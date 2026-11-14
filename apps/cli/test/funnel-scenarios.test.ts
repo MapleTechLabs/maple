@@ -117,6 +117,29 @@ const CASES = {
 		]),
 	],
 	// One account firing the same event four thousand times, then checking out.
+	// A backend that sends two events in one request: same millisecond, and no `seq` to order them.
+	tiedServerEvents: [
+		...user("signup_first", [
+			[1_000, "signup"],
+			[1_000, "plan"],
+			[9_000, "later"],
+		]),
+		...user("plan_first", [
+			[1_000, "plan"],
+			[1_000, "signup"],
+			[9_000, "later"],
+		]),
+		...user("searched_twice", [
+			[1_000, "search"],
+			[1_000, "search"],
+			[9_000, "later"],
+		]),
+	],
+	// A long session: the page view and the event it fires share a millisecond across `seq` 1024.
+	longSession: user("clicker", [
+		[1_000, "cart", 1_023],
+		[1_000, "pay", 1_024],
+	]),
 	heavyRepeats: [
 		...Arr.makeBy(4_000, (index) =>
 			event({ atMs: index * 1_000, eventName: "search", userId: "crawler", source: "server" }),
@@ -148,6 +171,45 @@ const caseDataset = (name: keyof typeof CASES): Dataset => ({
 	events: CASES[name],
 	sessions: [],
 })
+
+const view = (visitorId: string, atMs: number, seq: number) =>
+	event({
+		atMs,
+		seq,
+		sessionId: `s_${visitorId}`,
+		visitorId,
+		kind: "navigation",
+		eventName: "$pageview",
+		pagePath: "/pricing",
+		host: "acme.dev",
+	})
+
+// One visitor saw the pricing page once, another twice.
+const VIEWS: Dataset = {
+	orgId: "case_views",
+	sessions: [],
+	events: [view("once", 1_000, 0), view("twice", 1_000, 0), view("twice", 60_000, 1)],
+}
+
+// Two campaign sessions starting in the same millisecond: one opens with a page view, one sends nothing.
+const ENTRIES: Dataset = {
+	orgId: "case_entries",
+	sessions: [
+		session({ sessionId: "e1", startMs: 5_000, visitorId: "reader", utmSource: "twitter" }),
+		session({ sessionId: "e2", startMs: 5_000, visitorId: "bouncer", utmSource: "twitter" }),
+	],
+	events: [
+		event({
+			atMs: 5_000,
+			sessionId: "e1",
+			visitorId: "reader",
+			kind: "navigation",
+			eventName: "$pageview",
+			pagePath: "/",
+		}),
+		event({ atMs: 8_000, seq: 1, sessionId: "e1", visitorId: "reader", eventName: "clicked_cta" }),
+	],
+}
 
 // A person who arrives from a campaign, signs up in a second session, and is filtered by country.
 const ACQUISITION: Dataset = {
@@ -229,6 +291,8 @@ describeWithChdb("product event funnels over example products", () => {
 				mobile,
 				content,
 				ACQUISITION,
+				VIEWS,
+				ENTRIES,
 				...Arr.map(
 					[
 						"repeats",
@@ -238,6 +302,8 @@ describeWithChdb("product event funnels over example products", () => {
 						"outOfOrder",
 						"awkwardNames",
 						"heavyRepeats",
+						"tiedServerEvents",
+						"longSession",
 					] as const,
 					caseDataset,
 				),
@@ -286,6 +352,51 @@ describeWithChdb("product event funnels over example products", () => {
 	test("where a leaver went is read after the attempt that got furthest", () => {
 		const opts = byUser([ev("start"), ev("finish"), ev("never_happens")])
 		expect(sqlLeavers(db, "case_restart", opts)).toEqual([[3, "settings_opened", 1]])
+	})
+
+	test("two events in one millisecond with nothing to order them convert, in either order", () => {
+		const dataset = caseDataset("tiedServerEvents")
+		const converted = byUser([ev("signup"), ev("plan")])
+		expect(counts(dataset, converted)).toEqual([2, 2])
+		expect(sqlTiming(db, dataset.orgId, converted)).toEqual([{ step: 2, ...both(0), ...sinceStart(0) }])
+		// Counted as converted, so neither is a leaver of step 2; both went on to `later`.
+		expect(sqlLeavers(db, dataset.orgId, byUser([ev("signup"), ev("plan"), ev("never")]))).toEqual([
+			[3, "later", 2],
+		])
+	})
+
+	test("the same event twice in one millisecond is two events, with no time between them", () => {
+		const dataset = caseDataset("tiedServerEvents")
+		const twice = byUser([ev("search"), ev("search")])
+		expect(counts(dataset, twice)).toEqual([1, 1])
+		expect(sqlTiming(db, dataset.orgId, twice)).toEqual([{ step: 2, ...both(0), ...sinceStart(0) }])
+		expect(sqlLeavers(db, dataset.orgId, byUser([ev("search"), ev("search"), ev("never")]))).toEqual([
+			[3, "later", 1],
+		])
+	})
+
+	test("a long session keeps its order inside a millisecond past seq 1024", () => {
+		expect(counts(caseDataset("longSession"), byUser([ev("cart"), ev("pay")]))).toEqual([1, 1])
+	})
+
+	test("one page view is not both a $pageview event step and a page step", () => {
+		const byVisitor = (steps: ReadonlyArray<CH.FunnelStep>): Opts => ({
+			steps,
+			keyBy: "visitor",
+			windowSeconds: 3_600,
+		})
+		expect(counts(VIEWS, byVisitor([ev("$pageview"), page("/pricing")]))).toEqual([2, 1])
+		expect(counts(VIEWS, byVisitor([page("/pricing"), ev("$pageview")]))).toEqual([2, 1])
+	})
+
+	test("a session entry comes before the session's first event, and a visitor who sent nothing is a leaver", () => {
+		const opts: Opts = {
+			steps: [{ kind: "session", dimension: "utmSource", value: "twitter" }, page("/")],
+			keyBy: "visitor",
+			windowSeconds: 3_600,
+		}
+		expect(counts(ENTRIES, opts)).toEqual([2, 1])
+		expect(sqlLeavers(db, ENTRIES.orgId, opts)).toEqual([[2, "", 1]])
 	})
 
 	test("steps done before the first one do not count", () => {
@@ -675,19 +786,19 @@ function randomDatasets(
 	return Arr.makeBy(count, (index) => {
 		const orgId = `random_${index}`
 		const people = 2 + rng.int(4)
-		const used = new Set<number>()
 		const events = Arr.flatMap(Arr.range(1, people), (person) => {
 			const userId = rng.chance(0.7) ? `u${person}` : ""
 			const visitorId = userId === "" || rng.chance(0.5) ? `v${person}` : ""
 			const sessionId = visitorId === "" ? "" : `s${person}`
-			return Arr.makeBy(1 + rng.int(9), (seq) => {
-				// A distinct millisecond per row: ties are the hand-built cases' job.
-				let atMs = rng.int(4 * HOUR_MS)
-				while (used.has(atMs)) atMs += 1
-				used.add(atMs)
+			let previousMs = -1
+			return Arr.makeBy(1 + rng.int(9), (index) => {
+				// One row in five lands in the millisecond of the one before it, and a server row
+				// has no seq, so some rows tie outright.
+				const atMs = previousMs >= 0 && rng.chance(0.2) ? previousMs : rng.int(4 * HOUR_MS)
+				previousMs = atMs
 				return event({
 					atMs,
-					seq,
+					seq: sessionId === "" ? 0 : index,
 					userId,
 					visitorId,
 					sessionId,

@@ -271,10 +271,11 @@ export const sqlLeavers = (
 
 // The reference funnel
 //
-// The intended semantics, independent of the SQL: rows ordered by (timestamp, seq). An attempt
-// starts at a step-1 row and takes, for each later step, the first later row that matches and is
-// still within the window of the start, so one row serves one step. A person's level is their
-// deepest attempt, and their chain is the earliest attempt that gets that deep.
+// The intended semantics, independent of the SQL: rows ordered by (millisecond, seq), and rows that
+// tie on both in step order. An attempt starts at a step-1 row and takes, for each later step, the
+// first later row that matches and is no more than the window after the start, so one row serves
+// one step. A person's level is their deepest attempt, and their chain is the earliest attempt
+// that gets that deep.
 
 type Filters = NonNullable<CH.ProductEventsFunnelOpts["filters"]>
 
@@ -369,19 +370,33 @@ const stepMatches = (step: CH.FunnelStep, row: SimEvent): boolean => {
 
 interface FunnelRow {
 	readonly key: string
-	/** Microseconds after the base: the order rows are walked in, with `seq` breaking ties. */
-	readonly order: number
-	readonly seq: number
 	readonly atMs: number
+	readonly seq: number
 	readonly matches: ReadonlyArray<boolean>
 	readonly name: string
 	readonly dimension: string
 }
 
-const byOrder: Order.Order<FunnelRow> = Order.combine(
-	Order.mapInput(Order.Number, (row: FunnelRow) => row.order),
+/** A row matching an earlier step sorts first among rows of one millisecond and seq. */
+const stepRank = (row: FunnelRow): string =>
+	Arr.join(
+		Arr.map(row.matches, (matched) => (matched ? "0" : "1")),
+		"",
+	)
+
+const byOrder: Order.Order<FunnelRow> = Order.combineAll([
+	Order.mapInput(Order.Number, (row: FunnelRow) => row.atMs),
 	Order.mapInput(Order.Number, (row: FunnelRow) => row.seq),
-)
+	Order.mapInput(Order.String, stepRank),
+])
+
+/** A breakdown that reads a session dimension, not an event attribute. */
+const sessionDimensionOf = (
+	breakdownBy: CH.FunnelBreakdownBy | undefined,
+): CH.FunnelSessionDimension | undefined =>
+	Arr.findFirst(Rec.keys(SESSION_FIELD), (dimension) => dimension === breakdownBy).pipe(
+		Option.getOrUndefined,
+	)
 
 export interface PersonResult {
 	readonly key: string
@@ -396,7 +411,7 @@ const attemptFrom = (
 	rows: ReadonlyArray<FunnelRow>,
 	start: number,
 	stepCount: number,
-	windowMicro: number,
+	windowMs: number,
 ): ReadonlyArray<FunnelRow> => {
 	const first = rows[start]
 	if (first === undefined) return []
@@ -405,8 +420,7 @@ const attemptFrom = (
 	for (let step = 1; step < stepCount; step++) {
 		const next = Arr.findFirstIndex(
 			rows,
-			(row, index) =>
-				index > at && row.matches[step] === true && row.order <= first.order + windowMicro,
+			(row, index) => index > at && row.matches[step] === true && row.atMs <= first.atMs + windowMs,
 		)
 		if (Option.isNone(next)) break
 		at = next.value
@@ -419,11 +433,11 @@ const attemptFrom = (
 const walk = (
 	rows: ReadonlyArray<FunnelRow>,
 	stepCount: number,
-	windowMicro: number,
+	windowMs: number,
 ): ReadonlyArray<FunnelRow> =>
 	Arr.reduce(rows, [] as ReadonlyArray<FunnelRow>, (best, row, index) => {
 		if (row.matches[0] !== true) return best
-		const attempt = attemptFrom(rows, index, stepCount, windowMicro)
+		const attempt = attemptFrom(rows, index, stepCount, windowMs)
 		return attempt.length > best.length ? attempt : best
 	})
 
@@ -438,8 +452,9 @@ const dimensionOfEvent = (
 		return row.attributes[Str.slice("attribute:".length)(breakdownBy)] ?? ""
 	if (breakdownBy === "host") return row.host
 	const owner = sessionsById.get(row.sessionId)
-	if (owner === undefined || !inRange(owner.startMs, range)) return ""
-	return owner[SESSION_FIELD[breakdownBy as CH.FunnelSessionDimension]]
+	const dimension = sessionDimensionOf(breakdownBy)
+	if (owner === undefined || dimension === undefined || !inRange(owner.startMs, range)) return ""
+	return owner[SESSION_FIELD[dimension]]
 }
 
 export const referencePersons = (
@@ -471,9 +486,8 @@ export const referencePersons = (
 		return [
 			{
 				key,
-				order: row.atMs * 1000 + row.micro,
-				seq: row.seq,
 				atMs: row.atMs,
+				seq: row.seq,
 				matches,
 				name: displayName(row),
 				dimension: dimensionOfEvent(breakdownBy, row, sessionsById, range),
@@ -487,19 +501,15 @@ export const referencePersons = (
 					const key = keyOf(opts.keyBy, row, links)
 					if (!inRange(row.startMs, range) || !admitted(key)) return []
 					if (row[SESSION_FIELD[first.dimension]] !== first.value) return []
-					const isSessionDimension =
-						breakdownBy !== undefined && !Str.startsWith("attribute:")(breakdownBy)
+					const dimension = sessionDimensionOf(breakdownBy)
 					return [
 						{
 							key,
-							order: row.startMs * 1000,
-							seq: 0,
 							atMs: row.startMs,
+							seq: 0,
 							matches: Arr.map(opts.steps, (_, index) => index === 0),
 							name: "$session_entry",
-							dimension: isSessionDimension
-								? row[SESSION_FIELD[breakdownBy as CH.FunnelSessionDimension]]
-								: "",
+							dimension: dimension === undefined ? "" : row[SESSION_FIELD[dimension]],
 						},
 					]
 				})
@@ -508,7 +518,7 @@ export const referencePersons = (
 	const byKey = Arr.groupBy([...entryRows, ...eventRows], (row) => row.key)
 	return Arr.map(Rec.toEntries(byKey), ([key, rows]): PersonResult => {
 		const sorted = Arr.sort(rows, byOrder)
-		const chain = walk(sorted, opts.steps.length, opts.windowSeconds * 1_000_000)
+		const chain = walk(sorted, opts.steps.length, opts.windowSeconds * 1_000)
 		return {
 			key,
 			level: chain.length,
@@ -601,17 +611,17 @@ export const referenceLeavers = (
 	const nexts = Arr.flatMap(persons, (person) => {
 		const last = person.chain[person.level - 1]
 		if (last === undefined || person.level >= opts.steps.length) return []
+		// The first event after the last step's row; candidates that tie break by name.
 		const later = Arr.sort(
 			Arr.filter(
 				eventsByKey[person.key] ?? [],
-				(row) =>
-					row.atMs * 1000 + row.micro > last.order ||
-					(row.atMs * 1000 + row.micro === last.order && row.seq > last.seq),
+				(row) => row.atMs > last.atMs || (row.atMs === last.atMs && row.seq > last.seq),
 			),
-			Order.combine(
-				Order.mapInput(Order.Number, (row: SimEvent) => row.atMs * 1000 + row.micro),
+			Order.combineAll([
+				Order.mapInput(Order.Number, (row: SimEvent) => row.atMs),
 				Order.mapInput(Order.Number, (row: SimEvent) => row.seq),
-			),
+				Order.mapInput(Order.String, displayName),
+			]),
 		)
 		const next = later[0]
 		return [

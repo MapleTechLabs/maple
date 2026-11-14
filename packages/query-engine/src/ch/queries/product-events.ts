@@ -55,22 +55,22 @@ export function epochMs(ts: CH.Expr<DateTime.Utc>): CH.Expr<number> {
 	return CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
 }
 
-/** How many {@link orderKey} units one millisecond spans. */
-const ORDER_UNITS_PER_MS = 1_024_000
+/** How many {@link orderKey} units one millisecond spans: room for a session's `Seq`. */
+const ORDER_UNITS_PER_MS = 1_048_576
 
 /**
- * A row's place in its person's history, as one unsigned integer: microseconds * 1024 +
- * (`Seq` % 1024). `Seq` is the tiebreak inside one timestamp (a page load and the `track()` it
- * fires share a millisecond), and server rows, which carry `Seq` 0, order by their own clock.
- * `windowFunnel` and the chain walk both read this key, so they cannot disagree about order.
+ * A row's place in its person's history, as one unsigned integer: milliseconds * 2^20 +
+ * (`Seq` % 2^20). `Seq` is the tiebreak inside a millisecond (a page load and the `track()` it
+ * fires share one). Server rows carry `Seq` 0, so two of them in one millisecond tie; a tie
+ * counts in step order. `windowFunnel` and the walk both read this key, so they agree on order.
  */
 function orderKey(ts: CH.Expr<DateTime.Utc>, seq: CH.Expr<number>): CH.Expr<number> {
-	const micros = CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Micro", ts))
+	const millis = CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
 	return CH.compileTypedFnCall(
 		"plus",
 		T.uint64.schema,
-		CH.compileTypedFnCall("multiply", T.uint64.schema, micros, CH.lit(1024)),
-		CH.compileTypedFnCall("modulo", T.uint64.schema, seq, CH.lit(1024)),
+		CH.compileTypedFnCall("multiply", T.uint64.schema, millis, CH.lit(ORDER_UNITS_PER_MS)),
+		CH.compileTypedFnCall("modulo", T.uint64.schema, seq, CH.lit(ORDER_UNITS_PER_MS)),
 	)
 }
 
@@ -198,6 +198,8 @@ export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFu
 ) {}
 
 export const FUNNEL_BREAKDOWN_MAX_GROUPS = 20
+/** `product_events` keeps a year, so no conversion can take longer than that. */
+export const FUNNEL_MAX_WINDOW_SECONDS = 366 * 86_400
 
 function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
 	if (opts.steps.length === 0) {
@@ -222,10 +224,14 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			message: `a session step is only valid as step 1, found one at step ${misplacedSession.value + 1}`,
 		})
 	}
-	if (!Number.isFinite(opts.windowSeconds) || opts.windowSeconds <= 0) {
+	if (
+		!Number.isFinite(opts.windowSeconds) ||
+		opts.windowSeconds <= 0 ||
+		opts.windowSeconds > FUNNEL_MAX_WINDOW_SECONDS
+	) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidWindow",
-			message: `windowSeconds must be a positive number, got ${String(opts.windowSeconds)}`,
+			message: `windowSeconds must be a positive number up to ${FUNNEL_MAX_WINDOW_SECONDS} (${FUNNEL_MAX_WINDOW_SECONDS / 86_400} days), got ${String(opts.windowSeconds)}`,
 		})
 	}
 	return undefined
@@ -320,11 +326,13 @@ function sessionDimensionColumn($: ReplaysAccessor, dimension: FunnelSessionDime
 	}
 }
 
-/** A browser page view or a mobile screen view: both are named by `PagePath`. */
+/** The `Kind`s of a view: a browser page view and a mobile screen view, both named by `PagePath`. */
+export const PAGE_VIEW_KINDS = ["navigation", "screen"]
+
 function isPageView(
 	$: EventsAccessor | OpenJoinAccessor<typeof Datasources.productEvents.columns>,
 ): CH.Condition {
-	return CH.inList($.Kind, ["navigation", "screen"])
+	return CH.inList($.Kind, PAGE_VIEW_KINDS)
 }
 
 /** The step's predicate over a `product_events` row. `session` steps never match an event row. */
@@ -566,9 +574,15 @@ function funnelSource(plan: FunnelPlan) {
 		: fromQuery(eventsBranch(plan), "funnel_events")
 }
 
-/** The conversion window in {@link orderKey} units, exact past 2^53. */
+/**
+ * The conversion window in {@link orderKey} units, exact past 2^53. The last unit of its final
+ * millisecond is included, so a row that lands on the window's edge counts whatever its `Seq`.
+ */
 const windowUnits = (opts: ProductEventsFunnelOpts): string =>
-	(BigInt(Math.round(opts.windowSeconds * 1000)) * BigInt(ORDER_UNITS_PER_MS)).toString()
+	(
+		BigInt(Math.round(opts.windowSeconds * 1000)) * BigInt(ORDER_UNITS_PER_MS) +
+		BigInt(ORDER_UNITS_PER_MS - 1)
+	).toString()
 
 /** What a step matches on, ignoring its attribute and host narrowing: two steps sharing it can match one row. */
 const stepSubject = (step: FunnelStep): string => {
@@ -582,9 +596,14 @@ const stepSubject = (step: FunnelStep): string => {
 	}
 }
 
-/** Two steps could be satisfied by the same row, as in a funnel that repeats a step. */
+/**
+ * Two steps could be satisfied by the same row: a funnel that repeats a step, or an event step
+ * on a reserved name beside a page step, since a view is stored as a `$pageview` / `$screen` event.
+ */
 const stepsCanShareRow = (steps: ReadonlyArray<FunnelStep>): boolean =>
-	new Set(Arr.map(steps, stepSubject)).size < steps.length
+	new Set(Arr.map(steps, stepSubject)).size < steps.length ||
+	(Arr.some(steps, (step) => step.kind === "page") &&
+		Arr.some(steps, (step) => step.kind === "event" && Str.startsWith("$")(step.eventName)))
 
 /**
  * `SELECT key, <level> [, first dim AS group] FROM <funnel rows> GROUP BY key`: one row per
@@ -642,12 +661,14 @@ function walkQuery(plan: FunnelPlan) {
 		Arr.map(opts.steps, (_, index) => stepColumn(index)),
 		", ",
 	)
+	const tieOrder = Arr.join(["x.1", ...Arr.map(opts.steps, (_, index) => `1 - x.${index + 2}`)], ", ")
 	const perPerson = funnelSource(plan)
 		.select(($) => {
 			const row = {
 				key: $.key as CH.Expr<string>,
-				// Tuples sort by their first element, the order key.
-				evs: CH.untypedExpr(`arraySort(groupArray(tuple(ord, ${flags})))`),
+				// By order key; rows that tie sort in step order, as `windowFunnel` reads them, so a
+				// session entry comes before the session's first event.
+				evs: CH.untypedExpr(`arraySort(x -> (${tieOrder}), groupArray(tuple(ord, ${flags})))`),
 			}
 			if (plan.breakdownBy === undefined) return row
 			const dim = $.dim as CH.Expr<string>
@@ -681,11 +702,11 @@ function walkQuery(plan: FunnelPlan) {
 				]),
 			),
 			level: CH.rawExpr<number>(
-				Arr.join(
+				`toUInt8(${Arr.join(
 					Arr.map(firsts, (column) => `(${column} > 0)`),
 					" + ",
-				),
-				T.uint16,
+				)})`,
+				T.uint8,
 			),
 			// Steps are reached in order, so the deepest one's first time is the largest.
 			reachedAt: CH.rawExpr<number>(n === 1 ? "f1" : `greatest(${Arr.join(firsts, ", ")})`, T.uint64),
@@ -993,6 +1014,8 @@ export function eventDisplayName(
 
 const stepOrderColumn = (index: number) => `o${index + 1}`
 
+const stepIndexColumn = (index: number) => `i${index + 1}`
+
 /**
  * `SELECT key, level, o1, …, oN`: per person, the funnel level and the order key of each step's
  * row in their chain (0 for a step the chain did not reach).
@@ -1000,7 +1023,8 @@ const stepOrderColumn = (index: number) => `o${index + 1}`
  * The chain's start is the first step-1 row still inside the window when the deepest step was
  * first reached ({@link walkQuery}'s `reachedAt`): an earlier start had expired by then, and no
  * later one is needed. From there each step is the first matching row after the previous one,
- * which costs one scan of the person's rows per step.
+ * by position in the array as the walk counts, so rows that tie on the order key still chain.
+ * One scan of the person's rows per step.
  */
 function chainQuery(plan: FunnelPlan) {
 	const { opts } = plan
@@ -1009,18 +1033,22 @@ function chainQuery(plan: FunnelPlan) {
 		key: $.key,
 		level: $.level,
 		...Rec.fromEntries(
-			Arr.map(opts.steps, (_, index) => {
+			Arr.flatMap(opts.steps, (_, index) => {
 				const step = index + 1
-				const row =
+				const at = stepIndexColumn(index)
+				const found =
 					step === 1
-						? `x.2 = 1 AND x.1 + ${window} >= reachedAt`
-						: `x.${step + 1} = 1 AND x.1 > ${stepOrderColumn(index - 1)}`
+						? `arrayFirstIndex(x -> x.2 = 1 AND x.1 + ${window} >= reachedAt, evs)`
+						: `arrayFirstIndex((x, i) -> x.${step + 1} = 1 AND i > ${stepIndexColumn(index - 1)}, evs, arrayEnumerate(evs))`
 				return [
-					stepOrderColumn(index),
-					CH.rawExpr<number>(
-						`if(level >= ${step}, tupleElement(arrayFirst(x -> ${row}, evs), 1), toUInt64(0))`,
-						T.uint64,
-					),
+					[at, CH.rawExpr<number>(`if(level >= ${step}, ${found}, 0)`, T.uint32)],
+					[
+						stepOrderColumn(index),
+						CH.rawExpr<number>(
+							`if(${at} > 0, tupleElement(arrayElement(evs, ${at}), 1), toUInt64(0))`,
+							T.uint64,
+						),
+					],
 				]
 			}),
 		),
@@ -1142,15 +1170,16 @@ export function productEventsFunnelLeaversQuery(
 		}))
 		.where(($) => [($.level as CH.Expr<number>).gte(1), ($.level as CH.Expr<number>).lt(n)])
 
-	const nexts = fromQuery(personEventsBranch(plan), "e")
-		.innerJoinQuery(dropped, "d", (e, d) => e.key.eq(d.key))
+	// From the dropped persons outward: one with no event at all (a session entry and nothing else)
+	// still counts, under `''`. Ties on the order key break by name, so the answer does not vary.
+	const nexts = fromQuery(dropped, "d")
+		.leftJoinQuery(personEventsBranch(plan), "e", (d, e) => d.key.eq(e.key))
 		.select(($) => ({
 			key: $.key,
-			step: $.d.step as CH.Expr<number>,
-			next: argMinIf(
-				$.name as CH.Expr<string>,
-				$.ord,
-				($.ord as CH.Expr<number>).gt($.d.lastOrd as CH.Expr<number>),
+			step: $.step,
+			next: CH.rawExpr<string>(
+				"argMinIf(coalesce(e.name, ''), tuple(coalesce(e.ord, 0), coalesce(e.name, '')), coalesce(e.ord, 0) > d.lastOrd)",
+				T.string,
 			),
 		}))
 		.groupBy("key", "step")

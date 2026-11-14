@@ -4655,7 +4655,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [b0b5b3fb]
+-- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [df456bc1]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3, 4]) AS step,
@@ -4666,12 +4666,12 @@ SELECT
           countIf(level >= 1) AS entered
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(619315200000000)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level,
+          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level,
           argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group
         FROM (
 SELECT
           s.UserId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(s.StartTime)), 1024), modulo(0, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(s.StartTime)), 1048576), modulo(0, 1048576)) AS ord,
           1 AS s1,
           0 AS s2,
           0 AS s3,
@@ -4686,7 +4686,7 @@ SELECT
 UNION ALL
 SELECT
           e.UserId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           0 AS s1,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s2,
           toUInt8(e.EventName = 'signup_completed') AS s3,
@@ -4706,7 +4706,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [99914415]
+-- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [829aeae4]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3]) AS step,
@@ -4717,11 +4717,11 @@ SELECT
           countIf(level >= 1) AS entered
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(619315200000000)(ord, s1 = 1, s2 = 1, s3 = 1) AS level,
+          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level,
           argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group
         FROM (SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
           toUInt8(e.EventName = 'signup_completed') AS s2,
           toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3,
@@ -4758,7 +4758,7 @@ SELECT
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [7dc23b3d]
+-- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [e3739cab]
 SELECT
           hops.step AS step,
           tupleElement(hop, 1) AS next,
@@ -4774,83 +4774,41 @@ SELECT
           nexts.next AS next,
           count() AS count
         FROM (SELECT
-          e.key AS key,
+          d.key AS key,
           d.step AS step,
-          argMinIf(e.name, e.ord, e.ord > d.lastOrd) AS next
+          argMinIf(coalesce(e.name, ''), tuple(coalesce(e.ord, 0), coalesce(e.name, '')), coalesce(e.ord, 0) > d.lastOrd) AS next
         FROM (SELECT
-          e.VisitorId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
-          if((e.Kind IN ('navigation', 'screen') AND e.PagePath != ''), e.PagePath, e.EventName) AS name
-        FROM product_events AS e
-        WHERE e.OrgId = 'org_sql_catalog'
-          AND e.Timestamp >= '2026-01-01 10:30:00'
-          AND e.Timestamp <= '2026-01-03 14:15:00'
-          AND e.VisitorId != ''
-          AND e.VisitorId IN (SELECT
-          session_replays.VisitorId AS key
-        FROM session_replays
-        WHERE session_replays.OrgId = 'org_sql_catalog'
-          AND session_replays.StartTime >= '2026-01-01 10:30:00'
-          AND session_replays.StartTime <= '2026-01-03 14:15:00'
-          AND session_replays.SessionId IN (SELECT
-          product_events.SessionId AS sessionId
-        FROM product_events
-        WHERE product_events.OrgId = 'org_sql_catalog'
-          AND product_events.Timestamp >= '2026-01-01 10:30:00'
-          AND product_events.Timestamp <= '2026-01-03 14:15:00'
-          AND product_events.Kind = 'navigation'
-          AND product_events.Host = 'maple.dev'
-          AND product_events.PagePath = '/pricing'
-        GROUP BY sessionId)
-          AND session_replays.ReferrerHost = 't.co'
-          AND session_replays.Country = 'DE'
-          AND session_replays.DeviceType = 'desktop'
-          AND session_replays.BrowserName = 'Chrome'
-          AND session_replays.OsName = 'macOS'
-          AND session_replays.Language = 'en-US'
-          AND session_replays.UtmSource = 'twitter'
-          AND session_replays.UtmMedium = 'social'
-          AND session_replays.UtmCampaign = 'launch'
-          AND session_replays.VisitorIsNew = 1
-          AND session_replays.SessionId IN (SELECT
-          product_events.SessionId AS sessionId
-        FROM product_events
-        WHERE product_events.OrgId = 'org_sql_catalog'
-          AND product_events.Timestamp >= '2026-01-01 10:30:00'
-          AND product_events.Timestamp <= '2026-01-03 14:15:00'
-          AND product_events.Kind = 'custom'
-          AND product_events.EventName = 'signup_started'
-        GROUP BY sessionId)
-        GROUP BY key)) AS e
-        INNER JOIN (SELECT
           chain.key AS key,
           chain.level + 1 AS step,
           arrayElement([o1, o2, o3], level) AS lastOrd
         FROM (SELECT
           walked.key AS key,
           walked.level AS level,
-          if(level >= 1, tupleElement(arrayFirst(x -> x.2 = 1 AND x.1 + 619315200000000 >= reachedAt, evs), 1), toUInt64(0)) AS o1,
-          if(level >= 2, tupleElement(arrayFirst(x -> x.3 = 1 AND x.1 > o1, evs), 1), toUInt64(0)) AS o2,
-          if(level >= 3, tupleElement(arrayFirst(x -> x.4 = 1 AND x.1 > o2, evs), 1), toUInt64(0)) AS o3
+          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND x.1 + 634178765848575 >= reachedAt, evs), 0) AS i1,
+          if(i1 > 0, tupleElement(arrayElement(evs, i1), 1), toUInt64(0)) AS o1,
+          if(level >= 2, arrayFirstIndex((x, i) -> x.3 = 1 AND i > i1, evs, arrayEnumerate(evs)), 0) AS i2,
+          if(i2 > 0, tupleElement(arrayElement(evs, i2), 1), toUInt64(0)) AS o2,
+          if(level >= 3, arrayFirstIndex((x, i) -> x.4 = 1 AND i > i2, evs, arrayEnumerate(evs)), 0) AS i3,
+          if(i3 > 0, tupleElement(arrayElement(evs, i3), 1), toUInt64(0)) AS o3
         FROM (SELECT
           person_events.key AS key,
           person_events.evs AS evs,
           arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
-          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 619315200000000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
           arrayFill(v -> v > 0, b2) AS a2,
-          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 619315200000000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
           arrayFill(v -> v > 0, b3) AS a3,
           arrayFirst(v -> v > 0, a1) AS f1,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
-          (f1 > 0) + (f2 > 0) + (f3 > 0) AS level,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
           greatest(f1, f2, f3) AS reachedAt
         FROM (SELECT
           funnel_events.key AS key,
-          arraySort(groupArray(tuple(ord, s1, s2, s3))) AS evs
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
         FROM (SELECT
           e.VisitorId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
           toUInt8(e.EventName = 'signup_completed') AS s2,
           toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
@@ -4898,14 +4856,59 @@ SELECT
         GROUP BY key)) AS funnel_events
         GROUP BY key) AS person_events) AS walked) AS chain
         WHERE chain.level >= 1
-          AND chain.level < 3) AS d ON e.key = d.key
+          AND chain.level < 3) AS d
+        LEFT JOIN (SELECT
+          e.VisitorId AS key,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
+          if((e.Kind IN ('navigation', 'screen') AND e.PagePath != ''), e.PagePath, e.EventName) AS name
+        FROM product_events AS e
+        WHERE e.OrgId = 'org_sql_catalog'
+          AND e.Timestamp >= '2026-01-01 10:30:00'
+          AND e.Timestamp <= '2026-01-03 14:15:00'
+          AND e.VisitorId != ''
+          AND e.VisitorId IN (SELECT
+          session_replays.VisitorId AS key
+        FROM session_replays
+        WHERE session_replays.OrgId = 'org_sql_catalog'
+          AND session_replays.StartTime >= '2026-01-01 10:30:00'
+          AND session_replays.StartTime <= '2026-01-03 14:15:00'
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.Kind = 'navigation'
+          AND product_events.Host = 'maple.dev'
+          AND product_events.PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND session_replays.ReferrerHost = 't.co'
+          AND session_replays.Country = 'DE'
+          AND session_replays.DeviceType = 'desktop'
+          AND session_replays.BrowserName = 'Chrome'
+          AND session_replays.OsName = 'macOS'
+          AND session_replays.Language = 'en-US'
+          AND session_replays.UtmSource = 'twitter'
+          AND session_replays.UtmMedium = 'social'
+          AND session_replays.UtmCampaign = 'launch'
+          AND session_replays.VisitorIsNew = 1
+          AND session_replays.SessionId IN (SELECT
+          product_events.SessionId AS sessionId
+        FROM product_events
+        WHERE product_events.OrgId = 'org_sql_catalog'
+          AND product_events.Timestamp >= '2026-01-01 10:30:00'
+          AND product_events.Timestamp <= '2026-01-03 14:15:00'
+          AND product_events.Kind = 'custom'
+          AND product_events.EventName = 'signup_started'
+        GROUP BY sessionId)
+        GROUP BY key)) AS e ON d.key = e.key
         GROUP BY key, step) AS nexts
         GROUP BY step, next) AS counted
         GROUP BY step) AS ranked) AS hops
         ORDER BY step ASC, count DESC, next ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:person  [7616752e]
+-- builder:product-events:productEventsFunnelQuery:person  [a82e226b]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -4913,10 +4916,10 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(619315200000000)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
+          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
         FROM (SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
           toUInt8(e.EventName = 'signup_completed') AS s2,
           toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
@@ -4941,7 +4944,7 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-key  [f32e490d]
+-- builder:product-events:productEventsFunnelQuery:session-key  [7c4906ca]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -4949,10 +4952,10 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(1843200000000)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
+          windowFunnel(1887437848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
         FROM (SELECT
           e.SessionId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
           toUInt8(e.EventName = 'signup_completed') AS s2,
           toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
@@ -4966,7 +4969,7 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-step-filtered  [51fcc352]
+-- builder:product-events:productEventsFunnelQuery:session-step-filtered  [03d83cd4]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -4974,11 +4977,11 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3), countIf(level >= 4)] AS counts
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(619315200000000)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
+          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
         FROM (
 SELECT
           multiIf(s.UserId != '', s.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), s.VisitorId) AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(s.StartTime)), 1024), modulo(0, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(s.StartTime)), 1048576), modulo(0, 1048576)) AS ord,
           1 AS s1,
           0 AS s2,
           0 AS s3,
@@ -5050,7 +5053,7 @@ SELECT
 UNION ALL
 SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           0 AS s1,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s2,
           toUInt8(e.EventName = 'signup_completed') AS s3,
@@ -5124,7 +5127,7 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:visitor-session-step  [97d46614]
+-- builder:product-events:productEventsFunnelQuery:visitor-session-step  [36bdf192]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
@@ -5132,11 +5135,11 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3), countIf(level >= 4)] AS counts
         FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(3686400000000)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
+          windowFunnel(3774874648575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
         FROM (
 SELECT
           s.VisitorId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(s.StartTime)), 1024), modulo(0, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(s.StartTime)), 1048576), modulo(0, 1048576)) AS ord,
           1 AS s1,
           0 AS s2,
           0 AS s3,
@@ -5150,7 +5153,7 @@ SELECT
 UNION ALL
 SELECT
           e.VisitorId AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           0 AS s1,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s2,
           toUInt8(e.EventName = 'signup_completed') AS s3,
@@ -5166,7 +5169,7 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelTimingQuery:person  [61465ef0]
+-- builder:product-events:productEventsFunnelTimingQuery:person  [fa479286]
 SELECT
           arrayJoin([2, 3]) AS step,
           arrayElement(totals.p50s, step) AS p50Ms,
@@ -5174,35 +5177,38 @@ SELECT
           arrayElement(totals.start50s, step) AS sinceStartP50Ms,
           arrayElement(totals.start90s, step) AS sinceStartP90Ms
         FROM (SELECT
-          [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3), 0)] AS p50s,
-          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3), 0)] AS p90s,
-          [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1024000) - intDiv(o1, 1024000)), level >= 3), 0)] AS start50s,
-          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o1, 1024000)), level >= 3), 0)] AS start90s
+          [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1048576) - intDiv(o1, 1048576)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1048576) - intDiv(o2, 1048576)), level >= 3), 0)] AS p50s,
+          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1048576) - intDiv(o1, 1048576)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1048576) - intDiv(o2, 1048576)), level >= 3), 0)] AS p90s,
+          [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1048576) - intDiv(o1, 1048576)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1048576) - intDiv(o1, 1048576)), level >= 3), 0)] AS start50s,
+          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1048576) - intDiv(o1, 1048576)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1048576) - intDiv(o1, 1048576)), level >= 3), 0)] AS start90s
         FROM (SELECT
           walked.key AS key,
           walked.level AS level,
-          if(level >= 1, tupleElement(arrayFirst(x -> x.2 = 1 AND x.1 + 619315200000000 >= reachedAt, evs), 1), toUInt64(0)) AS o1,
-          if(level >= 2, tupleElement(arrayFirst(x -> x.3 = 1 AND x.1 > o1, evs), 1), toUInt64(0)) AS o2,
-          if(level >= 3, tupleElement(arrayFirst(x -> x.4 = 1 AND x.1 > o2, evs), 1), toUInt64(0)) AS o3
+          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND x.1 + 634178765848575 >= reachedAt, evs), 0) AS i1,
+          if(i1 > 0, tupleElement(arrayElement(evs, i1), 1), toUInt64(0)) AS o1,
+          if(level >= 2, arrayFirstIndex((x, i) -> x.3 = 1 AND i > i1, evs, arrayEnumerate(evs)), 0) AS i2,
+          if(i2 > 0, tupleElement(arrayElement(evs, i2), 1), toUInt64(0)) AS o2,
+          if(level >= 3, arrayFirstIndex((x, i) -> x.4 = 1 AND i > i2, evs, arrayEnumerate(evs)), 0) AS i3,
+          if(i3 > 0, tupleElement(arrayElement(evs, i3), 1), toUInt64(0)) AS o3
         FROM (SELECT
           person_events.key AS key,
           person_events.evs AS evs,
           arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
-          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 619315200000000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
           arrayFill(v -> v > 0, b2) AS a2,
-          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 619315200000000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
           arrayFill(v -> v > 0, b3) AS a3,
           arrayFirst(v -> v > 0, a1) AS f1,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
-          (f1 > 0) + (f2 > 0) + (f3 > 0) AS level,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
           greatest(f1, f2, f3) AS reachedAt
         FROM (SELECT
           funnel_events.key AS key,
-          arraySort(groupArray(tuple(ord, s1, s2, s3))) AS evs
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
         FROM (SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
-          plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord,
+          plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
           toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1,
           toUInt8(e.EventName = 'signup_completed') AS s2,
           toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3
