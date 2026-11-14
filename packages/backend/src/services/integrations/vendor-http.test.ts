@@ -1,5 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema, Stream, Tracer, Array as Arr, Record as Rec } from "effect"
+import {
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	Stream,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import * as VendorHttp from "./vendor-http"
@@ -28,6 +38,7 @@ const Page = Schema.Struct({ items: Schema.Array(Item), next: Schema.optionalKey
 const withClient = <A, E>(
 	fake: VendorFake.VendorFake,
 	use: (client: VendorHttp.VendorHttpClient<AcmeError>) => Effect.Effect<A, E>,
+	overrides: Partial<VendorHttp.VendorHttpOptions<AcmeError>> = {},
 ) =>
 	Effect.gen(function* () {
 		const httpClient = yield* HttpClient.HttpClient
@@ -40,6 +51,7 @@ const withClient = <A, E>(
 				toError,
 				timeout: "5 seconds",
 				rateLimitResetHeader: "x-ratelimit-reset",
+				...overrides,
 			}),
 		)
 	}).pipe(Effect.provide(Layer.merge(FetchHttpClient.layer, fake.layer)))
@@ -55,6 +67,39 @@ const sequence = (replies: ReadonlyArray<() => Response>) => {
 }
 
 describe("VendorHttp", () => {
+	it.effect("fails a malformed base URL in the typed channel instead of throwing", () => {
+		const fake = VendorFake.make({ routes: [] })
+		return withClient(
+			fake,
+			(client) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(client.json(Page, { path: "/v1/items" }))
+					assert.strictEqual(error.kind, "upstream")
+					assert.strictEqual(fake.calls.length, 0)
+				}),
+			{ baseUrl: "api.acme.test" },
+		)
+	})
+
+	it.effect("reads the vendor's message from a refusal body longer than the stored cut", () => {
+		const message = `bad request ${Str.repeat(2100)("x")}`
+		const fake = VendorFake.make({
+			routes: [{ path: "/v1/items", respond: () => VendorFake.json({ error: { message } }, 400) }],
+		})
+		return withClient(
+			fake,
+			(client) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(client.json(Page, { path: "/v1/items" }))
+					assert.isTrue(Str.startsWith("bad request x")(error.message))
+				}),
+			{
+				detail: (body) => (Str.includes("bad request")(body) ? message : undefined),
+				toError: (error) => new AcmeError({ message: error.detail ?? "no detail", kind: error.kind }),
+			},
+		)
+	})
+
 	it.effect("waits out a short retry-after on a 429 and sends the request again", () => {
 		const fake = VendorFake.make({
 			routes: [

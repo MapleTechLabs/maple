@@ -42,8 +42,7 @@ const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBo
 
 /** A failed call as the error callers branch on, with Vercel's own message when the body has one. */
 const toVercelError = (error: VendorHttp.VendorHttpError): VercelApiError => {
-	const detail = Option.getOrUndefined(decodeErrorBody(error.body ?? ""))?.error.message
-	const cut = detail === undefined ? undefined : Str.slice(0, 300)(detail)
+	const cut = error.detail === undefined ? undefined : Str.slice(0, 300)(error.detail)
 	const message =
 		error.status !== undefined
 			? `Vercel API returned ${error.status}${cut === undefined ? "" : `: ${cut}`}`
@@ -72,6 +71,7 @@ const client = (httpClient: HttpClient.HttpClient, token: string) =>
 		baseUrl: BASE_URL,
 		auth: VendorHttp.bearer(token),
 		toError: toVercelError,
+		detail: (body) => Option.getOrUndefined(decodeErrorBody(body))?.error.message,
 		timeout: REQUEST_TIMEOUT,
 	})
 

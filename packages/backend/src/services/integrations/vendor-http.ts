@@ -33,6 +33,8 @@ export class VendorHttpError extends Schema.TaggedError<VendorHttpError>()(
 		retryAfterSeconds: Schema.optionalKey(Schema.Number),
 		/** The answer's body, cut to {@link MAX_ERROR_BODY_CHARS} characters. */
 		body: Schema.optionalKey(Schema.String),
+		/** The vendor's own message, read from the whole body by the client's `detail`. */
+		detail: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -64,6 +66,8 @@ export interface VendorHttpOptions<E> {
 	/** Overrides the default kind of a non-2xx answer; `undefined` keeps the default. */
 	readonly classify?: (refusal: VendorRefusal) => VendorFailureKind | undefined
 	readonly toError: (error: VendorHttpError) => E
+	/** Reads the vendor's message from a refusal's whole body, before the body is cut. */
+	readonly detail?: (body: string) => string | undefined
 	/** Per attempt: the answer's headers and, for `json` and `text`, its whole body. */
 	readonly timeout: Duration.Input
 	/** Transient failures (5xx, transport, timeout); `false` turns retries off. */
@@ -145,7 +149,9 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 		kind: VendorFailureKind,
 		message: string,
 		request: VendorRequest,
-		extra: Partial<Pick<VendorHttpError, "status" | "retryAfterSeconds" | "body" | "cause">> = {},
+		extra: Partial<
+			Pick<VendorHttpError, "status" | "retryAfterSeconds" | "body" | "detail" | "cause">
+		> = {},
 	) =>
 		new VendorHttpError({
 			message: `${peerService} ${message}${request.operation === undefined ? "" : ` while ${request.operation}`}`,
@@ -186,9 +192,13 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			const kind = options.classify?.(refusal) ?? defaultKind(response.status)
 			const nowMs = yield* Clock.currentTimeMillis
 			const retryAfter = kind === "rate_limited" ? retryAfterOf(response.headers, nowMs) : Option.none()
+			const detail = options.detail?.(body)
 			return yield* fail(kind, `answered ${response.status}`, request, {
 				status: response.status,
 				body: Str.slice(0, MAX_ERROR_BODY_CHARS)(body),
+				...(detail === undefined
+					? undefined
+					: { detail: Str.slice(0, MAX_ERROR_BODY_CHARS)(detail) }),
 				...Option.match(retryAfter, {
 					onNone: () => undefined,
 					onSome: (seconds) => ({ retryAfterSeconds: seconds }),
@@ -196,42 +206,54 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			})
 		})
 
-	/** One attempt: send, refuse a non-2xx, then `read` the 2xx answer, all inside a Client span. */
+	/** Builds the request once, then attempts it under {@link withRetries}, each attempt in a Client span. */
 	const attempt = <A, R>(
 		request: VendorRequest,
 		read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, VendorHttpError, R>,
 	) => {
-		const built = buildRequest(request)
-		const url = new URL(built.url)
-		return Effect.gen(function* () {
-			const response = yield* options.httpClient.execute(built).pipe(
-				// The span below replaces the client's own, which records the full URL and query.
-				Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
-				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-				Effect.mapError((cause) => fail("upstream", "request failed", request, { cause })),
-			)
-			yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
-			if (response.status < 200 || response.status >= 300) return yield* refuse(request, response)
-			return yield* read(response)
-		}).pipe(
-			Effect.timeoutOrElse({
-				duration: request.timeout ?? options.timeout,
-				orElse: () => Effect.fail(fail("timeout", "timed out", request)),
-			}),
-			Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
-			Effect.withSpan("VendorHttp.request", {
-				kind: "client",
-				attributes: {
-					"peer.service": peerService,
-					"http.request.method": built.method,
-					"server.address": url.hostname,
-					"url.scheme": Str.slice(0, -1)(url.protocol),
-					"url.path": url.pathname,
-					...(request.operation === undefined
-						? undefined
-						: { "maple.vendor.operation": request.operation }),
-				},
-			}),
+		// A malformed base URL or body fails in the typed channel instead of throwing.
+		const prepared = Effect.try({
+			try: () => {
+				const built = buildRequest(request)
+				return { built, url: new URL(built.url) }
+			},
+			catch: (cause) => fail("upstream", "request could not be built", request, { cause }),
+		})
+		return Effect.flatMap(prepared, ({ built, url }) =>
+			withRetries(
+				request,
+				Effect.gen(function* () {
+					const response = yield* options.httpClient.execute(built).pipe(
+						// The span below replaces the client's own, which records the full URL and query.
+						Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+						Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+						Effect.mapError((cause) => fail("upstream", "request failed", request, { cause })),
+					)
+					yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
+					if (response.status < 200 || response.status >= 300)
+						return yield* refuse(request, response)
+					return yield* read(response)
+				}).pipe(
+					Effect.timeoutOrElse({
+						duration: request.timeout ?? options.timeout,
+						orElse: () => Effect.fail(fail("timeout", "timed out", request)),
+					}),
+					Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
+					Effect.withSpan("VendorHttp.request", {
+						kind: "client",
+						attributes: {
+							"peer.service": peerService,
+							"http.request.method": built.method,
+							"server.address": url.hostname,
+							"url.scheme": Str.slice(0, -1)(url.protocol),
+							"url.path": url.pathname,
+							...(request.operation === undefined
+								? undefined
+								: { "maple.vendor.operation": request.operation }),
+						},
+					}),
+				),
+			),
 		)
 	}
 
@@ -255,8 +277,7 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 	const send = <A, R>(
 		request: VendorRequest,
 		read: (response: HttpClientResponse.HttpClientResponse) => Effect.Effect<A, VendorHttpError, R>,
-	): Effect.Effect<A, E, R> =>
-		withRetries(request, attempt(request, read)).pipe(Effect.mapError(options.toError))
+	): Effect.Effect<A, E, R> => attempt(request, read).pipe(Effect.mapError(options.toError))
 
 	const readText = (request: VendorRequest) => (response: HttpClientResponse.HttpClientResponse) =>
 		response.text.pipe(

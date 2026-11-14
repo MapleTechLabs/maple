@@ -62,20 +62,18 @@ const ErrorBodySchema = Schema.Union([
 ])
 const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBodySchema))
 
-const upstreamDetail = (text: string) =>
+/** Supabase's own message, read from the whole body before the kit cuts it. */
+const supabaseDetail = (text: string) =>
 	Option.match(decodeErrorBody(text), {
-		onNone: () => "",
-		onSome: (body) => {
-			const detail = "error" in body ? (body.error.description ?? body.error.message) : body.message
-			return detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`
-		},
+		onNone: () => undefined,
+		onSome: (body) => ("error" in body ? (body.error.description ?? body.error.message) : body.message),
 	})
 
 /** A failed call as a {@link SupabaseApiError}, in the words each status has always had. */
 const toSupabaseError = (error: VendorHttp.VendorHttpError): SupabaseApiError => {
 	const what = error.operation ?? "calling the Management API"
 	const status = error.status === undefined ? undefined : { status: error.status }
-	const detail = upstreamDetail(error.body ?? "")
+	const detail = error.detail === undefined ? "" : `: ${Str.slice(0, 300)(error.detail)}`
 	switch (error.kind) {
 		case "unauthorized":
 			return new SupabaseApiError({
@@ -127,6 +125,7 @@ export const supabaseClient = (
 		auth,
 		headers: { accept: "application/json" },
 		toError: toSupabaseError,
+		detail: supabaseDetail,
 		timeout: REQUEST_TIMEOUT,
 		rateLimitResetHeader: "x-ratelimit-reset",
 	})
