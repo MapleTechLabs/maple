@@ -2687,6 +2687,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const destinationMap = new Map(Arr.map(allDestinations, (r) => [r.id, r]))
 				const ruleMap = new Map(Arr.map(allRules, (r) => [r.id, r]))
 				const incidentMap = new Map(Arr.map(allIncidents, (r) => [r.id, r]))
+				// The ids came off the delivery row and were loaded by id alone, so a row
+				// resolves only what its own org owns: anything else reads as missing.
+				const ownedBy = <A extends { readonly orgId: OrgId }>(
+					row: AlertDeliveryEventRow,
+					found: A | undefined,
+				): A | undefined => (found?.orgId === row.orgId ? found : undefined)
+				const destinationFor = (row: AlertDeliveryEventRow) =>
+					ownedBy(row, destinationMap.get(row.destinationId))
+				const ruleFor = (row: AlertDeliveryEventRow) => ownedBy(row, ruleMap.get(row.ruleId))
+				const incidentFor = (row: AlertDeliveryEventRow) =>
+					row.incidentId === null ? undefined : ownedBy(row, incidentMap.get(row.incidentId))
 
 				const processedCount = yield* Ref.make(0)
 				const failureCount = yield* Ref.make(0)
@@ -2706,7 +2717,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					yield* Ref.update(processedCount, (count) => count + 1)
 					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, 1)
 
-					const destinationRow = destinationMap.get(row.destinationId)
+					const destinationRow = destinationFor(row)
 					// On the span before anything can fail, so a delivery error issue
 					// names the destination it was aimed at without a DB round-trip.
 					yield* Effect.annotateCurrentSpan({
@@ -2739,8 +2750,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 
 					const payload = yield* parseDeliveryPayload(row.payloadJson)
 					const hydrated = yield* hydrateDestination(destinationRow)
-					const incidentRow: AlertIncidentRow | null =
-						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					const incidentRow: AlertIncidentRow | null = incidentFor(row) ?? null
 					// A queued escalation step goes out only to an incident still open and unacknowledged.
 					const staleStep = (yield* staleEscalationSteps([row])).get(row.id)
 					if (staleStep !== undefined) {
@@ -2781,7 +2791,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						})
 						return
 					}
-					const ruleRow = ruleMap.get(row.ruleId) ?? null
+					const ruleRow = ruleFor(row) ?? null
 					const payloadRule = payload.rule
 					const storedRule = ruleRow ? yield* decodeStoredAlertRuleMetadata(ruleRow) : null
 					const groupKey = incidentRow?.groupKey ?? payloadRule?.groupKey ?? null
@@ -3000,7 +3010,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					if (countsAgainstDestination) {
 						yield* noteTerminalDestinationFailure(
 							row,
-							destinationMap.get(row.destinationId)?.type ?? null,
+							destinationFor(row)?.type ?? null,
 							failedAt,
 							failure,
 						)
@@ -3020,8 +3030,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				})
 
 				const digestItem = Effect.fnUntraced(function* (row: AlertDeliveryEventRow) {
-					const incident = row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
-					const ruleRow = ruleMap.get(row.ruleId) ?? null
+					const incident = incidentFor(row) ?? null
+					const ruleRow = ruleFor(row) ?? null
 					// Best effort per line: one unreadable payload must not sink the whole digest.
 					const parsedPayload = yield* Effect.option(parseDeliveryPayload(row.payloadJson))
 					const payloadRule = Option.getOrUndefined(parsedPayload)?.rule
@@ -3181,8 +3191,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								rows,
 								(row) =>
 									row.eventType !== "test" &&
-									destinationMap.get(row.destinationId)?.type === "chat" &&
-									destinationMap.get(row.destinationId)?.enabled === true,
+									destinationFor(row)?.type === "chat" &&
+									destinationFor(row)?.enabled === true,
 							),
 							(row) => row.destinationId,
 						),
@@ -3197,7 +3207,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const deliverRow = (row: AlertDeliveryEventRow) => {
 					const group = digestOf.get(row.id)
 					if (group !== undefined) {
-						const destinationRow = destinationMap.get(row.destinationId)
+						const destinationRow = destinationFor(row)
 						return group[0].id !== row.id || destinationRow === undefined
 							? Effect.void
 							: processChatDigest(destinationRow, group).pipe(
@@ -6006,7 +6016,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
 						db.run(
 							PG.from(AlertIncidents, "i")
-								.innerJoin(AlertRules, "r", (incident, rule) => incident.ruleId.eq(rule.id))
+								.innerJoin(AlertRules, "r", (incident, rule) =>
+									incident.ruleId.eq(rule.id).and(incident.orgId.eq(rule.orgId)),
+								)
 								.select(($) => ({ ruleId: $.ruleId, orgId: $.orgId }))
 								.where(($) => [$.status.eq("open"), $.r.enabled.eq(false)])
 								.distinct(),
@@ -6017,7 +6029,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							const ruleRow = (yield* dbExecute((db) =>
 								db.run(
 									selectStoredAlertRules()
-										.where(($) => [$.id.eq(ruleId)])
+										.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 										.limit(1),
 								),
 							))[0]

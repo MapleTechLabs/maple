@@ -19,7 +19,7 @@ import {
 import {
 	DEFAULT_PATHS_BRANCHES,
 	DEFAULT_PATHS_DEPTH,
-	FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+	funnelBreakdownLimit,
 	ProductEventsFunnelWidgetParams,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
@@ -203,7 +203,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 	// empty state rather than asking the warehouse for a definition it rejects.
 	if (input.steps.length === 0) return { data: [] satisfies ReadonlyArray<FunnelWidgetRow> }
 
-	const { breakdownBy, details, ...rest } = input
+	const { breakdownBy, breakdownLimit, details, ...rest } = input
 	const request = {
 		...rest,
 		keyBy: input.keyBy ?? WIDGET_DEFAULT_KEY_BY,
@@ -218,7 +218,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 					payload: new ProductEventsFunnelBreakdownRequest({
 						...request,
 						breakdownBy,
-						limit: FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+						limit: funnelBreakdownLimit(breakdownLimit),
 					}),
 				})
 			}),
@@ -226,7 +226,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 		return { data: funnelWidgetBreakdownRows(input.steps, result.data) }
 	}
 
-	const result = yield* runWarehouseQuery("productEventsFunnelWidget", () =>
+	const counts = runWarehouseQuery("productEventsFunnelWidget", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
 			return yield* client.queryEngine.productEventsFunnel({
@@ -237,10 +237,14 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 	// The drop-off view's extras: time between steps and where the leavers
 	// went. Two more queries, so only that view asks; a one-step funnel has
 	// neither and draws with counts alone.
-	if (details !== true || input.steps.length < 2)
+	if (details !== true || input.steps.length < 2) {
+		const result = yield* counts
 		return { data: funnelWidgetRows(input.steps, result.data) }
-	const [timing, leavers] = yield* Effect.all(
+	}
+	// None of the three reads the others' rows, so they go out together.
+	const [result, timing, leavers] = yield* Effect.all(
 		[
+			counts,
 			runWarehouseQuery("productEventsFunnelWidgetTiming", () =>
 				Effect.gen(function* () {
 					const client = yield* MapleInternalHttp
@@ -258,7 +262,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 				}),
 			),
 		],
-		{ concurrency: 2 },
+		{ concurrency: 3 },
 	)
 	return {
 		data: funnelWidgetRowsWithDetails(

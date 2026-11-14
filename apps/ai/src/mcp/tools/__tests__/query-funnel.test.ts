@@ -11,10 +11,13 @@ import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../.
 
 // Both tools run through the registry the way a client reaches them, against a fake warehouse
 // that answers the funnel read with two steps and the event-name read with one custom event.
+/** Every funnel query reads its rows under this alias; the event-name read does not. */
+const isFunnelRead = (sql: string): boolean => Str.includes("funnel_events")(sql)
+
 const fixtures: FixtureRule[] = [
 	// Events with an empty VisitorId: keyed by session step 1 matches, keyed by visitor nothing does.
 	{
-		match: (sql) => Str.includes("anon_step")(sql) && /windowFunnel/i.test(sql) && !/VisitorId/.test(sql),
+		match: (sql) => Str.includes("anon_step")(sql) && isFunnelRead(sql) && !/VisitorId/.test(sql),
 		rows: [{ step: 1, count: 7 }],
 	},
 	{ match: (sql) => Str.includes("anon_step")(sql), rows: [] },
@@ -24,11 +27,11 @@ const fixtures: FixtureRule[] = [
 	},
 	// The breakdown read names the attribute it groups by.
 	{
-		match: (sql) => /windowFunnel/i.test(sql) && Str.includes("'plan'")(sql),
+		match: (sql) => isFunnelRead(sql) && Str.includes("'plan'")(sql),
 		rows: [{ group: "pro", step: 1, count: 10 }],
 	},
 	{
-		match: (sql) => /windowFunnel/i.test(sql),
+		match: (sql) => isFunnelRead(sql),
 		rows: [
 			{ step: 1, count: 100 },
 			{ step: 2, count: 40 },
@@ -200,7 +203,7 @@ describe("productEventsFunnel (observability helper)", () => {
 				windowSeconds: 86400,
 			}).pipe(Effect.provide(executor))
 			expect(result).toEqual(rows)
-			expect(compiledSql.at(-1)).toContain("windowFunnel")
+			expect(isFunnelRead(compiledSql.at(-1) ?? "")).toBe(true)
 		}),
 	)
 
