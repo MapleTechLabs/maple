@@ -102,4 +102,5 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 
 /** A tool service the runtime gains without a stand-in here fails to compile, not at test time. */
 type Uncovered = Exclude<McpToolRuntimeRequirements, Layer.Success<typeof unimplementedMcpToolServices>>
+/** @public Compile-time guard; nothing imports it. */
 export const coversEveryToolService: [Uncovered] extends [never] ? true : Uncovered = true

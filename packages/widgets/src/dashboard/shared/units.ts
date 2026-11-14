@@ -67,7 +67,7 @@ export const WIDGET_UNITS = [
 ] as const satisfies ReadonlyArray<WidgetUnitMeta>
 
 /** A catalogued unit token; `formatValueByUnit` gives every one a formatter. */
-export type WidgetUnitToken = (typeof WIDGET_UNITS)[number]["token"]
+type WidgetUnitToken = (typeof WIDGET_UNITS)[number]["token"]
 
 export const WIDGET_UNIT_TOKENS: ReadonlyArray<string> = Arr.map(WIDGET_UNITS, (unit) => unit.token)
 

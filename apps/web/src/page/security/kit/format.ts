@@ -184,9 +184,6 @@ export const isSameMonth = (epochMs: number, nowMs: number): boolean => {
 	return a.year === b.year && a.month === b.month
 }
 
-/** The machine-readable instant a `title` or `datetime` carries. */
-export const isoOf = (epochMs: number): string => DateTime.formatIso(DateTime.makeUnsafe(epochMs))
-
 /** `14:32:08` in the reader's zone: the event log's clock. */
 export const formatClock = (epochMs: number, timeZone: string): string =>
 	new Intl.DateTimeFormat("en-GB", {

@@ -104,8 +104,6 @@ export const dailyProductEventCountRowSchema = Schema.Struct({
 	events: CHNumber,
 })
 
-export type DailyProductEventCountOutput = typeof dailyProductEventCountRowSchema.Type
-
 /**
  * Per-UTC-day billable product events for one org.
  *
