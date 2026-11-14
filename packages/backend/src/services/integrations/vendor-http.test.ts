@@ -100,6 +100,33 @@ describe("VendorHttp", () => {
 		)
 	})
 
+	it.effect("sends a form body, and repeats a query parameter given as an array", () => {
+		const fake = VendorFake.make({
+			routes: [{ path: "/v1/token", respond: () => VendorFake.json({ items: [] }) }],
+		})
+		return withClient(fake, (client) =>
+			Effect.gen(function* () {
+				yield* client.json(Page, {
+					method: "POST",
+					path: "/v1/token",
+					query: { field: ["a", "b"], size: 5 },
+					form: { grant_type: "jwt", assertion: "x y" },
+				})
+				const [call] = fake.calls
+				assert.deepStrictEqual(call?.search.getAll("field"), ["a", "b"])
+				assert.strictEqual(call?.search.get("size"), "5")
+				assert.strictEqual(call?.headers.get("content-type"), "application/x-www-form-urlencoded")
+				assert.deepStrictEqual(
+					[...new URLSearchParams(call?.body)],
+					[
+						["grant_type", "jwt"],
+						["assertion", "x y"],
+					],
+				)
+			}),
+		)
+	})
+
 	it.effect("waits out a short retry-after on a 429 and sends the request again", () => {
 		const fake = VendorFake.make({
 			routes: [
