@@ -11,7 +11,6 @@
         "@alchemy.run/aws": "catalog:alchemy",
         "@alchemy.run/cloudflare": "catalog:alchemy",
         "@alchemy.run/cloudflare-runtime": "catalog:alchemy",
-        "@alchemy.run/domain": "catalog:alchemy",
         "@alchemy.run/neon": "catalog:alchemy",
         "@alchemy.run/planetscale": "catalog:alchemy",
         "@alchemy.run/test": "catalog:alchemy",
@@ -1118,7 +1117,6 @@
       "@alchemy.run/aws": "2.0.0-beta.87",
       "@alchemy.run/cloudflare": "2.0.0-beta.87",
       "@alchemy.run/cloudflare-runtime": "2.0.0-beta.87",
-      "@alchemy.run/domain": "2.0.0-beta.87",
       "@alchemy.run/neon": "2.0.0-beta.87",
       "@alchemy.run/planetscale": "2.0.0-beta.87",
       "@alchemy.run/test": "2.0.0-beta.87",
@@ -1170,8 +1168,6 @@
     "@alchemy.run/cloudflare-runtime": ["@alchemy.run/cloudflare-runtime@2.0.0-beta.87", "", { "dependencies": { "@alchemy.run/node-utils": "2.0.0-beta.87", "@cloudflare/unenv-preset": "^2.16.2", "@puppeteer/browsers": "^3.2.4", "capnp-es": "^0.0.16", "magic-string": "^0.30.21", "mime": "^4.1.1", "sharp": "^0.35.5", "unenv": "^2.0.0-rc.24", "workerd": "1.20261026.1", "yauzl": "^3.4.0" }, "peerDependencies": { "@distilled.cloud/cloudflare": "1.0.0-rc.20", "@effect/platform-bun": "^4.1.4", "@effect/platform-node": "^4.1.4", "effect": "^4.1.4", "rolldown": "1.2.16", "vite": "^7.0.0 || ^8.0.0" }, "optionalPeers": ["@effect/platform-bun", "@effect/platform-node", "rolldown", "vite"] }, "sha512-9nVPgg0czwEf4zdDB/FBNU+Fa4il0RoB+pspFZa96Z6Ve6MgTxau+PX5En7Vmw3amLzR0y+fQbgZFKKRHBgSQw=="],
 
     "@alchemy.run/docker": ["@alchemy.run/docker@2.0.0-beta.87", "", { "dependencies": { "rolldown": "1.2.16" }, "peerDependencies": { "@effect/platform-bun": "^4.1.4", "alchemy": "2.0.0-beta.87", "effect": "^4.1.4" }, "optionalPeers": ["@effect/platform-bun"] }, "sha512-xs+5UV4FqvmeXf9aS2I66R11FJzGUKQtR6pIMdNIf5AYXO9gIBHSE6LSCjlUgcaJqiY98m4HyJQZi/2uREjOag=="],
-
-    "@alchemy.run/domain": ["@alchemy.run/domain@2.0.0-beta.87", "", { "peerDependencies": { "@alchemy.run/cloudflare": "2.0.0-beta.87", "@alchemy.run/effect-cluster": "2.0.0-beta.87", "@alchemy.run/rivet": "2.0.0-beta.87", "@distilled.cloud/cloudflare": "1.0.0-rc.20", "@effect/sql-pg": "^4.1.4", "alchemy": "2.0.0-beta.87", "effect": "^4.1.4", "foldkit": "^0.170.0" }, "optionalPeers": ["@alchemy.run/cloudflare", "@alchemy.run/effect-cluster", "@alchemy.run/rivet", "@distilled.cloud/cloudflare", "@effect/sql-pg", "foldkit"] }, "sha512-kgnSf8k0qOBSh9Yisc/SxtkdmR7a5DRVvqq7VW9cGeSwyHg7YtmL1ai35tvXPHfSk+wiEfTOjm87wsArrrHI5Q=="],
 
     "@alchemy.run/kubernetes": ["@alchemy.run/kubernetes@2.0.0-beta.87", "", { "dependencies": { "@alchemy.run/docker": "2.0.0-beta.87", "yaml": "^2.9.1" }, "peerDependencies": { "@effect/platform-bun": "^4.1.4", "alchemy": "2.0.0-beta.87", "effect": "^4.1.4" }, "optionalPeers": ["@effect/platform-bun"] }, "sha512-DXNn23Ed5AhBwv15WNYxzD/4l625QytENFgvTZrb/29wBlNogHwq9i10kAqdKbAs7ao9xLB1NXWxUFsq5+i+0g=="],
 

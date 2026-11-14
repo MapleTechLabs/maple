@@ -70,7 +70,6 @@
 		"@alchemy.run/aws": "catalog:alchemy",
 		"@alchemy.run/cloudflare": "catalog:alchemy",
 		"@alchemy.run/cloudflare-runtime": "catalog:alchemy",
-		"@alchemy.run/domain": "catalog:alchemy",
 		"@alchemy.run/neon": "catalog:alchemy",
 		"@alchemy.run/planetscale": "catalog:alchemy",
 		"@alchemy.run/test": "catalog:alchemy",
@@ -129,7 +128,6 @@
 			"@alchemy.run/cloudflare": "2.0.0-beta.87",
 			"@alchemy.run/neon": "2.0.0-beta.87",
 			"@alchemy.run/planetscale": "2.0.0-beta.87",
-			"@alchemy.run/domain": "2.0.0-beta.87",
 			"@alchemy.run/cloudflare-runtime": "2.0.0-beta.87",
 			"@alchemy.run/test": "2.0.0-beta.87"
 		},
