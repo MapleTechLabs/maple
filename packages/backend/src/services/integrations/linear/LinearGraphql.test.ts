@@ -105,7 +105,10 @@ describe("linearGraphql", () => {
 		const refusal = (errors: ReadonlyArray<unknown>) =>
 			linear([() => VendorFake.json({ data: null, errors }, 400)])
 		const sixth = refusal([
-			...Arr.map(Arr.range(1, 5), (index) => ({ message: `Field ${index} is invalid` })),
+			...Arr.map(Arr.range(1, 5), (index) => ({
+				message: `Field ${index} is invalid`,
+				extensions: { code: "INPUT_ERROR" },
+			})),
 			{ message: "Team missing", extensions: { code: "ENTITY_NOT_FOUND" } },
 		])
 		const deep = refusal([
@@ -114,7 +117,13 @@ describe("linearGraphql", () => {
 				extensions: { code: "INPUT_ERROR" },
 			},
 		])
-		return Effect.forEach([sixth, deep], (server) =>
+		const noPeriod = refusal([
+			{
+				message: `Could not find referenced Issue ${Str.repeat(3_000)("x")}`,
+				extensions: { code: "INPUT_ERROR" },
+			},
+		])
+		return Effect.forEach([sixth, deep, noPeriod], (server) =>
 			send(QUERY, "MapleIssue").pipe(
 				Effect.provide(server.layer),
 				Effect.map((result) => assert.isTrue(Arr.some(result.errors, isNotFound))),

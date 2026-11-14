@@ -76,6 +76,8 @@ export interface VendorHttpOptions<E> {
 	readonly retry?: Schedule.Schedule<unknown> | false
 	/** The longest `retry-after` a request waits out before failing as `rate_limited`. */
 	readonly maxRetryAfter?: Duration.Input
+	/** False sends a rate-limited request only once, whatever its Retry-After (even 0). */
+	readonly replayRateLimit?: boolean
 	/** A header read when `retry-after` is absent, e.g. `x-ratelimit-reset`. */
 	readonly rateLimitResetHeader?: string
 	/** How `rateLimitResetHeader` counts: seconds from now (the default) or a Unix time in seconds. */
@@ -280,7 +282,8 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			(error) =>
 				error.kind === "rate_limited" &&
 				error.retryAfterSeconds !== undefined &&
-				error.retryAfterSeconds <= maxRetryAfterSeconds,
+				error.retryAfterSeconds <= maxRetryAfterSeconds &&
+				options.replayRateLimit !== false,
 			(error) =>
 				Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
 		)

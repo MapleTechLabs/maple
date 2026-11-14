@@ -241,8 +241,8 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 			timeout: REQUEST_TIMEOUT,
 			// One attempt, as before: the page waits on this read, and a failure is cached briefly.
 			retry: false,
-			// Nor a wait on a rate limit: the read fails at once and is cached briefly.
-			maxRetryAfter: "0 millis",
+			// Nor a replay on a rate limit, even Retry-After: 0: the read fails at once and is cached briefly.
+			replayRateLimit: false,
 			rateLimitResetHeader: "x-ratelimit-reset",
 			rateLimitResetFormat: "epoch-seconds",
 		})

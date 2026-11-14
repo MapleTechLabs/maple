@@ -140,7 +140,7 @@ const osv = (requests: Array<string>) =>
 					return repo === "oven-sh/bun"
 						? VendorFake.json(BUN_BODY)
 						: // A short Retry-After the single-attempt read must not wait out and repeat.
-							VendorFake.text("rate limited", 429, { "retry-after": "1" })
+							VendorFake.text("rate limited", 429, { "retry-after": "0" })
 				},
 			},
 			{

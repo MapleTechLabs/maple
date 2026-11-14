@@ -78,16 +78,28 @@ const NOT_FOUND_PHRASE = /entity not found|could not find referenced[^.]*\.?/i
 /** A long text cut to 200 characters, keeping the not-found phrase that classifies it. */
 const shorten = (text: string) => {
 	const hit = NOT_FOUND_PHRASE.exec(text)
-	return hit === null ? Str.slice(0, 200)(text) : hit[0]
+	return Str.slice(0, 200)(hit === null ? text : hit[0])
 }
 
 type RawError = NonNullable<typeof GraphqlEnvelopeSchema.Type.errors>[number]
 
-/** An error a caller branches on: it has a code, or says what was not found. */
-const isDecisive = (error: RawError) =>
-	error.extensions?.code !== undefined ||
+/** The codes callers branch on: not found, access, auth and rate limits. */
+const CALLER_CODES: ReadonlySet<string> = new Set([
+	"ENTITY_NOT_FOUND",
+	"FORBIDDEN",
+	"AUTHENTICATION_ERROR",
+	"RATELIMITED",
+])
+
+/** 0: a caller branches on it. 1: some other code. 2: neither. Kept in that order. */
+const rankOf = (error: RawError) =>
+	CALLER_CODES.has(error.extensions?.code ?? "") ||
 	NOT_FOUND_PHRASE.test(error.message) ||
 	NOT_FOUND_PHRASE.test(error.extensions?.userPresentableMessage ?? "")
+		? 0
+		: error.extensions?.code !== undefined
+			? 1
+			: 2
 
 const compactError = (error: RawError): RawError => ({
 	message: shorten(error.message),
@@ -116,8 +128,9 @@ const linearDetail = (body: string) =>
 			const errors = envelope.errors ?? []
 			if (errors.length === 0) return undefined
 			const ordered = [
-				...Arr.filter(errors, isDecisive),
-				...Arr.filter(errors, (error) => !isDecisive(error)),
+				...Arr.filter(errors, (error) => rankOf(error) === 0),
+				...Arr.filter(errors, (error) => rankOf(error) === 1),
+				...Arr.filter(errors, (error) => rankOf(error) === 2),
 			]
 			return encodeEnvelope({ errors: Arr.map(Arr.take(ordered, 5), compactError) })
 		},
