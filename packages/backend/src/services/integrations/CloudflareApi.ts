@@ -7,10 +7,20 @@
  * connection resolve a fresh token through `CloudflareOAuthService.getValidAccessToken`.
  */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Array as Arr, Duration, Effect, Option, Schema, String as Str } from "effect"
+import { Array as Arr, Duration, Effect, Option, Schedule, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import * as VendorHttp from "./vendor-http"
-import { VENDOR_TRANSIENT_RETRY } from "./vendor-retry"
+
+/**
+ * Auth blips outlast a 5xx: the SDK retried them 8 times, and one that survives the retries
+ * reads as a revoked grant, which turns the org's datasets off. Keep the same patience.
+ */
+const AUTH_BLIP_RETRY = Schedule.max([
+	Schedule.jittered(Schedule.exponential("500 millis")).pipe(
+		Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, Duration.seconds(5)))),
+	),
+	Schedule.recurs(8),
+])
 
 const DEFAULT_API_BASE_URL = "https://api.cloudflare.com/client/v4"
 /** Per attempt; a GraphQL Analytics query over many zones can take a while. */
@@ -144,9 +154,7 @@ const read = <S extends Schema.Top>(
 	schema: S,
 	request: VendorHttp.VendorRequest,
 ): Effect.Effect<S["Type"], VendorHttp.VendorHttpError, S["DecodingServices"]> =>
-	cloudflare
-		.json(schema, request)
-		.pipe(Effect.retry({ schedule: VENDOR_TRANSIENT_RETRY, while: isAuthBlip }))
+	cloudflare.json(schema, request).pipe(Effect.retry({ schedule: AUTH_BLIP_RETRY, while: isAuthBlip }))
 
 /** The `result` of one REST call, failing a 2xx whose envelope says `success: false`. */
 const restResult = <S extends Schema.Top>(

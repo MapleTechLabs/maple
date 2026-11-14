@@ -78,7 +78,8 @@ describe("Cloudflare API access", () => {
 						path: "/client/v4/accounts/acc_1/workers/scripts",
 						respond: () => {
 							attempts += 1
-							return attempts === 1
+							// Five blips in a row still recover, as they did under the SDK's 8 retries.
+							return attempts <= 5
 								? refused(400, 10000, "Authentication error")
 								: envelope([{ id: "api" }])
 						},
@@ -89,7 +90,7 @@ describe("Cloudflare API access", () => {
 				listWorkerScripts("token", "acc_1", BASE).pipe(Effect.provide(fake.layer)),
 			)
 			assert.deepStrictEqual(scripts.items, ["api"])
-			assert.lengthOf(fake.calls, 2)
+			assert.lengthOf(fake.calls, 6)
 		}),
 	)
 
