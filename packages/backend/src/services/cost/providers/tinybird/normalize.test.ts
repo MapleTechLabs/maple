@@ -1,15 +1,15 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Array as Arr } from "effect"
 import type { CostPullRow } from "../../CostProvider"
-import { isDedicated, toCostRows, type TinybirdUsage } from "./normalize"
+import { toCostRows, type TinybirdUsage } from "./normalize"
 import type { Workspace } from "./tinybird-cost-api"
 
 const ACCOUNT = { accountId: "org_tb", region: "europe-west2" }
 const WINDOW = { startDay: "2026-02-01", endDay: "2026-11-10" }
 const OPEN_DAY = "2026-11-08"
 const WORKSPACES: ReadonlyArray<Workspace> = [
-	{ workspace_id: "ws_1", name: "maple_prod", plan: "developer", live: 1 },
-	{ workspace_id: "ws_2", name: "maple_staging", plan: "developer", live: 1 },
+	{ workspace_id: "ws_1", name: "maple_prod", live: 1 },
+	{ workspace_id: "ws_2", name: "maple_staging", live: 1 },
 ]
 
 const usage = (over: Partial<TinybirdUsage>): TinybirdUsage => ({
@@ -113,10 +113,7 @@ describe("toCostRows", () => {
 	it("sums two workspaces of one name into one row", () => {
 		const rows = toCostRows(
 			usage({
-				workspaces: [
-					...WORKSPACES,
-					{ workspace_id: "ws_3", name: "maple_prod", plan: "developer", live: 0 },
-				],
+				workspaces: [...WORKSPACES, { workspace_id: "ws_3", name: "maple_prod", live: 0 }],
 				storage: [
 					{ day: "2026-11-02", workspace_id: "ws_1", bytes: 300e9 },
 					{ day: "2026-11-02", workspace_id: "ws_3", bytes: 200e9 },
@@ -130,25 +127,5 @@ describe("toCostRows", () => {
 			["2026-11-02", "Tinybird storage", "Storage", "maple_prod", 500, "GB-day"],
 		])
 		assert.closeTo(rows[0]?.billedCost ?? 0, (500 * 0.058) / 30, 1e-12)
-	})
-
-	it("has no vCPU overage when every live workspace is on a dedicated plan", () => {
-		const dedicated: ReadonlyArray<Workspace> = [
-			{ workspace_id: "ws_1", name: "maple_prod", plan: "enterprise", live: 1 },
-			// A deleted workspace's plan no longer counts.
-			{ workspace_id: "ws_2", name: "old", plan: "developer", live: 0 },
-		]
-		assert.isTrue(isDedicated(dedicated))
-		assert.isFalse(isDedicated(WORKSPACES))
-		assert.isFalse(isDedicated([]))
-		const rows = rowsOf({
-			workspaces: dedicated,
-			compute: [{ day: "2026-11-02", overage_seconds: 1000 }],
-			storage: [{ day: "2026-11-02", workspace_id: "ws_1", bytes: 300e9 }],
-		})
-		assert.deepStrictEqual(
-			Arr.map(rows, (row) => row.cloudService),
-			["Tinybird storage"],
-		)
 	})
 })

@@ -16,22 +16,12 @@ export const INTER_REGION_TRANSFER_USD_PER_GB = 0.1
 
 const GB = 1e9
 const CATEGORY = "Analytics"
-/** Dedicated plans have no vCPU overage. */
-const DEDICATED_PLAN = "enterprise"
 
 export interface TinybirdUsage {
 	readonly workspaces: ReadonlyArray<Workspace>
 	readonly compute: ReadonlyArray<ComputeDay>
 	readonly storage: ReadonlyArray<StorageDay>
 	readonly transfer: ReadonlyArray<TransferDay>
-}
-
-/** Whether every live workspace is on a dedicated plan, so no vCPU overage is billed. */
-export const isDedicated = (workspaces: ReadonlyArray<Workspace>): boolean => {
-	const live = Arr.filter(workspaces, (workspace) => workspace.live === 1)
-	return (
-		Arr.isReadonlyArrayNonEmpty(live) && Arr.every(live, (workspace) => workspace.plan === DEDICATED_PLAN)
-	)
 }
 
 /** Days in `day`'s UTC month. */
@@ -83,22 +73,21 @@ export const toCostRows = (
 		...parts,
 	})
 
-	const compute = isDedicated(usage.workspaces)
-		? []
-		: Arr.map(usage.compute, (entry) =>
-				row(
-					entry.day,
-					{
-						cloudService: "Tinybird compute",
-						usageType: "vCPU overage",
-						resourceId: account.accountId,
-						resourceType: "organization",
-						consumedUnit: "vCPU-second",
-					},
-					entry.overage_seconds,
-					entry.overage_seconds * VCPU_OVERAGE_USD_PER_SECOND,
-				),
-			)
+	// Only days on shared infrastructure have active seconds, so a dedicated day has no overage.
+	const compute = Arr.map(usage.compute, (entry) =>
+		row(
+			entry.day,
+			{
+				cloudService: "Tinybird compute",
+				usageType: "vCPU overage",
+				resourceId: account.accountId,
+				resourceType: "organization",
+				consumedUnit: "vCPU-second",
+			},
+			entry.overage_seconds,
+			entry.overage_seconds * VCPU_OVERAGE_USD_PER_SECOND,
+		),
+	)
 
 	const storage = Arr.map(usage.storage, (entry) => {
 		const gigabytes = entry.bytes / GB

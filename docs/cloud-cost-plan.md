@@ -533,13 +533,14 @@ real organization with spend, restated days, and how far back OpenAI serves.
 - A token works on one regional host. Every allowlisted host is asked at once who the organization
   is: a 200 picks the host. Live: another region's host answers 403 "Workspace not found", a bad
   signature 403 "Signature verification failed". One host refusing otherwise is the token's own
-  host without the scope. No column holds the host: requests are free, so each pull finds it again.
+  host without the scope. Each host is asked for at most 8 seconds, so a slow unrelated region
+  does not hold up a save. No column holds the host: requests are free, so each pull finds it again.
 - Identity: the newest `organization_id` and `organization_name` of
   `organization.shared_infra_active_seconds` in 90 days. An organization with no usage in 90 days
   is refused, as it cannot be named yet.
 - Compute: each second's `cpu_time` above that minute's plan `vcpus`
-  (`shared_infra_active_minutes`), $0.0002 per vCPU-second. None when every live workspace is on
-  the `enterprise` (dedicated) plan.
+  (`shared_infra_active_minutes`), $0.0002 per vCPU-second. Only days on shared infrastructure
+  have active seconds, so the data and not the workspace's current plan says which days count.
 - Storage: per day and workspace, the sum over data sources of the day's largest `bytes +
   bytes_quarantine`, $0.058 per GB-month, a day being 1/days-in-month of it. The plan's included
   25 GB or 250 GB is not subtracted: at most $1.45 or $14.50 a month over.
@@ -551,7 +552,7 @@ real organization with spend, restated days, and how far back OpenAI serves.
   price), LLM usage (covered by included credits), private link.
 - Live (2026-11-14, a real organization): the schemas, host refusals and the vCPU overage query
   above. Open: Maple's own organization reports plan `enterprise` yet has shared-infra seconds with
-  `vcpus` 1, so what the plan label means for overage is unconfirmed. History starts three months
+  `vcpus` 1, so whether those seconds are billed as overage is unconfirmed. History starts three months
   back; the tables only hold data from about when the organization started.
 
 ### Railway (estimated per service, billed per workspace)

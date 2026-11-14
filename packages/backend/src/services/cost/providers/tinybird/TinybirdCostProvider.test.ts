@@ -125,23 +125,6 @@ describe("TinybirdCostProvider", () => {
 		)
 	})
 
-	it.effect("does not ask for vCPU overage of an organization on a dedicated plan", () => {
-		const testDb = createTestDb(trackedDbs)
-		const world = makeFakeTinybird({
-			workspaces: [{ workspace_id: "ws_1", name: "maple_prod", plan: "enterprise", live: 1 }],
-			compute: [{ day: "2026-11-09", overage_seconds: 5000 }],
-		})
-		return run(
-			testDb,
-			world,
-			Effect.gen(function* () {
-				const pulled = yield* pull(ORG, yield* saveToken(testDb, world))
-				assert.deepStrictEqual(pulled.rows, [])
-				assert.isFalse(Arr.some(world.calls, (call) => Str.includes("LEFT JOIN")(call.sql)))
-			}),
-		)
-	})
-
 	it.effect("refuses a window whose days are not dates before any usage query", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeTinybird()

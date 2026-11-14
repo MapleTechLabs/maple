@@ -19,6 +19,8 @@ export interface FakeTinybird {
 	invalidToken: boolean
 	/** A host that is down (503). */
 	downHost: string | null
+	/** A host that never answers, until the request is aborted. */
+	hangingHost: string | null
 	identity: TinybirdIdentity | null
 	workspaces: ReadonlyArray<Workspace>
 	compute: ReadonlyArray<ComputeDay>
@@ -39,8 +41,9 @@ export const makeFakeTinybird = (overrides: Partial<FakeTinybird> = {}): FakeTin
 	ownRefusal: null,
 	invalidToken: false,
 	downHost: null,
+	hangingHost: null,
 	identity: FAKE_ORG,
-	workspaces: [{ workspace_id: "ws_1", name: "maple_prod", plan: "developer", live: 1 }],
+	workspaces: [{ workspace_id: "ws_1", name: "maple_prod", live: 1 }],
 	compute: [],
 	storage: [],
 	transfer: [],
@@ -73,6 +76,9 @@ const fetchStub =
 		world.calls.push({ host, sql })
 		world.authorizations.push(new Headers(init?.headers).get("authorization"))
 		if (host === world.downHost) return new Response("unavailable", { status: 503 })
+		if (host === world.hangingHost) {
+			return Effect.runPromise(Effect.never, { signal: init?.signal ?? undefined })
+		}
 		if (world.invalidToken) {
 			return refusal(
 				403,

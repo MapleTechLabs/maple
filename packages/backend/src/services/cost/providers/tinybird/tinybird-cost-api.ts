@@ -7,6 +7,9 @@ import type { CostPullWindow } from "../../CostProvider"
 import { addDays } from "../../sync-plan"
 
 const REQUEST_TIMEOUT = Duration.seconds(30)
+// Each host's own bound when finding a token's host: a slow unrelated region must not hold up the
+// answer of the token's own, nor outlast the 20 seconds a save waits.
+const PROBE_TIMEOUT = Duration.seconds(8)
 
 /** Tinybird's regional API hosts, the only hosts a token is ever sent to, with each one's region. */
 export const TINYBIRD_HOSTS = [
@@ -72,6 +75,7 @@ const query = <S extends Schema.Top>(
 	host: TinybirdHost,
 	sql: string,
 	row: S,
+	timeout: Duration.Duration = REQUEST_TIMEOUT,
 ) => {
 	const failed = (kind: TinybirdCostApiError["kind"], what: string) => (cause: unknown) =>
 		Effect.fail(new TinybirdCostApiError({ message: `Tinybird API ${what}`, kind, cause }))
@@ -99,7 +103,7 @@ const query = <S extends Schema.Top>(
 		const decoded = yield* Schema.decodeUnknownEffect(Schema.Struct({ data: Schema.Array(row) }))(body)
 		return decoded.data
 	}).pipe(
-		Effect.timeout(REQUEST_TIMEOUT),
+		Effect.timeout(timeout),
 		Effect.catchTags({
 			HttpClientError: failed("upstream", "request failed"),
 			TimeoutError: failed("upstream", "request timed out"),
@@ -146,7 +150,7 @@ export const resolveHost = Effect.fn("TinybirdCost.resolveHost")(function* (
 	const answers = yield* Effect.forEach(
 		TINYBIRD_HOSTS,
 		(host) =>
-			Effect.result(query(httpClient, token, host, IDENTITY_SQL, Identity)).pipe(
+			Effect.result(query(httpClient, token, host, IDENTITY_SQL, Identity, PROBE_TIMEOUT)).pipe(
 				Effect.map((answer) => ({ host, answer })),
 			),
 		{ concurrency: "unbounded" },
@@ -202,7 +206,6 @@ const windowBounds = (window: CostPullWindow) =>
 export const Workspace = Schema.Struct({
 	workspace_id: Schema.String,
 	name: Schema.String,
-	plan: Schema.String,
 	/** 1 while the workspace is not deleted. */
 	live: Schema.Number,
 })
@@ -218,7 +221,7 @@ export const getWorkspaces = (
 		httpClient,
 		token,
 		host,
-		"SELECT workspace_id, name, toString(plan) AS plan, toUInt8(isNull(deleted_at)) AS live FROM organization.workspaces",
+		"SELECT workspace_id, name, toUInt8(isNull(deleted_at)) AS live FROM organization.workspaces",
 		Workspace,
 	)
 

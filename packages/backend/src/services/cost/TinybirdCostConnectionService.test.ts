@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Fiber, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { TinybirdCostConnectionService } from "./TinybirdCostConnectionService"
 import { TINYBIRD_HOSTS } from "./providers/tinybird/tinybird-cost-api"
@@ -126,6 +127,21 @@ describe("TinybirdCostConnectionService", () => {
 				world.invalidToken = true
 				assert.deepStrictEqual(yield* failureOf(TOKEN), [VALIDATION, REJECTED])
 				assert.isUndefined(yield* storedToken(testDb))
+			}),
+		)
+	})
+
+	it.effect("saves the token though another region never answers", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeTinybird({ hangingHost: "https://api.tinybird.co" })
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				const saving = yield* Effect.forkChild(set(TOKEN))
+				yield* TestClock.adjust("9 seconds")
+				const saved = yield* Fiber.join(saving)
+				assert.strictEqual(saved.accountId, FAKE_ORG.organization_id)
 			}),
 		)
 	})

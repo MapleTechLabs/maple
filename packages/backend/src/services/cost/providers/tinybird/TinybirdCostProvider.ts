@@ -13,7 +13,7 @@ import {
 } from "../../CostProvider"
 import { CostConnectionStore, loadFailureOf } from "../../CostConnectionStore"
 import { addDays, utcToday } from "../../sync-plan"
-import { isDedicated, toCostRows } from "./normalize"
+import { toCostRows } from "./normalize"
 import * as TinybirdCost from "./tinybird-cost-api"
 
 /** The newest days Tinybird may still be counting. */
@@ -89,12 +89,9 @@ export class TinybirdCostProvider extends Context.Service<TinybirdCostProvider, 
 					const workspaces = yield* TinybirdCost.getWorkspaces(httpClient, secret, host).pipe(
 						Effect.mapError(fromApiError),
 					)
-					const dedicated = isDedicated(workspaces)
 					const [compute, storage, transfer] = yield* Effect.all(
 						[
-							dedicated
-								? Effect.succeed([])
-								: TinybirdCost.getComputeOverage(httpClient, secret, host, window),
+							TinybirdCost.getComputeOverage(httpClient, secret, host, window),
 							TinybirdCost.getStorage(httpClient, secret, host, window),
 							TinybirdCost.getTransfer(httpClient, secret, host, window),
 						],
@@ -108,10 +105,7 @@ export class TinybirdCostProvider extends Context.Service<TinybirdCostProvider, 
 						window,
 						openDay,
 					)
-					yield* Effect.annotateCurrentSpan({
-						"maple.cost.rows": rows.length,
-						"maple.cost.tinybird.dedicated": dedicated,
-					})
+					yield* Effect.annotateCurrentSpan({ "maple.cost.rows": rows.length })
 					return { rows, requests: 0 } satisfies CostPull
 				},
 				Effect.tapError((error) =>
