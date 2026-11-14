@@ -10,7 +10,7 @@ when services moved out of API, leaving the longest suite unsharded.
 workspace patterns and tracked manifests. It sizes Vitest shards against a 140s
 estimated test budget and packs small suites into lanes with the same budget.
 Per-file rates for the large suites are measured from CI run 35725366619
-(api 2.3s, web 0.55s, …; backend was re-measured at 2.0s on run 42756486011); unknown suites get 0.6s/file, fitted to
+(api 2.3s, web 0.55s, …; backend was re-measured at 2.0s on run 42756486011 and 2.6s on run 43639788554); unknown suites get 0.6s/file, fitted to
 the slowest cold small-suite lanes, plus a per-suite startup cost. File counts
 include all tracked test/spec files, so a suite can be overestimated but its
 tests are never filtered. Each lane runs the original package scripts through
@@ -24,7 +24,7 @@ and root markdown), or any `base` path (lockfile, CI config, root tsconfig), pla
 every suite. Before this, six of ten lanes on a typical PR were 100% Turbo
 cache hits (1-4s of work, run 38901779054) that still paid setup and a queue slot.
 
-A full plan produces 10 lanes, including three backend shards; a synthetic
+A full plan produces 20 lanes, including eight backend shards; a synthetic
 fivefold increase in files stays under GitHub's 256-job limit. The planner
 tests run in change detection and cover workspace ownership, contiguous shard
 coverage, bounded estimates, new workspaces, the matrix limit and the
