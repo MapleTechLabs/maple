@@ -115,11 +115,18 @@ const query = <S extends Schema.Top>(
 	)
 }
 
-const Identity = Schema.Struct({ organization_id: Schema.String, organization_name: Schema.String })
+const Identity = Schema.Struct({
+	workspace_id: Schema.String,
+	workspace_name: Schema.String,
+	/** '' when the organization had no shared-infrastructure minute in 90 days. */
+	organization_name: Schema.String,
+})
 export type TinybirdIdentity = typeof Identity.Type
 
+// The organization is known by its oldest workspace, deleted ones included: every organization has
+// one and it never changes, where only shared plans record the organization's own id.
 const IDENTITY_SQL =
-	"SELECT organization_id, organization_name FROM organization.shared_infra_active_seconds WHERE second_slot >= now() - INTERVAL 90 DAY ORDER BY second_slot DESC LIMIT 1"
+	"SELECT w.workspace_id AS workspace_id, w.name AS workspace_name, (SELECT any(organization_name) FROM organization.shared_infra_active_minutes WHERE minute >= now() - INTERVAL 90 DAY) AS organization_name FROM organization.workspaces w ORDER BY w.created_at, w.workspace_id LIMIT 1"
 
 /**
  * Why no host answered for a token. `rejected`: no host knows it. `no_scope`: its own host refuses
@@ -135,7 +142,7 @@ export class TinybirdHostError extends Schema.TaggedError<TinybirdHostError>()(
 
 export interface ResolvedHost {
 	readonly host: TinybirdHost
-	/** The organization, none when it has had no usage in 90 days. */
+	/** The organization, none when it has no workspace at all. */
 	readonly identity: Option.Option<TinybirdIdentity>
 }
 

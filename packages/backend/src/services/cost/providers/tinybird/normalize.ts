@@ -31,9 +31,6 @@ const daysInMonth = (day: string): number =>
 // NUL cannot be in a day or a name, so the key keeps the parts apart.
 const keyOf = (parts: ReadonlyArray<string>): string => Arr.join(parts, "\u0000")
 
-/** A cost that shows as $0.00 is left out. */
-const isZero = (cost: number): boolean => Math.round(cost * 100) === 0
-
 /**
  * The window's rows. A day from `openDay` on can still change. Rows of one key (two workspaces of
  * one name) are summed: the warehouse reads by that key, so two rows would count once.
@@ -150,5 +147,6 @@ export const toCostRows = (
 			consumedQuantity: sum((entry) => entry.consumedQuantity),
 		}
 	})
-	return Arr.filter(summed, (entry) => !isZero(entry.billedCost))
+	// Only nothing is left out: many sub-cent days add up to a real month.
+	return Arr.filter(summed, (entry) => entry.billedCost > 0)
 }

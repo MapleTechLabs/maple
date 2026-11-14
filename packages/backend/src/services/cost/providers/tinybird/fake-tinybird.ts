@@ -33,7 +33,11 @@ export interface FakeTinybird {
 	readonly authorizations: Array<string | null>
 }
 
-export const FAKE_ORG = { organization_id: "0f6a2b9c-1d3e-4f50-8a7b-9c0d1e2f3a4b", organization_name: "Acme" }
+export const FAKE_ORG = {
+	workspace_id: "0f6a2b9c-1d3e-4f50-8a7b-9c0d1e2f3a4b",
+	workspace_name: "maple_prod",
+	organization_name: "Acme",
+}
 export const FAKE_HOST = "https://api.europe-west2.gcp.tinybird.co"
 
 export const makeFakeTinybird = (overrides: Partial<FakeTinybird> = {}): FakeTinybird => ({
@@ -59,11 +63,12 @@ const rows = (data: ReadonlyArray<unknown>) =>
 	Response.json({ meta: [], data, rows: data.length, statistics: {} })
 
 const answer = (world: FakeTinybird, sql: string): Response => {
+	if (Str.includes("AS workspace_name")(sql)) return rows(world.identity === null ? [] : [world.identity])
 	if (Str.includes("FROM organization.workspaces")(sql)) return rows(world.workspaces)
 	if (Str.includes("FROM organization.datasources_storage")(sql)) return rows(world.storage)
 	if (Str.includes("FROM organization.data_transfer")(sql)) return rows(world.transfer)
 	if (Str.includes("LEFT JOIN")(sql)) return rows(world.compute)
-	return rows(world.identity === null ? [] : [world.identity])
+	return rows([])
 }
 
 const fetchStub =

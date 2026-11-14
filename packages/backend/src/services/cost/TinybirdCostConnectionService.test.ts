@@ -64,7 +64,7 @@ describe("TinybirdCostConnectionService", () => {
 			world,
 			Effect.gen(function* () {
 				const saved = yield* set(`  ${TOKEN}\n`)
-				assert.deepStrictEqual(saved, { accountId: FAKE_ORG.organization_id, accountLabel: "Acme" })
+				assert.deepStrictEqual(saved, { accountId: FAKE_ORG.workspace_id, accountLabel: "Acme" })
 				// Every allowlisted host was asked once, with the token as a bearer, and no other host.
 				assert.deepStrictEqual(
 					Arr.sort(
@@ -81,7 +81,7 @@ describe("TinybirdCostConnectionService", () => {
 				assert.isFalse(Str.includes(TOKEN)(stored?.secret_ciphertext ?? TOKEN))
 				assert.deepStrictEqual(
 					[stored?.provider, stored?.account_id, stored?.account_label],
-					["tinybird", FAKE_ORG.organization_id, "Acme"],
+					["tinybird", FAKE_ORG.workspace_id, "Acme"],
 				)
 			}),
 		)
@@ -93,7 +93,7 @@ describe("TinybirdCostConnectionService", () => {
 		return run(
 			testDb,
 			world,
-			Effect.map(set(TOKEN), (saved) => assert.strictEqual(saved.accountId, FAKE_ORG.organization_id)),
+			Effect.map(set(TOKEN), (saved) => assert.strictEqual(saved.accountId, FAKE_ORG.workspace_id)),
 		)
 	})
 
@@ -141,7 +141,7 @@ describe("TinybirdCostConnectionService", () => {
 				const saving = yield* Effect.forkChild(set(TOKEN))
 				yield* TestClock.adjust("9 seconds")
 				const saved = yield* Fiber.join(saving)
-				assert.strictEqual(saved.accountId, FAKE_ORG.organization_id)
+				assert.strictEqual(saved.accountId, FAKE_ORG.workspace_id)
 			}),
 		)
 	})
@@ -161,7 +161,22 @@ describe("TinybirdCostConnectionService", () => {
 		)
 	})
 
-	it.effect("refuses an organization with no usage in 90 days, which it cannot name", () => {
+	it.effect("saves an organization with no shared-plan usage, named by its oldest workspace", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeFakeTinybird({ identity: { ...FAKE_ORG, organization_name: "" } })
+		return run(
+			testDb,
+			world,
+			Effect.map(set(TOKEN), (saved) =>
+				assert.deepStrictEqual(saved, {
+					accountId: FAKE_ORG.workspace_id,
+					accountLabel: "maple_prod",
+				}),
+			),
+		)
+	})
+
+	it.effect("refuses an organization with no workspace, which has nothing to read", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeFakeTinybird({ identity: null })
 		return run(
@@ -170,7 +185,7 @@ describe("TinybirdCostConnectionService", () => {
 			Effect.gen(function* () {
 				assert.deepStrictEqual(yield* failureOf(TOKEN), [
 					VALIDATION,
-					"This Tinybird organization has no usage in the last 90 days, so Maple cannot tell which organization it is yet.",
+					"This Tinybird organization has no workspace yet, so there is nothing to read.",
 				])
 				assert.isUndefined(yield* storedToken(testDb))
 			}),

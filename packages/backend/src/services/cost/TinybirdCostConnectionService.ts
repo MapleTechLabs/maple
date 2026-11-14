@@ -73,12 +73,13 @@ export class TinybirdCostConnectionService extends Context.Service<
 				)
 				if (Option.isNone(identity)) {
 					return yield* refused(
-						"This Tinybird organization has no usage in the last 90 days, so Maple cannot tell which organization it is yet.",
+						"This Tinybird organization has no workspace yet, so there is nothing to read.",
 					)
 				}
+				const { workspace_id, workspace_name, organization_name } = identity.value
 				return {
-					accountId: identity.value.organization_id,
-					accountLabel: identity.value.organization_name,
+					accountId: workspace_id,
+					accountLabel: organization_name === "" ? workspace_name : organization_name,
 				}
 			},
 		)

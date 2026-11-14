@@ -535,9 +535,10 @@ real organization with spend, restated days, and how far back OpenAI serves.
   signature 403 "Signature verification failed". One host refusing otherwise is the token's own
   host without the scope. Each host is asked for at most 8 seconds, so a slow unrelated region
   does not hold up a save. No column holds the host: requests are free, so each pull finds it again.
-- Identity: the newest `organization_id` and `organization_name` of
-  `organization.shared_infra_active_seconds` in 90 days. An organization with no usage in 90 days
-  is refused, as it cannot be named yet.
+- Identity: the organization's oldest workspace (`organization.workspaces`, deleted ones included)
+  is the account: every organization has one and it never changes, where only shared plans record
+  the organization's own id. The label is the `organization_name` of the last 90 days of
+  `shared_infra_active_minutes`, or the workspace's name without one.
 - Compute: each second's `cpu_time` above that minute's plan `vcpus`
   (`shared_infra_active_minutes`), $0.0002 per vCPU-second. Only days on shared infrastructure
   have active seconds, so the data and not the workspace's current plan says which days count.
@@ -547,7 +548,7 @@ real organization with spend, restated days, and how far back OpenAI serves.
 - Data transfer (`organization.data_transfer`): intra-region $0.01/GB, inter-region $0.10/GB, per
   day, workspace and kind.
 - Rows: `Tinybird compute`, `Tinybird storage` or `Tinybird data transfer` (the provider's name keeps generic words apart on the page), the workspace (by name) the resource, the host's
-  region the region. Rows under a cent are left out.
+  region the region. Only rows of no cost are left out: sub-cent days add up over workspaces.
 - Not counted: the plan's base fee (not readable), QPS and SaaS active-minute overages (no public
   price), LLM usage (covered by included credits), private link.
 - Live (2026-11-14, a real organization): the schemas, host refusals and the vCPU overage query

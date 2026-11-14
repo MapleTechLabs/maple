@@ -98,16 +98,27 @@ describe("toCostRows", () => {
 		)
 	})
 
-	it("leaves out rows that show as no cost, and days outside the window", () => {
+	it("keeps costs under a cent, and leaves out no cost and days outside the window", () => {
 		const rows = rowsOf({
 			compute: [
 				{ day: "2026-11-02", overage_seconds: 10 },
+				{ day: "2026-11-03", overage_seconds: 0 },
 				{ day: "2026-11-11", overage_seconds: 100000 },
 			],
 			storage: [{ day: "2026-11-02", workspace_id: "ws_1", bytes: 1e9 }],
-			transfer: [{ day: "2026-11-02", workspace_id: "ws_1", kind: "intra", bytes: 1e8 }],
 		})
-		assert.deepStrictEqual(rows, [])
+		assert.deepStrictEqual(
+			Arr.map(rows, (row) => [row.day, row.cloudService]),
+			[
+				["2026-11-02", "Tinybird compute"],
+				["2026-11-02", "Tinybird storage"],
+			],
+		)
+		assert.closeTo(
+			Arr.reduce(rows, 0, (total, row) => total + row.billedCost),
+			0.002 + 0.058 / 30,
+			1e-12,
+		)
 	})
 
 	it("sums two workspaces of one name into one row", () => {
