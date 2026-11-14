@@ -8,6 +8,7 @@ import {
 	formatPercent,
 	formatPercentColumn,
 } from "@maple/ui/lib/format"
+import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { columnClass } from "@maple/views/ui/column"
@@ -466,26 +467,27 @@ const namespacesGroup = <M>(h: HtmlBuilder<M>, profile: UserProfile, scope: User
 		Arr.map(namespaces, (namespace) => {
 			const isActive = namespace.name === scope.active
 			const share = total === 0 ? 0 : namespace.signals / total
-			const row = [
-				icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
-				typography(h, { size: "xs", mono: true, truncate: true, className: "flex-1 text-left" }, [
-					namespace.name,
-				]),
-				typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [
-					formatPercent(share),
-				]),
-			]
+			const row = (className?: string): Html =>
+				hstack(h, { gap: "2", as: "span", className: cn("min-h-7 px-1.5", className) }, [
+					icon(h, "LayersIcon", { size: 12, className: "shrink-0 text-foreground-subtle" }),
+					typography(h, { size: "xs", mono: true, truncate: true, className: "flex-1 text-left" }, [
+						namespace.name,
+					]),
+					typography(h, { size: "2xs", tone: "muted", numeric: true, as: "span" }, [
+						formatPercent(share),
+					]),
+				])
 			return scope.isPinned
-				? hstack(h, { gap: "2", className: "-mx-1.5 min-h-7 px-1.5" }, row)
+				? row("-mx-1.5")
 				: pressable(
 						h,
 						{
 							onClick: scope.onSelect(isActive ? null : namespace.name),
 							isSelected: isActive,
 							selectedLane: isActive,
-							className: "-mx-1.5 flex min-h-7 items-center gap-2 rounded-sm px-1.5",
+							className: "-mx-1.5 block rounded-sm",
 						},
-						row,
+						[row()],
 					)
 		}),
 	)
