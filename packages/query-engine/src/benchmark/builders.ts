@@ -2599,6 +2599,53 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 	{
 		module: "users",
+		name: "usersListQuery",
+		label: "recentFloorBound",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersListQuery({ ...USERS_SCOPE, activityRollup: true }, {}, 201, {
+					since: "2026-01-01 23:40:00.000000000",
+				}),
+				window,
+			),
+	},
+	{
+		module: "users",
+		name: "usersListQuery",
+		label: "matchingBound",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersListQuery(
+					{ ...USERS_SCOPE, activityRollup: true },
+					{ hasErrors: true, hasReplay: true },
+					201,
+					{ matching: true },
+				),
+				window,
+			),
+	},
+	{
+		module: "users",
+		name: "usersRecentFloorQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersRecentFloorQuery({ ...USERS_SCOPE, activityRollup: true }, {}, 20_000),
+				window,
+			),
+	},
+	{
+		module: "users",
+		name: "usersMatchingCountQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.usersMatchingCountQuery({ ...USERS_SCOPE, activityRollup: true }, { hasErrors: true }),
+				window,
+			),
+	},
+	{
+		module: "users",
 		name: "usersFacetsQuery",
 		label: "default",
 		compile: () => CH.compileUnionUnsafe(CH.usersFacetsQuery(USERS_NAMESPACE_SCOPE, USERS_SCOPE), window),
