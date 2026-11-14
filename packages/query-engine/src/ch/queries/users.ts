@@ -23,7 +23,7 @@ import {
 } from "./mcp"
 import { utcHourFloor } from "./query-helpers"
 import { serviceOverviewWindows } from "./services"
-import { Array as Arr } from "effect"
+import { Array as Arr, type DateTime } from "effect"
 
 /** Where the users' signals may come from. */
 export interface UsersScope {
@@ -197,7 +197,7 @@ const mergedGroups = (groupIds: CH.Expr<ReadonlyArray<string>>) =>
 		CH.compileTypedFnCall("groupArrayArray", T.array(T.string).schema, groupIds),
 	)
 
-const replayUsers = (scope: UsersScope) =>
+const replayUsers = (scope: UsersScope, candidates?: Candidates) =>
 	fromQuery(replaySessions(scope), "sessions")
 		.select(($) => ({
 			userId: $.userId,
@@ -220,10 +220,10 @@ const replayUsers = (scope: UsersScope) =>
 			emailAt: seenAt($.userEmail, $.lastActivity),
 			groupAt: seenAt($.groupId, $.lastActivity),
 		}))
-		.where(($) => [$.userId.neq("")])
+		.where(($) => [$.userId.neq(""), onlyCandidates($.userId, candidates)])
 		.groupBy("userId", "namespace")
 
-const eventUsers = (scope: UsersScope) =>
+const eventUsers = (scope: UsersScope, candidates?: Candidates) =>
 	from(Datasources.productEvents)
 		.select(($) => ({
 			userId: $.UserId,
@@ -252,11 +252,12 @@ const eventUsers = (scope: UsersScope) =>
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.UserId.neq(""),
 			eventScope($, scope),
+			onlyCandidates($.UserId, candidates),
 		])
 		.groupBy("userId", "namespace")
 
 /** MCP server spans from a known user: `user.id`, else `enduser.id`; a request is a tool call. */
-const mcpUsers = (scope: UsersScope) =>
+const mcpUsers = (scope: UsersScope, candidates?: Candidates) =>
 	from(Datasources.traces)
 		.select(($) => ({
 			userId: mcpUserId($),
@@ -294,6 +295,7 @@ const mcpUsers = (scope: UsersScope) =>
 			scope.namespaces.length === 0
 				? undefined
 				: CH.inList($.ResourceAttributes.get("service.namespace"), scope.namespaces),
+			onlyCandidates(mcpUserId($), candidates),
 		])
 		.groupBy("userId", "namespace")
 
@@ -435,7 +437,7 @@ const activityChannels = (
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
  */
-const activityUsers = (scope: UsersScope) =>
+const activityUsers = (scope: UsersScope, candidates?: Candidates) =>
 	from(Datasources.userActivityHourly)
 		.select(($) => ({
 			userId: $.UserId,
@@ -478,30 +480,271 @@ const activityUsers = (scope: UsersScope) =>
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcHourFloor("endTime")),
 			$.UserId.neq(""),
+			onlyCandidates($.UserId, candidates),
 		])
 		.groupBy("userId", "namespace")
+
+/**
+ * The users whose rows the per-user reads aggregate. A large org has millions of users in a window,
+ * and aggregating all of them exceeds the query memory limit, so the directory reads a bounded set.
+ */
+type Candidates = ReturnType<typeof candidateUsers>
+
+const onlyCandidates = (userId: CH.Expr<string>, candidates: Candidates | undefined) =>
+	candidates === undefined ? undefined : inSubquery(userId, candidates)
 
 /**
  * Every source's rows per (user, namespace). The rollup replaces the raw MCP span scan: both carry
  * the same users, and a query reading a rollup and raw spans must tile the window, which these do
  * not. Callers check {@link hasUserSources} first.
  */
-const userSignals = (scope: UsersScope) => {
+const userSignals = (scope: UsersScope, candidates?: Candidates) => {
 	const spanSource = readsActivityRollup(scope)
-		? [activityUsers(scope)]
+		? [activityUsers(scope, candidates)]
 		: scope.mcpServices.length > 0
-			? [mcpUsers(scope)]
+			? [mcpUsers(scope, candidates)]
 			: []
 	const [first, ...rest] = [
-		...(readsServiceSources(scope) ? [replayUsers(scope), eventUsers(scope)] : []),
+		...(readsServiceSources(scope)
+			? [replayUsers(scope, candidates), eventUsers(scope, candidates)]
+			: []),
 		...spanSource,
 	]
-	return fromUnion(unionAll(first ?? replayUsers(scope), ...rest), "signals")
+	return fromUnion(unionAll(first ?? replayUsers(scope, candidates), ...rest), "signals")
+}
+
+// Row-level reads: one row per replay session, product event, rollup hour or MCP span, never one
+// per user. Distinct-user counts over them (`uniq`, exact up to 65536 users and bounded beyond) and
+// the directory's candidate set never hold every user of a large org at once.
+
+interface UserRowsWindow {
+	/** Only rows after this exact `toString` DateTime64 (exclusive). */
+	readonly since?: string
+	/** Only rows at or before this exact `toString` DateTime64. */
+	readonly through?: string
+	/** Read the span sources (the rollup or MCP spans); off where only groups count. */
+	readonly spans?: boolean
+}
+
+const rowTime = (at: CH.Expr<DateTime.Utc>, window: UserRowsWindow) => [
+	window.since === undefined ? undefined : at.gt(exactDateTime64(window.since)),
+	window.through === undefined ? undefined : at.lte(exactDateTime64(window.through)),
+]
+
+/** A `toString` DateTime64 as a DateTime64 value, comparable with a `DateTime` column. */
+const dateTime64Of = (value: string) =>
+	CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, CH.lit(value), CH.lit(9))
+
+/** A row's group as a one-element array, empty when it has none. */
+const groupOf = (groupId: CH.Expr<string>) =>
+	CH.compileTypedFnCall(
+		"if",
+		T.array(T.string).schema,
+		CH.compileTypedFnCall("notEmpty", T.uint8.schema, groupId),
+		CH.arrayOf(groupId),
+		noGroups(),
+	)
+
+const replayRows = (scope: UsersScope, window: UserRowsWindow) =>
+	fromQuery(replaySessions(scope), "sessions")
+		.select(($) => ({
+			userId: $.userId,
+			name: $.userName,
+			email: $.userEmail,
+			namespace: namespaceOf($.serviceName, scope),
+			at: $.lastActivity,
+			sessions: CH.toUInt64(CH.lit(1)),
+			errors: CH.toUInt64($.errors),
+			groupIds: groupOf($.groupId),
+		}))
+		.where(($) => [$.userId.neq(""), ...rowTime($.lastActivity, window)])
+
+const eventRows = (scope: UsersScope, window: UserRowsWindow) =>
+	from(Datasources.productEvents)
+		.select(($) => ({
+			userId: $.UserId,
+			name: CH.lit(""),
+			email: CH.lit(""),
+			namespace: namespaceOf($.ServiceName, scope),
+			at: $.Timestamp,
+			sessions: zero(),
+			errors: zero(),
+			groupIds: groupOf($.GroupId),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.UserId.neq(""),
+			eventScope($, scope),
+			...rowTime($.Timestamp, window),
+		])
+
+const activityRows = (scope: UsersScope, window: UserRowsWindow) =>
+	from(Datasources.userActivityHourly)
+		.select(($) => ({
+			userId: $.UserId,
+			name: CH.lit(""),
+			email: CH.lit(""),
+			namespace: $.ServiceNamespace,
+			at: CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, $.LastSeen, CH.lit(9)),
+			sessions: zero(),
+			errors: CH.toUInt64($.FailedRequestCount),
+			groupIds: noGroups(),
+		}))
+		.where(($) => {
+			const lastSeen = CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, $.LastSeen, CH.lit(9))
+			return [
+				$.OrgId.eq(orgIdParam),
+				scope.namespaces.length === 0 ? undefined : CH.inList($.ServiceNamespace, scope.namespaces),
+				$.Hour.gte(utcHourFloor("startTime")),
+				$.Hour.lte(utcHourFloor("endTime")),
+				// The sorting key's `Hour` prunes; a row's `LastSeen` falls within its hour.
+				window.since === undefined
+					? undefined
+					: $.Hour.gte(
+							CH.compileTypedFnCall(
+								"toStartOfHour",
+								T.dateTime64.schema,
+								dateTime64Of(window.since),
+							),
+						),
+				window.through === undefined ? undefined : $.Hour.lte(dateTime64Of(window.through)),
+				$.UserId.neq(""),
+				...rowTime(lastSeen, window),
+			]
+		})
+
+const mcpRows = (scope: UsersScope, window: UserRowsWindow) =>
+	from(Datasources.traces)
+		.select(($) => ({
+			userId: mcpUserId($),
+			name: $.SpanAttributes.get("user.name"),
+			email: $.SpanAttributes.get("user.email"),
+			namespace: $.ResourceAttributes.get("service.namespace"),
+			at: $.Timestamp,
+			sessions: zero(),
+			errors: zero(),
+			groupIds: noGroups(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.SpanKind.eq("Server"),
+			CH.inList($.ServiceName, scope.mcpServices),
+			mcpMethod($).neq(""),
+			mcpUserId($).neq(""),
+			scope.namespaces.length === 0
+				? undefined
+				: CH.inList($.ResourceAttributes.get("service.namespace"), scope.namespaces),
+			...rowTime($.Timestamp, window),
+		])
+
+/** Every source's rows, one per signal, under the same scope and source choice as {@link userSignals}. */
+const userRows = (scope: UsersScope, window: UserRowsWindow = {}) => {
+	const spanSource =
+		window.spans === false
+			? []
+			: readsActivityRollup(scope)
+				? [activityRows(scope, window)]
+				: scope.mcpServices.length > 0
+					? [mcpRows(scope, window)]
+					: []
+	const [first, ...rest] = [
+		...(readsServiceSources(scope) ? [replayRows(scope, window), eventRows(scope, window)] : []),
+		...spanSource,
+	]
+	return fromUnion(unionAll(first ?? replayRows(scope, window), ...rest), "rows")
+}
+
+interface UserRowColumns {
+	readonly userId: CH.Expr<string>
+	readonly name: CH.Expr<string>
+	readonly email: CH.Expr<string>
+	readonly errors: CH.Expr<number>
+	readonly sessions: CH.Expr<number>
+	readonly groupIds: CH.Expr<ReadonlyArray<string>>
+}
+
+/**
+ * Whether a row can belong to a user the filter keeps. Every filter holds for a user only if it
+ * holds for one of their rows (a latest name was some row's name), so these rows' users are a
+ * superset of the filtered users.
+ */
+const rowMatches = ($: UserRowColumns, filter: UsersListFilter) => [
+	filter.hasErrors === true ? $.errors.gt(0) : undefined,
+	filter.hasReplay === true ? $.sessions.gt(0) : undefined,
+	filter.groups !== undefined && filter.groups.length > 0
+		? CH.compileTypedFnCall(
+				"hasAny",
+				T.uint8.schema,
+				$.groupIds,
+				CH.arrayOf(...Arr.map(filter.groups, (group) => CH.lit(group))),
+			).eq(1)
+		: undefined,
+	CH.when(filter.search, (search) =>
+		CH.or(
+			containsText($.userId, search),
+			containsText($.name, search),
+			containsText($.email, search),
+			...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
+				? [CH.inList($.userId, filter.searchUserIds)]
+				: []),
+		),
+	),
+]
+
+/** Whether the filter narrows the directory at all. */
+export const usersListFiltered = (filter: UsersListFilter): boolean =>
+	filter.hasErrors === true ||
+	filter.hasReplay === true ||
+	(filter.groups !== undefined && filter.groups.length > 0) ||
+	filter.search !== undefined
+
+/**
+ * Which users a directory page aggregates. `since` keeps the users with a row after the recent
+ * rows' floor ({@link usersRecentFloorQuery}); `matching` keeps those with a row the filter
+ * matches. A page's cursor bounds both to rows at or before it.
+ */
+export interface UsersListBound {
+	readonly since?: string
+	readonly matching?: boolean
+}
+
+function candidateUsers(scope: UsersScope, filter: UsersListFilter, bound: UsersListBound) {
+	return userRows(scope, { since: bound.since, through: filter.after?.lastSeen })
+		.select(($) => ({ userId: $.userId }))
+		.where(($) => (bound.matching === true ? rowMatches($, filter) : []))
+		.groupBy("userId")
+}
+
+/**
+ * The oldest of the newest `rows` rows at or before the cursor, and how many there were. Every user
+ * with a row after that floor is ranked above every user without one, so a page aggregates only
+ * them. Fewer than `rows` rows means the window holds no more, and no floor applies.
+ */
+export function usersRecentFloorQuery(scope: UsersScope, filter: UsersListFilter, rows: number) {
+	const recent = userRows(scope, { through: filter.after?.lastSeen })
+		.select(($) => ({ at: $.at }))
+		.orderBy(["at", "desc"])
+		.limit(rows)
+	return fromQuery(recent, "recent")
+		.select(($) => ({ floor: CH.toString_(CH.min_($.at)), rows: CH.count() }))
+		.format("JSON")
+}
+
+/** How many users have a row the filter matches, at or before the cursor: exact up to 65536. */
+export function usersMatchingCountQuery(scope: UsersScope, filter: UsersListFilter) {
+	return userRows(scope, { through: filter.after?.lastSeen })
+		.select(($) => ({ users: CH.uniq($.userId) }))
+		.where(($) => rowMatches($, filter))
+		.format("JSON")
 }
 
 /** One row per user under the filter, every source merged: the directory and its group view read it. */
-const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
-	userSignals(scope)
+const usersPerUser = (scope: UsersScope, filter: UsersListFilter, candidates?: Candidates) =>
+	userSignals(scope, candidates)
 		.select(($) => ({
 			userId: $.userId,
 			name: CH.argMax($.name, $.nameAt),
@@ -558,8 +801,14 @@ const usersPerUser = (scope: UsersScope, filter: UsersListFilter) =>
 		])
 
 /** The directory: one row per user under the filter, the most recently seen first, then by id. */
-export function usersListQuery(scope: UsersScope, filter: UsersListFilter = {}, limit = 200) {
-	return usersPerUser(scope, filter)
+export function usersListQuery(
+	scope: UsersScope,
+	filter: UsersListFilter = {},
+	limit = 200,
+	bound?: UsersListBound,
+) {
+	const candidates = bound === undefined ? undefined : candidateUsers(scope, filter, bound)
+	return usersPerUser(scope, filter, candidates)
 		.orderBy(["lastSeen", "desc"], ["userId", "asc"])
 		.limit(limit)
 		.format("JSON")
@@ -613,25 +862,25 @@ export function usersGroupsQuery(scope: UsersScope, filter: UsersListFilter = {}
 
 /**
  * Users per namespace and per group, as `(name, count, facetType)`. Without `namespaceScope` (a
- * pinned scope) the namespace facet is skipped.
+ * pinned scope) the namespace facet is skipped. Only replays and events carry a group.
  */
 export function usersFacetsQuery(scope: UsersScope, namespaceScope?: UsersScope) {
-	// One row per group a source saw the user in: a user in two groups counts in both.
-	const groups = userSignals(scope)
+	// One row per group a row saw the user in: a user in two groups counts in both.
+	const groups = userRows(scope, { spans: false })
 		.select(($) => ({
 			// Typed: the union's array column carries no element type, and an untyped column leaves the row undecoded.
 			name: CH.compileTypedFnCall("arrayJoin", T.string.schema, $.groupIds),
-			count: CH.uniqExact($.userId),
+			count: CH.uniq($.userId),
 			facetType: CH.lit("group"),
 		}))
 		.groupBy("name")
 		.orderBy(["count", "desc"])
 		.limit(50)
 	if (namespaceScope === undefined) return unionAll(groups).format("JSON")
-	const namespaces = userSignals(namespaceScope)
+	const namespaces = userRows(namespaceScope)
 		.select(($) => ({
 			name: $.namespace,
-			count: CH.uniqExact($.userId),
+			count: CH.uniq($.userId),
 			facetType: CH.lit("namespace"),
 		}))
 		.where(($) => [$.namespace.neq("")])
@@ -641,22 +890,17 @@ export function usersFacetsQuery(scope: UsersScope, namespaceScope?: UsersScope)
 	return unionAll(namespaces, groups).format("JSON")
 }
 
-/** The header's totals over the scope: users, those active since `activeSince`, with errors, with a replay. */
+/**
+ * The header's totals over the scope: users, those active since `activeSince`, with errors, with a
+ * replay. Each holds for a user exactly when it holds for one of their rows.
+ */
 export function usersSummaryQuery(scope: UsersScope) {
-	const perUser = userSignals(scope)
+	return userRows(scope)
 		.select(($) => ({
-			userId: $.userId,
-			lastSeen: CH.max_($.lastSeen),
-			sessions: CH.sum($.sessions),
-			errors: CH.sum($.errors),
-		}))
-		.groupBy("userId")
-	return fromQuery(perUser, "users")
-		.select(($) => ({
-			identified: CH.count(),
-			activeToday: CH.countIf($.lastSeen.gte(param.dateTime("activeSince"))),
-			withErrors: CH.countIf($.errors.gt(0)),
-			withReplay: CH.countIf($.sessions.gt(0)),
+			identified: CH.uniq($.userId),
+			activeToday: CH.uniqIf($.userId, $.at.gte(param.dateTime("activeSince"))),
+			withErrors: CH.uniqIf($.userId, $.errors.gt(0)),
+			withReplay: CH.uniqIf($.userId, $.sessions.gt(0)),
 		}))
 		.format("JSON")
 }
