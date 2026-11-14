@@ -108,6 +108,23 @@ describe("Cloudflare API access", () => {
 		}),
 	)
 
+	it.effect("caps the Worker scripts listing at 1,000 and says it was cut", () =>
+		Effect.gen(function* () {
+			const fake = VendorFake.make({
+				routes: [
+					{
+						path: "/client/v4/accounts/acc_1/workers/scripts",
+						respond: () =>
+							envelope(Arr.map(Arr.range(0, 1000), (index) => ({ id: `w${index}` }))),
+					},
+				],
+			})
+			const scripts = yield* listWorkerScripts("token", "acc_1", BASE).pipe(Effect.provide(fake.layer))
+			assert.lengthOf(scripts.items, 1000)
+			assert.isTrue(scripts.truncated)
+		}),
+	)
+
 	it.effect("retries an 'Authentication error' blip and succeeds", () =>
 		Effect.gen(function* () {
 			let attempts = 0

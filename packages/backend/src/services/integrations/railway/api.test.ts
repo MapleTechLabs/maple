@@ -120,6 +120,28 @@ describe("Railway API access", () => {
 		}),
 	)
 
+	it.effect("fails discovery past 40 pages of projects instead of reconciling a partial list", () =>
+		Effect.gen(function* () {
+			const fake = railway({
+				TokenWorkspaces: () => VendorFake.json(WORKSPACES),
+				WorkspaceProjects: (variables) =>
+					VendorFake.json({
+						data: {
+							projects: {
+								edges: [project(`p-${String(variables["after"])}`, [{ id: "prod" }])],
+								pageInfo: { hasNextPage: true, endCursor: `c${String(variables["after"])}x` },
+							},
+						},
+					}),
+			})
+			yield* Effect.flip(run(fake, (client) => discover(client, "token")))
+			assert.lengthOf(
+				Arr.filter(operations(fake), (name) => name === "WorkspaceProjects"),
+				40,
+			)
+		}),
+	)
+
 	it.effect("retries Railway's transient 'Problem processing request' before failing", () =>
 		Effect.gen(function* () {
 			const fake = railway({ TokenWorkspaces: () => VendorFake.json(PROBLEM) })
