@@ -530,24 +530,42 @@ describe("WarehouseQueryService org-scoped reads", () => {
 		}).pipe(Effect.provide(buildLayer(createTestDb(trackedDbs), SCOPED)))
 	})
 
-	it.effect("changes nothing on vanilla ClickHouse, which has no token to scope with", () => {
+	// No signing key here, as such a deployment may run: neither route may ask for a token.
+	it.effect("changes nothing where managed reads are vanilla ClickHouse, on either route", () => {
 		const used = recordCredentials()
 		return Effect.gen(function* () {
+			const tenant = makeTenant()
+			yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(tenant, scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'")),
+			)
 			yield* WarehouseQueryService.use((service) =>
 				service.compiledQuery(
-					makeTenant(),
-					scopedSql("SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+					tenant,
+					rawCompiledQuery<Record<string, unknown>>({
+						sql: "SELECT 1 FROM alert_checks WHERE OrgId = 'org_test'",
+						tenantScope: "single-tenant",
+						route: "ingest",
+						reason: "test-fixture",
+						justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+					}),
 				),
 			)
-			assert.deepStrictEqual(used, [{ op: "sql", kind: "clickhouse", secret: "vanilla-password" }])
+			assert.deepStrictEqual(used, [
+				{ op: "sql", kind: "clickhouse", secret: "vanilla-password" },
+				{ op: "sql", kind: "tinybird", secret: "managed-token" },
+			])
 		}).pipe(
 			Effect.provide(
-				buildLayer(createTestDb(trackedDbs), {
-					CLICKHOUSE_URL: "https://clickhouse.example",
-					CLICKHOUSE_PROVIDER: "clickhouse",
-					CLICKHOUSE_PASSWORD: "vanilla-password",
-					MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1",
-				}),
+				buildLayer(
+					createTestDb(trackedDbs),
+					{
+						CLICKHOUSE_URL: "https://clickhouse.example",
+						CLICKHOUSE_PROVIDER: "clickhouse",
+						CLICKHOUSE_PASSWORD: "vanilla-password",
+						MAPLE_WAREHOUSE_ORG_SCOPED_READS: "1",
+					},
+					false,
+				),
 			),
 		)
 	})

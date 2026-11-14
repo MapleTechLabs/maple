@@ -439,11 +439,7 @@ const makeEnv = Effect.gen(function* () {
 	}
 
 	// At boot, not at the first query: with the flag on, every read of this Worker needs the token.
-	if (
-		env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
-		env.CLICKHOUSE_PROVIDER === "tinybird" &&
-		!hasTinybirdSigningKey
-	) {
+	if (env.MAPLE_WAREHOUSE_ORG_SCOPED_READS && managedReadsAreTinybird(env) && !hasTinybirdSigningKey) {
 		return yield* new EnvValidationError({
 			message:
 				"MAPLE_WAREHOUSE_ORG_SCOPED_READS needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID to mint the org-scoped read token",
@@ -501,6 +497,14 @@ const makeEnv = Effect.gen(function* () {
 		),
 	})
 })
+
+/**
+ * Whether the managed read backend is Tinybird (its query API, or its ClickHouse gateway) and not a
+ * vanilla ClickHouse. Only Tinybird has a per-org token, so only there do org-scoped reads apply.
+ */
+export const managedReadsAreTinybird = (
+	env: Pick<EnvConfig, "CLICKHOUSE_URL" | "CLICKHOUSE_PROVIDER">,
+): boolean => Option.isNone(env.CLICKHOUSE_URL) || env.CLICKHOUSE_PROVIDER === "tinybird"
 
 /** The config, plus the keys every service that encrypts or hashes would otherwise parse itself. */
 export interface EnvApi extends EnvConfig {

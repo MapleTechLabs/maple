@@ -24,7 +24,7 @@ import {
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import { Env } from "@maple/backend/platform/Env"
+import { Env, managedReadsAreTinybird } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 
@@ -477,8 +477,14 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				yield* Effect.annotateCurrentSpan("warehouse.route", purpose)
 				// A read the executor verified is one tenant's, on a Worker that asks for the
 				// org-scoped token. Writes and cross-org reads carry no scope and keep the shared one.
+				// Where managed reads are vanilla ClickHouse there is no such token, and the flag
+				// changes nothing on either route: the same rule `Env` checks the signing key by.
 				const orgScopedRead =
-					scope?.kind === "tenant" && env.MAPLE_WAREHOUSE_ORG_SCOPED_READS ? scope : undefined
+					scope?.kind === "tenant" &&
+					env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
+					managedReadsAreTinybird(env)
+						? scope
+						: undefined
 
 				if (purpose === "ingest" && orgScopedRead !== undefined) {
 					const jwt = yield* orgReadToken(tenant, label, orgScopedRead.sql)
@@ -543,10 +549,7 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 
 				yield* Effect.annotateCurrentSpan("clientSource", "managed")
 				const managed = yield* resolveManagedConfig()
-				const scopedByTinybird =
-					managed.config.kind === "tinybird" || managed.config.kind === "tinybird-gateway"
-				// Vanilla ClickHouse has no token to scope a read with; there the flag changes nothing.
-				if (purpose === "read" && !(orgScopedRead !== undefined && scopedByTinybird)) {
+				if (purpose === "read" && orgScopedRead === undefined) {
 					return { source: "managed" as const, ...managed }
 				}
 
