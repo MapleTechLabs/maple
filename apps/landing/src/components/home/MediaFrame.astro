@@ -33,6 +33,14 @@ interface Props {
 	 * this. Videos opt out — they carry their own controls.
 	 */
 	zoomable?: boolean;
+	/**
+	 * Shows a legible window of the shot instead of the whole capture scaled
+	 * down. `x` and `y` are the window's top-left corner as fractions of the
+	 * image; `zoom` is how much larger than the frame the image is drawn, so
+	 * `x + 1 / zoom` and `y + 1 / zoom` must stay at or under 1. The lightbox
+	 * still opens the full capture.
+	 */
+	crop?: { x: number; y: number; zoom: number };
 }
 
 const {
@@ -46,6 +54,7 @@ const {
 	loading = "lazy",
 	class: className = "",
 	zoomable = true,
+	crop,
 } = Astro.props;
 
 const ratio = `${width} / ${height}`;
@@ -73,6 +82,21 @@ const hasAsset = Boolean(src ?? (isVideo ? poster : undefined));
 					class="block w-full h-auto"
 					data-autoplay-video
 				/>
+			) : crop ? (
+				<div
+					class="media-crop"
+					style={`aspect-ratio: ${ratio}; --crop-x: ${crop.x}; --crop-y: ${crop.y}; --crop-zoom: ${crop.zoom};`}
+				>
+					<img
+						src={src ?? poster}
+						alt={label}
+						width={width}
+						height={height}
+						loading={loading}
+						decoding="async"
+						data-zoomable={zoomable ? "" : undefined}
+					/>
+				</div>
 			) : (
 				<img
 					src={src ?? poster}

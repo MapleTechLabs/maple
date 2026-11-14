@@ -27,6 +27,15 @@ import { Lightbox } from "./lightbox/Lightbox";
 		[data-lightbox-media][data-active] {
 			view-transition-name: lightbox-media;
 		}
+
+		/* A cropped plate draws its image larger than its frame, so the frame
+		   is the box the viewer opens from. */
+		html:not(:has([data-lightbox-content])) .media-crop:has(> [data-lightbox-origin]) {
+			view-transition-name: lightbox-media;
+		}
+		html:not(:has([data-lightbox-content])) .media-crop > [data-lightbox-origin] {
+			view-transition-name: none;
+		}
 	}
 
 	/* The plate is in the viewer while it is open; left in the page as well, it

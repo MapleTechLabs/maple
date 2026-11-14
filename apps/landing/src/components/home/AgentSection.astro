@@ -62,7 +62,7 @@ const points = [
 				>
 					{m.mcp_title()}
 				</h2>
-				<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{m.mcp_lede()}</p>
+				<p class="mt-5 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted md:text-base">{m.mcp_lede()}</p>
 
 				<!-- mt-auto is what makes the column span the row: prose at the
 				     top edge, these rules at the bottom, slack in the middle. -->
@@ -70,8 +70,8 @@ const points = [
 					{
 						points.map((point) => (
 							<div class="border-t border-border py-4">
-								<dt class="text-[13px] font-medium text-fg">{point.title}</dt>
-								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">
+								<dt class="text-[15px] font-medium text-fg">{point.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">
 									{point.body}
 								</dd>
 							</div>
@@ -79,7 +79,7 @@ const points = [
 					}
 				</dl>
 
-				<div class="mt-7 text-[13px]">
+				<div class="mt-7 text-sm">
 					<a href={featurePath} class="text-fg transition-colors hover:text-primary">
 						{m.nav_ai_mcp()} →
 					</a>
