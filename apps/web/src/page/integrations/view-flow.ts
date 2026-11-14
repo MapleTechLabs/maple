@@ -74,8 +74,8 @@ export const flowView = (
 	stage: FlowStage,
 	timeZone: string,
 ): Html => {
-	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.flowView(h, model, stage, timeZone)
+	const providerView = providerModuleOf(integration)?.flowView ?? null
+	if (providerView !== null) return providerView(h, model, stage, timeZone)
 	switch (integration) {
 		case "prometheus":
 		case "warpstream":

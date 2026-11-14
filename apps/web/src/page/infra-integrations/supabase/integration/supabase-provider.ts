@@ -37,7 +37,7 @@ export const SUPABASE: ProviderModule<SupabaseIntegrationStatus, SupabaseCardMod
 	onEnter: (model, env) => requestMetricsRows(model, env, "Load"),
 	onClock: (model, env) => requestMetricsRows(model, env, "Load"),
 	// Any answer to the current read retires saved flips; a failed one shows the last known value.
-	onStatus: (model, env, isCurrent) =>
+	onStatus: (model, env, { isCurrent }) =>
 		requestMetricsRows(isCurrent ? settledStatus(model) : model, env, "Load"),
 	// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
 	onConnected: (model) => clickedSync(model),

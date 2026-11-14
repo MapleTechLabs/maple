@@ -10,7 +10,6 @@ import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
-import * as SearchConsole from "./update-search-console"
 import { providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -137,10 +136,6 @@ const CONNECTED_TITLE = {
 	"google-search-console": "Google Search Console connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
-/** A reconnect as the same account keeps the grant key, so its property list is re-read outright. */
-const refreshedSites = (model: Model, context: PageContext, provider: ConnectProvider): Return =>
-	provider === "google-search-console" ? SearchConsole.requestSites(model, context, "Supersede") : { model }
-
 /** The callback page's verdict; a success is `integration_connected`. */
 export const receivedCallback = (
 	model: Model,
@@ -166,7 +161,6 @@ export const receivedCallback = (
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
 			(next) => providerModuleOf(provider)?.onConnected(next, context) ?? { model: next },
-			(next) => refreshedSites(next, context, provider),
 		])
 	}
 	if (status !== "error") return { model }
@@ -207,7 +201,7 @@ export const receivedRelay = (
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
-			(next) => refreshedSites(next, context, provider),
+			(next) => providerModuleOf(provider)?.onRelayedConnect(next, context) ?? { model: next },
 		])
 	}
 	if (status !== "error") return { model: ended }

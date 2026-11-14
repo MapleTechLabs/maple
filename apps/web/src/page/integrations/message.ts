@@ -12,7 +12,6 @@ import {
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
-	SearchConsoleAvailableSitesResponse,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
@@ -40,7 +39,6 @@ import {
 	AwsConnectionId,
 	AwsMetricNamespace,
 	AwsModule,
-	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
 } from "@maple/primitives"
@@ -62,6 +60,8 @@ import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
 import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
+import { SearchConsoleMessage } from "./search-console"
+import { ChatMessage } from "./chat"
 import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
 import {
 	ConfigureTarget,
@@ -111,13 +111,6 @@ export const Message = defineMessageUnion({
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
 	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
-	CompletedLoadSearchConsoleSites: result(SearchConsoleAvailableSitesResponse),
-	/** A property's checkbox in the Search Console picker. */
-	ToggledSearchConsoleSite: { siteUrl: Schema.String },
-	ClickedSaveSearchConsoleSites: {},
-	ClickedRetrySearchConsoleSites: {},
-	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
-	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
 	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
@@ -167,12 +160,6 @@ export const Message = defineMessageUnion({
 	GotDisconnectDialogMessage: { message: Dialog.Message },
 	ConfirmedDisconnect: {},
 	CompletedDisconnect: { integration: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedChatInstall: {},
-	CompletedChatInstall: { failure: Schema.NullOr(LoadFailure) },
-	ClickedChatIdentity: {},
-	CompletedChatIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
-	ClickedChatDisconnect: { workspaceId: ChatWorkspaceId },
-	CompletedChatDisconnect: { failure: Schema.NullOr(LoadFailure) },
 	ClickedGithubRefresh: {},
 	CompletedGithubRefreshSpin: { version: Schema.Number },
 	ToggledCiTraces: {},
@@ -250,6 +237,8 @@ export const Message = defineMessageUnion({
 	GotRailwayMessage: { message: RailwayMessage },
 	/** A message for the Supabase module. */
 	GotSupabaseMessage: { message: SupabaseMessage },
+	GotSearchConsoleMessage: { message: SearchConsoleMessage },
+	GotChatMessage: { message: ChatMessage },
 	/** Every 15 s while a fresh connection waits for its first sync. */
 	TickedVercelSettle: {},
 	ClickedVercelSync: {},

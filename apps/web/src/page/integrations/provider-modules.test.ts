@@ -1,19 +1,29 @@
 import { OrgId } from "@maple/domain"
-import { RailwayIntegrationStatus, SupabaseIntegrationStatus } from "@maple/domain/http"
+import {
+	LinearIntegrationStatus,
+	RailwayIntegrationStatus,
+	SearchConsoleAvailableSitesResponse,
+	SearchConsoleIntegrationStatus,
+	SupabaseIntegrationStatus,
+} from "@maple/domain/http"
+import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { SupabaseProjectRef } from "@maple/primitives"
 import { Array as Arr, Result, Schema } from "effect"
+import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import * as Field from "@maple/views/ui/field"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { RailwayMessage } from "../infra-integrations/railway/integration/railway"
 import { SupabaseMessage } from "../infra-integrations/supabase/integration/supabase"
+import { ChatMessage } from "./chat"
 import { cardStatusOf, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { RAILWAY_PROVIDER, SUPABASE_PROVIDER } from "./provider-modules"
+import { CHAT_PROVIDER, providerModuleOf, RAILWAY_PROVIDER, SUPABASE_PROVIDER } from "./provider-modules"
+import { SearchConsoleMessage } from "./search-console"
 import { init, update } from "./update"
-import { receivedCallback } from "./update-connect"
+import { receivedCallback, receivedRelay } from "./update-connect"
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_acme"),
@@ -27,6 +37,67 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const railway = (message: RailwayMessage) => Message.GotRailwayMessage({ message })
 const supabase = (message: SupabaseMessage) => Message.GotSupabaseMessage({ message })
+const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
+const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsoleMessage({ message })
+
+const chatList = Schema.decodeSync(V2ChatConnectorList)({
+	object: "chat_connector_list",
+	data: [
+		{
+			id: "slack",
+			object: "chat_connector",
+			name: "Slack",
+			available: true,
+			supports_identity: true,
+			workspaces: [
+				{
+					id: "chatw_YoxMqYdzUJ1tH4BqCWxPH3",
+					object: "chat_workspace",
+					connector: "slack",
+					external_workspace_id: "T1",
+					name: "Acme Shop",
+					settings: {},
+					created_at: "2026-09-10T12:00:00.000Z",
+				},
+			],
+		},
+	],
+})
+
+const withChat = (search: Model["search"]): Model => {
+	const model = init({ search }, context).model
+	return pageUpdate(
+		model,
+		Message.CompletedLoadChat({ key: model.statuses.chat.key ?? "", result: Result.succeed(chatList) }),
+	).model
+}
+
+const searchConsoleStatus = (accountEmail: string) =>
+	Schema.decodeSync(SearchConsoleIntegrationStatus)({
+		configured: true,
+		connected: true,
+		accountEmail,
+		connectedByUserId: null,
+		revoked: false,
+		sites: [],
+	})
+
+const SITES = Schema.decodeSync(SearchConsoleAvailableSitesResponse)({
+	sites: [
+		{ siteUrl: "sc-domain:acme.dev", permissionLevel: "siteOwner", selectable: true, enabled: false },
+	],
+})
+
+const withSearchConsole = (accountEmail: string, model?: Model): Model => {
+	const base = model ?? init({ search: { integration: "google-search-console" } }, context).model
+	return pageUpdate(
+		base,
+		Message.CompletedLoadSearchConsole({
+			key: base.statuses.searchConsole.key ?? "",
+			result: Result.succeed(searchConsoleStatus(accountEmail)),
+		}),
+	).model
+}
 
 const railwayStatus = (firstSyncPending: boolean) =>
 	Schema.decodeSync(RailwayIntegrationStatus)({
@@ -172,6 +243,82 @@ describe("provider modules", () => {
 		).not.toContain("SyncSupabase")
 	})
 
+	test("one module serves every chat connector's page, and only those", () => {
+		expect(providerModuleOf("chat-slack")?.id).toBe("chat")
+		expect(providerModuleOf("chat-discord")?.id).toBe("chat")
+		expect(providerModuleOf("linear")?.id).toBe("linear")
+		expect(providerModuleOf("github")).toBeUndefined()
+		expect(providerModuleOf(null)).toBeUndefined()
+	})
+
+	test("a module drives the shared disconnect dialog and owns its confirm", () => {
+		const model = withChat({ integration: "chat-slack" })
+		const workspaceId = chatList.data[0]?.workspaces[0]?.id
+		expect(workspaceId).toBeDefined()
+		if (workspaceId === undefined) return
+		const opened = pageUpdate(model, chat(ChatMessage.ClickedDisconnect({ workspaceId }))).model
+		expect(opened.disconnect.dialog.isOpen).toBe(true)
+		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
+		expect(names(confirmed.commands)).toEqual(["DisconnectChatWorkspace"])
+		// The module's removal is in flight: the dialog's own close is ignored.
+		expect(CHAT_PROVIDER.isDisconnecting(confirmed.model)).toBe(true)
+		const done = pageUpdate(confirmed.model, chat(ChatMessage.CompletedDisconnect({ failure: null })))
+		expect(done.model.disconnect.dialog.isOpen).toBe(false)
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Workspace disconnected",
+				description: "",
+			}),
+		)
+		const sent = names(done.commands)
+		expect(sent.indexOf("LoadIntegrationsChatConnectors")).toBeGreaterThanOrEqual(0)
+		expect(sent.indexOf("LoadIntegrationsChatConnectors")).toBeLessThan(
+			sent.indexOf("TrackIntegrationDisconnected"),
+		)
+	})
+
+	test("a status answer reaches the module with the read it replaced", () => {
+		const first = withSearchConsole("owner@acme.dev")
+		const listed = pageUpdate(
+			first,
+			searchConsole(
+				SearchConsoleMessage.CompletedLoadSites({
+					key: first.searchConsoleCard.sites.key ?? "",
+					result: Result.succeed(SITES),
+				}),
+			),
+		).model
+		const picked = pageUpdate(
+			listed,
+			searchConsole(SearchConsoleMessage.ToggledSite({ siteUrl: "sc-domain:acme.dev" })),
+		).model
+		const reread: Model = {
+			...picked,
+			statuses: {
+				...picked.statuses,
+				searchConsole: { ...picked.statuses.searchConsole, key: "again" },
+			},
+		}
+		// The same grant keeps the picker; another Google account starts it over.
+		const sameAccount = withSearchConsole("owner@acme.dev", reread)
+		expect(sameAccount.searchConsoleCard.draft).toEqual(["sc-domain:acme.dev"])
+		expect(AsyncData.isSuccess(sameAccount.searchConsoleCard.sites.data)).toBe(true)
+		const otherAccount = withSearchConsole("someone@globex.dev", reread)
+		expect(otherAccount.searchConsoleCard.draft).toBeNull()
+	})
+
+	test("a connect another tab finished runs the relayed hook, not the connected one", () => {
+		const model = withSearchConsole("owner@acme.dev")
+		expect(
+			names(receivedRelay(model, context, "google-search-console", "success", "").commands),
+		).toContain("FetchSearchConsoleSites")
+		const supabaseModel = withSupabase({ integration: "supabase" }, supabaseStatus(true))
+		expect(
+			names(receivedRelay(supabaseModel, context, "supabase", "success", "").commands),
+		).not.toContain("SyncSupabase")
+	})
+
 	test("the header badge and catalog row of a module come from the module", () => {
 		const statuses = withRailway({}, railwayStatus(true)).statuses
 		expect(cardStatusOf(statuses, "railway", NOW)).toEqual({ label: "1 environment", variant: "ok" })
@@ -180,5 +327,25 @@ describe("provider modules", () => {
 			context: "Acme",
 			stat: "1 environment polled",
 		})
+		const linear = init({ search: {} }, context).model
+		const linearStatuses = pageUpdate(
+			linear,
+			Message.CompletedLoadLinear({
+				key: linear.statuses.linear.key ?? "",
+				result: Result.succeed(
+					Schema.decodeSync(LinearIntegrationStatus)({
+						connected: true,
+						workspaceName: "Acme",
+						connectedByUserId: null,
+						revoked: true,
+					}),
+				),
+			}),
+		).model.statuses
+		expect(cardStatusOf(linearStatuses, "linear", NOW)).toEqual({ label: "Revoked", variant: "warn" })
+		// Chat rows read the one connector list by their own id.
+		const chatStatuses = withChat({}).statuses
+		expect(cardStatusOf(chatStatuses, "chat-slack", NOW)).toEqual({ label: "Acme Shop", variant: "ok" })
+		expect(overviewOf(chatStatuses, NOW, "chat-slack")).toMatchObject({ context: "Acme Shop" })
 	})
 })
