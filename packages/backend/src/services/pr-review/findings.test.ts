@@ -109,6 +109,7 @@ describe("settledFindings", () => {
 			"It was marked fixed in abc1234, yet I still see the token in the logs",
 			"Fixed in abc1234, but the guard is still missing",
 			"This would be a false positive if we redacted the token, but we currently log it.",
+			"This is a false positive if the token is redacted, but we log it unredacted.",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}

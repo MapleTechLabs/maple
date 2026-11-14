@@ -108,11 +108,20 @@ const HEDGED =
 
 /** A conditional before a dismissal phrase: "this would be a false positive if we redacted it". */
 const CONDITIONAL = /\b(?:would|could|might|if|unless)\b/i
+/**
+ * A condition attached right after it ("a false positive if the token is redacted"). A reason set
+ * off by a comma or dash ("Won't fix, it only runs if the flag is set") is not one.
+ */
+const CONDITION_AFTER = /^\s+(?:only\s+)?(?:if|unless|when|provided|as long as)\b/i
 
 const affirmsDismissal = (clause: string): boolean => {
 	if (HEDGED.test(clause)) return false
 	const match = DISMISSAL.exec(clause)
-	return match !== null && !CONDITIONAL.test(Str.slice(0, match.index)(clause))
+	return (
+		match !== null &&
+		!CONDITIONAL.test(Str.slice(0, match.index)(clause)) &&
+		!CONDITION_AFTER.test(Str.slice(match.index + match[0].length)(clause))
+	)
 }
 
 type ReplyVerdict = "dismissed" | "resolved" | "open"
