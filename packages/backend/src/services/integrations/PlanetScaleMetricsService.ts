@@ -285,6 +285,30 @@ export class PlanetScaleMetricsService extends Context.Service<
 			return rows.length
 		}, keepRefusal)
 
+		/** Why the org row was not claimed, so a routine fresh tick does not read as an overlap. */
+		const unclaimedReason = (connection: PlanetScaleConnectionRow, now: number) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscalePollState)
+						.select("enabled", "lastSuccessAt", "holdUntil")
+						.where(($) => [
+							$.orgId.eq(connection.orgId),
+							$.dataset.eq(PLANETSCALE_METRICS_DATASET),
+							$.databaseId.eq(""),
+						])
+						.limit(1),
+				),
+			).pipe(
+				Effect.map(([row]) => {
+					if (row === undefined) return "lease_held"
+					if (!row.enabled) return "disabled"
+					if (row.lastSuccessAt !== null && now - row.lastSuccessAt < ORG_LEASE_TTL_MS)
+						return "fresh"
+					if (row.holdUntil !== null && row.holdUntil > now) return "held"
+					return "lease_held"
+				}),
+			)
+
 		const pollOrg = Effect.fn("PlanetScaleMetricsService.pollOrg")(function* (
 			connection: PlanetScaleConnectionRow,
 			deadlineMs: number,
@@ -348,7 +372,14 @@ export class PlanetScaleMetricsService extends Context.Service<
 				pollStateLease(connection.orgId, PLANETSCALE_METRICS_DATASET, "", ORG_LEASE_TTL_MS),
 				now,
 				(lease) => pollBranches(connection, target, deadlineMs, lease),
-			).pipe(Effect.flatMap(Option.match({ onNone: () => skip("lease_held"), onSome: Effect.succeed })))
+			).pipe(
+				Effect.flatMap(
+					Option.match({
+						onNone: () => Effect.flatMap(unclaimedReason(connection, now), skip),
+						onSome: Effect.succeed,
+					}),
+				),
+			)
 			return yield* polled.pipe(skipIfPaused(dbExecute, connection.sourceId, now, followClock))
 		})
 
