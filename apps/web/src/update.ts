@@ -414,7 +414,12 @@ const writePage =
 		)
 			return { model }
 		const followed = actOnPageOut(model, transition.outMessage)
-		const pageHold = PageHold.written(followed.model.pageHold, followed.model.page, transition.slot)
+		const pageHold = PageHold.written(
+			followed.model.pageHold,
+			followed.model.page,
+			transition.slot,
+			PageHold.isRevived(followed.model.parkedPages, transition.slot),
+		)
 		const startedHold = PageHold.startedHold(followed.model.pageHold, pageHold)
 		const held = Preload.held(
 			followed.model.preload,
