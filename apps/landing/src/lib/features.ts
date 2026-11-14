@@ -37,8 +37,8 @@ export const features: Feature[] = [
 			constant: "trace 4f9ac21e…8b7d40f2",
 			plate: {
 				src: "/screenshots/hero-traces.webp",
-				width: 3600,
-				height: 1850,
+				width: 2880,
+				height: 1620,
 				alt: "A slow database span selected in an 18-span waterfall, with its query attributes open alongside",
 			},
 			facts: [
@@ -195,8 +195,8 @@ export const features: Feature[] = [
 			constant: "severity >= WARN",
 			plate: {
 				src: "/screenshots/strip-logs.webp",
-				width: 2976,
-				height: 1800,
+				width: 2880,
+				height: 1620,
 				alt: "Structured log search with severity facets and attribute filters down the left rail",
 			},
 			facts: [
@@ -257,8 +257,8 @@ export const features: Feature[] = [
 			constant: "http.server.request.duration",
 			plate: {
 				src: "/screenshots/surface-metrics.webp",
-				width: 2560,
-				height: 1320,
+				width: 2880,
+				height: 1620,
 				alt: "The metric explorer listing every metric with its type, service and data point count",
 			},
 			facts: [
@@ -333,8 +333,8 @@ export const features: Feature[] = [
 				// the plate renders taller here rather than showing a different crop
 				// than the homepage carousel, which covers it into a 1400×720 stage.
 				src: "/screenshots/hero-services.webp",
-				width: 2974,
-				height: 2122,
+				width: 2880,
+				height: 1620,
 				alt: "The service catalog listing latency percentiles, error-rate trends and throughput per service",
 			},
 			facts: [
@@ -644,8 +644,8 @@ export const features: Feature[] = [
 			constant: "api.maple.dev/mcp",
 			plate: {
 				src: "/screenshots/surface-mcp.webp",
-				width: 2560,
-				height: 1320,
+				width: 2880,
+				height: 1620,
 				alt: "The MCP server page showing the endpoint and client setup",
 			},
 			facts: [

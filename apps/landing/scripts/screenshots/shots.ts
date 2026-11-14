@@ -23,7 +23,13 @@ export const RELABEL = {
 	"test's Organization": "Acme",
 	"Redirect test US": "Acme",
 	"test test": "Ada Lovelace",
+	"premium-landing-page.api.localhost": "api.maple.dev",
+	"https://api.localhost": "https://api.maple.dev",
+	"david+clerk_test@gmail.com": "ada@acme.dev",
 } as const
+
+/** Whole text nodes swapped as-is: avatar initials derived from the dev names. */
+export const RELABEL_EXACT = { TO: "A", TT: "AL" } as const
 
 export const VIEWPORT = { width: 1440, height: 810 } as const
 export const TIMEZONE = "America/New_York"
@@ -51,6 +57,39 @@ const followLink = async (page: Page, href: string | null, drop: ReadonlyArray<s
 const openTrace = async (page: Page) => {
 	const href = await page.locator('a[aria-label^="Open trace"]').first().getAttribute("href")
 	await followLink(page, href, ["peek", "peekT"])
+}
+
+/** The failing checkout's own trace, on the waterfall tab. */
+const openWaterfall = async (page: Page) => {
+	await openTrace(page)
+	await page
+		.getByRole("tab", { name: /waterfall/i })
+		.first()
+		.click()
+}
+
+/** Open the span the incident is about: the payment call that timed out, with its detail panel. */
+const selectFailingCharge = async (page: Page) => {
+	await page.getByText("INSERT shop.payments").filter({ visible: true }).last().click()
+}
+
+/** The rule editor previews a week; the seed holds one day, so frame the last 12 hours. */
+const previewLastHours = async (page: Page) => {
+	await page
+		.getByRole("button", { name: /Last 7 days/ })
+		.first()
+		.click()
+	await page
+		.getByText(/^Last 12 hours$/)
+		.filter({ visible: true })
+		.first()
+		.click()
+}
+
+/** Onboarding banners ("First trace received") are not part of the product being shown. */
+const dismissBanners = async (page: Page) => {
+	const close = page.getByRole("button", { name: /dismiss|close/i })
+	if ((await close.count()) > 0) await close.first().click()
 }
 
 export const SHOTS: ReadonlyArray<Shot> = [
@@ -118,6 +157,90 @@ export const SHOTS: ReadonlyArray<Shot> = [
 	},
 
 	{ id: "surface-errors", route: "/errors" },
+
+	// Homepage plates: hero carousel, signals strip, platform sheet, incident story. The clock is
+	// pinned to the seed anchor so the pickers read as presets ("Last 24 hours"), not raw dates.
+	{
+		id: "hero-dashboard",
+		route: "/",
+		search: { timePreset: "24h" },
+		fakeNowMinutes: 0,
+		setup: dismissBanners,
+	},
+	{
+		id: "hero-services",
+		route: "/services",
+		search: { timePreset: "6h" },
+		fakeNowMinutes: 0,
+		setup: dismissBanners,
+	},
+	{
+		id: "hero-traces",
+		route: "/traces",
+		search: FAILED_CHECKOUTS,
+		range: lastMinutes(90),
+		fakeNowMinutes: 0,
+		setup: async (page) => {
+			await openWaterfall(page)
+			await selectFailingCharge(page)
+		},
+	},
+	{
+		id: "strip-trace",
+		route: "/traces",
+		search: FAILED_CHECKOUTS,
+		range: lastMinutes(90),
+		fakeNowMinutes: 0,
+		setup: openWaterfall,
+	},
+	{ id: "strip-logs", route: "/logs", search: { timePreset: "1h" }, fakeNowMinutes: 0 },
+	{ id: "surface-metrics", route: "/metrics", search: { timePreset: "6h" }, fakeNowMinutes: 0 },
+	{
+		id: "surface-map",
+		route: "/service-map",
+		search: { timePreset: "1h", environment: "production" },
+		fakeNowMinutes: 0,
+	},
+	{
+		id: "surface-alerts",
+		route: "/alerts/create",
+		search: { serviceName: "checkout-api", template: "slow_p95" },
+		fakeNowMinutes: 0,
+		setup: previewLastHours,
+	},
+	{ id: "surface-mcp", route: "/mcp" },
+	{
+		id: "flow-01-alert",
+		route: "/alerts/create",
+		search: { serviceName: "payment-svc", template: "high_error_rate" },
+		fakeNowMinutes: 0,
+		setup: previewLastHours,
+	},
+	{
+		id: "flow-02-trace",
+		route: "/traces",
+		search: FAILED_CHECKOUTS,
+		range: lastMinutes(90),
+		fakeNowMinutes: 0,
+		setup: async (page) => {
+			await openWaterfall(page)
+			await selectFailingCharge(page)
+		},
+	},
+	{
+		id: "flow-03-logs",
+		route: "/logs",
+		search: { timePreset: "1h", severities: ["ERROR"] },
+		fakeNowMinutes: 0,
+		setup: async (page) => {
+			// A row opens the log drawer; its header links to the log's own page.
+			await page
+				.getByText(/timed out acquiring/)
+				.first()
+				.click()
+			await followLink(page, await page.locator('a[href*="/logs/"]').first().getAttribute("href"))
+		},
+	},
 	{
 		id: "gallery-issue-detail",
 		route: "/errors",
