@@ -790,10 +790,11 @@ export function productEventsFunnelBreakdownQuery(
  * Event names in range for the step picker: `{ eventName, kind, count,
  * sessions, persons }`, most frequent first.
  *
- * `persons` is the unstitched `if(UserId != '', UserId, VisitorId)` — a cheap
- * approximation that needs no `identity_links` join; the funnel itself does the
- * stitching. Sidebar filters narrow by `SessionId`, so under an active filter
- * server-side events (which carry no session) are not listed.
+ * `persons` is the visitor id where the row has one, else the user id: a cheap count that needs
+ * no `identity_links` join. A browser row keeps its visitor id after sign-in, so a visitor who
+ * signs up is one person, not two; a server row has only the user id. The funnel itself does the
+ * stitching. Sidebar filters narrow by `SessionId`, so under an active filter server-side events
+ * (which carry no session) are not listed.
  */
 export function productEventNamesQuery(
 	opts: ProductEventNamesOpts = {},
@@ -806,7 +807,7 @@ export function productEventNamesQuery(
 			kind: $.Kind,
 			count: CH.count(),
 			sessions: CH.uniqIf($.SessionId, $.SessionId.neq("")),
-			persons: CH.uniq(CH.if_($.UserId.neq(""), $.UserId, $.VisitorId)),
+			persons: CH.uniq(CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

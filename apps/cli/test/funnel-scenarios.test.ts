@@ -31,6 +31,7 @@ import {
 	type SimEvent,
 	type StepTiming,
 	sqlBreakdown,
+	sqlEventPersons,
 	sqlFunnel,
 	sqlLeavers,
 	sqlTiming,
@@ -450,6 +451,15 @@ describeWithChdb("product event funnels over example products", () => {
 		expect(
 			counts(ACQUISITION, { steps, keyBy: "person", windowSeconds: week, filters: { country: "DE" } }),
 		).toEqual([1, 1, 1])
+	})
+
+	test("the event list counts a visitor who signs in as one person", () => {
+		// Ann, Bob and Cy viewed a page; Ann signed in before her signup event. The plan came from the backend.
+		expect(sqlEventPersons(db, ACQUISITION.orgId)).toEqual({
+			$pageview: 3,
+			signup_started: 2,
+			plan_started: 1,
+		})
 	})
 
 	// The example products: every funnel below must match the reference exactly.

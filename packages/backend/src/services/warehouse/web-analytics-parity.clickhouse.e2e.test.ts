@@ -737,7 +737,8 @@ describe.skipIf(!clickhouseE2eEnabled)("product events funnels", () => {
 				Number(row.persons),
 			]),
 			[
-				["$pageview", "navigation", 9, 6, 6],
+				// Five visitors: v1's signed-in page view is still v1, not a sixth person.
+				["$pageview", "navigation", 9, 6, 5],
 				["plan_started", "custom", 2, 0, 2],
 				["scroll", "custom", 1, 1, 1],
 				["signup_started", "custom", 1, 1, 1],
