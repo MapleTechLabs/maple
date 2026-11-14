@@ -17,6 +17,8 @@ import {
 	usersGroupNamesQuery,
 	usersMcpNamesQuery,
 	usersMcpNameSearchQuery,
+	usersMatchingCountQuery,
+	usersRecentFloorQuery,
 	usersSummaryQuery,
 	type UsersScope,
 } from "./users"
@@ -193,6 +195,56 @@ describe("usersListQuery", () => {
 	})
 })
 
+describe("a bounded directory page", () => {
+	const rollup: UsersScope = { ...storefront, activityRollup: true }
+	const since = "2026-06-25 05:00:00.123456789"
+
+	it("aggregates every source only for users with a row after the floor", () => {
+		const { sql } = compileUnsafe(usersListQuery(rollup, {}, 201, { since }), params)
+		// Replays, events and the rollup each keep only the candidates.
+		expect(count(sql, "IN (SELECT")).toBeGreaterThanOrEqual(3)
+		expect(sql).toContain(`toDateTime64(user_activity_hourly.LastSeen, 9) > '${since}'`)
+		expect(sql).toContain(`user_activity_hourly.Hour >= toStartOfHour(toDateTime64('${since}', 9))`)
+		expect(sql).toContain(`product_events.Timestamp > '${since}'`)
+	})
+
+	it("bounds the candidates to rows at or before the page's cursor", () => {
+		const after = { lastSeen: "2026-06-25 05:30:00.000000001", userId: "u_b" }
+		const { sql } = compileUnsafe(usersListQuery(rollup, { after }, 201, {}), params)
+		expect(sql).toContain(`product_events.Timestamp <= '${after.lastSeen}'`)
+		expect(sql).toContain(`user_activity_hourly.Hour <= toDateTime64('${after.lastSeen}', 9)`)
+	})
+
+	it("pushes one filter to single rows, since filters may hold on different rows", () => {
+		// A user with errors on a request and a replay on a clean session passes both filters,
+		// though no single row does.
+		const filter = { hasErrors: true, hasReplay: true, groups: ["acme"], search: "ada" } as const
+		const { sql } = compileUnsafe(usersListQuery(rollup, filter, 201, { matching: true }), params)
+		expect(sql).toContain("WHERE rows.errors > 0")
+		expect(sql).not.toContain("rows.sessions > 0")
+		expect(sql).not.toContain("hasAny(rows.groupIds")
+		expect(sql).toContain("HAVING sum(signals.errors) > 0")
+		expect(sql).toContain("sum(signals.sessions) > 0")
+		const counted = compileUnsafe(usersMatchingCountQuery(rollup, filter), params).sql
+		expect(counted).toContain("uniq(rows.userId) AS users")
+		expect(counted).toContain("rows.errors > 0")
+		const searched = compileUnsafe(usersMatchingCountQuery(rollup, { search: "ada" }), params).sql
+		expect(searched).toContain("positionCaseInsensitiveUTF8(rows.email, 'ada') > 0")
+	})
+
+	it("reads no candidate set without a bound", () => {
+		const { sql } = compileUnsafe(usersListQuery(rollup), params)
+		expect(sql).not.toContain("AS rows")
+	})
+
+	it("finds the floor as the oldest of the newest rows", () => {
+		const { sql } = compileUnsafe(usersRecentFloorQuery(rollup, {}, 20_000), params)
+		expect(sql).toMatch(/ORDER BY at DESC\s+LIMIT 20000/)
+		expect(sql).toContain("toString(min(recent.at)) AS floor")
+		expect(sql).not.toMatch(/GROUP BY userId/)
+	})
+})
+
 describe("usersFacetsQuery", () => {
 	it("counts namespaces over its own scope and groups over the page's", () => {
 		const { sql } = compileUnionUnsafe(usersFacetsQuery(storefront, unscoped), params)
@@ -210,11 +262,14 @@ describe("usersFacetsQuery", () => {
 })
 
 describe("usersSummaryQuery", () => {
-	it("counts users per flag over the merged sources", () => {
-		const { sql } = compileUnsafe(usersSummaryQuery(storefront), params)
-		expect(sql).toContain("countIf(users.lastSeen >= '2026-06-24 06:00:00') AS activeToday")
-		expect(sql).toContain("countIf(users.errors > 0) AS withErrors")
+	it("counts distinct users per flag over single rows, never one group per user", () => {
+		const { sql } = compileUnsafe(usersSummaryQuery({ ...storefront, activityRollup: true }), params)
+		expect(sql).toContain("uniq(rows.userId) AS identified")
+		expect(sql).toContain("uniqIf(rows.userId, rows.at >= '2026-06-24 06:00:00') AS activeToday")
+		expect(sql).toContain("uniqIf(rows.userId, rows.errors > 0) AS withErrors")
 		expect(sql).toContain("product_events.OrgId = 'org_1'")
+		expect(sql).toContain("FROM user_activity_hourly")
+		expect(sql).not.toMatch(/GROUP BY userId/)
 	})
 })
 
