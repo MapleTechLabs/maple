@@ -202,6 +202,24 @@ describe("GithubAppClient over the vendor HTTP kit", () => {
 		}).pipe(Effect.provide(github.layer))
 	})
 
+	it.effect("times out a blob whose body stalls after the headers", () => {
+		const github = clientLayer(
+			() =>
+				new Response(
+					new ReadableStream<Uint8Array>({
+						start: (controller) => controller.enqueue(new TextEncoder().encode("partial")),
+					}),
+				),
+		)
+		return Effect.gen(function* () {
+			const client = yield* GithubAppClient
+			const error = yield* Effect.flip(
+				VendorFake.elapsing(client.getBlobText("42", "octo", "shop", "abc", 1_000)),
+			)
+			assert.strictEqual(error.message, "Reading the blob timed out")
+		}).pipe(Effect.provide(github.layer))
+	})
+
 	it.effect("times out a read GitHub never answers instead of waiting for ever", () => {
 		const github = clientLayer(() => new Promise<Response>(() => undefined))
 		return Effect.gen(function* () {

@@ -1,6 +1,6 @@
 /** One Linear GraphQL call. Linear reports most failures in an `errors` array, so the codes decide, not the status. */
 import { IntegrationsRevokedError, IntegrationsUpstreamError } from "@maple/domain/http"
-import { Effect, Option, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { HttpClient } from "effect/http"
 import * as VendorHttp from "../vendor-http"
 
@@ -81,7 +81,34 @@ const linearDetail = (body: string) =>
 	Option.match(decodeEnvelope(body), {
 		onNone: () => undefined,
 		onSome: (envelope) =>
-			(envelope.errors ?? []).length === 0 ? undefined : encodeEnvelope({ errors: envelope.errors }),
+			(envelope.errors ?? []).length === 0
+				? undefined
+				: // Bounded so the encoded errors stay whole inside the kit's cut.
+					encodeEnvelope({
+						errors: Arr.map(Arr.take(envelope.errors ?? [], 5), (error) => ({
+							message: Str.slice(0, 200)(error.message),
+							...(error.extensions === undefined
+								? undefined
+								: {
+										extensions: {
+											...(error.extensions.code === undefined
+												? undefined
+												: { code: error.extensions.code }),
+											...(error.extensions.type === undefined
+												? undefined
+												: { type: error.extensions.type }),
+											...(error.extensions.userPresentableMessage === undefined
+												? undefined
+												: {
+														userPresentableMessage: Str.slice(
+															0,
+															200,
+														)(error.extensions.userPresentableMessage),
+													}),
+										},
+									}),
+						})),
+					}),
 	})
 
 const revoked = () =>

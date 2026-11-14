@@ -139,7 +139,8 @@ const osv = (requests: Array<string>) =>
 					requests.push(`github:${repo}`)
 					return repo === "oven-sh/bun"
 						? VendorFake.json(BUN_BODY)
-						: VendorFake.text("rate limited", 403)
+						: // A short Retry-After the single-attempt read must not wait out and repeat.
+							VendorFake.text("rate limited", 429, { "retry-after": "1" })
 				},
 			},
 			{
@@ -254,9 +255,13 @@ describe("RuntimeAdvisoryCatalog", () => {
 				{ product: "bun", version: "1.4.0" },
 				{ product: "bun", version: "1.2.0" },
 				{ product: "bun", version: "1.4.4" },
-				// Deno's read fails, so its version is left out.
+				// Deno's read is rate limited, so its version is left out after one request.
 				{ product: "deno", version: "2.1.0" },
 			])
+			assert.lengthOf(
+				Arr.filter(requests, (request) => request === "github:denoland/deno"),
+				1,
+			)
 			assert.deepStrictEqual(result.advisories, {
 				"bun@1.4.0": [
 					{

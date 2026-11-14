@@ -2442,6 +2442,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const result = next === undefined ? first : yield* open(next)
 				if (result._tag === "Refused") return yield* failure(result.answer, "Read blob", "repository")
 				const blob = result.blob
+				// The kit's timeout ends with the headers; a body that stalls gets its own deadline.
 				return yield* readTextWithin(
 					blob.body.pipe(
 						Stream.mapError(
@@ -2450,6 +2451,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					),
 					maxBytes,
 					() => new GithubAppError({ message: `The blob is larger than ${maxBytes} bytes` }),
+				).pipe(
+					Effect.timeoutOrElse({
+						duration: REQUEST_TIMEOUT,
+						orElse: () =>
+							Effect.fail(new GithubAppError({ message: "Reading the blob timed out" })),
+					}),
 				)
 			})
 
