@@ -10,9 +10,6 @@ import {
 	Record as Rec,
 	Redacted,
 } from "effect"
-import { Stage } from "alchemy/Stage"
-import { type MapleDeployment, parseMapleDeploymentEffect } from "./cloudflare/stage.ts"
-import type { MapleRegion } from "./region.ts"
 import type { SecretConsumer, SecretEnvironment } from "./secret.ts"
 import * as Catalog from "./secrets.ts"
 
@@ -56,19 +53,13 @@ const guard = (provider: ConfigProvider.ConfigProvider): ConfigProvider.ConfigPr
 		}),
 	)
 
-const PRD_ENVIRONMENT = { us: "prod", eu: "prod-eu" } satisfies Record<MapleRegion, SecretEnvironment>
+const SECRET_ENVIRONMENTS = ["dev", "preview", "prod", "prod-eu"] satisfies ReadonlyArray<SecretEnvironment>
 
-/** The Infisical environment a deployment loads its config from. */
-export const secretEnvironment = ({ stage, region }: MapleDeployment): SecretEnvironment => {
-	switch (stage.kind) {
-		case "prd":
-			return PRD_ENVIRONMENT[region]
-		case "pr":
-			return "preview"
-		case "dev":
-			return "dev"
-	}
-}
+/**
+ * The Infisical environment the deploy job exported, not one inferred from the stage: the orphan
+ * sweep destroys `pr-<n>` stages with `dev` loaded. Unset on a local `bun dev`.
+ */
+const loadedEnvironment = Config.option(Config.Literals(SECRET_ENVIRONMENTS, "INFISICAL_ENV_SLUG"))
 
 /** Fails when `environment` holds a secret the catalog keeps out of it. Blank counts as unset. */
 const refuseMisplaced = (environment: SecretEnvironment) =>
@@ -96,16 +87,12 @@ const refuseMisplaced = (environment: SecretEnvironment) =>
 /**
  * Run `effect` with the catalog guarding its config. Around the whole stack, a secret read outside
  * any deployable's scope (a Worker's init included) fails the deploy instead of going unchecked, as
- * does a secret the stage's environment may not hold.
+ * does a secret the loaded environment may not hold.
  */
 export const withSecretGuard = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
-		const stage = yield* Stage
-		// `Alchemy.Stack` admits only `ConfigError`.
-		const deployment = yield* parseMapleDeploymentEffect(stage).pipe(
-			Effect.mapError((error) => new Config.ConfigError(refusal(error.message))),
-		)
-		yield* refuseMisplaced(secretEnvironment(deployment))
+		const environment = yield* loadedEnvironment
+		if (Option.isSome(environment)) yield* refuseMisplaced(environment.value)
 		return yield* effect.pipe(Effect.updateService(ConfigProvider.ConfigProvider, guard))
 	})
 

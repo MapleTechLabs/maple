@@ -10,10 +10,8 @@ import {
 	Redacted,
 	Schema,
 } from "effect"
-import { Stage } from "alchemy/Stage"
 import { assert, describe, expect, it } from "vitest"
-import { parseMapleDeployment } from "./cloudflare/stage.ts"
-import { resolveAs, resolveWorkerEnv, secretEnvironment, withSecretGuard } from "./secret-guard.ts"
+import { resolveAs, resolveWorkerEnv, withSecretGuard } from "./secret-guard.ts"
 import * as Catalog from "./secrets.ts"
 import { OpenRouterApiKey, OtelIngestKey, StripeSecretKey } from "./secrets.ts"
 
@@ -33,10 +31,6 @@ const failure = <A>(effect: Effect.Effect<A, Config.ConfigError>, env: Env) => {
 	assert(Exit.isSuccess(exit), "expected the deploy to be refused")
 	return { cause: exit.value.cause._tag, message: exit.value.message }
 }
-
-/** `effect` inside a stack guarded as the alchemy stage `stage` (`prd`, `prd-eu`, `pr-12`, a dev name). */
-const guarded = <A, E, R>(effect: Effect.Effect<A, E, R>, stage = "prd") =>
-	withSecretGuard(effect).pipe(Effect.provideService(Stage, stage))
 
 const reveal = (env: Record<string, unknown>) =>
 	Rec.map(env, (value) => (Redacted.isRedacted(value) ? Redacted.value(value) : value))
@@ -125,11 +119,11 @@ describe("the catalog as a default-deny guard", () => {
 			const bound = yield* StripeSecretKey.optional
 			return reveal(bound)
 		})
-		expect(failure(guarded(unscoped), STRIPE).message).toContain(NO_SCOPE)
+		expect(failure(withSecretGuard(unscoped), STRIPE).message).toContain(NO_SCOPE)
 	})
 
 	it("still resolves a granted secret inside a guarded stack", () => {
-		const exit = run(guarded(resolveAs("api", StripeSecretKey.required)), STRIPE)
+		const exit = run(withSecretGuard(resolveAs("api", StripeSecretKey.required)), STRIPE)
 		assert(Exit.isSuccess(exit))
 		expect(reveal(exit.value)).toEqual(STRIPE)
 	})
@@ -139,7 +133,7 @@ describe("the catalog as a default-deny guard", () => {
 			const provider = yield* Config.String("MAPLE_LLM_PROVIDER")
 			return { provider }
 		})
-		const exit = run(guarded(plain), { MAPLE_LLM_PROVIDER: "openrouter" })
+		const exit = run(withSecretGuard(plain), { MAPLE_LLM_PROVIDER: "openrouter" })
 		assert(Exit.isSuccess(exit))
 		expect(exit.value).toEqual({ provider: "openrouter" })
 	})
@@ -147,26 +141,28 @@ describe("the catalog as a default-deny guard", () => {
 
 describe("where a secret may be held", () => {
 	const WEBHOOK_SECRET = { CLERK_WEBHOOK_SECRET: "whsec_1" }
+	const deploy = (env: Env) => run(withSecretGuard(Effect.void), env)
 
-	it("names the Infisical environment each deployment loads", () => {
-		const environmentOf = (stage: string) => secretEnvironment(parseMapleDeployment(stage))
-		expect(Arr.map(["prd", "prd-eu", "pr-12", "makisuo"], environmentOf)).toEqual([
-			"prod",
-			"prod-eu",
-			"preview",
-			"dev",
-		])
-	})
-
-	it("fails a deploy whose environment holds a secret the catalog keeps out of it", () => {
-		const refused = failure(guarded(Effect.void, "pr-12"), WEBHOOK_SECRET)
+	it("fails a deploy whose loaded environment holds a secret the catalog keeps out of it", () => {
+		const refused = failure(withSecretGuard(Effect.void), {
+			...WEBHOOK_SECRET,
+			INFISICAL_ENV_SLUG: "preview",
+		})
 		expect(refused.cause).toBe("SourceError")
 		expect(refused.message).toContain("The preview environment holds CLERK_WEBHOOK_SECRET")
 	})
 
-	it("deploys the same environment where the catalog allows it, and a blank value anywhere", () => {
-		expect(Exit.isSuccess(run(guarded(Effect.void, "prd"), WEBHOOK_SECRET))).toBe(true)
-		expect(Exit.isSuccess(run(guarded(Effect.void, "pr-12"), { CLERK_WEBHOOK_SECRET: " " }))).toBe(true)
+	it("deploys where the catalog allows it, a blank value anywhere, and with no environment named", () => {
+		expect(Exit.isSuccess(deploy({ ...WEBHOOK_SECRET, INFISICAL_ENV_SLUG: "dev" }))).toBe(true)
+		expect(Exit.isSuccess(deploy({ CLERK_WEBHOOK_SECRET: " ", INFISICAL_ENV_SLUG: "preview" }))).toBe(
+			true,
+		)
+		// A local `bun dev`, on `.env.local`.
+		expect(Exit.isSuccess(deploy(WEBHOOK_SECRET))).toBe(true)
+	})
+
+	it("refuses an environment the catalog does not know", () => {
+		expect(Exit.isFailure(deploy({ INFISICAL_ENV_SLUG: "staging" }))).toBe(true)
 	})
 })
 
