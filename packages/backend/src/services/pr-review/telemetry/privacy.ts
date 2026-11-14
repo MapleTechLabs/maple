@@ -36,9 +36,8 @@ const TRANSFORMED_LINE =
  * A value cut to a short prefix (`token.slice(0, 12)`), too short to use. Judged per entry like any
  * derived value: its comma is blanked first so the entry is not split, and its neighbours are still read.
  */
-const SHORT_PREFIX = /\.(?:slice|substring|substr)\(\s*0\s*,\s*(?:[1-9]|1[0-6])\s*\)/g
-const blankPrefixCommas = (text: string) =>
-	Str.replace(SHORT_PREFIX, (match: string) => Str.replace(",", " ")(match))(text)
+const SHORT_PREFIX = /(\.(?:slice|substring|substr)\(\s*0\s*),(\s*(?:[1-9]|1[0-6])\s*\))/g
+const blankPrefixCommas = Str.replace(SHORT_PREFIX, "$1 $2")
 
 /** Words before the match that make a name about the value, not the value: `hashedPassword`, `hasToken`. */
 const NOT_THE_VALUE = new Set([
