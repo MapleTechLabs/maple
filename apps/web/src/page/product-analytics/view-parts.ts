@@ -1,6 +1,6 @@
 import type { FunnelKeyBy } from "@maple/query-model"
 import { pluralize } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Array as Arr, Option, Order } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { empty, emptyDescription, emptyHeader, emptyTitle } from "@maple/views/ui/empty"
@@ -50,11 +50,15 @@ export const emptyPanel = (h: H, title: string, description: ReadonlyArray<Html 
 const eventRowsOf = (model: Model): ReadonlyArray<EventRow> =>
 	Option.getOrElse(AsyncData.getData(model.events.data), () => [])
 
+/** Events by the people who sent them, most first. */
+export const mostPeopleFirst = Order.flip(Order.mapInput(Order.Number, (row: EventRow) => row.persons))
+
 /** The window's event names, most reached first, for the step inputs. */
 export const eventSuggestions = (model: Model): ReadonlyArray<StepSuggestion> =>
-	eventRowsOf(model)
-		.toSorted((a, b) => b.persons - a.persons)
-		.map((row) => ({ name: row.eventName, count: row.persons }))
+	Arr.map(Arr.sort(eventRowsOf(model), mostPeopleFirst), (row) => ({
+		name: row.eventName,
+		count: row.persons,
+	}))
 
 /** The window's entry pages, for page steps. */
 export const pageSuggestions = (model: Model): ReadonlyArray<StepSuggestion> =>

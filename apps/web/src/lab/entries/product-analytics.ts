@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Effect, Schema } from "effect"
+import { Array as Arr, Effect, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../page/contract"
@@ -46,7 +46,7 @@ const EVENTS: ReadonlyArray<EventRow> = [
 	{ eventName: "plan_started", kind: "custom", count: 61, sessions: 61, persons: 61 },
 ]
 
-const PREVIOUS: ReadonlyArray<EventRow> = EVENTS.map((row) => ({
+const PREVIOUS: ReadonlyArray<EventRow> = Arr.map(EVENTS, (row) => ({
 	...row,
 	count: Math.round(row.count * 0.89),
 }))
@@ -138,7 +138,7 @@ const BREAKDOWNS: Breakdowns = {
 	],
 }
 
-const SIGNUP_TO_PAID: Search["steps"] = FUNNEL.map((row) => ({ kind: "event", eventName: row.name }))
+const SIGNUP_TO_PAID: Search["steps"] = Arr.map(FUNNEL, (row) => ({ kind: "event", eventName: row.name }))
 
 const searchOf = (scenario: Scenario): Search => {
 	switch (scenario) {
@@ -188,11 +188,11 @@ const init = (flags: typeof Flags.Type) => {
 
 /** Reads and the window never leave the lab; everything local (popovers, typing pauses) runs. */
 const isLocalCommand = (command: { readonly name: string }): boolean =>
-	!command.name.startsWith("Fetch") && command.name !== "ResolveProductAnalyticsWindow"
+	!Str.startsWith("Fetch")(command.name) && command.name !== "ResolveProductAnalyticsWindow"
 
 const update = (model: Model, message: Message) => {
 	const next = pageUpdate(model, message, context)
-	return { model: next.model, commands: (next.commands ?? []).filter(isLocalCommand) }
+	return { model: next.model, commands: Arr.filter(next.commands ?? [], isLocalCommand) }
 }
 
 const Flags = Schema.Struct({ scenario: Scenario })

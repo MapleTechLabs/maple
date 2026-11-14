@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
 import { fmtMetricTs } from "@maple/backend/services/warehouse/metric-rows"
+import { Array as Arr, Random } from "effect"
 
 // Demo browser sessions and product events: `session_replays` rows (what web analytics and the
 // funnel population filters read) and the `product_events` page views and track() calls inside
@@ -40,8 +41,10 @@ const SIDE_EVENTS = [
 	{ event: "query_run", page: "/explore" },
 ] as const
 
-const pick = <A extends readonly [unknown, ...ReadonlyArray<unknown>]>(items: A): A[number] =>
-	items[Math.floor(Math.random() * items.length)] ?? items[0]
+type Rand = () => number
+
+const pick = <A extends readonly [unknown, ...ReadonlyArray<unknown>]>(rand: Rand, items: A): A[number] =>
+	items[Math.floor(rand() * items.length)] ?? items[0]
 const id = (prefix: string) => `${prefix}_${randomBytes(8).toString("hex")}`
 
 export interface DemoProductRows {
@@ -54,27 +57,31 @@ export const generateDemoProductRows = (input: {
 	readonly hours: number
 	readonly visitorsPerHour: number
 	readonly nowMs?: number
+	/** Draws from the caller's Effect `Random`. Omitted, it is that service's default generator. */
+	readonly random?: Rand
 }): DemoProductRows => {
+	const fallback = Random.Random.defaultValue()
+	const rand: Rand = input.random ?? (() => fallback.nextDoubleUnsafe())
 	const nowMs = input.nowMs ?? Date.now()
 	const windowMs = input.hours * 3600_000
 	const visitors = Math.max(1, Math.round(input.hours * input.visitorsPerHour))
 	const sessionRows: Array<Record<string, unknown>> = []
 	const eventRows: Array<Record<string, unknown>> = []
 
-	Array.from({ length: visitors }).forEach(() => {
+	Arr.forEach(Arr.range(1, visitors), () => {
 		const visitorId = id("v")
 		const sessionId = id("s")
-		const referral = pick(REFERRERS)
-		const client = pick(CLIENTS)
-		const country = pick(COUNTRIES)
-		const startMs = nowMs - Math.random() * windowMs * 0.95
+		const referral = pick(rand, REFERRERS)
+		const client = pick(rand, CLIENTS)
+		const country = pick(rand, COUNTRIES)
+		const startMs = nowMs - rand() * windowMs * 0.95
 		let atMs = startMs
 		let seq = 0
 		let userId = ""
 		const pages: Array<string> = []
 
 		const push = (kind: "navigation" | "custom", eventName: string, pagePath: string) => {
-			atMs += 5_000 + Math.random() * 90_000
+			atMs += 5_000 + rand() * 90_000
 			seq += 1
 			if (kind === "navigation") pages.push(pagePath)
 			eventRows.push({
@@ -96,11 +103,11 @@ export const generateDemoProductRows = (input: {
 		const visit = (pagePath: string) => push("navigation", "$pageview", pagePath)
 
 		visit("/")
-		if (Math.random() < 0.5) visit("/pricing")
-		FUNNEL.every((step) => {
-			if (Math.random() >= step.chance) {
-				if (Math.random() < 0.6) {
-					const side = pick(SIDE_EVENTS)
+		if (rand() < 0.5) visit("/pricing")
+		Arr.every(FUNNEL, (step) => {
+			if (rand() >= step.chance) {
+				if (rand() < 0.6) {
+					const side = pick(rand, SIDE_EVENTS)
 					visit(side.page)
 					push("custom", side.event, side.page)
 				}

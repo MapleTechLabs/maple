@@ -7,7 +7,7 @@ import {
 import { getWebAnalyticsBreakdowns, WebAnalyticsFilterFields } from "@maple/web-data/warehouse/web-analytics"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow } from "../../data/time-range"
 import { Message, RequestMode, SlotName } from "./message"
 
@@ -34,20 +34,16 @@ export const ResolveWindow = Command.define("ResolveProductAnalyticsWindow", {
 
 const Window = { startTime: Schema.String, endTime: Schema.String }
 
-const define = <Fields extends Schema.Struct.Fields, R>(
+const define = <Fields extends Schema.Struct.Fields, E, R>(
 	name: string,
 	fields: Fields,
-	run: (input: Schema.Struct<Fields>["Type"]) => Effect.Effect<unknown, unknown, R>,
+	run: (input: Schema.Struct<Fields>["Type"]) => Effect.Effect<unknown, E, R>,
 ) =>
 	Command.define(name, {
 		args: { slot: SlotName, key: Schema.String, input: Schema.Struct(fields) },
 		messages: [Message.CompletedFetch],
 		execute: ({ slot, key, input }) =>
-			run(input).pipe(
-				Effect.mapError(toLoadFailure),
-				Effect.result,
-				Effect.map((result) => Message.CompletedFetch({ slot, key, result })),
-			),
+			run(input).pipe(settleTo((result) => Message.CompletedFetch({ slot, key, result }))),
 	})
 
 export const FetchBreakdowns = define(

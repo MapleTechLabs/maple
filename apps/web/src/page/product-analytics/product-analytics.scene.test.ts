@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { fromString } from "foldkit/url"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
@@ -21,7 +21,11 @@ const window = { startTime: "2026-10-27 00:00:00", endTime: "2026-11-03 00:00:00
 const pageUpdate = (model: Model, message: Message) => update(model, message, context)
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
-	(commands ?? []).map(({ name }) => name)
+	Arr.map(commands ?? [], ({ name }) => name)
+const sentAs = <C extends { readonly name: string }>(
+	commands: ReadonlyArray<C> | undefined,
+	name: string,
+): C | undefined => Option.getOrUndefined(Arr.findFirst(commands ?? [], (command) => command.name === name))
 
 const resolved = (search: Search = {}) =>
 	pageUpdate(init({ search }, context).model, Message.CompletedResolveWindow({ window, mode: "Load" }))
@@ -74,14 +78,15 @@ describe("product analytics", () => {
 	test("the Events tab reads the rail's options and this window's and the previous window's events", () => {
 		const sent = names(resolved().commands)
 		expect(sent).toContain("FetchProductAnalyticsBreakdowns")
-		expect(sent.filter((name) => name === "FetchProductEventNames")).toHaveLength(2)
+		expect(Arr.filter(sent, (name) => name === "FetchProductEventNames")).toHaveLength(2)
 		expect(sent).not.toContain("FetchProductAnalyticsFunnel")
 	})
 
 	test("a funnel runs only once a step names something, with the drop-off details by default", () => {
 		expect(names(resolved({ tab: "funnels" }).commands)).not.toContain("FetchProductAnalyticsFunnel")
-		const run = resolved({ tab: "funnels", steps: SIGNUP, country: "DE" }).commands?.find(
-			({ name }) => name === "FetchProductAnalyticsFunnel",
+		const run = sentAs(
+			resolved({ tab: "funnels", steps: SIGNUP, country: "DE" }).commands,
+			"FetchProductAnalyticsFunnel",
 		)
 		expect(run?.args).toMatchObject({
 			input: { steps: SIGNUP, keyBy: "person", windowSeconds: 86_400, details: true, country: "DE" },
@@ -89,19 +94,19 @@ describe("product analytics", () => {
 	})
 
 	test("names typed with stray spaces still match their events", () => {
-		const run = resolved({
-			tab: "funnels",
-			steps: [{ kind: "event", eventName: "signup " }],
-		}).commands?.find(({ name }) => name === "FetchProductAnalyticsFunnel")
+		const run = sentAs(
+			resolved({ tab: "funnels", steps: [{ kind: "event", eventName: "signup " }] }).commands,
+			"FetchProductAnalyticsFunnel",
+		)
 		expect(run?.args).toMatchObject({ input: { steps: [{ kind: "event", eventName: "signup" }] } })
 	})
 
 	test("paths wait for an anchor", () => {
 		expect(names(resolved({ tab: "paths" }).commands)).not.toContain("FetchProductAnalyticsPaths")
-		const run = resolved({
-			tab: "paths",
-			anchor: { kind: "event", eventName: "signup_completed" },
-		}).commands?.find(({ name }) => name === "FetchProductAnalyticsPaths")
+		const run = sentAs(
+			resolved({ tab: "paths", anchor: { kind: "event", eventName: "signup_completed" } }).commands,
+			"FetchProductAnalyticsPaths",
+		)
 		expect(run?.args).toMatchObject({ input: { direction: "after", depth: 3, branches: 4 } })
 	})
 

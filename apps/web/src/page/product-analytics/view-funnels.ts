@@ -1,6 +1,6 @@
 import { FUNNEL_MAX_STEPS, type FunnelKeyBy, type FunnelVariant } from "@maple/query-model"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
@@ -34,6 +34,7 @@ import {
 	emptyPanel,
 	eventSuggestions,
 	labelledSegment,
+	mostPeopleFirst,
 	pageSuggestions,
 } from "./view-parts"
 
@@ -46,7 +47,10 @@ const VARIANTS: ReadonlyArray<{ value: FunnelVariant; label: string }> = [
 	{ value: "dropoff", label: "Drop-off" },
 ]
 
-const WINDOWS = FUNNEL_WINDOW_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))
+const WINDOWS = Arr.map(FUNNEL_WINDOW_OPTIONS, (option) => ({
+	value: String(option.value),
+	label: option.label,
+}))
 
 const editor = (h: H, model: Model): Html => {
 	const funnel = funnelOf(model.search)
@@ -99,13 +103,17 @@ const editor = (h: H, model: Model): Html => {
 
 /** Starting points from the events this org sends: the most reached custom events, two at a time. */
 const suggestions = (h: H, model: Model): Html => {
-	const custom = Option.getOrElse(AsyncData.getData(model.events.data), () => [])
-		.filter(isCustomEvent)
-		.toSorted((a, b) => b.persons - a.persons)
-		.slice(0, 4)
-	const pairs = custom
-		.slice(1)
-		.map((row, index) => [custom[index]?.eventName ?? "", row.eventName] as const)
+	const custom = Arr.sort(
+		Arr.filter(
+			Option.getOrElse(AsyncData.getData(model.events.data), () => []),
+			isCustomEvent,
+		),
+		mostPeopleFirst,
+	).slice(0, 4)
+	const pairs = Arr.map(
+		custom.slice(1),
+		(row, index) => [custom[index]?.eventName ?? "", row.eventName] as const,
+	)
 	return emptyPanel(h, "Pick the steps people take, in order", [
 		"Each step is an event, a page view or, first step only, where a session came from.",
 		...(pairs.length === 0
@@ -115,7 +123,7 @@ const suggestions = (h: H, model: Model): Html => {
 					hstack(
 						h,
 						{ gap: "2", wrap: true, justify: "center", className: "mt-3" },
-						pairs.map(([first, second]) =>
+						Arr.map(pairs, ([first, second]) =>
 							button(
 								h,
 								{
@@ -143,11 +151,15 @@ const suggestions = (h: H, model: Model): Html => {
 
 /** The step that loses the largest share of those who reached the one before it. */
 const biggestDrop = (rows: ReadonlyArray<FunnelRow>): Readonly<{ name: string; share: number }> | null =>
-	rows.slice(1).reduce<Readonly<{ name: string; share: number }> | null>((worst, row, index) => {
-		const before = rows[index]?.value ?? 0
-		const share = before === 0 ? 0 : 1 - row.value / before
-		return worst === null || share > worst.share ? { name: row.name, share } : worst
-	}, null)
+	Arr.reduce<FunnelRow, Readonly<{ name: string; share: number }> | null>(
+		rows.slice(1),
+		null,
+		(worst, row, index) => {
+			const before = rows[index]?.value ?? 0
+			const share = before === 0 ? 0 : 1 - row.value / before
+			return worst === null || share > worst.share ? { name: row.name, share } : worst
+		},
+	)
 
 const stats = (h: H, rows: ReadonlyArray<FunnelRow>): Html => {
 	const entered = rows[0]?.value ?? 0
@@ -200,7 +212,7 @@ const stepsTable = (h: H, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy, ha
 		]),
 		tableBody(
 			h,
-			rows.map((row, index) => {
+			Arr.map(rows, (row, index) => {
 				const before = index === 0 ? 0 : (rows[index - 1]?.value ?? 0)
 				const leaver = row.leavers?.[0]
 				return tableRow(

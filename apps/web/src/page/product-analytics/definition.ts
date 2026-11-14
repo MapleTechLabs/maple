@@ -13,6 +13,7 @@ import {
 	type ProductEventsFunnelWidgetParams,
 	type ProductEventsPathsWidgetParams,
 } from "@maple/query-model"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
@@ -28,13 +29,17 @@ export type Search = typeof ProductAnalyticsSearch.Type
 export const TABS = ["events", "funnels", "paths"] as const
 export type Tab = (typeof TABS)[number]
 
-export const tabOf = (search: Search): Tab => TABS.find((tab) => tab === search.tab) ?? "events"
+export const tabOf = (search: Search): Tab =>
+	Option.getOrElse(
+		Arr.findFirst(TABS, (tab) => tab === search.tab),
+		(): Tab => "events",
+	)
 
 /** The session filters every read on the page takes, unset ones left out. */
 export const populationOf = (search: Search): FunnelPopulationFilters =>
-	Object.fromEntries(
-		FUNNEL_POPULATION_FILTER_FIELDS.flatMap((field) =>
-			search[field] === undefined ? [] : [[field, search[field]]],
+	Rec.fromEntries(
+		Arr.flatMap(FUNNEL_POPULATION_FILTER_FIELDS, (field) =>
+			search[field] === undefined ? [] : [[field, search[field]] as const],
 		),
 	)
 
@@ -58,7 +63,7 @@ export const funnelOf = (search: Search): FunnelDefinition => ({
 /** The funnel's widget params, or `null` until a step has something to match on. */
 export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
 	const funnel = funnelOf(search)
-	const steps = completedSteps(funnel.steps).map(trimmed)
+	const steps = Arr.map(completedSteps(funnel.steps), trimmed)
 	if (steps.length === 0) return null
 	return {
 		...populationOf(search),
@@ -88,7 +93,7 @@ export const pathsOf = (search: Search): PathsDefinition => ({
 
 /** The event or page an anchor names, trimmed; `""` while it names nothing. */
 export const anchorNameOf = (anchor: PathsAnchor): string =>
-	(anchor.kind === "event" ? anchor.eventName : anchor.pagePath).trim()
+	Str.trim(anchor.kind === "event" ? anchor.eventName : anchor.pagePath)
 
 /** The paths widget params, or `null` until the anchor names an event or a page. */
 export const pathsParamsOf = (search: Search): ProductEventsPathsWidgetParams | null => {
@@ -107,11 +112,11 @@ export const pathsParamsOf = (search: Search): ProductEventsPathsWidgetParams | 
 const trimmed = <S extends FunnelStep>(step: S): S => {
 	switch (step.kind) {
 		case "event":
-			return { ...step, eventName: step.eventName.trim() }
+			return { ...step, eventName: Str.trim(step.eventName) }
 		case "page":
-			return { ...step, pagePath: step.pagePath.trim() }
+			return { ...step, pagePath: Str.trim(step.pagePath) }
 		case "session":
-			return { ...step, value: step.value.trim() }
+			return { ...step, value: Str.trim(step.value) }
 	}
 }
 

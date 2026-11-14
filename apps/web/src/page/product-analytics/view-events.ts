@@ -1,5 +1,5 @@
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
-import { Option } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -28,7 +28,7 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { Message } from "./message"
 import { type EventKindFilter, type EventRow, isCustomEvent, type Model } from "./model"
 import { EVENTS_LIMIT } from "./requests"
-import { emptyPanel } from "./view-parts"
+import { emptyPanel, mostPeopleFirst } from "./view-parts"
 
 // The Events tab: every event name in the window, and the way into a funnel or paths from one.
 
@@ -48,7 +48,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: EventKindFilter; label: string }> = [
 	{ value: "screen", label: "Screens" },
 ]
 
-const sum = (rows: ReadonlyArray<EventRow>): number => rows.reduce((total, row) => total + row.count, 0)
+const sum = (rows: ReadonlyArray<EventRow>): number => Arr.reduce(rows, 0, (total, row) => total + row.count)
 
 /** `+12% vs previous period`, or nothing when the previous window is empty or still loading. */
 const deltaOf = (model: Model, current: number): string | undefined => {
@@ -60,24 +60,26 @@ const deltaOf = (model: Model, current: number): string | undefined => {
 }
 
 const kindSummary = (rows: ReadonlyArray<EventRow>): string => {
-	const pages = rows.filter((row) => row.kind === "navigation").length
-	const screens = rows.filter((row) => row.kind === "screen").length
+	const pages = Arr.filter(rows, (row) => row.kind === "navigation").length
+	const screens = Arr.filter(rows, (row) => row.kind === "screen").length
 	const custom = rows.length - pages - screens
-	return [
-		`${custom} custom`,
-		...(pages > 0 ? [`${pages} ${pluralize(pages, "page view")}`] : []),
-		...(screens > 0 ? [`${screens} ${pluralize(screens, "screen")}`] : []),
-	].join(" · ")
+	return Arr.join(
+		[
+			`${custom} custom`,
+			...(pages > 0 ? [`${pages} ${pluralize(pages, "page view")}`] : []),
+			...(screens > 0 ? [`${screens} ${pluralize(screens, "screen")}`] : []),
+		],
+		" · ",
+	)
 }
 
 const stats = (h: H, model: Model, rows: ReadonlyArray<EventRow>, isCapped: boolean): Html => {
 	const total = sum(rows)
-	const top = rows
-		.filter(isCustomEvent)
-		.reduce<EventRow | undefined>(
-			(best, row) => (best === undefined || row.persons > best.persons ? row : best),
-			undefined,
-		)
+	const top = Arr.reduce<EventRow, EventRow | undefined>(
+		Arr.filter(rows, isCustomEvent),
+		undefined,
+		(best, row) => (best === undefined || row.persons > best.persons ? row : best),
+	)
 	return statRail(h, { columns: 3 }, [
 		statRailItem(h, {
 			eyebrow: "Events",
@@ -104,18 +106,26 @@ const stats = (h: H, model: Model, rows: ReadonlyArray<EventRow>, isCapped: bool
 	])
 }
 
+/** Most people first, then most events. */
+const mostReachedFirst = Order.combine(
+	mostPeopleFirst,
+	Order.flip(Order.mapInput(Order.Number, (row: EventRow) => row.count)),
+)
+
 const visibleRows = (model: Model, rows: ReadonlyArray<EventRow>): ReadonlyArray<EventRow> => {
-	const query = model.eventsQuery.trim().toLowerCase()
-	return rows
-		.filter((row) =>
-			model.eventsKind === "all"
-				? true
-				: model.eventsKind === "custom"
-					? isCustomEvent(row)
-					: row.kind === model.eventsKind,
-		)
-		.filter((row) => query === "" || row.eventName.toLowerCase().includes(query))
-		.toSorted((a, b) => b.persons - a.persons || b.count - a.count)
+	const query = Str.toLowerCase(Str.trim(model.eventsQuery))
+	const ofKind = Arr.filter(rows, (row) =>
+		model.eventsKind === "all"
+			? true
+			: model.eventsKind === "custom"
+				? isCustomEvent(row)
+				: row.kind === model.eventsKind,
+	)
+	const matching = Arr.filter(
+		ofKind,
+		(row) => query === "" || Str.includes(query)(Str.toLowerCase(row.eventName)),
+	)
+	return Arr.sort(matching, mostReachedFirst)
 }
 
 const rowActions = (h: H, row: EventRow): Html =>
@@ -152,7 +162,7 @@ const rowActions = (h: H, row: EventRow): Html =>
 
 const eventsTable = (h: H, model: Model, rows: ReadonlyArray<EventRow>): Html => {
 	const shown = visibleRows(model, rows)
-	const maxPersons = Math.max(1, ...rows.map((row) => row.persons))
+	const maxPersons = Math.max(1, ...Arr.map(rows, (row) => row.persons))
 	if (shown.length === 0)
 		return filteredEmpty(h, { noun: "events", onClear: Message.ClickedClearEventsFilters() })
 	return table(h, { variant: "bare", size: "sm", ariaLabel: "Product events" }, [
@@ -168,7 +178,7 @@ const eventsTable = (h: H, model: Model, rows: ReadonlyArray<EventRow>): Html =>
 		]),
 		tableBody(
 			h,
-			shown.map((row) => {
+			Arr.map(shown, (row) => {
 				const kind = kindOf(row)
 				return tableRow(
 					h,

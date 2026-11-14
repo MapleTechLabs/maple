@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
@@ -94,19 +94,18 @@ export const requestSlots = (
 	mode: Keyed.RequestMode,
 	only?: ReadonlyArray<SlotName>,
 ): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } =>
-	plan(model, window)
-		.filter((request) => only === undefined || only.includes(request.slot))
-		.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
-			(state, request) => {
-				const key = requestKey(context.orgId, request.fn, { data: request.input })
-				const current: Keyed.Keyed<unknown, unknown> = state.model[request.slot]
-				return Option.match(Keyed.request(current, key, mode), {
-					onNone: () => state,
-					onSome: (slot) => ({
-						model: { ...state.model, [request.slot]: slot },
-						commands: [...state.commands, request.command(key)],
-					}),
-				})
-			},
-			{ model, commands: [] },
-		)
+	Arr.reduce<Request, { model: Model; commands: ReadonlyArray<Cmd> }>(
+		Arr.filter(plan(model, window), (request) => only === undefined || only.includes(request.slot)),
+		{ model, commands: [] },
+		(state, request) => {
+			const key = requestKey(context.orgId, request.fn, { data: request.input })
+			const current: Keyed.Keyed<unknown, unknown> = state.model[request.slot]
+			return Option.match(Keyed.request(current, key, mode), {
+				onNone: () => state,
+				onSome: (slot) => ({
+					model: { ...state.model, [request.slot]: slot },
+					commands: [...state.commands, request.command(key)],
+				}),
+			})
+		},
+	)

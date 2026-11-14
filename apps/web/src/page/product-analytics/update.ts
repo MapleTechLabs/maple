@@ -1,5 +1,5 @@
 import { FUNNEL_MAX_STEPS, FUNNEL_POPULATION_FILTER_FIELDS } from "@maple/query-model"
-import { Option, Result, Schema, Struct } from "effect"
+import { Array as Arr, Option, Result, Schema, Struct } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
@@ -45,7 +45,7 @@ const decodeFailure: LoadFailure = toLoadFailure("Couldn't read the response")
 
 /** Folds an answer into every slot that asked under its key, decoded with that slot's schema. */
 const settleSlots = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model =>
-	SlotName.literals.reduce<Model>((next, name) => {
+	Arr.reduce(SlotName.literals, model, (next, name) => {
 		if (next[name].key !== key) return next
 		const decoded = Result.match(result, {
 			onFailure: (failure) => Result.fail(failure),
@@ -57,7 +57,7 @@ const settleSlots = (model: Model, key: string, result: Result.Result<unknown, L
 		})
 		const slot: Keyed.Keyed<unknown, LoadFailure> = next[name]
 		return { ...next, [name]: Keyed.accept(slot, key, decoded) }
-	}, model)
+	})
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -107,7 +107,7 @@ const draftsOf = (search: Search): Pick<Model, "steps" | "anchor" | "committed">
 
 /** The search with the drafts written in, so a tab or filter change carries what is being typed. */
 export const withDrafts = (model: Model): Search => {
-	const steps = model.steps.map(toFunnelStep)
+	const steps = Arr.map(model.steps, toFunnelStep)
 	const anchor = toAnchor(model.anchor)
 	return {
 		...model.search,

@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
@@ -33,7 +33,7 @@ const tabs = (h: H, model: Model): Html => {
 	return linkTabStrip(
 		h,
 		"Product analytics views",
-		TABS.map((tab) => ({
+		Arr.map(TABS, (tab) => ({
 			key: tab,
 			href: hrefOf(
 				AppRoute.ProductAnalytics({

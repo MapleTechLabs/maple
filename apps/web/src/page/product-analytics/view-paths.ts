@@ -6,7 +6,7 @@ import {
 	type PathsDirection,
 } from "@maple/query-model"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { Array as Arr, Option } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as PathsChart from "@maple/views/charts/paths-chart"
@@ -53,7 +53,7 @@ const DEPTHS = Array.from({ length: PATHS_MAX_DEPTH }, (_, index) => ({
 	value: String(index + 1),
 	label: String(index + 1),
 }))
-const BRANCHES = [3, 4, 6, PATHS_MAX_BRANCHES].map((value) => ({
+const BRANCHES = Arr.map([3, 4, 6, PATHS_MAX_BRANCHES], (value) => ({
 	value: String(value),
 	label: String(value),
 }))
@@ -121,7 +121,7 @@ const nodeLabel = (name: string): string => (name === PATHS_OTHER ? "Other" : na
  * so a known event name is an event and anything else starting with `/` is a page.
  */
 const anchorOf = (name: string, eventNames: ReadonlySet<string>): PathsAnchor =>
-	!eventNames.has(name) && name.startsWith("/")
+	!eventNames.has(name) && Str.startsWith("/")(name)
 		? { kind: "page", pagePath: name }
 		: { kind: "event", eventName: name }
 
@@ -129,27 +129,34 @@ type Tally = Readonly<{ name: string; count: number }>
 
 const tally = (rows: ReadonlyArray<PathsRow>, pick: (row: PathsRow) => string): ReadonlyArray<Tally> => {
 	const counts = new Map<string, number>()
-	rows.forEach((row) => counts.set(pick(row), (counts.get(pick(row)) ?? 0) + row.count))
-	return [...counts].map(([name, count]) => ({ name, count })).toSorted((a, b) => b.count - a.count)
+	Arr.forEach(rows, (row) => counts.set(pick(row), (counts.get(pick(row)) ?? 0) + row.count))
+	return Arr.sort(
+		Arr.map([...counts], ([name, count]) => ({ name, count })),
+		Order.flip(Order.mapInput(Order.Number, (entry: Tally) => entry.count)),
+	)
 }
 
 /** The first hop's nodes: what people did right after (or before) the anchor. */
 const nextSteps = (rows: ReadonlyArray<PathsRow>): ReadonlyArray<Tally> =>
 	tally(
-		rows.filter((row) => row.hop === 1 && row.toNode !== ""),
+		Arr.filter(rows, (row) => row.hop === 1 && row.toNode !== ""),
 		(row) => row.toNode,
 	)
 
 /** Where a sequence stopped: the node a hop into `''` left from. At most depth × (branches + 1) rows. */
 const endings = (rows: ReadonlyArray<PathsRow>): ReadonlyArray<Tally> =>
 	tally(
-		rows.filter((row) => row.toNode === ""),
+		Arr.filter(rows, (row) => row.toNode === ""),
 		(row) => row.fromNode,
 	)
 
 /** Everyone who reached the anchor: each of them has exactly one first hop. */
 const anchorTotal = (rows: ReadonlyArray<PathsRow>): number =>
-	rows.filter((row) => row.hop === 1).reduce((total, row) => total + row.count, 0)
+	Arr.reduce(
+		Arr.filter(rows, (row) => row.hop === 1),
+		0,
+		(total, row) => total + row.count,
+	)
 
 const tallyTable = (
 	h: H,
@@ -158,7 +165,10 @@ const tallyTable = (
 ): Html => {
 	if (options.rows.length === 0) return emptyMessage(h, { className: "py-6" }, [options.empty])
 	const eventNames = new Set(
-		Option.getOrElse(AsyncData.getData(model.events.data), () => []).map((row) => row.eventName),
+		Arr.map(
+			Option.getOrElse(AsyncData.getData(model.events.data), () => []),
+			(row) => row.eventName,
+		),
 	)
 	return table(h, { variant: "bare", size: "sm", ariaLabel: options.label }, [
 		tableHeader(h, [
