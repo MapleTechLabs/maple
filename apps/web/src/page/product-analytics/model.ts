@@ -77,6 +77,8 @@ export const Model = Schema.Struct({
 	paths: KeyedSchema(Schema.Array(PathsRow), LoadFailure),
 	/** The funnel steps as edited; the URL catches up on a pick, or once typing pauses. */
 	steps: Schema.Array(StepDraft),
+	/** Each event step shows its property filter line; a funnel that has a filter always does. */
+	showsStepFilters: Schema.Boolean,
 	anchor: StepDraft,
 	/** The steps and anchor this page last wrote to the URL, so its own navigation keeps the draft. */
 	committed: Schema.String,

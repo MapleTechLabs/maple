@@ -391,6 +391,56 @@ describe("product analytics", () => {
 		)
 	})
 
+	test("a step's property filter reaches the URL once it parses, and Enter does not wait", () => {
+		const shown = pageUpdate(
+			resolved({ tab: "funnels", steps: SIGNUP }).model,
+			Message.ToggledStepFilters(),
+		)
+		expect(shown.outMessage).toBeUndefined()
+		const filter = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.ChangedStep({
+					scope: "funnel",
+					edit: StepEdit.ChangedText({ index: 1, field: "filterClause", value }),
+				}),
+			)
+		const typed = filter(shown.model, 'method = "google"')
+		expect(typed.outMessage).toBeUndefined()
+		const entered = pageUpdate(typed.model, Message.SubmittedStepFilter())
+		expect(searchOf(entered.outMessage).steps).toEqual([
+			{ kind: "event", eventName: "signup_started" },
+			{ kind: "event", eventName: "signup_completed", attributeEquals: { method: "google" } },
+		])
+		// Half a clause does not parse: the step keeps running with the filter that did.
+		const landed = routeChanged(entered.model, { search: searchOf(entered.outMessage) }, context).model
+		const halfway = pageUpdate(
+			filter(landed, 'method = "google" AND plan').model,
+			Message.SubmittedStepFilter(),
+		)
+		expect(searchOf(halfway.outMessage).steps?.[1]).toEqual({
+			kind: "event",
+			eventName: "signup_completed",
+			attributeEquals: { method: "google" },
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(halfway.model),
+			expectView(text('"plan" is not a key = "value" clause')).toExist(),
+		)
+	})
+
+	test("a shared funnel with a filtered step opens with its filter line, and the toggle clears it", () => {
+		const filtered: Search["steps"] = [
+			{ kind: "event", eventName: "signup_started" },
+			{ kind: "event", eventName: "signup_completed", attributeEquals: { method: "google" } },
+		]
+		const model = resolved({ tab: "funnels", steps: filtered }).model
+		expect(model.steps[1]).toMatchObject({ filterClause: 'method = "google"' })
+		const cleared = pageUpdate(model, Message.ToggledStepFilters())
+		expect(searchOf(cleared.outMessage).steps).toEqual(SIGNUP)
+	})
+
 	test("picking a breakdown writes it to the URL, and None clears it", () => {
 		const model = resolved({ tab: "funnels", steps: SIGNUP }).model
 		expect(searchOf(pickBreakdown(model, "attribute:plan").outMessage).breakdown).toBe("attribute:plan")

@@ -16,6 +16,7 @@ import {
 	type ProductEventsPathsWidgetParams,
 } from "@maple/query-model"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { compileFunnelStep } from "../dashboards/widget/funnel-filters"
 import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
@@ -141,12 +142,25 @@ const trimmed = <S extends FunnelStep>(step: S): S => {
 	}
 }
 
-/** A draft step as the URL keeps it: no typed attribute filter (this page offers none). */
-export const toFunnelStep = (draft: StepDraft): FunnelStep => {
+/**
+ * A draft step as the URL keeps it: the typed filter compiled to `attributeEquals`. A clause still
+ * being typed does not parse yet, so the step keeps the filter `running` has for the same event.
+ */
+export const toFunnelStep = (draft: StepDraft, running?: FunnelStep): FunnelStep => {
 	if (draft.kind !== "event") return draft
-	const { filterClause: _filterClause, ...step } = draft
-	return step
+	const compiled = compileFunnelStep(draft)
+	if (compiled.ok) return compiled.value
+	const step: FunnelStep = { kind: "event", eventName: draft.eventName }
+	return running?.kind === "event" &&
+		running.eventName === draft.eventName &&
+		running.attributeEquals !== undefined
+		? { ...step, attributeEquals: running.attributeEquals }
+		: step
 }
+
+/** Whether any step narrows its event by a property. */
+export const hasStepFilter = (steps: ReadonlyArray<StepDraft>): boolean =>
+	Arr.some(steps, (step) => step.kind === "event" && (step.filterClause ?? "") !== "")
 
 /** The paths anchor of a draft; a session step has no place in a sequence. */
 export const toAnchor = (draft: StepDraft): PathsAnchor => {

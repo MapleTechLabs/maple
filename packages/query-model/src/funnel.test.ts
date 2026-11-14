@@ -5,6 +5,7 @@ import {
 	FUNNEL_EMPTY_GROUP_LABEL,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
+	funnelStepLabel,
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
 	funnelWidgetRowsWithDetails,
@@ -61,6 +62,31 @@ describe("funnelWidgetBreakdownRows", () => {
 			),
 		).toEqual([80, 10, 0])
 		expect(rows[0]).toEqual({ name: "/pricing", value: 80, group: "news.ycombinator.com" })
+	})
+})
+
+describe("funnelStepLabel", () => {
+	it("names an event step's filter, a page's host and a session step's dimension", () => {
+		expect(
+			Arr.map(
+				[
+					{ kind: "event", eventName: "plan_started" },
+					{
+						kind: "event",
+						eventName: "plan_started",
+						attributeEquals: { plan: "startup", seats: "5" },
+					},
+					{ kind: "page", pagePath: "/pricing", host: "acme.dev" },
+					{ kind: "session", dimension: "utmSource", value: "twitter" },
+				] satisfies ReadonlyArray<FunnelStep>,
+				funnelStepLabel,
+			),
+		).toEqual([
+			"plan_started",
+			"plan_started (plan = startup, seats = 5)",
+			"acme.dev/pricing",
+			"UTM source: twitter",
+		])
 	})
 })
 

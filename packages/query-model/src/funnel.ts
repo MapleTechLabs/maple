@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 // A product-event funnel definition, as every surface that stores one keeps
 // it: the /analytics URL, a dashboard funnel widget, an MCP tool call, and the
@@ -72,8 +72,14 @@ export const FUNNEL_SESSION_DIMENSION_LABEL = {
  */
 export const funnelStepLabel = (step: FunnelStep): string => {
 	switch (step.kind) {
-		case "event":
-			return step.eventName
+		case "event": {
+			// A filtered step names its filter, so two steps on one event read apart.
+			const filter = Arr.join(
+				Arr.map(Rec.toEntries(step.attributeEquals ?? {}), ([key, value]) => `${key} = ${value}`),
+				", ",
+			)
+			return filter === "" ? step.eventName : `${step.eventName} (${filter})`
+		}
 		case "page":
 			return step.host ? `${step.host}${step.pagePath}` : step.pagePath
 		case "session":

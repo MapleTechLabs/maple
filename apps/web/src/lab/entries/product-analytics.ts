@@ -28,6 +28,7 @@ const Scenario = Schema.Literals([
 	"funnels",
 	"funnels-bars",
 	"funnels-breakdown",
+	"funnels-filter",
 	"funnels-new",
 	"funnels-error",
 	"paths",
@@ -212,6 +213,18 @@ const searchOf = (scenario: Scenario): Search => {
 			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS }
 		case "funnels-bars":
 			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, view: "bars" }
+		case "funnels-filter":
+			return {
+				tab: "funnels",
+				within: WITHIN_SECONDS,
+				steps: Arr.map(SIGNUP_TO_PAID ?? [], (step) =>
+					step.kind === "event" && step.eventName === "signup_completed"
+						? { ...step, attributeEquals: { method: "google" } }
+						: step.kind === "event" && step.eventName === "plan_started"
+							? { ...step, attributeEquals: { plan: "startup" } }
+							: step,
+				),
+			}
 		case "funnels-breakdown":
 			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, breakdown: "utmSource" }
 		case "funnels-new":

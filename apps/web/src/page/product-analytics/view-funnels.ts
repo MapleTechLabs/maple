@@ -16,6 +16,7 @@ import { fmtSpan } from "@maple/views/charts/funnel-dropoff-steps"
 import { button } from "@maple/views/ui/button"
 import { delta } from "@maple/views/ui/delta"
 import { errorState } from "@maple/views/ui/error-state"
+import { filterChip } from "@maple/views/ui/filter-chip"
 import { meter } from "@maple/views/ui/meter"
 import { panel, panelChartBody, panelHeader } from "@maple/views/ui/panel"
 import * as Select from "@maple/views/ui/select"
@@ -37,9 +38,10 @@ import {
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
 } from "../dashboards/kit/funnel-definition"
-import { stepBuilder } from "../kit/funnel-steps"
+import { parseFunnelStepFilter } from "../dashboards/widget/funnel-filters"
+import { type StepDraft, StepEdit, stepBuilder, stepFilterLine } from "../kit/funnel-steps"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { funnelOf, funnelParamsOf } from "./definition"
+import { funnelOf, funnelParamsOf, hasStepFilter } from "./definition"
 import { Message } from "./message"
 import { type FunnelGroupRow, type FunnelRow, isCustomEvent, type Model } from "./model"
 import { BREAKDOWN_SELECT_ID } from "./update"
@@ -141,14 +143,38 @@ const breakdownSelect = (h: H, model: Model, current: FunnelBreakdownBy | undefi
 	])
 }
 
+/** An event step's property filter: `plan = "pro"`, run on Enter or once typing pauses. */
+const filterLine = (h: H, step: StepDraft & { kind: "event" }, index: number): Html => {
+	const clause = step.filterClause ?? ""
+	const parsed = parseFunnelStepFilter(clause)
+	return stepFilterLine(h, {
+		id: `product-analytics-step-filter-${index}`,
+		index,
+		value: clause,
+		error: parsed.ok ? undefined : parsed.error,
+		onInput: (value) =>
+			Message.ChangedStep({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index, field: "filterClause", value }),
+			}),
+		submit: { onEnter: Message.SubmittedStepFilter() },
+	})
+}
+
 const editor = (h: H, model: Model): Html => {
 	const funnel = funnelOf(model.search)
+	const showsFilters = model.showsStepFilters || hasStepFilter(model.steps)
 	return panel(h, { className: "shrink-0" }, [
 		panelHeader(h, {
 			title: "Steps",
 			scope: typography(h, { size: "2xs", tone: "muted" }, [
 				"in order, each within the window of step 1",
 			]),
+			action: filterChip(
+				h,
+				{ size: "xs", isPressed: showsFilters, onClick: Message.ToggledStepFilters() },
+				["Filter by property"],
+			),
 		}),
 		vstack(h, { className: "p-3" }, [
 			stepBuilder(h, {
@@ -163,6 +189,7 @@ const editor = (h: H, model: Model): Html => {
 				onCombo: (id, message) => Message.GotStepComboMessage({ id, message }),
 				onSelect: (id, message) => Message.GotSelectMessage({ id, message }),
 				onEdit: (edit) => Message.ChangedStep({ scope: "funnel", edit }),
+				eventStepExtra: showsFilters ? (step, index) => filterLine(h, step, index) : undefined,
 			}),
 		]),
 		controlsBar(h, [

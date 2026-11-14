@@ -67,6 +67,10 @@ export const Message = defineMessageUnion({
 	ChangedStep: { scope: StepScope, edit: StepEdit },
 	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
+	/** The Steps panel's "Filter by property": shows a filter line per event step, or clears them all. */
+	ToggledStepFilters: {},
+	/** Enter in a step's filter: run it now instead of waiting out the typing pause. */
+	SubmittedStepFilter: {},
 	/** A typed step value held still long enough to run. */
 	PausedTyping: { version: Schema.Number },
 	PickedKeyBy: { keyBy: FunnelKeyBy },

@@ -23,7 +23,8 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CompleteReloadSpin, ResolveWindow, WaitForTypingPause } from "./command"
-import { anchorNameOf, pathsOf, type Search, toAnchor, toFunnelStep } from "./definition"
+import { draftFromFunnelStep } from "../dashboards/widget/funnel-filters"
+import { anchorNameOf, hasStepFilter, pathsOf, type Search, toAnchor, toFunnelStep } from "./definition"
 import { FilterKey, Message, type RequestMode, SlotName } from "./message"
 import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PathsRow } from "./model"
 import { requestSlots } from "./requests"
@@ -103,14 +104,14 @@ const committedOf = (search: Search): string =>
 	encodeJson({ steps: search.steps ?? [], anchor: search.anchor ?? null })
 
 const draftsOf = (search: Search): Pick<Model, "steps" | "anchor" | "committed"> => ({
-	steps: search.steps ?? [],
+	steps: Arr.map(search.steps ?? [], draftFromFunnelStep),
 	anchor: pathsOf(search).anchor,
 	committed: committedOf(search),
 })
 
 /** The search with the drafts written in, so a tab or filter change carries what is being typed. */
 export const withDrafts = (model: Model): Search => {
-	const steps = Arr.map(model.steps, toFunnelStep)
+	const steps = Arr.map(model.steps, (draft, index) => toFunnelStep(draft, model.search.steps?.[index]))
 	const anchor = toAnchor(model.anchor)
 	return {
 		...model.search,
@@ -182,6 +183,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		attributeKeys: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
+		showsStepFilters: false,
 		typingVersion: 0,
 		navigatedTo: null,
 		stepCombos: {},
@@ -322,6 +324,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const step = edited(lifted.model, target.value.scope, target.value.edit, false)
 			return { ...step, commands: [...(lifted.commands ?? []), ...(step.commands ?? [])] }
 		},
+		ToggledStepFilters: () => {
+			if (!model.showsStepFilters && !hasStepFilter(model.steps))
+				return { model: { ...model, showsStepFilters: true } }
+			// Turning it off clears the filters, so nothing keeps narrowing a step out of sight.
+			return commit({
+				...model,
+				showsStepFilters: false,
+				steps: Arr.map(model.steps, (step) =>
+					step.kind === "event" ? { kind: "event", eventName: step.eventName } : step,
+				),
+			})
+		},
+		SubmittedStepFilter: () => commit(model),
 		PausedTyping: ({ version }) => (version === model.typingVersion ? commit(model) : { model }),
 		PickedKeyBy: ({ keyBy }) => navigate(model, { ...withDrafts(model), keyBy }, true),
 		PickedWindow: ({ seconds }) => navigate(model, { ...withDrafts(model), within: seconds }, true),
