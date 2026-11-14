@@ -2,7 +2,7 @@
 // entered page has nothing to show, for at most `PAGE_HOLD_MS`, so a page whose reads land in time
 // appears whole. One still loading after that shows its skeletons at once: it already waited.
 
-import { Schema } from "effect"
+import { Schema, Array as Arr } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
 import { isBareSlot, isFirstLoading, isLoading, PageSlot } from "./registry"
 
@@ -23,26 +23,36 @@ const NONE = Model.None()
 const canStandIn = (left: PageSlot, entered: PageSlot) =>
 	left.orgId === entered.orgId && !isBareSlot(left) && !isBareSlot(entered) && !isFirstLoading(left)
 
-/** The hold after a page write from `previous` to `next`. */
-export const written = (hold: Model, previous: PageSlot | null, next: PageSlot | null): Model => {
+/** `next` is a parked page coming back (`parkPages`): it shows its last data, so it never waits. */
+export const isRevived = (parked: ReadonlyArray<PageSlot>, next: PageSlot | null): boolean =>
+	next !== null &&
+	Arr.some(parked, (slot) => slot._tag === next._tag && slot.key === next.key && slot.orgId === next.orgId)
+
+/** The hold after a page write from `previous` to `next`; `revived`: `next` came back from the parked pages. */
+export const written = (
+	hold: Model,
+	previous: PageSlot | null,
+	next: PageSlot | null,
+	revived: boolean,
+): Model => {
 	if (next === null) return NONE
 	if (previous !== null && previous.instance !== next.instance) {
 		// A second navigation during a hold keeps the page that is on screen.
 		const leaving = hold._tag === "Holding" ? hold.leaving : previous
 		// A literal, not `Model.Holding`: the constructor copies the slot, and the page cache keys on it.
-		return canStandIn(leaving, next) && isFirstLoading(next)
+		return !revived && canStandIn(leaving, next) && isLoading(next)
 			? { _tag: "Holding", leaving, instance: next.instance }
 			: NONE
 	}
-	if (hold._tag === "None" || hold.instance !== next.instance) return NONE
-	// `Waited` lasts while any read loads: dropping the 0ms delay would hide the skeletons still up.
-	return (hold._tag === "Holding" ? isFirstLoading(next) : isLoading(next)) ? hold : NONE
+	// Both last while any read loads: a side read landing first (presence, incidents) is not the page,
+	// and dropping `Waited`'s 0ms delay would hide the skeletons still up.
+	return hold._tag !== "None" && hold.instance === next.instance && isLoading(next) ? hold : NONE
 }
 
 /** `PAGE_HOLD_MS` ran out for `instance`: its page shows, with skeletons at once while it loads. */
 export const elapsed = (hold: Model, instance: number, page: PageSlot | null): Model =>
 	hold._tag === "Holding" && hold.instance === instance
-		? page !== null && page.instance === instance && isFirstLoading(page)
+		? page !== null && page.instance === instance && isLoading(page)
 			? Model.Waited({ instance })
 			: NONE
 		: hold
