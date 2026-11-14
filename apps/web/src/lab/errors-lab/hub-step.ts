@@ -1,6 +1,7 @@
 import { buildErrorsLabFixture } from "../errors-fixture"
-import type { ErrorSignal } from "../../lib/models/error-signal"
+import type { ErrorSignal } from "../../page/errors/kit/error-signal"
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Command } from "foldkit"
 import { fromString as urlFromString } from "foldkit/url"
@@ -11,7 +12,7 @@ import type { Model as HubModel } from "../../page/errors/hub/model"
 import * as HubUpdate from "../../page/errors/hub/update"
 import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
-import type { LabState } from "./model"
+import type { LabRole, LabState } from "./model"
 
 /** The hub runs against a fixture org; its window stays unresolved, so it never fetches the list. */
 export const LAB_CONTEXT: PageContext = {
@@ -20,9 +21,13 @@ export const LAB_CONTEXT: PageContext = {
 	timeZone: "UTC",
 }
 
-export const initHub = (nowMs: number): HubModel => ({
+/** The session's grants for the lab's role, as the page's own read would answer. */
+export const grantsOf = (role: LabRole): ReadonlyArray<Policy.Permission> => Policy.grantsOf([`org:${role}`])
+
+export const initHub = (nowMs: number, role: LabRole): HubModel => ({
 	...HubUpdate.init({ search: {} }, LAB_CONTEXT).model,
 	nowMs,
+	grants: grantsOf(role),
 })
 
 /** The fixture through the lab state, then the view, severity and search filters, sorted. */

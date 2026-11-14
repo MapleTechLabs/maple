@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { IngestRuleId, RoleName } from "../primitives"
+import { IngestRuleId, RoleName } from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class IngestRulePersistenceError extends HttpTaggedError<IngestRulePersistenceError>()(

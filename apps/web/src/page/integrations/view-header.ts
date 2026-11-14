@@ -4,8 +4,9 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { catalogEntry, type IntegrationId } from "./catalog"
-import { cardStatusOf, HEALTH_TONE, overviewOf } from "./derive"
+import type { CatalogEntry } from "./catalog"
+import { cardStatusOf, HEALTH_TONE, lastSyncText, overviewOf } from "./derive"
+import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { entryPlate } from "./view-entry"
@@ -13,39 +14,40 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationHeader`.
-
 type H = HtmlBuilder<Message>
 
 export type HeaderSlots = Readonly<{
-	/** `GcpHeaderStatus`, replacing the status line while Google Cloud is connected. */
+	/** Google Cloud's status line, replacing the default one while it is connected. */
 	statusLine?: Html
-	/** Controls before the Connect button (`CloudflareHeaderActions`). */
+	/** Controls before the Connect button (Cloudflare's). */
 	actions?: ReadonlyArray<Html>
-	/** `useIntegrationConnect()`'s header button, shown while the integration is available. */
+	/** The Connect button, shown while the integration is available. */
 	connect?: Html
 }>
 
 export const integrationHeader = (
 	h: H,
 	model: Model,
-	integration: IntegrationId,
+	entry: CatalogEntry,
 	slots: HeaderSlots,
+	timeZone: string,
 ): Html => {
-	const entry = catalogEntry(integration)
-	const status = cardStatusOf(model.statuses, integration, model.nowMs)
-	const overview = overviewOf(model.statuses, model.nowMs, integration)
+	const status = cardStatusOf(model.statuses, entry.id, model.nowMs)
+	const overview = overviewOf(model.statuses, model.nowMs, entry.id)
 	const connected = overview?.kind === "connected" ? overview : null
-	const statusLine =
+	const statusParts =
 		connected === null
-			? null
-			: Arr.join(
-					Arr.filter(
-						[connected.stateLabel, connected.context, connected.lastSyncLabel],
-						(part): part is string => part !== null && part !== "",
-					),
-					" · ",
+			? []
+			: Arr.filter(
+					[connected.stateLabel, connected.context],
+					(part): part is string => part !== null && part !== "",
 				)
+	const lastSync = connected?.lastSync ?? null
+	// The plain reading for the truncation title; the line itself carries a timestamp.
+	const statusLine = Arr.join(
+		lastSync === null ? statusParts : [...statusParts, lastSyncText(lastSync, model.nowMs)],
+		" · ",
+	)
 	return hstack(h, { wrap: true, className: "gap-x-3 gap-y-2" }, [
 		iconButton(
 			h,
@@ -65,7 +67,7 @@ export const integrationHeader = (
 			]),
 			...(connected !== null && slots.statusLine !== undefined
 				? [slots.statusLine]
-				: connected !== null && statusLine !== null && statusLine !== ""
+				: connected !== null && statusLine !== ""
 					? [
 							hstack(h, { gap: "1.5" }, [
 								statusDot(h, { tone: HEALTH_TONE[connected.health] }),
@@ -77,14 +79,33 @@ export const integrationHeader = (
 										truncate: true,
 										attributes: [h.Title(statusLine)],
 									},
-									[statusLine],
+									[
+										Arr.join(statusParts, " · "),
+										...(lastSync === null
+											? []
+											: [
+													statusParts.length === 0 ? "" : " · ",
+													relativeTime(h, {
+														value: lastSync.at,
+														nowMs: model.nowMs,
+														timeZone,
+														prefix: lastSync.verb,
+													}),
+												]),
+									],
 								),
 							]),
 						]
 					: []),
 		]),
-		h.div(
-			[h.Class("ml-auto flex shrink-0 basis-full items-center justify-end gap-3 sm:basis-auto")],
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				justify: "end",
+				className: "ml-auto shrink-0 basis-full sm:basis-auto",
+			},
 			[
 				...(entry.docsUrl !== undefined
 					? [

@@ -1,5 +1,6 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import type { PushSourcePlatform } from "@maple/domain/primitives"
+import * as Policy from "@maple/domain/policy"
+import type { PushSourcePlatform } from "@maple/primitives"
 import { Option, Result, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -11,13 +12,29 @@ import { sourceRetrieveKey, sourcesListKey } from "../kit/data"
 import { defaultSourceName } from "../kit/platforms"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { CreateSource, FetchCreatedSource, FetchSourcesList, ScrollToTop, WaitFirstDataPoll } from "./command"
-import { type DataIntegration, initEmbedded, isDataIntegration } from "../../integrations/embed"
-import type { Message as IntegrationMessage } from "../../integrations/message"
-import type { Model as IntegrationModel } from "../../integrations/model"
-import * as Integrations from "../../integrations/update"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
+import {
+	CreateSource,
+	FetchCreatedSource,
+	FetchSourcesList,
+	ReadNewSourceGrants,
+	ScrollToTop,
+	WaitFirstDataPoll,
+} from "./command"
+import {
+	type DataIntegration,
+	initEmbedded,
+	isDataIntegration,
+	type Message as IntegrationMessage,
+	type Model as IntegrationModel,
+	canContinue,
+	type FlowSpec,
+	flowOf,
+	nextStage,
+	previousStage,
+} from "../../integrations/embed"
+import * as Integrations from "../../integrations/embed"
 import { Message } from "./message"
-import { canContinue, type FlowSpec, flowOf, nextStage, previousStage } from "../../integrations/flow"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -44,7 +61,7 @@ const withForm = (model: Model, platform: PushSourcePlatform | null): Model => (
 	isSaving: false,
 })
 
-/** The form's list read; `refresh` when it mounts again in the same visit (the atom was dropped). */
+/** The form's list read; `refresh` when it mounts again in the same visit (the cached list was dropped). */
 const readList = (model: Model, context: PageContext, refresh: boolean): Return => {
 	const key = sourcesListKey(context.orgId)
 	const next = refresh
@@ -92,6 +109,8 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	const embedded = initEmbedded(integration, context)
 	const model = withForm(
 		{
+			// Read only on the page under Clerk; self-hosted sessions hold every permission.
+			grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 			platform: null,
 			name: "",
 			isAdvancedOpen: false,
@@ -114,6 +133,14 @@ export const init = (route: NewRoute, context: PageContext): Return => {
 	return platform === null && integration === null
 		? lifted
 		: merge(lifted, readList(lifted.model, context, false))
+}
+
+/** The page reads the session's grants: connecting needs `sources:manage`. */
+export const initPage = (route: NewRoute, context: PageContext): Return => {
+	const step = init(route, context)
+	return isClerkAuthEnabled
+		? { ...step, commands: [ReadNewSourceGrants(), ...(step.commands ?? [])] }
+		: step
 }
 
 const scrolledToTop = (step: Return): Return => ({
@@ -170,7 +197,7 @@ export const flowSpecOf = (model: Model): FlowSpec | null =>
 export const isIntegrationConnected = (model: Model): boolean =>
 	(flowSpecOf(model)?.connected ?? null) !== null
 
-/** `FirstDataStatus`'s `latest`: the polled source, else the one the create answered. */
+/** The polled source, else the one the create answered. */
 export const latestOf = (model: Model): V2Source | null =>
 	model.created === null
 		? null
@@ -219,7 +246,7 @@ const delegate = <Child, ChildMessage>(
 	wrap: (message: ChildMessage) => Message,
 ): Return => ({ model: set(step.model), commands: Command.mapMessages(step.commands ?? [], wrap) })
 
-/** Polls on while nothing has arrived, success or failure (`enabled: !receiving`). */
+/** Polls on while nothing has arrived, success or failure. */
 const pollUnlessReceiving = (step: Return): Return =>
 	step.model.created === null || isReceiving(step.model) || step.model.firstData.key === null
 		? step
@@ -244,6 +271,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 
 export const updateFlow = (model: Model, message: Message, context: PageContext): FlowReturn =>
 	Message.match<FlowReturn>(message, {
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedPushPlatform: ({ platform }) => ({
 			model,
 			outMessage: navigate(hrefOf(Routes.SourcesNew({ search: { platform } }))),

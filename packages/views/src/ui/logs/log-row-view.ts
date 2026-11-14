@@ -4,7 +4,7 @@ import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 import { countLabel } from "@maple/ui/lib/format"
 import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
 import { getSeverityColor } from "@maple/ui/lib/severity"
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { stripAnsi } from "@maple/ui/lib/strip-ansi"
 import { encodeLogKey } from "../../lib/log-key"
 import { tryParseJson } from "../../lib/display-text"
 import { SpanId, TraceId } from "@maple/domain"
@@ -52,7 +52,9 @@ export type PinnedCell = typeof PinnedCell.Type
 export const LogRowView = Schema.Struct({
 	timeMain: Schema.String,
 	timeFraction: Schema.String,
-	timeTitle: Schema.String,
+	/** The instant and the zone its text reads in, for the row's timestamp card. */
+	timeMs: Schema.Number,
+	timeZone: Schema.String,
 	severity: Schema.String,
 	severityColor: Schema.String,
 	serviceName: Schema.String,
@@ -78,7 +80,7 @@ const MAX_INLINE_CHIPS = 3
 const MAX_VALUE_CHARS = 24
 const SEVERITY_NUMBER_LABELS = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"] as const
 
-// packages/ui/src/components/logs/severity-badge.tsx `severityLabel` (a React module).
+/** The severity text, else the OTel severity number's name. */
 export const severityLabel = (severityText: string, severityNumber?: number): string => {
 	if (Str.trim(severityText) !== "") return severityText
 	if (severityNumber !== undefined && severityNumber >= 1 && severityNumber <= 24)
@@ -88,7 +90,7 @@ export const severityLabel = (severityText: string, severityNumber?: number): st
 
 const isJsonValue = (value: string): boolean => Option.isSome(tryParseJson(value))
 
-// packages/ui/src/components/logs/log-attribute-chip.tsx `shortKey` / `truncateValue`.
+// An attribute chip's short key and truncated value.
 const shortKey = (key: string): string => {
 	if (key === "http.status_code" || key === "http.response.status_code") return "status"
 	if (key === "http.method" || key === "http.request.method") return "method"
@@ -99,10 +101,10 @@ const shortKey = (key: string): string => {
 const truncateValue = (value: string): string =>
 	value.length <= MAX_VALUE_CHARS ? value : Str.slice(0, MAX_VALUE_CHARS - 1)(value) + "…"
 
-/** The compact and full timestamp formatters for the viewer's time zone. */
+/** The compact timestamp formatter for the viewer's time zone, and that zone. */
 export interface LogTimeFormat {
 	readonly compact: Intl.DateTimeFormat
-	readonly full: Intl.DateTimeFormat
+	readonly timeZone: string
 }
 
 export const logTimeFormat = (timeZone: string): LogTimeFormat => ({
@@ -114,22 +116,11 @@ export const logTimeFormat = (timeZone: string): LogTimeFormat => ({
 		fractionalSecondDigits: 3,
 		hour12: false,
 	}),
-	full: new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		year: "numeric",
-		month: "short",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		fractionalSecondDigits: 3,
-	}),
+	timeZone,
 })
 
-const formatWith = (formatter: Intl.DateTimeFormat, timestamp: string): string => {
-	const date = new Date(warehouseDateTimeToIso(timestamp))
-	return Number.isNaN(date.getTime()) ? EMPTY_VALUE : formatter.format(date)
-}
+const formatWith = (formatter: Intl.DateTimeFormat, epochMs: number): string =>
+	Number.isNaN(epochMs) ? EMPTY_VALUE : formatter.format(epochMs)
 
 /** Where a row links: the app's trace page, and its standalone log page if it has one. */
 export interface LogRowLinks {
@@ -148,8 +139,12 @@ export const toLogRowView = (
 	const body = stripAnsi(log.body)
 	const lines = Str.split("\n")(body)
 	const severity = Str.toUpperCase(severityLabel(log.severityText, log.severityNumber))
-	const compact = formatWith(time.compact, log.timestamp)
-	const dot = compact.lastIndexOf(".")
+	const timeMs = new Date(warehouseDateTimeToIso(log.timestamp)).getTime()
+	const compact = formatWith(time.compact, timeMs)
+	const clock = Option.match(Str.lastIndexOf(".")(compact), {
+		onNone: () => ({ main: compact, fraction: "" }),
+		onSome: (dot) => ({ main: Str.slice(0, dot)(compact), fraction: Str.slice(dot)(compact) }),
+	})
 	const chips = Arr.map(
 		Arr.filter(
 			pickImportantAttributes(log, Number.POSITIVE_INFINITY),
@@ -169,9 +164,10 @@ export const toLogRowView = (
 		},
 	)
 	return {
-		timeMain: dot === -1 ? compact : Str.slice(0, dot)(compact),
-		timeFraction: dot === -1 ? "" : Str.slice(dot)(compact),
-		timeTitle: formatWith(time.full, log.timestamp),
+		timeMain: clock.main,
+		timeFraction: clock.fraction,
+		timeMs,
+		timeZone: time.timeZone,
 		severity,
 		severityColor: getSeverityColor(severity),
 		serviceName: log.serviceName,

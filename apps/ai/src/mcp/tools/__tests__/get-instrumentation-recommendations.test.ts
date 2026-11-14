@@ -1,5 +1,5 @@
 // Pure-helper tests for the get_instrumentation_recommendations MCP tool.
-// Detection/reconcile logic is covered by packages/domain/src/recommendations.test.ts;
+// Detection/reconcile logic is covered by packages/backend/src/services/errors/recommendations.test.ts;
 // here we only guard the tool's severity mapping and coverage-gap derivation.
 
 import { describe, expect, it } from "vitest"
@@ -39,6 +39,6 @@ describe("deriveCoverageGaps", () => {
 			keys("service.version", "deployment.environment.name", "vcs.repository.url.full"),
 		)
 		expect(Arr.map(gaps, (gap) => gap.checkId)).toEqual(["RES-05"])
-		expect(gaps[0].attribute).toBe("vcs.ref.head.revision")
+		expect(Arr.getUnsafe(gaps, 0).attribute).toBe("vcs.ref.head.revision")
 	})
 })

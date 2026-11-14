@@ -1,8 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Issue priority: its labels, the bars icon and the clamp.
-
 export type PriorityLevel = 0 | 1 | 2 | 3 | 4
 
 export const PRIORITY_LABEL = {
@@ -27,7 +25,6 @@ const BARS = [
 	{ x: 17, h: 17 },
 ]
 
-/** Dots for none, the orange alert square for urgent, one to three bars below that. */
 export const priorityBarsIcon = <M>(h: HtmlBuilder<M>, level: PriorityLevel, size = 16): Html => {
 	const svg = (children: ReadonlyArray<Html>) =>
 		h.svg(

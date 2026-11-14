@@ -12,10 +12,11 @@
  * be a second set of bucketing, formula and comparison-window decisions to keep
  * in step, and they would drift.
  */
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import type { QuerySetExecutor } from "@maple/query-engine/query-set"
 import { Effect } from "effect"
 import type { QueryEngineServiceApi } from "@maple/backend/services/warehouse/QueryEngineService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { TenantContext } from "@maple/domain/http"
 
 export const makeServerQuerySetExecutor = (
 	tenant: TenantContext,
@@ -23,11 +24,14 @@ export const makeServerQuerySetExecutor = (
 ): QuerySetExecutor<unknown> => ({
 	execute: (request) =>
 		queryEngine
-			.execute(tenant, {
-				startTime: request.startTime,
-				endTime: request.endTime,
-				query: request.query,
-			})
+			.execute(
+				tenant,
+				new QueryEngineExecuteRequest({
+					startTime: request.startTime,
+					endTime: request.endTime,
+					query: request.query,
+				}),
+			)
 			.pipe(Effect.map((response) => response.result)),
 	// The failure's own message. `displayError` is a web concern — the runner
 	// only needs a string for the per-query card, and on this side the tagged

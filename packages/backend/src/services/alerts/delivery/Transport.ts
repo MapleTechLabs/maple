@@ -94,14 +94,15 @@ export interface HttpTransport<Config> {
 	readonly render: (input: RenderInput<Config>) => HttpRequestSpec
 	/**
 	 * PURE. Requests sent after `render`'s succeeds, in order; any non-2xx fails
-	 * the delivery like the primary would. Only `pagerduty` implements this, to
-	 * close the alert a rule's other severity opened. They must be idempotent: a
-	 * retry sends the primary and every follow-up again.
+	 * the delivery like the primary would. The paging providers (`pagerduty`,
+	 * `incident-io`) implement this, to close the alert a rule's other severity
+	 * opened. They must be idempotent: a retry sends the primary and every
+	 * follow-up again.
 	 */
 	readonly followUps?: (input: RenderInput<Config>) => ReadonlyArray<HttpRequestSpec>
 	/**
 	 * PURE. Give a non-2xx a better message than the generic one. Return null to
-	 * fall through to the runner's default. Only `google-chat` implements this.
+	 * fall through to the runner's default.
 	 */
 	readonly describeStatus?: (status: number) => string | null
 	/**

@@ -1,3 +1,4 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import type { DashboardDocument } from "@maple/domain/http"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -19,10 +20,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { isAlertable } from "./widget-actions"
 import { moveValue } from "./move-target"
 import { Schema, Array as Arr, Record as Rec } from "effect"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// The open dashboard's tiles: their actions menu and the context the shared tiles read.
+import { DashboardWidgetSchema } from "@maple/widgets/dashboard"
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
@@ -70,7 +68,8 @@ const tileInputsOf = (model: Model, widget: Widget): TileInputs => {
 		sparkRequest: requestOf(model, slot.sparkGate),
 		isEdit,
 		sections: isEdit ? model.document?.sections : undefined,
-		isSharesLoaded: model.shares === "Loaded",
+		// A previewed version's widgets may not exist on the live board, so they are not embeddable.
+		isSharesLoaded: model.shares === "Loaded" && model.history.previewed === null,
 		menu: model.widgetMenuId === widget.id ? model.widgetMenu : null,
 		chart: model.charts[widget.id],
 		sparklineChart: model.charts[`${widget.id}:spark`],
@@ -94,8 +93,6 @@ const requestsOf = (inputs: TileInputs): Model["requests"] => {
 			: { [sparkKey]: inputs.sparkRequest }),
 	}
 }
-
-// MENU
 
 const widgetMenuEntries = (inputs: TileInputs, widget: Widget): ReadonlyArray<MenuView.MenuEntry> => {
 	const isEdit = inputs.isEdit
@@ -141,7 +138,7 @@ const embedEntry = (widget: Widget): MenuView.MenuItemEntry =>
 				tooltip: { content: ["This widget can't be shown in shared views"], side: "left" },
 			}
 
-/** `MoveWidgetToSectionMenu`: Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
+/** Ungrouped, then every `Group · Tab`; where it lives now is disabled. */
 const moveToEntry = (sections: Sections, widget: Widget): MenuView.MenuEntry => {
 	const inRoot = widget.sectionId === undefined || widget.tabId === undefined
 	return {
@@ -234,6 +231,7 @@ const contextOf = (
 	onChart: (message) => Message.GotChartMessage({ widgetId: widget.id, message }),
 	onSort: (field, isText) => Message.ClickedSortColumn({ widgetId: widget.id, field, isText }),
 	sparkline: sparklineState(inputs, widget),
+	reloadPage: Message.ClickedReloadPage(),
 	narrowRange:
 		inputs.slot.gate?._tag === "Range" ? Message.ClickedNarrowRange({ widgetId: widget.id }) : null,
 	variables,
@@ -258,8 +256,6 @@ export const tileContext = (
 	timeZone: string,
 	variables: VariableValues,
 ): TileContext<Message> => contextOf(h, tileInputsOf(model, widget), widget, timeZone, variables)
-
-// MEMO
 
 const sameFields = (a: TileInputs, b: TileInputs): boolean => {
 	const before = Rec.values(a)
@@ -290,14 +286,37 @@ const renderTile = (
 	variables: VariableValues,
 ): Html => widgetTile(h, contextOf(h, inputs, widget, timeZone, variables), widget)
 
+const encodeWidget = Schema.encodeSync(Schema.fromJsonString(DashboardWidgetSchema))
+const canonicalWidgets = new WeakMap<Widget, Widget>()
+const lastWidgets = new Map<string, Readonly<{ json: string; widget: Widget }>>()
+
+/**
+ * The widget object this tile last drew while its content is the same: every store change decodes
+ * the board afresh, which would miss each tile's memo and data cache. Encoded once per new object.
+ */
+export const stableWidget = (widget: Widget): Widget => {
+	const known = canonicalWidgets.get(widget)
+	if (known !== undefined) return known
+	const json = encodeWidget(widget)
+	const last = lastWidgets.get(widget.id)
+	const kept = last?.json === json ? last.widget : widget
+	if (kept === widget) {
+		if (lastWidgets.size >= MAX_TILE_MEMOS) lastWidgets.clear()
+		lastWidgets.set(widget.id, { json, widget })
+	}
+	canonicalWidgets.set(widget, kept)
+	return kept
+}
+
 /** A tile of the open dashboard; it re-renders only when something it reads changed. */
 export const viewTile = (
 	h: H,
 	model: Model,
-	widget: Widget,
+	drawn: Widget,
 	timeZone: string,
 	variables: VariableValues,
 ): Html => {
+	const widget = stableWidget(drawn)
 	const next = tileInputsOf(model, widget)
 	const memo = tileMemos.get(widget.id)
 	if (memo === undefined && tileMemos.size >= MAX_TILE_MEMOS) tileMemos.clear()

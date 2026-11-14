@@ -1,4 +1,3 @@
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,12 +9,15 @@ import { severityBadge } from "@maple/views/ui/logs/severity-badge"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as TabsView from "@maple/views/ui/tabs-view"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { docsLink } from "@maple/views/ui/docs-link"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { LogEntry } from "../trace-source"
 import { TAB_VALUES } from "./update"
+import { hstack } from "../../ui/stack"
+import { typography } from "../../ui/typography"
 
 // The panel's Details / Logs / Infrastructure tabs on `@maple/views/ui/tabs-view.ts`, with icon labels and the
 // logs count badge.
@@ -29,7 +31,7 @@ const TAB_LABELS = {
 	infrastructure: { icon: "ServerIcon", text: " Infrastructure" },
 } as const satisfies Record<TabValue, { icon: IconName; text: string }>
 
-/** `logCountLabel`: the query stops at the limit, so a full page reads "100+". */
+/** The query stops at the limit, so a full page reads "100+". */
 const logCount = (model: Model): string | null =>
 	Option.match(AsyncData.getData(model.logs.data), {
 		onNone: () => null,
@@ -46,18 +48,19 @@ const logEntry = (h: H, log: LogEntry, timeZone: string): Html =>
 			onClick: Message.ClickedLog({ key: log.key }),
 		},
 		[
-			h.div(
-				[h.Class("flex items-center gap-2 text-3xs text-muted-foreground mb-1")],
-				[
-					h.span([], [formatTimestampInTimezone(log.timestamp, { timeZone })]),
-					severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
-				],
+			hstack(h, { gap: "2", align: "center", className: "text-3xs text-muted-foreground mb-1" }, [
+				timestamp(h, { value: log.timestamp, timeZone, className: "cursor-pointer" }),
+				severityBadge(h, { severity: log.severityText, className: "h-4 px-1" }),
+			]),
+			typography(
+				h,
+				{ size: "xs", mono: true, as: "p", className: "whitespace-pre-wrap break-all line-clamp-3" },
+				[log.body],
 			),
-			h.p([h.Class("font-mono text-xs whitespace-pre-wrap break-all line-clamp-3")], [log.body]),
 		],
 	)
 
-/** `SpanLogs`: the logs carrying this span's context. A row click asks the page to open that log. */
+/** The logs carrying this span's context. A row click asks the page to open that log. */
 export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, docsHref?: string): Html =>
 	AsyncData.matchData(model.logs.data, {
 		onEmpty: () =>
@@ -89,7 +92,11 @@ export const tabsView = (
 	values: ReadonlyArray<TabValue>,
 	panel: (value: TabValue) => ReadonlyArray<Html>,
 ): Html => {
-	const shownOf = (value: string): TabValue => values.find((shown) => shown === value) ?? "details"
+	const shownOf = (value: string): TabValue =>
+		Option.getOrElse(
+			Arr.findFirst(values, (shown) => shown === value),
+			(): TabValue => "details",
+		)
 	return h.submodel({
 		slotId: `span-panel-tabs-${model.tabs.idBase}`,
 		model: { ...model.tabs, values },

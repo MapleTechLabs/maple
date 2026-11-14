@@ -23,6 +23,10 @@ Skipped checks do not move the incident either way. The breach and healthy count
 
 An incident has two statuses, **open** and **resolved**. A resolved incident stays resolved. If the rule breaches again later, Maple opens a new incident.
 
+**Acknowledge**, in the **Inbox** or on the incident's page, marks an open incident as handled. Maple stops reminders and pending escalation chain steps for it, and the **Timeline** records who acknowledged it. An escalation from warning to critical clears the acknowledgement.
+
+**Silence** holds back notifications for the services, tags and environments it covers until it ends: after 1 hour, 4 hours, at 09:00, or at a time you pick. Start one from a rule, an incident, or **New silence** under **Alerts → Silences**.
+
 ### Flapping
 
 If a rule resolves and then opens a new incident for the same group within its **Remind while open, every** interval, Maple opens the incident without sending a `trigger`. The matching `resolve` is not sent either. This stops a signal that hovers around the threshold from sending a notification every few minutes.
@@ -53,7 +57,7 @@ The built-in format carries:
 - The evaluation window.
 - An **Open in Maple** link to the incident (or, without one, the affected service or the alerts list).
 
-A rule's **Message template** replaces the title and body for Slack, Hazel, Discord, Telegram and PagerDuty destinations. Email and webhook destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
+A rule's **Message template** replaces the title and body for Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear destinations. Email and webhook destinations use the built-in format. PagerDuty receives a stable `dedup_key` so the trigger and resolve land on the same PagerDuty incident. The webhook payload is in the [alert webhooks reference](/docs/reference/webhooks).
 
 If a delivery fails with an error that can be retried, Maple retries it up to 5 attempts, with a delay that doubles from 1 minute up to 15 minutes.
 
@@ -61,13 +65,13 @@ If a delivery fails with an error that can be retried, Maple retries it up to 5 
 
 - **Alerts → Inbox.** Lists every open incident with its severity, rule and group, the current value against the threshold, and how long it has been open. Below it, **Last 24 hours** charts recent incidents per rule, and **Blind spots** lists rules that cannot fire, notify or keep up: **Error**, **Stale**, **No data**, **Slowed down**, **Unrouted** and **Delivery**. When nothing is firing, **Headroom** shows how close each rule is to its threshold.
 - **The incident's page.** Click an incident. It charts the signal, shows a **Timeline** of the incident and its notifications, and links to the related traces, logs and error issue.
-- **The rule's page.** Click a rule on the **Rules** tab. The tab filters rules by **Firing**, **Blind**, **Healthy** and **Disabled**. The **Overview** tab charts the signal with the threshold and lists recent checks. The **History** tab lists past incidents, filterable by **All**, **Fired** and **Resolved**, with **Total triggered**, **Avg resolution** and **Top contributors**.
+- **The rule's page.** Click a rule under **Alerts → Rules**. The list filters rules by **Firing**, **Blind**, **Healthy** and **Disabled**. The **Overview** tab charts the signal with the threshold and lists recent checks. The **History** tab lists past incidents, filterable by **All**, **Fired** and **Resolved**, with **Total triggered**, **Avg resolution** and **Top contributors**.
 - **MCP.** `list_alert_incidents` and `get_incident_timeline` on the [MCP server](/docs/reference/mcp) return the same data to an AI assistant.
 
 ## Troubleshooting
 
 - **An incident is stuck on Waiting on data.** The service stopped sending the telemetry the rule reads. Check the service under **Traces**. The incident resolves on its own once data returns or the time limit passes.
-- **An incident opened but nobody was notified.** Check that the rule has destinations, and that none is marked disabled or auto-disabled under **Destinations** on the **Routing** tab. The **Delivery log** on the same tab lists every attempt. A re-opened incident inside the renotify interval is silent by design (see [Flapping](#flapping)).
+- **An incident opened but nobody was notified.** Check that the rule has destinations, and that none is marked disabled or auto-disabled under **Destinations** on **Alerts → Routing**. The **Delivery log** on the same page lists every attempt. A re-opened incident inside the renotify interval is silent by design (see [Flapping](#flapping)).
 - **Too many notifications.** Raise **Remind while open, every**, or raise **Breaches to fire** and **Resolve after** on the rule.
 
 ## Next steps

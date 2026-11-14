@@ -7,19 +7,19 @@ order: 1
 
 An **alert rule** watches one signal, checks it against a threshold on a fixed interval, and opens an [incident](/docs/alerting/incidents) when the threshold is crossed for long enough. Each incident notifies the [destinations](/docs/alerting/notification-destinations) attached to the rule.
 
-You manage rules on the **Rules** tab of the **Alerts** page. Creating, editing and deleting rules requires the organization admin role.
+You manage rules under **Alerts → Rules** in the sidebar. Creating, editing and deleting rules requires the engineer or admin role in the organization.
 
 ## Prerequisites
 
 - Telemetry arriving in Maple. Built-in signals read traces.
-- At least one [notification destination](/docs/alerting/notification-destinations), or the admin role to add one from the editor. A rule cannot be saved without one.
+- At least one [notification destination](/docs/alerting/notification-destinations) or escalation chain, or the engineer or admin role to add a destination from the editor. A rule cannot be saved without one of them.
 
 ## Create a rule
 
-1. Open **Alerts** and click **New rule**. To start from a service, open the service and click **Create alert**, which fills in the service.
+1. Open **Alerts** and click **New rule**. To start from a service, open the service and click **Create alert**, which fills in the service. The arrow next to **New rule** also offers **Anomaly rule**, **Uptime check** and **SLO**.
 2. **Start with a template** opens first. Pick a template, or **Start blank**. Every field a template sets stays editable.
-3. Fill in the four sections of the editor: **What to watch**, **When to alert**, **Who gets notified** and **Name it**.
-4. Check the chart under **When to alert**. It replays the rule against past data as you edit.
+3. Fill in the four cards of the editor: **When** (what to watch), **Alert when**, **Notify** and **Name**. A complete card closes to a one-line summary; click it to open it again.
+4. Check the chart above the cards. It replays the rule against past data as you edit.
 5. Click **Create rule**.
 
 To alert on a dashboard chart instead, open the chart's menu on the dashboard and choose **Create alert**. The rule opens with the chart's query.
@@ -37,11 +37,11 @@ To alert on a dashboard chart instead, open the chart's menu on the dashboard an
 | Low Apdex score  | Apdex      | below 0.8 (T 500ms) | 5 min  |                                                    |
 | Throughput drop  | Throughput | below 100           | 5 min  | **Minimum samples** 0                              |
 
-**Skip and use defaults** closes the picker with an empty rule. **Templates** in the bar at the bottom of the editor opens it again.
+**Cancel** closes the picker and keeps the blank rule. **Templates** in the bar at the bottom of the editor opens it again.
 
-## What to watch
+## When: what to watch
 
-The **Query mode** is **Built-in**, **Query builder** or **SQL**. A blank rule opens in **Query builder**. The templates use **Built-in**.
+The **Query mode** is **Built-in**, **Query builder**, **SQL** or **Anomaly**. A blank rule opens in **Query builder**. The templates use **Built-in**.
 
 ### Built-in
 
@@ -82,16 +82,19 @@ The editor times the query as you write it and shows **Query time** against the 
 
 For **Query builder** and **SQL** rules the query carries its own filters, so the service and environment fields are hidden.
 
-## When to alert
+### Anomaly
 
-The chart at the top of this section replays the rule over a past range. It shows the value for each window, the threshold as a dashed line, and shaded bands where the rule would have held an incident open. The header reads **Would have fired** with a count, or **No breaches in this window**. Pick the range in the time picker above the chart.
+**Anomaly** (`anomaly`) has no query and no threshold. It notifies when Maple's [anomaly detection](/docs/alerting/anomalies) opens an anomaly in the rule's scope: **Services**, **Environment** and **Signals** (**Error rate**, **p95 latency**, **Throughput**, **Error spikes**, **Log volume**). An empty field covers every value, but a new rule needs at least one of them set. The organization's default anomaly rule already covers everything, and the most specific rule handles each anomaly. The chart and the **Alert when** card are not shown for this mode.
+
+## Alert when
+
+The chart above the cards replays the rule over a past range. It shows the value for each window, the threshold as a dashed line, and shaded bands where the rule would have held an incident open. The header reads **Would have fired** with a count, or **No breaches in this window**. Pick the range in the time picker above the chart.
 
 **Dry run** evaluates the rule once against current data and shows the value with **Would trigger** or **Within threshold**. Neither the chart nor the dry run sends a notification.
 
-Below the chart:
+The **Alert when** card has three parts:
 
-- **Alert when the value** is the condition: is above, is at or above, is below, is at or below, equals, is not, is between or is outside. The last two use **From** and **To**.
-- **Thresholds** sets the value the signal is compared against, its **Severity** (Warning or Critical), and an optional recovery value (**Recovers below** or **Recovers above**). With a recovery value set, the incident clears only once the signal crosses back over it.
+- **Thresholds** reads as a sentence: the **Severity** (Warning or Critical), then **when the value**, the condition and the value. The condition is one of: is above, is at or above, is below, is at or below, equals, is not, is between or is outside. The last two use **From** and **To**. The above and below conditions also take an optional recovery value (**Recovers below** or **Recovers above**). With one set, the incident clears only once the signal crosses back over it.
 - **How it is checked** sets the window, how many breaches open an incident, the sample floor and the check interval.
 - **After it fires** sets when the incident resolves, how often it reminds, and what an empty window means.
 
@@ -125,15 +128,17 @@ Over the API, `minimum_sample_count` defaults to 0. The other API defaults match
 
 For a **Throughput** drop rule, set **Minimum samples** to 0, as the **Throughput drop** template does. With 50, a window under 50 requests is skipped, so a full outage cannot fire. [How alert rules are evaluated](/docs/alerting/rule-evaluation) covers skipped windows, no data and the check interval in detail.
 
-## Who gets notified
+## Notify
 
 Click **Add destination** to attach an existing destination, or create one from the same menu. With a critical tier, the section has one list for **Warning** and one for **Critical, on top of the warning destinations**.
 
+**Escalation chain** pages the steps of an escalation chain instead of, or as well as, the destinations. Create chains under **Alerts → Routing**. A rule needs a destination or a chain.
+
 **Send test** delivers a test notification for this rule to the selected destinations.
 
-**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram and PagerDuty notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
+**Message template** customizes the **Title** and **Body (Markdown)** of Slack, Hazel, Discord, Telegram, Google Chat, Microsoft Teams, PagerDuty, incident.io and Linear notifications with `{{ variable }}` substitution, for example `{{ rule.name }}`, `{{ value }}` or `{{ links.app }}`. Leave it blank for the built-in format. Email and webhook destinations always use the built-in format.
 
-## Name it
+## Name
 
 **Rule name** is required. **Tags** (up to 20, each up to 32 characters) group and filter rules in the alerts list. **Add notes** opens a free-text **Notes** field for runbook links or ownership.
 
@@ -141,7 +146,7 @@ The bar at the bottom of the editor reads **Ready to save**, or lists what is st
 
 ## Create a rule over the API
 
-Rules are available at `/v2/alerts/rules` on `https://api.maple.dev` (`https://api.eu.maple.dev` for EU organizations). Use an API key (`maple_ak_…`) from **Settings → Keys**. Creating, updating, deleting and testing a rule requires the `alerts:write` scope and the org admin role.
+Rules are available at `/v2/alerts/rules` on `https://api.maple.dev` (`https://api.eu.maple.dev` for EU organizations). Use an API key (`maple_ak_…`) from **Settings → Keys**. Creating, updating, deleting and testing a rule requires the `alerts:write` scope and the engineer or admin role.
 
 ```bash
 curl -X POST https://api.maple.dev/v2/alerts/rules \
@@ -198,11 +203,37 @@ The response lists the value and status of each window per group in `series`, an
 
 `POST /v2/alerts/rules/test` evaluates a rule once against current data. Set `send_notification` to `true` to also deliver a test notification. See the [API reference](/docs/reference/api) for every endpoint and field.
 
+## Audit log detections
+
+A **detection** is an alert rule that counts audit events. It fires when a set number of matching events arrive within a window, for example 5 or more failed sign-ins in 10 minutes. It is not one of the query modes above: organization admins create, edit and delete detections under **Security → Detections**, and the alert rules API does not create or change them.
+
+A detection matches events by **Platform**, **Category** and **Outcome**, each of which can stay on **Any**, and optionally by one exact **Action**, written as the platform names it, such as `team.member.role.updated`. With no filters it counts every audit event. It cannot match on who acted: a detection never names a person.
+
+| Field    | Values                                      |
+| -------- | ------------------------------------------- |
+| Count    | 1 to 100,000 events                         |
+| Window   | 5 minutes to 24 hours                       |
+| Severity | Warning or Critical                         |
+| Notify   | Up to 20 notification destinations, or none |
+
+An organization can have up to 50 detections. Each one is checked every minute.
+
+There are two ways to start one:
+
+- Open **Security → Detections** and click **New detection**. While the organization has no detections, the page lists five ready-made ones: a member added or removed, a permission or role changed, a credential created, rotated or revoked, a burst of refused requests, and repeated sign-in failures. Picking one fills in the editor. Nothing is created until you save.
+- Filter the audit log under **Security → Audit log** and click **Alert on these events**. The editor opens with the platform, category and outcome you filtered by. An actor filter is not carried over.
+
+When a detection fires it opens an [incident](/docs/alerting/incidents) and notifies its [destinations](/docs/alerting/notification-destinations). The notification carries the number of matching events, never an event or who caused it. A detection with no destination still opens the incident, and nobody is notified.
+
+Every member of the organization can see a detection's name and that it fired. The events it counted are in the audit log, which only organization admins can read.
+
+Deleting a detection also deletes the incidents it opened, open ones included.
+
 ## Troubleshooting
 
 - **The rule never fires.** Open the rule and look at its **Checks**. **Skipped** checks mean the window had no data or fewer samples than **Minimum samples**. In the editor, the chart says how many windows would be skipped and why. Check the service names and environments against what is arriving.
 - **The rule fires and resolves over and over.** Raise **Breaches to fire** and **Resolve after**, or widen the window.
-- **Save is disabled.** The bar at the bottom of the editor lists what is missing, such as a rule name or a destination.
+- **Save is disabled.** The bar at the bottom of the editor lists what is missing, such as a rule name, or a destination or escalation chain.
 
 ## Next steps
 

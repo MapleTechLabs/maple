@@ -7,7 +7,7 @@ import * as Chart from "@maple/views/charts/chart"
 import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartLoading } from "@maple/views/ui/chart-state"
-import { chartCard, chartCardMessage, CHART_HEIGHT } from "../../kit/chart-card"
+import { chartCard, chartCardMessage, CHART_HEIGHT } from "../../../kit/chart-card"
 import { type MetricChart, metricChartRows } from "../../kit/metric-charts"
 import { relativeTime } from "../../../kit/relative-time"
 import type { SupabaseProjectTimeseriesRow } from "../model"
@@ -17,7 +17,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { keyedBody, panelEmpty, panelMeta, sectionPanel } from "../panel"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The Postgres row: connections against the limit, transactions per second, slowest statements.
 
@@ -98,7 +98,6 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 								value: insights.queriesCheckedAt,
 								...clock,
 								prefix: "checked",
-								tooltip: "title",
 							}),
 						],
 					),
@@ -125,7 +124,7 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 				panelEmpty(h, [
 					insights.queriesCheckedAt === null
 						? "Maple reads pg_stat_statements every 15 minutes; the first read has not run yet."
-						: "No statements recorded yet.",
+						: "No statements recorded yet",
 				]),
 			],
 		)
@@ -138,13 +137,15 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 			h.ul(
 				[h.AriaLabel("Slowest queries")],
 				Arr.map(insights.topQueries.slice(0, 5), (query, index) =>
-					h.li(
-						[
-							h.Key(query.queryId),
-							h.Class(
-								"flex items-start gap-3 border-t border-border-subtle px-4 py-2.5 first:border-t-0",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "start",
+							as: "li",
+							className: "border-t border-border-subtle px-4 py-2.5 first:border-t-0",
+							attributes: [h.Key(query.queryId)],
+						},
 						[
 							vstack(h, { gap: "1", shrink: true, grow: true }, [
 								h.code(
@@ -158,8 +159,15 @@ const queriesBody = (h: H, insights: SupabaseProjectInsights, clock: Clock): Htm
 									`${formatNumber(query.calls)} calls · ${formatLatency(query.meanExecMs)} mean`,
 								]),
 							]),
-							h.span(
-								[h.Class("shrink-0 font-mono text-2xs tabular-nums text-foreground")],
+							typography(
+								h,
+								{
+									size: "2xs",
+									tone: "foreground",
+									mono: true,
+									numeric: true,
+									className: "shrink-0",
+								},
 								[formatPercent(shares[index] ?? 0)],
 							),
 						],

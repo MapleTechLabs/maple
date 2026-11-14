@@ -23,6 +23,7 @@ import {
 	Effect,
 	Layer,
 	Option,
+	Predicate,
 	Redacted,
 	Schema,
 	Stream,
@@ -83,7 +84,7 @@ const OPENROUTER_API_URLS = {
 type OpenRouterRegion = "us" | "eu"
 
 const openRouterRegion = (settings: LlmSettings): OpenRouterRegion =>
-	readString(settings, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
+	readLowerString(settings, "MAPLE_REGION") === "eu" ? "eu" : "us"
 
 export const openRouterApiUrl = (settings: LlmSettings): string =>
 	OPENROUTER_API_URLS[openRouterRegion(settings)]
@@ -153,36 +154,6 @@ const GEN_AI_PROVIDER_NAMES = {
  */
 const BINDING_PLACEHOLDER = "workers-ai-binding"
 
-/** The deployment's LLM configuration, keyed by the variable each field is read from. */
-export interface LlmSettings {
-	readonly CLOUDFLARE_ACCOUNT_ID?: string | undefined
-	readonly CLOUDFLARE_API_KEY?: Redacted.Redacted<string> | undefined
-	readonly MAPLE_LLM_PROVIDER?: string | undefined
-	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
-	readonly MAPLE_REGION?: string | undefined
-	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string | undefined
-	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string | undefined
-	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
-	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string | undefined
-	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
-	readonly MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER?: string | undefined
-	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
-	readonly MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER?: string | undefined
-	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string | undefined
-	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
-	readonly MAPLE_TRIAGE_MODEL_OUTPUT?: string | undefined
-	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
-	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string | undefined
-	/** Seconds an unattended model call streams before it is cut and retried; see {@link MODEL_ATTEMPT_CAP}. */
-	readonly MAPLE_MODEL_ATTEMPT_CAP_SECONDS?: string | undefined
-	readonly OPENROUTER_API_KEY?: Redacted.Redacted<string> | undefined
-	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
-	readonly MAPLE_DECISION_MODEL?: string | undefined
-	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
-	readonly MAPLE_EMBEDDING_MODEL?: string | undefined
-}
-
 /** A trimmed, non-blank value, or `undefined`; a malformed one falls back like an unset one. */
 const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 	Config.option(Config.String(key)).pipe(
@@ -197,28 +168,31 @@ const optionalTrimmed = (key: string): Config.Config<string | undefined> =>
 		Config.orElse(() => Config.succeed(undefined)),
 	)
 
-const optionalSecret = (key: string): Config.Config<Redacted.Redacted<string> | undefined> =>
+const optionalSecret = (key: string): Config.Config<Redacted.Redacted | undefined> =>
 	optionalTrimmed(key).pipe(Config.map((value) => (value === undefined ? undefined : Redacted.make(value))))
 
-/** {@link LlmSettings} from Effect `Config`, so the Worker env reaches it through the ConfigProvider. */
-export const llmSettingsConfig: Config.Config<LlmSettings> = Config.all({
+/** The deployment's LLM configuration from Effect `Config`, keyed by the variable each field reads. */
+export const llmSettingsConfig = Config.all({
 	CLOUDFLARE_ACCOUNT_ID: optionalTrimmed("CLOUDFLARE_ACCOUNT_ID"),
 	CLOUDFLARE_API_KEY: optionalSecret("CLOUDFLARE_API_KEY"),
 	MAPLE_LLM_PROVIDER: optionalTrimmed("MAPLE_LLM_PROVIDER"),
+	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
 	MAPLE_REGION: optionalTrimmed("MAPLE_REGION"),
 	MAPLE_TRIAGE_MODEL_OPENROUTER: optionalTrimmed("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 	MAPLE_TRIAGE_MODEL_WORKERS_AI: optionalTrimmed("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
 	MAPLE_REVIEW_MODEL_OPENROUTER: optionalTrimmed("MAPLE_REVIEW_MODEL_OPENROUTER"),
+	/** OpenRouter model for security-audit discovery (reconnaissance, hunters, critics). */
 	MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_DISCOVERY_MODEL_OPENROUTER"),
+	/** OpenRouter model for security-audit validation; a different model from discovery by design. */
 	MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER: optionalTrimmed("MAPLE_AUDIT_VALIDATION_MODEL_OPENROUTER"),
-	MAPLE_TRIAGE_MODEL_CONTEXT: optionalTrimmed("MAPLE_TRIAGE_MODEL_CONTEXT"),
-	MAPLE_TRIAGE_MODEL_OUTPUT: optionalTrimmed("MAPLE_TRIAGE_MODEL_OUTPUT"),
-	MAPLE_TRIAGE_REASONING_EFFORT: optionalTrimmed("MAPLE_TRIAGE_REASONING_EFFORT"),
-	MAPLE_MODEL_ATTEMPT_CAP_SECONDS: optionalTrimmed("MAPLE_MODEL_ATTEMPT_CAP_SECONDS"),
 	OPENROUTER_API_KEY: optionalSecret("OPENROUTER_API_KEY"),
+	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	MAPLE_DECISION_MODEL: optionalTrimmed("MAPLE_DECISION_MODEL"),
-	MAPLE_EMBEDDING_MODEL: optionalTrimmed("MAPLE_EMBEDDING_MODEL"),
 })
+
+/** The deployment's LLM configuration; any key may be absent, and then its default applies. */
+export type LlmSettings = Partial<Config.Success<typeof llmSettingsConfig>>
 
 /** Every key falls back on its own, so loading never fails: an unreadable value means the default. */
 export const loadLlmSettings: Effect.Effect<LlmSettings> = Effect.orElseSucceed(llmSettingsConfig, () => ({}))
@@ -229,19 +203,10 @@ export const loadLlmSettings: Effect.Effect<LlmSettings> = Effect.orElseSucceed(
  * The other dial. Maple tiers spend by swapping model *ids*, but on a frontier model the reasoning
  * budget moves cost and latency at least as much, without changing whose judgement you get.
  *
- * `off` omits the field entirely rather than sending a zero budget: a model that does not support
- * reasoning must see no `reasoning` key at all.
+ * No effort omits the field entirely rather than sending a zero budget: a model that does not
+ * support reasoning must see no `reasoning` key at all.
  */
-export type ReasoningEffort = "low" | "medium" | "high" | "off"
-
-const REASONING_EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "off"])
-
-const readReasoningEffort = (settings: LlmSettings, key: StringKey): ReasoningEffort | undefined => {
-	const raw = readString(settings, key)?.toLowerCase()
-	// An unrecognized value falls through to the caller's default rather than throwing. This is read
-	// on a request path in a Worker; a typo'd env var must not take the agent down.
-	return raw !== undefined && REASONING_EFFORTS.has(raw) ? (raw as ReasoningEffort) : undefined
-}
+export type ReasoningEffort = "low" | "medium" | "high"
 
 /**
  * Context windows for the models Maple configures.
@@ -282,13 +247,6 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 /** For a model not in the table at all. Low enough that an unknown model compacts rather than fails. */
 const DEFAULT_MODEL_LIMITS = { context: 128_000, output: 8_000 } as const
 
-const readPositiveInt = (settings: LlmSettings, key: StringKey): number | undefined => {
-	const raw = readString(settings, key)
-	if (raw === undefined) return undefined
-	const value = Number(raw)
-	return Number.isSafeInteger(value) && value > 0 ? value : undefined
-}
-
 /** The plain-string fields of {@link LlmSettings}; the secrets are read where they are used. */
 type StringKey = {
 	[K in keyof LlmSettings]-?: NonNullable<LlmSettings[K]> extends string ? K : never
@@ -299,10 +257,15 @@ const readString = (settings: LlmSettings, key: StringKey): string | undefined =
 	return value !== undefined && Str.trim(value) !== "" ? Str.trim(value) : undefined
 }
 
+const readLowerString = (settings: LlmSettings, key: StringKey): string | undefined => {
+	const value = readString(settings, key)
+	return value === undefined ? undefined : Str.toLowerCase(value)
+}
+
 const readSecret = (
 	settings: LlmSettings,
 	key: "OPENROUTER_API_KEY" | "CLOUDFLARE_API_KEY",
-): Redacted.Redacted<string> | undefined => {
+): Redacted.Redacted | undefined => {
 	const value = settings[key]
 	return value !== undefined && Str.trim(Redacted.value(value)) !== "" ? value : undefined
 }
@@ -310,7 +273,6 @@ const readSecret = (
 /** The client services a resolved model needs. `layerLlm` provides both, so either branch runs. */
 export type LlmClients = OpenRouterClient.OpenRouterClient | OpenAiClient.OpenAiClient
 
-/** The services a resolved model provides to a run. */
 type ModelServices = LanguageModel.LanguageModel | AiModel.ProviderName | AiModel.ModelName
 
 /**
@@ -334,19 +296,8 @@ export interface ResolvedModel {
 	readonly tags?: LlmCallTags
 }
 
-/** The triage overrides describe the triage model, so a review model reads only the table. */
-const limitsFor = (
-	settings: LlmSettings,
-	name: string,
-	overridable = true,
-): { readonly context: number; readonly output: number } => {
-	const known = MODEL_LIMITS[name] ?? DEFAULT_MODEL_LIMITS
-	if (!overridable) return known
-	return {
-		context: readPositiveInt(settings, "MAPLE_TRIAGE_MODEL_CONTEXT") ?? known.context,
-		output: readPositiveInt(settings, "MAPLE_TRIAGE_MODEL_OUTPUT") ?? known.output,
-	}
-}
+const limitsFor = (name: string): { readonly context: number; readonly output: number } =>
+	MODEL_LIMITS[name] ?? DEFAULT_MODEL_LIMITS
 
 /**
  * Which provider agents run on. Model overrides are deliberately provider-scoped: a model id is
@@ -354,9 +305,7 @@ const limitsFor = (
  * OpenRouter the moment someone flipped the switch.
  */
 export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
-	readString(settings, "MAPLE_LLM_PROVIDER")?.toLowerCase() === "workers-ai"
-		? "workers-ai"
-		: DEFAULT_LLM_PROVIDER
+	readLowerString(settings, "MAPLE_LLM_PROVIDER") === "workers-ai" ? "workers-ai" : DEFAULT_LLM_PROVIDER
 
 /**
  * Per-request body fields for the OpenRouter branch.
@@ -367,10 +316,11 @@ export const resolveLlmProvider = (settings: LlmSettings): LlmProvider =>
  *
  * `cache_control` puts the cache breakpoint on the request's last block, so an agent loop reuses its
  * whole history. Models with explicit caching otherwise cached only the system prompt and tools.
+ * {@link withStableCacheBreakpoint} moves it when that last block is the engine's run-status line.
  */
 const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags | undefined) => ({
 	cache_control: { type: "ephemeral" as const },
-	...(effort === undefined || effort === "off" ? undefined : { reasoning: { effort } }),
+	...(effort === undefined ? undefined : { reasoning: { effort } }),
 	...(tags === undefined
 		? undefined
 		: {
@@ -381,7 +331,8 @@ const openRouterConfig = (effort: ReasoningEffort | undefined, tags: LlmCallTags
 })
 
 /** The session as OpenRouter accepts it. The span carries the same value, so the two never diverge. */
-const sessionIdFor = (tags: LlmCallTags): string | undefined => tags.sessionId?.slice(0, 256)
+const sessionIdFor = (tags: LlmCallTags): string | undefined =>
+	tags.sessionId === undefined ? undefined : Str.slice(0, 256)(tags.sessionId)
 
 /**
  * The agent-session identity as span attributes: the session, the turn and the workflow.
@@ -448,40 +399,33 @@ export const MODEL_CALL_OUTPUT_TOKENS = 32_000
  */
 export const MODEL_ATTEMPT_CAP = Duration.seconds(90)
 
-/** The retry of a call cut at its cap: the same request, reasoning less unless reasoning is off. */
-const openRouterAttempts = (
-	settings: LlmSettings,
-	effort: ReasoningEffort | undefined,
-): ModelCallAttempts => {
-	const seconds = readPositiveInt(settings, "MAPLE_MODEL_ATTEMPT_CAP_SECONDS")
-	const cap = seconds === undefined ? MODEL_ATTEMPT_CAP : Duration.seconds(seconds)
-	return effort === "off"
-		? { cap, retry: (stream) => stream }
-		: {
-				cap,
-				// A request field a model does not support is dropped by OpenRouter, not refused.
-				retry: (stream) =>
-					stream.pipe(
-						Stream.provideService(OpenRouterLanguageModel.Config, {
-							reasoning: { effort: "low" },
-						}),
-					),
-				retryReasoningLevel: "low",
-			}
+/** The retry of a call cut at its cap: the same request, reasoning less. */
+const OPENROUTER_ATTEMPTS: ModelCallAttempts = {
+	cap: MODEL_ATTEMPT_CAP,
+	// A request field a model does not support is dropped by OpenRouter, not refused.
+	retry: (stream) =>
+		stream.pipe(
+			Stream.provideService(OpenRouterLanguageModel.Config, {
+				reasoning: { effort: "low" },
+			}),
+		),
+	retryReasoningLevel: "low",
+}
+
+interface OpenRouterModelOptions {
+	/** How hard the model reasons; without one the request carries no `reasoning` field. */
+	readonly effort?: ReasoningEffort
+	/** Nobody watches the run stream, so its deltas are joined and long calls retried. */
+	readonly unattended: boolean
 }
 
 const openRouterModel = (
-	settings: LlmSettings,
 	name: string,
-	effortKey: StringKey,
-	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
-	overridableLimits = true,
-	/** Nobody watches the run stream, so its deltas are joined; see `coalesceDeltas`. */
-	unattended = false,
+	options: OpenRouterModelOptions,
 ): ResolvedModel => {
-	const effort = readReasoningEffort(settings, effortKey) ?? fallbackEffort
-	const limits = limitsFor(settings, name, overridableLimits)
+	const { effort, unattended } = options
+	const limits = limitsFor(name)
 	const maxTokens = Math.min(limits.output, MODEL_CALL_OUTPUT_TOKENS)
 	return {
 		provider: "openrouter",
@@ -494,30 +438,24 @@ const openRouterModel = (
 			}),
 			{
 				providerName: genAiProviderName("openrouter"),
-				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
+				...(effort === undefined ? undefined : { reasoningLevel: effort }),
 				sessionAttributes: agentSessionSpanAttributes(tags),
 			},
-			unattended
-				? { coalesceDeltas: true, attempts: openRouterAttempts(settings, effort) }
-				: { coalesceDeltas: false },
+			unattended ? { coalesceDeltas: true, attempts: OPENROUTER_ATTEMPTS } : { coalesceDeltas: false },
 		),
 		limits,
 		tags,
 	}
 }
 
-const workersAiModel = (
-	settings: LlmSettings,
-	name: string,
-	tags: LlmCallTags | undefined,
-): ResolvedModel => ({
+const workersAiModel = (name: string, tags: LlmCallTags | undefined): ResolvedModel => ({
 	provider: "workers-ai",
 	name,
 	layer: instrumentedModel(name, OpenAiLanguageModel.make({ model: name }), {
 		providerName: genAiProviderName("workers-ai"),
 		sessionAttributes: agentSessionSpanAttributes(tags),
 	}),
-	limits: limitsFor(settings, name),
+	limits: limitsFor(name),
 	tags,
 })
 
@@ -537,23 +475,18 @@ export const resolveTriageModel = (
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
 		? workersAiModel(
-				settings,
 				readString(settings, "MAPLE_TRIAGE_MODEL_WORKERS_AI") ?? DEFAULT_WORKERS_AI_MODEL,
 				tags,
 			)
 		: openRouterModel(
-				settings,
 				readString(settings, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
 					(openRouterRegion(settings) === "eu"
 						? EU_DEFAULT_OPENROUTER_MODEL
 						: DEFAULT_OPENROUTER_MODEL),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				// No default. This resolver serves chat, AI triage *and* the validator, so a number
-				// picked here would retune three stages with different shapes at once.
-				undefined,
 				tags,
-				true,
-				unattended,
+				// No effort. This resolver serves chat, AI triage *and* the validator, so a number
+				// picked here would retune three stages with different shapes at once.
+				{ unattended },
 			)
 
 /** The organization's pick, when this region serves it: the EU endpoint 404s a model it lacks. */
@@ -562,7 +495,7 @@ const servedReviewModel = (
 	chosen: Option.Option<PrReviewModel>,
 ): Option.Option<string> =>
 	chosen.pipe(
-		Option.flatMap((id) => Option.fromUndefinedOr(PR_REVIEW_MODELS.find((model) => model.id === id))),
+		Option.flatMap((id) => Arr.findFirst(PR_REVIEW_MODELS, (model) => model.id === id)),
 		Option.filter((model) => openRouterRegion(settings) !== "eu" || model.eu),
 		Option.map((model) => model.id),
 	)
@@ -578,9 +511,8 @@ export const resolveReviewModel = (
 	chosen: Option.Option<PrReviewModel> = Option.none(),
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
-		? resolveTriageModel(settings, tags)
+		? resolveTriageModel(settings, tags, true)
 		: openRouterModel(
-				settings,
 				Option.getOrElse(
 					servedReviewModel(settings, chosen),
 					() =>
@@ -589,12 +521,16 @@ export const resolveReviewModel = (
 							? EU_DEFAULT_REVIEW_MODEL
 							: DEFAULT_REVIEW_MODEL),
 				),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				undefined,
 				tags,
-				false,
-				true,
+				{ unattended: true },
 			)
+
+/**
+ * The model a plan cancellation's second read runs on: the review model. One structured answer over
+ * a large JSON input, like a review: on 16 real cancellations the review default answered in 14 s
+ * (median, 43 s at most), where the production triage model took 46 s (520 s at most).
+ */
+export const resolveCancellationModel = (settings: LlmSettings): ResolvedModel => resolveReviewModel(settings)
 
 /**
  * Security-audit defaults per region. Discovery hunts on a cheap model so whole-repository audits
@@ -657,6 +593,27 @@ export const securityAuditModelIds = (
 }
 
 /**
+ * The model a discovery agent retries on when the run's hunting pick fails it, as OpenAI models do
+ * when their cybersecurity filter refuses hunter prompts: the deployment's own hunter, never the
+ * verifier. Undefined when the run already hunts on it, or on Workers AI.
+ */
+export const resolveSecurityAuditDiscoveryFallback = (
+	settings: LlmSettings,
+	chosen: Readonly<{ discovery: string | null; validation: string | null }>,
+	tags?: LlmCallTags,
+): ResolvedModel | undefined => {
+	if (resolveLlmProvider(settings) === "workers-ai") return undefined
+	const hunting = securityAuditModelId(settings, "discovery", chosen.discovery)
+	const fallback = securityAuditModelIds(settings, {
+		discovery: null,
+		validation: chosen.validation,
+	}).discovery
+	return fallback === hunting
+		? undefined
+		: openRouterModel(fallback, tags, { effort: "high", unattended: true })
+}
+
+/**
  * A security-audit stage's model. Unattended like a review: deltas coalesce and long calls retry.
  * On the Workers AI provider both stages fall back to the triage model.
  */
@@ -667,16 +624,11 @@ export const resolveSecurityAuditModel = (
 	chosen: string | null = null,
 ): ResolvedModel =>
 	resolveLlmProvider(settings) === "workers-ai"
-		? resolveTriageModel(settings, tags)
-		: openRouterModel(
-				settings,
-				securityAuditModelId(settings, stage, chosen),
-				"MAPLE_TRIAGE_REASONING_EFFORT",
-				"high",
-				tags,
-				false,
-				true,
-			)
+		? resolveTriageModel(settings, tags, true)
+		: openRouterModel(securityAuditModelId(settings, stage, chosen), tags, {
+				effort: "high",
+				unattended: true,
+			})
 
 /**
  * Splice the per-call fields into every outgoing OpenRouter chat request.
@@ -691,6 +643,9 @@ export const resolveSecurityAuditModel = (
  * router latency) nests under the span that made the call instead of arriving as a twin trace that
  * only shares a session id. The model config cannot carry them — it is built once per layer, and the
  * ids are per call — which is why they ride here with `usage`.
+ *
+ * Each tool's `strict: null` is dropped too: the provider sends it for every tool without a strict
+ * annotation, and some upstreams reject a null `strict`, failing the whole turn. Absent means the same.
  */
 const withPerCallFields = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
 	HttpClient.mapRequestEffect(client, (request) =>
@@ -714,12 +669,74 @@ const splicePerCallFields = (
 				? { trace_id: span.value.traceId, parent_span_id: span.value.spanId }
 				: undefined),
 		}
-		return yield* HttpClientRequest.bodyJson(request, {
-			...decoded,
-			usage: { include: true },
-			...(Object.keys(trace).length === 0 ? undefined : { trace }),
-		})
+		return yield* HttpClientRequest.bodyJson(
+			request,
+			withStableCacheBreakpoint({
+				...decoded,
+				...("tools" in decoded && Arr.isArray(decoded.tools)
+					? {
+							tools: Arr.map(decoded.tools, (tool) =>
+								Predicate.isObject(tool) ? dropNullStrict(tool) : tool,
+							),
+						}
+					: undefined),
+				usage: { include: true },
+				// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
+				...(Object.keys(trace).length === 0 ? undefined : { trace }),
+			}),
+		)
 	})
+
+const dropNullStrict = (tool: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
+	const fn = tool.function
+	if (!Predicate.isObject(fn) || fn.strict !== null) return tool
+	const { strict: _strict, ...rest } = fn
+	return { ...tool, function: rest }
+}
+
+/** Model families that cache at marked blocks only; the others cache any repeated prefix. */
+const CACHES_AT_BREAKPOINTS = /^(anthropic|openai)\//
+
+const messageText = (content: unknown): string | undefined => {
+	if (typeof content === "string") return content
+	const first = Arr.isArray(content) ? content[0] : undefined
+	return Predicate.isObject(first) && typeof first.text === "string" ? first.text : undefined
+}
+
+/** The engine's `<run-status>` line: derived per call, so no two requests carry the same one. */
+const isRunStatus = (message: unknown): boolean =>
+	Predicate.isObject(message) && Str.startsWith("<run-status>")(messageText(message.content) ?? "")
+
+/** A user or tool message with the cache breakpoint on its text; none when it has no plain text. */
+const markCacheBreakpoint = (
+	message: unknown,
+	cacheControl: unknown,
+): Option.Option<Record<PropertyKey, unknown>> => {
+	if (!Predicate.isObject(message) || (message.role !== "user" && message.role !== "tool")) {
+		return Option.none()
+	}
+	const text = message.content
+	return typeof text === "string" && text !== ""
+		? Option.some({ ...message, content: [{ type: "text", text, cache_control: cacheControl }] })
+		: Option.none()
+}
+
+/**
+ * Keeps the cache breakpoint off the engine's `<run-status>` line. The root `cache_control` marks
+ * the request's last block, and that line differs on every call, so a model that caches at marked
+ * blocks wrote its whole history again each call and read back only the system prompt and tools.
+ */
+const withStableCacheBreakpoint = (body: Record<PropertyKey, unknown>): Record<PropertyKey, unknown> => {
+	const { cache_control: cacheControl, ...rest } = body
+	const { messages, model } = body
+	if (cacheControl === undefined || !Arr.isArray(messages) || typeof model !== "string") return body
+	if (!CACHES_AT_BREAKPOINTS.test(model) || !isRunStatus(messages.at(-1))) return body
+	const index = messages.length - 2
+	return markCacheBreakpoint(messages[index], cacheControl).pipe(
+		Option.flatMap((marked) => Arr.replace(messages, index, marked)),
+		Option.match({ onNone: () => body, onSome: (moved) => ({ ...rest, messages: moved }) }),
+	)
+}
 
 /** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */
 const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
@@ -749,10 +766,7 @@ export const layerOpenRouterClient = (
  * Settings for an org that brought its own OpenRouter key: that key, and OpenRouter whatever this
  * deploy's provider is, since the key is only good there.
  */
-export const withOrgOpenRouterKey = (
-	settings: LlmSettings,
-	apiKey: Redacted.Redacted<string>,
-): LlmSettings => ({
+export const withOrgOpenRouterKey = (settings: LlmSettings, apiKey: Redacted.Redacted): LlmSettings => ({
 	...settings,
 	OPENROUTER_API_KEY: apiKey,
 	MAPLE_LLM_PROVIDER: "openrouter",
@@ -819,25 +833,25 @@ export const resolveDecisionModel = (settings: LlmSettings): string | undefined 
  * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
  * OpenRouter key there is no embedder, and the filter is off.
  */
-export const layerFindingEmbedder = (
-	settings: LlmSettings,
-): Layer.Layer<FindingEmbedder> | Layer.Layer<never> => {
+export const layerFindingEmbedder = (settings: LlmSettings): Layer.Layer<FindingEmbedder> => {
 	const apiKey = readSecret(settings, "OPENROUTER_API_KEY")
-	if (apiKey === undefined) return Layer.empty
-	const model = readString(settings, "MAPLE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL
+	if (apiKey === undefined) return FindingEmbedder.none
+	const model = DEFAULT_EMBEDDING_MODEL
 	return Layer.effect(FindingEmbedder)(
-		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) => ({
-			model,
-			embed: (inputs: ReadonlyArray<string>) =>
-				embeddings.embedMany(inputs).pipe(
-					Effect.mapBoth({
-						onSuccess: (response) =>
-							Arr.map(response.embeddings, (embedding) => embedding.vector),
-						onFailure: (error) =>
-							new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
-					}),
-				),
-		})),
+		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) =>
+			Option.some({
+				model,
+				embed: (inputs: ReadonlyArray<string>) =>
+					embeddings.embedMany(inputs).pipe(
+						Effect.mapBoth({
+							onSuccess: (response) =>
+								Arr.map(response.embeddings, (embedding) => embedding.vector),
+							onFailure: (error) =>
+								new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
+						}),
+					),
+			}),
+		),
 	).pipe(
 		Layer.provide(
 			OpenAiClient.layer({ apiKey, apiUrl: openRouterApiUrl(settings) }).pipe(
@@ -860,6 +874,6 @@ export const layerDecisionModelFromConfig = (
 	Layer.unwrap(Effect.map(loadLlmSettings, (settings) => layerDecisionModel(settings, workersAi)))
 
 /** {@link layerFindingEmbedder} on the settings the graph's ConfigProvider holds. */
-export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> | Layer.Layer<never> = Layer.unwrap(
+export const FindingEmbedderFromConfigLive: Layer.Layer<FindingEmbedder> = Layer.unwrap(
 	Effect.map(loadLlmSettings, layerFindingEmbedder),
 )

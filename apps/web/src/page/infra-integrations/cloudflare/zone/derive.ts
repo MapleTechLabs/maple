@@ -1,10 +1,6 @@
-import { classifyZone, ZONE_HEALTH_TONE } from "../../../../components/infra/cloudflare/list-model"
-import {
-	type CloudflareFilterKey,
-	type CloudflareFilters,
-	filtersFromSearch,
-} from "../../../../components/infra/cloudflare/filters"
-import { zoneSignalTotals } from "../../../../components/infra/cloudflare/zone-signals"
+import { classifyZone, ZONE_HEALTH_TONE } from "../list-model"
+import { type CloudflareFilterKey, type CloudflareFilters, filtersFromSearch } from "../filters"
+import { zoneSignalTotals } from "../zone-signals"
 import type { Tone } from "@maple/ui/lib/tone"
 import { AsyncData } from "foldkit"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
@@ -17,9 +13,9 @@ import type {
 	ZoneRow,
 	ZonesInput,
 } from "../data"
-import { dataOf } from "../list/derive"
+import { successOf } from "../../kit/success-of"
 import type { Model, ZoneTab } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"
 /** Rows the server returns per dimension. */
@@ -38,7 +34,6 @@ export type DimensionDef = Readonly<{
 	liveDimension?: "host" | "path"
 }>
 
-/** `DIMENSIONS`. */
 export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 	{ id: "path", tab: "Paths", column: "Path", noun: "paths", filterKey: "paths", liveDimension: "path" },
 	{ id: "host", tab: "Hosts", column: "Host", noun: "hosts", filterKey: "hosts", liveDimension: "host" },
@@ -61,8 +56,10 @@ export const DIMENSIONS: ReadonlyArray<DimensionDef> = [
 ]
 
 export const dimensionOf = (model: Model): DimensionDef =>
-	DIMENSIONS.find((dimension) => dimension.id === model.dimension) ??
-	DIMENSIONS[0] ?? {
+	Option.getOrElse(
+		Arr.findFirst(DIMENSIONS, (dimension) => dimension.id === model.dimension),
+		() => DIMENSIONS[0],
+	) ?? {
 		id: "path",
 		tab: "Paths",
 		column: "Path",
@@ -112,7 +109,7 @@ export type ZoneRailDns = Readonly<{ queries: number; alwaysNxdomain: number }>
 
 /** Null while loading or when the zone has no DNS analytics. */
 export const dnsSummaryOf = (model: Model): ZoneRailDns | null => {
-	const dns = dataOf(model.dns.data)
+	const dns = successOf(model.dns.data)
 	if (dns === null || (dns.names.length === 0 && dns.buckets.length === 0)) return null
 	return {
 		queries: Arr.reduce(dns.buckets, 0, (acc, b) => acc + b.queries),
@@ -122,7 +119,7 @@ export const dnsSummaryOf = (model: Model): ZoneRailDns | null => {
 
 /** Null while loading; zero means the dataset is live but quiet. */
 export const firewallEventsOf = (model: Model): number | null => {
-	const security = dataOf(model.security.data)
+	const security = successOf(model.security.data)
 	return security === null ? null : Arr.reduce(security.buckets, 0, (acc, b) => acc + b.events)
 }
 
@@ -153,27 +150,32 @@ export const needsBreakdown = (model: Model): boolean => {
 }
 
 export const zoneRowOf = (model: Model): ZoneRow | null =>
-	dataOf(model.zones.data)?.find((zone) => zone.serviceName === serviceNameOf(model)) ?? null
+	Option.getOrNull(
+		Arr.findFirst(successOf(model.zones.data) ?? [], (zone) => zone.serviceName === serviceNameOf(model)),
+	)
 
 export type ZoneAccount = Readonly<{ id: string; name: string; multi: boolean; zoneError: string | null }>
 
 export const zoneAccountOf = (model: Model): ZoneAccount | null => {
-	const status = dataOf(model.status.data)
+	const status = successOf(model.status.data)
 	if (status === null) return null
 	const accounts = status.accounts ?? []
-	const account = accounts.find((a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
-	if (account === undefined) return null
+	const found = Arr.findFirst(accounts, (a) => Arr.some(a.zones, (zone) => zone.name === model.zoneName))
+	if (Option.isNone(found)) return null
+	const account = found.value
 	return {
 		id: account.accountId,
 		name: account.accountName ?? account.accountId,
 		multi: accounts.length > 1,
-		zoneError: account.zones.find((zone) => zone.name === model.zoneName)?.lastError ?? null,
+		zoneError: Arr.findFirst(account.zones, (zone) => zone.name === model.zoneName).pipe(
+			Option.flatMapNullishOr((found) => found.lastError),
+			Option.getOrNull,
+		),
 	}
 }
 
-/** The header dot's tone. */
 export const severityOf = (model: Model): Tone | null => {
-	const detail = dataOf(model.detail.data)
+	const detail = successOf(model.detail.data)
 	if (detail === null) return null
 	const totals = zoneSignalTotals(detail.statusBuckets, detail.cacheBuckets)
 	return ZONE_HEALTH_TONE[classifyZone(totals.requests, totals.serverErrorRate, totals.clientErrorRate)]

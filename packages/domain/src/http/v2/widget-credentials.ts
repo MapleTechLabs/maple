@@ -1,10 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
 import { ApiKeyPersistenceError } from "../api-keys"
-import { OrgId } from "../../primitives"
+import { OrgId } from "@maple/primitives"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"
 import { publicError } from "./public-error"
+import { AnalystAccess } from "../analyst-access"
 
 /**
  * The credential a device's Home Screen widgets fetch with.
@@ -98,28 +99,32 @@ export class V2WidgetCredentialsApiGroup extends HttpApiGroup.make("widgetCreden
 			params: { installation_id: InstallationId },
 			success: V2WidgetCredential,
 			error: [publicError(ApiKeyPersistenceError)],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "mintWidgetCredential",
-				summary: "Mint this installation's widget credential",
-				description:
-					"Issues a read-only, expiring credential for this installation's Home Screen widgets, revoking whatever it had. Idempotent, so the app calls it again to roll. Requires the `widget_credentials:write` scope — which a widget credential does not have, so renewal always goes through a signed-in session.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "mintWidgetCredential",
+					summary: "Mint this installation's widget credential",
+					description:
+						"Issues a read-only, expiring credential for this installation's Home Screen widgets, revoking whatever it had. Idempotent, so the app calls it again to roll. Requires the `widget_credentials:write` scope — which a widget credential does not have, so renewal always goes through a signed-in session.",
+				}),
+			),
 	)
 	.add(
 		HttpApiEndpoint.delete("revoke", "/:installation_id", {
 			params: { installation_id: InstallationId },
 			success: V2WidgetCredentialDeleteResponse,
 			error: [publicError(ApiKeyPersistenceError)],
-		}).annotateMerge(
-			OpenApi.annotations({
-				identifier: "revokeWidgetCredential",
-				summary: "Revoke this installation's widget credential",
-				description:
-					"Retires the installation's credential for this organization; the app calls this on sign-out and when the user leaves the organization. Idempotent — an installation with nothing to revoke is already in the requested state. Requires the `widget_credentials:write` scope.",
-			}),
-		),
+		})
+			.annotate(AnalystAccess, "personal")
+			.annotateMerge(
+				OpenApi.annotations({
+					identifier: "revokeWidgetCredential",
+					summary: "Revoke this installation's widget credential",
+					description:
+						"Retires the installation's credential for this organization; the app calls this on sign-out and when the user leaves the organization. Idempotent — an installation with nothing to revoke is already in the requested state. Requires the `widget_credentials:write` scope.",
+				}),
+			),
 	)
 	.prefix("/v2/widget_credentials")
 	.middleware(AuthorizationV2)

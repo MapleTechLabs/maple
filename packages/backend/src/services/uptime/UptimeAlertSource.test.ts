@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
-import type { HeartbeatWatch } from "./UptimeAlertSource"
-import { isHeartbeatOverdue } from "./UptimeAlertSource"
+import type { HeartbeatWatch, ProbeWatch } from "./UptimeAlertSource"
+import { isHeartbeatOverdue, isProbeStale } from "./UptimeAlertSource"
 
 const at = (iso: string) => Date.parse(iso)
 
@@ -54,5 +54,52 @@ describe("isHeartbeatOverdue", () => {
 		})
 		assert.isFalse(isHeartbeatOverdue(resumed, at("2026-07-21T12:00:00Z")))
 		assert.isTrue(isHeartbeatOverdue(resumed, at("2026-07-21T13:06:00Z")))
+	})
+})
+
+const httpProbe = (overrides: Partial<ProbeWatch> = {}): ProbeWatch => ({
+	config: {
+		_tag: "http",
+		url: "https://checkout.example.com/health",
+		method: "GET",
+		headers: {},
+		assertions: [],
+		timeoutMs: 5000,
+	},
+	intervalSeconds: 60,
+	enabled: true,
+	status: "up",
+	statusChangedAt: null,
+	lastCheckJson: { at: at("2026-07-15T13:00:00Z") },
+	createdAt: at("2026-07-01T00:00:00Z"),
+	...overrides,
+})
+
+describe("isProbeStale", () => {
+	it("goes stale after three intervals without a check, and never before five minutes", () => {
+		// A 60 s probe: three intervals are under the floor, so the floor decides.
+		assert.isFalse(isProbeStale(httpProbe(), at("2026-07-15T13:05:00Z")))
+		assert.isTrue(isProbeStale(httpProbe(), at("2026-07-15T13:05:01Z")))
+		// A 10 min probe: three intervals decide.
+		const slow = httpProbe({ intervalSeconds: 600 })
+		assert.isFalse(isProbeStale(slow, at("2026-07-15T13:30:00Z")))
+		assert.isTrue(isProbeStale(slow, at("2026-07-15T13:30:01Z")))
+	})
+
+	it("waits from the resume for a pending probe, and from creation for one never checked", () => {
+		const resumed = httpProbe({ status: "pending", statusChangedAt: at("2026-07-20T14:00:00Z") })
+		assert.isFalse(isProbeStale(resumed, at("2026-07-20T14:04:00Z")))
+		assert.isTrue(isProbeStale(resumed, at("2026-07-20T14:06:00Z")))
+		const fresh = httpProbe({ status: "pending", lastCheckJson: null })
+		assert.isFalse(isProbeStale(fresh, at("2026-07-01T00:04:00Z")))
+		assert.isTrue(isProbeStale(fresh, at("2026-07-01T00:06:00Z")))
+	})
+
+	it("never marks a down, paused or disabled probe, or a heartbeat", () => {
+		const late = at("2026-07-20T00:00:00Z")
+		assert.isFalse(isProbeStale(httpProbe({ status: "down" }), late))
+		assert.isFalse(isProbeStale(httpProbe({ status: "paused" }), late))
+		assert.isFalse(isProbeStale(httpProbe({ enabled: false }), late))
+		assert.isFalse(isProbeStale(httpProbe({ config: nineAmNewYork().config }), late))
 	})
 })

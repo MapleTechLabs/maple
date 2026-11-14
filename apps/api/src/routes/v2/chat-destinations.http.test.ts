@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	AlertDestinationDocument,
 	AlertDestinationsListResponse,
@@ -17,7 +17,7 @@ import {
 } from "@maple/domain/http"
 import { ChatWorkspacePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -30,14 +30,9 @@ import {
 	type ChatWorkspaceServiceApi,
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithChat,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
+import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
 
 /**
  * The `chat` alert destination over HTTP: the workspace channel listing behind the picker (admin
@@ -49,9 +44,9 @@ const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const API_HOST = "api.maple.test"
-const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const WORKSPACE_PUBLIC_ID = Schema.encodeSync(ChatWorkspacePublicId)(WORKSPACE)
-const TESTCHAT = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
+const TESTCHAT = Schema.decodeSync(ChatConnectorId)("testchat")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -91,9 +86,7 @@ const chatLayer = (listDestinations: ChatWorkspaceServiceApi["listDestinations"]
 
 const destinationDocument = (channelLabel: string) =>
 	new AlertDestinationDocument({
-		id: Schema.decodeUnknownSync(AlertDestinationDocument.fields.id)(
-			"7c6b5a49-3821-4e0f-9d8c-7b6a59483726",
-		),
+		id: Schema.decodeSync(AlertDestinationDocument.fields.id)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 		name: "Incidents",
 		type: "chat",
 		enabled: true,
@@ -104,12 +97,8 @@ const destinationDocument = (channelLabel: string) =>
 		chatWorkspaceId: WORKSPACE,
 		lastTestedAt: null,
 		lastTestError: null,
-		createdAt: Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)(
-			"2026-09-24T00:00:00.000Z",
-		),
-		updatedAt: Schema.decodeUnknownSync(AlertDestinationDocument.fields.updatedAt)(
-			"2026-09-24T00:00:00.000Z",
-		),
+		createdAt: Schema.decodeSync(AlertDestinationDocument.fields.createdAt)("2026-09-24T00:00:00.000Z"),
+		updatedAt: Schema.decodeSync(AlertDestinationDocument.fields.updatedAt)("2026-09-24T00:00:00.000Z"),
 	})
 
 interface Recorded {
@@ -152,15 +141,21 @@ const makeHarness = (
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithChat(chatLayer(listDestinations))),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.alertDestinations,
+			MapleApiV2.groups.chatIntegration,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2AlertDestinationsLive,
+				HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatLayer(listDestinations))),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		// Before the facade stubs, so this fake is the destination service the routes see.
 		Layer.provide(destinationsLayer(recorded)),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -168,8 +163,8 @@ const makeHarness = (
 	)
 	const { handler, dispose: disposeHandler } = HttpRouter.toWebHandler(routes, { disableLogger: true })
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_chat_dest_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_chat_dest_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_chat_dest_e2e")
+	const USER = Schema.decodeSync(UserId)("user_chat_dest_e2e")
 
 	const key = (metadataJson?: Record<string, unknown>) =>
 		runtime.runPromise(

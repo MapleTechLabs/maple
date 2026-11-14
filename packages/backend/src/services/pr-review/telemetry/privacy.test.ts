@@ -116,7 +116,7 @@ describe("privacyHitAt", () => {
 		it(`flags ${name}`, () => {
 			const hit = hitOf(...snippet)
 			assert.strictEqual(hit?.kind, kind)
-			assert.strictEqual(hit?.subject.replaceAll("`", ""), subject)
+			assert.strictEqual(hit === undefined ? undefined : Str.replaceAll("`", "")(hit.subject), subject)
 		})
 	}
 

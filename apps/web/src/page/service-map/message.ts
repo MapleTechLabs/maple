@@ -1,14 +1,18 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
+import { WorldDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
 import * as Select from "@maple/views/ui/select"
+import * as Tiles from "./tiles/update"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
+import { BatchOutcome } from "./factory/edits"
 import * as Scene3d from "./scene3d"
 import {
 	BranchStatsSchema,
@@ -18,12 +22,8 @@ import {
 	MapBundleSchema,
 	PlanetScaleDatabase,
 	PlanetScaleStatsSchema,
-	Stored,
 } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { Stored } from "@maple/views/service-map/map/state"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -49,18 +49,24 @@ export const Message = defineMessageUnion({
 	CompletedFetchDbSummary: result(DbSummarySchema),
 	CompletedFetchBranchStats: result(BranchStatsSchema),
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetryFacets: {},
 	ClickedResetTimeRange: {},
-	ClickedView: { view: Schema.Literals(["2d", "3d"]) },
+	ClickedView: { view: Schema.Literals(["2d", "3d", "tiles"]) },
 	GotMapMessage: { message: ServiceMap.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotScene3dMessage: { message: Scene3d.Message },
+	GotTilesMessage: { message: Tiles.Message },
+	/** The org's world for the 3D viewport; dropped when it answers for another org. */
+	CompletedLoadWorld: { orgId: Schema.String, result: Schema.Result(WorldDocument, LoadFailure) },
+	CompletedSaveWorld: {
+		orgId: Schema.String,
+		batch: Schema.Number,
+		result: Schema.Result(BatchOutcome, LoadFailure),
+	},
 	GotServiceTabsMessage: { message: Tabs.Message },
 	GotChartMessage: { chart: Schema.Literals(["volume", "latency"]), message: Chart.Message },
 })

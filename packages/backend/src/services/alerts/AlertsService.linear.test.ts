@@ -1,11 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Schema, Array as Arr, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
-import { AlertsService } from "./AlertsService"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
@@ -16,6 +15,7 @@ import {
 	makeLayer,
 	makeWarehouseStub,
 	tracesRow,
+	alertServices,
 } from "./alerts-service-test-support"
 import { LinearAlertDestinationConfig } from "@maple/domain/http"
 
@@ -185,7 +185,7 @@ describe("AlertsService with a Linear destination", () => {
 		const orgId = asOrgId("org_linear_create")
 		return Effect.gen(function* () {
 			yield* connectLinear(testDb, linear.fetch, orgId)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				asUserId("user_linear"),
@@ -241,7 +241,7 @@ describe("AlertsService with a Linear destination", () => {
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			yield* connectLinear(testDb, linear.fetch, orgId)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const destination = yield* alerts.createDestination(
 				orgId,
 				userId,
@@ -260,7 +260,9 @@ describe("AlertsService with a Linear destination", () => {
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 1)
-			const create = linear.operations.find((operation) => operation.name === "MapleIssueCreate")
+			const create = Option.getOrUndefined(
+				Arr.findFirst(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
+			)
 			assert.strictEqual(create?.variables.input?.teamId, "team_1")
 			const thread = yield* Effect.promise(() =>
 				queryFirstRow<{ linear_identifier: string; incident_id: string }>(
@@ -270,7 +272,7 @@ describe("AlertsService with a Linear destination", () => {
 				),
 			)
 			assert.strictEqual(thread?.linear_identifier, "ENG-1")
-			assert.strictEqual(thread?.incident_id, incidents.incidents[0]!.id)
+			assert.strictEqual(thread?.incident_id, incidents.incidents[0].id)
 
 			state.tracesAggregateRows = [healthy]
 			yield* TestClock.adjust(Duration.minutes(1))
@@ -280,7 +282,7 @@ describe("AlertsService with a Linear destination", () => {
 
 			const comments = Arr.filter(linear.operations, (operation) => operation.name === "MapleComment")
 			assert.lengthOf(comments, 1)
-			assert.include(String(comments[0]!.variables.input?.body), "Resolved")
+			assert.include(String(comments[0].variables.input?.body), "Resolved")
 			assert.lengthOf(
 				Arr.filter(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
 				1,

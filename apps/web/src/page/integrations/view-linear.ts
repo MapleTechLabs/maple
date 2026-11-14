@@ -16,21 +16,19 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
-import { LINEAR_ACCENT } from "./catalog"
+} from "../kit/integration-empty"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { disconnectDialog } from "./view-disconnect"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// The Linear card: connect, the connected workspace, and a revoked grant that needs a reconnect.
+import { providerBrand } from "../kit/providers"
 
 type H = HtmlBuilder<Message>
 
-const BRAND = { icon: "LinearIcon", accent: LINEAR_ACCENT } as const
+const BRAND = providerBrand("linear")
 
-const ADMIN_ONLY = "Only org admins can change the Linear connection."
+const ADMIN_ONLY = "Only org admins and engineers can change the Linear connection."
 
 const notConnected = (h: H, model: Model): Html =>
 	integrationEmpty(h, [
@@ -61,14 +59,14 @@ const notConnected = (h: H, model: Model): Html =>
 			button(
 				h,
 				{
-					isDisabled: !model.isAdmin || model.connect.isStarting || model.disconnect.isPending,
+					isDisabled: !canManage(model) || model.connect.isStarting || model.disconnect.isPending,
 					isLoading: model.connect.isStarting,
 					attributes: [h.OnClick(Message.ClickedConnect())],
 				},
 				[icon(h, "LinearIcon"), "Connect Linear"],
 			),
 			integrationEmptyFooter(h, [
-				model.isAdmin ? "You'll authorize Maple in your Linear workspace." : ADMIN_ONLY,
+				canManage(model) ? "You'll authorize Maple in your Linear workspace." : ADMIN_ONLY,
 			]),
 		]),
 	])
@@ -108,14 +106,14 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 										[h.Class("[overflow-wrap:anywhere]")],
 										[
 											"Workspace ",
-											h.span([h.Class("text-foreground")], [status.workspaceName]),
+											typography(h, { tone: "foreground" }, [status.workspaceName]),
 										],
 									),
 								],
 							),
 						]
 					: []),
-				model.isAdmin
+				canManage(model)
 					? hstack(h, { gap: "2", align: "stretch", wrap: true }, [
 							button(
 								h,

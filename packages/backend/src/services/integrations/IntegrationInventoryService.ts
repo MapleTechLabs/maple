@@ -9,22 +9,22 @@ import {
 	PlanetscaleDatabases,
 	PlanetscalePollState,
 	RailwayConnections,
+	SearchConsoleSites,
 	RailwayEnvironments,
 	ScrapeTargets,
 	Sources,
 	VcsInstallations,
 	VcsRepositories,
+	VercelConnections,
+	VercelProjects,
 } from "@maple/db/tables"
-import {
-	buildIntegrationInventory,
-	type IntegrationInventory,
-	withSourceHealth,
-} from "@maple/domain/integration-inventory"
-import type { OrgId } from "@maple/domain/primitives"
+import type { IntegrationInventory } from "@maple/domain/integration-inventory"
+import { buildIntegrationInventory, withSourceHealth } from "./integration-inventory"
+import type { OrgId } from "@maple/primitives"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { readHealthOverrides } from "@maple/backend/services/org/integration-sources"
+import { readHealthOverrides } from "@maple/backend/services/integrations/integration-sources"
 import { SOURCE_HEALTH_COLUMNS, sourceRowHealth } from "@maple/backend/services/org/source-rows"
 
 export class IntegrationInventoryUnavailableError extends Schema.TaggedError<IntegrationInventoryUnavailableError>()(
@@ -131,6 +131,45 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							)
 							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
 					),
+					vercelConnections: db.run(
+						PG.from(VercelConnections)
+							.select(
+								"teamName",
+								"authFailedAt",
+								"logsEnabled",
+								"tracesEnabled",
+								"aiGatewayEnabled",
+								"speedInsightsEnabled",
+								"webAnalyticsEnabled",
+								"auditLogEnabled",
+								"logDrainState",
+								"traceDrainState",
+								"aiGatewayDrainState",
+								"speedInsightsDrainState",
+								"webAnalyticsDrainState",
+								"auditLogDrainState",
+								"lastSuccessAt",
+								"lastErrorAt",
+								"lastError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+					vercelProjects: db.run(
+						PG.from(VercelProjects)
+							.select(() => ({ count: PG.count() }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								// Only the current connection's: rows a disconnect raced with do not count.
+								PG.inSubquery(
+									$.connectionId,
+									PG.from(VercelConnections)
+										.select("id")
+										.where(($c) => [$c.orgId.eq(orgId)]),
+								),
+							]),
+					),
 					planetscaleConnections: db.run(
 						PG.from(PlanetscaleConnections)
 							.select(
@@ -176,6 +215,11 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							.select("connector", "name", "createdAt")
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
+					searchConsoleSites: db.run(
+						PG.from(SearchConsoleSites)
+							.select("siteUrl", "enabled", "lastSyncedAt", "lastError")
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
 					sources: db.run(
 						PG.from(Sources)
 							.select(...SOURCE_HEALTH_COLUMNS)
@@ -201,6 +245,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					...env,
 					serviceCount: Rec.keys(Option.getOrElse(decodeServices(servicesJson), () => ({}))).length,
 				})),
+				vercelConnection: rows.vercelConnections[0] ?? null,
+				vercelProjectCount: rows.vercelProjects[0]?.count ?? 0,
 				planetscaleConnection:
 					planetscale === undefined
 						? null
@@ -219,6 +265,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				),
 				scrapeTargets: rows.scrapeTargets,
 				chatWorkspaces: rows.chatWorkspaces,
+				searchConsoleSites: rows.searchConsoleSites,
 			},
 			now,
 		)

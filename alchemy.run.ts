@@ -15,12 +15,12 @@ import { SourceError } from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
-import { AwsRegionMismatchError, createMapleAwsOidcKey, resolveAwsRegion } from "@maple/infra/aws"
+import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
 import {
 	ApiWorker,
 	AiWorker,
 	SandboxWorker,
-	createMapleDeviceTokenKey,
+	declareStatusDomainsOrigin,
 	formatMapleDeployment,
 	formatMapleStage,
 	ManagedMapleDb,
@@ -28,16 +28,16 @@ import {
 	type MapleDbLogin,
 	type MapleDbResources,
 	type MapleDeployment,
-	type MapleProfile,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
+	prdOrigin,
 	resolveMapleDomains,
-	resolveMapleProfile,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
 import { DB_ACCESS_ROLES } from "@maple/db/roles"
+import { deployedDomains, type MapleProfile, resolveMapleProfile } from "@maple/infra/profile"
 import * as Acm from "@maple/infra/acm"
 import { createAwsSecurityBaseline } from "@maple/infra/security-baseline"
 import { optionalPlain, plainWithDefault, requiredPlain } from "@maple/infra/env"
@@ -223,12 +223,11 @@ const MapleStackLive = Layer.effect(
 		const webOnlyPreview =
 			deployment.stage.kind === "pr" &&
 			(yield* optionalPlain("MAPLE_PREVIEW_WEB_ONLY")).MAPLE_PREVIEW_WEB_ONLY === "1"
-		const allDomains = resolveMapleDomains(deployment)
-		// Without ingest and Electric their hostnames would resolve nowhere.
-		const domains = webOnlyPreview
-			? { web: allDomains.web, api: allDomains.api, sync: allDomains.sync, status: allDomains.status }
-			: allDomains
-		const profile = resolveMapleProfile(deployment, { webOnlyPreview })
+		// The `preview:collector` label: one preview tests the collector (scripts/ingest-preview-verify.sh).
+		const forceCollector =
+			(yield* optionalPlain("MAPLE_DEPLOY_AWS_COLLECTOR")).MAPLE_DEPLOY_AWS_COLLECTOR === "1"
+		const profile = resolveMapleProfile(deployment, { webOnlyPreview, forceCollector })
+		const domains = deployedDomains(resolveMapleDomains(deployment), profile)
 		const context: MapleStackContext = {
 			...deployment,
 			domains,
@@ -239,7 +238,7 @@ const MapleStackLive = Layer.effect(
 				// would go to production ingest.
 				ingest:
 					devEnv?.MAPLE_INGEST_URL ??
-					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev")),
+					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", prdOrigin("ingest"))),
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
@@ -250,8 +249,6 @@ const MapleStackLive = Layer.effect(
 			workerDev,
 			devEnv,
 			db: yield* declareMapleDb(deployment, profile),
-			awsOidc: yield* createMapleAwsOidcKey(),
-			deviceToken: yield* createMapleDeviceTokenKey(),
 		}
 		return context
 	}),
@@ -271,6 +268,8 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 			PORT: Output.map(Output.asOutput(route.port), String),
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
+			// The scraper's default is a fixed port; ingest's dev script listens on its route's port.
+			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
 			// The alchemy CLI sets NODE_ENV=production and children inherit it; vite and
 			// astro read it for `import.meta.env.DEV`/`PROD`, so dev servers must override it.
 			NODE_ENV: "development",
@@ -279,8 +278,8 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 
 /** Both clouds, unconditionally: stack options are evaluated before the stage is readable. */
 const providers =
-	// `Acm.providers()` needs the AWS credentials, so it is the layer provided TO.
-	Acm.providers().pipe(
+	// `Acm.providers` needs the AWS credentials, so it is the layer provided TO.
+	Acm.providers.pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
 		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
@@ -315,9 +314,17 @@ export default Alchemy.Stack(
 			})
 		}
 
-		const ingest = profile.deploys.ingest
-			? yield* createMapleIngest({ stage, region, domains, profile, dbLogin: db?.ingest })
-			: undefined
+		// Every stage that deploys a fleet has its hostname (`resolveMapleDomains`).
+		const ingest =
+			profile.deploys.ingest && domains.ingest
+				? yield* createMapleIngest({
+						stage,
+						region,
+						hostname: domains.ingest,
+						profile,
+						dbLogin: db?.ingest,
+					})
+				: undefined
 
 		// Account audit controls (CloudTrail, Config, GuardDuty): prd instances only.
 		const { awsSecurityBaseline } = profile.deploys
@@ -345,11 +352,11 @@ export default Alchemy.Stack(
 		// prd's electric-sync reads `ELECTRIC_URL` from the secret store, so its cutover is
 		// separate; a preview's points at this one. Electric runs in ingest's VPC, hence `ingest &&`.
 		const electric =
-			ingest && db?.electric
+			ingest && db?.electric && domains.electric
 				? yield* createMapleElectric({
 						stage,
 						region,
-						domains,
+						hostname: domains.electric,
 						profile,
 						network: ingest.network,
 						dbLogin: db.electric,
@@ -374,6 +381,8 @@ export default Alchemy.Stack(
 		// Public status pages, served from edge storage alone so they outlive a Maple outage.
 		const statusWorker = yield* StatusWorker
 		yield* serveWorker("status", statusWorker)
+		// Custom domains' CNAME target and the zone's fallback origin: one per zone, owned by US prd.
+		if (!isDevServer && stage.kind === "prd" && region === "us") yield* declareStatusDomainsOrigin
 
 		// A vite-source Worker: alchemy owns its build and dev server. Binds api as `API`.
 		const web = yield* Effect.provideService(Web, ApiWorker, api)

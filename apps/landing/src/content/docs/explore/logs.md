@@ -63,24 +63,26 @@ Each filter can include or exclude a value.
 
 The detail sheet opens with the message, a meta strip, and an **Error** or **Fatal** banner for those severities. It has these tabs:
 
-- **Attributes**: **Log Attributes** and **Resource Attributes**, with a **Search attributes...** box.
+- **Attributes**: **Log Attributes** and **Resource attributes**, with a **Search attributes…** box.
 - **Trace**: a **Trace Timeline** of every log in the same trace (up to 200), with span boundaries marked. Shown when the log has a trace ID.
+- **Context**: **Surrounding logs**, the logs written around this one by the same **Instance** or the whole **Service**.
 - **Raw**: the record as a **JSON Payload**.
 - **Infrastructure**: host, container, or Kubernetes details, shown when the log carries those resource attributes.
 
-The meta strip shows the timestamp, a `trace:` link, and the span ID. It also has **Open in full page**, **Shareable link**, and **Log JSON** (copy) actions.
+The meta strip shows the timestamp, a `trace:` link, and the span ID. It also has **Open in full page**, copy link to log, and **Log JSON** (copy) actions.
 
 ## Move between logs and traces
 
 - **From a log to its trace**: click the `trace:` link in the meta strip. The trace view opens at the log's timestamp.
-- **From a trace to its logs**: on a trace, click **View Logs**, or open a span's **Logs** tab. See [Traces](/docs/explore/traces#jump-to-logs-and-replays).
+- **From a trace to its logs**: on a trace, click **View logs**, or open a span's **Logs** tab. See [Traces](/docs/explore/traces#jump-to-logs-and-replays).
 
 ## Query logs from an assistant
 
-The [MCP server](/docs/reference/mcp) exposes two log tools:
+The [MCP server](/docs/reference/mcp) exposes three log tools:
 
 - `search_logs`: filter by service, severity, message text, trace ID, or span ID.
 - `mine_log_patterns`: groups recent matching log messages into templates such as `GET /api/users/<*> 200 in <*>ms`, with a count and a service and severity breakdown per template. It samples up to 50,000 recent logs (10,000 by default). Pattern mining is available through MCP only; the Logs page has no patterns view.
+- `compare_log_patterns`: what changed in the logs between two windows. It samples the logs nearest the boundary on each side, clusters them together (error-level logs apart from the rest), and lists templates that are new, gone, or whose share of the logs at least doubled or halved, so a rise in traffic alone flags nothing. Pass `since_deploy` with a `service` to compare the hour after that service's newest deploy with the hour before it.
 
 ## Troubleshooting
 

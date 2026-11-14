@@ -1,7 +1,7 @@
 import { Effect, Schema, Array as Arr } from "effect"
 import type { ClerkUserResource } from "../../../platform/clerk"
 
-// What the `/account` tabs read from Clerk's `useUser().user`, as plain data. Writes look the
+// What the `/account` tabs read from Clerk's signed-in user, as plain data. Writes look the
 // resource up again by id when they run (clerk-js resources are not data).
 
 export const AccountEmail = Schema.Struct({

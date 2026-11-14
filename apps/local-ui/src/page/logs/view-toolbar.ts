@@ -3,7 +3,14 @@ import { logsStreamToolbar } from "@maple/views/ui/logs/logs-stream-toolbar"
 import { Option } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { refreshButton, timeRangeSelect, toolbar, toolbarSearch, toolbarStat, toolbarStats } from "../kit/toolbar"
+import {
+	refreshButton,
+	timeRangeSelect,
+	toolbar,
+	toolbarSearch,
+	toolbarStat,
+	toolbarStats,
+} from "../kit/toolbar"
 import type { LogsMode } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -29,7 +36,7 @@ const streamControls = (h: HtmlBuilder<Message>, model: Model): Html =>
 		onToggleDensity: Message.ClickedDensity(),
 	})
 
-/** Each mode supplies its own stat (`LogListMode` / `LogPatternsMode`). */
+/** Each mode supplies its own stat. */
 const stats = (h: HtmlBuilder<Message>, model: Model, mode: LogsMode): ReadonlyArray<Html> => {
 	if (mode === "list") {
 		const hasNextPage = Option.exists(AsyncData.getData(model.logs.data), (data) => data.hasNextPage)
@@ -77,7 +84,11 @@ export const logsToolbar = (
 			[
 				...(mode === "list" ? [streamControls(h, model)] : []),
 				...stats(h, model, mode),
-				refreshButton(h, { isSpinning: model.isRefreshing, hasNewData: options.hasNewData, onRefresh: Message.ClickedRefresh() }),
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: options.hasNewData,
+					onRefresh: Message.ClickedRefresh(),
+				}),
 				timeRangeSelect(h, options.range, (range) => Message.ChangedRange({ range })),
 			],
 			"shrink-0",

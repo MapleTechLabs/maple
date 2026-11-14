@@ -1,9 +1,9 @@
 import type { CatalogPlan } from "@maple/domain/http"
-import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../../lib/billing/plans"
+import { getPlanDescription, getPlanFeatures, TRIAL_DURATION_DAYS } from "../kit/billing/plans"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { button } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import { card, cardDescription, cardFooter, cardHeader, cardPanel, cardTitle } from "@maple/views/ui/card"
 import { badge, separator } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
@@ -12,7 +12,8 @@ import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { panel } from "@maple/views/ui/panel"
 import { spinner } from "@maple/views/ui/spinner"
-import { Message, type Model } from "./pricing-cards"
+import { compliance } from "../kit/compliance-line"
+import { ENTERPRISE_CONTACT_URL, Message, type Model } from "./pricing-cards"
 import {
 	ENTERPRISE_DATA_FEATURES,
 	FEATURE_ICONS,
@@ -29,6 +30,15 @@ import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
+
+// Below `sm` the cards stack, so a card's action sits under its price, above the feature lists
+// (a phone showed only features before the button), and is 44px tall.
+const CARD_PANEL_CLASS = "flex flex-col gap-5 flex-1 max-sm:order-last max-sm:pb-4"
+const CARD_FOOTER_CLASS = "mt-auto flex-col gap-2 items-stretch"
+const CARD_ACTION_CLASS = "w-full max-sm:h-11"
+/** Two lines from `sm` up, so side-by-side cards line up; stacked cards need no filler. */
+const CARD_DESCRIPTION_CLASS =
+	"mt-2 sm:min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground"
 
 const loadingCard = (h: H): Html =>
 	card(h, [
@@ -49,36 +59,29 @@ const loadingCard = (h: H): Html =>
 
 const dataRow = (h: H, feature: FeatureRow, isDetailed: boolean): Html => {
 	const iconName = FEATURE_ICONS.get(feature.featureId)
-	const value = h.span([h.Class("font-semibold tabular-nums text-foreground")], [feature.value])
-	return h.div(
-		// One row height for both cards, so a two-line overage row never pushes its card out of step.
-		[h.Class("flex min-h-10 items-center justify-between text-sm")],
-		[
-			h.div(
-				[h.Class("text-muted-foreground flex items-center gap-2.5")],
-				[
-					...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4" })]),
-					h.span([h.Class("font-medium")], [feature.label]),
-				],
-			),
-			isDetailed
-				? h.div(
-						[h.Class("text-right")],
-						[
-							value,
-							...(feature.detail === null
-								? []
-								: [
-										h.p(
-											[h.Class("text-foreground-subtle text-3xs mt-0.5 font-medium")],
-											[feature.detail],
-										),
-									]),
-						],
-					)
-				: value,
-		],
-	)
+	const value = typography(h, { tone: "foreground", weight: "semibold", numeric: true }, [feature.value])
+	return hstack(h, { align: "center", justify: "between", className: "min-h-10 text-sm" }, [
+		hstack(h, { gap: "2.5", align: "center", className: "text-muted-foreground" }, [
+			...(iconName === undefined ? [] : [icon(h, iconName, { className: "size-4" })]),
+			typography(h, { weight: "medium" }, [feature.label]),
+		]),
+		isDetailed
+			? h.div(
+					[h.Class("text-right")],
+					[
+						value,
+						...(feature.detail === null
+							? []
+							: [
+									h.p(
+										[h.Class("text-foreground-subtle text-3xs mt-0.5 font-medium")],
+										[feature.detail],
+									),
+								]),
+					],
+				)
+			: value,
+	])
 }
 
 const platformFeatures = (h: H, slug: string): Html =>
@@ -89,23 +92,20 @@ const platformFeatures = (h: H, slug: string): Html =>
 			h.div(
 				[h.Class("space-y-2.5")],
 				Arr.map(getPlanFeatures(slug), (feature) =>
-					h.div(
-						[h.Class("flex items-start gap-2.5 text-sm")],
-						[
-							icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
-								className: "text-foreground-subtle size-4 shrink-0 mt-0.5",
-							}),
-							h.span([h.Class("text-muted-foreground leading-snug")], [feature.label]),
-							...(feature.value
-								? [
-										h.span(
-											[h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")],
-											[feature.value],
-										),
-									]
-								: []),
-						],
-					),
+					hstack(h, { gap: "2.5", align: "start", className: "text-sm" }, [
+						icon(h, PLATFORM_FEATURE_ICONS.get(feature.icon) ?? "CircleCheckIcon", {
+							className: "text-foreground-subtle size-4 shrink-0 mt-0.5",
+						}),
+						typography(h, { tone: "muted", className: "leading-snug" }, [feature.label]),
+						...(feature.value
+							? [
+									h.span(
+										[h.Class("font-semibold tabular-nums text-xs ml-auto shrink-0")],
+										[feature.value],
+									),
+								]
+							: []),
+					]),
 				),
 			),
 		],
@@ -138,22 +138,19 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 								]
 							: []),
 				]),
-				h.div(
-					[h.Class("mt-3 flex items-baseline gap-1")],
-					[
-						h.span(
-							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
-							[price],
-						),
-						...(interval === undefined
-							? []
-							: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
-					],
-				),
+				hstack(h, { gap: "1", align: "baseline", className: "mt-3" }, [
+					h.span(
+						[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+						[price],
+					),
+					...(interval === undefined
+						? []
+						: [eyebrow(h, { variant: "label", className: "ml-1" }, [interval])]),
+				]),
 				cardDescription(
 					h,
 					[plan.description ?? getPlanDescription(getPlanSlug(plan))],
-					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
+					CARD_DESCRIPTION_CLASS,
 				),
 			]),
 			cardPanel(
@@ -163,7 +160,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, getPlanSlug(plan)),
 				],
-				"flex flex-col gap-5 flex-1",
+				CARD_PANEL_CLASS,
 			),
 			cardFooter(
 				h,
@@ -174,7 +171,7 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 							variant: isTrial ? "default" : config.variant,
 							isLoading: loadingPlanId === plan.id,
 							isDisabled: config.isDisabled,
-							className: "w-full font-medium",
+							className: CARD_ACTION_CLASS,
 							attributes: [h.OnClick(Message.ClickedPlan({ planId: plan.id }))],
 						},
 						[
@@ -192,11 +189,11 @@ const planCard = (h: H, plan: CatalogPlan, loadingPlanId: string | null): Html =
 							]
 						: []),
 				],
-				"mt-auto flex-col gap-2 items-stretch",
+				CARD_FOOTER_CLASS,
 			),
 		],
 		cn(
-			"flex flex-col transition-colors",
+			"flex flex-col",
 			isActive && "bg-surface-strong",
 			isUpgrade && "bg-surface-sunken ring-1 ring-primary-a3",
 		),
@@ -212,19 +209,16 @@ const enterpriseCard = (h: H): Html =>
 				hstack(h, { gap: "2", justify: "between" }, [
 					cardTitle(h, ["Enterprise"], eyebrowVariants()),
 				]),
-				h.div(
-					[h.Class("mt-3 flex items-baseline gap-1")],
-					[
-						h.span(
-							[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
-							["Custom"],
-						),
-					],
-				),
+				hstack(h, { gap: "1", align: "baseline", className: "mt-3" }, [
+					h.span(
+						[h.Class("font-mono text-3xl font-semibold tracking-tight tabular-nums")],
+						["Custom"],
+					),
+				]),
 				cardDescription(
 					h,
 					["For high-volume teams with custom retention, compliance, and dedicated support."],
-					"mt-2 min-h-[2lh] font-display text-sm leading-relaxed text-muted-foreground",
+					CARD_DESCRIPTION_CLASS,
 				),
 			]),
 			cardPanel(
@@ -234,22 +228,28 @@ const enterpriseCard = (h: H): Html =>
 					separator(h, "horizontal", "bg-border-subtle"),
 					platformFeatures(h, "enterprise"),
 				],
-				"flex flex-col gap-5 flex-1",
+				CARD_PANEL_CLASS,
 			),
 			cardFooter(
 				h,
 				[
-					button(
+					// A real link: a tab opened from a Command can be blocked, and the page cannot tell.
+					linkButton(
 						h,
 						{
+							href: ENTERPRISE_CONTACT_URL,
 							variant: "outline",
-							className: "w-full font-medium",
-							attributes: [h.OnClick(Message.ClickedEnterpriseContact())],
+							className: CARD_ACTION_CLASS,
+							attributes: [
+								h.Target("_blank"),
+								h.Rel("noopener noreferrer"),
+								h.AriaLabel("Talk to founder (opens a new tab)"),
+							],
 						},
-						["Talk to founder"],
+						["Talk to founder", icon(h, "ExternalLinkIcon", { size: 12 })],
 					),
 				],
-				"mt-auto flex-col gap-2 items-stretch",
+				CARD_FOOTER_CLASS,
 			),
 		],
 		"flex flex-col",
@@ -274,7 +274,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 			}),
 )
 
-/** `CheckoutConfirmingPanel`: back from Stripe, before Autumn has the plan; the offer is withheld. */
+/** Back from Stripe, before Autumn has the plan; the offer is withheld. */
 const checkoutConfirming = (h: H): Html =>
 	panel(
 		h,
@@ -291,7 +291,7 @@ const checkoutConfirming = (h: H): Html =>
 		],
 	)
 
-/** `CheckoutTimedOutNotice`: the wait gave up, so a slow sync does not read as a failure. */
+/** The wait gave up, so a slow sync does not read as a failure. */
 const checkoutTimedOut = (h: H): Html =>
 	panel(
 		h,
@@ -310,7 +310,7 @@ const checkoutTimedOut = (h: H): Html =>
 const loadingGrid = (h: H): Html =>
 	h.div([h.Class("grid grid-cols-1 gap-4 sm:grid-cols-2")], [loadingCard(h), loadingCard(h)])
 
-/** `PlanCards`: the plans offered, then Enterprise as a peer card. */
+/** The plans offered, then Enterprise as a peer card. */
 export const planCards = (h: H, plans: ReadonlyArray<CatalogPlan>, loadingPlanId: string | null): Html => {
 	const totalCards = plans.length + 1
 	return h.div(
@@ -337,6 +337,7 @@ const plansGrid = (h: H, plans: ReadonlyArray<CatalogPlan>, model: Model): Html 
 				Arr.filter(plans, (plan) => !plan.addOn && !plan.autoEnable),
 				model.loadingPlanId,
 			),
+			compliance(h),
 		],
 	)
 

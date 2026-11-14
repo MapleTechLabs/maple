@@ -12,9 +12,9 @@ import type { Model } from "./model"
 import { ProductEdit } from "./product-edit"
 import { listAlignSelectId, listUnitSelectId } from "./product-selects"
 import { pageSelect } from "./view-select"
+import { hstack } from "@maple/views/ui/stack"
 
-// `DraggableColumnRow`: grip, field (with its suggestions while focused),
-// header, unit, alignment and remove. The grip drags (`MountListColumnDrag`) or moves by arrow key.
+// The grip drags or moves by arrow key.
 
 type H = HtmlBuilder<Message>
 
@@ -31,7 +31,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 	h.div(
 		[
 			h.Class(
-				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-popup",
+				"absolute top-full left-0 z-50 mt-1 w-full max-h-48 overflow-auto rounded-lg border bg-popover shadow-popup",
 			),
 		],
 		Arr.map(
@@ -45,7 +45,7 @@ const suggestionList = (h: H, column: ListColumn, index: number, fields: Readonl
 					h,
 					{
 						className:
-							"w-full px-2 py-1 text-left text-xs hover:bg-accent active:bg-accent truncate",
+							"w-full px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken truncate",
 						attributes: [h.OnMouseDown(product(ProductEdit.PickedListField({ index, field })))],
 					},
 					[field],
@@ -62,11 +62,14 @@ export const listColumnRow = (
 	index: number,
 	suggestions: ReadonlyArray<string> | null,
 ): Html =>
-	h.div(
-		[
-			h.Class("relative flex items-center gap-2 rounded-md bg-background py-1"),
-			h.DataAttribute(ROW_ATTRIBUTE, ""),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "relative rounded-md bg-background py-1",
+			attributes: [h.DataAttribute(ROW_ATTRIBUTE, "")],
+		},
 		[
 			pressable(
 				h,

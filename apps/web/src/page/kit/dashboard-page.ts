@@ -10,7 +10,7 @@ import {
 	pageScrollAreaStyles,
 	pageStickyAreaScrolledStyles,
 	pageStickyAreaStyles,
-} from "@maple/ui/styles/ui/page-layout"
+} from "@maple/views/ui/page-layout.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import {
 	pageDescription,
@@ -19,17 +19,14 @@ import {
 	pageTitle,
 } from "@maple/views/ui/page-layout"
 
-// The dashboard page below the shell's top bar:
-// `PageLayout.Body` with its filter rail, content column, sticky header and scroll area.
-// Below `lg` the shell lifts both rails out of the body into sheets (`shell/page-rails.ts`).
+// The dashboard page below the shell's top bar: its filter rail, content column, sticky header and
+// scroll area. Below `lg` the shell lifts both rails out of the body into sheets (`@maple/views/ui/page-rails`).
 
 export type DashboardPageOptions = Readonly<{
-	/** `DashboardLayout.Filters`'s children. */
 	filters?: Html
 	filtersWidth?: string
 	/** What the filter rail holds when it is not filters (a settings nav): names its sheet below `lg`. */
 	filtersLabel?: string
-	/** `DashboardLayout.Header`'s `titleContent`. */
 	titleContent?: Html | undefined
 	/** A plain page title, drawn as the page `<h1>` when there is no `titleContent`. */
 	title?: string
@@ -37,33 +34,35 @@ export type DashboardPageOptions = Readonly<{
 	description?: string
 	/** The header's right side: `headerActions` and the time controls, already composed. */
 	actions?: Html
-	/** `DashboardLayout.Tabs`'s children: page tabs pinned under the header. */
+	/** Page tabs pinned under the header. */
 	tabs?: Html
 	scrollClassName?: string
-	/** `DashboardLayout.Scroll`'s `width`: a centred capped column (`page-column`). */
+	/**
+	 * The body's column (`page-column`). Defaults to `wide`, a 1536px cap; `full` is for a
+	 * page whose content is the canvas (traces, the service map, a dashboard grid).
+	 */
 	width?: PageWidth
-	/** `DashboardLayout.Scroll`'s `gap` between the body's top-level blocks. */
+	/** The gap between the body's top-level blocks. */
 	gap?: PageGap
-	/** `header`:replaces the composed header (a page with its own title block). */
+	/** Replaces the composed header (a page with its own title block). */
 	header?: Html
-	/** `DashboardLayout.RightPanel`: inline at `lg` and up, a sheet below it (the shell lifts it). */
+	/** Inline at `lg` and up, a sheet below it (the shell lifts it). */
 	rightPanel?: Html
 	rightPanelWidth?: string
-	/** `DashboardPage`'s `sticky`: pinned under the header and tabs (a chart, a toolbar, a banner). */
+	/** Pinned under the header and tabs (a chart, a toolbar, a banner). */
 	sticky?: Html
-	/** `DashboardPage fill`: the body owns its scrolling (`DashboardLayout.Fill`, not `Scroll`). */
+	/** The body owns its scrolling, with no scroll area. */
 	fill?: boolean
 	/** A scroller below has left the top: the sticky area raises its shadow. */
 	isScrolled?: boolean
 }>
 
-/** `PageLayout.Body`. */
 export const pageBody = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class(pageBodyStyles), h.DataAttribute("slot", "page-body")], children)
 
 /**
- * `PageLayout.FilterSidebar` as the inline rail (lg and up). A rail with no facets to offer
- * (`filterSidebarFrame`'s `isIdle`) is hidden, so the content takes its width.
+ * The inline filter rail (lg and up). A rail with no facets to offer (`filterSidebarFrame`'s
+ * `isIdle`) is hidden, so the content takes its width.
  */
 export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string, label?: string): Html =>
 	h.aside(
@@ -81,7 +80,7 @@ export const filterRail = <M>(h: HtmlBuilder<M>, child: Html, width?: string, la
 		[child],
 	)
 
-/** `PageLayout.Content`; `attributes` adds state on the `<main>` (a loading placeholder's busy flag). */
+/** `attributes` adds state on the `<main>` (a loading placeholder's busy flag). */
 export const pageContent = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
@@ -97,7 +96,6 @@ export const pageContent = <M>(
 		children,
 	)
 
-/** `PageLayout.Header` + `HeaderActions` from a composed title block and actions. */
 export const pageHeader = <M>(
 	h: HtmlBuilder<M>,
 	titleContent: Html | undefined,
@@ -111,37 +109,42 @@ export const pageHeader = <M>(
 		actions === undefined ? [] : [pageHeaderActions(h, [actions])],
 	)
 
-/** `PageLayout.StickyArea`; the page reports the scrolled shadow. */
-const stickyArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>, isScrolled = false): Html =>
+const stickyArea = <M>(
+	h: HtmlBuilder<M>,
+	children: ReadonlyArray<Html>,
+	isScrolled: boolean,
+	width: PageWidth,
+): Html =>
 	h.div(
 		[
 			h.DataAttribute("slot", "page-sticky-area"),
 			h.Class(cn(pageStickyAreaStyles, isScrolled && pageStickyAreaScrolledStyles)),
 		],
-		children,
+		// The header caps at the body's width, so the title sits over the column it heads.
+		PAGE_WIDTH[width] === null
+			? children
+			: [h.div([h.Class(cn("w-full space-y-4", PAGE_WIDTH[width]))], children)],
 	)
 
-/** `PageLayout.Fill`. */
 const fillArea = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.DataAttribute("slot", "page-fill"), h.Class(pageFillStyles)], children)
 
-// `settings` caps the header and the column at the same left-aligned width (settings, integrations, account).
+// Every capped width is left-aligned on the page gutter, so the header, body and top bar share one edge.
 const PAGE_WIDTH = {
 	full: null,
-	reading: "mx-auto max-w-4xl",
-	narrow: "mx-auto max-w-3xl",
+	wide: "max-w-(--breakpoint-2xl)",
+	narrow: "max-w-3xl",
 	settings: "max-w-4xl",
 } as const
 const PAGE_GAP = { none: null, sm: "gap-3", md: "gap-4", lg: "gap-6" } as const
 export type PageWidth = keyof typeof PAGE_WIDTH
 export type PageGap = keyof typeof PAGE_GAP
 
-/** `DashboardLayout.Scroll`: the scroll area, with a `page-column` unless the width is full. */
 const scrollArea = <M>(
 	h: HtmlBuilder<M>,
 	children: ReadonlyArray<Html>,
 	className?: string,
-	width: PageWidth = "full",
+	width: PageWidth = "wide",
 	gap: PageGap = "none",
 ): Html =>
 	width === "full"
@@ -165,7 +168,7 @@ const scrollArea = <M>(
 				],
 			)
 
-/** `PageLayout.ScrollArea` on its own, for a page that lays out its header and footer itself. */
+/** The scroll area on its own, for a page that lays out its header and footer itself. */
 export const pageScrollArea = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ className?: string; width?: PageWidth; gap?: PageGap }>,
@@ -191,9 +194,9 @@ export const dashboardPage = <M>(
 					[heading, pageDescription(h, [options.description], "text-sm")],
 				))
 	const hasHeader = titleContent !== undefined || options.actions !== undefined
-	const headerWidth = options.width === "settings" ? PAGE_WIDTH.settings : undefined
-	const header =
-		options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions, headerWidth) : undefined)
+	// A page that owns its scrolling is a canvas: its header spans the full width with it.
+	const width = options.width ?? (options.fill === true ? "full" : "wide")
+	const header = options.header ?? (hasHeader ? pageHeader(h, titleContent, options.actions) : undefined)
 	const sticky = [
 		...(header === undefined ? [] : [header]),
 		...(options.tabs === undefined
@@ -206,10 +209,10 @@ export const dashboardPage = <M>(
 			? []
 			: [filterRail(h, options.filters, options.filtersWidth, options.filtersLabel)]),
 		pageContent(h, [
-			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled)] : []),
+			...(sticky.length > 0 ? [stickyArea(h, sticky, options.isScrolled ?? false, width)] : []),
 			options.fill === true
 				? fillArea(h, children)
-				: scrollArea(h, children, options.scrollClassName, options.width, options.gap),
+				: scrollArea(h, children, options.scrollClassName, width, options.gap),
 		]),
 		...(options.rightPanel === undefined
 			? []

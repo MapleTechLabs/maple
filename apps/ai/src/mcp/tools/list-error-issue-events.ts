@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { ListErrorIssueEventsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { actorLabel, issueIdParam, issueNotFound, persistenceFailed } from "./error-issue-shared"
@@ -22,7 +21,6 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 			issue_id: issueIdParam(),
 			limit: P.limit({ default: 100, max: MAX_EVENTS, noun: "events" }),
 		}),
-		output: ListErrorIssueEventsOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading issue history"],
 		handler: Effect.fn("McpTool.listErrorIssueEvents")(function* (params) {

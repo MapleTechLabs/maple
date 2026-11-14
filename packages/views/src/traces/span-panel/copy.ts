@@ -6,8 +6,8 @@ import { pressable } from "@maple/views/ui/pressable"
 import { Message } from "./message"
 import type { CopyStatus, PanelState as Model } from "./model"
 
-// `CopyButton` (with `idleIcon` and `tooltip`), `CopyableValue` and `SelectableValue` from @maple/ui,
-// with the copy status read from the panel's Model by target id.
+// Copy buttons, copyable values and selectable values, with the copy status read from the panel's
+// Model by target id.
 // TODO(toast): every copy should toast; toasts are not wired into the page yet.
 
 type H = HtmlBuilder<Message>
@@ -26,7 +26,7 @@ export type CopyButtonOptions = Readonly<{
 	tooltipId?: string
 }>
 
-/** `<CopyButton>` (ghost, icon-xs) whose click copies `value`. */
+/** A ghost icon-xs copy button whose click copies `value`. */
 export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html =>
 	sharedCopyButton(h, {
 		status: statusOf(model, options.id),
@@ -43,7 +43,7 @@ export const copyButton = (h: H, model: Model, options: CopyButtonOptions): Html
 		],
 	})
 
-/** `CopyableValue`: inline text that copies itself on click. */
+/** Inline text that copies itself on click. */
 export const copyableValue = (
 	h: H,
 	model: Model,
@@ -56,7 +56,7 @@ export const copyableValue = (
 		{
 			label: `Copy ${options.label ?? "value"}`,
 			className: cn(
-				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors",
+				"-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left",
 				status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 				status === "copied" && "bg-severity-info-a3",
 				status === "error" && "bg-severity-error-a3",
@@ -64,14 +64,16 @@ export const copyableValue = (
 			),
 			attributes: [
 				h.Title("Click to copy"),
-				h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), { propagation: "Stop" }),
+				h.OnClick(Message.ClickedCopy({ id: options.id, text: options.value }), {
+					propagation: "Stop",
+				}),
 			],
 		},
 		children ?? [options.value],
 	)
 }
 
-/** `SelectableValue`: selectable text with a trailing copy button for the whole value. */
+/** Selectable text with a trailing copy button for the whole value. */
 export const selectableValue = (
 	h: H,
 	model: Model,

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as A from "@maple/ui/styles/ui/autocomplete"
+import * as A from "./autocomplete.styles"
 import {
 	commandEmptyStyles,
 	commandFooterStyles,
@@ -8,7 +8,7 @@ import {
 	commandItemStyles,
 	commandListStyles,
 	commandShortcutStyles,
-} from "@maple/ui/styles/ui/command"
+} from "./command.styles"
 import { Array, Effect, Queue, Stream } from "effect"
 import { Mount } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -28,7 +28,7 @@ export type CommandItem = Readonly<{
 	shortcut?: string
 	/** The item's value (default: its title), what a pick reports. */
 	value?: string
-	/** `render={<Link />}`: the item is an `<a>` to this href. */
+	/** The item is an `<a>` to this href. */
 	href?: string
 	/** A glyph before the title (an icon, a service dot). */
 	leading?: Html
@@ -131,11 +131,11 @@ export type ListOptions<M> = Readonly<{
 	isUnfiltered?: boolean
 	/** Replaces the pick an item click reports (a link item navigates on its own). */
 	onClickItem?: (value: string) => M
-	/** `CommandItem className`. */
+	/** Classes on every item. */
 	itemClassName?: string
-	/** `CommandList className`. */
+	/** Classes on the list. */
 	listClassName?: string
-	/** `CommandEmpty`, shown in the list when no group has items. */
+	/** Shown in the list when no group has items. */
 	empty?: Html
 	/** On the ScrollArea viewport, e.g. a Mount that measures its overflow. */
 	viewportAttributes?: ReadonlyArray<Attribute<M>>

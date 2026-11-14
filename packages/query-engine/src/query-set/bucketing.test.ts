@@ -8,6 +8,7 @@ import {
 	resolveFallbackStrategy,
 	resolveTimeseriesBucketSpec,
 } from "./bucketing"
+import * as Arr from "effect/Array"
 
 describe("resolveTimeseriesBucketSpec", () => {
 	it("resolves deterministic auto bucket seconds for timeseries specs", () => {
@@ -175,7 +176,7 @@ describe("buildExecutionWindows", () => {
 
 		// 24h and 7d are not wider than the request; only 31d survives.
 		expect(windows).toHaveLength(2)
-		expect(windows[1].startTime).toBe("2025-12-08 00:00:00")
+		expect(Arr.getUnsafe(windows, 1).startTime).toBe("2025-12-08 00:00:00")
 	})
 
 	it("falls back to the primary alone for an unparseable or inverted range", () => {

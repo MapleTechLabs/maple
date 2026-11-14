@@ -1,5 +1,10 @@
 import { Schema, Array as Arr, String as Str } from "effect"
-import { ALERT_REDUCERS } from "@maple/query-model"
+import {
+	ALERT_REDUCERS,
+	QUERY_BUILDER_DATA_SOURCES,
+	QUERY_BUILDER_METRIC_TYPES,
+	QUERY_BUILDER_SPACE_AGGREGATIONS,
+} from "@maple/query-model"
 import { PublicHttpErrorBodySchema } from "./http/error-policy"
 import {
 	CommitSha,
@@ -9,8 +14,9 @@ import {
 	ServiceName,
 	ServiceNamespace,
 	SpanName,
+	StatusCode,
 	TraceId,
-} from "./primitives"
+} from "@maple/primitives"
 import { WireRow } from "./wire"
 
 const dateTimePattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/
@@ -33,10 +39,34 @@ export const TracesMetric = Schema.Literals([
 ])
 export type TracesMetric = Schema.Schema.Type<typeof TracesMetric>
 
-export const MetricsMetric = Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])
+/** How each series is reduced within a bucket (the time aggregation). */
+export const MetricsMetric = Schema.Literals([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+])
 export type MetricsMetric = Schema.Schema.Type<typeof MetricsMetric>
 
-export const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
+/**
+ * How the per-series values of one group are combined (the space aggregation).
+ * Absent means `defaultSpaceAggregation(metric)`. Histograms ignore it: their
+ * buckets merge across series.
+ */
+export const MetricsSpaceAggregation = Schema.Literals(QUERY_BUILDER_SPACE_AGGREGATIONS)
+export type MetricsSpaceAggregation = Schema.Schema.Type<typeof MetricsSpaceAggregation>
+
+export const defaultSpaceAggregation = (metric: MetricsMetric): MetricsSpaceAggregation =>
+	metric === "avg" || metric === "min" || metric === "max" ? metric : "sum"
+
+/** Group-by keys per query across `groupByAttributeKeys` and `groupByResourceAttributeKeys`. */
+export const MAX_METRICS_GROUP_BY_KEYS = 5
+
+export const MetricType = Schema.Literals(QUERY_BUILDER_METRIC_TYPES)
 export type MetricType = Schema.Schema.Type<typeof MetricType>
 
 const attributeFilterFields = {
@@ -83,7 +113,7 @@ export const TracesFilters = Schema.Struct({
 	 */
 	serviceNames: Schema.optional(Schema.Array(ServiceName)),
 	spanNames: Schema.optional(Schema.Array(SpanName)),
-	statusCode: Schema.optional(Schema.Literals(["Ok", "Error", "Unset"])),
+	statusCode: Schema.optional(Schema.Literals(StatusCode.literals)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
 	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
@@ -130,6 +160,10 @@ export const LogsFilters = Schema.Struct({
 	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Breakdown groupBy "attribute" groups by this LogAttributes key; "resource_attribute"
+	// by the ResourceAttributes key. Same field names as MetricsFilters.
+	groupByAttributeKey: Schema.optional(Schema.String),
+	groupByResourceAttributeKey: Schema.optional(Schema.String),
 })
 export type LogsFilters = Schema.Schema.Type<typeof LogsFilters>
 
@@ -169,6 +203,10 @@ export const MetricsFilters = Schema.Struct({
 	// ResourceAttributes key (host.name, k8s.pod.name, …) instead of a datapoint
 	// Attributes key. Required when groupBy includes "resource_attribute".
 	groupByResourceAttributeKey: Schema.optional(Schema.String),
+	// Several keys of each kind, grouped together (`namespace · job`). Supersede
+	// the singular keys above when present.
+	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
+	groupByResourceAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
@@ -272,6 +310,7 @@ export const MetricsTimeseriesQuery = Schema.Struct({
 	kind: Schema.Literal("timeseries"),
 	source: Schema.Literal("metrics"),
 	metric: MetricsMetric,
+	spaceAggregation: Schema.optional(MetricsSpaceAggregation),
 	groupBy: Schema.optional(
 		Schema.Array(Schema.Literals(["service", "attribute", "resource_attribute", "none"])),
 	),
@@ -309,7 +348,7 @@ export const LogsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("logs"),
 	metric: Schema.Literal("count"),
-	groupBy: Schema.Literals(["service", "severity"]),
+	groupBy: Schema.Literals(["service", "severity", "attribute", "resource_attribute"]),
 	filters: Schema.optional(LogsFilters),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),
@@ -321,6 +360,7 @@ export const MetricsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("metrics"),
 	metric: MetricsMetric,
+	spaceAggregation: Schema.optional(MetricsSpaceAggregation),
 	groupBy: Schema.Literals(["service", "attribute", "resource_attribute"]),
 	filters: MetricsFilters,
 	limit: Schema.optional(
@@ -410,7 +450,7 @@ export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsList
 
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
-	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	scope: Schema.optional(Schema.Literals(["span", "resource"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
@@ -475,7 +515,7 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
-	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery),
@@ -627,12 +667,12 @@ export type SparklineSeries = Schema.Schema.Type<typeof SparklineSeries>
 export const QueryEngineResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("timeseries"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(TimeseriesPoint),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("breakdown"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(BreakdownItem),
 	}),
 	Schema.Struct({
@@ -642,7 +682,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeKeys"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(AttributeKeyItem),
 	}),
 	Schema.Struct({
@@ -657,7 +697,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeValues"),
-		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+		source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 		data: Schema.Array(AttributeValueItem),
 	}),
 	Schema.Struct({
@@ -836,6 +876,12 @@ export const WEB_ANALYTICS_UNSET = "(none)"
  * forever when a tab dies without sending its unload row.
  */
 export const SESSION_LIVE_WINDOW_SECONDS = 300
+
+/**
+ * The browser SDK's hard cap on one session's lifetime (`@maple/browser-session`'s session record,
+ * which keeps its own copy): a replay window never needs to reach further than this past its start.
+ */
+export const MAX_SESSION_MS = 24 * 60 * 60 * 1000
 
 export {
 	SESSION_QUALITY_TAGS,

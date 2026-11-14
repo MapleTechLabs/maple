@@ -1,8 +1,8 @@
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { findFirstPartialIndex, splitAtFirstPartial } from "@maple/ui/components/plot/partial-buckets"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { findFirstPartialIndex, splitAtFirstPartial } from "../plot/partial-buckets"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
 import { formatBucketLabel, formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -15,8 +15,8 @@ import {
 	throughputPlot,
 	TRACED_KEY,
 } from "../fixed-metric-series"
-import { pinnedTimeXAxis } from "@maple/ui/components/plot/bucket-axis"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { pinnedTimeXAxis } from "../plot/bucket-axis"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import { timeseriesYAxis } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
 import type { BuiltChart } from "./built-chart"
@@ -28,14 +28,14 @@ import {
 	verticalGradient,
 } from "./fixed-metric-axes"
 import { cursorTooltip, tooltipFocusCapture } from "./plot-constants"
+import { gradientId, gradientUrl, type GradientId } from "./gradient-id"
 
-// Ports of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`
-// (packages/ui/src/components/charts/{area,line}), definition half. Code copied, constants unchanged.
+// The definitions of the throughput, error rate and latency charts.
 
 type FixedMetricSpec = Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 type Point = ChartPoint<TimeseriesRow, ChartValue, number>
 
-/** `PlotTooltipSeries`: one tooltip row reader. */
+/** One tooltip row reader. */
 interface TooltipSeries {
 	readonly label: string
 	readonly color: string
@@ -76,7 +76,7 @@ const chromeOf = (spec: FixedMetricSpec) => ({
 	background: colorOf(spec, "background"),
 })
 
-/** `PlotTooltipBody` reduced to data: rows off `points[0].datum`, nulls skipped. */
+/** The tooltip body as data: rows off `points[0].datum`, nulls skipped. */
 const bucketTooltip =
 	(
 		model: FixedMetricModel,
@@ -85,7 +85,7 @@ const bucketTooltip =
 	) =>
 	(points: ReadonlyArray<Point>): Option.Option<ChartTooltip> =>
 		Option.map(Option.fromNullishOr(points[0]), ({ datum }) => {
-			// `resolveTooltipHighlight`: the series nearest the cursor is emphasised.
+			// The series nearest the cursor is emphasised.
 			const highlighted = focus.highlight(
 				Arr.map(series, (entry) => [entry.label, entry.value(datum)] as const),
 			)
@@ -120,19 +120,19 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(rows, [THROUGHPUT_KEY], model.trimOptions)
 	const hasDashed = dashed.length > 0
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
 	const errorDash = roundCapDasharray(3, 3, 1.5)
 	const tracedDash = roundCapDasharray(4, 4, 1)
 
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string, partial: boolean) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId, partial: boolean) =>
 		areaY(slice, {
 			id: partial ? "throughput-area-partial" : "throughput-area",
 			x: at,
 			y: valueOf(THROUGHPUT_KEY),
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -172,14 +172,14 @@ const throughputChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, Chart
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, throughputColor),
+			verticalGradient(fillId, throughputColor),
 			...(hasDashed
-				? [verticalGradient(fadedGradientId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)]
+				? [verticalGradient(fadedFillId, throughputColor, AREA_FILL_PARTIAL, AREA_FILL_END)]
 				: []),
 		],
 		marks: [
-			band(solid, gradientId, false),
-			...(hasDashed ? [band(dashed, fadedGradientId, true)] : []),
+			band(solid, fillId, false),
+			...(hasDashed ? [band(dashed, fadedFillId, true)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			...(hasErrors ? [errorLine(solid, false)] : []),
@@ -260,16 +260,16 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, ["errorRate"], model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const value = valueOf("errorRate")
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId) =>
 		areaY(slice, {
-			id: fill === gradientId ? "error-rate-area" : "error-rate-area-partial",
+			id: fill === fillId ? "error-rate-area" : "error-rate-area-partial",
 			x: at,
 			y: value,
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -288,14 +288,12 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, color),
-			...(hasDashed
-				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
-				: []),
+			verticalGradient(fillId, color),
+			...(hasDashed ? [verticalGradient(fadedFillId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
-			band(solid, gradientId),
-			...(hasDashed ? [band(dashed, fadedGradientId)] : []),
+			band(solid, fillId),
+			...(hasDashed ? [band(dashed, fadedFillId)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			focusDot(plotRows, at, value, color, chrome),
@@ -328,10 +326,14 @@ const errorRateChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartV
  * belongs to both halves, so the dashed tail starts where the solid line ends.
  */
 const splitRunAt = (run: ReadonlyArray<TimeseriesRow>, partialFromMs: number | null) => {
-	const first = partialFromMs === null ? -1 : run.findIndex((row) => row.date.getTime() >= partialFromMs)
-	return first === -1
-		? { solid: run, dashed: [] }
-		: { solid: run.slice(0, first), dashed: run.slice(Math.max(0, first - 1)) }
+	const first =
+		partialFromMs === null
+			? Option.none()
+			: Arr.findFirstIndex(run, (row) => row.date.getTime() >= partialFromMs)
+	return Option.match(first, {
+		onNone: () => ({ solid: run, dashed: [] }),
+		onSome: (index) => ({ solid: run.slice(0, index), dashed: run.slice(Math.max(0, index - 1)) }),
+	})
 }
 
 const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
@@ -365,7 +367,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	// which would read as a wider bucket and mark closed readings in flight.
 	const partialFromMs = plotRows[findFirstPartialIndex(plotRows, model.trimOptions)]?.date.getTime() ?? null
 	const lines = Arr.flatMap(runs, ({ entry, runs: entryRuns }) =>
-		entryRuns.flatMap((run, index) => {
+		Arr.flatMap(entryRuns, (run, index) => {
 			const { solid, dashed } = splitRunAt(run, partialFromMs)
 			return [
 				line(solid, entry, false, index),
@@ -412,7 +414,7 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}
 }
 
-/** `ApdexAreaChart`: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
+/** The apdex chart: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
 const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()
@@ -421,16 +423,16 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	const chrome = chromeOf(spec)
 	const { solid, dashed } = splitAtFirstPartial(plotRows, ["apdexScore"], model.trimOptions)
 	const partialDash = roundCapDasharray(4, 4, STROKE_WIDTH)
-	const gradientId = `${spec.gradientPrefix}-fill`
-	const fadedGradientId = `${spec.gradientPrefix}-fill-partial`
+	const fillId = gradientId(spec.gradientPrefix, "fill")
+	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const value = valueOf("apdexScore")
-	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: string) =>
+	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId) =>
 		areaY(slice, {
-			id: fill === gradientId ? "apdex-area" : "apdex-area-partial",
+			id: fill === fillId ? "apdex-area" : "apdex-area-partial",
 			x: at,
 			y: value,
 			y1: () => 0,
-			fill: `url(#${fill})`,
+			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
 			stroke: "none",
@@ -449,14 +451,12 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	const definition = defineChart({
 		margin: marginOf(spec),
 		gradients: [
-			verticalGradient(gradientId, color),
-			...(hasDashed
-				? [verticalGradient(fadedGradientId, color, AREA_FILL_PARTIAL, AREA_FILL_END)]
-				: []),
+			verticalGradient(fillId, color),
+			...(hasDashed ? [verticalGradient(fadedFillId, color, AREA_FILL_PARTIAL, AREA_FILL_END)] : []),
 		],
 		marks: [
-			band(solid, gradientId),
-			...(hasDashed ? [band(dashed, fadedGradientId)] : []),
+			band(solid, fillId),
+			...(hasDashed ? [band(dashed, fadedFillId)] : []),
 			edge(solid, false),
 			...(hasDashed ? [edge(dashed, true)] : []),
 			focusDot(plotRows, at, value, color, chrome),

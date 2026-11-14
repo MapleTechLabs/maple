@@ -1,9 +1,5 @@
-import {
-	deriveLensVerdict,
-	lensHeadline,
-	lensSubhead,
-} from "../../../../components/infra/service-lens/service-lens-summary"
-import { unifiedBucketDomain } from "../../../../components/infra/service-lens/bucket-domain"
+import { deriveLensVerdict, lensHeadline, lensSubhead } from "./service-lens-summary"
+import { unifiedBucketDomain } from "./bucket-domain"
 import { countLabel, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
@@ -25,13 +21,13 @@ import { icon } from "@maple/views/ui/icon"
 import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { pageHero } from "../../kit/page-parts"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { sectionHeading } from "../../../kit/section-heading"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { lensRail, railState } from "../lens/rail-view"
 import type { PodRow } from "../pod-data"
 import { podTable, podTableLoading } from "../pod-table"
@@ -45,8 +41,7 @@ import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
 import { correlationStrips, type StripSeries } from "../../kit/correlation-strips"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// `ServiceLensPage` / `LensBody` in `ServiceLensShell`.
+import { selectableRow } from "@maple/views/ui/selectable-row"
 
 type H = HtmlBuilder<Message>
 
@@ -55,12 +50,13 @@ const isInitial = (data: AsyncData.AsyncData<unknown, unknown>) =>
 
 const workloadMeta = (h: H, model: Model, serviceName: string, workload: LinkedWorkload | null): Html => {
 	if (workload === null) return null
-	return h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
-			),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 pt-1 font-mono text-2xs text-muted-foreground",
+		},
 		[
 			h.a(
 				[
@@ -219,7 +215,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 	const xDomain = unifiedBucketDomain([Arr.map(points, (p) => p.bucket), Arr.map(cpuRows, (r) => r.bucket)])
 	const theme = model.themeColors
 	return h.div(
-		[h.Class("space-y-7 pb-4")],
+		[h.Class("space-y-6 pb-4")],
 		[
 			isLoading
 				? h.header(
@@ -277,7 +273,7 @@ const lensBody = (h: H, model: Model, serviceName: string, inputs: PageViewInput
 	)
 }
 
-/** `PodDistribution`: which nodes the service landed on; nothing for one node. */
+/** Which nodes the service landed on; nothing for one node. */
 const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean): Html => {
 	const byNode = [
 		...Arr.reduce(pods, new Map<string, { count: number; worst: number }>(), (map, pod) => {
@@ -298,17 +294,18 @@ const podDistribution = (h: H, pods: ReadonlyArray<PodRow>, isWaiting: boolean):
 				h,
 				{ gap: "2", align: "stretch", wrap: true },
 				Arr.map(byNode, ([node, { count, worst }]) =>
-					h.a(
-						[
-							h.Key(node),
-							h.Href(hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} }))),
-							h.Class(
+					selectableRow(
+						h,
+						{
+							isSelected: false,
+							href: hrefOf(AppRoute.InfraKubernetesNode({ nodeName: node, search: {} })),
+							className:
 								"flex items-center gap-2.5 rounded-md border px-2.5 py-1.5 font-mono text-2xs hover:bg-surface-sunken active:bg-surface-sunken",
-							),
-						],
+							attributes: [h.Key(node)],
+						},
 						[
-							h.span([h.Class("text-foreground")], [node]),
-							h.span([h.Class("text-muted-foreground")], [countLabel(count, "pod")]),
+							typography(h, { tone: "foreground" }, [node]),
+							typography(h, { tone: "muted" }, [countLabel(count, "pod")]),
 							typography(h, { tone: "muted", numeric: true }, ["worst ", formatPercent(worst)]),
 						],
 					),
@@ -332,7 +329,7 @@ const lensEmpty = (h: H, title: string, description: string, hasDocs: boolean): 
 		"py-24",
 	)
 
-/** `ServiceLensIndexPage`: nothing picked yet. */
+/** The lens with nothing picked yet. */
 const pickAService = (h: H, model: Model): Html => {
 	const rail = railState(model.rail)
 	return !rail.isLoading && rail.services.length === 0

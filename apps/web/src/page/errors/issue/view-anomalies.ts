@@ -1,16 +1,17 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { SEVERITY_TONE } from "@maple/web-data/anomalies/format"
-import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { SEVERITY_TONE } from "@maple/views/lib/anomaly-display"
+import { anomalyIncidentFromV2 } from "../../../data/anomaly-incidents"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { anomalyRow } from "../../anomalies/kit/row"
+import { anomalyRow } from "../../kit/anomaly-row"
 import { sectionHeading } from "../../kit/section-heading"
 import type { Model } from "./model"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
 
 // The related anomalies section and the open anomaly badge.
 
@@ -45,12 +46,9 @@ export const relatedAnomaliesSection = <M>(
 					title: "Related anomalies",
 					hint: countLabel(sorted.length, "detector incident"),
 				}),
-				h.div(
-					[
-						h.Class(
-							"overflow-hidden rounded-md border border-border-subtle divide-y divide-border-subtle",
-						),
-					],
+				dividedList(
+					h,
+					{ as: "div", className: "overflow-hidden border-border-subtle" },
 					Arr.map(sorted, (incident) =>
 						anomalyRow(h, {
 							incident,

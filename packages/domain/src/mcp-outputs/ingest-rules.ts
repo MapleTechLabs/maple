@@ -1,4 +1,3 @@
-/** Output schemas for the ingest rule MCP tools. */
 import { Schema } from "effect"
 import { V2IngestRuleAction } from "../http/v2/ingest-rules"
 import { IngestRuleCondition, IngestRuleSignal } from "../ingest-rules"

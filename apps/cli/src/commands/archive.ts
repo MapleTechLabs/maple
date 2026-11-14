@@ -14,6 +14,7 @@ import {
 } from "@maple/local-server/archives/listing"
 import { runArchiveGc } from "@maple/local-server/archives/gc"
 import { resolveArchiveTuning, tuningRecord } from "@maple/local-server/archives/config"
+import { DEFAULT_LOCAL_PORT } from "@maple/local-server/local-address"
 import {
 	ARCHIVE_SIGNALS,
 	isArchiveSignalName,
@@ -84,7 +85,7 @@ const applyFlag = Flag.Boolean("apply").pipe(
 
 const localPortFlag = Flag.Int("port").pipe(
 	Flag.withDescription("Private Maple local-query port"),
-	Flag.withDefault(4318),
+	Flag.withDefault(DEFAULT_LOCAL_PORT),
 )
 
 const sealingLagHoursFlag = Flag.Int("sealing-lag-hours").pipe(
@@ -421,10 +422,9 @@ export const archiveReconcile = Command.make("reconcile", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			// Both dry-run and apply go through the locked runArchiveReconciliation
-			// entry point (blocker 2): dry-run returns the plan without mutating;
-			// apply acquires the maintenance lock, migrates any v2 intent, then
-			// reconciles — never racing create/GC planning or pointer/catalog repair.
+			// Both modes go through the locked runArchiveReconciliation: dry-run returns the plan
+			// without mutating; apply takes the maintenance lock, so it never races create/GC
+			// planning or pointer/catalog repair.
 			const decision = yield* maintenanceOperation({
 				operation: "archive.reconcile",
 				try: () => runArchiveReconciliation(dataDir, archiveDir, scratchRoot, { dryRun: a.dryRun }),

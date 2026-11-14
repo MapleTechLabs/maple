@@ -1,17 +1,13 @@
 import { containerKeyOf, type DashboardDocument, ROOT_CONTAINER_KEY } from "@maple/domain/http"
 import { type GridGeometry, type Layout, normalizeLayout } from "@maple/grid-engine"
-import {
-	GRID_ROW_HEIGHT,
-	type GridTier,
-	projectLayout,
-	tierForWidth,
-} from "../../../components/dashboard-builder/canvas/grid-breakpoints"
+import { groupWidgetsByContainer } from "@maple/widgets/dashboard"
+import { GRID_ROW_HEIGHT, type GridTier, projectLayout, tierForWidth } from "../kit/grid-breakpoints"
 import type { Model } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
-// One container's grid as `DashboardGrid` derives it (the root canvas, or a section tab): the tier
-// for the one measured width every grid shares, the stored layout projected onto it, and the pixel
-// geometry a gesture resolves cells with.
+// One container's grid (the root canvas, or a section tab): the tier for the one measured width
+// every grid shares, the stored layout projected onto it, and the pixel geometry a gesture resolves
+// cells with.
 
 type Widget = DashboardDocument["widgets"][number]
 
@@ -27,8 +23,15 @@ export type CanvasGrid = Readonly<{
 	geometry: GridGeometry
 }>
 
+/** A container's widgets; one addressing a group or tab that no longer exists lands on the root. */
 export const widgetsOfContainer = (document: DashboardDocument, key: string): ReadonlyArray<Widget> =>
-	Arr.filter(document.widgets, (widget) => containerKeyOf(widget) === key)
+	groupWidgetsByContainer(document).get(key) ?? []
+
+/** The container a widget draws in: its own, or the root when that one is gone. */
+const drawnContainerOf = (document: DashboardDocument, widget: Widget): string => {
+	const key = containerKeyOf(widget)
+	return groupWidgetsByContainer(document).has(key) ? key : ROOT_CONTAINER_KEY
+}
 
 export const rootWidgetsOf = (document: DashboardDocument): ReadonlyArray<Widget> =>
 	widgetsOfContainer(document, ROOT_CONTAINER_KEY)
@@ -56,9 +59,20 @@ export const canvasGridOf = (model: Model, key: string = ROOT_CONTAINER_KEY): Ca
 
 /** The grid a widget sits in: gestures and keyboard moves stay inside their own container. */
 export const gridOfWidget = (model: Model, widgetId: string): CanvasGrid | null => {
-	const widget = model.document?.widgets.find((candidate) => candidate.id === widgetId)
-	return widget === undefined ? null : canvasGridOf(model, containerKeyOf(widget))
+	const document = model.document
+	if (document === null) return null
+	return Option.match(
+		Arr.findFirst(document.widgets, (candidate) => candidate.id === widgetId),
+		{ onNone: () => null, onSome: (widget) => canvasGridOf(model, drawnContainerOf(document, widget)) },
+	)
 }
+
+/** The grid a gesture began on is still the editable one: same container, columns and canonical tier. */
+export const isGestureGrid = (
+	grid: CanvasGrid | null,
+	began: Readonly<{ cols: number; key: string }>,
+): grid is CanvasGrid =>
+	grid !== null && grid.tier.canonical && grid.geometry.cols === began.cols && grid.key === began.key
 
 const holds = (grid: CanvasGrid, widgetId: string) =>
 	Arr.some(grid.widgets, (widget) => widget.id === widgetId)
@@ -69,6 +83,8 @@ export const shownLayoutOf = (model: Model, grid: CanvasGrid): Layout =>
 		? model.gesture.preview
 		: model.keyboardMove !== null && holds(grid, model.keyboardMove.widgetId)
 			? model.keyboardMove.preview
-			: model.droppedLayout !== null && model.droppedKey === grid.key
-				? model.droppedLayout
+			: model.layoutWrite !== null &&
+				  model.layoutWrite._tag !== "Failed" &&
+				  model.layoutWrite.key === grid.key
+				? model.layoutWrite.layout
 				: grid.layout

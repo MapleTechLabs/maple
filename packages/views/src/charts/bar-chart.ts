@@ -4,21 +4,16 @@ import { Submodel } from "foldkit"
 import type { Attribute, Html } from "foldkit/html"
 import type { Message, Model } from "./chart"
 import { MeasureChartContainer } from "./chart-mounts"
-import { timeseriesLegend } from "./timeseries-legend"
-import {
-	bucketTimeseries,
-	MAX_BAR_SERIES,
-	OTHER_LABEL,
-} from "@maple/ui/components/charts/_shared/bucket-series"
-import { ChartSpec, ChartTooltip, specCache, type TimeseriesAxisSpec } from "./chart-spec"
+import { type SeriesMark, timeseriesLegend } from "./timeseries-legend"
+import { bucketTimeseries, MAX_BAR_SERIES, OTHER_LABEL } from "./series/bucket-series"
+import { ChartSpec, ChartTooltip, rowsCache, specCache, type TimeseriesAxisSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
 import { SERIES_FALLBACK_COLOR, seriesColorTokens, seriesDefinitionsOf } from "./timeseries"
 
-// Port of `QueryBuilderBarChart` + `Timeseries.Frame` (packages/ui/src/components/charts/bar/,
-// plot/timeseries.tsx): the long tail folded into "Other", and its legend; the definition is
-// `definitions/bar.ts`.
+// The query-builder bar chart: the long tail folded into "Other", and its
+// legend; the definition is `definitions/bar.ts`.
 
 /** The tokens the bar series can resolve to; a page reads them with `ResolveThemeColors`. */
 export const BAR_CHART_TOKENS = [
@@ -44,12 +39,14 @@ export interface BarChartInputs {
 	readonly axis?: TimeseriesAxisSpec | undefined
 	readonly legend?: "hidden" | "visible" | "right" | undefined
 	readonly seriesStats?: boolean
+	/** A mark beside each series' name in the compact legend, by the series' label. */
+	readonly seriesMarks?: Readonly<Record<string, SeriesMark>> | undefined
 }
 
 type Row = Readonly<Record<string, string | number | boolean>>
 
 /** `bucketBarSeries`: past `MAX_BAR_SERIES` the long tail folds into one "Other" series. */
-export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
+export const bucketBarSeries = rowsCache((data: ReadonlyArray<Row>): ReadonlyArray<Row> => {
 	const seriesKeys = [
 		...new Set(
 			Arr.flatMap(data, (row) =>
@@ -60,7 +57,7 @@ export const bucketBarSeries = (data: ReadonlyArray<Row>): ReadonlyArray<Row> =>
 	if (seriesKeys.length <= MAX_BAR_SERIES) return data
 	const { rows } = bucketTimeseries(data, seriesKeys, MAX_BAR_SERIES)
 	return Arr.map(rows, (row, index) => (data[index]?.partial === true ? { ...row, partial: true } : row))
-}
+})
 
 const barSpec = specCache(
 	(data: ReadonlyArray<Row>, rest: Omit<Parameters<typeof ChartSpec.QueryBuilderBar>[0], "data">) =>
@@ -88,6 +85,7 @@ export const view = Submodel.defineView<Model, Message, BarChartInputs>((model, 
 		key: definition.chartKey,
 		label: definition.rawKey,
 		color: colors[definition.chartKey] ?? SERIES_FALLBACK_COLOR,
+		mark: inputs.seriesMarks?.[definition.rawKey],
 	}))
 	const tooltipBody = (portal: Attribute<Message>): Option.Option<Html> =>
 		Option.flatMap(model.tooltip, (tooltip) =>

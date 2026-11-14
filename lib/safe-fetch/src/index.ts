@@ -80,24 +80,35 @@ const isPrivateIPv4 = (host: string): boolean =>
  * The URL parser hands us the compressed hex form (`[::7f00:1]`), but a
  * trailing dotted quad is accepted too so direct callers get the same answer.
  */
-const ipv6Groups = (inner: string): ReadonlyArray<number> | null => {
+type Ipv6Groups = readonly [number, number, number, number, number, number, number, number]
+type Quad = readonly [number, number, number, number]
+
+const isIpv6Groups = (groups: ReadonlyArray<number>): groups is Ipv6Groups => groups.length === 8
+const isQuad = (octets: ReadonlyArray<number>): octets is Quad => octets.length === 4
+
+const ipv6Groups = (inner: string): Ipv6Groups | null => {
 	const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(inner)
-	const quad = dotted ? Arr.map(Str.split(".")(dotted[2]), Number) : null
+	const prefix = dotted?.[1]
+	const quadText = dotted?.[2]
+	const quad = quadText === undefined ? null : Arr.map(Str.split(".")(quadText), Number)
 	if (quad && Arr.some(quad, (octet) => octet > 255)) return null
-	const hexTail = quad
-		? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
-		: null
-	const head = dotted && hexTail ? `${dotted[1]}${hexTail}` : inner
+	const hexTail =
+		quad !== null && isQuad(quad)
+			? `${((quad[0] << 8) | quad[1]).toString(16)}:${((quad[2] << 8) | quad[3]).toString(16)}`
+			: null
+	const head = prefix !== undefined && hexTail ? `${prefix}${hexTail}` : inner
 	const halves = Str.split("::")(head)
 	if (halves.length > 2) return null
 	const parse = (part: string) => (part === "" ? [] : Str.split(":")(part))
-	const left = parse(halves[0])
-	const right = halves.length === 2 ? parse(halves[1]) : []
+	const [first, second] = halves
+	const left = parse(first)
+	const right = second === undefined ? [] : parse(second)
 	const missing = 8 - left.length - right.length
 	if (halves.length === 2 ? missing < 1 : missing !== 0) return null
 	const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right]
 	if (!Arr.every(groups, (group) => /^[0-9a-f]{1,4}$/i.test(group))) return null
-	return Arr.map(groups, (group) => Number.parseInt(group, 16))
+	const parsed = Arr.map(groups, (group) => Number.parseInt(group, 16))
+	return isIpv6Groups(parsed) ? parsed : null
 }
 
 const dottedFrom = (hi: number, lo: number): string =>
@@ -115,7 +126,7 @@ const zeroed = (groups: ReadonlyArray<number>, from: number, to: number): boolea
  * - mapped `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96` and 6to4 `2002::/16` carry an
  *   IPv4 address in a fixed place, so that address faces the IPv4 rules.
  */
-const isPrivateIPv6Groups = (groups: ReadonlyArray<number>): boolean => {
+const isPrivateIPv6Groups = (groups: Ipv6Groups): boolean => {
 	const [g0, g1, g2] = groups
 	if (zeroed(groups, 0, 6)) return true
 	if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xff00) === 0xff00) return true
@@ -216,6 +227,7 @@ const withoutCredentialHeaders = (request: HttpClientRequest.HttpClientRequest) 
 
 const withoutHeaders = (request: HttpClientRequest.HttpClientRequest, keep: ReadonlySet<string>) =>
 	Arr.reduce(
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 		Arr.filter(Object.keys(request.headers), (name) => !keep.has(Str.toLowerCase(name))),
 		request,
 		(next, name) => HttpClientRequest.removeHeader(next, name),
@@ -226,7 +238,8 @@ export interface GuardOptions {
 	/**
 	 * For requests whose headers all come from user config: a cross-origin hop drops every
 	 * header, 301/302/303 continue as a body-less GET, and 307/308 keep method and body only
-	 * within one origin. Without it, only credential headers are dropped cross-origin.
+	 * within one origin. Without it, only credential headers are dropped cross-origin and
+	 * method and body follow the fetch standard (see `fetchRedirectRequest`).
 	 */
 	readonly strictRedirects?: boolean
 	/** With `strictRedirects`: headers the caller sets itself (not user config), kept across origins. */
@@ -235,6 +248,14 @@ export interface GuardOptions {
 
 const SEE_OTHER_STATUSES: ReadonlySet<number> = new Set([301, 302, 303])
 
+/** Headers describing a body. `setBody` already clears `content-type` and `content-length`. */
+const BODY_HEADERS = ["content-encoding", "content-language", "content-location"] as const
+
+const withoutBody = (request: HttpClientRequest.HttpClientRequest) =>
+	Arr.reduce(BODY_HEADERS, HttpClientRequest.setBody(request, HttpBody.empty), (next, name) =>
+		HttpClientRequest.removeHeader(next, name),
+	)
+
 /** The request a strict redirect sends: HEAD stays HEAD, anything else replays as a plain GET. */
 const strictRedirectRequest = (
 	request: HttpClientRequest.HttpClientRequest,
@@ -242,8 +263,20 @@ const strictRedirectRequest = (
 	crossOrigin: boolean,
 ) => {
 	if (!SEE_OTHER_STATUSES.has(status) && !crossOrigin) return request
-	const bodyless = HttpClientRequest.setBody(request, HttpBody.empty)
+	const bodyless = withoutBody(request)
 	return request.method === "HEAD" ? bodyless : HttpClientRequest.setMethod(bodyless, "GET")
+}
+
+/**
+ * The fetch standard's rewrite: a 303 turns anything but GET or HEAD into a GET, a 301 or 302
+ * turns a POST into a GET, both without the body. 307 and 308 replay the request as it was.
+ */
+const fetchRedirectRequest = (request: HttpClientRequest.HttpClientRequest, status: number) => {
+	const becomesGet =
+		status === 303
+			? request.method !== "GET" && request.method !== "HEAD"
+			: (status === 301 || status === 302) && request.method === "POST"
+	return becomesGet ? HttpClientRequest.setMethod(withoutBody(request), "GET") : request
 }
 
 /** The full URL a request targets, query params and hash included. */
@@ -298,12 +331,15 @@ const pinTo =
 			const addresses = yield* resolve(hostname)
 			// Every answer is checked, so any is safe; IPv4 first because not every
 			// network that resolves AAAA can route IPv6.
-			const first = addresses.find((address) => !Str.includes(":")(address)) ?? addresses[0]
-			if (first === undefined || Arr.some(addresses, isPrivateAddress)) {
+			const preferred = Arr.findFirst(addresses, (address) => !Str.includes(":")(address)).pipe(
+				Option.orElse(() => Arr.head(addresses)),
+			)
+			if (Option.isNone(preferred) || Arr.some(addresses, isPrivateAddress)) {
 				return yield* new UrlValidationError({
 					message: `URL host '${url.hostname}' resolves to a loopback, private, or metadata address`,
 				})
 			}
+			const first = preferred.value
 			const pinned = new URL(url)
 			pinned.hostname = Str.includes(":")(first) ? `[${first}]` : first
 			return {
@@ -373,7 +409,7 @@ const guardWith = <E, R, E2>(
 			const next = HttpClientRequest.setUrl(
 				strict
 					? strictRedirectRequest(outgoing, response.status, target.origin !== validated.origin)
-					: outgoing,
+					: fetchRedirectRequest(outgoing, response.status),
 				target,
 			)
 			return yield* hop(next, redirects + 1, validated.origin)

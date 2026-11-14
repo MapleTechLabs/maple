@@ -44,7 +44,7 @@ If you use a gateway like OpenRouter or LiteLLM together with a framework, instr
 
 ## Connection details
 
-Every guide exports OTLP over HTTP with an ingest key from **Settings → Ingestion**:
+Every guide exports OTLP with an ingest key from **Settings → Ingestion**:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU organizations
@@ -53,7 +53,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="support-agent"
 ```
 
-Maple doesn't accept gRPC, so set the protocol to `http/protobuf` if your exporter defaults to it. A traces endpoint passed in code or through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must end in `/v1/traces`.
+The guides use `http/protobuf` because their install steps add the HTTP exporter. Maple also accepts OTLP over gRPC on the same host and port 443, so `grpc` works if you install a gRPC exporter instead. A traces endpoint passed in code or through `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` must end in `/v1/traces`.
 
 Keep agent traffic at 100% sampling, or sampled-out turns leave gaps in the session. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 

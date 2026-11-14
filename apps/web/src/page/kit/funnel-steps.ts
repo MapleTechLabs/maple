@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineTaggedUnion } from "foldkit/schema"
-import { Option, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import { button } from "@maple/views/ui/button"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as ComboboxView from "@maple/views/ui/combobox-view"
@@ -21,7 +21,7 @@ import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { FUNNEL_SESSION_DIMENSIONS } from "../../components/funnels/definition"
+import { FUNNEL_SESSION_DIMENSIONS } from "../dashboards/kit/funnel-definition"
 
 // The funnel step builder: an ordered list of steps, each an event name, a page path or (first
 // step only) a session dimension. The dashboard funnel and paths editors and /product-analytics
@@ -37,7 +37,7 @@ type StepTextField = typeof StepTextField.Type
 export const StepScope = Schema.Literals(["funnel", "paths"])
 export type StepScope = typeof StepScope.Type
 
-/** `FunnelStepDraft` (funnel-filters.ts): the wire step plus an event step's filter as typed. */
+/** The wire step plus an event step's filter as typed. */
 export const StepDraft = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("event"),
@@ -64,7 +64,7 @@ export const StepEdit = defineTaggedUnion({
 })
 export type StepEdit = typeof StepEdit.Type
 
-/** `withKind`: a step's kind changed, carrying nothing over. */
+/** A step's kind changed, carrying nothing over. */
 const withKind = (step: StepDraft, kind: StepKind): StepDraft => {
 	if (step.kind === kind) return step
 	switch (kind) {
@@ -97,22 +97,22 @@ const withText = (step: StepDraft, field: StepTextField, value: string): StepDra
 	}
 }
 
-/** `move`: an item moved within the list; out of range is a no-op. */
+/** An item moved within the list; out of range is a no-op. */
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
 	const item = items[from]
 	if (to < 0 || to >= items.length || item === undefined) return items
-	const rest = items.filter((_, index) => index !== from)
+	const rest = Arr.filter(items, (_, index) => index !== from)
 	return [...rest.slice(0, to), item, ...rest.slice(to)]
 }
 
-/** A step moved; a session step past step 1 is demoted to an event step (`reorder`). */
+/** A step moved; a session step past step 1 is demoted to an event step. */
 const reorderSteps = (steps: ReadonlyArray<StepDraft>, from: number, to: number): ReadonlyArray<StepDraft> =>
-	move(steps, from, to).map((step, index) =>
+	Arr.map(move(steps, from, to), (step, index) =>
 		index > 0 && step.kind === "session" ? withKind(step, "event") : step,
 	)
 
 const updateAt = <T>(items: ReadonlyArray<T>, index: number, update: (item: T) => T): ReadonlyArray<T> =>
-	items.map((item, position) => (position === index ? update(item) : item))
+	Arr.map(items, (item, position) => (position === index ? update(item) : item))
 
 /** A `StepEdit` applied to a step list; adding stops at `maxSteps`. */
 export const applyStepEdit = (
@@ -132,7 +132,7 @@ export const applyStepEdit = (
 		case "Moved":
 			return reorderSteps(steps, edit.index, edit.index + edit.delta)
 		case "Removed":
-			return steps.filter((_, index) => index !== edit.index)
+			return Arr.filter(steps, (_, index) => index !== edit.index)
 		case "Added":
 			return steps.length >= maxSteps ? steps : [...steps, { kind: "event", eventName: "" }]
 	}
@@ -183,7 +183,7 @@ export const stepEditOf = (id: string, value: string): Option.Option<ScopedStepE
 }
 
 /**
- * `SuggestingInput`'s update: the value is whatever was typed, and picking a suggestion types it.
+ * A step input's update: the value is whatever was typed, and picking a suggestion types it.
  * `edit` is the step edit that makes, and `isTyping` tells a keystroke from a pick.
  */
 export const stepComboUpdate = <M>(
@@ -246,16 +246,19 @@ const stepSelect = <M>(
 	items: ReadonlyArray<SelectOption>,
 	inputs: Readonly<{ className: string; ariaLabel: string }>,
 ): Html => {
-	const index = items.findIndex((item) => item.value === value)
 	const current =
-		options.selects[id] ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+		options.selects[id] ??
+		Select.init(id, {
+			value,
+			selectedIndex: Option.getOrNull(Arr.findFirstIndex(items, (item) => item.value === value)),
+		})
 	return h.submodel({
 		slotId: `${options.slotPrefix}-select-${id}`,
 		model: { ...current, value },
 		view: selectView,
 		toParentMessage: (message) => options.onSelect(id, message),
 		viewInputs: {
-			entries: items.map((item) => ({ _tag: "Item" as const, item })),
+			entries: Arr.map(items, (item) => ({ _tag: "Item" as const, item })),
 			size: "sm",
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,
@@ -264,7 +267,7 @@ const stepSelect = <M>(
 	})
 }
 
-/** `SuggestingInput`: free text, with the window's names to pick from. */
+/** Free text, with the window's names to pick from. */
 const suggestingInput = <M>(
 	h: HtmlBuilder<M>,
 	options: StepBuilderOptions<M>,
@@ -273,9 +276,9 @@ const suggestingInput = <M>(
 	suggestions: ReadonlyArray<StepSuggestion>,
 	inputs: Readonly<{ placeholder: string; ariaLabel: string; empty: string; isMono: boolean }>,
 ): Html => {
-	const names = suggestions.map((suggestion) => suggestion.name)
+	const names = Arr.map(suggestions, (suggestion) => suggestion.name)
 	const current = options.combos[id] ?? Combobox.init(id, "single")
-	const counts = new Map(suggestions.map((suggestion) => [suggestion.name, suggestion.count]))
+	const counts = new Map(Arr.map(suggestions, (suggestion) => [suggestion.name, suggestion.count]))
 	return h.submodel({
 		slotId: `${options.slotPrefix}-${id}`,
 		model: { ...current, inputValue: value, selected: names.includes(value) ? [value] : [] },
@@ -407,7 +410,7 @@ const valueInputs = <M>(
 					options,
 					stepControlId(scope, index, "dimension"),
 					step.dimension,
-					FUNNEL_SESSION_DIMENSIONS.map((dimension) => ({
+					Arr.map(FUNNEL_SESSION_DIMENSIONS, (dimension) => ({
 						value: dimension,
 						label: FUNNEL_SESSION_DIMENSION_LABEL[dimension],
 					})),
@@ -496,10 +499,14 @@ const stepRow = <M>(
 				options,
 				stepControlId(options.scope, index, "kind"),
 				step.kind,
-				kinds.map((kind) => ({ value: kind, label: KIND_LABEL[kind] })),
+				Arr.map(kinds, (kind) => ({ value: kind, label: KIND_LABEL[kind] })),
 				{ className: "w-24 min-w-0 shrink-0", ariaLabel: "Step type" },
 			),
-			hstack(h, { gap: "1.5", grow: true, className: "min-w-0" }, valueInputs(h, options, step, index)),
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", shrink: true, grow: true },
+				valueInputs(h, options, step, index),
+			),
 			...(isSingle ? [] : [rowActions(h, options, index, total)]),
 		]),
 		...(options.eventStepExtra !== undefined && step.kind === "event"
@@ -508,12 +515,12 @@ const stepRow = <M>(
 	])
 }
 
-/** `FunnelStepBuilder compact`: one row per step, then Add step (a single anchor has neither numbers nor Add). */
+/** One row per step, then Add step (a single anchor has neither numbers nor Add). */
 export const stepBuilder = <M>(h: HtmlBuilder<M>, options: StepBuilderOptions<M>): Html => {
 	const isSingle = options.maxSteps <= 1
 	const isFull = options.steps.length >= options.maxSteps
 	return vstack(h, { gap: "1.5" }, [
-		...options.steps.map((step, index) => stepRow(h, options, step, index)),
+		...Arr.map(options.steps, (step, index) => stepRow(h, options, step, index)),
 		...(isSingle
 			? []
 			: [

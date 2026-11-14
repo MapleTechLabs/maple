@@ -7,7 +7,7 @@ import {
 	popoverTitleStyles,
 	popoverViewportScrollStyles,
 	popoverViewportStyles,
-} from "@maple/ui/styles/ui/popover"
+} from "./popover.styles"
 import { Duration, Effect, Option, Schema, Stream } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
@@ -22,8 +22,6 @@ import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay
  * Base UI `Popover` (`@maple/ui/popover`, non-modal): the trigger toggles it, Escape and a press
  * outside close it, and it is placed under the trigger with `sideOffset` 4 and collision padding 5.
  */
-
-// MODEL
 
 export const Model = Schema.Struct({
 	...PopupState.fields,
@@ -75,8 +73,6 @@ export const init = (
 	requestedAlign: options.align ?? "center",
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: {},
 	ClickedClose: {},
@@ -111,8 +107,6 @@ const waitHover = (model: Model, millis: number, isOpening: boolean): Update.Ret
 		commands: [WaitHoverDelay({ generation, millis, isOpening })],
 	}
 }
-
-// UPDATE
 
 const transition = makeTransition<Model, Message>(
 	(message) => Message.GotAnimationMessage({ message }),
@@ -152,8 +146,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 						? close(model)
 						: { model },
 	})
-
-// MOUNT
 
 /** Portal, marker on the page outside, placement under the trigger and outside presses. */
 export const MountPopover = Mount.defineStream("MountPopover", {
@@ -213,8 +205,6 @@ export const MountPopover = Mount.defineStream("MountPopover", {
 		),
 })
 
-// VIEW
-
 /**
  * `trigger` goes on the parent's button; `withTrigger(button)` returns it with Base UI's focus
  * guards and `aria-owns` owner around it, and the portal last, as the parent's children.
@@ -230,7 +220,7 @@ export type ViewInputs = Readonly<{
 	className?: string
 	/** With `isBare`: the Positioner's and the Popup's own classes. */
 	bare?: Readonly<{ positionerClassName: string; popupClassName: string }>
-	/** `QuickPickMenu`'s `fallbackAnchor`: placed against it while the trigger is hidden. */
+	/** Placed against this element while the trigger is hidden. */
 	fallbackAnchorSelector?: string | undefined
 }>
 

@@ -1,13 +1,12 @@
 import type { V2Investigation } from "@maple/domain/http/v2"
-import type { InvestigationSummary, SignalState } from "../../../lib/models/error-signal"
+import type { InvestigationSummary, SignalState } from "./error-signal"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { textLink } from "@maple/views/ui/text-link"
-import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { String as Str } from "effect"
-
-// The signal state and investigation chips.
+import { typography } from "@maple/views/ui/typography"
 
 const INVESTIGATION_LABEL = {
 	investigating: "Investigating",
@@ -38,7 +37,7 @@ export const investigationChip = <M>(
 			attributes: [
 				h.Title(
 					investigation.confidence
-						? `Maple ${Str.toLowerCase(label)} — ${investigation.confidence} confidence`
+						? `Maple ${Str.toLowerCase(label)}, ${investigation.confidence} confidence`
 						: `Maple ${Str.toLowerCase(label)}`,
 				),
 			],
@@ -47,7 +46,7 @@ export const investigationChip = <M>(
 			statusDot(h, { tone: "custom", className: "bg-current" }),
 			h.span([h.Class(cn("truncate", options.compact === true && "hidden @xl/page:inline"))], [label]),
 			...(withConfidence && investigation.confidence && investigation.status === "diagnosed"
-				? [h.span([h.Class("text-foreground-subtle")], ["· ", investigation.confidence])]
+				? [typography(h, { tone: "subtle" }, ["· ", investigation.confidence])]
 				: []),
 		],
 	)
@@ -70,7 +69,7 @@ export const signalStateChip = <M>(
 				),
 				h.Title("An incident is open for this error"),
 			],
-			[statusDot(h, { tone: "crit" }), h.span([h.Class("truncate")], ["Open incident"])],
+			[statusDot(h, { tone: "crit" }), typography(h, { truncate: true }, ["Open incident"])],
 		)
 	}
 	if (state.kind === "investigation") {
@@ -94,6 +93,9 @@ export const signalStateChip = <M>(
 			),
 			h.Title(`Workflow state: ${WORKFLOW_LABEL[state.state]}`),
 		],
-		[workflowRingIcon(h, state.state, 12), h.span([h.Class("truncate")], [WORKFLOW_LABEL[state.state]])],
+		[
+			workflowRingIcon(h, state.state, 12),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[state.state]]),
+		],
 	)
 }

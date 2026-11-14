@@ -12,8 +12,10 @@ import * as FixedMetricChart from "@maple/views/charts/fixed-metric-chart"
 import type { FixedMetricChartInputs } from "@maple/views/charts/fixed-metric-chart"
 import {
 	LINKED_CURSOR_STYLE,
+	LINKED_ZOOM_CLASS,
+	LinkedCursorMessage,
 	linkedCursorOverlay,
-	MountLinkedCursor,
+	MountLinkedZoom,
 } from "@maple/views/charts/linked-cursor"
 import {
 	fixedMetricModel,
@@ -30,9 +32,10 @@ import { presenceOf } from "@maple/views/data/signal-presence"
 import { stableSlice } from "../kit/stable-slice"
 import { Message, type RetryTarget } from "./message"
 import type { Model, OverviewPoint } from "./model"
-import { widgetShell } from "./view-widget"
 import { typography } from "@maple/views/ui/typography"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { widgetShell } from "../kit/widget-shell"
 
 type MetricsData = Pick<Model, "overviewSeries" | "logSeries" | "refinement" | "presence">
 type CardId = "throughput" | "error-rate" | "latency" | "log-volume"
@@ -108,7 +111,7 @@ export type GridContext = Readonly<{
 	isChartReady: boolean
 	timeZone: string
 	nowMs: number
-	/** `overviewSamplingActive` over every environment: the refinement is merged and may fail. */
+	/** Sampling is on over every environment: the refinement is merged and may fail. */
 	useRefinement: boolean
 	/** The strips' `failureKey`s joined (a string keeps the cards cached); a card failing the same way says so in one line. */
 	pageFailureKeys: string
@@ -142,7 +145,7 @@ const throughputColors = (context: GridContext) => ({
 	error: resolveColor(context.colors, "--chart-error"),
 })
 
-/** The header chips a throughput chart hoists into its card (`usePlotLegendSlot`). */
+/** The header chips a throughput chart hoists into its card. */
 const throughputChips = (rows: ReadonlyArray<FixedMetricRow>, perSecond: boolean, context: GridContext) =>
 	throughputLegend(
 		throughputPlot(fixedMetricModel(rows, context.timeZone, context.nowMs), perSecond),
@@ -322,19 +325,19 @@ const cardContent = (
 			// The page strip already names this failure and retries it: the card keeps its frame and a
 			// one-line caption in the strip's failure class, centred in the plot area. No axis, no data.
 			if (Str.split(FAILURE_KEY_SEPARATOR)(pageFailureKeys).includes(failureKey(cardFailure)))
-				return h.div(
-					[h.Class("flex h-full flex-col px-4 pb-4")],
-					[
-						h.span(
-							[
-								h.Class(
-									"flex flex-1 items-center justify-center font-prose text-xs text-foreground-subtle",
-								),
-							],
-							[STRIPPED_CAPTION[failureKind(cardFailure)]],
-						),
-					],
-				)
+				return vstack(h, { className: "h-full px-4 pb-4" }, [
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							grow: true,
+							as: "span",
+							className: "font-prose text-xs text-foreground-subtle",
+						},
+						[STRIPPED_CAPTION[failureKind(cardFailure)]],
+					),
+				])
 			return errorState(h, {
 				failure: cardFailure,
 				variant: "panel",
@@ -412,9 +415,23 @@ export const metricsGrid = (h: HtmlBuilder<Message>, model: Model, context: Grid
 		[
 			h.DataAttribute("metrics-grid", ""),
 			...(isWaiting ? [h.AriaBusy(true)] : []),
-			h.Class(cn("grid grid-cols-1 md:grid-cols-2 gap-3", refreshingClass(isWaiting), "mt-4")),
+			h.Class(
+				cn(
+					"grid grid-cols-1 md:grid-cols-2 gap-3",
+					refreshingClass(isWaiting),
+					"mt-4",
+					LINKED_ZOOM_CLASS,
+				),
+			),
 			h.Style(LINKED_CURSOR_STYLE),
-			h.OnMount(Mount.mapMessage(MountLinkedCursor(), () => Message.CompletedMountLinkedCursor())),
+			h.OnMount(
+				Mount.mapMessage(MountLinkedZoom({ timeZone: context.timeZone }), (message) =>
+					LinkedCursorMessage.match<Message>(message, {
+						CompletedMountLinkedCursor: () => Message.CompletedMountLinkedCursor(),
+						SelectedChartRange: (range) => Message.SelectedChartRange(range),
+					}),
+				),
+			),
 		],
 		Arr.map(CARD_IDS, (id) =>
 			cardSlot(id, metricCard, [h, id, data, gridContext, model.charts[id] ?? EMPTY_CHART]),

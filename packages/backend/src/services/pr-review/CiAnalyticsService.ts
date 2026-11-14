@@ -13,16 +13,17 @@ import {
 	PrReviewPersistenceError,
 	type VcsRepositoryId,
 	type WarehouseReadError,
+	type TenantContext,
 } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import { CI_TTL_DAYS } from "@maple/domain/tinybird/datasources"
+import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { VcsRepositories } from "@maple/db/tables"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
 import type { CompiledQueryInput } from "@maple/query-engine/execution"
-import { Array as Arr, Clock, Context, DateTime, Effect, Layer, String as Str } from "effect"
+import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Option, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 type CiError = PrReviewPersistenceError | WarehouseReadError
@@ -40,8 +41,7 @@ export interface CiAnalyticsServiceApi {
 
 const HOUR = 3_600
 const DAY = 86_400
-/** How far back `ci_runs` and `ci_jobs` keep runs. */
-const CI_RETENTION_MS = 365 * DAY * 1000
+const CI_RETENTION_MS = CI_TTL_DAYS * DAY * 1000
 /** The longest window read: the retention plus a day to absorb a DST change at either end. */
 export const CI_MAX_SPAN_MS = CI_RETENTION_MS + DAY * 1000
 /** Runs read per possibly red workflow to find where its streak began. */
@@ -72,7 +72,7 @@ export const ciWindow = (query: { readonly startTime: number; readonly endTime: 
 
 const encodeCursor = (startedAtMs: number, traceId: string) => `${startedAtMs}_${traceId}`
 const decodeCursor = (cursor: string) => {
-	const at = cursor.indexOf("_")
+	const at = Option.getOrElse(Str.indexOf("_")(cursor), () => -1)
 	return {
 		startedAt: DateTime.makeUnsafe(Number(Str.slice(0, at)(cursor))),
 		traceId: Str.slice(at + 1)(cursor),
@@ -260,7 +260,7 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				const bucketMs = bucketSeconds * 1000
 				const first = Math.floor(startTime / bucketMs) * bucketMs
 				const fillSeries = (rows: ReadonlyArray<CiSeriesRow>) => {
-					const bySlot = new Map(rows.map((row) => [DateTime.toEpochMillis(row.bucket), row]))
+					const bySlot = new Map(Arr.map(rows, (row) => [DateTime.toEpochMillis(row.bucket), row]))
 					return Array.from(
 						{ length: Math.max(0, Math.ceil((endTime - first) / bucketMs)) },
 						(_, i) => {
@@ -331,7 +331,7 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				// Only a workflow whose latest run broke or was cancelled can be red: read its own runs.
 				// Rows come busiest first, so the checked workflows are the ones that matter most.
 				const candidates = new Set(
-					pipelineRows.filter((row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES),
+					Arr.filter(pipelineRows, (row) => mayBeRed(row.lastResult)).slice(0, STREAK_CANDIDATES),
 				)
 				yield* Effect.annotateCurrentSpan("maple.ci.streak_checks", candidates.size)
 				const pipelines = yield* Effect.forEach(
@@ -368,7 +368,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 					previous,
 					series,
 					pipelines,
-					jobs: jobRows.map(
+					jobs: Arr.map(
+						jobRows,
 						(row) =>
 							new CodeReviewCiJob({
 								...row,
@@ -422,8 +423,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 					"ciRuns",
 				)
 				const page = rows.slice(0, limit)
-				const failed = page.filter((run) => CH.isCiFailedResult(run.result))
-				const failedIds = failed.map((run) => run.traceId)
+				const failed = Arr.filter(page, (run) => CH.isCiFailedResult(run.result))
+				const failedIds = Arr.map(failed, (run) => run.traceId)
 				// Jobs are queued after their run starts and can outlast the window: read over the runs' span.
 				const span = CH.ciRunsSpanMs(failed)
 				const failedJobs =
@@ -448,7 +449,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 				const last = page[page.length - 1]
 
 				return new CodeReviewCiRunsResponse({
-					runs: page.map(
+					runs: Arr.map(
+						page,
 						(run) =>
 							new CodeReviewCiRun({
 								traceId: run.traceId,
@@ -466,7 +468,8 @@ export class CiAnalyticsService extends Context.Service<CiAnalyticsService, CiAn
 								durationMs: run.durationMs,
 								startedAt: DateTime.toEpochMillis(run.startedAt),
 								url: run.url,
-								failedJobs: (jobsByTrace[run.traceId] ?? []).map(
+								failedJobs: Arr.map(
+									jobsByTrace[run.traceId] ?? [],
 									(job) =>
 										new CodeReviewCiFailedJob({
 											job: job.job,

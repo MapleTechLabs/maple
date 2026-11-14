@@ -1,16 +1,13 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { CodeReviewAnalytics } from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { CodeReviewSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { Frame } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
-
-// `/code-review`: the analytics tab.
 
 export const Model = Schema.Struct({
 	search: CodeReviewSearch,
@@ -21,12 +18,11 @@ export const Model = Schema.Struct({
 	authors: KeyedSchema(CodeReviewAnalytics, LoadFailure),
 	/** Retained answers by key, so a filter undone within a minute is not fetched again. */
 	cache: ResponseCache(CodeReviewAnalytics),
-	/** `VolumeCard`'s metric and `IssuesCard`'s severity (component state). */
+	/** The volume chart's metric and the issues chart's severity. */
 	volumeSelect: Select.Model,
 	severitySelect: Select.Model,
 	volumeChart: Chart.Model,
 	issuesChart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type

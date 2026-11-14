@@ -17,8 +17,8 @@ import { bar, repositoryListSkeleton, withSlowNote } from "../kit/skeletons"
 import { rulesFormSkeleton } from "../rules-form/skeleton"
 import type * as RulesForm from "../rules-form/form"
 import * as RulesFormView from "../rules-form/view"
-import { Message, type Model } from "./model"
-import { repositoryList } from "./repositories"
+import { canManage, Message, type Model } from "./model"
+import { manageAccessLink, repositoryList } from "./repositories"
 import {
 	activeRepositories,
 	isRepoEnabled,
@@ -26,10 +26,9 @@ import {
 	DEFAULT_MODEL_LABEL,
 	MODEL_OPTIONS,
 } from "./update"
-import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { typography } from "@maple/views/ui/typography"
-
-// `CodeReviewSettingsView`: the code review settings page.
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -70,12 +69,14 @@ const modelSetting = (h: H, model: Model): Html =>
 				size: "sm",
 				ariaLabel: "Review model",
 				className: "w-56",
-				isDisabled: !model.isAdmin || model.isSavingModel,
+				isDisabled: !canManage(model) || model.isSavingModel,
 				toView: (parts) =>
 					h.div(
 						[
 							h.Class("contents"),
-							...(model.isAdmin ? [] : [h.Title("Only admins can change the review model")]),
+							...(canManage(model)
+								? []
+								: [h.Title("Only admins and engineers can change the review model")]),
 						],
 						parts,
 					),
@@ -83,24 +84,21 @@ const modelSetting = (h: H, model: Model): Html =>
 		}),
 	)
 
-const formView = (h: H, form: RulesForm.Model, isAdmin: boolean, wrap: (m: RulesForm.Message) => Message) =>
+const formView = (h: H, form: RulesForm.Model, canEdit: boolean, wrap: (m: RulesForm.Message) => Message) =>
 	h.submodel({
 		slotId: `${form.id}-form`,
 		model: form,
 		view: RulesFormView.view,
-		viewInputs: { isAdmin },
+		viewInputs: { canEdit },
 		toParentMessage: wrap,
 	})
 
 const notConnected = (h: H, isConnected: boolean): Html =>
 	emptyMessage(h, { dashed: true, className: "flex flex-col items-start gap-3 px-5 py-6 text-left" }, [
-		h.div(
-			[h.Class("flex items-center gap-2 text-sm font-medium text-foreground")],
-			[
-				icon(h, "GithubIcon", { size: 16 }),
-				isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
-			],
-		),
+		hstack(h, { gap: "2", align: "center", className: "text-sm font-medium text-foreground" }, [
+			icon(h, "GithubIcon", { size: 16 }),
+			isConnected ? "No repositories yet" : "Connect GitHub to review pull requests",
+		]),
 		typography(h, { size: "sm", tone: "muted", as: "p" }, [
 			isConnected
 				? "Grant the Maple GitHub App access to a repository, and it appears here."
@@ -119,7 +117,7 @@ const notConnected = (h: H, isConnected: boolean): Html =>
 
 const repositoriesSection = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.githubStatus.data, {
-		onEmpty: () => repositoryListSkeleton(h),
+		onEmpty: () => repositoryListSkeleton(h, manageAccessLink(h)),
 		onFailure: (failure) =>
 			errorState(h, {
 				failure,
@@ -132,7 +130,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 			return repositoryList(h, {
 				repositories,
 				state: model.repoList,
-				isAdmin: model.isAdmin,
+				canEdit: canManage(model),
 				busy: model.busy,
 				isEnabled: (repo) => isRepoEnabled(model, repo),
 				onSearch: (value) => Message.ChangedRepoSearch({ value }),
@@ -149,7 +147,7 @@ const repositoriesSection = (h: H, model: Model): Html =>
 		},
 	})
 
-/** `RepositoryConfig` in its dialog: skeleton, the error line, or the repository's rules form. */
+/** The repository dialog: skeleton, the error line, or the repository's rules form. */
 const repoConfigBody = (h: H, model: Model): Html =>
 	AsyncData.matchData(model.repoConfig.data, {
 		onEmpty: () => rulesFormSkeleton(h, "repository"),
@@ -160,13 +158,16 @@ const repoConfigBody = (h: H, model: Model): Html =>
 		onData: () =>
 			model.repoForm === null
 				? h.empty
-				: formView(h, model.repoForm, model.isAdmin, (message) =>
+				: formView(h, model.repoForm, canManage(model), (message) =>
 						Message.GotRepoFormMessage({ message }),
 					),
 	})
 
 const repoDialog = (h: H, model: Model): Html => {
-	const repo = activeRepositories(model).find((candidate) => candidate.id === model.configuring)
+	const repoName = Option.match(
+		Arr.findFirst(activeRepositories(model), (candidate) => candidate.id === model.configuring),
+		{ onNone: () => "", onSome: (repo) => repo.fullName },
+	)
 	const id = model.dialog.id
 	return h.submodel({
 		slotId: `${id}-view`,
@@ -184,7 +185,7 @@ const repoDialog = (h: H, model: Model): Html => {
 						h,
 						"dialog",
 						id,
-						`${repo?.fullName ?? ""}. Anything left on the organization default follows the default review rules.`,
+						`${repoName}. Anything left on the organization default follows the default review rules.`,
 					),
 				]),
 				DialogView.dialogPanel(h, "dialog", id, [repoConfigBody(h, model)]),
@@ -255,7 +256,7 @@ const content = (h: H, model: Model): Html =>
 					),
 				],
 				defaults: [rulesFormSkeleton(h, "organization")],
-				repositories: [repositoryListSkeleton(h, true)],
+				repositories: [repositoryListSkeleton(h, manageAccessLink(h), true)],
 			}),
 		onFailure: (failure) =>
 			errorState(h, {
@@ -269,7 +270,7 @@ const content = (h: H, model: Model): Html =>
 				defaults: Option.match(Option.fromNullishOr(model.defaultsForm), {
 					onNone: () => [],
 					onSome: (form) => [
-						formView(h, form, model.isAdmin, (message) =>
+						formView(h, form, canManage(model), (message) =>
 							Message.GotDefaultsFormMessage({ message }),
 						),
 					],

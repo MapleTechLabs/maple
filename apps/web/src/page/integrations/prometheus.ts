@@ -18,8 +18,6 @@ import { AuthType } from "./prometheus-form-field"
 
 export { FormFieldName } from "./prometheus-form-field"
 
-// `ScrapeTargetsSection`: state and writes.
-
 export const ScrapeForm = Schema.Struct({
 	name: Field.Model,
 	serviceName: Field.Model,
@@ -38,7 +36,7 @@ export type ProbeOutcome = typeof ProbeOutcome.Type
 
 export const PrometheusCardModel = Schema.Struct({
 	selectedId: Schema.NullOr(ScrapeTargetId),
-	/** `useScrapeTargetChecks(selectedId)`: the latest 20 checks, re-read every 10 s. */
+	/** The selected target's latest 20 checks, re-read every 10 s. */
 	checks: KeyedSchema(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
 	formDialog: Dialog.Model,
 	editingId: Schema.NullOr(ScrapeTargetId),
@@ -48,7 +46,7 @@ export const PrometheusCardModel = Schema.Struct({
 	deleteDialog: Dialog.Model,
 	deleteId: Schema.NullOr(ScrapeTargetId),
 	isDeleting: Schema.Boolean,
-	/** `useKeyedAsyncAction`: the targets a probe or an enable toggle is in flight for. */
+	/** The targets a probe or an enable toggle is in flight for. */
 	probing: Schema.Array(ScrapeTargetId),
 	toggling: Schema.Array(ScrapeTargetId),
 	/** The last probe per target id, so the connect flow's status row can show it. */
@@ -85,7 +83,6 @@ export const initPrometheusCard = (): PrometheusCardModel => ({
 	menus: {},
 })
 
-/** `hostnameFromUrl`: the URL's host, or the raw value when it does not parse. */
 export const hostnameOf = (value: string): string => (URL.canParse(value) ? new URL(value).host : value)
 
 const failureOf = (error: unknown): LoadFailure => toLoadFailure(error)
@@ -133,7 +130,7 @@ export const ToggleTarget = Command.define("ToggleScrapeTarget", {
 	execute: ({ id, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const payload = yield* Schema.decodeUnknownEffect(V2ScrapeTargetUpdateParams)({ enabled })
+			const payload = yield* Schema.decodeEffect(V2ScrapeTargetUpdateParams)({ enabled })
 			yield* client.scrapeTargets.update({ params: { id }, payload })
 		}).pipe(
 			Effect.match({
@@ -179,11 +176,11 @@ export const SaveTarget = Command.define("SaveScrapeTarget", {
 			const { auth_credentials: credentials, ...base } = payload
 			const raw = credentials === undefined ? base : { ...base, auth_credentials: credentials }
 			if (editingId !== null) {
-				const update = yield* Schema.decodeUnknownEffect(V2ScrapeTargetUpdateParams)(raw)
+				const update = yield* Schema.decodeEffect(V2ScrapeTargetUpdateParams)(raw)
 				yield* client.scrapeTargets.update({ params: { id: editingId }, payload: update })
 				return editingId
 			}
-			const create = yield* Schema.decodeUnknownEffect(V2ScrapeTargetCreateParams)(raw)
+			const create = yield* Schema.decodeEffect(V2ScrapeTargetCreateParams)(raw)
 			const created = yield* client.scrapeTargets.create({ payload: create })
 			return created.id
 		}).pipe(

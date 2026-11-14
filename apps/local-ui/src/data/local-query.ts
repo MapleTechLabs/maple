@@ -19,7 +19,7 @@ export const localFailure = (error: { readonly message: string }): LoadFailure =
 	_tag: "@maple/local/errors/LoadFailed",
 	type: "api_error",
 	code: "local_query_failed",
-	title: "Couldn’t load data",
+	title: "Couldn't load data",
 	message: error.message,
 	retryable: false,
 	recovery: "retry",
@@ -29,7 +29,7 @@ const resolve = <T>(compiled: CompiledQueryInput<T>): Effect.Effect<CompiledQuer
 	(Effect.isEffect(compiled) ? compiled : Effect.succeed(compiled)).pipe(Effect.mapError(localFailure))
 
 /**
- * `shouldRetryLocalQuery` with fixed delays: only a request that never got an
+ * Retries with fixed delays: only a request that never got an
  * answer is retried, twice, after 1 s and 2 s.
  */
 const run = (sql: string, apiBase: string) =>
@@ -53,7 +53,7 @@ export const queryRows = <T>(
 		return yield* query.decodeRows(rows).pipe(Effect.mapError(localFailure))
 	})
 
-/** `executeLocalCompiledFirstRow`. */
+/** The first row of a compiled query, if any. */
 export const queryFirstRow = <T>(
 	compiled: CompiledQueryInput<T>,
 	apiBase: string,

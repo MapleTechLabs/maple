@@ -1,9 +1,8 @@
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
-import { AsyncData } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -15,34 +14,7 @@ import { SortState } from "../../kit/table-sort"
 import { ENDPOINT_FILTERS } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
-
-// The service detail page.
-
-/** `ServiceDetailTimeSeriesPoint` (@maple/web-data/warehouse/services). */
-export const DetailPoint = Schema.Struct({
-	bucket: Schema.String,
-	throughput: Schema.Number,
-	tracedThroughput: Schema.Number,
-	hasSampling: Schema.Boolean,
-	samplingWeight: Schema.Number,
-	errorRate: Schema.Number,
-	p50LatencyMs: Schema.Number,
-	p95LatencyMs: Schema.Number,
-	p99LatencyMs: Schema.Number,
-	apdexScore: Schema.Number,
-	totalCount: Schema.Number,
-	partial: Schema.Boolean,
-})
-export type DetailPoint = typeof DetailPoint.Type
-
-/** `ReleasePoint` (components/vcs/commit-markers/marker-layout.ts). */
-export const Release = Schema.Struct({
-	bucket: Schema.String,
-	commitSha: Schema.String,
-	count: Schema.Number,
-	errorCount: Schema.Number,
-})
-export type Release = typeof Release.Type
+import { CommitData, DetailPoint, Release } from "../../kit/service-metrics/points"
 
 /** `ServiceDetailOverviewResult`: the charts, the release timeline and the switcher's options. */
 export const OverviewData = Schema.Struct({
@@ -54,7 +26,7 @@ export type OverviewData = typeof OverviewData.Type
 
 export const RefinementPoint = Schema.Struct({ bucket: Schema.String, throughput: Schema.Number })
 
-/** The `ErrorIssueDocument` fields `IssueLine` reads. */
+/** The `ErrorIssueDocument` fields an issue row reads. */
 export const Issue = Schema.Struct({
 	id: Schema.String,
 	title: Schema.String,
@@ -86,23 +58,6 @@ export const Workload = Schema.Struct({
 })
 export type Workload = typeof Workload.Type
 
-/** The `VcsCommitDetailResponse` fields the deploy rows and marker labels read. */
-export const Commit = Schema.Struct({
-	sha: Schema.String,
-	message: Schema.String,
-	authorName: Schema.NullOr(Schema.String),
-	authorLogin: Schema.NullOr(Schema.String),
-	authorAvatarUrl: Schema.NullOr(Schema.String),
-	committedAt: Schema.Number,
-})
-export type Commit = typeof Commit.Type
-
-/** A failed commit lookup keeps its error tag: "not connected" gets one panel-level CTA. */
-export const CommitFailure = Schema.Struct({ tag: Schema.String })
-export type CommitFailure = typeof CommitFailure.Type
-export const CommitData = AsyncData.Schema(Commit, CommitFailure)
-export type CommitData = AsyncData.AsyncData<Commit, CommitFailure>
-
 export const Model = Schema.Struct({
 	serviceName: Schema.String,
 	search: ServiceSearch,
@@ -133,19 +88,20 @@ export const Model = Schema.Struct({
 	workloads: KeyedSchema(Schema.Array(Workload), LoadFailure),
 	runtimes: KeyedSchema(Schema.Array(ServiceRuntime), LoadFailure),
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
-	/** `commitQueryAtom(sha)`, shared by the deploy rows and the marker labels. */
+	/** Commits by sha, shared by the deploy rows and the marker labels. */
 	commits: Schema.Record(Schema.String, CommitData.schema),
-	/** `ServiceRecentDeploys`' "Show all" toggle. */
+	/** The hover card a commit marker opens, shared by every chart on the page. */
+	markerCard: HoverCard.Model,
+	/** The recent deploys panel's "Show all" toggle. */
 	isDeploysExpanded: Schema.Boolean,
-	/** Each tab table's `useTableSort` state. */
+	/** Each tab table's sort. */
 	sorts: Schema.Struct({ operations: SortState, endpoints: SortState, dependencies: SortState }),
 	environmentSelect: Select.Model,
 	timePicker: TimeRangePicker.Model,
 	/** One chart Submodel per card and per operation sparkline, by id. */
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	...ChartEnvFields,
+	/** Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

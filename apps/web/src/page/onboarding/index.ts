@@ -1,6 +1,6 @@
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { Effect, Option, Schema, String as Str } from "effect"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
+import { Effect, Option, Schema, String as Str, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { load } from "foldkit/navigation"
@@ -35,8 +35,6 @@ export type { Inputs } from "./inputs"
  * public or org-less, so they cannot take a `PageContext`; the root holds the open one here.
  */
 
-// MODEL
-
 export const Screen = Schema.Union([
 	CliLogin.Model,
 	McpAuthorize.Model,
@@ -56,12 +54,9 @@ export const Model = Schema.Struct({
 	key: Schema.String,
 	screen: Screen,
 	switcher: OrgSwitcher.Model,
-	/** The onboarding header's account menu (`OnboardingUserMenu`). */
 	userMenu: Menu.Model,
 })
 export type Model = typeof Model.Type
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	GotCliLoginMessage: { message: CliLogin.Message },
@@ -116,14 +111,12 @@ const withScreen = <ScreenModel extends Screen, ScreenMessage>(
 	commands: Command.mapMessages(result.commands ?? [], wrap),
 })
 
-// ROUTES
-
 /** The screen's key for a route it renders in this session, or `None` (a redirect is due). */
 export const keyOf = (route: AppRoute, inputs: Inputs): Option.Option<string> => {
 	const isSignedOut = inputs.session === "SignedOut"
 	const withOrg = (key: string) =>
 		!isSignedOut && Option.isSome(inputs.maybeOrgId) ? Option.some(key) : Option.none()
-	// `WrongRegionScreen` replaces every org-scoped route; the auth pages redirect first.
+	// The wrong-region notice replaces every org-scoped route; the auth pages redirect first.
 	const isWrongRegion =
 		isClerkAuthEnabled &&
 		Option.isSome(wrongRegionOf(inputs.maybeOrganization)) &&
@@ -247,8 +240,6 @@ export const init = (route: AppRoute, key: string, inputs: Inputs): Option.Optio
 				() => Option.none(),
 			)
 
-// UPDATE
-
 /** The connect drawer's flow reads as a page does, in the active org (no namespace pin here). */
 const contextOf = (inputs: Inputs): PageContext | null =>
 	Option.match(inputs.maybeOrgId, {
@@ -292,7 +283,7 @@ export const LogOut = Command.define("OnboardingLogOut", {
 	),
 })
 
-/** `WrongRegionScreen` for a user with no org here: the same page on the org's own region. */
+/** The wrong-region notice, for a user with no org here: the same page on the org's own region. */
 export const LeaveForRegion = Command.define("OnboardingLeaveForRegion", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedLeaveForRegion],
@@ -317,7 +308,9 @@ const updateSwitcher = (model: Model, message: OrgSwitcher.Message, inputs: Inpu
 		out !== undefined &&
 		out._tag === "SelectedOrganization" &&
 		!Option.contains(inputs.maybeOrgId, out.orgId)
-			? inputs.memberships.find((organization) => organization.id === out.orgId)
+			? Option.getOrUndefined(
+					Arr.findFirst(inputs.memberships, (organization) => organization.id === out.orgId),
+				)
 			: undefined
 	return {
 		model: { ...model, switcher: next.model },

@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -5,9 +6,6 @@ import { TimeWindow } from "../../../../data/time-range"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { TracedService } from "../../kit/traced"
 import { AwsStatus, FleetRead, SparkRead } from "../data"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },

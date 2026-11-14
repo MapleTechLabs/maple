@@ -16,7 +16,7 @@ import { registerChartHost } from "@maple/views/charts/chart-mounts"
 registerChartHost("lab", () => import("./spike-host"))
 
 // A `/lab/charts` prototype in its `PlotFrame`: the lab host draws it from `ChartSpec.LabSpike`,
-// the frame carries its DOM legend (`PlotSeriesLegend`) and the tooltip body.
+// the frame carries its DOM legend and the tooltip body.
 
 export interface SpikeInputs {
 	readonly chartId: string
@@ -27,7 +27,7 @@ export interface SpikeInputs {
 	readonly footer?: string
 	readonly ariaLabel: string
 	readonly className?: string
-	/** `PlotSeriesLegend`: pinned emphasis by click, nothing on hover. */
+	/** Pinned emphasis by click, nothing on hover. */
 	readonly legend?: Readonly<{ label: string; series: ReadonlyArray<PlotLegendSeries> }>
 }
 
@@ -104,7 +104,7 @@ const bandTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>
 		]),
 	)
 
-/** `HeatmapSpike`'s body: the cell's coordinates, its swatch and count, or "no data" on a hole. */
+/** The heatmap's body: the cell's coordinates, its swatch and count, or "no data" on a hole. */
 const slotTooltipBody = (
 	h: H,
 	slot: Extract<ChartTooltip, { readonly _tag: "HeatmapSlot" }>,
@@ -141,7 +141,7 @@ const mono = (h: H, text: string): Html => h.span([h.Class("font-mono font-semib
 const keyValue = (h: H, label: string, value: string, className: string): Html =>
 	h.div([h.Class(className)], [muted(h, label), mono(h, value)])
 
-/** `BoxPlotSpike`'s body: the operation, then its outlier or its five-number summary. */
+/** The box plot's body: the operation, then its outlier or its five-number summary. */
 const boxTooltipBody = (h: H, bucket: BucketTooltip, portal: Attribute<Message>): Html => {
 	const heading = h.div(
 		[h.Class("border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight")],
@@ -213,13 +213,13 @@ const bucketBody = (h: H, arm: string, bucket: BucketTooltip, portal: Attribute<
 								h,
 								first?.label ?? "",
 								first?.value ?? "",
-								"flex items-center justify-between gap-4 pl-[18px]",
+								"flex items-center justify-between gap-4 pl-4.5",
 							),
 							keyValue(
 								h,
 								second?.label ?? "",
 								second?.value ?? "",
-								"flex items-center justify-between gap-4 pl-[18px]",
+								"flex items-center justify-between gap-4 pl-4.5",
 							),
 						],
 					)
@@ -240,7 +240,7 @@ const bucketBody = (h: H, arm: string, bucket: BucketTooltip, portal: Attribute<
 						h,
 						"spans",
 						first?.value ?? "",
-						"flex items-center justify-between gap-4 pl-[18px]",
+						"flex items-center justify-between gap-4 pl-4.5",
 					),
 				],
 			)

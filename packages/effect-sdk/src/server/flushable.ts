@@ -23,7 +23,7 @@ import {
 	makeSerializedFlush,
 	type Resolved,
 	runFlush,
-	type SignalState,
+	makeSignalState,
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
@@ -96,7 +96,10 @@ export interface FlushableTelemetry {
 	readonly layer: Layer.Layer<never>
 	/** Drain the buffers and POST them now. Never rejects (errors are logged + cooled down). */
 	readonly flush: () => Promise<void>
-	/** Stop the auto-flush timer, then do one final flush. */
+	/**
+	 * Stop the auto-flush timer, then do one final flush. Afterwards `flush` and
+	 * `layer` do nothing, and a second call returns the first.
+	 */
 	readonly dispose: () => Promise<void>
 }
 
@@ -106,9 +109,9 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	const metrics = makeMetricBuffer()
 	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)
 
-	const tracesState: SignalState = { disabledUntil: 0 }
-	const logsState: SignalState = { disabledUntil: 0 }
-	const metricsState: SignalState = { disabledUntil: 0 }
+	const tracesState = makeSignalState()
+	const logsState = makeSignalState()
+	const metricsState = makeSignalState()
 	const noOpNotice = makeNoOpNotice(
 		"[MapleServerSDK]",
 		"set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector",
@@ -149,7 +152,7 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 	// `await` it at shutdown and the auto-flush timer fires it as `void flush()`.
 	// It covers resource resolution, which runs before `runFlush` absorbs the
 	// per-signal transport errors.
-	const flush = makeSerializedFlush(
+	const serialized = makeSerializedFlush(
 		guardFlush("[MapleServerSDK]", async (): Promise<void> => {
 			const resolved = await ensureResolved()
 			await runFlush({
@@ -167,6 +170,10 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 		}),
 	)
 
+	/** Set by the first `dispose()`: later flushes and disposes do nothing more. */
+	let disposal: Promise<void> | undefined
+	const flush = (): Promise<void> => (disposal === undefined ? serialized() : Promise.resolve())
+
 	const intervalMs =
 		config.autoFlushInterval === undefined
 			? DEFAULT_AUTO_FLUSH_MS
@@ -182,13 +189,18 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 		;(timer as { unref?: () => void }).unref?.()
 	}
 
-	const dispose = async (): Promise<void> => {
+	const finalize = async (): Promise<void> => {
 		if (timer !== undefined) {
 			clearInterval(timer)
 			timer = undefined
 		}
-		await flush()
+		await serialized()
+		// Spans ended through `layer` after this are dropped rather than buffered for good.
+		spans.setDisabled(true)
+		logs.setDisabled(true)
+		metrics.setDisabled(true)
 	}
+	const dispose = (): Promise<void> => (disposal ??= finalize())
 
 	return { layer, flush, dispose }
 }

@@ -45,7 +45,7 @@ Node compiled imports when rebasing these patches: declaration checks do not par
   (`ingest`, `electric` on ECS), owning that app's resources and nothing else's. `sandbox`
   also keeps its declaration here, because its `src/worker.ts` must stay a plain bundle
   entry (see "The sandbox Worker" below). The one api resource the ingest gateway shares
-  (the replay bucket) is `apps/api/src/resources/replay-blobs.ts`.
+  (the replay bucket) is `packages/infra/src/cloudflare/replay-blobs.ts`.
 - `packages/infra`: stage/region/domain/naming logic, the shared deploy-time env groups, and
   the few resources several Worker modules bind.
     - `region.ts`: `MapleRegion` (`us` | `eu`), the one axis both clouds key on. See
@@ -63,14 +63,14 @@ Node compiled imports when rebasing these patches: declaration checks do not par
       Cloudflare zone, and `publishProxiedCname` for each ALB's public hostname.
     - `env.ts`: the deploy-time env primitives and the shared groups the Workers spread.
     - `cloudflare/maple-db.ts`: `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
-      Worker's init, or `mapleDbEnv` from its props) and the runtime read of the binding
-      (`readMapleDbBinding`).
+      Worker's init, or `mapleDbEnv` from its props). The runtime read of the binding
+      (`readMapleDbBinding`) is in `worker-runtime.ts`.
     - `config-helpers.ts`, `cloudflare/worker-runtime.ts`, `cloudflare/workers-cache.ts`:
       the _runtime_ (in-Worker) side, each behind its own subpath export so a Worker bundle
       never reaches the deploy graph through `./cloudflare`. `worker-runtime.ts` is the
-      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`) and
+      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`),
       `workerEnvLayer(env)`, the env plus its `ConfigProvider` for a graph built over one
-      env record. Nothing reaches for `cloudflare:workers`.
+      env record, and `dischargeRuntimeContext`. Nothing reaches for `cloudflare:workers`.
 
 **Read deploy-time config through `@maple/infra/env`, not `process.env`.** Alchemy resolves
 config through a ConfigProvider built as `fromDotEnv(--env-file ?? ".env")` **orElse**
@@ -237,11 +237,10 @@ What each kind of Worker keeps beside the module:
 - **Queues** (`api`): `Cloudflare.Queues.consumeQueueMessages(queue, settings, handler)` in
   `impl`, under `Queues.EventSourceLive`, yields the `Consumer` resource at plan time and the
   listener at runtime (`src/worker/consumers.ts`, over the declarations in
-  `src/resources/queues.ts`). The consumers carry `renamedFrom({ fqn })` with the ids the
-  retired api factory declared them under (`vcs-sync-consumer`, …). Alchemy migrates the
-  state rows, so the deploy plans a noop instead of re-creating each consumer. Without it,
-  the delete of the old row would have removed the physical consumer the new row had
-  adopted. Drop the decoration once every stage has deployed past it.
+  `src/resources/queues.ts`). Renaming a consumer's id needs `renamedFrom({ fqn })` from
+  `alchemy/Rename` until every stage has deployed past it: alchemy then migrates the state
+  row and plans a noop. Without it, the delete of the old row removes the physical consumer
+  the new row had adopted.
 - **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
   instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event),
   so `maple-vcs-sync` and `maple-planetscale-webhooks` keep their own service names.
@@ -332,8 +331,9 @@ What each kind of Worker keeps beside the module:
 
     A connector whose install mints a credential per workspace (rather than using one
     deployment-wide secret) has it sealed into `chat_workspaces.credentials_{ciphertext,iv,tag}`,
-    AAD-bound to `(org_id, connector, external_workspace_id)`. That is why chat-bot also
-    binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, optionally. Without it such a workspace fails
+    AAD-bound to `(org_id, connector, external_workspace_id)` (see `secret-encryption.md`).
+    That is why chat-bot also binds `MAPLE_INGEST_KEY_ENCRYPTION_KEY` and
+    `MAPLE_INGEST_KEY_DECRYPTION_KEYS`, optionally. Without it such a workspace fails
     its lookup and the mention goes unanswered, while every other connector runs normally.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is its
@@ -461,13 +461,14 @@ loudly at upload: remove the override and warm the DB graph off the request path
 list of yields. What it composes lives beside it:
 
 - `src/resources/*`: one file per resource the Worker binds, declared at module scope and
-  inert until yielded (`queues.ts`, `replay-blobs.ts`, and `env.ts` for the `Config`
+  inert until yielded (`queues.ts` and `env.ts` for the `Config`
   catalog). Stage-derived physical names come from `stageNamed` / `stageProps`
   (`@maple/infra/cloudflare`). They read alchemy's own `Stage`, one of the platform services
   a Worker's init may require (unlike `MapleStack`), behind the same `__ALCHEMY_RUNTIME__`
   guard as a Worker's props, because alchemy evaluates a resource's props Effect wherever it
-  is yielded, the bundle included. The ingest factory yields the same `ReplayBlobs`
-  declaration to mint the gateway's writer token.
+  is yielded, the bundle included. A resource another app also yields lives in
+  `@maple/infra/cloudflare` instead: the ingest factory yields `ReplayBlobs` to mint the
+  gateway's writer token.
 - `src/worker/*`: the runtime shell. `http.ts` (the lazily built route graph and `fetch`),
   `ai-forward.ts` (the forward to maple-ai), `crons.ts`, `consumers.ts`
   (`consumeQueueMessages` over the declarations, so no binding is read back off the host),
@@ -565,6 +566,16 @@ Worker's init (`MapleDb`, `packages/infra/src/cloudflare/maple-db.ts`); no cloud
 created and the origin credentials stay in the dashboard. A config id that no longer exists
 fails the plan.
 
+## Status page custom domains
+
+Customer domains reach the status Worker through Cloudflare for SaaS on `maple.dev`: the zone's
+fallback origin is the originless `status-domains.maple.dev` (declared by US prd only, a zone
+singleton, skipped until `MAPLE_STATUS_DOMAINS_ZONE_ID` is set), and each custom hostname gets
+its own Worker route to its stage's status Worker, created at runtime by the api and alerting
+Workers with `MAPLE_STATUS_DOMAINS_API_TOKEN`. Never a `*/*` route on the zone: it would catch
+proxied hostnames without a Worker, such as ingest. Setup steps and the lifecycle are in
+[`status-page-custom-domains.md`](status-page-custom-domains.md).
+
 ## Cost decisions
 
 These are cash-flow calls, not design ones. Revisit them rather than treating them as
@@ -606,8 +617,8 @@ Each has a comment at the site.
 - **`listenerPort` vs `port` on `ECS.Service`.** `port` is the container port; the listener
   defaults to 443 once `certificateArn` is set. Setting `listenerPort` to the container port
   breaks both the Cloudflare proxy and the health check.
-- **A security group that does not admit the listener port.** A stage without a domain gets
-  an HTTP listener on 80, not 443.
+- **A security group that does not admit the listener port.** The listener is 443 only
+  because a certificate is set; every stage that deploys ingest or Electric has a hostname.
 - **An image whose architecture does not match the task.** Keep `runtimePlatform` explicit.
 - **A cargo `--target-dir` inside the image context.** Alchemy's `hashDirectory` ignores
   `.dockerignore` and root-anchored gitignore rules, so the target dir would be hashed on

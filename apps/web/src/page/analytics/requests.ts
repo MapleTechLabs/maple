@@ -1,10 +1,8 @@
-import {
-	filtersFromSearch,
-	hasActiveFilters,
-	type AnalyticsFilters,
-} from "../../components/analytics/filters"
-import { previousWindow } from "../../components/analytics/previous-window"
-import { sparkBucketSeconds } from "../../components/analytics/ai/ai-traffic-model"
+import type { SearchConsoleIntegrationStatus, SearchConsoleSiteStatus } from "@maple/domain/http"
+import { completeThrough, pacificToday } from "@maple/domain/search-console"
+import { filtersFromSearch, hasActiveFilters, type AnalyticsFilters } from "./filters"
+import { previousWindow } from "./previous-window"
+import { sparkBucketSeconds } from "./ai-traffic-model"
 import { chartBucketSeconds } from "@maple/views/lib/infra-chart-units"
 import { Option, Struct, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -22,21 +20,29 @@ import {
 	FetchLive,
 	FetchPages,
 	FetchPageviews,
+	FetchSearchLanding,
+	FetchSearchOverview,
+	FetchSearchQueries,
+	FetchSearchStatus,
+	FetchSearchTimeseries,
 	FetchSummary,
 	FetchTimeseries,
 	FetchTraceSamples,
 } from "./command"
 import { type Message, SlotName } from "./message"
-import type { Model, Search } from "./model"
+import type { Model, Search, SearchSort, SearchTable } from "./model"
 
-// The reads the page makes, each keyed by its input (S6).
+// The reads the page makes, each keyed by its input.
 
 type Cmd = Command.Command<Message, never, Resources>
 
-const ANALYTICS_TABS = ["overview", "ai"] as const
+const ANALYTICS_TABS = ["overview", "ai", "search"] as const
 export type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
 export const tabOf = (search: Search): AnalyticsTab =>
-	ANALYTICS_TABS.find((tab) => tab === search.tab) ?? "overview"
+	Option.getOrElse(
+		Arr.findFirst(ANALYTICS_TABS, (tab) => tab === search.tab),
+		() => "overview",
+	)
 
 export const filtersOf = (search: Search): AnalyticsFilters => filtersFromSearch({ ...search })
 
@@ -198,7 +204,99 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 					summary("summary", { startTime, endTime, ...filters }),
 				]
 			: []
-	return [...page, ...overview, ...ai]
+	const search =
+		tabOf(model.search) === "search"
+			? searchPlan(model, window)
+			: overview.length > 0
+				? [searchStatus]
+				: []
+	return [...page, ...overview, ...ai, ...search]
+}
+
+/** The Search tab's property: the one in the URL when it is enabled, else the first enabled. */
+export const searchSiteOf = (
+	search: Search,
+	status: SearchConsoleIntegrationStatus | undefined,
+): SearchConsoleSiteStatus | undefined => {
+	if (status === undefined || !status.connected || status.revoked) return undefined
+	const enabled = Arr.filter(status.sites, (site) => site.enabled)
+	return Option.getOrUndefined(
+		Option.orElse(
+			Arr.findFirst(enabled, (site) => site.siteUrl === search.site),
+			() => Arr.head(enabled),
+		),
+	)
+}
+
+const SEARCH_LIST_LIMIT = 100
+
+/** A table's sort until someone clicks: most clicks first. */
+export const searchSortOf = (model: Model, table: SearchTable): SearchSort =>
+	model.searchSorts[table] ?? { key: "clicks", dir: "desc" }
+
+/**
+ * A table's sort as the read's order, so a metric sort picks its own top rows. Names have no
+ * server order: those rows stay the most clicked, re-ordered on screen.
+ */
+const searchOrderOf = (model: Model, table: SearchTable) => {
+	const sort = searchSortOf(model, table)
+	return sort.key === "name"
+		? { sortBy: "clicks" as const, sortDir: "desc" as const }
+		: { sortBy: sort.key, sortDir: sort.dir }
+}
+
+/** Whether Search Console is connected: the Search tab's first read, and the Overview's pointer to it. */
+const searchStatus: Request = {
+	slot: "searchStatus",
+	fn: "searchConsoleStatus",
+	input: {},
+	command: (key) => FetchSearchStatus({ slot: "searchStatus", key, input: {} }),
+}
+
+/** The Search tab: status first; the reads once a property has finished its first import. */
+const searchPlan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
+	const status = searchStatus
+	const site = searchSiteOf(model.search, Option.getOrUndefined(AsyncData.getData(model.searchStatus.data)))
+	if (site === undefined || site.watermarkDate === null) return [status]
+	// Windows end at the last complete day, so today's partial numbers never count or compare.
+	const base = {
+		siteUrl: site.siteUrl,
+		startTime: window.startTime,
+		endTime: window.endTime,
+		completeThrough: completeThrough(site.watermarkDate, pacificToday(model.nowMs)),
+	}
+	const queries = { ...base, ...searchOrderOf(model, "queries"), limit: SEARCH_LIST_LIMIT }
+	const eventName = filtersOf(model.search).eventName
+	// The page's event filter, when set, is what the Pages table counts as a conversion.
+	const pagesBase = { ...base, ...searchOrderOf(model, "pages"), limit: SEARCH_LIST_LIMIT }
+	const landing = eventName === undefined ? pagesBase : { ...pagesBase, conversionEvent: eventName }
+	return [
+		status,
+		{
+			slot: "searchOverview",
+			fn: "searchConsoleOverview",
+			input: base,
+			command: (key) => FetchSearchOverview({ slot: "searchOverview", key, input: base }),
+		},
+		{
+			slot: "searchTimeseries",
+			fn: "searchConsoleTimeseries",
+			input: base,
+			command: (key) => FetchSearchTimeseries({ slot: "searchTimeseries", key, input: base }),
+		},
+		{
+			slot: "searchQueries",
+			fn: "searchConsoleTopQueries",
+			input: queries,
+			command: (key) => FetchSearchQueries({ slot: "searchQueries", key, input: queries }),
+		},
+		{
+			slot: "searchLanding",
+			fn: "searchConsoleLandingPages",
+			input: landing,
+			command: (key) => FetchSearchLanding({ slot: "searchLanding", key, input: landing }),
+		},
+	]
 }
 
 type AnySlot = Keyed.Keyed<unknown, unknown>
@@ -221,16 +319,19 @@ export const requestSlots = (
 	// Two slots asking the same atom (the mix under `traffic: all`) share one request.
 	const sent = new Set<string>()
 	const slots: Readonly<Record<SlotName, AnySlot>> = model
-	return requests.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	return Arr.reduce<(typeof requests)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		requests,
+		{ model, commands: [] },
 		(state, request) => {
 			const key = requestKey(context.orgId, request.fn, { data: request.input })
 			const current: AnySlot = state.model[request.slot]
 			// An atom another slot already holds answers from the cache, like a shared atom does.
-			const cached = Arr.map(SLOT_NAMES, (name) => slots[name]).find(
+			const cached = Arr.findFirst(
+				Arr.map(SLOT_NAMES, (name) => slots[name]),
 				(slot) => slot.key === key && AsyncData.isSuccess(slot.data),
 			)
-			if (mode === "Load" && current.key !== key && cached !== undefined)
-				return { ...state, model: { ...state.model, [request.slot]: cached } }
+			if (mode === "Load" && current.key !== key && Option.isSome(cached))
+				return { ...state, model: { ...state.model, [request.slot]: cached.value } }
 			// The page's own atoms (breakdowns, events) sit outside the header reload: only a new key refetches them.
 			const slotMode =
 				mode === "Refresh" && only === undefined && PAGE_SLOTS.includes(request.slot) ? "Load" : mode
@@ -245,6 +346,5 @@ export const requestSlots = (
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }

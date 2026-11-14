@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2ApiKeyWithSecret, V2Source } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -24,6 +25,7 @@ import * as SourceDetail from "../../page/sources/detail/update"
 import type * as SourceDetailModel from "../../page/sources/detail/model"
 import { Message as SourceMessage } from "../../page/sources/detail/message"
 import { settingsTab } from "../../page/sources/detail/view-tabs"
+import { defaultDestinationForm } from "@maple/web-data/alerts/form-utils"
 import * as Destination from "../../page/alerts/destination/dialog"
 import * as DestinationView from "../../page/alerts/destination/view"
 import { AppRoute } from "../../route"
@@ -41,6 +43,9 @@ const ITEMS = [
 	"key-create",
 	"key-created",
 	"destination",
+	"destination-teams",
+	"destination-teams-retired",
+	"destination-incident-io",
 	"general",
 	"profile",
 	"profile-dirty",
@@ -55,6 +60,31 @@ const context: PageContext = {
 }
 
 const opened = (dialog: Dialog.Model): Dialog.Model => Dialog.init(dialog.id, dialog.kind, { isOpen: true })
+
+/** The provider (and pasted credentials) each destination item opens the dialog on. */
+const destinationForm = (item: (typeof ITEMS)[number]) => {
+	switch (item) {
+		case "destination-teams":
+			return {
+				...defaultDestinationForm("microsoft-teams"),
+				webhookUrl:
+					"https://default0a1b2c3d.47.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/9f8e7d6c/triggers/manual/paths/invoke?api-version=1&sv=1.0&sig=lab",
+			}
+		case "destination-teams-retired":
+			return {
+				...defaultDestinationForm("microsoft-teams"),
+				webhookUrl: "https://contoso.webhook.office.com/webhookb2/a@b/IncomingWebhook/c/d",
+			}
+		case "destination-incident-io":
+			return {
+				...defaultDestinationForm("incident-io"),
+				incidentIoAlertSourceId: "01GW2G3V0S59R238FAHPDS1R66",
+				incidentIoToken: "lab-token",
+			}
+		default:
+			return defaultDestinationForm()
+	}
+}
 
 const integrations = (isPending: boolean): IntegrationsModel.Model => {
 	const model = Integrations.init({ search: { integration: "linear" } }, context).model
@@ -83,7 +113,7 @@ const dashboards = (isDeleting: boolean): DashboardListModel.Model => {
 	}
 }
 
-const createdKey = Schema.decodeUnknownSync(V2ApiKeyWithSecret)({
+const createdKey = Schema.decodeSync(V2ApiKeyWithSecret)({
 	id: "key_aXwpxqBkqtYwtBtmsGbR41",
 	object: "api_key",
 	name: "ci-pipeline",
@@ -109,7 +139,7 @@ const keyDialog = (isCreated: boolean): KeyDialog.Model => {
 const ORG: OrgInfo = { id: "org_lab", name: "Acme", hasImage: false, region: "us" }
 
 const general = () => {
-	const model = General.init(true).model
+	const model = General.init(Policy.allPermissions).model
 	return {
 		...model,
 		org: AsyncData.Success({ data: ORG }),
@@ -145,7 +175,7 @@ const profile = (isDirty: boolean) => {
 }
 
 const SOURCE_ID = encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000002")
-const source = Schema.decodeUnknownSync(V2Source)({
+const source = Schema.decodeSync(V2Source)({
 	id: SOURCE_ID,
 	object: "source",
 	name: "Railway production",
@@ -198,7 +228,7 @@ const dashboardView = Submodel.defineView<DashboardListModel.Model, DashboardLis
 	deleteDialog(h, model),
 )
 const sourceView = Submodel.defineView<SourceDetailModel.Model, SourceMessage>((model, h) =>
-	settingsTab(h, model, source),
+	settingsTab(h, model, source, "UTC"),
 )
 
 const render = (h: HtmlBuilder<Message>, item: string): Html => {
@@ -228,11 +258,14 @@ const render = (h: HtmlBuilder<Message>, item: string): Html => {
 				toParentMessage: ignore,
 				viewInputs: { slotId: "lab-key-popup" },
 			})
-		case "destination": {
+		case "destination":
+		case "destination-teams":
+		case "destination-teams-retired":
+		case "destination-incident-io": {
 			const model = Destination.init("lab-destination")
 			return h.submodel({
 				slotId: "lab-destination",
-				model: { ...model, dialog: opened(model.dialog) },
+				model: { ...model, dialog: opened(model.dialog), form: destinationForm(item) },
 				view: DestinationView.view,
 				toParentMessage: ignore,
 				viewInputs: { id: "lab-destination" },

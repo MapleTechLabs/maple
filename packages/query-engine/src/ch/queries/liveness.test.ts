@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { DateTime, Effect, Array as Arr } from "effect"
+import { assert, describe, expect, it } from "vitest"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compileUnsafe, compileUnionUnsafe, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { orgTelemetryPulseQuery, serviceLivenessQuery } from "./liveness"
 import { OrgId } from "@maple/domain"
@@ -74,9 +74,10 @@ describe("serviceLivenessQuery", () => {
 				lastSeen: "2024-01-01 00:29:00",
 			},
 		])
+		assert.isDefined(byo)
 		expect(byo?.spanCount).toBe(14203)
 		expect(byo?.errorCount).toBe(0)
-		expect(byo && DateTime.formatIso(byo.lastSeen)).toBe("2024-01-01T00:29:00.000Z")
+		expect(DateTime.formatIso(byo.lastSeen)).toBe("2024-01-01T00:29:00.000Z")
 
 		const [managed] = decodeRows(compiled, [
 			{
@@ -97,7 +98,7 @@ describe("orgTelemetryPulseQuery", () => {
 		const { sql } = compileUnionUnsafe(orgTelemetryPulseQuery(), pulseParams)
 
 		// 2 branches → exactly 1 UNION ALL separator.
-		expect((sql.match(/UNION ALL/g) || []).length).toBe(1)
+		expect(Arr.fromIterable(Str.matchAll(/UNION ALL/g)(sql)).length).toBe(1)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM logs")
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- the signal label routes each row to its branch
@@ -117,7 +118,7 @@ describe("orgTelemetryPulseQuery", () => {
 
 	it("scopes every branch by OrgId and the bounded window", () => {
 		const { sql } = compileUnionUnsafe(orgTelemetryPulseQuery(), pulseParams)
-		expect((sql.match(/OrgId = 'org_123'/g) || []).length).toBe(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_123'/g)(sql)).length).toBe(2)
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp <= '2024-01-01 00:10:00'")
 		// The log branch also carries TimestampTime, the logs partition/index key.

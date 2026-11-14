@@ -22,14 +22,14 @@
 // Fixtures are a route matrix, not a happy path. A query function that picks
 // between materialized views and raw scans is several unrelated SQL shapes
 // wearing one name, and only the shape the fixture happens to select is ever
-// executed. `assertRouteCoverage` below fails when a route is never exercised.
+// executed. `routeCoverage` below reports a route that is never exercised.
 
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Array as Arr, String as Str, Option, Schema } from "effect"
+import { TracesMetric } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import {
 	DeploymentEnvironment,
 	MetricName,
-	OrgId,
 	QueryEngineExecuteRequest,
 	ServiceName,
 	warehouseQueries,
@@ -39,19 +39,16 @@ import {
 import { baselineWarehouseCapabilities, type WarehouseCapabilities } from "../capabilities"
 import * as CH from "../ch"
 import { builderFixtures } from "./builders"
+import { builderCatalogEntries, FIXTURE_END_TIME, FIXTURE_ORG_ID, FIXTURE_START_TIME } from "./fixture"
 import { compilePipeQuery } from "../ch/pipe-dispatch"
 import { compiledQueryOf } from "../execution/compiled-input"
 import { fingerprintSql } from "../execution/fingerprint"
 import { makeQueryEngineExecute, type QueryEngineWarehouse, type QueryTenant } from "../runtime"
 import { BenchmarkError, validateSuite, type Suite } from "@maple-dev/effect-orm/benchmark"
 
-// Fixture inputs
-
-const ORG_ID = "org_sql_catalog"
-/** A window that spans whole hours plus partial edges on both sides, so the
- *  edge-hour + rollup-interior union shapes both produce non-degenerate SQL. */
-const START_TIME = "2026-01-01 10:30:00"
-const END_TIME = "2026-01-03 14:15:00"
+const ORG_ID = FIXTURE_ORG_ID
+const START_TIME = FIXTURE_START_TIME
+const END_TIME = FIXTURE_END_TIME
 /** Narrow window for fine-grained buckets — the lowering rejects a timeseries
  *  whose bucket count is unreasonable, so a 60s fixture needs hours, not days. */
 const SHORT_START_TIME = "2026-01-03 10:30:00"
@@ -106,7 +103,7 @@ const FINGERPRINT = "11640393269246331608"
 
 /**
  * At least one fixture per name in `warehouseQueries` — enforced by
- * `assertPipeCoverage`, so adding a pipe without a fixture breaks the build.
+ * `uncoveredPipes`, so adding a pipe without a fixture breaks the build.
  */
 export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	{ pipe: "list_traces", label: "default", params: {}, allCapabilities: true },
@@ -161,7 +158,19 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 	{ pipe: "slow_traces", label: "default", params: { service: "api", deployment_env: "production" } },
 	{ pipe: "span_search", label: "default", params: { search: "timeout" }, allCapabilities: true },
-	{ pipe: "top_operations", label: "default", params: { service_name: "api", metric: "p95_duration" } },
+	{
+		pipe: "top_operations",
+		label: "default",
+		route: "top_operations:rollup",
+		params: { service_name: "api", metric: "p95_duration" },
+	},
+	{
+		// apdex scores each span against its thresholds, so it stays on raw spans.
+		pipe: "top_operations",
+		label: "apdex",
+		route: "top_operations:raw",
+		params: { service_name: "api", metric: "apdex", environment: "production" },
+	},
 
 	// NB: the pipe adapter never forwards `bucket_seconds` into the query opts,
 	// so none of these can reach the annual service-overview rollup — see
@@ -386,8 +395,6 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	},
 ]
 
-// Collection
-
 export interface CatalogEntry {
 	/** Stable identifier, e.g. `pipe:list_traces:filtered:bloom`. */
 	readonly id: string
@@ -453,8 +460,6 @@ export function collectPipeCatalog(): ReadonlyArray<CatalogEntry> {
 	return entries
 }
 
-// QuerySpec collection (dashboards, overview charts, the metrics explorer)
-//
 // The pipe registry is only half the product. Dashboards and the overview go
 // through `QueryEngineService.execute`, and the two adapters do NOT agree:
 // `pipeParamsToTracesTimeseriesOpts` never forwards `bucketSeconds` into the
@@ -790,6 +795,37 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			filters: { ...METRICS_FILTERS, groupByResourceAttributeKey: "host.name" },
 		},
 	},
+	{
+		label: "metrics-timeseries-grouped-by-several-keys",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "avg",
+			bucketSeconds: 300,
+			groupBy: ["resource_attribute", "attribute"],
+			filters: {
+				...METRICS_FILTERS,
+				groupByResourceAttributeKeys: ["k8s.namespace.name"],
+				groupByAttributeKeys: ["job", "http.route"],
+			},
+		},
+	},
+	{
+		label: "metrics-timeseries-rate-grouped-by-several-keys",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "rate",
+			bucketSeconds: 300,
+			groupBy: ["resource_attribute", "attribute"],
+			filters: {
+				metricName: metric("http.server.requests"),
+				metricType: "sum",
+				groupByResourceAttributeKeys: ["k8s.namespace.name"],
+				groupByAttributeKeys: ["job"],
+			},
+		},
+	},
 
 	{
 		label: "traces-breakdown",
@@ -820,6 +856,16 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			metric: "count",
 			groupBy: "severity",
 			filters: { serviceName: service("api") },
+		},
+	},
+	{
+		label: "logs-breakdown-by-resource-attribute",
+		query: {
+			kind: "breakdown",
+			source: "logs",
+			metric: "count",
+			groupBy: "resource_attribute",
+			filters: { serviceName: service("api"), groupByResourceAttributeKey: "k8s.pod.name" },
 		},
 	},
 	{
@@ -973,24 +1019,24 @@ interface CapturedSql {
  * result still contributes its SQL — the SQL is the artifact under test.
  */
 function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
-	readonly warehouse: QueryEngineWarehouse<QueryTenant>
+	readonly warehouse: QueryEngineWarehouse
 	readonly captured: ReadonlyArray<CapturedSql>
 } {
 	const captured: Array<CapturedSql> = []
 	const empty = Effect.succeed([] as ReadonlyArray<never>)
-	const warehouse: QueryEngineWarehouse<QueryTenant> = {
+	const warehouse: QueryEngineWarehouse = {
 		rawSqlQuery: (_tenant, sql) => {
 			captured.push({ sql })
 			return empty
 		},
 		compiledQuery: (_tenant, input) => {
 			const compiled = compiledQueryOf(input)
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 		compiledQueryWithCapabilities: (_tenant, compile) => {
 			const compiled = Effect.runSync(compile(capabilities))
-			captured.push({ sql: compiled.sql, compiled: compiled as CompiledQuery<unknown> })
+			captured.push({ sql: compiled.sql, compiled: compiled })
 			return empty
 		},
 	}
@@ -1003,7 +1049,7 @@ function makeCapturingWarehouse(capabilities: WarehouseCapabilities): {
  */
 export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 	const entries: Array<CatalogEntry> = []
-	const tenant: QueryTenant = { orgId: OrgId.make(ORG_ID) }
+	const tenant: QueryTenant = { orgId: ORG_ID }
 
 	for (const fixture of querySpecFixtures) {
 		const variants = fixture.allCapabilities ? capabilityVariants : capabilityVariants.slice(0, 1)
@@ -1048,63 +1094,36 @@ export function collectQuerySpecCatalog(): ReadonlyArray<CatalogEntry> {
 	return entries
 }
 
-// Builder collection (direct `warehouse.compiledQuery` call sites)
-//
 // The pipe registry + QuerySpec lowering cover only ~36 of 161 exported query
 // builders; the rest are compiled directly at call sites in apps/api and never
 // met the analyzer. `builderFixtures` (benchmark/builders.ts) enumerates them
 // with production-shaped params; the e2e sweep picks these entries up with
 // zero test changes because it iterates the catalog.
 
-export function collectBuilderCatalog(): ReadonlyArray<CatalogEntry> {
-	const entries: Array<CatalogEntry> = []
-	for (const fixture of builderFixtures) {
-		const compiled = fixture.compile()
-		// The executor dies on unresolved placeholders at runtime; a fixture with a
-		// missing compile param must fail HERE, in the unit test, not in the sweep.
-		if (Str.includes("__PARAM_")(compiled.sql)) {
-			throw new Error(
-				`SQL catalog: builder fixture ${fixture.module}/${fixture.name} (${fixture.label}) ` +
-					`left an unresolved __PARAM_ placeholder — a compile param is missing.`,
-			)
-		}
-		entries.push({
-			id: `builder:${fixture.module}:${fixture.name}:${fixture.label}`,
-			source: "builder",
-			name: fixture.name,
-			label: fixture.label,
-			capabilityLabel: "baseline",
-			route: undefined,
-			sql: compiled.sql,
-			fingerprint: fingerprintSql(compiled.sql),
-			compiled,
-			...(fixture.sampleValues ? { sampleValues: fixture.sampleValues } : undefined),
-		})
-	}
-	return entries
-}
+export const collectBuilderCatalog = (): ReadonlyArray<CatalogEntry> =>
+	builderCatalogEntries("SQL catalog builder fixture", builderFixtures)
 
 /** The benchmark and analyzer consume these same compiled cases. Compilation
  * failures stay typed at CLI boundaries instead of dropping fixtures. */
-export const collectQueryCatalog = () =>
-	Effect.try({
-		try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
-		catch: (cause) =>
-			new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
-	})
+export const collectQueryCatalog = Effect.try({
+	try: () => [...collectPipeCatalog(), ...collectQuerySpecCatalog(), ...collectBuilderCatalog()],
+	catch: (cause) => new BenchmarkError({ message: `Core catalog compilation failed: ${String(cause)}` }),
+})
 
 /** Composition happens in the app, keeping integration knowledge out of core. */
 export const mergeQueryCatalogs = (...catalogs: ReadonlyArray<ReadonlyArray<CatalogEntry>>) => {
 	const entries = catalogs.flat()
 	const seen = new Set<string>()
-	const duplicate = entries.find((entry) => {
+	const duplicate = Arr.findFirst(entries, (entry) => {
 		if (seen.has(entry.id)) return true
 		seen.add(entry.id)
 		return false
 	})
-	return duplicate
-		? Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${duplicate.id}` }))
-		: Effect.succeed(entries)
+	return Option.match(duplicate, {
+		onNone: () => Effect.succeed(entries),
+		onSome: (entry) =>
+			Effect.fail(new BenchmarkError({ message: `Duplicate query case ID: ${entry.id}` })),
+	})
 }
 
 /** The only conversion from compiled catalog cases to a serializable workload.
@@ -1132,8 +1151,6 @@ export function dedupeByFingerprint(entries: ReadonlyArray<CatalogEntry>): Reado
 	}
 	return [...seen.values()]
 }
-
-// Anti-rot assertions
 
 /**
  * Catalog entries whose rows nothing validates.
@@ -1267,7 +1284,7 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 				metric: query.metric,
 				needsSampling: true,
 				allMetrics: query.allMetrics === true,
-				groupBy: query.groupBy as ReadonlyArray<string> | undefined,
+				groupBy: query.groupBy,
 				bucketSeconds: query.bucketSeconds,
 				apdexThresholdMs: query.apdexThresholdMs,
 				rootOnly: filters.rootSpansOnly === true,
@@ -1287,6 +1304,12 @@ export function routeCoverage(): ReadonlyMap<string, { true: number; false: numb
 	for (const fixture of builderFixtures) {
 		if (fixture.module !== "web-analytics") continue
 		record("useProductEvents", Str.endsWith("-rollup")(fixture.label))
+	}
+
+	for (const fixture of pipeFixtures) {
+		if (fixture.pipe !== "top_operations") continue
+		const metric = Schema.decodeUnknownOption(TracesMetric)(fixture.params.metric ?? "count")
+		record("isRollupTopOperationsMetric", Option.exists(metric, CH.isRollupTopOperationsMetric))
 	}
 
 	return coverage

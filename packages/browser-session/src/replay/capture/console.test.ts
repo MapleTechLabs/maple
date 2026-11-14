@@ -60,6 +60,22 @@ describe("installConsoleCapture", () => {
 		])
 	})
 
+	it("does not capture the SDKs' own diagnostics, and still prints them", () => {
+		const printed: unknown[] = []
+		console.debug = (...args: unknown[]) => printed.push(args[0])
+		const events: SessionEvent[] = []
+		uninstall = installConsoleCapture((event) => events.push(event))
+		console.debug("[MapleClientSDK] logs flush failed; cooldown 60s:", new TypeError("NetworkError"))
+		console.debug("[maple] session events POST failed:", new TypeError("NetworkError"))
+		console.debug("[mapleleaf] the app's own tag")
+		console.debug("checkout failed [maple]")
+		expect(events.map((event) => event.message)).toEqual([
+			"[mapleleaf] the app's own tag",
+			"checkout failed [maple]",
+		])
+		expect(printed).toHaveLength(4)
+	})
+
 	it("leaves a wrapper the app installed on top in place, and working, after teardown", () => {
 		const seen: unknown[] = []
 		console.debug = () => {}

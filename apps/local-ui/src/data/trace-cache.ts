@@ -2,7 +2,7 @@ import { TraceData } from "@maple/views/traces/trace-data"
 import { Option, Schema, Array as Arr } from "effect"
 import type { CacheValue, QueryKey } from "./cache-store"
 
-// `useLocalTraceDetail`'s key and data (`buildTraceDetail`'s `TraceDetail`) in the result cache.
+// The trace detail's key and data (`buildTraceDetail`'s `TraceDetail`) in the result cache.
 
 /** `["local", "trace", traceId]`. */
 export const traceCacheKey = (traceId: string): QueryKey => ["local", "trace", traceId]

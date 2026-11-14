@@ -7,7 +7,8 @@ import {
 	makeSnapshot,
 } from "@maple/status-page/fixtures"
 import { beforeEach, describe, expect, it } from "vitest"
-import { cacheKey } from "./snapshot"
+import { sharedHostMatcher } from "./handler"
+import { CACHE_FRESH_MS, cacheKey } from "./snapshot"
 import {
 	type FakeStorage,
 	makeFakeStorage,
@@ -17,13 +18,24 @@ import {
 	putOverlayEntry,
 	send,
 } from "./test-support"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const PAGE = "https://status.acme.example/"
+
+const decodeUptime = Schema.decodeUnknownSync(
+	Schema.Struct({
+		page: Schema.Struct({ status_url: Schema.String }),
+		days: Schema.Number,
+		components: Schema.Array(Schema.Struct({ name: Schema.String, days: Schema.Array(Schema.Unknown) })),
+	}),
+)
 const TOKEN = "mstat_correct-horse-battery-staple"
 
 const delayedBanner = (html: string): string =>
-	html.match(/<div class="notice" id="delayed"[^>]*>/u)?.[0] ?? ""
+	Option.match(Str.match(/<div class="notice" id="delayed"[^>]*>/u)(html), {
+		onNone: () => "",
+		onSome: (found) => found[0],
+	})
 const entry = (fields: Partial<StatusPageOverlayEntry> = {}): StatusPageOverlayEntry => ({
 	id: "e1",
 	at: FIXTURE_NOW - 120_000,
@@ -52,9 +64,12 @@ describe("serving a page", () => {
 			"public, max-age=15, stale-while-revalidate=60, stale-if-error=86400",
 		)
 		expect(response.headers.get("x-content-type-options")).toBe("nosniff")
-		const nonce = response.headers
-			.get("content-security-policy")
-			?.match(/script-src 'nonce-([^']+)'/u)?.[1]
+		const nonce = Option.getOrThrow(
+			Option.fromNullishOr(response.headers.get("content-security-policy")).pipe(
+				Option.flatMap(Str.match(/script-src 'nonce-([^']+)'/u)),
+				Option.flatMapNullishOr((found) => found[1]),
+			),
+		)
 		expect(nonce).toBeDefined()
 		expect(html).toContain(`<script nonce="${nonce}">`)
 		expect(fake.cache.get(cacheKey("snapshot", FIXTURE_PAGE_ID))?.storedAt).toBe(FIXTURE_NOW)
@@ -103,6 +118,28 @@ describe("serving a page", () => {
 		expect(response.status).toBe(200)
 		expect(html).toContain(`href="/s/acme/feed.atom"`)
 		expect((await send(fake, "https://status.maple.workers.dev/s/unknown/")).status).toBe(404)
+	})
+
+	it("asks KV for the shared host once per cache window, not on every slug request", async () => {
+		const url = "https://status.maple.workers.dev/s/acme/"
+		const hostKey = StatusPageKeys.host("status.maple.workers.dev")
+		const hostReads = () => Arr.filter(fake.kvReads, (key) => key === hostKey).length
+		expect((await send(fake, url)).status).toBe(200)
+		expect((await send(fake, url)).status).toBe(200)
+		expect(hostReads()).toBe(1)
+		expect((await send(fake, url, { nowMs: FIXTURE_NOW + CACHE_FRESH_MS })).status).toBe(200)
+		expect(hostReads()).toBe(2)
+	})
+
+	it("serves a host that gains a page once its remembered miss has aged out", async () => {
+		const page = "https://status.late.example/"
+		expect((await send(fake, page)).status).toBe(404)
+		fake.kv.set(StatusPageKeys.host("status.late.example"), FIXTURE_PAGE_ID)
+		expect((await send(fake, page, { nowMs: FIXTURE_NOW + CACHE_FRESH_MS })).status).toBe(200)
+	})
+
+	it("keeps a host's own page ahead of the slug path, so it never serves another page", async () => {
+		expect((await send(fake, "https://status.acme.example/s/acme/")).status).toBe(404)
 	})
 
 	it("stops serving a renamed page under its old slug", async () => {
@@ -187,6 +224,37 @@ describe("serving a page", () => {
 		expect(html).toContain("Live checks are delayed")
 	})
 
+	it("serves daily uptime as public JSON, cached like status.json", async () => {
+		const response = await send(fake, `${PAGE}api/v1/uptime.json?days=7`)
+		expect(response.status).toBe(200)
+		expect(response.headers.get("access-control-allow-origin")).toBe("*")
+		expect(response.headers.get("cache-control")).toBe(
+			(await send(fake, `${PAGE}api/v1/status.json`)).headers.get("cache-control"),
+		)
+		const json = decodeUptime(await response.json())
+		expect(json.page.status_url).toBe("https://status.acme.example")
+		// The fixture's third component has no monitor: it has no uptime to report.
+		expect(Arr.map(json.components, (component) => component.name)).toEqual(["API", "Dashboard"])
+		expect(Arr.map(json.components, (component) => component.days.length)).toEqual([7, 7])
+
+		const one = decodeUptime(
+			await (await send(fake, `${PAGE}api/v1/uptime.json?component=${fixtureComponentId(1)}`)).json(),
+		)
+		expect(Arr.map(one.components, (component) => component.name)).toEqual(["Dashboard"])
+		expect(one.days).toBe(90)
+	})
+
+	it("refuses a bad window and an id with no uptime, as JSON", async () => {
+		for (const days of ["0", "366", "7.5", "week"]) {
+			const response = await send(fake, `${PAGE}api/v1/uptime.json?days=${days}`)
+			expect(response.status).toBe(400)
+			expect(await response.json()).toEqual({ error: "days must be a whole number from 1 to 365." })
+		}
+		const missing = await send(fake, `${PAGE}api/v1/uptime.json?component=${fixtureComponentId(2)}`)
+		expect(missing.status).toBe(404)
+		expect(missing.headers.get("access-control-allow-origin")).toBe("*")
+	})
+
 	it("serves status.json, the badge and the feed", async () => {
 		const json = await send(fake, `${PAGE}api/v1/status.json`)
 		expect(json.headers.get("content-type")).toBe("application/json; charset=utf-8")
@@ -198,6 +266,19 @@ describe("serving a page", () => {
 
 		const feed = await send(fake, `${PAGE}feed.atom`)
 		expect(await feed.text()).toContain(`<link rel="self" href="https://status.acme.example/feed.atom"/>`)
+
+		const rss = await send(fake, `${PAGE}feed.rss`)
+		expect(rss.headers.get("content-type")).toBe("application/rss+xml; charset=utf-8")
+		expect(rss.headers.get("cache-control")).toBe(feed.headers.get("cache-control"))
+		expect(await rss.text()).toContain(
+			`<atom:link href="https://status.acme.example/feed.rss" rel="self"`,
+		)
+	})
+
+	it("serves the RSS feed under the slug path with links under the prefix", async () => {
+		const rss = await send(fake, "https://status.maple.workers.dev/s/acme/feed.rss")
+		expect(rss.status).toBe(200)
+		expect(await rss.text()).toContain("<link>https://status.maple.workers.dev/s/acme/</link>")
 	})
 
 	it("answers /_health without touching storage", async () => {
@@ -455,5 +536,64 @@ describe("break-glass updates", () => {
 			]),
 		)
 		expect(overlayEntries(fake)[0]?.componentIds).toEqual([fixtureComponentId(0), fixtureComponentId(1)])
+	})
+})
+
+describe("custom domains", () => {
+	const CUSTOM = "https://status.acme.com"
+	let fake: FakeStorage
+	beforeEach(() => {
+		fake = makeFakeStorage()
+		publish(fake, makeSnapshot({ page: { ...makeSnapshot().page, customDomain: "status.acme.com" } }), {
+			host: "status.acme.com",
+		})
+	})
+
+	it("serves the page and every route of it on the custom domain", async () => {
+		const page = await send(fake, `${CUSTOM}/`)
+		expect(page.status).toBe(200)
+		expect(await page.text()).toContain("<title>Acme status</title>")
+		for (const path of ["/feed.atom", "/feed.rss", "/api/v1/status.json", "/badge.svg", "/_manage"])
+			expect((await send(fake, `${CUSTOM}${path}`)).status, path).toBe(200)
+	})
+
+	it("links feeds, status.json and the Slack command to the custom domain, wherever the page is read", async () => {
+		const viaSlug = "https://status.maple.workers.dev/s/acme"
+		expect(await (await send(fake, `${viaSlug}/feed.atom`)).text()).toContain(
+			`<link rel="self" href="${CUSTOM}/feed.atom"/>`,
+		)
+		expect(await (await send(fake, `${viaSlug}/feed.rss`)).text()).toContain(`<link>${CUSTOM}/</link>`)
+		expect(await (await send(fake, `${viaSlug}/api/v1/status.json`)).json()).toMatchObject({
+			page: { status_url: CUSTOM },
+		})
+		const html = await (await send(fake, `${viaSlug}/`)).text()
+		expect(html).toContain(`/feed subscribe ${CUSTOM}/feed.rss`)
+		expect(html).toContain(`<link rel="canonical" href="${CUSTOM}/">`)
+		expect(html).toContain(`<meta property="og:url" content="${CUSTOM}/">`)
+		expect(await (await send(fake, `${viaSlug}/api/v1/uptime.json`)).json()).toMatchObject({
+			page: { status_url: CUSTOM },
+		})
+	})
+
+	it("answers 404 on a host with no page, and never serves another page by path there", async () => {
+		const unknown = await send(fake, "https://status.other.com/")
+		expect(unknown.status).toBe(404)
+		const bySlug = await send(fake, "https://status.other.com/s/acme/")
+		expect(bySlug.status).toBe(404)
+		// A page's own domain does not serve /s/<slug> of any page either.
+		expect((await send(fake, `${CUSTOM}/s/acme/`)).status).toBe(404)
+	})
+})
+
+describe("sharedHostMatcher", () => {
+	const isShared = sharedHostMatcher("status.maple.dev")
+
+	it.each([
+		["status.maple.dev", true],
+		["STATUS.Maple.Dev", true],
+		["status.maple.dev.evil.com", false],
+		["evil-status.maple.dev", false],
+	])("treats %s as shared: %s", (hostname, shared) => {
+		expect(isShared(hostname)).toBe(shared)
 	})
 })

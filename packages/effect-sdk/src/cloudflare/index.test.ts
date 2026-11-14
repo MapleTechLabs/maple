@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Exit, Layer, Option, Scope, Array as Arr, Record as Rec, String as Str } from "effect"
 import { afterEach, expect, vi } from "vitest"
 import { make, WorkerEnvironment } from "./index.js"
 
@@ -18,7 +18,7 @@ const env = {
 const setupFetch = (responder: (url: string) => Response = () => new Response(null, { status: 200 })) => {
 	const calls: Array<FetchCall> = []
 	const original = globalThis.fetch
-	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const headers: Record<string, string> = {}
 		const initHeaders = init?.headers
@@ -29,10 +29,10 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 		} else if (initHeaders) {
 			Object.assign(headers, initHeaders)
 		}
-		const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+		const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 		calls.push({ url, headers, body })
 		return responder(url)
-	}) as typeof fetch
+	}
 	return { calls, restore: () => void (globalThis.fetch = original) }
 }
 
@@ -57,19 +57,18 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall).toBeDefined()
-		expect(traceCall!.url).toBe("https://collector.test/v1/traces")
-		expect(traceCall!.headers.authorization).toBe("Bearer secret")
-		const body = traceCall!.body as {
+		const traceCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(traceCall.url).toBe("https://collector.test/v1/traces")
+		expect(traceCall.headers.authorization).toBe("Bearer secret")
+		const body = traceCall.body as {
 			resourceSpans: Array<{
 				resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
 				scopeSpans: Array<{ spans: Array<{ name: string }> }>
 			}>
 		}
-		const spans = body.resourceSpans[0].scopeSpans[0].spans
+		const spans = Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans
 		expect(Arr.map(spans, (s) => s.name).sort()).toEqual(["op-1", "op-2"])
-		const attrs = body.resourceSpans[0].resource.attributes
+		const attrs = Arr.getUnsafe(body.resourceSpans, 0).resource.attributes
 		const attrMap = Rec.fromEntries(Arr.map(attrs, (a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("cloudflare")
@@ -99,20 +98,19 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const logCall = calls.find((c) => Str.endsWith("/v1/logs")(c.url))
-		expect(logCall).toBeDefined()
-		const body = logCall!.body as {
+		const logCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/logs")(c.url)))
+		const body = logCall.body as {
 			resourceLogs: Array<{
 				scopeLogs: Array<{
 					logRecords: Array<{ severityText: string; body: { stringValue?: string } }>
 				}>
 			}>
 		}
-		const records = body.resourceLogs[0].scopeLogs[0].logRecords
+		const records = Arr.getUnsafe(Arr.getUnsafe(body.resourceLogs, 0).scopeLogs, 0).logRecords
 		expect(records).toHaveLength(2)
-		expect(records[0].severityText).toBe("Info")
-		expect(records[0].body.stringValue).toBe("hello world")
-		expect(records[1].severityText).toBe("Error")
+		expect(Arr.getUnsafe(records, 0).severityText).toBe("Info")
+		expect(Arr.getUnsafe(records, 0).body.stringValue).toBe("hello world")
+		expect(Arr.getUnsafe(records, 1).severityText).toBe("Error")
 	})
 
 	it("defaults to https://ingest.maple.dev when no endpoint is configured", async () => {
@@ -126,8 +124,8 @@ describe("MapleCloudflareSDK.make", () => {
 		// defaulting here, not the no-op behavior.
 		await telemetry.flush({ MAPLE_INGEST_KEY: "secret" })
 
-		const tracesCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(tracesCall?.url).toBe("https://ingest.maple.dev/v1/traces")
+		const tracesCall = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(tracesCall.url).toBe("https://ingest.maple.dev/v1/traces")
 	})
 
 	it("runs in no-op mode when no ingest key is configured", async () => {
@@ -144,8 +142,12 @@ describe("MapleCloudflareSDK.make", () => {
 
 		expect(calls.length).toBe(0)
 		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("no ingest key configured")
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("set MAPLE_INGEST_KEY")
+		expect(Arr.getUnsafe(Arr.getUnsafe(consoleInfoSpy.mock.calls, 0), 0)).toContain(
+			"no ingest key configured",
+		)
+		expect(Arr.getUnsafe(Arr.getUnsafe(consoleInfoSpy.mock.calls, 0), 0)).toContain(
+			"set MAPLE_INGEST_KEY",
+		)
 
 		// A second flush within the same isolate should stay silent —
 		// the info log is one-shot.
@@ -169,9 +171,11 @@ describe("MapleCloudflareSDK.make", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush({ MAPLE_ENDPOINT: "http://localhost:4318" })
 
-		const tracesCall = calls.find((c) => c.url === "http://localhost:4318/v1/traces")
-		expect(tracesCall?.body).toBeDefined()
-		expect(tracesCall?.headers).not.toHaveProperty("authorization")
+		const tracesCall = Option.getOrThrow(
+			Arr.findFirst(calls, (c) => c.url === "http://localhost:4318/v1/traces"),
+		)
+		expect(tracesCall.body).toBeDefined()
+		expect(tracesCall.headers).not.toHaveProperty("authorization")
 		expect(consoleInfoSpy).not.toHaveBeenCalled()
 	})
 
@@ -216,9 +220,9 @@ describe("MapleCloudflareSDK.make", () => {
 		await Effect.runPromise(Effect.undefined.pipe(Effect.withSpan("op"), Effect.provide(telemetry.layer)))
 		await telemetry.flush(env)
 
-		const call = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(call?.url).toBe("https://override.test/v1/traces")
-		expect(call?.headers.authorization).toBe("Bearer override-key")
+		const call = Option.getOrThrow(Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url)))
+		expect(call.url).toBe("https://override.test/v1/traces")
+		expect(call.headers.authorization).toBe("Bearer override-key")
 	})
 
 	it("survives a failing collector — flush rejects internally and disables for cooldown", async () => {
@@ -261,27 +265,31 @@ describe("MapleCloudflareSDK.make", () => {
 
 		await telemetry.flush(env)
 
-		const traceCall = calls.find((c) => Str.endsWith("/v1/traces")(c.url))
-		expect(traceCall, "expected the deferred span to be POSTed by the awaited flush").toBeDefined()
-		const body = traceCall!.body as {
+		const traceCall = Arr.findFirst(calls, (c) => Str.endsWith("/v1/traces")(c.url))
+		expect(Option.isSome(traceCall), "expected the deferred span to be POSTed by the awaited flush").toBe(
+			true,
+		)
+		const body = Option.getOrThrow(traceCall).body as {
 			resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 		}
-		expect(Arr.map(body.resourceSpans[0].scopeSpans[0].spans, (s) => s.name)).toEqual(["deferred-op"])
+		expect(
+			Arr.map(Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans, (s) => s.name),
+		).toEqual(["deferred-op"])
 	})
 
 	it("overlapping flushes export every span exactly once", async () => {
 		const calls: Array<{ url: string; body: unknown }> = []
 		const original = globalThis.fetch
 		restore = () => void (globalThis.fetch = original)
-		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 			calls.push({
 				url,
-				body: init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+				body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
 			})
 			await new Promise<void>((resolve) => setTimeout(resolve, 5))
 			return new Response(null, { status: 200 })
-		}) as typeof fetch
+		}
 
 		const telemetry = make({ serviceName: "unit-test" })
 
@@ -318,13 +326,13 @@ describe("MapleCloudflareSDK.make", () => {
 		const calls: Array<{ url: string; body: unknown }> = []
 		const original = globalThis.fetch
 		restore = () => void (globalThis.fetch = original)
-		globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			const body = init?.body && typeof init.body === "string" ? JSON.parse(init.body) : undefined
+			const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
 			calls.push({ url, body })
 			// The first POST belongs to the cancelled invocation and never settles.
 			return calls.length === 1 ? new Promise<Response>(() => {}) : Promise.resolve(new Response(null))
-		}) as typeof fetch
+		}
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(
@@ -347,7 +355,10 @@ describe("MapleCloudflareSDK.make", () => {
 				const body = c.body as {
 					resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 				}
-				return Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (s) => s.name)
+				return Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0)?.scopeSpans, 0)?.spans,
+					(s) => s.name,
+				)
 			},
 		)
 		expect(names).toEqual([["stuck-op"], ["later-op"]])
@@ -386,9 +397,12 @@ describe("MapleCloudflareSDK.make requestLayer", () => {
 			const body = traces[0]?.body as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(Arr.map(body.resourceSpans[0]?.scopeSpans[0]?.spans, (span) => span.name)).toEqual([
-				"op-1",
-			])
+			expect(
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0)?.scopeSpans, 0)?.spans,
+					(span) => span.name,
+				),
+			).toEqual(["op-1"])
 		} finally {
 			restore()
 		}

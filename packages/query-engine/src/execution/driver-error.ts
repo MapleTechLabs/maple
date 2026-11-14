@@ -39,7 +39,7 @@ export class WarehouseDriverError extends Schema.TaggedError<WarehouseDriverErro
 	 * `status`/`statusCode`, `code` and `type` fields SDK errors conventionally carry.
 	 */
 	static fromUnknown(cause: unknown): WarehouseDriverError {
-		if (cause instanceof WarehouseDriverError) return cause
+		if (Schema.is(WarehouseDriverError)(cause)) return cause
 		const record = isRecord(cause) ? cause : undefined
 		const fields: Types.Mutable<ConstructorParameters<typeof WarehouseDriverError>[0]> = {
 			message: unknownMessage(cause),
@@ -70,4 +70,4 @@ const unknownMessage = (error: unknown): string => {
 
 /** Response limits retain their identity so they cannot enter the transient retry path. */
 export const warehouseDriverFailure = (cause: unknown): WarehouseDriverError | WarehouseResponseLimitError =>
-	cause instanceof WarehouseResponseLimitError ? cause : WarehouseDriverError.fromUnknown(cause)
+	Schema.is(WarehouseResponseLimitError)(cause) ? cause : WarehouseDriverError.fromUnknown(cause)

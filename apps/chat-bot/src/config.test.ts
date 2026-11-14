@@ -24,6 +24,36 @@ describe("resolving a connector's configuration", () => {
 		})
 	})
 
+	it("leaves an optional setting out without calling the connector unconfigured", () => {
+		const base = testSocketConnector()
+		const connector: IngressConnector = {
+			...base,
+			ingress: {
+				...base.ingress,
+				requiredConfig: [
+					...base.ingress.requiredConfig,
+					{ name: "TEST_REGION", secret: false, optional: true },
+				],
+			},
+		}
+		expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: "t" }, connector)).toEqual({
+			_tag: "ready",
+			config: new Map([[TEST_TOKEN_KEY, "t"]]),
+		})
+		expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: "t", TEST_REGION: "eu" }, connector)).toEqual({
+			_tag: "ready",
+			config: new Map([
+				[TEST_TOKEN_KEY, "t"],
+				["TEST_REGION", "eu"],
+			]),
+		})
+		// The required one still is.
+		expect(resolveConnectorConfig({ TEST_REGION: "eu" }, connector)).toEqual({
+			_tag: "missing",
+			names: [TEST_TOKEN_KEY],
+		})
+	})
+
 	it("treats a blank value as absent rather than binding an empty string", () => {
 		expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: "   " }, testSocketConnector())).toEqual({
 			_tag: "missing",

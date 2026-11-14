@@ -20,13 +20,12 @@ const rectsSlot = createLazy()
 const particlesSlot = createLazy()
 
 export type MapViewOptions = Readonly<{
-	/** The side panel for the selected node (`renderDetailPanel`). */
+	/** The side panel for the selected node. */
 	detailPanel?: (selectedId: string) => Html
-	/** Shown when the graph has no nodes at all (`emptyState`). */
+	/** Shown when the graph has no nodes at all. */
 	emptyState?: Html
-	/** `viewMode`: in 3D the scene replaces the canvas, without presentation controls or legend. */
-	viewMode?: "2d" | "3d"
-	render3D?: () => Html
+	/** A scene (3D, tiles) that replaces the canvas, without presentation controls or legend. */
+	renderScene?: () => Html
 }>
 
 /** Declutter hid every node: offer a reset instead of the "no instrumentation" empty state. */
@@ -100,7 +99,7 @@ const mapColumn = <M>(
 	toMessage: (message: Message) => M,
 	options: MapViewOptions,
 ): Html => {
-	const is3d = options.viewMode === "3d"
+	const scene = options.renderScene
 	return vstack(h, { className: "h-full" }, [
 		serviceMapToolbar(h, {
 			model: model.toolbar,
@@ -110,7 +109,7 @@ const mapColumn = <M>(
 			colorMode: model.colorMode,
 			hiddenNodeCount: model.graph.declutter.hiddenNodeCount,
 			hiddenEdgeCount: model.graph.declutter.hiddenEdgeCount,
-			showPresentationControls: !is3d,
+			showPresentationControls: scene === undefined,
 			toCombobox: (message) => toMessage(Message.GotFocusComboboxMessage({ message })),
 			toTraffic: (message) => toMessage(Message.GotTrafficSelectMessage({ message })),
 			toColor: (message) => toMessage(Message.GotColorSelectMessage({ message })),
@@ -121,8 +120,8 @@ const mapColumn = <M>(
 			onShowAllTraffic: toMessage(Message.ClickedShowAllTraffic()),
 			onResort: toMessage(Message.ClickedResort()),
 		}),
-		fillRegion(h, {}, [is3d ? (options.render3D?.() ?? h.div([], [])) : canvasArea(h, model, toMessage)]),
-		...(is3d
+		fillRegion(h, {}, [scene === undefined ? canvasArea(h, model, toMessage) : scene()]),
+		...(scene !== undefined
 			? []
 			: [
 					serviceMapLegend(h, model.colorMode, model.source.services, model.legend, (message) =>
@@ -146,7 +145,7 @@ export const view = <M>(
 		if (model.source.rawNodes.length > 0) return hiddenState(h, model, toMessage)
 		return options.emptyState ?? h.div([], [])
 	}
-	if (!model.revealed && options.viewMode !== "3d") return serviceMapLoading(h)
+	if (!model.revealed && options.renderScene === undefined) return serviceMapLoading(h)
 	const detail = Option.flatMap(model.selectedId, (id) =>
 		options.detailPanel === undefined ? Option.none() : Option.some(options.detailPanel(id)),
 	)

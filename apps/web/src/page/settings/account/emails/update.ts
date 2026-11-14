@@ -220,7 +220,7 @@ export const update = (model: Model, message: Message): Return =>
 			const commands = Command.mapMessages(step.commands ?? [], (inner) =>
 				Message.GotCodeMessage({ message: inner }),
 			)
-			// `onValueComplete`: the sixth digit submits.
+			// The sixth digit submits.
 			return !isComplete(model.code) && isComplete(step.model)
 				? withCommands(verify(next, OtpField.valueOf(step.model)), commands)
 				: { model: next, commands }

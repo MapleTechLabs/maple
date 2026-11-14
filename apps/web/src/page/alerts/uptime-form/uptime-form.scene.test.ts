@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
@@ -15,14 +16,17 @@ import {
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { ORG } from "../shared/test-rows"
-import { LIMIT_REACHED_CODE, monitorHref } from "../shared/uptime-commands"
-import { heartbeatMonitor, httpMonitor } from "../shared/uptime-test-monitors"
-import { wirePayload } from "./derive"
+import { ORG } from "../../kit/alert-test-rows"
+import { LIMIT_REACHED_CODE, monitorHref } from "../../kit/uptime/commands"
+import { heartbeatMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
+import { wirePayload } from "../../kit/uptime/form-derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const publicId = Schema.encodeSync(UptimeMonitorPublicId)
@@ -33,7 +37,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const asAdmin = (model: Model): Model =>
-	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, isAdmin: true })).model
+	pageUpdate(model, Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER })).model
 
 const fresh = (search: Model["search"] = {}): Model =>
 	asAdmin(init({ _tag: "AlertsUptimeNew", search }, context).model)
@@ -97,6 +101,19 @@ describe("uptime monitor form", () => {
 			expectView(text("The ping URL appears after you create the monitor.")).toExist(),
 			expectView(role("textbox", { name: "Grace period" })).toExist(),
 			expectView(role("textbox", { name: "URL" })).not.toExist(),
+		)
+	})
+
+	test("a heartbeat's header says Maple records pings, not that it checks from Ashburn", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(fresh()),
+			expectView(text(/from Ashburn, US and records every check/u)).toExist(),
+			click(role("button", { name: /Heartbeat/u })),
+			expectView(
+				text("Maple records every ping and alerts when one is late or reports a failure."),
+			).toExist(),
+			expectView(text(/from Ashburn, US and records every check/u)).not.toExist(),
 		)
 	})
 
@@ -231,12 +248,12 @@ describe("uptime monitor form", () => {
 	test("a member sees that the form is admin-only, and cannot save", () => {
 		const member = pageUpdate(
 			init({ _tag: "AlertsUptimeNew", search: {} }, context).model,
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: false }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: MEMBER }),
 		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(text("Only org admins can create or change uptime monitors")).toExist(),
+			expectView(text("Only org admins and engineers can create or change uptime monitors")).toExist(),
 			expectView(role("button", { name: "Create monitor" })).not.toExist(),
 		)
 		const tried = pageUpdate(

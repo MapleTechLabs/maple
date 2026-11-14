@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { statusDot } from "@maple/views/ui/status-dot"
 
-// `ListToolbar`: a list page's row of view tabs, then search, filters and the count readout.
+// A list page's row of view tabs, then search, filters and the count readout.
 
 export type ListToolbarOptions = Readonly<{
 	/** View tabs or a scope picker, pinned left. */

@@ -32,7 +32,7 @@ export const GET: APIRoute = ({ site }) => {
 		[
 			"# Maple",
 			"",
-			"> Maple is an open-source observability platform for traces, logs, and metrics, built on OpenTelemetry. Send OTLP from any instrumented app; there are no proprietary agents.",
+			"> Maple is a source-available observability platform for traces, logs, and metrics, built on OpenTelemetry. Send OTLP from any instrumented app; there are no proprietary agents.",
 			"",
 			"For AI agents and automation, use the resources below.",
 			"",

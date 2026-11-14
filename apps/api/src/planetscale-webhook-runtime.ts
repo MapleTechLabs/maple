@@ -150,7 +150,7 @@ export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 											}),
 										)
 							return yield* annotateJob.pipe(
-								Effect.flatMap(() => persist),
+								Effect.andThen(persist),
 								Effect.matchEffect({
 									onFailure: (error) =>
 										Effect.logError("PlanetScale webhook persistence failed").pipe(

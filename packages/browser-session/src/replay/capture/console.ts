@@ -26,11 +26,16 @@ let unpatch: Array<() => void> = []
 /** Set while listeners run: a listener that logs must not be captured again. */
 let dispatching = false
 
+/** The SDKs' own diagnostics. They describe Maple's export, not the host app, so they are never captured. */
+const SDK_LINE = /^\[(?:maple|Maple(?:Client|Server|Cloudflare)SDK)\]/
+const isSdkLine = (args: ReadonlyArray<unknown>): boolean =>
+	typeof args[0] === "string" && SDK_LINE.test(args[0])
+
 function wrapLevel(level: Level) {
 	return (original: Console[Level], hooks: () => Set<ConsoleListener> | undefined): Console[Level] =>
 		(...args: unknown[]): void => {
 			const subscribers = hooks()
-			if (subscribers && !dispatching) {
+			if (subscribers && !dispatching && !isSdkLine(args)) {
 				dispatching = true
 				try {
 					for (const listener of subscribers) listener(level, args)
@@ -111,7 +116,6 @@ export function boundedStringify(value: unknown, budget: number): string {
 	const full = (): boolean => out.length > budget
 	const room = (): number => Math.max(0, budget - out.length) + 2
 	/** A quoted string cut to the room left: escaping can grow it sixfold. */
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const quote = (text: string): string => truncateText(JSON.stringify(truncateText(text, room())), room())
 
 	const visit = (node: unknown, depth: number): void => {
@@ -130,6 +134,8 @@ export function boundedStringify(value: unknown, budget: number): string {
 			case "function":
 				out += "[Function]"
 				return
+			case "object":
+				break
 		}
 		if (typeof node !== "object" || node === null) {
 			out += "null"
@@ -140,7 +146,6 @@ export function boundedStringify(value: unknown, budget: number): string {
 			return
 		}
 		if (node instanceof Date) {
-			// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 			out += Number.isNaN(node.getTime()) ? "null" : JSON.stringify(node.toISOString())
 			return
 		}

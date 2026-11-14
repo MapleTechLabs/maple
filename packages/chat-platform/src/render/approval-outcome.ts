@@ -6,6 +6,8 @@
  * verbatim put a report's headings and a dashboard's validation table into a thread. The record
  * stays as it is — the model reads it on its next turn — and a channel gets one sentence and a link.
  */
+import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
+import { truncate } from "@maple/strings"
 import { Option, Schema, String as Str } from "effect"
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatApprovalOutcome, type ChatRenderContext } from "./blocks"
 
@@ -56,7 +58,7 @@ const OnDashboard = Schema.Struct({ dashboard: Named })
 const OnRule = Schema.Struct({ rule: Named })
 const OnIssue = Schema.Struct({ id: Schema.String })
 const Payload = <Tool extends string, Data extends Schema.Top>(tool: Tool, data: Data) =>
-	Schema.Struct({ __maple_ui: Schema.Literal(true), tool: Schema.Literal(tool), data })
+	Schema.Struct({ [TOOL_UI_MARKER]: Schema.Literal(true), tool: Schema.Literal(tool), data })
 
 const MutationPayload = Schema.Union([
 	Payload("create_dashboard", OnDashboard),
@@ -93,7 +95,7 @@ type MutationPayload = typeof MutationPayload.Type
 
 const decodePayload = Schema.decodeUnknownOption(Schema.fromJsonString(MutationPayload))
 
-/** `createDualContent` writes the payload as one line of its own, after the report. */
+/** A recorded `__maple_ui` payload is one line of its own, after the report. */
 const structuredOf = (lines: ReadonlyArray<string>, app: string): Described | null => {
 	for (const line of lines) {
 		const trimmed = Str.trim(line)
@@ -202,6 +204,3 @@ const describe = (output: MutationPayload, app: string): Described => {
 			}
 	}
 }
-
-const truncate = (text: string, max: number): string =>
-	text.length <= max ? text : `${Str.slice(0, max - 1)(text)}…`

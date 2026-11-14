@@ -11,17 +11,17 @@ import {
 	statFigureValueMonoStyles,
 	statFigureValueSizeStyles,
 	statFigureValueStyles,
-} from "@maple/ui/styles/ui/stat-figure"
+} from "./stat-figure.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/stat-figure.tsx: a headline number with a muted unit.
-// With a `label` or `caption` it is a whole KPI: label above, the value, the caption below.
+// A headline number with a muted unit. With a `label` or `caption` it is a whole KPI: label
+// above, the value, the caption below.
 
 export interface StatFigureOptions {
 	readonly value: Html | string
 	readonly unit?: Html | string
 	readonly size?: StatFigureSize
-	/** Mono figures for readouts; `false` sets the value in the display face. */
+	/** Mono figures for a machine readout; the default is the display face. */
 	readonly mono?: boolean
 	readonly className?: string
 	readonly valueClassName?: string
@@ -54,7 +54,7 @@ const figure = <M>(h: HtmlBuilder<M>, options: StatFigureOptions, className?: st
 					h.Class(
 						cn(
 							statFigureValueStyles,
-							(options.mono ?? true) ? statFigureValueMonoStyles : statFigureValueDisplayStyles,
+							(options.mono ?? false) ? statFigureValueMonoStyles : statFigureValueDisplayStyles,
 							statFigureValueSizeStyles[size],
 							options.valueClassName,
 						),
@@ -62,7 +62,7 @@ const figure = <M>(h: HtmlBuilder<M>, options: StatFigureOptions, className?: st
 				],
 				[options.value],
 			),
-			...(options.unit
+			...(options.unit !== undefined && options.unit !== ""
 				? [
 						h.span(
 							[h.Class(cn(statFigureUnitStyles, statFigureUnitSizeStyles[size]))],

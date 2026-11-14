@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Tracer, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Tracer, Array as Arr, String as Str, Option } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
@@ -118,14 +118,15 @@ describe("GithubAppClient request span", () => {
 				.searchCode("42", "octo", "shop", "card declined", undefined, 5)
 				.pipe(Effect.withTracer(tracer), Effect.exit)
 
-			const searchSpan = requestSpans(spans).find((span) =>
-				Str.includes("/search/code")(String(span.attributes.get("url.path"))),
+			const searchSpan = Option.getOrThrow(
+				Arr.findFirst(requestSpans(spans), (span) =>
+					Str.includes("/search/code")(String(span.attributes.get("url.path"))),
+				),
 			)
-			assert.isDefined(searchSpan)
 			// `url.path` on purpose, never `url.full`: the query carries the caller's
 			// raw search text, which has no business in telemetry.
-			assert.isUndefined(searchSpan?.attributes.get("url.full"))
-			for (const value of searchSpan?.attributes.values() ?? []) {
+			assert.isUndefined(searchSpan.attributes.get("url.full"))
+			for (const value of searchSpan.attributes.values()) {
 				assert.notInclude(String(value), "card declined")
 			}
 			// HttpClient's own `http.client` span records `url.full` with the encoded query; it must stay suppressed.

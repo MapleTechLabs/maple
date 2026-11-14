@@ -7,7 +7,7 @@ import {
 	ErrorIssuePullRequestId,
 	ErrorIssueVerificationId,
 	InvestigationId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AiTriageSettings,
@@ -17,11 +17,30 @@ import {
 	Investigations,
 } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import type { ChatSessionsApi } from "@maple/backend/platform/bindings"
-import { fakeChatSessions } from "@maple/backend/platform/chat-sessions-fake"
+import { ChatSessions, type ChatSessionsApi } from "@maple/backend/platform/bindings"
+import { fakeChatSessions } from "@maple/backend/testing/chat-sessions-fake"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { enqueueFixVerification } from "./fix-verification-enqueue"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	type EnqueueFixVerificationInput,
+	enqueueFixVerification as enqueue,
+} from "./fix-verification-enqueue"
+import { InvestigationStarter } from "./InvestigationStarter"
+
+/** The real starter over the test database, holding the session port the input names (or none). */
+const enqueueFixVerification = ({
+	chatSessions,
+	...rest
+}: EnqueueFixVerificationInput & { readonly chatSessions?: ChatSessionsApi | undefined }) =>
+	enqueue(rest).pipe(
+		Effect.provide(
+			InvestigationStarter.layer.pipe(
+				Layer.provide(
+					chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions),
+				),
+			),
+		),
+	)
 
 const ORG = Schema.decodeSync(OrgId)("org_fix_verification_enqueue")
 const PR_URL = "https://github.com/MapleTechLabs/maple/pull/612"
@@ -213,7 +232,7 @@ describe("enqueueFixVerification", () => {
 			const { verification } = yield* seedVerification()
 			const chat = fakeChatSession()
 			const database = yield* Database
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* database.execute((db) =>
 				db.run(
 					PG.insertInto(Investigations).values({

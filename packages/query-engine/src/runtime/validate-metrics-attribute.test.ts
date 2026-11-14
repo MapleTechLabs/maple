@@ -13,7 +13,7 @@ const makeRequest = (query: MetricsTimeseriesQuery): AlertEvaluateRequest => ({
 })
 
 const baseFilters = {
-	metricName: Schema.decodeUnknownSync(MetricName)("cpu.usage"),
+	metricName: Schema.decodeSync(MetricName)("cpu.usage"),
 	metricType: "gauge" as const,
 }
 
@@ -107,7 +107,7 @@ describe("validateMetricsAttributeFilters", () => {
 		}),
 	)
 
-	it.effect("rejects combining attribute and resource_attribute group-bys", () =>
+	it.effect("rejects more attribute keys than a query can group by", () =>
 		Effect.gen(function* () {
 			const error = yield* validateEvaluate(
 				makeRequest({
@@ -117,19 +117,31 @@ describe("validateMetricsAttributeFilters", () => {
 					groupBy: ["attribute", "resource_attribute"],
 					filters: {
 						...baseFilters,
-						groupByAttributeKey: "region",
-						groupByResourceAttributeKey: "host.name",
+						groupByAttributeKeys: ["a", "b", "c", "d"],
+						groupByResourceAttributeKeys: ["host.name", "k8s.pod.name"],
 					},
 				}),
 			).pipe(Effect.flip)
 
 			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
 			if (error._tag === "@maple/http/errors/QueryEngineValidationError") {
-				assert.include(
-					Arr.join(error.details, "; "),
-					"groupBy cannot combine attribute and resource_attribute",
-				)
+				assert.include(Arr.join(error.details, "; "), "at most 5 attribute keys")
 			}
+		}),
+	)
+
+	it.effect("rejects latest on histograms", () =>
+		Effect.gen(function* () {
+			const error = yield* validateEvaluate(
+				makeRequest({
+					kind: "timeseries",
+					source: "metrics",
+					metric: "latest",
+					filters: { ...baseFilters, metricType: "histogram" },
+				}),
+			).pipe(Effect.flip)
+
+			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
 		}),
 	)
 })

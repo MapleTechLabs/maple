@@ -1,11 +1,11 @@
-import type { WhereClauseAutocompleteSuggestion } from "../../lib/query-builder/where-clause-autocomplete"
+import type { WhereClauseAutocompleteSuggestion } from "./query-builder/where-clause-autocomplete"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { type AnchorRect, listboxStyle } from "./where-autocomplete"
 
-// `WhereClauseEditor`'s suggestion list and key handling, generic over the owner's Message.
+// The where editor's suggestion list and key handling, generic over the owner's Message.
 
 /** The suggestion list, fixed under (or over) the textarea. */
 export const suggestionListbox = <M>(
@@ -17,16 +17,21 @@ export const suggestionListbox = <M>(
 		onApply: (index: number) => M
 		/** The Mount that keeps the textarea focused while a row is pressed. */
 		keepFocus: Attribute<M>
+		/** Moved to `<body>` (inside a dialog): marked as a nested popup so a press keeps the dialog open. */
+		isPortaled?: boolean
 	}>,
 ): Html =>
 	h.div(
 		[
+			// Keyed: the highlight overlay beside it comes and goes, and must never be patched into it.
+			h.Key("where-suggestions"),
 			h.Role("listbox"),
 			h.AriaLabel("Where clause suggestions"),
 			h.Class(
-				"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
+				"fixed z-60 overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-popup",
 			),
 			...(inputs.anchor === null ? [] : [h.Style(listboxStyle(inputs.anchor))]),
+			...(inputs.isPortaled === true ? [h.DataAttribute("base-ui-portal", "")] : []),
 			inputs.keepFocus,
 		],
 		Arr.map(inputs.suggestions, (suggestion, index) =>
@@ -51,7 +56,7 @@ export const suggestionListbox = <M>(
 						[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],
 						[suggestion.label],
 					),
-					eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
+					eyebrow(h, { variant: "mono", className: "shrink-0" }, [suggestion.kind]),
 				],
 			),
 		),

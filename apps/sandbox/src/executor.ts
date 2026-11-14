@@ -9,35 +9,35 @@ import {
 	ExecutorPrepareResponse,
 	ExecutorRunRequest,
 	ExecutorRunResponse,
+	ExecutorReleaseRequest,
+	ExecutorReleaseResponse,
 	ExecutorDestroyResponse,
 	ExecutorUnavailable,
+	EXECUTOR_INACTIVITY_TIMEOUT_MS,
 } from "@maple/domain/executor"
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers"
 import { Effect, Schema, Semaphore, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { type GatewayProps, gatewayFetch } from "./executor-gateway"
 import { EXECUTOR_PROBE_VERSION, GATEWAY_HOST, GATEWAY_TLS_HOST } from "./executor-probe"
 import { type ExecutorContainer, type ExecutorProbeReport, probeOnce } from "./executor-run"
-import { type ExecutorHost, destroy, prepare, run } from "./executor-session"
+import { type ExecutorHost, destroy, prepare, release, run } from "./executor-session"
 
 /** What the container's intercepted host reaches (`executor-gateway.ts`). */
 export class RegistryGateway extends WorkerEntrypoint<unknown, GatewayProps> {
 	override fetch(request: Request): Promise<Response> {
+		// @effect-diagnostics-next-line globalFetch:off -- the gateway forwards to the upstream with the Worker's own fetch
 		return Effect.runPromise(gatewayFetch(request, this.ctx.props, (upstream) => fetch(upstream)))
 	}
 }
 
 const REPORT_KEY = `probe:v${EXECUTOR_PROBE_VERSION}`
 
-/**
- * Outlasts reconnaissance and synthesis (no commands, up to 30 minutes after prepare) and agents'
- * pauses; the run destroys its executor when it ends.
- */
-const INACTIVITY_TIMEOUT_MS = 90 * 60 * 1000
-
 /** Commands from one run's agents at once. The instance has one vCPU; the rest queue. */
 const CONCURRENT_COMMANDS = 3
 
 const decoder = new TextDecoder()
+const secureRandom = SecureRandom.make(SecureRandom.randomBytesUnsafe)
 
 /** `exec()` passes on only `PATH`; the scripts expect the rest of what a login shell had. */
 const EXEC_ENV = { HOME: "/root", LANG: "C.UTF-8" }
@@ -48,8 +48,10 @@ const attempt = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catc
 
 const decodePrepare = Schema.decodeEffect(ExecutorPrepareRequest)
 const decodeRun = Schema.decodeEffect(ExecutorRunRequest)
+const decodeRelease = Schema.decodeEffect(ExecutorReleaseRequest)
 const encodePrepare = Schema.encodeSync(ExecutorPrepareResponse)
 const encodeRun = Schema.encodeSync(ExecutorRunResponse)
+const encodeRelease = Schema.encodeSync(ExecutorReleaseResponse)
 const encodeDestroy = Schema.encodeSync(ExecutorDestroyResponse)
 
 const unreadable = new ExecutorUnavailable({ message: "the executor could not read the request" })
@@ -121,10 +123,25 @@ export class Executor extends DurableObject<ExecutorEnv> {
 		return Effect.runPromise(
 			decodeRun(request).pipe(
 				Effect.flatMap((decoded) =>
-					this.commands.withPermits(1)(run(this.host, decoded, crypto.randomUUID())),
+					Effect.flatMap(secureRandom.uuidV4(), (id) =>
+						this.commands.withPermits(1)(run(this.host, decoded, id)),
+					),
 				),
 				Effect.orElseSucceed(() => unreadable),
 				Effect.map(encodeRun),
+			),
+		)
+	}
+
+	/** Not behind the command slots: it ends commands rather than adding one. */
+	async release(
+		request: typeof ExecutorReleaseRequest.Encoded,
+	): Promise<typeof ExecutorReleaseResponse.Encoded> {
+		return Effect.runPromise(
+			decodeRelease(request).pipe(
+				Effect.flatMap((decoded) => release(this.host, decoded)),
+				Effect.orElseSucceed(() => unreadable),
+				Effect.map(encodeRelease),
 			),
 		)
 	}
@@ -149,7 +166,7 @@ export class Executor extends DurableObject<ExecutorEnv> {
 					container.start({ enableInternet: false })
 					this.interceptedFor = undefined
 				}
-				await container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS)
+				await container.setInactivityTimeout(EXECUTOR_INACTIVITY_TIMEOUT_MS)
 				// Registered again when the credential changes: the gateway's props carry it.
 				const token = gateway.git?.token ?? ""
 				if (this.interceptedFor !== token) {

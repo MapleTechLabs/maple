@@ -124,7 +124,8 @@ const result = (h: HtmlBuilder<Message>, model: Model): Html =>
 				title: "Run a query",
 				hint: "Pick a table or an example from the sidebar, or write your own SELECT. Every table is scoped by OrgId = 'local'.",
 			}),
-		Running: () => h.div([h.Class("flex h-24 items-center justify-center")], [spinner(h, "size-4")]),
+		Running: () =>
+			hstack(h, { align: "center", justify: "center", className: "h-24" }, [spinner(h, "size-4")]),
 		Failed: ({ title, detail }) => queryError(h, title, detail),
 		Succeeded: ({ rows }) =>
 			rows.length === 0

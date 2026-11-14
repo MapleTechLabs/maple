@@ -1,3 +1,7 @@
+import { ChartRuntimeMessages } from "@maple/views/charts/chart-env"
+import * as Policy from "@maple/domain/policy"
+import { DataSourceKind } from "@maple/domain/data-sources"
+import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
@@ -8,8 +12,13 @@ import {
 	LinearIntegrationStatus,
 	RailwayIntegrationStatus,
 	ScrapeTargetId,
+	SearchConsoleAvailableSitesResponse,
+	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
+	VercelDiscoverResponse,
+	VercelIntegrationStatus,
+	VercelProjectScope,
 } from "@maple/domain/http"
 import {
 	V2AwsConnection,
@@ -17,6 +26,7 @@ import {
 	V2AwsIngest,
 	V2AwsSetup,
 	V2ChatConnectorList,
+	V2DataSource,
 	V2GcpConnector,
 	V2GcpIntegration,
 	V2GcpSetupScripts,
@@ -29,17 +39,19 @@ import {
 import {
 	AwsConnectionId,
 	AwsMetricNamespace,
+	AwsModule,
 	ChatWorkspaceId,
 	GcpConnectorId,
 	GcpLogRuntime,
 	SupabaseProjectRef,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
+import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
@@ -50,13 +62,23 @@ import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
 import { SupabaseProjectRow } from "../infra-integrations/supabase/model"
-import { Capability, GcpFlags, SetupMethod } from "./gcp-configure-schema"
-import { ConfigureTarget, LogVolume, RemovedConnector } from "./gcp-schema"
-import { AwsRemovedStack, AwsSetupMethod, AwsSetupPart } from "./aws-schema"
+import { Capability, GcpFlags, SetupMethod } from "../infra-integrations/gcp/integration/gcp-configure-schema"
+import {
+	ConfigureTarget,
+	LogVolume,
+	RemovedConnector,
+} from "../infra-integrations/gcp/integration/gcp-schema"
+import { VercelConfigureTarget, VercelSignal } from "../infra-integrations/vercel/integration/vercel-schema"
+import {
+	AwsRemovedStack,
+	AwsSetupMethod,
+	AwsSetupPart,
+} from "../infra-integrations/aws/integration/aws-schema"
 
 export const StatusName = Schema.Literals([
 	"cloudflare",
 	"railway",
+	"vercel",
 	"planetscale",
 	"planetscaleDatabases",
 	"gcp",
@@ -64,8 +86,10 @@ export const StatusName = Schema.Literals([
 	"supabase",
 	"linear",
 	"github",
+	"searchConsole",
 	"chat",
 	"scrapeTargets",
+	"dataSources",
 ])
 export type StatusName = typeof StatusName.Type
 
@@ -78,6 +102,7 @@ export const Message = defineMessageUnion({
 	CompletedReadClock: { nowMs: Schema.Number },
 	CompletedLoadCloudflare: result(CloudflareIntegrationStatus),
 	CompletedLoadRailway: result(RailwayIntegrationStatus),
+	CompletedLoadVercel: result(VercelIntegrationStatus),
 	CompletedLoadPlanetscale: result(V2PlanetScaleIntegration),
 	CompletedLoadPlanetscaleDatabases: result(V2PlanetScaleDatabaseList),
 	CompletedLoadGcp: result(V2GcpIntegration),
@@ -85,16 +110,31 @@ export const Message = defineMessageUnion({
 	CompletedLoadSupabase: result(SupabaseIntegrationStatus),
 	CompletedLoadLinear: result(LinearIntegrationStatus),
 	CompletedLoadGithub: result(GithubIntegrationStatus),
+	CompletedLoadSearchConsole: result(SearchConsoleIntegrationStatus),
+	CompletedLoadSearchConsoleSites: result(SearchConsoleAvailableSitesResponse),
+	/** A property's checkbox in the Search Console picker. */
+	ToggledSearchConsoleSite: { siteUrl: Schema.String },
+	ClickedSaveSearchConsoleSites: {},
+	ClickedRetrySearchConsoleSites: {},
+	CompletedSaveSearchConsoleSites: { failure: Schema.NullOr(LoadFailure) },
+	CompletedSearchConsolePrime: {},
 	CompletedLoadChat: result(V2ChatConnectorList),
 	CompletedLoadScrapeTargets: result(Schema.Array(V2ScrapeTarget)),
+	CompletedLoadDataSources: result(Schema.Array(V2DataSource)),
+	/** A filter chip above the hub's list. */
+	SelectedFilter: { filter: HubFilter },
+	/** A data source row, or a "Query in place" card (Settings > Data sources). */
+	ClickedDataSource: { source: Schema.NullOr(Schema.String), connect: Schema.NullOr(DataSourceKind) },
 	CompletedLoadCustomer: result(BillingCustomer),
 	/** `trackProduct("integration_connected")` was handed to the session SDK. */
 	CompletedTrackConnected: {},
-	/** The shared session read answered (`useIsOrgAdmin`). */
-	CompletedLoadSession: { isAdmin: Schema.Boolean },
-	/** A catalog row or card, or the header's back button (`navigate({ search })`). */
+	/** `trackProduct("integration_disconnected")` was handed to the session SDK. */
+	CompletedTrackDisconnected: {},
+	/** The shared session read answered with its grants. */
+	CompletedLoadSession: { grants: Schema.Array(Policy.PermissionName), hasDataSources: Schema.Boolean },
+	/** A catalog row or card, or the header's back button. */
 	ClickedIntegration: { integration: Schema.NullOr(Schema.String) },
-	/** A settings nav tab (`navigate({ to: "/settings", search: { tab } })`). */
+	/** A settings nav tab. */
 	ClickedSettingsTab: { tab: Schema.String },
 	/** The chat callback toast went out; the return params are stripped next (a replace). */
 	CompletedChatToast: {},
@@ -115,7 +155,7 @@ export const Message = defineMessageUnion({
 	FailedStartConnect: { attempt: Schema.Number, title: Schema.String, description: Schema.String },
 	/** The authorize URL arrived but the popup was gone and could not be reopened. */
 	BlockedConnectPopup: { attempt: Schema.Number },
-	/** Every 3 s while a polling provider's popup is out (`onPoll`). */
+	/** Every 3 s while a polling provider's popup is out. */
 	PolledConnect: { attempt: Schema.Number },
 	ClosedConnectPopup: { attempt: Schema.Number },
 	EndedConnectGrace: { attempt: Schema.Number },
@@ -157,7 +197,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedLoadCloudflareUsage: result(CloudflareUsageResponse),
 	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
-	/** Every 30 s while a fresh Cloudflare connection settles (`useCloudflareIngestPhase`). */
+	/** Every 30 s while a fresh Cloudflare connection settles. */
 	TickedCloudflareIngest: {},
 	GotZoneFilterMessage: { message: ToggleGroup.Message },
 	ChangedZoneSearch: { value: Schema.String },
@@ -172,17 +212,14 @@ export const Message = defineMessageUnion({
 	ChangedManagedZoneSearch: { value: Schema.String },
 	SubmittedZoneSettings: {},
 	CompletedCloudflareZones: { failure: Schema.NullOr(LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartRuntimeMessages,
 	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
-	/** A press inside a row's switch or menu cell, which does not select the row. */
-	ClickedTargetControls: {},
 	CompletedFetchChecks: {
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(V2ScrapeTargetCheck), LoadFailure),
 	},
-	/** `useIntervalRefresh`: the target list every 30 s, the selected target's checks every 10 s. */
+	/** The target list every 30 s, the selected target's checks every 10 s. */
 	TickedTargetsRefresh: {},
 	TickedChecksRefresh: {},
 	ClickedProbe: { id: ScrapeTargetId },
@@ -219,6 +256,41 @@ export const Message = defineMessageUnion({
 	ClickedRailwayRotateCancel: {},
 	/** Every 15 s while environments wait for their first sync. */
 	TickedRailwaySettle: {},
+	/** Every 15 s while a fresh connection waits for its first sync. */
+	TickedVercelSettle: {},
+	ClickedVercelSync: {},
+	CompletedVercelSync: { failure: Schema.NullOr(LoadFailure) },
+	/** An issue alert's "Re-apply drains": an empty settings save. */
+	ClickedVercelReapply: {},
+	ClickedVercelConfigure: { target: VercelConfigureTarget },
+	GotVercelConfigureDialogMessage: { message: Dialog.Message },
+	GotVercelTokenMessage: { message: Field.Message },
+	/** The token step's form submit: look the token up, or save it as the new token. */
+	SubmittedVercelToken: {},
+	CompletedVercelDiscover: {
+		forTeam: Schema.NullOr(Schema.String),
+		response: Schema.NullOr(VercelDiscoverResponse),
+		error: Schema.NullOr(Schema.String),
+	},
+	GotVercelTeamMessage: { message: RadioGroup.Message },
+	SubmittedVercelTeam: {},
+	ClickedVercelConfigureBack: {},
+	ToggledVercelSignal: { signal: VercelSignal },
+	ChangedVercelScope: { scope: VercelProjectScope },
+	ToggledVercelProject: { id: Schema.String },
+	ChangedVercelProjectQuery: { value: Schema.String },
+	ChangedVercelSampling: { value: Schema.String },
+	SubmittedVercelConnect: {},
+	CompletedVercelConnect: {
+		mode: Schema.Literals(["connect", "token"]),
+		teamName: Schema.NullOr(Schema.String),
+		error: Schema.NullOr(Schema.String),
+	},
+	/** The settings step's "Save and apply": straight to Vercel, or through the confirmation. */
+	ClickedVercelSave: {},
+	GotVercelConfirmDialogMessage: { message: Dialog.Message },
+	ConfirmedVercelSave: {},
+	CompletedVercelSave: { isReapply: Schema.Boolean, error: Schema.NullOr(Schema.String) },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },
@@ -258,10 +330,20 @@ export const Message = defineMessageUnion({
 	ToggledAwsRegion: { id: AwsConnectionId, region: Schema.String },
 	ToggledAwsNamespace: { id: AwsConnectionId, namespace: AwsMetricNamespace },
 	SubmittedAwsMetrics: { id: AwsConnectionId },
+	/** `id`: the connection the save was for, which the editor may have moved on from. */
 	CompletedAwsMetricStream: {
+		id: AwsConnectionId,
 		connection: Schema.NullOr(V2AwsConnection),
 		error: Schema.NullOr(Schema.String),
 	},
+	ToggledAwsModule: { id: AwsConnectionId, module: AwsModule },
+	CompletedAwsModules: {
+		id: AwsConnectionId,
+		connection: Schema.NullOr(V2AwsConnection),
+		error: Schema.NullOr(Schema.String),
+	},
+	/** The connect flow's opt-in for a module on the account about to be connected. */
+	ToggledAwsNewModule: { module: AwsModule },
 	ClickedSupabaseSync: {},
 	/** Every minute while the connected Supabase card is shown, so its window and ages advance. */
 	TickedSupabaseClock: {},
@@ -377,7 +459,7 @@ export const Message = defineMessageUnion({
 	ClickedGcpPromptBack: {},
 	ClickedGcpConfirmRemoval: {},
 	CompletedGcpConfirmRemoval: { failure: Schema.NullOr(LoadFailure) },
-	/** The status poll: 10 s while a connection settles, else every minute (`useIntervalRefresh`). */
+	/** The status poll: 10 s while a connection settles, else every minute. */
 	TickedGcpRefresh: {},
 	ReceivedConnectMessage: {
 		provider: ConnectProvider,

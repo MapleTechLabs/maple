@@ -8,15 +8,15 @@ import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import { cursorTooltip } from "@maple/views/charts/definitions/plot-constants"
 import type { SpikeSpec } from "./spike-spec"
 
-// `BoxPlotSpike`, definition half: Tukey boxes over a
-// seeded log-normal sample per operation, on a log y scale. Code copied, constants unchanged.
+// The box plot spike's definition: Tukey boxes over a seeded log-normal sample per operation,
+// on a log y scale.
 
 interface BoxPlotRow {
 	readonly operation: string
 	readonly durationMs: number
 }
 
-type Datum = BoxDatum<BoxPlotRow, ChartValue>
+type Datum = BoxDatum<BoxPlotRow>
 
 const OPERATIONS: ReadonlyArray<{ name: string; medianMs: number; sigma: number }> = [
 	{ name: "GET /api/traces", medianMs: 8, sigma: 0.45 },
@@ -31,17 +31,16 @@ const OPERATIONS: ReadonlyArray<{ name: string; medianMs: number; sigma: number 
 
 const SAMPLES_PER_OPERATION = 120
 
-/** `makeRandom`: an LCG, the same sequence for the same seed. */
+/** An LCG, the same sequence for the same seed. */
 const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
 
 /** `makeRows`: two uniforms per sample through Box-Muller, in operation order. */
 const makeRows = (): ReadonlyArray<BoxPlotRow> =>
-	Arr.flatMap(OPERATIONS, (operation) =>
-		Array.from({ length: SAMPLES_PER_OPERATION }, () => operation),
-	).reduce<{
-		state: number
-		rows: ReadonlyArray<BoxPlotRow>
-	}>(
+	Arr.reduce<(typeof OPERATIONS)[number], { state: number; rows: ReadonlyArray<BoxPlotRow> }>(
+		Arr.flatMap(OPERATIONS, (operation) =>
+			Array.from({ length: SAMPLES_PER_OPERATION }, () => operation),
+		),
+		{ state: 0xb0c5_1234 >>> 0, rows: [] },
 		(acc, operation) => {
 			const s1 = nextState(acc.state)
 			const s2 = nextState(s1)
@@ -54,7 +53,6 @@ const makeRows = (): ReadonlyArray<BoxPlotRow> =>
 			)
 			return { state: s2, rows: [...acc.rows, { operation: operation.name, durationMs }] }
 		},
-		{ state: 0xb0c5_1234 >>> 0, rows: [] },
 	).rows
 
 /** The box or outlier under the pointer: its summary rows, the median emphasised. */

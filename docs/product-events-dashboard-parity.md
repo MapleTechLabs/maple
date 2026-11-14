@@ -133,7 +133,7 @@ hangs off the `QuerySpec` arms from phase 1.
     - `applyProductEventsClause` mirrors `applyLogsClause`: `event.name`, `event.kind`, `source`,
       `host`, `page.path`, `service.name`, `user.id`, `group.id`, `attr.<key>`, and the session keys
       the funnel population filter already parses (`country`, `referrer.host`, `utm.source`, …,
-      reuse `productEventsFilterField` from `apps/web/src/lib/query-builder/funnel-filters.ts` by
+      reuse `productEventsFilterField` from `apps/web/src/page/dashboards/widget/funnel-filters.ts` by
       lifting it into `@maple/query-model` where `FUNNEL_POPULATION_FILTER_FIELDS` already lives).
     - `buildTimeseriesQuerySpec` gains the `product_events` branch; `buildBreakdownQuerySpec` and
       `buildListQuerySpec` fall out.
@@ -179,10 +179,10 @@ hangs off the `QuerySpec` arms from phase 1.
   `makeQueryEngineEvaluateSeries` in `runtime/query-engine.ts`) gets a `product_events` branch
   reading `count` as `sampleCount` like logs, and the "supports traces, logs, and metrics" guard is
   widened. `alert-signal-display.ts`: label "Event count" / "Sessions with events", unit `count`.
-- Web: `apps/web/src/lib/alerts/form-utils.ts` and `signal-and-threshold-section.tsx` accept the
+- Web: `packages/web-data/src/alerts/form-utils.ts` and `signal-and-threshold-section.tsx` accept the
   source; the where-clause editor gets the same scope as the dashboard panel.
-- Alert templates: one "Signups dropped" example under `alert-templates/` is enough to prove the
-  path; don't build a catalogue.
+- Alert templates: one "Signups dropped" example is enough to prove the path; don't build a
+  catalogue.
 
 ### Phase 5: agents and public surfaces
 

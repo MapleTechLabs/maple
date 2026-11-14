@@ -22,7 +22,10 @@ export const TraceRow = Schema.Struct({
 export type TraceRow = typeof TraceRow.Type
 
 /** The paged list's data: every loaded page, and whether a full last page asks for more. */
-export const TracePages = Schema.Struct({ pages: Schema.Array(Schema.Array(TraceRow)), hasNextPage: Schema.Boolean })
+export const TracePages = Schema.Struct({
+	pages: Schema.Array(Schema.Array(TraceRow)),
+	hasNextPage: Schema.Boolean,
+})
 export type TracePages = typeof TracePages.Type
 
 export const FacetOption = Schema.Struct({ name: Schema.String, count: Schema.Number })
@@ -62,10 +65,10 @@ export const Model = Schema.TaggedStruct("TracesPage", {
 	isFetchingNextPage: Schema.Boolean,
 	/** Bumped when the list is refetched or rekeyed; a next page from an older generation is dropped. */
 	pageGeneration: Schema.Number,
-	/** `dataUpdatedAt` of the list, for the "New data" pill. */
+	/** When the list last loaded, for the "New data" pill. */
 	tracesUpdatedAtMs: Schema.Number,
 	search: Draft,
-	/** `RangeFilterSection`'s draft and the committed values it was last formatted from. */
+	/** The range filter's draft and the committed values it was last formatted from. */
 	duration: Schema.Struct({
 		min: Schema.String,
 		max: Schema.String,

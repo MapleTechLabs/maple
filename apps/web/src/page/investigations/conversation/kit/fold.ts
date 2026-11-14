@@ -133,16 +133,16 @@ const toolCallToPart = (call: ChatToolCall): UIMessagePart => {
 	}
 }
 
-/**
- * Prose and tool calls back in the order they happened: the text is split at each call's
- * `textOffset`, clamped and forced non-decreasing; a call without one lands after the prose.
- */
 /** The fold's state: the parts so far and how much of the text they cover. */
 interface Interleaved<Part> {
 	readonly parts: Array<Part | ReturnType<typeof TextPart.make>>
 	readonly cursor: number
 }
 
+/**
+ * Prose and tool calls back in the order they happened: the text is split at each call's
+ * `textOffset`, clamped and forced non-decreasing; a call without one lands after the prose.
+ */
 const interleave = <Call extends { readonly textOffset?: number }, Part>(
 	text: string,
 	calls: ReadonlyArray<Call>,
@@ -171,8 +171,6 @@ export const historyMessageToUIMessage = (message: ChatMessage): UIMessage => ({
 	parts: interleaveParts(message.text, message.toolCalls),
 	createdAt: message.createdAt,
 })
-
-// LIVE EVENTS
 
 type Messages = ReadonlyArray<UIMessage>
 

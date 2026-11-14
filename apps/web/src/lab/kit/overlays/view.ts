@@ -65,7 +65,7 @@ const renderItem = (h: H, model: Model, item: OverlayItem): Html => {
 	}
 }
 
-/** `KitToast`'s note; the toast itself is in the bottom-right region. Three text nodes, `type`
+/** The toast item's note; the toast itself is in the bottom-right region. Three text nodes, `type`
  *  between literals: one merged node shapes differently at the joins. */
 const kitToastNote = (h: H, type: string): Html =>
 	h.p(
@@ -73,14 +73,14 @@ const kitToastNote = (h: H, type: string): Html =>
 		["Toast type: ", type, ", shown in the bottom right corner."],
 	)
 
-/** TanStack `<Link>`: the active one also gets `active`, `aria-current` and `data-status`. */
+/** A nav link: the active one also gets `active`, `aria-current` and `data-status`. */
 const itemLink = (h: H, name: OverlayItem, isActive: boolean): Html =>
 	h.a(
 		[
 			...(isActive ? [h.AriaCurrent("page")] : []),
 			h.Class(
 				cn(
-					"rounded-md border px-2 py-1 font-mono text-xs transition-colors",
+					"rounded-md border px-2 py-1 font-mono text-xs",
 					isActive
 						? "active border-foreground/20 bg-accent font-medium text-foreground"
 						: "border-border text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground",

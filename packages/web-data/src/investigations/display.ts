@@ -1,7 +1,7 @@
 import type { IssueSeverity } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { String as Str } from "effect"
+import { Array as Arr, String as Str } from "effect"
 
 // Investigation display logic shared by apps/web (`components/investigations/`) and the Foldkit app.
 
@@ -25,7 +25,7 @@ export type InvestigationKindKey = "alert" | "error" | "anomaly" | "question" | 
 
 /**
  * The exact title the API writes when the seed context carried no name of its
- * own — `snapshotFor` (apps/api/src/lib/ai-triage-enqueue.ts) and
+ * own: `snapshotFor` (packages/backend/src/services/errors/ai-triage-enqueue.ts) and
  * `fallbackSnapshot` (InvestigationService) both emit this string, and nothing
  * else does. Matching it precisely is what lets the list promote the
  * informative field into the slot the placeholder was occupying.
@@ -33,7 +33,8 @@ export type InvestigationKindKey = "alert" | "error" | "anomaly" | "question" | 
 const GENERIC_TITLE = /^(Error|Anomaly|Alert) incident$/
 
 const trimmed = (value: string | null | undefined): string | null => {
-	const text = value?.trim()
+	if (value == null) return null
+	const text = Str.trim(value)
 	return text ? text : null
 }
 
@@ -127,7 +128,7 @@ export function matchesQuery(investigation: V2Investigation, query: string): boo
 		finding.kind === "none" ? null : finding.text,
 		investigation.report?.suspectedCause,
 	]
-	return haystack.some((value) => value?.toLowerCase().includes(needle))
+	return Arr.some(haystack, (value) => value != null && Str.includes(needle)(Str.toLowerCase(value)))
 }
 
 export type InvestigationSortKey = "updated" | "severity" | "confidence"
@@ -184,13 +185,11 @@ export function sortInvestigations(
 			if (right === null) return -1
 			return direction === "desc" ? right - left : left - right
 		}
-		return updatedWeight(b) - updatedWeight(a) || Str.localeCompare(b.id)(a.id)
+		return updatedWeight(b) !== updatedWeight(a)
+			? updatedWeight(b) - updatedWeight(a)
+			: Str.localeCompare(b.id)(a.id)
 	})
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Durations
- * -----------------------------------------------------------------------------------------------*/
 
 export interface Elapsed {
 	value: string
@@ -214,7 +213,7 @@ const pad = (n: number) => Str.padStart(2, "0")(String(n))
  * component import the other for it built an import cycle that threw at runtime.
  */
 export const splitDuration = (ms: number): Elapsed => {
-	// A pass that died before it started is a real case (`workflow_binding_unavailable`
+	// A pass that died before it started is a real case (an unreachable workflow binding
 	// fails in microseconds), and "0 µs" reads as a broken clock rather than an
 	// instant failure. Sub-second resolution buys nothing at this display size.
 	if (ms < 1000) return { value: "<1", unit: "s" }

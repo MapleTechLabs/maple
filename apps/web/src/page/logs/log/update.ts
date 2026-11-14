@@ -3,7 +3,7 @@ import { getLog } from "@maple/web-data/warehouse/logs"
 import { Effect, Option, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import { LOG_PAGE_PATH, logPageHref } from "../log-links"
@@ -24,7 +24,6 @@ const keyToInput = (key: LogKey) => ({
 	spanId: key.spanId === "" ? undefined : key.spanId,
 })
 
-/** `getLogResultAtom({ data: keyToInput(key) })`. */
 export const FetchLog = Command.define("FetchLogPageLog", {
 	args: {
 		key: Schema.String,
@@ -36,9 +35,8 @@ export const FetchLog = Command.define("FetchLogPageLog", {
 	messages: [Message.CompletedFetchLog],
 	execute: ({ key, ...logKey }) =>
 		getLog({ data: keyToInput(logKey) }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchLog({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchLog({ key, result })),
 		),
 })
 
@@ -100,6 +98,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		ClickedRetry: () => requestLog(model, context, "Refresh"),
-		// `openLog`: a log picked from the trace or the context opens its own page.
+		// A log picked from the trace or the context opens its own page.
 		GotDetailMessage: ({ message: inner }) => liftDetail(model, LogDetail.update(model.detail, inner)),
 	})

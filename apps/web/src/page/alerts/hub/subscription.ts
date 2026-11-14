@@ -4,12 +4,14 @@ import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnectStream from "../shared/chat-connect-stream"
-import { collectionLoadFailed } from "../shared/collection-load"
-import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../shared/collections"
+import { collectionLoadFailed } from "../../kit/collection-load"
+import { destinationRows, incidentRows, ruleRows, ruleStateRows } from "../../kit/alert-collections"
+import { listKeys } from "../../kit/list-keys"
+import { inboxIncidentsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-/** How often the staleness derivation's clock advances (`CLOCK_TICK`). */
+/** How often the staleness derivation's clock advances. */
 const CLOCK_TICK = "30 seconds"
 
 const byOrg = { orgId: Schema.String }
@@ -19,6 +21,19 @@ const HUB_LOAD_TIMEOUT_MS = 10_000
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
+		/** The Inbox's list keys while it lists open incidents; an open menu keeps its arrows. */
+		listKeys: entry(
+			{ hasRows: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({
+					hasRows: inboxIncidentsOf(model).length > 0 && !model.newRuleMenu.isOpen,
+				}),
+				dependenciesToStream: ({ hasRows }) =>
+					hasRows
+						? listKeys({ toMessage: (key) => Message.PressedListKey({ key }) })
+						: Stream.empty,
+			},
+		),
 		rules: entry(byOrg, {
 			modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
 			dependenciesToStream: ({ orgId }) =>
@@ -66,15 +81,17 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 		}),
 		/** The destination dialog's Linear connect popup coming back. */
 		destinationConnectReturn: entry(DestinationDialog.ConnectReturnDependencies, {
-			modelToDependencies: ({ model }) => DestinationDialog.connectReturnDependencies(model.destinationDialog),
+			modelToDependencies: ({ model }) =>
+				DestinationDialog.connectReturnDependencies(model.destinationDialog),
 			dependenciesToStream: (dependencies) =>
 				Stream.map(DestinationDialog.connectReturnStream(dependencies), (message) =>
 					Message.GotDestinationDialogMessage({ message }),
 				),
 		}),
-		/** The destination dialog's workspace connect popup (`useChatWorkspaceConnect`). */
+		/** The destination dialog's workspace connect popup. */
 		destinationChatConnect: entry(ChatConnectStream.Dependencies.fields, {
-			modelToDependencies: ({ model }) => DestinationDialog.chatConnectDependencies(model.destinationDialog),
+			modelToDependencies: ({ model }) =>
+				DestinationDialog.chatConnectDependencies(model.destinationDialog),
 			dependenciesToStream: (dependencies) =>
 				Stream.map(DestinationDialog.chatConnectStream(dependencies), (message) =>
 					Message.GotDestinationDialogMessage({ message }),
@@ -87,7 +104,9 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: () =>
 					Stream.tick(CLOCK_TICK).pipe(
 						Stream.drop(1),
-						Stream.mapEffect(() => Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs }))),
+						Stream.mapEffect(() =>
+							Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
+						),
 					),
 			},
 		),

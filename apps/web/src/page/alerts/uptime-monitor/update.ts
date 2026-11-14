@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Option, Result } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -7,8 +8,8 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { monitorIdFromUrl } from "../shared/uptime-commands"
-import { formatMs } from "../shared/uptime-derive"
+import { monitorIdFromUrl } from "../../kit/uptime/commands"
+import { formatMs } from "../../kit/uptime/derive"
 import {
 	CheckMonitorNow,
 	FetchCheckStats,
@@ -19,6 +20,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, UptimeWindow } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type MonitorRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeMonitor" }>
@@ -73,7 +75,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		monitor: Keyed.idle(),
 		destinations: null,
 		incidents: null,
-		isAdmin: false,
+		grants: [],
 		isToggling: false,
 		isChecking: false,
 		copies: {},
@@ -90,11 +92,7 @@ export const init = (route: MonitorRoute, context: PageContext): Return => {
 		model: read.model,
 		commands: [
 			ReadMonitorClock(),
-			FoldkitCommand.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 			FetchMonitorSession({ orgId: context.orgId }),
 			...(read.commands ?? []),
 		],
@@ -152,8 +150,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		UpdatedIncidents: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, incidents: rows } } : { model },
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin } } : { model },
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		ClickedToggle: () => toggle(model),
 		CompletedToggle: ({ result }) => {
 			const settled = { ...model, isToggling: false }
@@ -198,11 +195,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		HoveredCheck: ({ index }) =>
 			index === model.hoveredCheck ? { model } : { model: { ...model, hoveredCheck: index } },
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

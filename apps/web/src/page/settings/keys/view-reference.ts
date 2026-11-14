@@ -1,11 +1,11 @@
-import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../platform/api-base-url"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { collapsible } from "@maple/views/ui/collapsible"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
-import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { linkButton } from "@maple/views/ui/button"
@@ -13,8 +13,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
-
-// `ApiReference` and `OAuthPointer`.
 
 type H = HtmlBuilder<Message>
 
@@ -36,6 +34,24 @@ const SCOPE_FAMILY_ROWS = [
 		id: "scrape_targets",
 		label: "Scrape targets",
 		description: "Prometheus/PlanetScale scrape targets, probes, and checks",
+	},
+	{ id: "slos", label: "SLOs", description: "Service level objectives and their error budgets" },
+	{
+		id: "uptime_monitors",
+		label: "Uptime monitors",
+		description: "Uptime monitors, their checks and test runs",
+	},
+	{ id: "ingest_rules", label: "Ingest rules", description: "Ingest-time drop, sample and redact rules" },
+	{
+		id: "data_sources",
+		label: "Data sources",
+		description: "Connected external databases and queries against them",
+	},
+	{ id: "status_pages", label: "Status pages", description: "Status pages and their configuration" },
+	{
+		id: "status_page_incidents",
+		label: "Status page incidents",
+		description: "Incidents and maintenance posted to a status page",
 	},
 	{ id: "instrumentation", label: "Recommendations", description: "Instrumentation recommendations" },
 	{
@@ -75,14 +91,18 @@ const SCOPE_FAMILY_ROWS = [
 ] as const
 
 const scopeRow = (h: H, family: (typeof SCOPE_FAMILY_ROWS)[number]): Html =>
-	h.div(
-		[
-			h.Key(family.id),
-			h.Class("flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-2.5"),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-4 gap-y-1.5 px-4 py-2.5",
+			attributes: [h.Key(family.id)],
+		},
 		[
 			spaced(h, { space: "0.5", fill: true }, [
-				h.div([h.Class("text-sm")], [family.label]),
+				typography(h, { size: "sm", as: "div" }, [family.label]),
 				typography(h, { size: "xs", tone: "muted", as: "div" }, [family.description]),
 			]),
 			hstack(h, { gap: "1.5", className: "shrink-0" }, [
@@ -153,27 +173,21 @@ export const apiReference = (h: H, model: Model): Html =>
 		},
 		[
 			panel(h, { className: "divide-y" }, [
-				h.div(
-					[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3")],
-					[
-						h.span(
-							[h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")],
-							["Base URL"],
-						),
-						h.div(
-							[h.Class("min-w-0 flex-1")],
-							[
-								copyableField(h, {
-									id: "keys-base-url",
-									value: `${apiPublicUrl}/v2`,
-									copyLabel: "Base URL",
-									copy: model.baseUrlCopy,
-									toCopyMessage: (message) => Message.GotBaseUrlCopyMessage({ message }),
-								}),
-							],
-						),
-					],
-				),
+				hstack(h, { align: "center", wrap: true, className: "gap-x-6 gap-y-2 px-4 py-3" }, [
+					h.span([h.Class("w-20 shrink-0 font-prose text-xs text-muted-foreground")], ["Base URL"]),
+					h.div(
+						[h.Class("min-w-0 flex-1")],
+						[
+							copyableField(h, {
+								id: "keys-base-url",
+								value: `${apiPublicUrl}/v2`,
+								copyLabel: "Base URL",
+								copy: model.baseUrlCopy,
+								toCopyMessage: (message) => Message.GotBaseUrlCopyMessage({ message }),
+							}),
+						],
+					),
+				]),
 				scopes(h, model.isScopesOpen),
 			]),
 		],

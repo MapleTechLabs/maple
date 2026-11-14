@@ -11,7 +11,7 @@
  * - Prometheus: `legacy-exporter` scrapes fail with connection refused; `node-exporter` is fine.
  * - No chat workspace is linked.
  */
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { EvalRuntime } from "./eval-runtime"
 import type { FixtureRule } from "./fake-warehouse"
@@ -409,7 +409,7 @@ const CI_RUNS: ReadonlyArray<CiRunFixture> = Arr.map(
 ).sort((a, b) => a.hoursAgo - b.hoursAgo)
 
 const inWindow = (sql: string, hoursAgo: number) => {
-	const stamps = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
+	const stamps = Arr.map(Arr.fromIterable(Str.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)(sql)), (m) =>
 		parseWarehouseDateTime(m[1] ?? ""),
 	)
 	const at = Date.now() - hoursAgo * 3_600_000

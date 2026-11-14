@@ -1,4 +1,6 @@
+import * as Policy from "@maple/domain/policy"
 import {
+	AiCreditUsageResponse,
 	AttachResult,
 	BillingAccount,
 	BillingAccountUsageResponse,
@@ -19,10 +21,11 @@ import * as Chart from "@maple/views/charts/chart"
 import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
+import * as CheckoutReturn from "../../kit/checkout-return"
 import * as Details from "./details/model"
 
 // The Billing tab: this cycle's spend, usage and caps, the plan, invoices and billing details. The customer
-// is the settings page's (one `billingCustomerAtom`).
+// is the settings page's one read.
 
 export const SpendFeatureId = Schema.Literals([
 	"logs",
@@ -30,10 +33,11 @@ export const SpendFeatureId = Schema.Literals([
 	"metrics",
 	"browser_sessions",
 	"product_events",
+	"ai_credits",
 ])
 export type SpendFeatureId = typeof SpendFeatureId.Type
 
-/** The open cap editor's input (`autoFocus`). */
+/** The open cap editor's input, focused as it opens. */
 export const CAP_INPUT_ID = "billing-cap-input"
 
 /** A profile read that failed: a deployment without Stripe reads differently from an outage. */
@@ -42,6 +46,7 @@ export const ProfileFailure = Schema.Struct({ isNotConfigured: Schema.Boolean, f
 export const PlansData = AsyncData.Schema(Schema.Array(CatalogPlan), LoadFailure)
 export const UsageData = AsyncData.Schema(BillingUsage, LoadFailure)
 export const DailyData = AsyncData.Schema(DailySpendResponse, LoadFailure)
+export const AiUsageData = AsyncData.Schema(AiCreditUsageResponse, LoadFailure)
 export const InvoicesData = AsyncData.Schema(Schema.Array(BillingInvoice), LoadFailure)
 export const ProfileData = AsyncData.Schema(BillingProfile, ProfileFailure)
 export const RuleStatsData = AsyncData.Schema(V2IngestRuleStats, LoadFailure)
@@ -56,18 +61,17 @@ export const OrgChoicesData = AsyncData.Schema(Schema.Array(OrgChoice), LoadFail
 /** A failed link or unlink: `rejection` is the server's message when the rules refused it. */
 export const LinkFailure = Schema.Struct({ rejection: Schema.NullOr(Schema.String), failure: LoadFailure })
 
-/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
-export const CheckoutReturn = Schema.Literals(["Idle", "Confirming", "TimedOut"])
-export type CheckoutReturn = typeof CheckoutReturn.Type
-
 export const Model = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	/** Clerk mode: the viewer's other orgs are known, so this org can be billed through one. */
 	isClerk: Schema.Boolean,
-	checkoutReturn: CheckoutReturn,
+	/** `useCheckoutReturn`: back from Stripe (`?checkout=complete`), waiting on the Autumn sync. */
+	checkoutReturn: CheckoutReturn.Model,
 	plans: PlansData.schema,
 	usage: UsageData.schema,
 	daily: DailyData.schema,
+	/** AI credit spend by surface and by day, this cycle. */
+	aiUsage: AiUsageData.schema,
 	invoices: InvoicesData.schema,
 	profile: ProfileData.schema,
 	/** What ingest rules dropped this cycle; read once the cycle is known. */
@@ -101,12 +105,16 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may change the plan and payment details (`billing:manage`). */
+export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "billing:manage")
+
 const result = <A extends Schema.Top>(schema: A) => ({ result: Schema.Result(schema, LoadFailure) })
 
 export const Message = defineMessageUnion({
 	CompletedFetchPlans: result(Schema.Array(CatalogPlan)),
 	CompletedFetchUsage: result(BillingUsage),
 	CompletedFetchDaily: result(DailySpendResponse),
+	CompletedFetchAiUsage: result(AiCreditUsageResponse),
 	CompletedFetchInvoices: result(Schema.Array(BillingInvoice)),
 	CompletedFetchProfile: { result: Schema.Result(BillingProfile, ProfileFailure) },
 	CompletedFetchRuleStats: result(V2IngestRuleStats),
@@ -131,8 +139,7 @@ export const Message = defineMessageUnion({
 	GotCompareDialogMessage: { message: Dialog.Message },
 	ClickedSubscribe: { planId: Schema.String },
 	CompletedAttach: { planId: Schema.String, ...result(AttachResult) },
-	ElapsedCheckoutPoll: {},
-	ElapsedCheckoutTimeout: {},
+	GotCheckoutReturnMessage: { message: CheckoutReturn.Message },
 	CompletedTrackProduct: {},
 	ClickedEditDetails: {},
 	GotDetailsMessage: { message: Details.Message },

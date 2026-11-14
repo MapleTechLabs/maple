@@ -1,10 +1,10 @@
-import { ChatConnectorId } from "@maple/domain/primitives"
+import { ChatConnectorId } from "@maple/primitives"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message, type Model } from "./chat-connect"
 
-// The popup itself (`useOAuthPopupFlow`): opened in the click, sent to the install URL, ticked
+// The popup itself: opened in the click, sent to the install URL, ticked
 // every 500 ms (a poll every sixth tick), and closed when the Subscription releases it.
 
 const WINDOW_NAME = "maple-chat-connect"
@@ -26,7 +26,12 @@ export type Dependencies = typeof Dependencies.Type
 export const dependenciesOf = (model: Model, isEnabled = true): Dependencies =>
 	model.active === null || !isEnabled
 		? { attempt: null, connector: null, name: "", phase: "idle" }
-		: { attempt: model.active.attempt, connector: model.active.connector, name: model.active.name, phase: model.active.phase }
+		: {
+				attempt: model.active.attempt,
+				connector: model.active.connector,
+				name: model.active.name,
+				phase: model.active.phase,
+			}
 
 const interimDocument = (label: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" /><title>Connecting to ${label}</title>
@@ -45,7 +50,12 @@ const install = (connector: ChatConnectorId) =>
 	}).pipe(Effect.mapError((error) => toLoadFailure(error).message))
 
 /** Ticks while `isClosed` is false (or for `graceMs` once closed): `Polled`, then `ClosedPopup`. */
-const tick = (attempt: number, offer: (message: Message) => void, isClosed: () => boolean, graceMs: number | null) =>
+const tick = (
+	attempt: number,
+	offer: (message: Message) => void,
+	isClosed: () => boolean,
+	graceMs: number | null,
+) =>
 	Effect.acquireRelease(
 		Effect.sync(() => {
 			const state = { ticks: 0 }
@@ -58,7 +68,9 @@ const tick = (attempt: number, offer: (message: Message) => void, isClosed: () =
 				}
 			}, POPUP_TICK_MS)
 			const timeout =
-				graceMs === null ? undefined : window.setTimeout(() => offer(Message.EndedGrace({ attempt })), graceMs)
+				graceMs === null
+					? undefined
+					: window.setTimeout(() => offer(Message.EndedGrace({ attempt })), graceMs)
 			return { interval, timeout }
 		}),
 		({ interval, timeout }) =>
@@ -68,10 +80,9 @@ const tick = (attempt: number, offer: (message: Message) => void, isClosed: () =
 			}),
 	)
 
-const closing = (popup: Window | null) =>
-	Effect.addFinalizer(() => Effect.sync(() => popup?.close()))
+const closing = (popup: Window | null) => Effect.addFinalizer(() => Effect.sync(() => popup?.close()))
 
-/** `connect`: open in the click, install, then send the popup to the platform and watch it. */
+/** Open in the click, install, then send the popup to the platform and watch it. */
 const popupFlow = (attempt: number, connector: ChatConnectorId, name: string) =>
 	Stream.callback<Message, never, MapleApiV2Client>((queue) =>
 		Effect.gen(function* () {
@@ -81,6 +92,7 @@ const popupFlow = (attempt: number, connector: ChatConnectorId, name: string) =>
 			const popup = yield* Effect.sync(() => {
 				const opened = window.open("", WINDOW_NAME, WINDOW_FEATURES)
 				if (opened !== null) {
+					// oxlint-disable-next-line typescript/no-deprecated -- fills a blank popup before it navigates; nothing else writes an about:blank document.
 					opened.document.write(interimDocument(name))
 					opened.document.close()
 				}
@@ -115,12 +127,20 @@ const popupFlow = (attempt: number, connector: ChatConnectorId, name: string) =>
 /** After a close, the grace keeps polling; then the attempt ends. */
 const grace = (attempt: number) =>
 	Stream.callback<Message>((queue) =>
-		tick(attempt, (message) => Queue.offerUnsafe(queue, message), () => true, CLOSE_GRACE_MS).pipe(
-			Effect.andThen(Effect.never),
-		),
+		tick(
+			attempt,
+			(message) => Queue.offerUnsafe(queue, message),
+			() => true,
+			CLOSE_GRACE_MS,
+		).pipe(Effect.andThen(Effect.never)),
 	)
 
-export const streamOf = ({ attempt, connector, name, phase }: Dependencies): Stream.Stream<Message, never, MapleApiV2Client> =>
+export const streamOf = ({
+	attempt,
+	connector,
+	name,
+	phase,
+}: Dependencies): Stream.Stream<Message, never, MapleApiV2Client> =>
 	attempt === null || connector === null || phase === "idle"
 		? Stream.empty
 		: phase === "popup"

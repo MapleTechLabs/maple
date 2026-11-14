@@ -17,7 +17,7 @@ export const durationSecondsOf = (context: PageContext): number => resolveRange(
 export const boundsOf = (model: Model, context: PageContext): Option.Option<TimeBounds> =>
 	Option.map(model.maybeAnchorMs, (anchorMs) => boundsForRange(rangeOf(context), anchorMs))
 
-/** `buildGraph`: the flow graph and its focusable services from the rows. */
+/** The flow graph and its focusable services from the rows. */
 export const sourceGraphOf = (data: LocalServiceMapData, durationSeconds: number): SourceGraph =>
 	buildSourceGraph({ ...graphRowsOf(data), durationSeconds })
 
@@ -32,17 +32,28 @@ export const load = (
 		onNone: () => ({ model }),
 		onSome: (bounds) => {
 			const durationSeconds = durationSecondsOf(context)
-			const key = keyOf("service-map", { durationSeconds, bounds: `${bounds.startTime}/${bounds.endTime}` })
+			const key = keyOf("service-map", {
+				durationSeconds,
+				bounds: `${bounds.startTime}/${bounds.endTime}`,
+			})
 			// `revalidates`: a stale cached answer is shown and its fetch has not started.
 			const requested =
-				revalidates && model.data.key === key ? Option.some(model.data) : requestKeepingFailure(model.data, key, force ? "Refresh" : "Load")
+				revalidates && model.data.key === key
+					? Option.some(model.data)
+					: requestKeepingFailure(model.data, key, force ? "Refresh" : "Load")
 			return Option.match(requested, {
 				onNone: () => ({ model }),
 				onSome: (data) => ({
 					model: { ...model, data },
 					// A new window reads the cache first; a refetch of the same one goes to the server.
 					commands: [
-						FetchServiceMap({ key, ...bounds, durationSeconds, apiBase: context.env.apiBase, readsCache: model.data.key !== key }),
+						FetchServiceMap({
+							key,
+							...bounds,
+							durationSeconds,
+							apiBase: context.env.apiBase,
+							readsCache: model.data.key !== key,
+						}),
 					],
 				}),
 			})

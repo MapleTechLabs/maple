@@ -13,14 +13,13 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { dataTableEmpty } from "../../../infra/kit/data-table"
+import { dataTableEmpty } from "../../../kit/data-table"
 import { FLEET_BAND_BOXED, fleetBand, fleetBandLoading } from "../../../infra/kit/fleet-band"
 import { pageHeroParts, searchToolbar } from "../../../infra/kit/page-parts"
-import { viewTabStrip } from "../../../infra/kit/view-tabs"
+import { viewTabStrip } from "../../../kit/view-tabs"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { integrationConnectCta } from "../../kit/integration-empty"
-import { AWS_ACCENT } from "../../../integrations/catalog"
-import { pageTime } from "../../kit/page-time"
+import { integrationConnectCta } from "../../../kit/integration-empty"
+import { pageTime } from "../../../kit/page-time"
 import type { AwsStatus, FleetRead } from "../data"
 import {
 	BAND_CELLS,
@@ -37,9 +36,9 @@ import type { Model } from "./model"
 import { activeKind, DEFAULT_PRESET, searchHref } from "./update"
 import { awsTable, awsTableLoading, type TableContext } from "./view-table"
 import { hstack, vstackClass } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
-
-// `/infra/aws`: every streamed resource of the connected accounts, problems first.
+import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
+import { providerBrand } from "../../../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -134,7 +133,7 @@ const kindView = (h: H, model: Model, read: FleetRead, isWaiting: boolean): Html
 			button(
 				h,
 				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryFleet())] },
-				["Retry"],
+				["Try again"],
 			),
 		])
 	const views = resourceViews(read)
@@ -190,7 +189,7 @@ const FEATURES = [
 
 const awsConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "AwsIcon", accent: AWS_ACCENT, iconClassName: "text-foreground" },
+		brand: providerBrand("aws"),
 		features: FEATURES,
 		hint: "Deploy a read-only role, pick regions and services, then Maple streams their CloudWatch metrics.",
 		label: "Connect AWS",
@@ -221,16 +220,21 @@ const noMetrics = (h: H, status: AwsStatus): Html => {
 			integration: "aws",
 			actionLabel: "Stream metrics",
 		})
-	const error = streaming.find((connection) => connection.metrics_last_error !== null)?.metrics_last_error
+	const error = Option.flatMapNullishOr(
+		Arr.findFirst(streaming, (connection) => connection.metrics_last_error !== null),
+		(connection) => connection.metrics_last_error,
+	)
 	const regions = [
 		...new Set(Arr.flatMap(streaming, (connection) => connection.metric_stream?.regions ?? [])),
 	]
 	return integrationNotConnected(h, {
 		icon: icon(h, "AwsIcon", { size: 16 }),
 		title: "Waiting for the first metrics",
-		description:
-			error ??
-			`CloudWatch streams ${Arr.join(regions, ", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
+		description: Option.getOrElse(
+			error,
+			() =>
+				`CloudWatch streams ${Arr.join(regions, ", ")} once the stack is deployed again. Metrics land a few minutes after that.`,
+		),
 		integration: "aws",
 		actionLabel: "Check the connection",
 		actionVariant: "outline",
@@ -245,9 +249,9 @@ const fleetView = (
 	isWaiting: boolean,
 ) => {
 	const active = activeKind(model)
-	const read = reads.find((entry) => entry.kind === active)
-	if (read === undefined || active === undefined) return noMetrics(h, status)
-	return kindView(h, model, read, isWaiting)
+	const read = Arr.findFirst(reads, (entry) => entry.kind === active)
+	if (Option.isNone(read) || active === undefined) return noMetrics(h, status)
+	return kindView(h, model, read.value, isWaiting)
 }
 
 /** The kind tabs for the header's `tabs` slot, once the status and the fleet have both read. */
@@ -295,7 +299,7 @@ const description = (h: H, status: AwsStatus | null): Html | string => {
 	const regions = [
 		...new Set(Arr.flatMap(status.connections, (connection) => connection.metric_stream?.regions ?? [])),
 	]
-	const mono = (text: string) => h.span([h.Class("font-mono text-xs text-foreground-soft")], [text])
+	const mono = (text: string) => typography(h, { size: "xs", tone: "soft", mono: true }, [text])
 	return h.span(
 		[],
 		[

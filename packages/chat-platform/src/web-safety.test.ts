@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 const srcRoot = fileURLToPath(new URL(".", import.meta.url))
 
@@ -40,7 +40,9 @@ const VALUE_IMPORT = /^\s*import\s+(type\s+)?[^"']*from\s+["']([^"']+)["']/gm
 
 const resolveLocal = (from: string, specifier: string): string | undefined => {
 	const base = resolve(dirname(from), Str.replace(/\.ts$/, "")(specifier))
-	return [`${base}.ts`, join(base, "index.ts")].find((candidate) => existsSync(candidate))
+	return Option.getOrUndefined(
+		Arr.findFirst([`${base}.ts`, join(base, "index.ts")], (candidate) => existsSync(candidate)),
+	)
 }
 
 describe("the manifests subpath stays web-safe", () => {
@@ -50,7 +52,7 @@ describe("the manifests subpath stays web-safe", () => {
 		const visit = (file: string): void => {
 			if (visited.has(file)) return
 			visited.add(file)
-			for (const match of readFileSync(file, "utf8").matchAll(VALUE_IMPORT)) {
+			for (const match of Str.matchAll(VALUE_IMPORT)(readFileSync(file, "utf8"))) {
 				// Erased at build time, so it reaches no bundle.
 				if (match[1] !== undefined) continue
 				const specifier = match[2] ?? ""

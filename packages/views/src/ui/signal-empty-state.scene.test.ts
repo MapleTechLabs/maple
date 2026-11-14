@@ -13,6 +13,7 @@ const view = (withExtras: boolean) => (model: Model, h: HtmlBuilder<Message>) =>
 		signal: "traces",
 		presence: model.presence,
 		nowMs: 10 * 60_000,
+		timeZone: "UTC",
 		isFiltered: model.isFiltered,
 		onClearFilters: { _tag: "Clear" },
 		onramp: { source: ["Point an SDK here."], content: [h.span([], ["the on-ramp"])] },

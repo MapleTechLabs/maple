@@ -14,8 +14,9 @@ import {
 	type SupabaseAdvisorLint,
 	SupabaseProjectInsights,
 } from "@maple/domain/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	SupabaseConnections,
 	SupabaseProjectInsights as SupabaseProjectInsightsTable,
@@ -24,13 +25,13 @@ import {
 	type SupabaseProjectInsightsRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Cause, Clock, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { isSourcePaused } from "@maple/backend/services/org/integration-sources"
+import { isSourcePaused } from "@maple/backend/services/integrations/integration-sources"
 import type { SupabaseApiError } from "./supabase/api"
 import { getAdvisors, getTopQueries } from "./supabase/insights"
 import { shouldScrape } from "./supabase/scrape-targets"
@@ -44,7 +45,6 @@ const LEASE_MS = 12 * 60_000
 /** No project starts after this. */
 const TICK_BUDGET_MS = 5 * 60_000
 const RATE_LIMIT_HOLD_MS = 5 * 60_000
-const ORG_CONCURRENCY = 3
 const PROJECT_CONCURRENCY = 4
 const ERROR_CHARS = 500
 
@@ -61,11 +61,13 @@ const LEVEL_ORDER = { ERROR: 0, WARN: 1, INFO: 2 } as const
 
 /** Advisors grouped by level, each group ordered by title then object. */
 export const groupAdvisors = (lints: ReadonlyArray<SupabaseAdvisorLint>) => {
-	const sorted = lints.toSorted(
-		(a, b) =>
-			LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||
-			Str.localeCompare(b.title)(a.title) ||
-			Str.localeCompare(b.object ?? "")(a.object ?? ""),
+	const sorted = Arr.sort(
+		lints,
+		Order.combineAll([
+			Order.mapInput(Order.Number, (lint: SupabaseAdvisorLint) => LEVEL_ORDER[lint.level]),
+			Order.make((a: SupabaseAdvisorLint, b) => Str.localeCompare(b.title)(a.title)),
+			Order.make((a: SupabaseAdvisorLint, b) => Str.localeCompare(b.object ?? "")(a.object ?? "")),
+		]),
 	)
 	return new SupabaseAdvisorsByLevel({
 		error: Arr.filter(sorted, (lint) => lint.level === "ERROR"),
@@ -109,7 +111,7 @@ export interface SupabaseInsightsServiceApi {
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseInsightsPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<SupabaseInsightsPollAllSummary, IntegrationsPersistenceError>
 }
 
 export class SupabaseInsightsService extends Context.Service<
@@ -186,7 +188,7 @@ export class SupabaseInsightsService extends Context.Service<
 				db.run(
 					PG.insertInto(SupabaseProjectInsightsTable)
 						.values(
-							projects.map((project) => ({
+							Arr.map(projects, (project) => ({
 								projectId: project.id,
 								orgId: project.orgId,
 								createdAt: now,
@@ -204,12 +206,8 @@ export class SupabaseInsightsService extends Context.Service<
 						.set({ leaseUntil: now + LEASE_MS })
 						.where(($) => [
 							$.projectId.eq(project.id),
-							PG.or(
-								$.leaseUntil.isNull(),
-								$.leaseUntil.lt(now),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
-								$.leaseUntil.gt(now + 2 * LEASE_MS),
-							),
+							// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
+							leaseClaimable($.leaseUntil, now, 2 * LEASE_MS),
 						])
 						.returning(),
 				),
@@ -226,9 +224,7 @@ export class SupabaseInsightsService extends Context.Service<
 						.set(set)
 						.where(($) => [
 							$.projectId.eq(claimed.projectId),
-							claimed.leaseUntil === null
-								? $.leaseUntil.isNull()
-								: $.leaseUntil.eq(claimed.leaseUntil),
+							leaseStillOurs($.leaseUntil, claimed.leaseUntil),
 						]),
 				),
 			)
@@ -263,7 +259,7 @@ export class SupabaseInsightsService extends Context.Service<
 					tag: failure._tag,
 					error: failure.message,
 				})
-				yield* updateClaimed(claimed, onError(failure.message.slice(0, ERROR_CHARS)))
+				yield* updateClaimed(claimed, onError(Str.slice(0, ERROR_CHARS)(failure.message)))
 				return "failed" as const
 			})
 
@@ -377,14 +373,15 @@ export class SupabaseInsightsService extends Context.Service<
 			if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
 				return skip("source paused")
 			}
-			const running = (yield* loadProjects(connection)).filter(isRunning)
+			const projects = yield* loadProjects(connection)
+			const running = Arr.filter(projects, isRunning)
 			if (running.length === 0) return skip("no projects")
 			yield* ensureRows(running, now)
 
 			const results = yield* Effect.forEach(running, (project) => pollProject(project, tickStartedAt), {
 				concurrency: PROJECT_CONCURRENCY,
 			})
-			const count = (pick: (result: ProjectPollResult) => boolean) => results.filter(pick).length
+			const count = (pick: (result: ProjectPollResult) => boolean) => Arr.filter(results, pick).length
 			const summary = {
 				orgId,
 				skipped: null,
@@ -404,39 +401,27 @@ export class SupabaseInsightsService extends Context.Service<
 		const pollOrg = (orgId: OrgId) =>
 			Clock.currentTimeMillis.pipe(Effect.flatMap((started) => pollOrgAt(orgId, started)))
 
-		const pollAllOrgs = Effect.fn("SupabaseInsightsService.pollAllOrgs")(function* () {
+		const pollAllOrgs = Effect.gen(function* () {
 			const started = yield* Clock.currentTimeMillis
 			const orgs = yield* dbExecute((db) => db.run(PG.from(SupabaseConnections).select("orgId")))
-			const summaries = yield* Effect.forEach(
-				orgs,
-				(row) =>
-					pollOrgAt(decodeOrgId(row.orgId), started).pipe(
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("supabase insights org poll failed", {
-										orgId: row.orgId,
-										error: summarizeCause(cause),
-									}).pipe(
-										Effect.as<SupabaseInsightsPollOrgSummary>({
-											orgId: decodeOrgId(row.orgId),
-											skipped: "org poll failed",
-											projects: 0,
-											advisorsRead: 0,
-											queriesRead: 0,
-											failures: 1,
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
-			)
+			const summaries = yield* pollFleet(orgs, (row) => pollOrgAt(decodeOrgId(row.orgId), started), {
+				message: "supabase insights org poll failed",
+				annotations: (row) => ({ orgId: row.orgId }),
+				fallback: (row): SupabaseInsightsPollOrgSummary => ({
+					orgId: decodeOrgId(row.orgId),
+					skipped: "org poll failed",
+					projects: 0,
+					advisorsRead: 0,
+					queriesRead: 0,
+					failures: 1,
+				}),
+			})
 			const summary = {
 				orgs: orgs.length,
-				advisorsRead: summaries.reduce((sum, item) => sum + item.advisorsRead, 0),
-				queriesRead: summaries.reduce((sum, item) => sum + item.queriesRead, 0),
-				failures: summaries.reduce((sum, item) => sum + item.failures, 0),
-				skipped: summaries.filter((item) => item.skipped !== null).length,
+				advisorsRead: Arr.reduce(summaries, 0, (sum, item) => sum + item.advisorsRead),
+				queriesRead: Arr.reduce(summaries, 0, (sum, item) => sum + item.queriesRead),
+				failures: Arr.reduce(summaries, 0, (sum, item) => sum + item.failures),
+				skipped: Arr.filter(summaries, (item) => item.skipped !== null).length,
 			} satisfies SupabaseInsightsPollAllSummary
 			yield* Effect.annotateCurrentSpan({
 				"maple.supabase.orgs": summary.orgs,
@@ -445,7 +430,7 @@ export class SupabaseInsightsService extends Context.Service<
 				"maple.supabase.insights.failures": summary.failures,
 			})
 			return summary
-		})
+		}).pipe(Effect.withSpan("SupabaseInsightsService.pollAllOrgs"))
 
 		return { getInsights, pollOrg, pollAllOrgs } satisfies SupabaseInsightsServiceApi
 	}),

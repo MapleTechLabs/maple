@@ -3,8 +3,8 @@ use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::clickhouse_insert_mappings::{self, InsertMapping};
@@ -13,7 +13,7 @@ use crate::otel::{
     encode_rows_internal_span, export_client_span, record_stage_error, wal_commit_internal_span,
 };
 use crate::outbound;
-use crate::wal_store::WalSegmentStore;
+use crate::wal_store::{ClaimRelease, OrphanedSegment, OwnerClaim, WalSegmentStore};
 use chrono::Utc;
 use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
@@ -58,6 +58,9 @@ const WAL_MAGIC: &[u8; 4] = b"MTW1";
 const WAL_V1_HEADER_LEN: usize = 20;
 const WAL_V2_HEADER_LEN: usize = 22;
 const WAL_V3_HEADER_LEN: usize = 23;
+/// Most a frame read reserves before any payload byte arrives. The declared
+/// length is unverified until the checksum, so a corrupt one must not size it.
+const WAL_PAYLOAD_PREALLOC_MAX: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ExportDestination {
@@ -237,65 +240,216 @@ impl Default for ClickHouseBreakerConfig {
     }
 }
 
+/// Identifies one admitted half-open probe, so only that probe's outcome settles it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BreakerDecision {
-    /// The target looks healthy enough to attempt an export.
-    Allow,
-    /// The target is in the open state; make no attempt. The caller defers the
-    /// batch for one short window, then sheds it.
+struct ProbeTicket {
+    id: u64,
+    started_at: Instant,
+}
+
+/// Per-org breaker state. Each variant carries only the fields that mean something
+/// in it, so a probe on a closed breaker or a spent deferral without an outage cannot exist.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BreakerState {
+    Closed {
+        failures: u32,
+    },
+    /// Shedding; past the cooldown the next admission becomes the probe.
+    /// `deferral_spent`: a batch already waited out a full window in this outage,
+    /// so later batches shed at once instead of each holding the lane again.
+    Open {
+        opened_at: Instant,
+        deferral_spent: bool,
+    },
+    /// Open, with exactly one probe in flight.
+    HalfOpen {
+        opened_at: Instant,
+        deferral_spent: bool,
+        probe: ProbeTicket,
+    },
+}
+
+/// The pure result of one admission check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AdmitStep {
+    /// Attempt the export; `Some` when this attempt is the half-open probe.
+    Attempt { probe: Option<u64> },
+    /// Open, and this batch still has deferral window left: wait, cursor held.
+    Defer,
+    /// Open, and the window is spent (by this batch or an earlier one): shed.
     Shed,
 }
 
-#[derive(Debug, Default)]
-struct BreakerState {
-    consecutive_failures: u32,
-    /// When the breaker last tripped open. `None` while closed.
-    opened_at: Option<Instant>,
-    /// When the in-flight half-open probe was admitted. `None` when no probe is
-    /// outstanding. Only meaningful while `opened_at` is set.
-    probe_started_at: Option<Instant>,
-    /// A batch already waited out a full deferral window in this outage, so later
-    /// batches shed at once instead of each holding the lane again. Cleared on success.
-    deferral_spent: bool,
+impl BreakerState {
+    /// Admission under the lock. Takes `now` rather than reading the clock so the
+    /// state machine is unit-testable with a synthetic one.
+    fn admit(
+        &mut self,
+        cfg: ClickHouseBreakerConfig,
+        now: Instant,
+        window_spent: bool,
+        next_probe_id: impl FnOnce() -> u64,
+    ) -> AdmitStep {
+        let (opened_at, deferral_spent, probe_free) = match *self {
+            Self::Closed { .. } => return AdmitStep::Attempt { probe: None },
+            Self::Open {
+                opened_at,
+                deferral_spent,
+            } => (
+                opened_at,
+                deferral_spent,
+                now.saturating_duration_since(opened_at) >= cfg.cooldown,
+            ),
+            // A probe silent for a whole cooldown is treated as abandoned, so a worker
+            // that dies mid-probe cannot wedge the breaker open forever.
+            Self::HalfOpen {
+                opened_at,
+                deferral_spent,
+                probe,
+            } => (
+                opened_at,
+                deferral_spent,
+                now.saturating_duration_since(probe.started_at) >= cfg.cooldown,
+            ),
+        };
+        if probe_free {
+            // One probe at a time: every lane worker consults this state, and an
+            // ungated half-open sends all of them at the recovering target at once.
+            let id = next_probe_id();
+            *self = Self::HalfOpen {
+                opened_at,
+                deferral_spent,
+                probe: ProbeTicket {
+                    id,
+                    started_at: now,
+                },
+            };
+            return AdmitStep::Attempt { probe: Some(id) };
+        }
+        if !(deferral_spent || window_spent) {
+            return AdmitStep::Defer;
+        }
+        if let Self::Open { deferral_spent, .. } | Self::HalfOpen { deferral_spent, .. } = self {
+            *deferral_spent = true;
+        }
+        AdmitStep::Shed
+    }
+
+    /// A delivery proves the target healthy, whichever attempt made it.
+    fn succeed(&mut self) {
+        *self = Self::Closed { failures: 0 };
+    }
+
+    fn fail(&mut self, cfg: ClickHouseBreakerConfig, probe: Option<u64>, now: Instant) {
+        match *self {
+            Self::Closed { failures } => {
+                let failures = failures.saturating_add(1);
+                *self = if failures >= cfg.failure_threshold {
+                    Self::Open {
+                        opened_at: now,
+                        deferral_spent: false,
+                    }
+                } else {
+                    Self::Closed { failures }
+                };
+            }
+            // The probe failed: back off for another cooldown.
+            Self::HalfOpen {
+                deferral_spent,
+                probe: ticket,
+                ..
+            } if probe == Some(ticket.id) => {
+                *self = Self::Open {
+                    opened_at: now,
+                    deferral_spent,
+                };
+            }
+            // A late attempt admitted before the breaker opened, or a superseded probe:
+            // the breaker already knows, and the running probe must keep its slot.
+            Self::Open { .. } | Self::HalfOpen { .. } => {}
+        }
+    }
+
+    /// The probe ended without a verdict on the target (a config-class drop):
+    /// free the slot so the next admission probes at once.
+    fn release(&mut self, probe: Option<u64>) {
+        if let Self::HalfOpen {
+            opened_at,
+            deferral_spent,
+            probe: ticket,
+        } = *self
+        {
+            if probe == Some(ticket.id) {
+                *self = Self::Open {
+                    opened_at,
+                    deferral_spent,
+                };
+            }
+        }
+    }
 }
 
-/// Pure transition: should the next attempt run, given the current state? Kept
-/// free of `Instant::now()` so the state machine is unit-testable with a
-/// synthetic clock.
-fn breaker_decision(
-    state: &BreakerState,
-    cfg: ClickHouseBreakerConfig,
-    now: Instant,
-) -> BreakerDecision {
-    // Closed → nothing to gate.
-    let Some(opened) = state.opened_at else {
-        return BreakerDecision::Allow;
-    };
-    // Still within the cooldown window → keep shedding.
-    if now.duration_since(opened) < cfg.cooldown {
-        return BreakerDecision::Shed;
+/// What the export loop does next for one org.
+enum Admission<'a> {
+    Attempt(ExportPermit<'a>),
+    Defer,
+    Shed,
+}
+
+/// One admitted export attempt. Settle it with `succeed` or `fail`; dropping it
+/// unsettled (every config-class `Dropped` exit, or a cancelled future) releases a
+/// half-open probe without counting as target health either way.
+#[must_use]
+struct ExportPermit<'a> {
+    registry: &'a ClickHouseBreakerRegistry,
+    org_id: &'a str,
+    probe: Option<u64>,
+    settled: bool,
+}
+
+impl ExportPermit<'_> {
+    fn succeed(mut self) {
+        self.settled = true;
+        if let Some(state) = self.registry.states.get(self.org_id) {
+            lock_state(&state).succeed();
+        }
     }
-    // Half-open, and gated to a single probe. Every lane worker checks this
-    // registry, so an ungated half-open let all of them attempt the recovering
-    // target at once the instant cooldown elapsed — a thundering herd against a
-    // target that had just been declared unhealthy, repeated every cooldown.
-    //
-    // A probe that has not reported an outcome within one cooldown is treated as
-    // abandoned and a fresh one is admitted, so a worker that dies mid-probe
-    // cannot wedge the breaker open forever.
-    match state.probe_started_at {
-        Some(started) if now.duration_since(started) < cfg.cooldown => BreakerDecision::Shed,
-        _ => BreakerDecision::Allow,
+
+    fn fail(mut self, now: Instant) {
+        self.settled = true;
+        if !self.registry.enabled() {
+            return;
+        }
+        let state = self.registry.state_for(self.org_id);
+        lock_state(&state).fail(self.registry.cfg, self.probe, now);
     }
+}
+
+impl Drop for ExportPermit<'_> {
+    fn drop(&mut self) {
+        if self.settled || self.probe.is_none() {
+            return;
+        }
+        if let Some(state) = self.registry.states.get(self.org_id) {
+            lock_state(&state).release(self.probe);
+        }
+    }
+}
+
+fn lock_state(state: &Mutex<BreakerState>) -> std::sync::MutexGuard<'_, BreakerState> {
+    state
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Per-org ClickHouse circuit breakers. An org's CH frames may span several
 /// shards (traces shard by trace id), so breaker state is shared across all
-/// lane workers rather than living inside one worker — the first worker to
+/// lane workers rather than living inside one worker; the first worker to
 /// observe an unhealthy target trips it for the rest.
 struct ClickHouseBreakerRegistry {
     cfg: ClickHouseBreakerConfig,
     states: DashMap<String, Arc<Mutex<BreakerState>>>,
+    next_probe_id: AtomicU64,
 }
 
 impl ClickHouseBreakerRegistry {
@@ -303,6 +457,7 @@ impl ClickHouseBreakerRegistry {
         Self {
             cfg,
             states: DashMap::new(),
+            next_probe_id: AtomicU64::new(0),
         }
     }
 
@@ -322,23 +477,6 @@ impl ClickHouseBreakerRegistry {
         }
     }
 
-    fn deferral_spent(&self, org_id: &str) -> bool {
-        self.states.get(org_id).is_some_and(|state| {
-            state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .deferral_spent
-        })
-    }
-
-    fn mark_deferral_spent(&self, org_id: &str) {
-        let state = self.state_for(org_id);
-        state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .deferral_spent = true;
-    }
-
     /// How often a breaker-deferred batch re-checks for a half-open probe slot.
     fn poll_interval(&self) -> Duration {
         self.cfg
@@ -350,66 +488,31 @@ impl ClickHouseBreakerRegistry {
     fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
         self.states
             .entry(org_id.to_owned())
-            .or_insert_with(|| Arc::new(Mutex::new(BreakerState::default())))
+            .or_insert_with(|| Arc::new(Mutex::new(BreakerState::Closed { failures: 0 })))
             .clone()
     }
 
-    /// Decide whether to attempt an export for `org_id`, claiming the half-open
-    /// probe slot when this caller is the one admitted. Never allocates breaker
-    /// state for an org that has only ever succeeded.
-    fn decide(&self, org_id: &str, now: Instant) -> BreakerDecision {
-        if !self.enabled() {
-            return BreakerDecision::Allow;
-        }
-        let Some(state) = self.states.get(org_id) else {
-            return BreakerDecision::Allow;
+    /// Admit, defer or shed one attempt for `org_id`, deciding and recording any
+    /// spent deferral under one lock. `window_spent` is this batch's own deferral
+    /// running out. Never allocates state for an org that has only ever succeeded.
+    fn admit<'a>(&'a self, org_id: &'a str, now: Instant, window_spent: bool) -> Admission<'a> {
+        let step = match self.states.get(org_id) {
+            Some(state) if self.enabled() => {
+                lock_state(&state).admit(self.cfg, now, window_spent, || {
+                    self.next_probe_id.fetch_add(1, Ordering::Relaxed)
+                })
+            }
+            _ => AdmitStep::Attempt { probe: None },
         };
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let decision = breaker_decision(&guard, self.cfg, now);
-        // An `Allow` while open is the half-open probe, and the slot is claimed
-        // under the same lock the decision was read under — otherwise two workers
-        // racing here would both be told to probe.
-        if decision == BreakerDecision::Allow && guard.opened_at.is_some() {
-            guard.probe_started_at = Some(now);
-        }
-        decision
-    }
-
-    fn on_success(&self, org_id: &str) {
-        if !self.enabled() {
-            return;
-        }
-        if let Some(state) = self.states.get(org_id) {
-            let mut guard = state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            guard.consecutive_failures = 0;
-            guard.opened_at = None;
-            guard.probe_started_at = None;
-            guard.deferral_spent = false;
-        }
-    }
-
-    fn on_failure(&self, org_id: &str, now: Instant) {
-        if !self.enabled() {
-            return;
-        }
-        let state = self.state_for(org_id);
-        let mut guard = state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.consecutive_failures = guard.consecutive_failures.saturating_add(1);
-        // The probe (if this was one) has reported; release the slot so the next
-        // cooldown can admit a fresh one.
-        guard.probe_started_at = None;
-        if guard.consecutive_failures >= self.cfg.failure_threshold {
-            // Re-stamped on every failure on purpose: `on_failure` only runs for
-            // attempts the breaker *allowed*, so each one is either a pre-open
-            // failure or a half-open probe. Restarting the cooldown after a failed
-            // probe is the intended back-off.
-            guard.opened_at = Some(now);
+        match step {
+            AdmitStep::Attempt { probe } => Admission::Attempt(ExportPermit {
+                registry: self,
+                org_id,
+                probe,
+                settled: false,
+            }),
+            AdmitStep::Defer => Admission::Defer,
+            AdmitStep::Shed => Admission::Shed,
         }
     }
 }
@@ -430,6 +533,9 @@ pub enum TelemetrySignal {
     /// `POST /v1/events` (NDJSON, gateway-written). Lands in `product_events`
     /// next to the browser rows the `session_events` MV materializes there.
     ProductEvents,
+    /// Audit events from provider feeds (a Vercel audit drain, GCP audit logs),
+    /// gateway-written into `audit_trail_events`, never as OTLP logs.
+    AuditTrail,
 }
 
 impl TelemetrySignal {
@@ -446,6 +552,7 @@ impl TelemetrySignal {
             Self::SessionReplays => "session_replays",
             Self::SessionEvents => "session_events",
             Self::ProductEvents => "product_events",
+            Self::AuditTrail => "audit_trail",
         }
     }
 }
@@ -528,7 +635,6 @@ pub struct TinybirdConfig {
     pub batch_max_rows: usize,
     pub batch_max_bytes: usize,
     pub batch_max_wait: Duration,
-    pub export_concurrency_per_shard: usize,
     pub export_max_attempts: u32,
     /// Per-attempt timeout for a direct ClickHouse export POST. Kept short and
     /// separate from `forward_timeout` so a hanging BYO-ClickHouse target fails
@@ -598,8 +704,9 @@ impl TinybirdConfig {
         if self.org_queue_max_bytes == 0 {
             return Err("INGEST_ORG_QUEUE_MAX_BYTES must be greater than 0".to_owned());
         }
-        if self.export_concurrency_per_shard == 0 {
-            return Err("INGEST_TINYBIRD_CONCURRENCY_PER_SHARD must be greater than 0".to_owned());
+        // `mpsc::channel(0)` panics, so a zero capacity is refused at boot instead.
+        if self.queue_channel_capacity == 0 {
+            return Err("INGEST_QUEUE_CHANNEL_CAPACITY must be greater than 0".to_owned());
         }
         if self.export_max_attempts == 0 {
             return Err("INGEST_EXPORT_MAX_ATTEMPTS must be greater than 0".to_owned());
@@ -1066,23 +1173,6 @@ impl TelemetryPipeline {
     /// the session-replay ingest path, whose rows are built directly by the
     /// gateway (not derived from OTLP). Routes by org so a session's metadata
     /// and chunk-index rows land on the same shard in order.
-    pub async fn accept_rows(
-        &self,
-        org_id: &str,
-        datasource: String,
-        rows: Vec<Vec<u8>>,
-        signal: TelemetrySignal,
-    ) -> Result<AcceptStats, PipelineError> {
-        self.accept_rows_to(
-            org_id,
-            datasource,
-            rows,
-            signal,
-            ExportDestination::Tinybird,
-        )
-        .await
-    }
-
     #[hotpath::measure]
     pub async fn accept_rows_to(
         &self,
@@ -1119,6 +1209,9 @@ impl TelemetryPipeline {
         let frame_count = frames.len();
         let mut committed_bytes = 0u64;
         let mut frames_committed = 0usize;
+        let mut batch_frames = 0u64;
+        let mut lock_wait = Duration::ZERO;
+        let mut sync_wait = Duration::ZERO;
         // Captured before entering the WAL span so the link points at the
         // request's server span, not at `ingest.wal_commit` itself. An unsampled
         // context would produce a link to a span that was never exported.
@@ -1156,42 +1249,36 @@ impl TelemetryPipeline {
                 let queued_bytes = frame.payload.len() as u64;
                 self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
                     .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
-                // Every exit from here to `commit()` — the error below, an early
-                // return above it, or this future being dropped mid-append —
-                // releases the reservation.
+                // The delivery owns the reservation: it commits when the frame
+                // reaches the lane, and dropping it instead (a failed encode, or a
+                // refused or failed append) releases it.
                 let reservation = OrgBytesReservation {
-                    counters: &self.inner.org_queue_bytes,
-                    org_id: &frame.org_id,
+                    counters: Arc::clone(&self.inner.org_queue_bytes),
+                    org_id: frame.org_id.clone(),
                     bytes: queued_bytes,
                     committed: false,
                 };
-                let (segment, start, end) = match self.inner.wal.append(lane, &frame).await {
-                    Ok(position) => {
-                        reservation.commit();
-                        position
-                    }
-                    Err(error) => {
-                        record_failing_frame(shard, lane, &frame.datasource);
-                        return Err(PipelineError::QueueUnavailable(error));
-                    }
-                };
+                let datasource = frame.datasource.clone();
+                let encoded = encode_wal_frame(&frame).map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
+                let deliver =
+                    queued_delivery(frame, shard, permit, reservation, source_span.clone());
+                let appended = self
+                    .inner
+                    .wal
+                    .append_delivering(lane, encoded, true, deliver)
+                    .await
+                    .map_err(|error| {
+                        record_failing_frame(shard, lane, &datasource);
+                        PipelineError::QueueUnavailable(error)
+                    })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
-                permit.send(QueuedFrame {
-                    shard,
-                    segment,
-                    start,
-                    end,
-                    org_id: frame.org_id,
-                    queued_bytes,
-                    signal: frame.signal,
-                    destination: frame.destination,
-                    datasource: frame.datasource,
-                    row_count: frame.row_count,
-                    payload: frame.payload,
-                    source_span: source_span.clone(),
-                    enqueued_at: Instant::now(),
-                });
+                batch_frames = batch_frames.max(appended.batch_frames);
+                lock_wait += appended.lock_wait;
+                sync_wait += appended.sync_wait;
             }
 
             Ok(())
@@ -1202,6 +1289,17 @@ impl TelemetryPipeline {
         span_handle.record("maple.ingest.frame_count", frame_count);
         span_handle.record("maple.ingest.frames_committed", frames_committed);
         span_handle.record("maple.ingest.queued_bytes", committed_bytes);
+        if frames_committed > 0 {
+            span_handle.record("maple.ingest.wal_batch_frames", batch_frames);
+            span_handle.record(
+                "maple.ingest.wal_lock_wait_ms",
+                lock_wait.as_secs_f64() * 1e3,
+            );
+            span_handle.record(
+                "maple.ingest.wal_sync_wait_ms",
+                sync_wait.as_secs_f64() * 1e3,
+            );
+        }
         if let Err(error) = &result {
             record_stage_error(
                 &span_handle,
@@ -1348,17 +1446,85 @@ struct WalLane {
     /// Bytes held by every segment on disk, the exported prefix included. Drives
     /// the lane cap and the `wal_shard_bytes` gauge.
     live_bytes: AtomicU64,
-    /// Cumulative bytes appended and marked exported since this lane was opened.
-    /// Their difference is the backlog, and it stays exact across rotation and
-    /// deletion — which nothing derived from file sizes does.
+    /// Cumulative bytes handed to export and marked exported since this lane
+    /// was opened. Their difference is the backlog, and it stays exact across
+    /// rotation and deletion, which nothing derived from file sizes does.
     committed_bytes: AtomicU64,
     exported_bytes: AtomicU64,
     append: Mutex<LaneAppend>,
+    /// Signalled whenever a sync finishes, so waiters re-check their batch.
+    synced: Condvar,
     export: Mutex<LaneExport>,
     /// Set once, if a durability tier is configured, before any traffic is
     /// accepted. Segments are announced to it as they seal and as they are
     /// unlinked.
     shipper: OnceLock<mpsc::Sender<SegmentEvent>>,
+    /// Makes written bytes durable. `File::sync_data` outside the WAL benchmark,
+    /// which injects a device with a fixed fsync latency.
+    sync: WalSync,
+}
+
+/// How a lane makes its written bytes durable.
+#[doc(hidden)]
+pub type WalSync = Arc<dyn Fn(&File) -> std::io::Result<()> + Send + Sync>;
+
+fn sync_data_wal() -> WalSync {
+    Arc::new(File::sync_data)
+}
+
+/// Cleared when the append's caller is dropped, so its delivery is skipped.
+struct WaitingCaller(Arc<AtomicBool>);
+
+impl Drop for WaitingCaller {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+/// `deliver`, run only while the returned guard is alive. Skipped, the inner
+/// delivery is dropped, which releases its org reservation, and the frame's
+/// bytes leave `lane`'s backlog: nothing in this process will export them.
+fn while_caller_waits(deliver: Delivery, lane: Arc<WalLane>) -> (WaitingCaller, Delivery) {
+    let waiting = WaitingCaller(Arc::new(AtomicBool::new(true)));
+    let still_waiting = Arc::clone(&waiting.0);
+    let guarded: Delivery = Box::new(move |segment, start, end| {
+        if still_waiting.load(Ordering::Acquire) {
+            deliver(segment, start, end);
+        } else {
+            lane.forget_committed(end.saturating_sub(start));
+        }
+    });
+    (waiting, guarded)
+}
+
+/// Hands a durable frame to its lane's export channel, committing its org
+/// reservation. Dropped unrun, the reservation releases instead.
+fn queued_delivery(
+    frame: EncodedFrame,
+    shard: usize,
+    permit: mpsc::OwnedPermit<QueuedFrame>,
+    reservation: OrgBytesReservation,
+    source_span: Option<SpanContext>,
+) -> Delivery {
+    Box::new(move |segment, start, end| {
+        let queued_bytes = reservation.bytes;
+        reservation.commit();
+        permit.send(QueuedFrame {
+            shard,
+            segment,
+            start,
+            end,
+            org_id: frame.org_id,
+            queued_bytes,
+            signal: frame.signal,
+            destination: frame.destination,
+            datasource: frame.datasource,
+            row_count: frame.row_count,
+            payload: frame.payload,
+            source_span,
+            enqueued_at: Instant::now(),
+        });
+    })
 }
 
 /// A segment's lifecycle as the object-store shipper sees it. Events for one
@@ -1374,11 +1540,41 @@ enum SegmentEvent {
 
 struct LaneAppend {
     seq: u64,
-    file: File,
+    /// Shared so a batch leader can fsync it with the lane lock released.
+    file: Arc<File>,
     /// Bytes written to `file`. The handle is append-only and nothing else
     /// writes it, so this is the offset every frame in it is addressed by.
     len: u64,
+    /// A sync is in flight. Appends that land meanwhile join `open`.
+    syncing: bool,
+    /// Frames written since the in-flight sync started, waiting for the next.
+    open: Option<SyncBatch>,
 }
+
+/// Runs once its frame is durable, with the position it landed at.
+type Delivery = Box<dyn FnOnce(u64, u64, u64) + Send>;
+
+/// Frames that share one sync. Every appender in it holds `outcome` and waits
+/// until the leader that synced them sets it to the batch's frame count.
+#[derive(Default)]
+struct SyncBatch {
+    outcome: Arc<OnceLock<Result<u64, String>>>,
+    /// In write order. Run under the lane lock after the sync, so frames reach
+    /// the export channel in the order they sit in the segment.
+    deliveries: Vec<Box<dyn FnOnce() + Send>>,
+    frames: u64,
+    bytes: u64,
+}
+
+/// What a durable append waited on. Where it landed goes to its `Delivery`.
+struct Appended {
+    /// Frames made durable by the same sync as this one.
+    batch_frames: u64,
+    lock_wait: Duration,
+    sync_wait: Duration,
+}
+
+type AppendGuard<'a> = std::sync::MutexGuard<'a, LaneAppend>;
 
 struct LaneExport {
     /// Oldest segment still on disk. Sequences are contiguous, so this and the
@@ -1446,11 +1642,13 @@ impl WalLane {
     fn open(
         shard: usize,
         destination: ExportDestination,
-        cfg: &TinybirdConfig,
+        queue_dir: &Path,
+        segment_max_bytes: u64,
         max_bytes: u64,
+        sync: WalSync,
     ) -> Result<Self, String> {
         let lane_key = format!("shard-{shard:03}-{}", destination.as_str());
-        let dir = cfg.queue_dir.join(&lane_key);
+        let dir = queue_dir.join(&lane_key);
         std::fs::create_dir_all(&dir)
             .map_err(|error| format!("create ingest WAL lane {}: {error}", dir.display()))?;
         let cursor_path = dir.join("lane.cursor");
@@ -1499,7 +1697,7 @@ impl WalLane {
             dir,
             cursor_path,
             max_bytes,
-            segment_max_bytes: cfg.wal_segment_max_bytes,
+            segment_max_bytes,
             active_seq: AtomicU64::new(next_seq),
             live_bytes: AtomicU64::new(on_disk),
             // Whatever survived the last boot is backlog this lane still owes.
@@ -1507,34 +1705,41 @@ impl WalLane {
             exported_bytes: AtomicU64::new(0),
             append: Mutex::new(LaneAppend {
                 seq: next_seq,
-                file,
+                file: Arc::new(file),
                 len: 0,
+                syncing: false,
+                open: None,
             }),
+            synced: Condvar::new(),
             export: Mutex::new(LaneExport {
                 next_delete: cursor.seq,
                 cursor,
             }),
             shipper: OnceLock::new(),
+            sync,
         })
     }
 
-    /// Append one encoded frame and return where it landed. `enforce_cap` is
-    /// false only for frames being relocated from an older WAL layout, which
+    /// Append one encoded frame and return once a sync covers it. `enforce_cap`
+    /// is false only for frames being relocated from an older WAL layout, which
     /// were already accepted and must not be rejected now.
+    ///
+    /// Group commit: frames written while a sync is in flight share the next
+    /// one, so a slow fsync costs each append about two syncs, not one per
+    /// append queued ahead of it. `deliver` runs once the frame is durable.
     fn append_blocking(
         &self,
         encoded: &[u8],
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let added = encoded.len() as u64;
         let append_started = Instant::now();
-        let mut state = self
-            .append
-            .lock()
-            .map_err(|_| "WAL lane mutex poisoned".to_owned())?;
+        let state = self.lock_append()?;
         // Everything before this point was queueing behind other appenders on
         // this lane; everything after is this append's own work.
         let lock_wait = append_started.elapsed();
+        let mut state = self.wait_for_room(state)?;
         if enforce_cap
             && self
                 .live_bytes
@@ -1545,45 +1750,139 @@ impl WalLane {
             metrics::wal_shard_full(self.shard, self.destination.as_str());
             return Err("Telemetry WAL lane is full".to_owned());
         }
-        state
-            .file
+        (&*state.file)
             .write_all(encoded)
             .map_err(|error| format!("write WAL: {error}"))?;
-        let fsync_started = Instant::now();
-        state
-            .file
-            .sync_data()
-            .map_err(|error| format!("sync WAL: {error}"))?;
-        let fsync = fsync_started.elapsed();
         let seq = state.seq;
         let start = state.len;
         let end = start + added;
         state.len = end;
         let live = self.live_bytes.fetch_add(added, Ordering::Relaxed) + added;
-        self.committed_bytes.fetch_add(added, Ordering::Relaxed);
-        // Sealing is an open() and a directory fsync, paid once per segment —
-        // versus the tail rewrite the previous layout paid here under this lock.
-        if end >= self.segment_max_bytes {
-            self.seal(&mut state)?;
-        }
+        let batch = state.open.get_or_insert_with(SyncBatch::default);
+        batch.frames += 1;
+        batch.bytes += added;
+        batch
+            .deliveries
+            .push(Box::new(move || deliver(seq, start, end)));
+        let outcome = Arc::clone(&batch.outcome);
+        let written = Instant::now();
+
+        let batch_frames = loop {
+            if let Some(result) = outcome.get() {
+                break result.clone()?;
+            }
+            // Not syncing means no batch is in flight, so ours is the open one.
+            state = if state.syncing {
+                self.wait_synced(state)?
+            } else {
+                self.sync_open_batch(state)?
+            };
+        };
         drop(state);
 
+        let sync_wait = written.elapsed();
         metrics::wal_commit_bytes(self.shard, self.destination.as_str(), added);
         metrics::wal_shard_bytes(self.shard, self.destination.as_str(), live);
-        // Recorded after the lock is released: the append is done, and holding it
-        // to emit metrics would make the very contention this measures worse.
+        // Recorded after the lock is released: holding it to emit metrics
+        // would make the very contention this measures worse.
         metrics::wal_append_durations(
             self.shard,
             self.destination.as_str(),
             lock_wait.as_secs_f64(),
-            fsync.as_secs_f64(),
+            sync_wait.as_secs_f64(),
             append_started.elapsed().as_secs_f64(),
         );
-        Ok((seq, start, end))
+        Ok(Appended {
+            batch_frames,
+            lock_wait,
+            sync_wait,
+        })
+    }
+
+    fn lock_append(&self) -> Result<AppendGuard<'_>, String> {
+        self.append
+            .lock()
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    fn wait_synced<'a>(&'a self, state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        self.synced
+            .wait(state)
+            .map_err(|_| "WAL lane mutex poisoned".to_owned())
+    }
+
+    /// A segment at its seal threshold takes no more frames: it is synced and
+    /// sealed first, which keeps the overshoot to one frame, as before.
+    fn wait_for_room<'a>(&'a self, mut state: AppendGuard<'a>) -> Result<AppendGuard<'a>, String> {
+        while state.len >= self.segment_max_bytes {
+            if state.syncing {
+                state = self.wait_synced(state)?;
+            } else if state.open.is_some() {
+                state = self.sync_open_batch(state)?;
+            } else {
+                self.seal(&mut state)?;
+            }
+        }
+        Ok(state)
+    }
+
+    /// Lead one sync: take the open batch, fsync with the lock released, then
+    /// deliver its frames in order and wake everyone waiting on it. A failed
+    /// sync drops the deliveries, which releases their reservations.
+    fn sync_open_batch<'a>(
+        &'a self,
+        mut state: AppendGuard<'a>,
+    ) -> Result<AppendGuard<'a>, String> {
+        // Callers lead only when no sync is in flight and frames are waiting,
+        // so a missing batch is a bug; failing beats spinning on it.
+        let Some(batch) = state.open.take() else {
+            return Err("WAL sync batch missing".to_owned());
+        };
+        state.syncing = true;
+        let file = Arc::clone(&state.file);
+        drop(state);
+
+        let fsync_started = Instant::now();
+        let synced = (self.sync)(&file).map_err(|error| format!("sync WAL: {error}"));
+        let fsync = fsync_started.elapsed();
+
+        let mut state = self.lock_append()?;
+        state.syncing = false;
+        let SyncBatch {
+            outcome,
+            deliveries,
+            frames,
+            bytes,
+        } = batch;
+        if synced.is_ok() {
+            self.committed_bytes.fetch_add(bytes, Ordering::Relaxed);
+            for deliver in deliveries {
+                deliver();
+            }
+            // Sealed now rather than by the next append, so a quiet lane still
+            // ships its full segment.
+            if state.open.is_none() && state.len >= self.segment_max_bytes {
+                if let Err(error) = self.seal(&mut state) {
+                    warn!(shard = self.shard, %error, "Failed to seal a full WAL segment");
+                }
+            }
+        } else {
+            drop(deliveries);
+        }
+        drop(outcome.set(synced.map(|()| frames)));
+        self.synced.notify_all();
+        metrics::wal_sync(
+            self.shard,
+            self.destination.as_str(),
+            fsync.as_secs_f64(),
+            frames,
+        );
+        Ok(state)
     }
 
     /// Close the active segment and open the next one. The caller holds
-    /// `append`; every frame in the outgoing segment is already `sync_data`d.
+    /// `append` with no sync in flight; every frame in the outgoing segment was
+    /// synced, or refused to its appender because its sync failed.
     fn seal(&self, state: &mut LaneAppend) -> Result<(), String> {
         let sealed = state.seq;
         let next = sealed + 1;
@@ -1592,7 +1891,7 @@ impl WalLane {
         // is looking at a segment whose length can no longer change.
         self.active_seq.store(next, Ordering::Release);
         state.seq = next;
-        state.file = file;
+        state.file = Arc::new(file);
         state.len = 0;
         metrics::wal_segment_sealed(self.shard, self.destination.as_str());
         self.notify(SegmentEvent::Sealed {
@@ -1604,10 +1903,9 @@ impl WalLane {
 
     /// Hand a segment event to the shipper, if one is attached.
     ///
-    /// A full channel drops the event rather than blocking the caller — an
-    /// append must not wait on S3. A dropped `Sealed` leaves that segment local
-    /// only; a dropped `Exported` leaves an object behind that a later claim
-    /// replays, which is the at-least-once this whole tier is built on.
+    /// A full channel drops the event rather than block an append on S3. A dropped
+    /// `Sealed` ships with the lane's next one; a dropped `Exported` leaves an object
+    /// that a later claim replays, which is the at-least-once this tier is built on.
     fn notify(&self, event: SegmentEvent) {
         let Some(shipper) = self.shipper.get() else {
             return;
@@ -1736,6 +2034,22 @@ impl WalLane {
             .load(Ordering::Relaxed)
             .saturating_sub(self.exported_bytes.load(Ordering::Relaxed))
     }
+
+    /// Take a synced frame back out of the backlog. Its sync already counted
+    /// it, but it never reaches export, so it would never be marked exported.
+    fn forget_committed(&self, bytes: u64) {
+        self.committed_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
+}
+
+/// What WAL orphan recovery did with one segment's source object.
+enum SegmentRecovery {
+    /// Re-committed, re-shipped under this owner, and deleted.
+    Released,
+    /// Left in the bucket for a later boot.
+    Kept,
+    /// Left in the bucket, and recovery of this owner stops here.
+    Halted,
 }
 
 impl ShardedWal {
@@ -1749,8 +2063,10 @@ impl ShardedWal {
                 lanes.push(Arc::new(WalLane::open(
                     shard,
                     destination,
-                    cfg,
+                    &cfg.queue_dir,
+                    cfg.wal_segment_max_bytes,
                     max_bytes_per_lane,
+                    sync_data_wal(),
                 )?));
             }
         }
@@ -1898,7 +2214,7 @@ impl ShardedWal {
                 };
                 // Bypass the per-lane byte cap: these frames were already accepted
                 // and are merely being relocated, so we must not reject them.
-                if let Err(error) = self.append_inner(lane, &encoded, false).await {
+                if let Err(error) = self.append_relocated(lane, &encoded).await {
                     warn!(shard, error = %error, "Failed to migrate legacy ingest WAL frame; will retry next boot");
                     migrated = false;
                     break;
@@ -1956,6 +2272,10 @@ impl ShardedWal {
     /// by the same replay path as anything this task's own disk was holding.
     /// Every step is best-effort: a bucket that is unreachable must not stop the
     /// gateway from booting and accepting traffic.
+    ///
+    /// One segment at a time: fetched, re-committed, re-shipped under our own
+    /// owner id and only then deleted, so memory holds one segment however large
+    /// the dead owner's backlog is, and the frames are never only on this disk.
     #[expect(
         clippy::cognitive_complexity,
         reason = "WAL recovery: the branches are the recovery cases, and each needs the others' \
@@ -1970,10 +2290,21 @@ impl ShardedWal {
                 return;
             }
         };
+        // Segments this host kept from its last boot sealed before any shipper
+        // was attached, so nothing else ever ships them. Best-effort, and done
+        // before recovery appends anything.
+        self.flush_segments_to(store).await;
+        // Per lane, the first segment recovery has not re-shipped, seeded at the
+        // active segment: every segment from there on is one recovery wrote.
+        let mut reshipped_below: Vec<u64> = self
+            .lanes
+            .iter()
+            .map(|lane| lane.active_seq.load(Ordering::Acquire))
+            .collect();
         for owner in owners {
-            match store.claim(&owner, now).await {
-                Ok(true) => {}
-                Ok(false) => {
+            let claim = match store.claim(&owner, now).await {
+                Ok(Some(claim)) => claim,
+                Ok(None) => {
                     info!(owner, "Another task is already recovering this WAL owner");
                     continue;
                 }
@@ -1981,89 +2312,222 @@ impl ShardedWal {
                     warn!(owner, error = %error, "Failed to claim orphaned WAL segments");
                     continue;
                 }
-            }
-            let segments = match store.take_segments(&owner).await {
-                Ok(segments) => segments,
-                Err(error) => {
-                    warn!(owner, error = %error, "Failed to read orphaned WAL segments");
-                    continue;
-                }
             };
-            let mut recovered_frames = 0usize;
-            // Segments still in the bucket after this pass. Any at all keeps the
-            // owner discoverable so a later boot retries them.
-            let mut left_behind = 0usize;
-            let mut keys = Vec::with_capacity(segments.len());
-            for segment in segments {
-                let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
-                    warn!(
-                        owner,
-                        lane_key = segment.lane_key,
-                        "Skipping an orphaned WAL segment for an unknown lane"
-                    );
-                    left_behind += 1;
-                    continue;
-                };
-                let frames = decode_segment_frames(&segment.bytes);
-                let mut committed = true;
-                for frame in frames {
-                    let encoded = EncodedFrame {
-                        routing_key: 0, // the lane is already decided by the key
-                        org_id: frame.org_id,
-                        signal: frame.signal,
-                        destination: frame.destination,
-                        datasource: frame.datasource,
-                        row_count: frame.row_count,
-                        payload: frame.payload,
-                    };
-                    // Bypass the lane cap: these frames were accepted by the
-                    // task that died, and rejecting them here is the loss this
-                    // whole tier exists to prevent.
-                    if let Err(error) = self.append_inner(lane, &encoded, false).await {
-                        warn!(owner, error = %error, "Failed to re-commit an orphaned WAL frame");
-                        committed = false;
-                        break;
-                    }
-                    recovered_frames += 1;
-                }
-                if committed {
-                    keys.push(segment.key);
-                } else {
-                    left_behind += 1;
-                }
-            }
-            if recovered_frames == 0 && keys.is_empty() {
-                if left_behind == 0 {
-                    drop(store.release_owner(&owner).await);
-                }
+            let recovery = store.while_claimed(
+                &claim,
+                self.recover_owner(cfg, store, &claim, &mut reshipped_below),
+            );
+            let Some((recovered_frames, left_behind)) = recovery.await else {
                 continue;
-            }
-            // Sealed and re-shipped under our own owner id *before* the source
-            // objects are dropped, so the frames are never only on this task's
-            // disk.
-            self.flush_segments_to(store).await;
-            for key in keys {
-                if let Err(error) = store.release_key(&key).await {
-                    warn!(owner, key, error = %error, "Failed to delete a recovered WAL segment");
-                    left_behind += 1;
-                }
-            }
-            if left_behind > 0 {
+            };
+            if claim.is_lost() {
+                // The new holder recovers the rest and owns the cleanup.
+                warn!(owner, "A WAL owner claim was taken over mid-recovery");
+            } else if left_behind > 0 {
                 warn!(
                     owner,
                     left_behind,
                     "Keeping a WAL owner so a later boot retries its remaining segments"
                 );
-            } else if let Err(error) = store.release_owner(&owner).await {
-                warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
+            } else {
+                match store.release_owner(&claim).await {
+                    Ok(ClaimRelease::Released) => {}
+                    Ok(ClaimRelease::Lost) => {
+                        warn!(owner, "A WAL owner claim was taken over before its cleanup");
+                    }
+                    Ok(ClaimRelease::SegmentsRemain) => warn!(
+                        owner,
+                        "Keeping a WAL owner whose segments appeared after recovery listed it"
+                    ),
+                    Err(error) => {
+                        warn!(owner, error = %error, "Failed to retire a recovered WAL owner");
+                    }
+                }
             }
-            metrics::wal_frames_recovered(recovered_frames as u64);
-            info!(
-                owner,
-                frames = recovered_frames,
-                "Recovered orphaned WAL segments from the object store"
-            );
+            if recovered_frames > 0 {
+                metrics::wal_frames_recovered(recovered_frames as u64);
+                info!(
+                    owner,
+                    frames = recovered_frames,
+                    "Recovered orphaned WAL segments from the object store"
+                );
+            }
         }
+    }
+
+    /// Recover every segment of one claimed owner, stopping early if the claim
+    /// is taken over. Returns the frames committed and how many segments stay in
+    /// the bucket, or `None` if they could not be listed.
+    async fn recover_owner(
+        &self,
+        cfg: &TinybirdConfig,
+        store: &WalSegmentStore,
+        claim: &OwnerClaim,
+        reshipped_below: &mut [u64],
+    ) -> Option<(usize, usize)> {
+        let owner = claim.owner();
+        let segments = match store.list_segments(owner).await {
+            Ok(segments) => segments,
+            Err(error) => {
+                warn!(owner, error = %error, "Failed to list orphaned WAL segments");
+                return None;
+            }
+        };
+        let mut recovered_frames = 0usize;
+        // Segments still in the bucket after this pass. Any at all keeps the
+        // owner discoverable so a later boot retries them.
+        let mut left_behind = 0usize;
+        let total = segments.len();
+        for (index, segment) in segments.into_iter().enumerate() {
+            // Checked between segments, never inside one: a segment is fetched,
+            // re-committed and re-shipped as a unit.
+            if claim.is_lost() {
+                left_behind += total - index;
+                break;
+            }
+            let (frames, outcome) = self
+                .recover_segment(cfg, store, owner, &segment, reshipped_below)
+                .await;
+            recovered_frames += frames;
+            match outcome {
+                SegmentRecovery::Released => {}
+                SegmentRecovery::Kept => left_behind += 1,
+                // Local disk or re-shipping is failing: carrying on would only
+                // pile the rest onto this disk for a later boot to replay again.
+                SegmentRecovery::Halted => {
+                    left_behind += 1;
+                    break;
+                }
+            }
+        }
+        Some((recovered_frames, left_behind))
+    }
+
+    /// Re-commit one orphaned segment to its local lane, re-ship that lane, and
+    /// only then delete the source. Returns the frames committed and what became
+    /// of the source object.
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "WAL recovery: each early return is a case where the source must stay"
+    )]
+    async fn recover_segment(
+        &self,
+        cfg: &TinybirdConfig,
+        store: &WalSegmentStore,
+        owner: &str,
+        segment: &OrphanedSegment,
+        reshipped_below: &mut [u64],
+    ) -> (usize, SegmentRecovery) {
+        let Some(lane) = Self::lane_for_key(&segment.lane_key, cfg) else {
+            warn!(
+                owner,
+                lane_key = segment.lane_key,
+                "Skipping an orphaned WAL segment for an unknown lane"
+            );
+            return (0, SegmentRecovery::Kept);
+        };
+        let frames = match store.fetch_segment(segment).await {
+            Ok(bytes) => decode_segment_frames(&bytes),
+            Err(error) => {
+                warn!(
+                    owner,
+                    key = segment.key,
+                    error = %error,
+                    "Failed to read an orphaned WAL segment"
+                );
+                return (0, SegmentRecovery::Kept);
+            }
+        };
+        let mut recovered = 0usize;
+        let mut committed = true;
+        for frame in frames {
+            let encoded = EncodedFrame {
+                routing_key: 0, // the lane is already decided by the key
+                org_id: frame.org_id,
+                signal: frame.signal,
+                destination: frame.destination,
+                datasource: frame.datasource,
+                row_count: frame.row_count,
+                payload: frame.payload,
+            };
+            // Bypass the lane cap: these frames were accepted by the task that
+            // died, and rejecting them here is the loss this whole tier exists
+            // to prevent.
+            if let Err(error) = self.append_relocated(lane, &encoded).await {
+                warn!(
+                    owner,
+                    key = segment.key,
+                    error = %error,
+                    "Failed to re-commit an orphaned WAL frame"
+                );
+                committed = false;
+                break;
+            }
+            recovered += 1;
+        }
+        // Sealed and re-shipped even after a partial commit, so whatever did
+        // land is exported; the source stays for a later boot.
+        let reshipped = self
+            .reship_lane(store, lane, &mut reshipped_below[lane])
+            .await;
+        if !(committed && reshipped) {
+            return (recovered, SegmentRecovery::Halted);
+        }
+        if let Err(error) = store.release_key(&segment.key).await {
+            warn!(
+                owner,
+                key = segment.key,
+                error = %error,
+                "Failed to delete a recovered WAL segment"
+            );
+            return (recovered, SegmentRecovery::Kept);
+        }
+        (recovered, SegmentRecovery::Released)
+    }
+
+    /// Seal `lane` and ship every segment from `*reshipped_below` up to the new
+    /// active one, advancing it past each that lands. False when any did not,
+    /// so the caller keeps the source object those frames came from.
+    async fn reship_lane(
+        &self,
+        store: &WalSegmentStore,
+        lane: usize,
+        reshipped_below: &mut u64,
+    ) -> bool {
+        let Ok(lane) = self.lane(lane) else {
+            return false;
+        };
+        if let Err(error) = lane.seal_if_dirty() {
+            warn!(
+                shard = lane.shard,
+                destination = lane.destination.as_str(),
+                %error,
+                "Failed to seal a WAL lane segment after recovery"
+            );
+            return false;
+        }
+        // Nothing exports during recovery, so each of these is still on disk.
+        let active = lane.active_seq.load(Ordering::Acquire);
+        for seq in *reshipped_below..active {
+            let Some(bytes) = lane.read_segment(seq) else {
+                return false;
+            };
+            let len = bytes.len() as u64;
+            if let Err(error) = store.put_segment(&lane.lane_key, seq, bytes).await {
+                warn!(
+                    shard = lane.shard,
+                    destination = lane.destination.as_str(),
+                    segment = seq,
+                    error_kind = error.error_kind(),
+                    %error,
+                    "Failed to re-ship a recovered WAL segment"
+                );
+                return false;
+            }
+            metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len);
+            *reshipped_below = seq + 1;
+        }
+        true
     }
 
     fn lane(&self, lane: usize) -> Result<Arc<WalLane>, String> {
@@ -2073,22 +2537,49 @@ impl ShardedWal {
             .ok_or_else(|| format!("invalid WAL lane {lane}"))
     }
 
+    #[cfg(test)]
     async fn append(&self, lane: usize, frame: &EncodedFrame) -> Result<(u64, u64, u64), String> {
-        self.append_inner(lane, frame, true).await
+        let (sender, landed) = std::sync::mpsc::channel();
+        let deliver: Delivery = Box::new(move |seq, start, end| {
+            sender.send((seq, start, end)).ok();
+        });
+        self.append_delivering(lane, encode_wal_frame(frame)?, true, deliver)
+            .await?;
+        landed
+            .recv()
+            .map_err(|_| "a durable append was never delivered".to_owned())
     }
 
+    /// Frames relocated at boot: no cap, and nothing to deliver, because the
+    /// lane replays them from disk.
+    async fn append_relocated(&self, lane: usize, frame: &EncodedFrame) -> Result<(), String> {
+        let encoded = encode_wal_frame(frame)?;
+        self.append_delivering(lane, encoded, false, Box::new(|_, _, _| {}))
+            .await
+            .map(|_| ())
+    }
+
+    /// Append an encoded frame and return once it is durable. `deliver` runs
+    /// first, from the blocking task, so it still runs if this future is dropped.
     #[hotpath::measure]
-    async fn append_inner(
+    async fn append_delivering(
         &self,
         lane: usize,
-        frame: &EncodedFrame,
+        encoded: Vec<u8>,
         enforce_cap: bool,
-    ) -> Result<(u64, u64, u64), String> {
+        deliver: Delivery,
+    ) -> Result<Appended, String> {
         let lane_ref = self.lane(lane)?;
-        let encoded = encode_wal_frame(frame)?;
-        tokio::task::spawn_blocking(move || lane_ref.append_blocking(&encoded, enforce_cap))
-            .await
-            .map_err(|error| format!("join WAL append: {error}"))?
+        // A caller dropped mid-append (a request timeout) has already answered
+        // with a retryable error, so its frame must not reach export as well.
+        let (waiting, deliver) = while_caller_waits(deliver, Arc::clone(&lane_ref));
+        let appended = tokio::task::spawn_blocking(move || {
+            lane_ref.append_blocking(&encoded, enforce_cap, deliver)
+        })
+        .await
+        .map_err(|error| format!("join WAL append: {error}"))?;
+        drop(waiting);
+        appended
     }
 
     /// Bytes committed but not yet exported across every lane.
@@ -2117,12 +2608,59 @@ impl ShardedWal {
     }
 }
 
+/// One WAL lane driven directly, for `benches/wal_append_bench.rs`: the real
+/// append path with an injected fsync, without an export pipeline behind it.
+#[doc(hidden)]
+pub struct WalLaneBench {
+    lane: WalLane,
+}
+
+impl std::fmt::Debug for WalLaneBench {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WalLaneBench")
+            .field("dir", &self.lane.dir)
+            .finish()
+    }
+}
+
+impl WalLaneBench {
+    pub fn open(queue_dir: &Path, segment_max_bytes: u64, sync: WalSync) -> Result<Self, String> {
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            queue_dir,
+            segment_max_bytes,
+            u64::MAX,
+            sync,
+        )?;
+        Ok(Self { lane })
+    }
+
+    /// Append one frame carrying `payload`; returns once it is durable.
+    pub fn append(&self, payload: Vec<u8>) -> Result<(), String> {
+        let encoded = encode_wal_frame(&EncodedFrame {
+            routing_key: 0,
+            org_id: "org_bench".to_owned(),
+            signal: TelemetrySignal::Logs,
+            destination: ExportDestination::Tinybird,
+            datasource: "logs".to_owned(),
+            row_count: 1,
+            payload,
+        })?;
+        self.lane
+            .append_blocking(&encoded, true, Box::new(|_, _, _| {}))
+            .map(|_| ())
+    }
+}
+
 /// Keep this task's owner marker fresh, so a booting task can tell a live
-/// writer's segments from a dead one's.
+/// writer's segments from a dead one's. Ends once the owner is retired.
 async fn run_owner_heartbeat(store: Arc<WalSegmentStore>, interval: Duration) {
     loop {
-        if let Err(error) = store.heartbeat().await {
-            warn!(error = %error, "Failed to refresh the WAL owner heartbeat");
+        match store.heartbeat().await {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(error) => warn!(error = %error, "Failed to refresh the WAL owner heartbeat"),
         }
         sleep(interval).await;
     }
@@ -2132,58 +2670,68 @@ async fn run_owner_heartbeat(store: Arc<WalSegmentStore>, interval: Duration) {
 ///
 /// Events arrive in the order their lane produced them, so an `Exported` for a
 /// segment always follows the `Sealed` that uploaded it.
-async fn run_segment_shipper(
+fn run_segment_shipper(
     lanes: Vec<Arc<WalLane>>,
     store: Arc<WalSegmentStore>,
     mut receiver: mpsc::Receiver<SegmentEvent>,
-) {
-    while let Some(event) = receiver.recv().await {
-        let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
-        let Some(lane_ref) = lanes.get(lane) else {
-            continue;
-        };
-        let result = match event {
-            SegmentEvent::Sealed { .. } => {
-                // A healthy pipeline exports a segment well before its upload
-                // comes up, and a segment already in the warehouse needs no
-                // backup — which is why this tier costs almost nothing.
-                if lane_ref.is_exported(seq) {
-                    metrics::wal_ship_skipped(lane_ref.shard, lane_ref.destination.as_str());
-                    continue;
+) -> impl std::future::Future<Output = ()> {
+    // Per lane, the next segment expected to seal, read when the shipper is created.
+    // A lane seals in sequence, so a `Sealed` past it means dropped events: ship the gap.
+    let mut next_sealed: Vec<u64> = lanes
+        .iter()
+        .map(|lane| lane.active_seq.load(Ordering::Acquire))
+        .collect();
+    async move {
+        while let Some(event) = receiver.recv().await {
+            let (SegmentEvent::Sealed { lane, seq } | SegmentEvent::Exported { lane, seq }) = event;
+            let (Some(lane_ref), Some(next)) = (lanes.get(lane), next_sealed.get_mut(lane)) else {
+                continue;
+            };
+            match event {
+                SegmentEvent::Sealed { .. } => {
+                    let from = (*next).min(seq);
+                    *next = (*next).max(seq.saturating_add(1));
+                    for sealed in from..=seq {
+                        ship_sealed_segment(lane_ref, &store, sealed).await;
+                    }
                 }
-                let Some(bytes) = lane_ref.read_segment(seq) else {
-                    continue;
-                };
-                let len = bytes.len() as u64;
-                store
-                    .put_segment(&lane_ref.lane_key, seq, bytes)
-                    .await
-                    .inspect(|()| {
-                        metrics::wal_segment_shipped(
-                            lane_ref.shard,
-                            lane_ref.destination.as_str(),
-                            len,
-                        );
-                    })
+                SegmentEvent::Exported { .. } => {
+                    if let Err(error) = store.delete_segment(&lane_ref.lane_key, seq).await {
+                        report_ship_failure(lane_ref, seq, &error);
+                    }
+                }
             }
-            SegmentEvent::Exported { .. } => store.delete_segment(&lane_ref.lane_key, seq).await,
-        };
-        if let Err(error) = result {
-            metrics::wal_ship_failed(
-                lane_ref.shard,
-                lane_ref.destination.as_str(),
-                error.error_kind(),
-            );
-            warn!(
-                shard = lane_ref.shard,
-                destination = lane_ref.destination.as_str(),
-                segment = seq,
-                error_kind = error.error_kind(),
-                %error,
-                "WAL segment shipping failed"
-            );
         }
     }
+}
+
+async fn ship_sealed_segment(lane: &WalLane, store: &WalSegmentStore, seq: u64) {
+    // A healthy pipeline exports a segment well before its upload comes up, and
+    // a segment already in the warehouse needs no backup, which keeps this tier cheap.
+    if lane.is_exported(seq) {
+        metrics::wal_ship_skipped(lane.shard, lane.destination.as_str());
+        return;
+    }
+    let Some(bytes) = lane.read_segment(seq) else {
+        return;
+    };
+    let len = bytes.len() as u64;
+    match store.put_segment(&lane.lane_key, seq, bytes).await {
+        Ok(()) => metrics::wal_segment_shipped(lane.shard, lane.destination.as_str(), len),
+        Err(error) => report_ship_failure(lane, seq, &error),
+    }
+}
+
+fn report_ship_failure(lane: &WalLane, seq: u64, error: &crate::aws::S3Error) {
+    metrics::wal_ship_failed(lane.shard, lane.destination.as_str(), error.error_kind());
+    warn!(
+        shard = lane.shard,
+        destination = lane.destination.as_str(),
+        segment = seq,
+        error_kind = error.error_kind(),
+        %error,
+        "WAL segment shipping failed"
+    );
 }
 
 fn write_cursor(path: &Path, cursor: SegmentCursor) -> Result<(), String> {
@@ -2473,9 +3021,17 @@ fn read_wal_frame(file: &mut impl Read, start: u64) -> Result<Option<DecodedWalF
     let mut datasource = vec![0u8; datasource_len];
     file.read_exact(&mut datasource)
         .map_err(|error| format!("read WAL datasource: {error}"))?;
-    let mut payload = vec![0u8; payload_len];
-    file.read_exact(&mut payload)
+    // The length is an unverified header field (up to 4 GiB), so the buffer
+    // grows with the bytes actually read instead of being allocated up front.
+    let mut payload = Vec::with_capacity(payload_len.min(WAL_PAYLOAD_PREALLOC_MAX));
+    let payload_read = file
+        .by_ref()
+        .take(payload_len as u64)
+        .read_to_end(&mut payload)
         .map_err(|error| format!("read WAL payload: {error}"))?;
+    if payload_read != payload_len {
+        return Err(format!("truncated WAL payload at offset {start}"));
+    }
 
     let mut crc = Crc32::new();
     crc.update(&[signal_tag(signal)]);
@@ -2516,6 +3072,7 @@ fn signal_tag(signal: TelemetrySignal) -> u8 {
         TelemetrySignal::SessionReplays => 4,
         TelemetrySignal::SessionEvents => 5,
         TelemetrySignal::ProductEvents => 6,
+        TelemetrySignal::AuditTrail => 7,
     }
 }
 
@@ -2527,6 +3084,7 @@ fn signal_from_tag(tag: u8) -> Option<TelemetrySignal> {
         4 => Some(TelemetrySignal::SessionReplays),
         5 => Some(TelemetrySignal::SessionEvents),
         6 => Some(TelemetrySignal::ProductEvents),
+        7 => Some(TelemetrySignal::AuditTrail),
         _ => None,
     }
 }
@@ -2573,26 +3131,25 @@ fn add_org_queue_bytes(counters: &Arc<DashMap<String, Arc<AtomicU64>>>, org_id: 
 /// timeout fires. Dropped there, nobody released the bytes and nobody ever
 /// would, so the org's counter drifted up permanently until it was throttled by
 /// a queue that did not exist.
-struct OrgBytesReservation<'a> {
-    counters: &'a Arc<DashMap<String, Arc<AtomicU64>>>,
-    org_id: &'a str,
+struct OrgBytesReservation {
+    counters: Arc<DashMap<String, Arc<AtomicU64>>>,
+    org_id: String,
     bytes: u64,
     committed: bool,
 }
 
-impl OrgBytesReservation<'_> {
+impl OrgBytesReservation {
     /// The frame is on its way to the lane; the export worker owns the release
-    /// from here. Consumes the guard so the borrow ends and the frame's fields
-    /// can be moved into the `QueuedFrame`.
+    /// from here.
     fn commit(mut self) {
         self.committed = true;
     }
 }
 
-impl Drop for OrgBytesReservation<'_> {
+impl Drop for OrgBytesReservation {
     fn drop(&mut self) {
         if !self.committed {
-            release_org_queue_bytes(self.counters, self.org_id, self.bytes);
+            release_org_queue_bytes(&self.counters, &self.org_id, self.bytes);
         }
     }
 }
@@ -2693,9 +3250,9 @@ impl ExportWorker {
             }
             let span_handle = span.clone();
             if let Err(error) = self.export_and_mark(frames).instrument(span).await {
-                // Reaching here means the WAL cursor did not advance, so the
-                // batch will be replayed — distinct from a per-destination drop,
-                // which returns Ok and is recorded on the export span.
+                // The WAL cursor did not advance and the batch is gone from memory:
+                // it is exported again only if a restart replays the lane before a
+                // later batch moves the cursor past it. A destination drop is Ok.
                 record_stage_error(&span_handle, "export_batch", &error, true);
                 error!(shard = self.shard, error = %error, "Telemetry export worker failed batch");
             }
@@ -2738,8 +3295,12 @@ impl ExportWorker {
         // Shed, not drop-and-forget: a shed frame still advances the cursor and
         // releases its org bytes below, because leaving it in the WAL would keep
         // the very backlog this is cutting.
+        // An audit event is a record, not a reading that ages out: a late one is still
+        // evidence, and its volume is bounded per org at the accept path.
         let is_stale = |frame: &QueuedFrame| {
-            !max_age.is_zero() && now.duration_since(frame.enqueued_at) > max_age
+            !max_age.is_zero()
+                && frame.signal != TelemetrySignal::AuditTrail
+                && now.duration_since(frame.enqueued_at) > max_age
         };
         let mut shed_frames = 0usize;
         let mut shed_rows = 0usize;
@@ -2828,12 +3389,17 @@ impl ExportWorker {
             .iter()
             .map(|frame| frame.end.saturating_sub(frame.start))
             .sum();
-        self.wal
+        let marked = self
+            .wal
             .mark_exported(self.lane, cursor, exported_bytes)
-            .await?;
+            .await;
+        // Released even when the cursor write failed: the frames leave memory
+        // here either way, and holding their bytes would throttle the org on a
+        // queue that no longer exists.
         for frame in &frames {
             release_org_queue_bytes(&self.org_queue_bytes, &frame.org_id, frame.queued_bytes);
         }
+        marked?;
         metrics::export_batch_completed(
             frames[0].shard,
             self.destination.as_str(),
@@ -2922,6 +3488,7 @@ impl ExportWorker {
             let response = request.send().instrument(span).await;
 
             let last_status: String;
+            let throttled: bool;
             match response {
                 Ok(response) if response.status().is_success() => {
                     span_handle.record("http.response.status_code", response.status().as_u16());
@@ -2934,13 +3501,18 @@ impl ExportWorker {
                     );
                     return Ok(());
                 }
-                Ok(response) if response.status().is_client_error() => {
+                // 408 and 429 are the upstream asking us to slow down, not bad data:
+                // they fall through to the retry arm, as on the ClickHouse path.
+                Ok(response)
+                    if response.status().is_client_error()
+                        && !is_retryable_clickhouse_status(response.status().as_u16()) =>
+                {
                     let status = response.status().as_u16();
                     let body = outbound::read_body_capped(response, MAX_ERROR_BODY_BYTES).await;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "dropped");
-                    // Terminal: these rows are gone. 4xx from Tinybird means we
-                    // sent bad data, so this one is genuinely ours.
+                    // Terminal: these rows are gone. Any other 4xx from Tinybird means
+                    // we sent bad data, so this one is genuinely ours.
                     record_stage_error(&span_handle, "non_retryable", &body, true);
                     metrics::tinybird_export_dropped(
                         destination,
@@ -2954,9 +3526,17 @@ impl ExportWorker {
                 Ok(response) => {
                     let status = response.status().as_u16();
                     last_status = status.to_string();
+                    throttled = status == 408 || status == 429;
                     span_handle.record("http.response.status_code", status);
                     span_handle.record("maple.ingest.outcome", "retry");
-                    span_handle.record("error.type", "upstream_5xx");
+                    span_handle.record(
+                        "error.type",
+                        if throttled {
+                            "upstream_throttled"
+                        } else {
+                            "upstream_5xx"
+                        },
+                    );
                     metrics::tinybird_export_retry(destination, datasource, &last_status);
                     warn!(
                         datasource,
@@ -2965,6 +3545,7 @@ impl ExportWorker {
                 }
                 Err(error) => {
                     last_status = "transport".to_owned();
+                    throttled = false;
                     span_handle.record("maple.ingest.outcome", "retry");
                     span_handle.record("error.type", "transport");
                     span_handle.record("otel.status_description", error.to_string().as_str());
@@ -2974,7 +3555,7 @@ impl ExportWorker {
             }
 
             attempt = attempt.saturating_add(1);
-            if attempt >= max_attempts {
+            if attempt >= tinybird_attempt_budget(max_attempts, throttled) {
                 span_handle.record("maple.ingest.outcome", "dropped");
                 record_stage_error(
                     &span_handle,
@@ -3047,12 +3628,12 @@ impl ExportWorker {
             // so a blip is delivered without loss; past it the batch sheds, which bounds
             // how long co-sharded orgs on this lane wait behind a broken target.
             let now = Instant::now();
-            if self.clickhouse_breakers.decide(org_id, now) == BreakerDecision::Shed {
-                let window_spent = self.clickhouse_breakers.deferral_spent(org_id)
-                    || deferred_since
-                        .is_some_and(|since| now.duration_since(since) >= deferral_window);
-                if window_spent {
-                    self.clickhouse_breakers.mark_deferral_spent(org_id);
+            let window_spent =
+                deferred_since.is_some_and(|since| now.duration_since(since) >= deferral_window);
+            // Every exit below that drops the permit unsettled releases a half-open probe.
+            let permit = match self.clickhouse_breakers.admit(org_id, now, window_spent) {
+                Admission::Attempt(permit) => permit,
+                Admission::Shed => {
                     // A shed makes no HTTP call, but it discards customer data, so it
                     // still gets a span or the drop is invisible in traces.
                     let span =
@@ -3069,30 +3650,35 @@ impl ExportWorker {
                     );
                     return Ok(ClickHouseExportOutcome::Dropped);
                 }
-                let since = *deferred_since.get_or_insert_with(|| {
-                    // One span per deferred batch, left Unset: waiting is not a failure.
-                    let span =
-                        clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
-                    span.record("maple.ingest.outcome", "deferred_circuit_open");
-                    metrics::clickhouse_export_retry(datasource, "circuit_open");
-                    warn!(
-                        org_id,
-                        datasource,
-                        rows,
-                        attempt,
-                        "Deferring ClickHouse batch: target circuit breaker open"
-                    );
-                    now
-                });
-                waited_on_breaker = true;
-                let remaining = deferral_window.saturating_sub(now.duration_since(since));
-                sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
-                continue;
-            }
+                Admission::Defer => {
+                    let since = *deferred_since.get_or_insert_with(|| {
+                        // One span per deferred batch, left Unset: waiting is not a failure.
+                        let span =
+                            clickhouse_export_span(org_id, datasource, attempt, rows, &compressed);
+                        span.record("maple.ingest.outcome", "deferred_circuit_open");
+                        metrics::clickhouse_export_retry(datasource, "circuit_open");
+                        warn!(
+                            org_id,
+                            datasource,
+                            rows,
+                            attempt,
+                            "Deferring ClickHouse batch: target circuit breaker open"
+                        );
+                        now
+                    });
+                    waited_on_breaker = true;
+                    let remaining = deferral_window.saturating_sub(now.duration_since(since));
+                    sleep(self.clickhouse_breakers.poll_interval().min(remaining)).await;
+                    continue;
+                }
+            };
             // Backoff is taken here (before the attempt) so that when the breaker
             // trips mid-batch the shed-check above can wait without first sleeping
             // out the previous failure's backoff; a breaker wait replaces it.
-            if attempt > 0 && !std::mem::take(&mut waited_on_breaker) {
+            // A probe already waited out a cooldown; backing off too could outlast
+            // its claim and let another worker supersede it.
+            let waited = std::mem::take(&mut waited_on_breaker) || permit.probe.is_some();
+            if attempt > 0 && !waited {
                 backoff(attempt).await;
             }
 
@@ -3117,7 +3703,7 @@ impl ExportWorker {
                         attempt,
                         "Retrying ClickHouse batch because no ready target resolved"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         span.record("maple.ingest.outcome", "dropped");
@@ -3155,7 +3741,7 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after target resolution error"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         span.record("maple.ingest.outcome", "dropped");
@@ -3267,7 +3853,7 @@ impl ExportWorker {
                         started.elapsed().as_secs_f64(),
                         rows as u64,
                     );
-                    self.clickhouse_breakers.on_success(org_id);
+                    permit.succeed();
                     return Ok(ClickHouseExportOutcome::Delivered);
                 }
                 Ok(response) => {
@@ -3333,7 +3919,7 @@ impl ExportWorker {
                         body = %body,
                         "Retrying ClickHouse batch"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     last_status = bucket.to_owned();
                 }
                 Err(error) if outbound::is_blocked_address(&error) => {
@@ -3362,7 +3948,7 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after transport error"
                     );
-                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    permit.fail(Instant::now());
                     last_status = "transport".to_owned();
                 }
             }
@@ -3432,6 +4018,20 @@ fn status_bucket(status: u16) -> &'static str {
 
 fn is_retryable_clickhouse_status(status: u16) -> bool {
     status == 408 || status == 429 || status >= 500
+}
+
+/// Attempts a throttled (408/429) Tinybird batch gets, about 7 seconds of
+/// backoff. Tinybird can throttle one datasource, and a lane exports one batch
+/// at a time, so a full retry budget here would hold every other datasource on
+/// the lane behind it until their frames aged out.
+const TINYBIRD_THROTTLE_MAX_ATTEMPTS: u32 = 5;
+
+fn tinybird_attempt_budget(max_attempts: u32, throttled: bool) -> u32 {
+    if throttled {
+        max_attempts.min(TINYBIRD_THROTTLE_MAX_ATTEMPTS)
+    } else {
+        max_attempts
+    }
 }
 
 async fn backoff(attempt: u32) {
@@ -4422,7 +5022,6 @@ mod tests {
             batch_max_bytes: 1024 * 1024,
             queue_max_age: Duration::ZERO,
             batch_max_wait: Duration::from_millis(10),
-            export_concurrency_per_shard: 1,
             export_max_attempts: 20,
             clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
@@ -4433,6 +5032,16 @@ mod tests {
             datasource_session_events: "session_events".to_owned(),
             datasource_product_events: "product_events".to_owned(),
         }
+    }
+
+    #[test]
+    fn a_zero_channel_capacity_is_refused_instead_of_panicking_at_boot() {
+        let mut cfg = test_cfg();
+        cfg.queue_channel_capacity = 0;
+        let error = cfg
+            .validate()
+            .expect_err("a lane channel needs at least one slot");
+        assert!(error.contains("INGEST_QUEUE_CHANNEL_CAPACITY"));
     }
 
     #[tokio::test]
@@ -4737,6 +5346,24 @@ mod tests {
         assert_eq!(decoded.payload, br#"{"a":1}"#);
         assert!(decoded.end > 0);
         drop(std::fs::remove_file(path));
+    }
+
+    #[test]
+    fn a_frame_header_claiming_more_payload_than_exists_is_corrupt() {
+        let mut encoded = encode_wal_frame(&wal_test_frame(64)).expect("encode");
+        let intact = encoded.clone();
+        // Bytes 11..15 of a v3 header are the payload length.
+        encoded[11..15].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        let mut reader = std::io::Cursor::new(encoded.as_slice());
+        assert!(
+            read_wal_frame(&mut reader, 0).is_err(),
+            "a length the segment cannot back is a corrupt frame"
+        );
+        // The same reader over a good frame followed by the bad one keeps the good one.
+        let mut segment = intact;
+        segment.extend_from_slice(&encoded);
+        assert_eq!(decode_segment_frames(&segment).len(), 1);
     }
 
     #[test]
@@ -5091,6 +5718,71 @@ mod tests {
         assert_eq!(row["log_attributes"]["component"], "pipeline-e2e");
         assert_eq!(row["trace_id"], "cccccccccccccccccccccccccccccccc");
         assert_eq!(row["span_id"], "dddddddddddddddd");
+
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    // Audit rows are built by the gateway, not derived from OTLP: they have to
+    // reach the warehouse under their own datasource, never as a log.
+    #[tokio::test]
+    async fn audit_trail_rows_reach_tinybird_under_their_own_datasource() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("fake-tinybird-audit-trail");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{addr}");
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let event: serde_json::Map<String, Value> = serde_json::from_str(
+            r#"{"id":"evt_1","teamId":"team_1","action":"project.created","timestamp":1700000000000}"#,
+        )
+        .unwrap();
+        let row = crate::audit_trail::vercel_event(&event, 1_700_000_060_000)
+            .expect("an event with an action")
+            .to_row("org_e2e", 1_700_000_060_000);
+        let stats = pipeline
+            .accept_rows_to(
+                "org_e2e",
+                crate::audit_trail::DATASOURCE.to_owned(),
+                vec![row],
+                TelemetrySignal::AuditTrail,
+                ExportDestination::Tinybird,
+            )
+            .await
+            .unwrap();
+        assert_eq!(stats.rows, 1);
+
+        let import = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("fake Tinybird should receive an import")
+            .expect("fake Tinybird channel should stay open");
+        assert_eq!(import.datasource, "audit_trail_events");
+        let stored: Value = serde_json::from_str(import.body.trim()).unwrap();
+        assert_eq!(stored["OrgId"], "org_e2e");
+        assert_eq!(stored["Provider"], "vercel");
+        assert_eq!(stored["Action"], "project.created");
 
         wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
         drop(std::fs::remove_dir_all(queue_dir));
@@ -5840,6 +6532,7 @@ mod tests {
         assert_eq!(TelemetrySignal::SessionReplays.as_str(), "session_replays");
         assert_eq!(TelemetrySignal::SessionEvents.as_str(), "session_events");
         assert_eq!(TelemetrySignal::ProductEvents.as_str(), "product_events");
+        assert_eq!(TelemetrySignal::AuditTrail.as_str(), "audit_trail");
     }
 
     #[test]
@@ -5853,6 +6546,7 @@ mod tests {
             TelemetrySignal::SessionReplays,
             TelemetrySignal::SessionEvents,
             TelemetrySignal::ProductEvents,
+            TelemetrySignal::AuditTrail,
         ] {
             assert_eq!(signal_from_tag(signal_tag(signal)), Some(signal));
         }
@@ -5896,6 +6590,68 @@ mod tests {
         assert_eq!(attempts, cfg.export_max_attempts);
 
         assert!(cfg.tinybird_target(ExportDestination::ClickHouse).is_none());
+    }
+
+    #[test]
+    fn a_throttled_batch_gets_a_short_retry_budget_so_its_lane_keeps_moving() {
+        assert_eq!(
+            tinybird_attempt_budget(20, true),
+            TINYBIRD_THROTTLE_MAX_ATTEMPTS
+        );
+        // Never more than the operator allowed.
+        assert_eq!(tinybird_attempt_budget(3, true), 3);
+        // An outage keeps the whole budget: every datasource is waiting on it anyway.
+        assert_eq!(tinybird_attempt_budget(20, false), 20);
+    }
+
+    /// Answers 429 to the first import and 200 to every later one.
+    async fn throttling_tinybird_import(
+        State(count): State<Arc<std::sync::atomic::AtomicUsize>>,
+        _body: Bytes,
+    ) -> StatusCode {
+        if count.fetch_add(1, Ordering::SeqCst) == 0 {
+            StatusCode::TOO_MANY_REQUESTS
+        } else {
+            StatusCode::OK
+        }
+    }
+
+    #[tokio::test]
+    async fn a_throttled_tinybird_batch_is_retried_instead_of_dropped() {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v0/events", post(throttling_tinybird_import))
+            .with_state(Arc::clone(&count));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("tinybird-throttled");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{addr}");
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        pipeline
+            .accept_logs("org_throttled", &populated_log_request())
+            .await
+            .unwrap();
+
+        // A dropped batch advances the cursor too, so the request count is what tells them apart.
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "the 429 is answered with a second attempt, which delivers the batch"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     /// A fake Tinybird that reports every import it receives.
@@ -5951,6 +6707,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_cursor_write_still_releases_the_org_queue_bytes() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+
+        let queue_dir = unique_test_dir("cursor-write-fails");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        // A directory where the cursor file belongs fails every cursor write.
+        std::fs::create_dir(lane_dir(&queue_dir).join("lane.cursor")).unwrap();
+
+        pipeline
+            .accept_logs("org_cursor", &populated_log_request())
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), primary_rx.recv())
+            .await
+            .expect("the export worker should deliver the batch")
+            .unwrap();
+
+        let queued = || {
+            pipeline
+                .inner
+                .org_queue_bytes
+                .get("org_cursor")
+                .map_or(0, |entry| entry.value().load(Ordering::Relaxed))
+        };
+        for _ in 0..100 {
+            if queued() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            queued(),
+            0,
+            "the batch left memory, so it no longer counts against the org"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
     async fn frames_older_than_the_max_queue_age_are_shed_and_still_drain_the_wal() {
         // The byte and slot caps do not bound how long a frame waits: a lane
         // holds 100k frames and the WAL 20 GiB, so a stalled target absorbs
@@ -6001,6 +6811,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_audit_event_past_the_max_queue_age_is_still_exported() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+
+        let queue_dir = unique_test_dir("queue-age-audit-trail");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Any frame that survives a channel hop is already older than this.
+        cfg.queue_max_age = Duration::from_nanos(1);
+
+        let pipeline = TelemetryPipeline::new(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+        let event: serde_json::Map<String, Value> = serde_json::from_str(
+            r#"{"id":"evt_1","teamId":"team_1","action":"project.created","timestamp":1700000000000}"#,
+        )
+        .unwrap();
+        let row = crate::audit_trail::vercel_event(&event, 1_700_000_060_000)
+            .expect("an event with an action")
+            .to_row("org_late", 1_700_000_060_000);
+        pipeline
+            .accept_rows_to(
+                "org_late",
+                crate::audit_trail::DATASOURCE.to_owned(),
+                vec![row],
+                TelemetrySignal::AuditTrail,
+                ExportDestination::Tinybird,
+            )
+            .await
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), primary_rx.recv())
+            .await
+            .expect("an audit event past the max queue age must still be exported")
+            .expect("fake Tinybird channel should stay open");
+        assert_eq!(pipeline.drain_wal(Duration::from_secs(5)).await, 0);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
     async fn drain_wal_reports_the_backlog_when_the_destination_is_unreachable() {
         let queue_dir = unique_test_dir("drain-stuck");
         let mut cfg = test_cfg();
@@ -6046,114 +6906,213 @@ mod tests {
         assert_eq!(ClickHouseBreakerConfig::default().failure_threshold, 2);
     }
 
+    fn breaker(failure_threshold: u32, cooldown: Duration) -> ClickHouseBreakerRegistry {
+        ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold,
+            cooldown,
+        })
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum Seen {
+        Attempt,
+        Probe,
+        Defer,
+        Shed,
+    }
+
+    fn seen(admission: &Admission<'_>) -> Seen {
+        match admission {
+            Admission::Attempt(permit) if permit.probe.is_some() => Seen::Probe,
+            Admission::Attempt(_) => Seen::Attempt,
+            Admission::Defer => Seen::Defer,
+            Admission::Shed => Seen::Shed,
+        }
+    }
+
+    /// Admission kind for `org`, settling nothing: a dropped probe permit is released.
+    fn check(registry: &ClickHouseBreakerRegistry, now: Instant, window_spent: bool) -> Seen {
+        seen(&registry.admit("org", now, window_spent))
+    }
+
+    fn permit(registry: &ClickHouseBreakerRegistry, now: Instant) -> ExportPermit<'_> {
+        match registry.admit("org", now, false) {
+            Admission::Attempt(permit) => permit,
+            other => panic!("expected an attempt, got {:?}", seen(&other)),
+        }
+    }
+
+    fn state(registry: &ClickHouseBreakerRegistry) -> BreakerState {
+        *lock_state(&registry.states.get("org").expect("org has breaker state"))
+    }
+
     #[test]
-    fn clickhouse_breaker_trips_sheds_and_recovers() {
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 3,
-            cooldown: Duration::from_secs(30),
-        });
+    fn clickhouse_breaker_trips_defers_sheds_and_recovers() {
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(3, cooldown);
         let t0 = Instant::now();
 
-        // Unknown org: allowed, and no state is allocated.
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        // Unknown org: attempted, and no state is allocated.
+        permit(&registry, t0).succeed();
+        assert!(registry.states.is_empty());
 
-        // Below threshold stays closed.
-        registry.on_failure("org", t0);
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        // Below threshold stays closed; the threshold-th failure opens it.
+        permit(&registry, t0).fail(t0);
+        permit(&registry, t0).fail(t0);
+        assert_eq!(check(&registry, t0, false), Seen::Attempt);
+        permit(&registry, t0).fail(t0);
 
-        // Threshold-th failure trips it open → shed for the whole cooldown.
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+        // Open: a batch defers until its own window runs out, then sheds, and
+        // every later batch in this outage sheds at once.
+        assert_eq!(check(&registry, t0, false), Seen::Defer);
         assert_eq!(
-            registry.decide("org", t0 + Duration::from_secs(29)),
-            BreakerDecision::Shed
+            check(&registry, t0 + Duration::from_secs(29), true),
+            Seen::Shed
+        );
+        assert_eq!(
+            check(&registry, t0 + Duration::from_secs(29), false),
+            Seen::Shed
         );
 
-        // After the cooldown a single probe is allowed (half-open).
-        let after_cooldown = t0 + Duration::from_secs(31);
+        // After the cooldown one probe is admitted; its failure re-opens.
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        permit(&registry, half_open).fail(half_open);
         assert_eq!(
-            registry.decide("org", after_cooldown),
-            BreakerDecision::Allow
+            check(&registry, half_open + Duration::from_secs(1), false),
+            Seen::Shed
         );
 
-        // A failed probe re-opens for another cooldown.
-        registry.on_failure("org", after_cooldown);
-        assert_eq!(
-            registry.decide("org", after_cooldown + Duration::from_secs(1)),
-            BreakerDecision::Shed
-        );
-
-        // Success closes the breaker and resets the failure count, so it takes a
-        // full `failure_threshold` again to re-trip.
-        registry.on_success("org");
-        let recovered = after_cooldown + Duration::from_secs(2);
-        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
-        registry.on_failure("org", recovered);
-        registry.on_failure("org", recovered);
-        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
+        // A successful probe closes it, and the failure count starts over.
+        let recovered = half_open + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, recovered);
+        assert!(probe.probe.is_some());
+        probe.succeed();
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
+        permit(&registry, recovered).fail(recovered);
+        permit(&registry, recovered).fail(recovered);
+        assert_eq!(check(&registry, recovered, false), Seen::Attempt);
     }
 
     #[test]
     fn clickhouse_breaker_half_open_admits_one_probe_at_a_time() {
         // Every lane worker consults this registry, so an ungated half-open let
-        // all of them hit the recovering target the instant cooldown elapsed —
-        // a thundering herd against a target that had just been declared
-        // unhealthy, repeated every cooldown for as long as it stayed down.
+        // all of them hit the recovering target the instant cooldown elapsed.
         let cooldown = Duration::from_secs(30);
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 1,
-            cooldown,
-        });
+        let registry = breaker(1, cooldown);
         let t0 = Instant::now();
-        registry.on_failure("org", t0);
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+        permit(&registry, t0).fail(t0);
 
         let half_open = t0 + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
-        // Every other worker arriving in the same window is shed, not admitted.
+        let probe = permit(&registry, half_open);
         for _ in 0..10 {
-            assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+            assert_eq!(check(&registry, half_open, false), Seen::Defer);
         }
+        probe.succeed();
+        assert_eq!(check(&registry, half_open, false), Seen::Attempt);
+    }
 
-        // The probe succeeding closes the breaker for everyone.
-        registry.on_success("org");
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
+    #[test]
+    fn clickhouse_breaker_shed_cannot_mark_a_breaker_another_worker_closed() {
+        // A worker whose window ran out after a probe closed the breaker must attempt,
+        // not shed, and must not mark the closed breaker, or the next outage would
+        // get no deferral window.
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        permit(&registry, t0).fail(t0);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, half_open);
+        probe.succeed();
+        // The losing worker's window ran out while the probe was in flight.
+        assert_eq!(check(&registry, half_open, true), Seen::Attempt);
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
+
+        // The next outage still gets its deferral window.
+        let later = half_open + Duration::from_secs(1);
+        permit(&registry, later).fail(later);
+        assert_eq!(check(&registry, later, false), Seen::Defer);
+    }
+
+    #[test]
+    fn clickhouse_breaker_dropped_probe_releases_the_slot_without_a_verdict() {
+        // Config-class drops (bad URL, insecure or blocked endpoint, redirect, 4xx)
+        // return without settling the permit. That must free the probe slot at
+        // once, and neither close the breaker nor restart its cooldown.
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        permit(&registry, t0).fail(t0);
+        assert_eq!(check(&registry, t0, true), Seen::Shed);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        drop(permit(&registry, half_open));
+        assert_eq!(
+            state(&registry),
+            BreakerState::Open {
+                opened_at: t0,
+                deferral_spent: true
+            }
+        );
+        // Not a cooldown later: the very next batch probes.
+        assert_eq!(check(&registry, half_open, false), Seen::Probe);
+    }
+
+    #[test]
+    fn clickhouse_breaker_late_failure_does_not_free_a_running_probe() {
+        let cooldown = Duration::from_secs(30);
+        let registry = breaker(1, cooldown);
+        let t0 = Instant::now();
+        // Admitted while closed, still in flight when another attempt opens the breaker.
+        let straggler = permit(&registry, t0);
+        permit(&registry, t0).fail(t0);
+
+        let half_open = t0 + cooldown + Duration::from_secs(1);
+        let probe = permit(&registry, half_open);
+        straggler.fail(half_open);
+        assert_eq!(check(&registry, half_open, false), Seen::Defer);
+
+        // Only the probe's own failure settles it.
+        probe.fail(half_open);
+        assert_eq!(
+            state(&registry),
+            BreakerState::Open {
+                opened_at: half_open,
+                deferral_spent: false
+            }
+        );
     }
 
     #[test]
     fn clickhouse_breaker_readmits_a_probe_that_never_reported() {
-        // A worker that dies between being admitted and recording an outcome
-        // must not wedge the breaker open forever: the claim expires after one
-        // cooldown and the next caller probes.
+        // A probe that hangs past one cooldown must not wedge the breaker open; the
+        // next caller probes, and the hung probe's late outcome no longer counts.
         let cooldown = Duration::from_secs(30);
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 1,
-            cooldown,
-        });
+        let registry = breaker(1, cooldown);
         let t0 = Instant::now();
-        registry.on_failure("org", t0);
+        permit(&registry, t0).fail(t0);
 
         let half_open = t0 + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Allow);
-        assert_eq!(registry.decide("org", half_open), BreakerDecision::Shed);
+        let hung = permit(&registry, half_open);
+        assert_eq!(check(&registry, half_open, false), Seen::Defer);
 
-        // No on_success/on_failure ever arrived for that probe.
         let abandoned = half_open + cooldown + Duration::from_secs(1);
-        assert_eq!(registry.decide("org", abandoned), BreakerDecision::Allow);
+        let fresh = permit(&registry, abandoned);
+        hung.fail(abandoned);
+        assert_eq!(check(&registry, abandoned, false), Seen::Defer);
+        fresh.succeed();
+        assert_eq!(state(&registry), BreakerState::Closed { failures: 0 });
     }
 
     #[test]
     fn clickhouse_breaker_disabled_when_threshold_zero() {
-        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
-            failure_threshold: 0,
-            cooldown: Duration::from_secs(30),
-        });
+        let registry = breaker(0, Duration::from_secs(30));
         let t0 = Instant::now();
         for _ in 0..10 {
-            registry.on_failure("org", t0);
+            permit(&registry, t0).fail(t0);
         }
-        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+        assert_eq!(check(&registry, t0, true), Seen::Attempt);
+        assert!(registry.states.is_empty());
     }
 
     #[tokio::test]
@@ -6941,7 +7900,8 @@ mod tests {
         let mapping = clickhouse_insert_mappings::mapping_for("logs").expect("logs mapping");
         let sql = build_clickhouse_insert_sql(mapping, "org_'one");
         assert!(sql.starts_with("INSERT INTO logs (OrgId, Timestamp"));
-        assert!(sql.contains("SELECT 'org_\\'one', timestamp, timestamp"));
+        // `input()` rejects reading one raw column twice, so the repeat is a cast.
+        assert!(sql.contains("SELECT 'org_\\'one', timestamp, CAST(timestamp AS DateTime)"));
         assert!(sql.contains("FROM input('timestamp DateTime64(9)"));
         assert!(sql.ends_with("FORMAT JSONEachRow"));
         assert!(!sql.contains("payment failed"));
@@ -7181,6 +8141,179 @@ mod tests {
 
     fn lane_dir(queue_dir: &Path) -> PathBuf {
         queue_dir.join("shard-000-tinybird")
+    }
+
+    /// A lane whose sync takes `delay`, records the file length each sync
+    /// started from (all of it is covered), and fails while `fail` is set.
+    struct SlowSync {
+        syncs: AtomicU64,
+        durable_len: AtomicU64,
+        fail: std::sync::atomic::AtomicBool,
+    }
+
+    fn slow_sync_lane(name: &str, delay: Duration) -> (WalLane, Arc<SlowSync>, PathBuf) {
+        let queue_dir = unique_test_dir(name);
+        let probe = Arc::new(SlowSync {
+            syncs: AtomicU64::new(0),
+            durable_len: AtomicU64::new(0),
+            fail: std::sync::atomic::AtomicBool::new(false),
+        });
+        let sync: WalSync = {
+            let probe = Arc::clone(&probe);
+            Arc::new(move |file: &File| {
+                let covered = file.metadata()?.len();
+                std::thread::sleep(delay);
+                probe.syncs.fetch_add(1, Ordering::SeqCst);
+                if probe.fail.load(Ordering::SeqCst) {
+                    return Err(std::io::Error::other("injected fsync failure"));
+                }
+                probe.durable_len.fetch_max(covered, Ordering::SeqCst);
+                Ok(())
+            })
+        };
+        let lane = WalLane::open(
+            0,
+            ExportDestination::Tinybird,
+            &queue_dir,
+            u64::MAX,
+            u64::MAX,
+            sync,
+        )
+        .expect("open lane");
+        (lane, probe, queue_dir)
+    }
+
+    fn encoded_test_frame(payload_bytes: usize) -> Vec<u8> {
+        encode_wal_frame(&wal_test_frame(payload_bytes)).expect("encode")
+    }
+
+    #[test]
+    fn concurrent_appends_share_syncs_and_return_only_once_covered() {
+        const WRITERS: usize = 32;
+        let (lane, probe, queue_dir) =
+            slow_sync_lane("wal-group-commit", Duration::from_millis(20));
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        std::thread::scope(|scope| {
+            (0..WRITERS).for_each(|_| {
+                scope.spawn(|| {
+                    let (sender, landed) = std::sync::mpsc::channel();
+                    let delivered = Arc::clone(&delivered);
+                    let deliver: Delivery = Box::new(move |_, start, end| {
+                        delivered.lock().expect("delivered").push(start);
+                        sender.send(end).ok();
+                    });
+                    lane.append_blocking(&encoded_test_frame(256), true, deliver)
+                        .expect("append");
+                    // Delivered before the append returned, and only after a
+                    // sync that started with this frame's bytes in the file.
+                    let end = landed.try_recv().expect("delivered before return");
+                    assert!(probe.durable_len.load(Ordering::SeqCst) >= end);
+                });
+            });
+        });
+
+        let syncs = probe.syncs.load(Ordering::SeqCst);
+        assert!(
+            syncs < WRITERS as u64,
+            "{WRITERS} concurrent appends took {syncs} syncs"
+        );
+        let delivered = delivered.lock().expect("delivered").clone();
+        let mut in_segment_order = delivered.clone();
+        in_segment_order.sort_unstable();
+        assert_eq!(
+            delivered, in_segment_order,
+            "frames reach the lane in file order"
+        );
+        assert_eq!(delivered.len(), WRITERS);
+        assert_eq!(lane.backlog_bytes(), file_len(&segment_path(&lane.dir, 0)));
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_frame_whose_caller_gave_up_is_not_delivered() {
+        let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone", Duration::ZERO);
+        let lane = Arc::new(lane);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+
+        let (gone, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
+        drop(gone);
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("the frame is still made durable");
+        assert_eq!(ran.load(Ordering::SeqCst), 0, "but never reaches export");
+
+        let (waiting, deliver) = while_caller_waits(counting(), Arc::clone(&lane));
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("append");
+        drop(waiting);
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            1,
+            "a waiting caller's frame is delivered"
+        );
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_frame_whose_caller_gave_up_is_not_backlog() {
+        let (lane, _probe, queue_dir) = slow_sync_lane("wal-caller-gone-backlog", Duration::ZERO);
+        let lane = Arc::new(lane);
+        let nothing = || -> Delivery { Box::new(|_, _, _| {}) };
+
+        let (gone, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
+        drop(gone);
+        lane.append_blocking(&encoded_test_frame(64), true, deliver)
+            .expect("append");
+        assert_eq!(
+            lane.backlog_bytes(),
+            0,
+            "nothing will export a skipped frame, so it must not hold the drain open"
+        );
+
+        let delivered = encoded_test_frame(64);
+        let (waiting, deliver) = while_caller_waits(nothing(), Arc::clone(&lane));
+        lane.append_blocking(&delivered, true, deliver)
+            .expect("append");
+        drop(waiting);
+        assert_eq!(
+            lane.backlog_bytes(),
+            delivered.len() as u64,
+            "a delivered frame is backlog until it exports"
+        );
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[test]
+    fn a_failed_sync_refuses_its_batch_and_the_lane_recovers() {
+        let (lane, probe, queue_dir) = slow_sync_lane("wal-group-commit-fail", Duration::ZERO);
+        probe.fail.store(true, Ordering::SeqCst);
+        let ran = Arc::new(AtomicU64::new(0));
+        let counting = || -> Delivery {
+            let ran = Arc::clone(&ran);
+            Box::new(move |_, _, _| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        };
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .err()
+            .expect("an unsynced frame is not acknowledged");
+        assert_eq!(
+            ran.load(Ordering::SeqCst),
+            0,
+            "a refused frame is never delivered"
+        );
+        assert_eq!(lane.backlog_bytes(), 0, "nor counted as backlog");
+
+        probe.fail.store(false, Ordering::SeqCst);
+        lane.append_blocking(&encoded_test_frame(64), true, counting())
+            .expect("the next sync succeeds");
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
+        drop(std::fs::remove_dir_all(queue_dir));
     }
 
     #[tokio::test]
@@ -7439,15 +8572,45 @@ mod tests {
 
         /// Objects carry their write time: claim expiry is a real branch in the
         /// protocol, and a fake that stamped everything old would make every
-        /// claim look abandoned.
-        type Objects = BTreeMap<String, (Vec<u8>, DateTime<Utc>)>;
+        /// claim look abandoned. And an ETag, fresh per write, for `If-Match`.
+        type Objects = BTreeMap<String, (Vec<u8>, DateTime<Utc>, String)>;
 
         #[derive(Clone, Default)]
         pub(super) struct FakeS3 {
             objects: Arc<StdMutex<Objects>>,
+            /// Every object request, as `"<METHOD> <key>"`, in arrival order.
+            requests: Arc<StdMutex<Vec<String>>>,
+            /// PUTs to keys under this prefix answer 500.
+            failing_puts: Arc<StdMutex<Option<String>>>,
+            /// PUTs to keys under this prefix never answer.
+            stalled_puts: Arc<StdMutex<Option<String>>>,
+            writes: Arc<AtomicU64>,
         }
 
         impl FakeS3 {
+            pub(super) fn requests(&self) -> Vec<String> {
+                self.requests.lock().unwrap().clone()
+            }
+
+            pub(super) fn fail_puts_under(&self, prefix: &str) {
+                *self.failing_puts.lock().unwrap() = Some(prefix.to_owned());
+            }
+
+            pub(super) fn stall_puts_under(&self, prefix: &str) {
+                *self.stalled_puts.lock().unwrap() = Some(prefix.to_owned());
+            }
+
+            fn next_etag(&self) -> String {
+                format!("etag-{}", self.writes.fetch_add(1, Ordering::Relaxed))
+            }
+
+            /// Backdate an object without rewriting it, so its ETag still matches.
+            pub(super) fn age(&self, key: &str, age: chrono::Duration) {
+                if let Some(object) = self.objects.lock().unwrap().get_mut(key) {
+                    object.1 = Utc::now() - age;
+                }
+            }
+
             pub(super) fn keys(&self) -> Vec<String> {
                 self.objects.lock().unwrap().keys().cloned().collect()
             }
@@ -7457,16 +8620,17 @@ mod tests {
                     .lock()
                     .unwrap()
                     .get(key)
-                    .map(|(body, _)| body.clone())
+                    .map(|(body, _, _)| body.clone())
             }
 
             /// Write an object as it would look after `age` — how a test stages
             /// a dead task's leftovers.
             pub(super) fn put_aged(&self, key: &str, body: Vec<u8>, age: chrono::Duration) {
+                let etag = self.next_etag();
                 self.objects
                     .lock()
                     .unwrap()
-                    .insert(key.to_owned(), (body, Utc::now() - age));
+                    .insert(key.to_owned(), (body, Utc::now() - age, etag));
             }
         }
 
@@ -7476,28 +8640,56 @@ mod tests {
             headers: HeaderMap,
             method: axum::http::Method,
             body: AxumBytes,
-        ) -> (StatusCode, Vec<u8>) {
+        ) -> (StatusCode, HeaderMap, Vec<u8>) {
+            state
+                .requests
+                .lock()
+                .unwrap()
+                .push(format!("{method} {key}"));
+            let none = HeaderMap::new();
+            if method == axum::http::Method::PUT {
+                let stalled = state.stalled_puts.lock().unwrap().clone();
+                if stalled.is_some_and(|prefix| key.starts_with(&prefix)) {
+                    std::future::pending::<()>().await;
+                }
+            }
             let mut objects = state.objects.lock().unwrap();
             match method {
                 axum::http::Method::PUT => {
+                    let failing = state.failing_puts.lock().unwrap().clone();
+                    if failing.is_some_and(|prefix| key.starts_with(&prefix)) {
+                        return (StatusCode::INTERNAL_SERVER_ERROR, none, Vec::new());
+                    }
                     // Real S3 refuses a PUT without Content-Length (411
                     // MissingContentLength); accepting one hid the heartbeat bug.
                     if !headers.contains_key("content-length") {
-                        return (StatusCode::LENGTH_REQUIRED, Vec::new());
+                        return (StatusCode::LENGTH_REQUIRED, none, Vec::new());
                     }
                     if headers.contains_key("if-none-match") && objects.contains_key(&key) {
-                        return (StatusCode::PRECONDITION_FAILED, Vec::new());
+                        return (StatusCode::PRECONDITION_FAILED, none, Vec::new());
                     }
-                    objects.insert(key, (body.to_vec(), Utc::now()));
-                    (StatusCode::OK, Vec::new())
+                    // As S3: 404 when the key is gone, 412 when it was rewritten.
+                    if let Some(expected) = headers.get("if-match") {
+                        let Some((_, _, etag)) = objects.get(&key) else {
+                            return (StatusCode::NOT_FOUND, none, Vec::new());
+                        };
+                        if expected.to_str().ok() != Some(format!("\"{etag}\"").as_str()) {
+                            return (StatusCode::PRECONDITION_FAILED, none, Vec::new());
+                        }
+                    }
+                    let etag = state.next_etag();
+                    let mut response = HeaderMap::new();
+                    response.insert("etag", format!("\"{etag}\"").parse().unwrap());
+                    objects.insert(key, (body.to_vec(), Utc::now(), etag));
+                    (StatusCode::OK, response, Vec::new())
                 }
                 axum::http::Method::DELETE => {
                     objects.remove(&key);
-                    (StatusCode::NO_CONTENT, Vec::new())
+                    (StatusCode::NO_CONTENT, none, Vec::new())
                 }
                 _ => match objects.get(&key) {
-                    Some((body, _)) => (StatusCode::OK, body.clone()),
-                    None => (StatusCode::NOT_FOUND, Vec::new()),
+                    Some((body, _, _)) => (StatusCode::OK, none, body.clone()),
+                    None => (StatusCode::NOT_FOUND, none, Vec::new()),
                 },
             }
         }
@@ -7511,12 +8703,12 @@ mod tests {
             let contents = objects
                 .iter()
                 .filter(|(key, _)| key.starts_with(&prefix))
-                .fold(String::new(), |mut out, (key, (body, written))| {
+                .fold(String::new(), |mut out, (key, (body, written, etag))| {
                     use std::fmt::Write as _;
                     let _unused: Result<(), std::fmt::Error> = write!(
                         out,
                         "<Contents><Key>{key}</Key><LastModified>{}</LastModified>\
-                         <Size>{}</Size></Contents>",
+                         <ETag>&quot;{etag}&quot;</ETag><Size>{}</Size></Contents>",
                         written.to_rfc3339(),
                         body.len()
                     );
@@ -7633,6 +8825,277 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_dropped_sealed_event_is_shipped_with_the_next_one() {
+        // `notify` drops events on a full channel rather than block an append. A
+        // lost `Sealed` must not leave its segment local-only for good.
+        let queue_dir = unique_test_dir("wal-ship-gap");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 240);
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let owner = store.owner().to_owned();
+        let (events, receiver) = mpsc::channel(8);
+        tokio::spawn(run_segment_shipper(wal.lanes.clone(), store, receiver));
+
+        let frame = wal_test_frame(200);
+        let (first, _, _) = wal.append(0, &frame).await.expect("append a");
+        let (second, _, _) = wal.append(0, &frame).await.expect("append b");
+        wal.append(0, &frame).await.expect("append c");
+        assert_eq!(second, first + 1, "each append sealed the one before");
+
+        // Only the later segment's event arrives.
+        events
+            .send(SegmentEvent::Sealed {
+                lane: 0,
+                seq: second,
+            })
+            .await
+            .unwrap();
+        for seq in [first, second] {
+            let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+            wait_for("every sealed segment to ship", || {
+                bucket.get(&key).is_some()
+            })
+            .await;
+        }
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn retire_stops_the_heartbeat_for_good() {
+        // A heartbeat landing after retire recreated `owners/<id>`, so the owner
+        // looked alive and its shipped tail waited out the staleness window.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let store = test_wal_store(&endpoint);
+        let owner_key = format!("wal/v1/owners/{}", store.owner());
+        let heartbeat = tokio::spawn(run_owner_heartbeat(
+            Arc::clone(&store),
+            Duration::from_millis(5),
+        ));
+        wait_for("the first heartbeat", || bucket.get(&owner_key).is_some()).await;
+
+        store.retire().await.expect("retire");
+        tokio::time::timeout(Duration::from_secs(3), heartbeat)
+            .await
+            .expect("the heartbeat task ends once the owner retires")
+            .unwrap();
+        assert_eq!(bucket.get(&owner_key), None);
+        assert!(!store.heartbeat().await.expect("heartbeat"));
+        assert_eq!(bucket.get(&owner_key), None);
+    }
+
+    #[tokio::test]
+    async fn a_claim_under_recovery_is_renewed_so_it_is_not_taken_over() {
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let recovering = test_wal_store(&endpoint);
+        let booting = test_wal_store(&endpoint);
+        let now = Utc::now();
+        // Two claims, each held 25 minutes already; only one is still recovering.
+        let mut claims = Vec::new();
+        for owner in ["renewed", "idle"] {
+            claims.push(
+                recovering
+                    .claim(owner, now)
+                    .await
+                    .unwrap()
+                    .expect("claimed"),
+            );
+            bucket.age(
+                &format!("wal/v1/claims/{owner}"),
+                chrono::Duration::minutes(25),
+            );
+        }
+        recovering
+            .while_claimed_every(
+                &claims[0],
+                Duration::from_millis(10),
+                sleep(Duration::from_millis(100)),
+            )
+            .await;
+        assert!(!claims[0].is_lost(), "renewing our own claim keeps it");
+
+        // Ten minutes on, the idle claim is past its lease; the renewed one is not.
+        let later = Utc::now() + chrono::Duration::minutes(10);
+        assert!(booting.claim("renewed", later).await.unwrap().is_none());
+        assert!(booting.claim("idle", later).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_stale_recovery_cannot_renew_or_clean_up_after_a_takeover() {
+        // A recovery outlives its lease and another task takes the owner over.
+        // The stale one must not overwrite the new claim on renewal, must stop,
+        // and must not delete the owner's markers out from under the new holder.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let dead = "task-that-died";
+        let segment = format!("wal/v1/segments/{dead}/shard-000-tinybird/000000000001.seg");
+        let owner_key = format!("wal/v1/owners/{dead}");
+        let claim_key = format!("wal/v1/claims/{dead}");
+        bucket.put_aged(&owner_key, Vec::new(), chrono::Duration::hours(1));
+        bucket.put_aged(&segment, b"frames".to_vec(), chrono::Duration::hours(1));
+
+        let stale = test_wal_store(&endpoint);
+        let successor = test_wal_store(&endpoint);
+        let stale_claim = stale
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age(&claim_key, chrono::Duration::minutes(31));
+        let successor_claim = successor
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("an expired claim is taken over");
+        let successor_body = bucket.get(&claim_key).unwrap();
+
+        // The stale recovery's work runs until it is told the claim is gone.
+        let stopped = stale
+            .while_claimed_every(&stale_claim, Duration::from_millis(10), async {
+                tokio::time::timeout(Duration::from_secs(3), async {
+                    while !stale_claim.is_lost() {
+                        sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .is_ok()
+            })
+            .await;
+        assert!(stopped, "the renewal reports the takeover to the recovery");
+        assert_eq!(
+            bucket.get(&claim_key).as_deref(),
+            Some(successor_body.as_slice()),
+            "the stale renewal did not overwrite the successor's claim"
+        );
+
+        assert_eq!(
+            stale.release_owner(&stale_claim).await.unwrap(),
+            ClaimRelease::Lost
+        );
+        assert!(
+            bucket.get(&owner_key).is_some(),
+            "the owner stays discoverable"
+        );
+        assert!(bucket.get(&segment).is_some());
+
+        // The holder still holds it: its own segment keeps the markers, and once
+        // that is recovered it releases the owner.
+        assert_eq!(
+            successor.release_owner(&successor_claim).await.unwrap(),
+            ClaimRelease::SegmentsRemain
+        );
+        assert!(bucket.get(&owner_key).is_some());
+        successor.release_key(&segment).await.unwrap();
+        assert_eq!(
+            successor.release_owner(&successor_claim).await.unwrap(),
+            ClaimRelease::Released
+        );
+        assert_eq!(bucket.get(&owner_key), None);
+        assert_eq!(bucket.get(&claim_key), None);
+    }
+
+    #[tokio::test]
+    async fn a_release_after_an_unnoticed_takeover_deletes_nothing() {
+        // The takeover happens after the last renewal tick: the release-time
+        // renewal is the fence that catches it.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let dead = "task-that-died";
+        let owner_key = format!("wal/v1/owners/{dead}");
+        let claim_key = format!("wal/v1/claims/{dead}");
+        bucket.put_aged(&owner_key, Vec::new(), chrono::Duration::hours(1));
+        let stale = test_wal_store(&endpoint);
+        let successor = test_wal_store(&endpoint);
+        let stale_claim = stale
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age(&claim_key, chrono::Duration::minutes(31));
+        successor
+            .claim(dead, Utc::now())
+            .await
+            .unwrap()
+            .expect("an expired claim is taken over");
+        let successor_body = bucket.get(&claim_key).unwrap();
+        assert!(
+            !stale_claim.is_lost(),
+            "nothing has told the stale holder yet"
+        );
+
+        assert_eq!(
+            stale.release_owner(&stale_claim).await.unwrap(),
+            ClaimRelease::Lost
+        );
+        assert!(stale_claim.is_lost());
+        assert!(bucket.get(&owner_key).is_some());
+        assert_eq!(bucket.get(&claim_key), Some(successor_body));
+    }
+
+    #[tokio::test]
+    async fn two_takeovers_of_one_expired_claim_have_one_winner() {
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let first = test_wal_store(&endpoint);
+        let second = test_wal_store(&endpoint);
+        let abandoned = test_wal_store(&endpoint);
+        abandoned
+            .claim("owner", Utc::now())
+            .await
+            .unwrap()
+            .expect("claimed");
+        bucket.age("wal/v1/claims/owner", chrono::Duration::hours(1));
+
+        let (a, b) = tokio::join!(
+            first.claim("owner", Utc::now()),
+            second.claim("owner", Utc::now())
+        );
+        let winners = [a.unwrap(), b.unwrap()]
+            .iter()
+            .filter(|claim| claim.is_some())
+            .count();
+        assert_eq!(winners, 1);
+    }
+
+    #[tokio::test]
+    async fn retire_writes_its_marker_within_budget_while_a_heartbeat_is_stalled() {
+        // A heartbeat stuck in flight near the shutdown deadline must not keep the
+        // retired marker from landing: that marker is what lets a successor claim
+        // the shipped tail at once.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let store = test_wal_store(&endpoint);
+        let owner_key = format!("wal/v1/owners/{}", store.owner());
+        let retired_key = format!("wal/v1/retired/{}", store.owner());
+        bucket.stall_puts_under(&owner_key);
+        let heartbeat = tokio::spawn(run_owner_heartbeat(
+            Arc::clone(&store),
+            Duration::from_millis(5),
+        ));
+        wait_for("the heartbeat to be in flight", || {
+            bucket.requests().contains(&format!("PUT {owner_key}"))
+        })
+        .await;
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            store.retire_within(Duration::from_millis(100)),
+        )
+        .await
+        .expect("retire finishes inside the shutdown budget")
+        .expect("retire");
+        assert!(bucket.get(&retired_key).is_some());
+        assert!(
+            !bucket.requests().contains(&format!("DELETE {owner_key}")),
+            "the owner key is left alone while a heartbeat could still land on it"
+        );
+        heartbeat.abort();
+        drop(heartbeat.await);
+        assert!(
+            !store.heartbeat().await.expect("heartbeat"),
+            "no heartbeat starts after retire"
+        );
+    }
+
+    #[tokio::test]
     async fn a_dead_task_s_segments_are_claimed_and_re_committed() {
         // What happens when a task dies without draining: its segments are still in
         // the bucket, and the next task to boot claims them, re-commits the frames
@@ -7683,6 +9146,168 @@ mod tests {
         drop(std::fs::remove_dir_all(queue_dir));
     }
 
+    /// Stage a dead owner with one two-frame segment per sequence on lane
+    /// `shard-000-tinybird`, and return the segment keys.
+    fn stage_dead_owner(bucket: &fake_s3::FakeS3, owner: &str, seqs: &[u64]) -> Vec<String> {
+        let frame = wal_test_frame(64);
+        let mut segment = encode_wal_frame(&frame).unwrap();
+        segment.extend(encode_wal_frame(&frame).unwrap());
+        let long_dead = chrono::Duration::hours(1);
+        bucket.put_aged(&format!("wal/v1/owners/{owner}"), Vec::new(), long_dead);
+        seqs.iter()
+            .map(|seq| {
+                let key = format!("wal/v1/segments/{owner}/shard-000-tinybird/{seq:012}.seg");
+                bucket.put_aged(&key, segment.clone(), long_dead);
+                key
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn recovery_releases_each_segment_before_fetching_the_next() {
+        // Fetching a dead owner's whole backlog before replaying any of it held
+        // all of it in memory at once. Each segment must be re-committed,
+        // re-shipped and deleted before the next one is read.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3, 4, 5]);
+
+        let queue_dir = unique_test_dir("wal-streamed-recovery");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let reship_prefix = format!("PUT wal/v1/segments/{}/", store.owner());
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(wal.replay(0).await.expect("replay").len(), 6);
+        let requests = bucket.requests();
+        let at = |request: &str| {
+            requests
+                .iter()
+                .position(|seen| seen == request)
+                .unwrap_or_else(|| panic!("no {request} in {requests:?}"))
+        };
+        for (index, key) in keys.iter().enumerate() {
+            let fetched = at(&format!("GET {key}"));
+            let deleted = at(&format!("DELETE {key}"));
+            let reshipped = requests[fetched..deleted]
+                .iter()
+                .filter(|request| request.starts_with(&reship_prefix))
+                .count();
+            assert_eq!(
+                reshipped, 1,
+                "{key} is re-shipped before it is deleted: {requests:?}"
+            );
+            if let Some(next) = keys.get(index + 1) {
+                assert!(
+                    deleted < at(&format!("GET {next}")),
+                    "{key} is released before {next} is fetched: {requests:?}"
+                );
+            }
+        }
+        assert!(
+            bucket
+                .keys()
+                .iter()
+                .all(|key| !key.contains("task-that-died")),
+            "{:?}",
+            bucket.keys()
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_source_that_spans_two_local_segments_re_ships_both() {
+        // A segment cap under one frame seals after every append, so the source's
+        // two frames land in two local segments and both must ship first.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3]);
+
+        let queue_dir = unique_test_dir("wal-recovery-two-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, 16);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        let reship_prefix = format!("PUT wal/v1/segments/{}/", store.owner());
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(wal.replay(0).await.expect("replay").len(), 2);
+        let requests = bucket.requests();
+        let deleted = requests
+            .iter()
+            .position(|request| *request == format!("DELETE {}", keys[0]))
+            .unwrap_or_else(|| panic!("the source is released: {requests:?}"));
+        let reshipped = requests[..deleted]
+            .iter()
+            .filter(|request| request.starts_with(&reship_prefix))
+            .count();
+        assert_eq!(reshipped, 2, "{requests:?}");
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn segments_left_on_disk_by_the_last_boot_are_shipped_at_recovery() {
+        // A boot opens a fresh segment above the ones it found, and the shipper
+        // only hears about segments sealed after it attaches.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let queue_dir = unique_test_dir("wal-leftover-segments");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let leftover = {
+            let wal = ShardedWal::open(&cfg).expect("open WAL");
+            wal.append(0, &wal_test_frame(64)).await.expect("append").0
+        };
+
+        let wal = ShardedWal::open(&cfg).expect("reopen WAL");
+        let store = test_wal_store(&endpoint);
+        wal.recover_orphans(&cfg, &store).await;
+
+        let shipped = format!(
+            "wal/v1/segments/{}/shard-000-tinybird/{leftover:012}.seg",
+            store.owner()
+        );
+        assert!(bucket.get(&shipped).is_some(), "{:?}", bucket.keys());
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_segment_that_fails_to_re_ship_keeps_its_source() {
+        // Deleting the source after a failed re-ship left the frames only on this
+        // task's disk, which is exactly what the durability tier rules out.
+        let (endpoint, bucket) = fake_s3::spawn("maple-wal-test").await;
+        let keys = stage_dead_owner(&bucket, "task-that-died", &[3, 4]);
+
+        let queue_dir = unique_test_dir("wal-reship-fails");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let cfg = segmented_cfg(queue_dir.clone(), 64 * 1024, WAL_SEGMENT_MAX_BYTES);
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        let store = test_wal_store(&endpoint);
+        bucket.fail_puts_under(&format!("wal/v1/segments/{}/", store.owner()));
+        wal.recover_orphans(&cfg, &store).await;
+
+        assert_eq!(
+            wal.replay(0).await.expect("replay").len(),
+            2,
+            "the frames are still committed locally"
+        );
+        let remaining = bucket.keys();
+        assert!(remaining.contains(&keys[0]), "{remaining:?}");
+        assert!(remaining.contains(&keys[1]), "{remaining:?}");
+        assert!(
+            !bucket.requests().contains(&format!("GET {}", keys[1])),
+            "recovery of the owner stops at the first failed re-ship"
+        );
+        assert!(
+            remaining.contains(&"wal/v1/owners/task-that-died".to_owned()),
+            "the owner stays discoverable for a later retry: {remaining:?}"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     #[tokio::test]
     async fn only_one_task_can_claim_an_owner() {
         // Two tasks booting into the same bucket at once must not both replay the
@@ -7699,11 +9324,11 @@ mod tests {
         let now = Utc::now();
 
         assert!(
-            first.claim("task-that-died", now).await.unwrap(),
+            first.claim("task-that-died", now).await.unwrap().is_some(),
             "the first claimant wins"
         );
         assert!(
-            !second.claim("task-that-died", now).await.unwrap(),
+            second.claim("task-that-died", now).await.unwrap().is_none(),
             "the second is told someone else has it"
         );
     }

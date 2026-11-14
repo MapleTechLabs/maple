@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { Option, String as Str } from "effect"
 /**
  * Sentinels fencing the machine-written part of a chat message.
  *
@@ -8,9 +8,9 @@ import { String as Str } from "effect"
  * while the transcript can leave it out of the bubble, which matters now that
  * user turns are durable and replay to everyone who opens the thread.
  *
- * Shared here because both ends have to agree: `apps/api` wraps the prompt that
- * seeds an investigation, `apps/web` wraps per-conversation context and strips
- * both at render time.
+ * Shared here because both ends have to agree: `@maple/backend` wraps the prompt
+ * that seeds an investigation or a review, `apps/chat-bot` wraps its relay
+ * context, and `apps/web` strips it at render time.
  */
 export const CHAT_CONTEXT_OPEN = "<!--maple:context-->"
 export const CHAT_CONTEXT_CLOSE = "<!--/maple:context-->"
@@ -26,7 +26,8 @@ export const wrapChatContext = (block: string, userText: string): string =>
  */
 export const stripChatContext = (text: string): string => {
 	if (!Str.startsWith(CHAT_CONTEXT_OPEN)(text)) return text
-	const end = text.indexOf(CHAT_CONTEXT_CLOSE)
-	if (end === -1) return text
-	return Str.replace(/^\s+/, "")(Str.slice(end + CHAT_CONTEXT_CLOSE.length)(text))
+	return Option.match(Str.indexOf(CHAT_CONTEXT_CLOSE)(text), {
+		onNone: () => text,
+		onSome: (end) => Str.replace(/^\s+/, "")(Str.slice(end + CHAT_CONTEXT_CLOSE.length)(text)),
+	})
 }

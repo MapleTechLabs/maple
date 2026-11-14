@@ -1,30 +1,17 @@
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { DashboardTemplateId } from "@maple/domain/http"
 import { LIST_LIMIT_MAX } from "@maple/domain/http/v2"
 import { listMetrics } from "@maple/web-data/warehouse/metrics"
-import {
-	Clock,
-	Duration,
-	Effect,
-	Queue,
-	Schema,
-	Stream,
-	Array as Arr,
-	Record as Rec,
-	String as Str,
-} from "effect"
+import { Duration, Effect, Queue, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { fetchWidgetData, toWidgetFailure } from "../kit/widget-data"
 import { awaitTxid } from "../kit/store"
 import { Message } from "./message"
 
-export const ReadClock = Command.define("ReadTemplatesClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadTemplatesClock", Message.CompletedReadClock)
 
-/** `retainedQueryV2("dashboards", "listTemplates", { query: { limit: LIST_LIMIT_MAX } })`. */
 export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchTemplates],
@@ -33,33 +20,26 @@ export const FetchTemplates = Command.define("FetchDashboardTemplates", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.dashboards.listTemplates({ query: { limit: LIST_LIMIT_MAX } })
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTemplates({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchTemplates({ key, result }))),
 })
 
-/** Readiness reads the org's metric names from the last 24 h (`METRIC_LIMIT` 1000). */
+/** Readiness reads the org's metric names from the last 24 h (up to 1000). */
 export const FetchMetrics = Command.define("FetchTemplateReadinessMetrics", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedFetchMetrics],
 	execute: ({ key }) =>
 		listMetrics({ data: { limit: 1000 } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.data, (metric) => ({
-						metricName: metric.metricName,
-						lastSeen: metric.lastSeen,
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMetrics({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.data, (metric) => ({
+					metricName: metric.metricName,
+					lastSeen: metric.lastSeen,
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchMetrics({ key, result })),
 		),
 })
 
-/** `SELECTION_DEBOUNCE_MS`: a template must stay selected this long before its preview queries. */
+/** A template must stay selected this long before its preview queries. */
 export const WaitPreviewDelay = Command.define("WaitTemplatePreviewDelay", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedPreviewDelay],
@@ -67,12 +47,20 @@ export const WaitPreviewDelay = Command.define("WaitTemplatePreviewDelay", {
 		Effect.as(Effect.sleep(Duration.millis(250)), Message.ElapsedPreviewDelay({ generation })),
 })
 
-/** `ToolbarSearch`'s 300 ms debounce before the query applies. */
+/** A parameter edit settles for 300 ms (the search box's debounce) before the preview asks again. */
+export const WaitParameterDebounce = Command.define("WaitTemplateParameterDebounce", {
+	args: { generation: Schema.Number },
+	messages: [Message.ElapsedParameterDebounce],
+	execute: ({ generation }) =>
+		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedParameterDebounce({ generation })),
+})
+
+/** The search box's 300 ms debounce before the query applies. */
 export const WaitSearchDebounce = Command.define("WaitTemplatesSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 const decodeTemplateId = Schema.decodeUnknownEffect(DashboardTemplateId)
@@ -82,7 +70,7 @@ const parametersPayload = (parameters: Readonly<Record<string, string>>) => {
 	return entries.length > 0 ? { parameters: Rec.fromEntries(entries) } : {}
 }
 
-/** `previewTemplate`: the template's own build for these parameters, nothing persisted. */
+/** The template's own build for these parameters, nothing persisted. */
 export const FetchPreview = Command.define("FetchDashboardTemplatePreview", {
 	args: {
 		key: Schema.String,
@@ -98,11 +86,7 @@ export const FetchPreview = Command.define("FetchDashboardTemplatePreview", {
 				params: { template_id },
 				payload: parametersPayload(parameters),
 			})
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPreview({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPreview({ key, result }))),
 })
 
 export const FetchWidget = Command.define("FetchTemplatePreviewWidget", {
@@ -120,7 +104,7 @@ export const FetchWidget = Command.define("FetchTemplatePreviewWidget", {
 		),
 })
 
-/** `instantiateTemplate`: the dashboard is created now; its txid is reconciled in the background. */
+/** The dashboard is created now; its txid is reconciled in the background. */
 export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", {
 	args: { templateId: Schema.String, parameters: Schema.Record(Schema.String, Schema.String) },
 	messages: [Message.CompletedCreate],
@@ -133,14 +117,10 @@ export const CreateFromTemplate = Command.define("CreateDashboardFromTemplate", 
 				payload: Rec.keys(parameters).length > 0 ? { parameters } : {},
 			})
 			return { id: created.id, name: created.name, txid: created.txid ?? null }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedCreate({ result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedCreate({ result }))),
 })
 
-/** `reconcileTxid`: waits for the new row on the shape stream; nothing waits on it. */
+/** Waits for the new row on the shape stream; nothing waits on it. */
 export const AwaitCreated = Command.define("AwaitCreatedDashboard", {
 	args: { orgId: Schema.String, id: Schema.String, txid: Schema.NullOr(Schema.String) },
 	messages: [Message.CompletedAwaitCreated],
@@ -148,7 +128,7 @@ export const AwaitCreated = Command.define("AwaitCreatedDashboard", {
 		Effect.as(awaitTxid(orgId, txid ?? undefined), Message.CompletedAwaitCreated({ id })),
 })
 
-/** `useContainerSize` on the preview grid: its width picks the column count. */
+/** The preview grid's width picks the column count. */
 export const MeasurePreview = Mount.defineStream("MeasureTemplatePreview", {
 	messages: [Message.MeasuredPreview],
 	execute: ({ element }) =>

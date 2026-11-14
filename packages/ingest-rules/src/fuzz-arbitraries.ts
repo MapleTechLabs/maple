@@ -27,10 +27,10 @@ const int = (minimum: number, maximum: number) =>
 	Arbitrary.schema(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum })))
 
 const oneOf = <A>(...choices: ReadonlyArray<Arbitrary.Arbitrary<A>>): Arbitrary.Arbitrary<A> =>
-	Arbitrary.flatMap(int(0, choices.length - 1), (index) => choices[index])
+	Arbitrary.flatMap(int(0, choices.length - 1), (index) => Arr.getUnsafe(choices, index))
 
 const element = <A>(items: ReadonlyArray<A>): Arbitrary.Arbitrary<A> =>
-	Arbitrary.map(int(0, items.length - 1), (index) => items[index])
+	Arbitrary.map(int(0, items.length - 1), (index) => Arr.getUnsafe(items, index))
 
 /** A subset of `items`, in their order, with at least `min` of them. */
 const subset = <A>(items: ReadonlyArray<A>, min = 0): Arbitrary.Arbitrary<Array<A>> =>
@@ -277,10 +277,12 @@ export const recordOf = (signal: IngestRuleSignal): Arbitrary.Arbitrary<{ readon
 					["statusMessage", message],
 					[
 						"events",
-						events?.map(([eventName, eventAttributes]) => ({
-							name: eventName,
-							attributes: eventAttributes,
-						})),
+						events === undefined
+							? undefined
+							: Arr.map(events, ([eventName, eventAttributes]) => ({
+									name: eventName,
+									attributes: eventAttributes,
+								})),
 					],
 				]),
 		)
@@ -466,14 +468,17 @@ export const ruleFor = (signal: IngestRuleSignal): Arbitrary.Arbitrary<IngestRul
 										? ["email"]
 										: detectors,
 								patterns,
-								scopes: Arr.filter(
-									scopes,
-									(scope) =>
-										(scope !== "body" || signals.includes("logs")) &&
-										(scope !== "events" || signals.includes("traces")),
-								)
-									.concat(["attributes"])
-									.filter((scope, index, all) => all.indexOf(scope) === index),
+								scopes: Arr.dedupe(
+									Arr.append<IngestRuleScope, IngestRuleScope>(
+										Arr.filter(
+											scopes,
+											(scope) =>
+												(scope !== "body" || signals.includes("logs")) &&
+												(scope !== "events" || signals.includes("traces")),
+										),
+										"attributes",
+									),
+								),
 								method,
 							},
 						}),

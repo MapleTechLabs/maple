@@ -21,7 +21,7 @@ const CHAT_IDENTITY_CALLBACK_PATH = "/oauth/chat/:connector/identity/callback"
 
 const decodeConnectorParam = Schema.decodeUnknownOption(ChatConnectorId)
 
-/** The dashboard's catalog id for a connector's card (`integration-catalog.tsx`). */
+/** The dashboard's catalog id for a connector's card (`chatIntegrationId` in apps/web). */
 const cardId = (connector: string): string => `chat-${connector}`
 
 export const ChatCallbackRouter = HttpRouter.use((router) =>

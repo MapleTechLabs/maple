@@ -1,13 +1,13 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
 import { getReleaseDetail, getReleases } from "@maple/web-data/warehouse/releases"
-import { Clock, Duration, Effect, Predicate, type Result, Schema } from "effect"
+import { Effect, Predicate, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
-import { resolveWindow } from "../../../data/time-range"
 import { readCommitDetail } from "../../kit/commit-card"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
-import { RequestMode } from "../list/message"
 import { ReleasesData } from "../list/model"
 import { ReleaseDetail } from "./model"
 import { Message } from "./message"
@@ -15,28 +15,13 @@ import { Message } from "./message"
 const finish = <A, E, R, M>(
 	effect: Effect.Effect<A, E, R>,
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
-) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+) => effect.pipe(settleTo(toMessage))
 
-export const ResolveReleaseWindow = Command.define("ResolveReleaseWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveReleaseWindow = resolveWindowCommand(
+	"ResolveReleaseWindow",
+	Message.CompletedResolveWindow,
+)
 
-/** `commitQueryAtom(sha)`. */
 export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchCommit],
@@ -44,10 +29,11 @@ export const FetchReleaseCommit = Command.define("FetchReleaseCommit", {
 		finish(readCommitDetail(key, sha), (result) => Message.CompletedFetchCommit({ key, result })),
 })
 
-/** `getReleasesResultAtom({ startTime, endTime, environments })` with the pin: the list's unfiltered read. */
+/** The window's releases with the pin: the list's unfiltered read. */
 export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		startTime: Schema.String,
 		endTime: Schema.String,
 		environments: Schema.optional(Schema.Array(Schema.String)),
@@ -71,7 +57,7 @@ export const FetchDeployReleases = Command.define("FetchDeployReleases", {
 		),
 })
 
-/** `ReleaseChangesetLoaded`: one `base..head` range, up to 100 commits listed. */
+/** One `base..head` range, up to 100 commits listed. */
 export const FetchChangeset = Command.define("FetchReleaseChangeset", {
 	args: { key: Schema.String, ranges: Schema.String },
 	messages: [Message.CompletedFetchChangeset],
@@ -86,7 +72,7 @@ export const FetchChangeset = Command.define("FetchReleaseChangeset", {
 		),
 })
 
-/** `DeployIssues`: issues introduced since five minutes before the deploy. */
+/** Issues introduced since five minutes before the deploy. */
 export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 	args: { key: Schema.String, introducedAfter: Schema.String },
 	messages: [Message.CompletedFetchIssues],
@@ -103,10 +89,11 @@ export const FetchDeployIssues = Command.define("FetchDeployIssues", {
 		),
 })
 
-/** `getReleaseDetailResultAtom`: this version on one service, and the version it replaced. */
+/** This version on one service, and the version it replaced. */
 export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 	args: {
-		key: Schema.String, refresh: Schema.Boolean,
+		key: Schema.String,
+		refresh: Schema.Boolean,
 		serviceName: Schema.String,
 		commitSha: Schema.String,
 		baselineCommitSha: Schema.UndefinedOr(Schema.String),
@@ -130,7 +117,7 @@ export const FetchReleaseDetail = Command.define("FetchReleaseDetail", {
 		),
 })
 
-/** `ReleaseIssuesLoaded`: the v2 issues of the fingerprints this version carried, on its service. */
+/** The v2 issues of the fingerprints this version carried, on its service. */
 export const FetchServiceIssues = Command.define("FetchReleaseServiceIssues", {
 	args: {
 		key: Schema.String,
@@ -152,7 +139,7 @@ export const FetchServiceIssues = Command.define("FetchReleaseServiceIssues", {
 		),
 })
 
-/** `commitQueryAtom(sha)` for a commit marker's label. */
+/** The commit behind a marker's label. */
 export const FetchMarkerCommit = Command.define("FetchReleaseMarkerCommit", {
 	args: { key: Schema.String, sha: Schema.String },
 	messages: [Message.CompletedFetchMarkerCommit],
@@ -176,9 +163,4 @@ export const FetchMarkerCommit = Command.define("FetchReleaseMarkerCommit", {
 		),
 })
 
-export const CompleteReleaseReloadSpin = Command.define("CompleteReleaseReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReleaseReloadSpin = reloadSpin("CompleteReleaseReloadSpin", Message.CompletedReloadSpin)

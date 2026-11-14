@@ -28,7 +28,7 @@ import {
 import type { ReplaySessionHandle } from "@maple/browser-session/replay"
 import { trace } from "@opentelemetry/api"
 import { type MapleBrowserConfig, type ResolvedConfig, resolveConfig } from "./config"
-import { configureErrorFilters } from "./error-filters"
+import { configureErrorFilters, isErrorNoise } from "./error-filters"
 import { closeExceptionCapture, onErrorRecorded, openExceptionCapture, setupErrorCapture } from "./errors"
 import { setLogIdentity } from "./logs"
 import { resetNavigation } from "./navigation"
@@ -91,11 +91,15 @@ async function attempt(step: () => Promise<void> | undefined): Promise<void> {
 	} catch {}
 }
 
+const noOpHandle = (): MapleBrowserHandle => ({ sessionId: "", shutdown: () => Promise.resolve() })
+
+/** What a plain-JS `init()` with no argument runs on: every default, and the missing-name warning. */
+const NO_CONFIG: MapleBrowserConfig = { serviceName: "" }
+
 /** Same settings, by value: a re-render passing a fresh but equal object is not a reconfiguration. */
 function sameConfig(a: MapleBrowserConfig, b: MapleBrowserConfig): boolean {
 	if (a === b) return true
 	try {
-		// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 		return JSON.stringify(a) === JSON.stringify(b)
 	} catch {
 		return false
@@ -108,7 +112,8 @@ function sameConfig(a: MapleBrowserConfig, b: MapleBrowserConfig): boolean {
  * it without flushing, and a later grant starts cleanly again. While a handle
  * is live, `init()` returns it and ignores the new config.
  */
-export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
+export function init(config: MapleBrowserConfig): MapleBrowserHandle {
+	const rawConfig = config ?? NO_CONFIG
 	if (active) {
 		if (activeRawConfig && !warnedReinit && !sameConfig(activeRawConfig, rawConfig)) {
 			warnedReinit = true
@@ -118,10 +123,20 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		}
 		return active
 	}
-	if (typeof window === "undefined") {
-		return { sessionId: "", shutdown: () => Promise.resolve() }
+	if (typeof window === "undefined") return noOpHandle()
+	try {
+		return start(rawConfig)
+	} catch (cause) {
+		// Telemetry must not take the app's entrypoint down with it. No handle is
+		// live here: a start that got as far as one has already shut it down.
+		activeConfig = undefined
+		activeRawConfig = undefined
+		console.warn("[maple] init() failed; telemetry is off for this page.", cause)
+		return noOpHandle()
 	}
+}
 
+function start(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	const config = resolveConfig(rawConfig)
 	// Called after `init` was written, so it is the newer statement of who is here.
 	if (pendingIdentity) config.identity = normalizeIdentity(pendingIdentity.input)
@@ -189,6 +204,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 				maskAllInputs: config.maskAllInputs,
 				maskAllText: config.maskAllText,
 				getIdentity: () => config.identity,
+				isErrorNoise,
 			},
 			session.id,
 		)
@@ -244,6 +260,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 					maskAllInputs: config.maskAllInputs,
 					maskAllText: config.maskAllText,
 					mode: replayMode,
+					isErrorNoise,
 					canvasFps: config.canvasFps,
 					networkBodies: config.networkBodies,
 				})
@@ -284,15 +301,6 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	const stopReplayTrigger = onErrorRecorded(() => {
 		void runtime?.replay?.trigger()
 	})
-	startRuntime()
-	openExceptionCapture()
-	if (!ready) {
-		// The handle is live already; its session starts once the previous one is flushed.
-		void behind?.then(() => {
-			ready = true
-			startRuntime()
-		})
-	}
 	// Consent is page-wide and only tightens: another SDK copy can turn the gate
 	// on after this init. Without a gate the listener never fires.
 	const stopConsentListener = onConsentChange((allowed) => {
@@ -359,6 +367,21 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		},
 	}
 	active = handle
+	try {
+		startRuntime()
+		openExceptionCapture()
+	} catch (cause) {
+		// Undo whatever did start; `init` reports it and hands back a handle that does nothing.
+		void attempt(() => handle.shutdown())
+		throw cause
+	}
+	if (!ready) {
+		// The handle is live already; its session starts once the previous one is flushed.
+		void behind?.then(() => {
+			ready = true
+			startRuntime()
+		})
+	}
 	return handle
 }
 

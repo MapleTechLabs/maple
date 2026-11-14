@@ -1,4 +1,4 @@
-import { Option, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import { describe, expect, test } from "vitest"
 import { buildSpendCumulative } from "./spend"
 
@@ -62,12 +62,17 @@ const hover = (point: ReturnType<typeof day>) => {
 describe("spend chart tooltip", () => {
 	test("a day to come reads its point on the projection line", () => {
 		const tooltip = hover(day(3, { base: null, logs: null }, true, null))
-		expect(tooltip?.rows.map((row) => [row.label, row.value])).toEqual([["Projected", "$55.00"]])
+		expect(
+			tooltip === undefined ? undefined : Arr.map(tooltip.rows, (row) => [row.label, row.value]),
+		).toEqual([["Projected", "$55.00"]])
 	})
 
 	test("a day that happened lists each band and the total", () => {
 		const tooltip = hover(day(1, { base: 10, logs: 20 }, false, 30))
-		expect(tooltip?.rows.map((row) => row.value)).toEqual(["$10.00", "$20.00"])
+		expect(tooltip === undefined ? undefined : Arr.map(tooltip.rows, (row) => row.value)).toEqual([
+			"$10.00",
+			"$20.00",
+		])
 		expect(tooltip?.total).toBe("$30.00")
 	})
 })

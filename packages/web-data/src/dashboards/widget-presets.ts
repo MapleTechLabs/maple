@@ -12,10 +12,9 @@ import {
 	makeStaticDataSource,
 } from "@maple/widgets/dashboard"
 
-// The "Add widget" picker's ready-made widgets (apps/web dashboard-builder/widgets), React-free so
-// the web app and the Foldkit port read one catalog.
+// The "Add widget" picker's ready-made widgets.
 
-/** The domain's readonly shapes made mutable, sparing the data source (`dashboard-builder/types`). */
+/** The domain's readonly shapes made mutable. */
 type DeepMutable<T> =
 	T extends ReadonlyArray<infer U>
 		? Array<DeepMutable<U>>

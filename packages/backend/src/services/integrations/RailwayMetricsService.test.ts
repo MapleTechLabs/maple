@@ -9,15 +9,17 @@ import {
 	Array as Arr,
 	Record as Rec,
 	String as Str,
+	DateTime,
+	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
-import { SourceId } from "@maple/domain/primitives"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
+import { SourceId } from "@maple/primitives"
 import { nextWindow, RailwayMetricsService } from "./RailwayMetricsService"
 
 const now = Date.UTC(2026, 9, 3, 12, 30, 30)
@@ -167,10 +169,14 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 		}
 		if (Str.includes("projects(")(query)) {
 			const pages = options.projectPages ?? [[SHOP]]
-			const cursor = Rec.values(body.variables ?? {}).find(
+			const cursor = Arr.findFirst(
+				Rec.values(body.variables ?? {}),
 				(value): value is string => typeof value === "string" && Str.startsWith("cursor_")(value),
 			)
-			const page = cursor === undefined ? 0 : Number(Str.slice("cursor_".length)(cursor))
+			const page = Option.match(cursor, {
+				onNone: () => 0,
+				onSome: (value) => Number(Str.slice("cursor_".length)(value)),
+			})
 			const hasNextPage = page + 1 < pages.length
 			return json({
 				data: {
@@ -251,7 +257,7 @@ describe("RailwayMetricsService", () => {
 				// The metrics probe ran before the token was saved.
 				assert.isTrue(Arr.some(calls.railway, (call) => Str.includes("metrics(")(call.query)))
 				// The first hour was pulled inline, so nothing waits on the cron.
-				assert.isNotNull(status.environments[0]!.lastSyncedAt)
+				assert.isNotNull(status.environments[0].lastSyncedAt)
 				assert.isNotNull(status.lastSyncedAt)
 				const row = yield* Effect.promise(() =>
 					queryFirstRow<{ token_ciphertext: string }>(
@@ -323,7 +329,7 @@ describe("RailwayMetricsService", () => {
 				)
 				// Nothing of the paused window is read after a resume.
 				assert.strictEqual(
-					new Date(environment!.watermark_at).getTime(),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(environment!.watermark_at)),
 					Date.UTC(2026, 9, 3, 12, 28, 0),
 				)
 			}),
@@ -357,7 +363,7 @@ describe("RailwayMetricsService", () => {
 				const railway = yield* RailwayMetricsService
 				yield* railway.connect(orgId, userId, "rw_token_123")
 				assert.strictEqual(calls.ingest.length, 1)
-				assert.match(calls.ingest[0]!.authorization ?? "", /^Bearer maple_pk_/)
+				assert.match(calls.ingest[0].authorization ?? "", /^Bearer maple_pk_/)
 				const source = yield* Effect.promise(() =>
 					queryFirstRow<{ id: string; name: string }>(
 						testDb,
@@ -366,16 +372,21 @@ describe("RailwayMetricsService", () => {
 				)
 				assert.isDefined(source)
 				const payload = Schema.decodeUnknownSync(Schema.fromJsonString(IngestPayload))(
-					calls.ingest[0]!.body,
+					calls.ingest[0].body,
 				)
-				const stamped = Arr.map(
-					payload.resourceMetrics,
-					(resource) =>
-						resource.resource.attributes.find((attr) => attr.key === "maple_source_id")?.value
-							.stringValue,
+				const stamped = Arr.map(payload.resourceMetrics, (resource) =>
+					Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(
+								resource.resource.attributes,
+								(attr) => attr.key === "maple_source_id",
+							),
+							(attr) => attr.value.stringValue,
+						),
+					),
 				)
 				assert.isAbove(stamped.length, 0)
-				const expected = publicSourceId(Schema.decodeUnknownSync(SourceId)(source!.id))
+				const expected = publicSourceId(Schema.decodeSync(SourceId)(source.id))
 				assert.deepStrictEqual(
 					stamped,
 					Arr.map(stamped, () => expected),
@@ -388,7 +399,7 @@ describe("RailwayMetricsService", () => {
 					),
 				)
 				assert.strictEqual(
-					new Date(environment!.watermark_at).getTime(),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(environment!.watermark_at)),
 					Date.UTC(2026, 9, 3, 12, 28, 0),
 				)
 
@@ -413,7 +424,39 @@ describe("RailwayMetricsService", () => {
 				yield* resetWatermarks(testDb)
 				const status = yield* railway.sync(orgId)
 				assert.strictEqual(calls.ingest.length, 2)
-				assert.isNotNull(status.environments[0]!.lastSyncedAt)
+				assert.isNotNull(status.environments[0].lastSyncedAt)
+			}),
+		)
+	})
+
+	it.effect("refuses to poll with a stored token that is not in the v2 envelope", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		const stub = stubFetch(calls)
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				const railway = yield* RailwayMetricsService
+				yield* railway.connect(orgId, userId, "rw_token_123")
+				const stored = {
+					ciphertext: Buffer.from("old").toString("base64"),
+					iv: Buffer.alloc(12, 1).toString("base64"),
+					tag: Buffer.alloc(16, 2).toString("base64"),
+				}
+				yield* Effect.promise(() =>
+					queryFirstRow(
+						testDb,
+						`UPDATE railway_connections SET token_ciphertext = $1, token_iv = $2, token_tag = $3
+						 WHERE org_id = $4 RETURNING id`,
+						[stored.ciphertext, stored.iv, stored.tag, orgId],
+					),
+				)
+				yield* resetWatermarks(testDb)
+				const before = calls.railway.length
+				const error = yield* railway.pollOrg(orgId).pipe(Effect.flip)
+				assert.strictEqual(error.message, "Failed to decrypt the Railway token")
+				assert.strictEqual(calls.railway.length, before)
 			}),
 		)
 	})
@@ -457,7 +500,10 @@ describe("RailwayMetricsService", () => {
 					),
 				]),
 			)
-			assert.isAbove(new Date(rows[0]!.lease_until!).getTime(), now + 10 * minute)
+			assert.isAbove(
+				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.lease_until!)),
+				now + 10 * minute,
+			)
 			assert.isNull(rows[1]!.watermark_at)
 			const held = yield* run(
 				testDb,
@@ -495,7 +541,10 @@ describe("RailwayMetricsService", () => {
 						[orgId],
 					),
 				)
-				assert.isAbove(new Date(connection!.lease_until!).getTime(), now + 30 * minute)
+				assert.isAbove(
+					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.lease_until!)),
+					now + 30 * minute,
+				)
 				const held = yield* run(
 					testDb,
 					refusedStub,
@@ -534,7 +583,7 @@ describe("RailwayMetricsService", () => {
 			const all = yield* run(
 				testDb,
 				revokedStub,
-				RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+				RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 			)
 			assert.strictEqual(all.orgs, 0)
 		})

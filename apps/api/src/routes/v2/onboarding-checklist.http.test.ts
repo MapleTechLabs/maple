@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, V2OnboardingChecklist } from "@maple/domain/http/v2"
 import {
 	type OnboardingChecklistEvaluation,
 	OnboardingRewardNotClaimableError,
 } from "@maple/domain/onboarding-checklist"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -16,23 +16,11 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
-import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { HttpV2OnboardingChecklistLive } from "./onboarding-checklist.http"
-import {
-	AlertsServiceStubLayer,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	makeWarehouseServiceStub,
-	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-	V2GroupLayersExceptOnboardingChecklist,
-	SourcesServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
 
 /**
  * Wire-contract tests for `/v2/onboarding/checklist`. The step rules live in
@@ -44,8 +32,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_checklist_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_checklist_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_checklist_e2e")
+const USER = Schema.decodeSync(UserId)("user_checklist_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -106,24 +94,13 @@ const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
 		AuthService.layer,
 		DashboardPersistenceService.layer,
 		SharedDashboardService.layer,
-		IngestAttributeMappingService.layer,
-		OrgIngestKeysService.layer,
-		SourcesServiceStubsLayer,
-		ConfigResourceServiceStubsLayer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				V2GroupLayersExceptOnboardingChecklist,
-				HttpV2OnboardingChecklistLive.pipe(Layer.provide(checklistStub)),
-			),
-		),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.onboardingChecklist),
+	).pipe(
+		Layer.provide(HttpV2OnboardingChecklistLive.pipe(Layer.provide(checklistStub))),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),

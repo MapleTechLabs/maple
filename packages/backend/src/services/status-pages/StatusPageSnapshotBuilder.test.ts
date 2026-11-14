@@ -1,8 +1,9 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Array as Arr } from "effect"
-import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/domain/primitives"
+import { Effect, Exit, Layer, Array as Arr, DateTime } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { OrgId, StatusPageComponentId, StatusPageIncidentId, UptimeMonitorId } from "@maple/primitives"
 import { DEFAULT_STATUS_PAGE_THEME, utcDay } from "@maple/domain/status-page"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	DRAFT_PAGE_ID,
 	draftComponentId,
@@ -56,6 +57,7 @@ const baseInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput => ({
 		showPoweredBy: true,
 		breakGlassTokenSha256: null,
 		revision: 3,
+		customDomain: null,
 	},
 	components: [API_COMPONENT],
 	daily: [],
@@ -349,7 +351,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			})
 			yield* seedComponent(testDb, { id: downComponent, pageId, name: "API", position: 0, monitorId })
 			yield* seedIncident(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId,
 				title: "Draft",
 				status: "investigating",
@@ -358,7 +360,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				componentIds: [manualComponent],
 			})
 			yield* seedIncident(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId,
 				title: "Docs slow",
 				impact: "critical",
@@ -367,7 +369,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				componentIds: [manualComponent],
 			})
 			yield* seedIncident(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId,
 				title: "Old outage",
 				impact: "major",
@@ -379,7 +381,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			const otherPage = newPageId()
 			yield* seedPage(testDb, { id: otherPage, slug: "other-build" })
 			yield* seedIncident(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId: otherPage,
 				title: "Other page",
 				status: "resolved",
@@ -453,7 +455,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 			const pageId = newPageId()
 			yield* seedPage(testDb, { id: pageId, slug: "busy-page" })
 			yield* seedIncident(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId,
 				title: "Long-running",
 				status: "identified",
@@ -479,7 +481,7 @@ describe("StatusPageSnapshotBuilder.build", () => {
 				executeSql(
 					testDb,
 					`UPDATE status_page_incidents SET status = 'resolved', resolved_at = $1 WHERE title = 'Long-running'`,
-					[new Date(NOW).toISOString()],
+					[DateTime.formatIso(DateTime.makeUnsafe(NOW))],
 				),
 			)
 			const after = yield* builder.build(pageId, NOW + 1_000)
@@ -491,8 +493,8 @@ describe("StatusPageSnapshotBuilder.build", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const builder = yield* StatusPageSnapshotBuilder
-			const ours = crypto.randomUUID()
-			const theirs = crypto.randomUUID()
+			const ours = SecureRandom.uuidV4Unsafe()
+			const theirs = SecureRandom.uuidV4Unsafe()
 			yield* seedMonitor(testDb, { id: ours, status: "up" })
 			yield* seedMonitor(testDb, { id: theirs, status: "up", orgId: "org_other" })
 			const daily = (monitorId: string, lastCheckAt: number, orgId: string = ORG) =>
@@ -523,6 +525,8 @@ describe("toStatusPageDraft", () => {
 			slug: "Not A Slug",
 			website_url: "javascript:alert(1)",
 			privacy_url: "https://acme.example/privacy",
+			favicon_url: "http://acme.example/favicon.png",
+			support_url: "https://acme.example/help",
 			theme: { appearance: "light", text: "#777777", background: "#ffffff" },
 			components: [{ name: " API ", group: " " }],
 		})
@@ -531,6 +535,8 @@ describe("toStatusPageDraft", () => {
 		assert.deepStrictEqual(draft.page.theme, DEFAULT_STATUS_PAGE_THEME)
 		assert.isNull(draft.page.websiteUrl)
 		assert.strictEqual(draft.page.privacyUrl, "https://acme.example/privacy")
+		assert.isNull(draft.page.faviconUrl)
+		assert.strictEqual(draft.page.supportUrl, "https://acme.example/help")
 		assert.deepStrictEqual(draft.components, [
 			{
 				name: "API",
@@ -640,7 +646,7 @@ describe("StatusPageSnapshotBuilder.buildDraft", () => {
 			yield* seedPage(testDb, { id: pageId, slug: "acme-existing", revision: 2 })
 			yield* seedMonitor(testDb, { id: monitorId, status: "up" })
 			yield* seedComponent(testDb, {
-				id: crypto.randomUUID(),
+				id: SecureRandom.uuidV4Unsafe(),
 				pageId,
 				name: "API",
 				position: 0,

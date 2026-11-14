@@ -2,7 +2,7 @@ import type { V2AnomalyServiceCount } from "@maple/domain/http/v2"
 import { formatErrorRate, formatLatency, formatThroughput } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { HEALTH_TONE, primaryServiceHealthCause } from "../../components/dashboard/service-health"
+import { HEALTH_TONE, primaryServiceHealthCause } from "../kit/service-health-rollup"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -26,11 +26,16 @@ import {
 	type ServiceHealth,
 	type ServiceHealthCause,
 } from "./derive"
-import type { HealthSnapshot, Incident, Model } from "./model"
-import { alertFiringHero } from "./view-hero"
+import type { HealthSnapshot, Model } from "./model"
+import { alertFiringHero, heroCountsOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
-import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, Option } from "effect"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
+import type { HealthIncident } from "../kit/service-health"
+import { healthGapNotice, healthGapOf, healthGapText } from "../kit/health-gap-notice"
 
 // The service health overview: the alerts banner and
 // the health summary rail above the usage cards.
@@ -38,10 +43,10 @@ import { Array as Arr } from "effect"
 export type HealthData = readonly [
 	ReadonlyArray<HealthSnapshot>,
 	ReadonlyArray<V2AnomalyServiceCount>,
-	ReadonlyArray<Incident>,
+	ReadonlyArray<HealthIncident>,
 ]
 
-/** `Result.all([snapshot, anomalies, alertIncidents])`. */
+/** The snapshot with the anomalies and alert incidents; those two read as empty when they failed, and `healthGapNotice` says so. */
 export const healthData = (model: Model): AsyncData.AsyncData<HealthData, LoadFailure> =>
 	AsyncData.all([
 		model.snapshot.data,
@@ -56,7 +61,7 @@ export type SliceSearch = Readonly<{
 	environments: ReadonlyArray<string> | undefined
 }>
 
-/** `servicesLinkSearch`: the dashboard's slice carried over to `/services`. */
+/** The dashboard's slice carried over to `/services`. */
 export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string =>
 	hrefOf(
 		AppRoute.Services({
@@ -71,12 +76,14 @@ export const servicesHref = (slice: SliceSearch, health?: ServiceHealth): string
 	)
 
 const railAction = <M>(h: HtmlBuilder<M>, slice: SliceSearch, health?: ServiceHealth): Html =>
-	h.a(
-		[
-			h.Href(servicesHref(slice, health)),
-			h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`),
-			h.Class("text-foreground-faint hover:text-foreground active:text-foreground"),
-		],
+	textLink(
+		h,
+		{
+			href: servicesHref(slice, health),
+			tone: "muted",
+			className: "text-foreground-faint",
+			attributes: [h.AriaLabel(health === undefined ? "View all services" : `View ${health} services`)],
+		},
 		[icon(h, "ArrowRightIcon", { className: "size-3" })],
 	)
 
@@ -97,24 +104,13 @@ export type HealthOverviewInputs = Readonly<{
 	nowMs: number
 }>
 
-/** `ServiceHealthOverview`: the banner once alerts are known; the rail loading, absent on error, counted on success. */
+/** The banner once alerts are known; the rail loading, absent on error, counted on success. */
 export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: HealthOverviewInputs): Html => {
 	const incidents = AsyncData.getOrElse(model.incidents, () => [])
-	const open = Arr.filter(incidents, (incident) => incident.status === "open")
 	const rules = AsyncData.getOrElse(model.rules, () => [])
-	// "All clear" claims to know: without live alerts (loading or sync down) the banner stays out.
+	// Without live alerts (loading or sync down) the strip stays out.
 	const isAlertsKnown = AsyncData.isSuccess(model.incidents) && AsyncData.isSuccess(model.rules)
-	const banner = !isAlertsKnown
-		? []
-		: [
-				alertFiringHero(h, {
-					openCount: open.length,
-					criticalCount: Arr.filter(open, (incident) => incident.severity === "critical").length,
-					warningCount: Arr.filter(open, (incident) => incident.severity === "warning").length,
-					rulesEnabled: Arr.filter(rules, (enabled) => enabled).length,
-					rulesTotal: rules.length,
-				}),
-			]
+	const banner = !isAlertsKnown ? [] : alertFiringHero(h, heroCountsOf(incidents, rules))
 	const data = healthData(model)
 	return AsyncData.matchData(data, {
 		onEmpty: () => section(h, "mb-4 space-y-3", false, [...banner, statRailLoading(h, 4)]),
@@ -131,8 +127,10 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 			)
 			const tone = (health: ServiceHealth, active: "ok" | "warn" | "crit") =>
 				counts[health] > 0 ? active : "neutral"
+			const gap = healthGapOf(model.incidents, model.anomalies.data)
 			return section(h, "mb-4 space-y-3", AsyncData.isRefreshing(data), [
 				...banner,
+				...(gap === null ? [] : [healthGapNotice(h, gap)]),
 				statRail(h, {}, [
 					statRailItem(h, {
 						eyebrow: "Services",
@@ -142,23 +140,21 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 					statRailItem(h, {
 						eyebrow: "Healthy",
 						value: String(counts.healthy),
-						tone: tone("healthy", "ok"),
+						// Not vouched for while an input is missing, so not green.
+						tone: gap === null ? tone("healthy", "ok") : "neutral",
 						action: railAction(h, slice, "healthy"),
-						delay: 60,
 					}),
 					statRailItem(h, {
 						eyebrow: "Degraded",
 						value: String(counts.degraded),
 						tone: tone("degraded", "warn"),
 						action: railAction(h, slice, "degraded"),
-						delay: 120,
 					}),
 					statRailItem(h, {
 						eyebrow: "Unhealthy",
 						value: String(counts.unhealthy),
 						tone: tone("unhealthy", "crit"),
 						action: railAction(h, slice, "unhealthy"),
-						delay: 180,
 					}),
 				]),
 			])
@@ -166,25 +162,32 @@ export const healthOverview = <M>(h: HtmlBuilder<M>, { model, slice, nowMs }: He
 	})
 }
 
-const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch): Html =>
+/** The caption says what status reflects, or what it leaves out while an input is missing. */
+const listHeader = <M>(h: HtmlBuilder<M>, slice: SliceSearch, model: Model): Html => {
+	const gap = healthGapOf(model.incidents, model.anomalies.data)
+	return listHeaderOf(
+		h,
+		slice,
+		gap === null ? "Status reflects active alerts and baseline anomalies." : healthGapText(gap),
+	)
+}
+
+const listHeaderOf = <M>(h: HtmlBuilder<M>, slice: SliceSearch, caption: string): Html =>
 	hstack(h, { justify: "between" }, [
 		h.div(
 			[],
 			[
 				eyebrow(h, { variant: "label", as: "h2" }, ["Services"]),
-				h.p(
-					[h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")],
-					["Status reflects active alerts and baseline anomalies."],
-				),
+				h.p([h.Class("mt-0.5 font-prose text-2xs text-foreground-subtle")], [caption]),
 			],
 		),
-		h.a(
-			[
-				h.Href(servicesHref(slice)),
-				h.Class(
-					"text-xs font-medium text-muted-foreground hover:text-foreground active:text-foreground",
-				),
-			],
+		textLink(
+			h,
+			{
+				href: servicesHref(slice),
+				tone: "muted",
+				className: typographyClass({ size: "xs", weight: "medium" }),
+			},
 			["View all services →"],
 		),
 	])
@@ -199,7 +202,7 @@ export type HealthListInputs = HealthOverviewInputs &
 		isNeverReceived: boolean
 	}>
 
-/** `ServiceHealthList`: up to seven rows, worst first, under the section header. */
+/** Up to seven rows, worst first, under the section header. */
 export const healthList = <M>(
 	h: HtmlBuilder<M>,
 	{ model, slice, nowMs, emptyState, isNeverReceived }: HealthListInputs,
@@ -209,11 +212,11 @@ export const healthList = <M>(
 		onEmpty: () =>
 			isNeverReceived
 				? section(h, "mt-4 space-y-3", false, [
-						listHeader(h, slice),
+						listHeader(h, slice, model),
 						card(h, [emptyState], "overflow-hidden p-0"),
 					])
 				: section(h, "mt-4 space-y-3", false, [
-						listHeader(h, slice),
+						listHeader(h, slice, model),
 						card(
 							h,
 							[skeletonList(h, { rows: 4, rowClassName: "h-6", gap: "2", className: "p-4" })],
@@ -221,7 +224,7 @@ export const healthList = <M>(
 						),
 					]),
 		onFailure: (failure) =>
-			section(h, "mt-4 space-y-3", false, [listHeader(h, slice), errorState(h, { failure })]),
+			section(h, "mt-4 space-y-3", false, [listHeader(h, slice, model), errorState(h, { failure })]),
 		onData: ([snapshot, anomalies, alerts]) => {
 			const rows = enrichServices(
 				snapshot,
@@ -229,16 +232,18 @@ export const healthList = <M>(
 				anomalies,
 				nowMs,
 			).slice(0, MAX_ROWS)
+			const isVouched = healthGapOf(model.incidents, model.anomalies.data) === null
 			return section(h, "mt-4 space-y-3", AsyncData.isRefreshing(data), [
-				listHeader(h, slice),
+				listHeader(h, slice, model),
 				card(
 					h,
 					[
 						rows.length === 0
 							? emptyState
-							: h.ul(
-									[h.Class("divide-y divide-border")],
-									Arr.map(rows, (row) => serviceRow(h, row, slice)),
+							: dividedList(
+									h,
+									{ as: "ul", bordered: false },
+									Arr.map(rows, (row) => serviceRow(h, row, slice, isVouched)),
 								),
 					],
 					"overflow-hidden p-0",
@@ -253,7 +258,7 @@ type MetricTone = "ok" | "warn" | "crit"
 const metricTone = (cause: ServiceHealthCause | undefined): MetricTone =>
 	cause === undefined ? "ok" : cause.severity === "critical" ? "crit" : "warn"
 
-/** `Metric`: a right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
+/** A right-aligned value over its eyebrow; `valueClassName` wins over the tone. */
 const metric = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -261,13 +266,10 @@ const metric = <M>(
 	tone: MetricTone,
 	valueClassName?: string,
 ): Html =>
-	h.div(
-		[h.Class("flex w-16 flex-col items-end gap-0.5")],
-		[
-			h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
-			eyebrow(h, {}, [label]),
-		],
-	)
+	vstack(h, { gap: "0.5", align: "end", className: "w-16" }, [
+		h.span([h.Class(cn("leading-none", TONE_TEXT[tone], valueClassName))], [value]),
+		eyebrow(h, {}, [label]),
+	])
 
 const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	const direction = cause.direction
@@ -299,7 +301,7 @@ const causeBadge = <M>(h: HtmlBuilder<M>, cause: ServiceHealthCause): Html => {
 	)
 }
 
-/** `serviceDetailSearch` plus the row's environment: the service page scoped to it. */
+/** The service page, scoped to the row's environment. */
 const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -313,35 +315,39 @@ const serviceHref = (slice: SliceSearch, service: HealthSnapshot): string =>
 		}),
 	)
 
-/** `ServiceHealthRow`. */
 const serviceRow = <M>(
 	h: HtmlBuilder<M>,
 	{ service, health, causes }: EnrichedService,
 	slice: SliceSearch,
+	isVouched: boolean,
 ): Html => {
 	const primary = primaryServiceHealthCause(causes)
-	const latencyCause = causes.find((cause) => cause.metric === "latency")
+	const causeOf = (kind: ServiceHealthCause["metric"]) =>
+		Option.getOrUndefined(Arr.findFirst(causes, (cause) => cause.metric === kind))
+	const latencyCause = causeOf("latency")
 	return h.li(
 		[h.Key(`${service.serviceName}:${service.environment}`)],
 		[
 			listRow(h, {
 				href: serviceHref(slice, service),
-				leading: statusDot(h, { tone: HEALTH_TONE[health], size: "lg" }),
+				// "Healthy" is not vouched for while an input is missing, so its dot is not green.
+				leading: statusDot(h, {
+					tone: health === "healthy" && !isVouched ? "neutral" : HEALTH_TONE[health],
+					size: "lg",
+				}),
 				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
 					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-					h.span([h.Class("truncate text-sm font-medium text-foreground")], [service.serviceName]),
+					typography(h, { size: "sm", tone: "foreground", weight: "medium", truncate: true }, [
+						service.serviceName,
+					]),
 					badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [service.environment]),
 					...(primary === undefined ? [] : [causeBadge(h, primary)]),
 				]),
-				trailing: h.div(
-					[h.Class("flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums")],
+				trailing: hstack(
+					h,
+					{ gap: "5", align: "center", className: "shrink-0 font-mono text-xs tabular-nums" },
 					[
-						metric(
-							h,
-							"err",
-							formatErrorRate(service.errorRate),
-							metricTone(causes.find((cause) => cause.metric === "error")),
-						),
+						metric(h, "Errors", formatErrorRate(service.errorRate), metricTone(causeOf("error"))),
 						metric(
 							h,
 							"p95",
@@ -355,7 +361,7 @@ const serviceRow = <M>(
 							h,
 							"rps",
 							formatThroughput(service.throughput, "/s"),
-							metricTone(causes.find((cause) => cause.metric === "traffic")),
+							metricTone(causeOf("traffic")),
 						),
 					],
 				),

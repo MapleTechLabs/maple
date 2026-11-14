@@ -7,15 +7,15 @@ import { AlertDestinationId, AlertPersistenceError, OrgId, RoleName, UserId } fr
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import { GetErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
-import { CurrentMcpTenant } from "../../lib/query-warehouse"
+import { CurrentMcpTenant } from "../../tenant"
 import { executeRegisteredMcpToolUnscoped } from "../registry"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_policy_tools")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_policy_tools_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_policy_tools")
+const ORG = Schema.decodeSync(OrgId)("org_policy_tools")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_policy_tools_other")
+const USER = Schema.decodeSync(UserId)("user_policy_tools")
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 const DEST = asDestinationId(randomUUID())
 const FOREIGN_DEST = asDestinationId(randomUUID())
@@ -56,10 +56,10 @@ const makeLayer = (namesFail = false) => {
 		Layer.succeed(CurrentMcpTenant, {
 			orgId: ORG,
 			userId: USER,
-			roles: [Schema.decodeUnknownSync(RoleName)("org:admin")],
+			roles: [Schema.decodeSync(RoleName)("org:admin")],
 			authMode: "self_hosted",
 		} as never),
-		Layer.succeed(AlertsService, {
+		Layer.succeed(AlertDestinationsService, {
 			listDestinations: () =>
 				namesFail
 					? Effect.fail(new AlertPersistenceError({ message: "bad destination row" }))
@@ -110,8 +110,9 @@ describe("error notification policy tools", () => {
 				{ id: DEST, publicId, name: "On-call", type: "webhook", enabled: true },
 			])
 			expect(first.output.minOccurrenceCount).toBe(2)
-			expect(first.output.firstNotificationThreshold).toBe(3)
-			expect(first.text).toContain("after 3 occurrences")
+			// Within the day's early promotions the policy's own count applies; past them, 3.
+			expect(first.output.firstNotificationThreshold).toBe(2)
+			expect(first.text).toContain("at least 3 once the day's early promotions are spent")
 
 			yield* call("update_error_notification_policy", { destination_ids: [], notify_on_resolve: true })
 			yield* call("update_error_notification_policy", {

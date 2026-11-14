@@ -1,4 +1,14 @@
-import { toggleFilterValue, toggleTraffic } from "../../components/analytics/filters"
+import { pickerStep } from "../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { toggleFilterValue, toggleTraffic } from "./filters"
+import {
+	SearchConsoleIntegrationStatus,
+	SearchConsoleLandingPage,
+	SearchConsoleOverview,
+	SearchConsolePoint,
+	SearchConsoleQueryRow,
+} from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -16,7 +26,7 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import type { PresetValue } from "../kit/time-controls"
 import { CompleteReloadSpin, LoadSignalPresence, ResolveWindow } from "./command"
-import { type FilterKey, Message, type RequestMode, type SlotName } from "./message"
+import { type FilterKey, Message, type SlotName } from "./message"
 import {
 	AiCrawlers,
 	AiReferralPoint,
@@ -28,11 +38,14 @@ import {
 	PageviewsPoint,
 	type PanelState,
 	type Search,
+	type SearchSort,
+	type SearchSortKey,
+	type SearchTable,
 	Summary,
 	TimeseriesPoint,
 	TraceSample,
 } from "./model"
-import { filtersOf, requestSlots, showsOverviewContent, tabOf } from "./requests"
+import { filtersOf, requestSlots, searchSortOf, showsOverviewContent, tabOf } from "./requests"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
@@ -54,6 +67,11 @@ const SLOT_SCHEMAS = {
 	previousAiReferrals: Schema.Array(AiReferralPoint),
 	aiCrawlers: AiCrawlers,
 	traceSamples: Schema.Array(TraceSample),
+	searchStatus: SearchConsoleIntegrationStatus,
+	searchOverview: SearchConsoleOverview,
+	searchTimeseries: Schema.Array(SearchConsolePoint),
+	searchQueries: Schema.Array(SearchConsoleQueryRow),
+	searchLanding: Schema.Array(SearchConsoleLandingPage),
 } satisfies Record<SlotName, Schema.Top>
 
 const SLOTS = Arr.filter(Rec.keys(SLOT_SCHEMAS), (name): name is SlotName => name in SLOT_SCHEMAS)
@@ -62,7 +80,7 @@ const decodeFailure: LoadFailure = toLoadFailure("The response could not be read
 
 /** Folds an answer into every slot that asked under its key, decoded with that slot's schema. */
 const settleSlots = (model: Model, key: string, result: Result.Result<unknown, LoadFailure>): Model =>
-	SLOTS.reduce<Model>((next, name) => {
+	Arr.reduce(SLOTS, model, (next, name) => {
 		if (next[name].key !== key) return next
 		const decoded = Result.match(result, {
 			onFailure: (failure) => Result.fail(failure),
@@ -74,7 +92,7 @@ const settleSlots = (model: Model, key: string, result: Result.Result<unknown, L
 		})
 		const slot: Keyed.Keyed<unknown, LoadFailure> = next[name]
 		return { ...next, [name]: Keyed.accept(slot, key, decoded) }
-	}, model)
+	})
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
@@ -93,7 +111,7 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	}),
 })
 
-/** `onFilterChange`: an empty value drops out of the URL. */
+/** An empty value drops out of the URL. */
 const withFilter = (search: Search, key: FilterKey, value: string | undefined): Search => ({
 	...search,
 	[key]: value === "" ? undefined : value,
@@ -103,6 +121,20 @@ const withRequests = (model: Model, context: PageContext, mode: Keyed.RequestMod
 	if (model.window === null) return { model }
 	return requestSlots(model, context, model.window, mode)
 }
+
+/** The Search tab's reads that need the status's property. */
+export const SEARCH_DATA_SLOTS: ReadonlyArray<SlotName> = [
+	"searchOverview",
+	"searchTimeseries",
+	"searchQueries",
+	"searchLanding",
+]
+const SEARCH_SLOTS: ReadonlyArray<SlotName> = ["searchStatus", ...SEARCH_DATA_SLOTS]
+
+const SEARCH_TABLE_SLOT = {
+	queries: "searchQueries",
+	pages: "searchLanding",
+} as const satisfies Record<SearchTable, SlotName>
 
 const defaultPanel: PanelState = { pickedTab: null, query: "", sortKey: null, sortDir: "desc" }
 export const panelOf = (model: Model, panel: string): PanelState => model.panels[panel] ?? defaultPanel
@@ -116,8 +148,8 @@ const hasRows = <A>(slot: Keyed.Keyed<ReadonlyArray<A>, LoadFailure>): boolean =
 	Option.match(AsyncData.getData(slot.data), { onNone: () => false, onSome: (rows) => rows.length > 0 })
 
 /**
- * `useTableSort`'s `initialKey` is read once, when the card mounts with the breakdowns: Pages and
- * Events sort by their second column only if those rows were already in by then.
+ * A card's initial sort is read once, when it mounts with the breakdowns: Pages and Events sort by
+ * their second column only if those rows were already in by then.
  */
 const seedPanels = (model: Model): Model => {
 	if (tabOf(model.search) !== "overview" || !showsOverviewContent(model)) return model
@@ -126,12 +158,10 @@ const seedPanels = (model: Model): Model => {
 		["content", hasRows(model.pages)],
 		["events", hasRows(model.events)],
 	]
-	return seeds.reduce<Model>(
-		(next, [panel, hasViews]) =>
-			next.panels[panel] === undefined
-				? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
-				: next,
-		model,
+	return Arr.reduce(seeds, model, (next, [panel, hasViews]) =>
+		next.panels[panel] === undefined
+			? withPanel(next, panel, { sortKey: hasViews ? "views" : "count" })
+			: next,
 	)
 }
 
@@ -152,8 +182,6 @@ const delivered = (model: Model, key: string, result: Result.Result<unknown, Loa
 		: seedPanels(settleSlots({ ...next, heldEvents: null }, held.key, held.result))
 }
 
-// ENTRY POINTS
-
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -173,6 +201,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		previousAiReferrals: Keyed.idle(),
 		aiCrawlers: Keyed.idle(),
 		traceSamples: Keyed.idle(),
+		searchStatus: Keyed.idle(),
+		searchOverview: Keyed.idle(),
+		searchTimeseries: Keyed.idle(),
+		searchQueries: Keyed.idle(),
+		searchLanding: Keyed.idle(),
+		searchSorts: {},
+		searchMetric: null,
 		presence: SignalPresenceData.Loading(),
 		pickedMetric: null,
 		panels: {},
@@ -196,11 +231,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -215,13 +246,30 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	// A tab switch unmounts the other tab's cards, and with them their tab, search and sort.
 	const isSameTab = tabOf(model.search) === tabOf(route.search)
-	const next = { ...model, search: route.search, panels: isSameTab ? model.panels : {} }
+	// The expand dialog shows one of them, so it closes with them. Its exit commands go out with
+	// the step: dropped, the leave transition never settles and the page stays locked behind it.
+	const closing = isSameTab ? { model: model.expandDialog } : Dialog.close(model.expandDialog)
+	const closeCommands = Command.mapMessages(closing.commands ?? [], (message) =>
+		Message.GotExpandDialogMessage({ message }),
+	)
+	const next = {
+		...model,
+		search: route.search,
+		panels: isSameTab ? model.panels : {},
+		expandedPanel: isSameTab ? model.expandedPanel : null,
+		expandDialog: closing.model,
+	}
+	const withClose = (step: Return): Return => ({
+		...step,
+		commands: [...(step.commands ?? []), ...closeCommands],
+	})
 	return routeWindowStep(model.search, route.search, {
-		resolve: (): Return => ({
-			model: next,
-			commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
-		}),
-		requestAll: (mode) => withRequests(next, context, mode),
+		resolve: (): Return =>
+			withClose({
+				model: next,
+				commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+			}),
+		requestAll: (mode) => withClose(withRequests(next, context, mode)),
 	})
 }
 
@@ -242,12 +290,13 @@ const refreshOnly = (model: Model, context: PageContext, slots: ReadonlyArray<Sl
 const retryFailed = (model: Model, context: PageContext, slots: ReadonlyArray<SlotName>): Return =>
 	model.window === null ? { model } : requestSlots(model, context, model.window, "Load", slots)
 
-/** `onClearFilters`: the window and the tab stay; the filters go. */
+/** The window and the tab stay; the filters go. */
 const clearedFilters = (search: Search): Search => ({
 	startTime: search.startTime,
 	endTime: search.endTime,
 	timePreset: search.timePreset,
 	tab: search.tab,
+	site: search.site,
 })
 
 const dialogStep = (model: Model, inner: Dialog.Message): Return => {
@@ -263,7 +312,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			withRequests({ ...model, window, nowMs }, context, mode),
-		CompletedFetch: ({ key, result }) => ({ model: delivered(model, key, result) }),
+		CompletedFetch: ({ key, result }) => {
+			const next = delivered(model, key, result)
+			// A status answer asks for the reads it unlocks; a failed one asks for nothing (Retry does).
+			return key === model.searchStatus.key && Result.isSuccess(result) && next.window !== null
+				? requestSlots(next, context, next.window, "Load", SEARCH_DATA_SLOTS)
+				: { model: next }
+		},
 		CompletedLoadSignalPresence: ({ result }) =>
 			withRequests(
 				seedPanels({ ...model, presence: AsyncData.settle(model.presence, result) }),
@@ -271,6 +326,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				"Load",
 			),
 		TickedLivePoll: () => refreshOnly(model, context, ["live"]),
+		TickedSearchImportPoll: () => refreshOnly(model, context, ["searchStatus"]),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -295,6 +351,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetrySummaryAndBreakdowns: () => refreshOnly(model, context, ["summary", "breakdowns"]),
 		ClickedRetryAiReferrals: () => retryFailed(model, context, ["aiReferrals", "previousAiReferrals"]),
 		ClickedRetryAiCrawlers: () => retryFailed(model, context, ["aiCrawlers"]),
+		ClickedRetrySearch: () => retryFailed(model, context, SEARCH_SLOTS),
+		ClickedRetryEvents: () => retryFailed(model, context, ["events"]),
+		PickedSearchSite: ({ siteUrl }) => navigate(model, { ...model.search, site: siteUrl }),
+		ClickedWidenSearchRange: () =>
+			navigate(model, { ...model.search, startTime: undefined, endTime: undefined, timePreset: "1mo" }),
+		ClickedSearchSort: ({ table, key }) => {
+			// Names and position start ascending: lower position is better.
+			const next = nextSort<SearchSortKey>(searchSortOf(model, table), key, {
+				stringKeys: ["name", "position"],
+			})
+			const sort: SearchSort = { key: next.key ?? "clicks", dir: next.dir }
+			const sorted = { ...model, searchSorts: { ...model.searchSorts, [table]: sort } }
+			// The sort is part of the read's key: a new order asks again, and an older answer is dropped.
+			return sorted.window === null
+				? { model: sorted }
+				: requestSlots(sorted, context, sorted.window, "Load", [SEARCH_TABLE_SLOT[table]])
+		},
+		PickedSearchMetric: ({ metric }) => ({ model: { ...model, searchMetric: metric } }),
 		ToggledFilter: ({ key, value }) => {
 			const filters = filtersOf(model.search)
 			return navigate(model, withFilter(model.search, key, toggleFilterValue(filters[key], value)))
@@ -346,19 +420,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
-				timePicker: next.model,
-			})
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					navigate(model, {
+						...model.search,
+						...patch,
+					}).outMessage,
+			)
 		},
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
@@ -366,9 +437,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				chart: next.model,
 			})
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 	})

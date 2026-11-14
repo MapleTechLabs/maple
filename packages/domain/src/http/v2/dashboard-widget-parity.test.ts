@@ -1,8 +1,9 @@
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Schema, Struct, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { WIDGET_DATA_SOURCE_KINDS } from "@maple/widgets/dashboard"
 import { DashboardWidgetSchema, WidgetDisplayConfigSchema } from "../dashboards"
 import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashboards"
+import { replaceWith } from "@maple/strings"
 
 // The v2 public schema is a hand-maintained clone of the stored widget schema:
 // the same fields again, differing only by `Schema.encodeKeys` for snake_case.
@@ -12,32 +13,18 @@ import { V2DashboardWidget, V2WidgetDataSource, V2WidgetDisplay } from "./dashbo
 // type-checks structurally, so a field added to the shared schema and forgotten
 // in the clone is a silent omission from the public API, not a compile error.
 //
-// This file makes that a build failure both ways: the type assertions below fail
-// `tsc` when either side gains a field, and the encode tests fail when a field is
-// present in the type but dropped on the wire or spelled differently there.
+// This file makes that a build failure both ways: the type assertion below fails
+// `tsc` when the v2 display has a field storage lacks, and the encode tests fail
+// when a stored field is dropped on the wire or spelled differently there.
 
-const snakeCase = (key: string): string => key.replace(/[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
+const snakeCase = (key: string): string => replaceWith(key, /[A-Z]/g, (c) => `_${Str.toLowerCase(c)}`)
 
 /** Fails to compile unless `A` is assignable to `B`. */
 type AssertAssignable<A extends B, B> = [A, B]
 
-// The three structural assignability assertions that used to live here are gone,
-// and deliberately.
-//
-// They asserted that the stored widget/display types were mutually assignable
-// with the v2 ones — which held only while the v2 schemas were a field-for-field
-// clone of storage. Schema v3 ends that: `dataSource.queries` is a typed array of
-// query drafts in storage and an opaque `UnknownRecord` on the wire, because the
-// wire representation of a query has always been opaque (it lived inside the
-// untyped `params` bag) and typing it now would be a second, larger breaking
-// change to the published spec.
-//
-// So assignability is genuinely false, and forcing it would mean either leaking
-// storage types into the public contract or weakening storage to match the wire.
-// What the assertions actually PROTECTED — "you cannot extend the internal schema
-// without deciding what the public API does" — is preserved by the kind-coverage
-// test at the bottom of this file, which fails when an arm is added to the stored
-// union and not mirrored here.
+// Whole-widget assignability is false on purpose since schema v3 (the data source
+// differs between storage and wire); the kind-coverage test at the bottom makes a
+// new stored arm a decision about the public API instead.
 export type _DisplayFieldsCovered = AssertAssignable<
 	keyof typeof V2WidgetDisplay.Type,
 	keyof typeof WidgetDisplayConfigSchema.Type
@@ -141,7 +128,7 @@ describe("the v2 widget display mirrors the stored one", () => {
 	it("puts every stored field on the wire, in mechanical snake_case", () => {
 		const encoded = Schema.encodeUnknownSync(V2WidgetDisplay)(fullDisplay)
 
-		expect(Object.keys(encoded).sort()).toEqual(
+		expect(Struct.keys(encoded).sort()).toEqual(
 			Arr.map(Rec.keys(WidgetDisplayConfigSchema.fields), snakeCase).sort(),
 		)
 	})
@@ -188,7 +175,7 @@ describe("the v2 widget display mirrors the stored one", () => {
 	it("keeps the interpolation-sensitive listWhereClause name on both sides", () => {
 		expect(WidgetDisplayConfigSchema.fields).toHaveProperty("listWhereClause")
 		const encoded = Schema.encodeUnknownSync(V2WidgetDisplay)(fullDisplay)
-		expect(Object.keys(encoded)).toContain("list_where_clause")
+		expect(Struct.keys(encoded)).toContain("list_where_clause")
 	})
 })
 
@@ -224,7 +211,7 @@ describe("the v2 widget mirrors the stored one", () => {
 	it("puts every stored field on the wire, in mechanical snake_case", () => {
 		const encoded = Schema.encodeUnknownSync(V2DashboardWidget)(fullWidget)
 
-		expect(Object.keys(encoded).sort()).toEqual(
+		expect(Struct.keys(encoded).sort()).toEqual(
 			Arr.map(Rec.keys(DashboardWidgetSchema.fields), snakeCase).sort(),
 		)
 	})
@@ -248,11 +235,8 @@ describe("the v2 widget mirrors the stored one", () => {
 	})
 })
 
-// The structural successor to the deleted assignability assertions.
-//
 // A fifth arm added to the stored data-source union fails here until someone has
-// decided what `/v2/dashboards` does with it — which is the question the old type
-// assertions forced, and the only one worth forcing.
+// decided what `/v2/dashboards` does with it.
 describe("the v2 data source covers every stored kind", () => {
 	const decode = Schema.decodeUnknownSync(V2WidgetDataSource)
 
@@ -264,7 +248,7 @@ describe("the v2 data source covers every stored kind", () => {
 			raw_sql: { kind: "raw_sql", sql: "SELECT count() FROM logs WHERE $__orgFilter" },
 			route: { kind: "route", endpoint: "list_traces" },
 			static: { kind: "static" },
-		}[kind]!
+		}[kind]
 
 		expect(() => decode(fixture)).not.toThrow()
 	})

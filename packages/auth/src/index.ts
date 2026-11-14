@@ -1,13 +1,13 @@
 // Shared auth core for Maple services. These are the pure tenant-resolution +
-// self-hosted login primitives — Clerk session verification and self-hosted
-// HS256 JWT verify/sign — with NO dependency on any app's `Env` service: every
+// self-hosted login primitives (Clerk session verification and self-hosted
+// HS256 JWT verify/sign) with NO dependency on any app's `Env` service: every
 // factory takes a structural {@link AuthEnv} (or a `Pick` of it). `apps/api`
 // wraps these in an `AuthService` Context.Service bound to its `Env`; the
 // standalone `apps/electric-sync` worker feeds them its own small config. Auth
 // is the one genuinely cross-service concern, so it lives in this lean package
 // (effect + @maple/domain + @clerk/backend) rather than an app.
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { createClerkClient } from "@clerk/backend"
+import { type ClerkClient, createClerkClient } from "@clerk/backend"
 import {
 	AuthMode,
 	AuthorizationUnavailableError,
@@ -17,6 +17,7 @@ import {
 	SelfHostedAuthDisabledError,
 	SelfHostedInvalidPasswordError,
 	SelfHostedLoginResponse,
+	type TenantContext,
 	UnauthorizedError,
 	UserId,
 } from "@maple/domain/http"
@@ -37,7 +38,7 @@ import {
  * root password: there is no session store to revoke against, so the only thing
  * that can end a leaked token is time.
  *
- * - {@link SELF_HOSTED_SESSION_TTL_SECONDS} bounds ONE minted token — short
+ * - {@link SELF_HOSTED_SESSION_TTL_SECONDS} bounds ONE minted token: short
  *   enough that a leaked token dies on its own, long enough to cover a working
  *   day of dashboard use without a mid-session logout.
  * - {@link SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS} bounds the whole login.
@@ -59,13 +60,6 @@ export const SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS = 7 * 24 * 60 * 60
 // mint ourselves; `nbf`/`exp` boundaries stay exact because they are
 // RFC-specified and, on a correctly signed token, attacker-chosen.
 const CLOCK_SKEW_LEEWAY_SECONDS = 60
-
-export interface TenantContext {
-	readonly orgId: OrgId
-	readonly userId: UserId
-	readonly roles: readonly RoleName[]
-	readonly authMode: AuthMode
-}
 
 type HeaderRecord = Record<string, string | undefined>
 
@@ -107,7 +101,7 @@ const SelfHostedRoles = Schema.Union([Schema.Array(Schema.String), Schema.String
 
 /**
  * The self-hosted session contract, decoded IMMEDIATELY after the HMAC signature
- * is verified — there is no permissive intermediate payload and no second
+ * is verified: there is no permissive intermediate payload and no second
  * validation pipeline downstream.
  *
  * Every field a caller is trusted with is required and branded here: `sub` is a
@@ -116,7 +110,7 @@ const SelfHostedRoles = Schema.Union([Schema.Array(Schema.String), Schema.String
  * path is not a self-hosted session).
  *
  * `iat` is REQUIRED: `signHs256Jwt` is the only minter that has ever existed and
- * it has always set `iat`, so requiring it invalidates nothing already issued —
+ * it has always set `iat`, so requiring it invalidates nothing already issued;
  * and it is what gives a pre-`exp` token a bounded life (see the max-age check in
  * {@link verifySelfHostedSessionToken}). `exp`/`session_exp` stay optional for
  * exactly one release cycle: tokens minted before this change carry neither, and
@@ -152,9 +146,9 @@ const noActiveOrganization = () =>
 	new UnauthorizedError({ message: "Active organization is required", reason: "no_active_organization" })
 
 // NOTE: the decode helpers below deliberately discard the parse error and the
-// JWT helpers in `verifyHs256Jwt` do the same. Auth failures must NOT leak
+// JWT checks in `verifySelfHostedSessionToken` do the same. Auth failures must NOT leak
 // validation hints (e.g. which schema field rejected the input) to unauthorized
-// callers — that's an oracle for credential stuffing. Do not refactor these to
+// callers: that's an oracle for credential stuffing. Do not refactor these to
 // preserve `cause`.
 const decodeOrgId = (value: string, message: string): Effect.Effect<OrgId, UnauthorizedError> =>
 	Schema.decodeEffect(OrgId)(value).pipe(Effect.mapError(() => unauthorized(message)))
@@ -179,11 +173,15 @@ const getBearerToken = (headers: HeaderRecord): string | undefined => {
 	return token
 }
 
+/**
+ * The bearer and nothing else. A cookie the browser attaches on its own is never a credential
+ * here, so only a caller that can read the session token can act with it.
+ */
 const toHeaders = (headers: HeaderRecord): Headers => {
 	const requestHeaders = new Headers()
 
 	for (const [name, value] of Rec.toEntries(headers)) {
-		if (value !== undefined) {
+		if (value !== undefined && Str.toLowerCase(name) === "authorization") {
 			requestHeaders.set(name, value)
 		}
 	}
@@ -216,11 +214,11 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 	secret: string,
 ): Effect.fn.Return<SelfHostedSessionClaims, UnauthorizedError> {
 	const parts = Str.split(".")(token)
-	if (parts.length !== 3) {
+	const [encodedHeader, encodedPayload, encodedSignature] = parts
+	if (parts.length !== 3 || encodedPayload === undefined || encodedSignature === undefined) {
 		return yield* unauthorized("Invalid JWT format")
 	}
 
-	const [encodedHeader, encodedPayload, encodedSignature] = parts
 	const header = yield* Schema.decodeEffect(Schema.fromJsonString(JwtHeaderSchema))(
 		decodeBase64Url(encodedHeader),
 	).pipe(Effect.mapError(() => unauthorized("Invalid JWT header")))
@@ -248,7 +246,7 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 
 	// Presence, not truthiness: `exp: 0` is a token that expired at the epoch, and
 	// a truthiness guard silently turned it into a token that never expires.
-	// Boundaries follow RFC 7519 §4.1.4/§4.1.5 — `now >= exp` is expired, `now == nbf`
+	// Boundaries follow RFC 7519 §4.1.4/§4.1.5: `now >= exp` is expired, `now == nbf`
 	// is already active.
 	if (claims.nbf !== undefined && now < claims.nbf) {
 		return yield* unauthorized("JWT is not active yet")
@@ -273,8 +271,8 @@ const verifySelfHostedSessionToken = Effect.fn("AuthService.verifySelfHostedSess
 
 	// The backstop, and the rollout mechanism: a token minted before `exp` existed
 	// carries only `iat`, and this is what bounds it. It never fires on a current
-	// token — `exp` is at most SELF_HOSTED_SESSION_TTL_SECONDS out and the session
-	// deadline is capped at the same horizon — so it costs nothing to keep
+	// token (`exp` is at most SELF_HOSTED_SESSION_TTL_SECONDS out and the session
+	// deadline is capped at the same horizon), so it costs nothing to keep
 	// afterwards as a floor under any future minting bug.
 	if (now - claims.iat >= SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS) {
 		return yield* unauthorized("JWT has expired")
@@ -303,7 +301,7 @@ const signHs256Jwt = (payload: SelfHostedTokenClaims, secret: string): string =>
 }
 
 /**
- * The single place a self-hosted session token is minted — login and renewal both
+ * The single place a self-hosted session token is minted: login and renewal both
  * go through it, so they cannot drift apart on lifetime.
  *
  * `sessionExpiresAt` is the absolute deadline of the login, chosen once at login
@@ -368,10 +366,14 @@ type ClerkRequestState = {
 	readonly toAuth: (options?: { readonly treatPendingAsSignedOut?: boolean }) => ClerkSessionAuth | null
 }
 
+type ClerkTokenType = "session_token" | "api_key" | "m2m_token" | "oauth_token"
+// Clerk takes `"any"` only on its own, never inside the array.
+type ClerkAcceptsToken = ClerkTokenType | ReadonlyArray<ClerkTokenType> | "any"
+
 type ClerkAuthenticateRequest = (
 	request: Request,
 	options: {
-		readonly acceptsToken: string | string[]
+		readonly acceptsToken: ClerkAcceptsToken
 		readonly jwtKey?: string
 	},
 ) => Promise<ClerkRequestState>
@@ -380,17 +382,21 @@ export interface AuthEnv {
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_DEFAULT_ORG_ID: string
 	readonly MAPLE_ORG_ID_OVERRIDE: Option.Option<string>
-	/** Only `development` lets a pinned org admit a non-member (with their session role). */
 	readonly MAPLE_ENVIRONMENT?: string | undefined
-	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
-	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
+	/**
+	 * Lets a pinned org admit a non-member with their session role, for a local stack pinned to a
+	 * seeded org. Honoured only when `MAPLE_ENVIRONMENT` is `development`; absent means refuse.
+	 */
+	readonly MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS?: boolean | undefined
+	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted>
+	readonly CLERK_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly CLERK_PUBLISHABLE_KEY: Option.Option<string>
-	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly CLERK_JWT_KEY: Option.Option<Redacted.Redacted>
 }
 
 const getOptionalString = <A>(option: Option.Option<A>): A | undefined => Option.getOrUndefined(option)
 
-const getOptionalSecret = (option: Option.Option<Redacted.Redacted<string>>): string | undefined =>
+const getOptionalSecret = (option: Option.Option<Redacted.Redacted>): string | undefined =>
 	Option.match(option, { onNone: () => undefined, onSome: Redacted.value })
 
 /**
@@ -403,34 +409,48 @@ class MissingAuthSecretError extends Schema.TaggedError<MissingAuthSecretError>(
 	{ secret: Schema.String, message: Schema.String },
 ) {}
 
-const requireSecret = (
-	option: Option.Option<Redacted.Redacted<string>>,
-	label: string,
-): Effect.Effect<string, never> =>
+const requireSecret = (option: Option.Option<Redacted.Redacted>, label: string): Effect.Effect<string> =>
 	Option.match(option, {
 		// Config is read once at layer build, so a missing secret is a misconfigured
 		// deployment, not a request that could be answered differently.
 		onNone: () =>
-			// oxlint-disable-next-line maple/no-effect-die
+			// oxlint-disable-next-line maple/no-effect-die -- a missing secret is a misconfigured deployment
 			Effect.die(new MissingAuthSecretError({ secret: label, message: `${label} is required` })),
 		onSome: (value) => Effect.succeed(Redacted.value(value)),
 	})
 
-const makeClerkAuthenticateRequest = (
-	env: Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-): ClerkAuthenticateRequest | undefined => {
-	if (Option.isNone(env.CLERK_SECRET_KEY)) {
-		return undefined
-	}
+export type ClerkEnv = Pick<AuthEnv, "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">
 
-	const clerkClient = createClerkClient({
+const clerkClients = new WeakMap<ClerkEnv, ClerkClient>()
+
+/** The deployment's Clerk backend client, built once per env; `undefined` without a secret key. */
+export const clerkClientFor = (env: ClerkEnv): ClerkClient | undefined => {
+	if (Option.isNone(env.CLERK_SECRET_KEY)) return undefined
+	const cached = clerkClients.get(env)
+	if (cached !== undefined) return cached
+	const client = createClerkClient({
 		secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
 		publishableKey: getOptionalString(env.CLERK_PUBLISHABLE_KEY),
 		jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
 	})
+	clerkClients.set(env, client)
+	return client
+}
+
+/** {@link clerkClientFor}, only in Clerk auth mode. */
+export const clerkModeClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">): ClerkClient | undefined =>
+	getAuthMode(env.MAPLE_AUTH_MODE) === "clerk" ? clerkClientFor(env) : undefined
+
+const makeClerkAuthenticateRequest = (env: ClerkEnv): ClerkAuthenticateRequest | undefined => {
+	const clerkClient = clerkClientFor(env)
+	if (clerkClient === undefined) return undefined
 
 	return (request, options) =>
-		clerkClient.authenticateRequest(request, options as any) as Promise<ClerkRequestState>
+		clerkClient.authenticateRequest(request, {
+			jwtKey: options.jwtKey,
+			acceptsToken:
+				typeof options.acceptsToken === "string" ? options.acceptsToken : [...options.acceptsToken],
+		})
 }
 
 export const makeLoginSelfHosted = (
@@ -459,7 +479,7 @@ export const makeLoginSelfHosted = (
 		const tenant = makeSelfHostedTenant(env.MAPLE_DEFAULT_ORG_ID)
 		const now = Math.floor((yield* Clock.currentTimeMillis) / 1000)
 		// Entering the root password is what starts the absolute clock. Renewal
-		// never restarts it — only another login does.
+		// never restarts it: only another login does.
 		const sessionExpiresAt = now + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
 		const { token, expiresAt } = mintSelfHostedSessionToken(tenant, now, sessionExpiresAt, rootPassword)
 
@@ -477,7 +497,7 @@ export const makeLoginSelfHosted = (
  * token lifetime does not mean the operator is logged out mid-session.
  *
  * The presented token is re-verified from scratch rather than trusted from the
- * middleware that already let the request through — this function is the only
+ * middleware that already let the request through: this function is the only
  * thing standing between a token and a new one, so it does its own checking. An
  * expired token cannot be renewed; that is the point of the expiry.
  */
@@ -498,7 +518,7 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
 		// A token minted before `session_exp` existed still gets a bounded renewal
 		// window rather than an unlimited one: its own `iat` plus the same maximum
 		// lifetime, which is exactly the deadline the max-age rule already enforces
-		// against it. That is the rollout path — legacy sessions renew until they
+		// against it. That is the rollout path: legacy sessions renew until they
 		// hit the cap, then the operator logs in again.
 		const sessionExpiresAt = claims.session_exp ?? claims.iat + SELF_HOSTED_SESSION_MAX_LIFETIME_SECONDS
 		const renewed = mintSelfHostedSessionToken(
@@ -529,12 +549,11 @@ export const makeRefreshSelfHostedSession = (env: Pick<AuthEnv, "MAPLE_AUTH_MODE
  * It exists for one shape of caller: the iOS app publishing a Home Screen
  * widget snapshot per organization. A Clerk token carries exactly one active
  * organization, and `setActive` is global session state the foreground is
- * using — so the only way to read another org's data without disturbing the
+ * using, so the only way to read another org's data without disturbing the
  * user is to name it per request and prove membership server-side.
  *
- * Deliberately NOT `x-org-id`: that name belongs to the internal-service branch
- * in `apps/api/src/mcp/lib/resolve-tenant.ts`, which trusts it wholesale behind
- * a shared secret. Two very different trust models must not share a spelling.
+ * Namespaced under `x-maple-`: the value is never trusted on its own, only
+ * after membership in the named org is proven.
  */
 export const ORG_SELECTION_HEADER = "x-maple-org-id"
 
@@ -577,12 +596,12 @@ const organizationAccessDenied = (requestedOrgId?: OrgId) => {
  * Two invariants, and both are load-bearing:
  *
  * 1. **The header only ever selects among organizations the caller can already
- *    be proven a member of.** Wherever that proof is unavailable — self-hosted
- *    mode, `MAPLE_ORG_ID_OVERRIDE`, API keys, no verifier wired — the request is
+ *    be proven a member of.** Wherever that proof is unavailable (self-hosted
+ *    mode, `MAPLE_ORG_ID_OVERRIDE`, API keys, no verifier wired) the request is
  *    rejected, never silently served under the credential's own organization.
  *    Silently ignoring it is the failure mode where a widget renders one
  *    organization's incidents under another's name and nobody notices.
- * 2. **Naming the organization you already have is free** — see
+ * 2. **Naming the organization you already have is free**: see
  *    {@link applyRequestedOrg}, which short-circuits before reaching here. That
  *    is what lets a client send the header unconditionally instead of branching.
  */
@@ -630,7 +649,7 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	const requestedOrgId = yield* decodeOrgId(requested, "Invalid organization selection")
 	if (requestedOrgId === tenant.orgId) return tenant
 
-	// `None` means "no header", which the guard above has already ruled out — so
+	// `None` means "no header", which the guard above has already ruled out, so
 	// this either adopts an organization or fails. There is deliberately no
 	// branch here that returns the original tenant: that shape is what a silent
 	// ignore looks like, and it is the failure this whole path exists to avoid.
@@ -647,8 +666,8 @@ const authenticateClerkUser = Effect.fnUntraced(function* (
 	headers: HeaderRecord,
 	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
 	authenticateClerkRequest: ClerkAuthenticateRequest,
-	acceptsToken: string | string[],
-	acceptPendingSession = false,
+	acceptsToken: ClerkAcceptsToken,
+	acceptPendingSession: boolean = false,
 ) {
 	const requestState = yield* Effect.tryPromise({
 		try: () =>
@@ -716,9 +735,9 @@ export const makeResolveClerkUser = (
 export const makeResolveTenant = (
 	env: AuthEnv,
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-	acceptsToken: string | string[] = "session_token",
+	acceptsToken: ClerkAcceptsToken = "session_token",
 	/**
-	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely — the header is then
+	 * Omit to disable {@link ORG_SELECTION_HEADER} entirely: the header is then
 	 * rejected rather than ignored. Callers that have no membership directory to
 	 * check against (electric-sync) and callers where the header has no meaning
 	 * (`makeResolveMcpTenant`, whose credentials include org-bound API keys)
@@ -770,7 +789,7 @@ export const makeResolveTenant = (
 				const pinnedOrgId = yield* decodeOrgId(orgIdOverride, "Invalid MAPLE_ORG_ID_OVERRIDE value")
 				// The pin wins over a selection header (every web session names its own
 				// org). The role is the verified membership's; a non-member is only let
-				// in with their session's role on a development pin.
+				// in with their session's role on an explicitly opted-in development pin.
 				if (auth.orgId === pinnedOrgId) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
@@ -780,16 +799,19 @@ export const makeResolveTenant = (
 				if (Option.isSome(membership)) {
 					return { orgId: pinnedOrgId, userId, roles: [membership.value.role], authMode: "clerk" }
 				}
-				if (env.MAPLE_ENVIRONMENT === "development") {
+				if (
+					env.MAPLE_ENVIRONMENT === "development" &&
+					env.MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS === true
+				) {
 					return { orgId: pinnedOrgId, userId, roles: sessionRoles, authMode: "clerk" }
 				}
-				// Outside development, membership the resolver cannot prove (no verifier) is a refusal.
+				// Otherwise membership the resolver cannot prove (no verifier) is a refusal.
 				return yield* organizationAccessDenied(pinnedOrgId)
 			}
 
 			if (!auth.orgId) {
 				// No active organization in the session. A request that names one it
-				// can prove membership of is still serviceable — this is the widget
+				// can prove membership of is still serviceable: this is the widget
 				// publishing path, whose whole point is not to disturb whatever the
 				// foreground has active.
 				const selected = yield* selectRequestedOrg(userId, headers, selectable)
@@ -852,8 +874,8 @@ export const makeResolveMcpTenant = (
 	// "Clerk / self-hosted session auth" fallback in resolveMcpTenantContext, used
 	// by a logged-in browser applying an approved chat proposal via
 	// POST /internal/chat/apply. Both resolve to the caller's own org (and a session
-	// token keeps the human userId for attribution). The internal-service and
-	// api-key paths run before this fallback, so this only widens the
+	// token keeps the human userId for attribution). The api-key path runs
+	// before this fallback, so this only widens the
 	// already-last-resort branch; self-hosted HS256 mode already ignored
 	// acceptsToken, so this just brings Clerk mode to parity.
 ) => makeResolveTenant(env, authenticateClerkRequest, ["api_key", "session_token"])
@@ -881,8 +903,11 @@ const clerkLookup = <A>(
 	)
 
 const extractPrimaryEmail = (u: ClerkUser): string | null => {
-	const primary = u.emailAddresses?.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.emailAddress ?? u.emailAddresses?.[0]?.emailAddress ?? null
+	const primary = Arr.findFirst(u.emailAddresses ?? [], (e) => e.id === u.primaryEmailAddressId)
+	return Option.getOrElse(
+		Option.flatMapNullishOr(primary, (e) => e.emailAddress),
+		() => u.emailAddresses?.[0]?.emailAddress ?? null,
+	)
 }
 
 /** The primary address only once Clerk has verified it; never a fallback to another address. */
@@ -894,68 +919,52 @@ export const extractVerifiedPrimaryEmail = (u: {
 		readonly verification: { readonly status: string } | null
 	}>
 }): string | null => {
-	const primary = u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)
-	return primary?.verification?.status === "verified" ? primary.emailAddress : null
+	return Option.match(
+		Arr.findFirst(u.emailAddresses, (e) => e.id === u.primaryEmailAddressId),
+		{
+			onNone: () => null,
+			onSome: (primary) => (primary.verification?.status === "verified" ? primary.emailAddress : null),
+		},
+	)
 }
 
-const makeClerkClient = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || Option.isNone(env.CLERK_SECRET_KEY)) {
-		return null
-	}
-	return createClerkClient({
-		secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
-		publishableKey: getOptionalString(env.CLERK_PUBLISHABLE_KEY),
-		jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
-	})
-}
+const makeClerkClient = (env: ClerkEnv & Pick<AuthEnv, "MAPLE_AUTH_MODE">) => clerkModeClient(env) ?? null
 
-export const makeGetUserEmail = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
-		return Effect.fn("AuthService.getUserEmail")(function* (_userId: string) {
-			return null as string | null
+/** One Clerk user lookup per call; null outside Clerk mode or on a failed lookup. */
+const makeUserEmailLookup =
+	(spanName: string, extract: (user: ClerkUser) => string | null) =>
+	(
+		env: Pick<
+			AuthEnv,
+			"MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY"
+		>,
+	) => {
+		const clerkClient = makeClerkClient(env)
+		if (!clerkClient) {
+			return Effect.fn(spanName)(function* (_userId: string) {
+				return null as string | null
+			})
+		}
+
+		return Effect.fn(spanName)(function* (userId: string) {
+			yield* Effect.annotateCurrentSpan("tenant.userId", userId)
+			const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
+				clerkClient.users.getUser(userId),
+			).pipe(Effect.option)
+
+			return Option.match(user, {
+				onNone: () => null as string | null,
+				onSome: extract,
+			})
 		})
 	}
 
-	return Effect.fn("AuthService.getUserEmail")(function* (userId: string) {
-		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-			clerkClient.users.getUser(userId),
-		).pipe(Effect.option)
+export const makeGetUserEmail = makeUserEmailLookup("AuthService.getUserEmail", extractPrimaryEmail)
 
-		return Option.match(user, {
-			onNone: () => null as string | null,
-			onSome: extractPrimaryEmail,
-		})
-	})
-}
-
-export const makeGetVerifiedPrimaryEmail = (
-	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
-) => {
-	const clerkClient = makeClerkClient(env)
-	if (!clerkClient) {
-		return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (_userId: string) {
-			return null as string | null
-		})
-	}
-
-	return Effect.fn("AuthService.getVerifiedPrimaryEmail")(function* (userId: string) {
-		yield* Effect.annotateCurrentSpan("tenant.userId", userId)
-		const user = yield* clerkLookup("Clerk.users.getUser", { "tenant.userId": userId }, () =>
-			clerkClient.users.getUser(userId),
-		).pipe(Effect.option)
-
-		return Option.match(user, {
-			onNone: () => null as string | null,
-			onSome: extractVerifiedPrimaryEmail,
-		})
-	})
-}
+export const makeGetVerifiedPrimaryEmail = makeUserEmailLookup(
+	"AuthService.getVerifiedPrimaryEmail",
+	extractVerifiedPrimaryEmail,
+)
 
 export const makeGetCustomerData = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,

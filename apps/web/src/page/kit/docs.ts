@@ -1,0 +1,71 @@
+/**
+ * Every docs page the app links to from an empty state, as a path under maple.dev. One table so
+ * `docs.test.ts` can resolve each path against the landing content collection: a renamed doc then
+ * fails in the PR that renames it instead of rotting into a 404.
+ */
+export const DOCS = {
+	instrumentation: "/docs/instrumentation",
+	nodejsGuide: "/docs/guides/instrumentation-nodejs",
+	nextjsGuide: "/docs/guides/instrumentation-nextjs",
+	pythonGuide: "/docs/guides/instrumentation-python",
+	goGuide: "/docs/guides/instrumentation-go",
+	javaGuide: "/docs/guides/instrumentation-java",
+	rustGuide: "/docs/guides/instrumentation-rust",
+	kotlinGuide: "/docs/guides/instrumentation-kotlin",
+	dotnetGuide: "/docs/guides/instrumentation-csharp",
+	laravelGuide: "/docs/guides/instrumentation-laravel",
+	rubyGuide: "/docs/guides/instrumentation-ruby",
+	effectSdk: "/docs/sdks/effect",
+	quickstart: "/docs/getting-started/quickstart",
+	otelConventions: "/docs/concepts/otel-conventions",
+	samplingThroughput: "/docs/concepts/sampling-throughput",
+	missingRootSpans: "/docs/concepts/missing-root-spans",
+	retention: "/docs/reference/retention",
+	traces: "/docs/explore/traces",
+	logs: "/docs/explore/logs",
+	metrics: "/docs/explore/metrics",
+	services: "/docs/explore/services",
+	serviceMap: "/docs/explore/service-map",
+	errors: "/docs/errors/overview",
+	sessionReplay: "/docs/session-replay/replays",
+	browserSdk: "/docs/session-replay/browser-sdk",
+	identifyingUsers: "/docs/explore/users",
+	productEventsApi: "/docs/product-events/api",
+	webAnalytics: "/docs/product-events/web-analytics",
+	agentSessions: "/docs/agent-sessions/overview",
+	aiAgents: "/docs/getting-started/ai-agents",
+	mcp: "/docs/reference/mcp",
+	alertRules: "/docs/alerting/alert-rules",
+	incidents: "/docs/alerting/incidents",
+	destinations: "/docs/alerting/notification-destinations",
+	dashboards: "/docs/dashboards/build-dashboards",
+	embedCharts: "/docs/dashboards/embed-charts",
+	apiReference: "/docs/reference/api",
+	authentication: "/docs/reference/authentication",
+	hosts: "/docs/infrastructure/hosts",
+	docker: "/docs/infrastructure/docker",
+	kubernetes: "/docs/infrastructure/kubernetes",
+	cloudflare: "/docs/integrations/cloudflare",
+	gcp: "/docs/integrations/gcp",
+	aws: "/docs/integrations/aws",
+	gcpOpenTelemetry: "/docs/integrations/gcp-opentelemetry",
+	gcpManualSetup: "/docs/integrations/gcp-manual-setup",
+	gcpInfrastructureAsCode: "/docs/integrations/gcp-infrastructure-as-code",
+	planetscale: "/docs/integrations/planetscale",
+	vercel: "/docs/integrations/vercel",
+	railway: "/docs/integrations/railway",
+	supabase: "/docs/integrations/supabase",
+	prometheus: "/docs/integrations/prometheus",
+	warpstream: "/docs/integrations/warpstream",
+	github: "/docs/integrations/github",
+	slack: "/docs/integrations/slack",
+} as const
+
+export type DocsPage = keyof typeof DOCS
+
+const DOCS_ORIGIN = "https://maple.dev"
+
+/** `anchor` is a heading slug on that page, e.g. `trace-correlation`. */
+export function docsUrl(page: DocsPage, anchor?: string): string {
+	return `${DOCS_ORIGIN}${DOCS[page]}${anchor === undefined ? "" : `#${anchor}`}`
+}

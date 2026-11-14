@@ -12,13 +12,9 @@ interface HelperResult {
 const notRun: HelperResult = { ok: false, stdout: "" }
 
 /**
- * Run a native credential helper and collect its exit status and stdout.
- *
- * A missing, non-executable, or signal-killed helper means "this machine has no
- * usable native credential store", which every caller already handles by
- * falling back to file storage. That still degrades to `ok: false` — but the
- * cause is logged rather than discarded, so a broken keychain is no longer
- * indistinguishable from a machine that simply has none.
+ * Run a native credential helper and collect its exit status and stdout. A missing or
+ * signal-killed helper degrades to `ok: false` (callers fall back to file storage), with the
+ * cause logged so a broken keychain is distinguishable from a machine that has none.
  */
 const run = (
 	cmd: readonly [string, ...ReadonlyArray<string>],
@@ -81,7 +77,7 @@ export const writeNativeCredential = (
 ): Effect.Effect<boolean, never, ChildProcessSpawner> =>
 	Effect.gen(function* () {
 		const account = credentialAccount(apiUrl)
-		const stored = yield* Effect.gen(function* () {
+		const storeNative = Effect.gen(function* () {
 			if (process.platform === "darwin") {
 				// With -w as the final option and no argument, `security` prompts for
 				// the secret rather than taking it as an argv word, so it never shows
@@ -103,6 +99,7 @@ export const writeNativeCredential = (
 			}
 			return false
 		})
+		const stored = yield* storeNative
 		if (!stored) return false
 		// Neither helper reports a partial write through its exit status, and the
 		// caller drops the file fallback whenever this returns true — so prove the

@@ -1,4 +1,5 @@
 import { String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 /**
  * Safe `{{ variable }}` template renderer for alert notifications.
  *
@@ -57,13 +58,12 @@ const isPresent = (value: string | undefined): value is string => value != null 
 export const renderTemplate = (template: string, context: TemplateContext): RenderResult => {
 	const missing = new Set<string>()
 
-	// 1. Resolve conditional blocks first; their inner tokens are substituted in step 2.
-	const withConditionals = template.replace(IF_BLOCK, (_match, key: string, inner: string) =>
+	// Conditional blocks first; their inner tokens are substituted with the rest below.
+	const withConditionals = replaceWith(template, IF_BLOCK, (_match, key = "", inner = "") =>
 		isPresent(context[key]) ? inner : "",
 	)
 
-	// 2. Substitute remaining tokens.
-	const text = withConditionals.replace(TOKEN, (_match, key: string, fallback: string | undefined) => {
+	const text = replaceWith(withConditionals, TOKEN, (_match, key = "", fallback: string | undefined) => {
 		const value = context[key]
 		if (isPresent(value)) return value
 		if (fallback !== undefined) return fallback

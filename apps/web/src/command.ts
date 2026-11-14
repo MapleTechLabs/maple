@@ -1,5 +1,5 @@
 import { DashboardWidgetSchema } from "@maple/domain/http"
-import { mutateDashboard } from "./page/dashboards/kit/store"
+import { errorMessageOf, mutateDashboard } from "./page/dashboards/kit/store"
 import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
@@ -22,7 +22,7 @@ const AUTH_SETTLE_TIMEOUT = Duration.seconds(2)
 /** How long a first visit holds the boot splash on the customer read before failing open. */
 const CUSTOMER_SPLASH_GRACE = Duration.seconds(4)
 
-/** `retryOrgCollections`: a fresh collection set; every live query moves onto it. */
+/** A fresh collection set; every live query moves onto it. */
 export const ReconnectOrgCollections = Command.define("ReconnectOrgCollections", {
 	messages: [Message.CompletedReconnectOrgCollections],
 	execute: Effect.gen(function* () {
@@ -44,7 +44,12 @@ export const RestoreDashboardWidgets = Command.define("RestoreDashboardWidgets",
 			return missing.length === 0
 				? document
 				: { ...document, widgets: [...document.widgets, ...missing], updatedAt: nowIso }
-		}).pipe(Effect.ignore, Effect.as(Message.CompletedRestoreDashboardWidgets())),
+		}).pipe(
+			Effect.as(Message.CompletedRestoreDashboardWidgets({ error: null })),
+			Effect.catch((error) =>
+				Effect.succeed(Message.CompletedRestoreDashboardWidgets({ error: errorMessageOf(error) })),
+			),
+		),
 })
 
 export const NavigateInternal = Command.define("NavigateInternal", {
@@ -65,7 +70,7 @@ export const LoadExternal = Command.define("LoadExternal", {
 	execute: ({ href }) => load(href).pipe(Effect.as(Message.CompletedLoadExternal())),
 })
 
-/** `resolveSelfHostedRouterAuth`: a rejected token is cleared, an unreachable API keeps it. */
+/** A rejected token is cleared, an unreachable API keeps it. */
 export const CheckSession = Command.define("CheckSession", {
 	messages: [Message.SucceededCheckSession, Message.FailedCheckSession],
 	execute: Effect.gen(function* () {
@@ -119,7 +124,7 @@ export const IdentifySession = Command.define("IdentifySession", {
 	execute: ({ identity }) => identifySession(identity).pipe(Effect.as(Message.CompletedIdentifySession())),
 })
 
-/** `billingCustomerAtom`: `GET /internal/billing/customer`, for the org it was asked for. */
+/** `GET /internal/billing/customer`, for the org it was asked for. */
 export const LoadCustomer = Command.define("LoadCustomer", {
 	args: { orgId: Schema.String, refresh: Schema.Boolean },
 	messages: [Message.SucceededLoadCustomer, Message.FailedLoadCustomer],
@@ -138,7 +143,7 @@ export const WaitCustomerGrace = Command.define("WaitCustomerGrace", {
 		Effect.sleep(CUSTOMER_SPLASH_GRACE).pipe(Effect.as(Message.ElapsedCustomerGrace({ orgId }))),
 })
 
-/** The plan settled: remember whether this org may render the app (`selectedPlanKnownAtomFor`). */
+/** The plan settled: remember whether this org may render the app. */
 export const SaveSelectedPlanKnown = Command.define("SaveSelectedPlanKnown", {
 	args: { orgId: Schema.String, mayRenderApp: Schema.Boolean },
 	messages: [Message.CompletedSaveSelectedPlanKnown],
@@ -157,7 +162,7 @@ export const WaitPreloadDelay = Command.define("WaitPreloadDelay", {
 		),
 })
 
-/** `warmAtoms`' hold: unused preloads are released after it. */
+/** How long preloads are held; unused ones are released after it. */
 export const HoldPreloads = Command.define("HoldPreloads", {
 	args: { keys: Schema.Array(Schema.String) },
 	messages: [Message.ExpiredPreloads],
@@ -195,7 +200,7 @@ export const ReadSessionTimeRange = Command.define("ReadSessionTimeRange", {
 		),
 })
 
-/** `persistSessionTimeRange`: the window a settled navigation carried. */
+/** The window a settled navigation carried. */
 export const WriteSessionTimeRange = Command.define("WriteSessionTimeRange", {
 	args: { orgId: Schema.String, value: SessionTimeRange },
 	messages: [Message.CompletedWriteSessionTimeRange],

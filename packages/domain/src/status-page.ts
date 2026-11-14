@@ -1,4 +1,4 @@
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Schema, SchemaTransformation, Struct, Array as Arr, String as Str } from "effect"
 import {
 	StatusPageComponentId,
 	StatusPageComponentStatus,
@@ -7,8 +7,9 @@ import {
 	StatusPageIncidentKind,
 	StatusPageIncidentStatus,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 	type UptimeMonitorStatus,
-} from "./primitives"
+} from "@maple/primitives"
 
 // Status pages: the snapshot the publisher writes to edge storage and `apps/status` serves
 // without touching Maple, plus the pure rules both sides share (component status, bars,
@@ -25,12 +26,141 @@ export const STATUS_PAGE_INCIDENT_HISTORY_DAYS = 14
 export const STATUS_PAGE_STALE_AFTER_MS = 5 * 60_000
 /** Longest page link (website, logo, privacy, terms) the service stores; the editor checks it too. */
 export const STATUS_PAGE_MAX_URL_LENGTH = 2048
+/** Longest incident update message, in characters; the API, the service and the editor all check it. */
+export const STATUS_PAGE_UPDATE_MAX_LENGTH = 20_000
 
 /** Lowercase letters, digits and inner hyphens: the `<slug>` in `<slug>.<status domain>`. */
 export const StatusPageSlug = Schema.String.check(
 	Schema.isPattern(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/u),
 ).annotate({ identifier: "@maple/StatusPageSlug", title: "Status Page Slug" })
 export type StatusPageSlug = Schema.Schema.Type<typeof StatusPageSlug>
+
+/** Longest custom domain hostname Maple stores (DNS caps a name at 253 characters). */
+export const STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH = 253
+
+/**
+ * Hostnames a customer may not claim: Maple's own, Cloudflare's shared ones and names that never
+ * resolve publicly. A suffix match covers the name itself and every name under it.
+ */
+const RESERVED_CUSTOM_DOMAIN_SUFFIXES = [
+	"maple.dev",
+	"workers.dev",
+	"pages.dev",
+	"cloudflare.com",
+	"localhost",
+	"local",
+	"internal",
+	"test",
+	"example",
+	"invalid",
+	"arpa",
+] as const
+
+const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u
+
+/**
+ * Common two-label public suffixes: `acme.co.uk` is an apex, so it needs a fourth label. Not the
+ * full public suffix list; a missed apex only sits in pending DNS until removed.
+ */
+const TWO_LABEL_PUBLIC_SUFFIXES = new Set([
+	"co.uk",
+	"org.uk",
+	"me.uk",
+	"ltd.uk",
+	"plc.uk",
+	"ac.uk",
+	"gov.uk",
+	"com.au",
+	"net.au",
+	"org.au",
+	"co.nz",
+	"org.nz",
+	"co.za",
+	"co.jp",
+	"ne.jp",
+	"or.jp",
+	"co.kr",
+	"co.in",
+	"com.br",
+	"com.cn",
+	"com.mx",
+	"com.tr",
+	"com.sg",
+	"com.hk",
+	"com.tw",
+	"co.il",
+	"com.ar",
+	"co.id",
+	"com.my",
+	"com.ph",
+	"github.io",
+	"netlify.app",
+	"vercel.app",
+])
+
+/** Trimmed, lower-cased, without a trailing dot: the one spelling a custom domain is stored in. */
+export const normalizeCustomDomain = (raw: string): string =>
+	Str.replace(/\.$/u, "")(Str.toLowerCase(Str.trim(raw)))
+
+/**
+ * Why a normalized hostname cannot be a status page's custom domain, or null when it can. A
+ * subdomain is required (`status.acme.com`): an apex cannot CNAME to Maple.
+ */
+export const customDomainIssue = (hostname: string): string | null => {
+	if (hostname === "") return "Enter a hostname, like status.acme.com."
+	if (hostname.length > STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH)
+		return `A hostname has at most ${STATUS_PAGE_CUSTOM_DOMAIN_MAX_LENGTH} characters.`
+	if (Str.includes("/")(hostname)) return "Enter the hostname alone, without https:// or a path."
+	const labels = Str.split(".")(hostname)
+	if (!Arr.every(labels, (label) => HOSTNAME_LABEL.test(label)))
+		return "Use letters, digits and hyphens between the dots, like status.acme.com."
+	if (/^[0-9]+$/u.test(labels.at(-1) ?? "")) return "Enter a hostname, not an IP address."
+	const suffixLabels = TWO_LABEL_PUBLIC_SUFFIXES.has(Arr.join(labels.slice(-2), ".")) ? 2 : 1
+	if (labels.length < suffixLabels + 2)
+		return "Use a subdomain, like status.acme.com: an apex domain cannot point at Maple."
+	const reserved = Arr.findFirst(
+		RESERVED_CUSTOM_DOMAIN_SUFFIXES,
+		(suffix) => hostname === suffix || Str.endsWith(`.${suffix}`)(hostname),
+	)
+	return Option.match(reserved, {
+		onNone: () => null,
+		onSome: (suffix) => `Names under ${suffix} cannot be a custom domain.`,
+	})
+}
+
+/** Why a customer adds a DNS record: to route the hostname to Maple, prove they own it, or get its certificate. */
+export const StatusPageCustomDomainRecordPurpose = Schema.Literals(["routing", "ownership", "certificate"])
+export type StatusPageCustomDomainRecordPurpose = Schema.Schema.Type<
+	typeof StatusPageCustomDomainRecordPurpose
+>
+
+/** One DNS record the customer adds at their DNS provider. */
+export const StatusPageCustomDomainDnsRecord = Schema.Struct({
+	type: Schema.Literals(["CNAME", "TXT"]),
+	name: Schema.String,
+	value: Schema.String,
+	purpose: StatusPageCustomDomainRecordPurpose,
+})
+export type StatusPageCustomDomainDnsRecord = Schema.Schema.Type<typeof StatusPageCustomDomainDnsRecord>
+
+/** A custom domain as the API takes it: any case, trimmed, then checked by {@link customDomainIssue}. */
+export const StatusPageCustomDomainHostname = Schema.String.pipe(
+	Schema.decodeTo(
+		Schema.String.check(
+			Schema.makeFilter((hostname: string) => customDomainIssue(hostname) ?? undefined),
+		),
+		SchemaTransformation.transform<string, string>({
+			decode: normalizeCustomDomain,
+			encode: (hostname) => hostname,
+		}),
+	),
+).annotate({
+	identifier: "@maple/StatusPageCustomDomainHostname",
+	title: "Status Page Custom Domain",
+	description:
+		"A subdomain you control, like `status.acme.com`. Not an apex domain, an IP address or a Maple hostname.",
+	examples: ["status.acme.com"],
+})
 
 /** `YYYY-MM-DD`, UTC. */
 export const StatusPageDay = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
@@ -103,8 +233,6 @@ export const StatusPageIncidentHistoryEntry = Schema.Struct({
 })
 export type StatusPageIncidentHistoryEntry = Schema.Schema.Type<typeof StatusPageIncidentHistoryEntry>
 
-// --- Theme ---
-
 export const StatusPageThemePreset = Schema.Literals(["default", "maple", "mono", "midnight", "paper"])
 export type StatusPageThemePreset = Schema.Schema.Type<typeof StatusPageThemePreset>
 export const StatusPageThemeAppearance = Schema.Literals(["auto", "light", "dark"])
@@ -156,9 +284,6 @@ export const STATUS_PAGE_PRESET_DEFAULTS = {
 	StatusPageThemePreset,
 	{ readonly font: StatusPageThemeFont; readonly radius: StatusPageThemeRadius }
 >
-
-/** The colour overrides a forced appearance takes; Auto ignores them. */
-export const STATUS_PAGE_THEME_COLOR_FIELDS = ["background", "text", "card", "border"] as const
 
 /** Concrete CSS tokens for one colour scheme. */
 export interface StatusPageThemeTokens {
@@ -426,11 +551,15 @@ export const contrastRatio = (a: string, b: string): number => {
 
 /** The most-blended mix of `fg` into `bg` (from 62% up to 100%) that keeps AA on `bg` and `card`. */
 const readableMix = (fg: string, bg: string, card: string): string =>
-	Arr.map(MUTED_WEIGHTS, (weight) => mixHex(fg, bg, weight)).find(
-		(muted) =>
-			contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
-			contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
-	) ?? fg
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.map(MUTED_WEIGHTS, (weight) => mixHex(fg, bg, weight)),
+			(muted) =>
+				contrastRatio(muted, bg) >= STATUS_PAGE_MIN_CONTRAST &&
+				contrastRatio(muted, card) >= STATUS_PAGE_MIN_CONTRAST,
+		),
+		() => fg,
+	)
 
 const MUTED_WEIGHTS = Array.from({ length: 39 }, (_, step) => 0.62 + step * 0.01)
 
@@ -460,9 +589,13 @@ const TINT_WEIGHTS = Array.from({ length: 10 }, (_, step) => 0.22 - step * 0.02)
 
 /** The strongest mix of `status` into `card` (22% down to 4%) that keeps `fg` text at AA on it. */
 const statusTint = (status: string, card: string, fg: string): string =>
-	Arr.map(TINT_WEIGHTS, (weight) => mixHex(status, card, weight)).find(
-		(tint) => contrastRatio(fg, tint) >= STATUS_PAGE_MIN_CONTRAST,
-	) ?? card
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.map(TINT_WEIGHTS, (weight) => mixHex(status, card, weight)),
+			(tint) => contrastRatio(fg, tint) >= STATUS_PAGE_MIN_CONTRAST,
+		),
+		() => card,
+	)
 
 /**
  * Links take the accent only where it stays readable on that mode's background; else the text
@@ -498,7 +631,7 @@ const withAccent = (tokens: StatusPageThemeTokens, accent: string | null): Resol
  */
 export const resolveStatusPageTheme = (theme: StatusPageTheme): ResolvedStatusPageTheme => {
 	const preset = PRESET_TOKENS[theme.preset]
-	const accent = theme.accent?.toLowerCase() ?? null
+	const accent = theme.accent == null ? null : Str.toLowerCase(theme.accent)
 	const forced = (mode: "light" | "dark") =>
 		theme.appearance === mode ? withOverrides(preset[mode], theme) : preset[mode]
 	return {
@@ -563,12 +696,30 @@ export const StatusPageSnapshotPage = Schema.Struct({
 	description: Schema.NullOr(Schema.String),
 	websiteUrl: Schema.NullOr(Schema.String),
 	logoUrl: Schema.NullOr(Schema.String),
+	// Branding added later: absent from older snapshots, which render without them.
+	/** Shown instead of the logo in dark mode. */
+	logoDarkUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	faviconUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/** Where visitors get help, linked in the header. */
+	supportUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	// Snapshots published before themes existed carry none; they render the default until republished.
 	theme: StatusPageTheme.pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(DEFAULT_STATUS_PAGE_THEME))),
 	showPoweredBy: Schema.Boolean,
 	// Footer links; absent from snapshots published before they existed.
 	privacyUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	termsUrl: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/**
+	 * The page's active custom domain (`status.acme.com`), or null. When set it is the page's
+	 * canonical address: feeds, the Slack command and emails link there.
+	 */
+	customDomain: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
+	/**
+	 * Who may read the page. A password page has no feeds or subscribe options (feed readers
+	 * cannot sign in); an internal one is never served at the edge. Absent before visibility existed.
+	 */
+	visibility: StatusPageVisibility.pipe(
+		Schema.withDecodingDefaultTypeKey(Effect.succeed("public" as const)),
+	),
 })
 export type StatusPageSnapshotPage = Schema.Schema.Type<typeof StatusPageSnapshotPage>
 
@@ -581,6 +732,11 @@ export const StatusPageSnapshot = Schema.Struct({
 	page: StatusPageSnapshotPage,
 	/** SHA-256 (base64url) of the break-glass token; null when none is issued. */
 	breakGlassTokenSha256: Schema.NullOr(Schema.String),
+	/**
+	 * The password hash (`status-page-access.ts`) of a password page, null otherwise. The status
+	 * Worker checks posted passwords and signs access cookies with it; nothing renders it.
+	 */
+	passwordHash: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefaultTypeKey(Effect.succeed(null))),
 	components: Schema.Array(StatusPageSnapshotComponent),
 	/** Open incidents, upcoming and active maintenance, and recently resolved ones; newest first. */
 	incidents: Schema.Array(StatusPageSnapshotIncident),
@@ -594,6 +750,16 @@ export const StatusPageSnapshot = Schema.Struct({
 })
 export type StatusPageSnapshot = Schema.Schema.Type<typeof StatusPageSnapshot>
 
+/** The credentials only the edge holds. */
+const SNAPSHOT_SECRETS = ["breakGlassTokenSha256", "passwordHash"] as const
+
+/** A snapshot as the API returns it to members: without the credentials the edge checks. */
+export const StatusPagePublicSnapshot = StatusPageSnapshot.mapFields(Struct.omit(SNAPSHOT_SECRETS))
+export type StatusPagePublicSnapshot = Schema.Schema.Type<typeof StatusPagePublicSnapshot>
+
+export const toPublicStatusPageSnapshot = (snapshot: StatusPageSnapshot): StatusPagePublicSnapshot =>
+	Struct.omit(snapshot, SNAPSHOT_SECRETS)
+
 /**
  * Written after each successful publish sweep. `probesSeenAt` is the newest scheduled check result
  * across all monitors: when the prober stops, every monitored page goes delayed together.
@@ -603,8 +769,6 @@ export const StatusPagePublisherHeartbeat = Schema.Struct({
 	probesSeenAt: Schema.NullOr(Schema.Number),
 })
 export type StatusPagePublisherHeartbeat = Schema.Schema.Type<typeof StatusPagePublisherHeartbeat>
-
-// --- Break-glass overlay ---
 
 /** An update posted straight to the status Worker while Maple is down; imported into Postgres later. */
 export const StatusPageOverlayEntry = Schema.Struct({
@@ -669,9 +833,11 @@ export const applyOverlay = (
 		(a, b) => a.at - b.at,
 	)
 	if (entries.length === 0) return snapshot
-	const incidents = entries.reduce<ReadonlyArray<StatusPageSnapshotIncident>>((list, entry) => {
+	const incidents = Arr.reduce(entries, snapshot.incidents, (list, entry) => {
 		const targetId = entry.incidentId ?? overlayIncidentId(entry.id)
-		const existing = list.find((incident) => matchesTarget(incident, targetId))
+		const existing = Option.getOrUndefined(
+			Arr.findFirst(list, (incident) => matchesTarget(incident, targetId)),
+		)
 		if (existing === undefined) {
 			const status =
 				entry.status !== null && statusFitsKind("incident", entry.status)
@@ -729,11 +895,9 @@ export const applyOverlay = (
 					}
 				: incident,
 		)
-	}, snapshot.incidents)
+	})
 	return { ...snapshot, incidents, components: withIncidentImpact(snapshot.components, incidents) }
 }
-
-// --- Component status ---
 
 const STATUS_RANK = {
 	operational: 0,
@@ -744,9 +908,10 @@ const STATUS_RANK = {
 } as const satisfies Record<StatusPageComponentStatus, number>
 
 export const worstStatus = (statuses: ReadonlyArray<StatusPageComponentStatus>): StatusPageComponentStatus =>
-	statuses.reduce<StatusPageComponentStatus>(
-		(worst, status) => (STATUS_RANK[status] > STATUS_RANK[worst] ? status : worst),
+	Arr.reduce<StatusPageComponentStatus, StatusPageComponentStatus>(
+		statuses,
 		"operational",
+		(worst, status) => (STATUS_RANK[status] > STATUS_RANK[worst] ? status : worst),
 	)
 
 const IMPACT_STATUS = {
@@ -828,10 +993,8 @@ const withIncidentImpact = (
 }
 
 /** The banner status: the worst component, or `operational` for an empty page. */
-export const overallStatus = (snapshot: StatusPageSnapshot): StatusPageComponentStatus =>
+export const overallStatus = (snapshot: StatusPagePublicSnapshot): StatusPageComponentStatus =>
 	worstStatus(Arr.map(snapshot.components, (component) => component.status))
-
-// --- Bars ---
 
 export const dayState = (bar: StatusPageDayBar): StatusPageDayState =>
 	bar.checks === 0 ? "none" : bar.downChecks > 0 ? "down" : bar.failures > 0 ? "degraded" : "ok"
@@ -859,8 +1022,6 @@ export const fillDays = (
 	return Arr.map(days, (day) => byDay.get(day) ?? { day, checks: 0, failures: 0, downChecks: 0 })
 }
 
-// --- Freshness ---
-
 export type StatusPageFreshness =
 	| { readonly _tag: "live"; readonly updatedAt: number }
 	| { readonly _tag: "delayed"; readonly updatedAt: number }
@@ -885,8 +1046,6 @@ export const pageFreshness = (input: {
 		? { _tag: "delayed", updatedAt }
 		: { _tag: "live", updatedAt }
 }
-
-// --- Break-glass token ---
 
 export const STATUS_PAGE_BREAK_GLASS_PREFIX = "mstat_"
 

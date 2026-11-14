@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import type { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, toLoadFailure, settled } from "@maple/views/data/load-failure"
 import { MapleAiClient, MapleInternalApiClient } from "../../../platform/api-clients"
 
 // The `securityAudit` group on the ai Worker as Effects the Security Center's Commands wrap. Every
@@ -22,7 +22,7 @@ const call = <A, E, R>(run: (api: Ai) => Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		const api = yield* MapleAiClient
 		return yield* run(api)
-	}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+	}).pipe(settled)
 
 export const listTargets = call((api) => api.securityAudit.listTargets())
 
@@ -134,6 +134,8 @@ export const toStartFailure = (error: unknown): LoadFailure => {
 			...failure,
 			message: `${error.message} Change the plan under Settings, Billing, or add an OpenRouter key under Settings, AI.`,
 		}
+	if (isCreditsUsedUp(error) && error.capReached === true)
+		return { ...failure, message: `${error.message} It resets on ${resetDay(error.resetsAt)}.` }
 	if (isCreditsUsedUp(error))
 		return {
 			...failure,
@@ -165,4 +167,4 @@ export const updateFindingStatus = (
 export const githubStatus = Effect.gen(function* () {
 	const api = yield* MapleInternalApiClient
 	return yield* api.integrations.githubStatus()
-}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+}).pipe(settled)

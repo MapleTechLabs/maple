@@ -5,12 +5,13 @@ import { PageOutMessage, type PageContext, type PageReturn } from "../contract"
 import { integrationOfSearch } from "./catalog"
 import { ConnectProvider, type ConnectModel, PROVIDERS } from "./connect"
 import type { Message } from "./message"
-import type { Model, Statuses } from "./model"
+import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
-import * as Cloudflare from "./update-cloudflare"
-import * as Planetscale from "./update-planetscale"
-import * as Supabase from "./update-supabase"
+import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
+import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
+import * as SearchConsole from "./update-search-console"
+import * as Supabase from "../infra-integrations/supabase/integration/update-supabase"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
 
@@ -22,6 +23,7 @@ const STATUS_OF = {
 	github: "github",
 	planetscale: "planetscale",
 	supabase: "supabase",
+	"google-search-console": "searchConsole",
 } satisfies { readonly [K in ConnectProvider]: keyof Statuses }
 
 const withConnect = (model: Model, connect: Partial<ConnectModel>): Model => ({
@@ -36,7 +38,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 
 const isCurrent = (model: Model, attempt: number) => model.connect.active?.attempt === attempt
 
-/** `refreshStatus` of the provider (Cloudflare's usage and prime ride along, see its card). */
+/** Re-reads the provider's status (Cloudflare's usage and prime ride along, see its card). */
 export const refreshProvider = (
 	model: Model,
 	context: PageContext,
@@ -52,7 +54,8 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 		model.githubCard.selectingInstallation !== null
 	)
 		return { model }
-	if (integration === "linear" && !model.isAdmin) return { model }
+	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
+		return { model }
 	const attempt = model.connect.attempts + 1
 	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
 	const active = { provider: integration, attempt }
@@ -111,7 +114,7 @@ export const polled = (model: Model, context: PageContext, attempt: number): Ret
 		: { model }
 }
 
-/** `onClosed`: re-read the status; a provider with a grace keeps the attempt open a while. */
+/** The popup closed: re-read the status; a provider with a grace keeps the attempt open a while. */
 export const closedPopup = (model: Model, context: PageContext, attempt: number): Return => {
 	const active = model.connect.active
 	if (active === null || active.attempt !== attempt) return { model }
@@ -131,9 +134,14 @@ const CONNECTED_TITLE = {
 	github: "GitHub connected",
 	planetscale: null,
 	supabase: "Supabase connected",
+	"google-search-console": "Google Search Console connected",
 } satisfies { readonly [K in ConnectProvider]: string | null }
 
-/** `useIntegrationMessage`: the callback page's verdict; a success is `integration_connected`. */
+/** A reconnect as the same account keeps the grant key, so its property list is re-read outright. */
+const refreshedSites = (model: Model, context: PageContext, provider: ConnectProvider): Return =>
+	provider === "google-search-console" ? SearchConsole.requestSites(model, context, "Supersede") : { model }
+
+/** The callback page's verdict; a success is `integration_connected`. */
 export const receivedCallback = (
 	model: Model,
 	context: PageContext,
@@ -159,6 +167,7 @@ export const receivedCallback = (
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
 			// The callback no longer discovers projects; a sync now lists them instead of the hourly cron.
 			(next) => (provider === "supabase" ? Supabase.clickedSync(next) : { model: next }),
+			(next) => refreshedSites(next, context, provider),
 		])
 	}
 	if (status !== "error") return { model }
@@ -199,6 +208,7 @@ export const receivedRelay = (
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+			(next) => refreshedSites(next, context, provider),
 		])
 	}
 	if (status !== "error") return { model: ended }

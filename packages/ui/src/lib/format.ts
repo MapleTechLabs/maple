@@ -1,10 +1,11 @@
-import { Match, pipe, Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import { toEpochMs } from "./time-format"
 
 // Imported, not re-exported straight through: the formatters below CALL these,
 // and a bare `export … from` binds nothing in this module's scope.
-import { formatDuration, formatNumber } from "@maple/domain/format"
+import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
+import type { WIDGET_UNITS } from "@maple/domain/http"
 
 export { formatDuration, formatNumber }
 
@@ -170,9 +171,10 @@ export function formatErrorRate(rate: number): string {
  * Expects data with a `bucket` string timestamp field.
  */
 export function inferBucketSeconds(data: ReadonlyArray<{ bucket: string }>): number | undefined {
-	if (data.length < 2) return undefined
-	const t0 = toEpochMs(data[0].bucket)
-	const t1 = toEpochMs(data[1].bucket)
+	const [first, second] = data
+	if (first === undefined || second === undefined) return undefined
+	const t0 = toEpochMs(first.bucket)
+	const t1 = toEpochMs(second.bucket)
 	const diffMs = t1 - t0
 	if (diffMs <= 0 || Number.isNaN(diffMs)) return undefined
 	return diffMs / 1000
@@ -209,12 +211,64 @@ const isZonedMidnight = (date: Date, timeZone: string | undefined): boolean =>
 	date.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) ===
 	"00:00"
 
+const tickFormatters = new Map<string, Intl.DateTimeFormat>()
+
+const tickFormatter = (
+	locale: string | undefined,
+	timeZone: string | undefined,
+	options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat => {
+	const key = `${locale ?? ""}|${timeZone ?? ""}|${options.month ?? ""}|${options.hour ?? ""}|${options.minute ?? ""}|${options.second ?? ""}`
+	const cached = tickFormatters.get(key)
+	if (cached !== undefined) return cached
+	const formatter = new Intl.DateTimeFormat(locale, { timeZone, ...options })
+	tickFormatters.set(key, formatter)
+	return formatter
+}
+
+/** A 12-hour clock reads "6:00 AM"; a 24-hour one keeps its leading zero ("06:00"). */
+const isTwelveHourClock = (locale: string | undefined): boolean =>
+	tickFormatter(locale, undefined, { hour: "numeric" }).resolvedOptions().hour12 === true
+
+/**
+ * A tick's clock, as short as the locale allows: a 12-hour clock drops the leading zero and, on
+ * the hour, the minutes ("6 AM", "6:30 AM"); a 24-hour clock keeps "06:00".
+ */
+const formatTickClock = (
+	date: Date,
+	options: {
+		readonly locale: string | undefined
+		readonly timeZone: string | undefined
+		readonly withDate: boolean
+		readonly withSeconds: boolean
+	},
+): string => {
+	const day: Intl.DateTimeFormatOptions = options.withDate ? { month: "short", day: "numeric" } : {}
+	const twelveHour = isTwelveHourClock(options.locale)
+	const full = tickFormatter(options.locale, options.timeZone, {
+		...day,
+		hour: twelveHour ? "numeric" : "2-digit",
+		minute: "2-digit",
+		second: options.withSeconds ? "2-digit" : undefined,
+	})
+	// Read off a Latin-digit formatter: the label's own parts print in the locale's digits.
+	const onTheHour =
+		twelveHour &&
+		!options.withSeconds &&
+		tickFormatter("en-US", options.timeZone, { minute: "numeric" }).format(date) === "0"
+	const formatter = onTheHour
+		? tickFormatter(options.locale, options.timeZone, { ...day, hour: "numeric" })
+		: full
+	// An h24 clock prints midnight as "24:00".
+	return Str.replace(/(^|\s)24:/, "$100:")(formatter.format(date))
+}
+
 /**
  * Format a bucket timestamp label that adapts based on the overall time range:
  * - >= 24h with daily buckets, or a tick on midnight: "Feb 14"
- * - >= 24h with sub-day buckets: "Feb 14, 02:00 PM"
- * - 30min - 24h: "02:00 PM"
- * - <= 30min: "02:00:30 PM"
+ * - >= 24h with sub-day buckets: "Feb 14, 2 PM"
+ * - 30min - 24h: "2 PM", "2:30 PM" ("14:00" on a 24-hour clock)
+ * - <= 30min: "2:00:30 PM"
  */
 export function formatBucketLabel(
 	value: unknown,
@@ -230,8 +284,7 @@ export function formatBucketLabel(
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60
 	const includeSeconds = context.rangeMs <= 30 * 60 * 1000 && !includeDate
-	// The viewer's selected zone when the chart sits under a `PlotTimeZoneProvider`;
-	// the browser's otherwise.
+	// The viewer's selected zone when the caller passes one; the browser's otherwise.
 	const timeZone = context.timeZone
 	// The browser's locale unless the caller read one (Foldkit views stay pure).
 	const locale = context.locale
@@ -255,31 +308,10 @@ export function formatBucketLabel(
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60 || isZonedMidnight(date, timeZone)) {
 			return date.toLocaleDateString(locale, { timeZone, month: "short", day: "numeric" })
 		}
-		return Str.replace(
-			/ 24:/,
-			" 00:",
-		)(
-			date.toLocaleString(locale, {
-				timeZone,
-				month: "short",
-				day: "numeric",
-				hour: "2-digit",
-				minute: "2-digit",
-			}),
-		)
+		return formatTickClock(date, { locale, timeZone, withDate: true, withSeconds: false })
 	}
 
-	return Str.replace(
-		/^24:/,
-		"00:",
-	)(
-		date.toLocaleTimeString(locale, {
-			timeZone,
-			hour: "2-digit",
-			minute: "2-digit",
-			second: includeSeconds ? "2-digit" : undefined,
-		}),
-	)
+	return formatTickClock(date, { locale, timeZone, withDate: false, withSeconds: includeSeconds })
 }
 
 const bucketLabelMap: Record<number, string> = {
@@ -350,29 +382,46 @@ const percentText = (pct: number): string => {
 	return pct < 0 ? `>-${PERCENT_SMALLEST}%` : `<${PERCENT_SMALLEST}%`
 }
 
+/** One formatter per catalogued widget unit (`WIDGET_UNITS`); a new token fails to compile here. */
+const UNIT_FORMATS = {
+	none: formatNumber,
+	number: formatNumber,
+	short: formatNumber,
+	percent: (num: number) => percentText(num * 100),
+	// For sources that already report 0–100 (PlanetScale's `*_util_percentages`, NATS varz
+	// `cpu`, most Prometheus exporters). Without this they had to borrow `percent` and render
+	// 100× high, or drop the `%` entirely by falling back to `number`.
+	percent_100: (num: number) => percentText(num),
+	duration_ms: (num: number) => formatDuration(num),
+	duration_us: (num: number) => formatDuration(num / 1000),
+	duration_s: (num: number) => formatDuration(num * 1000),
+	duration_ns: (num: number) => formatDuration(num / 1_000_000),
+	requests_per_sec: (num: number) => `${formatNumber(num)}/s`,
+	// Decimal, deliberately: widgets with a `bytes` unit live in saved user
+	// dashboards, and switching them to a 1024 base would silently rewrite
+	// every one of those readouts (1_000_000 → "976.6 KB" instead of "1.0 MB").
+	bytes: (num: number) => formatStorageBytes(num),
+} satisfies Record<(typeof WIDGET_UNITS)[number]["token"], (num: number) => string>
+
+// Spend per bucket is often a fraction of a cent, which two decimals print as "$0.00".
+const formatUsd = (num: number): string =>
+	num !== 0 && Math.abs(num) < 0.01
+		? num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 })
+		: formatCurrency(num, "usd")
+
+const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
+	Rec.has<string, (num: number) => string>(UNIT_FORMATS, unit)
+
 /**
- * Format a numeric value according to a unit type.
- * Used by chart Y-axis ticks, tooltips, and stat widgets.
+ * Format a numeric value according to a unit type. Used by chart Y-axis ticks, tooltips,
+ * and stat widgets; an uncatalogued unit (a stored `"GB"`) renders as a plain number.
  */
-export const formatValueByUnit: (num: number, unit?: string) => string = (num, unit) =>
-	pipe(
-		Match.value(unit),
-		Match.when("percent", () => percentText(num * 100)),
-		// For sources that already report 0–100 (PlanetScale's `*_util_percentages`, NATS varz
-		// `cpu`, most Prometheus exporters). Without this they had to borrow `percent` and render
-		// 100× high, or drop the `%` entirely by falling back to `number`.
-		Match.when("percent_100", () => percentText(num)),
-		Match.when("duration_ms", () => formatDuration(num)),
-		Match.when("duration_us", () => formatDuration(num / 1000)),
-		Match.when("duration_s", () => formatDuration(num * 1000)),
-		Match.when("duration_ns", () => formatDuration(num / 1_000_000)),
-		Match.when("requests_per_sec", () => `${formatNumber(num)}/s`),
-		// Decimal, deliberately: widgets with a `bytes` unit live in saved user
-		// dashboards, and switching them to a 1024 base would silently rewrite
-		// every one of those readouts (1_000_000 → "976.6 KB" instead of "1.0 MB").
-		Match.when("bytes", () => formatStorageBytes(num)),
-		Match.orElse(() => formatNumber(num)),
-	)
+export const formatValueByUnit = (num: number, unit?: string): string =>
+	unit === "usd"
+		? formatUsd(num)
+		: unit !== undefined && isUnitToken(unit)
+			? UNIT_FORMATS[unit](num)
+			: formatNumber(num)
 
 const DURATION_TO_MS = new Map([
 	["duration_ms", 1],
@@ -420,8 +469,12 @@ const axisStep = (domain: readonly [number, number], count: number, max: number 
 	const hi = Math.max(domain[0], domain[1])
 	const base = tickStep(hi - lo, count)
 	if (max === undefined) return base
-	const steps = [base, nextNiceStep(base), nextNiceStep(nextNiceStep(base))]
-	return steps.find((step) => ticksBetween(lo, hi, step) <= max) ?? nextNiceStep(steps[2])
+	const widest = nextNiceStep(nextNiceStep(base))
+	const steps = [base, nextNiceStep(base), widest]
+	return Option.getOrElse(
+		Arr.findFirst(steps, (step) => ticksBetween(lo, hi, step) <= max),
+		() => nextNiceStep(widest),
+	)
 }
 
 export interface AxisTickOptions {
@@ -467,7 +520,10 @@ export function axisTickFormatter(
 		// under 1s reads in ms ("0, 250ms, 500ms").
 		const ticks = axisTickValues(domain, count, options)
 		const largest = Math.max(...Arr.map(ticks, (t) => Math.abs(t))) * toMs
-		const axisUnit = DURATION_AXIS_UNITS.find((u) => largest < u.below) ?? DURATION_AXIS_UNITS[4]
+		const axisUnit = Option.getOrElse(
+			Arr.findFirst(DURATION_AXIS_UNITS, (u) => largest < u.below),
+			() => DURATION_AXIS_UNITS[4],
+		)
 		const decimals = stepDecimals((step * toMs) / axisUnit.ms, 3)
 		return (value) =>
 			!Number.isFinite(value)

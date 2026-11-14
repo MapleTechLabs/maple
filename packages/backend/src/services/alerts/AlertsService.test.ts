@@ -2,19 +2,19 @@
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { AlertValidationError, WebhookAlertDestinationConfig } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str } from "effect"
+import { Cause, Duration, Effect, Exit, Schema, Array as Arr, String as Str, DateTime, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { projectAlertLifecycleEvent } from "@maple/alerting-core"
 import { AlertRuleUpsertRequest, OrgId, UserId } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService, type AlertsServiceApi, interleaveAlertRulesByOrg } from "./AlertsService"
+import { type AlertsServiceApi, interleaveAlertRulesByOrg } from "./AlertsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	getError,
 	emptyWarehouseRows,
@@ -30,6 +30,7 @@ import {
 	okFetch,
 	insertDeliveryEventRow,
 	makeUuidSequence,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -61,7 +62,7 @@ describe("AlertsService", () => {
 	it.effect("caps active alert rules per organization", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_active_rule_cap")
 			const userId = asUserId("user_active_rule_cap")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -95,9 +96,9 @@ describe("AlertsService", () => {
 			)
 			assert.strictEqual(Arr.filter(exits, Exit.isSuccess).length, 1)
 			assert.strictEqual(Arr.filter(exits, Exit.isFailure).length, 1)
-			const error = getError(exits.find(Exit.isFailure)!)
+			const error = getError(Option.getOrUndefined(Arr.findFirst(exits, Exit.isFailure))!)
 			assert.instanceOf(error, AlertValidationError)
-			assert.include((error as AlertValidationError).message, "at most 100 active alert rules")
+			assert.include(error.message, "at most 100 active alert rules")
 			const rules = yield* alerts.listRules(orgId)
 			assert.lengthOf(
 				Arr.filter(rules.rules, (rule) => rule.enabled),
@@ -134,7 +135,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alerts")
 			const userId = asUserId("user_alerts")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -149,7 +150,7 @@ describe("AlertsService", () => {
 			const incidentsAfterSecondTick = yield* alerts.listIncidents(orgId)
 			const retrievedIncident = yield* alerts.getIncident(
 				orgId,
-				incidentsAfterSecondTick.incidents[0]!.id,
+				incidentsAfterSecondTick.incidents[0].id,
 			)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
@@ -201,7 +202,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alerts_outbox")
 			const userId = asUserId("user_alerts_outbox")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -275,7 +276,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alerts_edit_fence")
 			const userId = asUserId("user_alerts_edit_fence")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -316,7 +317,7 @@ describe("AlertsService", () => {
 							executeSql(
 								testDb,
 								"insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3) on conflict (rule_id) do update set last_scheduled_at = excluded.last_scheduled_at",
-								[rule.id, orgId, new Date(tickAt).toISOString()],
+								[rule.id, orgId, DateTime.formatIso(DateTime.makeUnsafe(tickAt))],
 							),
 						),
 					),
@@ -356,7 +357,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_tpl")
 			const userId = asUserId("user_tpl")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -400,7 +401,7 @@ describe("AlertsService", () => {
 			// The webhook body is the snapshotted delivery payload — it carries the
 			// template so retries and downstream consumers render the same message.
 			assert.lengthOf(bodies, 1)
-			const payload = JSON.parse(bodies[0]!) as {
+			const payload = JSON.parse(bodies[0]) as {
 				template?: { title?: string; body?: string }
 			}
 			assert.strictEqual(payload.template?.title, "{{ severity }} on {{ rule.name }}")
@@ -433,7 +434,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_link")
 			const userId = asUserId("user_link")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -446,9 +447,10 @@ describe("AlertsService", () => {
 			const incidents = yield* alerts.listIncidents(orgId)
 			assert.lengthOf(incidents.incidents, 1)
 			assert.lengthOf(bodies, 1)
-			const payload = JSON.parse(bodies[0]!) as { linkUrl?: string }
+			const payload = JSON.parse(bodies[0]) as { linkUrl?: string }
 			assert.isTrue(
-				payload.linkUrl?.endsWith(`/alerts/incidents/${incidents.incidents[0]!.id}`),
+				payload.linkUrl !== undefined &&
+					Str.endsWith(`/alerts/incidents/${incidents.incidents[0].id}`)(payload.linkUrl),
 				payload.linkUrl,
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })))
@@ -462,7 +464,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_skipped")
 			const userId = asUserId("user_skipped")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -488,7 +490,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_throughput")
 			const userId = asUserId("user_throughput")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -529,7 +531,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_compiled_plan")
 			const userId = asUserId("user_compiled_plan")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -580,7 +582,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_claim_lock")
 			const userId = asUserId("user_claim_lock")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -624,7 +626,7 @@ describe("AlertsService", () => {
 			assert.isOk(claimFirst?.lastScheduledAt, "claim row is created on the first tick")
 			assert.isAbove(
 				claimSecond!.lastScheduledAt!.getTime(),
-				claimFirst!.lastScheduledAt!.getTime(),
+				claimFirst.lastScheduledAt.getTime(),
 				"claim advances every tick",
 			)
 			assert.strictEqual(
@@ -652,7 +654,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_batch_claim")
 			const userId = asUserId("user_batch_claim")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -662,12 +664,12 @@ describe("AlertsService", () => {
 
 			// Another worker took this one moments ago: inside SCHEDULER_LOCK_TTL_MS,
 			// so this tick must lose it and leave its timestamp untouched.
-			const heldAt = new Date(DEFAULT_CLOCK_EPOCH_MS - 1_000)
+			const heldAtMs = DEFAULT_CLOCK_EPOCH_MS - 1_000
 			yield* Effect.promise(() =>
 				executeSql(
 					testDb,
 					`insert into alert_rule_claims (rule_id, org_id, last_scheduled_at) values ($1, $2, $3)`,
-					[ruleHeld.id, orgId, heldAt],
+					[ruleHeld.id, orgId, DateTime.formatIso(DateTime.makeUnsafe(heldAtMs))],
 				),
 			)
 
@@ -700,7 +702,7 @@ describe("AlertsService", () => {
 			// ...while the held one keeps the other worker's timestamp exactly.
 			assert.strictEqual(
 				claimHeld?.lastScheduledAt?.getTime(),
-				heldAt.getTime(),
+				heldAtMs,
 				"a rule held inside the lock TTL is not stolen by the batch",
 			)
 		}).pipe(
@@ -712,7 +714,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_env_scope")
 			const userId = asUserId("user_env_scope")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -757,7 +759,7 @@ describe("AlertsService", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_env_builder")
 			const userId = asUserId("user_env_builder")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -813,7 +815,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_resolve")
 			const userId = asUserId("user_resolve")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -951,7 +953,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers")
 				const userId = asUserId("user_tiers")
 				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
@@ -1026,7 +1028,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_remind")
 				yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_remind"))
 
@@ -1055,6 +1057,88 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect(
+			"an acknowledged incident de-escalates quietly and escalates loudly, clearing the ack once",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const state = {
+					tracesAggregateRows: errorRateRows(30) as ReadonlyArray<Record<string, unknown>>,
+				}
+				const requests: Array<string> = []
+				const tick = (alerts: AlertsServiceApi) =>
+					Effect.gen(function* () {
+						yield* TestClock.adjust(Duration.minutes(1))
+						yield* alerts.runSchedulerTick()
+					})
+				const acknowledge = (orgId: OrgId) =>
+					Effect.promise(() =>
+						executeSql(
+							testDb,
+							`update alert_incidents set acknowledged_at = now(), acknowledged_by_name = 'Dana',
+						   acknowledged_via = 'web' where org_id = $1`,
+							[orgId],
+						),
+					)
+				const ackEvents = (orgId: OrgId) =>
+					Effect.promise(() =>
+						testDb.pglite.query<{ type: string }>(
+							"select type from alert_incident_events where org_id = $1 order by created_at",
+							[orgId],
+						),
+					).pipe(Effect.map((result) => Arr.map(result.rows, (row) => row.type)))
+
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+					const alerts = yield* alertServices
+					const orgId = asOrgId("org_tiers_ack")
+					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_ack"))
+
+					yield* alerts.runSchedulerTick()
+					yield* tick(alerts)
+					const opened = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(opened?.severity, "critical")
+					yield* acknowledge(orgId)
+
+					// Down to warning while acknowledged: no notice, the reminder clock stays where it was.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const quiet = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(quiet?.severity, "warning")
+					assert.strictEqual(quiet?.lastNotifiedAt, opened?.lastNotifiedAt)
+					assert.isNotNull(quiet?.acknowledgedAt)
+					assert.lengthOf(requests, 2)
+
+					// Back to critical: it pages despite the ack, and the ack is cleared with one event.
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					const escalated = (yield* alerts.listIncidents(orgId)).incidents[0]
+					assert.strictEqual(escalated?.severity, "critical")
+					assert.isNull(escalated?.acknowledgedAt)
+					assert.isNull(escalated?.acknowledgedByName)
+					assert.sameMembers(requests.slice(2), [
+						"trigger https://example.com/warn",
+						"trigger https://example.com/page",
+					])
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+
+					// An escalation with no ack standing writes no event.
+					state.tracesAggregateRows = errorRateRows(10)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					state.tracesAggregateRows = errorRateRows(30)
+					yield* tick(alerts)
+					yield* tick(alerts)
+					assert.deepStrictEqual(yield* ackEvents(orgId), ["ack_cleared"])
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub(state), { fetch: recordingFetch(requests) }),
+					),
+				)
+			},
+		)
+
 		it.effect("resolves a warning incident ended by a rule edit without paging", () => {
 			const testDb = createTestDb(trackedDbs)
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
@@ -1062,7 +1146,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_edit")
 				const userId = asUserId("user_tiers_edit")
 				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
@@ -1108,7 +1192,7 @@ describe("AlertsService", () => {
 			const requests: Array<string> = []
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_removed")
 				const userId = asUserId("user_tiers_removed")
 				const { rule, pageHook } = yield* createTieredSetup(alerts, orgId, userId)
@@ -1170,7 +1254,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_removed_dest")
 				const userId = asUserId("user_tiers_removed_dest")
 				const { rule, warnHook } = yield* createTieredSetup(alerts, orgId, userId)
@@ -1197,7 +1281,7 @@ describe("AlertsService", () => {
 						comparator: rule.comparator,
 						thresholds: [
 							rule.thresholds[0],
-							{ ...rule.thresholds[1]!, destinationIds: [warnHook.id] },
+							{ ...rule.thresholds[1], destinationIds: [warnHook.id] },
 						],
 						windowMinutes: rule.windowMinutes,
 						minimumSampleCount: rule.minimumSampleCount,
@@ -1226,7 +1310,7 @@ describe("AlertsService", () => {
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_rename")
 				const userId = asUserId("user_tiers_rename")
 				const { rule } = yield* createTieredSetup(alerts, orgId, userId)
@@ -1262,7 +1346,7 @@ describe("AlertsService", () => {
 			const state = { tracesAggregateRows: errorRateRows(10) as ReadonlyArray<Record<string, unknown>> }
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_edit_history")
 				const userId = asUserId("user_tiers_edit_history")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1316,7 +1400,7 @@ describe("AlertsService", () => {
 				}
 				return Effect.gen(function* () {
 					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-					const alerts = yield* AlertsService
+					const alerts = yield* alertServices
 					const orgId = asOrgId("org_tiers_issue")
 					yield* createTieredSetup(alerts, orgId, asUserId("user_tiers_issue"))
 
@@ -1342,7 +1426,7 @@ describe("AlertsService", () => {
 		it.effect("rejects a critical threshold that is not worse than the warning one", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_tiers_invalid")
 				const userId = asUserId("user_tiers_invalid")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1418,7 +1502,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_flap")
 			const userId = asUserId("user_flap")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1476,7 +1560,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_flap_disable")
 			const userId = asUserId("user_flap_disable")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1549,7 +1633,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_renotify_gate")
 			const userId = asUserId("user_renotify_gate")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1615,6 +1699,94 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: failingFetch })))
 	})
 
+	it.effect("holds reminders while an incident is acknowledged and clears the ack on resolve", () => {
+		const testDb = createTestDb(trackedDbs)
+		const breaching = tracesRow({
+			count: 200,
+			avgDuration: 40,
+			p50Duration: 20,
+			p95Duration: 120,
+			p99Duration: 240,
+			errorRate: 10,
+			satisfiedCount: 180,
+			toleratingCount: 10,
+			apdexScore: 0.925,
+		})
+		const state = {
+			tracesAggregateRows: [breaching] as ReadonlyArray<Record<string, unknown>>,
+		}
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_ack_holds_renotify")
+			const userId = asUserId("user_ack_holds_renotify")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 5,
+					destinationIds: [destination.id],
+				}),
+			)
+
+			// The trigger opens on the second tick; acknowledge it straight away.
+			for (let minute = 0; minute < 2; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`update alert_incidents set acknowledged_at = now(), acknowledged_by_user_id = $1,
+					   acknowledged_by_name = 'Dana', acknowledged_via = 'web' where org_id = $2`,
+					[userId, orgId],
+				),
+			)
+
+			// Well past the 5-minute reminder interval, still breaching.
+			for (let minute = 0; minute < 12; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const events = yield* alerts.listDeliveryEvents(orgId)
+			assert.deepStrictEqual(
+				Arr.dedupe(Arr.map(events.events, (event: { eventType: string }) => event.eventType)),
+				["trigger"],
+			)
+
+			state.tracesAggregateRows = [{ ...breaching, errorRate: 1 }]
+			for (let minute = 0; minute < 3; minute += 1) {
+				yield* alerts.runSchedulerTick()
+				yield* TestClock.adjust(Duration.minutes(1))
+			}
+			const [incident] = (yield* alerts.listIncidents(orgId)).incidents
+			assert.strictEqual(incident?.status, "resolved")
+			assert.isNull(incident?.acknowledgedAt)
+			assert.isNull(incident?.acknowledgedByName)
+			const afterResolve = yield* alerts.listDeliveryEvents(orgId)
+			assert.isTrue(
+				Arr.some(
+					afterResolve.events,
+					(event: { eventType: string }) => event.eventType === "resolve",
+				),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
+	})
+
 	it.effect("skips unchanged alert_rule_states writes and refreshes on the 5-minute heartbeat", () => {
 		const testDb = createTestDb(trackedDbs)
 		// Healthy from the start: errorRate 1 stays below the threshold of 5.
@@ -1649,11 +1821,12 @@ describe("AlertsService", () => {
 					[ruleId],
 				),
 			)
-		const ms = (value: Date | string | undefined) => new Date(value ?? 0).getTime()
+		const ms = (value: Date | string | undefined) =>
+			DateTime.toEpochMillis(DateTime.makeUnsafe(value ?? 0))
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_state_quiet")
 			const userId = asUserId("user_state_quiet")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1732,11 +1905,12 @@ describe("AlertsService", () => {
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
 
-		const ms = (value: Date | string | undefined) => new Date(value ?? 0).getTime()
+		const ms = (value: Date | string | undefined) =>
+			DateTime.toEpochMillis(DateTime.makeUnsafe(value ?? 0))
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_state_cap")
 			const userId = asUserId("user_state_cap")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1790,7 +1964,7 @@ describe("AlertsService", () => {
 		}) as typeof fetch
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_test_destination")
 			const userId = asUserId("user_test_destination")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1822,7 +1996,7 @@ describe("AlertsService", () => {
 		return Effect.gen(function* () {
 			// Pin the clock to fixedTime so the pre-seeded delivery (scheduledAt: fixedTime - 1) is due.
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_eval_failure")
 			const userId = asUserId("user_eval_failure")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1867,7 +2041,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -1965,7 +2139,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(fixedTime)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_dest_disable")
 				const userId = asUserId("user_dest_disable")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1992,8 +2166,11 @@ describe("AlertsService", () => {
 				assert.strictEqual(requestCount, 3)
 
 				const events = yield* alerts.listDeliveryEvents(orgId)
-				const skipped = events.events.find(
-					(event: { deliveryKey: string }) => event.deliveryKey === "dead-destination-4",
+				const skipped = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event: { deliveryKey: string }) => event.deliveryKey === "dead-destination-4",
+					),
 				)
 				assert.strictEqual(skipped?.status, "failed")
 				assert.strictEqual(skipped?.errorMessage, "Destination disabled")
@@ -2017,7 +2194,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(fixedTime)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_dest_platform_fault")
 				const userId = asUserId("user_dest_platform_fault")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2064,7 +2241,7 @@ describe("AlertsService", () => {
 
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(fixedTime)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_dest_reset")
 				const userId = asUserId("user_dest_reset")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2117,7 +2294,7 @@ describe("AlertsService", () => {
 			// One shared TestClock pinned to fixedTime backs every service instance below.
 			yield* TestClock.setTime(fixedTime)
 			const setup = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_dupe_guard")
 				const userId = asUserId("user_dupe_guard")
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2164,7 +2341,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2172,7 +2349,7 @@ describe("AlertsService", () => {
 			// Two independent service instances race to claim the same queued delivery;
 			// the DB-level claim lease must let exactly one of them send it.
 			const runTick = Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.runSchedulerTick()
 			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 
@@ -2181,14 +2358,16 @@ describe("AlertsService", () => {
 			})
 
 			const events = yield* Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				return yield* alerts.listDeliveryEvents(setup.orgId)
 			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 
 			assert.strictEqual(requestCount, 1)
 			assert.strictEqual(tickA.processedCount + tickB.processedCount, 1)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "shared-delivery-key"),
+				)?.status,
 				"success",
 			)
 		})
@@ -2227,7 +2406,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_tx_rollback")
 			const userId = asUserId("user_tx_rollback")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2261,7 +2440,7 @@ describe("AlertsService", () => {
 					incidentId: null,
 					ruleId: rule.id,
 					destinationId: destination.id,
-					deliveryKey: `${"00000000-0000-4000-8000-000000000004"}:${destination.id}:trigger:${fixedTime}`,
+					deliveryKey: `00000000-0000-4000-8000-000000000004:${destination.id}:trigger:${fixedTime}`,
 					eventType: "trigger",
 					attemptNumber: 1,
 					status: "queued",
@@ -2286,7 +2465,7 @@ describe("AlertsService", () => {
 							sampleCount: 200,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2323,7 +2502,7 @@ describe("AlertsService", () => {
 			const respond = (async () => new Response("nope", { status })) as typeof fetch
 
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId(`org_retry_${status}`)
 				const userId = asUserId(`user_retry_${status}`)
 				const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2359,7 +2538,7 @@ describe("AlertsService", () => {
 							},
 							observed: { value: 0, sampleCount: 0 },
 							linkUrl: "http://127.0.0.1:3471/alerts",
-							sentAt: new Date(fixedTime).toISOString(),
+							sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 						}),
 					}),
 				)
@@ -2368,11 +2547,17 @@ describe("AlertsService", () => {
 				const events = yield* alerts.listDeliveryEvents(orgId)
 
 				assert.strictEqual(tick.deliveryFailureCount, 1)
-				const firstAttempt = events.events.find(
-					(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 1,
+				const firstAttempt = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 1,
+					),
 				)
-				const retryAttempt = events.events.find(
-					(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 2,
+				const retryAttempt = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event) => event.deliveryKey === deliveryKey && event.attemptNumber === 2,
+					),
 				)
 				assert.strictEqual(firstAttempt?.status, "failed")
 				assert.include(firstAttempt?.errorMessage ?? "", expectedMessage)
@@ -2410,7 +2595,7 @@ describe("AlertsService", () => {
 		const hangingFetch = (() => new Promise(() => {})) as typeof fetch
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_timeout")
 			const userId = asUserId("user_timeout")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2469,7 +2654,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 						futureAdditiveField: { preserve: true },
 					}),
 				}),
@@ -2494,11 +2679,17 @@ describe("AlertsService", () => {
 
 			assert.strictEqual(tick.processedCount, 1)
 			assert.strictEqual(tick.deliveryFailureCount, 1)
-			const timeoutEvent = events.events.find(
-				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 1,
+			const timeoutEvent = Option.getOrUndefined(
+				Arr.findFirst(
+					events.events,
+					(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 1,
+				),
 			)
-			const retryEvent = events.events.find(
-				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 2,
+			const retryEvent = Option.getOrUndefined(
+				Arr.findFirst(
+					events.events,
+					(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 2,
+				),
 			)
 			assert.strictEqual(timeoutEvent?.status, "failed")
 			assert.include(timeoutEvent?.errorMessage ?? "", "timed out")
@@ -2527,7 +2718,7 @@ describe("AlertsService", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(fixedTime)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_payload_isolation")
 			const userId = asUserId("user_payload_isolation")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -2583,7 +2774,7 @@ describe("AlertsService", () => {
 							sampleCount: 0,
 						},
 						linkUrl: "http://127.0.0.1:3471/alerts",
-						sentAt: new Date(fixedTime).toISOString(),
+						sentAt: DateTime.formatIso(DateTime.makeUnsafe(fixedTime)),
 					}),
 				}),
 			)
@@ -2595,11 +2786,15 @@ describe("AlertsService", () => {
 			assert.strictEqual(tick.deliveryFailureCount, 1)
 			assert.strictEqual(requestCount, 1)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "bad-payload-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "bad-payload-key"),
+				)?.status,
 				"failed",
 			)
 			assert.strictEqual(
-				events.events.find((event) => event.deliveryKey === "good-payload-key")?.status,
+				Option.getOrUndefined(
+					Arr.findFirst(events.events, (event) => event.deliveryKey === "good-payload-key"),
+				)?.status,
 				"success",
 			)
 		}).pipe(

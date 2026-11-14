@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { tinybirdProjectManifest } from "../generated/tinybird-project-manifest"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Option, Record as Rec } from "effect"
 
 const RETENTION_DAYS = {
 	alert_checks: 365,
 	// CI projections outlive their raw traces on purpose: a year of run history.
 	ci_jobs: 365,
 	ci_runs: 365,
+	// Two years and a month: every month keeps the same month a year earlier beside it.
+	cost_daily: 760,
 	// Raw-tier projection of `traces`: rebuilt from it, so holding
 	// it past the source's own retention would store rows detection can no
 	// longer cross-check against a raw trace.
@@ -15,11 +17,15 @@ const RETENTION_DAYS = {
 	ai_crawler_requests: 30,
 	// Six years — HIPAA's documentation retention floor. Never rebuildable.
 	audit_log: 2190,
+	// Thirteen months: a year of audit history plus a month to compare against.
+	audit_trail_events: 400,
 	attribute_keys_hourly: 90,
 	attribute_values_hourly: 90,
 	error_events: 90,
 	error_events_by_time: 90,
 	error_fingerprints_minutely: 90,
+	// Only read while a fingerprint version bump settles; the re-key needs a recent occurrence.
+	error_fingerprint_lineage: 30,
 	logs: 30,
 	logs_aggregates_hourly: 365,
 	metric_catalog: 90,
@@ -29,6 +35,8 @@ const RETENTION_DAYS = {
 	metrics_sum: 90,
 	// Raw-tier projection of `traces`, like `ai_crawler_requests`.
 	scanner_requests: 30,
+	// Google keeps 16 months of Search Console data; a month past that keeps a full year-over-year window.
+	search_console_daily: 520,
 	service_address_resolutions_hourly: 365,
 	// Hour-grain only, read for windows of days; a year would be a second annual table.
 	service_endpoint_details_hourly: 90,
@@ -64,6 +72,8 @@ const RETENTION_DAYS = {
 	trace_list_mv: 30,
 	traces: 30,
 	traces_aggregates_hourly: 365,
+	// Users' PII: last seen up to a quarter back, not a year; raw drill-down needs only 30.
+	user_activity_hourly: 90,
 	// Browser rows past 30 days can never be rebuilt from `session_events`, but
 	// direct-ingested (server/mobile) rows have no source: this table IS the copy.
 	product_events: 365,
@@ -78,8 +88,8 @@ describe("Tinybird retention matrix", () => {
 		expect(actualNames).toEqual([...Rec.keys(RETENTION_DAYS), ...ZERO_RETENTION_DATASOURCES].sort())
 
 		for (const [name, expectedDays] of Rec.toEntries(RETENTION_DAYS)) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource!.content, datasource!.name).toMatch(
@@ -90,8 +100,8 @@ describe("Tinybird retention matrix", () => {
 
 	it("does not retain Null-engine ingestion bridges", () => {
 		for (const name of ZERO_RETENTION_DATASOURCES) {
-			const datasource = tinybirdProjectManifest.datasources.find(
-				(candidate) => candidate.name === name,
+			const datasource = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.datasources, (candidate) => candidate.name === name),
 			)
 			expect(datasource, name).toBeDefined()
 			expect(datasource?.content, name).toContain("ENGINE Null")
@@ -110,13 +120,19 @@ describe("Tinybird retention matrix", () => {
 	 * data movement, which is the only correct shape here. Migration 0023's first
 	 * deploy attempt failed on exactly this.
 	 */
-	it("applies service-operations and endpoint-details rollup changes by ALTER, never by rebuild", () => {
+	it("applies service-operations, service-overview, endpoint-details and user-activity rollup changes by ALTER, never by rebuild", () => {
 		for (const name of [
 			"service_operations_minutely_mv",
 			"service_operations_hourly_mv",
+			"service_overview_minutely_mv",
+			"service_overview_hourly_mv",
 			"service_endpoint_details_hourly_mv",
+			"user_activity_hourly_traces_mv",
+			"user_activity_hourly_logs_mv",
 		]) {
-			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
+			)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}
@@ -129,7 +145,9 @@ describe("Tinybird retention matrix", () => {
 	 */
 	it("applies error-events view changes by ALTER, never by rebuild", () => {
 		for (const name of ["error_events_mv", "error_events_by_time_mv"]) {
-			const pipe = tinybirdProjectManifest.pipes.find((candidate) => candidate.name === name)
+			const pipe = Option.getOrUndefined(
+				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),
+			)
 			expect(pipe, name).toBeDefined()
 			expect(pipe?.content, name).toContain("DEPLOYMENT_METHOD alter")
 		}

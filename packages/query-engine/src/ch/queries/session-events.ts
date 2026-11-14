@@ -17,14 +17,13 @@ import {
 	type ColumnAccessor,
 	type InferOutput,
 } from "@maple-dev/effect-orm/clickhouse"
-import { SessionEvents, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 
 // The builder's `count`, which knows the result is a `UInt64` — a local
 // `compileFnCall` copy shadowed it and decoded nothing.
 const count = CH.count
 
-// Transcript: every event for one session, in order
-//
 // (OrgId, SessionId) is the sort-key prefix, so this is a contiguous range
 // scan. Timestamp + Seq give a stable playback/reading order.
 //
@@ -71,7 +70,7 @@ export interface SessionTranscriptOpts {
 
 export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 	const order = opts.newestFirst ? "desc" : "asc"
-	return from(SessionEvents)
+	return from(Datasources.sessionEvents)
 		.select(($) => ({
 			timestamp: $.Timestamp,
 			seq: $.Seq,
@@ -111,8 +110,6 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 		.format("JSON")
 }
 
-// Event-match semi-join: sessions whose distilled events match the predicates
-//
 // Row-level filters are ANDed, so callers pass a coherent predicate set (e.g.
 // type="network" + minStatus=500, or messageSearch="…"). Returns one row per
 // matching session with the match count — an UNFORMATTED grouped builder used as
@@ -135,7 +132,7 @@ export interface SessionEventMatchOpts {
 }
 
 export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
-	return from(SessionEvents)
+	return from(Datasources.sessionEvents)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			matchCount: count(),
@@ -154,8 +151,6 @@ export function sessionEventMatchQuery(opts: SessionEventMatchOpts) {
 		.groupBy("sessionId")
 }
 
-// Active / idle time, computed from gaps between distilled events
-//
 // A session's wall-clock duration overstates engagement: a 30s interaction left
 // open in a background tab for 45 minutes reports 45:00. We approximate *active*
 // time from `session_events` — the distilled semantic stream (click / nav /
@@ -194,7 +189,7 @@ export interface SessionActivityOpts {
 // Per-event gap (ms) to the previous distilled event in the same session.
 // dateTime64(9) subtraction via nanos, matching the metrics rate query's
 // lagInFrame pattern. Shared by the single-session and aggregate variants.
-function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
+function sessionGapSelect($: ColumnAccessor<typeof Datasources.sessionEvents.columns>) {
 	const onePrecedingFrame = CH.windowSpec({
 		partitionBy: [$.SessionId],
 		orderBy: [
@@ -213,12 +208,12 @@ function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
 }
 
 function sessionGaps() {
-	return from(SessionEvents).select(sessionGapSelect)
+	return from(Datasources.sessionEvents).select(sessionGapSelect)
 }
 
 /** The per-event gap query, whatever params its WHERE binds. */
 type SessionGaps<P> = CHQuery<
-	typeof SessionEvents.columns,
+	typeof Datasources.sessionEvents.columns,
 	InferOutput<ReturnType<typeof sessionGapSelect>>,
 	{},
 	undefined,

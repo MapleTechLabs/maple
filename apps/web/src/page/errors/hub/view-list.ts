@@ -1,4 +1,4 @@
-import type { ErrorSignal } from "../../../lib/models/error-signal"
+import type { ErrorSignal } from "../kit/error-signal"
 import { Option, Array as Arr } from "effect"
 import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -12,9 +12,8 @@ import { bulkBar } from "./view-bulk"
 import { hubEmpty } from "./view-empty"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { canTriageIssues } from "../kit/grants"
 import { type HeaderSelection, type RowState, signalHeader, signalRow, signalRowSkeleton } from "./view-row"
-
-// `ErrorsHubView`'s body: skeleton rows, the retry card, the rows, the empty states and paging.
 
 type H = HtmlBuilder<Message>
 
@@ -60,7 +59,7 @@ export const pagingFooter = (h: H, paging: PagingState): ReadonlyArray<Html> => 
 		isFailed: paging === "failed",
 		onLoadMore: Message.ClickedLoadMore(),
 		className: stripClass("block"),
-		children: paging === "failed" ? [h.span([], ["Couldn't load more errors."])] : [],
+		children: paging === "failed" ? [h.span([], ["Couldn't load more errors"])] : [],
 	})
 	return footer === null ? [] : [footer]
 }
@@ -70,6 +69,8 @@ export type ListInputs = Readonly<{
 	signals: ReadonlyArray<ErrorSignal>
 	rowState: (signal: ErrorSignal) => RowState
 	isNarrowed: boolean
+	/** The page zone, for the empty state's last-seen card. */
+	timeZone: string
 }>
 
 const rowView = (
@@ -83,6 +84,7 @@ const rowView = (
 	sparkWindow: RowState["sparkWindow"],
 	picker: RowState["picker"],
 	rowMenu: RowState["rowMenu"],
+	canTriage: RowState["canTriage"],
 ): Html =>
 	signalRow(h, signal, {
 		isSelected,
@@ -93,6 +95,7 @@ const rowView = (
 		sparkWindow,
 		picker,
 		rowMenu,
+		canTriage,
 	})
 
 // One slot per list position, `index % 256` so the cache stays bounded: hovering a row (which moves
@@ -112,15 +115,21 @@ const memoRow = (h: H, signal: ErrorSignal, index: number, state: RowState): Htm
 		state.sparkWindow,
 		state.picker,
 		state.rowMenu,
+		state.canTriage,
 	])
 
 /** The rows, or the empty state, under the column header. */
 const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> => {
 	const { signals } = inputs
+	// Selection and the bulk bar are triage: an analyst gets neither.
+	const canTriage = canTriageIssues(model)
 	if (signals.length === 0) {
 		return [
-			h.div([h.Key("empty"), h.Class("contents")], [hubEmpty(h, model, inputs.isNarrowed)]),
-			...bulkBar(h, model),
+			h.div(
+				[h.Key("empty"), h.Class("contents")],
+				[hubEmpty(h, model, inputs.isNarrowed, inputs.timeZone)],
+			),
+			...(canTriage ? bulkBar(h, model) : []),
 		]
 	}
 	const ids = Arr.map(signals, (signal) => signal.id)
@@ -134,7 +143,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 		h.div(
 			[h.Key("rows")],
 			[
-				signalHeader(h, selection),
+				signalHeader(h, canTriage ? selection : null),
 				h.div(
 					[h.Role("list"), h.Class("divide-y divide-border-subtle"), h.OnMount(MountRowSelect())],
 					Arr.map(signals, (signal, index) =>
@@ -147,7 +156,7 @@ const readyBody = (h: H, model: Model, inputs: ListInputs): ReadonlyArray<Html> 
 				...pagingFooter(h, pagingOf(model)),
 			],
 		),
-		...bulkBar(h, model),
+		...(canTriage ? bulkBar(h, model) : []),
 	]
 }
 

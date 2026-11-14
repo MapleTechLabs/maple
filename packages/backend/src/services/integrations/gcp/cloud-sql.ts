@@ -4,7 +4,7 @@
  */
 import type { GcpCloudSqlSettings } from "@maple/domain/http"
 import type { GcpSqlInstanceData } from "./api"
-import { Array as Arr } from "effect"
+import { Option, Predicate, Array as Arr, String as Str } from "effect"
 
 /** Memory and vCPUs of a tier, for the tiers whose name says so. Shared-core tiers have no whole vCPU. */
 const tierSize = (tier: string): { readonly cpus: number | null; readonly memoryGb: number } | undefined => {
@@ -58,7 +58,14 @@ export const gcpSqlSettings = (
 		const settings = data.settings
 		const size = tierSize(settings?.tier ?? "")
 		const flag = numberOrNull(
-			settings?.databaseFlags?.find((databaseFlag) => databaseFlag.name === "max_connections")?.value,
+			Option.getOrUndefined(
+				Option.flatMap(Option.fromNullishOr(settings?.databaseFlags), (flags) =>
+					Option.map(
+						Arr.findFirst(flags, (databaseFlag) => databaseFlag.name === "max_connections"),
+						(databaseFlag) => databaseFlag.value,
+					),
+				),
+			),
 		)
 		// A replica takes its primary's default when the primary is larger.
 		const memoryGb = Math.max(
@@ -66,8 +73,18 @@ export const gcpSqlSettings = (
 			memoryOf.get(data.masterInstanceName ?? "") ?? Number.NEGATIVE_INFINITY,
 		)
 		const defaultLimit =
-			data.databaseVersion?.startsWith("POSTGRES") && Number.isFinite(memoryGb)
-				? POSTGRES_DEFAULT_MAX_CONNECTIONS.find(([minimumGb]) => memoryGb >= minimumGb)?.[1]
+			Predicate.isString(data.databaseVersion) &&
+			Str.startsWith("POSTGRES")(data.databaseVersion) &&
+			Number.isFinite(memoryGb)
+				? Option.getOrUndefined(
+						Option.map(
+							Arr.findFirst(
+								POSTGRES_DEFAULT_MAX_CONNECTIONS,
+								([minimumGb]) => memoryGb >= minimumGb,
+							),
+							([, limit]) => limit,
+						),
+					)
 				: undefined
 		return [
 			name,

@@ -5,7 +5,7 @@ import type { IconName } from "@maple/views/ui/icon"
 import { Message, type Model } from "./model"
 import { Array as Arr } from "effect"
 
-// `CopyScenarios`: every shape `CopyButton` is asked to take, side by side.
+// Every shape a copy button is asked to take, side by side.
 
 type H = HtmlBuilder<Message>
 
@@ -127,9 +127,9 @@ const copyableValue = (h: H, model: Model): Html => {
 						h.AriaLabel("Copy span ID"),
 						h.Class(
 							status === "copied"
-								? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors bg-severity-info-a3"
+								? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left bg-severity-info-a3"
 								: status === "error"
-									? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left transition-colors bg-severity-error-a3"
+									? "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left bg-severity-error-a3"
 									: "-mx-0.5 cursor-pointer rounded-sm px-0.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 						),
 						h.Title("Click to copy"),

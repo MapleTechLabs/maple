@@ -18,6 +18,7 @@ import {
 } from "../lib/pricing-offer"
 import * as m from "../paraglide/messages.js"
 import { pricingFaq } from "../lib/pricing-faq"
+import { complianceMarkdown } from "../lib/compliance"
 import { Array as Arr } from "effect"
 
 /** "GB", "session", or "1,000 events": the block the rate is quoted per. */
@@ -43,7 +44,7 @@ export const GET: APIRoute = async () => {
 	)
 
 	const trial =
-		offer.hasTrial && offer.trialDuration
+		offer.hasTrial && (offer.trialDuration ?? 0) > 0
 			? m.pricing_trial_reassure({ duration: String(offer.trialDuration) })
 			: undefined
 
@@ -108,6 +109,9 @@ export const GET: APIRoute = async () => {
 			`Included: ${Arr.join(platformFeatures(), " · ")}.`,
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
+
+			`## ${m.compliance_title()}`,
+			complianceMarkdown(),
 
 			`## ${m.pricing_enterprise()}`,
 			m.pricing_enterprise_rail(),

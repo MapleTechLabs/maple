@@ -7,16 +7,17 @@ import {
 	funnelStepLabel,
 	type FunnelKeyBy as FunnelKeyByType,
 } from "@maple/query-model"
-import { QueryFunnelOutput } from "@maple/domain/mcp-outputs"
 import { productEventsFunnel, productEventsFunnelBreakdown } from "@maple/query-engine/observability"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, formatPercent, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
+import { orFallback } from "../lib/fallback"
 
 const TOOL = "query_funnel"
 const WINDOW = P.timeWindow({ defaultHours: 7 * 24, maxHours: MCP_DISCOVERY_MAX_HOURS })
@@ -77,7 +78,6 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			),
 			browser: P.optionalText("Only persons with a session in this browser (e.g. Chrome)."),
 		}),
-		output: QueryFunnelOutput,
 		hints: { readOnly: true },
 		phrases: ["Computing a funnel", "Querying a funnel"],
 		handler: Effect.fn("McpTool.queryFunnel")(function* (params) {
@@ -165,7 +165,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					),
 				),
 			)
-			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count || 0]))
+			const counts = new Map(Arr.map(outcome, (row) => [row.step, row.count]))
 
 			const first = counts.get(1) ?? 0
 			const stepData = Arr.map(steps, (step, index) => {
@@ -191,8 +191,8 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 					: yield* withTenantExecutor(
 							productEventsFunnel({ ...definition, keyBy: "session" }),
 						).pipe(
-							Effect.map((rows) => Number(rows.find((row) => row.step === 1)?.count) || 0),
-							Effect.orElseSucceed(() => undefined),
+							Effect.map((rows) => rows.find((row) => row.step === 1)?.count ?? 0),
+							orFallback("per-session funnel step 1", () => undefined),
 						)
 			const identityNote =
 				sessionFirst !== undefined && sessionFirst > Math.max(first, 1)
@@ -224,7 +224,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 										Array.from<number>({ length: steps.length }).fill(0)
 									byGroup.set(group, arr)
 									const index = row.step - 1
-									if (index >= 0 && index < steps.length) arr[index] = row.count || 0
+									if (index >= 0 && index < steps.length) arr[index] = row.count
 								}
 								const groups = Arr.map([...byGroup.entries()], ([group, groupCounts]) => ({
 									group,

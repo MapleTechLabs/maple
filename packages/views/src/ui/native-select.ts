@@ -1,9 +1,10 @@
 import { cn } from "@maple/ui/lib/utils"
 import {
 	nativeSelectIconStyles,
+	nativeSelectLeadingStyles,
 	nativeSelectStyles,
 	nativeSelectWrapperStyles,
-} from "@maple/ui/styles/ui/native-select"
+} from "./native-select.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "./icon"
 import { Array as Arr } from "effect"
@@ -43,7 +44,11 @@ export const nativeSelect = <Message>(
 		size?: "sm" | "default"
 		className?: string
 		defaultValue?: string
+		/** Controlled: the select shows this value on every render, whatever was picked last. */
+		value?: string
 		isDisabled?: boolean
+		/** A mark before the value (the picked option's status dot); decorative, the value names it. */
+		leading?: Html
 		attributes?: ReadonlyArray<Attribute<Message>>
 	}>,
 	entries: ReadonlyArray<NativeSelectEntry>,
@@ -56,17 +61,22 @@ export const nativeSelect = <Message>(
 			h.DataAttribute("slot", "native-select-wrapper"),
 		],
 		[
+			...(options.leading === undefined
+				? []
+				: [h.span([h.AriaHidden(true), h.Class(nativeSelectLeadingStyles)], [options.leading])]),
 			h.select(
 				[
 					...(options.attributes ?? []),
 					h.Class(nativeSelectStyles),
+					...(options.leading === undefined ? [] : [h.DataAttribute("leading", "")]),
 					h.DataAttribute("size", size),
 					h.DataAttribute("slot", "native-select"),
 					...(options.isDisabled === true ? [h.Disabled(true)] : []),
+					...(options.value === undefined ? [] : [h.Value(options.value)]),
 				],
 				Arr.map(entries, (entry) =>
 					entry._tag === "Option"
-						? optionView(h, entry.option, options.defaultValue)
+						? optionView(h, entry.option, options.value ?? options.defaultValue)
 						: h.optgroup(
 								[
 									h.Attribute("class", ""),
@@ -74,7 +84,7 @@ export const nativeSelect = <Message>(
 									h.LabelAttr(entry.label),
 								],
 								Arr.map(entry.options, (option) =>
-									optionView(h, option, options.defaultValue),
+									optionView(h, option, options.value ?? options.defaultValue),
 								),
 							),
 				),

@@ -1,4 +1,5 @@
-import { Schema, Array as Arr } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr, String as Str } from "effect"
 import type { AiSessionSortDir, AiSessionSortKey } from "@maple/domain/http"
 import type { ListAiSessionsInput } from "@maple/web-data/warehouse/ai-sessions"
 import type { Types } from "effect"
@@ -6,11 +7,7 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
 import type { AgentSessionsSearch } from "../../../route/search"
 import type { Model, RangeKey, SessionRow } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// copied: agent-sessions-filter-inputs.ts (it imports a hook type through `@/`) and the paging
-// arithmetic of `useInfiniteAiSessions`.
+import { urlSortPatch } from "../../kit/table-sort"
 
 export type Search = typeof AgentSessionsSearch.Type
 
@@ -65,16 +62,8 @@ export const sortOf = (search: Search): Sort => ({
 })
 
 /** The sorted column flips; any other starts descending; the default order clears both params. */
-export const sortPatch = (
-	search: Search,
-	key: AiSessionSortKey,
-): { sortBy: AiSessionSortKey | undefined; sortDir: AiSessionSortDir | undefined } => {
-	const current = sortOf(search)
-	const sortDir: AiSessionSortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
-	return isDefaultSort({ sortBy: key, sortDir })
-		? { sortBy: undefined, sortDir: undefined }
-		: { sortBy: key, sortDir }
-}
+export const sortPatch = (search: Search, key: AiSessionSortKey) =>
+	urlSortPatch(sortOf(search), key, DEFAULT_SORT)
 
 export const hasFilters = (search: Search): boolean =>
 	Arr.some(FILTER_KEYS, (key) => {
@@ -90,7 +79,7 @@ export type FilterInputs = Omit<ListAiSessionsInput, "limit" | "offset">
 /** The warehouse filter inputs for a search and the resolved window. */
 export const filterInputs = (search: Search, window: TimeWindow): FilterInputs => {
 	const sort = sortOf(search)
-	const query = search.q?.trim()
+	const query = search.q === undefined ? undefined : Str.trim(search.q)
 	return {
 		startTime: window.startTime,
 		endTime: window.endTime,
@@ -166,7 +155,6 @@ export const countedFilters = (inputs: FilterInputs) => ({
 	search: inputs.search,
 })
 
-/** `JSON.stringify` keys, like the hook's memo keys. */
 export const filterKeyOf = (inputs: FilterInputs): string => encodeJson(inputs)
 export const detailsKeyOf = (inputs: FilterInputs): string => encodeJson(countedFilters(inputs))
 

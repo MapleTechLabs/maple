@@ -1,4 +1,5 @@
-import { QueryEngineExecuteRequest, formatWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { ListMetricsRequest, MetricName, MetricsSummaryRequest, ServiceName } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
@@ -203,6 +204,8 @@ const GetMetricAttributeKeysInputSchema = Schema.Struct({
 	endTime: Schema.optional(WarehouseDateTimeString),
 	metricName: Schema.optional(Schema.String),
 	metricType: Schema.optional(MetricTypeSchema),
+	/** `resource` lists the metric's ResourceAttributes keys instead of its data-point keys. */
+	scope: Schema.optional(Schema.Literals(["metric", "resource"])),
 })
 
 export type GetMetricAttributeKeysInput = Schema.Schema.Type<typeof GetMetricAttributeKeysInputSchema>
@@ -234,6 +237,7 @@ const getMetricAttributeKeysEffect = Effect.fn("QueryEngine.getMetricAttributeKe
 			source: "metrics" as const,
 			metricName: input.metricName,
 			metricType: input.metricType,
+			...(input.scope === "resource" ? { scope: "resource" as const } : undefined),
 		},
 	})
 	const response = yield* executeQueryEngine("queryEngine.getMetricAttributeKeys", request)

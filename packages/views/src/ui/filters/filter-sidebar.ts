@@ -9,10 +9,10 @@ import { eyebrow } from "../eyebrow"
 import { scrollArea } from "../scroll-area"
 import { skeleton } from "../skeleton"
 
-// Port of packages/ui/src/components/filters/filter-sidebar.tsx, plus its error state.
+// The filter rail: its frame, header, groups, body, loading and error states.
 
 /**
- * `FilterSidebarFrame`: dims while a refetch runs over the facets it shows. `isIdle` marks a rail
+ * The filter rail's frame: dims while a refetch runs over the facets it shows. `isIdle` marks a rail
  * with nothing to offer, so the inline rail (`filterRail`) gives its width back to the content.
  */
 export const filterSidebarFrame = <M>(
@@ -31,7 +31,7 @@ export const filterSidebarFrame = <M>(
 	)
 }
 
-/** `FilterSidebarHeader`; `onClear` shows "Clear all" when a filter is set. */
+/** The rail's header; `onClear` shows "Clear all" when a filter is set. */
 export const filterSidebarHeader = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ title?: string; onClear?: M }> = {},
@@ -50,7 +50,8 @@ export const filterSidebarHeader = <M>(
 							{
 								variant: "link",
 								size: "xs",
-								className: "px-0 text-muted-foreground hover:text-foreground active:text-foreground",
+								className:
+									"px-0 text-muted-foreground hover:text-foreground active:text-foreground",
 								attributes: [h.OnClick(options.onClear)],
 							},
 							["Clear all"],
@@ -71,13 +72,16 @@ export const filterSidebarGroupLabel = <M>(
 ): Html =>
 	h.div(
 		[h.Class("flex items-center gap-1 py-2")],
-		[eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]), ...trailing],
+		[
+			eyebrow(h, { as: "h4", variant: "label", className: "text-muted-foreground" }, [title]),
+			...trailing,
+		],
 	)
 
 /** A rule between groups of sections inside the body. */
 export const filterSidebarDivider = <M>(h: HtmlBuilder<M>): Html => separator(h, "horizontal", "my-2")
 
-/** `FilterSidebarBody`: separator, the scrolling section list and its bottom fade. */
+/** Separator, the scrolling section list and its bottom fade. */
 export const filterSidebarBody = <M>(
 	h: HtmlBuilder<M>,
 	idPrefix: string,
@@ -89,13 +93,13 @@ export const filterSidebarBody = <M>(
 		[h.Class("relative -mr-4 min-h-0 flex-1")],
 		[
 			scrollArea(h, { className: "h-full", idPrefix }, [
-				h.div([h.Class("space-y-2 pr-4 pb-6")], children),
+				h.div([h.Class("space-y-1 pr-4 pb-6")], children),
 			]),
 			h.div(
 				[
 					h.AriaHidden(true),
 					h.Class(
-						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-background to-transparent",
+						"pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-linear-to-t from-background to-transparent",
 					),
 				],
 				[],
@@ -107,7 +111,7 @@ export const filterSidebarBody = <M>(
 const OPTION_WIDTHS = ["w-[58%]", "w-[72%]", "w-[44%]", "w-[64%]", "w-[50%]"]
 const LABEL_WIDTHS = ["w-14", "w-20", "w-16", "w-12"]
 
-/** `FilterSidebarLoading`: shaped like the loaded rail so nothing jumps in. */
+/** Shaped like the loaded rail so nothing jumps in. */
 export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Html =>
 	filterSidebarFrame(h, {}, [
 		h.div(
@@ -116,17 +120,17 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 				h.div([h.Class("flex h-8 items-center py-2")], [skeleton(h, "h-2.5 w-12")]),
 				railRule(h),
 				h.div(
-					[h.Class("space-y-2")],
+					[h.Class("space-y-1")],
 					Array.from({ length: sectionCount }, (_, section) =>
 						h.div(
-							[h.Class("pb-3")],
+							[h.Class("pb-2")],
 							[
 								h.div(
-									[h.Class("flex h-8 items-center")],
+									[h.Class("flex h-7 items-center")],
 									[skeleton(h, cn("h-2", LABEL_WIDTHS[section % LABEL_WIDTHS.length]))],
 								),
 								h.div(
-									[h.Class("space-y-2")],
+									[h.Class("space-y-1.5")],
 									Array.from({ length: section === 0 ? 2 : 4 }, (_, row) =>
 										h.div(
 											[h.Class("flex h-4 items-center gap-2")],
@@ -152,7 +156,7 @@ export const filterSidebarLoading = <M>(h: HtmlBuilder<M>, sectionCount = 3): Ht
 		),
 	])
 
-/** `FilterSidebarEmpty`: nothing to filter and no filter set. */
+/** Nothing to filter and no filter set. */
 export const filterSidebarEmpty = <M>(h: HtmlBuilder<M>): Html =>
 	filterSidebarFrame(h, { isIdle: true }, [
 		filterSidebarHeader(h),

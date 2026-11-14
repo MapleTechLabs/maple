@@ -15,8 +15,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
-// The issue detail skeleton and the not-found state.
-
 type H = HtmlBuilder<Message>
 
 const titleSkeleton = (h: H): Html =>
@@ -73,22 +71,19 @@ const railRow = (h: H, label: string, width: string): Html =>
 	detailRailRow(h, { label }, [skeleton(h, `h-4 ${width}`)])
 
 const railSkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(h, "Details", [
-				railRow(h, "Status", "w-24"),
-				railRow(h, "Severity", "w-16"),
-				railRow(h, "Priority", "w-20"),
-				railRow(h, "Assignee", "w-24"),
-			]),
-			detailRailGroup(h, "Scope", [
-				railRow(h, "Service", "w-28"),
-				railRow(h, "Environment", "w-20"),
-				railRow(h, "Issue ID", "w-16"),
-			]),
-		],
-	)
+	vstack(h, {}, [
+		detailRailGroup(h, "Details", [
+			railRow(h, "Status", "w-24"),
+			railRow(h, "Severity", "w-16"),
+			railRow(h, "Priority", "w-20"),
+			railRow(h, "Assignee", "w-24"),
+		]),
+		detailRailGroup(h, "Scope", [
+			railRow(h, "Service", "w-28"),
+			railRow(h, "Environment", "w-20"),
+			railRow(h, "Issue ID", "w-16"),
+		]),
+	])
 
 /** The page's frame while the issue loads: real labels, tabs and controls; skeleton values. */
 export const issueSkeleton = (h: H, model: Model): Html => {
@@ -105,7 +100,6 @@ export const issueSkeleton = (h: H, model: Model): Html => {
 	)
 }
 
-/** `ResourceNotFound` with its way back to the list. */
 export const issueNotFound = (h: H): Html =>
 	dashboardPage(h, {}, [
 		resourceNotFound(h, {

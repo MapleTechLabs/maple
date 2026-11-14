@@ -1,6 +1,24 @@
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorId } from "@maple/domain"
-import { AlertDeliveryEventDocument, AlertDestinationId, AlertRuleId } from "@maple/domain/http"
-import { V2UptimeMonitor } from "@maple/domain/http/v2"
+import {
+	AlertDeliveryEventDocument,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertMaintenanceWindowId,
+	AlertRuleId,
+	AlertSilenceId,
+	EscalationChainId,
+	OnCallScheduleId,
+} from "@maple/domain/http"
+import {
+	V2AlertMaintenanceWindow,
+	V2AlertSilence,
+	V2EscalationChain,
+	V2OnCallSchedule,
+	V2Slo,
+	V2SloStatus,
+	V2UptimeMonitor,
+} from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -10,51 +28,60 @@ import {
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import { AlertsSearch } from "../../../route/search"
+import { AlertsHubSearch, AlertsTab } from "../../../route/search"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as DestinationDialog from "../destination/dialog"
+import { OrgMember } from "../shared/org-members"
+import * as WindowDialog from "../maintenance-dialog/dialog"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import { ServiceNamespaces } from "./uptime-groups"
-
-// The `/alerts` hub.
-
-/** `useAlertDestinationsList` / the overview collections: `null` until the first live snapshot. */
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
+import { LiveRows } from "../../kit/load-schemas"
+import { UptimeMonitorKind } from "@maple/primitives"
 
 export const UptimeStatusFilter = Schema.Literals(["all", "down", "degraded", "paused"])
-export const UptimeKindFilter = Schema.Literals(["all", "http", "tcp", "dns", "heartbeat"])
+export const UptimeKindFilter = Schema.Literals(["all", ...UptimeMonitorKind.literals])
 export type UptimeKindFilter = typeof UptimeKindFilter.Type
+
+/** An SLO beside its status (`listSloRows`); `status` is `null` when that read failed. */
+export const SloListRow = Schema.Struct({ slo: V2Slo, status: Schema.NullOr(V2SloStatus) })
+export type SloListRow = typeof SloListRow.Type
 
 export const TestOutcome = Schema.Struct({ message: Schema.String, success: Schema.Boolean })
 
 export const Model = Schema.Struct({
-	search: AlertsSearch,
+	tab: AlertsTab,
+	search: AlertsHubSearch,
 	/** `Clock.currentTimeMillis` when the overview model was built; `null` until read. */
 	nowMs: Schema.NullOr(Schema.Number),
-	rules: Rows(AlertRuleRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
-	destinations: Rows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
 	/** `alertDeliveries.list({ limit: 100 })`, newest first. */
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	/** The Routing tab's own `alertDeliveries.list` read, separate from `deliveries`. */
 	routingDeliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
-	/** `session.roles` has root or org:admin; `false` until the session answers. */
-	isAdmin: Schema.Boolean,
+	/** What the session may do (`Policy.grantsOf`); none until the session answers. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** Rules tab: the search box and "Show all". */
 	rulesQuery: Schema.String,
 	isShowingAllRules: Schema.Boolean,
-	/** The enable/disable PATCH in flight (`toggleRule.state`) and whether the last one failed. */
+	/** The enable/disable PATCH in flight and whether the last one failed. */
 	togglingRuleId: Schema.NullOr(AlertRuleId),
 	hasToggleFailed: Schema.Boolean,
 	/** The rules or incidents stream stopped, or stalled, before its first answer. */
 	isLoadFailed: Schema.Boolean,
+	/** Inbox: the keyboard-focused open incident, by id (the live list reorders under it). */
+	focusedIncidentId: Schema.NullOr(Schema.String),
 	/** Routing: destinations with a test or delete in flight, and the one awaiting delete confirmation. */
 	testingDestinationIds: Schema.Array(AlertDestinationId),
+	/** Inbox: incidents with an acknowledge or unacknowledge request in flight. */
+	acknowledgingIncidentIds: Schema.Array(AlertIncidentId),
 	deletingDestinationIds: Schema.Array(AlertDestinationId),
 	confirmDeleteId: Schema.NullOr(AlertDestinationId),
 	deleteDialog: Dialog.Model,
-	/** Provider brand images that failed to load (`ProviderLogo`'s `errored`), by destination type. */
+	/** Provider brand images that failed to load, by destination type. */
 	brokenLogos: Schema.Array(Schema.String),
 	/** Row action menus by menu id, created on first use. */
 	menus: Schema.Record(Schema.String, Menu.Model),
@@ -73,5 +100,40 @@ export const Model = Schema.Struct({
 	deletingMonitorId: Schema.NullOr(UptimeMonitorId),
 	confirmDeleteMonitorId: Schema.NullOr(UptimeMonitorId),
 	deleteMonitorDialog: Dialog.Model,
+	/** SLOs tab: `slos.list` and each SLO's status, read only while the tab is open. */
+	slos: KeyedSchema(Schema.Array(SloListRow), LoadFailure),
+	/** Routing tab: `escalationChains.list`, read only while the tab is open. */
+	chains: KeyedSchema(Schema.Array(V2EscalationChain), LoadFailure),
+	/** The chain awaiting delete confirmation, the delete in flight, and why the last one was refused. */
+	confirmDeleteChainId: Schema.NullOr(EscalationChainId),
+	deletingChainId: Schema.NullOr(EscalationChainId),
+	deleteChainError: Schema.NullOr(Schema.String),
+	/** The refusal was "in use": its message is rebuilt once the re-read chains land. */
+	isDeleteChainInUse: Schema.Boolean,
+	deleteChainDialog: Dialog.Model,
+	/** `oncallSchedules.list`, read on every tab: the inbox strip, the On-call tab and the chain dialog. */
+	schedules: KeyedSchema(Schema.Array(V2OnCallSchedule), LoadFailure),
+	/** When the clock last asked for the schedules again; a failing read waits out the max age. */
+	schedulesAskedAtMs: Schema.NullOr(Schema.Number),
+	/** The org's members, to name who is on call; `null` until Clerk answers (or failed). */
+	members: Schema.NullOr(Schema.Array(OrgMember)),
+	/** The members were asked for: only the tabs that name people (inbox, On-call, Routing) ask. */
+	isMembersRequested: Schema.Boolean,
+	confirmDeleteScheduleId: Schema.NullOr(OnCallScheduleId),
+	deletingScheduleId: Schema.NullOr(OnCallScheduleId),
+	deleteScheduleError: Schema.NullOr(Schema.String),
+	deleteScheduleDialog: Dialog.Model,
+	/** Silences tab: `alertSilences.list`, read while the tab is open. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	endingSilenceIds: Schema.Array(AlertSilenceId),
+	silenceDialog: SilenceDialog.Model,
+	/** Maintenance and Silences tabs: `alertMaintenanceWindows.list`, read while either is open. */
+	windows: KeyedSchema(Schema.Array(V2AlertMaintenanceWindow), LoadFailure),
+	/** Enable/disable PATCHes in flight, the delete in flight and the window awaiting confirmation. */
+	togglingWindowIds: Schema.Array(AlertMaintenanceWindowId),
+	deletingWindowId: Schema.NullOr(AlertMaintenanceWindowId),
+	confirmDeleteWindowId: Schema.NullOr(AlertMaintenanceWindowId),
+	deleteWindowDialog: Dialog.Model,
+	windowDialog: WindowDialog.Model,
 })
 export type Model = typeof Model.Type

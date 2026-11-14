@@ -1,4 +1,4 @@
-import { Schema, String as Str } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 import {
 	DashboardTemplateId,
 	DashboardTemplateParameterKey,
@@ -16,8 +16,6 @@ import type { TemplateParameterValues, WidgetDef } from "./types"
 /** The display half of a widget, so the shared chart presets are literal-typed. */
 type WidgetDisplay = WidgetDef["display"]
 
-// Brand makers — used inside template definitions for compile-time correctness
-
 export const templateId = (value: string): DashboardTemplateId =>
 	Schema.decodeSync(DashboardTemplateId)(value)
 
@@ -25,9 +23,6 @@ export const paramKey = (value: string): DashboardTemplateParameterKey =>
 	Schema.decodeSync(DashboardTemplateParameterKey)(value)
 
 const decodePortableDashboard = Schema.decodeUnknownSync(PortableDashboardDocument)
-
-// Query draft helpers — produce the queries format expected by the
-// custom_query_builder_timeseries / custom_query_builder_breakdown endpoints
 
 export function makeQueryDraft(opts: {
 	id: string
@@ -62,7 +57,6 @@ export function makeQueryDraft(opts: {
 		legend: "",
 	} as const satisfies Omit<QueryBuilderQueryDraftPayload, "dataSource">
 
-	// Metric-only fields belong solely to the metrics source.
 	if (opts.dataSource === "metrics") {
 		return {
 			...base,
@@ -148,7 +142,7 @@ export function chartDisplayForMetric(aggregation: string): WidgetDisplay {
 // metric where-clause literal, so a value containing `"` (or `\`) can't break
 // out of the string. Metric where-clauses are ClickHouse-dialect string literals.
 export function escapeMetricStringLiteral(value: string): string {
-	return Str.replace(/"/g, '\\"')(Str.replace(/\\/g, "\\\\")(value))
+	return Str.replace(/[\\"]/g, "\\$&")(value)
 }
 
 export function serviceWhereClause(serviceName?: string): string {
@@ -156,7 +150,13 @@ export function serviceWhereClause(serviceName?: string): string {
 }
 
 export function combineWhere(...clauses: Array<string | undefined>): string {
-	return clauses.filter((clause) => clause && Str.trim(clause).length > 0).join(" AND ")
+	return Arr.join(
+		Arr.filter(
+			clauses,
+			(clause): clause is string => clause !== undefined && Str.trim(clause).length > 0,
+		),
+		" AND ",
+	)
 }
 
 export function metricsTimeseries(opts: {

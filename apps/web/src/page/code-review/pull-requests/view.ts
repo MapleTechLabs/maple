@@ -20,8 +20,6 @@ import { DEFAULT_PRESET, MAX_ROWS, sortOf, STATUS_LABELS } from "./update"
 import { reviewTable } from "./view-table"
 import { vstack } from "@maple/views/ui/stack"
 
-// The code review pull requests page.
-
 type H = HtmlBuilder<Message>
 
 const STATUS_ENTRIES: ReadonlyArray<SelectEntry> = Arr.map(
@@ -145,7 +143,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				slotId: "code-review-pull-requests-sheet",
 				model: model.sheet,
 				view: ReviewSheetView.view,
-				viewInputs: { timeZone: inputs.context.timeZone },
+				viewInputs: { timeZone: inputs.context.timeZone, window: model.search },
 				toParentMessage: (message: SheetMessage) => Message.GotSheetMessage({ message }),
 			}),
 		},

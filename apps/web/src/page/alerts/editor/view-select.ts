@@ -2,7 +2,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { Message } from "./message"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -17,11 +17,15 @@ export const formSelect = (
 		className?: string
 		ariaLabel?: string
 		labelledBy?: string
+		/** The error text the trigger is described by, and marked invalid with. */
+		errorId?: string
+		/** The trigger's text for the value, when it is shorter than the list's label. */
+		renderValue?: (value: string) => ReadonlyArray<Html | string>
 		toView: (parts: ReadonlyArray<Html>) => Html
 	}>,
 ): Html => {
-	const index = options.findIndex((option) => option.value === value)
-	const current = selected ?? Select.init(id, { value, selectedIndex: index === -1 ? null : index })
+	const index = Arr.findFirstIndex(options, (option) => option.value === value)
+	const current = selected ?? Select.init(id, { value, selectedIndex: Option.getOrNull(index) })
 	return h.submodel({
 		slotId: `alert-rule-select-${id}`,
 		model: { ...current, value },
@@ -32,6 +36,8 @@ export const formSelect = (
 			className: inputs.className,
 			ariaLabel: inputs.ariaLabel,
 			labelledBy: inputs.labelledBy,
+			...(inputs.errorId === undefined ? undefined : { describedBy: inputs.errorId, isInvalid: true }),
+			...(inputs.renderValue === undefined ? undefined : { renderValue: inputs.renderValue }),
 			toView: inputs.toView,
 		},
 	})

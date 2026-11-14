@@ -1,11 +1,5 @@
 import { Cron, Option, Result, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import {
-	OrgId,
-	UptimeIntervalSeconds,
-	UptimeMonitorId,
-	UptimeMonitorKind,
-	UptimeMonitorStatus,
-} from "./primitives"
+import { OrgId, UptimeIntervalSeconds, UptimeMonitorId, UptimeMonitorStatus } from "@maple/primitives"
 
 // Uptime monitors: the stored config per kind, the probe contract between the API and
 // `apps/scraper`, and the pure rules both sides share (assertions, the up/down machine).
@@ -105,7 +99,7 @@ export const UptimeCheckDetail = Schema.Struct({
 })
 export type UptimeCheckDetail = Schema.Schema.Type<typeof UptimeCheckDetail>
 
-// --- Probe contract (`/api/internal/uptime-*`, SD_INTERNAL_TOKEN bearer) ---
+// Probe contract: `/api/internal/uptime-*`, behind the SD_INTERNAL_TOKEN bearer.
 
 export class UptimeProbeTarget extends Schema.Class<UptimeProbeTarget>("UptimeProbeTarget")({
 	id: UptimeMonitorId,
@@ -134,8 +128,6 @@ export const UptimeCheckReportList = Schema.Array(UptimeCheckReport).check(
 	Schema.isMaxLength(UPTIME_CHECK_REPORT_BATCH_MAX),
 )
 
-// --- Assertions ---
-
 export interface UptimeHttpObservation {
 	readonly statusCode: number
 	readonly durationMs: number
@@ -156,7 +148,9 @@ const asJsonObject = Schema.decodeUnknownOption(Schema.Record(Schema.String, Sch
  * missing, `Some(null)` for a JSON null.
  */
 export const readJsonPath = (root: unknown, path: string): Option.Option<unknown> =>
-	Array.from(Str.replace(/^\$\.?/u, "")(path).matchAll(PATH_TOKEN)).reduce<Option.Option<unknown>>(
+	Arr.reduce<RegExpMatchArray, Option.Option<unknown>>(
+		Arr.fromIterable(Str.matchAll(PATH_TOKEN)(Str.replace(/^\$\.?/u, "")(path))),
+		Option.some(root),
 		(current, match) =>
 			Option.flatMap(current, (value) => {
 				const key = match[1] ?? match[0]
@@ -173,7 +167,6 @@ export const readJsonPath = (root: unknown, path: string): Option.Option<unknown
 						),
 				)
 			}),
-		Option.some(root),
 	)
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -237,8 +230,6 @@ export const firstFailedAssertion = (
 	return failures[0] ?? null
 }
 
-// --- Check spans ---
-
 /** `service.name` of the spans the scraper exports per check; the service map drops it. */
 export const UPTIME_SERVICE_NAME = "maple-uptime"
 /** The resource attribute naming the monitor a check span belongs to. */
@@ -258,8 +249,6 @@ export const MAPLE_SERVICES_NAMESPACE = "maple-services"
 export const isMapleService = (row: { readonly serviceName: string; readonly serviceNamespace: string }) =>
 	row.serviceNamespace === MAPLE_SERVICES_NAMESPACE ||
 	(row.serviceNamespace === "" && row.serviceName === UPTIME_SERVICE_NAME)
-
-// --- HTTP check request ---
 
 export const UPTIME_USER_AGENT = "maple-uptime/1.0"
 
@@ -288,9 +277,15 @@ export const uptimeHttpRequest = (
 	config: Schema.Schema.Type<typeof UptimeHttpConfig>,
 	extraHeaders: Readonly<Record<string, string>> = {},
 ): UptimeCheckRequest => {
-	const contentType = Rec.toEntries(config.headers).find(
-		([name]) => Str.toLowerCase(name) === "content-type",
-	)?.[1]
+	const contentType = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(
+				Rec.toEntries(config.headers),
+				([name]) => Str.toLowerCase(name) === "content-type",
+			),
+			([, value]) => value,
+		),
+	)
 	return {
 		method: config.method,
 		url: config.url,
@@ -301,8 +296,6 @@ export const uptimeHttpRequest = (
 				: null,
 	}
 }
-
-// --- Up/down machine ---
 
 export const UptimeMonitorStateSnapshot = Schema.Struct({
 	status: UptimeMonitorStatus,
@@ -337,10 +330,6 @@ export const appendRecentCheck = (
 	check: UptimeRecentCheck,
 ): ReadonlyArray<UptimeRecentCheck> => [...recent, check].slice(-UPTIME_RECENT_LIMIT)
 
-export const uptimeKindOf = (config: UptimeMonitorConfig): UptimeMonitorKind => config._tag
-
-// --- Heartbeat deadlines ---
-
 export type UptimeHeartbeatConfig = Schema.Schema.Type<typeof UptimeHeartbeatConfig>
 
 /** Parses a heartbeat's cron schedule in its own time zone; `None` when either is invalid. */
@@ -371,8 +360,16 @@ const relativeAge = (ms: number): string => {
 }
 
 /** The error an overdue heartbeat records, e.g. `No ping since 2026-10-26 14:03 UTC (3 h ago)`. */
-export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string => {
-	if (lastPingAt === null) return "No ping received yet"
-	const at = Str.replace("T", " ")(Str.slice(0, 16)(new Date(lastPingAt).toISOString()))
-	return `No ping since ${at} UTC (${relativeAge(nowMs - lastPingAt)})`
-}
+export const describeMissedHeartbeat = (lastPingAt: number | null, nowMs: number): string =>
+	lastPingAt === null ? "No ping received yet" : `No ping since ${sinceText(lastPingAt, nowMs)}`
+
+const sinceText = (at: number, nowMs: number): string =>
+	`${Str.replace("T", " ")(Str.slice(0, 16)(new Date(at).toISOString()))} UTC (${relativeAge(nowMs - at)})`
+
+/** How long a probe's last check vouches for it: 3 intervals, and never under 5 minutes. */
+export const probeStaleAfterMs = (intervalSeconds: number): number =>
+	Math.max(3 * intervalSeconds * 1000, 5 * 60_000)
+
+/** What a probe with no recent check reports, e.g. `No check result since 2026-10-26 14:03 UTC (12 min ago)`. */
+export const describeStaleProbe = (lastCheckAt: number | null, nowMs: number): string =>
+	lastCheckAt === null ? "No check result yet" : `No check result since ${sinceText(lastCheckAt, nowMs)}`

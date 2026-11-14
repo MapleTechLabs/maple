@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
-import { String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** Which of a subscriber row's two emails a link turns off. */
 export type UnsubscribeKind = "digest" | "web-analytics"
@@ -26,8 +26,9 @@ export const verifyUnsubscribeToken = (
 	token: string,
 ): { readonly kind: UnsubscribeKind; readonly subscriptionId: string } | undefined => {
 	const [rawKind, subscriptionId, rawSig, ...rest] = Str.split(".")(token)
-	const kind = KINDS.find((k) => k === rawKind)
-	if (kind === undefined || !subscriptionId || !rawSig || rest.length > 0) return undefined
+	const found = Arr.findFirst(KINDS, (k) => k === rawKind)
+	if (Option.isNone(found) || !subscriptionId || !rawSig || rest.length > 0) return undefined
+	const kind = found.value
 	const expected = sign(secret, kind, subscriptionId)
 	const actual = Buffer.from(rawSig, "base64url")
 	if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined

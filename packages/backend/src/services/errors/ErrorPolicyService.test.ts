@@ -9,12 +9,12 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/domain/primitives"
+import { AlertDestinationId, ErrorIssueId, IssueEscalationId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, IssueEscalations } from "@maple/db/tables"
 import { Clock, Effect, Layer, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorPolicyService } from "./ErrorPolicyService"
 
 // Compile-time guard: broadening policy persistence to Env, notifications,
@@ -193,7 +193,6 @@ describe("ErrorPolicyService", () => {
 			)
 
 			assert.strictEqual(failure._tag, "@maple/http/errors/ErrorForbiddenError")
-			// And nothing was written.
 			assert.isNull(yield* policies.loadNotificationPolicyRow(ORG))
 		}).pipe(Effect.provide(makeLayer())),
 	)

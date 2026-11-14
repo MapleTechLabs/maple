@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { Array as Arr } from "effect"
 
-// `UnderlineTabStrip` and `underlineTabClass`: a row of tabs with an underlined active tab.
+// A row of tabs with an underlined active tab.
 
 export type UnderlineTabStripOptions = Readonly<{
 	label: string
@@ -37,7 +37,7 @@ export const underlineTabStrip = <M>(
 
 export const underlineTabClass = (isActive: boolean): string =>
 	cn(
-		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm transition-colors",
+		"-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 text-sm",
 		isActive
 			? "border-primary font-medium text-foreground"
 			: "border-transparent text-muted-foreground hover:text-foreground active:text-foreground",
@@ -60,7 +60,12 @@ export type LinkTab<M = never> = Readonly<{
 }>
 
 /** A page's tabs as links: each one a route, the current one underlined. */
-export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: ReadonlyArray<LinkTab<M>>): Html =>
+export const linkTabStrip = <M>(
+	h: HtmlBuilder<M>,
+	label: string,
+	tabs: ReadonlyArray<LinkTab<M>>,
+	options?: Readonly<{ className?: string }>,
+): Html =>
 	underlineTabStrip(
 		h,
 		{
@@ -68,7 +73,7 @@ export const linkTabStrip = <M>(h: HtmlBuilder<M>, label: string, tabs: Readonly
 			label,
 			bleed: false,
 			divided: false,
-			className: "gap-0 border-b border-border",
+			className: cn("gap-0 border-b border-border", options?.className),
 		},
 		Arr.map(tabs, (tab) =>
 			h.a(

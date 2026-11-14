@@ -1,20 +1,18 @@
 import { DashboardDocument, DashboardId, DashboardVersionId } from "@maple/domain/http"
-import type { V2Dashboard } from "@maple/domain/http/v2"
-import { Effect, Schema, Array as Arr } from "effect"
+import type { V2DashboardVersionDetail } from "@maple/domain/http/v2"
+import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { errorMessageOf } from "../kit/store"
 import { Message } from "./message"
-
-// `useDashboardVersions`, `useDashboardVersionDetail` and `useRestoreDashboardVersion`.
 
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 const decodeVersionId = Schema.decodeUnknownEffect(DashboardVersionId)
 const decodeDocument = Schema.decodeUnknownEffect(DashboardDocument)
 
 /** A version's snapshot read as the board document the canvas renders. */
-export const documentOf = (snapshot: V2Dashboard) =>
+export const documentOf = (snapshot: V2DashboardVersionDetail["snapshot"]) =>
 	decodeDocument({
 		id: snapshot.id,
 		name: snapshot.name,
@@ -49,9 +47,12 @@ export const FetchVersions = Command.define("FetchDashboardVersions", {
 				createdBy: version.createdBy,
 			}))
 		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVersions({ generation, result })),
+			settled,
+			Effect.flatMap((result) =>
+				Effect.map(Clock.currentTimeMillis, (nowMs) =>
+					Message.CompletedFetchVersions({ generation, nowMs, result }),
+				),
+			),
 		),
 })
 
@@ -65,11 +66,7 @@ export const FetchSnapshot = Command.define("FetchDashboardVersionSnapshot", {
 			const version_id = yield* decodeVersionId(versionId)
 			const detail = yield* client.dashboards.retrieveVersion({ params: { id, version_id } })
 			return yield* documentOf(detail.snapshot)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSnapshot({ versionId, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchSnapshot({ versionId, result }))),
 })
 
 export const RestoreVersion = Command.define("RestoreDashboardVersion", {

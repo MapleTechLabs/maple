@@ -10,7 +10,7 @@ import {
 	sparkline,
 	type ChartPoint,
 } from "./static-chart"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Order, String as Str } from "effect"
 
 const at = (minutesAgo: number): number => Date.UTC(2026, 7, 18, 14, 32) - minutesAgo * 60_000
 
@@ -48,7 +48,7 @@ describe("niceTicks", () => {
 	it("spans zero to above the max", () => {
 		const ticks = niceTicks(0.4, 3.9)
 		expect(ticks[0]).toBe(0)
-		expect(ticks[ticks.length - 1]!).toBeGreaterThanOrEqual(3.9)
+		expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(3.9)
 	})
 
 	it("does not collapse when every value is identical", () => {
@@ -94,7 +94,7 @@ describe("the axes, which the caller draws and this only places", () => {
 		// The grid is `<line>`s at the tick heights; a label that is not on one of
 		// them is a label pointing at nothing.
 		const gridY = new Set(
-			Arr.map([...render.svg.matchAll(/<line x1="12" y1="([\d.]+)"/g)], (match) => match[1]),
+			Arr.map([...Str.matchAll(/<line x1="12" y1="([\d.]+)"/g)(render.svg)], (match) => match[1]),
 		)
 		for (const tick of render.yAxis) {
 			const y = PLOT_PAD + tick.yFraction * (PLOT_HEIGHT - PLOT_PAD * 2)
@@ -133,9 +133,8 @@ describe("the axes, which the caller draws and this only places", () => {
 					)
 					// Distinct is not enough on its own: the labels also have to run
 					// the way the axis does, largest at the top.
-					expect(Arr.map(yAxis, (tick) => tick.yFraction)).toEqual(
-						[...Arr.map(yAxis, (tick) => tick.yFraction)].sort((a, b) => a - b),
-					)
+					const fractions = Arr.map(yAxis, (tick) => tick.yFraction)
+					expect(fractions).toEqual(Arr.sort(fractions, Order.Number))
 				}
 			}
 		}
@@ -145,7 +144,7 @@ describe("the axes, which the caller draws and this only places", () => {
 		// Read at about half size, five labels are a texture and four are a scale.
 		const { yAxis, svg } = renderChartSvg(spec)
 		expect(yAxis.length).toBeLessThanOrEqual(4)
-		expect(svg.match(/<line x1="12"/g)?.length).toBeGreaterThanOrEqual(yAxis.length)
+		expect([...Str.matchAll(/<line x1="12"/g)(svg)].length).toBeGreaterThanOrEqual(yAxis.length)
 	})
 
 	it("walks the time axis from the range's start to its end", () => {
@@ -227,12 +226,11 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 	})
 
 	it("sorts unordered points rather than drawing a zigzag", () => {
-		const shuffled: ReadonlyArray<ChartPoint> = [
-			[at(0), 3],
-			[at(30), 1],
-			[at(15), 2],
-		]
-		const sorted: ReadonlyArray<ChartPoint> = [shuffled[0]!, shuffled[2]!, shuffled[1]!]
+		const early: ChartPoint = [at(0), 3]
+		const middle: ChartPoint = [at(15), 2]
+		const late: ChartPoint = [at(30), 1]
+		const shuffled: ReadonlyArray<ChartPoint> = [early, late, middle]
+		const sorted: ReadonlyArray<ChartPoint> = [early, middle, late]
 		const draw = (points: ReadonlyArray<ChartPoint>) =>
 			renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points }] }).svg
 		expect(draw(shuffled)).toBe(draw(sorted))
@@ -309,7 +307,7 @@ describe("renderChartSvg, as a reply draws it: several series and no threshold",
 			unit: "number",
 			series: [named("a", [1, 2]), named("b", [3, 4])],
 		})
-		const starts = Arr.map([...two.svg.matchAll(/<path d="M ([\d.]+) /g)], (match) => match[1])
+		const starts = Arr.map([...Str.matchAll(/<path d="M ([\d.]+) /g)(two.svg)], (match) => match[1])
 
 		expect(new Set(starts).size).toBe(starts.length)
 	})
@@ -332,8 +330,8 @@ describe("sparkline", () => {
 	it("renders one glyph per bucket, rising with the values", () => {
 		const spark = sparkline([1, 2, 3, 4, 5, 6, 7, 8])
 		expect(spark).toHaveLength(8)
-		expect(spark.at(0)).toBe("▁")
-		expect(spark.at(-1)).toBe("█")
+		expect(Str.at(spark, 0)).toEqual(Option.some("▁"))
+		expect(Str.at(spark, -1)).toEqual(Option.some("█"))
 	})
 
 	it("stays flat rather than dividing by zero on a constant series", () => {

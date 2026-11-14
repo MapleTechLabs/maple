@@ -30,6 +30,7 @@ import {
 import { hstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The Operations tab: one table, p50 and the activity sparkline hidden below `md`.
 // TODO(row-keyboard): Enter / Space on a focused row does not drill down yet; click does.
@@ -67,8 +68,16 @@ const operationRow = (
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("block truncate font-mono text-xs text-foreground"), h.Title(op.spanName)],
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							mono: true,
+							truncate: true,
+							className: "block",
+							attributes: [h.Title(op.spanName)],
+						},
 						[op.spanName],
 					),
 				],
@@ -77,13 +86,10 @@ const operationRow = (
 			barCell(
 				h,
 				{ value: op.estimatedSpanCount, max: context.maxCalls, tone: "calls" },
-				h.span(
-					[h.Class("tabular-nums font-mono text-xs text-foreground")],
-					[
-						...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
-						formatRate(callsPerSecond(op.estimatedSpanCount, context.seconds)),
-					],
-				),
+				typography(h, { size: "xs", tone: "foreground", mono: true, numeric: true }, [
+					...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
+					formatRate(callsPerSecond(op.estimatedSpanCount, context.seconds)),
+				]),
 			),
 			barCell(
 				h,

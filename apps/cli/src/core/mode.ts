@@ -5,7 +5,6 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Predicate,
 	Redacted,
 	Schema,
 	Array as Arr,
@@ -15,6 +14,8 @@ import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import * as os from "node:os"
 import * as path from "node:path"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
+import { ServerDiscovery } from "@maple/local-server/server-discovery"
 import { MapleConfig } from "./config"
 
 /**
@@ -102,31 +103,14 @@ export const probeLocal = (
 export const MAPLE_DIR = path.join(os.homedir(), ".maple")
 export const SERVER_DISCOVERY_FILE = path.join(MAPLE_DIR, "maple-server.json")
 
-const ServerDiscovery = Schema.Struct({ pid: Schema.Number, url: Schema.String })
 const decodeServerDiscovery = Schema.decodeUnknownOption(Schema.fromJsonString(ServerDiscovery))
-
-const errorCode = (cause: unknown): string | undefined =>
-	Predicate.hasProperty(cause, "code") && Predicate.isString(cause.code) ? cause.code : undefined
-
-/** Signal 0 checks existence; EPERM means it exists under another user. */
-const pidAlive = (pid: number): Effect.Effect<boolean> =>
-	Effect.try({ try: () => process.kill(pid, 0), catch: errorCode }).pipe(
-		Effect.as(true),
-		Effect.catch((code) => Effect.succeed(code === "EPERM")),
-	)
 
 /** The running server's URL from one discovery file, when its pid is alive. */
 export const discoverLocalUrl = (fs: FileSystem, file: string = SERVER_DISCOVERY_FILE) =>
 	fs.readFileString(file).pipe(
 		Effect.map(decodeServerDiscovery),
-		Effect.flatMap(
-			Option.match({
-				onNone: () => Effect.succeed(Option.none<string>()),
-				onSome: (found) =>
-					Effect.map(pidAlive(found.pid), (alive) =>
-						alive ? Option.some(found.url) : Option.none<string>(),
-					),
-			}),
+		Effect.map(
+			Option.flatMap((found) => (isProcessAlive(found.pid) ? Option.some(found.url) : Option.none())),
 		),
 		Effect.orElseSucceed(() => Option.none<string>()),
 	)
@@ -221,7 +205,7 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 					Effect.sync(() => {
 						if (found.ambiguous.length > 1) {
 							process.stderr.write(
-								`note: several Maple servers are running (${found.ambiguous.join(", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
+								`note: several Maple servers are running (${Arr.join(found.ambiguous, ", ")}); using ${config.localUrl}. Set MAPLE_LOCAL_URL to pick one.\n`,
 							)
 						}
 						return Option.getOrElse(found.url, () => config.localUrl)
@@ -251,7 +235,6 @@ export class Mode extends Context.Service<Mode, ModeApi>()("@maple/cli/Mode", {
 			}
 			if (forceLocal) return yield* local
 
-			// Stored preference.
 			if (Option.contains(config.defaultMode, "remote") && remote !== undefined) return remote
 			if (Option.contains(config.defaultMode, "local")) return yield* local
 

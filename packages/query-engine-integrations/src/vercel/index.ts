@@ -1,0 +1,49 @@
+// Vercel integration queries: the /infra/vercel project table, per-project charts,
+// functions, the event drains and AI Gateway usage.
+
+export {
+	vercelProjectLatencySQL,
+	vercelProjectRequestsSQL,
+	vercelProjectErrorLogsSQL,
+	VERCEL_ERROR_LOG_SAMPLE,
+	vercelProjectTopPathsSQL,
+	vercelRequestTimeseriesSQL,
+	vercelProjectBreakdownSQL,
+	vercelEdgeLatencyTimeseriesSQL,
+	VERCEL_BREAKDOWN_ATTRIBUTES,
+	type VercelBreakdownDimension,
+	type VercelBreakdownStatus,
+	type VercelProjectScope,
+	type VercelRequestFilter,
+} from "./vercel-infra"
+export {
+	clusterVercelErrorLogs,
+	errorPatternSearch,
+	withoutLambdaEnvelope,
+	type VercelErrorLogRow,
+	type VercelErrorPattern,
+} from "./vercel-errors"
+export {
+	vercelFunctionRoutesSQL,
+	vercelFunctionRouteTimeseriesSQL,
+	type VercelFunctionFilters,
+	vercelFunctionTimeseriesSQL,
+	vercelProjectDependenciesSQL,
+	vercelProjectFunctionsSQL,
+} from "./vercel-functions"
+export {
+	vercelSpeedInsightsSQL,
+	vercelWebAnalyticsSummarySQL,
+	vercelWebAnalyticsTopSQL,
+	type VercelSpeedInsightsFilter,
+	type VercelSpeedInsightsGroup,
+	type VercelWebAnalyticsFilter,
+	type VercelWebAnalyticsDimension,
+} from "./vercel-event-drains"
+export {
+	VERCEL_AI_GATEWAY_SERVICE,
+	vercelAiGatewayByModelSQL,
+	vercelAiGatewayByProjectSQL,
+	vercelAiGatewaySummarySQL,
+	vercelAiGatewayTimeseriesSQL,
+} from "./vercel-ai-gateway"

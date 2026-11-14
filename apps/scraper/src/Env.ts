@@ -1,10 +1,10 @@
-import { Config, Context, Effect, Layer, Redacted, Schema } from "effect"
+import { Config, Context, Effect, Layer, Redacted, Schema, String as Str } from "effect"
 
 export interface ScraperEnvConfig {
 	/** Base URL of the Maple API, e.g. `https://api.maple.dev`. */
 	readonly MAPLE_API_URL: string
 	/** Shared internal bearer for the `/api/internal/*` scraper endpoints. */
-	readonly SD_INTERNAL_TOKEN: Redacted.Redacted<string>
+	readonly SD_INTERNAL_TOKEN: Redacted.Redacted
 	/**
 	 * Base URL of the Maple ingest gateway, e.g. `https://ingest.maple.dev`.
 	 * Scraped metrics are sent here as OTLP/JSON with each org's public
@@ -34,11 +34,11 @@ export interface ScraperEnvConfig {
 	readonly PORT: number
 }
 
-// Defaults target the local dev stack (`bun dev`: api on 3472, ingest on
-// 3474, the docker-compose dev token) so the scraper boots without extra
-// configuration instead of crashing the turbo dev TUI. Production overrides
-// all three (apps/scraper/alchemy.run.ts); a missing override
-// degrades to visible per-reconcile warnings, never a crash loop.
+// Defaults target a standalone run (api on 3472, ingest on 3474, the
+// docker-compose dev token) so the scraper boots without extra configuration.
+// `bun dev` passes both URLs from its routes (root alchemy.run.ts) and
+// production overrides all three (apps/scraper/alchemy.run.ts); a missing
+// override degrades to visible per-reconcile warnings, never a crash loop.
 //
 // Numeric settings ARE validated at layer build, unlike the URLs: a missing
 // URL fails loudly every reconcile, but SCRAPER_CONCURRENCY=0 builds a
@@ -76,8 +76,8 @@ const envConfig = Config.all({
 export class ScraperEnv extends Context.Service<ScraperEnv, ScraperEnvConfig>()("@maple/scraper/Env", {
 	make: Effect.map(envConfig, (env) => ({
 		...env,
-		MAPLE_API_URL: env.MAPLE_API_URL.replace(/\/$/, ""),
-		MAPLE_INGEST_URL: env.MAPLE_INGEST_URL.replace(/\/$/, ""),
+		MAPLE_API_URL: Str.replace(/\/$/, "")(env.MAPLE_API_URL),
+		MAPLE_INGEST_URL: Str.replace(/\/$/, "")(env.MAPLE_INGEST_URL),
 	})),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

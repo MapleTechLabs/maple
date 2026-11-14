@@ -1,17 +1,22 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
+import { StatusPagesDisabledError } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../contract"
-import { NOW, ORG } from "../../alerts/shared/test-rows"
+import { NOW, ORG } from "../../kit/alert-test-rows"
 import { newStatusPageHref, statusPageHref } from "../shared/commands"
 import type { StatusPageSummary } from "../shared/derive"
-import { statusPage } from "../shared/test-pages"
+import { pageId, statusPage } from "../shared/test-pages"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as listView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -20,17 +25,20 @@ const view = withViewInputs(listView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const entered = (isAdmin = true): Model => {
+const entered = (canEdit = true): Model => {
 	const start = init({ _tag: "StatusPages" }, context).model
 	return Arr.reduce(
-		[Message.ReadClock({ nowMs: NOW }), Message.CompletedFetchSession({ orgId: ORG, isAdmin })],
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: canEdit ? ENGINEER : MEMBER }),
+		],
 		start,
 		(model, message) => listUpdate(model, message).model,
 	)
 }
 
-const withPages = (pages: ReadonlyArray<StatusPageSummary>, isAdmin = true): Model => {
-	const model = entered(isAdmin)
+const withPages = (pages: ReadonlyArray<StatusPageSummary>, canEdit = true): Model => {
+	const model = entered(canEdit)
 	return listUpdate(
 		model,
 		Message.CompletedFetchPages({ key: model.pages.key ?? "", result: Result.succeed(pages) }),
@@ -59,6 +67,28 @@ describe("status pages list", () => {
 			given(withPages([], false)),
 			expectView(role("link", { name: "Create a status page" })).not.toExist(),
 			expectView(text("Ask an org admin to create one.")).toExist(),
+		)
+	})
+
+	test("each row says who can view the page; an internal one has no public address", () => {
+		const row = (page: ReturnType<typeof statusPage>): StatusPageSummary => ({
+			page,
+			overall: "operational",
+			componentCount: 1,
+			openIncidents: 0,
+		})
+		scene(
+			{ update: listUpdate, view },
+			given(
+				withPages([
+					row(statusPage({ visibility: "password", has_password: true })),
+					row(statusPage({ id: pageId(2), slug: "acme-internal", visibility: "internal" })),
+				]),
+			),
+			expectView(text("Password")).toExist(),
+			expectView(text("Internal")).toExist(),
+			expectView(text("Members only, in Maple")).toExist(),
+			expectView(text("/s/acme-internal")).not.toExist(),
 		)
 	})
 
@@ -121,5 +151,31 @@ describe("status pages list", () => {
 		expect(names(listUpdate(failed, Message.ClickedRetry()).commands)).toEqual([
 			"FetchStatusPageSummaries",
 		])
+	})
+
+	test("an org outside the rollout is told so, not shown a failed load", () => {
+		const model = entered()
+		const refused = listUpdate(
+			model,
+			Message.CompletedFetchPages({
+				key: model.pages.key ?? "",
+				result: Result.fail(
+					toLoadFailure(
+						new StatusPagesDisabledError({
+							message: "Status pages are not enabled for this organization.",
+						}),
+					),
+				),
+			}),
+		).model
+		scene(
+			{ update: listUpdate, view },
+			given(refused),
+			expectView(text("Status pages are not enabled")).toExist(),
+			expectView(text("Couldn't load status pages")).not.toExist(),
+			// Neither helps until the org is in the rollout.
+			expectView(role("button", { name: "Try again" })).not.toExist(),
+			expectView(role("link", { name: "Create a status page" })).not.toExist(),
+		)
 	})
 })

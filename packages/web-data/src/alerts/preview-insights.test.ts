@@ -75,7 +75,13 @@ function incident(groupKey: string | null, status = "open"): AlertIncidentDocume
 		lastNotifiedAt: at(0),
 		holdReason: null,
 		heldSince: null,
+		acknowledgedAt: null,
+		acknowledgedByUserId: null,
+		acknowledgedByName: null,
+		acknowledgedVia: null,
 		errorIssueId: null,
+		silenceId: null,
+		silencedAt: null,
 	})
 }
 
@@ -169,6 +175,32 @@ describe("diffRuleForms", () => {
 		expect(diffRuleForms(saved, { ...saved, evaluationIntervalMinutes: "10" })).toEqual([
 			{ field: "Check every", before: "Auto", after: "10m" },
 		])
+	})
+
+	it("opening an add-on section and leaving it empty is not a change; filling it in is", () => {
+		const base = defaultRuleForm()
+		const builder = (addOns: Partial<typeof base.queryBuilderDraft.addOns>, groupBy: string[]) => ({
+			...base,
+			name: "Checkout errors",
+			signalType: "builder_query" as const,
+			queryBuilderDraft: {
+				...base.queryBuilderDraft,
+				addOns: { ...base.queryBuilderDraft.addOns, groupBy: false, ...addOns },
+				groupBy,
+			},
+		})
+		const saved = builder({}, [])
+		expect(diffRuleForms(saved, builder({ groupBy: true, having: true, limit: true }, []))).toEqual([])
+		expect(
+			Arr.map(diffRuleForms(saved, builder({ groupBy: true }, ["service.name"])), (row) => row.field),
+		).toContain("Query")
+		// Closing a section that holds a value drops it from the query.
+		expect(
+			Arr.map(
+				diffRuleForms(builder({ groupBy: true }, ["service.name"]), builder({}, ["service.name"])),
+				(row) => row.field,
+			),
+		).toContain("Query")
 	})
 
 	it("finds nothing when the draft equals the saved rule", () => {

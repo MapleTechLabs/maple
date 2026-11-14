@@ -1,12 +1,12 @@
 import { cn } from "@maple/ui/lib/utils"
-import type { ReleaseHealth } from "../../components/releases/release-model"
+import type { ReleaseHealth } from "./release-model"
 import { AsyncData } from "foldkit"
 import { childAttributes, type Html, type HtmlBuilder } from "foldkit/html"
 import { badge } from "@maple/views/ui/display"
 import * as HoverCard from "@maple/views/ui/hover-card"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { commitDetailBody, isResolvableSha } from "../kit/commit-card"
-import { PILL_CLASS, RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_LABEL } from "./kit"
+import { PILL_VARIANT, RELEASE_HEALTH_DESCRIPTION, RELEASE_HEALTH_LABEL } from "./kit"
 import { commitTriggerId, Message, type Model } from "./overlays"
 
 // The triggers of the releases overlays. Each trigger embeds the shared Model as its own
@@ -18,7 +18,7 @@ export type Overlays<M> = Readonly<{
 	clock: Readonly<{ nowMs: number; timeZone: string }>
 }>
 
-/** `ReleaseHealthPill`: the badge is the tooltip trigger, the description its popup. */
+/** The health pill: the badge is the tooltip trigger, the description its popup. */
 export const releaseHealthPill = <M>(
 	h: HtmlBuilder<M>,
 	overlays: Overlays<M>,
@@ -42,18 +42,24 @@ export const releaseHealthPill = <M>(
 						size: "xs",
 						pill: true,
 						mono: true,
-						className: cn("cursor-default font-normal", PILL_CLASS[health], className),
-						attributes: [...trigger(triggerId), ...childAttributes([h.DataAttribute("slot", "tooltip-trigger")])],
+						variant: PILL_VARIANT[health],
+						className: cn("cursor-default font-normal", className),
+						attributes: [
+							...trigger(triggerId),
+							...childAttributes([h.DataAttribute("slot", "tooltip-trigger")]),
+						],
 					},
 					[
 						label ?? RELEASE_HEALTH_LABEL[health],
-						...(portal !== null && overlays.model.healthTooltip.triggerId === triggerId ? [portal] : []),
+						...(portal !== null && overlays.model.healthTooltip.triggerId === triggerId
+							? [portal]
+							: []),
 					],
 				),
 		},
 	})
 
-/** `CommitShaHoverCard`: a full sha opens the commit card on hover; any other is plain text. */
+/** A full sha opens the commit card on hover; any other is plain text. */
 export const commitTrigger = <M>(
 	h: HtmlBuilder<M>,
 	overlays: Overlays<M>,
@@ -72,11 +78,16 @@ export const commitTrigger = <M>(
 		viewInputs: {
 			triggerIds: [id],
 			className: "w-80 p-0",
-			toContent: () => [commitDetailBody(h, overlays.model.commitDetails[sha] ?? AsyncData.Loading(), overlays.clock)],
+			toContent: () => [
+				commitDetailBody(h, overlays.model.commitDetails[sha] ?? AsyncData.Loading(), overlays.clock),
+			],
 			toView: ({ triggerFor, portal }) =>
 				h.span(
 					[h.Class(cn("cursor-default", className)), ...triggerFor(id)],
-					[...children, ...(portal !== null && overlays.model.commitCard.triggerId === id ? [portal] : [])],
+					[
+						...children,
+						...(portal !== null && overlays.model.commitCard.triggerId === id ? [portal] : []),
+					],
 				),
 		},
 	})

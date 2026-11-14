@@ -16,8 +16,8 @@ import { buildChatAlertBlocks, chatTransport } from "./chat"
  * connector is `testchat`, and what the platform does with the blocks is its own test's business.
  */
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_1")
-const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+const ORG = Schema.decodeSync(OrgId)("org_1")
+const WORKSPACE = Schema.decodeSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
 
@@ -29,7 +29,7 @@ const config: SecretConfigOf<"chat"> = {
 }
 
 const destinationRow: AlertDestinationRow = {
-	id: Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
+	id: Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 	orgId: ORG,
 	name: "Incidents",
 	type: "chat",
@@ -95,10 +95,8 @@ const cardOf = (blocks: ReadonlyArray<ChatBlock>): ChatAlertBlock => {
 
 const TESTCHAT = chatConnectorId("testchat")
 
-const outboundError = (extra: {
-	readonly status?: number
-	readonly reason?: "auth" | "not_found" | "rejected"
-}) => new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
+const outboundError = (extra: { readonly status?: number; readonly reason?: ChatOutboundError["reason"] }) =>
+	new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
 
 describe("chat alert blocks", () => {
 	it("is the alert card: title, summary, severity and group, chart, links, footer", () => {
@@ -115,6 +113,28 @@ describe("chat alert blocks", () => {
 		assert.deepStrictEqual(card.links, [{ label: "Open in Maple", url: LINK, primary: true }])
 		assert.deepStrictEqual(card.footer, ["\u{1F341} Maple Alerts", "`▁▂▅▇`", "Incident `inc_1`"])
 		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
+	})
+
+	it("offers an open incident's firing card the ack control, with who acknowledged it", () => {
+		assert.deepStrictEqual(cardOf(buildChatAlertBlocks(inputFor())).acknowledge, {
+			incidentId: "inc_1",
+			acknowledgedBy: null,
+		})
+		const acked = cardOf(
+			buildChatAlertBlocks(inputFor({ context: { ...context, incidentAcknowledgedBy: "Ada" } })),
+		)
+		assert.deepStrictEqual(acked.acknowledge, { incidentId: "inc_1", acknowledgedBy: "Ada" })
+	})
+
+	it("gives no ack control to a resolve, a test or a resolved incident", () => {
+		for (const overrides of [
+			{ eventType: "resolve" as const },
+			{ eventType: "test" as const },
+			{ incidentStatus: "resolved" },
+		]) {
+			const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, ...overrides } })))
+			assert.isUndefined(card.acknowledge)
+		}
 	})
 
 	it("colours a resolve green", () => {
@@ -210,6 +230,15 @@ describe("chat delivery failures", () => {
 			chatDeliveryFailure(outboundError({ reason: "rejected" }))._tag,
 			"@maple/http/errors/AlertDeliveryRejectedError",
 		)
+	})
+
+	it("retries a rate limit whatever the status, and not a 400 the platform refused", () => {
+		// Discord answers 400 to both: code 40003 (DMs opened too fast) and 50007 (blocked).
+		const tooFast = chatDeliveryFailure(outboundError({ reason: "rate_limited", status: 400 }))
+		assert.strictEqual(tooFast._tag, "@maple/http/errors/AlertDeliveryError")
+		assert.isTrue(tooFast.error.retryable)
+		const blocked = chatDeliveryFailure(outboundError({ reason: "rejected", status: 400 }))
+		assert.isFalse(blocked.error.retryable)
 	})
 
 	it("falls back to the status, and retries what nobody explained", () => {

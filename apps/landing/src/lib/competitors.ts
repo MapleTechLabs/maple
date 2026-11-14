@@ -162,7 +162,7 @@ const CHECKED_AXIOM = "2026-09"
 const CHECKED_BETTER_STACK = "2026-09"
 const CHECKED_HONEYCOMB = "2026-09"
 
-const MAPLE_EXPORTER = `  otlphttp/maple:
+const MAPLE_EXPORTER = `  otlp_http/maple:
     endpoint: https://ingest.maple.dev
     headers:
       x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}`
@@ -174,11 +174,11 @@ ${MAPLE_EXPORTER}
 service:
   pipelines:
     traces:
-      exporters: [${existingKey}, otlphttp/maple]
+      exporters: [${existingKey}, otlp_http/maple]
     logs:
-      exporters: [${existingKey}, otlphttp/maple]
+      exporters: [${existingKey}, otlp_http/maple]
     metrics:
-      exporters: [${existingKey}, otlphttp/maple]`
+      exporters: [${existingKey}, otlp_http/maple]`
 
 const CORE_PARITY: Msg[] = [
 	m.cmp_parity_tracing,
@@ -670,6 +670,7 @@ export const competitors: Competitor[] = [
 				maple: m.cmp_d0_selfhost_maple,
 				competitor: m.cmp_d0_selfhost_them,
 				edge: "maple",
+				source: 3,
 			},
 			{
 				id: "retention",
@@ -743,6 +744,7 @@ export const competitors: Competitor[] = [
 			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED_PRICING },
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
+			{ label: "Dash0 SignalControl", url: "https://www.dash0.com/signalcontrol", checked: "2026-11" },
 		],
 		locales: ["en", "ja", "ko"],
 	},
@@ -844,7 +846,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_channels,
 				maple: m.cmp_sn_channels_maple,
 				competitor: m.cmp_sn_channels_them,
-				edge: "competitor",
+				edge: "even",
 				source: 9,
 			},
 		],
@@ -1060,8 +1062,8 @@ export const competitors: Competitor[] = [
 			{ title: m.cmp_ax_mig_2_title, body: m.cmp_ax_mig_2_body },
 		],
 		migrationDiff: collectorDiff(
-			"otlphttp/axiom",
-			`  otlphttp/axiom:
+			"otlp_http/axiom",
+			`  otlp_http/axiom:
     compression: zstd
     endpoint: https://api.axiom.co
     headers:
@@ -1239,8 +1241,8 @@ export const competitors: Competitor[] = [
 			{ title: m.cmp_bs_mig_3_title, body: m.cmp_bs_mig_3_body },
 		],
 		migrationDiff: collectorDiff(
-			"otlphttp/betterstack",
-			`  otlphttp/betterstack:
+			"otlp_http/betterstack",
+			`  otlp_http/betterstack:
     endpoint: https://\${env:BETTERSTACK_INGESTING_HOST}
     headers:
       Authorization: Bearer \${env:BETTERSTACK_SOURCE_TOKEN}`,
@@ -1375,7 +1377,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_slo,
 				maple: m.cmp_hc_slo_maple,
 				competitor: m.cmp_hc_slo_them,
-				edge: "competitor",
+				edge: "even",
 				source: 0,
 			},
 			{
@@ -1419,8 +1421,8 @@ export const competitors: Competitor[] = [
 			{ title: m.cmp_hc_mig_3_title, body: m.cmp_hc_mig_3_body },
 		],
 		migrationDiff: collectorDiff(
-			"otlphttp/honeycomb",
-			`  otlphttp/honeycomb:
+			"otlp_http/honeycomb",
+			`  otlp_http/honeycomb:
     endpoint: https://api.honeycomb.io:443
     headers:
       x-honeycomb-team: \${env:HONEYCOMB_API_KEY}`,

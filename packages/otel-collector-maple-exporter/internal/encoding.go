@@ -3,7 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"math"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -72,7 +72,9 @@ func ServiceName(resource pcommon.Map) string {
 // the layout — but ClickHouse parses the no-zone form and stores at the
 // configured precision, so we omit the zone to match its native rendering.
 func FormatTimestampNano(unixNano uint64) string {
-	if unixNano == 0 {
+	// DateTime64(9) is an Int64 of nanoseconds: a value past MaxInt64 would wrap
+	// negative below and fail the whole insert, so it maps to the epoch like 0.
+	if unixNano == 0 || unixNano > math.MaxInt64 {
 		return "1970-01-01 00:00:00.000000000"
 	}
 	t := time.Unix(0, int64(unixNano)).UTC()
@@ -82,7 +84,7 @@ func FormatTimestampNano(unixNano uint64) string {
 // FormatDateTime formats a UnixNano integer as the second-precision DateTime
 // form used by Maple's `Timestamp DateTime` and `Hour DateTime` columns.
 func FormatDateTime(unixNano uint64) string {
-	if unixNano == 0 {
+	if unixNano == 0 || unixNano > math.MaxInt64 {
 		return "1970-01-01 00:00:00"
 	}
 	return time.Unix(0, int64(unixNano)).UTC().Format("2006-01-02 15:04:05")
@@ -123,8 +125,8 @@ func StatusCodeString(code int32) string {
 }
 
 // SeverityNumberToText returns the canonical OTel severity text for a
-// numeric severity (1-24). Falls back to the numeric form for unknown
-// values.
+// numeric severity (1-24). Unknown values are the empty string, as in the
+// gateway's and Maple Local's encoders, so all three write the same rows.
 func SeverityNumberToText(n int32) string {
 	switch {
 	case n >= 1 && n <= 4:
@@ -140,7 +142,7 @@ func SeverityNumberToText(n int32) string {
 	case n >= 21 && n <= 24:
 		return "FATAL"
 	default:
-		return strconv.Itoa(int(n))
+		return ""
 	}
 }
 

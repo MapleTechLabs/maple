@@ -1,5 +1,5 @@
 import { rowsToInvestigation } from "@maple/web-data/collections/investigations"
-import { Clock, Duration, Effect, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, Schema, Stream, Option, Array as Arr } from "effect"
 import { Subscription } from "foldkit"
 import { OrgCollections } from "../../../data/collections/org-collections"
 import { liveQueryStream } from "../../../data/live-query"
@@ -10,8 +10,8 @@ import { Message } from "./message"
 import type { Model, Sync } from "./model"
 
 /**
- * `useInvestigation`: the `investigation_v2` shape scoped to this id, as a live query. The
- * collection is minted per (org, id) and released once the Subscription's live query lets go.
+ * The `investigation_v2` shape scoped to this id, as a live query. The collection is minted per
+ * (org, id) and released once the Subscription's live query lets go.
  */
 const investigationStream = (orgId: string, id: string, attempt: number) =>
 	Stream.unwrap(
@@ -21,14 +21,18 @@ const investigationStream = (orgId: string, id: string, attempt: number) =>
 			return liveQueryStream(
 				(q) => q.from({ i: collection }),
 				(rows): ReturnType<typeof Message.SyncedInvestigation> => {
-					const row = rows.find((candidate) => candidate.id === id)
-					const investigation = row === undefined ? null : rowsToInvestigation(row)
-					const sync: Sync =
-						row === undefined
-							? { _tag: "Missing" }
-							: investigation === null
-								? { _tag: "Failed" }
-								: { _tag: "Ready", investigation }
+					const sync: Sync = Option.match(
+						Arr.findFirst(rows, (candidate) => candidate.id === id),
+						{
+							onNone: (): Sync => ({ _tag: "Missing" }),
+							onSome: (row): Sync => {
+								const investigation = rowsToInvestigation(row)
+								return investigation === null
+									? { _tag: "Failed" }
+									: { _tag: "Ready", investigation }
+							},
+						},
+					)
 					return Message.SyncedInvestigation({ orgId, id, attempt, sync })
 				},
 			).pipe(Stream.ensuring(collections.releaseInvestigation(collection)))
@@ -40,14 +44,14 @@ const investigationStream = (orgId: string, id: string, attempt: number) =>
 /** `COLLECTION_LOAD_TIMEOUT_MS`: how long the shape may stay loading before it counts as lost. */
 export const LOAD_TIMEOUT = Duration.seconds(30)
 
-/** `useCollectionLoadFailed`: nothing synced within the timeout means the connection is lost (with Retry). */
+/** Nothing synced within the timeout means the connection is lost (with Retry). */
 export const withLoadWatchdog = <A, E, R>(
 	live: Stream.Stream<A, E, R>,
 	failed: A,
 	timeout: Duration.Input = LOAD_TIMEOUT,
 ) => Stream.race(live, Stream.fromEffect(Effect.as(Effect.sleep(timeout), failed)))
 
-/** `useTickingNow`: a running pass's elapsed time counts up once a second. */
+/** A running pass's elapsed time counts up once a second. */
 const clock = Stream.tick(Duration.seconds(1)).pipe(
 	Stream.drop(1),
 	Stream.mapEffect(() => Clock.currentTimeMillis),
@@ -67,7 +71,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				dependenciesToStream: ({ orgId, id, attempt }) => investigationStream(orgId, id, attempt),
 			},
 		),
-		/** The thread's live turn, while one runs (`useMapleChat`'s tail). */
+		/** The thread's live turn, while one runs. */
 		tail: entry(
 			{ tail: Schema.NullOr(Tail) },
 			{

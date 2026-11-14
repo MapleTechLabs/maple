@@ -5,6 +5,7 @@ import { Array as Arr } from "effect"
 
 export const debugEnabled = (): boolean =>
 	(typeof process !== "undefined" && Arr.isArray(process.argv) && process.argv.includes("--debug")) ||
+	// @effect-diagnostics-next-line processEnv:off -- read outside any parsed-flag context
 	process.env.MAPLE_DEBUG === "1"
 
 /** Emit a plain debug line to stderr (no-op unless debug is enabled). */

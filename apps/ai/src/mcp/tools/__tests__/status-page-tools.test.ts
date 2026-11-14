@@ -3,13 +3,11 @@ import { Schema, Array as Arr, String as Str } from "effect"
 import { RoleName } from "@maple/domain/http"
 import {
 	ApplyStatusPageConfigOutput,
-	GetStatusPageConfigOutput,
 	GetStatusPageOutput,
-	ListStatusPagesOutput,
 	StatusPageIncidentMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -40,21 +38,39 @@ afterAll(async () => {
 	await rt.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeSync(schema)(result.structuredContent)
+
+/** The page detail of a get_status_page call that named a page. */
+const pageOf = (result: McpToolResult) => {
+	const { page } = decode(GetStatusPageOutput, result)
+	if (page === undefined) throw new Error(`no page in ${markdown(result)}`)
+	return page
+}
+
+/** get_status_page with include_config, as its structured (wire) content. */
+const readConfig = (runtime: EvalRuntime, page: string) =>
+	runToolDirect(runtime, "get_status_page", { page, include_config: true })
 
 describe("status page tools", () => {
 	it("lists the org's pages with their REST ids", async () => {
-		const output = decode(ListStatusPagesOutput, await runToolDirect(rt, "list_status_pages", {}))
-		expect(output.total).toBe(1)
-		expect(output.pages[0]).toMatchObject({ name: "Acme Status", slug: "acme-status" })
-		expect(output.pages[0]?.id).toMatch(/^stp_/)
+		const output = decode(GetStatusPageOutput, await runToolDirect(rt, "get_status_page", {}))
+		expect(output.page).toBeUndefined()
+		expect(output.pages).toHaveLength(1)
+		expect(output.pages?.[0]).toMatchObject({ name: "Acme Status", slug: "acme-status" })
+		expect(output.pages?.[0]?.id).toMatch(/^stp_/)
+	})
+
+	it("refuses include_config without a page instead of listing", async () => {
+		const result = await runToolDirect(rt, "get_status_page", { include_config: true })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("include_config needs `page`")
 	})
 
 	it("opens an agent incident as a draft that the page does not show", async () => {
 		const created = decode(
 			StatusPageIncidentMutationOutput,
-			await runToolDirect(rt, "create_status_page_incident", {
+			await runToolDirect(rt, "post_status_page_update", {
 				page: "acme-status",
 				title: "Elevated API errors",
 				message: "We are looking into elevated error rates.",
@@ -71,10 +87,7 @@ describe("status page tools", () => {
 		expect(created.incident.id).toMatch(/^sti_/)
 
 		// A draft names the component but does not change what visitors see.
-		const page = decode(
-			GetStatusPageOutput,
-			await runToolDirect(rt, "get_status_page", { page: "acme-status" }),
-		)
+		const page = pageOf(await runToolDirect(rt, "get_status_page", { page: "acme-status" }))
 		expect(page.components).toMatchObject([{ name: "API", status: "operational" }])
 		expect(Arr.map(page.activeIncidents, (i) => i.id)).toContain(created.incident.id)
 		expect(page.freshness.publishPending).toBe(true)
@@ -93,17 +106,19 @@ describe("status page tools", () => {
 		const liveResult = await runToolDirect(rt, "get_status_page", { page: "Acme Status" })
 		// The follow-up needs public wording, so it is a notice, not a half-filled call.
 		expect(markdown(liveResult)).toContain("To update an open incident, call post_status_page_update")
-		const live = decode(GetStatusPageOutput, liveResult)
+		const live = pageOf(liveResult)
 		expect(live.components).toMatchObject([{ name: "API", status: "partial_outage" }])
 		expect(live.overallStatus).toBe("partial_outage")
 
 		const resolved = decode(
 			StatusPageIncidentMutationOutput,
-			await runToolDirect(rt, "resolve_status_page_incident", {
+			await runToolDirect(rt, "post_status_page_update", {
 				incident: created.incident.id,
+				status: "resolved",
 				message: "Error rates are back to normal.",
 			}),
 		)
+		expect(resolved.action).toBe("resolved")
 		expect(resolved.incident.status).toBe("resolved")
 		expect(resolved.incident.resolvedAt).not.toBeNull()
 	})
@@ -111,13 +126,14 @@ describe("status page tools", () => {
 	it("publishes straight away when asked", async () => {
 		const created = decode(
 			StatusPageIncidentMutationOutput,
-			await runToolDirect(rt, "create_status_page_incident", {
+			await runToolDirect(rt, "post_status_page_update", {
 				page: "acme-status",
 				title: "Login delays",
 				message: "Some sign-ins are slow.",
 				publish: true,
 			}),
 		)
+		expect(created.action).toBe("created")
 		expect(created.incident.published).toBe(true)
 		expect(created.pageDraft).toBe(false)
 	})
@@ -129,7 +145,7 @@ describe("status page tools", () => {
 			 VALUES ($1, $2, 'Draft Status', 'draft-status', true, $3, now(), now())`,
 			["7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d0a", rt.tenant.orgId, rt.tenant.userId],
 		)
-		const result = await runToolDirect(rt, "create_status_page_incident", {
+		const result = await runToolDirect(rt, "post_status_page_update", {
 			page: "draft-status",
 			title: "Login delays",
 			message: "Some sign-ins are slow.",
@@ -142,7 +158,7 @@ describe("status page tools", () => {
 	})
 
 	it("schedules maintenance as a draft with its window", async () => {
-		const result = await runToolDirect(rt, "schedule_status_page_maintenance", {
+		const result = await runToolDirect(rt, "post_status_page_update", {
 			page: "acme-status",
 			title: "Database upgrade",
 			message: "The API may be read-only for a few minutes.",
@@ -151,6 +167,7 @@ describe("status page tools", () => {
 			components: ["API"],
 		})
 		const output = decode(StatusPageIncidentMutationOutput, result)
+		expect(output.action).toBe("scheduled")
 		expect(output.incident).toMatchObject({
 			kind: "maintenance",
 			status: "scheduled",
@@ -159,10 +176,43 @@ describe("status page tools", () => {
 			scheduledEnd: "2026-08-01T03:00:00.000Z",
 		})
 		expect(markdown(result)).toContain("draft")
+
+		// `completed` and `resolved` both close: maintenance stores `completed`.
+		const closed = decode(
+			StatusPageIncidentMutationOutput,
+			await runToolDirect(rt, "post_status_page_update", {
+				incident: output.incident.id,
+				status: "resolved",
+				message: "Done.",
+			}),
+		)
+		expect(closed.incident.status).toBe("completed")
+	})
+
+	it("says which parameter is missing or out of place before writing anything", async () => {
+		const cases: ReadonlyArray<readonly [Record<string, unknown>, string]> = [
+			[{ message: "y" }, "Pass `page`"],
+			[{ page: "acme-status", message: "y" }, "`title`"],
+			[
+				{ page: "acme-status", title: "x", message: "y", starts_at: "2026-08-01T02:00:00Z" },
+				"`ends_at`",
+			],
+			[{ incident: "sti_whatever", message: "y" }, "needs a `status`"],
+			[
+				{ incident: "sti_whatever", title: "x", status: "identified", message: "y" },
+				"only applies when opening",
+			],
+		]
+		for (const [params, expected] of cases) {
+			const result = await runToolDirect(rt, "post_status_page_update", params)
+			expect(result.isError).toBe(true)
+			expect(result.failureCategory).toBe("invalid_input")
+			expect(markdown(result)).toContain(expected)
+		}
 	})
 
 	it("names the unknown component and page instead of guessing", async () => {
-		const component = await runToolDirect(rt, "create_status_page_incident", {
+		const component = await runToolDirect(rt, "post_status_page_update", {
 			page: "acme-status",
 			title: "x",
 			message: "y",
@@ -172,21 +222,22 @@ describe("status page tools", () => {
 		expect(markdown(component)).toContain("API")
 		const page = await runToolDirect(rt, "get_status_page", { page: "nope" })
 		expect(page.isError).toBe(true)
-		expect(markdown(page)).toContain("list_status_pages")
+		expect(markdown(page)).toContain("get_status_page without `page`")
 	})
 
 	it("resolves a draft and publishes it in the same call, or says it stayed a draft", async () => {
 		const open = async (title: string) =>
 			decode(
 				StatusPageIncidentMutationOutput,
-				await runToolDirect(rt, "create_status_page_incident", {
+				await runToolDirect(rt, "post_status_page_update", {
 					page: "acme-status",
 					title,
 					message: "Investigating.",
 				}),
 			).incident.id
-		const kept = await runToolDirect(rt, "resolve_status_page_incident", {
+		const kept = await runToolDirect(rt, "post_status_page_update", {
 			incident: await open("Quiet draft"),
+			status: "resolved",
 			message: "Never mind.",
 		})
 		expect(decode(StatusPageIncidentMutationOutput, kept).incident).toMatchObject({
@@ -194,12 +245,13 @@ describe("status page tools", () => {
 			published: false,
 		})
 		expect(markdown(kept)).toContain("closed as a draft")
-		expect(markdown(kept)).not.toContain("post_status_page_update")
+		expect(markdown(kept)).not.toContain("publish=true")
 
 		const shown = decode(
 			StatusPageIncidentMutationOutput,
-			await runToolDirect(rt, "resolve_status_page_incident", {
+			await runToolDirect(rt, "post_status_page_update", {
 				incident: await open("Public draft"),
+				status: "resolved",
 				message: "Fixed.",
 				publish: true,
 			}),
@@ -237,8 +289,7 @@ describe("status page tools", () => {
 			monitorId,
 		])
 		const freshness = async () =>
-			decode(GetStatusPageOutput, await runToolDirect(rt, "get_status_page", { page: "acme-status" }))
-				.freshness
+			pageOf(await runToolDirect(rt, "get_status_page", { page: "acme-status" })).freshness
 
 		expect(await freshness()).toMatchObject({ state: "delayed", updatedAt: null })
 		await executeSql(
@@ -252,10 +303,11 @@ describe("status page tools", () => {
 
 	describe("config", () => {
 		const PAGE = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1e01"
-		const admin = () => ({
+		const withRole = (role: string) => ({
 			...rt,
-			tenant: { ...rt.tenant, roles: [Schema.decodeUnknownSync(RoleName)("org:admin")] },
+			tenant: { ...rt.tenant, roles: [Schema.decodeSync(RoleName)(role)] },
 		})
+		const admin = () => withRole("org:admin")
 		beforeAll(async () => {
 			const now = Date.now()
 			await executeSql(
@@ -278,7 +330,7 @@ describe("status page tools", () => {
 		})
 
 		it("reads the page as a JSON document with public ids, fenced for the model", async () => {
-			const result = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const result = await readConfig(rt, "config-page")
 			const { config } = result.structuredContent
 			expect(config).toMatchObject({
 				name: "Config Page",
@@ -286,13 +338,14 @@ describe("status page tools", () => {
 				components: [{ name: "Web" }, { name: "Docs" }],
 			})
 			expect(config.components[0].id).toMatch(/^stc_/)
-			expect(decode(GetStatusPageConfigOutput, result).config.components).toHaveLength(2)
+			expect(decode(GetStatusPageOutput, result).config?.components).toHaveLength(2)
+			expect(pageOf(result).components).toHaveLength(2)
 			expect(markdown(result)).toContain("```json\n")
 			expect(markdown(result)).toContain(`"id": "${config.components[0].id}"`)
 		})
 
 		it("applies an edited document passed as a JSON string and summarises what changed", async () => {
-			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const read = await readConfig(rt, "config-page")
 			const [web] = read.structuredContent.config.components
 			const edited = {
 				...read.structuredContent.config,
@@ -325,7 +378,7 @@ describe("status page tools", () => {
 		})
 
 		it("reports nothing changed for a re-sent document that differs only until stored", async () => {
-			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			const result = await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
@@ -351,7 +404,7 @@ describe("status page tools", () => {
 		})
 
 		it("refuses a key the config does not define, as an object or as JSON text", async () => {
-			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			const [first, ...rest] = config.components
 			const { show_uptime: _shown, ...withoutUptime } = first
@@ -368,45 +421,63 @@ describe("status page tools", () => {
 			})
 			expect(asText.isError).toBe(true)
 			expect(markdown(asText)).toContain("colour")
-			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(config)
 		})
 
 		it("refuses a document read before the config changed, and says to read it again", async () => {
-			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const read = await readConfig(rt, "config-page")
 			const { config } = read.structuredContent
 			await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
 				config: { ...config, description: "Changed meanwhile." },
 			})
-			const moved = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const moved = await readConfig(rt, "config-page")
 			const stale = await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
 				config: { ...config, components: [] },
 			})
 			expect(stale.isError).toBe(true)
-			expect(markdown(stale)).toContain("get_status_page_config again")
+			expect(markdown(stale)).toContain("include_config=true again")
 			const explicit = await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
 				config: moved.structuredContent.config,
 				if_version: config.version,
 			})
 			expect(explicit.isError).toBe(true)
-			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(moved.structuredContent.config)
 			expect(after.structuredContent.config.version).not.toBe(config.version)
 		})
 
+		it("refuses an engineer's change of who can read the page", async () => {
+			const read = await readConfig(rt, "config-page")
+			const { config } = read.structuredContent
+			expect(config.visibility).toBe("public")
+			const refused = await runToolDirect(withRole("org:engineer"), "apply_status_page_config", {
+				page: "config-page",
+				config: { ...config, visibility: "internal" },
+			})
+			expect(refused.isError).toBe(true)
+			expect(markdown(refused)).toContain(
+				"apply_status_page_config would change who can read the page, which only org admins may do. Leave `visibility` as it is, or ask an admin.",
+			)
+			const after = await readConfig(rt, "config-page")
+			expect(after.structuredContent.config).toEqual(config)
+		})
+
 		it("refuses members and names a component id from another page", async () => {
-			const read = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const read = await readConfig(rt, "config-page")
 			const refused = await runToolDirect(rt, "apply_status_page_config", {
 				page: "config-page",
 				config: read.structuredContent.config,
 			})
 			expect(refused.isError).toBe(true)
-			expect(markdown(refused)).toContain("only org admins")
+			expect(markdown(refused)).toContain(
+				"apply_status_page_config changes a public status page, which only org admins and engineers may do. Ask an admin or engineer, or edit it in Maple under Status pages.",
+			)
 
-			const other = await runToolDirect(rt, "get_status_page_config", { page: "acme-status" })
+			const other = await readConfig(rt, "acme-status")
 			const stolen = other.structuredContent.config.components[0].id
 			const foreign = await runToolDirect(admin(), "apply_status_page_config", {
 				page: "config-page",
@@ -417,7 +488,7 @@ describe("status page tools", () => {
 			})
 			expect(foreign.isError).toBe(true)
 			expect(markdown(foreign)).toContain(stolen)
-			const after = await runToolDirect(rt, "get_status_page_config", { page: "config-page" })
+			const after = await readConfig(rt, "config-page")
 			expect(after.structuredContent.config).toEqual(read.structuredContent.config)
 		})
 	})
@@ -434,28 +505,13 @@ describe("status page tools outside the statusPages rollout", () => {
 
 	it("refuses every tool as unavailable, naming the missing capability", async () => {
 		// A real document, so the apply is refused by the gate and not by decoding.
-		const config = decode(
-			GetStatusPageConfigOutput,
-			await runToolDirect(rt, "get_status_page_config", { page: "acme-status" }),
-		).config
+		const { config } = (await readConfig(rt, "acme-status")).structuredContent
 		const incident = "7f0b7d0e-0b6a-4f55-9a0e-2a4b9a0c1d09"
 		const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
-			["list_status_pages", {}],
-			["get_status_page", { page: "acme-status" }],
-			["create_status_page_incident", { page: "acme-status", title: "x", message: "y" }],
+			["get_status_page", {}],
+			["get_status_page", { page: "acme-status", include_config: true }],
+			["post_status_page_update", { page: "acme-status", title: "x", message: "y" }],
 			["post_status_page_update", { incident, status: "identified", message: "y" }],
-			["resolve_status_page_incident", { incident, message: "y" }],
-			[
-				"schedule_status_page_maintenance",
-				{
-					page: "acme-status",
-					title: "x",
-					message: "y",
-					starts_at: "2026-08-01T02:00:00Z",
-					ends_at: "2026-08-01T03:00:00Z",
-				},
-			],
-			["get_status_page_config", { page: "acme-status" }],
 			["apply_status_page_config", { page: "acme-status", config }],
 		]
 		for (const [name, params] of calls) {

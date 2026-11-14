@@ -1,11 +1,9 @@
-import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatWorkspaceId } from "@maple/primitives"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
 import { Message } from "./message"
-
-// `ChatIntegrationCard`: its writes.
 
 /** Full-page redirect to the platform's consent screen, as the install and the account link do. */
 const redirect = (url: string) => Effect.sync(() => window.location.assign(url))

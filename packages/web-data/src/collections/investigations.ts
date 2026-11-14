@@ -48,8 +48,6 @@ const decodeInvestigationId = Schema.decodeUnknownOption(InvestigationId)
  */
 const decodeInvestigation = Schema.decodeUnknownOption(Schema.toType(V2Investigation))
 
-// Rows
-
 /**
  * Identity row schema for the `investigation_v2` shape. One struct per column the
  * proxy projects, so a post-deploy column drift surfaces as a SchemaValidationError
@@ -88,7 +86,7 @@ export type InvestigationRow = typeof InvestigationRowSchema.Type
  * decoded type is the underlying raw id, which is what the row already holds — so
  * this renames fields and re-brands, it does not encode. An incident id that
  * fails to decode drops the whole subject (the server raises
- * `InvestigationSubjectDecodeError` at the same point); the page renders its
+ * `InvestigationDataCorruptionError` at the same point); the page renders its
  * freeform fallback rather than a chain built on an id nothing can open.
  */
 export const rowToSubject = (row: InvestigationRow): V2Investigation["subject"] | null => {
@@ -161,7 +159,7 @@ const fallbackSnapshot = (subject: V2Investigation["subject"]): V2Investigation[
 			? subject.title
 			: subject.type === "fix_verification"
 				? "Fix verification"
-				: `${subject.incident_kind[0]?.toUpperCase() ?? ""}${Str.slice(1)(subject.incident_kind)} incident`,
+				: `${Str.toUpperCase(Str.slice(0, 1)(subject.incident_kind))}${Str.slice(1)(subject.incident_kind)} incident`,
 	scope: null,
 	status: "open",
 	severity: null,

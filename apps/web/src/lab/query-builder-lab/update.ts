@@ -27,7 +27,7 @@ import { groupByStep, selectStep, updateQuery } from "./update-controls"
 export type Return = Update.Return<Model, Message, Resources>
 type Cmd = Command.Command<Message, never, Resources>
 
-/** `search.timePreset ?? "1h"`: the route's default window. */
+/** The route's default window. */
 export const DEFAULT_PRESET = "1h"
 const presetOf = (search: TimeSearch): string => search.timePreset ?? DEFAULT_PRESET
 
@@ -66,10 +66,12 @@ const withCommands = (step: Return, commands: ReadonlyArray<Cmd>): Return => ({
 	commands: [...(step.commands ?? []), ...commands],
 })
 
-/** `AutocompleteValuesProvider` (not lazy): every lookup over the current window. */
+/** Every autocomplete lookup over the current window, not lazily. */
 const requestLookups = (model: Model, orgId: OrgId): Return =>
-	AUTOCOMPLETE_LOOKUPS.reduce<Return>(
-		(step, lookup) => {
+	Arr.reduce(
+		AUTOCOMPLETE_LOOKUPS,
+		{ model, commands: [] } satisfies Return,
+		(step: Return, lookup): Return => {
 			const key = requestKey(orgId, `autocomplete.${lookup}`, step.model.window)
 			const slot = step.model.autocomplete[lookup] ?? Keyed.idle()
 			return Option.match(Keyed.request(slot, key, "Load"), {
@@ -87,7 +89,6 @@ const requestLookups = (model: Model, orgId: OrgId): Return =>
 					),
 			})
 		},
-		{ model, commands: [] },
 	)
 
 const requestMetrics = (model: Model, orgId: OrgId, mode: Keyed.RequestMode): Return => {
@@ -146,7 +147,7 @@ const reloaded = (model: Model): Return => {
 	}
 }
 
-/** `runQueries`: the drafts and window as they are now, or the no-enabled-queries error. */
+/** The drafts and window as they are now, or the no-enabled-queries error. */
 const ran = (model: Model): Return => {
 	if (!Arr.some(model.queries, (query) => query.enabled))
 		return { model: { ...model, noQueriesError: NO_ENABLED_QUERIES, submitted: null } }
@@ -162,10 +163,15 @@ const ran = (model: Model): Return => {
 }
 
 const cloned = (model: Model, queryId: string, id: string): Return => {
-	const source = model.queries.find((query) => query.id === queryId)
-	return source === undefined
-		? { model }
-		: { model: { ...model, queries: relabelQueries([...model.queries, { ...source, id }]) } }
+	return Option.match(
+		Arr.findFirst(model.queries, (query) => query.id === queryId),
+		{
+			onNone: (): Return => ({ model }),
+			onSome: (source): Return => ({
+				model: { ...model, queries: relabelQueries([...model.queries, { ...source, id }]) },
+			}),
+		},
+	)
 }
 
 const signedIn = (model: Model, orgId: OrgId): Return => {

@@ -34,7 +34,7 @@ export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Toggle dark / light mode", group: "Global", combo: key("T") },
 	{ label: "Focus search", group: "Search & time", combo: key("/") },
 	{ label: "Open time range picker", group: "Search & time", combo: key("D") },
-	{ label: "Open advanced filter (traces)", group: "Search & time", combo: key("F") },
+	{ label: "Open advanced filter (traces, logs)", group: "Search & time", combo: key("F") },
 	{ label: "Next row", group: "Lists & tables", combo: key("J"), aliases: [key("ArrowDown")] },
 	{ label: "Previous row", group: "Lists & tables", combo: key("K"), aliases: [key("ArrowUp")] },
 	{ label: "Open focused row", group: "Lists & tables", combo: key("Enter") },
@@ -51,7 +51,7 @@ export const SHORTCUTS: ReadonlyArray<ShortcutDef> = [
 	{ label: "Seek forward 5s", group: "Session replay", combo: key("ArrowRight") },
 ]
 
-/** `KEY_DISPLAY_SYMBOLS` for the keys the registry binds. */
+/** Display symbols for the keys the registry binds. */
 const KEY_SYMBOLS: ReadonlyMap<string, string> = new Map([
 	["ArrowUp", "↑"],
 	["ArrowDown", "↓"],
@@ -61,7 +61,7 @@ const KEY_SYMBOLS: ReadonlyMap<string, string> = new Map([
 	["Escape", "Esc"],
 ])
 
-/** `MODIFIER_ORDER` (Control, Alt, Shift, Meta) after `Mod` resolves to Meta on a Mac. */
+/** Modifiers in order (Control, Alt, Shift, Meta) after `Mod` resolves to Meta on a Mac. */
 const modifierTokens = (modifiers: ReadonlyArray<Modifier>, platform: Platform): ReadonlyArray<string> => {
 	const hasShift = modifiers.includes("Shift")
 	const hasMod = modifiers.includes("Mod")
@@ -69,13 +69,13 @@ const modifierTokens = (modifiers: ReadonlyArray<Modifier>, platform: Platform):
 	return [...(hasMod ? ["Ctrl"] : []), ...(hasShift ? ["Shift"] : [])]
 }
 
-/** `comboDisplayTokens`: one token per Kbd chip ("Mod+K" is ["⌘", "K"] on a Mac). */
+/** One token per Kbd chip ("Mod+K" is ["⌘", "K"] on a Mac). */
 const comboTokens = (combo: Combo, platform: Platform): ReadonlyArray<string> => [
 	...modifierTokens(combo.modifiers ?? [], platform),
 	combo.key === "Space" ? "Space" : (KEY_SYMBOLS.get(combo.key) ?? combo.key),
 ]
 
-/** `shortcutDisplayAlternates`: the primary combo and its aliases, or the `display` override. */
+/** The primary combo and its aliases, or the `display` override. */
 export const displayAlternates = (
 	def: ShortcutDef,
 	platform: Platform,
@@ -84,7 +84,7 @@ export const displayAlternates = (
 		? [def.display]
 		: Arr.map([def.combo, ...(def.aliases ?? [])], (combo) => comboTokens(combo, platform))
 
-/** `detectPlatform` (`@tanstack/hotkeys`), read once at boot. */
+/** The platform, read once at boot. */
 export const detectPlatform = (): Platform => {
 	const platform = Str.toLowerCase(navigator.platform)
 	const userAgent = Str.toLowerCase(navigator.userAgent)

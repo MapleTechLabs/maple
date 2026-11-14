@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import {
 	ChatConnectorId,
 	ChatIdentityId,
@@ -29,16 +29,15 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Schema,
 	Record as Rec,
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import type { OAuthFlowInitiator } from "@maple/backend/services/auth/oauth/oauth-state"
@@ -58,6 +57,7 @@ import {
 	loadOwnedChatWorkspace,
 	missingOutboundConfig,
 } from "@maple/backend/services/integrations/chat-outbound"
+import { newOAuthState } from "@maple/backend/services/auth/oauth/oauth-state"
 
 export { ChatConnectorRegistry }
 export type { ChatIdentityLink, ChatWorkspaceResolution }
@@ -71,9 +71,6 @@ export type { ChatIdentityLink, ChatWorkspaceResolution }
  * and a platform that needs something this contract has no room for belongs in
  * the contract, not in a branch.
  */
-
-/** How long an install may sit between the authorize redirect and the callback. */
-const STATE_TTL_MS = 10 * 60_000
 
 /** `oauth_auth_states.provider` for a chat install, namespaced per connector. */
 const stateProvider = (connector: ChatConnectorId): string => `chat:${connector}`
@@ -245,13 +242,13 @@ const make: Effect.Effect<
 	const config = env.CHAT_CONNECTOR_CONFIG
 
 	/**
-	 * The key the per-workspace credential envelope is sealed and opened with.
+	 * The keyring the per-workspace credential envelope is sealed and opened with.
 	 *
 	 * Read lazily rather than at layer build: only a connector whose install mints a credential
 	 * needs it, and a deployment without one must still list, link and unlink everything else.
 	 */
-	const credentialKey = parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+	const credentialKeyring = secretKeyringFromEnv(
+		env,
 		(message) =>
 			new IntegrationsConfigurationError({
 				message: `Chat workspace credentials cannot be stored on this deployment: ${message}`,
@@ -353,24 +350,19 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
-		const state = randomBytes(24).toString("base64url")
+		const state = yield* newOAuthState
 		// The URL first: an unconfigured connector fails here, before a state row
 		// nobody will ever redeem is written.
 		const url = yield* connector.install
 			.authorizeUrl({ config, state, redirectUri: callbackUrl })
 			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
-		const now = yield* Clock.currentTimeMillis
-		yield* states.purgeExpired(now).pipe(Effect.mapError(toPersistenceError))
 		yield* states
-			.insert({
+			.save({
 				state,
-				orgId,
 				provider: stateProvider(connectorId),
-				initiatedByUserId: userId,
+				initiator: { orgId, userId },
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: now,
-				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -421,10 +413,10 @@ const make: Effect.Effect<
 		const sealed =
 			credentials === undefined
 				? null
-				: yield* Effect.flatMap(credentialKey, (key) =>
+				: yield* Effect.flatMap(credentialKeyring, (keyring) =>
 						sealChatWorkspaceCredentials(
 							credentials,
-							key,
+							keyring,
 							{
 								orgId,
 								connector: connectorId,
@@ -493,25 +485,20 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const identity = yield* requireIdentity(connector)
-		const state = randomBytes(24).toString("base64url")
+		const state = yield* newOAuthState
 		// The URL first, as the install does: an unconfigured connector fails here,
 		// before a state row nobody will ever redeem is written.
 		const url = yield* identity
 			.authorizeUrl({ config, state, redirectUri: callbackUrl })
 			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
-		const now = yield* Clock.currentTimeMillis
-		yield* states.purgeExpired(now).pipe(Effect.mapError(toPersistenceError))
 		yield* states
-			.insert({
+			.save({
 				state,
-				orgId,
 				provider: identityStateProvider(connectorId),
-				// The Maple user the callback will bind the chat account to — see `completeLink`.
-				initiatedByUserId: userId,
+				// The Maple user the callback will bind the chat account to: see `completeLink`.
+				initiator: { orgId, userId },
 				redirectUri: callbackUrl,
 				returnTo: null,
-				createdAt: now,
-				expiresAt: now + STATE_TTL_MS,
 			})
 			.pipe(Effect.mapError(toPersistenceError))
 		return { url }
@@ -659,8 +646,8 @@ const make: Effect.Effect<
 		workspaceId: ChatWorkspaceId,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		const key = yield* credentialKey
-		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key).pipe(
+		const keyring = yield* credentialKeyring
+		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, keyring).pipe(
 			Effect.catchTags({
 				"@maple/backend/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
 				"@maple/backend/ChatWorkspaceCredentialsUnreadable": () =>
@@ -697,6 +684,7 @@ const make: Effect.Effect<
 							message: `The Maple bot is no longer in this workspace. Reinstall ${name} from Integrations to add it back.`,
 						})
 					case "rejected":
+					case "rate_limited":
 					case undefined:
 						return new IntegrationsUpstreamError({
 							message: error.message,
@@ -716,7 +704,7 @@ const make: Effect.Effect<
 		// A deployment with no usable key resolves the workspace without its credential rather than
 		// failing the lookup: everything that does not need one keeps working, and the connector
 		// that does reports it cannot post.
-		const key = yield* credentialKey.pipe(
+		const keyring = yield* credentialKeyring.pipe(
 			Effect.tapError((error) =>
 				Effect.logError("Chat workspace credential key is unusable").pipe(
 					Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
@@ -724,7 +712,7 @@ const make: Effect.Effect<
 			),
 			Effect.orElseSucceed(() => null),
 		)
-		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, key)
+		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, keyring)
 		// The one cross-tenant lookup here — the resolved org belongs on the span.
 		if (Option.isSome(resolved)) yield* Effect.annotateCurrentSpan({ orgId: resolved.value.orgId })
 		return resolved

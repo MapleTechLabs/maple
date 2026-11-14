@@ -1,4 +1,4 @@
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,22 +8,23 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { timestamp } from "@maple/views/ui/timestamp"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { incidentHref } from "../shared/links"
-import { editMonitorHref, traceHref, uptimeTabHref } from "../shared/uptime-commands"
+import { incidentHref } from "../../kit/alert-links"
+import { editMonitorHref, traceHref, uptimeTabHref } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatEvery,
 	KIND_LABEL,
 	requestLine,
 	type UptimeMonitor,
-} from "../shared/uptime-derive"
-import { uptimeStatusChip } from "../shared/uptime-view"
+} from "../../kit/uptime/derive"
+import { uptimeStatusChip } from "../../kit/uptime/view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import { monitorOf } from "./update"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -41,8 +42,6 @@ import {
 } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
-
-// `/alerts/uptime/$monitorId`: the header, the incident block when down, then the panels.
 
 type H = HtmlBuilder<Message>
 
@@ -73,7 +72,7 @@ const eyebrowLine = (monitor: UptimeMonitor): string =>
 
 const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 	detailActions(h, [
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					button(
 						h,
@@ -94,7 +93,7 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 					]),
 				]
 			: []),
-		...(monitor.config.type === "http" && model.isAdmin
+		...(monitor.config.type === "http" && canManage(model)
 			? [
 					button(
 						h,
@@ -113,20 +112,33 @@ const headerActions = (h: H, model: Model, monitor: UptimeMonitor): Html =>
 const openIncidentId = (model: Model, monitor: UptimeMonitor): string | null =>
 	monitor.alert_rule_id === null
 		? null
-		: ((model.incidents ?? []).find(
+		: Arr.findFirst(
+				model.incidents ?? [],
 				(row) => row.rule_id === monitor.alert_rule_id && row.status === "open",
-			)?.id ?? null)
+			).pipe(
+				Option.flatMapNullishOr((found) => found.id),
+				Option.getOrNull,
+			)
 
 /** "Returning 503 since 14:02:18", the check's error, and the way to the failing trace. */
 const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: string): Html => {
 	const last = monitor.state.last_check
 	const changed = monitor.state.status_changed_at
-	const since =
-		changed === null ? "" : ` since ${formatTimeInTimezone(changed, { timeZone, withSeconds: true })}`
-	const headline =
-		last?.status_code === null || last === null
-			? `Failing${since}`
-			: `Returning ${last.status_code}${since}`
+	const since: ReadonlyArray<Html | string> =
+		changed === null
+			? []
+			: [
+					" since ",
+					timestamp(h, {
+						value: changed,
+						timeZone,
+						label: formatTimeInTimezone(changed, { timeZone, withSeconds: true }),
+					}),
+				]
+	const headline = [
+		last?.status_code === null || last === null ? "Failing" : `Returning ${last.status_code}`,
+		...since,
+	]
 	const incidentId = openIncidentId(model, monitor)
 	const actions = [
 		...(incidentId === null
@@ -148,7 +160,7 @@ const incidentBlock = (h: H, model: Model, monitor: UptimeMonitor, timeZone: str
 	// An alert, not a panel: an overflow-hidden panel in the page column shrinks to its border.
 	return alert(h, { variant: "crit" }, [
 		icon(h, "CircleXmarkIcon"),
-		alertTitle(h, [headline]),
+		alertTitle(h, headline),
 		...(last?.error === null || last === null ? [] : [alertDescription(h, [last.error])]),
 		...(actions.length === 0 ? [] : [alertAction(h, actions)]),
 	])
@@ -176,22 +188,17 @@ const body = (
 		h.div(
 			[h.Class("grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-4")],
-					[
-						...(monitor.heartbeat_url === null
-							? []
-							: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
-						...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
-						...(monitor.config.type === "http"
-							? [phaseBreakdownPanel(h, model, chartContext)]
-							: []),
-						...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
-							panel === null ? [] : [panel],
-						),
-						checksPanel(h, monitor, timeZone),
-					],
-				),
+				vstack(h, { gap: "4", shrink: true }, [
+					...(monitor.heartbeat_url === null
+						? []
+						: [heartbeatPanel(h, model, monitor.heartbeat_url)]),
+					...(monitor.kind === "heartbeat" ? [] : [responseTimePanel(h, model, chartContext)]),
+					...(monitor.config.type === "http" ? [phaseBreakdownPanel(h, model, chartContext)] : []),
+					...Arr.flatMap([checksScatterPanel(h, model, timeZone)], (panel) =>
+						panel === null ? [] : [panel],
+					),
+					checksPanel(h, monitor, timeZone),
+				]),
 				vstack(h, { gap: "4" }, [
 					lastCheckPanel(h, monitor),
 					setupPanel(h, model, monitor, serviceHrefOf(monitor)),

@@ -1,12 +1,12 @@
 import type { McpToolRegistrar } from "./types"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { truncate, formatNumber, toSecondTimestamp } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import { SearchLogsOutput, type LogSearchFilters } from "@maple/domain/mcp-outputs"
+import { type LogSearchFilters } from "@maple/domain/mcp-outputs"
 import { searchLogs } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { emptyResultHints } from "../lib/empty-result-hints"
@@ -68,7 +68,6 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
 		}),
 		aliases: { ...P.SERVICE_ALIASES, query: "search" },
-		output: SearchLogsOutput,
 		hints: { readOnly: true },
 		phrases: ["Searching logs", "Reading through logs"],
 		handler: Effect.fn("McpTool.searchLogs")(function* (params) {

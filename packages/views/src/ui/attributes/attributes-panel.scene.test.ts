@@ -13,7 +13,7 @@ import {
 import { describe, expect, test } from "vitest"
 import { init, Message, type Model, OutMessage, update, WriteAttributeClipboard } from "./attributes-panel"
 import { type PanelInputs, view } from "./attributes-view"
-import { Record as Rec } from "effect"
+import { Record as Rec, Array as Arr } from "effect"
 
 const INPUTS: PanelInputs = {
 	logAttributes: { "http.route": "/api/checkout", duration_ms: "785", maple_org_id: "org_1" },
@@ -71,7 +71,9 @@ describe("attributes panel", () => {
 			init("panel"),
 			Message.ClickedCopy({ copyId: "key:log:http.route", text: "x" }),
 		)
-		expect(clicked.commands?.map((command) => command.name)).toEqual([WriteAttributeClipboard.name])
+		expect(
+			clicked.commands === undefined ? undefined : Arr.map(clicked.commands, (command) => command.name),
+		).toEqual([WriteAttributeClipboard.name])
 		const copied = update(clicked.model, Message.SucceededCopy({ generation: 1 }))
 		expect(copied.model.copy).toEqual({ id: "key:log:http.route", status: "copied", generation: 1 })
 		const stale = update(copied.model, Message.ElapsedCopyStatus({ generation: 0 }))

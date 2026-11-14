@@ -4,12 +4,10 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesPodsSearch } from "../../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as Peek from "../peek/model"
 import { PodsPage, RestartRows } from "../pod-data"
-
-// `/infra/kubernetes/pods`.
 
 export const PodCounts = Schema.Struct(PodsSummaryResponse.fields)
 export type PodCounts = typeof PodCounts.Type
@@ -25,13 +23,13 @@ export const Model = Schema.Struct({
 	debouncedQuery: Schema.String,
 	page: PageIndex,
 	pods: KeyedSchema(PodsPage, LoadFailure),
-	/** `PodTableWithRestarts`: the page's restarts, fetched beside the list. */
+	/** The page's restarts, fetched beside the list. */
 	restarts: KeyedSchema(RestartRows, LoadFailure),
 	summary: KeyedSchema(PodCounts, LoadFailure),
 	facets: KeyedSchema(PodFacets, LoadFailure),
 	filterSections: FilterSections.Model,
 	install: InstallModal.Model,
-	/** `PodPeekSheet`, opened by `search.peek`. */
+	/** The peek sheet, opened by `search.peek`. */
 	peek: Peek.Model,
 })
 export type Model = typeof Model.Type

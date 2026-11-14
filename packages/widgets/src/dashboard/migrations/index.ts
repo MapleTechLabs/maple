@@ -1,14 +1,14 @@
 import { CURRENT_DASHBOARD_SCHEMA_VERSION, type DashboardSchemaVersion } from "../version"
 import type { DashboardMigration } from "./types"
 import { v1ToV2 } from "./v1-to-v2"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type { DashboardMigration } from "./types"
 
 /**
  * Ordered chain, one entry per version step. `migrations.test.ts` asserts the
- * chain is contiguous and terminates at `CURRENT_DASHBOARD_SCHEMA_VERSION`, so a
- * step added out of order fails there rather than silently skipping a document.
+ * chain is contiguous from 1, so a step added out of order fails there rather
+ * than silently skipping a document. It ends at 2; see `migrateToLatest`.
  */
 export const DASHBOARD_MIGRATIONS: ReadonlyArray<DashboardMigration> = [v1ToV2]
 
@@ -16,7 +16,7 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 // Includes 3 even though no chain step produces it: `detectSchemaVersion` reads
-// an unrecognised version as 1, so leaving 3 out would make a backfilled document
+// an unrecognised version as 1, so leaving 3 out would make a v3 document
 // look like a pre-versioning one and run it through `v1ToV2` again.
 const KNOWN_SCHEMA_VERSIONS: ReadonlySet<number> = new Set([1, 2, 3])
 
@@ -31,7 +31,7 @@ export const detectSchemaVersion = (document: unknown): DashboardSchemaVersion =
 
 /**
  * Walks the chain from the document's declared version to the current one and
- * stamps the result. Never throws — see invariant 3 above.
+ * stamps the result. Never throws: see invariant 3 on `DashboardMigration`.
  */
 export const migrateToLatest = (document: unknown): Record<string, unknown> => {
 	if (!isPlainObject(document)) return { schemaVersion: CURRENT_DASHBOARD_SCHEMA_VERSION }
@@ -56,25 +56,18 @@ export const migrateToLatest = (document: unknown): Record<string, unknown> => {
 	let version = detectSchemaVersion(document)
 
 	while (version < CURRENT_DASHBOARD_SCHEMA_VERSION) {
-		const step = DASHBOARD_MIGRATIONS.find((migration) => migration.from === version)
+		const step = Arr.findFirst(DASHBOARD_MIGRATIONS, (migration) => migration.from === version)
 		// No step for this version means the chain is broken. Stop rather than
 		// loop; decode reports what is actually wrong with the document.
-		if (step === undefined) break
-		current = step.migrate(current)
-		version = step.to
+		if (Option.isNone(step)) break
+		current = step.value.migrate(current)
+		version = step.value.to
 	}
 
 	// Stamped with the version actually REACHED, not with the current one.
 	//
-	// These differ during the v3 window: the chain ends at 2 while
-	// `CURRENT_DASHBOARD_SCHEMA_VERSION` is 3, because the v2 -> v3 transform is a
-	// one-shot backfill (`upgrade-to-v3.ts`) rather than a chain step. Stamping 3
-	// on a document still in v2 shape would be a lie that decode immediately
-	// catches — `parseStoredDashboard` returns `Rejected` and the writable path
-	// refuses it, so nothing corrupt reaches storage — but a lie the version
-	// history and the span annotation would both repeat.
-	//
-	// This whole module is deleted once the backfill has run; until then it should
-	// report what is true.
+	// The chain ends at 2 while `CURRENT_DASHBOARD_SCHEMA_VERSION` is 3: the v2 -> v3
+	// step was a one-shot backfill (since deleted), not a chain step. Stamping 3 on a
+	// v2-shaped document would be a lie that decode rejects and history repeats.
 	return { ...current, schemaVersion: version }
 }

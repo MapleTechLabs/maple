@@ -7,13 +7,14 @@
  * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
-import { Option, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 import type { AlertDestinationType, AlertEventType } from "@maple/domain/http"
 import type { DispatchContext } from "./delivery/context"
 import {
 	comparatorBreachPhrase,
 	discordEmbedColor,
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatComparator,
 	formatAlertHeadline,
@@ -27,6 +28,8 @@ import {
 	signalDisplayOf,
 	truncate,
 	uptimeSummaryLine,
+	anomalySummaryLine,
+	hasSignalHeadline,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
@@ -36,10 +39,6 @@ import {
 	resolveTemplate,
 	type TemplateContext,
 } from "./alert-templating/renderer"
-
-/* -------------------------------------------------------------------------- */
-/*  Alert deep-link helper                                                    */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The alert rule's page: the webhook's `chatUrl` and the template's `links.chat`. A `test`
@@ -81,6 +80,13 @@ type SummaryLineContext = Pick<
  */
 export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
 	if (context.signalType === "uptime") return em(uptimeSummaryLine(context))
+	if (context.signalType === "anomaly") return em(anomalySummaryLine(context))
+	// An SLO's check names both windows and the tier, which one value and window cannot.
+	if (context.signalType === "slo_burn_rate" && context.detail != null && context.eventType !== "test")
+		return em(context.detail)
+	// A detection's check already says how many events arrived and over which window.
+	if (context.signalType === "audit" && context.detail != null && context.eventType !== "test")
+		return em(context.detail)
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)
@@ -118,7 +124,7 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
 		fields: [
 			{ name: "Severity", value: context.severity, inline: true },
 			{ name: "Signal", value: formatSignalLabel(context), inline: true },
-			{ name: "Group", value: displayGroupKey(context.groupKey) ?? "all", inline: true },
+			{ name: "Group", value: displayGroup(context) ?? "all", inline: true },
 			{ name: "Observed", value: formatObservedSummary(context), inline: true },
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
 			{
@@ -131,10 +137,6 @@ export const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string) =>
 		footer: { text: discordFooterText(context) },
 	},
 ]
-
-/* -------------------------------------------------------------------------- */
-/*  Telegram                                                                  */
-/* -------------------------------------------------------------------------- */
 
 /**
  * Telegram's `parse_mode: "HTML"` accepts only a small tag set (`b`, `i`,
@@ -159,9 +161,9 @@ const telegramFooter = (context: Pick<DispatchContext, "sentAtMs" | "incidentId"
 }
 
 const telegramDetailLine = (
-	context: Pick<DispatchContext, "severity" | "groupKey" | "windowMinutes">,
+	context: Pick<DispatchContext, "severity" | "groupKey" | "groupLabel" | "signalType" | "windowMinutes">,
 ): string => {
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const parts = [
 		`<b>Severity</b> ${escapeTelegramHtml(formatSeverityLabel(context.severity))}`,
 		`<b>Window</b> ${escapeTelegramHtml(formatWindow(context.windowMinutes))}`,
@@ -175,10 +177,9 @@ const telegramBody = (title: string, lines: ReadonlyArray<string>): string =>
 
 /** No link arguments: Telegram carries both links in the inline keyboard. */
 export const buildTelegramText = (context: DispatchContext): string => {
-	const title =
-		context.signalType === "uptime"
-			? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
-			: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
+	const title = hasSignalHeadline(context.signalType)
+		? `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(formatAlertHeadline(context))}</b>`
+		: `${eventTypeEmoji(context.eventType)} <b>${escapeTelegramHtml(context.ruleName)}</b> \u{2014} ${escapeTelegramHtml(formatEventTypeLabel(context.eventType))}`
 	return telegramBody(title, [
 		escapeTelegramHtml(buildSummaryLine(context, (value) => value)),
 		"",
@@ -197,13 +198,12 @@ export const buildTelegramText = (context: DispatchContext): string => {
  * let a template author aim a button at an arbitrary in-app action.
  */
 const markdownToTelegramHtml = (markdown: string): string =>
-	Str.replace(
-		/\*\*([^*]+)\*\*/g,
-		"<b>$1</b>",
-	)(escapeTelegramHtml(markdown)).replace(
-		/\[([^\]]+)\]\(([^)\s]+)\)/g,
-		(match, text: string, url: string) =>
+	pipe(
+		escapeTelegramHtml(markdown),
+		Str.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"),
+		replaceWith(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text = "", url = "") =>
 			/^https?:\/\//i.test(url) ? `<a href="${Str.replaceAll('"', "%22")(url)}">${text}</a>` : match,
+		),
 	)
 
 export const buildTelegramTextFromTemplate = (
@@ -216,10 +216,6 @@ export const buildTelegramTextFromTemplate = (
 		"",
 		telegramFooter(context),
 	])
-
-/* -------------------------------------------------------------------------- */
-/*  Templated notifications                                                   */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The subset of {@link DispatchContext} the templating layer reads. Narrowed so
@@ -256,7 +252,7 @@ export const buildTemplateContext = (
 		observed: formatSignalMetric(context.value, display),
 		"observed.summary": formatObservedSummary(context),
 		sampleCount: context.sampleCount != null ? String(context.sampleCount) : "",
-		group: displayGroupKey(context.groupKey) ?? "all",
+		group: displayGroup(context) ?? "all",
 		window: formatWindow(context.windowMinutes),
 		incidentId: context.incidentId ?? "",
 		incidentStatus: context.incidentStatus,

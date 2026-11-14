@@ -1,24 +1,23 @@
-import { formatNumber, formatPercent } from "@maple/ui/lib/format"
+import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { stripClass } from "@maple/views/ui/rule"
 import { emptyMessage } from "@maple/views/ui/empty"
-import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { searchInput } from "@maple/views/ui/search-input"
 import { controlledView as controlledToggleGroup } from "@maple/views/ui/toggle-group"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
+import { expandTableFooter } from "../kit/expand-table-footer"
 import { sortRowsByField } from "../kit/table-sort"
 import { type FilterKey, Message } from "./message"
 import type { Model, PanelState } from "./model"
 import { panelOf } from "./update"
 import { analyticsRowIcon, dimensionHasIcons } from "./view-icons"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr, String as Str } from "effect"
-
-// `AnalyticsBreakdownPanel`: one breakdown card.
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 type SortKey = "name" | "count" | "views"
@@ -36,29 +35,39 @@ export type BreakdownDimension = Readonly<{
 	renderIcon?: (h: H, row: BreakdownRow) => Html
 	viewsLabel?: string
 	countLabel?: string
+	/** A line under the table that leads on from these rows (the referrers' way to the Search tab). */
+	note?: (h: H) => Html
 }>
 
 export type BreakdownCard = Readonly<{ id: string; dimensions: ReadonlyArray<BreakdownDimension> }>
 
 type ShareRow = BreakdownRow & Readonly<{ share: number }>
 
-/** `shareBar` (infra/primitives/share-bar.ts): the row's background filled to its share. */
-const shareBarStyle = (share: number): Readonly<Record<string, string>> => {
+/**
+ * The row's background filled to its share. `quiet` is for a full-width table, where the fill
+ * runs under every figure and the card tint would read as a block.
+ */
+export const shareBarStyle = (
+	share: number,
+	strength: "card" | "quiet" = "card",
+): Readonly<Record<string, string>> => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return {}
-	const fill = "color-mix(in oklab, var(--primary) 14%, transparent)"
+	const fill = `color-mix(in oklab, var(--primary) ${strength === "quiet" ? 8 : 14}%, transparent)`
 	return {
 		"background-image": `linear-gradient(to right, ${fill} 0%, ${fill} ${pct}%, transparent ${pct}%)`,
 	}
 }
 
-const columnLabel = (noun: string): string => Str.toUpperCase(noun.charAt(0)) + Str.slice(1)(noun)
+/** A noun as a column head: "query" heads its column as "Query". */
+export const columnLabel = (noun: string): string =>
+	Str.toUpperCase(Str.slice(0, 1)(noun)) + Str.slice(1)(noun)
 
 /** The panel's resolved view: tab, rows filtered and shared, the sort in effect. */
 export const panelView = (state: PanelState, dimensions: ReadonlyArray<BreakdownDimension>) => {
-	const firstPopulated = Math.max(
-		dimensions.findIndex((dimension) => dimension.rows.length > 0),
-		0,
+	const firstPopulated = Option.getOrElse(
+		Arr.findFirstIndex(dimensions, (dimension) => dimension.rows.length > 0),
+		() => 0,
 	)
 	const activeTab = state.pickedTab ?? firstPopulated
 	const dimension = dimensions[activeTab] ?? dimensions[0]
@@ -71,7 +80,7 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 		Arr.filter(dimension.rows, (row) =>
 			needle
 				? Str.includes(needle)(Str.toLowerCase(label(row.name))) ||
-					(row.secondary?.toLowerCase().includes(needle) ?? false)
+					(row.secondary !== undefined && Str.includes(needle)(Str.toLowerCase(row.secondary)))
 				: true,
 		),
 		(row) => ({ ...row, share: total > 0 ? (hasViews ? (row.views ?? 0) : row.count) / total : 0 }),
@@ -82,7 +91,6 @@ export const panelView = (state: PanelState, dimensions: ReadonlyArray<Breakdown
 
 type PanelView = NonNullable<ReturnType<typeof panelView>>
 
-/** `DimensionTabs`. */
 export const dimensionTabs = (
 	h: H,
 	cardId: string,
@@ -102,7 +110,6 @@ export const dimensionTabs = (
 		})),
 	})
 
-/** `FilterInput`. */
 export const panelFilterInput = (
 	h: H,
 	cardId: string,
@@ -116,7 +123,7 @@ export const panelFilterInput = (
 		id: `analytics-${cardId}-filter${idSuffix}`,
 		size: "sm",
 		value,
-		placeholder: `Filter ${nounPlural}`,
+		placeholder: `Filter ${nounPlural}…`,
 		onInput: (next) => Message.ChangedPanelQuery({ panel: cardId, value: next }),
 		onClear: Message.ChangedPanelQuery({ panel: cardId, value: "" }),
 		className,
@@ -129,7 +136,7 @@ const sortHead = (cardId: string, view: PanelView, key: SortKey) => ({
 	onSort: Message.ClickedPanelSort({ panel: cardId, key, current: view.sort }),
 })
 
-/** `BreakdownTable`: the card's capped table, or the dialog's ranked one. */
+/** The card's capped table, or the dialog's ranked one. */
 export const breakdownTable = (
 	h: H,
 	model: Model,
@@ -206,7 +213,10 @@ export const breakdownTable = (
 							isSelected,
 							selectedLane: isSelected,
 							className: cn(
-								"group flex w-full items-center gap-3 border-b border-border-subtle px-3 py-2 text-left transition-colors last:border-0 @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+								stripClass(
+									"row",
+									"group flex w-full items-center gap-3 px-3 text-left @min-[420px]/panel:gap-4 @min-[420px]/panel:px-4",
+								),
 								"hover:bg-foreground/[0.06] active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] focus-visible:outline-none",
 							),
 							attributes: [
@@ -237,7 +247,7 @@ export const breakdownTable = (
 									[
 										h.Class(
 											cn(
-												"min-w-0 truncate text-xs transition-colors",
+												"min-w-0 truncate text-xs",
 												isSelected
 													? typographyClass({
 															tone: "foreground",
@@ -326,8 +336,14 @@ export const breakdownPanel = (
 	if (view === null) return null
 	const { dimension } = view
 	return panel(h, { className: "@container/panel" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pt-2.5 pb-2")],
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "gap-x-3 gap-y-2 px-3 pt-2.5 pb-2",
+			},
 			[
 				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
 				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),
@@ -349,25 +365,11 @@ export const breakdownPanel = (
 						selected: options.selectedOf(dimension.filterKey),
 						isWaiting: options.isWaiting,
 					}),
-					pressable(
-						h,
-						{
-							onClick: Message.ClickedExpandPanel({ panel: card.id }),
-							className:
-								"flex w-full items-center justify-between gap-2 rounded-b-md px-4 py-2 text-2xs text-muted-foreground hover:bg-surface-sunken active:bg-surface-sunken hover:text-foreground active:text-foreground focus-visible:bg-surface-sunken focus-visible:outline-none",
-						},
-						[
-							hstack(h, { gap: "1.5", as: "span" }, [
-								icon(h, "MaximizeIcon", { size: 12 }),
-								"Expand table",
-							]),
-							typography(h, { mono: true, numeric: true }, [
-								formatNumber(dimension.rows.length),
-								" ",
-								dimension.nounPlural,
-							]),
-						],
-					),
+					...(dimension.note === undefined ? [] : [dimension.note(h)]),
+					expandTableFooter(h, {
+						onClick: Message.ClickedExpandPanel({ panel: card.id }),
+						count: `${formatNumber(dimension.rows.length)} ${pluralize(dimension.rows.length, dimension.noun, dimension.nounPlural)}`,
+					}),
 				]),
 	])
 }

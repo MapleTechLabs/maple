@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ApiKeyKind } from "@maple/domain/http"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyKind } from "@maple/domain/api-keys"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 export const ApiKeys = PG.table("api_keys", {
@@ -35,4 +35,3 @@ export const ApiKeys = PG.table("api_keys", {
 })
 
 export type ApiKeyRow = PG.SelectRowOf<typeof ApiKeys>
-export type ApiKeyInsert = PG.InsertRowOf<typeof ApiKeys>

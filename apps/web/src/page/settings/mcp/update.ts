@@ -44,7 +44,7 @@ const liftRevokeDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 	),
 })
 
-/** `onCreated`: the new secret goes into every snippet. */
+/** The new secret goes into every snippet. */
 const liftCreateKey = (model: Model, step: ReturnType<typeof CreateKey.update>): Return => {
 	const out = step.outMessage
 	return {

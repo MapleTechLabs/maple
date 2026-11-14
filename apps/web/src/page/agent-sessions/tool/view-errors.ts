@@ -9,36 +9,29 @@ import {
 	failureStatus,
 	fillTrend,
 	unwrapToolErrorText,
-} from "../../../lib/agent-sessions/tool-error-display"
+} from "../../kit/tools/tool-error-display"
 import { UNGROUPED_FINGERPRINT } from "@maple/web-data/lib/tool-analytics"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import { eyebrow } from "@maple/views/ui/eyebrow"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../tools-kit/error-parts"
-import type { ToolErrorRow } from "../tools-kit/model"
-import {
-	shareCell,
-	type SortState,
-	sortRows,
-	th,
-	toolTableRow,
-	toolTable,
-	toolTableBody,
-	toolTableHead,
-} from "../tools-kit/table"
+import { errorTextLine, failureStatusLine, maskChip, windowRangeLabel } from "../../kit/tools/error-parts"
+import type { ToolErrorRow } from "../../kit/tools/model"
+import { shareCell, th, toolTableRow, toolTable, toolTableBody, toolTableHead } from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
+import { type SortState, sortRows } from "../../kit/table-sort"
 
 type H = HtmlBuilder<Message>
 
@@ -63,7 +56,7 @@ export type Prepared = ToolErrorRow &
 		spark: ReadonlyArray<number>
 	}>
 
-/** `prepareToolErrors`: messages unwrapped, the shared prefix hoisted, trends filled over the window. */
+/** Messages unwrapped, the shared prefix hoisted, trends filled over the window. */
 export const prepare = (rows: ReadonlyArray<ToolErrorRow>, range: Range) => {
 	const failures = Arr.reduce(rows, 0, (sum, row) => sum + row.calls)
 	const bucket = errorTrendBucket(range.startMs, range.endMs)
@@ -138,25 +131,23 @@ const errorRow = (
 			attributes: [h.Key(row.fingerprint), ...(row.display === "" ? [] : [h.Title(row.display)])],
 		},
 		[
-			h.span(
-				[
-					h.Class(
-						"flex w-0 min-w-0 flex-1 items-center gap-2.5 overflow-hidden font-mono text-xs leading-4",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2.5",
+					align: "center",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "w-0 overflow-hidden font-mono text-xs leading-4",
+				},
 				[
 					groupTitle(h, row),
 					...(sharedType === undefined && row.errorType !== ""
 						? [
-								h.span(
-									[
-										h.Class(
-											cn(
-												"flex h-4.5 shrink-0 items-center rounded-sm border border-border px-1.5 text-2xs leading-3.5",
-												TONE_TEXT.crit,
-											),
-										),
-									],
+								badge(
+									h,
+									{ variant: "meta", size: "xs", className: cn("px-1.5", TONE_TEXT.crit) },
 									[row.errorType],
 								),
 							]
@@ -206,7 +197,6 @@ const errorRow = (
 			relativeTime(h, {
 				value: row.lastSeen,
 				variant: "orDate",
-				tooltip: "title",
 				nowMs: inputs.nowMs,
 				timeZone: inputs.timeZone,
 				className:
@@ -228,14 +218,14 @@ const LOADING_WIDTHS = [340, 260, 400]
 
 const loadingRows = (h: H): ReadonlyArray<Html> =>
 	Arr.map(LOADING_WIDTHS, (width, index) =>
-		h.div(
-			[
-				h.Key(String(width)),
-				h.Class(
-					"flex h-[38px] items-center gap-3 border-b border-border-subtle px-2.5 last:border-0",
-				),
-				h.Style({ opacity: String(1 - index * 0.2) }),
-			],
+		hstack(
+			h,
+			{
+				gap: "3",
+				align: "center",
+				className: "h-[38px] border-b border-border-subtle px-2.5 last:border-0",
+				attributes: [h.Key(String(width)), h.Style({ opacity: String(1 - index * 0.2) })],
+			},
 			[
 				h.span(
 					[h.Class(columnClass({ min: "0" }))],
@@ -245,11 +235,14 @@ const loadingRows = (h: H): ReadonlyArray<Html> =>
 					[h.Class("hidden w-24 shrink-0 @min-[720px]/panel:block")],
 					[skeleton(h, "h-2.5 w-24")],
 				),
-				h.span(
-					[h.Class("flex w-36 shrink-0 justify-end gap-2.5")],
+				hstack(
+					h,
+					{ gap: "2.5", align: "stretch", justify: "end", as: "span", className: "w-36 shrink-0" },
 					[skeleton(h, "h-1 w-[60px]"), h.span([h.Class("w-[46px]")], [])],
 				),
-				h.span([h.Class("flex w-20 shrink-0 justify-end")], [skeleton(h, "h-2.5 w-7")]),
+				hstack(h, { align: "stretch", justify: "end", as: "span", className: "w-20 shrink-0" }, [
+					skeleton(h, "h-2.5 w-7"),
+				]),
 				h.span(
 					[h.Class("hidden w-20 shrink-0 justify-end @min-[640px]/panel:flex")],
 					[skeleton(h, "h-2.5 w-[22px]")],
@@ -275,8 +268,15 @@ const head = (h: H, inputs: ErrorsTableInputs, headHint: string): Html => {
 			hidden,
 		})
 	return toolTableHead(h, [
-		h.div(
-			[h.Class("flex w-0 min-w-0 flex-1 items-baseline gap-2.5 font-mono text-2xs leading-3.5")],
+		hstack(
+			h,
+			{
+				gap: "2.5",
+				align: "baseline",
+				shrink: true,
+				grow: true,
+				className: "w-0 font-mono text-2xs leading-3.5",
+			},
 			[
 				eyebrow(h, { variant: "mono" }, ["Error"]),
 				...(headHint === ""
@@ -325,25 +325,19 @@ const showMore = (h: H, hidden: ReadonlyArray<Prepared>, isExpanded: boolean): H
 				),
 				attributes: [h.AriaHidden(true)],
 			}),
-			h.span(
-				[h.Class("text-foreground")],
-				[
-					isExpanded
-						? "Show fewer errors"
-						: `Show ${formatNumber(hidden.length)} more ${pluralize(hidden.length, "error")}`,
-				],
-			),
+			typography(h, { tone: "foreground" }, [
+				isExpanded
+					? "Show fewer errors"
+					: `Show ${formatNumber(hidden.length)} more ${pluralize(hidden.length, "error")}`,
+			]),
 			...(isExpanded
 				? []
 				: [
-						h.span(
-							[h.Class("text-foreground-subtle")],
-							[
-								formatNumber(hiddenCalls),
-								` failed ${pluralize(hiddenCalls, "call")}`,
-								...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
-							],
-						),
+						typography(h, { tone: "subtle" }, [
+							formatNumber(hiddenCalls),
+							` failed ${pluralize(hiddenCalls, "call")}`,
+							...(hiddenCalls === hidden.length && hidden.length > 1 ? [", 1 each"] : []),
+						]),
 					]),
 		],
 	)
@@ -403,36 +397,39 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 	return h.section(
 		[h.AriaLabel("Errors"), h.Class("@container/panel min-w-0 border-b border-border px-6 pt-5 pb-4")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 pb-3 font-mono")],
+			hstack(
+				h,
+				{
+					align: "baseline",
+					justify: "between",
+					wrap: true,
+					className: "gap-x-6 gap-y-1 pb-3 font-mono",
+				},
 				[
-					h.div(
-						[h.Class("flex items-baseline gap-2.5")],
-						[
-							typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Errors"]),
-							inputs.isLoading
-								? skeleton(h, "h-2.5 w-36 self-center")
-								: typography(
-										h,
-										{
-											size: "2xs",
-											tone: "subtle",
-											numeric: true,
-											className: "leading-3.5",
-										},
-										[
-											formatNumber(failures),
-											" failed ",
-											pluralize(failures, "call"),
-											...(inputs.rows.length > 0
-												? [
-														` · ${formatNumber(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
-													]
-												: []),
-										],
-									),
-						],
-					),
+					hstack(h, { gap: "2.5", align: "baseline" }, [
+						typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Errors"]),
+						inputs.isLoading
+							? skeleton(h, "h-2.5 w-36 self-center")
+							: typography(
+									h,
+									{
+										size: "2xs",
+										tone: "subtle",
+										numeric: true,
+										className: "leading-3.5",
+									},
+									[
+										formatNumber(failures),
+										" failed ",
+										pluralize(failures, "call"),
+										...(inputs.rows.length > 0
+											? [
+													` · ${formatNumber(inputs.rows.length)} ${pluralize(inputs.rows.length, "error")}`,
+												]
+											: []),
+									],
+								),
+					]),
 					...(status === undefined
 						? []
 						: [
@@ -448,31 +445,29 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 				],
 			),
 			isEmpty
-				? h.div(
-						[h.Class("flex flex-col gap-2 border-t border-border px-2.5 py-5 font-mono")],
-						[
-							h.span(
-								[h.Class("flex items-center gap-2 text-xs text-foreground")],
-								[
-									statusDot(h, { tone: "ok" }),
-									"No failed calls between",
-									" ",
-									windowRangeLabel(startMs, startMs, inputs.timeZone),
-									" and",
-									" ",
-									windowRangeLabel(endMs, endMs, inputs.timeZone),
-								],
-							),
-							h.span(
-								[h.Class("pl-3.5 text-xs text-muted-foreground")],
-								[
-									inputs.toolCalls > 0
-										? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this range succeeded.`
-										: `${inputs.tool} was not called in this range.`,
-								],
-							),
-						],
-					)
+				? vstack(h, { gap: "2", className: "border-t border-border px-2.5 py-5 font-mono" }, [
+						hstack(
+							h,
+							{ gap: "2", align: "center", as: "span", className: "text-xs text-foreground" },
+							[
+								statusDot(h, { tone: "ok" }),
+								"No failed calls between",
+								" ",
+								windowRangeLabel(startMs, startMs, inputs.timeZone),
+								" and",
+								" ",
+								windowRangeLabel(endMs, endMs, inputs.timeZone),
+							],
+						),
+						h.span(
+							[h.Class("pl-3.5 text-xs text-muted-foreground")],
+							[
+								inputs.toolCalls > 0
+									? `All ${formatNumber(inputs.toolCalls)} ${inputs.tool} ${pluralize(inputs.toolCalls, "call")} in this window succeeded`
+									: `${inputs.tool} was not called in this window`,
+							],
+						),
+					])
 				: toolTable(h, [
 						head(h, inputs, headHint),
 						toolTableBody(
@@ -498,12 +493,15 @@ export const errorsTable = (h: H, inputs: ErrorsTableInputs): Html => {
 						),
 						...(masks.length > 0 && !inputs.isLoading
 							? [
-									h.div(
-										[
-											h.Class(
-												"flex flex-wrap items-center gap-2 border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-foreground-subtle",
-											),
-										],
+									hstack(
+										h,
+										{
+											gap: "2",
+											align: "center",
+											wrap: true,
+											className:
+												"border-t border-border px-2.5 pt-3 font-mono text-2xs leading-3.5 text-foreground-subtle",
+										},
 										[
 											h.span(
 												[],

@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
+import { sha256FileSync } from "../checkpoint-digest"
 import { Schema, Array as Arr, Record as Rec } from "effect"
 import type { ArchiveTuningRecord } from "./config"
 import { NonNegativeSafeInt, Sha256Lower } from "./schemas"
@@ -144,7 +145,7 @@ const TUNING_KEYS = new Set([
 const assertExactOwnKeys = (record: Record<string, unknown>, keys: ReadonlySet<string>, label = ""): void => {
 	const location = label.length > 0 ? `${label} ` : ""
 	for (const key of keys) {
-		if (!Object.prototype.hasOwnProperty.call(record, key)) {
+		if (!Rec.has(record, key)) {
 			throw new Error(`invalid archive manifest ${location}field: ${key} (required in formatVersion 3)`)
 		}
 	}
@@ -179,8 +180,7 @@ const requiredPositiveInteger = (record: Record<string, unknown>, key: string): 
 }
 
 /** The same 64-hex rule the journal enforces, stated once in ./schemas. */
-const isSha256Hex = (value: string): boolean =>
-	Schema.decodeUnknownResult(Sha256Lower)(value)._tag === "Success"
+const isSha256Hex = (value: string): boolean => Schema.decodeResult(Sha256Lower)(value)._tag === "Success"
 
 /** A safe logical config name (no path separators, no traversal). */
 const SAFE_CONFIG_NAME = /^[A-Za-z0-9._-]+$/
@@ -509,3 +509,36 @@ export const shardFilePath = (
 	shardName: string,
 ): string =>
 	join(generationManifestPath(archiveDir, signal, rangeDate, generationId), "..", "shards", shardName)
+
+/** A shard's recorded identity: what a manifest promises and what GC freezes as evidence. */
+export interface ShardEvidence {
+	readonly name: string
+	readonly bytes: number
+	readonly sha256: string
+}
+
+/**
+ * Check every shard under `generationDir/shards` is a real file with its recorded byte size
+ * and SHA-256, returning the observed evidence. Throws on the first defect.
+ */
+export const verifyGenerationShards = (
+	archiveDir: string,
+	generationDir: string,
+	shards: ReadonlyArray<ShardEvidence>,
+	label: string,
+): ReadonlyArray<ShardEvidence> =>
+	Arr.map(shards, (shard) => {
+		const path = join(generationDir, "shards", shard.name)
+		const shardLabel = `${label} ${shard.name}`
+		assertNoSymlinkSync(archiveDir, path, shardLabel)
+		assertRealFileSync(path, shardLabel)
+		const bytes = statSync(path).size
+		if (bytes !== shard.bytes)
+			throw new Error(`${shardLabel} byte size mismatch: recorded ${shard.bytes}, actual ${bytes}`)
+		const sha256 = sha256FileSync(path)
+		if (sha256 !== shard.sha256)
+			throw new Error(
+				`${shardLabel} SHA-256 mismatch: recorded ${shard.sha256}, actual ${sha256} (${generationDir})`,
+			)
+		return { name: shard.name, bytes, sha256 }
+	})

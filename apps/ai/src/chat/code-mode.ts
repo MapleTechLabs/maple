@@ -11,6 +11,7 @@ import { CodeExecutionLimits, type CodeExecutor } from "@yielded/agent/code-exec
 import * as CodeMode from "@yielded/agent/code-mode"
 import { Duration, Layer, Array as Arr, Record as Rec } from "effect"
 import { type Tool, Toolkit } from "effect/ai"
+import { toolLayerWithContent } from "../platform/genai-spans"
 import { TOOL_CONCURRENCY } from "./budgets"
 import { PR_REVIEW_TOOLS } from "./permissions"
 
@@ -25,6 +26,8 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	...PR_REVIEW_TOOLS,
 	"ci_runs",
 	"compare_commits",
+	"compare_log_patterns",
+	"compare_operations",
 	"compare_periods",
 	"describe_warehouse_tables",
 	"diagnose_service",
@@ -35,6 +38,7 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"get_session_transcript",
 	"ingest_freshness",
 	"inspect_infra",
+	"inspect_security_audit_run",
 	"inspect_security_finding",
 	"inspect_span",
 	"inspect_trace",
@@ -46,7 +50,9 @@ export const CODE_MODE_TOOLS: ReadonlySet<string> = new Set([
 	"list_error_issues",
 	"list_infra",
 	"list_integrations",
+	"list_security_audit_runs",
 	"list_security_findings",
+	"list_source_repositories",
 	"mine_log_patterns",
 	"query_data",
 	"run_sql",
@@ -95,6 +101,29 @@ const description = (methods: ReadonlyArray<string>) =>
 	)
 
 /**
+ * A failed program as its span reads it: the failure's kind and message, then each read that did
+ * not succeed. A read's rejection the program let escape is the message, which names no tool.
+ */
+const programFailureText = (error: CodeMode.CodeModeFailure): string => {
+	const calls = error.calls ?? []
+	const omitted = error.omittedCalls ?? 0
+	return Arr.join(
+		[
+			`${error.errorTag}: ${error.message}`,
+			...Arr.flatMap(calls, (call) =>
+				call.status === "succeeded"
+					? []
+					: [
+							`maple.${call.toolName} (call ${call.sequenceIndex + 1} of ${calls.length + omitted}) ${call.status}${call.errorTag === undefined ? "" : `: ${call.errorTag}`}`,
+						],
+			),
+			...(omitted === 0 ? [] : [`${omitted} more calls not listed`]),
+		],
+		"\n",
+	)
+}
+
+/**
  * `run_code` over `tools`, or undefined when there is nothing to call. `handlers` provides those
  * tools' handlers; the program's calls run through them.
  */
@@ -118,6 +147,10 @@ export const buildCodeMode = <T extends Tool.Any, H, E, R>(
 	return {
 		tool: RUN_CODE,
 		toolkit: Toolkit.make(definition.tool),
-		layer: definition.handlers.pipe(Layer.provide(handlers), Layer.provide(executor)),
+		// The engine registers this handler itself, so its span content is recorded here.
+		layer: toolLayerWithContent(definition.tool, definition.handlers, programFailureText).pipe(
+			Layer.provide(handlers),
+			Layer.provide(executor),
+		),
 	}
 }

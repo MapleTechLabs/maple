@@ -2,6 +2,7 @@ import { InfraSurfaceLiteral } from "@maple/domain/http"
 import { V2Source } from "@maple/domain/http/v2"
 import type { BillingCustomer } from "@maple/domain/http"
 import type { ClerkOrganization, ClerkUser } from "../platform/clerk"
+import * as Policy from "@maple/domain/policy"
 import { Option, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import { PopupPosition } from "@maple/views/ui/anchor"
@@ -15,7 +16,8 @@ import { PinnedDashboardRow } from "./dashboards-shape"
 import * as Palette from "./palette/model"
 import { Platform } from "./palette/shortcuts"
 import { Menu, Theme } from "./message"
-import { NavSurface } from "./nav"
+import { type NavAudience, NavSurface } from "./nav"
+import { OnCallSnapshot } from "./oncall"
 import {
 	type InfraSurfaces,
 	PENDING_INTEGRATIONS,
@@ -31,6 +33,7 @@ export const InfraPresenceData = AsyncData.Schema(Schema.Array(InfraSurfaceLiter
 export const DashboardsData = AsyncData.Schema(Schema.Array(PinnedDashboardRow), LoadFailure)
 export const NamespacesData = AsyncData.Schema(Schema.Array(Schema.String), LoadFailure)
 export const SourcesData = AsyncData.Schema(Schema.Array(V2Source), LoadFailure)
+export const OnCallData = AsyncData.Schema(OnCallSnapshot, LoadFailure)
 
 export const OpenMenu = Schema.Struct({ menu: Menu, maybePosition: Schema.Option(PopupPosition) })
 export type OpenMenu = typeof OpenMenu.Type
@@ -40,6 +43,7 @@ const IntegrationFlag = Schema.NullOr(Schema.Boolean)
 export const Integrations = Schema.Struct({
 	cloudflare: IntegrationFlag,
 	railway: IntegrationFlag,
+	vercel: IntegrationFlag,
 	planetscale: IntegrationFlag,
 	gcp: IntegrationFlag,
 	supabase: IntegrationFlag,
@@ -51,9 +55,9 @@ export const Model = Schema.Struct({
 	isSidebarOpen: Schema.Boolean,
 	/** The last toggle came from ⌘B: keyboard toggles snap instead of animating the width. */
 	isSidebarToggleInstant: Schema.Boolean,
-	/** The mobile nav sheet (`openMobile`). */
+	/** The mobile nav sheet. */
 	isMobileNavOpen: Schema.Boolean,
-	/** Below `md` the sidebar is a sheet (`useIsMobile`). */
+	/** Below `md` the sidebar is a sheet. */
 	isMobile: Schema.Boolean,
 	/** The sidebar's own reads (infra presence, integrations, pinned dashboards) were sent for this org. */
 	hasRequestedSidebarData: Schema.Boolean,
@@ -76,6 +80,20 @@ export const Model = Schema.Struct({
 	/** `maple.infra-surfaces.<orgId>`: each org's last settled surfaces, so the sidebar lays out once. */
 	rememberedSurfaces: Schema.Record(Schema.String, Schema.Array(NavSurface)),
 	dashboards: DashboardsData.schema,
+	/** Read only while an alerts page is open; `null` until then. */
+	alertsInboxCount: Schema.NullOr(Schema.Number),
+	/** The org's schedules and who holds each now, for the footer's on-call pill. */
+	onCall: OnCallData.schema,
+	/** `maple.sidebar.collapsed-groups`: nav group ids the user folded. */
+	collapsedNavGroups: Schema.Array(Schema.String),
+	/** The pill's clock: when an on-call event last happened, so ended shifts read as unknown. */
+	onCallNowMs: Schema.Number,
+	/** When the pill reads again; `null` for an org without schedules. */
+	onCallNextReadAtMs: Schema.NullOr(Schema.Number),
+	/** The current retry delay; 0 after a good answer. */
+	onCallBackoffMs: Schema.Number,
+	/** `maple.oncall.no-schedules.<orgId>`: when each org last answered with no schedules. */
+	noScheduleOrgs: Schema.Record(Schema.String, Schema.Number),
 	namespaces: NamespacesData.schema,
 	/** The org's sources, read once a page links to its source (`source-link.ts`). */
 	sources: SourcesData.schema,
@@ -87,15 +105,15 @@ export const Model = Schema.Struct({
 	clerkOrgMenu: ClerkOrgSwitcher.Model,
 	/** Clerk: the onboarding reward pill in the top bar. */
 	checklist: Checklist.Model,
-	/** The top bar's Connect popover (`ConnectButton`). */
+	/** The top bar's Connect popover. */
 	connect: ConnectPanel.Model,
 	/** Clerk: the shared Slack channel dialog of the Support menu. */
 	supportChannel: SupportChannel.Model,
 	/** `quota-banner-approaching` in sessionStorage: the approaching-quota banner was dismissed. */
 	isQuotaApproachingDismissed: Schema.Boolean,
-	/** The server serves a newer build than this tab (`AppUpdateBanner`). */
+	/** The server serves a newer build than this tab. */
 	isAppOutdated: Schema.Boolean,
-	/** `GlobalShortcuts`: the command palette and the shortcuts dialog, `null` while unmounted. */
+	/** The command palette and the shortcuts dialog, `null` while unmounted. */
 	palette: Schema.NullOr(Palette.Model),
 	shortcutsDialog: Schema.NullOr(Dialog.Model),
 	/** `detectPlatform`: how the shortcuts dialog spells modifiers. */
@@ -104,17 +122,25 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /**
- * What the shell reads from Clerk and Autumn in Clerk mode (`useUser`, `useOrganization`,
- * `useOrganizationList`, `useMapleCustomer`), passed in by the root; `null` self-hosted.
+ * What the shell reads from Clerk and Autumn in Clerk mode, passed in by the root; `null`
+ * self-hosted.
  */
 export type ShellClerk = Readonly<{
 	maybeUser: Option.Option<ClerkUser>
 	maybeOrganization: Option.Option<ClerkOrganization>
 	memberships: ReadonlyArray<ClerkOrganization>
 	customer: BillingCustomer | undefined
+	/** The viewer's role in the active org (`org:admin`), once Clerk has read their membership. */
+	maybeRole: Option.Option<string>
 }>
 
-/** `<TooltipPopup side="right" align="center">` of `SidebarMenuButton`. */
+/** Who the shell is drawn for; self-hosted has no Clerk role, so it is never an analyst. */
+export const shellAudience = (clerk: ShellClerk | null): NavAudience =>
+	clerk !== null && Option.exists(clerk.maybeRole, (role) => Policy.isAnalyst([role]))
+		? "analyst"
+		: "operator"
+
+/** A rail item's tooltip: right of the item, centred. */
 export const initRailTooltip = (): Tooltip.Model =>
 	Tooltip.init("shell-rail-tooltip", { side: "right", align: "center" })
 
@@ -127,19 +153,23 @@ export const initRightSheet = (): Dialog.Model => Dialog.init(RIGHT_SHEET_ID, "s
 
 /** Persisted shell state, read before the first render (see `main.ts` flags). */
 export type ShellFlags = Readonly<{
+	/** The `sidebar_state` cookie; absent is open. */
+	isSidebarOpen?: boolean
 	isMobile: boolean
 	isFilterCollapsed?: boolean
 	isBelowSm?: boolean
 	theme: Theme
 	pinnedNamespaces: Readonly<Record<string, string>>
 	dashboardFavorites: ReadonlyArray<string>
+	collapsedNavGroups?: ReadonlyArray<string>
+	noScheduleOrgs?: Readonly<Record<string, number>>
 	rememberedSurfaces?: Readonly<Record<string, ReadonlyArray<NavSurface>>>
 	isQuotaApproachingDismissed?: boolean
 	platform?: Platform
 }>
 
 export const init = (flags: ShellFlags): Model => ({
-	isSidebarOpen: true,
+	isSidebarOpen: flags.isSidebarOpen ?? true,
 	isSidebarToggleInstant: false,
 	isMobileNavOpen: false,
 	isMobile: flags.isMobile,
@@ -157,6 +187,13 @@ export const init = (flags: ShellFlags): Model => ({
 	integrations: PENDING_INTEGRATIONS,
 	rememberedSurfaces: flags.rememberedSurfaces ?? {},
 	dashboards: DashboardsData.Idle(),
+	alertsInboxCount: null,
+	onCall: OnCallData.Idle(),
+	collapsedNavGroups: flags.collapsedNavGroups ?? [],
+	onCallNowMs: 0,
+	onCallNextReadAtMs: null,
+	onCallBackoffMs: 0,
+	noScheduleOrgs: flags.noScheduleOrgs ?? {},
 	namespaces: NamespacesData.Idle(),
 	sources: SourcesData.Idle(),
 	namespaceQuery: "",

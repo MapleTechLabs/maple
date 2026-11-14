@@ -1,5 +1,5 @@
 import type { Ecosystem } from "./types.ts"
-import { String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 interface SemVer {
 	readonly major: string
@@ -36,15 +36,23 @@ const compareIdentifier = (a: string, b: string): number => {
 
 const comparePrerelease = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): number => {
 	if (a.length === 0 || b.length === 0) return b.length - a.length
-	const differing = a.findIndex((id, i) => i < b.length && compareIdentifier(id, b[i] ?? "") !== 0)
-	return differing === -1 ? a.length - b.length : compareIdentifier(a[differing] ?? "", b[differing] ?? "")
+	return Option.match(
+		Arr.findFirstIndex(a, (id, i) => i < b.length && compareIdentifier(id, b[i] ?? "") !== 0),
+		{
+			onNone: () => a.length - b.length,
+			onSome: (differing) => compareIdentifier(a[differing] ?? "", b[differing] ?? ""),
+		},
+	)
 }
 
-const compareParsed = (a: SemVer, b: SemVer): number =>
-	compareNumeric(a.major, b.major) ||
-	compareNumeric(a.minor, b.minor) ||
-	compareNumeric(a.patch, b.patch) ||
-	comparePrerelease(a.prerelease, b.prerelease)
+const compareParsed = (a: SemVer, b: SemVer): number => {
+	const byMajor = compareNumeric(a.major, b.major)
+	if (byMajor !== 0) return byMajor
+	const byMinor = compareNumeric(a.minor, b.minor)
+	if (byMinor !== 0) return byMinor
+	const byPatch = compareNumeric(a.patch, b.patch)
+	return byPatch !== 0 ? byPatch : comparePrerelease(a.prerelease, b.prerelease)
+}
 
 const toSemVer = (m: RegExpExecArray): SemVer => ({
 	major: m[1] ?? "0",

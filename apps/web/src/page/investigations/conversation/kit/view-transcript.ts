@@ -1,7 +1,7 @@
 import type { MarkdownDocument } from "@foldkit/markdown"
 import type { AnnotationSegment } from "@maple/domain/chat-annotations"
 import { stripChatContext } from "@maple/domain/chat-preamble"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { messageResponse, type ViewOverrides } from "../../../kit/message-response"
@@ -32,10 +32,10 @@ import {
 } from "./transcript-rows"
 import type { ToolPart, UIMessage, UIMessagePart } from "./ui-message"
 import { type PanelHost, runningClock, toolNodes, toolStandalone } from "./view-tool"
-import { hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr, String as Str } from "effect"
-
-// The transcript: the scrolling thread.
+import { typography } from "@maple/views/ui/typography"
 
 export type MarkdownCache = Readonly<
 	Record<string, { readonly document: MarkdownDocument | null; readonly isStale: boolean }>
@@ -46,12 +46,13 @@ export type TranscriptHost<M> = PanelHost<M> &
 	Readonly<{
 		markdown: MarkdownCache
 		timeZone: string
+		/** The page's clock, for the message times' hover card. */
+		nowMs: number
 		isLoading: boolean
 		readOnly: "resolved" | "transcript" | null
 		/** Copy status by button id (`copy:<messageId>`). */
 		copies: Readonly<Record<string, CopyButton.Model>>
 		onCopy: (id: string, message: CopyButton.Message) => M
-		/** Cards the transcript does not own: inline `<<maple:…>>` cards, approvals, sub-agents. */
 		/** The autoscroll Mount (`MountMessageScroller()`), typed for the host's Message. */
 		scrollerMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
 		/** The turn rail's state and its Mount (`MountTurnMinimap` lifted to the host). */
@@ -65,9 +66,9 @@ export type TranscriptHost<M> = PanelHost<M> &
 			draw: Readonly<{ richText: (text: string) => Html; tool: (part: ToolPart) => Html }>,
 		) => Html
 		markdownOverrides?: ViewOverrides
-		/** `fallbackDiagnosis`: the report card an investigation thread leads with until its own turn lands. */
+		/** The report card an investigation thread leads with until its own turn lands. */
 		fallback?: Html
-		/** `JumpToDiagnosis`: the thread's `submit_diagnosis` turn and the Mount (`MountJumpToMessage`). */
+		/** The thread's `submit_diagnosis` turn and the Mount of its jump button. */
 		jump?: Readonly<{ messageId: string; mount: Parameters<HtmlBuilder<M>["OnMount"]>[0] }>
 	}>
 
@@ -95,7 +96,7 @@ const markdownBody = <M>(
 		host.markdownOverrides,
 	)
 
-/** `RichText`: markdown, split at inline cards when the text carries any. */
+/** Markdown, split at inline cards when the text carries any. */
 export const richText = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, text: string): Html => {
 	const body = richTextSegments(text)
 	if (body._tag === "Plain") return markdownBody(h, host, text)
@@ -116,43 +117,43 @@ const messageParts = <M>(
 	host: TranscriptHost<M>,
 	message: UIMessage,
 ): ReadonlyArray<Html> => {
-	const { nodes, buffer } = message.parts.reduce<{
-		nodes: ReadonlyArray<Html>
-		buffer: ReadonlyArray<ToolPart>
-	}>(
-		(acc, part, index) => {
-			const flushed = [...acc.nodes, ...toolNodes(h, acc.buffer, `tool-${acc.nodes.length}`, host)]
-			if (part._tag === "text") {
-				const text = stripChatContext(part.text)
-				return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
+	const { nodes, buffer } = Arr.reduce<
+		(typeof message.parts)[number],
+		{
+			nodes: ReadonlyArray<Html>
+			buffer: ReadonlyArray<ToolPart>
+		}
+	>(message.parts, { nodes: [], buffer: [] }, (acc, part, index) => {
+		const flushed = [...acc.nodes, ...toolNodes(h, acc.buffer, `tool-${acc.nodes.length}`, host)]
+		if (part._tag === "text") {
+			const text = stripChatContext(part.text)
+			return { nodes: text === "" ? flushed : [...flushed, richText(h, host, text)], buffer: [] }
+		}
+		if (part._tag === "task")
+			return {
+				nodes:
+					host.taskCard === undefined
+						? flushed
+						: [
+								...flushed,
+								host.taskCard(part, {
+									richText: (text) => richText(h, host, text),
+									tool: (leaf) => toolStandalone(h, leaf, host),
+								}),
+							],
+				buffer: [],
 			}
-			if (part._tag === "task")
-				return {
-					nodes:
-						host.taskCard === undefined
-							? flushed
-							: [
-									...flushed,
-									host.taskCard(part, {
-										richText: (text) => richText(h, host, text),
-										tool: (leaf) => toolStandalone(h, leaf, host),
-									}),
-								],
-					buffer: [],
-				}
-			if (!isToolPart(part)) return acc
-			if (rendersOwnCard(part)) {
-				const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
-				return { nodes: card === null ? flushed : [...flushed, card], buffer: [] }
-			}
-			return { nodes: acc.nodes, buffer: [...acc.buffer, part] }
-		},
-		{ nodes: [], buffer: [] },
-	)
+		if (!isToolPart(part)) return acc
+		if (rendersOwnCard(part)) {
+			const card = host.ownCard?.(part, `${message.id}:${index}`) ?? null
+			return { nodes: card === null ? flushed : [...flushed, card], buffer: [] }
+		}
+		return { nodes: acc.nodes, buffer: [...acc.buffer, part] }
+	})
 	return [...nodes, ...toolNodes(h, buffer, `tool-${nodes.length}`, host)]
 }
 
-/** `StatusMarker`: the live "Thinking…" row. */
+/** The live "Thinking…" row. */
 export const statusMarker = <M>(
 	h: HtmlBuilder<M>,
 	label = "Thinking…",
@@ -202,35 +203,29 @@ const messageActions = <M>(h: HtmlBuilder<M>, host: TranscriptHost<M>, message: 
 			iconSize: 12,
 			className: "size-5",
 		})
-	return h.div(
-		[
-			h.Class(
-				"-my-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
-			),
-		],
+	return hstack(
+		h,
+		{
+			gap: "0.5",
+			align: "center",
+			className:
+				"-my-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100",
+		},
 		[
 			...(text === "" ? [] : [copy(`copy:${message.id}`, text, "Message")]),
 			...(message.createdAt === undefined
 				? []
 				: [
-						h.time(
-							[
-								h.Attribute("datetime", new Date(message.createdAt).toISOString()),
-								h.Title(
-									formatTimestampInTimezone(message.createdAt, {
-										timeZone: host.timeZone,
-										withYear: true,
-									}),
-								),
-								h.Class("ml-1 text-2xs text-muted-foreground tabular-nums"),
-							],
-							[
-								formatTimestampInTimezone(message.createdAt, {
-									timeZone: host.timeZone,
-									style: "range",
-								}),
-							],
-						),
+						timestamp(h, {
+							value: message.createdAt,
+							timeZone: host.timeZone,
+							nowMs: host.nowMs,
+							label: formatTimestampInTimezone(message.createdAt, {
+								timeZone: host.timeZone,
+								style: "range",
+							}),
+							className: "ml-1 text-2xs text-muted-foreground tabular-nums",
+						}),
 					]),
 		],
 	)
@@ -300,7 +295,7 @@ const toolRunItem = <M>(
 		]),
 	])
 
-/** `JumpToDiagnosis`: back to the report once it scrolled away (its Mount shows and presses it). */
+/** Back to the report once it scrolled away (its Mount shows and presses it). */
 const jumpButton = <M>(
 	h: HtmlBuilder<M>,
 	messageId: string,
@@ -319,7 +314,7 @@ const jumpButton = <M>(
 						"absolute bottom-4 start-4 max-w-[45%] rounded-full bg-background shadow-raised",
 					attributes: [h.OnMount(mount)],
 				},
-				[icon(h, "PulseIcon"), h.span([h.Class("truncate")], ["Jump to diagnosis"])],
+				[icon(h, "PulseIcon"), typography(h, { truncate: true }, ["Jump to diagnosis"])],
 			),
 		],
 	)

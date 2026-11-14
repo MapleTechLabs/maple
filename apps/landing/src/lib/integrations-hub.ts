@@ -8,6 +8,7 @@
 import * as m from "../paraglide/messages.js"
 import { AGENT_FRAMEWORK_GUIDES, AGENT_GATEWAY_GUIDES, AGENT_GUIDE_LANGUAGES } from "./agent-tracing-guides"
 import type { AgentGuide } from "./agent-tracing-guides"
+import { FRONTEND_GUIDES } from "./instrumentation-guides"
 import type { BrandMarkId } from "./brand-marks"
 import type { LanguageId } from "./docs-languages"
 import { Array as Arr } from "effect"
@@ -113,6 +114,13 @@ const languages: HubTile[] = [
 		icon: { lang: "laravel" },
 	},
 	{
+		name: "Ruby",
+		keywords: "rails sinatra sidekiq",
+		hint: "Rails, Sinatra, Sidekiq",
+		href: doc("guides/instrumentation-ruby"),
+		icon: { lang: "ruby" },
+	},
+	{
 		name: "Cloudflare Workers",
 		hint: m.intg_hint_workers,
 		href: doc("guides/instrumentation-cloudflare-workers"),
@@ -125,6 +133,13 @@ const languages: HubTile[] = [
 		href: doc("session-replay/browser-sdk"),
 		icon: { mark: "javascript" },
 	},
+	...Arr.map(FRONTEND_GUIDES, (g): HubTile => ({
+		name: g.name,
+		keywords: "frontend browser tracing",
+		hint: m.intg_hint_frontend,
+		href: g.href,
+		icon: g.icon,
+	})),
 ]
 
 const LANGUAGE_LABELS = new Map<string, string>(Arr.map(AGENT_GUIDE_LANGUAGES, (l) => [l.id, l.label]))

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import type { FleetRead } from "../../infra-integrations/aws/data"
 import { findingHref } from "./links"
 import { summarizeAws } from "./summarize-aws"
+import { Array as Arr } from "effect"
 
 const point = (keys: ReadonlyArray<string>, metric: string, total: number, samples = 1) => ({
 	keys,
@@ -32,7 +33,7 @@ describe("summarizeAws", () => {
 		const summary = summarizeAws([ecs, ec2])
 		expect(summary?.resources).toBe("3 resources")
 		expect(summary?.headlineTone).toBe("crit")
-		expect(summary?.findings.map((finding) => [finding.subject, finding.tone])).toEqual([
+		expect(Arr.map(summary?.findings ?? [], (finding) => [finding.subject, finding.tone])).toEqual([
 			["i-0abc", "crit"],
 			["checkout", "warn"],
 		])

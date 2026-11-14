@@ -1,15 +1,17 @@
+import { ok } from "node:assert"
 // Golden decode tests for the coordinator journal envelope.
 //
 // The fixture below is a literal copy of what a shipped build writes to
 // `maple-store-migration.json`. Its purpose is to fail loudly if the schema
 // ever stops accepting a journal an installed store already holds — the
 // declaration is only safe because this pins the accepted form.
-import { Schema, String as Str } from "effect"
+import { Schema, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	decodeMigrationJournal,
 	MigrationJournalSchema,
 } from "@maple/local-server/local-store-migrations/journal-schema"
+import * as Arr from "effect/Array"
 
 const golden = {
 	formatVersion: 2,
@@ -79,13 +81,14 @@ describe("migration journal envelope", () => {
 
 	it("keeps absent optional identity fields absent rather than present-undefined", () => {
 		const journal = structuredClone(golden)
-		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = journal.chain[0]!.from
+		const { manifestDigest: _m, projectRevision: _p, ...leanFrom } = Arr.getUnsafe(journal.chain, 0).from
 		const decoded = decodeMigrationJournal({
 			...journal,
-			chain: [{ ...journal.chain[0]!, from: leanFrom }],
+			chain: [{ ...journal.chain[0], from: leanFrom }],
 		})
-		expect("manifestDigest" in decoded.chain[0]!.from).toBe(false)
-		expect(Object.keys(decoded.chain[0]!.from)).not.toContain("projectRevision")
+		expect("manifestDigest" in Arr.getUnsafe(decoded.chain, 0).from).toBe(false)
+		const from: Readonly<Record<string, unknown>> = Arr.getUnsafe(decoded.chain, 0).from
+		expect(Rec.keys(from)).not.toContain("projectRevision")
 	})
 
 	it("rejects a journal written by a build this one does not know", () => {
@@ -115,7 +118,8 @@ describe("migration journal envelope", () => {
 	})
 
 	it("rejects a malformed step without interpreting module state", () => {
-		const step = golden.chain[0]!
+		const step = golden.chain[0]
+		ok(step !== undefined)
 		for (const patch of [
 			{ status: "halfway" },
 			{ moduleVersion: 0 },

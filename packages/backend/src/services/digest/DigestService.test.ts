@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Array as Arr } from "effect"
+import { ConfigProvider, Effect, Layer, Array as Arr, Option } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { OrgId, UserId, WarehouseQueryError } from "@maple/domain/http"
 import type { WeeklyDigestProps } from "@maple/email/weekly-digest-core"
@@ -13,7 +14,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { EdgeCacheService, makeEdgeCacheService, makeMemoryBackend } from "@maple/cache"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { DigestService } from "./DigestService"
 
 const createdDbs: TestDb[] = []
@@ -165,6 +166,7 @@ const makeHarness = (
 				emailStub,
 				makeWarehouseStub(fixture, seen, failing),
 				Layer.succeed(EdgeCacheService, makeEdgeCacheService(makeMemoryBackend())),
+				SecureRandom.layerWebCrypto,
 			),
 		),
 		Layer.provideMerge(base),
@@ -207,7 +209,7 @@ const getSub = (id: string) =>
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* Effect.die(`subscription ${id} not found`)
 		}
 		return row
@@ -378,14 +380,14 @@ describe("DigestService.unsubscribeByToken", () => {
 			const digest = yield* DigestService
 			yield* digest.runDigestTick()
 
-			const toA = messages.find((m) => m.to === "a@example.com")
+			const toA = Option.getOrUndefined(Arr.findFirst(messages, (m) => m.to === "a@example.com"))
 			assert.isDefined(toA)
 			const header = toA.headers["List-Unsubscribe"] ?? ""
 			assert.strictEqual(toA.headers["List-Unsubscribe-Post"], "List-Unsubscribe=One-Click")
 			const token = decodeURIComponent(/token=([^>]+)>/.exec(header)?.[1] ?? "")
 			assert.include(toA.html, `/unsubscribe?token=${encodeURIComponent(token)}`)
 			assert.notInclude(
-				messages.find((m) => m.to === "b@example.com")?.html ?? "",
+				Option.getOrUndefined(Arr.findFirst(messages, (m) => m.to === "b@example.com"))?.html ?? "",
 				encodeURIComponent(token),
 			)
 
@@ -466,7 +468,7 @@ const multiEnvFixture = {
 } satisfies WarehouseFixture
 
 const findService = (props: WeeklyDigestProps, environment: string) => {
-	const match = props.services.find((s) => s.environment === environment)
+	const match = Option.getOrUndefined(Arr.findFirst(props.services, (s) => s.environment === environment))
 	assert.isDefined(match, `no service row for environment ${environment}`)
 	return match
 }
@@ -661,13 +663,17 @@ describe("DigestService.generateDigestData", () => {
 			}
 
 			// `error_events` has a deployment env column but no namespace one.
-			const errors = seen.find((call) => call.context === "digestTopErrors")
+			const errors = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestTopErrors"),
+			)
 			assert.include(errors?.sql, "DeploymentEnv IN ('production')")
 			assert.notInclude(errors?.sql, "ServiceNamespace")
 
 			// `service_usage` has neither column, so the scope is approximated by
 			// service membership and the email says so.
-			const usage = seen.find((call) => call.context === "digestServiceUsageCompare")
+			const usage = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestServiceUsageCompare"),
+			)
 			assert.include(usage?.sql, "ServiceName IN ('api')")
 			assert.isTrue(props.ingestion.approximate)
 			assert.deepStrictEqual(props.scope, { environments: ["production"], namespaces: ["edge"] })
@@ -766,7 +772,9 @@ describe("DigestService.generateDigestData — scope containment", () => {
 			const digest = yield* DigestService
 			yield* digest.generateDigestData(ORG_ID, { environments: [], namespaces: ["edge"] })
 
-			const errors = seen.find((call) => call.context === "digestTopErrors")
+			const errors = Option.getOrUndefined(
+				Arr.findFirst(seen, (call) => call.context === "digestTopErrors"),
+			)
 			assert.include(errors?.sql, "ServiceName IN ('api')")
 			assert.notInclude(errors?.sql, "DeploymentEnv IN", "no environment in this scope")
 		}).pipe(Effect.provide(layer))
@@ -785,8 +793,14 @@ describe("DigestService.generateDigestData — scope containment", () => {
 
 			// Dropping the filter here would have shown org-wide ingestion and
 			// org-wide errors inside a digest claiming to cover one namespace.
-			assert.isUndefined(seen.find((call) => call.context === "digestServiceUsageCompare"))
-			assert.isUndefined(seen.find((call) => call.context === "digestTopErrors"))
+			assert.isUndefined(
+				Option.getOrUndefined(
+					Arr.findFirst(seen, (call) => call.context === "digestServiceUsageCompare"),
+				),
+			)
+			assert.isUndefined(
+				Option.getOrUndefined(Arr.findFirst(seen, (call) => call.context === "digestTopErrors")),
+			)
 			assert.strictEqual(props.ingestion.totalBytes, 0)
 			assert.deepStrictEqual(props.topErrors, [])
 		}).pipe(Effect.provide(layer))
@@ -906,6 +920,90 @@ describe("DigestService — subscriber opt-out", () => {
 			const row = yield* getSub(id)
 			assert.strictEqual(row.enabled, false)
 			assert.notStrictEqual(row.optedOutAt, null)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("DigestService.reconcileSubscriptions", () => {
+	const subsOf = (orgId: OrgId) =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			return yield* database.execute((db) =>
+				db.run(
+					PG.from(DigestSubscriptions)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)]),
+				),
+			)
+		})
+
+	it.effect("subscribes every member of every org, past one statement's worth of rows", () => {
+		const { layer } = makeHarness()
+		const otherOrg = OrgId.make("org_digest_other")
+		const member = (orgId: OrgId, index: number) => ({
+			orgId,
+			userId: UserId.make(`user-${index}`),
+			email: `member-${index}@example.com`,
+		})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const digest = yield* DigestService
+
+			yield* digest.reconcileSubscriptions([
+				...Arr.makeBy(520, (index) => member(ORG_ID, index)),
+				...Arr.makeBy(3, (index) => member(otherOrg, index)),
+			])
+
+			const first = yield* subsOf(ORG_ID)
+			assert.strictEqual(new Set(Arr.map(first, (row) => row.userId)).size, 520)
+			assert.strictEqual(new Set(Arr.map(first, (row) => row.id)).size, 520)
+			assert.isTrue(
+				Arr.every(
+					first,
+					(row) =>
+						row.enabled &&
+						row.dayOfWeek === 1 &&
+						row.timezone === "UTC" &&
+						row.createdAt === TICK_MS,
+				),
+			)
+			assert.deepStrictEqual(Arr.map(yield* subsOf(otherOrg), (row) => row.email).sort(), [
+				"member-0@example.com",
+				"member-1@example.com",
+				"member-2@example.com",
+			])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("updates a stored email and keeps one row for a member Clerk lists twice", () => {
+		const { layer } = makeHarness()
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const digest = yield* DigestService
+			const existing = yield* seedSub({
+				email: "old@example.com",
+				dayOfWeek: 4,
+				timezone: "Europe/Berlin",
+			})
+			const existingUser = UserId.make(`user-${existing}`)
+			const repeated = UserId.make("user-repeated")
+
+			yield* digest.reconcileSubscriptions([
+				{ orgId: ORG_ID, userId: repeated, email: "first@example.com" },
+				{ orgId: ORG_ID, userId: existingUser, email: "new@example.com" },
+				{ orgId: ORG_ID, userId: repeated, email: "second@example.com" },
+			])
+
+			// The sweep owns the email and nothing else on a row that already exists.
+			const kept = yield* getSub(existing)
+			assert.strictEqual(kept.email, "new@example.com")
+			assert.strictEqual(kept.dayOfWeek, 4)
+			assert.strictEqual(kept.timezone, "Europe/Berlin")
+			const rows = Arr.filter(yield* subsOf(ORG_ID), (row) => row.userId === repeated)
+			assert.deepStrictEqual(
+				Arr.map(rows, (row) => row.email),
+				["second@example.com"],
+			)
 		}).pipe(Effect.provide(layer))
 	})
 })

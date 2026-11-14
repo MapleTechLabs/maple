@@ -2,6 +2,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { AlertMemberNotifier } from "@maple/backend/services/alerts/AlertMemberNotifier"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 /**
  * Integration test for the `@maple-dev/alchemy` provider package
@@ -11,9 +12,9 @@ import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
  * via a custom `fetch`.
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
+import { Clock, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -33,7 +34,7 @@ import { MapleEnvironment } from "../../../../../packages/alchemy-maple/src/Mapl
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
@@ -44,6 +45,9 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
+import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
@@ -54,15 +58,20 @@ import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	WarehouseServiceStubLayer,
 } from "./v2-test-support"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { HttpV2DashboardsLive } from "./dashboards.http"
+import { HttpV2AlertDestinationsLive } from "./alert-destinations.http"
+import { HttpV2AlertRulesLive } from "./alert-rules.http"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
+import { SloReadService } from "@maple/backend/services/slos/SloReadService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -109,7 +118,7 @@ const makeHarness = () => {
 		Layer.provide(configLive),
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, {
-		now: Effect.sync(() => Date.now()),
+		now: Clock.currentTimeMillis,
 		makeUuid: () => crypto.randomUUID(),
 		deliveryTimeoutMs: () => 15_000,
 		schedulerTickBudgetMs: () => 25_000,
@@ -160,6 +169,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(InvestigationStarter.layer),
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
@@ -185,7 +195,19 @@ const makeHarness = () => {
 				alertDestinationsLive,
 				alertReadModelsLive,
 				alertRulesLive,
+				Layer.effect(AlertMemberNotifier, AlertMemberNotifier.make).pipe(
+					Layer.provide(ChatAlertPoster.layer),
+					Layer.provide(
+						Layer.mergeAll(envLive, testDb.layer, runtimeLive, emailLive, orgMembersLive),
+					),
+				),
 				UptimeAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				AnomalyAlertSource.layer.pipe(Layer.provide(testDb.layer)),
+				Layer.effect(SloAlertSource, SloAlertSource.make).pipe(
+					Layer.provide(Layer.effect(SloReadService, SloReadService.make)),
+					Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
+				),
+				Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provide(warehouseLive)),
 			),
 		),
 	)
@@ -200,12 +222,27 @@ const makeHarness = () => {
 		alertsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
-		Layer.provide(ConfigResourceServiceStubsLayer),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.dashboards,
+			MapleApiV2.groups.alertDestinations,
+			MapleApiV2.groups.alertRules,
+			MapleApiV2.groups.apiKeys,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2DashboardsLive.pipe(
+					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+				),
+				HttpV2AlertDestinationsLive,
+				HttpV2AlertRulesLive,
+				HttpV2ApiKeysLive,
+			),
+		),
+		Layer.provide(WarehouseServiceStubLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -215,8 +252,8 @@ const makeHarness = () => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_alchemy_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_alchemy_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_alchemy_e2e")
+	const USER = Schema.decodeSync(UserId)("user_alchemy_e2e")
 
 	const bootstrapKey = () =>
 		runtime.runPromise(

@@ -1,12 +1,20 @@
-import { HUB_SORTS, HUB_VIEWS, SEVERITY_FILTERS } from "../../../lib/errors/hub-params"
+import { keyed, runSteps, type Step as KitStep } from "../../kit/keyed-step"
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
+import type { RequestMode } from "@maple/views/data/keyed"
+import {
+	DEFAULT_HUB_SORT,
+	DEFAULT_HUB_VIEW,
+	DEFAULT_SEVERITY_FILTER,
+	HUB_SORTS,
+	HUB_VIEWS,
+	SEVERITY_FILTERS,
+} from "./hub-params"
 import type { IssueKind } from "@maple/domain/http"
-import { sparkFingerprintHashes } from "../../../lib/models/error-signal"
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { sparkFingerprintHashes } from "../kit/error-signal"
+import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../data/time-range"
-import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import * as ContextMenu from "@maple/views/ui/context-menu"
@@ -17,6 +25,7 @@ import { type PageContext, PageOutMessage, type PageReturn } from "../../contrac
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import {
 	FetchEnvironments,
+	FetchHubSession,
 	FetchInvestigations,
 	FetchPage,
 	FetchRanking,
@@ -43,7 +52,7 @@ import {
 	VOLUME_RANK_LIMIT,
 	warehouseFiltersOf,
 } from "./derive"
-import { type FilterParam, Message, type RequestMode } from "./message"
+import { type FilterParam, Message } from "./message"
 import { pressedRowPointer, rowMenuStep } from "./row-menu"
 import { copyToast } from "../../kit/clipboard"
 import {
@@ -58,11 +67,10 @@ import {
 import { SOURCES } from "../kit/source"
 import type { IssuePage, Model, PageSlot } from "./model"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+import { acceptGrants } from "../../kit/session-grants"
+import { initialGrants, readsSessionGrants } from "../kit/grants"
 
 export type Return = PageReturn<Model, Message>
-type Cmd = Command.Command<Message, never, Resources>
 
 /** `ERRORS_WINDOW`: the trend, count and totals look back a fixed day. */
 export const ERRORS_WINDOW = "24h"
@@ -70,34 +78,9 @@ export const ERRORS_WINDOW = "24h"
 export const resolveCommand = (context: PageContext, mode: RequestMode) =>
 	ResolveWindow({ mode, preset: ERRORS_WINDOW, timeZone: context.timeZone })
 
-type Step = Readonly<{ patch: Partial<Model>; commands: ReadonlyArray<Cmd> }>
+type Step = KitStep<Model, Message>
 
 const NO_STEP: Step = { patch: {}, commands: [] }
-
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Cmd,
-): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => NO_STEP,
-		onSome: (next) => ({ patch: write(next), commands: [fetch(next.key)] }),
-	})
-
-/** Applies steps in order, each seeing the Model the previous one left. */
-const applySteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
-		(acc, step) => {
-			const next = step(acc.model)
-			return { model: { ...acc.model, ...next.patch }, commands: [...acc.commands, ...next.commands] }
-		},
-		{ model, commands: [] },
-	)
-
-// REQUESTS
 
 const summaryStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
@@ -123,7 +106,7 @@ const environmentsStep =
 			(key) => FetchEnvironments({ key, window }),
 		)
 
-/** `useAtomValue(retainedQueryV2(...))`: not on the page's Reload. */
+/** Not re-read on the page's Reload. */
 const serviceCountsStep =
 	(context: PageContext) =>
 	(model: Model): Step =>
@@ -245,7 +228,7 @@ export const requestAll = (
 	window: TimeWindow,
 	mode: RequestMode,
 ): Return =>
-	applySteps({ ...model, window }, [
+	runSteps({ ...model, window }, [
 		summaryStep(context, window, mode),
 		...(model.isFilterRailMounted
 			? [serviceCountsStep(context), environmentsStep(context, window, mode)]
@@ -258,7 +241,7 @@ export const requestAll = (
 
 /** After a slot settled: the list may now be ready to ask, and its rows' volume and trend. */
 export const follow = (model: Model, context: PageContext): Return =>
-	applySteps(model, [listStep(context), followStep(context, "Load")])
+	runSteps(model, [listStep(context), followStep(context, "Load")])
 
 /** "Load more": the next cursor's page, or a retry of a failed one. In-flight guarded. */
 export const loadMore = (model: Model, context: PageContext): Return => {
@@ -297,9 +280,6 @@ const pageQuery = (model: Model, cursor: string | null) => {
 	return cursor === null ? base : { ...base, cursor }
 }
 
-// NAVIGATION
-
-/** `navigate({ to: "/errors", search: (prev) => ({ ...prev, ...patch }) })`. */
 export const navigate = (model: Model, patch: Partial<Search>): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -308,30 +288,29 @@ export const navigate = (model: Model, patch: Partial<Search>): Return => ({
 	}),
 })
 
-const asView = (value: string) => HUB_VIEWS.find((view) => view === value)
-const asSort = (value: string) => HUB_SORTS.find((sort) => sort === value)
-const asSeverity = (value: string) => SEVERITY_FILTERS.find((severity) => severity === value)
+const asView = (value: string) => Arr.findFirst(HUB_VIEWS, (view) => view === value)
+const asSort = (value: string) => Arr.findFirst(HUB_SORTS, (sort) => sort === value)
+const asSeverity = (value: string) => Arr.findFirst(SEVERITY_FILTERS, (severity) => severity === value)
 
 /** The toolbar's controls: the default value of each leaves the URL. */
 export const navigateView = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asView(value)), {
+	Option.match(asView(value), {
 		onNone: () => ({ model }),
-		onSome: (view) => navigate(model, { view: view === "open" ? undefined : view }),
+		onSome: (view) => navigate(model, { view: view === DEFAULT_HUB_VIEW ? undefined : view }),
 	})
 
 export const navigateSort = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asSort(value)), {
+	Option.match(asSort(value), {
 		onNone: () => ({ model }),
-		onSome: (sort) => navigate(model, { sort: sort === "last_seen" ? undefined : sort }),
+		onSome: (sort) => navigate(model, { sort: sort === DEFAULT_HUB_SORT ? undefined : sort }),
 	})
 
 export const navigateSeverity = (model: Model, value: string): Return =>
-	Option.match(Option.fromNullishOr(asSeverity(value)), {
+	Option.match(asSeverity(value), {
 		onNone: () => ({ model }),
-		onSome: (severity) => navigate(model, { severity: severity === "all" ? undefined : severity }),
+		onSome: (severity) =>
+			navigate(model, { severity: severity === DEFAULT_SEVERITY_FILTER ? undefined : severity }),
 	})
-
-// ENTRY POINTS
 
 const sortIndex = (search: Search) => HUB_SORTS.indexOf(sortOf(search))
 const severityIndex = (search: Search) => SEVERITY_FILTERS.indexOf(severityOf(search))
@@ -343,6 +322,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	const search = route.search
 	const model: Model = {
 		search,
+		grants: initialGrants,
 		window: null,
 		nowMs: 0,
 		summary: Keyed.idle(),
@@ -362,6 +342,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		focusedId: null,
 		bulkSeverityMenu: Menu.init("errors-bulk-severity"),
 		bulkMoveMenu: Menu.init("errors-bulk-move"),
+		bulkMergeMenu: Menu.init("errors-bulk-merge"),
 		writingIds: [],
 		rowMenu: ContextMenu.init("errors-row-menu"),
 		rowMenuTarget: null,
@@ -382,6 +363,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		model,
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
+			...(readsSessionGrants ? [FetchHubSession({ orgId: context.orgId })] : []),
 			resolveCommand(context, "Load"),
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
@@ -403,7 +385,7 @@ export const routeChanged = (
 	const next: Model = {
 		...model,
 		search,
-		// `ToolbarSearch` resyncs only for a change it did not send itself.
+		// The search box resyncs only for a change it did not send itself.
 		searchDraft: draftQuery(model.searchDraft) === search.q ? model.searchDraft : (search.q ?? ""),
 		tabs: {
 			...model.tabs,
@@ -418,8 +400,6 @@ export const routeChanged = (
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	model.window === null ? { model } : requestAll(model, context, model.window, "Load")
-
-// EVENTS
 
 const isIssueKind = (value: string): value is IssueKind => Arr.some(SOURCES, (kind) => kind === value)
 
@@ -500,7 +480,7 @@ const retryFirstPage = (model: Model): Return => {
 
 /** The failed volume ranking, asked again; its answer requests the list (`follow`). */
 const retryRanking = (model: Model, context: PageContext): Return =>
-	model.window === null ? { model } : applySteps(model, [rankingStep(context, model.window, "Refresh")])
+	model.window === null ? { model } : runSteps(model, [rankingStep(context, model.window, "Refresh")])
 
 const settled = <
 	K extends "summary" | "serviceCounts" | "environments" | "volume" | "spark" | "investigations",
@@ -514,6 +494,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, nowMs, mode }) =>
 			requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchSummary: ({ key, result }) => ({
 			model: settled(model, "summary", Keyed.accept(model.summary, key, result)),
 		}),
@@ -621,6 +602,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedClearSelection: () => ({ model: { ...model, selectedIds: [], selectionAnchor: null } }),
 		GotBulkSeverityMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkSeverityMenu", inner),
 		GotBulkMoveMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkMoveMenu", inner),
+		GotBulkMergeMenuMessage: ({ message: inner }) => bulkMenuStep(model, "bulkMergeMenu", inner),
 		CompletedHubWrite: ({ ids, write, isBulk, outcome }) =>
 			completedHubWrite(model, context, ids, write, isBulk, outcome, pageQuery),
 		ToggledAllRows: () => ({ model: { ...model, ...toggledAllRows(model) } }),

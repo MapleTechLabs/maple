@@ -17,8 +17,8 @@ import type {
 import { Effect, Result } from "effect"
 import { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "../ch"
-import { timeRangeCache } from "../runtime/query-engine"
-import { defineQuery, makeTimeBucketQueryCachePolicy } from "./query-definition"
+import { timeRangeCache } from "../runtime/cache-policy"
+import { defineQuery, makeTimeBucketQueryCachePolicy, windowParams } from "./query-definition"
 import type { OrgId } from "@maple/domain"
 
 // Product-event funnels read `product_events` only — server and mobile rows have
@@ -74,13 +74,7 @@ export const productEventsFunnel = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelRequest, orgId: OrgId) =>
 		builtFunnel(CH.productEventsFunnelQuery(productEventsFunnelOpts(payload))).pipe(
-			Effect.flatMap((query) =>
-				CH.compile(query, {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				}),
-			),
+			Effect.flatMap((query) => CH.compile(query, windowParams(payload, orgId))),
 		),
 })
 
@@ -95,11 +89,7 @@ export const productEventsFunnelBreakdown = defineQuery({
 				breakdownBy: payload.breakdownBy,
 				limit: payload.limit,
 			}),
-		).pipe(
-			Effect.flatMap((query) =>
-				CH.compile(query, { orgId, startTime: payload.startTime, endTime: payload.endTime }),
-			),
-		),
+		).pipe(Effect.flatMap((query) => CH.compile(query, windowParams(payload, orgId)))),
 })
 
 export const productEventsFunnelTiming = defineQuery({
@@ -108,13 +98,7 @@ export const productEventsFunnelTiming = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelTimingRequest, orgId: OrgId) =>
 		builtFunnel(CH.productEventsFunnelTimingQuery(productEventsFunnelOpts(payload))).pipe(
-			Effect.flatMap((query) =>
-				CH.compile(query, {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				}),
-			),
+			Effect.flatMap((query) => CH.compile(query, windowParams(payload, orgId))),
 		),
 })
 
@@ -124,13 +108,7 @@ export const productEventsFunnelLeavers = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsFunnelLeaversRequest, orgId: OrgId) =>
 		builtFunnel(CH.productEventsFunnelLeaversQuery(productEventsFunnelOpts(payload))).pipe(
-			Effect.flatMap((query) =>
-				CH.compile(query, {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				}),
-			),
+			Effect.flatMap((query) => CH.compile(query, windowParams(payload, orgId))),
 		),
 })
 
@@ -153,13 +131,7 @@ export const productEventsPaths = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ProductEventsPathsRequest, orgId: OrgId) =>
 		builtFunnel(CH.productEventsPathsQuery(productEventsPathsOpts(payload))).pipe(
-			Effect.flatMap((query) =>
-				CH.compile(query, {
-					orgId,
-					startTime: payload.startTime,
-					endTime: payload.endTime,
-				}),
-			),
+			Effect.flatMap((query) => CH.compile(query, windowParams(payload, orgId))),
 		),
 })
 
@@ -173,7 +145,7 @@ export const productEventNames = defineQuery({
 				filters: productEventsFilters(payload),
 				limit: payload.limit,
 			}),
-			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+			windowParams(payload, orgId),
 		),
 })
 
@@ -187,9 +159,7 @@ export const productEventsForTrace = defineQuery({
 	cache: 60,
 	compile: (payload: ProductEventsForTraceRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventsForTraceQuery({ limit: payload.limit ?? 50 }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			traceId: payload.traceId,
 		}),
 })
@@ -200,9 +170,7 @@ export const productEventTraceSamples = defineQuery({
 	cache: 60,
 	compile: (payload: ProductEventTraceSamplesRequest, orgId: OrgId) =>
 		CH.compile(CH.productEventTraceSamplesQuery({ limit: payload.limit ?? 20 }), {
-			orgId,
-			startTime: payload.startTime,
-			endTime: payload.endTime,
+			...windowParams(payload, orgId),
 			eventName: payload.eventName,
 		}),
 })

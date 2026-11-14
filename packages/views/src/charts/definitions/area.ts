@@ -1,11 +1,7 @@
 import { formatBucketLabel, formatValueByUnit } from "@maple/ui/lib/format"
-import { isolatedPointIndexes, pointsFit } from "@maple/ui/components/charts/_shared/sparse-series"
-import {
-	findFirstPartialIndex,
-	splitAtFirstPartial,
-	trimEmptyTrailingBuckets,
-} from "@maple/ui/components/plot/partial-buckets"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
+import { isolatedPointIndexes, pointsFit } from "../series/sparse-series"
+import { findFirstPartialIndex, splitAtFirstPartial, trimEmptyTrailingBuckets } from "../plot/partial-buckets"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
 import { areaY, d3Curve, defineChart, dot, lineY, type ChartValue } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 import { Option, Array as Arr, Record as Rec } from "effect"
@@ -20,7 +16,7 @@ import {
 	timeseriesYAxis,
 } from "../timeseries"
 import { asFiniteNumber, type TimeseriesRow } from "../timeseries-rows"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import type { BuiltChart } from "./built-chart"
 import {
 	AREA_FILL_END,
@@ -30,17 +26,19 @@ import {
 	verticalGradient,
 } from "./fixed-metric-axes"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
+import { gradientId, gradientUrl } from "./gradient-id"
 
-// Port of `QueryBuilderAreaChart` and `QueryBuilderLineChart` (packages/ui/src/components/charts/area/,
-// line/), definition half: bands or lines, stacked or not, linear or monotone.
+// The area and line chart definitions: bands or lines, stacked or not, linear or monotone.
 // TODO(thresholds): threshold rules, log scale and fitted or soft y bounds are not ported.
 
 type AreaSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderArea" }>
 
 const STROKE_WIDTH = SERIES_STROKE_WIDTH
-const STACKED_STROKE_WIDTH = 1
-const STACKED_FILL_OPACITY = 0.55
-const PARTIAL_STACKED_FILL_OPACITY = 0.2
+/** A band's top edge: thinner than a lone line, since a stack draws one per series. */
+const STACKED_STROKE_WIDTH = 1.25
+/** Light enough that the edges carry the shape and the grid reads through the stack. */
+const STACKED_FILL_OPACITY = 0.3
+const PARTIAL_STACKED_FILL_OPACITY = 0.12
 const PARTIAL_FILL_GRADIENT = [AREA_FILL_PARTIAL, AREA_FILL_END] as const
 
 interface Series {
@@ -49,7 +47,7 @@ interface Series {
 	readonly color: string
 }
 
-/** `computeStackBases`: per row object, where each visible band starts. */
+/** Per row object, where each visible band starts. */
 const stackBases = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	visible: ReadonlyArray<Series>,
@@ -105,6 +103,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 					fitYAxisToData: axis.fitYAxisToData,
 					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
 					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					...(axis.max === undefined ? undefined : { max: axis.max }),
+					...(axis.zeroLabel === undefined ? undefined : { zeroLabel: axis.zeroLabel }),
 					thresholds: axis.thresholds,
 				}),
 	})
@@ -126,7 +126,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 	const curve = spec.curve === "monotone" ? d3Curve(curveMonotoneX) : undefined
 	const partialDash = roundCapDasharray(4, 4, isStacked ? STACKED_STROKE_WIDTH : STROKE_WIDTH)
 	const gradientIdFor = (key: string, partial: boolean) =>
-		`${spec.gradientPrefix}-${key}${partial ? "-partial" : ""}`
+		partial ? gradientId(spec.gradientPrefix, key, "partial") : gradientId(spec.gradientPrefix, key)
 	const hasDashed = dashed.length > 0
 	const fillOpacityFor = (partial: boolean) =>
 		isStacked ? (partial ? PARTIAL_STACKED_FILL_OPACITY : STACKED_FILL_OPACITY) : 1
@@ -137,7 +137,7 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 			x: (row: TimeseriesRow) => row.date,
 			y: (row: TimeseriesRow) => topOf(row, entry.key),
 			y1: (row: TimeseriesRow) => baseOf(row, entry.key),
-			fill: isStacked ? entry.color : `url(#${gradientIdFor(entry.key, partial)})`,
+			fill: isStacked ? entry.color : gradientUrl(gradientIdFor(entry.key, partial)),
 			fillOpacity: fillOpacityFor(partial),
 			stroke: "none",
 			curve,
@@ -172,6 +172,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 						: []),
 				]
 
+	// A stack's edges paint top band first: a band at 0 leaves the edge of the one under it visible.
+	const edgeOrder = isStacked ? Arr.reverse(visible) : visible
 	const paths = isLine
 		? [
 				...Arr.map(visible, (entry) => edge(solid, entry, false)),
@@ -180,8 +182,8 @@ export const buildQueryBuilderArea = (spec: AreaSpec): BuiltChart<TimeseriesRow,
 		: [
 				...Arr.map(visible, (entry) => band(solid, entry, false)),
 				...(hasDashed ? Arr.map(visible, (entry) => band(dashed, entry, true)) : []),
-				...(isStacked ? [] : Arr.map(visible, (entry) => edge(solid, entry, false))),
-				...(hasDashed ? Arr.map(visible, (entry) => edge(dashed, entry, true)) : []),
+				...Arr.map(edgeOrder, (entry) => edge(solid, entry, false)),
+				...(hasDashed ? Arr.map(edgeOrder, (entry) => edge(dashed, entry, true)) : []),
 			]
 
 	const definition = defineChart({

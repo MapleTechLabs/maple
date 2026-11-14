@@ -1,8 +1,9 @@
-import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { Option, pipe, Schema, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
 	alertAccentColor,
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatAlertHeadline,
 	formatSeverityLabel,
@@ -30,16 +31,13 @@ const escapeHtml = (value: string): string =>
  * http(s) links only. Escaped first, so only the tags built here reach Google Chat.
  */
 const markdownToCardHtml = (markdown: string): string =>
-	Str.replace(
-		/\n/g,
-		"<br>",
-	)(
-		Str.replace(
-			/\*\*([^*]+)\*\*/g,
-			"<b>$1</b>",
-		)(escapeHtml(markdown)).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text: string, url: string) =>
+	pipe(
+		escapeHtml(markdown),
+		Str.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"),
+		replaceWith(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, text = "", url = "") =>
 			/^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : match,
 		),
+		Str.replace(/\n/g, "<br>"),
 	)
 
 /** `<users/all>` is Google Chat mention syntax; a rule name or template must never ping a space. */
@@ -62,10 +60,10 @@ const threadedUrl = (webhookUrl: string): string =>
 		}),
 	)
 
-export const buildGoogleChatMessage = (input: RenderInput<Config>) => {
+const buildGoogleChatMessage = (input: RenderInput<Config>) => {
 	const { context, templated, linkUrl, chatUrl } = input
 	const accent = alertAccentColor(context.eventType, context.severity)
-	const group = displayGroupKey(context.groupKey)
+	const group = displayGroup(context)
 	const title = templated?.title ?? `${eventTypeEmoji(context.eventType)} ${formatAlertHeadline(context)}`
 	const lead = templated
 		? markdownToCardHtml(truncate(templated.body, MAX_TEMPLATED_BODY_CHARS))

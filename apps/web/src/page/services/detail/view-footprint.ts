@@ -1,5 +1,5 @@
-import { severityLevel } from "../../../components/infra/format"
-import { BAR_FILL, BAR_VALUE_TONE } from "../../../components/infra/severity-tokens"
+import { severityLevel } from "../../infra/kit/format"
+import { BAR_FILL, BAR_VALUE_TONE } from "../../kit/severity-tokens"
 import {
 	countLabel,
 	EMPTY_VALUE,
@@ -21,17 +21,16 @@ import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
-import { pickTimeSearch } from "../../infra/kit/view-tabs"
+import { pickTimeSearch } from "../../kit/view-tabs"
 import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
 import { Message } from "./message"
 import type { Model, UsageTotals } from "./model"
 import { sectionCard, viewAllButton } from "./view-panels"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// `ServiceUsagePanel`, `ServiceWorkloadsPanel` and `ServiceDependencyStrip` (components/services/).
 
 type H = HtmlBuilder<Message>
 
@@ -48,7 +47,7 @@ const USAGE_STATS: ReadonlyArray<{
 	{ key: "dataSize", label: "Stored", format: formatStorageBytes },
 ]
 
-/** `ServiceUsagePanel`: nothing while loading, on error or with no data. */
+/** Nothing while loading, on error or with no data. */
 export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html => {
 	const usage = AsyncData.getOrElse(model.usage.data, () => null)
 	if (usage === null) return null
@@ -65,27 +64,28 @@ export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html =
 			h.div(
 				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
 				Arr.map(USAGE_STATS, (stat) =>
-					h.div(
-						[h.Key(stat.key), h.Class("flex flex-col gap-0.5 px-4 py-3")],
-						[
-							eyebrow(h, {}, [stat.label]),
-							h.span(
-								[
-									h.Class(
-										"font-mono text-lg font-semibold leading-tight tabular-nums text-foreground",
-									),
-								],
-								[stat.format(totals[stat.key])],
-							),
-							delta(h, {
-								current: totals[stat.key],
-								previous: previous?.[stat.key],
-								suffix: "vs prev",
-								flatThreshold: 0.005,
-								className: typographyClass({ size: "3xs", tone: "muted" }),
-							}),
-						],
-					),
+					vstack(h, { gap: "0.5", className: "px-4 py-3", attributes: [h.Key(stat.key)] }, [
+						eyebrow(h, {}, [stat.label]),
+						typography(
+							h,
+							{
+								size: "lg",
+								tone: "foreground",
+								weight: "semibold",
+								mono: true,
+								numeric: true,
+								className: "leading-tight",
+							},
+							[stat.format(totals[stat.key])],
+						),
+						delta(h, {
+							current: totals[stat.key],
+							previous: previous?.[stat.key],
+							suffix: "vs prev",
+							flatThreshold: 0.005,
+							className: typographyClass({ size: "3xs", tone: "muted" }),
+						}),
+					]),
 				),
 			),
 		],
@@ -97,32 +97,25 @@ const meterRow = (h: H, label: string, fraction: number): Html => {
 	const finite = Number.isFinite(fraction)
 	const clamped = finite ? Math.max(0, Math.min(1, fraction)) : 0
 	const level = severityLevel(clamped)
-	return h.div(
-		[h.Key(label), h.Class("flex items-center gap-2 leading-none")],
-		[
-			h.span(
-				[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-wider text-foreground-subtle"))],
-				[label],
-			),
-			meter(h, {
-				value: clamped,
-				className: "h-[3px] flex-1 rounded-2xs",
-				fillClassName: BAR_FILL[level],
-			}),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"w-9",
-							"shrink-0 text-right font-mono text-2xs tabular-nums",
-							BAR_VALUE_TONE[level],
-						),
-					),
-				],
-				[finite ? formatPercent(fraction) : EMPTY_VALUE],
-			),
-		],
-	)
+	return hstack(h, { gap: "2", align: "center", className: "leading-none", attributes: [h.Key(label)] }, [
+		h.span(
+			[h.Class(cn("w-8", "shrink-0 font-mono text-3xs tracking-caption text-foreground-subtle"))],
+			[label],
+		),
+		meter(h, {
+			value: clamped,
+			className: "h-[3px] flex-1 rounded-2xs",
+			fillClassName: BAR_FILL[level],
+		}),
+		h.span(
+			[
+				h.Class(
+					cn("w-9", "shrink-0 text-right font-mono text-2xs tabular-nums", BAR_VALUE_TONE[level]),
+				),
+			],
+			[finite ? formatPercent(fraction) : EMPTY_VALUE],
+		),
+	])
 }
 
 const runsOnRow = (
@@ -214,31 +207,28 @@ export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html 
 			),
 		},
 		[
-			h.ul(
-				[h.Class("divide-y")],
-				[
-					...Arr.map(runtimes, (runtime) => {
-						const link = runtimeLink(runtime, time)
-						return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
-					}),
-					...Arr.map(workloads, (workload) => {
-						const link = workloadLink(workload, time)
-						const meters = [
-							...(workload.avgCpuLimitUtilization === null
-								? []
-								: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
-							...(workload.avgMemoryLimitUtilization === null
-								? []
-								: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
-						]
-						return h.keyed("li")(
-							link.key,
-							[],
-							[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
-						)
-					}),
-				],
-			),
+			dividedList(h, { as: "ul", bordered: false }, [
+				...Arr.map(runtimes, (runtime) => {
+					const link = runtimeLink(runtime, time)
+					return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
+				}),
+				...Arr.map(workloads, (workload) => {
+					const link = workloadLink(workload, time)
+					const meters = [
+						...(workload.avgCpuLimitUtilization === null
+							? []
+							: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
+						...(workload.avgMemoryLimitUtilization === null
+							? []
+							: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
+					]
+					return h.keyed("li")(
+						link.key,
+						[],
+						[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
+					)
+				}),
+			]),
 		],
 	)
 }
@@ -262,7 +252,10 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 					h.Href(hrefOf(AppRoute.Service({ serviceName: target.name, search: {} }))),
 					h.Class(CHIP),
 				],
-				[serviceDot(h, { serviceName: target.name }), h.span([h.Class("truncate")], [target.name])],
+				[
+					serviceDot(h, { serviceName: target.name }),
+					typography(h, { truncate: true }, [target.name]),
+				],
 			)
 		: pressable(
 				h,
@@ -273,7 +266,7 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 				],
 			)
 
-/** `ServiceDependencyStrip`: the busiest downstream targets as one row of chips; quiet while empty. */
+/** The busiest downstream targets as one row of chips; quiet while empty. */
 export const dependencyStrip = (h: H, model: Model): Html => {
 	const targets = AsyncData.getOrElse(AsyncData.map(model.dependencies.data, stripTargets), () => [])
 	if (targets.length === 0) return null

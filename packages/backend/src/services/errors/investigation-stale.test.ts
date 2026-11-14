@@ -13,7 +13,7 @@ import { Effect, Schema, String as Str } from "effect"
 import { Investigations } from "@maple/db/tables"
 import { InvestigationFreeformSubject, InvestigationId, OrgId } from "@maple/domain/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	isInvestigationStale,
 	PROGRESS_HEARTBEAT_STALE_MS,
@@ -156,7 +156,7 @@ describe("sweepAbandonedInvestigations", () => {
 			const database = yield* Database
 			const moved = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
 
-			assert.strictEqual(moved, 2)
+			assert.strictEqual(moved.length, 2)
 			assert.strictEqual(yield* statusOf("1"), "failed")
 			assert.strictEqual(yield* statusOf("2"), "investigating")
 			assert.strictEqual(yield* statusOf("3"), "failed")
@@ -172,7 +172,8 @@ describe("sweepAbandonedInvestigations", () => {
 				progress: { stepCount: 1, steps: [] },
 			})
 			const database = yield* Database
-			assert.strictEqual(yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW)), 1)
+			const swept = yield* database.execute((db) => sweepAbandonedInvestigations(db, NOW))
+			assert.strictEqual(swept.length, 1)
 			assert.strictEqual(yield* statusOf("5"), "failed")
 		}).pipe(Effect.provide(makeLayer())),
 	)

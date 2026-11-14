@@ -3,8 +3,6 @@ import type * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { typography } from "@maple/views/ui/typography"
 
-// `ApiKeySecretReveal`.
-
 export type SecretRevealOptions<M> = Readonly<{
 	id: string
 	secret: string

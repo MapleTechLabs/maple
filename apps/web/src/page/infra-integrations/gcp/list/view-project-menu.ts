@@ -1,4 +1,4 @@
-import type { GcpProjectHealth } from "../../../../components/infra/gcp/list-model"
+import type { GcpProjectHealth } from "../list-model"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html } from "foldkit/html"
@@ -9,10 +9,11 @@ import * as MenuView from "@maple/views/ui/menu-view"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import type { H } from "./view-rows"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
-// `GcpProjectMenu`: with two or more projects the title's chip picks one of them, or all.
+// With two or more projects the title's chip picks one of them, or all.
 
 export const ALL_PROJECTS = "__all__"
 export const MANAGE_CONNECTIONS = "manage-connections"
@@ -29,20 +30,18 @@ const projectItem = (
 	health: GcpProjectHealth | undefined,
 ): ReadonlyArray<Html> => [
 	hstack(h, { gap: "2", align: "start", as: "span" }, [
-		h.span(
-			[h.Class("mt-1.5 flex w-1.5 shrink-0")],
+		hstack(
+			h,
+			{ align: "stretch", as: "span", className: "mt-1.5 w-1.5 shrink-0" },
 			health === undefined ? [] : [statusDot(h, { tone: health.tone })],
 		),
-		h.span(
-			[h.Class("flex flex-col")],
-			[
-				h.span([h.Class("font-mono")], [project]),
-				h.span(
-					[h.Class(cn("text-3xs", healthText(health)))],
-					health === undefined ? [counts] : [counts, ` · ${health.message}`],
-				),
-			],
-		),
+		vstack(h, { as: "span" }, [
+			typography(h, { mono: true }, [project]),
+			h.span(
+				[h.Class(cn("text-3xs", healthText(health)))],
+				health === undefined ? [counts] : [counts, ` · ${health.message}`],
+			),
+		]),
 	]),
 ]
 

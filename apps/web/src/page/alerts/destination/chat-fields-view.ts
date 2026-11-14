@@ -1,4 +1,4 @@
-import { channelPickerView, resolveSearchQuery } from "../../../components/alerts/channel-search"
+import { channelPickerView, resolveSearchQuery } from "../shared/channel-search"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -22,8 +22,8 @@ import type { DestinationForm } from "./form"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `ChatDestinationFields`' view. TODO(destination-dialog): the input's clear button and the
-// "Showing N of M" status line under a capped list.
+// TODO(destination-dialog): the input's clear button and the "Showing N of M" status line under
+// a capped list.
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -32,7 +32,7 @@ const IDLE: FieldState = {
 	isFocused: false,
 	isTouched: false,
 }
-/** The label points at the combobox input (`htmlFor="destination-chat-channel"`). */
+/** The label points at the combobox input. */
 const IDS: FieldIds = {
 	control: Combobox.inputId(CHANNEL_COMBOBOX_ID),
 	label: "destination-chat-channel-label",
@@ -102,7 +102,7 @@ const status = <M>(
 										h.OnClick(inputs.toMessage(ChatMessage.ClickedRefreshChannels())),
 									],
 								},
-								["Retry"],
+								["Try again"],
 							),
 						]),
 			]),
@@ -159,10 +159,12 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 	const connectorName = destinationProvider("chat", form.chatConnector).label
 	const isLoading = AsyncData.isLoading(model.channels.data) || AsyncData.isRefreshing(model.channels.data)
 	const channels = channelsOf(model)
-	const selected = channels.find((channel) => channel.id === form.chatChannelId)
+	const selected = Arr.findFirst(channels, (channel) => channel.id === form.chatChannelId)
 	const query = resolveSearchQuery(
 		model.combobox.inputValue,
-		selected === undefined ? undefined : { name: selected.name, is_private: selected.private },
+		Option.getOrUndefined(
+			Option.map(selected, (channel) => ({ name: channel.name, is_private: channel.private })),
+		),
 	)
 	const picker = channelPickerView(
 		Arr.map(channels, (channel) => ({ ...channel, is_private: channel.private, is_member: true })),
@@ -184,14 +186,14 @@ export const chatFields = <M>(h: HtmlBuilder<M>, inputs: Inputs<M>): Html => {
 					? "Loading channels…"
 					: channels.length === 0
 						? "No channels loaded yet"
-						: "No matching channels",
+						: "No channels match",
 				startAddon: icon(h, "MagnifierIcon"),
 				className: "w-full",
 				renderItem: (label) => {
 					const channel = byLabel.get(label)
 					return [
 						hstack(h, { gap: "2", as: "span" }, [
-							h.span([h.Class("truncate")], [`#${channel?.name ?? label}`]),
+							typography(h, { truncate: true }, [`#${channel?.name ?? label}`]),
 							...(channel?.private === true
 								? [typography(h, { size: "2xs", tone: "muted" }, ["private"])]
 								: []),

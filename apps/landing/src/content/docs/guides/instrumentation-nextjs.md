@@ -63,7 +63,9 @@ export function register() {
 			headers,
 		}),
 		logRecordProcessors: [
-			new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+			new BatchLogRecordProcessor({
+				exporter: new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
+			}),
 		],
 		metricReaders: [
 			new PeriodicExportingMetricReader({
@@ -73,6 +75,8 @@ export function register() {
 	})
 }
 ```
+
+`BatchLogRecordProcessor` takes `{ exporter }` in `@opentelemetry/sdk-logs` 0.220.0 and later, including 3.x. Older releases take the exporter as the first argument. A current release accepts the exporter as a positional argument without throwing, but then exports no log records.
 
 `traceExporter` takes an exporter instance. `OTLPHttpProtoTraceExporter` is exported by `@vercel/otel` and sends OTLP over HTTP with protobuf encoding. It also runs in the Edge runtime.
 
@@ -201,7 +205,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Wrong path or port.** Maple accepts OTLP over HTTP and gRPC on port 443, so the endpoint has no port. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Check that `instrumentation.ts` is in the project root, or in `src/` for a `src` layout, and not inside `app/` or `pages/`. On Next.js 13.4 and 14, check that `experimental.instrumentationHook` is set.
 

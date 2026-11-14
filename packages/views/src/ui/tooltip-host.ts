@@ -13,6 +13,7 @@ import { Command, Dom, type Update } from "foldkit"
 import { type Attribute, type Html, type HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { Side } from "./overlay/position"
+import { timestampCard } from "./timestamp"
 import * as Tooltip from "./tooltip"
 
 /**
@@ -24,6 +25,9 @@ const CONTENT_ATTRIBUTE = "data-tooltip"
 const LAYOUT_ATTRIBUTE = "data-tooltip-layout"
 const SIDE_ATTRIBUTE = "data-tooltip-side"
 const OVERFLOW_ATTRIBUTE = "data-tooltip-overflow"
+const INSTANT_ATTRIBUTE = "data-tooltip-instant"
+const ZONE_ATTRIBUTE = "data-tooltip-zone"
+const NOW_ATTRIBUTE = "data-tooltip-now"
 const ID_PREFIX = "maple-tooltip-trigger-"
 
 export type TriggerOptions = Readonly<{
@@ -47,9 +51,15 @@ export const tooltipTrigger = <Message>(
 	...(options.isOverflowOnly === true ? [h.DataAttribute("tooltip-overflow", "")] : []),
 ]
 
-// MODEL
+/** A `timestampTrigger`'s instant, zone and the page clock its text read (else the hover's). */
+const Instant = Schema.Struct({ epochMs: Schema.Number, timeZone: Schema.String, nowMs: Schema.Number })
 
-const Shown = Schema.Struct({ text: Schema.String, isIconButton: Schema.Boolean, side: Side })
+const Shown = Schema.Struct({
+	text: Schema.String,
+	isIconButton: Schema.Boolean,
+	side: Side,
+	instant: Schema.optionalKey(Instant),
+})
 type Shown = typeof Shown.Type
 
 export const Model = Schema.Struct({
@@ -75,8 +85,6 @@ export const init = (id: string, options: Tooltip.InitOptions = {}): Model => ({
 	isEngaged: false,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String, shown: Shown },
 	FocusedTrigger: { triggerId: Schema.String, shown: Shown },
@@ -94,8 +102,6 @@ export const Message = defineMessageUnion({
 	GotTooltipMessage: { message: Tooltip.Message },
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 
@@ -201,8 +207,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			),
 	})
 
-// SUBSCRIPTION
-
 /** The trigger an event lands in, carrying its own text. */
 const closestTrigger = (target: EventTarget | null): Option.Option<HTMLElement> => {
 	if (!(target instanceof Element)) return Option.none()
@@ -222,6 +226,7 @@ const openableTrigger = (target: EventTarget | null): Option.Option<HTMLElement>
 /** The trigger's id to anchor to, assigned once when the view gave it none. */
 const anchorIdOf = (trigger: HTMLElement): string => {
 	if (trigger.id === "")
+		// @effect-diagnostics-next-line globalRandom:off -- a DOM id suffix, not a seeded value
 		trigger.id = `${ID_PREFIX}${Date.now().toString(36)}-${Str.slice(2)(Math.random().toString(36))}`
 	return trigger.id
 }
@@ -231,12 +236,22 @@ const isInside = (trigger: Element, node: EventTarget | null) =>
 
 const decodeSide = Schema.decodeUnknownOption(Side)
 
+const instantOf = (trigger: HTMLElement): Option.Option<typeof Instant.Type> => {
+	const epochMs = Number(trigger.getAttribute(INSTANT_ATTRIBUTE) ?? Number.NaN)
+	const pageNowMs = Number(trigger.getAttribute(NOW_ATTRIBUTE) ?? Number.NaN)
+	const nowMs = Number.isFinite(pageNowMs) ? pageNowMs : Date.now()
+	return Number.isFinite(epochMs)
+		? Option.some({ epochMs, timeZone: trigger.getAttribute(ZONE_ATTRIBUTE) ?? "", nowMs })
+		: Option.none()
+}
+
 const shownOf = (trigger: HTMLElement) => ({
 	triggerId: anchorIdOf(trigger),
 	shown: {
 		text: trigger.getAttribute(CONTENT_ATTRIBUTE) ?? "",
 		isIconButton: trigger.getAttribute(LAYOUT_ATTRIBUTE) === "icon-button",
 		side: Option.getOrElse(decodeSide(trigger.getAttribute(SIDE_ATTRIBUTE)), (): Side => "top"),
+		...Option.match(instantOf(trigger), { onNone: () => ({}), onSome: (instant) => ({ instant }) }),
 	},
 })
 
@@ -373,8 +388,6 @@ export const whileEngaged: Stream.Stream<Message> = Stream.mergeAll([escapes, tr
 export const isEngaged = (model: Model): boolean =>
 	model.isEngaged || model.tooltip.isOpen || model.tooltip.isPressingTrigger
 
-// VIEW
-
 /**
  * The portal, inside a wrapper that keeps its place in the parent: place it before any sibling
  * whose children change, since the portal itself moves to `<body>`.
@@ -401,7 +414,12 @@ export const view = <ParentMessage>(
 							: undefined,
 					// A description's lines (a legend) stay lines.
 					className: "whitespace-pre-line",
-					toContent: (triggerId) => [model.shown[triggerId]?.text ?? ""],
+					toContent: (triggerId) => {
+						const shown = model.shown[triggerId]
+						return shown?.instant === undefined
+							? [shown?.text ?? ""]
+							: [timestampCard(h, shown.instant)]
+					},
 					toView: ({ portal }) => portal ?? h.empty,
 				},
 			}),

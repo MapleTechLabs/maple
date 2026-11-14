@@ -3,7 +3,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
-import { badge } from "@maple/views/ui/display"
+import { type BadgeOptions, badge } from "@maple/views/ui/display"
 import {
 	empty,
 	emptyDescription,
@@ -13,7 +13,7 @@ import {
 	emptyTitle,
 } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
-import { icon } from "@maple/views/ui/icon"
+import { type IconName, icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -38,9 +38,17 @@ import {
 	timelineValues,
 } from "./derive"
 import { type Exposure, Message, type Model } from "./model"
+import { dividedList } from "@maple/views/ui/rule"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import {
+	ATTACK_STAGE_LABELS,
+	SCANNER_KIND_LABELS,
+	type ScannerKind,
+	attackChainReasons,
+	scannerKindOf,
+} from "@maple/domain/security-telemetry"
 
 // The Exposure tab: probe paths a service answered, the week's totals, categories and sources.
 
@@ -53,13 +61,10 @@ const lastSeen = (h: H, clock: Clock, value: string): Html =>
 		nowMs: clock.nowMs,
 		timeZone: clock.timeZone,
 		variant: "orDate",
-		tooltip: "title",
 		className: typographyClass({ size: "xs", tone: "muted", className: "whitespace-nowrap" }),
 	})
 
 const count = (value: number): string => formatNumber(value)
-
-// EXPOSED PROBES
 
 const EXPOSED_COPY =
 	"A scanner asked for something that should never be public and the service answered with a 2xx. Check that the response does not contain it. Services that answer almost every path are listed separately as likely catch-all routes."
@@ -135,7 +140,7 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 											h.Class("block max-w-80 truncate font-mono text-xs"),
 											h.Title(`${row.host}${row.path}`),
 										],
-										[h.span([h.Class("text-muted-foreground")], [row.host]), row.path],
+										[typography(h, { tone: "muted" }, [row.host]), row.path],
 									),
 								],
 								WIDE_COLUMN,
@@ -171,8 +176,6 @@ const exposedPanel = (h: H, clock: Clock, rows: Exposure["exposed"], capped: boo
 		]),
 	])
 
-// TOTALS
-
 const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	const totals = exposureTotals(exposure)
 	const floor = totals.isSignaturesCapped ? "+" : ""
@@ -196,9 +199,12 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 			eyebrow: "Clients",
 			value: totals.isSourcesCapped ? `${SOURCES_SHOWN}+` : String(totals.sources),
 			compact: true,
-			subline: totals.isSourcesCapped
-				? `client addresses, the ${SOURCES_SHOWN} most active listed`
-				: "distinct client addresses",
+			subline:
+				totals.attackChains > 0
+					? `${totals.attackChains}${totals.isSourcesCapped ? ` of the ${SOURCES_SHOWN} listed` : ""} ran an attack chain`
+					: totals.isSourcesCapped
+						? `client addresses, the ${SOURCES_SHOWN} most active listed`
+						: "distinct client addresses",
 		}),
 		statRailItem(h, {
 			eyebrow: "Services probed",
@@ -214,8 +220,6 @@ const totalsRail = (h: H, clock: Clock, exposure: Exposure): Html => {
 	])
 }
 
-// CATCH-ALL ROUTES
-
 const CATCH_ALL_COPY =
 	"These services answer almost every probe path with a success, which usually means they serve the same page for any path. Their answered probes are left out above."
 
@@ -230,43 +234,39 @@ const catchAllPanel = (h: H, services: ReadonlyArray<CatchAllService>): Html =>
 					: `${CATCH_ALL_COPY} Check one response to confirm nothing real is served.`,
 			],
 		),
-		h.ul(
-			[h.Class("divide-y divide-border px-4 pb-2 text-sm")],
+		dividedList(
+			h,
+			{ as: "ul", bordered: false, className: "px-4 pb-2 text-sm" },
 			Arr.map(services, (entry) =>
-				h.li(
-					[h.Class("flex items-center justify-between gap-4 py-2")],
-					[
-						h.span([h.Class("font-medium")], [entry.service]),
-						hstack(h, { gap: "4", as: "span" }, [
-							typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
-								`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
-							]),
-							...(entry.sampleTraceId === ""
-								? []
-								: [
-										textLink(
-											h,
-											{
-												tone: "muted",
-												className: "whitespace-nowrap text-xs",
-												href: hrefOf(
-													AppRoute.Trace({
-														traceId: entry.sampleTraceId,
-														search: {},
-													}),
-												),
-											},
-											["Sample trace"],
-										),
-									]),
+				hstack(h, { gap: "4", align: "center", justify: "between", as: "li", className: "py-2" }, [
+					typography(h, { weight: "medium" }, [entry.service]),
+					hstack(h, { gap: "4", as: "span" }, [
+						typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
+							`${entry.answered} of ${entry.probed} sensitive probe paths answered`,
 						]),
-					],
-				),
+						...(entry.sampleTraceId === ""
+							? []
+							: [
+									textLink(
+										h,
+										{
+											tone: "muted",
+											className: "whitespace-nowrap text-xs",
+											href: hrefOf(
+												AppRoute.Trace({
+													traceId: entry.sampleTraceId,
+													search: {},
+												}),
+											),
+										},
+										["Sample trace"],
+									),
+								]),
+					]),
+				]),
 			),
 		),
 	])
-
-// CATEGORIES
 
 /** Answered probes alarm only where a success means something leaked; WordPress probes do not. */
 const answeredCell = (h: H, row: CategoryRow): Html => {
@@ -351,19 +351,59 @@ const categoriesPanel = (h: H, rows: ReadonlyArray<CategoryRow>): Html =>
 		]),
 	])
 
-// SOURCES
+const SCANNER_KIND_LOOK = {
+	agent: { variant: "crit", icon: "FaceRobotIcon" },
+	vulnerability: { variant: "warn", icon: "CrosshairsIcon" },
+	fuzzer: { variant: "done", icon: "FolderSearchIcon" },
+	survey: { variant: "info", icon: "RadarIcon" },
+} as const satisfies Record<
+	ScannerKind,
+	{ readonly variant: NonNullable<BadgeOptions["variant"]>; readonly icon: IconName }
+>
+
+/** A named tool as a badge in its kind's tone and icon; an unnamed client as a quiet one. */
+const scannerBadge = (h: H, scanner: string): Html => {
+	const kind = scannerKindOf(scanner)
+	if (scanner === "" || kind === undefined) {
+		return badge(h, { variant: "meta" }, [scanner === "" ? "Unnamed" : scanner])
+	}
+	const look = SCANNER_KIND_LOOK[kind]
+	return badge(h, { variant: look.variant, attributes: [h.Title(SCANNER_KIND_LABELS[kind])] }, [
+		icon(h, look.icon),
+		scanner,
+	])
+}
+
+/** A red badge when the source ran an attack chain, over the stages or agent behind it, muted otherwise. */
+const behaviorCell = (h: H, source: Exposure["sources"][number]): Html => {
+	const reasons = attackChainReasons(source)
+	const stages = Arr.map(source.stages ?? [], (stage) => ATTACK_STAGE_LABELS[stage].short)
+	const agent = source.agent ?? ""
+	const detail = stages.length > 0 ? Arr.join(stages, ", ") : agent !== "" ? `${agent} user agent` : "None"
+	return vstack(h, { gap: "1", align: "start" }, [
+		...(reasons.length === 0
+			? []
+			: [
+					badge(h, { variant: "crit", attributes: [h.Title(Arr.join(reasons, "\n"))] }, [
+						"Attack chain",
+					]),
+				]),
+		typography(h, { size: "xs", tone: "muted", className: "max-w-36 whitespace-normal" }, [detail]),
+	])
+}
 
 const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 	panel(h, { className: "overflow-hidden" }, [
 		panelHeader(h, {
 			title: "Top clients",
-			action: typography(h, { size: "xs", tone: "muted" }, ["Most requests first"]),
+			action: typography(h, { size: "xs", tone: "muted" }, ["Agents first, then most requests"]),
 		}),
 		table(h, { ariaLabel: "Top clients" }, [
 			tableHeader(h, [
 				tableRow(h, [
 					tableHead(h, ["Client address"]),
-					tableHead(h, ["Tool"]),
+					tableHead(h, ["Tool"], WIDE_COLUMN),
+					tableHead(h, ["Behavior"]),
 					tableHead(h, ["User agent"], WIDE_COLUMN),
 					tableHead(h, ["Requests"], "text-right"),
 					tableHead(h, ["Distinct probes"], cn("text-right", WIDE_COLUMN)),
@@ -376,18 +416,29 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 					tableRow(
 						h,
 						[
-							tableCell(h, [source.clientAddress], typographyClass({ size: "xs", mono: true })),
 							tableCell(
 								h,
-								[source.scanner === "" ? "Unnamed" : source.scanner],
-								source.scanner === "" ? "text-muted-foreground" : undefined,
+								[
+									source.clientAddress,
+									// Phones drop the Tool column; its badge rides here.
+									...(source.scanner === ""
+										? []
+										: [
+												hstack(h, { className: "pt-1 sm:hidden" }, [
+													scannerBadge(h, source.scanner),
+												]),
+											]),
+								],
+								typographyClass({ size: "xs", mono: true }),
 							),
+							tableCell(h, [scannerBadge(h, source.scanner)], WIDE_COLUMN),
+							tableCell(h, [behaviorCell(h, source)]),
 							tableCell(
 								h,
 								[
 									h.span(
 										[
-											h.Class("block max-w-72 truncate text-xs text-muted-foreground"),
+											h.Class("block max-w-56 truncate text-xs text-muted-foreground"),
 											h.Title(source.userAgent),
 										],
 										[source.userAgent === "" ? "None sent" : source.userAgent],
@@ -417,8 +468,6 @@ const sourcesPanel = (h: H, clock: Clock, sources: Exposure["sources"]): Html =>
 			),
 		]),
 	])
-
-// STATES
 
 const exposureEmpty = (h: H): Html =>
 	empty(

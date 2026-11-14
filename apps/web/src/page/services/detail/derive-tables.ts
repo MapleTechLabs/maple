@@ -1,7 +1,7 @@
 import { nextSort as nextSortBy, type SortState } from "../../kit/table-sort"
 import type { SortTable } from "./model-tabs"
 
-// The tabs' sort configuration (`useSortState` per table) and the drill-down searches.
+// The tabs' sort configuration and the drill-down searches.
 
 /** A table's first sorted column and the text columns that start ascending. */
 const sortConfig = (initialKey: string, stringKeys: ReadonlyArray<string> = []) => ({
@@ -20,7 +20,7 @@ export const initialSort = (table: SortTable): SortState => ({
 	dir: "desc",
 })
 
-/** `handleSort`: the active column flips direction; another column starts desc (asc for text). */
+/** The active column flips direction; another column starts desc (asc for text). */
 export const nextSort = (table: SortTable, current: SortState, key: string): SortState =>
 	nextSortBy(current, key, { stringKeys: SORT_CONFIG[table].stringKeys })
 
@@ -35,7 +35,8 @@ export const operationTraceSearch = (args: {
 }) => ({
 	services: [args.serviceName],
 	spanNames: [args.spanName],
-	deploymentEnvs: args.environments?.length ? [...args.environments] : undefined,
+	deploymentEnvs:
+		args.environments !== undefined && args.environments.length > 0 ? [...args.environments] : undefined,
 	rootOnly: false,
 	startTime: args.startTime,
 	endTime: args.endTime,

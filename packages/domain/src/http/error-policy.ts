@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Predicate, Record, Schema } from "effect"
 
 /** Recovery actions understood by both the HTTP boundary and Maple clients. */
 export const HttpErrorRecovery = Schema.Literals([
@@ -74,7 +74,11 @@ export interface PublicHttpErrorBody<Tag extends string, Status extends PublicHt
 	readonly retry_after_seconds?: number
 	readonly retry_at?: string
 	readonly param?: string
+	readonly details?: PublicHttpErrorDetails
 }
+
+/** Scalar error fields a policy publishes by name; never causes, bodies or secrets. */
+export type PublicHttpErrorDetails = { readonly [key: string]: string | number | boolean }
 
 const publicHttpErrorBodyFields = {
 	code: Schema.String.annotate({
@@ -107,6 +111,11 @@ const publicHttpErrorBodyFields = {
 	param: Schema.optionalKey(
 		Schema.String.annotate({ description: "Request parameter associated with the failure." }),
 	),
+	details: Schema.optionalKey(
+		Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number, Schema.Boolean])).annotate({
+			description: "Safe, failure-specific values, such as an upstream provider's HTTP status.",
+		}),
+	),
 }
 
 /**
@@ -114,8 +123,8 @@ const publicHttpErrorBodyFields = {
  * Runtime decoding and endpoint-specific OpenAPI branches share these fields so they cannot drift.
  */
 export const makePublicHttpErrorBodySchema = <Tag extends string, Type extends PublicHttpErrorType>(
-	tag: Schema.Codec<Tag, Tag, never, never>,
-	type: Schema.Codec<Type, Type, never, never>,
+	tag: Schema.Codec<Tag, Tag>,
+	type: Schema.Codec<Type, Type>,
 ) =>
 	Schema.Struct({
 		_tag: tag,
@@ -134,9 +143,10 @@ export const makeExactPublicHttpErrorBodySchema = <
 	Type extends PublicHttpErrorType,
 	Status extends PublicHttpErrorStatus,
 >(
-	tag: Schema.Codec<Tag, Tag, never, never>,
-	type: Schema.Codec<Type, Type, never, never>,
+	tag: Schema.Codec<Tag, Tag>,
+	type: Schema.Codec<Type, Type>,
 	policy: PublicHttpErrorPolicy<Error, Status>,
+	detailFields?: Schema.Struct.Fields,
 ) =>
 	Schema.Struct({
 		_tag: tag,
@@ -151,6 +161,10 @@ export const makeExactPublicHttpErrorBodySchema = <
 				: publicHttpErrorBodyFields.message,
 		retryable: Schema.Literal(policy.retry !== "never"),
 		recovery: Schema.Literal(policy.recovery),
+		// Only errors with a `publicDetails` allowlist ever send `details`.
+		...(detailFields === undefined
+			? undefined
+			: { details: Schema.optionalKey(Schema.Struct(detailFields)) }),
 	})
 
 /** Runtime contract for a public error body when its exact tag/status are not known statically. */
@@ -169,6 +183,11 @@ interface PublicHttpErrorPolicyBase<Error, Status extends PublicHttpErrorStatus>
 	readonly param?: ErrorValue<Error, string | undefined>
 	readonly retryAfterSeconds?: ErrorValue<Error, number | undefined>
 	readonly retryAt?: ErrorValue<Error, string | undefined>
+	/**
+	 * Allowlist of scalar fields published under `details`, as wire key to field name.
+	 * Every other field stays server-side whatever the exposure.
+	 */
+	readonly publicDetails?: { readonly [wireKey: string]: Exclude<keyof Error, "message" | "_tag"> & string }
 }
 
 type PublicHttpRetryPolicy =
@@ -230,6 +249,8 @@ export interface PublicHttpErrorClassDefinition<
 > {
 	readonly tag: Tag
 	readonly policy: PublicHttpErrorPolicy<Error, Status>
+	/** Wire schemas for `policy.publicDetails`, keyed by wire key. */
+	readonly detailFields?: Schema.Struct.Fields
 }
 
 export interface SelfDescribingHttpErrorClass<Error extends SelfDescribingHttpError> extends Function {
@@ -272,8 +293,12 @@ export const HttpTaggedError =
 				publicHttpErrorBody(this)
 		} as unknown as typeof ErrorClass
 
+		const detailFields =
+			policy.publicDetails === undefined
+				? undefined
+				: Record.map(policy.publicDetails, (field) => fields[field])
 		return Object.assign(SelfDescribingErrorClass, {
-			[PublicHttpErrorPolicyTypeId]: { tag, policy },
+			[PublicHttpErrorPolicyTypeId]: { tag, policy, detailFields },
 		} as const)
 	}
 
@@ -282,7 +307,6 @@ export const publicHttpErrorPolicy = <Error extends SelfDescribingHttpError>(
 ): PublicHttpErrorPolicy<Error, PublicHttpErrorStatusOf<Error>> =>
 	publicHttpErrorDefinitionFor<Error>(error.constructor).policy
 
-/** Read the tag and public policy owned by an error class. */
 export function publicHttpErrorDefinitionFor<Error extends SelfDescribingHttpError>(
 	errorClass: Function,
 ): PublicHttpErrorClassDefinition<Error, Error["_tag"], PublicHttpErrorStatusOf<Error>>
@@ -304,12 +328,6 @@ export function publicHttpErrorDefinitionFor<Error extends PublicTaggedError>(
 	if (definition === undefined) throw new Error(`No public HTTP policy registered for ${errorClass.name}`)
 	return definition
 }
-
-/** Read the public policy owned by an error class, including for wire-shaped presenters. */
-export const publicHttpErrorPolicyFor = <Error extends PublicTaggedError>(
-	errorClass: Function,
-): PublicHttpErrorPolicy<Error, PublicHttpErrorStatus> =>
-	publicHttpErrorDefinitionFor<Error>(errorClass).policy
 
 const resolve = <Error, Value>(value: Value | ((error: Error) => Value), error: Error): Value =>
 	typeof value === "function" ? (value as (error: Error) => Value)(error) : value
@@ -351,6 +369,8 @@ export const publicHttpErrorBody = <Error extends SelfDescribingHttpError>(
 		policy.retryAfterSeconds === undefined ? undefined : resolve(policy.retryAfterSeconds, error)
 	const retryAt = policy.retryAt === undefined ? undefined : resolve(policy.retryAt, error)
 	const param = policy.param === undefined ? undefined : resolve(policy.param, error)
+	const details =
+		policy.publicDetails === undefined ? undefined : publicDetails(policy.publicDetails, error)
 
 	return {
 		_tag: error._tag,
@@ -363,5 +383,21 @@ export const publicHttpErrorBody = <Error extends SelfDescribingHttpError>(
 		...(!(retryAfterSeconds === undefined) ? { retry_after_seconds: retryAfterSeconds } : undefined),
 		...(!(retryAt === undefined) ? { retry_at: retryAt } : undefined),
 		...(!(param === undefined) ? { param } : undefined),
+		...(!(details === undefined) ? { details } : undefined),
 	}
+}
+
+const isDetailValue = (value: unknown): value is string | number | boolean =>
+	Predicate.isString(value) || Predicate.isNumber(value) || Predicate.isBoolean(value)
+
+/** Only scalar values pass, so an allowlisted field can never carry an object out. */
+const publicDetails = <Error extends PublicTaggedError>(
+	allowlist: { readonly [wireKey: string]: keyof Error & string },
+	error: Error,
+): PublicHttpErrorDetails | undefined => {
+	const values = Record.filter(
+		Record.map(allowlist, (field) => error[field]),
+		isDetailValue,
+	)
+	return Record.isEmptyRecord(values) ? undefined : values
 }

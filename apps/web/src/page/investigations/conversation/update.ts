@@ -1,6 +1,7 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { chartFences } from "@maple/domain/chat-chart-spec"
 import type { ChatEvent } from "@maple/domain/chat-session"
-import { Array, Result, Record as Rec, String as Str } from "effect"
+import { Result, Record as Rec, String as Str, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -38,12 +39,13 @@ type MarkdownEntry = Model["markdown"][string]
 
 /** The longest parsed text an on-screen body extends: a streaming body's previous version. */
 const parsedPrefix = (cache: Model["markdown"], text: string): MarkdownEntry | undefined =>
-	Array.filter(
-		Rec.toEntries(cache),
-		([key, entry]) => !entry.isStale && key !== text && Str.startsWith(key)(text),
-	).reduce<[string, MarkdownEntry] | undefined>(
-		(best, pair) => (best === undefined || pair[0].length > best[0].length ? pair : best),
+	Arr.reduce<[string, MarkdownEntry], [string, MarkdownEntry] | undefined>(
+		Arr.filter(
+			Rec.toEntries(cache),
+			([key, entry]) => !entry.isStale && key !== text && Str.startsWith(key)(text),
+		),
 		undefined,
+		(best, pair) => (best === undefined || pair[0].length > best[0].length ? pair : best),
 	)?.[1]
 
 /**
@@ -52,9 +54,9 @@ const parsedPrefix = (cache: Model["markdown"], text: string): MarkdownEntry | u
  */
 const followMarkdown = (result: Return): Return => {
 	const model = result.model
-	const wanted = Array.dedupe(transcriptMarkdown(model.messages))
+	const wanted = Arr.dedupe(transcriptMarkdown(model.messages))
 	const markdown = Rec.fromEntries(
-		Array.flatMap(wanted, (text) => {
+		Arr.flatMap(wanted, (text) => {
 			const own = model.markdown[text]
 			if (own !== undefined && !own.isStale) return [[text, own]]
 			const prefix = parsedPrefix(model.markdown, text)
@@ -62,19 +64,17 @@ const followMarkdown = (result: Return): Return => {
 			return shown === undefined ? [] : [[text, shown]]
 		}),
 	)
-	const missing = Array.filter(
+	const missing = Arr.filter(
 		wanted,
 		(text) =>
 			(markdown[text]?.isStale ?? true) &&
-			!Array.some(model.markdownPending, (pending) => Str.startsWith(pending)(text)),
+			!Arr.some(model.markdownPending, (pending) => Str.startsWith(pending)(text)),
 	)
-	const fences = Array.flatMap(Rec.values(markdown), ({ document }) =>
+	const fences = Arr.flatMap(Rec.values(markdown), ({ document }) =>
 		document === null ? [] : highlightedFences(document.blocks),
 	)
-	const keys = new Set(Array.map(fences, (fence) => highlightKey(fence.language, fence.code)))
-	const highlights = Rec.fromEntries(
-		Array.filter(Rec.toEntries(model.highlights), ([key]) => keys.has(key)),
-	)
+	const keys = new Set(Arr.map(fences, (fence) => highlightKey(fence.language, fence.code)))
+	const highlights = Rec.fromEntries(Arr.filter(Rec.toEntries(model.highlights), ([key]) => keys.has(key)))
 	const coloured = withHighlights(
 		{ ...model, markdown, highlights, markdownPending: [...model.markdownPending, ...missing] },
 		fences,
@@ -89,7 +89,7 @@ const followMarkdown = (result: Return): Return => {
 const followCharts = (result: Return): Return => {
 	const model = result.model
 	if (model.chartRuntime !== null) return result
-	const hasChart = Array.some(transcriptMarkdown(model.messages), (text) => chartFences(text).length > 0)
+	const hasChart = Arr.some(transcriptMarkdown(model.messages), (text) => chartFences(text).length > 0)
 	return hasChart
 		? withCommands({ ...result, model: { ...model, chartRuntime: ChartRuntime.Loading() } }, [
 				LoadChartRuntime(),
@@ -127,7 +127,7 @@ export const init = (sessionId: string, readOnly: ReadOnly = null): Return => ({
 	commands: [LoadHistory({ sessionId, generation: 1 })],
 })
 
-/** `handleSend`: the optimistic bubble, `submitted` and the POST; nothing while a turn runs. */
+/** The optimistic bubble, `submitted` and the POST; nothing while a turn runs. */
 const send = (model: Model, text: string): Return => {
 	const trimmed = Str.trim(text)
 	if (trimmed === "" || !model.historyReady || isLoading(model) || model.readOnly !== null) return { model }
@@ -167,7 +167,7 @@ const withHighlights = (
 	fences: ReadonlyArray<{ readonly language: string; readonly code: string }>,
 ): Model => {
 	// Plain tokens are not cached, so a parse after the highlighter loads colours these fences.
-	const missing = Array.filter(
+	const missing = Arr.filter(
 		fences,
 		(fence) => !(highlightKey(fence.language, fence.code) in model.highlights),
 	)
@@ -178,7 +178,7 @@ const withHighlights = (
 				highlights: {
 					...model.highlights,
 					...Rec.fromEntries(
-						Array.map(missing, (fence) => [
+						Arr.map(missing, (fence) => [
 							highlightKey(fence.language, fence.code),
 							highlight(fence.language, fence.code),
 						]),
@@ -188,10 +188,10 @@ const withHighlights = (
 }
 
 const toggle = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
-	ids.includes(id) ? Array.filter(ids, (other) => other !== id) : [...ids, id]
+	ids.includes(id) ? Arr.filter(ids, (other) => other !== id) : [...ids, id]
 
 const without = (ids: ReadonlyArray<string>, id: string): ReadonlyArray<string> =>
-	Array.filter(ids, (other) => other !== id)
+	Arr.filter(ids, (other) => other !== id)
 
 const toast = (type: "success" | "error", title: string) => OutMessage.RequestedToast({ type, title })
 
@@ -233,7 +233,6 @@ const step = (model: Model, message: Message): Return =>
 						],
 					},
 		ChangedDraft: ({ text }) => ({ model: { ...model, draft: text } }),
-		// `form.reset()` runs before `onSubmit`, so the composer clears even when nothing is sent.
 		// Before the history is read the draft stays: a send then would drop the history.
 		SubmittedComposer: () =>
 			model.historyReady ? send({ ...model, draft: "" }, model.draft) : { model },
@@ -248,21 +247,21 @@ const step = (model: Model, message: Message): Return =>
 							stream: null,
 							generation: model.generation + 1,
 							status: "ready",
-							messages: Array.map(model.messages, finalizeStreamingText),
+							messages: Arr.map(model.messages, finalizeStreamingText),
 						},
 						commands: [AbortTurn({ sessionId: model.sessionId })],
 					}
 				: { model },
-		// A send outlives a Stop (`runStream` after the POST): its bubble still shown, it adopts the
+		// A send outlives a Stop (the tail starts after the POST): its bubble still shown, it adopts the
 		// cursor under a fresh generation so the server's `turn-end` settles the turn.
 		CompletedPostMessage: ({ generation, localId, text, result }) => {
-			if (!Array.some(model.messages, (entry) => entry.id === localId)) return { model }
+			if (!Arr.some(model.messages, (entry) => entry.id === localId)) return { model }
 			const tail = generation === model.generation ? generation : model.generation + 1
 			return Result.match(result, {
 				onSuccess: (sent) => ({
 					model: {
 						...model,
-						messages: Array.map(model.messages, (entry) =>
+						messages: Arr.map(model.messages, (entry) =>
 							entry.id === localId ? { ...entry, id: sent.messageId } : entry,
 						),
 						generation: tail,
@@ -274,7 +273,7 @@ const step = (model: Model, message: Message): Return =>
 					model: {
 						...model,
 						status: "ready",
-						messages: Array.filter(model.messages, (entry) => entry.id !== localId),
+						messages: Arr.filter(model.messages, (entry) => entry.id !== localId),
 						failedSend: { message: text, error },
 					},
 				}),
@@ -283,7 +282,7 @@ const step = (model: Model, message: Message): Return =>
 		ReceivedChatEvents: ({ generation, events, nowMs }) =>
 			model.stream === null || model.stream.generation !== generation
 				? { model }
-				: { model: Array.reduce(events, model, (acc, event) => foldEvent(acc, event, nowMs)) },
+				: { model: Arr.reduce(events, model, (acc, event) => foldEvent(acc, event, nowMs)) },
 		FailedChatStream: ({ generation, message: error }) =>
 			model.stream === null || model.stream.generation !== generation
 				? { model }
@@ -305,12 +304,12 @@ const step = (model: Model, message: Message): Return =>
 				markdown: {
 					...model.markdown,
 					...Rec.fromEntries(
-						Array.map(parsed, ({ text, document }) => [text, { document, isStale: false }]),
+						Arr.map(parsed, ({ text, document }) => [text, { document, isStale: false }]),
 					),
 				},
-				markdownPending: Array.filter(
+				markdownPending: Arr.filter(
 					model.markdownPending,
-					(text) => !Array.some(parsed, (entry) => entry.text === text),
+					(text) => !Arr.some(parsed, (entry) => entry.text === text),
 				),
 			},
 		}),
@@ -343,11 +342,7 @@ const step = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotMinimapMessage: ({ message: child }) => ({
 			model: { ...model, minimap: updateMinimap(model.minimap, child) },
 		}),

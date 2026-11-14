@@ -6,7 +6,6 @@ import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import type { CodeReviewIssuesSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
-import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { epochWindow } from "../kit/api"
 import { ALL, type FrameOut, type FrameReturn } from "../kit/frame"
@@ -17,6 +16,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import type { Retained } from "../kit/retained"
 import { cachedStep, mergeSteps, remember } from "../kit/page-steps"
@@ -32,7 +32,7 @@ import {
 	WaitSearchDebounce,
 } from "./model"
 import type { PresetValue } from "../../kit/time-controls"
-import { Array as Arr } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
 export type Search = typeof CodeReviewIssuesSearch.Type
 type Return = PageReturn<Model, Message>
@@ -45,7 +45,7 @@ const FRAME_ID = "code-review-issues"
 const searchHref = (search: Search) => hrefOf(AppRoute.CodeReviewIssues({ search }))
 
 const navigate = (model: Model, patch: Partial<Search>): Return => {
-	const isFilter = Arr.some(Object.keys(patch), (key) => key !== "review")
+	const isFilter = Arr.some(Rec.keys<string, unknown>(patch), (key) => key !== "review")
 	return {
 		model: isFilter ? { ...model, limit: PAGE } : model,
 		outMessage: PageOutMessage.RequestedNavigation({
@@ -114,12 +114,13 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 	}
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message) => Message.GotFrameMessage({ message }))
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
+	)
 
 const sheetOut = (model: Model, out: SheetOut): Return =>
 	out._tag === "Dismissed"
@@ -144,15 +145,27 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 
 const SELECT_FIELD = { severity: "severitySelect", category: "categorySelect", state: "stateSelect" } as const
 
-/** `FilterSelect`: only a listed option reaches the URL; "all" clears it. */
+/** Only a listed option reaches the URL; "all" clears it. */
 const filterPatch = (filter: FilterKey, value: string): Partial<Search> => {
 	switch (filter) {
 		case "severity":
-			return { severity: PrReviewSeverity.literals.find((literal) => literal === value) }
+			return {
+				severity: Option.getOrUndefined(
+					Arr.findFirst(PrReviewSeverity.literals, (literal) => literal === value),
+				),
+			}
 		case "category":
-			return { category: PrReviewCategory.literals.find((literal) => literal === value) }
+			return {
+				category: Option.getOrUndefined(
+					Arr.findFirst(PrReviewCategory.literals, (literal) => literal === value),
+				),
+			}
 		case "state":
-			return { state: PrReviewFindingStatus.literals.find((literal) => literal === value) }
+			return {
+				state: Option.getOrUndefined(
+					Arr.findFirst(PrReviewFindingStatus.literals, (literal) => literal === value),
+				),
+			}
 	}
 }
 
@@ -163,8 +176,6 @@ const withSelects = (model: Model, search: Search): Model => ({
 	stateSelect: { ...model.stateSelect, value: search.state ?? ALL },
 	searchDraft: syncedDraft(model.searchDraft, search.q),
 })
-
-// ENTRY POINTS
 
 export const init = (
 	route: { readonly search: Search },
@@ -187,7 +198,6 @@ export const init = (
 			stateSelect: select("state"),
 			searchDraft: route.search.q ?? "",
 			searchGeneration: 0,
-			timeTooltip: Tooltip.init(`${FRAME_ID}-time`),
 			sheet: {
 				...initSheet(`${FRAME_ID}-review`),
 				detailCache: carried.retained.details,
@@ -279,15 +289,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			return picked === undefined
 				? lifted
 				: combine(lifted, (current) => navigate(current, filterPatch(filter, picked.value)))
-		},
-		GotTimeTooltipMessage: ({ message: inner }) => {
-			const next = Tooltip.update(model.timeTooltip, inner)
-			return {
-				model: { ...model, timeTooltip: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (m) =>
-					Message.GotTimeTooltipMessage({ message: m }),
-				),
-			}
 		},
 		ChangedSearchDraft: ({ value }) => {
 			const searchGeneration = model.searchGeneration + 1

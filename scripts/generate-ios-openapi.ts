@@ -10,7 +10,7 @@
  *  1. Nullability is emitted as `anyOf: [S, { type: "null" }]`, often behind an
  *     anonymous `Union_N` component. Left alone, `notes` becomes `Union_23`
  *     with a `.value1: String?` instead of `String?`. We rewrite those to `S`
- *     and drop the key from `required` — lossless, because the generator emits
+ *     and drop the key from `required`: lossless, because the generator emits
  *     `decodeIfPresent`, which yields `nil` for both an explicit `null` and an
  *     absent key, and `Schema.NullOr` always emits the key.
  *  1b. Every `Schema.Number` is emitted as
@@ -20,7 +20,7 @@
  *     `Service` becomes a struct-of-optionals. We collapse it to `number`.
  *     See `NON_FINITE_NUMBER_ENUM` for why that is the right trade.
  *  2. Error responses are per-status `anyOf` unions over literal-`_tag`
- *     branches — over half the reachable schemas. They are all structurally the
+ *     branches, over half the reachable schemas. They are all structurally the
  *     same envelope, so they collapse to one `MapleErrorEnvelope` whose `_tag`
  *     is a plain string. That is how the server intends it to be consumed:
  *     `public-error.ts` documents `_tag` as "Stable semantic error tag. Branch
@@ -37,10 +37,9 @@ import { MapleApiV2 } from "../packages/domain/src/http/v2/api"
 
 /**
  * The operations the iOS app calls. Adding a screen means adding an id here and
- * re-running the script — the incremental cost of the allowlist is two lines.
+ * re-running the script; the incremental cost of the allowlist is two lines.
  */
 const IOS_OPERATIONS: ReadonlyArray<string> = [
-	// Services
 	"listServices",
 	"listEnvironments",
 	"getService",
@@ -48,7 +47,6 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"queryServiceHealth",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
-	// Errors
 	"listErrorIssues",
 	"listErrorIssueServiceCounts",
 	"getErrorIssue",
@@ -57,18 +55,13 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"claimErrorIssue",
 	"releaseErrorIssue",
 	"setErrorIssueSeverity",
-	// Traces and logs
 	"searchTraces",
 	"getTrace",
-	"getSpan",
 	"searchLogs",
 	"queryLogTimeseries",
-	"getLog",
-	// Dashboards
 	"listDashboards",
 	"getDashboard",
 	"queryDashboardWidgetData",
-	// Alerts
 	"listAlertIncidents",
 	"getAlertIncident",
 	"listAlertRules",
@@ -77,11 +70,9 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"previewAlertRule",
 	"listAlertRuleChecks",
 	"listAlertDeliveries",
-	// Anomalies
 	"listAnomalyIncidents",
 	"getAnomalyIncident",
 	"getAnomalyIncidentTimeseries",
-	// Push
 	"listMobileDevices",
 	"registerMobileDevice",
 	"unregisterMobileDevice",
@@ -94,7 +85,7 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"revokeDeviceCredential",
 	"getDeviceAttestationChallenge",
 	"issueDeviceToken",
-	// Home Screen widgets — one read, and the only one a device credential reaches.
+	// Home Screen widgets: one read, and the only one a device credential reaches.
 	"getWidgetSummary",
 ]
 
@@ -111,7 +102,7 @@ const checkMode = process.argv.includes("--check")
 /**
  * The document is rewritten structurally, so it is modelled as plain JSON rather
  * than as Effect's `OpenAPISpec` type (which omits the generated extension
- * fields this script reads). Narrowing at every read is the point — see the
+ * fields this script reads). Narrowing at every read is the point; see the
  * `as*` helpers below.
  */
 type JsonValue = string | number | boolean | null | ReadonlyArray<JsonValue> | JsonObject
@@ -128,12 +119,12 @@ const asObject = (value: JsonValue | undefined): JsonObject | undefined =>
 const asArray = (value: JsonValue | undefined): ReadonlyArray<JsonValue> | undefined =>
 	Array.isArray(value) ? value : undefined
 
-/** An array whose entries are all objects — the shape `anyOf`/`allOf`/`parameters` take. */
+/** An array whose entries are all objects, the shape `anyOf`/`allOf`/`parameters` take. */
 const asObjectArray = (value: JsonValue | undefined): ReadonlyArray<JsonObject> | undefined => {
 	const entries = asArray(value)
 	if (entries === undefined) return undefined
 	const objects = entries.map(asObject)
-	return objects.every((entry) => entry !== undefined) ? (objects as ReadonlyArray<JsonObject>) : undefined
+	return objects.every((entry) => entry !== undefined) ? objects : undefined
 }
 
 const asString = (value: JsonValue | undefined): string | undefined =>
@@ -142,9 +133,7 @@ const asString = (value: JsonValue | undefined): string | undefined =>
 const asStringArray = (value: JsonValue | undefined): ReadonlyArray<string> | undefined => {
 	const entries = asArray(value)
 	if (entries === undefined) return undefined
-	return entries.every((entry) => typeof entry === "string")
-		? (entries as ReadonlyArray<string>)
-		: undefined
+	return entries.every((entry) => typeof entry === "string") ? entries : undefined
 }
 
 const HTTP_METHODS = ["get", "put", "post", "delete", "options", "head", "patch", "trace"] as const
@@ -191,7 +180,7 @@ function render(): { text: string; doc: JsonObject } {
 }
 
 /**
- * Pass 1 — keep only the allowlisted operations.
+ * Pass 1: keep only the allowlisted operations.
  *
  * A missing id is fatal: a server-side rename must break the generator loudly
  * rather than silently shrink the client and surface days later as a confusing
@@ -247,7 +236,7 @@ function dropPropertyNames(node: JsonValue | undefined): void {
 }
 
 /**
- * Pass 2 — rewrite `anyOf: [S, { type: "null" }]` to `S`, and mark the owning
+ * Pass 2: rewrite `anyOf: [S, { type: "null" }]` to `S`, and mark the owning
  * property/parameter optional so the generator emits `decodeIfPresent`.
  * Also collapses Effect's non-finite-number union (see `NON_FINITE_NUMBER_ENUM`).
  */
@@ -271,7 +260,7 @@ function collapseNullableUnions(doc: JsonObject): void {
 	/**
 	 * Peel synthetic unions until nothing changes. They nest: an optional
 	 * widened enum arrives as `anyOf[anyOf[Severity, "unset"], null]`, so one
-	 * pass would leave the inner union — and a struct-of-optionals — behind.
+	 * pass would leave the inner union (and a struct-of-optionals) behind.
 	 */
 	const collapse = (schema: JsonObject): Collapsed | undefined => {
 		let current = schema
@@ -389,7 +378,7 @@ function collapseNullableUnions(doc: JsonObject): void {
 		}
 
 		// Reached anywhere else (array items, additionalProperties), a union still
-		// collapses — optionality is then carried by the element type itself.
+		// collapses; optionality is then carried by the element type itself.
 		return resolve(object).schema
 	}
 
@@ -423,8 +412,8 @@ function nullableInnerSchema(schema: JsonObject): JsonObject | undefined {
  * `Service`'s eleven metrics decodes into a struct-of-optionals rather than a
  * `Double`. The trade: if the warehouse ever returns a non-finite aggregate,
  * the response fails to decode and the screen shows its error state instead of
- * silently rendering a bogus number. That is the right failure — a non-finite
- * `error_rate` is a server bug — and it is loud enough to notice.
+ * silently rendering a bogus number. That is the right failure (a non-finite
+ * `error_rate` is a server bug), and it is loud enough to notice.
  */
 function finiteNumberSchema(
 	schema: JsonObject,
@@ -462,7 +451,7 @@ function finiteNumberSchema(
  * over the union of their values.
  *
  * The v2 contract widens an enum this way when a query param accepts an extra
- * sentinel — `severity` on `listErrorIssues` is `IssueSeverity | "unset"`.
+ * sentinel: `severity` on `listErrorIssues` is `IssueSeverity | "unset"`.
  * Generated as a union it becomes a struct-of-optionals; merged it becomes the
  * single Swift enum the parameter actually is.
  */
@@ -515,7 +504,7 @@ function widenedStringUnion(
  *
  * Effect emits a branded string's checks as `allOf` fragments beside the type.
  * swift-openapi-generator has no notion of intersecting constraints, so it
- * models `allOf` structurally — `_maple_TraceId` becomes a struct with
+ * models `allOf` structurally: `_maple_TraceId` becomes a struct with
  * `value1` and `value2` rather than a `String`. Flattening loses nothing: the
  * generator does not enforce `minLength`/`pattern` either way, and the server
  * is the thing that validates.
@@ -549,7 +538,7 @@ function flattenedConstraintAllOf(schema: JsonObject): JsonObject | undefined {
 function singleBranchUnion(schema: JsonObject): JsonObject | undefined {
 	const branches = asObjectArray(schema.anyOf)
 	if (branches === undefined || branches.length !== 1) return undefined
-	return mergeAnnotations(schema, branches[0]!)
+	return mergeAnnotations(schema, branches[0])
 }
 
 /** Fold a wrapper's sibling annotations (title, description) onto its inner schema. */
@@ -559,7 +548,7 @@ function mergeAnnotations(wrapper: JsonObject, inner: JsonObject): JsonObject {
 }
 
 /**
- * Pass 3 — every non-2xx response body becomes one `MapleErrorEnvelope`.
+ * Pass 3: every non-2xx response body becomes one `MapleErrorEnvelope`.
  *
  * The per-operation `anyOf` over literal-`_tag` branches accounts for over half
  * the reachable schemas and buys nothing: the app branches on `_tag`/`recovery`
@@ -623,33 +612,40 @@ function errorEnvelopeSchema(): JsonObject {
 					},
 					retry_at: string("Absolute time after which a retry is permitted."),
 					param: string("The request parameter at fault, for validation failures."),
+					details: {
+						type: "object",
+						additionalProperties: {
+							oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }],
+						},
+						description:
+							"Safe, failure-specific scalar values, e.g. an upstream provider's HTTP status.",
+					},
 				},
 			},
 		},
 	}
 }
 
-/** Pass 4a — drop components no longer reachable from the pruned paths. */
 /**
- * Pass 3b — one Swift type per domain schema.
+ * Pass 3b: one Swift type per domain schema.
  *
  * Effect registers a component per *annotation site*, so a domain schema such
  * as `AlertSignalType` that is re-annotated on the incident, the check, and the
  * rule arrives as `_maple_AlertSignalType`, `_maple_AlertSignalType_2`,
- * `_maple_AlertSignalType_3` — identical but for `description`/`examples`.
+ * `_maple_AlertSignalType_3`, identical but for `description`/`examples`.
  * Left alone, the generator emits three unrelated Swift types and every
  * comparison across them needs a raw-value round trip.
  *
  * This used to compare `enum` arrays only, which was enough while Effect
  * reused one component for a plain branded string. As of 4.0.0-rc.111 it
- * numbers those too — and sometimes emits *only* numbered copies, with no
- * unsuffixed base to merge into — so the comparison is now structural
+ * numbers those too, and sometimes emits *only* numbered copies with no
+ * unsuffixed base to merge into, so the comparison is now structural
  * (everything but `description`/`examples`) and the canonical name is promoted
  * out of the lowest-numbered copy when no base exists.
  *
  * A group whose members genuinely differ is left alone; the `_\d+` suffix
  * would then survive into the spec and `openapi-ios.test.ts` fails, which is
- * the right outcome — two different schemas sharing a base name is a domain
+ * the right outcome: two different schemas sharing a base name is a domain
  * problem, not something to paper over here.
  */
 function mergeDuplicateComponents(doc: JsonObject): void {
@@ -658,7 +654,7 @@ function mergeDuplicateComponents(doc: JsonObject): void {
 	/**
 	 * Structural identity: what makes two annotation sites the same Swift type.
 	 *
-	 * `title` is documentation, not structure — `_maple_OrgId` titled
+	 * `title` is documentation, not structure: `_maple_OrgId` titled
 	 * "Organization ID" on one endpoint and "Org ID" on another is one brand
 	 * described twice, and giving the app two types for it helps nobody. The
 	 * canonical copy keeps its own title.
@@ -768,6 +764,7 @@ function renameEncodedComponents(doc: JsonObject): void {
 	}
 }
 
+/** Pass 4a: drop components no longer reachable from the pruned paths. */
 function sweepUnreachableSchemas(doc: JsonObject): void {
 	const schemas = asObject(asObject(doc.components)?.schemas) ?? {}
 	const reachable = new Set<string>()
@@ -809,7 +806,7 @@ function componentNameFromRef(ref: string): string | undefined {
 	return ref.startsWith(prefix) ? ref.slice(prefix.length) : undefined
 }
 
-/** Pass 4b — deterministic key order, so `--check` is byte-stable. */
+/** Pass 4b: deterministic key order, so `--check` is byte-stable. */
 function sortKeysDeep(node: JsonValue | undefined): JsonValue | undefined {
 	if (Array.isArray(node)) return node.map(sortKeysDeep) as ReadonlyArray<JsonValue>
 	const object = asObject(node)

@@ -1,7 +1,6 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema, String as Str } from "effect"
-import { CommentOnErrorIssueOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
@@ -26,7 +25,6 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 				"Who can see the comment; `internal` keeps it to the org's own members",
 			),
 		}),
-		output: CommentOnErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Commenting on an issue"],
 		handler: Effect.fn("McpTool.commentOnErrorIssue")(function* (params) {

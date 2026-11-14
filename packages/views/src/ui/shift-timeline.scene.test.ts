@@ -1,0 +1,136 @@
+import { expect as expectView, given, role, scene, text, within } from "foldkit/scene"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { defineMessageUnion } from "foldkit/message"
+import { describe, test } from "vitest"
+import { shiftTimeline } from "./shift-timeline"
+
+const Message = defineMessageUnion({ ClickedBar: {} })
+type Message = typeof Message.Type
+type Model = Readonly<{ nowMs: number }>
+
+const HOUR = 3_600_000
+const FROM = Date.parse("2026-11-09T00:00:00.000Z")
+
+const view = (model: Model, h: HtmlBuilder<Message>): Html =>
+	shiftTimeline(h, {
+		fromMs: FROM,
+		toMs: FROM + 7 * 24 * HOUR,
+		timeZone: "UTC",
+		nowMs: model.nowMs,
+		ariaLabel: "Shifts",
+		nowLabel: "Now, Tue 10 Nov, 11:30",
+		rows: [
+			{
+				key: "final",
+				label: "Final schedule",
+				bars: [
+					{
+						key: "a",
+						startMs: FROM,
+						endMs: FROM + HOUR,
+						label: "Ana",
+						title: "Ana, 1 hour",
+						tone: "primary",
+						onClick: Message.ClickedBar(),
+					},
+					{
+						key: "gap",
+						id: "gap-0",
+						startMs: FROM + HOUR,
+						endMs: FROM + 3 * HOUR,
+						label: "No one",
+						title: "No one on call, Mon 9 Nov 01:00 to 03:00",
+						tone: "gap",
+					},
+				],
+			},
+			{
+				key: "layer",
+				label: "Primary",
+				isTabStop: false,
+				bars: [
+					{
+						key: "b",
+						startMs: FROM,
+						endMs: FROM + 24 * HOUR,
+						label: "Ben",
+						title: "Ben, Mon",
+						tone: "neutral",
+					},
+				],
+			},
+			{
+				key: "later",
+				label: "Later layer",
+				emptyText: "Not active in this range",
+				bars: [
+					{
+						key: "c",
+						startMs: FROM + 10 * 24 * HOUR,
+						endMs: FROM + 11 * 24 * HOUR,
+						label: "Cy",
+						title: "Cy, next week",
+						tone: "neutral",
+					},
+				],
+			},
+		],
+	})
+const update = (model: Model) => ({ model, commands: [] })
+
+describe("shift timeline", () => {
+	test("reads as a table: one header over the track, a row header per lane, and every bar named", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(role("columnheader", { name: "Shifts" })).toExist(),
+			expectView(text("Mon 9")).toExist(),
+			expectView(role("rowheader", { name: /Primary/u })).toExist(),
+			expectView(role("button", { name: "Ana, 1 hour" })).toExist(),
+			expectView(role("img", { name: "Ben, Mon" })).toExist(),
+			expectView(text("Now, Tue 10 Nov, 11:30")).toExist(),
+		)
+	})
+
+	test("says nothing of now when it is outside the range", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM - HOUR }),
+			expectView(text("Now, Tue 10 Nov, 11:30")).not.toExist(),
+		)
+	})
+
+	test("a lane whose shifts all fall outside the range says so instead of drawing blank", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(text("Not active in this range")).toExist(),
+			expectView(role("img", { name: "Cy, next week" })).not.toExist(),
+		)
+	})
+
+	test("a gap is a named, focusable bar a summary can reach by id; a layer's bars leave the tab order", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(role("img", { name: "No one on call, Mon 9 Nov 01:00 to 03:00" })).toHaveAttr(
+				"id",
+				"gap-0",
+			),
+			expectView(role("img", { name: "No one on call, Mon 9 Nov 01:00 to 03:00" })).toHaveAttr(
+				"tabIndex",
+				"0",
+			),
+			expectView(role("img", { name: "Ben, Mon" })).toHaveAttr("tabIndex", "-1"),
+		)
+	})
+
+	test("every day of the header is named in full, however its drawn label is shortened", () => {
+		scene(
+			{ update, view },
+			given<Model>({ nowMs: FROM + 35 * HOUR }),
+			expectView(within(role("columnheader", { name: "Shifts" }), text("Mon 9 Nov"))).toExist(),
+			expectView(within(role("columnheader", { name: "Shifts" }), text("Sun 15 Nov"))).toExist(),
+		)
+	})
+})

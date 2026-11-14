@@ -1,20 +1,18 @@
+import { readClock, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { readGrants } from "../../../data/session-tenant"
 import { getRun, getSettings, githubStatus, listFindings, listRuns, listTargets, startRun } from "../kit/api"
 import { Message } from "./model"
 
 // Every read and write the three tabs send. Names start with `SecurityApi` so the lab can drop them.
 
-export const ReadSecurityClock = Command.define("ReadSecurityClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadSecurityClock = readClock("ReadSecurityClock", Message.ReadClock)
 
-export const ReadSecurityIsAdmin = Command.define("ReadSecurityIsAdmin", {
-	messages: [Message.CompletedReadIsAdmin],
-	execute: Effect.map(readIsAdmin, (isAdmin) => Message.CompletedReadIsAdmin({ isAdmin })),
+export const ReadSecurityGrants = Command.define("ReadSecurityGrants", {
+	messages: [Message.CompletedReadGrants],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedReadGrants({ grants })),
 })
 
 export const FetchTargets = Command.define("SecurityApiListTargets", {
@@ -43,7 +41,7 @@ export const WaitSecuritySearchDebounce = Command.define("WaitSecuritySearchDebo
 	args: { generation: Schema.Finite },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
 export const FetchFindings = Command.define("SecurityApiListFindings", {

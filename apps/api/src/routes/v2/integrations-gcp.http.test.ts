@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Record as Rec } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -13,14 +13,9 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { GcpConnectorService } from "@maple/backend/services/integrations/GcpConnectorService"
+import { HttpV2GcpIntegrationsLive } from "./integrations-gcp.http"
 
 /**
  * `/v2/integrations/gcp` over an embedded PGlite with the real connector service: the wire shape
@@ -31,8 +26,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_gcp_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_gcp_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_gcp_e2e")
+const USER = Schema.decodeSync(UserId)("user_gcp_e2e")
 const BASE = "/v2/integrations/gcp"
 
 const testConfig = (metricsAvailable: boolean) =>
@@ -65,13 +60,11 @@ const makeHarness = (options: { readonly metricsAvailable: boolean } = { metrics
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.gcpIntegration),
+	).pipe(
+		Layer.provide(HttpV2GcpIntegrationsLive.pipe(Layer.provide(GcpConnectorService.layer))),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),

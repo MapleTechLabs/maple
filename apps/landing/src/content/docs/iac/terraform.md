@@ -9,12 +9,12 @@ navLabel: "Terraform"
 
 The Maple provider for [Terraform](https://developer.hashicorp.com/terraform) manages Maple configuration as code: dashboards, alert rules and their destinations, uptime monitors, scrape targets and API keys. It talks to the public [v2 API](/docs/reference/api), so anything you can do there with a key you can review in a plan first.
 
-|                    |                                                                                                                         |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| Provider           | `mapletechlabs/maple`                                                                                                   |
-| Terraform          | 1.0 or later; `import` blocks need 1.5                                                                                  |
-| Source             | [packages/terraform-provider-maple](https://github.com/MapleTechLabs/maple/tree/main/packages/terraform-provider-maple) |
-| Resource reference | [Terraform resources](/docs/iac/terraform-resources)                                                                    |
+|                    |                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| Provider           | `mapletechlabs/maple`                                                                               |
+| Terraform          | 1.0 or later; `import` blocks need 1.5                                                              |
+| Source             | [MapleTechLabs/terraform-provider-maple](https://github.com/MapleTechLabs/terraform-provider-maple) |
+| Resource reference | [Terraform resources](/docs/iac/terraform-resources)                                                |
 
 ## Quick start
 
@@ -115,7 +115,7 @@ The quickest way to get a dashboard's widget documents is to build it in Maple a
 
 ## Secrets and state
 
-Notification credentials (`integration_key`, `webhook_url`, `bot_token`, `signing_secret`) and a scrape target's `auth_credentials` are write-only in the API. Terraform keeps the value you set and sends it on every update, but it cannot see a credential someone changes in Maple.
+Notification credentials (`integration_key`, a webhook's `url` and `signing_secret`, `webhook_url`, `bot_token`) and a scrape target's `auth_credentials` are write-only in the API. Terraform keeps the value you set and sends it on every update, but it cannot see a credential someone changes in Maple.
 
 `maple_api_key` stores the new key's `secret` in state, since Maple only returns it once. The `maple_ingest_keys` data source reads your ingest keys into state too. Keep state in an encrypted backend.
 

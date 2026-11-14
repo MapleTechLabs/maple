@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe } from "effect"
-import type { ServiceDependenciesOutput } from "@maple/domain/tinybird"
+import type { ServiceDependenciesOutput } from "../ch/queries/service-map"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange, ServiceEdge } from "./types"
 

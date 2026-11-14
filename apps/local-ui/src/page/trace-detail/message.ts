@@ -1,5 +1,5 @@
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import * as Waterfall from "@maple/views/traces/waterfall"
+import * as Timeline from "@maple/views/traces/timeline"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import { TraceData } from "@maple/views/traces/trace-data"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
@@ -19,14 +19,14 @@ export const Message = defineMessageUnion({
 	ClickedBack: {},
 	ClickedRefresh: {},
 	PressedEscape: {},
-	/** The pointer over the page, for the timeline's span tooltip (`handleHover`'s position). */
+	/** The pointer over the page, for the timeline's span tooltip. */
 	MovedPointer: { x: Schema.Number, y: Schema.Number },
 	GotTabsMessage: { message: Tabs.Message },
 	GotTimelineMessage: { message: Timeline.Message },
 	GotWaterfallMessage: { message: Waterfall.Message },
 	GotFlowMessage: { message: TraceFlow.Message },
 	GotSpanPanelMessage: { message: SpanPanel.Message },
-	/** A Logs-tab row's whole log: `LogDetailSheet` opens on it. */
+	/** A Logs-tab row's whole log: the log sheet opens on it. */
 	FoundSpanLog: { log: LocalLog },
 	/** The clicked row's log could not be read again: the panel's reads are refreshed. */
 	FailedReadSpanLog: {},

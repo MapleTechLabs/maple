@@ -15,7 +15,7 @@
  * `no-effect-die` is the other half of that convention: the try/catch ban keeps
  * failures out of exceptions, and this keeps them out of defects. Every one of
  * the 26 production sites at the time it landed was a legitimate defect, so it
- * cleans nothing up — it exists so the next one has to argue for itself.
+ * cleans nothing up; it exists so the next one has to argue for itself.
  *
  * `no-raw-tool-layer` guards the tool-span seam: a handler map registered
  * straight through `toolkit.toLayer` produces `execute_tool` spans with no
@@ -23,7 +23,7 @@
  *
  * `no-record-string-any` exists as its own rule (rather than leaning on
  * `typescript/no-explicit-any`, which flags the inner `any` anyway) so the worst
- * offender — an open key set whose values are also unchecked — can sit at `error`
+ * offender (an open key set whose values are also unchecked) can sit at `error`
  * while the broader `any` backlog is still being worked down.
  *
  * @see https://oxc.rs/docs/guide/usage/linter/js-plugins.html
@@ -35,7 +35,7 @@ const MESSAGE =
 const NO_REACT_USE_EFFECT_MESSAGE =
 	"Do not call React.useEffect directly. Derive values during render, act in event handlers, use a data-fetching library, or use useMountEffect for mount-scoped external synchronization."
 
-/** `{ [key: string]: any }` written as an index signature — same shape, same problem. */
+/** `{ [key: string]: any }` written as an index signature: same shape, same problem. */
 const isStringToAnyIndexSignature = (node) =>
 	node.members?.length === 1 &&
 	node.members[0].type === "TSIndexSignature" &&
@@ -53,7 +53,7 @@ const noRecordStringAny = {
 	},
 	create(context) {
 		// `<Output extends Record<string, any>>` is the builder-DSL idiom for "any object
-		// shape" — `unknown` does not work in a constraint position. Parents are visited
+		// shape"; `unknown` does not work in a constraint position. Parents are visited
 		// before their children, so recording the constraint node here is enough.
 		const constraints = new Set()
 		const report = (node) => {
@@ -145,7 +145,7 @@ const COMPILE_MODULES = /(effect-clickhouse|query-engine\/ch)$/
 /**
  * A call to a compile entry point.
  *
- * `x.compile(…)` matches on the property name — that covers `CH.compile` and a
+ * `x.compile(…)` matches on the property name, which covers `CH.compile` and a
  * query definition's own `compile` field. A BARE `compile(…)` only matches when
  * it was imported from the builder: `compile` is also the parameter name every
  * `compiledQueryWithCapabilities` double gives its callback, and a double
@@ -161,7 +161,7 @@ const isCompileCall = (node, importedCompiles) => {
 	return callee.property.type === "Identifier" && COMPILE_NAMES.has(callee.property.name)
 }
 
-/** `Effect.orDie` as a value — the callee of `Effect.orDie(x)` and the argument of `.pipe(…)`. */
+/** `Effect.orDie` as a value: the callee of `Effect.orDie(x)` and the argument of `.pipe(…)`. */
 const isEffectOrDie = (node) =>
 	node?.type === "MemberExpression" &&
 	!node.computed &&
@@ -239,7 +239,7 @@ const NO_EFFECT_DIE_MESSAGE =
  * `Effect.die` in any position.
  *
  * Reported on the member expression rather than the call, so the value form
- * (`Effect.catch(Effect.die)`) is caught alongside `Effect.die(x)` — a call's
+ * (`Effect.catch(Effect.die)`) is caught alongside `Effect.die(x)`; a call's
  * callee IS that member expression, so each occurrence is still reported once.
  *
  * A bare `die(…)` from `import { die } from "effect/Effect"` is out of scope:
@@ -470,7 +470,41 @@ const mcpTracerAnticipatedErrors = {
 	},
 }
 
+const NO_THROWING_LIVE_ROW_DECODE_MESSAGE =
+	"Do not decode a synced row with a call that throws. Row mappers run inside live-query callbacks, outside any Effect, so one value this build has never seen (a signal type or kind a newer server added) takes the whole page down. Decode the row with `liveRowDecoder` / `liveValueDecoder` from `collections/live-row.ts` (returns `Option` and reports the dropped row), or `Schema.decodeUnknownOption` for a field that degrades to a default."
+
+const THROWING_DECODES = new Set(["decodeUnknownSync", "decodeSync", "decodeUnknownPromise", "decodePromise"])
+
+/**
+ * `Schema.decode*Sync` / `Schema.decode*Promise`, and `new <X>Document(...)` (a `Schema.Class`
+ * constructor validates and throws), in the Electric row mappers.
+ */
+const noThrowingLiveRowDecode = {
+	meta: {
+		type: "problem",
+		docs: {
+			description: "Disallow throwing decodes in live-row mappers.",
+		},
+		messages: { noThrowingLiveRowDecode: NO_THROWING_LIVE_ROW_DECODE_MESSAGE },
+	},
+	create(context) {
+		return {
+			MemberExpression(node) {
+				if (node.computed) return
+				if (node.object.type !== "Identifier" || node.object.name !== "Schema") return
+				if (node.property.type !== "Identifier" || !THROWING_DECODES.has(node.property.name)) return
+				context.report({ node, messageId: "noThrowingLiveRowDecode" })
+			},
+			NewExpression(node) {
+				if (node.callee.type !== "Identifier" || !node.callee.name.endsWith("Document")) return
+				context.report({ node, messageId: "noThrowingLiveRowDecode" })
+			},
+		}
+	},
+}
+
 import { designRules } from "./design-rules.mjs"
+import { consistencyRules } from "./consistency-rules.mjs"
 import { uiKitRules } from "./ui-kit-rules.mjs"
 
 export default {
@@ -478,6 +512,7 @@ export default {
 	rules: {
 		...designRules,
 		...uiKitRules,
+		...consistencyRules,
 		"dialog-body-padding": dialogBodyPadding,
 		"mcp-tracer-anticipated-errors": mcpTracerAnticipatedErrors,
 		"no-date-parse": noDateParse,
@@ -486,6 +521,7 @@ export default {
 		"no-raw-tool-layer": noRawToolLayer,
 		"no-react-use-effect": noReactUseEffect,
 		"no-record-string-any": noRecordStringAny,
+		"no-throwing-live-row-decode": noThrowingLiveRowDecode,
 		"no-try-catch": noTryCatch,
 	},
 }

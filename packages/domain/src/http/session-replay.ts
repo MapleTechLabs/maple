@@ -1,11 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { SessionId, TraceId, UserId } from "../primitives"
+import { SessionId, TraceId, UserId } from "@maple/primitives"
 import { SessionTag, TinybirdDateTime } from "../query-engine"
 import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { QueryEngineExecutionError, QueryEngineTimeoutError } from "./query-engine"
 import { warehouseHttpErrors } from "./warehouse"
+import { AnalystAccess } from "./analyst-access"
 
 // Session replay schemas shared by the v2 contract and the internal replay group.
 
@@ -52,7 +53,6 @@ export const SessionReplayListItem = Schema.Struct({
 export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("ReplaysFacetsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	// Same optional-filter contract as ListReplaysRequest — see the note there.
 	serviceName: Schema.optional(Schema.String),
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
@@ -139,8 +139,6 @@ export class SessionTraceSummariesResponse extends Schema.Class<SessionTraceSumm
 	data: Schema.Array(SessionTraceSummary),
 }) {}
 
-// API group
-
 const sessionReplayEndpointErrors = [
 	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
@@ -172,4 +170,6 @@ export class SessionReplaysInternalApiGroup extends HttpApiGroup.make("sessionRe
 	)
 	.prefix("/internal/session-replays")
 	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an analyst may call it.
+	.annotate(AnalystAccess, "read")
 	.annotate(AuditedRead, "session_replay.read") {}

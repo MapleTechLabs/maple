@@ -1,29 +1,18 @@
-import {
-	type CloudflareAccount,
-	cloudflareAccounts,
-	zoneAccountIds,
-} from "../../../../components/infra/cloudflare/accounts"
-import {
-	CLOUDFLARE_VIEWS,
-	type CloudflareView,
-	mergeWorkerRows,
-	type WorkerListRow,
-} from "../../../../components/infra/cloudflare/list-model"
+import { type CloudflareAccount, cloudflareAccounts, zoneAccountIds } from "../accounts"
+import { type CloudflareView, mergeWorkerRows, type WorkerListRow } from "../list-model"
+import { CLOUDFLARE_VIEWS } from "../../../../route/search"
 import { AsyncData } from "foldkit"
 import type { PlatformResources, QueueRow, Usage, ZoneBucket, ZoneRow } from "../data"
 import { ingestPhaseOf } from "../ingest"
 import type { Model } from "./model"
-import { Array as Arr, String as Str } from "effect"
-
-/** A loaded value, refreshing included; a failure or an empty slot reads as not there yet. */
-export const dataOf = <A, E>(slot: AsyncData.AsyncData<A, E>): A | null =>
-	AsyncData.isSuccess(slot) || AsyncData.isRefreshing(slot) ? slot.data : null
+import { Array as Arr, String as Str, Option } from "effect"
+import { successOf } from "../../kit/success-of"
 
 export const isWaiting = <A, E>(slot: AsyncData.AsyncData<A, E>): boolean => AsyncData.isRefreshing(slot)
 
-export const statusOf = (model: Model) => dataOf(model.status.data)
+export const statusOf = (model: Model) => successOf(model.status.data)
 
-const usageOf = (model: Model): Usage | null => dataOf(model.usage.data)
+const usageOf = (model: Model): Usage | null => successOf(model.usage.data)
 
 export const phaseOf = (model: Model) => ingestPhaseOf(statusOf(model), usageOf(model), model.nowMs)
 
@@ -40,7 +29,7 @@ export const requestSparks = (
 		Arr.map([...byZone], ([serviceName, series]) => [
 			serviceName,
 			Arr.map(
-				series.toSorted((a, b) => Str.localeCompare(b.bucket)(a.bucket)),
+				Arr.sort(series, (a: ZoneBucket, b: ZoneBucket) => Str.localeCompare(b.bucket)(a.bucket)),
 				(point) => point.requests,
 			),
 		]),
@@ -54,13 +43,13 @@ export type ListData = Readonly<{
 	workerRows: ReadonlyArray<WorkerListRow> | null
 }>
 
-/** `CloudflareData`'s reads: null while loading (a failed read stays loading). */
+/** Null while loading (a failed read stays loading). */
 export const listDataOf = (model: Model): ListData => {
-	const timeseries = dataOf(model.timeseries.data)
-	const platform = dataOf(model.platform.data)
-	const workers = dataOf(model.workers.data)
+	const timeseries = successOf(model.timeseries.data)
+	const platform = successOf(model.platform.data)
+	const workers = successOf(model.workers.data)
 	return {
-		zones: dataOf(model.zones.data),
+		zones: successOf(model.zones.data),
 		sparks: timeseries === null ? undefined : requestSparks(timeseries),
 		platform,
 		workerRows: workers === null ? null : mergeWorkerRows(workers, platform?.durableObjects ?? []),
@@ -85,7 +74,7 @@ export type ListScope = Readonly<{
 	scopedAccount: CloudflareAccount | undefined
 }>
 
-/** `CloudflareListPage`'s account scoping, counts, and the view fallback. */
+/** The account scoping, counts, and the view fallback. */
 export const listScopeOf = (
 	model: Model,
 	data: ListData,
@@ -93,28 +82,50 @@ export const listScopeOf = (
 ): ListScope => {
 	const multiAccount = accounts.length > 1
 	const accountId = multiAccount
-		? accounts.find((account) => account.accountId === model.search.account)?.accountId
+		? Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(accounts, (account) => account.accountId === model.search.account),
+					(account) => account.accountId,
+				),
+			)
 		: undefined
 	const zoneAccount = zoneAccountIds(accounts)
 	const allQueues = data.platform?.queues ?? null
 	const zones =
 		accountId === undefined
 			? data.zones
-			: (data.zones?.filter((zone) => zoneAccount.get(zone.serviceName) === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(data.zones), (rows) =>
+						Arr.filter(rows, (zone) => zoneAccount.get(zone.serviceName) === accountId),
+					),
+				)
 	const workerRows =
 		accountId === undefined
 			? data.workerRows
-			: (data.workerRows?.filter((row) => row.accountId === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(data.workerRows), (rows) =>
+						Arr.filter(rows, (row) => row.accountId === accountId),
+					),
+				)
 	const queues =
 		accountId === undefined
 			? allQueues
-			: (allQueues?.filter((queue) => queue.accountId === accountId) ?? null)
+			: Option.getOrNull(
+					Option.map(Option.fromNullishOr(allQueues), (rows) =>
+						Arr.filter(rows, (queue) => queue.accountId === accountId),
+					),
+				)
 	const counts = {
 		zones: zones?.length ?? null,
 		workers: workerRows?.length ?? null,
 		queues: queues?.length ?? null,
 	}
-	const view = model.search.view ?? CLOUDFLARE_VIEWS.find((v) => (counts[v] ?? 0) > 0) ?? "zones"
+	const view =
+		model.search.view ??
+		Option.getOrElse(
+			Arr.findFirst(CLOUDFLARE_VIEWS, (v) => (counts[v] ?? 0) > 0),
+			(): (typeof CLOUDFLARE_VIEWS)[number] => "zones",
+		)
 	return {
 		accounts,
 		multiAccount,
@@ -127,7 +138,9 @@ export const listScopeOf = (
 		counts,
 		view,
 		showAccountColumn: multiAccount && accountId === undefined,
-		scopedAccount: accounts.find((account) => account.accountId === accountId),
+		scopedAccount: Option.getOrUndefined(
+			Arr.findFirst(accounts, (account) => account.accountId === accountId),
+		),
 	}
 }
 

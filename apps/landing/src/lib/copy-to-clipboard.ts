@@ -70,7 +70,7 @@ export function bindCopyButtons({
 		const text = host.dataset.copy ?? ""
 		let timer: ReturnType<typeof setTimeout> | undefined
 
-		button.addEventListener("click", async () => {
+		const copy = async () => {
 			const ok = await writeClipboardText(text)
 			// Copying is the strongest intent signal the marketing site has —
 			// tracked here rather than at each call site, since this is the one
@@ -89,6 +89,7 @@ export function bindCopyButtons({
 				button.classList.remove(doneClass)
 				delete button.dataset.copyState
 			}, RESET_MS)
-		})
+		}
+		button.addEventListener("click", () => void copy())
 	}
 }

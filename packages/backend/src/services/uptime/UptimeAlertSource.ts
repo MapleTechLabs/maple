@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto"
-import { bumpPagesForMonitors } from "@maple/backend/services/status-pages/outbox"
-import { countOne, upsertDailyCounts } from "./uptime-daily"
-import * as Orm from "@maple-dev/effect-orm/database"
+import { heartbeatCheckState, recordHeartbeatCheck, toUptimePersistenceError } from "./uptime-state"
+import { lockOrgAlertRules } from "@maple/backend/services/alerts/alert-persistence"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
 import { UNGROUPED_GROUP_KEY, UptimeMonitorPersistenceError } from "@maple/domain/http"
@@ -11,14 +10,15 @@ import {
 	type UptimeMonitorId,
 	type UptimeMonitorStatus,
 	type UserId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
-	appendRecentCheck,
 	describeMissedHeartbeat,
+	describeStaleProbe,
 	heartbeatDeadline,
+	probeStaleAfterMs,
 	type UptimeMonitorConfig,
 } from "@maple/domain/uptime"
-import { Clock, Context, Effect, Layer, Option, Ref } from "effect"
+import { Clock, Context, Effect, Layer, Option, Ref, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { uptimeRuleFields } from "@maple/backend/services/alerts/AlertRuleModel"
@@ -28,7 +28,9 @@ export interface UptimeAlertObservation {
 	/** The monitor's service when linked, so a down monitor is a cause in that service's health. */
 	readonly groupKey: string
 	readonly down: boolean
-	/** The failing check's error, e.g. `Status 503, expected 2xx`; null while up. */
+	/** No recent check vouches for an `up` or `pending` probe: the rule has no data, not a healthy check. */
+	readonly stale: boolean
+	/** The failing check's error, e.g. `Status 503, expected 2xx`, or why it is stale; null while up. */
 	readonly detail: string | null
 }
 
@@ -56,10 +58,37 @@ export const isHeartbeatOverdue = (monitor: HeartbeatWatch, nowMs: number): bool
 	return Option.exists(heartbeatDeadline(monitor.config, waitingSince), (deadline) => nowMs > deadline)
 }
 
+/** The probe fields the staleness check reads. */
+export interface ProbeWatch {
+	readonly config: UptimeMonitorConfig
+	readonly intervalSeconds: number
+	readonly enabled: boolean
+	readonly status: UptimeMonitorStatus
+	readonly statusChangedAt: number | null
+	readonly lastCheckJson: { readonly at: number } | null
+	readonly createdAt: number
+}
+
+/**
+ * True when an http, tcp or dns monitor that reads `up` or `pending` has had no check result for
+ * `probeStaleAfterMs`. A `pending` one waits from its creation or resume. A `down` one is never
+ * stale: its open incident stays until a check says otherwise.
+ */
+export const isProbeStale = (monitor: ProbeWatch, nowMs: number): boolean => {
+	if (monitor.config._tag === "heartbeat" || !monitor.enabled) return false
+	if (monitor.status !== "up" && monitor.status !== "pending") return false
+	const lastCheckAt = monitor.lastCheckJson?.at ?? 0
+	const waitingSince =
+		monitor.status === "pending"
+			? Math.max(lastCheckAt, monitor.statusChangedAt ?? 0, monitor.createdAt)
+			: Math.max(lastCheckAt, monitor.createdAt)
+	return nowMs - waitingSince > probeStaleAfterMs(monitor.intervalSeconds)
+}
+
 export interface UptimeAlertSourceApi {
 	/**
-	 * The monitor behind `ruleId` as one observation, marking an overdue heartbeat down first.
-	 * `None` when no monitor owns the rule any more.
+	 * The monitor behind `ruleId` as one observation, marking an overdue heartbeat down first and
+	 * a probe with no recent check stale. `None` when no monitor owns the rule any more.
 	 */
 	readonly observe: (
 		orgId: OrgId,
@@ -84,12 +113,6 @@ interface MonitorWithoutRule {
 	readonly createdBy: UserId
 }
 
-const toPersistenceError = (error: unknown) =>
-	new UptimeMonitorPersistenceError({
-		message: error instanceof Error ? error.message : "Uptime monitor persistence failed",
-		cause: error,
-	})
-
 /**
  * The alert evaluator's view of uptime monitors. Its own service, with only the database,
  * so the alerting worker does not take on the monitor service's billing and HTTP dependencies.
@@ -99,7 +122,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toPersistenceError)
+			const dbExecute = makeDbExecute(database, "UptimeAlertSource", toUptimePersistenceError)
 
 			const readMonitor = (orgId: OrgId, ruleId: AlertRuleId) =>
 				dbExecute((db) =>
@@ -111,11 +134,13 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							.select(($) => ({
 								id: $.id,
 								configJson: $.configJson,
+								intervalSeconds: $.intervalSeconds,
 								serviceName: $.serviceName,
 								enabled: $.enabled,
 								createdAt: $.createdAt,
 								status: $.s.status,
 								consecutiveFailures: $.s.consecutiveFailures,
+								consecutiveSuccesses: $.s.consecutiveSuccesses,
 								statusChangedAt: $.s.statusChangedAt,
 								lastCheckJson: $.s.lastCheckJson,
 								recentJson: $.s.recentJson,
@@ -137,6 +162,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				return {
 					groupKey: row.serviceName ?? UNGROUPED_GROUP_KEY,
 					down,
+					stale: false,
 					detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
 				}
 			}
@@ -151,6 +177,19 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				const row = read.value
 				const groupKey = row.serviceName ?? UNGROUPED_GROUP_KEY
 				const watch = { ...row, config: row.configJson }
+				// The scraper stopped reporting, or the API refuses its reports: say so, not "up".
+				if (isProbeStale(watch, nowMs)) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.uptime.monitor_id": row.id,
+						"maple.uptime.checks_stale": true,
+					})
+					return Option.some({
+						groupKey,
+						down: false,
+						stale: true,
+						detail: describeStaleProbe(row.lastCheckJson?.at ?? null, nowMs),
+					})
+				}
 				if (!isHeartbeatOverdue(watch, nowMs)) return Option.some(asStored(row))
 				// Fenced on the state read above: a ping or check landing in between wins.
 				const error = describeMissedHeartbeat(row.lastPingAt, nowMs)
@@ -159,26 +198,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 						Effect.gen(function* () {
 							const rows = yield* db.run(
 								PG.update(UptimeMonitorStates)
-									.set({
-										status: "down",
-										consecutiveFailures: row.consecutiveFailures + 1,
-										consecutiveSuccesses: 0,
-										statusChangedAt: nowMs,
-										lastCheckJson: {
-											at: nowMs,
-											ok: false,
-											durationMs: null,
-											statusCode: null,
-											error,
-											traceId: null,
-										},
-										recentJson: appendRecentCheck(row.recentJson, {
-											at: nowMs,
-											ok: false,
-											durationMs: null,
-										}),
-										updatedAt: nowMs,
-									})
+									.set(heartbeatCheckState(row, nowMs, false, error))
 									.where(($) => [
 										$.orgId.eq(orgId),
 										$.monitorId.eq(row.id),
@@ -189,14 +209,10 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 							)
 							if (rows.length === 0) return rows
 							// The miss counts as a down check, so the day's bar shows it, and pages showing it republish.
-							yield* upsertDailyCounts(db, [
-								{
-									monitorId: row.id,
-									orgId,
-									count: countOne({ at: nowMs, ok: false, down: true }),
-								},
-							])
-							yield* bumpPagesForMonitors(db, orgId, [row.id])
+							yield* recordHeartbeatCheck(db, orgId, row.id, row.status, {
+								at: nowMs,
+								ok: false,
+							})
 							return rows
 						}),
 					),
@@ -205,7 +221,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					"maple.uptime.monitor_id": row.id,
 					"maple.uptime.heartbeat_overdue": marked.length > 0,
 				})
-				if (marked.length > 0) return Option.some({ groupKey, down: true, detail: error })
+				if (marked.length > 0)
+					return Option.some({ groupKey, down: true, stale: false, detail: error })
 				// A ping or failure landed between the read and the write: report what it left.
 				const monitor = yield* readMonitor(orgId, ruleId)
 				return Option.map(monitor, asStored)
@@ -220,9 +237,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 					db.transaction(
 						Effect.gen(function* () {
 							// The org lock rule writes take; the re-read makes a repeat a no-op.
-							yield* db.execute(
-								Orm.sql`select pg_advisory_xact_lock(hashtext(${monitor.orgId}))`,
-							)
+							yield* lockOrgAlertRules(db, monitor.orgId)
 							const still = yield* db.run(
 								PG.from(UptimeMonitors)
 									.select("id")
@@ -288,7 +303,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 						),
 					),
 				)
-				const count = created.filter((made) => made).length
+				const count = Arr.filter(created, (made) => made).length
 				yield* Effect.annotateCurrentSpan("maple.uptime.rules_backfilled", count)
 				return count
 			}).pipe(Effect.withSpan("UptimeAlertSource.backfillRules"))

@@ -1,9 +1,7 @@
 /**
- * Tiny dependency-free ClickHouse HTTP client. Just enough to apply DDL +
- * read system tables. Mirrors the body shape of
- * `apps/api/src/services/OrgClickHouseSettingsService.ts:execClickHouse`
- * but without the Effect machinery — a CLI doesn't need it and pulling in
- * Effect would balloon the install footprint of `bunx @maple/clickhouse-cli`.
+ * Dependency-free ClickHouse HTTP client mirroring `execClickHouse` in
+ * `apps/api/src/workflows/ClickHouseSchemaApplyWorkflow.run.ts`. No Effect here: it would balloon
+ * the install footprint of `bunx @maple/clickhouse-cli`.
  */
 
 export interface ClickHouseConfig {
@@ -14,14 +12,8 @@ export interface ClickHouseConfig {
 }
 
 /**
- * Run a single statement against ClickHouse via the HTTP interface.
- *
- * The `database` is sent as both the X-ClickHouse-Database header and a
- * `?database=` query parameter. The duplication is intentional — CH Cloud's
- * 24.x analyzer occasionally fails to resolve unqualified table names in
- * MV bodies if only the header is set, surfacing as `Code: 60. UNKNOWN_TABLE`.
- *
- * Throws a `ClickHouseError` (with .status + .body) on any non-2xx response.
+ * `database` goes in both the header and `?database=`: CH Cloud's 24.x analyzer sometimes fails
+ * to resolve unqualified table names in MV bodies with only the header (`Code: 60. UNKNOWN_TABLE`).
  */
 export async function exec(config: ClickHouseConfig, sql: string): Promise<string> {
 	const url = `${config.url.replace(/\/$/, "")}/?database=${encodeURIComponent(config.database)}`
@@ -60,7 +52,6 @@ export class ClickHouseError extends Error {
 	}
 }
 
-/** Connectivity probe — returns the server version on success. */
 export async function ping(config: ClickHouseConfig): Promise<string> {
 	const text = await exec(config, "SELECT version() FORMAT TabSeparated")
 	return text.trim()

@@ -13,7 +13,7 @@ This page is about collecting metrics from your Railway services. To run Maple i
 
 ## Prerequisites
 
-- You are an admin of the Maple organization. Connecting, **Sync now**, and disconnecting are admin actions. Any member can see the status.
+- You are an admin or engineer in the Maple organization. Connecting, **Sync now**, and disconnecting need one of those roles. Any member can see the status.
 - A Railway account or workspace token.
 
 ## 1. Create a token

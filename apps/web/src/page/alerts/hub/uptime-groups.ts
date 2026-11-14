@@ -1,6 +1,6 @@
 import { isMapleService } from "@maple/domain/uptime"
 import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import type { UptimeMonitor } from "../shared/uptime-derive"
+import type { UptimeMonitor } from "../../kit/uptime/derive"
 
 // The Uptime tab's namespace groups. A monitor stores only its service's name, so its namespace is
 // the one that service reported telemetry under.
@@ -64,7 +64,7 @@ export const groupMonitors = (
 	})
 	if (!Arr.some([...groups.keys()], (namespace) => namespace !== NO_NAMESPACE))
 		return [[NO_NAMESPACE, monitors]]
-	return [...groups].toSorted(([a], [b]) =>
+	return Arr.sort([...groups], ([a]: MonitorGroup, [b]: MonitorGroup) =>
 		a === NO_NAMESPACE ? 1 : b === NO_NAMESPACE ? -1 : Str.localeCompare(b)(a),
 	)
 }

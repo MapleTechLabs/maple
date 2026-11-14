@@ -1,19 +1,19 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
-import { ConfigProvider, Effect, Exit, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { OrgOpenRouterKeyService } from "./OrgOpenRouterKeyService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_byok")
-const USER = Schema.decodeUnknownSync(UserId)("user_byok")
+const ORG = Schema.decodeSync(OrgId)("org_byok")
+const USER = Schema.decodeSync(UserId)("user_byok")
 const KEY = "sk-or-v1-0123456789abcdef0123456789abcdef"
 
 interface World {
@@ -140,7 +140,7 @@ describe("OrgOpenRouterKeyService", () => {
 						"SELECT key_ciphertext FROM org_openrouter_keys WHERE org_id = 'org_byok'",
 					),
 				)
-				assert.isFalse(row?.key_ciphertext.includes(KEY) ?? true)
+				assert.isFalse(row === undefined || Str.includes(KEY)(row.key_ciphertext))
 
 				const resolved = yield* keys.resolveForRun(ORG)
 				assert.strictEqual(Option.map(resolved, Redacted.value).pipe(Option.getOrNull), KEY)
@@ -184,8 +184,8 @@ describe("OrgOpenRouterKeyService", () => {
 			world,
 			Effect.gen(function* () {
 				const keys = yield* OrgOpenRouterKeyService
-				const exit = yield* Effect.exit(keys.set(ORG, USER, "sk-ant-not-openrouter-key"))
-				assert.isTrue(Exit.isFailure(exit))
+				const error = yield* Effect.flip(keys.set(ORG, USER, "sk-ant-not-openrouter-key"))
+				assert.strictEqual(error._tag, "@maple/http/openrouter-key/OpenRouterKeyValidationError")
 				assert.deepStrictEqual(world.openRouterCalls, [])
 			}),
 		)

@@ -11,18 +11,19 @@ import {
 	makeChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission } from "@maple/domain/permission"
-import { ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
+import { ExternalUserId, OrgId, UserId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr } from "effect"
 import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { mapleToolCatalog } from "../mcp/tools/registry"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AGENTS, agentForSession } from "./agents"
-import { profileForTurn } from "./profiles"
+import { MUTATING_TOOL_NAMES } from "./permissions"
+import type { TenantContext } from "@maple/domain/http"
+import { AGENTS, agentForSession, isAutonomousTurn, sessionOf } from "./agents"
+import { profileForRoles, profileForTurn } from "./profiles"
+import { DASHBOARD_AUTHORING_TOOLS } from "../mcp/tools/types"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
-import { buildChatToolkit } from "./tools"
+import { buildChatToolkit } from "./maple-toolkit"
 
 /** A connector id, not a real one: the engine never learns which chat platform it answers in. */
 const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
@@ -43,6 +44,45 @@ describe("AGENTS", () => {
 		for (const mode of ChatMode.literals) {
 			assert.equal(AGENTS[mode].name, mode)
 		}
+	})
+})
+
+describe("sessionOf", () => {
+	const UUID = "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f"
+
+	it("names the row a session's turns settle, by mode", () => {
+		assert.deepEqual(sessionOf(makeChatSessionId("org_1", `inv-${UUID}`)).row, {
+			kind: "investigate",
+			id: UUID,
+		})
+		assert.deepEqual(sessionOf(makeChatSessionId("org_1", `pr-${UUID}`)).row, {
+			kind: "pr-review",
+			id: UUID,
+		})
+		assert.deepEqual(sessionOf(makeChatSessionId("org_1", `prr-${UUID}`)).row, {
+			kind: "pr-reply",
+			id: UUID,
+		})
+		assert.isUndefined(sessionOf(makeChatSessionId("org_1", "tab")).row)
+	})
+
+	/**
+	 * Documents today's split: the prefix alone picks the persona, budget and code mode, but only
+	 * an id that decodes makes it a row. So an `inv-<non-uuid>` session runs the investigate agent
+	 * as an ordinary conversation: no `submit_diagnosis`, no close-out, billed as plain chat.
+	 */
+	it("keeps the mode's agent for a prefix whose id does not decode, with no row", () => {
+		const session = sessionOf(makeChatSessionId("org_1", "inv-not-a-uuid"))
+		assert.equal(session.agent.name, "investigate")
+		assert.isUndefined(session.row)
+		assert.isFalse(isAutonomousTurn(session.row, { kind: "autonomous" }))
+	})
+
+	it("treats only an unattended turn on a row as a pass the runner closes out", () => {
+		const { row } = sessionOf(makeChatSessionId("org_1", `inv-${UUID}`))
+		assert.isTrue(isAutonomousTurn(row, { kind: "autonomous" }))
+		assert.isFalse(isAutonomousTurn(row, { kind: "app" }))
+		assert.isFalse(isAutonomousTurn(row, CONNECTOR_ORIGIN))
 	})
 })
 
@@ -95,6 +135,29 @@ describe("profileForTurn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.property(tools, name, `${name} was withheld from the connector`)
 			assert.equal(evaluatePermission(profile.ruleset, name), "ask", name)
+		}
+	})
+
+	it("proposes dashboard changes to an analyst and offers no other tool that changes data", () => {
+		const profile = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:analyst",
+		])
+		const { tools } = buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit
+		assert.property(tools, "search_traces")
+		for (const name of MUTATING_TOOL_NAMES) {
+			if (DASHBOARD_AUTHORING_TOOLS.has(name)) {
+				assert.equal(evaluatePermission(profile.ruleset, name), "ask", name)
+			} else {
+				assert.notProperty(tools, name, `${name} was offered to an analyst`)
+			}
+		}
+		assert.property(tools, "create_dashboard")
+		// A member's turn on the same session still proposes every one of them.
+		const member = profileForRoles(profileForTurn(agentForSession(appSession), { kind: "app" }), [
+			"org:member",
+		])
+		for (const name of MUTATING_TOOL_NAMES) {
+			assert.equal(evaluatePermission(member.ruleset, name), "ask", name)
 		}
 	})
 

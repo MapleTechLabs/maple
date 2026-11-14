@@ -1,12 +1,13 @@
+import { cn } from "@maple/ui/lib/utils"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../../kit/relative-time"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { formatValueWithUnit } from "@maple/views/lib/infra-chart-units"
-import { LINKED_CURSOR_STYLE, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LINKED_CURSOR_STYLE, LINKED_ZOOM_CLASS, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import {
 	INFRA_METRIC_CHART_HEIGHT,
 	type InfraSeriesInfo,
@@ -15,13 +16,10 @@ import {
 import { chartError, chartLoading, chartPlotArea } from "@maple/views/ui/chart-state"
 import { attributeSection, metaRow, resourceAttributesCard } from "../../kit/resource-attributes"
 import { seriesLegend } from "../../../kit/series-legend"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
 import { type HostMetric, Message } from "./message"
 import type { HostSummary, Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// `HostMetadataPanel`, and the Metrics panel of `HostDetailPage` with its `MetricStrip`s.
 
 type H = HtmlBuilder<Message>
 
@@ -35,7 +33,7 @@ export const hostMetadataPanel = (
 	const row = (
 		label: string,
 		value: string,
-		extra: Readonly<{ copyable?: boolean; copyValue?: string; tooltip?: string }>,
+		extra: Readonly<{ copyable?: boolean; copyValue?: string; display?: Html }>,
 	) =>
 		metaRow(h, {
 			label,
@@ -58,13 +56,13 @@ export const hostMetadataPanel = (
 					row("cloud.region", summary.cloudRegion, { copyable: true }),
 				]),
 				attributeSection(h, "Lifecycle", [
-					row("first seen", formatRelativeTime(summary.firstSeen, nowMs), {
+					row("first seen", summary.firstSeen, {
 						copyValue: summary.firstSeen,
-						tooltip: formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+						display: relativeTime(h, { value: summary.firstSeen, nowMs, timeZone }),
 					}),
-					row("last seen", formatRelativeTime(summary.lastSeen, nowMs), {
+					row("last seen", summary.lastSeen, {
 						copyValue: summary.lastSeen,
-						tooltip: formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+						display: relativeTime(h, { value: summary.lastSeen, nowMs, timeZone }),
 					}),
 				]),
 			],
@@ -77,7 +75,7 @@ export const METRIC_STRIPS: ReadonlyArray<Readonly<{ metric: HostMetric; label: 
 		{ metric: "cpu", label: "CPU", caption: "Per-mode utilization · stacked area" },
 		{ metric: "memory", label: "Memory", caption: "Used / cached / free · stacked" },
 		{ metric: "filesystem", label: "Filesystem", caption: "Mountpoint utilization" },
-		{ metric: "network", label: "Network", caption: "Throughput in/out per device" },
+		{ metric: "network", label: "Network", caption: "Throughput in/out, all devices but loopback" },
 		{ metric: "load15", label: "Load 15m", caption: "Linux load average" },
 	]
 
@@ -123,7 +121,6 @@ const stripChart = (h: H, model: Model, metric: HostMetric, timeZone: string): H
 	})
 }
 
-/** `MetricStrip`. */
 const metricStrip = (h: H, model: Model, strip: (typeof METRIC_STRIPS)[number], timeZone: string): Html =>
 	h.section(
 		[
@@ -157,12 +154,16 @@ export const metricsPanel = (h: H, model: Model, timeZone: string): Html =>
 			]),
 		}),
 		h.div(
-			[h.Class("px-4"), h.Style(LINKED_CURSOR_STYLE), h.OnMount(MountLinkedCursor())],
+			[
+				h.Class(cn("px-4", LINKED_ZOOM_CLASS)),
+				h.Style(LINKED_CURSOR_STYLE),
+				h.OnMount(MountLinkedZoom({ timeZone })),
+			],
 			Arr.map(METRIC_STRIPS, (strip) => metricStrip(h, model, strip, timeZone)),
 		),
 	])
 
-/** `HostSeriesSummary`: the right-aligned last-value strip. */
+/** The right-aligned last-value strip. */
 export const hostSeriesSummary = (h: HtmlBuilder<Chart.Message>, info: InfraSeriesInfo): Html =>
 	seriesLegend(h, {
 		className: "px-3 py-2",

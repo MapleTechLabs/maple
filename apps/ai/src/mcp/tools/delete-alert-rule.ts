@@ -1,7 +1,7 @@
-import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { toMcpHttpError } from "../lib/map-http-error"
 import { Effect, Schema } from "effect"
-import { DeleteAlertRuleOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { parseRuleId, ruleNotFoundFromError } from "../lib/alert-rules"
 import * as P from "../lib/params"
@@ -18,7 +18,6 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			rule_id: P.resourceId("alertRule", "Alert rule ID"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteAlertRuleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
 		phrases: ["Deleting an alert rule"],
 		handler: Effect.fn("McpTool.deleteAlertRule")(function* (params) {
@@ -36,22 +35,12 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			const result = yield* alerts.deleteRule(tenant.orgId, tenant.roles, ruleId).pipe(
 				Effect.catchTags({
 					"@maple/http/errors/AlertRuleNotFoundError": ruleNotFoundFromError,
+					"@maple/http/errors/AlertValidationError": (error) =>
+						Effect.fail(new McpInvalidInputError({ message: error.message })),
 					"@maple/http/errors/AlertForbiddenError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: `${error._tag}: ${error.message}`,
-								pipeName: "delete_alert_rule",
-								cause: error,
-							}),
-						),
+						Effect.fail(toMcpHttpError("delete_alert_rule")(error)),
 					"@maple/http/errors/AlertPersistenceError": (error) =>
-						Effect.fail(
-							new McpQueryError({
-								message: `${error._tag}: ${error.message}`,
-								pipeName: "delete_alert_rule",
-								cause: error,
-							}),
-						),
+						Effect.fail(toMcpHttpError("delete_alert_rule")(error)),
 				}),
 			)
 

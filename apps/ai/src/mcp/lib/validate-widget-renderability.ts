@@ -10,7 +10,7 @@ import { dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "@mapl
 import { FUNNEL_MAX_STEPS, PATHS_MAX_BRANCHES, PATHS_MAX_DEPTH } from "@maple/query-model"
 import { isGroupByRequested } from "./inspect-widget"
 import { stringifyJson } from "./json"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -52,9 +52,7 @@ export interface ValidateWidgetRenderabilityInput {
 const panelTypeOf = (input: ValidateWidgetRenderabilityInput): PanelType => {
 	if (input.panelType) return input.panelType
 	const visualization = input.widget.visualization
-	return visualization === "chart" || !(visualization in WIDGET_TYPES)
-		? "line"
-		: (visualization as PanelType)
+	return visualization === "chart" || !(visualization in WIDGET_TYPES) ? "line" : visualization
 }
 
 /** Every unit field a display config can carry, with a label for the message. */
@@ -92,8 +90,6 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	const kind = (widget.dataSource as { kind?: unknown }).kind
 	const isStatic = kind === "static"
 
-	// --- fatal -------------------------------------------------------------
-
 	// A note renders `display.markdown.content` and issues no request; anything
 	// else backing it means the query runs and its result is thrown away.
 	if (panelType === "markdown" && !isStatic) {
@@ -108,7 +104,7 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	}
 
 	// `list` deliberately has no raw-SQL display type, so the lookup falls back to
-	// `"line"` and the widget renders as a line chart. Silent before this check.
+	// `"line"` and the widget renders as a line chart.
 	if (panelType === "list" && rawSql !== null) {
 		fatal.push(
 			'`panel_type: "list"` has no raw-SQL rendering — a list is configured by its `display_json.listDataSource`, not by SQL. For tabular SQL results use `panel_type: "table"`.',
@@ -144,10 +140,13 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 				`A product-event funnel has at most ${FUNNEL_MAX_STEPS} steps, but \`display_json.funnel.steps\` has ${funnelSteps.length}.`,
 			)
 		}
-		const lateSession = funnelSteps.findIndex((step, index) => index > 0 && step.kind === "session")
-		if (lateSession !== -1) {
+		const lateSession = Arr.findFirstIndex(
+			funnelSteps,
+			(step, index) => index > 0 && step.kind === "session",
+		)
+		if (Option.isSome(lateSession)) {
 			fatal.push(
-				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession + 1}.`,
+				`A \`{ "kind": "session" }\` funnel step describes how the session was acquired, so it is only valid as step 1 — \`display_json.funnel.steps\` has one at step ${lateSession.value + 1}.`,
 			)
 		}
 		const windowSeconds = widget.display.funnel?.windowSeconds
@@ -199,8 +198,6 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 	if (panelType !== "paths" && widget.display.paths !== undefined) {
 		warnings.push('`display_json.paths` only applies to `panel_type: "paths"`; other panels ignore it.')
 	}
-
-	// --- warnings ----------------------------------------------------------
 
 	// The breakdown endpoint is meaningless ungrouped: one bucket per time slice
 	// instead of one slice per category. The web editor blocks this; the MCP path

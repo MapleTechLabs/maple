@@ -17,20 +17,34 @@ import {
 	RailwayIntegrationStatus,
 	UserId,
 } from "@maple/domain/http"
-import { pollStatus } from "@maple/domain/integration-inventory"
+import { pollStatus } from "./integration-inventory"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	RailwayConnections,
 	RailwayEnvironments,
 	type RailwayConnectionRow,
 	type RailwayEnvironmentRow,
 } from "@maple/db/tables"
-import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Redacted, Ref, Schema } from "effect"
+import {
+	DateTime,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Ref,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { railwayTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
@@ -41,7 +55,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { discover, fetchEnvironmentMetrics, RailwayApiError, type RailwayDiscovery } from "./railway/api"
 import { mapRailwayMetrics } from "./railway/mapping"
@@ -66,7 +80,6 @@ const DISCOVERY_TIMEOUT = Duration.seconds(60)
 const MAX_ENVIRONMENT_CALLS_PER_TICK = 15
 const RATE_LIMIT_HOLD_MS = 15 * 60_000
 const BILLING_HOLD_MS = 60 * 60_000
-const ORG_CONCURRENCY = 3
 /**
  * Connect runs the first poll inline so the page has an hour of data when it loads, instead of
  * every environment sitting at "pending" until the next cron tick. What doesn't finish in time is
@@ -90,9 +103,6 @@ const TOKEN_REJECTED_REASON = "Railway rejected the token. Reconnect Railway wit
 const toPersistenceError = makePersistenceErrorMapper(IntegrationsPersistenceError, "Railway database error")
 
 const floorToSample = (ms: number) => ms - (ms % SAMPLE_MS)
-
-/** Binds each ciphertext to its org so a row copied across orgs fails to decrypt. */
-const tokenAad = (orgId: OrgId) => Buffer.from(`railway-token:${orgId}`)
 
 const parseServices = (json: string): Readonly<Record<string, string>> =>
 	decodeServices(json).pipe((option) => (option._tag === "Some" ? option.value : {}))
@@ -150,7 +160,7 @@ export interface RailwayMetricsServiceApi {
 	/** Polls now instead of waiting for the cron. Caught-up environments cost no Railway call. */
 	readonly sync: (orgId: OrgId) => Effect.Effect<RailwayIntegrationStatus, IntegrationsPersistenceError>
 	readonly pollOrg: (orgId: OrgId) => Effect.Effect<RailwayPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<RailwayPollAllOrgsSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<RailwayPollAllOrgsSummary, IntegrationsPersistenceError>
 }
 
 export class RailwayMetricsService extends Context.Service<RailwayMetricsService, RailwayMetricsServiceApi>()(
@@ -161,8 +171,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
 			const ingestKeys = yield* OrgIngestKeysService
-			const encryptionKey = yield* parseBase64Aes256GcmKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+			const keyring = yield* secretKeyringFromEnv(
+				env,
 				(message) => new IntegrationsPersistenceError({ message }),
 			)
 			const ingest = yield* makeIngestSender
@@ -223,8 +233,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			const environmentHealth = (orgId: OrgId, now: number) =>
 				loadEnvironments(orgId).pipe(
 					Effect.map((rows) => {
-						const enabled = rows.filter((row) => row.enabled)
-						const unhealthy = enabled.filter((row) => {
+						const enabled = Arr.filter(rows, (row) => row.enabled)
+						const unhealthy = Arr.filter(enabled, (row) => {
 							const status = pollStatus(row, now, ENVIRONMENT_STALE_MS)
 							return status === "failing" || status === "stale"
 						})
@@ -233,16 +243,17 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 
 			const decryptToken = (connection: RailwayConnectionRow) =>
-				decryptAes256Gcm(
+				openSecret(
+					keyring,
+					railwayTokenSlot,
+					{ orgId: connection.orgId },
 					{
 						ciphertext: connection.tokenCiphertext,
 						iv: connection.tokenIv,
 						tag: connection.tokenTag,
 					},
-					encryptionKey,
 					() =>
 						new IntegrationsPersistenceError({ message: "Failed to decrypt the Railway token" }),
-					tokenAad(connection.orgId),
 				)
 
 			/** Upsert discovered environments; soft-disable the ones that disappeared. */
@@ -253,7 +264,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 			) {
 				const existing = yield* loadEnvironments(connection.orgId)
 				const discoveredIds = new Set(
-					discovery.environments.map((environment) => environment.environmentId),
+					Arr.map(discovery.environments, (environment) => environment.environmentId),
 				)
 				yield* Effect.forEach(
 					discovery.environments,
@@ -293,7 +304,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				// A project whose environment page came back full may have more; leave its unseen rows on.
 				const truncated = new Set(discovery.truncatedProjectIds)
 				yield* Effect.forEach(
-					existing.filter(
+					Arr.filter(
+						existing,
 						(row) =>
 							row.enabled &&
 							!discoveredIds.has(row.environmentId) &&
@@ -304,7 +316,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				)
 				yield* updateConnection(connection.id, {
 					discoveredAt: now,
-					workspaceNames: discovery.workspaceNames.join(", ") || null,
+					workspaceNames: Arr.join(discovery.workspaceNames, ", ") || null,
 					updatedAt: now,
 				})
 			})
@@ -332,26 +344,25 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 					authFailed: connection.authFailedAt !== null,
 					lastSyncedAt: connection.lastSuccessAt,
 					lastError: connection.lastError,
-					environments: environments
-						.filter((row) => row.enabled)
-						.sort(
-							(a, b) =>
-								a.projectName.localeCompare(b.projectName) ||
-								a.environmentName.localeCompare(b.environmentName),
-						)
-						.map(
-							(row) =>
-								new RailwayEnvironmentStatus({
-									projectId: row.projectId,
-									projectName: row.projectName,
-									environmentId: row.environmentId,
-									environmentName: row.environmentName,
-									serviceCount: Object.keys(parseServices(row.servicesJson)).length,
-									enabled: row.enabled,
-									lastSyncedAt: row.lastSuccessAt,
-									lastError: row.lastError,
-								}),
-						),
+					environments: Arr.map(
+						Arr.filter(environments, (row) => row.enabled).sort((a, b) => {
+							const byProject = Str.localeCompare(b.projectName)(a.projectName)
+							return byProject !== 0
+								? byProject
+								: Str.localeCompare(b.environmentName)(a.environmentName)
+						}),
+						(row) =>
+							new RailwayEnvironmentStatus({
+								projectId: row.projectId,
+								projectName: row.projectName,
+								environmentId: row.environmentId,
+								environmentName: row.environmentName,
+								serviceCount: Rec.keys(parseServices(row.servicesJson)).length,
+								enabled: row.enabled,
+								lastSyncedAt: row.lastSuccessAt,
+								lastError: row.lastError,
+							}),
+					),
 				})
 			})
 
@@ -361,7 +372,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				rawToken: string,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const token = rawToken.trim()
+				const token = Str.trim(rawToken)
 				const toConnectError = (error: RailwayApiError) =>
 					error.kind === "unauthorized"
 						? new IntegrationsValidationError({
@@ -381,11 +392,12 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						sampleRateSeconds: SAMPLE_RATE_SECONDS,
 					}).pipe(Effect.mapError(toConnectError))
 				}
-				const encrypted = yield* encryptAes256Gcm(
+				const encrypted = yield* sealSecret(
+					keyring,
+					railwayTokenSlot,
+					{ orgId },
 					token,
-					encryptionKey,
 					(message) => new IntegrationsPersistenceError({ message }),
-					tokenAad(orgId),
 				)
 				const now = yield* Clock.currentTimeMillis
 				// A reconnect keeps the connection id and so its source.
@@ -482,12 +494,8 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								PG.or(
-									$.leaseUntil.isNull(),
-									$.leaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-									$.leaseUntil.gt(now + 2 * BILLING_HOLD_MS),
-								),
+								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
+								leaseClaimable($.leaseUntil, now, 2 * BILLING_HOLD_MS),
 							])
 							.returning(),
 					),
@@ -506,7 +514,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.set({ leaseUntil: holdUntilMs, updatedAt: now })
 							.where(($) => [
 								$.id.eq(connectionId),
-								claimedUntil === null ? $.leaseUntil.isNull() : $.leaseUntil.eq(claimedUntil),
+								leaseStillOurs($.leaseUntil, claimedUntil),
 							]),
 					),
 				)
@@ -649,10 +657,12 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 						return { ...skip("ingest key unavailable"), callsMade: discoveryCalls }
 					const sourceId = stampedSourceId(claimed.sourceId)
 
-					const enabled = (yield* loadEnvironments(orgId)).filter((row) => row.enabled)
-					const environments = enabled
-						.map((row) => ({ row, window: nextWindow(row.watermarkAt, now) }))
-						.filter((item) => item.window !== null)
+					const loaded = yield* loadEnvironments(orgId)
+					const enabled = Arr.filter(loaded, (row) => row.enabled)
+					const environments = Arr.filter(
+						Arr.map(enabled, (row) => ({ row, window: nextWindow(row.watermarkAt, now) })),
+						(item) => item.window !== null,
+					)
 						// Most-behind first, so a tight call budget still spreads across environments.
 						.sort((a, b) => (a.window?.startMs ?? 0) - (b.window?.startMs ?? 0))
 						.slice(0, MAX_ENVIRONMENT_CALLS_PER_TICK)
@@ -740,7 +750,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 											}
 										}
 										yield* updateEnvironment(row.id, {
-											lastError: error.message.slice(0, 500),
+											lastError: Str.slice(0, 500)(error.message),
 											lastErrorAt: now,
 											updatedAt: now,
 										})
@@ -758,7 +768,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									updatedAt: now,
 								}
 							: {
-									lastError: lastError.slice(0, 500),
+									lastError: Str.slice(0, 500)(lastError),
 									lastErrorAt: now,
 									updatedAt: now,
 								},
@@ -769,7 +779,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							claimed.sourceId,
 							lastError === null
 								? { _tag: "Ok", resources }
-								: { _tag: "Failed", error: lastError.slice(0, 500), resources },
+								: { _tag: "Failed", error: Str.slice(0, 500)(lastError), resources },
 							now,
 						)
 					}
@@ -798,7 +808,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				return summary
 			})
 
-			const pollAllOrgs = Effect.fn("RailwayMetricsService.pollAllOrgs")(function* () {
+			const pollAllOrgs = Effect.gen(function* () {
 				const connections = yield* dbExecute((db) =>
 					db.run(
 						PG.from(RailwayConnections)
@@ -806,49 +816,30 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 							.where(($) => [$.authFailedAt.isNull()]),
 					),
 				)
-				const summaries = yield* Effect.forEach(
-					connections,
-					(row) =>
-						pollOrg(decodeOrgId(row.orgId)).pipe(
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("railway org poll failed", {
-											orgId: row.orgId,
-											error: summarizeCause(cause),
-										}).pipe(
-											Effect.as<RailwayPollOrgSummary>({
-												orgId: decodeOrgId(row.orgId),
-												skipped: "org poll failed",
-												callsMade: 0,
-												rowsIngested: 0,
-												failures: 1,
-											}),
-										),
-							),
-						),
-					{ concurrency: ORG_CONCURRENCY },
-				)
+				const summaries = yield* pollFleet(connections, (row) => pollOrg(decodeOrgId(row.orgId)), {
+					message: "railway org poll failed",
+					annotations: (row) => ({ orgId: row.orgId }),
+					fallback: (row): RailwayPollOrgSummary => ({
+						orgId: decodeOrgId(row.orgId),
+						skipped: "org poll failed",
+						callsMade: 0,
+						rowsIngested: 0,
+						failures: 1,
+					}),
+				})
 				return {
 					orgs: connections.length,
-					rowsIngested: summaries.reduce((sum, summary) => sum + summary.rowsIngested, 0),
-					failures: summaries.reduce((sum, summary) => sum + summary.failures, 0),
-					skipped: summaries.filter((summary) => summary.skipped !== null).length,
+					rowsIngested: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.rowsIngested),
+					failures: Arr.reduce(summaries, 0, (sum, summary) => sum + summary.failures),
+					skipped: Arr.filter(summaries, (summary) => summary.skipped !== null).length,
 				} satisfies RailwayPollAllOrgsSummary
-			})
+			}).pipe(Effect.withSpan("RailwayMetricsService.pollAllOrgs"))
 
 			/** Best effort: a failed or slow poll still leaves the connection for the cron to catch up. */
 			const pollNow = (orgId: OrgId) =>
 				pollOrg(orgId).pipe(
 					Effect.timeoutOption(POLL_NOW_TIMEOUT),
-					Effect.catchCause((cause) =>
-						Cause.hasInterruptsOnly(cause)
-							? Effect.interrupt
-							: Effect.logWarning("railway on-demand poll failed", {
-									orgId,
-									error: summarizeCause(cause),
-								}),
-					),
+					isolatePollFailure("railway on-demand poll failed", { orgId }, undefined),
 					Effect.asVoid,
 				)
 

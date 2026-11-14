@@ -1,11 +1,12 @@
 import { Schema, Array as Arr, String as Str } from "effect"
+import type { OrganizationFeatureFlags } from "./organization-feature-flags"
 import {
 	type AwsAccountId,
 	type AwsConnectionId,
 	AwsMetricNamespace,
 	AwsModule,
 	AwsRegion,
-} from "./primitives"
+} from "@maple/primitives"
 
 const isAwsModule = Schema.is(AwsModule)
 
@@ -27,6 +28,8 @@ interface AwsModuleSpec {
 	readonly summary: string
 	/** Whether Maple reads anything with it yet. A planned module is not offered. */
 	readonly available: boolean
+	/** A module that is not `available` is still offered to an org with this rollout flag on. */
+	readonly rolloutFlag?: keyof OrganizationFeatureFlags
 	/** AWS managed policies attached when the module is on. Metadata only: never data reads. */
 	readonly managedPolicies: ReadonlyArray<string>
 	/** Actions of the module's own policy, beyond the managed ones. */
@@ -74,21 +77,52 @@ export const AWS_MODULE_SPECS = {
 	},
 	cost: {
 		title: "Cost",
-		summary: "Spend by service and resource, and what to cut.",
+		summary:
+			"Daily spend by service, region and usage type. AWS bills USD 0.01 per Cost Explorer request.",
 		available: false,
+		rolloutFlag: "cloudCost",
 		managedPolicies: [],
+		// Every cost read Maple plans to make: adding one later means each customer updates the stack.
 		actions: [
 			"ce:GetCostAndUsage",
+			"ce:GetCostAndUsageWithResources",
 			"ce:GetCostForecast",
+			"ce:GetDimensionValues",
+			"ce:GetTags",
+			"ce:GetCostCategories",
+			"ce:GetSavingsPlansCoverage",
+			"ce:GetSavingsPlansUtilization",
+			"ce:GetSavingsPlansPurchaseRecommendation",
+			"ce:GetReservationCoverage",
+			"ce:GetReservationUtilization",
+			"ce:GetReservationPurchaseRecommendation",
+			"ce:GetAnomalies",
+			"ce:GetAnomalyMonitors",
+			// The hub carries Compute Optimizer's rightsizing, so only its enrollment is read there.
+			"cost-optimization-hub:ListEnrollmentStatuses",
+			"cost-optimization-hub:ListRecommendations",
+			"cost-optimization-hub:ListRecommendationSummaries",
+			"cost-optimization-hub:GetRecommendation",
 			"compute-optimizer:GetEnrollmentStatus",
-			"compute-optimizer:GetEC2InstanceRecommendations",
 			"bcm-data-exports:ListExports",
 			"bcm-data-exports:GetExport",
+			"bcm-data-exports:ListExecutions",
+			"bcm-data-exports:GetExecution",
 		],
 	},
 } as const satisfies Record<AwsModule, AwsModuleSpec>
 
-export const isAwsModuleAvailable = (module: AwsModule) => AWS_MODULE_SPECS[module].available
+/** Whether an org with these rollout flags is offered the module, and may turn it on. */
+export const isAwsModuleAvailable = (module: AwsModule, flags: OrganizationFeatureFlags): boolean => {
+	const spec: AwsModuleSpec = AWS_MODULE_SPECS[module]
+	return spec.available || (spec.rolloutFlag !== undefined && flags[spec.rolloutFlag])
+}
+
+/** The rollout flag of a module that is built but offered only to orgs in its rollout. */
+export const awsModuleRolloutFlag = (module: AwsModule): keyof OrganizationFeatureFlags | undefined => {
+	const spec: AwsModuleSpec = AWS_MODULE_SPECS[module]
+	return spec.rolloutFlag
+}
 
 /** Every connection's role starts with it. The cleanup keeps the OIDC provider while one is left. */
 export const AWS_ROLE_NAME_PREFIX = "MapleIntegration-"

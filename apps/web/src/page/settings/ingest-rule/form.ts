@@ -14,6 +14,7 @@ import {
 	signalsForField,
 } from "@maple/domain/ingest-rules"
 import { Schema, Array as Arr, String as Str } from "effect"
+import { replaceWith } from "@maple/strings"
 
 // The editor's draft: text inputs stay strings until `specOf` turns the draft into a rule.
 
@@ -67,7 +68,7 @@ export const emptyDraft: Draft = {
 	method: "mask",
 }
 
-// FIELDS AND OPS (which op a field allows comes from `@maple/domain/ingest-rules`)
+// Which op a field allows comes from `@maple/domain/ingest-rules`.
 
 export const FIELD_LABELS = {
 	service_name: "service",
@@ -115,12 +116,10 @@ export const defaultCondition = (id: number, field: IngestRuleField): ConditionD
 	values: "",
 })
 
-// DRAFT TO SPEC
-
 /** Comma-separated and trimmed; `\,` is a literal comma and `\\` a backslash, so values round-trip. */
 export const splitList = (text: string): ReadonlyArray<string> =>
 	Arr.filter(
-		Array.from(text.matchAll(/(?:\\.|[^,\\])+|\\$/gu), (match) =>
+		Array.from(Str.matchAll(/(?:\\.|[^,\\])+|\\$/gu)(text), (match) =>
 			Str.trim(Str.replace(/\\(.)/gu, "$1")(match[0])),
 		),
 		(entry) => entry.length > 0,
@@ -128,7 +127,7 @@ export const splitList = (text: string): ReadonlyArray<string> =>
 
 export const joinList = (values: ReadonlyArray<string>): string =>
 	Arr.join(
-		Arr.map(values, (value) => value.replace(/[\\,]/gu, (char) => `\\${char}`)),
+		Arr.map(values, (value) => replaceWith(value, /[\\,]/gu, (char) => `\\${char}`)),
 		", ",
 	)
 

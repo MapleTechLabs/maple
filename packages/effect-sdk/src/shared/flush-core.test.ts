@@ -1,13 +1,13 @@
 import { describe, it } from "@effect/vitest"
 import { afterEach, expect, it as vitestIt, vi } from "vitest"
-import { Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
+import { Clock, DateTime, Effect, Metric, Redacted, Array as Arr, String as Str } from "effect"
 import {
 	buildResolved,
 	fetchTransport,
 	makeSerializedFlush,
 	runFlush,
 	type FlushTransport,
-	type SignalState,
+	makeSignalState,
 } from "./flush-core.js"
 import { makeLogBuffer } from "./flushable-logger.js"
 import { makeMetricBuffer } from "./flushable-metrics.js"
@@ -65,18 +65,19 @@ describe("buildResolved", () => {
 describe("runFlush", () => {
 	afterEach(() => {
 		vi.useRealTimers()
+		vi.restoreAllMocks()
 	})
 
 	it.live("retains failed and cooldown batches while allowing the other signal to succeed", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()
-			const tracesState: SignalState = { disabledUntil: 0 }
-			const logsState: SignalState = { disabledUntil: 0 }
-			const metricsState: SignalState = { disabledUntil: 0 }
+			const tracesState = makeSignalState()
+			const logsState = makeSignalState()
+			const metricsState = makeSignalState()
 			const traceBodies: unknown[] = []
 			const logBodies: unknown[] = []
 			let failTraces = true
@@ -124,10 +125,12 @@ describe("runFlush", () => {
 			const body = traceBodies[0] as {
 				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
 			}
-			expect(Arr.map(body.resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name)).toEqual([
-				"first",
-				"second",
-			])
+			expect(
+				Arr.map(
+					Arr.getUnsafe(Arr.getUnsafe(body.resourceSpans, 0).scopeSpans, 0).spans,
+					(span) => span.name,
+				),
+			).toEqual(["first", "second"])
 		}),
 	)
 
@@ -135,15 +138,15 @@ describe("runFlush", () => {
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 		const signals: Array<AbortSignal | null | undefined> = []
 		const original = globalThis.fetch
-		globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (_input: RequestInfo | URL, init?: RequestInit) => {
 			signals.push(init?.signal)
 			// Ignores the abort, like a request whose owner was cancelled.
 			return new Promise<Response>(() => {})
-		}) as typeof fetch
+		}
 		const spans = makeSpanBuffer()
 		await Effect.runPromise(recordSpan(spans, "slow"))
 		vi.useFakeTimers()
-		const tracesState: SignalState = { disabledUntil: 0 }
+		const tracesState = makeSignalState()
 		let settled = false
 		const flushed = runFlush({
 			resolved,
@@ -151,8 +154,8 @@ describe("runFlush", () => {
 			logs: makeLogBuffer(),
 			metrics: makeMetricBuffer(),
 			tracesState,
-			logsState: { disabledUntil: 0 },
-			metricsState: { disabledUntil: 0 },
+			logsState: makeSignalState(),
+			metricsState: makeSignalState(),
 			transport: fetchTransport,
 			logPrefix: "[test]",
 		}).then(() => {
@@ -191,6 +194,30 @@ describe("runFlush", () => {
 		release?.()
 		await Promise.all([first, second])
 		expect(peak).toBe(1)
+	})
+
+	vitestIt("starts a `now` drain in the same task, and queues later drains behind it", async () => {
+		const seen: string[] = []
+		const gates = new Map<string, () => void>()
+		const run = makeSerializedFlush(async (value: string) => {
+			seen.push(value)
+			await new Promise<void>((resolve) => gates.set(value, resolve))
+		})
+
+		const first = run("queued")
+		await Promise.resolve()
+		const urgent = run.now("urgent")
+		expect(seen).toEqual(["queued", "urgent"])
+		const later = run("later")
+		gates.get("queued")?.()
+		await first
+		await Promise.resolve()
+		expect(seen).toEqual(["queued", "urgent"])
+		gates.get("urgent")?.()
+		await urgent
+		await vi.waitFor(() => expect(seen).toEqual(["queued", "urgent", "later"]))
+		gates.get("later")?.()
+		await later
 	})
 
 	vitestIt("recovers after a rejected drain", async () => {
@@ -245,7 +272,7 @@ describe("runFlush", () => {
 		Effect.gen(function* () {
 			const spans = makeSpanBuffer()
 			yield* Effect.forEach(["a", "b", "c", "d"], (name) => recordSpan(spans, name), { discard: true })
-			const tracesState: SignalState = { disabledUntil: 0 }
+			const tracesState = makeSignalState()
 			const sent: Array<Array<string>> = []
 			const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
 			const flush = (tailBytes: number) =>
@@ -255,8 +282,8 @@ describe("runFlush", () => {
 					logs: makeLogBuffer(),
 					metrics: makeMetricBuffer(),
 					tracesState,
-					logsState: { disabledUntil: 0 },
-					metricsState: { disabledUntil: 0 },
+					logsState: makeSignalState(),
+					metricsState: makeSignalState(),
 					transport: {
 						post: async (_url, _headers, body) => {
 							const { resourceSpans } = body as {
@@ -264,7 +291,12 @@ describe("runFlush", () => {
 									scopeSpans: Array<{ spans: Array<{ name: string }> }>
 								}>
 							}
-							sent.push(Arr.map(resourceSpans[0]!.scopeSpans[0]!.spans, (span) => span.name))
+							sent.push(
+								Arr.map(
+									Arr.getUnsafe(Arr.getUnsafe(resourceSpans, 0).scopeSpans, 0).spans,
+									(span) => span.name,
+								),
+							)
 							// The newest request fails last: completion order must not decide the restore order.
 							if (sent.length === 1) await new Promise((resolve) => setTimeout(resolve, 5))
 							throw new Error("collector unavailable")
@@ -283,7 +315,7 @@ describe("runFlush", () => {
 			yield* Effect.promise(() => flushed)
 
 			expect(errorSpy).toHaveBeenCalledTimes(1)
-			expect(tracesState.disabledUntil).toBeGreaterThan(Date.now())
+			expect(tracesState.disabledUntil).toBeGreaterThan(yield* Clock.currentTimeMillis)
 
 			// No room for even the newest item: one request, in drain order.
 			sent.length = 0
@@ -311,9 +343,9 @@ describe("runFlush", () => {
 					spans,
 					logs,
 					metrics,
-					tracesState: { disabledUntil: 0 },
-					logsState: { disabledUntil: 0 },
-					metricsState: { disabledUntil: 0 },
+					tracesState: makeSignalState(),
+					logsState: makeSignalState(),
+					metricsState: makeSignalState(),
 					transport: {
 						post: async (url, _headers, body) => {
 							if (Str.endsWith("/v1/metrics")(url)) metricsBody = body
@@ -334,16 +366,19 @@ describe("runFlush", () => {
 					}>
 				}>
 			}
-			const exported = body.resourceMetrics[0]!.scopeMetrics[0]!.metrics[0]!
+			const exported = Arr.getUnsafe(
+				Arr.getUnsafe(Arr.getUnsafe(body.resourceMetrics, 0).scopeMetrics, 0).metrics,
+				0,
+			)
 			expect(exported.name).toBe("test.requests_total")
-			expect(exported.sum.dataPoints[0]!.asDouble).toBe(3)
+			expect(Arr.getUnsafe(exported.sum.dataPoints, 0).asDouble).toBe(3)
 		}),
 	)
 
 	it.live("retries a changed metric after a failed export", () =>
 		Effect.gen(function* () {
 			vi.useFakeTimers()
-			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			vi.setSystemTime(DateTime.toDateUtc(DateTime.makeUnsafe("2026-01-01T00:00:00Z")))
 			const spans = makeSpanBuffer()
 			const logs = makeLogBuffer()
 			const metrics = makeMetricBuffer()
@@ -351,9 +386,9 @@ describe("runFlush", () => {
 			yield* Metric.update(counter, 1).pipe(Effect.provide(metrics.layer))
 
 			let attempts = 0
-			const tracesState: SignalState = { disabledUntil: 0 }
-			const logsState: SignalState = { disabledUntil: 0 }
-			const metricsState: SignalState = { disabledUntil: 0 }
+			const tracesState = makeSignalState()
+			const logsState = makeSignalState()
+			const metricsState = makeSignalState()
 			const flush = () =>
 				runFlush({
 					resolved,
@@ -384,4 +419,127 @@ describe("runFlush", () => {
 			expect(attempts).toBe(2)
 		}),
 	)
+
+	vitestIt("logs an outage once, says nothing while it lasts, and reports the recovery", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] })
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const spans = makeSpanBuffer()
+		const blocked = new TypeError("NetworkError when attempting to fetch resource.")
+		const delivered: unknown[] = []
+		let fail = true
+		let attempts = 0
+		const tracesState = makeSignalState()
+		const flush = () =>
+			runFlush({
+				resolved,
+				spans,
+				logs: makeLogBuffer(),
+				metrics: makeMetricBuffer(),
+				tracesState,
+				logsState: makeSignalState(),
+				metricsState: makeSignalState(),
+				transport: {
+					post: async (_url, _headers, body) => {
+						attempts += 1
+						if (fail) throw blocked
+						delivered.push(body)
+					},
+				},
+				logPrefix: "[test]",
+			})
+
+		await Effect.runPromise(recordSpan(spans, "first"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+		expect(errorSpy.mock.calls[0]?.[0]).toContain("[test] traces flush failed; cooldown 60s")
+		expect(errorSpy.mock.calls[0]?.[1]).toBe(blocked)
+
+		// Flush ticks inside the cooldown: no request, no output, nothing lost.
+		await Effect.runPromise(recordSpan(spans, "second"))
+		vi.advanceTimersByTime(5_000)
+		await flush()
+		vi.advanceTimersByTime(50_000)
+		await flush()
+		expect(attempts).toBe(1)
+		expect(spans.size()).toBe(2)
+
+		// The retry after the cooldown fails too: same outage, so no second line.
+		vi.advanceTimersByTime(5_000)
+		await flush()
+		expect(attempts).toBe(2)
+		expect(spans.size()).toBe(2)
+		vi.advanceTimersByTime(59_999)
+		await flush()
+		expect(attempts).toBe(2)
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+		expect(warnSpy).not.toHaveBeenCalled()
+		expect(infoSpy).not.toHaveBeenCalled()
+
+		fail = false
+		vi.advanceTimersByTime(1)
+		await flush()
+		expect(spans.size()).toBe(0)
+		expect(delivered).toMatchObject([
+			{ resourceSpans: [{ scopeSpans: [{ spans: [{ name: "first" }, { name: "second" }] }] }] },
+		])
+		expect(infoSpy.mock.calls).toEqual([["[test] traces flush recovered after 2 failed attempts"]])
+
+		// A healthy flush is silent, and the next outage is announced again.
+		await Effect.runPromise(recordSpan(spans, "third"))
+		await flush()
+		expect(infoSpy).toHaveBeenCalledTimes(1)
+		fail = true
+		await Effect.runPromise(recordSpan(spans, "fourth"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(2)
+		expect(spans.size()).toBe(1)
+	})
+
+	vitestIt("does not take an unload flush for a recovery: the outage stays one outage", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] })
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+		const spans = makeSpanBuffer()
+		let fail = true
+		const tracesState = makeSignalState()
+		const flush = (ignoreCooldown?: boolean) =>
+			runFlush({
+				resolved,
+				spans,
+				logs: makeLogBuffer(),
+				metrics: makeMetricBuffer(),
+				tracesState,
+				logsState: makeSignalState(),
+				metricsState: makeSignalState(),
+				transport: {
+					post: async () => {
+						if (fail) throw new Error("collector unavailable")
+					},
+				},
+				logPrefix: "[test]",
+				ignoreCooldown,
+			})
+
+		await Effect.runPromise(recordSpan(spans, "first"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		// The unload transport reports a POST it could not wait for as sent.
+		fail = false
+		await flush(true)
+		expect(infoSpy).not.toHaveBeenCalled()
+
+		// The page came back and the endpoint is still down: the same outage, not a new one.
+		fail = true
+		await Effect.runPromise(recordSpan(spans, "second"))
+		await flush()
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+
+		fail = false
+		vi.advanceTimersByTime(60_000)
+		await flush()
+		expect(infoSpy.mock.calls).toEqual([["[test] traces flush recovered after 2 failed attempts"]])
+	})
 })

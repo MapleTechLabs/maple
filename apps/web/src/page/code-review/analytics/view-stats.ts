@@ -1,13 +1,11 @@
 import type { CodeReviewTotals } from "@maple/domain/http"
-import { formatSpan } from "../../../components/code-review/code-review-format"
+import { formatSpan } from "../kit/code-review-format"
 import { countLabel, EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatExactCount } from "@maple/views/lib/locale"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { delta, relativeChange } from "@maple/views/ui/delta"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { Array as Arr } from "effect"
-
-// `HeadlineStrip` and `SecondaryStats`.
 
 /** Change against the previous window; nothing when there is no baseline to compare with. */
 export const changeOf = <M>(

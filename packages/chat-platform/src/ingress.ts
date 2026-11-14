@@ -29,8 +29,6 @@ import { Option, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { ChatConnectorId } from "./connector.ts"
 
-// Configuration
-
 /**
  * One environment value a connector needs in order to run at all.
  *
@@ -46,6 +44,11 @@ import { ChatConnectorId } from "./connector.ts"
 export interface ConnectorConfigKey {
 	readonly name: string
 	readonly secret: boolean
+	/**
+	 * A setting the connector works without (a region, a tuning knob): its absence leaves the
+	 * connector configured. Unset means required.
+	 */
+	readonly optional?: boolean
 }
 
 /**
@@ -53,8 +56,6 @@ export interface ConnectorConfigKey {
  * `undefined` without an index signature the reader has to defend against.
  */
 export type ConnectorConfig = ReadonlyMap<string, string>
-
-// Normalized inbound events
 
 /**
  * Who took an action, as the platform names them.
@@ -161,8 +162,6 @@ export type InboundWorkspaceRemoved = Schema.Schema.Type<typeof InboundWorkspace
 export const InboundEvent = Schema.Union([InboundMessage, InboundAction, InboundWorkspaceRemoved])
 export type InboundEvent = Schema.Schema.Type<typeof InboundEvent>
 
-// Ingress failures
-
 /**
  * A connector could not make sense of what the platform sent it — an unverifiable
  * signature, a body that is not the payload it claims to be.
@@ -180,8 +179,6 @@ export class ConnectorIngressError extends Schema.TaggedError<ConnectorIngressEr
 	},
 ) {}
 
-// Webhook ingress
-
 export interface WebhookIngressResult {
 	/** What to answer the platform with, signature rejections included. */
 	readonly response: HttpServerResponse.HttpServerResponse
@@ -196,8 +193,6 @@ export interface WebhookIngress {
 		config: ConnectorConfig,
 	): Effect.Effect<WebhookIngressResult, ConnectorIngressError>
 }
-
-// Socket ingress
 
 /**
  * An HTTP call the connector needs the host to make, now.

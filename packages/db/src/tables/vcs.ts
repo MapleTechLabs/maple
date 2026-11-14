@@ -1,6 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
-	GitCommitSha,
 	PrReviewCategory,
 	PrReviewFindingStatus,
 	PrReviewId,
@@ -17,6 +16,9 @@ import {
 	PrReviewSkipReason,
 	PrReviewStatus,
 	PrReviewTelemetry,
+} from "@maple/domain/http"
+import {
+	GitCommitSha,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -28,8 +30,8 @@ import {
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
 	VcsRepositoryDiscovery,
-} from "@maple/domain/http"
-import { OrgId, SourceId, UserId } from "@maple/domain/primitives"
+} from "@maple/domain/vcs"
+import { OrgId, SourceId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 import { Sources } from "./sources"
 
@@ -37,9 +39,6 @@ import { Sources } from "./sources"
 // discriminator; GitHub-specific concepts never reach this layer. External
 // provider ids (installation/repo/account) are stored as TEXT for
 // cross-provider generality. Timestamps are stored as `timestamptz`.
-//
-// IMPORTANT: only `VcsRepository` (apps/api/src/services/vcs/VcsRepository.ts)
-// may import these tables. All other code goes through that repo service.
 
 /** Who a before-merge step came from: read off the diff, or named by the reviewer. */
 export const PrReviewMergeStepSourceSchema = Schema.Literals(["diff", "reviewer"])
@@ -250,6 +249,8 @@ export const PrReviews = PG.table("pr_reviews", {
 		model: PG.nullable(PG.text),
 		inputTokens: PG.column(PG.nullable(PG.int4), { name: "input_tokens" }),
 		outputTokens: PG.column(PG.nullable(PG.int4), { name: "output_tokens" }),
+		/** What the model provider billed for the review, in microdollars; null before it was kept. */
+		costMicrousd: PG.column(PG.nullable(PG.int4), { name: "cost_microusd" }),
 		startedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "started_at" }),
 		finishedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "finished_at" }),
 		/** When the pull request merged, stamped on every review of it by the `closed` event. */
@@ -455,17 +456,9 @@ export const PrReviewSettings = PG.table("pr_review_settings", {
 })
 
 export type VcsInstallationRow = PG.SelectRowOf<typeof VcsInstallations>
-export type VcsInstallationInsert = PG.InsertRowOf<typeof VcsInstallations>
 export type VcsRepositoryRow = PG.SelectRowOf<typeof VcsRepositories>
-export type VcsRepositoryInsert = PG.InsertRowOf<typeof VcsRepositories>
 export type VcsCommitRow = PG.SelectRowOf<typeof VcsCommits>
-export type VcsCommitInsert = PG.InsertRowOf<typeof VcsCommits>
 export type VcsRepositoryBranchRow = PG.SelectRowOf<typeof VcsRepositoryBranches>
-export type VcsRepositoryBranchInsert = PG.InsertRowOf<typeof VcsRepositoryBranches>
 export type PrReviewRow = PG.SelectRowOf<typeof PrReviews>
-export type PrReviewSettingsRow = PG.SelectRowOf<typeof PrReviewSettings>
-export type PrReviewInsert = PG.InsertRowOf<typeof PrReviews>
 export type PrReviewFindingRow = PG.SelectRowOf<typeof PrReviewFindings>
-export type PrReviewFindingEmbeddingRow = PG.SelectRowOf<typeof PrReviewFindingEmbeddings>
 export type PrReviewReplyRow = PG.SelectRowOf<typeof PrReviewReplies>
-export type PrReviewEditRow = PG.SelectRowOf<typeof PrReviewEdits>

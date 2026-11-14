@@ -21,16 +21,28 @@ import {
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { DateTime, Cause, Clock, Context, Duration, Effect, Layer, Schema } from "effect"
+import {
+	DateTime,
+	Cause,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { stampedSourceId } from "@maple/backend/services/org/integration-sources"
+import { stampedSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import { branchPassesFilters, parseBranchFilters } from "./PlanetScaleDiscoveryService"
 import { decodeConsumed, runPlanetScale, type SdkError } from "./planetscale/api"
@@ -55,9 +67,8 @@ const FIRST_WINDOW_MS = 10 * MINUTE_MS
 /** One request per branch per tick; a runaway org cannot spend the whole API allowance. */
 const MAX_BRANCHES_PER_ORG = 150
 const BRANCH_CONCURRENCY = 4
-const ORG_CONCURRENCY = 3
 
-const SYSTEM_USER_ID = Schema.decodeUnknownSync(UserId)("system-planetscale-metrics")
+const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-planetscale-metrics")
 
 export interface PlanetScaleMetricsPollSummary {
 	readonly orgs: number
@@ -68,17 +79,17 @@ export interface PlanetScaleMetricsPollSummary {
 }
 
 export interface PlanetScaleMetricsServiceApi {
-	readonly pollAll: () => Effect.Effect<PlanetScaleMetricsPollSummary, IntegrationsPersistenceError>
+	readonly pollAll: Effect.Effect<PlanetScaleMetricsPollSummary, IntegrationsPersistenceError>
 }
 
 type OrgOutcome =
 	| { readonly _tag: "Skipped" }
 	| { readonly _tag: "Polled"; readonly branches: number; readonly rows: number; readonly failed: boolean }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale metrics persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale metrics persistence failed",
+)
 
 /** A managed target scraping with a stored service token: Prometheus already has the branch. */
 export const scrapesWithToken = (target: ScrapeTargetRow | null) =>
@@ -145,17 +156,21 @@ export class PlanetScaleMetricsService extends Context.Service<
 						.where(($) => [$.orgId.eq(connection.orgId), $.deletedAt.isNull()]),
 				),
 			)
-			return databases.flatMap((row) =>
-				(row.branchesJson ?? [])
-					.filter((branch) => branch.ready && branchPassesFilters(branch.name, filters))
-					.map((branch): ApiMetricBranch => ({
+			return Arr.flatMap(databases, (row) =>
+				Arr.map(
+					Arr.filter(
+						row.branchesJson ?? [],
+						(branch) => branch.ready && branchPassesFilters(branch.name, filters),
+					),
+					(branch): ApiMetricBranch => ({
 						organization: connection.psOrganization,
 						database: row.name,
 						kind: row.kind,
 						branch: branch.name,
 						branchId: branch.id,
 						serviceName,
-					})),
+					}),
+				),
 			)
 		})
 
@@ -171,7 +186,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 						]),
 				),
 			)
-			return new Map(rows.map((row) => [row.databaseId, row.watermarkAt]))
+			return new Map(Arr.map(rows, (row) => [row.databaseId, row.watermarkAt]))
 		})
 
 		const recordBranch = (
@@ -188,7 +203,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 								lastError: null,
 								lastErrorAt: null,
 							}
-						: { lastError: outcome.error.slice(0, 500), lastErrorAt: now }
+						: { lastError: Str.slice(0, 500)(outcome.error), lastErrorAt: now }
 				return dbExecute((db) =>
 					db.run(
 						PG.insertInto(PlanetscalePollState)
@@ -236,7 +251,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 					database: branch.database,
 					branch: branch.branch,
 					// Repeated `metrics=` parameters keep only the last; one comma list keeps them all.
-					metrics: [apiMetricsFor(branch.kind).join(",")],
+					metrics: [Arr.join(apiMetricsFor(branch.kind), ",")],
 					from: DateTime.formatIso(DateTime.makeUnsafe(startMs)),
 					to: DateTime.formatIso(DateTime.makeUnsafe(endMs)),
 				}),
@@ -365,11 +380,14 @@ export class PlanetScaleMetricsService extends Context.Service<
 					),
 				{ concurrency: BRANCH_CONCURRENCY },
 			)
-			const failures = results.flatMap((result) => (result._tag === "Failed" ? [result.error] : []))
-			const deferred = results.filter((result) => result._tag === "Deferred").length
-			const rows = results.reduce(
-				(sum, result) => sum + (result._tag === "Ingested" ? result.rows : 0),
+			const failures = Arr.flatMap(results, (result) =>
+				result._tag === "Failed" ? [result.error] : [],
+			)
+			const deferred = Arr.filter(results, (result) => result._tag === "Deferred").length
+			const rows = Arr.reduce(
+				results,
 				0,
+				(sum, result) => sum + (result._tag === "Ingested" ? result.rows : 0),
 			)
 			yield* recordPollResult(
 				connection.orgId,
@@ -377,10 +395,10 @@ export class PlanetScaleMetricsService extends Context.Service<
 				"",
 				failures.length === 0
 					? null
-					: `${failures.length} of ${branches.length} branches failed. ${failures[0]}`.slice(
+					: Str.slice(
 							0,
 							500,
-						),
+						)(`${failures.length} of ${branches.length} branches failed. ${failures[0]}`),
 				null,
 			)
 			yield* Effect.annotateCurrentSpan({
@@ -397,43 +415,25 @@ export class PlanetScaleMetricsService extends Context.Service<
 			} satisfies OrgOutcome
 		})
 
-		const pollAll = Effect.fn("PlanetScaleMetricsService.pollAll")(function* () {
+		const pollAll = Effect.gen(function* () {
 			// The lane's inventory and webhook sync already ran; leave room before its deadline.
 			const deadlineMs = (yield* Clock.currentTimeMillis) + POLL_BUDGET_MS
 			const connections = yield* dbExecute((db) => db.run(PG.from(PlanetscaleConnections).select()))
-			const outcomes = yield* Effect.forEach(
-				connections,
-				(connection) =>
-					pollOrg(connection, deadlineMs).pipe(
-						// A broken org must not stop the fleet.
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("PlanetScale metrics poll failed").pipe(
-										Effect.annotateLogs({
-											orgId: connection.orgId,
-											error: summarizeCause(cause),
-										}),
-										Effect.as<OrgOutcome>({
-											_tag: "Polled",
-											branches: 0,
-											rows: 0,
-											failed: true,
-										}),
-									),
-						),
-					),
-				{ concurrency: ORG_CONCURRENCY },
-			)
-			const polled = outcomes.flatMap((outcome) => (outcome._tag === "Polled" ? [outcome] : []))
+			// A broken org must not stop the fleet.
+			const outcomes = yield* pollFleet(connections, (connection) => pollOrg(connection, deadlineMs), {
+				message: "PlanetScale metrics poll failed",
+				annotations: (connection) => ({ orgId: connection.orgId }),
+				fallback: (): OrgOutcome => ({ _tag: "Polled", branches: 0, rows: 0, failed: true }),
+			})
+			const polled = Arr.flatMap(outcomes, (outcome) => (outcome._tag === "Polled" ? [outcome] : []))
 			return {
 				orgs: connections.length,
 				polled: polled.length,
-				branches: polled.reduce((sum, outcome) => sum + outcome.branches, 0),
-				rowsIngested: polled.reduce((sum, outcome) => sum + outcome.rows, 0),
-				failures: polled.filter((outcome) => outcome.failed).length,
+				branches: Arr.reduce(polled, 0, (sum, outcome) => sum + outcome.branches),
+				rowsIngested: Arr.reduce(polled, 0, (sum, outcome) => sum + outcome.rows),
+				failures: Arr.filter(polled, (outcome) => outcome.failed).length,
 			}
-		})
+		}).pipe(Effect.withSpan("PlanetScaleMetricsService.pollAll"))
 
 		return { pollAll } satisfies PlanetScaleMetricsServiceApi
 	}),

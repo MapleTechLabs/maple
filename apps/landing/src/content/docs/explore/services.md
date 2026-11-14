@@ -63,12 +63,15 @@ Panels below the charts:
 - **Open issues**: [error issues](/docs/errors/overview) for this service from the latest 90 days.
 - **Recent deploys**.
 - **Ingest this window**: logs, spans, and metrics this service sent in the time range.
-- **Kubernetes**: workloads running the service, with CPU and memory, when Kubernetes resource attributes are present.
+- **Uptime**: the [uptime checks](/docs/alerting/uptime-monitoring) attached to this service, each with its recent results and pass rate. **Open in Alerts** opens the **Uptime** tab. Hidden when no check watches the service.
+- **Runs on**: where the service runs, platform resources from connected integrations first, then Kubernetes workloads with their pod count, CPU and memory.
 - **Talks to**: the services and databases it calls.
 
 ### API
 
-HTTP endpoints served by this service, with **Req/s**, **Errors**, **p50**, **p95**, and **p99**. Summary stats show the endpoint count, total requests per second, errors, and the worst p99. Requests that did not match a route are split into **Unrouted paths** and **Scanner probes**, hidden until you click **Show anyway**. Click an endpoint to open matching traces.
+HTTP endpoints served by this service, with **Req/s**, **Errors**, **p50**, **p95**, and **p99**. Summary stats show the endpoint count, total requests per second, errors, and the worst p99. Requests that did not match a route are split into **Unrouted paths** and **Scanner probes**, hidden until you click **Show anyway**. **Filter routes…** searches the endpoints by route, and the filter beside it shows **All**, **Rejecting > 5%** or **p95 > 100ms**.
+
+Click an endpoint to open its details beside the table: requests and latency over the window, **Status codes**, the latency **Distribution**, **Top clients** by user agent, **Request body** sizes and the **Slowest requests**. **Traces** opens the endpoint's traces, and **Create alert** starts a rule for it. Step to the previous or next endpoint with the arrows in its header.
 
 ### Operations
 

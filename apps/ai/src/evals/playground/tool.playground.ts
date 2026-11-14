@@ -8,11 +8,13 @@
  *   PLAYGROUND_ARGS   JSON arguments, for call
  *   PLAYGROUND_OUT    where the text goes (what the model would read)
  *   PLAYGROUND_LOG    optional JSONL file; every call is appended for grading
+ *   PLAYGROUND_CH     1 to run data source SQL on the Docker ClickHouse (data-source-world-ch.sh)
  */
-import { appendFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs"
+import { dirname } from "node:path"
 import { afterAll, beforeAll, it } from "vitest"
-import { Schema, Array as Arr } from "effect"
-import { RoleName } from "@maple/domain/primitives"
+import { Option, Schema, Array as Arr } from "effect"
+import { RoleName } from "@maple/primitives"
 import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import {
 	integrationFixtureRules,
@@ -21,6 +23,11 @@ import {
 } from "@/mcp/__evals__/integration-world"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "@/mcp/__evals__/eval-runtime"
 import { infraFixtureRules } from "@/mcp/__evals__/infra-world"
+import {
+	dataSourceWorldLayer,
+	makeDataSourceWorldState,
+	seedDataSourceWorld,
+} from "@/mcp/__evals__/ds-world/runtime"
 import { providerFixtureRules } from "@/mcp/__evals__/provider-world"
 import { securityCatalogFetch, securityFixtureRules, seedSecurityWorld } from "@/mcp/__evals__/security-world"
 import { inputSchemaOf, mapleToolCatalog } from "@/mcp/tools/registry"
@@ -44,12 +51,14 @@ beforeAll(async () => {
 		undefined,
 		"empty",
 	)
-	const base = makeEvalRuntime()
+	// The data source world: 18 sources, Clerk faked, ClickHouse in Docker with PLAYGROUND_CH=1.
+	const base = makeEvalRuntime(undefined, dataSourceWorldLayer(makeDataSourceWorldState()))
 	// The playground plays an org admin, so the admin-only integration tools can be exercised.
 	rt = { ...base, tenant: { ...base.tenant, roles: [Schema.decodeSync(RoleName)("org:admin")] } }
 	await seedIntegrationWorld(rt)
 	await seedCommitWorld(rt)
 	await seedSecurityWorld(rt)
+	await rt.runtime.runPromise(seedDataSourceWorld)
 })
 afterAll(async () => {
 	restoreWarehouse()
@@ -61,8 +70,9 @@ const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown,
 const decodeJson = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))
 
 const log = (entry: Record<string, unknown>) => {
-	if (env.PLAYGROUND_LOG)
-		appendFileSync(env.PLAYGROUND_LOG, `${encodeJson({ at: new Date().toISOString(), ...entry })}\n`)
+	if (!env.PLAYGROUND_LOG) return
+	mkdirSync(dirname(env.PLAYGROUND_LOG), { recursive: true })
+	appendFileSync(env.PLAYGROUND_LOG, `${encodeJson({ at: new Date().toISOString(), ...entry })}\n`)
 }
 
 it("playground", async () => {
@@ -77,10 +87,15 @@ it("playground", async () => {
 				),
 			)
 		case "schema": {
-			const entry = publicTools.find((candidate) => candidate.name === tool)
 			return writeFileSync(
 				out,
-				entry === undefined ? `Unknown tool "${tool}".` : encodePrettyJson(inputSchemaOf(entry)),
+				Option.match(
+					Arr.findFirst(publicTools, (candidate) => candidate.name === tool),
+					{
+						onNone: () => `Unknown tool "${tool}".`,
+						onSome: (entry) => encodePrettyJson(inputSchemaOf(entry)),
+					},
+				),
 			)
 		}
 		case "call": {
@@ -88,7 +103,15 @@ it("playground", async () => {
 			const started = Date.now()
 			const params: unknown = decodeJson(env.PLAYGROUND_ARGS ?? "{}")
 			const result = await runToolDirect(rt, tool, params).then(
-				(value) => ({ text: markdown(value), ok: value?.isError !== true }),
+				(value: unknown) => ({
+					text: markdown(value),
+					ok: !(
+						typeof value === "object" &&
+						value !== null &&
+						"isError" in value &&
+						value.isError === true
+					),
+				}),
 				(error: unknown) => ({ text: `Tool failed: ${String(error)}`, ok: false }),
 			)
 			writeFileSync(out, result.text)

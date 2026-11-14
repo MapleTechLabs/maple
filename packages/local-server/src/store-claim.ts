@@ -4,6 +4,7 @@ import { Clock, Effect, Option, String as Str } from "effect"
 import { randomUUID } from "node:crypto"
 import { linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
+import { isProcessAlive } from "./process-liveness"
 import { errnoCode, type ServerStateFileError, stateFileError, syscallError } from "./store-errors"
 import {
 	adoptLegacySidecars,
@@ -13,15 +14,11 @@ import {
 	serverPidPath,
 } from "./store-version"
 
-// ---------------------------------------------------------------------------
-// Process liveness: is the owner named by a PID file still that process?
-// ---------------------------------------------------------------------------
-
 /** Parse `ps -o etime=` (`[[dd-]hh:]mm:ss`) into whole seconds. */
 export const parseElapsedSeconds = (raw: string): number | undefined => {
-	const match = Str.trim(raw).match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
-	if (!match) return undefined
-	const [, days, hours, minutes, seconds] = match
+	const found = Str.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)(Str.trim(raw))
+	if (Option.isNone(found)) return undefined
+	const [, days, hours, minutes, seconds] = found.value
 	return Number(days ?? 0) * 86_400 + Number(hours ?? 0) * 3_600 + Number(minutes) * 60 + Number(seconds)
 }
 
@@ -31,13 +28,14 @@ export const parseElapsedSeconds = (raw: string): number | undefined => {
  * counted after the last `)` because the command name may hold spaces and parens.
  */
 export const parseProcStartedAtMs = (pidStat: string, systemStat: string): number | undefined => {
-	const commEnd = pidStat.lastIndexOf(")")
+	const commEnd = Str.lastIndexOf(")")(pidStat)
+	if (Option.isNone(commEnd)) return undefined
 	// `state` is field 3, so `starttime` (field 22) is index 19 after the comm.
-	const ticks = Str.split(" ")(Str.slice(commEnd + 2)(pidStat))[19] ?? ""
-	const boot = systemStat.match(/^btime (\d+)$/m)
-	if (commEnd < 0 || !boot || !/^\d+$/.test(ticks)) return undefined
+	const ticks = Str.split(" ")(Str.slice(commEnd.value + 2)(pidStat))[19] ?? ""
+	const boot = Str.match(/^btime (\d+)$/m)(systemStat)
+	if (Option.isNone(boot) || !/^\d+$/.test(ticks)) return undefined
 	// /proc reports times in USER_HZ, which the kernel ABI fixes at 100 per second.
-	return Number(boot[1]) * 1000 + Number(ticks) * 10
+	return Number(boot.value[1]) * 1000 + Number(ticks) * 10
 }
 
 /**
@@ -48,31 +46,6 @@ export const parseProcStartedAtMs = (pidStat: string, systemStat: string): numbe
  */
 export const startedBeforeWrite = (startedAtMs: number, writtenAtMs: number): boolean =>
 	startedAtMs <= writtenAtMs + 2_000
-
-/** Liveness probe via signal 0: a process primitive with no FileSystem
- *  equivalent. Never throws (errors mean "not alive").
- *
- *  A PID file naming *this* process is stale by definition: the previous server
- *  is the one that wrote it, so if its number is ours it has died and the OS
- *  reused the PID. In a container that is the common case, not the edge case:
- *  `maple start` is PID 1 on every restart, the file survives on the data
- *  volume, and `kill(1, 0)` always succeeds, so without this check a container
- *  whose server died once refuses to start forever ("already running (PID 1)").
- *  Non-positive PIDs are rejected for the same reason: `kill(0, 0)` and
- *  `kill(-n, 0)` signal process groups and "succeed" for a group that exists. */
-export const isProcessAlive = (pid: number): boolean => {
-	if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch {
-		return false
-	}
-}
-
-// ---------------------------------------------------------------------------
-// PID file: the one claim that serializes every process opening a store.
-// ---------------------------------------------------------------------------
 
 export interface PidFileSnapshot {
 	readonly raw: string

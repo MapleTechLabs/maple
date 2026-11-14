@@ -1,44 +1,27 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
 import { AI_TOOL_ERRORS_MAX } from "@maple/domain/http"
 import { getAiSessionsFacets, listAiSessions } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolErrors, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { settleTo } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { presentInputs } from "../list/derive"
-import { fetchTotals, Selection, toInput } from "../tools-kit/reads"
-import { Message, RequestMode } from "./message"
+import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
+import { Message } from "./message"
 
 /** Sessions the page lists: the most recent, not the busiest. */
 export const SESSIONS_LIMIT = 50
 
-export const ResolveWindow = Command.define("ResolveAgentToolWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAgentToolWindow", Message.CompletedResolveWindow)
 
 export const FetchSeries = Command.define("FetchAgentToolSeries", {
 	args: { key: Schema.String, selection: Selection, bucketSeconds: Schema.Number },
 	messages: [Message.CompletedFetchSeries],
 	execute: ({ key, selection, bucketSeconds }) =>
 		getAiToolSeries({ data: { ...toInput(selection), bucketSeconds, split: "none" } }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ key, result })),
+			settleTo((result) => Message.CompletedFetchSeries({ key, result })),
 		),
 })
 
@@ -58,11 +41,7 @@ export const FetchErrors = Command.define("FetchAgentToolErrors", {
 	execute: ({ key, selection, tool, bucketSeconds }) =>
 		getAiToolErrors({
 			data: { ...toInput(selection), tool, bucketSeconds, limit: AI_TOOL_ERRORS_MAX },
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchErrors({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchErrors({ key, result }))),
 })
 
 export const SessionsInput = Schema.Struct({
@@ -92,11 +71,7 @@ export const FetchSessions = Command.define("FetchAgentToolSessions", {
 				}),
 				limit: SESSIONS_LIMIT,
 			},
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSessions({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchSessions({ key, result }))),
 })
 
 export const FetchFacets = Command.define("FetchAgentToolFacets", {
@@ -104,15 +79,8 @@ export const FetchFacets = Command.define("FetchAgentToolFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAgentToolReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAgentToolReloadSpin", Message.CompletedReloadSpin)

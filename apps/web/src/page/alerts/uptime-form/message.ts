@@ -3,7 +3,6 @@ import { V2UptimeMonitor, V2UptimeMonitorTestResult } from "@maple/domain/http/v
 import { AlertDestinationRowSchema } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import {
 	AssertionType,
@@ -14,19 +13,19 @@ import {
 	RecordType,
 	ScheduleMode,
 	TextField,
-} from "./form"
-
-const outcome = <S extends Schema.Top>(success: S) => Schema.Result(success, LoadFailure)
+} from "../../kit/uptime/form"
+import { LoadOutcome } from "../../kit/load-schemas"
+import { SessionGrants } from "../../kit/session-grants"
 
 /** The part of an "Up when" row that changed. */
 export const AssertionPart = Schema.Literals(["op", "target", "value"])
 
 export const Message = defineMessageUnion({
-	CompletedFetchExisting: { key: Schema.String, result: outcome(V2UptimeMonitor) },
+	CompletedFetchExisting: { key: Schema.String, result: LoadOutcome(V2UptimeMonitor) },
 	UpdatedDestinations: { orgId: Schema.String, rows: Schema.Array(AlertDestinationRowSchema) },
 	CompletedFetchServices: { services: Schema.Array(Schema.String) },
 	CompletedReadTimeZones: { zones: Schema.Array(Schema.String) },
-	CompletedFetchSession: { orgId: Schema.String, isAdmin: Schema.Boolean },
+	CompletedFetchSession: SessionGrants,
 	PickedKind: { kind: MonitorKind },
 	ChangedText: { field: TextField, value: Schema.String },
 	ChangedMethod: { method: HttpMethod },
@@ -42,8 +41,10 @@ export const Message = defineMessageUnion({
 	RemovedDestination: { id: AlertDestinationId },
 	GotDestinationMenuMessage: { message: Menu.Message },
 	ClickedTest: {},
-	CompletedTest: { result: outcome(V2UptimeMonitorTestResult) },
+	CompletedTest: { result: LoadOutcome(V2UptimeMonitorTestResult) },
 	ClickedSave: {},
-	CompletedSave: { result: outcome(V2UptimeMonitor) },
+	CompletedSave: { result: LoadOutcome(V2UptimeMonitor) },
+	/** `trackProduct("uptime_monitor_created")` was handed to the session SDK. */
+	CompletedTrackCreated: {},
 })
 export type Message = typeof Message.Type

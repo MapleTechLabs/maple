@@ -1,13 +1,15 @@
-import { toOrgRole } from "../../../components/settings/org-membership"
-import { Array, Effect, Option, Result, Schema, String as Str } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { orgRoleKeys, orgRoleNoun, toOrgRole } from "../kit/org-membership"
+import { Array, Effect, Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import type {
 	ClerkInvitationResource,
 	ClerkMembershipResource,
 	ClerkOrganizationResource,
 } from "../../../platform/clerk"
 import { ClerkActionError, clerkTry, currentClerkOrganization } from "../../../platform/clerk"
+import { trackProduct } from "../../../data/analytics"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
@@ -15,11 +17,11 @@ import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
 import { memberDisplayName, otherAdminName } from "../kit/members"
-import { type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
+import { canManage, type InvitationRow, type MemberRow, Message, type Model, OrgRole } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-/** Clerk's default page size for `useOrganization`'s infinite lists. */
+/** Clerk's default page size for its paginated lists. */
 const PAGE_SIZE = 10
 
 const settleClerk =
@@ -85,18 +87,14 @@ const FetchMembers = Command.define("FetchClerkMemberships", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => membershipsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => {
-					const userId = window.Clerk?.user?.id ?? null
-					return {
-						rows: Array.map(result.data, (member) => memberRow(member, userId)),
-						total: result.total_count,
-					}
-				},
-				onFailure: toLoadFailure,
+			Effect.map((result) => {
+				const userId = window.Clerk?.user?.id ?? null
+				return {
+					rows: Array.map(result.data, (member) => memberRow(member, userId)),
+					total: result.total_count,
+				}
 			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchMembers({ page, generation, result })),
+			settleTo((result) => Message.CompletedFetchMembers({ page, generation, result })),
 		),
 })
 
@@ -106,15 +104,11 @@ const FetchInvitations = Command.define("FetchClerkInvitations", {
 	execute: ({ page, generation }) =>
 		currentClerkOrganization.pipe(
 			Effect.flatMap((organization) => invitationsPage(organization, page)),
-			Effect.mapBoth({
-				onSuccess: (result) => ({
-					rows: Array.map(result.data, invitationRow),
-					total: result.total_count,
-				}),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvitations({ page, generation, result })),
+			Effect.map((result) => ({
+				rows: Array.map(result.data, invitationRow),
+				total: result.total_count,
+			})),
+			settleTo((result) => Message.CompletedFetchInvitations({ page, generation, result })),
 		),
 })
 
@@ -173,8 +167,16 @@ const InviteMember = Command.define("InviteClerkMember", {
 					organization.inviteMember({ emailAddress: email, role }),
 				),
 			),
-			settleClerk((result) => Message.CompletedInvite({ email, result })),
+			settleClerk((result) => Message.CompletedInvite({ email, role, result })),
 		),
+})
+
+/** A sent invitation is the `member_invited` product event. */
+const TrackMemberInvited = Command.define("TrackMemberInvited", {
+	args: { role: OrgRole },
+	messages: [Message.CompletedTrackMemberInvited],
+	execute: ({ role }) =>
+		trackProduct("member_invited", { role }).pipe(Effect.as(Message.CompletedTrackMemberInvited())),
 })
 
 const ChangeRole = Command.define("ChangeClerkMemberRole", {
@@ -183,7 +185,7 @@ const ChangeRole = Command.define("ChangeClerkMemberRole", {
 	execute: ({ memberId, name, next }) =>
 		withMembership(memberId, (member) =>
 			clerkTry("Couldn't change role", () => member.update({ role: next })),
-		).pipe(settleClerk((result) => Message.CompletedRoleChange({ name, next, result }))),
+		).pipe(settleClerk((result) => Message.CompletedRoleChange({ memberId, name, next, result }))),
 })
 
 const RemoveMember = Command.define("RemoveClerkMember", {
@@ -233,17 +235,18 @@ const ResendInvitation = Command.define("ResendClerkInvitation", {
 		}),
 })
 
-const ROLE_VALUES = ["org:member", "org:admin"] as const
-
 export const roleSelectFor = (model: Model, member: MemberRow): Select.Model =>
 	model.roleSelects[member.id] ?? roleSelect(`member-role-${member.id}`, toOrgRole(member.role))
 
 const roleSelect = (id: string, role: OrgRole): Select.Model =>
-	Select.init(id, { value: role, selectedIndex: ROLE_VALUES.indexOf(role) })
+	Select.init(id, {
+		value: role,
+		selectedIndex: Option.getOrNull(Array.findFirstIndex(orgRoleKeys, (key) => key === role)),
+	})
 
-export const init = (isAdmin: boolean): Return => ({
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		adminName: null,
 		hasOrganization: null,
 		orgName: "",
@@ -257,7 +260,6 @@ export const init = (isAdmin: boolean): Return => ({
 		isInviting: false,
 		roleSelects: {},
 		pendingRole: null,
-		isRoleSaving: false,
 		rowMenus: {},
 		removing: null,
 		removeDialog: Dialog.init("member-remove", "alert-dialog"),
@@ -270,8 +272,10 @@ export const init = (isAdmin: boolean): Return => ({
 	commands: [
 		FetchOrganization(),
 		FetchMembers({ page: 1, generation: 0 }),
-		FetchInvitations({ page: 1, generation: 0 }),
-		...(isAdmin ? [] : [FetchAdminName()]),
+		// Clerk answers 403 to a member reading pending invitations; the section only shows for managers.
+		...(Policy.has(grants, "members:manage")
+			? [FetchInvitations({ page: 1, generation: 0 })]
+			: [FetchAdminName()]),
 	],
 })
 
@@ -296,7 +300,7 @@ const liftRevoke = lift("revokeDialog", (message) => Message.GotRevokeDialogMess
 const stopPaging = <A extends { readonly isFetchingMore: boolean }, E>(data: AsyncData.AsyncData<A, E>) =>
 	AsyncData.map(data, (list) => ({ ...list, isFetchingMore: false }))
 
-/** `memberships.revalidate()`: the list reads again from its first page, dropping older answers. */
+/** The list reads again from its first page, dropping older answers. */
 const revalidateMembers = (model: Model): Return => {
 	const members = stopPaging(model.members)
 	const generation = model.membersGeneration + 1
@@ -436,10 +440,13 @@ export const revisit = (model: Model): Return => {
 			...members.commands,
 			...invitations.commands,
 			FetchOrganization(),
-			...(model.isAdmin ? [] : [FetchAdminName()]),
+			...(canManage(model) ? [] : [FetchAdminName()]),
 		],
 	}
 }
+
+const isSavingFor = (model: Model, memberId: string): boolean =>
+	model.pendingRole?._tag === "Saving" && model.pendingRole.memberId === memberId
 
 export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
@@ -526,7 +533,7 @@ export const update = (model: Model, message: Message): Return =>
 				commands: [InviteMember({ email, role: inviteRoleOf(model) })],
 			}
 		},
-		CompletedInvite: ({ email, result }) =>
+		CompletedInvite: ({ email, role, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const reset = {
@@ -539,7 +546,11 @@ export const update = (model: Model, message: Message): Return =>
 					const refreshed = revalidateInvitations(closed.model)
 					return {
 						model: refreshed.model,
-						commands: [...(closed.commands ?? []), ...(refreshed.commands ?? [])],
+						commands: [
+							...(closed.commands ?? []),
+							...(refreshed.commands ?? []),
+							TrackMemberInvited({ role }),
+						],
 						outMessage: toast("success", `Invitation sent to ${email}`),
 					}
 				},
@@ -548,6 +559,7 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", error),
 				}),
 			}),
+		CompletedTrackMemberInvited: () => ({ model }),
 		GotRoleSelectMessage: ({ memberId, message: child }) =>
 			Option.match(
 				Option.flatMap(AsyncData.getData(model.members), (data) =>
@@ -572,43 +584,72 @@ export const update = (model: Model, message: Message): Return =>
 							onSome: (role) =>
 								role === toOrgRole(member.role)
 									? { model: next, commands }
-									: {
-											model: {
-												...next,
-												pendingRole: { memberId, name: member.name, next: role },
+									: isSavingFor(model, memberId)
+										? // One save per member: the pick closes the list and is dropped.
+											{
+												model: {
+													...next,
+													roleSelects: {
+														...model.roleSelects,
+														[memberId]: {
+															...step.model,
+															value: roleSelectFor(model, member).value,
+														},
+													},
+												},
+												commands,
+											}
+										: {
+												model: {
+													...next,
+													pendingRole: {
+														_tag: "Confirming",
+														memberId,
+														name: member.name,
+														next: role,
+													},
+												},
+												commands,
 											},
-											commands,
-										},
 						})
 					},
 				},
 			),
 		ClickedCancelRole: () =>
-			model.isRoleSaving ? { model } : { model: { ...model, pendingRole: null } },
+			model.pendingRole?._tag === "Saving" ? { model } : { model: { ...model, pendingRole: null } },
 		ClickedConfirmRole: () => {
 			const pending = model.pendingRole
-			if (pending === null || model.isRoleSaving) return { model }
-			return { model: { ...model, isRoleSaving: true }, commands: [ChangeRole(pending)] }
+			if (pending === null || pending._tag === "Saving") return { model }
+			const { memberId, name, next } = pending
+			return {
+				model: { ...model, pendingRole: { _tag: "Saving", memberId, name, next } },
+				commands: [ChangeRole({ memberId, name, next })],
+			}
 		},
-		CompletedRoleChange: ({ name, next, result }) =>
-			Result.match(result, {
+		CompletedRoleChange: ({ memberId, name, next, result }) => {
+			const pending = model.pendingRole
+			const isShown =
+				pending !== null &&
+				pending._tag === "Saving" &&
+				pending.memberId === memberId &&
+				pending.next === next
+			return Result.match(result, {
 				onSuccess: () => ({
 					...revalidateMembers({
 						...model,
-						isRoleSaving: false,
-						pendingRole: null,
-						roleSelects: {},
+						pendingRole: isShown ? null : pending,
+						roleSelects: Rec.remove(model.roleSelects, memberId),
 					}),
-					outMessage: toast(
-						"success",
-						`${name} is now ${next === "org:admin" ? "an admin" : "a member"}`,
-					),
+					outMessage: toast("success", `${name} is now ${orgRoleNoun(next)}`),
 				}),
 				onFailure: (error) => ({
-					model: { ...model, isRoleSaving: false },
+					model: isShown
+						? { ...model, pendingRole: { _tag: "Confirming", memberId, name, next } }
+						: model,
 					outMessage: toast("error", error),
 				}),
-			}),
+			})
+		},
 		GotRowMenuMessage: ({ menuId, message: child }) => {
 			const step = Menu.update(model.rowMenus[menuId] ?? Menu.init(menuId), child)
 			const next = { ...model, rowMenus: { ...model.rowMenus, [menuId]: step.model } }

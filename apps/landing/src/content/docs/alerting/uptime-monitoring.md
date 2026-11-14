@@ -1,13 +1,13 @@
 ---
 title: "Uptime monitoring"
-description: "Monitor availability in Maple: alert on traffic stopping and failing requests from your traces, and add HTTP checks from the OpenTelemetry Collector for endpoints and TLS certificates."
+description: "Monitor availability in Maple: alert on traffic stopping and failing requests from your traces, run hosted HTTP, TCP and DNS checks, or add HTTP checks from your own OpenTelemetry Collector."
 group: "Alerting"
 order: 5
 ---
 
-Maple monitors availability from two sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. HTTP checks from the OpenTelemetry Collector cover what real traffic cannot: endpoints with little traffic, and failures that happen before a request reaches your code, such as a DNS change or an expired certificate.
+Maple monitors availability from three sources. Alert rules on your traces fire when a service stops receiving requests or starts failing them. Hosted uptime checks, under **Alerts → Uptime**, run HTTP, TCP and DNS checks from Maple every 30 seconds or more. [Heartbeat monitors](/docs/alerting/heartbeat-monitors), on the same page, watch cron jobs and scheduled workers that ping Maple when they finish. HTTP checks from an OpenTelemetry Collector you operate cover endpoints Maple cannot reach, such as ones inside a private network.
 
-Maple does not run hosted probes. The checks run in a Collector you operate.
+This page covers alerts on traces and Collector checks. For hosted checks, open **Alerts → Uptime** and click **New monitor** (**New uptime check** when there are none yet).
 
 > **Recommended reading first.** [Uptime monitoring with traces and HTTP checks](/guides/uptime-monitoring) is the background for this page: which failures a probe catches, which ones only traces see, and when a probe is worth adding. This page is the setup.
 
@@ -20,10 +20,10 @@ Maple does not run hosted probes. The checks run in a Collector you operate.
 ## Alert on real traffic
 
 1. Open **Alerts**, click **New rule** and pick the **Throughput drop** template.
-2. Under **What to watch**, pick the service in **Services**. The template sets **Minimum samples** to 0, so a window with no requests counts as zero and fires.
+2. Under **When**, pick the service in **Services**. The template sets **Minimum samples** to 0, so a window with no requests counts as zero and fires.
 3. Set **Threshold** below the service's quietest five minutes on a normal day.
-4. Under **When to alert**, pick a range above the chart to replay the rule. The shaded periods are where it would have held an incident open.
-5. Attach a destination under **Who gets notified** and click **Create rule**.
+4. Pick a range above the chart to replay the rule. The shaded periods are where it would have held an incident open.
+5. Attach a destination under **Notify** and click **Create rule**.
 
 <figure class="shot">
   <img src="/screenshots/docs/uptime-monitoring-01-throughput-rule.webp" alt="The alert rule form with the Throughput signal selected, condition below 100, the checkout service in scope, and Evaluation timing opened to show a 5 minute window and Min samples 0." loading="lazy" />
@@ -65,7 +65,7 @@ processors:
     batch: {}
 
 exporters:
-    otlphttp/maple:
+    otlp_http/maple:
         endpoint: https://ingest.maple.dev
         compression: gzip
         headers:
@@ -76,7 +76,7 @@ service:
         metrics/uptime:
             receivers: [http_check]
             processors: [resource/uptime, batch]
-            exporters: [otlphttp/maple]
+            exporters: [otlp_http/maple]
 ```
 
 Start the Collector with your key in the environment:
@@ -87,7 +87,7 @@ MAPLE_INGEST_KEY=YOUR_INGEST_KEY otelcol-contrib --config config.yaml
 
 Notes on the config:
 
-- **Older Collector releases name the receiver `httpcheck`.** Use that name in both places if your release rejects `http_check`.
+- **Older Collector releases use the previous names:** `httpcheck` and `otlphttp`. Use those if your release rejects `http_check` or `otlp_http`.
 - **`resource/uptime` sets `service.name`.** The checks appear in Maple under the service `uptime-checks`.
 - **EU organizations** use `https://ingest.eu.maple.dev` as the endpoint.
 - **Run the Collector outside the system it checks.** On the same machine as the service, it goes down with it.
@@ -108,10 +108,10 @@ Every data point carries the checked address in `http.url`.
 1. Open **Metrics** and open `httpcheck.status`.
 2. Set **Aggregate** to `max`, **Where** to `attr.http.status_class = "2xx"`, and **Group by** to `attr.http.url`. Keep the `attr.` prefix on the filter, or it is dropped when the chart becomes a rule.
 3. Click **Create alert**.
-4. Set **Alert when the value** to **is below** and **Threshold** to `1`.
+4. Under **Alert when**, set the condition to **is below** and **Threshold** to `1`.
 5. Under **How it is checked**, set **Window** to 2 and **Minimum samples** to 1. A two-minute window holds two data points per URL, so the default of 50 would skip every check.
 6. Leave **Breaches to fire** at 2.
-7. Attach a destination under **Who gets notified** and click **Create rule**.
+7. Attach a destination under **Notify** and click **Create rule**.
 
 The rule reads: no check of this URL returned a 2xx in the last two minutes. It opens one incident per URL, about three minutes into an outage, and one failed check on its own does not fire it.
 
@@ -134,7 +134,7 @@ The rule reads: no check of this URL returned a 2xx in the last two minutes. It 
 
 A grouped rule skips a window with no data, so a stopped Collector would go unnoticed. Create a second rule on `httpcheck.status` with no group-by:
 
-- **Aggregate** `count`, **Alert when the value** **is below**, **Threshold** `1`
+- **Aggregate** `count`, condition **is below**, **Threshold** `1`
 - **Minimum samples** 1
 - **Alert when there is no data** switched on
 
@@ -143,7 +143,7 @@ A grouped rule skips a window with no data, so a stopped Collector would go unno
 Create a rule on `httpcheck.tls.cert_remaining`:
 
 - **Aggregate** `min`, **Group by** `attr.http.url`
-- **Alert when the value** **is below**, **Threshold** `1209600` (14 days in seconds)
+- Condition **is below**, **Threshold** `1209600` (14 days in seconds)
 - **Minimum samples** 1
 
 ## Verify
@@ -153,9 +153,8 @@ Open **Metrics** and search for `httpcheck`. The metrics appear after the first 
 ## Limits
 
 - One Collector probes from one place, through one DNS resolver. It cannot show that users in another region are cut off, and a network problem next to the Collector looks the same as an outage.
-- There is no status page.
 
-For probes from several regions, a public status page, or an availability report for customers, run a dedicated uptime product next to Maple.
+For probes from several regions, or an availability report for customers, run a dedicated uptime product next to Maple.
 
 ## Troubleshooting
 

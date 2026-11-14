@@ -8,10 +8,9 @@ import type { Message as DetailMessage } from "../detail/message"
 import { Message } from "./message"
 import type { Model, TraceRow } from "./model"
 import { allRows } from "./update"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
-// The trace peek sheet's wiring: the URL's
-// `peek*` params pick the trace; the trace page's Model runs inside the sheet.
+// The trace peek sheet's wiring: the URL's `peek*` params pick the trace; the trace page's Model runs inside the sheet.
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -19,7 +18,7 @@ type Cmd = Command.Command<Message, never, Resources>
 
 const PEEK_CLEARED = { peek: undefined, peekRow: undefined, peekT: undefined, peekSpan: undefined }
 
-/** `peekParamsFor` + `deepLinkSpanId`: a row's trace, its time and (per-span lists) its span. */
+/** A row's trace, its time and (per-span lists) its span. */
 export const peekSearchFor = (search: Search, row: TraceRow): Search => ({
 	...search,
 	peek: row.traceId,
@@ -28,15 +27,18 @@ export const peekSearchFor = (search: Search, row: TraceRow): Search => ({
 	peekSpan: row.isRootSpan ? undefined : row.spanId,
 })
 
-/** `resolvePeek`: the row `peekRow` names among the trace's rows, else the trace's first row. */
+/** The row `peekRow` names among the trace's rows, else the trace's first row. */
 const peekIndex = (model: Model, rows: ReadonlyArray<TraceRow>): number => {
 	const peek = model.search.peek
 	if (peek === undefined) return -1
 	const exact =
 		model.search.peekRow === undefined
-			? -1
-			: rows.findIndex((row) => row.traceId === peek && row.spanId === model.search.peekRow)
-	return exact >= 0 ? exact : rows.findIndex((row) => row.traceId === peek)
+			? Option.none()
+			: Arr.findFirstIndex(rows, (row) => row.traceId === peek && row.spanId === model.search.peekRow)
+	return Option.getOrElse(
+		Option.orElse(exact, () => Arr.findFirstIndex(rows, (row) => row.traceId === peek)),
+		() => -1,
+	)
 }
 
 export const peekPosition = (model: Model): { readonly index: number; readonly count: number } | null => {
@@ -50,7 +52,7 @@ const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Traces({ search })), isReplace }),
 })
 
-/** A trace page link that keeps the list's search (`search: (prev) => ({ ...prev, t, spanId })`). */
+/** A trace page link that keeps the list's search. */
 export const traceHrefFrom = (
 	search: Search,
 	traceId: string,
@@ -59,7 +61,10 @@ export const traceHrefFrom = (
 ) => {
 	const list = hrefOf(AppRoute.Traces({ search: { ...search, ...PEEK_CLEARED } }))
 	const page = hrefOf(AppRoute.Trace({ traceId, search: { t, spanId } }))
-	const listQuery = Str.includes("?")(list) ? Str.slice(list.indexOf("?") + 1)(list) : ""
+	const listQuery = Option.match(Str.indexOf("?")(list), {
+		onNone: () => "",
+		onSome: (question) => Str.slice(question + 1)(list),
+	})
 	const [path, pageQuery = ""] = Str.split("?")(page)
 	const query = Arr.join(
 		Arr.filter([listQuery, pageQuery], (part) => part !== ""),
@@ -90,7 +95,7 @@ const liftDetail = (
 	const out = step.outMessage
 	if (out === undefined) return { model: next, commands }
 	// The page writes its `spanId`/`view` to its own URL; in the sheet the span is `peekSpan` and
-	// the view stays local, as `TraceViewTabs` keeps it in the sheet.
+	// the view stays local to the sheet.
 	if (out._tag === "RequestedNavigation" && Str.startsWith(`/traces/${step.model.traceId}`)(out.url)) {
 		const params = new URLSearchParams(Str.split("?")(out.url)[1] ?? "")
 		const spanId = params.get("spanId") ?? undefined
@@ -114,7 +119,7 @@ const liftDetail = (
 	return { model: next, commands, outMessage: out }
 }
 
-/** The same trace at a new time keeps its time-independent reads, as their atoms are keyed alike. */
+/** The same trace at a new time keeps its time-independent reads, as they are keyed alike. */
 const carried = (
 	step: ReturnType<typeof TraceDetail.init>,
 	previous: Model["peek"],
@@ -176,7 +181,7 @@ export const peekDialogStep = (model: Model, message: Dialog.Message): Return =>
 	}
 }
 
-/** ↑/↓ walk the loaded list from the peeked row, replacing history as `closePeek` does. */
+/** ↑/↓ walk the loaded list from the peeked row, replacing history as closing does. */
 export const steppedPeek = (model: Model, delta: 1 | -1): Return => {
 	const position = peekPosition(model)
 	const next = position === null ? undefined : allRows(model)[position.index + delta]

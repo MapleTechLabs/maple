@@ -37,7 +37,8 @@ export const Message = defineMessageUnion({
 	ElapsedCustomerGrace: { orgId: Schema.String },
 	CompletedSaveSelectedPlanKnown: {},
 	CompletedReconnectOrgCollections: {},
-	CompletedRestoreDashboardWidgets: {},
+	/** The Undo's write: `error` is why the widgets could not be put back. */
+	CompletedRestoreDashboardWidgets: { error: Schema.NullOr(Schema.String) },
 	CompletedSignOutOfClerk: {},
 	/** The Clerk identity was handed to the telemetry session (`identify`). */
 	CompletedIdentifySession: {},
@@ -56,7 +57,7 @@ export const Message = defineMessageUnion({
 	CompletedReleaseReads: {},
 	LoadedSessionTimeRange: { orgId: Schema.String, value: SessionTimeRange, nowMs: Schema.Number },
 	CompletedWriteSessionTimeRange: { nowMs: Schema.Number },
-	/** `timezonePreferenceAtom` changed (a pick here, or another tab's `storage` event): the effective zone. */
+	/** The zone preference changed (a pick here, or another tab's `storage` event): the effective zone. */
 	ChangedTimeZonePreference: { timeZone: Schema.String },
 })
 export type Message = typeof Message.Type

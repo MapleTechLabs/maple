@@ -39,7 +39,8 @@ export const argvFormat = (argv: ReadonlyArray<string>): OutputFormat | undefine
 		const arg = argv[i]
 		if (arg === "--") break
 		if (arg === "--format") found = argv[i + 1]
-		else if (arg?.startsWith("--format=")) found = Str.slice("--format=".length)(arg)
+		else if (arg !== undefined && Str.startsWith("--format=")(arg))
+			found = Str.slice("--format=".length)(arg)
 	}
 	return isFormat(found) ? found : undefined
 }
@@ -59,14 +60,10 @@ export const chosenFormat: Effect.Effect<OutputFormat | undefined> = Effect.gen(
 	return explicit ?? (isFormat(env) ? env : undefined)
 })
 
-/** The chosen format, defaulting to json. */
 export const resolveFormat: Effect.Effect<OutputFormat> = Effect.map(
 	chosenFormat,
 	(format) => format ?? "json",
 )
-
-// ---------------------------------------------------------------------------
-// Cell formatting (table mode only; JSON keeps raw numbers)
 
 const integerFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 })
 const decimalFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 })
@@ -122,7 +119,7 @@ const ATTRIBUTES_KEY = /[aA]ttributes$/
  * log whose text happens to look like a datetime prints unchanged.
  */
 export const utcTimestampReplacer = () => {
-	const attributeMaps = new WeakSet<object>()
+	const attributeMaps = new WeakSet()
 	return function (this: unknown, key: string, value: unknown) {
 		if (typeof this === "object" && this !== null && attributeMaps.has(this)) return value
 		if (ATTRIBUTES_KEY.test(key) && typeof value === "object" && value !== null) attributeMaps.add(value)
@@ -175,9 +172,6 @@ export const headerFor = (key: string): string =>
 	Str.toUpperCase(
 		Str.replace(/_/g, " ")(Str.replace(/([a-z0-9])([A-Z])/g, "$1 $2")(Str.replace(/Ms$/, "")(key))),
 	)
-
-// ---------------------------------------------------------------------------
-// Tables
 
 export interface Column<R> {
 	readonly header: string
@@ -271,9 +265,6 @@ export const autoSections = (data: unknown): ReadonlyArray<Section> => {
 	return fields.length > 0 ? [{ body: renderFields(fields) }, ...sections] : sections
 }
 
-// ---------------------------------------------------------------------------
-// Printing
-
 export interface Section {
 	readonly title?: string
 	readonly body: string
@@ -296,7 +287,7 @@ export interface View<A> {
 export const isEmptyResult = (data: unknown): boolean => {
 	if (Arr.isArray(data)) return data.length === 0
 	if (!isRecord(data)) return false
-	const arrays = Arr.filter(Rec.values(data), Array.isArray)
+	const arrays = Arr.filter(Rec.values(data), (value): value is Array<unknown> => Arr.isArray(value))
 	return arrays.length > 0 && Arr.every(arrays, (a) => a.length === 0)
 }
 
@@ -312,7 +303,6 @@ export const printResult = <A>(data: A, view?: View<A>): Effect.Effect<void> =>
 		const format = yield* resolveFormat
 		const empty = view?.isEmpty ? view.isEmpty(data) : isEmptyResult(data)
 		if (format === "json") {
-			// Raw SQL rows stay as the query returned them.
 			const replacer = view?.raw ? undefined : utcTimestampReplacer()
 			const text = yield* Schema.encodeEffect(
 				Schema.fromJsonString(Schema.Unknown, { replacer, space: 2 }),

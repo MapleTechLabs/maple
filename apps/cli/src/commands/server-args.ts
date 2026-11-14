@@ -1,7 +1,7 @@
-import { Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { homedir } from "node:os"
 import { join, resolve, sep } from "node:path"
-import { DEFAULT_LOCAL_PORT, normalizeHost, resolveBindHost } from "@maple/local-server/local-address"
+import { DEFAULT_LOCAL_PORT, defaultBindHost, normalizeHost } from "@maple/local-server/local-address"
 
 import type { DirtyStorePolicy } from "@maple/local-server/store-errors"
 
@@ -56,7 +56,7 @@ export const commandScope = (options: {
 	if (resolve(options.dataDir) !== resolve(defaultDataDir())) scope.dataDir = resolve(options.dataDir)
 	if (options.port !== undefined && options.port !== DEFAULT_LOCAL_PORT) scope.port = options.port
 	const host = options.host === undefined ? undefined : normalizeHost(options.host)
-	if (host !== undefined && host !== resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)) scope.host = host
+	if (host !== undefined && host !== defaultBindHost()) scope.host = host
 	return scope
 }
 
@@ -71,7 +71,10 @@ const SCOPE_FLAGS = {
 } satisfies Record<string, ReadonlyArray<keyof CommandScope>>
 
 const acceptedScopeFlags = (subcommand: string): ReadonlyArray<keyof CommandScope> =>
-	Rec.toEntries(SCOPE_FLAGS).find(([name]) => name === subcommand)?.[1] ?? []
+	Option.match(
+		Arr.findFirst(Rec.toEntries(SCOPE_FLAGS), ([name]) => name === subcommand),
+		{ onNone: () => [], onSome: ([, flags]) => flags },
+	)
 
 const dataDirWord = (dataDir: string): string =>
 	shellWord(prettyPath(dataDir)) === prettyPath(dataDir) ? prettyPath(dataDir) : shellWord(dataDir)

@@ -1,5 +1,5 @@
 import type { AnomalyIncidentDocument, ErrorIssueDocument } from "@maple/domain/http"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -16,15 +16,13 @@ import { view as dialogView } from "@maple/views/ui/dialog-view"
 import { scrollArea } from "@maple/views/ui/scroll-area"
 import { spinner } from "@maple/views/ui/spinner"
 import { relativeTime } from "../../kit/relative-time"
-import { workflowRingIcon } from "../../errors/kit/workflow"
-import { shortIssueId } from "../kit/row"
+import { workflowRingIcon } from "../../kit/issue-workflow"
+import { shortIssueId } from "@maple/ui/lib/ids"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
-
-// `AnomalyLinkIssueDialog`: a command
-// dialog over the service's issues, filtered here (`filter={null}`), the linked one left out.
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -63,20 +61,23 @@ const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, time
 			],
 		},
 		[
-			h.span(
-				[h.Class("flex min-w-0 flex-1 items-center gap-2")],
-				[
-					workflowRingIcon(h, issue.workflowState, 14),
-					typography(h, { tone: "foreground", truncate: true }, [
-						issue.exceptionType || "Unknown error",
-					]),
-					...(issue.exceptionMessage
-						? [typography(h, { tone: "muted", truncate: true }, [issue.exceptionMessage])]
-						: []),
-				],
-			),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground")],
+			hstack(h, { gap: "2", align: "center", shrink: true, grow: true, as: "span" }, [
+				workflowRingIcon(h, issue.workflowState, 14),
+				typography(h, { tone: "foreground", truncate: true }, [
+					issue.exceptionType || "Unknown error",
+				]),
+				...(issue.exceptionMessage
+					? [typography(h, { tone: "muted", truncate: true }, [issue.exceptionMessage])]
+					: []),
+			]),
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					as: "span",
+					className: "ml-auto shrink-0 text-xs text-muted-foreground",
+				},
 				[
 					h.code(
 						[h.Class(typographyClass({ mono: true, numeric: true }))],
@@ -86,7 +87,6 @@ const item = (h: H, model: Model, issue: ErrorIssueDocument, index: number, time
 						value: issue.lastSeenAt,
 						nowMs: model.nowMs,
 						timeZone,
-						tooltip: "title",
 						className: "tabular-nums",
 					}),
 				],
@@ -103,8 +103,14 @@ const listBody = (
 	const query = model.linkCombobox.inputValue
 	if (AsyncData.isLoading(model.linkIssues.data) || AsyncData.isIdle(model.linkIssues.data))
 		return [
-			h.div(
-				[h.Class("flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground")],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "center",
+					className: "py-6 text-sm text-muted-foreground",
+				},
 				[spinner(h, "size-3.5"), " Loading issues…"],
 			),
 		]
@@ -141,7 +147,6 @@ export const linkIssueDialog = (
 		view: dialogView,
 		viewInputs: {
 			hasTrigger: false,
-			// The dialog has no trigger: closing leaves focus on the body.
 			isReturningFocus: false,
 			toView: ({ portal }) => portal,
 			toContent: () =>
@@ -185,12 +190,13 @@ export const linkIssueDialog = (
 									),
 								],
 							),
-							h.div(
-								[
-									h.Class(
-										"flex items-center justify-between border-t border-border-subtle px-3 py-2",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "between",
+									className: "border-t border-border-subtle px-3 py-2",
+								},
 								[
 									typography(h, { size: "xs", tone: "muted" }, [
 										model.linkAllServices

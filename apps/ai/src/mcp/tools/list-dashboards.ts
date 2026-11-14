@@ -1,7 +1,6 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListDashboardsOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { DASHBOARD_TEMPLATES } from "@maple/backend/dashboard-templates"
 import { toMcpDashboardError, toDashboardRow } from "../lib/dashboard-mutations"
@@ -19,7 +18,6 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 		parameters: Schema.Struct({
 			search: P.optionalText("Filter dashboards by name (case-insensitive contains)"),
 		}),
-		output: ListDashboardsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing dashboards"],
 		handler: Effect.fn("McpTool.listDashboards")(function* ({ search }) {
@@ -31,10 +29,11 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
 			const lowerSearch = search?.toLowerCase()
+			const all = Arr.map(result.dashboards, (stored) => stored.document)
 			const dashboards =
 				lowerSearch === undefined
-					? result.dashboards
-					: Arr.filter(result.dashboards, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
+					? all
+					: Arr.filter(all, (d) => Str.includes(lowerSearch)(Str.toLowerCase(d.name)))
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

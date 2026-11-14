@@ -8,8 +8,8 @@
  * markdown flavour, an embed, a button and a mention syntax never leave the connector's directory.
  */
 import type { ChatConversationKey } from "@maple/primitives"
-import type { Duration, Effect } from "effect"
-import { Context, Schema } from "effect"
+import type { Duration } from "effect"
+import { Context, Effect, Schema } from "effect"
 import { ChatConnectorId } from "./connector"
 import type { ConnectorConfig, ConnectorConfigKey, InboundAction, InboundMessage } from "./ingress"
 import type { ChatBlock } from "./render/blocks"
@@ -235,6 +235,14 @@ export interface ChatOutboundTransport {
 	readonly destinations: (
 		workspaceId: string,
 	) => Effect.Effect<ReadonlyArray<ChatDestination>, ChatOutboundError>
+	/**
+	 * Where a direct message to one person goes, for paging them. `userId` is the platform's own
+	 * id for the account. A platform that cannot open one fails with reason `rejected`.
+	 */
+	readonly directMessage: (
+		workspaceId: string,
+		userId: string,
+	) => Effect.Effect<ChatTarget, ChatOutboundError>
 }
 
 /**
@@ -255,6 +263,11 @@ export interface ChatOutbound<R = never> {
 	 * would otherwise spend no write on a message that already says the right thing.
 	 */
 	readonly liveMessages?: boolean
+	/**
+	 * Whether {@link ChatOutboundTransport.directMessage} can reach a person. Absent means it
+	 * cannot, so a host paging people skips the connector instead of queueing a page that fails.
+	 */
+	readonly directMessages?: boolean
 	/**
 	 * The deployment-wide configuration `transport` reads out of {@link ConnectorCredentials}.
 	 *
@@ -279,15 +292,17 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 			"thread",
 			"history",
 			"destinations",
+			"direct_message",
 		]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		/**
 		 * What the platform said was wrong, where it said so: the bot's grant (`auth`), the address
-		 * (`not_found`), or the message itself (`rejected`). Absent for a failure worth retrying —
-		 * a rate limit, an outage, a reply that could not be read.
+		 * (`not_found`), or the message itself (`rejected`). `rate_limited` is a request to slow
+		 * down whatever the status says, so it is retried. Absent for a failure the status decides:
+		 * an outage, a reply that could not be read.
 		 */
-		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected"])),
+		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected", "rate_limited"])),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -295,3 +310,43 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 export type ChatOutboundOperation = ChatOutboundError["operation"]
 
 export type ChatOutboundFailureReason = NonNullable<ChatOutboundError["reason"]>
+
+/** How many times a 429 is waited out before the turn gives up on the message. */
+const MAX_RATE_LIMIT_ATTEMPTS = 3
+
+/**
+ * Calls that give up on the first 429. History is context read before the turn starts, so waiting
+ * delays the answer for background the model can do without; a channel listing has someone at a picker.
+ */
+const GIVES_UP_AT_ONCE: ReadonlySet<ChatOutboundOperation> = new Set(["history", "destinations"])
+
+/**
+ * Runs a connector call, waiting out its `rateLimited` failures with `pause`, up to
+ * {@link MAX_RATE_LIMIT_ATTEMPTS}; then it fails with `gaveUp` as a 429 `rate_limited`.
+ */
+export const withRateLimitRetry = <A, E, L, R, R2>(
+	attempt: Effect.Effect<A, E, R>,
+	options: {
+		readonly operation: ChatOutboundOperation
+		/** The connector's internal rate-limit error. */
+		readonly rateLimited: Schema.Schema<L>
+		readonly pause: (limited: L) => Effect.Effect<void, never, R2>
+		readonly gaveUp: (extra: {
+			readonly status: 429
+			readonly reason: "rate_limited"
+		}) => ChatOutboundError
+	},
+): Effect.Effect<A, Exclude<E, E & L> | ChatOutboundError, R | R2> => {
+	type Failure = Exclude<E, E & L> | ChatOutboundError
+	const isLimited = Schema.is(options.rateLimited)
+	const isRateLimited = (error: E): error is E & L => isLimited(error)
+	const tryOnce = (count: number): Effect.Effect<A, Failure, R | R2> =>
+		attempt.pipe(
+			Effect.catchIf<E, E & L, A, Failure, R | R2>(isRateLimited, (limited) =>
+				count >= MAX_RATE_LIMIT_ATTEMPTS || GIVES_UP_AT_ONCE.has(options.operation)
+					? Effect.fail(options.gaveUp({ status: 429, reason: "rate_limited" }))
+					: Effect.andThen(options.pause(limited), tryOnce(count + 1)),
+			),
+		)
+	return tryOnce(1)
+}

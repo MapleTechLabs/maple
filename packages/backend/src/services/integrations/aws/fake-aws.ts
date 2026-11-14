@@ -6,7 +6,7 @@
  * is the one its check accepts.
  */
 import { generateKeyPairSync } from "node:crypto"
-import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 
 /** Maple's signing key in tests: the private half goes in the env, the fake verifies with the public. */
@@ -80,11 +80,11 @@ export const deployTemplate = (
 	templateJson: string,
 	createsProvider = true,
 ): { readonly role: FakeRole; readonly provider: FakeProvider | undefined } => {
-	const template = Schema.decodeUnknownSync(Schema.fromJsonString(Template))(templateJson)
+	const template = Schema.decodeSync(Schema.fromJsonString(Template))(templateJson)
 	const resources = template.Resources
-	const role = Rec.values(resources).find((resource) => resource.Type === "AWS::IAM::Role")
-	if (role === undefined) throw new Error("template has no role")
-	const properties = Schema.decodeUnknownSync(RoleProperties)(role.Properties)
+	const role = Arr.findFirst(Rec.values(resources), (resource) => resource.Type === "AWS::IAM::Role")
+	if (Option.isNone(role)) throw new Error("template has no role")
+	const properties = Schema.decodeUnknownSync(RoleProperties)(role.value.Properties)
 	const [statement] = properties.AssumeRolePolicyDocument.Statement
 	if (statement === undefined) throw new Error("role has no trust statement")
 	if (statement.Action !== "sts:AssumeRoleWithWebIdentity") throw new Error("role is not federated")
@@ -95,13 +95,12 @@ export const deployTemplate = (
 		return Schema.decodeUnknownSync(PolicyProperties)(policy.Properties).ManagedPolicyName
 	})
 	const federated = statement.Principal.Federated
-	const providerResource = Rec.values(resources).find(
-		(resource) => resource.Type === "AWS::IAM::OIDCProvider",
+	const provider = Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(Rec.values(resources), (resource) => resource.Type === "AWS::IAM::OIDCProvider"),
+			(providerResource) => Schema.decodeUnknownSync(ProviderProperties)(providerResource.Properties),
+		),
 	)
-	const provider =
-		providerResource === undefined
-			? undefined
-			: Schema.decodeUnknownSync(ProviderProperties)(providerResource.Properties)
 	return {
 		role: {
 			accountId,
@@ -158,7 +157,7 @@ const verifiedClaims = async (key: CryptoKey, token: string) => {
 		new TextEncoder().encode(`${header}.${body}`),
 	)
 	return valid
-		? Schema.decodeUnknownSync(Schema.fromJsonString(TokenClaims))(
+		? Schema.decodeSync(Schema.fromJsonString(TokenClaims))(
 				Buffer.from(body, "base64url").toString("utf8"),
 			)
 		: undefined

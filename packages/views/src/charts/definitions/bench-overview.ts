@@ -1,5 +1,6 @@
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
+import { Y_GRID } from "../plot/plot-grid"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { niceLinearDomain } from "../plot/plot-scales"
 import {
 	axisTickFormatter,
 	formatBucketLabel,
@@ -17,6 +18,8 @@ import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { verticalGradient } from "./fixed-metric-axes"
 import { cursorTooltip } from "./plot-constants"
+import { nonZeroOr } from "@maple/ui/lib/number"
+import { gradientId, gradientUrl } from "./gradient-id"
 
 // The `/lab/bench/tanstack` chart definitions: throughput area, error rate area and latency line.
 
@@ -57,7 +60,7 @@ const xScale = (axisContext: { rangeMs: number; bucketSeconds: number | undefine
 const yScale = (domain: readonly [number, number], format: (value: number) => string, nice: boolean) => ({
 	scale: scaleLinear().domain(domain),
 	nice,
-	grid: true,
+	grid: Y_GRID,
 	axis: {
 		line: false,
 		ticks: { size: 0, padding: 6, format: (value: number) => (value === 0 ? "0" : format(value)) },
@@ -128,7 +131,7 @@ const rowsOf = (spec: BenchSpec, bucketSeconds: number | undefined): ReadonlyArr
 	spec.chart !== "Throughput"
 		? spec.rows
 		: Arr.map(spec.rows, (row) => {
-				const throughput = numberOf(row, "throughput") / (bucketSeconds || 1)
+				const throughput = numberOf(row, "throughput") / nonZeroOr(bucketSeconds ?? 1, 1)
 				return { ...row, throughput, errorThroughput: throughput * numberOf(row, "errorRate") }
 			})
 
@@ -170,7 +173,7 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 						id: `${lead.key}Area`,
 						x,
 						y: y(lead.key),
-						fill: `url(#${spec.gradientId})`,
+						fill: gradientUrl(gradientId(spec.gradientId)),
 						fillOpacity: 1,
 						stroke: "none",
 					}),
@@ -193,7 +196,10 @@ export const buildBenchOverview = (spec: BenchSpec): BuiltChart<Row, ChartValue,
 	]
 	return {
 		definition: defineChart({
-			gradients: isArea && lead !== undefined ? [verticalGradient(spec.gradientId, lead.color)] : [],
+			gradients:
+				isArea && lead !== undefined
+					? [verticalGradient(gradientId(spec.gradientId), lead.color)]
+					: [],
 			marks,
 			scales: { x: xScale(axisContext), y: yOf(spec, rows, rateLabel) },
 			margin: spec.marginLeft === undefined ? undefined : { left: spec.marginLeft },

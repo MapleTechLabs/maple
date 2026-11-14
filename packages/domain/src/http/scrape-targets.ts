@@ -5,7 +5,7 @@ import {
 	ScrapeIntervalSeconds,
 	ScrapeTargetId,
 	ScrapeTargetType,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
 export class ScrapeTargetResponse extends Schema.Class<ScrapeTargetResponse>("ScrapeTargetResponse")({
@@ -97,10 +97,6 @@ export class ScrapeTargetProbeResponse extends Schema.Class<ScrapeTargetProbeRes
 	lastScrapeError: Schema.NullOr(Schema.String),
 }) {}
 
-/**
- * One persisted scheduled-scrape attempt (a `scrape_target_checks` row),
- * reported by the scraper and stored by the API.
- */
 export class ScrapeTargetPersistenceError extends HttpTaggedError<ScrapeTargetPersistenceError>()(
 	"@maple/http/errors/ScrapeTargetPersistenceError",
 	{
@@ -146,6 +142,23 @@ export class ScrapeTargetValidationError extends HttpTaggedError<ScrapeTargetVal
 		title: "Invalid scrape target",
 		retry: "never",
 		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org already has as many scrape targets as one organization may hold. */
+export class ScrapeTargetLimitReachedError extends HttpTaggedError<ScrapeTargetLimitReachedError>()(
+	"@maple/http/errors/ScrapeTargetLimitReachedError",
+	{
+		message: Schema.String,
+		limit: Schema.Number,
+	},
+	{
+		status: 409,
+		code: "scrape_target_limit_reached",
+		title: "Scrape target limit reached",
+		retry: "never",
+		recovery: "none",
 		exposure: "public_message",
 	},
 ) {}

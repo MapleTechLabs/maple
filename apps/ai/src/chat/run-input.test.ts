@@ -13,12 +13,12 @@ import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import { runChatTurn } from "./run"
-import { makeRunUsage } from "./tools"
+import { makeRunUsage } from "./usage"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -72,13 +72,15 @@ const noTools: McpToolExecutorApi = {
 	execute: () => Effect.die("no tool call expected"),
 }
 
-const userText = (prompt: Prompt.Prompt): string =>
-	Arr.join(
-		Arr.filter(prompt.content, (message) => message.role === "user").flatMap((message) =>
-			message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+const userText = (prompt: Prompt.Prompt): string => {
+	const userMessages = Arr.filter(prompt.content, (message) => message.role === "user")
+	return Arr.join(
+		Arr.flatMap(userMessages, (message) =>
+			Arr.flatMap(message.content, (part) => (part.type === "text" ? [part.text] : [])),
 		),
 		"",
 	)
+}
 
 describe("runChatTurn input", () => {
 	it("sends the turn's message verbatim, not as a JSON string literal", async () => {
@@ -94,7 +96,6 @@ describe("runChatTurn input", () => {
 				origin: { kind: "app" },
 				toolExecutor: noTools,
 				model,
-				submitDiagnosis: () => Effect.die("no investigation in a default session"),
 				text,
 				history: [],
 				usage: makeRunUsage(),
@@ -104,6 +105,6 @@ describe("runChatTurn input", () => {
 		)
 
 		assert.lengthOf(prompts, 1)
-		assert.equal(userText(prompts[0]!), text)
+		assert.equal(userText(Arr.getUnsafe(prompts, 0)), text)
 	})
 })

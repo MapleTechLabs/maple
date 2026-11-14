@@ -1,8 +1,8 @@
 /** Pieces the uptime monitor MCP tools share: rows, target summaries, config building, errors. */
-import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Schema, Array as Arr, Record as Rec } from "effect"
 import type { UptimeMonitorRow } from "@maple/domain/mcp-outputs"
 import { UPTIME_DEFAULT_TIMEOUT_MS } from "@maple/domain/http/v2"
-import type { UptimeMonitorKind } from "@maple/domain/primitives"
+import type { UptimeMonitorKind } from "@maple/primitives"
 import {
 	UptimeMonitorConfig,
 	type UptimeAssertion,
@@ -119,15 +119,9 @@ export const toMcpUptimeError = (tool: string) => (error: UptimeServiceError) =>
 				capability: "uptime_monitor_allowance",
 			})
 		case "@maple/http/errors/UptimeMonitorPersistenceError":
-			return new McpQueryError({
-				message: `${error._tag}: ${error.message}`,
-				pipeName: tool,
-				cause: error,
-			})
+			return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
 	}
 }
-
-// --- Config from flat tool parameters ---
 
 export interface UptimeConfigFields {
 	readonly url?: string | undefined
@@ -141,7 +135,7 @@ export interface UptimeConfigFields {
 	readonly expected?: string | undefined
 	readonly heartbeat_interval_seconds?: number | undefined
 	readonly cron?: string | undefined
-	readonly timezone?: string | undefined
+	readonly time_zone?: string | undefined
 	readonly grace_seconds?: number | undefined
 	/** Update only: drop the matching check or expected answer. */
 	readonly clear_max_response_ms?: boolean | undefined
@@ -161,7 +155,7 @@ const FIELD_KINDS: ReadonlyArray<readonly [keyof UptimeConfigFields, ReadonlyArr
 	["expected", ["dns"]],
 	["heartbeat_interval_seconds", ["heartbeat"]],
 	["cron", ["heartbeat"]],
-	["timezone", ["heartbeat"]],
+	["time_zone", ["heartbeat"]],
 	["grace_seconds", ["heartbeat"]],
 	["clear_max_response_ms", ["http"]],
 	["clear_body_contains", ["http"]],
@@ -176,15 +170,15 @@ const CLEAR_PAIRS: ReadonlyArray<readonly [keyof UptimeConfigFields, keyof Uptim
 
 /** A clear flag and the value it clears cannot both be set. */
 const rejectClearConflicts = (fields: UptimeConfigFields) => {
-	const conflict = CLEAR_PAIRS.find(
+	const conflict = Arr.findFirst(
+		CLEAR_PAIRS,
 		([clear, field]) => fields[clear] === true && fields[field] !== undefined,
 	)
-	return conflict === undefined
-		? Effect.void
-		: invalid(
-				`Pass ${conflict[1]} to set it, or ${conflict[0]}=true to remove it, not both.`,
-				conflict[0],
-			)
+	return Option.match(conflict, {
+		onNone: () => Effect.void,
+		onSome: ([clear, field]) =>
+			invalid(`Pass ${field} to set it, or ${clear}=true to remove it, not both.`, clear),
+	})
 }
 
 const isLatency = (assertion: UptimeAssertion) => assertion._tag === "latency"
@@ -198,15 +192,15 @@ const invalid = (message: string, parameter?: string) =>
 
 /** A field for another kind is a mistake to name, not to drop: the model meant something by it. */
 const rejectMisplaced = (kind: UptimeMonitorKind, fields: UptimeConfigFields) => {
-	const misplaced = FIELD_KINDS.find(
+	const misplaced = Arr.findFirst(
+		FIELD_KINDS,
 		([field, kinds]) => fields[field] !== undefined && !kinds.includes(kind),
 	)
-	return misplaced === undefined
-		? Effect.void
-		: invalid(
-				`${misplaced[0]} applies to ${Arr.join(misplaced[1], " and ")} monitors, not ${kind}.`,
-				misplaced[0],
-			)
+	return Option.match(misplaced, {
+		onNone: () => Effect.void,
+		onSome: ([field, kinds]) =>
+			invalid(`${field} applies to ${Arr.join(kinds, " and ")} monitors, not ${kind}.`, field),
+	})
 }
 
 const decodeConfig = (kind: UptimeMonitorKind, raw: unknown) =>
@@ -223,9 +217,14 @@ const withAssertion = (
 	matches: (assertion: UptimeAssertion) => boolean,
 ): ReadonlyArray<UptimeAssertion> => {
 	if (next === undefined) return assertions
-	const at = assertions.findIndex(matches)
 	const kept = Arr.filter(assertions, (assertion) => !matches(assertion))
-	return at === -1 ? [...kept, next] : [...kept.slice(0, at), next, ...kept.slice(at)]
+	return Option.match(
+		Arr.findFirstIndex(assertions, (assertion) => matches(assertion)),
+		{
+			onNone: () => [...kept, next],
+			onSome: (at) => [...kept.slice(0, at), next, ...kept.slice(at)],
+		},
+	)
 }
 
 const httpAssertions = (current: ReadonlyArray<UptimeAssertion>, fields: UptimeConfigFields) =>
@@ -267,10 +266,10 @@ const heartbeatSchedule = (
 		return invalid("Pass heartbeat_interval_seconds or cron, not both.", "cron")
 	}
 	if (fields.heartbeat_interval_seconds !== undefined) {
-		if (fields.timezone !== undefined) {
+		if (fields.time_zone !== undefined) {
 			return invalid(
-				"timezone applies to a cron schedule; this heartbeat runs on an interval.",
-				"timezone",
+				"time_zone applies to a cron schedule; this heartbeat runs on an interval.",
+				"time_zone",
 			)
 		}
 		return Effect.succeed({ _tag: "interval", seconds: fields.heartbeat_interval_seconds })
@@ -324,7 +323,7 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 			})
 		}
 		case "heartbeat": {
-			const schedule = yield* heartbeatSchedule(fields, fields.timezone ?? DEFAULT_HEARTBEAT_TIMEZONE)
+			const schedule = yield* heartbeatSchedule(fields, fields.time_zone ?? DEFAULT_HEARTBEAT_TIMEZONE)
 			if (schedule === undefined) {
 				return yield* invalid(
 					"A heartbeat monitor needs heartbeat_interval_seconds (at least 60) or a cron expression.",
@@ -392,12 +391,12 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 		case "heartbeat": {
 			const currentZone =
 				current.schedule._tag === "cron" ? current.schedule.timezone : DEFAULT_HEARTBEAT_TIMEZONE
-			const timezone = fields.timezone ?? currentZone
+			const timezone = fields.time_zone ?? currentZone
 			const next = yield* heartbeatSchedule(fields, timezone)
-			if (next === undefined && fields.timezone !== undefined && current.schedule._tag !== "cron") {
+			if (next === undefined && fields.time_zone !== undefined && current.schedule._tag !== "cron") {
 				return yield* invalid(
-					"timezone applies to a cron schedule; this heartbeat runs on an interval.",
-					"timezone",
+					"time_zone applies to a cron schedule; this heartbeat runs on an interval.",
+					"time_zone",
 				)
 			}
 			const schedule =

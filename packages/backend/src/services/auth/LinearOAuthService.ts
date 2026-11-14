@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -8,9 +7,7 @@ import {
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -19,12 +16,9 @@ import {
 	linearData,
 	linearGraphql,
 } from "@maple/backend/services/integrations/linear/LinearGraphql"
-import {
-	makeOAuthConnectionHelpers,
-	OAUTH_STATE_TTL_MS,
-	type OAuthTokenEndpointConfig,
-} from "./oauth/connection-helpers"
+import { makeOAuthConnectionHelpers, type OAuthTokenEndpointConfig } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const LINEAR_PROVIDER = "linear"
 const AUTHORIZE_URL = "https://linear.app/oauth/authorize"
@@ -52,7 +46,7 @@ const TeamsSchema = Schema.Struct({
 const resolveConfig = (
 	env: EnvConfig,
 ): Effect.Effect<
-	OAuthTokenEndpointConfig & { readonly clientSecret: Redacted.Redacted<string> },
+	OAuthTokenEndpointConfig & { readonly clientSecret: Redacted.Redacted },
 	IntegrationsValidationError
 > =>
 	Option.match(
@@ -149,23 +143,11 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				options: { readonly callbackUrl: string; readonly returnTo?: string },
 			) {
 				const config = yield* resolveConfig(env)
-				const state = randomBytes(24).toString("base64url")
-				const currentTime = yield* Clock.currentTimeMillis
-
-				yield* oauth.purgeExpiredStates(currentTime)
-				yield* oauth.dbExecute((db) =>
-					db.run(
-						PG.insertInto(OAuthAuthStates).values({
-							state,
-							orgId,
-							provider: LINEAR_PROVIDER,
-							initiatedByUserId: userId,
-							redirectUri: options.callbackUrl,
-							returnTo: options.returnTo ?? null,
-							createdAt: currentTime,
-							expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-						}),
-					),
+				const state = yield* newOAuthState
+				yield* oauth.saveState(
+					state,
+					{ orgId, userId },
+					{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null },
 				)
 
 				const params = new URLSearchParams({
@@ -195,12 +177,12 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					"query MapleConnectedWorkspace { organization { id name } }",
 				).pipe(Effect.flatMap(linearData(ViewerSchema, "workspace lookup")))
 
-				const accessEnc = yield* oauth.encryptValue(tokens.access_token)
+				const orgId = decodeOrgId(stateRow.orgId)
+				const accessEnc = yield* oauth.sealAccessToken(orgId, tokens.access_token)
 				const refreshEnc = tokens.refresh_token
-					? yield* oauth.encryptValue(tokens.refresh_token)
+					? yield* oauth.sealRefreshToken(orgId, tokens.refresh_token)
 					: null
 				const currentTime = yield* Clock.currentTimeMillis
-				const orgId = decodeOrgId(stateRow.orgId)
 
 				// An app-actor grant belongs to the workspace, so the workspace is the principal.
 				yield* oauth.upsertConnection(orgId, currentTime, {
@@ -256,7 +238,11 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				const teams = yield* linearData(TeamsSchema, "team list")(result)
-				return teams.teams.nodes.toSorted((a, b) => a.name.localeCompare(b.name))
+				return Arr.sortWith(
+					teams.teams.nodes,
+					(team) => team.name,
+					(self: string, that: string) => Str.localeCompare(that)(self),
+				)
 			})
 
 			const getTeam = Effect.fn("LinearOAuthService.getTeam")(function* (orgId: OrgId, teamId: string) {
@@ -270,7 +256,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				// A team the app cannot see answers FORBIDDEN; to the picker it does not exist either.
-				if (result.errors.some((error) => isNotFound(error) || error.code === "FORBIDDEN"))
+				if (Arr.some(result.errors, (error) => isNotFound(error) || error.code === "FORBIDDEN"))
 					return null
 				return (yield* linearData(TeamSchema, "team lookup")(result)).team
 			})
@@ -280,7 +266,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				function* (orgId: OrgId) {
 					const row = yield* oauth.loadConnection(orgId)
 					if (row === null) return
-					const accessToken = yield* oauth.decryptValue({
+					const accessToken = yield* oauth.openAccessToken(row.orgId, {
 						ciphertext: row.accessTokenCiphertext,
 						iv: row.accessTokenIv,
 						tag: row.accessTokenTag,

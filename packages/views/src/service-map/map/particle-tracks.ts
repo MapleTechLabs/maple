@@ -1,6 +1,6 @@
 import { Array as Arr } from "effect"
-// copied: packages/ui/src/components/service-map/service-map-particles.tsx (the budget and
-// sampling half), which cannot be imported here because it is a React module.
+import { codeUnitAt } from "@maple/strings"
+// The service map's particle budget and sampling.
 
 export const MAX_TOTAL_PARTICLES = 400
 const TRAVERSE_TIME = 2
@@ -57,8 +57,9 @@ export const allocateParticleBudget = (
 	}
 	remainders.sort((a, b) => b[1] - a[1])
 	let remaining = maxTotal - used
-	for (let i = 0; i < remainders.length && remaining > 0; i++) {
-		result.set(remainders[i][0], (result.get(remainders[i][0]) ?? 0) + 1)
+	for (const [id] of remainders) {
+		if (remaining <= 0) break
+		result.set(id, (result.get(id) ?? 0) + 1)
 		remaining--
 	}
 	return result
@@ -80,7 +81,7 @@ export interface Track {
 
 const hash01 = (value: string): number => {
 	let h = 0
-	for (let i = 0; i < value.length; i++) h = (h * 31 + value.charCodeAt(i)) | 0
+	for (let i = 0; i < value.length; i++) h = (h * 31 + codeUnitAt(value, i)) | 0
 	return (Math.abs(h) % 1000) / 1000
 }
 

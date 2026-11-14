@@ -1,6 +1,6 @@
 import { McpToolCatalogEntry } from "@maple/domain/http"
 import { V2McpConnection } from "@maple/domain/http/v2"
-import { MCP_CLIENTS } from "../../../components/settings/mcp-client-config"
+import { MCP_CLIENTS } from "../../kit/mcp-client-config"
 import { Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,7 +9,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as CreateKey from "../keys/create-dialog"
 
-// `McpSection`: connect a client, the connected OAuth clients and the tool catalog. Shared by
+// The MCP tab: connect a client, the connected OAuth clients and the tool catalog. Shared by
 // `/settings?tab=mcp` and `/mcp`.
 
 export const ConnectionsData = AsyncData.Schema(Schema.Array(V2McpConnection), LoadFailure)

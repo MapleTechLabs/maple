@@ -1,9 +1,5 @@
 import { CACHE_STATUS_COLORS, STATUS_CLASS_COLORS } from "@maple/views/lib/cloudflare-constants"
-import {
-	activeFilterChips,
-	type CloudflareFilters,
-	hasActiveFilters,
-} from "../../../../components/infra/cloudflare/filters"
+import { activeFilterChips, type CloudflareFilters, hasActiveFilters } from "../filters"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { sectionOf } from "./derive"
 import { AsyncData } from "foldkit"
@@ -23,8 +19,6 @@ import * as Popover from "@maple/views/ui/popover"
 import { filterChipRail } from "../../kit/filter-chip-rail"
 import type { ZoneFacets } from "../data"
 import { type FilterKey, Message, type Model } from "./model"
-
-// `CloudflareFilterChips`, `CloudflareFilterPopover` and `CloudflareFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 
@@ -128,7 +122,7 @@ const sidebar = (h: H, model: Model, filters: CloudflareFilters): Html => {
 	})
 }
 
-/** `CloudflareFilterPopover`: every facet behind one dashed button. */
+/** Every facet behind one dashed button. */
 export const filterPopover = (h: H, model: Model, filters: CloudflareFilters): Html =>
 	h.submodel({
 		slotId: "cloudflare-zone-filter-popover",

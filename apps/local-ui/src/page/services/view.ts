@@ -126,7 +126,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load services",
+				title: "Couldn't load services",
 				onRetry: Message.ClickedRefresh(),
 			})
 		if (entries.length === 0)
@@ -139,6 +139,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				onWidenRange: Message.ClickedWidenRange(),
 				presence: inputs.presenceOf("traces"),
 				nowMs: inputs.presenceNowMs,
+				timeZone: inputs.context.timeFormat.timeZone,
 				guide: {
 					id: "services-empty",
 					endpoint: context.env.otlpEndpoint,

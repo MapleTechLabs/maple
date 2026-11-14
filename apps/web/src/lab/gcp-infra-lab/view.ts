@@ -10,7 +10,7 @@ import {
 	VIEW_LABEL,
 	VIEWS,
 } from "../gcp-infra-fixture"
-import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../components/infra/gcp/list-model"
+import { gcpRequestedView, gcpSparks, gcpWindowSeconds } from "../../page/infra-integrations/gcp/list-model"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -20,7 +20,7 @@ import { gcpListPageParts, THEME_TOKENS, titleRow } from "../../page/infra-integ
 import { dashboardPage } from "../../page/kit/dashboard-page"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { Message, type Model } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const SPARKS = gcpSparks(SPARKLINE_READS, { startTime: START, endTime: END, bucketSeconds: BUCKET_SECONDS })
 
@@ -95,7 +95,10 @@ export const overlay = (model: Model, h: HtmlBuilder<Message>): Html =>
 				size: "xs",
 				ariaLabel: "Lab view",
 				options: Arr.map(VIEWS, (value) => ({ value, label: VIEW_LABEL[value] })),
-				value: VIEWS.find((view) => view === model.state.view) ?? "services",
+				value: Option.getOrElse(
+					Arr.findFirst(VIEWS, (view) => view === model.state.view),
+					(): (typeof VIEWS)[number] => "services",
+				),
 				onChange: (view) => Message.ClickedLabView({ view }),
 			}),
 		],

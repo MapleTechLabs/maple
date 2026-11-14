@@ -4,7 +4,7 @@ import { cachedAs } from "../../data/cached"
 import { filtersOf, nextCursor } from "./fetch"
 import { SessionFacets, type SessionPages, SessionRow } from "./model"
 
-// `useLocalSessions` / `useLocalSessionFacets` keys and data, as the result cache keeps them.
+// The sessions list and facets keys and data, as the result cache keeps them.
 
 type Window = Readonly<{ search: string; startTime: string; endTime: string }>
 
@@ -22,7 +22,7 @@ export const facetsKey = (window: Window) => keyFor("session-facets", window)
 
 const CachedPages = Schema.Struct({ pages: Schema.Array(Schema.Array(SessionRow)) })
 
-/** `useInfiniteQuery`'s data: the pages and the cursor each was fetched from. */
+/** The pages and the cursor each was fetched from. */
 export const pagesToCached = (data: Pick<SessionPages, "pages">) => ({
 	pages: data.pages,
 	pageParams: [undefined, ...Arr.map(data.pages.slice(0, -1), nextCursor)],

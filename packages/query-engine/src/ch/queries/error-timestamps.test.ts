@@ -14,7 +14,7 @@ import {
 	errorTickFirstErrorMinuteQuery,
 	errorTickIssuesQuery,
 } from "./errors"
-import { anomalyErrorSpikeServiceTimeseriesQuery, anomalyErrorSpikeTimeseriesQuery } from "./anomaly"
+import { anomalyErrorSpikeTimeseriesQuery } from "./anomaly"
 import { releaseErrorFingerprintsQuery } from "./releases"
 
 // Rows reach callers through `decodeRows`. A query whose row schema is not
@@ -109,13 +109,13 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 		},
 		{
 			name: "errorIssueTimeseriesQuery",
-			compiled: compile(errorIssueTimeseriesQuery(), params),
+			compiled: compile(errorIssueTimeseriesQuery({ fingerprintHashes: ["1"] }), params),
 			row: { bucket: "2024-01-01 10:00:00", count: "3" },
 			fields: { bucket: "2024-01-01T10:00:00.000Z" },
 		},
 		{
 			name: "errorIssueSampleTracesQuery",
-			compiled: compile(errorIssueSampleTracesQuery({}), params),
+			compiled: compile(errorIssueSampleTracesQuery({ fingerprintHashes: ["1"] }), params),
 			row: {
 				traceId: "t1",
 				spanId: "s1",
@@ -150,12 +150,6 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 			fields: { bucket: "2024-01-01T10:05:00.000Z" },
 		},
 		{
-			name: "anomalyErrorSpikeServiceTimeseriesQuery",
-			compiled: compile(anomalyErrorSpikeServiceTimeseriesQuery(), params),
-			row: { bucket: "2024-01-01 10:05:00", count: "3" },
-			fields: { bucket: "2024-01-01T10:05:00.000Z" },
-		},
-		{
 			name: "releaseErrorFingerprintsQuery",
 			compiled: compile(releaseErrorFingerprintsQuery({ serviceName: "api" }), params),
 			row: { fingerprintHash: "42", count: "3", firstSeen: "2024-01-01 10:00:00" },
@@ -171,7 +165,7 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 				const [decoded] = yield* compiled.decodeRows([row])
 				const actual = Rec.fromEntries(
 					Arr.map(
-						Arr.filter(Object.entries(decoded ?? {}), ([key]) => key in fields),
+						Arr.filter(Rec.toEntries<string, unknown>(decoded ?? {}), ([key]) => key in fields),
 						([key, value]) => [key, iso(value)],
 					),
 				)

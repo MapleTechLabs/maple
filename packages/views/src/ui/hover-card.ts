@@ -1,6 +1,6 @@
 import * as Animation from "@foldkit/ui/animation"
 import { cn } from "@maple/ui/lib/utils"
-import { hoverCardContentStyles, hoverCardPositionerStyles } from "@maple/ui/styles/ui/hover-card"
+import { hoverCardContentStyles, hoverCardPositionerStyles } from "./hover-card.styles"
 import { Duration, Effect, Number, Option, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount, Submodel, type Update } from "foldkit"
 import { type ChildAttribute, childAttributes, type Html } from "foldkit/html"
@@ -14,10 +14,9 @@ import { isMounted, stateAttributes } from "./overlay/transition"
  * Base UI `PreviewCard` (`@maple/ui/hover-card`): opens after the pointer rests on the trigger
  * (600 ms, or the trigger's `delay`), closes after it leaves trigger and card (300 ms), placed
  * below with offsets 4 and 4 unless `HoverCardContent` says otherwise. One Model can serve many
- * triggers (a table's commit cells): `triggerId` is the one it is anchored to.
+ * triggers (a table's commit cells): `triggerId` is the one it is anchored to. A non-interactive
+ * card is a readout: the pointer passes through it to the triggers below, and it closes on leave.
  */
-
-// MODEL
 
 export const Model = Schema.Struct({
 	...PopupState.fields,
@@ -28,20 +27,25 @@ export const Model = Schema.Struct({
 	requestedAlign: Align,
 	sideOffset: Schema.Number,
 	alignOffset: Schema.Number,
+	isInteractive: Schema.Boolean,
 })
 export type Model = typeof Model.Type
 
 export const OPEN_DELAY = Duration.millis(600)
 export const CLOSE_DELAY = Duration.millis(300)
+/** Long enough to cross the gap to a neighbouring trigger without the card closing. */
+export const READOUT_CLOSE_DELAY = Duration.millis(80)
 
 export type InitOptions = Readonly<{
 	isOpen?: boolean
-	/** `HoverCardTrigger delay` */
+	/** How long the pointer rests on the trigger before the card opens. */
 	openDelayMs?: number
 	side?: Side
 	align?: Align
 	sideOffset?: number
 	alignOffset?: number
+	/** `false` for a readout nobody reaches into, so it never covers the triggers around it. */
+	interactive?: boolean
 }>
 
 export const init = (id: string, options: InitOptions = {}): Model => {
@@ -56,10 +60,9 @@ export const init = (id: string, options: InitOptions = {}): Model => {
 		requestedAlign: align,
 		sideOffset: options.sideOffset ?? 4,
 		alignOffset: options.alignOffset ?? 4,
+		isInteractive: options.interactive ?? true,
 	}
 }
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	EnteredTrigger: { triggerId: Schema.String },
@@ -74,14 +77,12 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// UPDATE
-
 /** The open or close delay; a newer pointer move bumps the generation and drops this one. */
 export const WaitHoverDelay = Command.define("WaitHoverDelay", {
-	args: { generation: Schema.Number, isOpening: Schema.Boolean, openDelayMs: Schema.Number },
+	args: { generation: Schema.Number, isOpening: Schema.Boolean, delayMs: Schema.Number },
 	messages: [Message.ElapsedHoverDelay],
-	execute: ({ generation, isOpening, openDelayMs }) =>
-		Effect.sleep(isOpening ? Duration.millis(openDelayMs) : CLOSE_DELAY).pipe(
+	execute: ({ generation, isOpening, delayMs }) =>
+		Effect.sleep(Duration.millis(delayMs)).pipe(
 			Effect.as(Message.ElapsedHoverDelay({ generation, isOpening })),
 		),
 })
@@ -96,7 +97,15 @@ const schedule = (model: Model, isOpening: boolean): UpdateReturn => {
 	const generation = Number.increment(model.hoverGeneration)
 	return {
 		model: { ...model, hoverGeneration: generation },
-		commands: [WaitHoverDelay({ generation, isOpening, openDelayMs: model.openDelayMs })],
+		commands: [
+			WaitHoverDelay({
+				generation,
+				isOpening,
+				delayMs: isOpening
+					? model.openDelayMs
+					: Duration.toMillis(model.isInteractive ? CLOSE_DELAY : READOUT_CLOSE_DELAY),
+			}),
+		],
 	}
 }
 
@@ -127,8 +136,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 /** Portal and placement only: a preview card neither marks the page nor moves focus. */
 export const MountHoverCard = Mount.defineStream("MountHoverCard", {
@@ -166,8 +173,6 @@ export const MountHoverCard = Mount.defineStream("MountHoverCard", {
 			),
 		),
 })
-
-// VIEW
 
 export type RenderInfo = Readonly<{
 	/** The default trigger's attributes. */
@@ -229,7 +234,9 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				[
 					h.div(
 						[
-							h.Class(hoverCardPositionerStyles),
+							h.Class(
+								cn(hoverCardPositionerStyles, !model.isInteractive && "pointer-events-none"),
+							),
 							...placement,
 							...state,
 							...side,

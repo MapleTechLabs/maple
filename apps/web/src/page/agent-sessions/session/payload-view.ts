@@ -5,8 +5,6 @@ import { prettyJson } from "@maple/views/lib/display-text"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { Message } from "./message"
 
-// Payload views: JSON payloads, message bodies, the view switch and disclosure.
-
 type H = HtmlBuilder<Message>
 
 /** A payload pretty-printed where it parses as a JSON object or array, verbatim otherwise. */
@@ -26,9 +24,9 @@ export const messageBody = (text: string): Readonly<{ rendered: "md" | "json"; f
 export const disclosed = (openRows: ReadonlyArray<string>, key: string, byDefault: boolean): boolean =>
 	openRows.includes(key) ? !byDefault : byDefault
 
-const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-wider sm:text-3xs"
+const SEGMENT_CLASS = "font-mono text-3xs uppercase tracking-caption sm:text-3xs"
 
-/** `ViewSwitch`: the rendered and raw segments; clicking the pressed one keeps the view. */
+/** The rendered and raw segments; clicking the pressed one keeps the view. */
 export const viewSwitch = (
 	h: H,
 	options: Readonly<{ rendered: string; isRaw: boolean; rawKey: string; className?: string }>,

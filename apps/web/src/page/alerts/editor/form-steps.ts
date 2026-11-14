@@ -1,12 +1,17 @@
-import type { AlertDestinationId, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import type {
+	AlertDestinationId,
+	AlertSeverity,
+	AlertSignalType,
+	AnomalySignalType,
+	EscalationChainId,
+} from "@maple/domain/http"
+import { ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { switchSignalKind } from "@maple/web-data/alerts/rule-modes"
 import { ALERT_TEMPLATES } from "../shared/templates"
 import { suggestCriticalThreshold } from "./derive"
 import { asFormState, fromFormState, type RuleForm } from "./form"
 import type { SignalKind, TextField, Tier } from "./message"
-import { Array as Arr, String as Str } from "effect"
-
-// The form edits each control makes (the `onChange((c) => ...)` callbacks), as pure steps.
+import { Array as Arr, String as Str, Option } from "effect"
 
 export const setText = (form: RuleForm, field: TextField, value: string): RuleForm => ({
 	...form,
@@ -20,7 +25,35 @@ export const setEscalationField = (
 ): RuleForm =>
 	form.escalation === null ? form : { ...form, escalation: { ...form.escalation, [field]: value } }
 
-/** `setKind`: the switch carries filters and the threshold's meaning, and may leave a notice. */
+/** How breaches are counted, a select inside the "Fire after" sentence. */
+export const BREACH_MODE_SELECT_ID = "rule-breach-mode"
+
+/** Breaches counted in a row (no window), or out of the last N checks, starting two past the count. */
+export const setBreachMode = (form: RuleForm, mode: string): RuleForm => {
+	if (mode !== "window") return { ...form, breachesOutOf: "" }
+	if (Str.trim(form.breachesOutOf).length > 0) return form
+	const required = Number(Str.trim(form.consecutiveBreachesRequired))
+	return {
+		...form,
+		breachesOutOf: Number.isInteger(required) && required > 0 ? String(required + 2) : "5",
+	}
+}
+
+/** The mode switch as a select, below `sm` where the four segments do not fit. */
+export const KIND_SELECT_ID = "rule-kind"
+
+/** A tier's escalation chain select, and its "None" value. */
+export const chainSelectIdOf = (tier: Tier): string => `rule-chain-${tier}`
+export const NO_CHAIN = "none"
+
+export const setTierChain = (form: RuleForm, tier: Tier, chainId: EscalationChainId | null): RuleForm =>
+	tier === "warning"
+		? { ...form, escalationChainId: chainId }
+		: form.escalation === null
+			? form
+			: { ...form, escalation: { ...form.escalation, escalationChainId: chainId } }
+
+/** The switch carries filters and the threshold's meaning, and may leave a notice. */
 export const switchKind = (form: RuleForm, kind: SignalKind): { form: RuleForm; notice: string | null } => {
 	const moved = switchSignalKind(asFormState(form), kind)
 	return { form: fromFormState(moved.form), notice: moved.notice }
@@ -36,7 +69,23 @@ export const setSeverity = (form: RuleForm, severity: AlertSeverity): RuleForm =
 export const addCriticalTier = (form: RuleForm): RuleForm => ({
 	...form,
 	severity: "warning",
-	escalation: { threshold: suggestCriticalThreshold(form), recoveryValue: "", destinationIds: [] },
+	escalation: {
+		threshold: suggestCriticalThreshold(form),
+		recoveryValue: "",
+		destinationIds: [],
+		escalationChainId: null,
+	},
+})
+
+/** An anomaly rule's signal toggled in or out of its scope, kept in the editor's order. */
+export const toggleAnomalySignal = (form: RuleForm, signal: AnomalySignalType): RuleForm => ({
+	...form,
+	anomalySignals: form.anomalySignals.includes(signal)
+		? Arr.filter(form.anomalySignals, (existing) => existing !== signal)
+		: Arr.filter(
+				ANOMALY_SIGNALS,
+				(candidate) => candidate === signal || form.anomalySignals.includes(candidate),
+			),
 })
 
 /** Services: each named service is already its own group, and exclude only narrows "all services". */
@@ -63,7 +112,6 @@ export const setChips = (form: RuleForm, id: string, values: ReadonlyArray<strin
 	}
 }
 
-/** The tier's destination ids updated (`setIds`). */
 export const updateTierIds = (
 	form: RuleForm,
 	tier: Tier,
@@ -81,25 +129,38 @@ export const updateTierIds = (
 					},
 				}
 
+/**
+ * A destination picked for a tier joins it. On an anomaly rule it also leaves the other tier:
+ * critical anomaly pages already reach the warning destinations, so being on both only doubles
+ * the page. A threshold rule keeps it on both, since each of its tiers needs its own destinations.
+ */
+export const assignToTier = (form: RuleForm, tier: Tier, id: AlertDestinationId): RuleForm =>
+	updateTierIds(
+		form.signalType === "anomaly"
+			? updateTierIds(form, tier === "warning" ? "critical" : "warning", removeId(id))
+			: form,
+		tier,
+		addId(id),
+	)
+
 export const addId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) => [
 	...new Set([...ids, id]),
 ]
 export const removeId = (id: AlertDestinationId) => (ids: ReadonlyArray<AlertDestinationId>) =>
 	Arr.filter(ids, (existing) => existing !== id)
 
-/** `onPick`: templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in. */
+/** Templates fill the query builder; Apdex has no builder aggregation, so it stays Built-in. */
 export const pickTemplate = (form: RuleForm, templateId: string): RuleForm => {
-	const template = ALERT_TEMPLATES.find((candidate) => candidate.id === templateId)
-	if (template === undefined) return form
-	const applied = fromFormState(template.apply(form))
+	const template = Arr.findFirst(ALERT_TEMPLATES, (candidate) => candidate.id === templateId)
+	if (Option.isNone(template)) return form
+	const applied = fromFormState(template.value.apply(form))
 	return applied.signalType === "apdex" ? applied : switchKind(applied, "builder_query").form
 }
 
-// `TagInput`'s limits and `canonicalize`.
 const MAX_TAGS = 20
 const MAX_TAG_LENGTH = 32
 
-/** `commit`: the draft as a canonical tag, unless empty, already there, or over the limit. */
+/** The draft as a canonical tag, unless empty, already there, or over the limit. */
 export const commitTag = (form: RuleForm, raw: string): RuleForm => {
 	const tag = Str.slice(0, MAX_TAG_LENGTH)(Str.toLowerCase(Str.trim(raw)))
 	if (tag.length === 0 || form.tags.includes(tag) || form.tags.length >= MAX_TAGS) return form
@@ -111,7 +172,7 @@ export const removeTag = (form: RuleForm, tag: string): RuleForm => ({
 	tags: Arr.filter(form.tags, (existing) => existing !== tag),
 })
 
-/** `appendToBody`: a variable token after the body, space-separated. */
+/** A variable token after the body, space-separated. */
 export const appendVariable = (form: RuleForm, key: string): RuleForm => {
 	const token = `{{ ${key} }}`
 	return {

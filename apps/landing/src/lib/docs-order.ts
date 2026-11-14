@@ -24,11 +24,15 @@ export async function getDocGroups(): Promise<{ group: string; docs: Doc[] }[]> 
 	}
 
 	return Arr.map(
-		[...groups.entries()].sort(([a], [b]) => groupRank(a) - groupRank(b) || Str.localeCompare(b)(a)),
+		[...groups.entries()].sort(([a], [b]) =>
+			groupRank(a) !== groupRank(b) ? groupRank(a) - groupRank(b) : Str.localeCompare(b)(a),
+		),
 		([group, items]) => ({
 			group,
-			docs: items.sort(
-				(a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title),
+			docs: items.sort((a, b) =>
+				a.data.order !== b.data.order
+					? a.data.order - b.data.order
+					: a.data.title.localeCompare(b.data.title),
 			),
 		}),
 	)
@@ -102,7 +106,7 @@ export async function getDocSections(currentSlug: string) {
 		return {
 			...section,
 			count: docs.length,
-			href: first ? `/docs/${first.id}` : "/docs",
+			href: first !== undefined ? `/docs/${first.id}` : "/docs",
 			active: section.id === activeId,
 		}
 	})

@@ -1,6 +1,6 @@
-// Configuration groups both SDKs accept with the same names, defaults and
-// meaning. Each SDK's config extends these; `resolveSignalOptions` is the one
-// place the defaults live.
+// The signal and replay option groups of `MapleBrowser.init`, and their
+// defaults. Only `@maple-dev/browser` reads them today: the Effect client
+// presets declare and default their own options (`webVitals` is off there).
 import type { ErrorFilterOptions } from "./error-filters"
 import { type HeaderCapture, type HeaderCaptureOptions, resolveHeaderCapture } from "./http-headers"
 import { resolveSampleRate } from "./sampling"
@@ -53,7 +53,7 @@ export interface ReplayOptions {
 	}
 }
 
-/** The signal options shared verbatim by `MapleBrowser.init` and the Effect client presets. */
+/** The signal options of `MapleBrowser.init`. The Effect client presets do not take these yet. */
 export interface SignalOptions {
 	readonly tracing?: TracingSignalOptions
 	/** Which captured errors to drop, and which HTTP statuses count as errors. */
@@ -130,11 +130,15 @@ export function resolveReplayOptions(replay: ReplayOptions | undefined): Resolve
 		sampleRate: resolveSampleRate("replay.sampleRate", replay?.sampleRate),
 		onErrorSampleRate: resolveSampleRate("replay.onErrorSampleRate", replay?.onErrorSampleRate, 0),
 		canvasFps: replay?.canvasFps,
-		networkBodies: replay?.networkBodies?.urls.length
-			? {
-					urls: replay.networkBodies.urls,
-					maxLength: Math.min(MAX_BODY_LENGTH, replay.networkBodies.maxLength ?? MAX_BODY_LENGTH),
-				}
-			: undefined,
+		networkBodies:
+			replay?.networkBodies !== undefined && replay.networkBodies.urls.length > 0
+				? {
+						urls: replay.networkBodies.urls,
+						maxLength: Math.min(
+							MAX_BODY_LENGTH,
+							replay.networkBodies.maxLength ?? MAX_BODY_LENGTH,
+						),
+					}
+				: undefined,
 	}
 }

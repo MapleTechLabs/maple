@@ -1,4 +1,4 @@
-import { REPLAY_BLOCK_CLASS } from "../../../../components/common/replay-privacy"
+import { REPLAY_BLOCK_CLASS } from "../../../kit/replay-privacy"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -10,13 +10,13 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import * as OtpField from "@maple/views/ui/otp-field"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
-import { settingsSection, settingsSections } from "../../kit/section"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
 import { codeField } from "../code-field"
 import type { AccountUser } from "../user"
 import { type EnrollStep, Message, type Model } from "./model"
 import { qrCode } from "./qr-code"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 type H = HtmlBuilder<Message>
@@ -120,28 +120,25 @@ const stepContent = (h: H, model: Model, step: EnrollStep): ReadonlyArray<Html> 
 					"Open your authenticator app and scan the code, or enter the setup key by hand.",
 				),
 				DialogView.dialogPanel(h, "dialog", id, [
-					h.div(
-						[h.Class("flex flex-col items-center gap-4")],
-						[
-							h.div(
-								[h.Class("rounded-md border border-border bg-background p-3")],
-								[qrCode(h, step.uri, "size-44")],
-							),
-							h.div(
-								[h.Class("w-full")],
-								[
-									copyableField(h, {
-										id: "account-totp-secret",
-										value: step.secret,
-										label: "Setup key",
-										copyLabel: "Setup key",
-										copy: model.secretCopy,
-										toCopyMessage: (message) => Message.GotSecretCopyMessage({ message }),
-									}),
-								],
-							),
-						],
-					),
+					vstack(h, { gap: "4", align: "center" }, [
+						h.div(
+							[h.Class("rounded-md border border-border bg-background p-3")],
+							[qrCode(h, step.uri, "size-44")],
+						),
+						h.div(
+							[h.Class("w-full")],
+							[
+								copyableField(h, {
+									id: "account-totp-secret",
+									value: step.secret,
+									label: "Setup key",
+									copyLabel: "Setup key",
+									copy: model.secretCopy,
+									toCopyMessage: (message) => Message.GotSecretCopyMessage({ message }),
+								}),
+							],
+						),
+					]),
 				]),
 				DialogView.dialogFooter(h, "dialog", [
 					button(

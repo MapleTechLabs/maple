@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { gcpSetupPlan, type GcpSetupPlanInput } from "@maple/domain/gcp"
-import { GcpConnectorId, GcpProjectId, GcpResourceNumber } from "@maple/domain/primitives"
+import { GcpConnectorId, GcpProjectId, GcpResourceNumber } from "@maple/primitives"
 import { renderGcpAlchemy } from "./alchemy"
 import { gcpLogFilter } from "./setup-scripts"
 import { hcl, renderGcpTerraform } from "./terraform"
 
-const connectorId = Schema.decodeUnknownSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
-const host = Schema.decodeUnknownSync(GcpProjectId)("acme-host")
-const folder = Schema.decodeUnknownSync(GcpResourceNumber)("123456789012")
+const connectorId = Schema.decodeSync(GcpConnectorId)("018f2b3c-4d5e-4f70-8192-a3b4c5d6e7f8")
+const host = Schema.decodeSync(GcpProjectId)("acme-host")
+const folder = Schema.decodeSync(GcpResourceNumber)("123456789012")
 const NEW = { logs: false, reader: false }
 
 const input: GcpSetupPlanInput = {

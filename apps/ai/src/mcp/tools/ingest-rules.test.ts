@@ -3,12 +3,12 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { parameterOfProblem, previewNotes, previewOver, registerIngestRuleTools } from "./ingest-rules"
 import type { McpToolError, McpToolRegistrar } from "./types"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolRequirements } from "./runtime-services"
 import { unimplementedMcpToolServices } from "../../../test/mcp/unimplemented-tool-services"
 
 const trackedDbs: TestDb[] = []
@@ -39,10 +39,7 @@ const tools = () => {
 	const registrar: McpToolRegistrar = {
 		define: (spec) => {
 			handlers.set(spec.name, (params) =>
-				Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
-					Effect.orDie,
-					Effect.flatMap(spec.handler),
-				),
+				Schema.decodeEffect(spec.parameters)(params).pipe(Effect.orDie, Effect.flatMap(spec.handler)),
 			)
 		},
 	}
@@ -59,9 +56,9 @@ const layerFor = (testDb: TestDb, roles: ReadonlyArray<string>) =>
 		unimplementedMcpToolServices,
 		IngestRuleService.layer,
 		Layer.succeed(CurrentMcpTenant, {
-			orgId: Schema.decodeUnknownSync(OrgId)("org_mcp_rules"),
-			userId: Schema.decodeUnknownSync(UserId)("user_mcp_rules"),
-			roles: Arr.map(roles, (role) => Schema.decodeUnknownSync(RoleName)(role)),
+			orgId: Schema.decodeSync(OrgId)("org_mcp_rules"),
+			userId: Schema.decodeSync(UserId)("user_mcp_rules"),
+			roles: Arr.map(roles, (role) => Schema.decodeSync(RoleName)(role)),
 			authMode: "self_hosted",
 		}),
 	).pipe(

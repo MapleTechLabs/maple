@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { EdgeCacheService } from "@maple/cache"
-import { Effect, Layer, String as Str } from "effect"
+import { Array as Arr, Effect, Layer, Order, String as Str } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { RuntimeReleaseCatalog } from "./RuntimeReleaseCatalog"
@@ -51,7 +51,7 @@ describe("RuntimeReleaseCatalog", () => {
 				],
 			})
 			// A runtime asked for twice is read once.
-			assert.deepStrictEqual(requests.toSorted(), [
+			assert.deepStrictEqual(Arr.sort(requests, Order.String), [
 				"https://endoflife.date/api/v1/products/nodejs",
 				"https://endoflife.date/api/v1/products/python",
 			])

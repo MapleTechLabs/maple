@@ -12,8 +12,6 @@ import { searchInput } from "@maple/views/ui/search-input"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// The session views' control bar: the filter and the view options.
-
 type H = HtmlBuilder<Message>
 
 type OptionRow = Readonly<{ id: string; option: ViewOption; label: string; hint: string }>
@@ -63,7 +61,7 @@ const optionsOf = (view: SessionView): ReadonlyArray<OptionRow> => {
 	]
 }
 
-/** `SearchInput` (size sm): not debounced, it filters spans already in hand. */
+/** Not debounced: it filters spans already in hand. */
 const filterInput = (h: H, model: Model, view: SessionView): Html =>
 	searchInput(h, {
 		id: "agent-session-filter",
@@ -88,7 +86,7 @@ const optionRow = (h: H, model: Model, row: OptionRow): Html =>
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [row.hint]),
 			],
 		),
-		// Base UI: the `id` goes to the hidden input the label targets; the switch is labelled by it.
+		// The `id` goes to the hidden input the label targets; the switch is labelled by it.
 		...switchControl(h, {
 			id: `${row.id}-switch`,
 			inputId: row.id,
@@ -98,7 +96,7 @@ const optionRow = (h: H, model: Model, row: OptionRow): Html =>
 		}),
 	])
 
-/** `ViewOptions`: what this view shows, behind one trigger. */
+/** What this view shows, behind one trigger. */
 const displayOptions = (h: H, model: Model, view: SessionView): Html => {
 	const rows = optionsOf(view)
 	const on = Arr.filter(rows, (row) => model.options[row.option]).length
@@ -165,22 +163,23 @@ const PublishControlsHeight = Mount.defineStream("PublishAgentSessionControlsHei
 
 /** The sticky bar: the view tabs, and for every view but the Overview the filter and Display. */
 export const controlBar = (h: H, model: Model, view: SessionView, tabList: Html): Html =>
-	h.div(
-		[
-			h.Class(
-				"sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-border border-b bg-background pb-2",
-			),
-			h.OnMount(PublishControlsHeight()),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "sticky top-0 z-10 gap-x-3 gap-y-2 border-border border-b bg-background pb-2",
+			attributes: [h.OnMount(PublishControlsHeight())],
+		},
 		[
 			tabList,
 			...(view === "overview"
 				? []
 				: [
-						h.div(
-							[h.Class("ml-auto flex flex-wrap items-center gap-2")],
-							[filterInput(h, model, view), displayOptions(h, model, view)],
-						),
+						hstack(h, { gap: "2", align: "center", wrap: true, className: "ml-auto" }, [
+							filterInput(h, model, view),
+							displayOptions(h, model, view),
+						]),
 					]),
 		],
 	)

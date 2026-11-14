@@ -102,7 +102,7 @@ describe("local errors", () => {
 			{ update: pageUpdate, view },
 			given(answered.model),
 			expectView(role("button", { name: /ConnectionTimeout/ })).toHaveAttr("aria-expanded", "true"),
-			expectView(text("No traces found for this error in the selected range.")).toExist(),
+			expectView(text("No traces for this error in this window")).toExist(),
 		)
 		const closed = pageUpdate(answered.model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))
 		const reopened = pageUpdate(closed.model, Message.ClickedErrorType({ fingerprintHash: "fp1" }))

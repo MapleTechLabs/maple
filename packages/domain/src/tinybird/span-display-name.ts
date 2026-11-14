@@ -31,7 +31,7 @@ const spanAttributes = CH.dynamicColumn<Record<string, string>>("SpanAttributes"
 /** SQL text required by Tinybird materialization and ClickHouse migration DDL. */
 export const NORMALIZED_SPAN_NAME_SQL = compile(
 	normalizedSpanNameExpr(
-		CH.dynamicColumn<string>("SpanName"),
+		CH.dynamicColumn("SpanName"),
 		CH.mapGet(spanAttributes, "http.route"),
 		CH.mapGet(spanAttributes, "url.path"),
 	).toFragment(),

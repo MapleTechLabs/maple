@@ -4,7 +4,7 @@ How a plain-Docker host's containers become rows on `/infra/containers`, charts 
 page, and an Infrastructure tab on spans/logs, plus the design decisions that will bite if
 re-derived differently. The k8s sibling of this lifecycle is
 [service-map-infrastructure.md](service-map-infrastructure.md); the end-user install guide is
-`apps/landing/src/content/docs/guides/docker-infrastructure.md`.
+`apps/landing/src/content/docs/infrastructure/docker.md`.
 
 ## End-to-end flow
 

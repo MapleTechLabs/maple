@@ -1,4 +1,4 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -9,9 +9,9 @@ import { alert, alertDescription } from "@maple/views/ui/alert"
 import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type * as Select from "@maple/views/ui/select"
-import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
+import { entryLabel, environmentSwitcher } from "../kit/environment-switcher"
 import { timeControls } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
@@ -29,10 +29,12 @@ import { DB_CHART_TOKENS } from "./view-db-charts"
 import { databasePanel } from "./view-db-panel"
 import { serviceMapEmptyState } from "./view-empty"
 import type * as Scene3d from "./scene3d"
-import { scene3dView } from "./view-scene3d"
+import { scene3dView, topologyOf } from "./view-scene3d"
+import type * as Tiles from "./tiles/update"
+import * as TilesView from "./tiles/view"
 import { servicePanel } from "@maple/views/service-map/panel/service-panel"
 import { infrastructureTab } from "./view-service-infra"
-import { pickTimeSearch } from "../infra/kit/view-tabs"
+import { pickTimeSearch } from "../kit/view-tabs"
 import { AppRoute, hrefOf } from "../../route"
 import { hstack } from "@maple/views/ui/stack"
 
@@ -41,6 +43,7 @@ type H = HtmlBuilder<Message>
 const VIEW_OPTIONS = [
 	{ value: "2d", label: "2D" },
 	{ value: "3d", label: "3D" },
+	{ value: "tiles", label: "Tiles" },
 ] as const
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
@@ -70,33 +73,23 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	const views = segmentedSelect<"2d" | "3d", Message>(h, {
+	const views = segmentedSelect<"2d" | "3d" | "tiles", Message>(h, {
 		size: "sm",
 		ariaLabel: "Service map view",
 		options: VIEW_OPTIONS,
 		value: model.search.view ?? "2d",
 		onChange: (view) => Message.ClickedView({ view }),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		// The value follows the URL and facets (`selectedEnvironment`), not the trigger's last pick.
-		model: { ...model.environmentSelect, value: selectedEnvironment(model) },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
-				_tag: "Item",
-				item,
-			})),
-			size: "sm",
-			// Sized to its value like the Overview select; full width only on its own narrow row.
-			className: "w-full min-w-0 @2xl/page:w-auto",
-			// `SelectValue` shows the raw value when it is not among the items (facets not loaded).
-			renderValue: (value) => [
-				environmentItems(model).find((item) => item.value === value)?.label ?? value,
-			],
-			toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
-		},
+	const entries = environmentItems(model)
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: selectedEnvironment(model),
+		entries,
+		toMessage: toSelect,
+		// Sized to its value like the Overview select; full width only on its own narrow row.
+		className: "w-full min-w-0 @2xl/page:w-auto",
+		renderValue: (value) => [entryLabel(entries, value)],
+		toView: (parts) => hstack(h, { gap: "2", wrap: true }, [views, ...parts, controls]),
 	})
 }
 
@@ -118,7 +111,12 @@ const serviceDetail = (
 		map,
 		overviews: rows.overviews,
 		edges: rows.edges,
-		platform: rows.platforms.find((row) => row.serviceName === serviceId)?.platform,
+		platform: Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(rows.platforms, (row) => row.serviceName === serviceId),
+				(row) => row.platform,
+			),
+		),
 		durationSeconds,
 		dbEdges: rows.dbEdges,
 		serviceHref: (serviceName) => hrefOf(AppRoute.Service({ serviceName, search: {} })),
@@ -134,7 +132,7 @@ const serviceDetail = (
 	})
 }
 
-/** `renderDetailPanel`: a database node gets its panel, anything else the service panel. */
+/** A database node gets its panel, anything else the service panel. */
 const detailPanel =
 	(
 		h: H,
@@ -147,7 +145,9 @@ const detailPanel =
 	(selectedId: string): Html => {
 		if (!Str.startsWith(DB_NODE_PREFIX)(selectedId))
 			return serviceDetail(h, model, rows, durationSeconds, map, selectedId)
-		const node = map.source.rawNodes.find((candidate) => candidate.id === selectedId)
+		const node = Option.getOrUndefined(
+			Arr.findFirst(map.source.rawNodes, (candidate) => candidate.id === selectedId),
+		)
 		return databasePanel(h, model, {
 			nodeId: selectedId,
 			...parseDbNodeId(selectedId),
@@ -159,6 +159,30 @@ const detailPanel =
 	}
 
 const toScene3d = (message: Scene3d.Message) => Message.GotScene3dMessage({ message })
+const toTiles = (message: Tiles.Message) => Message.GotTilesMessage({ message })
+
+/** The 3D or tile scene in place of the 2D canvas, or `undefined` for 2D. */
+const sceneOf = (h: H, model: Model, map: ServiceMap.Model): (() => Html) | undefined => {
+	switch (model.search.view) {
+		case "3d":
+			return () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d })
+		case "tiles":
+			return () =>
+				h.submodel({
+					slotId: "service-map-tiles",
+					model: model.tiles,
+					view: TilesView.view,
+					toParentMessage: toTiles,
+					viewInputs: {
+						topology: topologyOf(map),
+						selectedId: Option.getOrNull(map.selectedId),
+						reducedMotion: map.reducedMotion,
+					},
+				}) ?? h.div([], [])
+		default:
+			return undefined
+	}
+}
 
 /** The API dropped the database edges past their budget: say so rather than draw a map with no databases. */
 const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
@@ -176,7 +200,7 @@ const dbEdgesTimedOutNotice = (h: H, model: Model): ReadonlyArray<Html> =>
 				: [],
 	})
 
-/** `ResultView` over the bundle: the loading skeleton, the error, or the map. */
+/** The bundle's loading skeleton, its error, or the map. */
 const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 	AsyncData.matchData(model.bundle.data, {
 		onEmpty: () => serviceMapLoading(h),
@@ -192,9 +216,8 @@ const mapArea = (h: H, model: Model, inputs: PageViewInputs): Html =>
 				return serviceMapLoading(h)
 			const map = model.map.value
 			return mapView(h, map, toMap, {
-				viewMode: model.search.view ?? "2d",
-				render3D: () => scene3dView(h, { model: model.scene3d, map, toMessage: toScene3d }),
-				emptyState: serviceMapEmptyState(h, model),
+				renderScene: sceneOf(h, model, map),
+				emptyState: serviceMapEmptyState(h, model, inputs.context.timeZone),
 				detailPanel: detailPanel(
 					h,
 					model,
@@ -211,7 +234,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: DB_CHART_TOKENS }))],
 		[
-			dashboardPage(h, { title: "Service map", actions: headerActions(h, model) }, [
+			dashboardPage(h, { title: "Service map", width: "full", actions: headerActions(h, model) }, [
 				Option.match(AsyncData.getError(model.facets.data), {
 					onSome: (failure) =>
 						errorState(h, {
@@ -225,7 +248,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 							[
 								...dbEdgesTimedOutNotice(h, model),
 								h.div(
-									[h.Class("-mx-4 -mb-4 h-[calc(100vh-10rem)]")],
+									[h.Class("-mx-4 -mb-4 h-[calc(100vh-9rem)]")],
 									[mapArea(h, model, inputs)],
 								),
 							],

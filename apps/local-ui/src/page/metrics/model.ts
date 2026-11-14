@@ -14,12 +14,12 @@ export const Draft = Schema.Struct({ text: Schema.String, version: Schema.Number
 export type Draft = typeof Draft.Type
 
 export const Model = Schema.TaggedStruct("MetricsPage", {
-	/** `useTimeWindow`'s anchor, snapped to the minute; none until the clock is read. */
+	/** The time window's anchor, snapped to the minute; none until the clock is read. */
 	maybeAnchorMs: Schema.Option(Schema.Number),
 	/** The clock at the last read: `chartWindow`'s "now". */
 	nowMs: Schema.Number,
 	list: KeyedSchema(MetricsListData, LoadFailure),
-	/** `dataUpdatedAt` of the list, for the "New data" pill. */
+	/** When the list last loaded, for the "New data" pill. */
 	listUpdatedAtMs: Schema.Number,
 	summary: KeyedSchema(Schema.Array(SummaryRow), LoadFailure),
 	sparklines: KeyedSchema(Schema.Array(MetricSparkline), LoadFailure),

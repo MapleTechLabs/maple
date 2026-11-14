@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ChatConnectorId, ChatWorkspaceId, OrgId } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatWorkspaceId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // One row per chat workspace linked to a Maple org (a server, a team, a tenant,
@@ -19,9 +19,8 @@ import { Schema } from "effect"
 //     (a team server and a customer server), and nothing needs to pick one.
 //
 // `org_id` carries no foreign key: orgs live in Clerk, not Postgres. Org
-// deletion is handled by the explicit `ORG_SCOPED_TABLES` purge list in
-// `packages/backend/src/services/org/OrganizationService.ts`; this table must
-// be listed there.
+// deletion purges every table with an `org_id` (`OrganizationService.ts`),
+// this one included.
 
 export const ChatWorkspaces = PG.table("chat_workspaces", {
 	columns: {
@@ -40,7 +39,7 @@ export const ChatWorkspaces = PG.table("chat_workspaces", {
 		// for a connector that authenticates with one deployment-wide credential,
 		// which is why this is three nullable columns rather than a second table.
 		// The AAD binds the envelope to `(org_id, connector, external_workspace_id)`
-		// (`chat-workspace-credentials.ts`), so a row's ciphertext cannot be moved
+		// (`secret-slots.ts`), so a row's ciphertext cannot be moved
 		// onto another org's row by anyone holding only database write access.
 		credentialsCiphertext: PG.column(PG.nullable(PG.text), { name: "credentials_ciphertext" }),
 		credentialsIv: PG.column(PG.nullable(PG.text), { name: "credentials_iv" }),

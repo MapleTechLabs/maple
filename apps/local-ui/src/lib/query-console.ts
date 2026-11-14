@@ -54,9 +54,7 @@ const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** A table name as SQL: bare when it can be, backtick-quoted otherwise. */
 export function quoteIdentifier(name: string): string {
-	return PLAIN_IDENTIFIER.test(name)
-		? name
-		: `\`${Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(name))}\``
+	return PLAIN_IDENTIFIER.test(name) ? name : `\`${Str.replace(/[\\`]/g, "\\$&")(name)}\``
 }
 
 export function tablePreviewSql(table: string): string {
@@ -149,9 +147,12 @@ export interface QueryErrorDescription {
 
 const READ_ONLY_PREFIX = "read-only query endpoint: "
 
+const isQueryFailed = Schema.is(LocalQueryFailed)
+const isQueryUnreachable = Schema.is(LocalQueryUnreachable)
+
 /** A failed run as a heading plus the server's own message. */
 export function describeQueryError(error: unknown): QueryErrorDescription {
-	if (error instanceof LocalQueryFailed) {
+	if (isQueryFailed(error)) {
 		if (Str.startsWith(READ_ONLY_PREFIX)(error.detail))
 			return { title: "Query not allowed", detail: Str.slice(READ_ONLY_PREFIX.length)(error.detail) }
 		return {
@@ -159,8 +160,7 @@ export function describeQueryError(error: unknown): QueryErrorDescription {
 			detail: error.detail || error.message,
 		}
 	}
-	if (error instanceof LocalQueryUnreachable)
-		return { title: "Maple Local is unreachable", detail: error.message }
+	if (isQueryUnreachable(error)) return { title: "Maple Local is unreachable", detail: error.message }
 	return { title: "Query failed", detail: error instanceof Error ? error.message : String(error) }
 }
 

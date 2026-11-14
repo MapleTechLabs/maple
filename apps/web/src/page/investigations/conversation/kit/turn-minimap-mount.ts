@@ -2,8 +2,8 @@ import { Effect, Queue, Stream, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import { MinimapMessage } from "./turn-minimap"
 
-// The rail's DOM side: its width, which rows intersect the viewport (`useMessageScrollerVisibility`),
-// the pointer and keyboard preview, and the jump itself (`scrollToMessage`, smooth, row at the top).
+// The rail's DOM side: its width, which rows intersect the viewport, the pointer and keyboard
+// preview, and the jump itself (smooth, row at the top).
 
 const VIEWPORT = "[data-slot=message-scroller-viewport]"
 const ITEM = "[data-slot=message-scroller-item]"

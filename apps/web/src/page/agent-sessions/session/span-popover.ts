@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Option } from "effect"
 import type { AiSessionSpan } from "@maple/domain/http"
 import {
 	classifyAiSpan,
@@ -29,7 +29,7 @@ import { detailsSection, logsSection, metaStrip, toolCallsSection } from "./span
 import { messagesSection, POPOVER_KEY } from "./span-popover-messages"
 import { payloadCopyButton } from "./transcript-kit"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
@@ -64,7 +64,7 @@ export type SpanPopoverInputs = Readonly<{
 	timeZone: string
 }>
 
-/** `SpanExpansion`: the title and tab strip are fixed chrome; only the payload under them scrolls. */
+/** The title and tab strip are fixed chrome; only the payload under them scrolls. */
 const expansion = (
 	h: H,
 	model: Model,
@@ -88,50 +88,48 @@ const expansion = (
 				return logsSection(h, model, span, timeZone)
 		}
 	}
-	return h.div(
-		[h.Class("flex min-h-0 min-w-0 grow flex-col text-left")],
-		[
-			titleRow(h, span, inputs, closeTrigger),
-			h.div(
-				[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-border border-b px-5 pb-2")],
-				[
-					tabStrip(h, active, messages.length, toolCalls.length),
-					hstack(h, { gap: "2", className: "ml-auto" }, [
-						payloadCopyButton(h, model, {
-							key: `${keyPrefix}:json`,
-							value: encodePrettyJson(span),
-							label: "Span JSON",
-							idleLabel: "Copy JSON",
-							iconSize: 12,
+	return vstack(h, { shrink: true, className: "min-h-0 grow text-left" }, [
+		titleRow(h, span, inputs, closeTrigger),
+		hstack(
+			h,
+			{ gap: "2", align: "center", wrap: true, className: "shrink-0 border-border border-b px-5 pb-2" },
+			[
+				tabStrip(h, active, messages.length, toolCalls.length),
+				hstack(h, { gap: "2", className: "ml-auto" }, [
+					payloadCopyButton(h, model, {
+						key: `${keyPrefix}:json`,
+						value: encodePrettyJson(span),
+						label: "Span JSON",
+						idleLabel: "Copy JSON",
+						iconSize: 12,
+						variant: "outline",
+						size: "sm",
+						className: "h-6.5 gap-1.5 text-xs",
+						hasTooltip: false,
+					}),
+					linkButton(
+						h,
+						{
 							variant: "outline",
 							size: "sm",
 							className: "h-6.5 gap-1.5 text-xs",
-							hasTooltip: false,
-						}),
-						linkButton(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								className: "h-6.5 gap-1.5 text-xs",
-								href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch(
-									[
-										["t", span.timestamp],
-										["spanId", span.spanId],
-									],
-								)}`,
-							},
-							["Open in Traces", icon(h, "ExternalLinkIcon")],
-						),
-					]),
-				],
-			),
-			h.div(
-				[h.Class("min-h-0 grow overflow-y-auto overscroll-contain px-5 pb-6")],
-				[metaStrip(h, model, span, timeZone), section()],
-			),
-		],
-	)
+							href: `${hrefOf(AppRoute.Trace({ traceId: span.traceId, search: {} }))}${orderedSearch(
+								[
+									["t", span.timestamp],
+									["spanId", span.spanId],
+								],
+							)}`,
+						},
+						["Open in Traces", icon(h, "ExternalLinkIcon")],
+					),
+				]),
+			],
+		),
+		h.div(
+			[h.Class("min-h-0 grow overflow-y-auto overscroll-contain px-5 pb-6")],
+			[metaStrip(h, model, span, timeZone), section()],
+		),
+	])
 }
 
 /** The same wording the waterfall's headers use for the fallback partition. */
@@ -149,22 +147,24 @@ export const viewPopover = (
 	const spanId = model.search.span
 	const found =
 		spanId === undefined
-			? undefined
-			: Arr.flatMap(data.turns, (turn) => Arr.map(turn.spans, (span) => ({ span, turn }))).find(
+			? Option.none()
+			: Arr.findFirst(
+					Arr.flatMap(data.turns, (turn) => Arr.map(turn.spans, (span) => ({ span, turn }))),
 					({ span }) => span.spanId === spanId,
 				)
 	return spanPopover(
 		h,
 		model,
-		found === undefined
-			? undefined
-			: {
-					span: found.span,
-					toolResults: data.toolResults,
-					turnOrdinal: view === "flow" ? turnOrdinal(found.turn) : undefined,
-					isTraceDoor: view !== "trace",
-					timeZone,
-				},
+		Option.match(found, {
+			onNone: () => undefined,
+			onSome: ({ span, turn }) => ({
+				span,
+				toolResults: data.toolResults,
+				turnOrdinal: view === "flow" ? turnOrdinal(turn) : undefined,
+				isTraceDoor: view !== "trace",
+				timeZone,
+			}),
+		}),
 	)
 }
 
@@ -176,7 +176,7 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 		view: Tooltip.view,
 		toParentMessage: (message: Tooltip.Message) => Message.GotCloseTooltipMessage({ message }),
 		viewInputs: {
-			// `IconButton`'s tooltip: its label, in the icon-button popup layout.
+			// The label, in the icon-button popup layout.
 			toContent: () => ["Close span detail"],
 			layout: "icon-button",
 			toView: ({ trigger, portal }) =>
@@ -200,11 +200,13 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 							inputs === undefined
 								? []
 								: [
-										h.div(
-											[
-												h.DataAttribute("slot", "span-popover"),
-												h.Class("flex min-h-0 min-w-0 grow flex-col"),
-											],
+										vstack(
+											h,
+											{
+												shrink: true,
+												className: "min-h-0 grow",
+												attributes: [h.DataAttribute("slot", "span-popover")],
+											},
 											[expansion(h, model, inputs, trigger())],
 										),
 										...(portal === null ? [] : [portal]),
@@ -217,7 +219,7 @@ export const spanPopover = (h: H, model: Model, inputs: SpanPopoverInputs | unde
 const tabCount = (h: H, count: number): ReadonlyArray<Html> =>
 	count === 0
 		? []
-		: [h.span([h.Class("font-mono text-3xs text-muted-foreground tabular-nums")], [String(count)])]
+		: [typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true }, [String(count)])]
 
 const isSpanTab = (value: string): value is SpanDetailTab =>
 	value === "details" || value === "messages" || value === "tools" || value === "logs"
@@ -226,7 +228,7 @@ const tabStrip = (h: H, active: SpanDetailTab, messageCount: number, toolCount: 
 	ToggleGroup.view(h, {
 		model: ToggleGroup.init({ label: "Span detail", values: [active] }),
 		toParentMessage: (message) =>
-			// Clicking the pressed tab empties the group in Base UI; the tab stays put.
+			// Clicking the pressed tab reports no value; the tab stays put.
 			Message.PickedSpanTab({
 				tab:
 					message._tag === "ClickedItem" && isSpanTab(message.value) && message.value !== active
@@ -257,40 +259,39 @@ const titleRow = (
 		),
 		" · ",
 	)
-	return h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-5 pt-4 pb-3")],
-		[
-			icon(h, isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[category], {
-				size: 14,
-				className: cn("shrink-0", isErrored ? "text-severity-error" : CATEGORY_TEXT[category]),
-				attributes: [h.AriaHidden(true)],
-			}),
-			h.span([h.Class("min-w-0 truncate font-medium font-mono text-sm")], [span.spanName]),
-			...(subtitle === "" ? [] : [typography(h, { size: "xs", tone: "muted" }, [subtitle])]),
-			hstack(h, { gap: "2", className: "ml-auto" }, [
-				...(isTraceDoor
-					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "xs",
-									attributes: [h.OnClick(Message.ClickedOpenInTraceView())],
-								},
-								["Open in Traces view"],
-							),
-						]
-					: []),
-				iconButton(
-					h,
-					{
-						label: "Close span detail",
-						hasTooltip: false,
-						attributes: [...closeTrigger, h.OnClick(Message.ClickedCloseSpan())],
-					},
-					[icon(h, "XmarkIcon")],
-				),
-			]),
-		],
-	)
+	return hstack(h, { align: "center", wrap: true, className: "shrink-0 gap-x-3 gap-y-1 px-5 pt-4 pb-3" }, [
+		icon(h, isErrored ? "CircleXmarkIcon" : CATEGORY_ICON[category], {
+			size: 14,
+			className: cn("shrink-0", isErrored ? "text-severity-error" : CATEGORY_TEXT[category]),
+			attributes: [h.AriaHidden(true)],
+		}),
+		typography(h, { size: "sm", weight: "medium", mono: true, truncate: true, className: "min-w-0" }, [
+			span.spanName,
+		]),
+		...(subtitle === "" ? [] : [typography(h, { size: "xs", tone: "muted" }, [subtitle])]),
+		hstack(h, { gap: "2", className: "ml-auto" }, [
+			...(isTraceDoor
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "xs",
+								attributes: [h.OnClick(Message.ClickedOpenInTraceView())],
+							},
+							["Open in Traces view"],
+						),
+					]
+				: []),
+			iconButton(
+				h,
+				{
+					label: "Close span detail",
+					hasTooltip: false,
+					attributes: [...closeTrigger, h.OnClick(Message.ClickedCloseSpan())],
+				},
+				[icon(h, "XmarkIcon")],
+			),
+		]),
+	])
 }

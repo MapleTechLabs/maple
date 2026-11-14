@@ -1,6 +1,5 @@
 import { Schema, Array as Arr, Record as Rec } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
 
 /** Stable identifiers used across eval prompts + fixtures. */
 export const FIXTURES = {
@@ -33,9 +32,7 @@ export const jsonDepth = (value: unknown): number => {
 		: typeof value === "object" && value !== null
 			? Rec.values(value)
 			: undefined
-	return children === undefined
-		? 0
-		: 1 + children.reduce<number>((max, v) => Math.max(max, jsonDepth(v)), 0)
+	return children === undefined ? 0 : 1 + Arr.reduce(children, 0, (max, v) => Math.max(max, jsonDepth(v)))
 }
 
 /**

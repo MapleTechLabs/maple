@@ -8,11 +8,8 @@ export interface ResolvedTimeRange {
 /**
  * Validates an agent-supplied dashboard `time_range` shorthand.
  *
- * `create_dashboard` used to run this value through a `{1h, 6h, 24h, 7d}`
- * whitelist and silently fall back to "1h" for anything else — so asking for a
- * 30-day board produced a 1-hour one with no indication anything had changed.
- * Now anything the picker can express is accepted up to the engine's real
- * ceiling, and everything else is an explicit error.
+ * Anything the picker can express is accepted up to the engine's real ceiling;
+ * everything else is an explicit error, never a silent fallback to another window.
  *
  * Returns `null` when the value is valid, or an error message to return to the
  * agent when it is not.

@@ -1,4 +1,7 @@
-import { DB_NODE_PREFIX } from "@maple/ui/components/service-map/service-map-utils"
+import { pickerStep } from "../kit/page-time"
+import { applySteps } from "../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { DB_NODE_PREFIX } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -13,12 +16,29 @@ import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
-import { CompleteReloadSpin, LoadSignalPresence, ReadStored, SaveStored } from "./command"
-import { DEFAULT_PRESET, focusOf, scopedRows, type Search, sourceGraphOf, withFocus } from "./derive"
+import * as Tiles from "./tiles/update"
+import { topologyOf } from "./view-scene3d"
+import {
+	CompleteReloadSpin,
+	LoadSignalPresence,
+	LoadWorld,
+	ReadStored,
+	SaveStored,
+	SaveWorld,
+} from "./command"
+import { stepEnvironmentSelect } from "../kit/environment-switcher"
+import {
+	ALL_ENVIRONMENTS,
+	DEFAULT_PRESET,
+	focusOf,
+	scopedRows,
+	type Search,
+	sourceGraphOf,
+	withFocus,
+} from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
-	applySteps,
 	bundleStep,
 	databaseSteps,
 	facetsStep,
@@ -29,7 +49,6 @@ import {
 	searchHref,
 } from "./request"
 
-/** The service panel's tabs (`<Tabs defaultValue="service">`). */
 const initServiceTabs = () =>
 	Tabs.init({ idBase: 60, values: ["service", "infrastructure"], selected: "service" })
 
@@ -60,6 +79,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		timePicker: TimeRangePicker.init("service-map-time-range"),
 		scene3d: Scene3d.init(),
+		tiles: Tiles.init(),
 		presence: SignalPresenceData.Loading(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
@@ -72,16 +92,10 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			ReadStored({ orgId: context.orgId }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
-
-// THE MAP
 
 const merge = (result: Return, next: Return): Return => ({
 	model: next.model,
@@ -113,10 +127,10 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 			? model.serviceTabs
 			: initServiceTabs()
 	const withTabs = { ...model, serviceTabs: tabs }
-	const database =
+	const database: Return =
 		previous !== undefined && Option.getOrNull(previous.selectedId) === Option.getOrNull(map.selectedId)
 			? { model: withTabs }
-			: applySteps(withTabs, databaseSteps(withTabs, context, "Load"))
+			: applySteps<Model, Message>(withTabs, databaseSteps(withTabs, context, "Load"))
 	const focusChanged = !sameFocus(map.focus, focusOf(model.search))
 	return {
 		model: database.model,
@@ -144,7 +158,6 @@ const afterMap = (before: Option.Option<ServiceMap.Model>, result: Return, conte
 	}
 }
 
-/** Folds a map step into the page: the map Model, its lifted Commands, then `afterMap`. */
 const withMapStep = (
 	model: Model,
 	before: Option.Option<ServiceMap.Model>,
@@ -161,8 +174,8 @@ const withMapStep = (
 	)
 
 /**
- * Rebuild the graph from whatever has landed (`buildFlowElements`): the
- * first time the bundle and the stored prefs are both in, the map is created; later rows refine it.
+ * Rebuild the graph from whatever has landed (`buildFlowElements`): the first time the bundle
+ * and the stored prefs are both in, the map is created; later rows refine it.
  */
 const syncMap =
 	(context: PageContext) =>
@@ -201,16 +214,31 @@ const applyUrlFocus = (result: Return, context: PageContext): Return =>
 			),
 	})
 
-/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
+/** Lays the tile board out for the map as it changes, once the Tiles view has been opened. */
+const syncTiles = (result: Return): Return => {
+	const { model } = result
+	if (Option.isNone(model.map) || (model.search.view !== "tiles" && model.tiles.layoutKey === null))
+		return result
+	const tiles = Tiles.sync(model.tiles, topologyOf(model.map.value))
+	return tiles === model.tiles ? result : { ...result, model: { ...model, tiles } }
+}
+
 export const routeChanged = (
 	model: Model,
 	route: { readonly search: Search },
 	context: PageContext,
-): Return => {
+): Return => syncTiles(searchChanged(model, route, context))
+
+/** The search changed: a new window re-resolves; the environment re-keys the bundle; focus goes to the map. */
+const searchChanged = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	// The 3D viewport remounts when the view switches to it, so its state starts over.
+	// The 3D viewport remounts when the view switches to it: its view state starts over, its world stays.
 	const isEntering3d = route.search.view === "3d" && model.search.view !== "3d"
-	const next = { ...model, search: route.search, scene3d: isEntering3d ? Scene3d.init() : model.scene3d }
+	const next = {
+		...model,
+		search: route.search,
+		scene3d: isEntering3d ? Scene3d.reenter(model.scene3d) : model.scene3d,
+	}
 	const requested = routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
 			model: next,
@@ -222,7 +250,10 @@ export const routeChanged = (
 }
 
 /** The namespace pin scopes the rows on the client: rebuild the graph. A new zone re-resolves "today". */
-export const contextChanged = (model: Model, context: PageContext): Return => {
+export const contextChanged = (model: Model, context: PageContext): Return =>
+	syncTiles(scopeChanged(model, context))
+
+const scopeChanged = (model: Model, context: PageContext): Return => {
 	const synced = syncMap(context)({ model })
 	const isNewZone = model.windowZone !== null && model.windowZone !== context.timeZone
 	if (!isNewZone) return synced
@@ -231,21 +262,20 @@ export const contextChanged = (model: Model, context: PageContext): Return => {
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" stays in the URL as `__all__`, so it sticks.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, { ...model.search, environment: next.outMessage.value })
-					.outMessage,
-			}
+	// "All environments" stays in the URL as `__all__`, so it sticks.
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: true,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(model, { ...model.search, environment }).outMessage,
+		}),
+	})
 }
 
 /** The 3D view's step; a pick becomes the map's `onSelect`. */
@@ -258,38 +288,63 @@ const withScene3d = (model: Model, message: Scene3d.Message, context: PageContex
 		),
 	}
 	if (next.outMessage === undefined) return lifted
-	const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
-	return Option.match(lifted.model.map, {
-		onNone: () => lifted,
-		onSome: (map) =>
-			merge(
-				lifted,
-				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
-			),
+	return Scene3d.OutMessage.match(next.outMessage, {
+		RequestedWorld: (): Return =>
+			merge(lifted, { model: lifted.model, commands: [LoadWorld({ orgId: context.orgId })] }),
+		SavedWorldOps: ({ batch, ops }): Return =>
+			merge(lifted, {
+				model: lifted.model,
+				commands: [SaveWorld({ orgId: context.orgId, batch, ops })],
+			}),
+		Selected: ({ nodeId }): Return => {
+			const picked = ServiceMap.Message.PickedNode({ nodeId })
+			return Option.match(lifted.model.map, {
+				onNone: () => lifted,
+				onSome: (map) =>
+					merge(
+						lifted,
+						withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+					),
+			})
+		},
 	})
 }
 
+/** The tile view's step over the live map; a pick becomes the map's `onSelect`. */
+const withTiles = (model: Model, message: Tiles.Message, context: PageContext): Return =>
+	Option.match(model.map, {
+		onNone: () => ({ model }),
+		onSome: (map) => {
+			const next = Tiles.update(model.tiles, message, topologyOf(map))
+			const lifted: Return = { model: { ...model, tiles: next.model } }
+			if (next.outMessage === undefined) return lifted
+			const picked = ServiceMap.Message.PickedNode({ nodeId: next.outMessage.nodeId })
+			return merge(
+				lifted,
+				withMapStep(lifted.model, lifted.model.map, ServiceMap.update(map, picked), context),
+			)
+		},
+	})
+
 const withTimePicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? TimeRangePicker.unpicked(lifted, next.outMessage)
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	// A preset: the absolute bounds leave the URL.
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+		{ toastRejected: true },
+	)
 }
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	syncTiles(step(model, message, context))
+
+const step = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveWindow: ({ window, timeZone, facetsWindow, nowMs, mode }) =>
 			// The facets window is minted once per visit and kept.
@@ -310,7 +365,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		// The default environment can move once facets land (a confirmed no-production org).
 		CompletedFetchFacets: ({ key, result }) => {
 			const next = { ...model, facets: Keyed.accept(model.facets, key, result) }
-			const rekeyed = applySteps(next, [bundleStep(next, context, "Load")])
+			const rekeyed = applySteps<Model, Message>(next, [bundleStep(next, context, "Load")])
 			// Only a new environment re-asks; the same key keeps its answer, a failure included.
 			return rekeyed.model.bundle.key === model.bundle.key ? { model: next } : rekeyed
 		},
@@ -344,11 +399,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -361,7 +412,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		ClickedRetryFacets: () => applySteps(model, [facetsStep(model, context, "Refresh")]),
+		ClickedRetryFacets: () => applySteps<Model, Message>(model, [facetsStep(model, context, "Refresh")]),
 		ClickedResetTimeRange: () =>
 			navigate(model, {
 				...model.search,
@@ -377,6 +428,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotScene3dMessage: ({ message: inner }) => withScene3d(model, inner, context),
+		GotTilesMessage: ({ message: inner }) => withTiles(model, inner, context),
+		// An answer for another org (the user switched while it was in flight) is dropped.
+		CompletedLoadWorld: ({ orgId, result }) =>
+			orgId === context.orgId
+				? withScene3d(model, Scene3d.Message.LoadedWorld({ result }), context)
+				: { model },
+		CompletedSaveWorld: ({ orgId, batch, result }) =>
+			orgId === context.orgId
+				? withScene3d(model, Scene3d.Message.SettledWorldOps({ batch, result }), context)
+				: { model },
 		GotTimePickerMessage: ({ message: inner }) => withTimePicker(model, inner),
 		GotServiceTabsMessage: ({ message: inner }) => {
 			const next = Tabs.update(model.serviceTabs, inner)

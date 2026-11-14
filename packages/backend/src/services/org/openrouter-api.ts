@@ -1,21 +1,34 @@
 /**
- * The two OpenRouter calls the key check makes, shaped like a `@distilled.cloud` SDK: a
- * credentials service resolved per request, a REST protocol, and operations whose failures are
- * typed per HTTP status. OpenRouter's error body is `{ error: { code, message } }`.
+ * The OpenRouter calls Maple makes outside an AI turn (the key checks and the cost pull), shaped
+ * like a `@distilled.cloud` SDK: a credentials service resolved per request, a REST protocol, and
+ * operations whose failures are typed per HTTP status. OpenRouter's error body is
+ * `{ error: { code, message } }`.
  */
 import * as API from "@distilled.cloud/core/api"
 import * as Category from "@distilled.cloud/core/category"
 import { makeRestProtocol } from "@distilled.cloud/core/protocol-rest"
 import * as T from "@distilled.cloud/core/trait"
-import { Context, Effect, Predicate, Redacted, Schema } from "effect"
+import { OPENROUTER_KEY_MAX_LENGTH } from "@maple/domain/http"
+import { Context, Effect, Predicate, Redacted, Schema, String as Str } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 
 export const OPENROUTER_API_URLS = {
 	us: "https://openrouter.ai/api/v1",
 	eu: "https://eu.openrouter.ai/api/v1",
 } as const
 
+/**
+ * Where a management key is used. OpenRouter documents its EU host for inference only, and an
+ * account's activity is kept with its billing records, so every instance asks the global host.
+ */
+export const OPENROUTER_MANAGEMENT_API_URL = OPENROUTER_API_URLS.us
+
+/** Whether the text has the shape of an OpenRouter key, so nothing else is ever sent to OpenRouter. */
+export const isOpenRouterKey = (apiKey: string): boolean =>
+	Str.startsWith("sk-or-")(apiKey) && apiKey.length >= 20 && apiKey.length <= OPENROUTER_KEY_MAX_LENGTH
+
 export interface Config {
-	readonly apiKey: Redacted.Redacted<string>
+	readonly apiKey: Redacted.Redacted
 	readonly apiBaseUrl: string
 }
 
@@ -113,6 +126,66 @@ export const getKey = API.make(() => ({
 	protocol: OpenRouterProtocol,
 }))
 
+/**
+ * What `GET /key` says about the key it was asked with. Either flag names a management key. An
+ * organization's account is its `organization_id`; a personal one is the user who made the key.
+ */
+const KeyInfo = Schema.Struct({
+	data: Schema.Struct({
+		label: Schema.String,
+		is_management_key: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+		is_provisioning_key: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+		organization_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		creator_user_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	}),
+})
+
+// The SDK returns a 2xx body as it came, whatever `output` says, so a typed answer is decoded here.
+const decoded =
+	<A, I>(schema: Schema.Codec<A, I>) =>
+	(body: unknown) =>
+		Schema.decodeUnknownEffect(schema)(body).pipe(
+			Effect.mapError((cause) => new OpenRouterParseError({ cause })),
+		)
+
+/** `getKey`, with the fields the cost source reads. */
+export const getKeyInfo = (input: typeof GetKeyRequest.Type) =>
+	getKey(input).pipe(Effect.flatMap(decoded(KeyInfo)))
+
+/**
+ * One day, model and serving endpoint of an account's spend. `usage` is USD billed by OpenRouter.
+ * `date` starts with the UTC day, as a date or as a timestamp at its midnight.
+ */
+export const ActivityItem = Schema.Struct({
+	date: Schema.String.check(
+		Schema.isPattern(/^\d{4}-\d{2}-\d{2}/, { description: "Expected to start with YYYY-MM-DD" }),
+	),
+	model: Schema.String,
+	provider_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	usage: Schema.Number,
+	prompt_tokens: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	completion_tokens: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+})
+export type ActivityItem = typeof ActivityItem.Type
+
+const ActivityResponse = Schema.Struct({ data: Schema.Array(ActivityItem) })
+
+const GetActivityRequest = Schema.Struct({}).pipe(T.Http({ method: "GET", uri: "/activity", code: 200 }))
+
+const getActivityBody = API.make(() => ({
+	input: GetActivityRequest,
+	output: Schema.Unknown,
+	errors: [BadRequest, Unauthorized, Forbidden],
+	protocol: OpenRouterProtocol,
+}))
+
+/**
+ * The account's last 30 completed UTC days, every day in one answer. Management keys only: any
+ * other key gets 403.
+ */
+export const getActivity = (input: typeof GetActivityRequest.Type) =>
+	getActivityBody(input).pipe(Effect.flatMap(decoded(ActivityResponse)))
+
 const CreateChatCompletionRequest = Schema.Struct({
 	model: Schema.String,
 	messages: Schema.Array(Schema.Struct({ role: Schema.Literal("user"), content: Schema.String })),
@@ -131,3 +204,56 @@ export const createChatCompletion = API.make(() => ({
 export type OpenRouterError = { readonly _tag: string; readonly message: string }
 
 export const withCredentials = (config: Config) => Effect.provideService(Credentials, config)
+
+/**
+ * Runs OpenRouter calls on one key and host, over `httpClient`. A redirect is not OpenRouter
+ * answering, so the key is never followed to another host.
+ */
+export const withKey =
+	(httpClient: HttpClient.HttpClient, config: Config) =>
+	<A, E, R>(effect: Effect.Effect<A, E, R>) =>
+		effect.pipe(
+			withCredentials(config),
+			Effect.provideService(HttpClient.HttpClient, httpClient),
+			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+		)
+
+/** A workspace id no account has. */
+const NO_SUCH_WORKSPACE = "00000000-0000-4000-8000-000000000000"
+
+/**
+ * Whether the key reads one workspace only. Asked for the activity of a workspace no account has,
+ * a key for the whole account is answered 404 and a workspace-scoped one 403. Read off the
+ * status, not through an operation: there the expected 404 fails a span on every saved key.
+ */
+export const readsOneWorkspaceOnly = (httpClient: HttpClient.HttpClient, config: Config) =>
+	httpClient
+		.execute(
+			HttpClientRequest.get(`${config.apiBaseUrl}/activity`).pipe(
+				HttpClientRequest.setUrlParam("workspace_id", NO_SUCH_WORKSPACE),
+				HttpClientRequest.bearerToken(config.apiKey),
+			),
+		)
+		.pipe(
+			Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+			Effect.annotateSpans("peer.service", "openrouter"),
+			Effect.mapError(
+				(error) =>
+					new UnknownOpenRouterError({
+						status: 0,
+						message: `OpenRouter request failed: ${error.message}`,
+					}),
+			),
+			Effect.flatMap((response) =>
+				response.status === 403
+					? Effect.succeed(true)
+					: response.status === 404 || response.status === 200
+						? Effect.succeed(false)
+						: Effect.fail(
+								new UnknownOpenRouterError({
+									status: response.status,
+									message: `OpenRouter answered ${response.status} to the workspace check`,
+								}),
+							),
+			),
+		)

@@ -1,22 +1,23 @@
+import * as Policy from "@maple/domain/policy"
 import type { V2McpConnection } from "@maple/domain/http/v2"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { relativeTime } from "../../kit/relative-time"
-import { sectionNote, settingsSection } from "../kit/section"
+import { sectionNote, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Array as Arr } from "effect"
-
-// `McpConnectedClientsSection`.
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
-type Inputs = Readonly<{ isAdmin: boolean; nowMs: number; timeZone: string }>
+type Inputs = Readonly<{ grants: ReadonlyArray<Policy.Permission>; nowMs: number; timeZone: string }>
 
 const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html =>
 	hstack(h, { gap: "4", as: "li", className: "px-4 py-3", attributes: [h.Key(connection.id)] }, [
@@ -33,7 +34,15 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 		),
 		h.p(
 			[h.Class("hidden shrink-0 text-xs text-muted-foreground sm:block")],
-			["Connected ", formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone })],
+			[
+				"Connected ",
+				timestamp(h, {
+					value: connection.connected_at,
+					timeZone: inputs.timeZone,
+					nowMs: inputs.nowMs,
+					label: formatDateInTimezone(connection.connected_at, { timeZone: inputs.timeZone }),
+				}),
+			],
 		),
 		h.p(
 			[h.Class("hidden shrink-0 text-xs text-muted-foreground md:block")],
@@ -61,12 +70,13 @@ const connectionRow = (h: H, connection: V2McpConnection, inputs: Inputs): Html 
 const content = (h: H, model: Model, inputs: Inputs): Html =>
 	AsyncData.matchData(model.connections, {
 		onEmpty: () => h.div([h.Class("p-4")], [skeletonList(h, { rows: 2 })]),
-		onFailure: () => sectionNote(h, "Couldn't load connected clients."),
+		onFailure: () => sectionNote(h, "Couldn't load connected clients"),
 		onData: (rows) =>
 			rows.length === 0
 				? sectionNote(h, "No clients connected yet. Connect one above.")
-				: h.ul(
-						[h.Class("divide-y")],
+				: dividedList(
+						h,
+						{ as: "ul", bordered: false },
 						Arr.map(rows, (row) => connectionRow(h, row, inputs)),
 					),
 	})
@@ -78,7 +88,7 @@ export const connectedClientsSection = (h: H, model: Model, inputs: Inputs): Htm
 			id: "mcp-clients-heading",
 			title: "Connected clients",
 			description: [
-				inputs.isAdmin
+				Policy.has(inputs.grants, "mcp_connections:view_all")
 					? "Clients that members approved with OAuth. Revoking one signs it out right away."
 					: "Clients you approved with OAuth. Revoking signs the client out right away.",
 			],

@@ -5,8 +5,8 @@ import {
 	summarizeCrawls,
 	summarizeReferrals,
 	totalReferrals,
-} from "../../components/analytics/ai/ai-traffic-model"
-import { DEFAULT_TRAFFIC, hasActiveFilters } from "../../components/analytics/filters"
+} from "./ai-traffic-model"
+import { DEFAULT_TRAFFIC, hasActiveFilters } from "./filters"
 import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -32,21 +32,10 @@ import { type FilterKey, Message } from "./message"
 import type { AiCrawlers, Model } from "./model"
 import { filtersOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
-import {
-	aiEmpty,
-	aiPanel,
-	aiProductCard,
-	CARD_SURFACE,
-	contentFormats,
-	crawlerTable,
-	DIALOG_SURFACE,
-	plural,
-	rankingTable,
-} from "./view-ai-parts"
+import { aiEmpty, aiProductCard, contentFormats, crawlerTable, plural, rankingTable } from "./view-ai-parts"
+import { analyticsPanel, CARD_SURFACE, DIALOG_SURFACE } from "./view-panel"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
-
-// `AnalyticsAiTab`: the AI traffic tab.
 
 type H = HtmlBuilder<Message>
 
@@ -98,7 +87,7 @@ const noAiTraffic = (h: H): Html =>
 			emptyMedia(h, { variant: "icon" }, [icon(h, "FaceRobotIcon")]),
 			emptyTitle(h, ["No AI traffic yet"]),
 			emptyDescription(h, [
-				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server’s traces.",
+				"See visits sent by ChatGPT, Claude and other assistants, and which pages AI crawlers read. Visits come from the Maple browser SDK, crawler fetches from your server's traces.",
 			]),
 		]),
 		emptyContent(h, [
@@ -107,7 +96,7 @@ const noAiTraffic = (h: H): Html =>
 	])
 
 const NO_CRAWLS = (h: H): ReadonlyArray<Html | string> => [
-	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server’s traces: HTTP server spans whose ",
+	"AI crawlers fetch pages without running JavaScript, so the browser SDK never sees them. They are counted from your server's traces: HTTP server spans whose ",
 	inlineCode(h, {}, ["user_agent.original"]),
 	" names GPTBot, ClaudeBot, PerplexityBot or another AI fetcher.",
 	hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
@@ -165,7 +154,7 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 								referrals?.get(product.id),
 								crawls?.get(product.id),
 								(index % 3) * 60,
-								model.nowMs,
+								clock,
 							),
 						),
 					),
@@ -202,8 +191,8 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 						onData: (data) => [
 							contentFormats(h, data.formats),
 							data.pages.length === 0
-								? aiPanel(h, { title: "Pages read by AI crawlers" }, [
-										aiEmpty(h, ["No page was served to an AI crawler in this window."]),
+								? analyticsPanel(h, { title: "Pages read by AI crawlers" }, [
+										aiEmpty(h, ["No page was served to an AI crawler in this window"]),
 									])
 								: (breakdownPanel(h, model, crawledPagesCard(model, data), {
 										selectedOf: (key) =>
@@ -221,12 +210,12 @@ export const aiTab = (h: H, model: Model, timeZone: string): Html => {
 const rankingPanel = (h: H, ranks: ReturnType<typeof rankReferrals>): Html => {
 	const options = { title: "Share of AI visits", hint: "Change in share since the previous period" }
 	return ranks.length === 0
-		? aiPanel(h, options, [
+		? analyticsPanel(h, options, [
 				aiEmpty(h, [
 					"No visits from AI assistants in this window. When someone follows a link from ChatGPT, Perplexity, Claude or another assistant, it shows up here.",
 				]),
 			])
-		: aiPanel(h, {
+		: analyticsPanel(h, {
 				...options,
 				expand: {
 					id: "ai-ranking",
@@ -247,8 +236,8 @@ const crawlersPanel = (
 		title: "AI crawlers",
 		hint: "Pages served to each crawler. Error responses are not counted as reads.",
 	}
-	if (data.crawlers.length === 0) return aiPanel(h, options, [aiEmpty(h, NO_CRAWLS(h))])
-	return aiPanel(h, {
+	if (data.crawlers.length === 0) return analyticsPanel(h, options, [aiEmpty(h, NO_CRAWLS(h))])
+	return analyticsPanel(h, {
 		...options,
 		aside:
 			failed > 0
@@ -311,9 +300,10 @@ const aiKpis = (
 	const summaries = referrals === undefined ? [] : [...referrals.values()]
 	const visits = Arr.reduce(summaries, 0, (sum, summary) => sum + summary.visits)
 	const products = Arr.filter(summaries, (summary) => summary.visits > 0).length
-	const spark = summaries.reduce<ReadonlyArray<number>>(
-		(total, summary) => Arr.map(summary.spark, (value, i) => value + (total[i] ?? 0)),
+	const spark = Arr.reduce<(typeof summaries)[number], ReadonlyArray<number>>(
+		summaries,
 		[],
+		(total, summary) => Arr.map(summary.spark, (value, i) => value + (total[i] ?? 0)),
 	)
 	const previousVisits =
 		previousTotals === undefined
@@ -322,9 +312,11 @@ const aiKpis = (
 	const change =
 		previousVisits !== undefined && previousVisits > 0 ? (visits - previousVisits) / previousVisits : null
 	const sessions = dataOf(model.summary)?.sessions
-	const fetches = crawlers?.crawlers.reduce((sum, row) => sum + row.requests, 0) ?? 0
-	const failed = crawlers?.crawlers.reduce((sum, row) => sum + row.failedRequests, 0) ?? 0
-	const pages = crawlers?.formats.reduce((sum, row) => sum + row.pages, 0) ?? 0
+	const fetches =
+		crawlers === undefined ? 0 : Arr.reduce(crawlers.crawlers, 0, (sum, row) => sum + row.requests)
+	const failed =
+		crawlers === undefined ? 0 : Arr.reduce(crawlers.crawlers, 0, (sum, row) => sum + row.failedRequests)
+	const pages = crawlers === undefined ? 0 : Arr.reduce(crawlers.formats, 0, (sum, row) => sum + row.pages)
 	return statRail(h, {}, [
 		statRailItem(h, {
 			eyebrow: "AI visits",
@@ -340,15 +332,16 @@ const aiKpis = (
 		}),
 		statRailItem(h, {
 			eyebrow: "Share of sessions",
-			value: referrals !== undefined && sessions ? formatPercent(visits / sessions) : EMPTY_VALUE,
+			value:
+				referrals !== undefined && sessions !== undefined && sessions > 0
+					? formatPercent(visits / sessions)
+					: EMPTY_VALUE,
 			subline: sessions === undefined ? undefined : `of ${formatNumber(sessions)} sessions`,
-			delay: 60,
 		}),
 		statRailItem(h, {
 			eyebrow: "Pages read by AI",
 			value: crawlers === undefined ? EMPTY_VALUE : formatNumber(pages),
 			subline: crawlers === undefined ? undefined : "Distinct pages served to crawlers",
-			delay: 120,
 		}),
 		statRailItem(h, {
 			eyebrow: "Crawler fetches",
@@ -360,7 +353,6 @@ const aiKpis = (
 					: failed > 0
 						? `${formatNumber(failed)} got an error`
 						: "All served",
-			delay: 180,
 		}),
 	])
 }

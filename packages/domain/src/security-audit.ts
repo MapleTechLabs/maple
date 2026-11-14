@@ -2,9 +2,17 @@
  * Identifiers and states of the scheduled security audit: a target (one repository branch the org
  * audits), its runs, and the findings followed across runs.
  */
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 
 export { executionModeLine, type ExecutionProfile } from "@maple/security-audit/ecosystems"
+import {
+	Profile as SecurityAuditProfile,
+	Severity as SecurityAuditSeverity,
+	Verdict as SecurityAuditVerdict,
+} from "@maple/security-audit/schema"
+
+export { SecurityAuditProfile, SecurityAuditSeverity, SecurityAuditVerdict }
+export { isSafeScopePath } from "@maple/security-audit/scope-path"
 
 export const SecurityAuditTargetId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/SecurityAuditTargetId"),
@@ -19,20 +27,11 @@ export const SecurityAuditRunId = Schema.String.check(Schema.isNonEmpty()).pipe(
 )
 export type SecurityAuditRunId = Schema.Schema.Type<typeof SecurityAuditRunId>
 
-export const SecurityAuditProfile = Schema.Literals(["quick", "standard", "deep"])
-export type SecurityAuditProfile = typeof SecurityAuditProfile.Type
-
 export const SecurityAuditRunKind = Schema.Literals(["baseline", "slice", "revalidation", "manual"])
 export type SecurityAuditRunKind = typeof SecurityAuditRunKind.Type
 
 export const SecurityAuditRunStatus = Schema.Literals(["in_progress", "complete", "incomplete", "failed"])
 export type SecurityAuditRunStatus = typeof SecurityAuditRunStatus.Type
-
-export const SecurityAuditVerdict = Schema.Literals(["confirmed", "needs_validation", "rejected"])
-export type SecurityAuditVerdict = typeof SecurityAuditVerdict.Type
-
-export const SecurityAuditSeverity = Schema.Literals(["informational", "low", "medium", "high", "critical"])
-export type SecurityAuditSeverity = typeof SecurityAuditSeverity.Type
 
 /** A finding's lifecycle on its target; only `fixed` reopens when the fingerprint comes back. */
 export const SecurityAuditFindingStatus = Schema.Literals(["open", "fixed", "dismissed", "accepted_risk"])
@@ -64,6 +63,9 @@ export const ORG_NO_AI_CREDITS = "org_no_ai_credits"
 /** Why a run ends incomplete when the org reaches its monthly spend limit mid-run. */
 export const ORG_SPEND_LIMIT_REACHED = "org_spend_limit_reached"
 
+/** Why a run ends incomplete when the org's audit spend could not be read (billing unreachable). */
+export const ORG_BUDGET_UNAVAILABLE = "org_budget_unavailable"
+
 /** The UTC month containing `epochMs`: when an org's audit spend started counting, and when it resets. */
 export const securityAuditSpendWindow = (
 	epochMs: number,
@@ -78,7 +80,9 @@ export const securityAuditSpendWindow = (
 /**
  * The models an org may pick for its audits, as OpenRouter ids. `eu` marks a model the EU instance
  * serves; there, a pick without it runs on the region's default. `verifies` is false for a model
- * that refused verifier prompts in the phase 0 eval.
+ * that refused verifier prompts in the phase 0 eval. `inputUsd` and `outputUsd` are OpenRouter's
+ * list prices per million tokens; `intelligenceIndex` is the public benchmark score named by
+ * `SECURITY_AUDIT_INTELLIGENCE_SOURCE` (both checked 2026-11-12).
  */
 export const SECURITY_AUDIT_MODELS = [
 	{
@@ -87,6 +91,9 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "DeepSeek",
 		eu: false,
 		verifies: true,
+		inputUsd: 0.15,
+		outputUsd: 0.6,
+		intelligenceIndex: 29,
 	},
 	{
 		id: "anthropic/claude-sonnet-5.5",
@@ -94,6 +101,9 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "Anthropic",
 		eu: true,
 		verifies: true,
+		inputUsd: 2,
+		outputUsd: 10,
+		intelligenceIndex: 42,
 	},
 	{
 		id: "anthropic/claude-haiku-5.5",
@@ -101,9 +111,20 @@ export const SECURITY_AUDIT_MODELS = [
 		provider: "Anthropic",
 		eu: true,
 		verifies: true,
+		inputUsd: 0.1,
+		outputUsd: 0.5,
+		intelligenceIndex: 30,
 	},
-	{ id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", provider: "OpenAI", eu: true, verifies: false },
-	{ id: "openai/gpt-6-luna", label: "GPT-6 Luna", provider: "OpenAI", eu: true, verifies: true },
+	{
+		id: "openai/gpt-6-luna",
+		label: "GPT-6 Luna",
+		provider: "OpenAI",
+		eu: true,
+		verifies: true,
+		inputUsd: 0.1,
+		outputUsd: 0.5,
+		intelligenceIndex: 21,
+	},
 ] as const
 
 export type SecurityAuditModelOption = (typeof SECURITY_AUDIT_MODELS)[number]
@@ -123,32 +144,38 @@ export const SecurityAuditValidationModel = Schema.Literals(
 )
 export type SecurityAuditValidationModel = typeof SecurityAuditValidationModel.Type
 
+/** Upper bounds of levels 1 to 4 on a five-level rating; anything above the last is level 5. */
+type LevelBounds = readonly [number, number, number, number]
+
+/** How many levels a price or intelligence rating has: one per bound, plus the open-ended top. */
+export const SECURITY_AUDIT_RATING_LEVELS = 5
+
+const levelWithin = (bounds: LevelBounds, value: number): number =>
+	Option.getOrElse(
+		Arr.findFirstIndex(bounds, (bound) => value <= bound),
+		() => bounds.length,
+	) + 1
+
+/** Audit agents read far more than they write (about 4.6M input tokens a run), so input weighs 3 to 1. */
+type ListPrice = Readonly<{ inputUsd: number; outputUsd: number }>
+
+/** Blended dollars per million tokens; each step is roughly 3x the last. */
+const PRICE_LEVEL_BOUNDS: LevelBounds = [0.5, 1.5, 5, 15]
+
+/** A model's list price as a level from 1 (cheapest) to 5. */
+export const securityAuditPriceLevel = (model: ListPrice): number =>
+	levelWithin(PRICE_LEVEL_BOUNDS, (3 * model.inputUsd + model.outputUsd) / 4)
+
+/** Where `intelligenceIndex` comes from, as the picker's tooltip names it. */
+export const SECURITY_AUDIT_INTELLIGENCE_SOURCE = "Artificial Analysis Intelligence Index v5.0.1, high effort"
+
+/** Index points, 10 per level; the leaderboard tops out in the 60s. */
+const INTELLIGENCE_LEVEL_BOUNDS: LevelBounds = [15, 25, 35, 45]
+
+/** A model's public benchmark score as a level from 1 to 5. */
+export const securityAuditIntelligenceLevel = (model: Readonly<{ intelligenceIndex: number }>): number =>
+	levelWithin(INTELLIGENCE_LEVEL_BOUNDS, model.intelligenceIndex)
+
 /** The catalogue entry for an id, or undefined for one the catalogue no longer lists. */
 export const securityAuditModelOption = (id: string): SecurityAuditModelOption | undefined =>
-	SECURITY_AUDIT_MODELS.find((model) => model.id === id)
-
-const PATH_FORBIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u
-const WINDOWS_RESERVED_COMPONENT =
-	/^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu
-
-/**
- * A repository-relative path the engine accepts as a scope path. Mirrors `isSafeRelativePath` in
- * `@maple/security-audit`, which domain cannot import (it pulls in `node:path`).
- */
-export const isSafeScopePath = (value: string): boolean =>
-	value.length > 0 &&
-	Str.trim(value) === value &&
-	!PATH_FORBIDDEN_CHARACTER.test(value) &&
-	!Str.includes("\\")(value) &&
-	!Str.includes(":")(value) &&
-	!Str.startsWith("/")(value) &&
-	!Str.startsWith("~")(value) &&
-	Arr.every(
-		Str.split("/")(value),
-		(segment) =>
-			segment !== "" &&
-			segment !== "." &&
-			segment !== ".." &&
-			!/[ .]$/u.test(segment) &&
-			!WINDOWS_RESERVED_COMPONENT.test(segment),
-	)
+	Option.getOrUndefined(Arr.findFirst(SECURITY_AUDIT_MODELS, (model) => model.id === id))

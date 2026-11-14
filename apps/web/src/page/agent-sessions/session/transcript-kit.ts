@@ -8,8 +8,6 @@ import type { Model } from "./model"
 import { disclosed, messageBody } from "./payload-view"
 import { textHash } from "./transcript-rows"
 
-// The transcript's wiring of `ClampedText`, `MessageBody` and `CopyButton` to the page's Model.
-
 type H = HtmlBuilder<Message>
 
 /** A clamped body whose expansion, measured overflow and markdown parse live in the Model under `textKey`. */
@@ -45,7 +43,7 @@ export const clampedBody = (
 		},
 	})
 
-/** `MessageBody`: the chosen reading of a captured message, clamped. */
+/** The chosen reading of a captured message, clamped. */
 export const messageBodyView = (
 	h: H,
 	model: Model,
@@ -63,7 +61,7 @@ export const messageBodyView = (
 	})
 }
 
-/** `<CopyButton value label>`: the transcript's copies share one status, keyed by what was copied. */
+/** The transcript's copies share one status, keyed by what was copied. */
 export const payloadCopyButton = (
 	h: H,
 	model: Model,

@@ -1,4 +1,9 @@
-import { Duration, Effect, Option, Schema, Array as Arr } from "effect"
+import { pickerStep } from "../../kit/page-time"
+import { applySteps, keyed, type Step as KitStep } from "../../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { reloadSpin } from "@maple/views/data/timing"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { emptyOnFailure } from "../../../data/enrichment"
@@ -11,7 +16,6 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { type PageContext, PageOutMessage, type PageReturn, pickCommands } from "../../contract"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import type { Resources } from "../../../platform/resources"
 import {
 	type BaselineInput,
 	FetchAnomalies,
@@ -24,9 +28,20 @@ import {
 	type OverviewInput,
 	ResolveWindow,
 } from "./command"
-import { commitsKey, displayedServices, healthSummary, isServiceHealth, type Search } from "./derive"
-import { type Facet, Message, type RequestMode } from "./message"
-import { IncidentsData, type Model } from "./model"
+import {
+	commitsKey,
+	displayedServices,
+	healthSummary,
+	isServiceHealth,
+	orderedServices,
+	resolveGroupBy,
+	type Search,
+} from "./derive"
+import { listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
+import { type Facet, Message } from "./message"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
+import type { Model, ServiceRow } from "./model"
+import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../../kit/service-health"
 import {
 	clickedCopySha,
 	commitCardMessage,
@@ -41,16 +56,7 @@ type Return = PageReturn<Model, Message>
 
 /** The list's default window ("12h" lists, `DashboardPage`'s `defaultPreset`). */
 export const DEFAULT_PRESET = "12h"
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-const RELOAD_SPIN = Duration.millis(600)
-
-export const CompleteReloadSpin = Command.define("CompleteServicesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
-
-// REQUESTS
+export const CompleteReloadSpin = reloadSpin("CompleteServicesReloadSpin", Message.CompletedReloadSpin)
 
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -61,7 +67,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-/** `applyGlobalNamespace(input, "top")`: the pin overrides the URL's namespace filters. */
+/** The pin overrides the URL's namespace filters. */
 const withPin = <
 	A extends {
 		readonly namespaces?: ReadonlyArray<string>
@@ -94,28 +100,7 @@ export const overviewInput = (
 		pinnedNamespace,
 	)
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
-
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ patch: {}, commands: [] }),
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-	})
-
-const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: Arr.flatMap(steps, (step) => step.commands),
-})
+type Step = KitStep<Model, Message>
 
 const facetsStep = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Step =>
 	keyed(
@@ -134,7 +119,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		{ rangeStartTime: window.startTime, environments: model.search.environments },
 		context.pinnedNamespace,
 	)
-	return applySteps({ ...model, window }, [
+	return applySteps<Model, Message>({ ...model, window }, [
 		keyed(
 			model.overview,
 			requestKey(org, "getServiceOverview", { data: input }),
@@ -150,7 +135,7 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 			(key) => FetchSparklines({ key, input, refresh: mode === "Refresh" }),
 		),
 		facetsStep(model, context, window, mode),
-		// Reload refreshes the overview, sparklines and facets only (`useRefreshableAtomValue`).
+		// Reload refreshes the overview, sparklines and facets only.
 		keyed(
 			model.baseline,
 			requestKey(org, "getServiceHealthBaseline", { data: baselineInput }),
@@ -160,15 +145,15 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 		),
 		keyed(
 			model.anomalies,
-			requestKey(org, "anomalies.serviceCounts", { status: "open" }),
+			anomaliesKey(org),
 			"Load",
 			(anomalies) => ({ anomalies }),
-			(key) => FetchAnomalies({ key }),
+			(key) => FetchAnomalies({ key, refresh: false }),
 		),
 	])
 }
 
-/** Requests that follow the loaded data: the commit messages of the deploys on screen (`CommitMessagesProvider`). */
+/** Requests that follow the loaded data: the commit messages of the deploys on screen. */
 const followData =
 	(context: PageContext) =>
 	(result: Return): Return => {
@@ -218,9 +203,7 @@ export const summaryOf = (model: Model) => {
 const bumped = <A, E>(model: Model, before: Keyed.Keyed<A, E>, after: Keyed.Keyed<A, E>): number =>
 	before === after ? model.rowRevision : model.rowRevision + 1
 
-// NAVIGATION
-
-/** The row's `goToDetail`: the service in its environment, the window carried. */
+/** A row click: the service in its environment, the window carried. */
 const serviceHref = (model: Model, serviceName: string, environment: string): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -233,6 +216,43 @@ const serviceHref = (model: Model, serviceName: string, environment: string): st
 			},
 		}),
 	)
+
+const openedService = (model: Model, serviceName: string, environment: string): Return => ({
+	model,
+	outMessage: PageOutMessage.RequestedNavigation({
+		url: serviceHref(model, serviceName, environment),
+		isReplace: false,
+	}),
+})
+
+/** The rows the table draws, in its order: what the list keys step over. */
+export const focusableServices = (model: Model, context: PageContext): ReadonlyArray<ServiceRow> => {
+	const overview = AsyncData.getData(model.overview.data)
+	if (Option.isNone(overview)) return []
+	const services = displayedServices(overview.value, summaryOf(model), model.search)
+	return orderedServices(
+		services,
+		resolveGroupBy(model.search.groupBy, services, context.pinnedNamespace !== null),
+	)
+}
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollServicesFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter opens the focused row exactly as a click on it does. */
+const pressedListKey = (model: Model, key: string, context: PageContext): Return => {
+	const rows = focusableServices(model, context)
+	const action = listKeyAction(key, model.focusedIndex, rows.length)
+	if (action._tag === "Focus")
+		return {
+			model: { ...model, focusedIndex: action.index },
+			commands: action.index === null ? [] : [ScrollFocusedRow()],
+		}
+	const row = action._tag === "Open" ? rows[action.index] : undefined
+	return row === undefined ? { model } : openedService(model, row.serviceName, row.environment)
+}
 
 const navigate = (model: Model, search: Search): Return => ({
 	model,
@@ -248,37 +268,8 @@ const EXCLUDED_OF = {
 	commitShas: "excludedCommitShas",
 } as const satisfies Record<Facet, string>
 
-/** `updateFilter`: an empty list leaves the URL. */
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
-/** `toggleOption`: include and exclude are exclusive per value. */
-const toggledFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[EXCLUDED_OF[facet]]: excluded.includes(name)
-			? listOrUndefined(Arr.filter(excluded, (v) => v !== name))
-			: search[EXCLUDED_OF[facet]],
-		[facet]: listOrUndefined(
-			selected.includes(name) ? Arr.filter(selected, (v) => v !== name) : [...selected, name],
-		),
-	}
-}
-
-const excludedFacet = (search: Search, facet: Facet, name: string): Search => {
-	const selected = search[facet] ?? []
-	const excluded = search[EXCLUDED_OF[facet]] ?? []
-	return {
-		...search,
-		[facet]: selected.includes(name)
-			? listOrUndefined(Arr.filter(selected, (v) => v !== name))
-			: search[facet],
-		[EXCLUDED_OF[facet]]: listOrUndefined(
-			excluded.includes(name) ? Arr.filter(excluded, (v) => v !== name) : [...excluded, name],
-		),
-	}
-}
+/** A facet's include param and its excluded twin. */
+const paramsOf = (facet: Facet) => ({ include: facet, exclude: EXCLUDED_OF[facet] })
 
 const windowOnly = (search: Search): Search => ({
 	startTime: search.startTime,
@@ -286,14 +277,7 @@ const windowOnly = (search: Search): Search => ({
 	timePreset: search.timePreset,
 })
 
-// ENTRY POINTS
-
-const loadChartRuntime = () =>
-	Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
+const loadChartRuntime = () => LoadChartRuntime()
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -302,6 +286,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		nowMs: 0,
 		refreshVersion: 0,
 		isReloading: false,
+		focusedIndex: null,
 		overview: Keyed.idle(),
 		sparklines: Keyed.idle(),
 		rowRevision: 0,
@@ -334,14 +319,18 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 /** Back after leaving: the last rows stay on screen while the window re-resolves like entry (snapped). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	// The open-anomalies key never changes, so the window re-resolve alone would keep the parked counts.
-	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
-	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const anomalies = Keyed.request(
+		Keyed.forgetFailure(model.anomalies),
+		anomaliesKey(context.orgId),
+		"Refresh",
+	)
 	const next = {
 		...model,
 		...initOverlays(),
 		search: route.search,
 		refreshVersion: 0,
 		isReloading: false,
+		focusedIndex: null,
 		rowRevision: model.rowRevision + 1,
 		overview: Keyed.forgetFailure(model.overview),
 		sparklines: Keyed.forgetFailure(model.sparklines),
@@ -358,16 +347,15 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		commands: [
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(next, context, "Load"),
-			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey })] : []),
+			...(Option.isSome(anomalies)
+				? [FetchAnomalies({ key: anomaliesKey(context.orgId), refresh: false })]
+				: []),
 			...(model.chartRuntime._tag === "Failed" ? [loadChartRuntime()] : []),
 		],
 	}
 }
 
-/**
- * `servicesRouteAtoms(search)`, warmed on link intent: the facets, overview and sparklines for the
- * snapped window. The atoms pin overview and sparklines before keying ("top"), so the page reuses them.
- */
+/** Warmed on link intent: the facets, overview and sparklines for the snapped window, which the page reuses. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -394,7 +382,8 @@ export const routeChanged = (
 	context: PageContext,
 ): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
-	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1 }
+	// A new search is a new row set: the focus starts over.
+	const next = { ...model, search: route.search, rowRevision: model.rowRevision + 1, focusedIndex: null }
 	// Re-resolves only on a window change; filters and grouping keep the window.
 	if (!isWindowChange(model.search, route.search) && model.window !== null)
 		return followData(context)(requestAll(next, context, model.window, "Load"))
@@ -450,23 +439,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
-		UpdatedIncidents: ({ orgId, incidents }) =>
-			orgId === context.orgId
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Success({ data: incidents }) },
-					})
-				: { model },
-		FailedLoadIncidents: ({ orgId }) =>
-			orgId === context.orgId && AsyncData.isLoading(model.incidents)
-				? followData(context)({
-						model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) },
-					})
-				: { model },
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		UpdatedIncidents: ({ orgId, incidents }) => {
+			const next = receivedIncidents(orgId, context.orgId, incidents)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
+		FailedLoadIncidents: ({ orgId }) => {
+			const next = failedIncidents(model.incidents, orgId, context.orgId)
+			return next === undefined
+				? { model }
+				: followData(context)({ model: { ...model, incidents: next } })
+		},
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -482,12 +467,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedRetryFacets: () =>
 			model.window === null
 				? { model }
-				: applySteps(model, [facetsStep(model, context, model.window, "Refresh")]),
-		ToggledFacetOption: ({ facet, name }) => navigate(model, toggledFacet(model.search, facet, name)),
+				: applySteps<Model, Message>(model, [facetsStep(model, context, model.window, "Refresh")]),
+		ToggledFacetOption: ({ facet, name }) =>
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyFacetOption: ({ facet, name }) =>
-			navigate(model, { ...model.search, [facet]: [name], [EXCLUDED_OF[facet]]: undefined }),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), () => onlyValue(name)),
+			),
 		ClickedExcludeFacetOption: ({ facet, name }) =>
-			navigate(model, excludedFacet(model.search, facet, name)),
+			navigate(
+				model,
+				editFacet(model.search, paramsOf(facet), (lists) => excludedValue(lists, name)),
+			),
 		// Single-select on a multi-select control: the newly ticked value wins, re-unticking clears.
 		ToggledHealthOption: ({ name }) =>
 			navigate(model, {
@@ -499,13 +494,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			navigate(model, { ...windowOnly(model.search), groupBy: model.search.groupBy }),
 		ClickedGroupBy: ({ groupBy }) =>
 			groupBy === model.search.groupBy ? { model } : navigate(model, { ...model.search, groupBy }),
-		ClickedServiceRow: ({ serviceName, environment }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({
-				url: serviceHref(model, serviceName, environment),
-				isReplace: false,
-			}),
-		}),
+		ClickedServiceRow: ({ serviceName, environment }) => openedService(model, serviceName, environment),
+		PressedListKey: ({ key }) => pressedListKey(model, key, context),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ClickedServiceLink: ({ url }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
@@ -540,29 +531,24 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		RemovedFilterChip: ({ param }) => navigate(model, { ...model.search, [param]: undefined }),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOf(
-								AppRoute.Services({
-									search: {
-										...model.search,
-										...TimeRangePicker.searchPatchOf(next.outMessage),
-									},
-								}),
-							),
-							isReplace: false,
-						}),
-					}
+			// Picking a preset drops the absolute bounds from the URL.
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOf(
+							AppRoute.Services({
+								search: {
+									...model.search,
+									...patch,
+								},
+							}),
+						),
+						isReplace: false,
+					}),
+				{ toastRejected: true },
+			)
 		},
 	})

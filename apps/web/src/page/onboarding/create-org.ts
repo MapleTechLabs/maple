@@ -1,9 +1,10 @@
 import { MapleRegion } from "@maple/domain/organization-regions"
-import { Effect, Option, Schema, String as Str } from "effect"
+import { UnauthorizedError } from "@maple/domain/http"
+import { Cause, Effect, Option, Schema, String as Str } from "effect"
 import { Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { suggestOrganizationName } from "../../lib/onboarding-org-name"
-import { currentRegion } from "../../lib/region"
+import { suggestOrganizationName } from "./onboarding-org-name"
+import { currentRegion } from "../../platform/region"
 import {
 	acceptUserInvitation,
 	type ClerkUser,
@@ -12,7 +13,12 @@ import {
 	UserInvitation,
 } from "../../platform/clerk"
 import type { Resources } from "../../platform/resources"
-import { createdTargetOf, createOrganization, openOrganization } from "../../shell/clerk-org-switcher"
+import {
+	createdTargetOf,
+	createOrganization,
+	openOrganization,
+	type OrganizationCreateError,
+} from "../../shell/clerk-org-switcher"
 import { startDitherField } from "@maple/views/ui/dither-field"
 
 // `/org-required`: a signed-in user with no organization names their first one (the name guessed from
@@ -58,8 +64,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMANDS
-
 export const LoadInvitations = Command.define("LoadUserInvitations", {
 	messages: [Message.LoadedInvitations, Message.FailedLoadInvitations],
 	execute: pendingUserInvitations.pipe(
@@ -68,13 +72,25 @@ export const LoadInvitations = Command.define("LoadUserInvitations", {
 	),
 })
 
+export const SIGN_IN_EXPIRED_MESSAGE =
+	"Your sign-in expired before the organization was created. Reload the page to sign in again."
+
+/** A 401 that a fresh token did not fix: another click cannot help, signing in again can. */
+export const createFailureMessage = (error: OrganizationCreateError): string =>
+	Cause.isCause(error.cause) &&
+	Option.exists(Cause.findErrorOption(error.cause), Schema.is(UnauthorizedError))
+		? SIGN_IN_EXPIRED_MESSAGE
+		: error.message
+
 export const CreateOrganization = Command.define("CreateFirstOrganization", {
 	args: { name: Schema.String, region: MapleRegion },
 	messages: [Message.SucceededCreate, Message.FailedCreate],
 	execute: ({ name, region }) =>
 		createOrganization(name, region).pipe(
 			Effect.map((orgId) => Message.SucceededCreate({ orgId })),
-			Effect.catch((error) => Effect.succeed(Message.FailedCreate({ message: error.message }))),
+			Effect.catch((error) =>
+				Effect.succeed(Message.FailedCreate({ message: createFailureMessage(error) })),
+			),
 		),
 })
 
@@ -115,8 +131,6 @@ export const MountDitherField = Mount.define("MountOnboardingDitherField", {
 			(stop) => Effect.sync(stop),
 		).pipe(Effect.as(Message.CompletedMountDitherField())),
 })
-
-// INIT AND UPDATE
 
 type Result = Update.Return<Model, Message, Resources>
 

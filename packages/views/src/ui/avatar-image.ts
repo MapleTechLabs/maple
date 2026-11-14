@@ -7,8 +7,9 @@ const flagAvatarImage = (event: Event): void => {
 }
 
 /**
- * `AvatarImage` drops its `AvatarFallback` once loaded. Foldkit has no stateless load hook, so one
- * capture listener (load/error do not bubble) sets `data-loaded`, and styles.css hides the initials.
+ * An avatar drops its initials fallback once its image loads. Foldkit has no stateless load hook,
+ * so one capture listener (load/error do not bubble) sets `data-loaded`, and styles.css hides the
+ * initials.
  */
 export const trackAvatarImageLoads = (target: Document = document): void => {
 	target.addEventListener("load", flagAvatarImage, true)

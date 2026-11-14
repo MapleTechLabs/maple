@@ -1,27 +1,16 @@
-import { createClerkClient } from "@clerk/backend"
 import { EdgeCacheService } from "@maple/cache"
 import type { VerifiedOrgMembership } from "@maple/auth"
 import { AuthorizationUnavailableError, OrgId, RoleName, type UserId } from "@maple/domain/http"
-import {
-	Array as Arr,
-	Clock,
-	Context,
-	Effect,
-	Layer,
-	Option,
-	Redacted,
-	Schema,
-	Stream,
-	String as Str,
-} from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { clerkModeClient } from "@maple/auth"
 
 export interface OrgMembershipServiceApi {
 	/**
 	 * Is `userId` a member of `orgId`, and with what role?
 	 *
-	 * `Option.none()` is a definite no. A failure is "could not find out" — the
+	 * `Option.none()` is a definite no. A failure is "could not find out": the
 	 * caller must reject the request, never fall back to the credential's own
 	 * organization: a Clerk blip would otherwise render one org's incidents under
 	 * another org's name.
@@ -35,8 +24,8 @@ export interface OrgMembershipServiceApi {
 /**
  * Membership lookups are keyed by **user**, never by (user, org).
  *
- * The org in the key would be attacker-controlled — it arrives in a request
- * header — so a per-pair cache turns the header into a Clerk-request amplifier:
+ * The org in the key would be attacker-controlled (it arrives in a request
+ * header), so a per-pair cache turns the header into a Clerk-request amplifier:
  * rotate the value and every request misses and dials out. Caching the whole
  * membership set per user means header rotation costs zero extra outbound
  * calls, and negative answers come for free.
@@ -48,7 +37,7 @@ export const ORG_MEMBERSHIP_CACHE_BUCKET = "org-membership"
  *
  * **The shared TTL is the revocation lag**: for up to five minutes after being
  * removed from an organization, a user can still select it with the header.
- * That is a deliberate, tunable number and it is strictly tighter than nothing —
+ * That is a deliberate, tunable number and it is strictly tighter than nothing,
  * but it is looser than the token path, where Clerk session tokens last ~60s.
  * If it ever needs to be tighter, lower it; the traffic here is widget refreshes
  * and the extra Clerk volume is small. Do not "fix" it by removing the cache:
@@ -65,7 +54,7 @@ const MEMBERSHIP_CACHE_TTL_SECONDS = 300
 /**
  * Well above the service default (40ms). That deadline's premise is that
  * abandoning a read is cheap because `compute` was going to open a connection
- * anyway — here `compute` is a round-trip to Clerk, which is exactly the case
+ * anyway; here `compute` is a round-trip to Clerk, which is exactly the case
  * `readTimeoutMs` exists for.
  */
 const MEMBERSHIP_CACHE_READ_TIMEOUT_MS = 200
@@ -93,7 +82,7 @@ const membershipMemo = new Map<string, MemoEntry>()
  * Drop one user's memoized memberships. The shared tier is evicted through
  * `edgeCache.invalidate`, but the per-isolate memo answers with zero network
  * and would otherwise keep serving a removed member for up to a minute.
- * Only the isolate that handles the webhook is reached — the shared eviction
+ * Only the isolate that handles the webhook is reached; the shared eviction
  * is what bounds the rest.
  */
 export const forgetMembershipMemo = (userId: UserId): void => {
@@ -140,7 +129,7 @@ export const collectMemberships = Effect.fnUntraced(function* (
 
 	const rows = Arr.flatMap(pages, (page) => page.rows)
 	const truncated = Arr.some(pages, (page) => page.truncated)
-	// A Clerk role Maple does not model must not 500 an unrelated request —
+	// A Clerk role Maple does not model must not 500 an unrelated request:
 	// it simply is not a membership we can act on. Counted so the span says
 	// it happened rather than the count quietly disagreeing with Clerk.
 	const memberships = Arr.getSomes(
@@ -165,10 +154,7 @@ const make = Effect.gen(function* () {
 	const env = yield* Env
 	const edgeCache = yield* EdgeCacheService
 
-	const clerk =
-		Str.toLowerCase(env.MAPLE_AUTH_MODE) === "clerk" && Option.isSome(env.CLERK_SECRET_KEY)
-			? createClerkClient({ secretKey: Redacted.value(env.CLERK_SECRET_KEY.value) })
-			: null
+	const clerk = clerkModeClient(env) ?? null
 
 	const listFromClerk = (userId: UserId) =>
 		collectMemberships((offset) => {
@@ -233,7 +219,7 @@ const make = Effect.gen(function* () {
 		).pipe(Effect.mapError(unavailable))
 
 		const membership = response.data[0]
-		if (!membership) return Option.none<VerifiedOrgMembership>()
+		if (membership === undefined) return Option.none<VerifiedOrgMembership>()
 		const role = decodeRoleNameOption(membership.role)
 		return Option.map(role, (value): VerifiedOrgMembership => ({ orgId, role: value }))
 	})
@@ -241,8 +227,8 @@ const make = Effect.gen(function* () {
 	const verify = Effect.fn("OrgMembershipService.verify")(function* (userId: UserId, orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan({ "tenant.userId": userId, "tenant.requestedOrgId": orgId })
 		const { memberships, truncated } = yield* load(userId)
-		const found = memberships.find((membership) => membership.orgId === orgId)
-		if (found) return Option.some<VerifiedOrgMembership>(found)
+		const found = Arr.findFirst(memberships, (membership) => membership.orgId === orgId)
+		if (Option.isSome(found)) return Option.some<VerifiedOrgMembership>(found.value)
 		if (!truncated) return Option.none<VerifiedOrgMembership>()
 		return yield* verifyPair(userId, orgId)
 	})

@@ -4,7 +4,6 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
-		".": "./src/index.ts",
 		"./acm": "./src/aws/acm-dns-validation.ts",
 		"./aws": "./src/aws/index.ts",
 		"./cached-recoverable": "./src/cloudflare/cached-recoverable.ts",
@@ -13,6 +12,7 @@
 		"./dev-urls": "./src/dev-urls.ts",
 		"./env": "./src/env.ts",
 		"./isolate-age": "./src/cloudflare/isolate-age.ts",
+		"./profile": "./src/profile.ts",
 		"./r2-credentials": "./src/cloudflare/r2-credentials.ts",
 		"./security-baseline": "./src/aws/security-baseline.ts",
 		"./worker-build": "./src/cloudflare/worker-build.ts",

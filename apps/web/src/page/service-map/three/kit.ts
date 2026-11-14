@@ -1,5 +1,5 @@
-import { createSketch, type Sketch } from "../../../components/service-map/three/maple-scenery-sketch"
-import { FACE_TONE } from "../../../components/service-map/three/palette"
+import { createSketch, type Sketch } from "./maple-scenery-sketch"
+import { FACE_TONE } from "./palette"
 import * as THREE from "three"
 import { Array as Arr } from "effect"
 
@@ -20,16 +20,22 @@ export interface Transform {
 /** A live flag a frame callback reads: `running` props become getters, so a pause needs no rebuild. */
 export type Running = () => boolean
 
-/** Per-frame work, as R3F's `useFrame((_, delta) => ...)`. */
 export type FrameCallback = (delta: number) => void
 
 /** What one build of the scene shares: frame callbacks and canvas textures. */
 export interface Scope {
 	readonly frames: Array<FrameCallback>
+	/** Textures this build owns (a belt's route data), freed with it. */
 	readonly textures: Map<string, THREE.Texture>
+	/** Painted textures reused across builds (parcels, buckets, logs). An entity layer passes one
+	 * map shared by all its entities; a lone scope uses its own `textures`. */
+	readonly shared: Map<string, THREE.Texture>
 }
 
-export const makeScope = (): Scope => ({ frames: [], textures: new Map() })
+export const makeScope = (): Scope => {
+	const textures = new Map<string, THREE.Texture>()
+	return { frames: [], textures, shared: textures }
+}
 
 const flatten = (children: ReadonlyArray<Child>): Array<THREE.Object3D> =>
 	Arr.flatMap(children, (child): Array<THREE.Object3D> => {
@@ -38,7 +44,6 @@ const flatten = (children: ReadonlyArray<Child>): Array<THREE.Object3D> =>
 		return flatten(child)
 	})
 
-/** Applies R3F's `position`, `rotation` and `scale` props. */
 export const place = <T extends THREE.Object3D>(object: T, transform: Transform = {}): T => {
 	if (transform.position !== undefined) object.position.set(...transform.position)
 	if (transform.rotation !== undefined) object.rotation.set(...transform.rotation)
@@ -49,7 +54,6 @@ export const place = <T extends THREE.Object3D>(object: T, transform: Transform 
 	return object
 }
 
-/** `<group {...transform}>{children}</group>`. */
 export const group = (transform: Transform, children: ReadonlyArray<Child>): THREE.Group => {
 	const node = place(new THREE.Group(), transform)
 	const objects = flatten(children)
@@ -57,22 +61,36 @@ export const group = (transform: Transform, children: ReadonlyArray<Child>): THR
 	return node
 }
 
-/** Frees every geometry, material and texture under `root`. */
-export const disposeTree = (root: THREE.Object3D): void => {
+// A guard keeps the default generics; a bare `instanceof` narrows to `Mesh<any, any>`.
+const isDrawable = (object: THREE.Object3D): object is THREE.Mesh | THREE.LineSegments =>
+	object instanceof THREE.Mesh || object instanceof THREE.LineSegments
+
+/** Frees a tree's geometry and materials. Textures in `shared` belong to someone longer-lived
+ * (a layer's cache other entities still draw with), so they are left alone. */
+export const disposeTree = (root: THREE.Object3D, shared: ReadonlySet<THREE.Texture> = new Set()): void => {
 	root.traverse((object) => {
-		if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments)) return
+		if (!isDrawable(object)) return
 		object.geometry.dispose()
+		// An instanced mesh also holds per-instance buffers that only its own dispose frees.
+		if (object instanceof THREE.InstancedMesh) object.dispose()
 		const materials: ReadonlyArray<THREE.Material> = Arr.isArray(object.material)
 			? object.material
 			: [object.material]
 		Arr.forEach(materials, (material) => {
-			if (material instanceof THREE.MeshBasicMaterial) material.map?.dispose()
+			const map = material instanceof THREE.MeshBasicMaterial ? material.map : null
+			if (map !== null && !shared.has(map)) map.dispose()
 			material.dispose()
 		})
 	})
 }
 
-// Geometry primitives, as functions.
+/** Frees one build: its tree, its canvas textures, and drops its frame callbacks. */
+export const disposeScope = (scope: Scope, root: THREE.Object3D): void => {
+	disposeTree(root)
+	scope.textures.forEach((texture) => texture.dispose())
+	scope.textures.clear()
+	scope.frames.length = 0
+}
 
 /** Bake the isometric face tones into vertex colors so materials stay unlit. */
 export function shadeFaces(geometry: THREE.BufferGeometry) {
@@ -105,7 +123,7 @@ function seams([w, h, d]: Vec3, cell: number) {
 	return points
 }
 
-/** `<PaperMaterial>`: faces sit a hair behind their outlines so ink never flickers into paper. */
+/** Faces sit a hair behind their outlines so ink never flickers into paper. */
 export const paperMaterial = (color: string) =>
 	new THREE.MeshBasicMaterial({
 		color,
@@ -122,7 +140,6 @@ export const mesh = (
 	transform?: Transform,
 ): THREE.Mesh => place(new THREE.Mesh(geometry, material), transform)
 
-/** `<InkOutline>` */
 export const inkOutline = (geometry: THREE.BufferGeometry, ink: string): THREE.LineSegments =>
 	new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: ink }))
 
@@ -135,12 +152,14 @@ export interface InkBoxProps {
 	readonly cell?: number
 }
 
-/** `<InkBox>` */
 export function inkBox({ size, position = [0, 0, 0], color, ink, cell }: InkBoxProps): THREE.Group {
 	const [w, h, d] = size
 	const faces = shadeFaces(new THREE.BoxGeometry(w, h, d))
 	const edges = new THREE.EdgesGeometry(faces)
-	const points = [...edges.getAttribute("position").array, ...(cell ? seams(size, cell) : [])]
+	const points = [
+		...edges.getAttribute("position").array,
+		...(cell !== undefined && cell > 0 ? seams(size, cell) : []),
+	]
 	edges.dispose()
 	const lines = new THREE.BufferGeometry()
 	lines.setAttribute("position", new THREE.Float32BufferAttribute(points, 3))
@@ -155,7 +174,7 @@ export interface InkSolidProps {
 	readonly ink: string
 }
 
-/** `<InkSolid>`: any solid outlined at its creases. Flat normals per facet. */
+/** Any solid outlined at its creases. Flat normals per facet. */
 export function inkSolid({
 	geometry,
 	position = [0, 0, 0],
@@ -178,7 +197,7 @@ export interface InkPlateProps {
 	readonly ink: string
 }
 
-/** `<InkPlate>`: a flat outlined plate lying on a face, for doors, windows and decals. */
+/** A flat outlined plate lying on a face, for doors, windows and decals. */
 export function inkPlate({ size, position, normal, color, ink }: InkPlateProps): THREE.Group {
 	const rotation: Vec3 =
 		normal === "y" ? [-Math.PI / 2, 0, 0] : normal === "x" ? [0, Math.PI / 2, 0] : [0, 0, 0]
@@ -198,7 +217,7 @@ export function inkPlate({ size, position, normal, color, ink }: InkPlateProps):
 	])
 }
 
-/** `<InkLines>`: free ink strokes as point pairs. */
+/** Free ink strokes as point pairs. */
 export function inkLines(points: ReadonlyArray<number>, ink: string): THREE.LineSegments {
 	const lines = new THREE.BufferGeometry()
 	lines.setAttribute("position", new THREE.Float32BufferAttribute([...points], 3))

@@ -1,5 +1,4 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -27,9 +26,9 @@ import { usageRows, usageTotals } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
-
-// `SourceOverview`.
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { relativeTime } from "../../kit/relative-time"
+import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 type Children = ReadonlyArray<Html | string>
@@ -37,24 +36,21 @@ type Children = ReadonlyArray<Html | string>
 const statCard = (h: H, label: string, value: Html | string, hint: string): Html =>
 	panel(h, { padded: true, className: "gap-1.5" }, [
 		typography(h, { size: "xs", tone: "muted" }, [label]),
-		h.span([h.Class("truncate text-base font-medium")], [value]),
+		typography(h, { size: "base", weight: "medium", truncate: true }, [value]),
 		typography(h, { size: "xs", tone: "muted" }, [hint]),
 	])
 
 const configRow = (h: H, label: string, children: Children): Html =>
-	h.div(
-		[h.Class("flex gap-4 border-t px-4 py-3 text-sm first:border-t-0")],
-		[
-			h.span([h.Class("text-muted-foreground w-44 shrink-0")], [label]),
-			h.div([h.Class("min-w-0 flex-1")], children),
-		],
-	)
+	hstack(h, { gap: "4", align: "stretch", className: "border-t px-4 py-3 text-sm first:border-t-0" }, [
+		h.span([h.Class("text-muted-foreground w-44 shrink-0")], [label]),
+		h.div([h.Class("min-w-0 flex-1")], children),
+	])
 
-const notices = (h: H, source: V2Source, nowMs: number): ReadonlyArray<Html> => [
+const notices = (h: H, source: V2Source, timeZone: string, nowMs: number): ReadonlyArray<Html> => [
 	...(source.status === "paused"
 		? [
 				alert(h, { variant: "warn" }, [
-					alertTitle(h, [pausedLabel(source)]),
+					alertTitle(h, pausedLabel(h, source, timeZone)),
 					alertDescription(
 						h,
 						[
@@ -70,7 +66,10 @@ const notices = (h: H, source: V2Source, nowMs: number): ReadonlyArray<Html> => 
 	...(source.status === "expired" && source.expires_at !== null
 		? [
 				alert(h, {}, [
-					alertTitle(h, [`Expired ${formatRelativeTime(source.expires_at, nowMs)}`]),
+					alertTitle(h, [
+						"Expired ",
+						relativeTime(h, { value: source.expires_at, nowMs, timeZone }),
+					]),
 					alertDescription(
 						h,
 						["Senders are rejected with 401. Set a new expiry in Settings to accept it again."],
@@ -163,22 +162,24 @@ const last24h = (h: H, model: Model): Html => {
 		h,
 		"Last 24h",
 		AsyncData.isFailure(model.usage.data)
-			? h.span([h.Class("text-muted-foreground")], ["Unavailable"])
+			? typography(h, { tone: "muted" }, ["Unavailable"])
 			: Option.match(totals, { onNone: () => skeleton(h, "h-5 w-32"), onSome: volumeSize }),
 		Option.match(totals, { onNone: () => "Stored from this source", onSome: signalCounts }),
 	)
 }
 
-const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
+const rulesSummary = (h: H, source: V2Source, timeZone: string, nowMs: number): Html =>
 	panel(h, {}, [
 		configRow(h, "Signals", [signalsSummary(source.allowed_signals)]),
 		configRow(h, "Rate limit", [rateLimitLabel(source.rate_limit_rps)]),
 		configRow(h, "Expires", [
-			source.expires_at === null ? "Never" : formatRelativeTime(source.expires_at, nowMs),
+			source.expires_at === null
+				? "Never"
+				: relativeTime(h, { value: source.expires_at, nowMs, timeZone }),
 		]),
 		configRow(h, "Resource attributes", [
 			source.resource_attributes.length === 0
-				? h.span([h.Class("text-muted-foreground")], ["None"])
+				? typography(h, { tone: "muted" }, ["None"])
 				: h.div(
 						[h.Class("space-y-1 font-mono text-xs")],
 						Arr.map(source.resource_attributes, (attribute) =>
@@ -187,10 +188,9 @@ const rulesSummary = (h: H, source: V2Source, nowMs: number): Html =>
 								[h.Class("flex flex-wrap gap-x-3")],
 								[
 									h.span([h.Class("break-all")], [attribute.key, " = ", attribute.value]),
-									h.span(
-										[h.Class("text-muted-foreground")],
-										[Str.toLowerCase(MODE_LABELS[attribute.mode])],
-									),
+									typography(h, { tone: "muted" }, [
+										Str.toLowerCase(MODE_LABELS[attribute.mode]),
+									]),
 								],
 							),
 						),
@@ -227,34 +227,34 @@ const resourcesLabel = (source: V2Source): string | null => {
 }
 
 /** What an integration source collects, where its rules table would be: Maple holds the settings. */
-const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number): Html => {
+const collectionSummary = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
 	const signals = storedSignals(model)
 	const resources = resourcesLabel(source)
 	return panel(h, {}, [
-		h.div(
-			[h.Class("flex items-center justify-between gap-4 border-b px-4 py-3")],
-			[
-				typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
-				h.a(
-					[
-						h.Href(sourceHref(source, "connection")),
-						h.Class(
-							hstackClass({
-								gap: "1",
-								inline: true,
-								className: typographyClass({
-									size: "xs",
-									tone: "muted",
-									hoverTone: "foreground",
-								}),
+		hstack(h, { gap: "4", align: "center", justify: "between", className: stripClass("header") }, [
+			typography(h, { size: "sm", weight: "medium" }, ["What Maple collects"]),
+			h.a(
+				[
+					h.Href(sourceHref(source, "connection")),
+					h.Class(
+						hstackClass({
+							gap: "1",
+							inline: true,
+							className: typographyClass({
+								size: "xs",
+								tone: "muted",
+								hoverTone: "foreground",
 							}),
-						),
-					],
-					["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
-				),
-			],
-		),
-		configRow(h, "Connected", [`${viaLabel(source)} · ${formatRelativeTime(source.created_at, nowMs)}`]),
+						}),
+					),
+				],
+				["Manage connection", icon(h, "ArrowRightIcon", { size: 12 })],
+			),
+		]),
+		configRow(h, "Connected", [
+			`${viaLabel(source)} · `,
+			relativeTime(h, { value: source.created_at, nowMs, timeZone }),
+		]),
 		configRow(h, "Collects", [platformMeta(source.platform).description]),
 		...(resources === null ? [] : [configRow(h, "Resources", [resources])]),
 		configRow(h, "Signals", [signals ?? skeleton(h, "h-4 w-32")]),
@@ -263,7 +263,7 @@ const collectionSummary = (h: H, model: Model, source: V2Source, nowMs: number):
 
 export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: string, nowMs: number): Html => {
 	return vstack(h, { gap: "4" }, [
-		...notices(h, source, nowMs),
+		...notices(h, source, timeZone, nowMs),
 		h.div(
 			[h.Class("grid gap-3 sm:grid-cols-3")],
 			[
@@ -280,7 +280,7 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 					integrationPlatformOf(source) === null ? "Last data" : "Last sync",
 					source.health.last_data_at === null
 						? "Never"
-						: formatRelativeTime(source.health.last_data_at, nowMs),
+						: relativeTime(h, { value: source.health.last_data_at, nowMs, timeZone }),
 					hasToken(source) || source.is_default
 						? "Last request the gateway accepted"
 						: "Last successful collection",
@@ -289,7 +289,9 @@ export const overviewTab = (h: H, model: Model, source: V2Source, timeZone: stri
 			],
 		),
 		volumePanel(h, model, timeZone, nowMs),
-		...(hasToken(source) ? [rulesSummary(h, source, nowMs)] : []),
-		...(integrationPlatformOf(source) === null ? [] : [collectionSummary(h, model, source, nowMs)]),
+		...(hasToken(source) ? [rulesSummary(h, source, timeZone, nowMs)] : []),
+		...(integrationPlatformOf(source) === null
+			? []
+			: [collectionSummary(h, model, source, timeZone, nowMs)]),
 	])
 }

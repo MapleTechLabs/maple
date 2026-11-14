@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Schema, Array as Arr } from "effect"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { isoMs } from "./time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The evaluator's own record of a rule, bucketed: what the scheduler observed, not a replay.
 
@@ -80,7 +80,7 @@ export const summaryChecksOf = (
 						: "skipped"
 		const bucketStart = IsoDateTimeString.make(point.bucket)
 		const bucketEnd = IsoDateTimeString.make(
-			new Date(isoMs(point.bucket) + summary.bucketSeconds * 1000).toISOString(),
+			new Date(toEpochMs(point.bucket) + summary.bucketSeconds * 1000).toISOString(),
 		)
 		return new AlertCheckDocument({
 			timestamp: bucketStart,

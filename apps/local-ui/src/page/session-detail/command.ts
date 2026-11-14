@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { cachedAs, readCached, recordCached, withCache } from "../../data/cached"
 import { CH } from "@maple/query-engine"
 import { LOCAL_ORG_ID } from "@maple/query-engine/local"
@@ -9,10 +10,7 @@ import { SessionDetail, SessionTrace, TranscriptEvent } from "./model"
 
 // The session detail queries as Commands.
 
-export const ReadClock = Command.define("ReadSessionDetailClock", {
-	messages: [Message.CompletedReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedReadClock({ nowMs })),
-})
+export const ReadClock = readClock("ReadSessionDetailClock", Message.CompletedReadClock)
 
 /** Finalized metadata for one session (latest ReplacingMergeTree version), or null. */
 export const FetchDetail = Command.define("FetchLocalSessionDetail", {

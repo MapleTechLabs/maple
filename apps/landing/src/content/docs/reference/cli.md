@@ -22,7 +22,7 @@ New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use th
 | [`maple services`](#maple-services) · [`diagnose`](#maple-diagnose-service-name) · [`service-map`](#maple-service-map) · [`top-ops`](#maple-top-ops-service-name) | Services, their health, dependencies and hottest operations  |
 | [`maple traces`](#maple-traces) · [`trace`](#maple-trace-trace-id) · [`slow-traces`](#maple-slow-traces)                                                          | Search spans, inspect one trace, find the slowest            |
 | [`maple errors`](#maple-errors) · [`error`](#maple-error-fingerprint-hash)                                                                                        | Error groups by fingerprint, and one group in detail         |
-| [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns)                                                                                               | Search logs, or cluster them into templates                  |
+| [`maple logs`](#maple-logs) · [`log-patterns`](#maple-log-patterns) · [`log-diff`](#maple-log-diff)                                                               | Search logs, or cluster them into templates                  |
 | [`maple attributes keys`](#maple-attributes-keys) · [`values`](#maple-attributes-values-key)                                                                      | Discover attribute keys and their values                     |
 | [`maple metrics`](#maple-metrics) · [`metrics show`](#maple-metrics-show-metric-name) · [`query`](#maple-query-sql)                                               | List metrics, read one over time, run read-only SQL          |
 | [`maple timeseries`](#maple-timeseries) · [`breakdown`](#maple-breakdown) · [`compare`](#maple-compare)                                                           | Bucketed metrics, top-N breakdowns, two windows side by side |
@@ -41,15 +41,15 @@ Accepted by every command, in any position (`maple --local traces` and `maple tr
 
 Most **query** commands also share a set of filter flags. Which ones apply is listed per command below; the shapes are always the same:
 
-| Flag               | Alias | Default | Description                                                  |
-| ------------------ | ----- | ------- | ------------------------------------------------------------ |
-| `--since <range>`  |       | `6h`    | Relative time range: `30m`, `1h`, `6h`, `24h`, `7d`          |
-| `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC (use with `--end`) |
-| `--end <time>`     |       |         | Absolute end, `YYYY-MM-DD HH:mm:ss` UTC                      |
-| `--service <name>` | `-s`  |         | Filter by service name                                       |
-| `--env <name>`     | `-e`  |         | Filter by deployment environment, e.g. `production`          |
-| `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                    |
-| `--offset <n>`     |       | `0`     | Pagination offset                                            |
+| Flag               | Alias | Default | Description                                                                             |
+| ------------------ | ----- | ------- | --------------------------------------------------------------------------------------- |
+| `--since <range>`  |       | `6h`    | Relative window ending now: a number and `m`, `h`, `d` or `w` (`30m`, `6h`, `7d`, `2w`) |
+| `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC or ISO-8601. Alone, the window runs to now    |
+| `--end <time>`     |       |         | Absolute end, same formats. Alone, the window is `--since` back from it                 |
+| `--service <name>` | `-s`  |         | Filter by service name                                                                  |
+| `--env <name>`     | `-e`  |         | Filter by deployment environment, e.g. `production`                                     |
+| `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                                               |
+| `--offset <n>`     |       | `0`     | Pagination offset                                                                       |
 
 ## Server commands
 
@@ -292,6 +292,14 @@ Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`, `--offset
 
 Cluster logs into templates to surface the noisiest patterns. Flags: `--since` / `--start` / `--end`, `--service`, `--env`, `--severity`, `--search`/`-q`, `--limit`.
 
+### `maple log-diff`
+
+What changed in the logs between two windows: templates that are new, gone, or whose share of the logs at least doubled or halved. A rise in traffic alone flags nothing. Give the windows as `maple compare` does: `--around <time>` (30 minutes on each side) or all four of `--previous-start`, `--previous-end`, `--current-start`, `--current-end`. Also `--service`, `--env`, `--severity`, `--search`/`-q`, `--limit`.
+
+```bash
+maple log-diff --around "2026-09-25 22:00:00" --service checkout
+```
+
 ## Attributes
 
 ### `maple attributes keys`
@@ -393,7 +401,7 @@ maple use remote                                   # optional: stop auto-detecti
 maple services --since 1h
 ```
 
-`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
+`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) that acts with your role in that organization and expires after 90 days. It appears under **Settings → Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
 
 Every query command works in remote mode, `maple query` included. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `delete`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
 

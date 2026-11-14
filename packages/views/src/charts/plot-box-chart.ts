@@ -5,7 +5,7 @@ import type { Message, Model } from "./chart"
 import type { ChartSpec } from "./chart-spec"
 import { plotFrame } from "./plot-frame"
 
-// `CursorPlot` with a `height`: the plot frame in a fixed-height box, the bucket tooltip as its body.
+// The plot frame in a fixed-height box, the bucket tooltip as its body.
 // Embed with `h.submodel`; the card around it is the page's.
 
 export interface PlotBoxChartInputs {

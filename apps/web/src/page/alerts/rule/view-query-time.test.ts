@@ -6,7 +6,7 @@ import { checkTimesOf } from "./view-query-time"
 const NOW = Date.parse("2026-10-22T12:00:00.000Z")
 
 const check = (minutesAgo: number, durationMs: number) =>
-	Schema.decodeUnknownSync(AlertCheckDocument)({
+	Schema.decodeSync(AlertCheckDocument)({
 		timestamp: new Date(NOW - minutesAgo * 60_000).toISOString(),
 		groupKey: "__total__",
 		status: "healthy",

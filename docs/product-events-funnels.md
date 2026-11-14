@@ -1,5 +1,7 @@
 # Product events + funnels: plan
 
+The names Maple itself emits, and how they are identified, are in `product-events-catalog.md`.
+
 Status: **implemented in code (2026-08-17), pending rollout.** Goal: answer "referral → signed
 up → started a plan" for any org (and for Maple itself), from browser, mobile and backend events,
 as a real funnel in the product rather than a hand-written `run_sql`.
@@ -10,7 +12,8 @@ rather than by a separate `drop_web_events` migration.
 
 ## Rollout checklist (operator steps the code cannot do)
 
-1. **Tinybird**: `bun run --cwd apps/api tinybird:deploy` creates `product_events`,
+1. **Tinybird**: `bun run tinybird:deploy start`, then `bun run tinybird:deploy promote` once
+   `bun run tinybird:deploy status` shows it ready, creates `product_events`,
    `identity_links` and their MVs. Then populate both from their sources with an explicit `tb`
    step (the SDK has no populate option; same caveat as 0014). Until populated, page views
    read as zero on managed orgs. Old `web_events`/`web_events_mv` can be removed from the
@@ -26,7 +29,7 @@ rather than by a separate `drop_web_events` migration.
    to set unless the datasource name differs.
 5. Publish `@maple-dev/effect-sdk` / `@maple-dev/browser` so customers' events start carrying
    identity; older builds keep writing (all new columns default).
-6. **Billing**: `bun run --cwd apps/api atmn push` (`scripts/atmn.sh` runs `atmn`
+6. **Billing**: `bun run --cwd apps/api atmn push` (`apps/api/scripts/atmn.sh` runs `atmn`
    through bunx) so the `product_events` feature and its `startup` plan item exist in
    Autumn before the gateway starts reserving against it. Until pushed, Autumn answers
    `allowed: false` for the unknown feature. That is a real denial, not an error, so `is_allowed`'s
@@ -203,7 +206,7 @@ is one row per (visitor,user) pair.
 `web_events` references; the page-view queries move here unchanged):
 
 - `productEventsFunnelQuery({ steps, keyBy: "person" | "visitor" | "user" | "session",
-windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
+  windowSeconds, filters })` → per-step `count`, `conversion_from_prev`, `conversion_from_first`.
   Step = `{ eventName } | { pagePath, host? } | { referrerHost | utmSource | ... }`. A
   session-dimension step (referral) becomes step 0's condition through the person's first
   `session_replays` row; event steps are `EventName = …` conditions on `product_events`.
@@ -390,7 +393,8 @@ lookup.
 
 ### Rollout
 
-1. **Managed**: `bun run --cwd apps/api tinybird:deploy` creates `product_events_traces_mv` and
+1. **Managed**: `bun run tinybird:deploy start`, then `promote` once `status` shows it ready,
+   creates `product_events_traces_mv` and
    adds the two columns, then an explicit `tb` populate from `traces` (bounded by its 30-day TTL).
    Blocked on the same manual step the rest of this document's checklist is (see the
    `project_product_events_tinybird_rollout_pending` note).

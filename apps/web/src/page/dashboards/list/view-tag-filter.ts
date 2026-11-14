@@ -10,8 +10,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// `TagFilterMenu`'s `MultiSelectCombobox` in `mode="trigger"`: the Tags button, and its popup with
-// the tag search, the tag list and "Clear tags".
+// The Tags button, and its popup with the tag search, the tag list and "Clear tags".
 
 type Inputs = Readonly<{ allTags: ReadonlyArray<string> }>
 
@@ -79,7 +78,7 @@ const popup = (
 	listPopup(h, model, {
 		slot: "combobox",
 		items: inputs.allTags,
-		emptyText: "No matching tags",
+		emptyText: "No tags match",
 		anchorSelector: `#${triggerId}`,
 		className: "w-64",
 		renderItem: (tag) => [

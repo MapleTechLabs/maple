@@ -25,11 +25,11 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
 import * as Tabs from "@maple/views/ui/tabs"
 import { type PageContext, PageOutMessage } from "../../contract"
-import { Message as IntegrationMessage } from "../../integrations/message"
+import { Message as IntegrationMessage } from "../../integrations/embed"
 import { ScrollToTop } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { initPage as init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { trailOf } from "./view-trail"
 
@@ -42,7 +42,7 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
-const route = (platform?: "nodejs" | "kubernetes") => ({
+const route = (platform?: "nodejs" | "kubernetes" | "browser") => ({
 	_tag: "SourcesNew" as const,
 	search: platform === undefined ? {} : { platform },
 })
@@ -60,7 +60,7 @@ const indicatorMeasured = () =>
 	)
 
 const created = (lastUsedAt: string | null = null) =>
-	Schema.decodeUnknownSync(V2SourceWithSecret)({
+	Schema.decodeSync(V2SourceWithSecret)({
 		id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000010"),
 		object: "source",
 		name: "Node.js",
@@ -86,6 +86,17 @@ const created = (lastUsedAt: string | null = null) =>
 	})
 
 describe("connect a source", () => {
+	test("a member without sources:manage is told who can connect, not shown the picker", () => {
+		const entered = init(route("nodejs"), context).model
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(entered, Message.CompletedReadGrants({ grants: [] })).model),
+			expectView(text("Only org admins and engineers can connect sources")).toExist(),
+			expectView(role("link", { name: "View sources" })).toHaveAttr("href", "/sources"),
+			expectView(role("textbox")).not.toExist(),
+		)
+	})
+
 	test("the picker reads the integration statuses; a push card sets the platform, an integration card its step", () => {
 		const entered = init(route(), context)
 		expect(names(entered.commands)).toEqual(expect.arrayContaining(STATUS_READS))
@@ -129,6 +140,15 @@ describe("connect a source", () => {
 		const picked = names(routeChanged(back.model, route("kubernetes"), context).commands)
 		expect(picked).toContain("FetchSourcesList")
 		expect(picked).toContain("ScrollSourcesNewToTop")
+	})
+
+	test("a browser source says its token is public", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(init(route("browser"), context).model),
+			expectView(text("Public token")).toExist(),
+			expectView(role("button", { name: "Create source" })).toExist(),
+		)
 	})
 
 	test("an empty name disables Create; a failed create toasts and re-enables it", () => {
@@ -193,7 +213,7 @@ describe("connect a source", () => {
 			given(receiving.model),
 			indicatorMeasured(),
 			expectView(role("link", { name: "Open source" })).toExist(),
-			expectView(role("listitem", { name: "Receiving data" })).toExist(),
+			expectView(role("listitem", { name: "Receiving data (done)" })).toExist(),
 		)
 	})
 
@@ -295,7 +315,7 @@ describe("connect a source", () => {
 			expectView(role("listitem", { current: "step", name: "Connect" })).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "Acme" })).toExist(),
+			expectView(role("listitem", { name: "Acme (done)" })).toExist(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 			click(role("button", { name: "Back" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
@@ -314,7 +334,7 @@ describe("connect a source", () => {
 			IntegrationMessage.CompletedLoadAws({
 				key: entered.model.integrations.statuses.aws.key ?? "",
 				result: Result.succeed(
-					Schema.decodeUnknownSync(V2AwsIntegration)({
+					Schema.decodeSync(V2AwsIntegration)({
 						object: "aws_integration",
 						available: true,
 						modules: [],
@@ -373,7 +393,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(live(status("2026-10-23T08:59:30.000Z"))),
-			expectView(role("listitem", { name: "Live" })).toExist(),
+			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 		)
 	})
 
@@ -388,7 +408,7 @@ describe("connect a source", () => {
 	test("WarpStream finishes once a target is added in this visit, and links to the list", () => {
 		const entered = init(integrationRoute("warpstream"), context).model
 		expect(entered.hasAddedTarget).toBe(false)
-		const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+		const target = Schema.decodeSync(V2ScrapeTarget)({
 			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
 			object: "scrape_target",
 			name: "api.warpstream.com",
@@ -443,7 +463,7 @@ describe("connect a source", () => {
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
-			expectView(role("listitem", { name: "api.warpstream.com" })).toExist(),
+			expectView(role("listitem", { name: "api.warpstream.com (done)" })).toExist(),
 			expectView(role("link", { name: "View sources" })).toExist(),
 		)
 	})

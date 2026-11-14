@@ -3,18 +3,26 @@ import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../query-eng
 import {
 	AlertDeliveryEventId,
 	AlertDestinationId,
+	AlertIncidentEventId,
 	AlertIncidentId,
 	AlertRuleId,
+	AnomalyIncidentId,
+	AlertSilenceId,
 	ChatConnectorId,
 	ChatWorkspaceId,
 	ErrorIssueId,
+	EscalationChainId,
 	IsoDateTimeString,
 	PostgresTransactionId,
 	RoleName,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
+import { AnomalySignalType } from "./anomalies"
+
+import { AlertDeliveryStatus, AlertIncidentLabels, AlertIncidentPageStatus, AlertSeverity } from "../alerts"
+export { AlertDeliveryStatus, AlertIncidentLabels, AlertIncidentPageStatus, AlertSeverity } from "../alerts"
 
 export const AlertDestinationType = Schema.Literals([
 	"pagerduty",
@@ -22,6 +30,8 @@ export const AlertDestinationType = Schema.Literals([
 	"discord",
 	"telegram",
 	"google-chat",
+	"microsoft-teams",
+	"incident-io",
 	"email",
 	"chat",
 	"linear",
@@ -30,12 +40,6 @@ export const AlertDestinationType = Schema.Literals([
 	title: "Alert Destination Type",
 })
 export type AlertDestinationType = Schema.Schema.Type<typeof AlertDestinationType>
-
-export const AlertSeverity = Schema.Literals(["warning", "critical"]).annotate({
-	identifier: "@maple/AlertSeverity",
-	title: "Alert Severity",
-})
-export type AlertSeverity = Schema.Schema.Type<typeof AlertSeverity>
 
 export const AlertSignalType = Schema.Literals([
 	"error_rate",
@@ -47,11 +51,27 @@ export const AlertSignalType = Schema.Literals([
 	"raw_query",
 	/** The hidden rule behind an uptime monitor; managed only through the monitor. */
 	"uptime",
+	/** The hidden burn-rate rule behind an SLO; managed only through the SLO. */
+	"slo_burn_rate",
+	/** Pages on the anomaly detector's open incidents in the rule's scope; it has no query. */
+	"anomaly",
+	/** The hidden rule behind an audit log detection; managed only through the Security hub. */
+	"audit",
 ]).annotate({
 	identifier: "@maple/AlertSignalType",
 	title: "Alert Signal Type",
 })
 export type AlertSignalType = Schema.Schema.Type<typeof AlertSignalType>
+
+/** Signal types whose rule another resource owns: hidden from and refused by the generic rule APIs. */
+export const MANAGED_SIGNAL_TYPES = [
+	"uptime",
+	"slo_burn_rate",
+	"audit",
+] as const satisfies ReadonlyArray<AlertSignalType>
+export type ManagedSignalType = (typeof MANAGED_SIGNAL_TYPES)[number]
+export const isManagedSignalType = (signalType: string): signalType is ManagedSignalType =>
+	Arr.some(MANAGED_SIGNAL_TYPES, (managed) => managed === signalType)
 
 export const AlertGroupByDimension = Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed()).annotate({
 	identifier: "@maple/AlertGroupByDimension",
@@ -127,17 +147,55 @@ export const AlertIncidentHoldReason = Schema.Literals([
 })
 export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
 
-export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
+export const AlertIncidentAckSource = Schema.Literals(["web", "api", "mcp", "slack", "discord"]).annotate({
+	identifier: "@maple/AlertIncidentAckSource",
+	title: "Alert Incident Acknowledgement Source",
+})
+export type AlertIncidentAckSource = Schema.Schema.Type<typeof AlertIncidentAckSource>
+
+/**
+ * The incident activity log. `ack_cleared` is written by the scheduler when an
+ * acknowledged incident escalates to a higher severity and pages again; `paged`
+ * is an escalation step paging a person.
+ */
+export const AlertIncidentEventType = Schema.Literals([
+	"acknowledged",
+	"unacknowledged",
+	"ack_cleared",
+	"paged",
+]).annotate({
+	identifier: "@maple/AlertIncidentEventType",
+	title: "Alert Incident Event Type",
+})
+export type AlertIncidentEventType = Schema.Schema.Type<typeof AlertIncidentEventType>
+
+/** The notifications the public API reports; `acknowledge` stays internal (see AlertEventType). */
+export const AlertNotificationEventType = Schema.Literals([
+	"trigger",
+	"resolve",
+	"renotify",
+	"test",
+]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
 })
-export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
+export type AlertNotificationEventType = Schema.Schema.Type<typeof AlertNotificationEventType>
 
-export const AlertDeliveryStatus = Schema.Literals(["queued", "processing", "success", "failed"]).annotate({
-	identifier: "@maple/AlertDeliveryStatus",
-	title: "Alert Delivery Status",
+/**
+ * Every delivery the queue sends. `acknowledge` (a PagerDuty sync) is kept out of the public API:
+ * shipped clients decode the event type as a closed enum and would fail on a new value.
+ */
+export const AlertEventType = Schema.Literals([
+	...AlertNotificationEventType.literals,
+	"acknowledge",
+]).annotate({
+	identifier: "@maple/AlertDeliveryEventType",
+	title: "Alert Delivery Event Type",
 })
-export type AlertDeliveryStatus = Schema.Schema.Type<typeof AlertDeliveryStatus>
+
+export const isAlertNotificationEventType = (type: AlertEventType): type is AlertNotificationEventType =>
+	type !== "acknowledge"
+export type AlertEventType = Schema.Schema.Type<typeof AlertEventType>
 
 export const AlertEvaluationStatus = Schema.Literals(["breached", "healthy", "skipped"]).annotate({
 	identifier: "@maple/AlertEvaluationStatus",
@@ -221,6 +279,8 @@ export const AlertThreshold = Schema.Struct({
 	/** Null recovers as soon as the trigger stops holding. */
 	recoveryValue: Schema.NullOr(Schema.Number),
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** Escalation chain an incident at this tier starts, on top of its destinations. */
+	escalationChainId: Schema.optionalKey(Schema.NullOr(EscalationChainId)),
 }).annotate({ identifier: "@maple/AlertThreshold", title: "Alert Threshold" })
 export type AlertThreshold = Schema.Schema.Type<typeof AlertThreshold>
 
@@ -329,6 +389,32 @@ export class GoogleChatAlertDestinationConfig extends Schema.Class<GoogleChatAle
 }) {}
 
 /**
+ * A Teams channel's Workflows webhook: the "Post to a channel when a webhook request is received"
+ * flow (`https://….environment.api.powerplatform.com/powerautomate/automations/direct/workflows/…`).
+ */
+export class MicrosoftTeamsAlertDestinationConfig extends Schema.Class<MicrosoftTeamsAlertDestinationConfig>(
+	"MicrosoftTeamsAlertDestinationConfig",
+)({
+	type: Schema.Literal("microsoft-teams"),
+	name: ChannelLabel,
+	/** Write-only: the `sig` query parameter is the credential. */
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/** An incident.io HTTP alert source: its config id (not secret) and its token (write-only). */
+export class IncidentIoAlertDestinationConfig extends Schema.Class<IncidentIoAlertDestinationConfig>(
+	"IncidentIoAlertDestinationConfig",
+)({
+	type: Schema.Literal("incident-io"),
+	name: ChannelLabel,
+	alertSourceConfigId: NonEmptyString,
+	/** The alert source's secret token. Write-only, never returned. */
+	token: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+/**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
  * from the workspace row, never taken from the request — the workspace must belong to the org, and
  * the channel must be one the workspace's connector lists; its name is read from that listing.
@@ -377,6 +463,65 @@ export const parseGoogleChatWebhookUrl = (raw: string): Option.Option<{ readonly
 		}),
 	)
 
+/** `URL.hostname` is already lowercase, so this needs no case folding. */
+const TEAMS_WORKFLOWS_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.environment\.api\.powerplatform\.com$/
+const TEAMS_WORKFLOW_INVOKE_PATH =
+	/^\/powerautomate\/automations\/direct\/workflows\/([A-Za-z0-9]+)\/triggers\/[A-Za-z0-9_]+\/paths\/invoke$/
+
+/**
+ * A Teams Workflows webhook URL. Only the Power Platform host is accepted: Office 365 connector
+ * URLs (`*.webhook.office.com`) were retired in May 2026 and `*.logic.azure.com` flow URLs stopped
+ * triggering on 2025-11-30. The `sig` query parameter is the credential.
+ */
+export const parseTeamsWorkflowWebhookUrl = (raw: string): Option.Option<{ readonly workflowId: string }> =>
+	Option.liftThrowable(() => new URL(Str.trim(raw)))().pipe(
+		Option.flatMap((url) => {
+			const workflow = TEAMS_WORKFLOW_INVOKE_PATH.exec(url.pathname)
+			return url.protocol === "https:" &&
+				url.port === "" &&
+				url.username === "" &&
+				url.password === "" &&
+				TEAMS_WORKFLOWS_HOST.test(url.hostname) &&
+				workflow?.[1] !== undefined &&
+				(url.searchParams.get("sig") ?? "").length > 0
+				? Option.some({ workflowId: workflow[1] })
+				: Option.none()
+		}),
+	)
+
+/** Why a pasted Teams URL is not a Workflows webhook, for the two retired kinds people still have. */
+export const teamsWebhookUrlProblem = (
+	raw: string,
+): "retired-connector" | "retired-logic-apps" | "invalid" | null => {
+	if (Option.isSome(parseTeamsWorkflowWebhookUrl(raw))) return null
+	return Option.match(Option.liftThrowable(() => new URL(Str.trim(raw)))(), {
+		onNone: () => "invalid" as const,
+		onSome: (url) => {
+			const host = url.hostname
+			if (Str.endsWith(".webhook.office.com")(host) || host === "outlook.office.com")
+				return "retired-connector"
+			if (Str.endsWith(".logic.azure.com")(host)) return "retired-logic-apps"
+			return "invalid"
+		},
+	})
+}
+
+/** Why each kind of rejected Teams URL is rejected, shown by the dialog and the API alike. */
+export const TEAMS_WEBHOOK_URL_PROBLEM_MESSAGES = {
+	"retired-connector":
+		'That is an Office 365 connector URL, which Microsoft retired in May 2026. In the Teams channel, create a Workflows webhook ("Post to a channel when a webhook request is received") and paste its URL.',
+	"retired-logic-apps":
+		"That is a logic.azure.com flow URL, which stopped working on 30 November 2025. Open the flow in Power Automate and copy the new URL from its webhook trigger.",
+	invalid:
+		"That isn't a Teams Workflows webhook URL. It is on environment.api.powerplatform.com and ends with a sig parameter; copy it from the channel's Workflows webhook.",
+} as const
+
+/**
+ * incident.io leaves the alert source id's format open, so this only keeps it to what can sit in a
+ * URL path segment as typed: a ULID (`01GW2G3V0S59R238FAHPDS1R66`) today.
+ */
+export const isIncidentIoAlertSourceId = (raw: string): boolean => /^[A-Za-z0-9_-]{1,64}$/.test(Str.trim(raw))
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -404,6 +549,8 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	GoogleChatAlertDestinationConfig,
+	MicrosoftTeamsAlertDestinationConfig,
+	IncidentIoAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	ChatAlertDestinationConfig,
 	LinearAlertDestinationConfig,
@@ -452,6 +599,23 @@ export class UpdateGoogleChatAlertDestinationConfig extends Schema.Class<UpdateG
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateMicrosoftTeamsAlertDestinationConfig extends Schema.Class<UpdateMicrosoftTeamsAlertDestinationConfig>(
+	"UpdateMicrosoftTeamsAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class UpdateIncidentIoAlertDestinationConfig extends Schema.Class<UpdateIncidentIoAlertDestinationConfig>(
+	"UpdateIncidentIoAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	alertSourceConfigId: Schema.optionalKey(Schema.String),
+	token: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailAlertDestinationConfig>(
 	"UpdateEmailAlertDestinationConfig",
 )({
@@ -497,6 +661,14 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("google-chat"),
 		...UpdateGoogleChatAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		...UpdateMicrosoftTeamsAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		...UpdateIncidentIoAlertDestinationConfig.fields,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),
@@ -573,7 +745,7 @@ const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 /** A single rule tag. Free-form, bounded so the list/group UI stays legible. */
 const TagString = Schema.String.check(Schema.isMaxLength(32))
 /** The tags array on a rule — capped to keep grouping and filtering manageable. */
-const RuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
+export const AlertRuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
 
 export const AlertNotificationTemplateOverride = Schema.Struct({
 	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
@@ -647,6 +819,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	 * their own filters.
 	 */
 	environments: Schema.Array(Schema.String),
+	/** Anomaly rules only: the detector signals the rule pages on. Absent or empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
 	/** Free-form tags used to group and filter rules in the alerts list. */
 	tags: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(AlertGroupBy),
@@ -683,7 +857,6 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	slowedIntervalMinutes: Schema.NullOr(AlertEvaluationIntervalMinutes),
 	slowedAt: Schema.NullOr(IsoDateTimeString),
 	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
-	/** Last time the scheduler picked this rule up for evaluation. */
 	lastScheduledAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
@@ -709,7 +882,9 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	environments: Schema.optionalKey(Schema.Array(Schema.String)),
-	tags: Schema.optionalKey(RuleTags),
+	/** Anomaly rules only: the detector signals to page on. Absent or empty means every signal. */
+	anomalySignals: Schema.optionalKey(Schema.Array(AnomalySignalType)),
+	tags: Schema.optionalKey(AlertRuleTags),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
@@ -823,11 +998,16 @@ export class AlertQueryTiming extends Schema.Class<AlertQueryTiming>("AlertQuery
 	fitsIntervalMinutes: Schema.Array(AlertEvaluationIntervalMinutes),
 }) {}
 
+/** Why a raw SQL preview has no series: too heavy to chart, or no time bucket. */
+export const AlertSeriesFailure = Schema.Literals([
+	"query_too_slow",
+	"query_too_much_memory",
+	"not_time_grouped",
+])
+
 /**
- * Evaluator-faithful preview of an alert rule over a time range: the exact
- * per-window observations the scheduler computes (tumbling `windowMinutes`
- * buckets — the live scheduler slides every tick, so `wouldFire` spans are an
- * approximation between bucket boundaries).
+ * Evaluator-faithful preview over a time range, in tumbling `windowMinutes` buckets. The live
+ * scheduler slides every tick, so `wouldFire` spans are approximate between bucket boundaries.
  */
 export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewResponse>(
 	"AlertRulePreviewResponse",
@@ -845,9 +1025,7 @@ export class AlertRulePreviewResponse extends Schema.Class<AlertRulePreviewRespo
 	/** Raw SQL rules only: how long one check takes against each interval's limit. */
 	queryTiming: Schema.optionalKey(AlertQueryTiming),
 	/** Raw SQL rules only: the range was too heavy to chart, or the SQL has no time bucket, so `series` is empty. */
-	seriesFailure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	),
+	seriesFailure: Schema.optionalKey(AlertSeriesFailure),
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({
@@ -875,7 +1053,55 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	/** Set while the incident is open but waiting on telemetry; see {@link AlertIncidentHoldReason}. */
 	holdReason: Schema.NullOr(AlertIncidentHoldReason),
 	heldSince: Schema.NullOr(IsoDateTimeString),
+	/**
+	 * Set while an open incident is acknowledged: reminders pause until it is
+	 * unacknowledged, escalates or resolves. All null otherwise.
+	 */
+	acknowledgedAt: Schema.NullOr(IsoDateTimeString),
+	/** The Maple user who acknowledged; null for an unlinked chat account. */
+	acknowledgedByUserId: Schema.NullOr(UserId),
+	/** Display name of whoever acknowledged, as the source reported it. */
+	acknowledgedByName: Schema.NullOr(Schema.String),
+	acknowledgedVia: Schema.NullOr(AlertIncidentAckSource),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
+	/** Anomaly rules only: the anomaly incident this alert incident pages on. */
+	anomalyIncidentId: Schema.optionalKey(Schema.NullOr(AnomalyIncidentId)),
+	/** What to show as the group when the key is not readable, e.g. an anomaly's "checkout (production)". */
+	groupLabel: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** The service and environment the incident is about; silences match on these first. */
+	labels: Schema.optionalKey(Schema.NullOr(AlertIncidentLabels)),
+	/** The silence that last held back one of this incident's notifications. */
+	silenceId: Schema.NullOr(AlertSilenceId),
+	/** Set while a silenced notification is still owed; cleared once one is sent after the silence. */
+	silencedAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
+/** A person an escalation step paged, on one channel. Never carries the address. */
+export const AlertIncidentPage = Schema.Struct({
+	userId: UserId,
+	/** The member's display name, or null when the directory could not name them. */
+	name: Schema.NullOr(Schema.String),
+	/** `email`, or the chat connector of the direct message (`slack`, `discord`). */
+	channel: Schema.String,
+	status: AlertIncidentPageStatus,
+	/** Why it was not sent, for a `failed` or `skipped` page. */
+	errorMessage: Schema.NullOr(Schema.String),
+})
+export type AlertIncidentPage = Schema.Schema.Type<typeof AlertIncidentPage>
+
+export class AlertIncidentEventDocument extends Schema.Class<AlertIncidentEventDocument>(
+	"AlertIncidentEventDocument",
+)({
+	id: AlertIncidentEventId,
+	incidentId: AlertIncidentId,
+	type: AlertIncidentEventType,
+	actorUserId: Schema.NullOr(UserId),
+	actorName: Schema.NullOr(Schema.String),
+	/** Null for scheduler-written events. */
+	source: Schema.NullOr(AlertIncidentAckSource),
+	/** Set on a `paged` event. */
+	page: Schema.optionalKey(AlertIncidentPage),
+	createdAt: IsoDateTimeString,
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(
@@ -1136,6 +1362,7 @@ export class AlertRuleStoredConfigInvalidError extends HttpTaggedError<AlertRule
 			"notification_template",
 			"query_builder_draft",
 			"thresholds",
+			"audit_filters",
 		]),
 		cause: Schema.Defect(),
 	},
@@ -1165,24 +1392,23 @@ export class AlertIncidentNotFoundError extends HttpTaggedError<AlertIncidentNot
 	},
 ) {}
 
-export type AlertNotFoundError =
-	| AlertRuleNotFoundError
-	| AlertDestinationNotFoundError
-	| AlertIncidentNotFoundError
+/** Only an open incident can be acknowledged or unacknowledged. */
+export class AlertIncidentResolvedError extends HttpTaggedError<AlertIncidentResolvedError>()(
+	"@maple/http/errors/AlertIncidentResolvedError",
+	{ message: Schema.String, incidentId: AlertIncidentId },
+	{
+		status: 409,
+		code: "alert_incident_resolved",
+		title: "Alert incident already resolved",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
 
-// Alert delivery failures are one class per failure mode, discriminated by
-// `_tag`/`catchTags`, for the same reason the warehouse errors are (see the
-// header comment in `warehouse-errors.ts`): `retryable` is derived from the
-// class policy and baked into each endpoint's OpenAPI as a literal, so a
-// `reason` field inside a single class could not change it without the
-// published schema lying.
-//
-// It also matters operationally. Every delivery failure used to be one
-// `AlertDeliveryError` carrying `retry: "backoff"`, and the queue reads
-// `error.error.retryable` to decide whether to re-enqueue — so a destination
-// whose token had been revoked was retried the full `MAX_DELIVERY_ATTEMPTS`
-// against a provider that would never accept it. Splitting the class is what
-// makes "reconfigure the channel" terminal.
+// One class per delivery failure mode: `retryable` comes from the class policy and is
+// baked into each endpoint's OpenAPI as a literal (see `warehouse-errors.ts`). The queue
+// reads `error.error.retryable` to re-enqueue, so a revoked token must be its own terminal class.
 
 const alertDeliveryErrorFields = {
 	message: Schema.String,
@@ -1193,6 +1419,12 @@ const alertDeliveryErrorFields = {
 	providerErrorCode: Schema.optionalKey(Schema.String),
 	cause: Schema.optionalKey(Schema.Defect()),
 }
+
+/** The provider's status and error code reach clients; cause and message stay redacted. */
+const alertDeliveryPublicDetails = {
+	provider_status: "providerStatus",
+	provider_error_code: "providerErrorCode",
+} as const
 
 /** Transient provider failure — timeout, network, 5xx, 429. Worth retrying. */
 export class AlertDeliveryError extends HttpTaggedError<AlertDeliveryError>()(
@@ -1206,6 +1438,7 @@ export class AlertDeliveryError extends HttpTaggedError<AlertDeliveryError>()(
 		retry: "backoff",
 		recovery: "retry",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1221,6 +1454,7 @@ export class AlertDeliveryAuthError extends HttpTaggedError<AlertDeliveryAuthErr
 		retry: "never",
 		recovery: "reconnect",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1240,6 +1474,7 @@ export class AlertDeliveryTargetMissingError extends HttpTaggedError<AlertDelive
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1255,6 +1490,7 @@ export class AlertDeliveryRejectedError extends HttpTaggedError<AlertDeliveryRej
 		retry: "never",
 		recovery: "contact_support",
 		exposure: "redacted",
+		publicDetails: alertDeliveryPublicDetails,
 	},
 ) {}
 
@@ -1280,7 +1516,7 @@ export class AlertDestinationInUseError extends HttpTaggedError<AlertDestination
 		status: 409,
 		code: "alert_destination_in_use",
 		title: "Alert destination is in use",
-		message: "The alert destination is currently used by one or more alert rules.",
+		message: "The alert destination is currently used by one or more alert rules or escalation chains.",
 		retry: "never",
 		recovery: "fix_request",
 		exposure: "redacted",
@@ -1326,12 +1562,3 @@ export class AlertChecksListResponse extends Schema.Class<AlertChecksListRespons
 		checks: Schema.Array(AlertCheckDocument),
 	},
 ) {}
-
-export const ListRuleChecksQuery = Schema.Struct({
-	groupKey: Schema.optionalKey(Schema.String),
-	since: Schema.optionalKey(IsoDateTimeString),
-	until: Schema.optionalKey(IsoDateTimeString),
-	limit: Schema.optionalKey(
-		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2000 })),
-	),
-})

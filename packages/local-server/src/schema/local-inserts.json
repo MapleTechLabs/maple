@@ -1,5 +1,5 @@
 {
-	"projectRevision": "2ae0b96587a57b9e2f7a63bf2e3ac3f10f1f0f38078cdacd04f1177cba388926",
+	"projectRevision": "5059e1601b59566f096b277902cfa023b21cbd0b62e1d9e53a7bb05cc92473f7",
 	"orgPlaceholder": "__ORG__",
 	"datasources": {
 		"traces": {
@@ -86,7 +86,7 @@
 			"selects": [
 				"__ORG__",
 				"timestamp",
-				"timestamp",
+				"CAST(timestamp AS DateTime)",
 				"trace_id",
 				"span_id",
 				"flags",

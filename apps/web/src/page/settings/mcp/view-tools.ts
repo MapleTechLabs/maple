@@ -1,6 +1,6 @@
 import type { McpToolCatalogEntry } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
-import { groupMcpTools, type McpToolGroup } from "../../../components/mcp/mcp-tool-groups"
+import { groupMcpTools, type McpToolGroup } from "../kit/mcp-tool-groups"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -9,15 +9,13 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { searchInput } from "@maple/views/ui/search-input"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { sectionNote, settingsSection } from "../kit/section"
+import { sectionNote, settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
-
-// `McpToolsList`.
 
 type H = HtmlBuilder<Message>
 
@@ -65,7 +63,7 @@ const toolGroup = (h: H, group: McpToolGroup, isOpen: boolean, isShowingAll: boo
 						isOpen && "rotate-90",
 					),
 				}),
-				h.span([h.Class("font-medium")], [group.label]),
+				typography(h, { weight: "medium" }, [group.label]),
 				typography(h, { size: "xs", tone: "muted", numeric: true }, [String(group.tools.length)]),
 			],
 		},
@@ -155,7 +153,7 @@ export const toolsSection = (h: H, model: Model): Html => {
 		},
 		AsyncData.matchData(model.tools, {
 			onEmpty: () => [h.div([h.Class("p-4")], [skeletonList(h, { rows: 6 })])],
-			onFailure: () => [sectionNote(h, "Couldn't load the tool list.")],
+			onFailure: () => [sectionNote(h, "Couldn't load the tool list")],
 			onData: (tools) => catalog(h, model, tools),
 		}),
 	)

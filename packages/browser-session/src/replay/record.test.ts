@@ -1,7 +1,8 @@
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import * as Arr from "effect/Array"
 
 // rrweb touches the DOM at import time in a real browser; here we only need the
 // emit callback and the takeFullSnapshot recovery hook.
@@ -61,7 +62,7 @@ vi.mock("../platform/transport", () => ({
 const { startBufferedRecording, startRecording } = await import("./record")
 const { clearPendingChunk } = await import("../session/pending-chunk")
 const { nextChunkSeq } = await import("../session/session")
-const { gzip, reserveKeepalive } = await import("../platform/transport")
+const { gzip, reserveKeepalive, warnDropped } = await import("../platform/transport")
 
 const CONFIG = {
 	endpoint: "https://ingest.example",
@@ -114,7 +115,7 @@ describe("startRecording", () => {
 		await recorder.flush()
 
 		expect(posted).toHaveLength(1)
-		const chunk = posted[0]!
+		const chunk = Arr.getUnsafe(posted, 0)
 		expect(chunk.meta.isCheckpoint).toBe(true)
 		expect(chunk.meta.eventCount).toBe(2)
 		expect(chunk.meta.durationMs).toBe(1_500)
@@ -160,7 +161,7 @@ describe("startRecording", () => {
 		await recorder.flush()
 
 		expect(posted).toHaveLength(1)
-		expect(posted[0]!.meta.eventCount).toBe(1)
+		expect(Arr.getUnsafe(posted, 0).meta.eventCount).toBe(1)
 		recorder.stop()
 	})
 
@@ -229,7 +230,7 @@ describe("startRecording", () => {
 			expect(cancelIdleCallback).toHaveBeenCalledWith(1)
 
 			// Belt and braces: even a callback the browser ran anyway must not post.
-			idleCallbacks[0]!()
+			Arr.getUnsafe(idleCallbacks, 0)()
 			await vi.advanceTimersByTimeAsync(0)
 			expect(posted).toEqual([])
 		} finally {
@@ -333,17 +334,16 @@ describe("startRecording", () => {
 
 			await nextStart()
 			expect(posted).toHaveLength(1)
-			expect(posted[0]!.meta).toMatchObject({
+			expect(Arr.getUnsafe(posted, 0).meta).toMatchObject({
 				sessionId: "session-1",
 				chunkSeq: 7,
 				isCheckpoint: true,
 				eventCount: 2,
 				durationMs: 1_500,
 			})
-			expect((JSON.parse(posted[0]!.body) as Array<{ type: number }>).map((e) => e.type)).toEqual([
-				FULL_SNAPSHOT,
-				INCREMENTAL,
-			])
+			expect(
+				(JSON.parse(Arr.getUnsafe(posted, 0).body) as Array<{ type: number }>).map((e) => e.type),
+			).toEqual([FULL_SNAPSHOT, INCREMENTAL])
 			expect(stored()).toBeUndefined()
 
 			await nextStart()
@@ -563,7 +563,10 @@ describe("startBufferedRecording", () => {
 			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 3, durationMs: 500 },
 			{ sessionId: "session-1", chunkSeq: 1, isCheckpoint: true, eventCount: 4, durationMs: 1_000 },
 		])
-		const first = JSON.parse(posted[0]!.body) as Array<{ timestamp: number; data: { href?: string } }>
+		const first = JSON.parse(Arr.getUnsafe(posted, 0).body) as Array<{
+			timestamp: number
+			data: { href?: string }
+		}>
 		expect(first[0]?.timestamp).toBe(31_000)
 		expect(first[0]?.data.href).toBe("https://app.example/?token=REDACTED")
 
@@ -622,6 +625,16 @@ describe("rrweb's own failures", () => {
 		startRecording(CONFIG, "session-1").stop()
 		const handler = recordOptions?.errorHandler
 		expect(typeof handler === "function" && handler(new TypeError("observer failed"))).toBe(true)
+	})
+
+	it("are reported as a recording failure", () => {
+		startRecording(CONFIG, "session-1").stop()
+		const handler = recordOptions?.errorHandler
+		vi.mocked(warnDropped).mockClear()
+		const failure = new TypeError("observer failed")
+
+		expect(typeof handler === "function" && handler(failure)).toBe(true)
+		expect(warnDropped).toHaveBeenCalledWith("replay recording", failure)
 	})
 })
 
@@ -720,6 +733,103 @@ describe("startRecording stream integrity", () => {
 			recorder.stop()
 		},
 	)
+
+	describe("with a chunk still uploading", () => {
+		let answers: Array<(outcome: "accepted" | "failed") => void>
+
+		beforeEach(() => {
+			answers = []
+			vi.mocked(postSessionBlob).mockImplementation(
+				async (
+					_config: unknown,
+					meta: PostedChunk["meta"],
+					bytes: Uint8Array,
+					keepalive?: boolean,
+				) => {
+					posted.push({
+						meta,
+						body: new TextDecoder().decode(bytes),
+						keepalive: keepalive ?? false,
+					})
+					return new Promise((resolve) => answers.push(resolve))
+				},
+			)
+		})
+
+		afterEach(() => {
+			vi.mocked(postSessionBlob).mockImplementation(
+				async (
+					_config: unknown,
+					meta: PostedChunk["meta"],
+					bytes: Uint8Array,
+					keepalive?: boolean,
+				) => {
+					posted.push({
+						meta,
+						body: new TextDecoder().decode(bytes),
+						keepalive: keepalive ?? false,
+					})
+					return outcomes.shift() ?? "accepted"
+				},
+			)
+		})
+
+		it("cuts no later chunk, so one that loses its snapshot sends nothing built on it", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			takeFullSnapshot.mockImplementation(() => snapshot(Date.now()))
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted).toHaveLength(1)
+
+			// These patch the snapshot that is still uploading.
+			emitRef!(incremental(2_000))
+			const second = recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted).toHaveLength(1)
+
+			Arr.getUnsafe(answers, 0)("failed")
+			await second
+			expect(posted).toHaveLength(1)
+
+			// After the backoff the stream reopens at a fresh snapshot.
+			await vi.advanceTimersByTimeAsync(10_000)
+			expect(takeFullSnapshot).toHaveBeenCalledTimes(1)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted.slice(1).flatMap((chunk) => types(chunk))).toEqual([META, FULL_SNAPSHOT])
+			recorder.stop()
+		})
+
+		it("sends the queued chunk once the one before it is accepted", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			emitRef!(incremental(2_000))
+			const second = recorder.flush()
+			Arr.getUnsafe(answers, 0)("accepted")
+			await vi.advanceTimersByTimeAsync(0)
+			expect(posted.map((chunk) => types(chunk))).toEqual([[META, FULL_SNAPSHOT], [INCREMENTAL]])
+			Arr.getUnsafe(answers, 1)("accepted")
+			await second
+			recorder.stop()
+		})
+
+		it("still sends a page-hide flush at once, with keepalive", async () => {
+			const recorder = startRecording(CONFIG, "session-1")
+			snapshot(1_000)
+			void recorder.flush()
+			await vi.advanceTimersByTimeAsync(0)
+			emitRef!(incremental(2_000))
+			void recorder.flush(true)
+			expect(posted.map((chunk) => [chunk.keepalive, types(chunk)])).toEqual([
+				[false, [META, FULL_SNAPSHOT]],
+				[true, [INCREMENTAL]],
+			])
+			recorder.stop()
+		})
+	})
 
 	it("backs off re-snapshots while chunks keep failing", async () => {
 		const recorder = startRecording(CONFIG, "session-1")

@@ -2,8 +2,9 @@
 // arrives (`last_used_at`) and what it refused; an integration's poller reports each tick's outcome
 // (`last_poll_*`, `disconnected_at`). A platform's policy says which of the two shows freshness.
 
+import { Array as Arr, Option } from "effect"
 import { AWS_STREAM_STALE_MS } from "./aws"
-import type { SourcePlatform } from "./primitives"
+import type { SourcePlatform } from "@maple/primitives"
 
 /** Worst first. */
 export const SOURCE_HEALTH_STATUSES = [
@@ -67,6 +68,8 @@ const POLICIES = {
 	// Analytics are polled and Logpush pushes; a grant may only push. Both arrive at the gateway.
 	cloudflare: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
 	railway: { freshness: "poll", staleAfterMs: 30 * MINUTE },
+	// The drains push logs and traces; the poller only reads deployments and checks the drains.
+	vercel: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE, pollReadsData: false },
 	// Log forwarding pushes, metrics are polled; a connector may only forward logs.
 	gcp: { freshness: "data", staleAfterMs: 24 * 60 * MINUTE },
 	// The inventory refreshes hourly; metrics arrive through the managed scrape.
@@ -156,4 +159,7 @@ export const sourceHealth = (source: SourceHealthInput, now: number): SourceHeal
 
 /** Worst first, by `SOURCE_HEALTH_STATUSES`. */
 export const worstSourceStatus = (statuses: ReadonlyArray<SourceHealthStatus>): SourceHealthStatus =>
-	SOURCE_HEALTH_STATUSES.find((status) => statuses.includes(status)) ?? "healthy"
+	Option.getOrElse(
+		Arr.findFirst(SOURCE_HEALTH_STATUSES, (status) => statuses.includes(status)),
+		(): SourceHealthStatus => "healthy",
+	)

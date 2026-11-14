@@ -1,50 +1,30 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, readClock } from "@maple/views/data/timing"
 import { AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { v2CheckToDocument } from "@maple/web-data/alerts/form-utils"
-import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow } from "../../../data/time-range"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { listDeliveries, setRuleEnabled } from "../shared/commands"
+import { listActiveSilences } from "../shared/silences"
+import { readGrants } from "../../../data/session-tenant"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { CheckStatusFilter } from "./model"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 const PAGE_LIMIT = 100
-const RELOAD_SPIN = Duration.millis(600)
+/** The window, 24h by default: snapped on entry, against the real clock on Reload. */
+export const ResolveRuleWindow = resolveWindowCommand(
+	"ResolveAlertRuleWindow",
+	Message.CompletedResolveWindow,
+)
 
-/** `useEffectiveTimeRange(search…, "24h")`: snapped on entry, against the real clock on Reload. */
-export const ResolveRuleWindow = Command.define("ResolveAlertRuleWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ReadDiagnosisClock = readClock("ReadAlertRuleDiagnosisClock", Message.ReadDiagnosisClock)
 
-export const ReadDiagnosisClock = Command.define("ReadAlertRuleDiagnosisClock", {
-	messages: [Message.ReadDiagnosisClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadDiagnosisClock({ nowMs })),
-})
-
-export const CompleteRuleReloadSpin = Command.define("CompleteAlertRuleReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) => Effect.as(Effect.sleep(RELOAD_SPIN), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteRuleReloadSpin = reloadSpin("CompleteAlertRuleReloadSpin", Message.CompletedReloadSpin)
 
 export const FetchRuleDeliveries = Command.define("FetchAlertRuleDeliveries", {
 	args: { key: Schema.String },
@@ -56,7 +36,7 @@ export const FetchRuleDeliveries = Command.define("FetchAlertRuleDeliveries", {
 		),
 })
 
-/** `checksAtomFamily`: the newest page and the window summary, together. */
+/** The newest page and the window summary, together. */
 export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 	args: { key: Schema.String, ruleId: AlertRuleId, since: IsoDateTimeString, until: IsoDateTimeString },
 	messages: [Message.CompletedFetchChecks],
@@ -79,14 +59,10 @@ export const FetchRuleChecks = Command.define("FetchAlertRuleChecks", {
 				nextCursor: response.next_cursor,
 				summary,
 			}
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchChecks({ key, result }))),
 })
 
-/** `handleSelectBucket`: one bucket's checks, bounded; the request number drops stale answers. */
+/** One bucket's checks, bounded; the request number drops stale answers. */
 export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 	args: { request: Schema.Number, ruleId: AlertRuleId, since: IsoDateTimeString, until: IsoDateTimeString },
 	messages: [Message.CompletedFetchBucketChecks],
@@ -98,14 +74,9 @@ export const FetchBucketChecks = Command.define("FetchAlertRuleBucketChecks", {
 				query: { since, until, limit: PAGE_LIMIT },
 			})
 			return Arr.map(page.data, v2CheckToDocument)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchBucketChecks({ request, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchBucketChecks({ request, result }))),
 })
 
-/** `ChecksPanel`'s "Load 100 more". */
 export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 	args: {
 		ruleId: AlertRuleId,
@@ -125,11 +96,7 @@ export const LoadMoreChecks = Command.define("LoadMoreAlertRuleChecks", {
 				query: status === "all" ? query : { ...query, status },
 			})
 			return { checks: Arr.map(page.data, v2CheckToDocument), nextCursor: page.next_cursor }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedLoadMoreChecks({ generation, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedLoadMoreChecks({ generation, result }))),
 })
 
 export const FetchRulePreview = Command.define("FetchAlertRulePreview", {
@@ -160,9 +127,20 @@ export const OpenRuleInvestigation = Command.define("OpenAlertRuleInvestigation"
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
+		}).pipe(settleTo((result) => Message.CompletedOpenInvestigation({ result }))),
+})
+
+export const FetchRuleSilences = Command.define("FetchAlertRuleSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listActiveSilences.pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedOpenInvestigation({ result })),
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
 		),
+})
+
+export const FetchRuleSession = Command.define("FetchAlertRuleSession", {
+	messages: [Message.CompletedFetchSession],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ grants })),
 })

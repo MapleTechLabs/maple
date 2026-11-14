@@ -5,6 +5,7 @@ import { readPackageJsons, type ManifestDeps } from "../internal/manifests.ts"
 import type { LockedPackage, LockfileInput, Relation } from "../types.ts"
 import { LockfileParseError } from "../errors.ts"
 import type { ParserOutput } from "./types.ts"
+import { replaceWith } from "@maple/strings"
 
 interface Specifier {
 	readonly name: string
@@ -29,7 +30,7 @@ const VERSION_LINE = /^ {2}"?version"?:? +"?([^"\s]+)"?\s*$/
 
 /** yarn v1: unindented `"a@^1", a@^1.2:` headers, each followed by an indented `version "1.2.3"`. */
 const parseV1Blocks = (content: string): ReadonlyArray<Block> =>
-	Str.split(/\r?\n/)(content).reduce<Array<Block>>((blocks, line) => {
+	Arr.reduce(Str.split(/\r?\n/)(content), Arr.empty<Block>(), (blocks, line) => {
 		if (line === "" || Str.startsWith("#")(line)) return blocks
 		if (!/^\s/.test(line)) {
 			blocks.push({ specifiers: parseSpecifiers(line), version: undefined })
@@ -41,7 +42,7 @@ const parseV1Blocks = (content: string): ReadonlyArray<Block> =>
 			blocks[blocks.length - 1] = { ...last, version }
 		}
 		return blocks
-	}, [])
+	})
 
 /** Real registry name of a specifier: `alias@npm:real@^1` names `real`; non-registry ranges have none. */
 const registryName = (spec: Specifier): string | undefined => {
@@ -82,7 +83,7 @@ const parseYarnV1 = (blocks: ReadonlyArray<Block>, manifest: ManifestDeps) => {
 
 /** decodeURIComponent throws on stray `%`; this cannot. */
 const percentDecode = (s: string): string =>
-	s.replace(/%([0-9A-Fa-f]{2})/g, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
+	replaceWith(s, /%([0-9A-Fa-f]{2})/g, (_, hex = "") => String.fromCharCode(Number.parseInt(hex, 16)))
 
 /** Berry `resolution`: `name@npm:1.0.0`, an alias, or a patch wrapping one (`name@patch:name@npm%3A1.0.0#...`). */
 const berryRegistryName = (resolution: string): string | undefined => {
@@ -119,8 +120,7 @@ const berryResult = Effect.fn(function* (input: LockfileInput, manifest: Manifes
 
 const v1Result = Effect.fn(function* (input: LockfileInput, manifest: ManifestDeps) {
 	const blocks = parseV1Blocks(input.content)
-	const broken = blocks.find((b) => b.specifiers.length === 0 || b.version === undefined)
-	if (broken !== undefined) {
+	if (Arr.some(blocks, (b) => b.specifiers.length === 0 || b.version === undefined)) {
 		return yield* new LockfileParseError({
 			path: input.path,
 			message: "yarn.lock has an entry without specifiers or version",

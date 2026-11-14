@@ -1582,7 +1582,7 @@ dependencies = [
  "opentelemetry_sdk",
  "proptest",
  "prost",
- "regex",
+ "regex-automata",
  "reqwest",
  "ring",
  "rustls",

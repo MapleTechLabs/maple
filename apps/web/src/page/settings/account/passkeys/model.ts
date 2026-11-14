@@ -4,12 +4,10 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { AccountPasskey, AccountUser } from "../user"
 
-// The Passkeys tab.
-
 export const Model = Schema.Struct({
 	isLoaded: Schema.Boolean,
 	user: Schema.NullOr(AccountUser),
-	/** `isWebAuthnSupported()`: `PublicKeyCredential` on `window`. */
+	/** Whether `PublicKeyCredential` is on `window`. */
 	isSupported: Schema.Boolean,
 	isBusy: Schema.Boolean,
 	rowMenus: Schema.Record(Schema.String, Menu.Model),

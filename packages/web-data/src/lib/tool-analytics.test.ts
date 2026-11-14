@@ -17,7 +17,6 @@ import {
 	toolMetricLabel,
 	toolsTableFooter,
 	toolSeriesColors,
-	toolSeriesMode,
 	type ToolBreakdownRow,
 	type ToolSeriesPoint,
 } from "./tool-analytics"
@@ -31,18 +30,6 @@ const point = (
 	seriesKey: string,
 	over: Partial<typeof EMPTY_MEASURES> = {},
 ): ToolSeriesPoint => ({ bucket, seriesKey, ...measures(over) })
-
-describe("toolSeriesMode", () => {
-	it("splits by tool until a tool is picked, then by model, then not at all", () => {
-		expect(toolSeriesMode(undefined, undefined)).toBe("tools")
-		expect(toolSeriesMode("run_tests", undefined)).toBe("models")
-		expect(toolSeriesMode("run_tests", "claude-opus-5")).toBe("single")
-	})
-
-	it("splits by tool when only a model is picked — the question is still which tool", () => {
-		expect(toolSeriesMode(undefined, "claude-opus-5")).toBe("tools")
-	})
-})
 
 describe("metricValue", () => {
 	const row = measures({ calls: 200, sessions: 12, errors: 10, p50: 1e9, p90: 4e9, p95: 9e9 })

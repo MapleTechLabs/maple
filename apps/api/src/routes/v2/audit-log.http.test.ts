@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import type { AuditLogEntry } from "@maple/backend/services/audit/audit-event"
 import { actorAvatarUrl, actorDisplayName, type ActorProfile } from "./audit-log.http"
 
-const USER = Schema.decodeUnknownSync(UserId)("user_audit_route_test")
+const USER = Schema.decodeSync(UserId)("user_audit_route_test")
 
 const directory = (profile: ActorProfile) => new Map([[USER, profile]])
 const ada: ActorProfile = { name: "Ada Lovelace", imageUrl: "https://img.test/ada.png" }

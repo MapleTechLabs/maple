@@ -19,7 +19,7 @@ export type PageContext = Readonly<{
 	canGoBack: boolean
 }>
 
-/** `rangeFromQuery`: the hash's own `range`, else the viewer's last pick. */
+/** The hash's own `range`, else the viewer's last pick. */
 export const rangeOf = (context: PageContext): string => {
 	const fromUrl = queryOf(context.location).get("range")
 	return isRangeKey(fromUrl) ? fromUrl : context.rememberedRange
@@ -27,7 +27,7 @@ export const rangeOf = (context: PageContext): string => {
 
 /** A page never touches the URL or the root; it asks with one of these. */
 export const PageOutMessage = defineMessageUnion({
-	/** `navigate(path, query, { replace })`. */
+	/** Navigate to a hash, replacing the current history entry or pushing a new one. */
 	RequestedNavigation: { hash: Schema.String, isReplace: Schema.Boolean },
 	/** `goBack(listPath, query)`: history back when in-app history exists, else to the list. */
 	RequestedBack: { fallbackHash: Schema.String },
@@ -40,7 +40,7 @@ export const PageOutMessage = defineMessageUnion({
 	 * server and marks the signal presence stale, so the next empty state reads it again.
 	 */
 	RefetchedInPlace: {},
-	/** `PageShell`'s Filters button below `md`: the root opens the drawer around the page's rail. */
+	/** The page shell's Filters button below `md`: the root opens the drawer around the page's rail. */
 	RequestedFilterDrawer: {},
 })
 export type PageOutMessage = typeof PageOutMessage.Type
@@ -48,14 +48,14 @@ export type PageOutMessage = typeof PageOutMessage.Type
 /** A list value repeats its key (`attrs=a&attrs=b`); empty, null or undefined removes it. */
 export type ParamUpdates = Readonly<Record<string, string | ReadonlyArray<string> | null | undefined>>
 
-/** `setParams` (lib/router.ts `useQueryParams`): same path, keys set or (empty) removed. */
+/** Same path, keys set or (empty) removed. */
 export const withParams = (location: Location, updates: ParamUpdates): string => {
 	const next = queryOf(location)
 	Arr.forEach(Rec.toEntries(updates), ([key, value]) => {
 		next.delete(key)
 		if (typeof value === "string") {
 			if (value !== "") next.set(key, value)
-		} else value?.forEach((entry) => next.append(key, entry))
+		} else if (value) Arr.forEach(value, (entry) => next.append(key, entry))
 	})
 	const search = next.toString()
 	return `#${location.path}${search ? `?${search}` : ""}`

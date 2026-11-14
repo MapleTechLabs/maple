@@ -1,11 +1,11 @@
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { readEffectiveTimeZone, readSelectedTimeZone } from "../platform/time-zone"
-import { presetLabel } from "../page/kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import * as TimeRangePicker from "../page/kit/time-range-picker"
 import { kbd } from "@maple/views/ui/display"
@@ -49,7 +49,7 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	effectiveTimeZone: readEffectiveTimeZone,
 })
 
-/** `relativeToAbsolute` at `nowMs` in the zone, with the preset it came from. */
+/** A preset resolved at `nowMs` in the zone, with the preset it came from. */
 const rangeOf = (presetValue: string, nowMs: number, timeZone: string): Range | null => {
 	const resolved = resolveRelativeRangeToWarehouse(presetValue, nowMs, timeZone)
 	return resolved === null ? null : { ...resolved, presetValue }
@@ -66,7 +66,7 @@ const ResolveRange = Command.define("ResolveLabTimeRange", {
 
 type Return = Update.Return<Model, Message>
 
-/** `PRESET_OPTIONS[0]`: the last five minutes. */
+/** The first preset: the last five minutes. */
 export const init = (flags: Flags): Return => ({
 	model: {
 		picker: TimeRangePicker.init("lab-time-range"),
@@ -85,7 +85,7 @@ export const update = (model: Model, message: Message): Return =>
 				Message.GotPickerMessage({ message: child }),
 			)
 			const picker = { ...model, picker: next.model }
-			// `setRange`: a custom range is stored as picked, with no preset.
+			// A custom range is stored as picked, with no preset.
 			if (next.outMessage?._tag === "SelectedCustomRange")
 				return {
 					model: {

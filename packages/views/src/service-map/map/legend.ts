@@ -2,7 +2,7 @@ import {
 	getPlatformColor,
 	getServiceMapNodeColor,
 	type ServiceMapColorMode,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Popover from "../../ui/popover"
 import { pressable } from "../../ui/pressable"
@@ -11,13 +11,13 @@ import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
 import { Array as Arr } from "effect"
 
-// `ServiceMapLegend` (packages/ui `service-map/service-map-canvas.tsx`), with the "+N more"
-// popover listing every service.
+// The service map legend, with the "+N more" popover listing every service.
 
 const LEGEND_PLATFORMS = [
 	["kubernetes", "Kubernetes"],
 	["cloudflare", "Cloudflare"],
 	["gcp", "Google Cloud"],
+	["vercel", "Vercel"],
 	["lambda", "Lambda"],
 	["web", "Web"],
 	["unknown", "Unknown"],
@@ -26,7 +26,7 @@ const LEGEND_PLATFORMS = [
 const swatch = <M>(h: HtmlBuilder<M>, color: string, label: string): Html =>
 	hstack(h, { gap: "1.5" }, [
 		h.div([h.Class("size-2.5 rounded-sm shrink-0"), h.Style({ "background-color": color })]),
-		h.span([h.Class("font-medium")], [label]),
+		typography(h, { weight: "medium" }, [label]),
 	])
 
 const serviceSwatchColor = (service: string) =>
@@ -88,12 +88,14 @@ export const serviceMapLegend = <M>(
 	popover: Popover.Model,
 	toPopover: (message: Popover.Message) => M,
 ): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex flex-wrap items-center gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className:
+				"gap-x-4 gap-y-2 border-t bg-surface-sunken px-3 py-2.5 text-2xs text-muted-foreground shrink-0",
+		},
 		[
 			h.span([h.Class("font-medium max-sm:hidden")], ["Drag nodes to arrange"]),
 			h.span([h.Class("text-foreground-faint max-sm:hidden")], ["·"]),
@@ -109,7 +111,7 @@ export const serviceMapLegend = <M>(
 				: []),
 			...(colorMode === "platform"
 				? [
-						h.span([h.Class("text-foreground-faint")], ["·"]),
+						typography(h, { tone: "faint" }, ["·"]),
 						...Arr.map(LEGEND_PLATFORMS, ([platform, label]) =>
 							swatch(h, getPlatformColor(platform === "unknown" ? undefined : platform), label),
 						),

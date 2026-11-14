@@ -1,5 +1,5 @@
-import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Array as Arr, String as Str } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { DateTime, Effect, Array as Arr, String as Str, Option } from "effect"
 import { compile, compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	getSessionReplayQuery,
@@ -16,14 +16,13 @@ const baseParams = { orgId: OrgId.make("org_1") }
 const sessionParams = { orgId: OrgId.make("org_1"), sessionId: "sess_1" }
 const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 /** The `facetType` literals a facets union emits, the values the sidebar groups rows by. */
-const facetTypes = (sql: string) => Arr.map([...sql.matchAll(/'(\w+)' AS facetType/g)], (m) => m[1])
+const facetTypes = (sql: string) =>
+	Arr.map(Arr.fromIterable(Str.matchAll(/'(\w+)' AS facetType/g)(sql)), (m) => m[1])
 const UTC_WINDOW = {
 	startTime: DateTime.makeUnsafe("2026-06-24T04:00:00Z"),
 	endTime: DateTime.makeUnsafe("2026-06-25T06:00:00Z"),
 }
 
-// sessionTraceSummariesQuery
-//
 // One bar per correlated trace on the session replay timeline. The root span's
 // kind + attributes ride along so the UI can render the canonical HTTP label
 // (`POST /api/foo`) instead of the raw span name (e.g. `HTTP POST`).
@@ -150,8 +149,6 @@ describe("sessionsForTraceQuery", () => {
 	})
 })
 
-// UserId filter (exact match) — list + facets
-//
 // UserId is high-cardinality identity data, so it's an exact-match filter, not a
 // facet branch. On the list it narrows to one user's sessions; on the facets it
 // narrows every dimension's counts (no facet branch is excluded for it).
@@ -323,8 +320,6 @@ describe("getSessionReplayQuery", () => {
 	})
 })
 
-// Session-time filters — duration (stored) + active time (session_events gaps)
-//
 // Guardrail: the default list and the duration-only filter must never touch
 // session_events. Active-time filtering joins the per-session activity aggregate
 // (the only path that scans the events table).
@@ -400,8 +395,6 @@ describe("sessionReplaysListQuery session-time filters", () => {
 	})
 })
 
-// Event refinement — INNER JOIN the distilled session_events match subquery
-//
 // Powers the search_sessions MCP tool's "by what happened inside" filtering.
 // Only an event predicate triggers the join; metadata-only filters (including
 // the web listReplays path) must never read session_events.
@@ -460,8 +453,6 @@ describe("sessionReplaysListQuery event refinement", () => {
 	})
 })
 
-// Session-length distribution + percentiles (facets union)
-//
 // Drives the sidebar's histogram and its "> p50" / "> p95" preset chips. These
 // ride the facets union's existing {name, count, facetType} shape rather than a
 // separate query, so they inherit its filters and its single round-trip.
@@ -481,7 +472,7 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).toContain("quantile(0.5)(assumeNotNull(session_replays.DurationMs))")
 		expect(sql).toContain("quantile(0.95)(assumeNotNull(session_replays.DurationMs))")
-		expect(sql.match(/'durationStat' AS facetType/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/'durationStat' AS facetType/g)(sql))).toHaveLength(2)
 	})
 
 	// ClickHouse rejects a UNION ALL that mixes quantile()'s Float64 with the
@@ -503,7 +494,7 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 		// Only the Version=2 row carries a DurationMs, so this is one row per
 		// finished session — no GROUP BY SessionId needed, and in-progress
 		// sessions (NULL duration) drop out as they do on the list.
-		expect(sql.match(/DurationMs > 0/g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/DurationMs > 0/g)(sql))).toHaveLength(3)
 	})
 
 	it("narrows the distribution by the other facet filters", () => {
@@ -528,8 +519,6 @@ describe("sessionReplaysFacetsQuery duration distribution", () => {
 	})
 })
 
-// Live-ness, keyset paging and visitor scoping
-//
 // The read side used to trust `Status` on its own. It cannot: the SDK writes
 // `"ended"` from an unload handler, so a tab that is killed, crashes or is put
 // to sleep leaves the row saying `"active"` for the rest of its retention.
@@ -585,7 +574,9 @@ describe("sessionReplaysListQuery keyset cursor", () => {
 			}),
 			{ ...baseParams, ...WINDOW },
 		)
-		expect(sql.indexOf("StartTime < '2026-09-01 12:00:00'")).toBeLessThan(sql.indexOf("GROUP BY"))
+		expect(Option.getOrThrow(Str.indexOf("StartTime < '2026-09-01 12:00:00'")(sql))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("GROUP BY")(sql)),
+		)
 	})
 })
 
@@ -663,8 +654,6 @@ describe("page visited filter", () => {
 	})
 })
 
-// Session tags
-//
 // Rule-based tags decided over each session's finalized row (see session-tags.ts).
 // Filtering is a SessionId semi-join, so it rides every list branch unchanged.
 
@@ -680,7 +669,7 @@ describe("session tags", () => {
 	it("ranks bot first, then bounce, idle, glance, and falls back to engaged", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({}), params)
 		const order = Arr.map(["'bot'", "'bounce'", "'idle'", "'glance'", "'engaged'"], (tag) =>
-			sql.indexOf(tag),
+			Option.getOrThrow(Str.indexOf(tag)(sql)),
 		)
 		expect(Arr.every(order, (position) => position > 0)).toBe(true)
 		expect([...order].sort((a, b) => a - b)).toEqual(order)
@@ -695,7 +684,7 @@ describe("session tags", () => {
 
 	it("requires every requested tag through one semi-join over the same window", () => {
 		const { sql } = compileUnsafe(sessionReplaysListQuery({ tags: ["engaged", "signed_in"] }), params)
-		expect(sql.match(/FROM session_replays/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/FROM session_replays/g)(sql))).toHaveLength(2)
 	})
 
 	it("applies no tag predicate when no tags are asked for", () => {
@@ -714,8 +703,10 @@ describe("session tags", () => {
 
 	it("counts sessions per tag in one facet branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({}), params).sql)
-		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
-			Str.includes("'tag' AS facetType")(branch),
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(Str.split("UNION ALL")(sql), (branch) =>
+				Str.includes("'tag' AS facetType")(branch),
+			),
 		)
 		expect(tagBranch).toContain(
 			"arrayJoin(arrayFilter(tag -> tag != '', [t.quality, if(t.signedIn = 1, 'signed_in', ''), if(t.newVisitor = 1, 'new_visitor', '')])) AS name",
@@ -725,7 +716,9 @@ describe("session tags", () => {
 	it("narrows every other facet branch by the selected tags, but not the tag branch", () => {
 		const sql = flat(compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["engaged"] }), params).sql)
 		const branches = Str.split("UNION ALL")(sql)
-		const tagBranch = branches.find((branch) => Str.includes("'tag' AS facetType")(branch))
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(branches, (branch) => Str.includes("'tag' AS facetType")(branch)),
+		)
 		expect(tagBranch).not.toContain("WHERE t.quality = 'engaged'")
 		// Every other branch, including the hand-written error one, is narrowed by it.
 		const narrowed = Arr.filter(branches, (branch) => Str.includes("WHERE t.quality = 'engaged'")(branch))
@@ -736,8 +729,10 @@ describe("session tags", () => {
 		const sql = flat(
 			compileUnionUnsafe(sessionReplaysFacetsQuery({ tags: ["bot", "signed_in"] }), params).sql,
 		)
-		const tagBranch = Str.split("UNION ALL")(sql).find((branch) =>
-			Str.includes("'tag' AS facetType")(branch),
+		const tagBranch = Option.getOrThrow(
+			Arr.findFirst(Str.split("UNION ALL")(sql), (branch) =>
+				Str.includes("'tag' AS facetType")(branch),
+			),
 		)
 		// A tier is counted under the selected traits only: ticking a tier replaces the tier.
 		expect(tagBranch).toContain("if((t.quality != '' AND t.signedIn = 1), t.quality, '')")
@@ -793,9 +788,10 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 				const compiled = yield* compile(sessionReplaysListQuery(opts), { ...baseParams, ...WINDOW })
 				expect(compiled.rowSchemaSource).toBe("derived")
 				const [row] = yield* compiled.decodeRows([listRow])
-				expect(DateTime.formatIso(row!.startTime)).toBe("2026-06-24T04:00:00.123Z")
-				expect(row!.endTime).toBeNull()
-				expect(row!.lastActivityAt && DateTime.formatIso(row!.lastActivityAt)).toBe(
+				assert.isDefined(row)
+				expect(DateTime.formatIso(row.startTime)).toBe("2026-06-24T04:00:00.123Z")
+				expect(row.endTime).toBeNull()
+				expect(row.lastActivityAt && DateTime.formatIso(row.lastActivityAt)).toBe(
 					"2026-06-24T04:05:00.000Z",
 				)
 			}),
@@ -816,7 +812,8 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 					isCheckpoint: 1,
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2026-06-24T04:00:01.500Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2026-06-24T04:00:01.500Z")
 		}),
 	)
 
@@ -830,7 +827,8 @@ describe("session replay rows decode timestamps to DateTime.Utc", () => {
 			const [row] = yield* compiled.decodeRows([
 				{ sessionId: "sess_1", startTime: "2026-06-24 04:00:00.000000000", durationMs: null },
 			])
-			expect(DateTime.toEpochMillis(row!.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.startTime)).toBe(Date.UTC(2026, 5, 24, 4))
 		}),
 	)
 })

@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 /**
  * The Google calls the poller makes, over WebCrypto and `fetch` so they run in a Worker. Nothing
  * here may leak a credential: tokens stay `Redacted`, and a failure carries the HTTP status and
@@ -15,7 +15,7 @@ import {
 	type GcpMetric,
 	type GcpMetricGroup,
 } from "@maple/domain/gcp-metrics"
-import type { GcpConnectorId, GcpProjectId } from "@maple/domain/primitives"
+import type { GcpConnectorId, GcpProjectId } from "@maple/primitives"
 import {
 	Duration,
 	Effect,
@@ -27,6 +27,7 @@ import {
 	String as Str,
 } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { pemToPkcs8, RS256, signJwt } from "@maple/backend/platform/jwt"
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
 const IAM_SCOPE = "https://www.googleapis.com/auth/iam"
@@ -159,34 +160,20 @@ const call = <A>(
 	)
 }
 
-// Maple's service account
-
 const ServiceAccountKey = Schema.Struct({
 	client_email: Schema.String,
 	private_key: Schema.String,
 	private_key_id: Schema.String,
 })
 const decodeServiceAccountKey = Schema.decodeUnknownEffect(Schema.fromJsonString(ServiceAccountKey))
-const encodeJsonSync = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-const pemToPkcs8 = (pem: string): ArrayBuffer => {
-	const der = Buffer.from(Str.replace(/\s+/g, "")(Str.replace(/-----[^-]+-----/g, "")(pem)), "base64")
-	return der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength)
-}
 
 /** `MAPLE_GCP_SERVICE_ACCOUNT_KEY`: the service account's key file, base64-encoded. */
-export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
+export const importServiceAccountKey = (encoded: Redacted.Redacted) =>
 	decodeServiceAccountKey(Buffer.from(Redacted.value(encoded), "base64").toString("utf8")).pipe(
 		Effect.flatMap((key) =>
 			Effect.tryPromise({
 				try: () =>
-					crypto.subtle.importKey(
-						"pkcs8",
-						pemToPkcs8(key.private_key),
-						{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-						false,
-						["sign"],
-					),
+					crypto.subtle.importKey("pkcs8", pemToPkcs8(key.private_key), RS256, false, ["sign"]),
 				catch: () =>
 					new GcpApiError({
 						message: "MAPLE_GCP_SERVICE_ACCOUNT_KEY holds a private key that does not import",
@@ -211,9 +198,6 @@ export const importServiceAccountKey = (encoded: Redacted.Redacted<string>) =>
 		),
 	)
 
-const base64Url = (value: string | ArrayBuffer) =>
-	(typeof value === "string" ? Buffer.from(value, "utf8") : Buffer.from(value)).toString("base64url")
-
 const decodeAccessToken = Schema.decodeUnknownEffect(
 	Schema.Struct({ access_token: Schema.RedactedFromValue(Schema.String) }),
 )
@@ -225,24 +209,26 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 	nowMs: number,
 ) {
 	const issuedAt = Math.floor(nowMs / 1000)
-	const signingInput = Arr.join(
-		Arr.map(
-			[
-				{ alg: "RS256", typ: "JWT", kid: signer.keyId },
-				{
-					iss: signer.clientEmail,
-					scope: IAM_SCOPE,
-					aud: TOKEN_URL,
-					iat: issuedAt,
-					exp: issuedAt + TOKEN_LIFETIME_SECONDS,
-				},
-			],
-			(part) => base64Url(encodeJsonSync(part)),
+	const assertion = yield* signJwt(
+		signer.key,
+		RS256,
+		{ alg: "RS256", typ: "JWT", kid: signer.keyId },
+		{
+			iss: signer.clientEmail,
+			scope: IAM_SCOPE,
+			aud: TOKEN_URL,
+			iat: issuedAt,
+			exp: issuedAt + TOKEN_LIFETIME_SECONDS,
+		},
+	).pipe(
+		Effect.mapError(
+			() =>
+				new GcpApiError({
+					message: "Signing Maple's Google OAuth assertion failed",
+					api: "Google OAuth",
+					kind: "invalid",
+				}),
 		),
-		".",
-	)
-	const signature = yield* Effect.promise(() =>
-		crypto.subtle.sign("RSASSA-PKCS1-v1_5", signer.key, new TextEncoder().encode(signingInput)),
 	)
 	const response = yield* call(
 		httpClient,
@@ -250,7 +236,7 @@ export const fetchMapleAccessToken = Effect.fnUntraced(function* (
 		HttpClientRequest.post(TOKEN_URL).pipe(
 			HttpClientRequest.bodyUrlParams({
 				grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-				assertion: `${signingInput}.${base64Url(signature)}`,
+				assertion,
 			}),
 		),
 		decodeAccessToken,
@@ -264,7 +250,7 @@ const decodeImpersonatedToken = Schema.decodeUnknownEffect(
 
 /** A connector's reader account, signed in. Its project pays the quota for what it reads. */
 export interface GcpReader {
-	readonly accessToken: Redacted.Redacted<string>
+	readonly accessToken: Redacted.Redacted
 	readonly quotaProject: GcpProjectId
 }
 
@@ -281,7 +267,7 @@ const asReader = (reader: GcpReader) => (request: HttpClientRequest.HttpClientRe
  */
 export const impersonateReader = Effect.fnUntraced(function* (
 	httpClient: HttpClient.HttpClient,
-	mapleToken: Redacted.Redacted<string>,
+	mapleToken: Redacted.Redacted,
 	connector: { readonly id: GcpConnectorId; readonly projectId: GcpProjectId },
 ) {
 	// A project id has nothing to encode; encoding keeps any other stored value inside the path.
@@ -305,8 +291,6 @@ export const impersonateReader = Effect.fnUntraced(function* (
 	)
 	return { accessToken: response.accessToken, quotaProject: connector.projectId } satisfies GcpReader
 })
-
-// Cloud Monitoring
 
 const BucketOptions = Schema.Struct({
 	linearBuckets: Schema.optionalKey(
@@ -411,8 +395,6 @@ export const listTimeSeriesPage = (
 		),
 		decodeTimeSeriesPage,
 	)
-
-// Cloud Asset Inventory
 
 const ResourceSearchResult = Schema.Struct({
 	/** Full resource name, e.g. `//run.googleapis.com/projects/p/locations/l/services/s`. */

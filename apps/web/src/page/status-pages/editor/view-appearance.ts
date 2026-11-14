@@ -10,35 +10,42 @@ import { previewSnapshot } from "@maple/status-page"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { colorInput } from "@maple/views/ui/color-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { heading } from "@maple/views/ui/heading"
-import { settingsSection } from "../../settings/kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { selectField, textField } from "../shared/fields"
 import {
 	type SettingsForm,
 	THEME_OVERRIDE_FIELDS,
 	type ThemeColorField,
 	type ThemeForm,
+	settingsIssues,
 	themeColorIssues,
 	themeContrastOf,
 	themeOf,
 } from "../shared/form"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { isoMs } from "../../alerts/shared/time"
+import { pageUrlOf } from "./update-domain"
+import { canManage, type Model } from "./model"
+import { monitorStatusOf } from "../shared/derive"
 import { APPEARANCES, presetCards } from "../shared/look"
 import {
 	daysOf,
 	isListedIncident,
+	previewControls,
 	previewDocument,
+	previewExampleNote,
 	previewFrame,
 	previewTheme,
+	simulatePreview,
 	toSnapshotIncident,
 } from "../shared/preview"
 import { componentsOf, incidentsOf, monitorsOf, statusReadsReady } from "./reads"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The Settings view's Appearance section and the live preview of the public page.
 
@@ -89,40 +96,86 @@ const colorField = (
 	isDisabled: boolean,
 ): Html => {
 	const value = theme[entry.field]
-	const showSwatch = error === null && Str.trim(value) !== "" && !isDisabled
-	return h.div(
-		[h.Class("flex items-end gap-2")],
+	const preset = presetTokens(theme)[entry.token]
+	// The picker opens on the colour in effect: the typed one, or the preset's when the field is empty.
+	const picked = Str.trim(value) === "" ? preset : Str.toLowerCase(Str.trim(value))
+	return hstack(h, { gap: "2", align: "end" }, [
+		textField(h, {
+			id: `status-page-theme-${entry.field}`,
+			label: entry.label,
+			value,
+			placeholder: preset,
+			isMono: true,
+			isDisabled,
+			error,
+			className: "flex-1",
+			onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
+		}),
+		...(error === null && !isDisabled
+			? [
+					colorInput(h, {
+						value: picked,
+						label: `${entry.label} color`,
+						onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
+					}),
+				]
+			: []),
+	])
+}
+
+/** The logos and tab icon: what carries the brand besides the colours. */
+export const brandingSection = (h: H, model: Model, form: SettingsForm): Html => {
+	const issues = settingsIssues(form)
+	const isReadOnly = !canManage(model)
+	return settingsSection(
+		h,
+		{
+			id: "status-page-settings-branding",
+			title: "Branding",
+			description: ["Your logo in the page header and the icon in the browser tab."],
+		},
 		[
-			textField(h, {
-				id: `status-page-theme-${entry.field}`,
-				label: entry.label,
-				value,
-				placeholder: presetTokens(theme)[entry.token],
-				isMono: true,
-				isDisabled,
-				error,
-				className: "flex-1",
-				onInput: (next) => Message.ChangedThemeColor({ field: entry.field, value: next }),
-			}),
-			...(showSwatch
-				? [
-						h.span(
-							[
-								h.AriaHidden(true),
-								h.Class("mb-1.5 size-6 shrink-0 rounded-md border"),
-								h.Style({ backgroundColor: Str.trim(value) }),
-							],
-							[],
-						),
-					]
-				: []),
+			h.div(
+				[h.Class("grid gap-4 sm:grid-cols-2")],
+				[
+					textField(h, {
+						id: "status-page-logo",
+						label: "Logo URL",
+						value: form.logoUrl,
+						placeholder: "https://acme.example/logo.svg",
+						isDisabled: isReadOnly,
+						error: issues.logoUrl,
+						hint: "Also the image when the page is shared.",
+						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
+					}),
+					textField(h, {
+						id: "status-page-logo-dark",
+						label: "Dark mode logo URL",
+						value: form.logoDarkUrl,
+						placeholder: "https://acme.example/logo-dark.svg",
+						isDisabled: isReadOnly,
+						error: issues.logoDarkUrl,
+						hint: "Shown instead of the logo on a dark page.",
+						onInput: (value) => Message.ChangedSetting({ field: "logoDarkUrl", value }),
+					}),
+					textField(h, {
+						id: "status-page-favicon",
+						label: "Favicon URL",
+						value: form.faviconUrl,
+						placeholder: "https://acme.example/favicon.png",
+						isDisabled: isReadOnly,
+						error: issues.faviconUrl,
+						onInput: (value) => Message.ChangedSetting({ field: "faviconUrl", value }),
+					}),
+				],
+			),
 		],
 	)
 }
 
 export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const theme = form.theme
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	const isAuto = theme.appearance === "auto"
 	const issues = themeColorIssues(theme)
 	const contrast = themeContrastOf(theme)
@@ -209,34 +262,19 @@ export const appearanceSection = (h: H, model: Model, form: SettingsForm): Html 
 	)
 }
 
-// PREVIEW
-
 const orNull = (value: string): string | null => (Str.trim(value) === "" ? null : Str.trim(value))
 
 /** The public page as the draft would render it, from the loaded components and incidents. */
 export const settingsDocument = (model: Model, page: V2StatusPage, form: SettingsForm): string => {
-	const nowMs = model.nowMs ?? isoMs(page.updated_at)
+	const nowMs = model.nowMs ?? toEpochMs(page.updated_at)
 	const monitors = monitorsOf(model)
-	const snapshot = previewSnapshot({
-		pageId: page.id,
-		page: {
-			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
-			slug: form.slug,
-			description: orNull(form.description),
-			websiteUrl: orNull(form.websiteUrl),
-			logoUrl: orNull(form.logoUrl),
-			privacyUrl: orNull(form.privacyUrl),
-			termsUrl: orNull(form.termsUrl),
-			showPoweredBy: form.showPoweredBy,
-			theme: previewTheme(themeOf(form.theme), model.previewScheme),
-		},
+	const shown = simulatePreview(model.previewState, {
 		components: Arr.map(componentsOf(model), (component) => ({
 			id: component.id,
 			name: component.name,
 			description: component.description,
 			group: component.group,
-			monitorStatus:
-				monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+			monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 			manualStatus: component.manual_status,
 			showUptime: component.show_uptime,
 			monitored: component.monitor_id !== null,
@@ -248,37 +286,65 @@ export const settingsDocument = (model: Model, page: V2StatusPage, form: Setting
 		),
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: false, selectedIds: [] })
+	const snapshot = previewSnapshot({
+		pageId: page.id,
+		page: {
+			name: Str.trim(form.name) === "" ? page.name : Str.trim(form.name),
+			slug: form.slug,
+			description: orNull(form.description),
+			websiteUrl: orNull(form.websiteUrl),
+			logoUrl: orNull(form.logoUrl),
+			logoDarkUrl: orNull(form.logoDarkUrl),
+			faviconUrl: orNull(form.faviconUrl),
+			supportUrl: orNull(form.supportUrl),
+			privacyUrl: orNull(form.privacyUrl),
+			termsUrl: orNull(form.termsUrl),
+			customDomain: null,
+			visibility: page.visibility,
+			showPoweredBy: form.showPoweredBy,
+			theme: previewTheme(themeOf(form.theme), model.previewScheme),
+		},
+		components: shown.components,
+		incidents: shown.incidents,
+		nowMs,
+	})
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: false,
+		selectedIds: [],
+		publicUrl: pageUrlOf(model, page),
+	})
 }
 
 export const previewPanel = (h: H, model: Model, page: V2StatusPage, form: SettingsForm): Html =>
-	h.section(
+	vstack(
+		h,
+		{
+			gap: "3",
+			shrink: true,
+			as: "section",
+			className: "xl:sticky xl:top-6",
+			attributes: [h.AriaLabelledBy("status-page-preview-title")],
+		},
 		[
-			h.AriaLabelledBy("status-page-preview-title"),
-			h.Class("flex min-w-0 flex-col gap-3 xl:sticky xl:top-6"),
-		],
-		[
-			hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+			hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 				heading(h, { level: 2, variant: "subsection", id: "status-page-preview-title" }, ["Preview"]),
-				...(form.theme.appearance === "auto"
-					? [
-							segmentedSelect(h, {
-								size: "xs",
-								ariaLabel: "Preview mode",
-								value: model.previewScheme,
-								onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-								options: [
-									{ value: "light", label: "Light" },
-									{ value: "dark", label: "Dark" },
-								],
-							}),
-						]
-					: []),
+				previewControls(h, {
+					state: model.previewState,
+					width: model.previewWidth,
+					scheme: form.theme.appearance === "auto" ? model.previewScheme : null,
+					onState: (state) => Message.PickedPreviewState({ state }),
+					onWidth: (width) => Message.PickedPreviewWidth({ width }),
+					onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+				}),
 			]),
+			...previewExampleNote(h, model.previewState),
 			statusReadsReady(model)
 				? previewFrame(h, {
 						title: "Status page preview",
 						document: settingsDocument(model, page, form),
+						width: model.previewWidth,
 						className: "h-[640px]",
 					})
 				: skeleton(h, "h-[640px] w-full"),

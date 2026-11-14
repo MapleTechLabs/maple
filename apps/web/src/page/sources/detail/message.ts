@@ -1,8 +1,9 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { V2Source, V2SourceUsage, V2SourceWithSecret } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -10,15 +11,14 @@ import * as Menu from "@maple/views/ui/menu"
 import { SourceList } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
-import { Message as IntegrationMessage } from "../../integrations/message"
+import { Message as IntegrationMessage } from "../../integrations/embed"
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Number },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchList: { key: Schema.String, result: Schema.Result(SourceList, LoadFailure) },
 	CompletedFetchUsage: { key: Schema.String, result: Schema.Result(V2SourceUsage, LoadFailure) },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotPauseMenuMessage: { message: Menu.Message },
 	ClickedResume: {},

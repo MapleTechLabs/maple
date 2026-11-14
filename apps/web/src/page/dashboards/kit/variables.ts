@@ -18,9 +18,6 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import type { WidgetFailure } from "./widget-data"
 
-// The dashboard variables: the
-// option list each variable reads, and the value it resolves to from the URL, its default or the list.
-
 export type Variable = NonNullable<DashboardDocument["variables"]>[number]
 
 /** A variable's option list: custom options are inline; query variables fetch for the window. */
@@ -35,7 +32,7 @@ const names = (rows: ReadonlyArray<{ readonly name: string }>) => Arr.map(rows, 
 const values = (rows: ReadonlyArray<{ readonly attributeValue: string }>) =>
 	Arr.map(rows, (row) => row.attributeValue)
 
-/** `readVariableOptions`'s request for one variable, keyed so a window change refetches. */
+/** One variable's request, keyed so a window change refetches. */
 export const optionsSourceOf = (orgId: string, variable: Variable, window: Window | null): OptionsSource => {
 	if (variable.type === "custom")
 		return { _tag: "Inline", options: Arr.map(variable.options, (option) => option.value) }
@@ -44,7 +41,7 @@ export const optionsSourceOf = (orgId: string, variable: Variable, window: Windo
 	return { _tag: "Query", key: requestKey(orgId, "dashboardVariableOptions", { query, window }) }
 }
 
-/** The option strings a query variable reads (`readVariableOptions`' server functions). */
+/** The option strings a query variable reads. */
 export const fetchVariableOptions = (variable: Variable, window: Window) => {
 	const query = dashboardVariableOptionsQuery(variable)
 	if (query === null) return Effect.succeed<ReadonlyArray<string>>([])
@@ -77,9 +74,24 @@ export const fetchVariableOptions = (variable: Variable, window: Window) => {
 			)
 }
 
-export type OptionsState = Readonly<{ options: ReadonlyArray<string>; loading: boolean }>
+/** A variable's option list; `error` says why a query variable has none it could read. */
+export type OptionsState = Readonly<{
+	options: ReadonlyArray<string>
+	loading: boolean
+	error: string | null
+}>
 
-/** `values`: each variable's resolved value; one still waiting on its options is absent. */
+export const NO_OPTIONS: OptionsState = { options: [], loading: false, error: null }
+
+/** A query variable whose options failed: its empty fallback is no value. */
+const isUnavailable = (variable: Variable, options: OptionsState, value: string | undefined) =>
+	variable.type === "query" && options.error !== null && value === ""
+
+/** "All" over failed options: fine where it drops a where clause, no value where it expands to the options. */
+const isUnexpandable = (variable: Variable, options: OptionsState, value: string | undefined) =>
+	variable.type === "query" && options.error !== null && value === ALL_VALUE
+
+/** Each variable's resolved value; one waiting on (or failed by) its options is absent. */
 export const resolveVariableValues = (
 	variables: ReadonlyArray<Variable>,
 	urlValues: Readonly<Record<string, string>>,
@@ -87,15 +99,45 @@ export const resolveVariableValues = (
 ): VariableValues =>
 	Rec.fromEntries(
 		Arr.flatMap(variables, (variable) => {
-			const options = optionsByName[variable.name] ?? { options: [], loading: false }
+			const options = optionsByName[variable.name] ?? NO_OPTIONS
 			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
-			return value === undefined
+			return value === undefined || isUnavailable(variable, options, value)
 				? []
 				: [[variable.name, { value, isAll: value === ALL_VALUE, options: [...options.options] }]]
 		}),
 	)
 
-// OPTION SLOTS
+/** The variables no value can come from, by name, with why: tiles reading them cannot run. */
+export const unavailableVariables = (
+	variables: ReadonlyArray<Variable>,
+	urlValues: Readonly<Record<string, string>>,
+	optionsByName: Readonly<Record<string, OptionsState>>,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.flatMap(variables, (variable) => {
+			const options = optionsByName[variable.name] ?? NO_OPTIONS
+			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
+			return isUnavailable(variable, options, value) && options.error !== null
+				? [[variable.name, options.error]]
+				: []
+		}),
+	)
+
+/** Variables set to "All" whose options failed, with why: tiles expanding them (SQL) cannot run. */
+export const unexpandableVariables = (
+	variables: ReadonlyArray<Variable>,
+	urlValues: Readonly<Record<string, string>>,
+	optionsByName: Readonly<Record<string, OptionsState>>,
+): Readonly<Record<string, string>> =>
+	Rec.fromEntries(
+		Arr.flatMap(variables, (variable) => {
+			const options = optionsByName[variable.name] ?? NO_OPTIONS
+			const value = resolveDashboardVariableValue(variable, urlValues[variable.name], options)
+			return isUnexpandable(variable, options, value) && options.error !== null
+				? [[variable.name, options.error]]
+				: []
+		}),
+	)
 
 /** Each query variable's fetched option list, by variable name. */
 export type OptionsSlots = Readonly<Record<string, Keyed.Keyed<ReadonlyArray<string>, WidgetFailure>>>
@@ -114,7 +156,7 @@ export const planOptionRequests = (
 	return Arr.reduce(variables, initial, (state, variable) => {
 		const source = optionsSourceOf(orgId, variable, window)
 		if (source._tag !== "Query" || window === null) return state
-		return Option.match(Keyed.request(state.slots[variable.name] ?? Keyed.idle(), source.key, mode), {
+		return Option.match(Keyed.request(Keyed.at(state.slots, variable.name), source.key, mode), {
 			onNone: () => state,
 			onSome: (next) => ({
 				slots: { ...state.slots, [variable.name]: next },
@@ -124,7 +166,7 @@ export const planOptionRequests = (
 	})
 }
 
-/** `optionsByName`: inline lists, fetched lists, and the loading state of the rest. */
+/** Inline lists, fetched lists, and the loading state of the rest. */
 export const optionsByNameOf = (
 	orgId: string,
 	variables: ReadonlyArray<Variable>,
@@ -134,22 +176,26 @@ export const optionsByNameOf = (
 	Rec.fromEntries(
 		Arr.map(variables, (variable) => {
 			const source = optionsSourceOf(orgId, variable, window)
-			if (source._tag === "Inline") return [variable.name, { options: source.options, loading: false }]
-			if (source._tag === "None")
-				return [variable.name, { options: [], loading: variable.type === "query" }]
+			if (source._tag === "Inline") return [variable.name, { ...NO_OPTIONS, options: source.options }]
+			if (source._tag === "None" && variable.type === "query")
+				return [
+					variable.name,
+					window === null
+						? { ...NO_OPTIONS, loading: true }
+						: { ...NO_OPTIONS, error: "This variable has no options query" },
+				]
+			if (source._tag === "None") return [variable.name, NO_OPTIONS]
 			const slot = slots[variable.name]
 			const data = slot === undefined || slot.key !== source.key ? AsyncData.Idle() : slot.data
-			return [
-				variable.name,
-				AsyncData.match(data, {
-					onIdle: () => ({ options: [], loading: true }),
-					onLoading: () => ({ options: [], loading: true }),
-					onFailure: () => ({ options: [], loading: false }),
-					onSuccess: (options) => ({ options, loading: false }),
-					onRefreshing: (options) => ({ options, loading: true }),
-					onStale: ({ data: options }) => ({ options, loading: false }),
-				}),
-			]
+			const state: OptionsState = AsyncData.match(data, {
+				onIdle: () => ({ ...NO_OPTIONS, loading: true }),
+				onLoading: () => ({ ...NO_OPTIONS, loading: true }),
+				onFailure: (failure) => ({ ...NO_OPTIONS, error: failure.message }),
+				onSuccess: (options) => ({ ...NO_OPTIONS, options }),
+				onRefreshing: (options) => ({ ...NO_OPTIONS, options, loading: true }),
+				onStale: ({ data: options }) => ({ ...NO_OPTIONS, options }),
+			})
+			return [variable.name, state]
 		}),
 	)
 
@@ -160,7 +206,12 @@ export const planVariablesOf = (
 	urlValues: Readonly<Record<string, string>>,
 	slots: OptionsSlots,
 	window: Window | null,
-) => ({
-	names: Arr.map(variables, (variable) => variable.name),
-	values: resolveVariableValues(variables, urlValues, optionsByNameOf(orgId, variables, slots, window)),
-})
+) => {
+	const optionsByName = optionsByNameOf(orgId, variables, slots, window)
+	return {
+		names: Arr.map(variables, (variable) => variable.name),
+		values: resolveVariableValues(variables, urlValues, optionsByName),
+		unavailable: unavailableVariables(variables, urlValues, optionsByName),
+		unexpandable: unexpandableVariables(variables, urlValues, optionsByName),
+	}
+}

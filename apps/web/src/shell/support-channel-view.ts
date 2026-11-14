@@ -10,6 +10,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { Message, type Model } from "./support-channel"
 import { typography } from "@maple/views/ui/typography"
 import { hstackClass } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -18,7 +19,7 @@ const ID = "shell-support-channel"
 const panel = (h: H, children: ReadonlyArray<Html>, className?: string): Html =>
 	DialogView.dialogPanel(h, "dialog", ID, children, className)
 
-/** `OpenInSlack`: an outline button that is a link into Slack, in a new tab. */
+/** An outline button that is a link into Slack, in a new tab. */
 const openInSlackButton = (h: H, url: string): Html =>
 	linkButton(
 		h,
@@ -36,22 +37,21 @@ const openInSlackButton = (h: H, url: string): Html =>
 
 const invitedBody = (h: H, invited: V2SupportChannel): ReadonlyArray<Html> => [
 	panel(h, [
-		h.p(
-			[h.Class("text-sm")],
-			[
-				"Invite sent to ",
-				h.span([h.Class("font-medium")], [invited.invited_email ?? ""]),
-				". Open the email or Slack and accept it to add",
-				" ",
-				h.span([h.Class("font-mono")], ["#", invited.channel_name ?? ""]),
-				" to your workspace.",
-			],
-		),
+		typography(h, { size: "sm", as: "p" }, [
+			"Invite sent to ",
+			typography(h, { weight: "medium" }, [invited.invited_email ?? ""]),
+			". Open the email or Slack and accept it to add",
+			" ",
+			typography(h, { mono: true }, ["#", invited.channel_name ?? ""]),
+			" to your workspace.",
+		]),
 	]),
-	...(invited.slack_url ? [DialogView.dialogFooter(h, "dialog", [openInSlackButton(h, invited.slack_url)])] : []),
+	...(invited.slack_url
+		? [DialogView.dialogFooter(h, "dialog", [openInSlackButton(h, invited.slack_url)])]
+		: []),
 ]
 
-/** `SupportChannelBody`: skeleton, the read's error, the invite outcome or the channel's offer. */
+/** Skeleton, the read's error, the invite outcome or the channel's offer. */
 const body = (h: H, model: Model, email: Option.Option<string>): ReadonlyArray<Html> => {
 	if (model.invited !== null) return invitedBody(h, model.invited)
 	return AsyncData.match(model.channel, {
@@ -70,7 +70,7 @@ const loadingBody = (h: H): ReadonlyArray<Html> => [
 	panel(h, [skeleton(h, "h-4 w-full"), skeleton(h, "h-4 w-2/3")], "space-y-2"),
 ]
 
-/** `SupportChannelDialog`; `email` is the Clerk user's primary address. */
+/** The support channel dialog; `email` is the Clerk user's primary address. */
 export const view = Submodel.defineView<Model, Message, Readonly<{ email: Option.Option<string> }>>(
 	(model, inputs, h) =>
 		h.submodel({
@@ -104,24 +104,31 @@ export const view = Submodel.defineView<Model, Message, Readonly<{ email: Option
 		}),
 )
 
-const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Option.Option<string>): ReadonlyArray<Html> => {
+const channelBody = (
+	h: H,
+	model: Model,
+	channel: V2SupportChannel,
+	email: Option.Option<string>,
+): ReadonlyArray<Html> => {
 	if (channel.status === "unavailable")
 		return [
 			panel(h, [
-				typography(h, { size: "sm", tone: "muted", as: "p" },
-					[
-						"Shared Slack channels are not set up on this Maple instance. Email",
-						" ",
-						h.a([h.Class("underline"), h.Href("mailto:support@maple.dev")], ["support@maple.dev"]),
-						" ",
-						"and we will get back to you.",
-					],
-				),
+				typography(h, { size: "sm", tone: "muted", as: "p" }, [
+					"Shared Slack channels are not set up on this Maple instance. Email",
+					" ",
+					textLink(
+						h,
+						{ href: "mailto:support@maple.dev", tone: "inherit", className: "inline underline" },
+						["support@maple.dev"],
+					),
+					" ",
+					"and we will get back to you.",
+				]),
 			]),
 		]
 	const target = Option.match(email, {
 		onNone: (): Html | string => "your email",
-		onSome: (address) => h.span([h.Class("font-medium")], [address]),
+		onSome: (address) => typography(h, { weight: "medium" }, [address]),
 	})
 	const isActive = channel.status === "active"
 	return [
@@ -129,27 +136,28 @@ const channelBody = (h: H, model: Model, channel: V2SupportChannel, email: Optio
 			h,
 			[
 				isActive
-					? h.p(
-							[h.Class("text-sm")],
-							[
-								"Your team's channel is ",
-								h.span([h.Class("font-mono")], ["#", channel.channel_name ?? ""]),
-								". We will send a Slack Connect invite to ",
-								target,
-								" so you can join it.",
-							],
-						)
-					: h.p(
-							[h.Class("text-sm")],
-							[
-								"We will create the channel and send a Slack Connect invite to ",
-								target,
-								". Accept it in Slack and the channel shows up in your workspace. Teammates can join the same way from here.",
-							],
-						),
+					? typography(h, { size: "sm", as: "p" }, [
+							"Your team's channel is ",
+							typography(h, { mono: true }, ["#", channel.channel_name ?? ""]),
+							". We will send a Slack Connect invite to ",
+							target,
+							" so you can join it.",
+						])
+					: typography(h, { size: "sm", as: "p" }, [
+							"We will create the channel and send a Slack Connect invite to ",
+							target,
+							". Accept it in Slack and the channel shows up in your workspace. Teammates can join the same way from here.",
+						]),
 				...(model.inviteError === null
 					? []
-					: [errorState(h, { failure: model.inviteError, title: "Couldn't send the invite", variant: "inline", className: "py-0" })]),
+					: [
+							errorState(h, {
+								failure: model.inviteError,
+								title: "Couldn't send the invite",
+								variant: "inline",
+								className: "py-0",
+							}),
+						]),
 			],
 			"space-y-3",
 		),

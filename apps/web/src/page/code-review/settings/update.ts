@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	type GithubIntegrationStatus,
 	type GithubRepoSummary,
@@ -7,8 +8,8 @@ import {
 	PrReviewRepositoryConfig,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
-import { currentRegion } from "../../../lib/region"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
+import { currentRegion } from "../../../platform/region"
 import { isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -16,6 +17,7 @@ import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
@@ -26,12 +28,12 @@ import {
 	FetchRepoConfig,
 	FetchSettings,
 	FetchStatus,
-	ReadIsAdmin,
+	ReadGrants,
 	SaveRepoConfig,
 	SaveSettings,
 	SetPrReview,
 } from "./command"
-import { Message, type Model, type SavePurpose } from "./model"
+import { canManage, Message, type Model, type SavePurpose } from "./model"
 import { initRepoList, pinOnce } from "./repositories"
 
 type Return = PageReturn<Model, Message>
@@ -43,7 +45,10 @@ export const MODEL_OPTIONS = Arr.filter(PR_REVIEW_MODELS, (model) => currentRegi
 export const modelLabel = (value: string) =>
 	value === DEFAULT_MODEL
 		? DEFAULT_MODEL_LABEL
-		: (MODEL_OPTIONS.find((model) => model.id === value)?.label ?? value)
+		: Arr.findFirst(MODEL_OPTIONS, (model) => model.id === value).pipe(
+				Option.flatMapNullishOr((found) => found.label),
+				Option.getOrElse(() => value),
+			)
 const isModel = Schema.is(PrReviewModel)
 // One instance, so the form's "the config changed" check does not fire on every answer.
 const EMPTY_CONFIG = new PrReviewRepositoryConfig({})
@@ -58,7 +63,7 @@ const messageOf = (failure: LoadFailure, fallback: string) =>
 
 const settingsKey = (context: PageContext) =>
 	requestKey(context.orgId, "integrations.githubGetPrReviewSettings", {})
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.githubStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "github")
 const configKey = (context: PageContext, repositoryId: VcsRepositoryId) =>
 	requestKey(context.orgId, "integrations.githubGetPrReviewConfig", { params: { repositoryId } })
 
@@ -199,8 +204,14 @@ const serverValueOf = (
 	data: AsyncData.AsyncData<GithubIntegrationStatus, LoadFailure>,
 	repositoryId: string,
 ): boolean | undefined =>
-	Option.getOrUndefined(AsyncData.getData(data))?.repositories.find((repo) => repo.id === repositoryId)
-		?.prReviewEnabled
+	Option.getOrUndefined(
+		Option.flatMap(AsyncData.getData(data), (status) =>
+			Option.map(
+				Arr.findFirst(status.repositories, (repo) => repo.id === repositoryId),
+				(repo) => repo.prReviewEnabled,
+			),
+		),
+	)
 
 const combine = (first: Return, second: (model: Model) => Return): Return => {
 	const next = second(first.model)
@@ -211,8 +222,6 @@ const combine = (first: Return, second: (model: Model) => Return): Return => {
 	}
 }
 
-// ENTRY
-
 export const init = (_route: unknown, context: PageContext, carried: Carried = noCarry): Return => {
 	const key = statusKey(context)
 	const model: Model = {
@@ -221,7 +230,7 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 			onNone: () => Keyed.idle(),
 			onSome: (status) => ({ key, data: AsyncData.Success({ data: status }) }),
 		}),
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		modelSelect: Select.init("code-review-model", { value: DEFAULT_MODEL, selectedIndex: null }),
 		isSavingModel: false,
 		localSettings: null,
@@ -244,7 +253,7 @@ export const init = (_route: unknown, context: PageContext, carried: Carried = n
 		: model
 	return combine(readSettings(pinned, context, "Load"), (next) => ({
 		model: next,
-		commands: isClerkAuthEnabled ? [ReadIsAdmin()] : [],
+		commands: isClerkAuthEnabled ? [ReadGrants()] : [],
 	}))
 }
 
@@ -266,16 +275,19 @@ const liftForm = (
 		const queued = enqueueSave(next, "defaults", "", withDefaults(baseSettings(model), saved.config))
 		return { ...queued, commands: [...commands, ...(queued.commands ?? [])] }
 	}
-	const repo = activeRepositories(model).find((candidate) => candidate.id === model.configuring)
-	return repo === undefined
-		? { model: next, commands }
-		: {
+	return Option.match(
+		Arr.findFirst(activeRepositories(model), (candidate) => candidate.id === model.configuring),
+		{
+			onNone: (): Return => ({ model: next, commands }),
+			onSome: (repo): Return => ({
 				model: next,
 				commands: [
 					...commands,
 					SaveRepoConfig({ repositoryId: repo.id, fullName: repo.fullName, config: saved.config }),
 				],
-			}
+			}),
+		},
+	)
 }
 
 /** A settings answer: the model select and the default rules follow it. */
@@ -303,7 +315,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	const commands = Command.mapMessages(result.commands ?? [], (message) =>
 		Message.GotDialogMessage({ message }),
 	)
-	// `RepositoryConfig` unmounts with the closed dialog: the next open builds its form again.
+	// The closed dialog drops its form: the next open builds it again.
 	const closed = result.outMessage?._tag === "Closed"
 	return {
 		model: { ...model, dialog: result.model, repoForm: closed ? null : model.repoForm },
@@ -311,7 +323,7 @@ const liftDialog = (model: Model, result: ReturnType<typeof Dialog.update>): Ret
 	}
 }
 
-/** `RepositoryConfig`'s form, built from the answer once it is in (or kept in step with it). */
+/** The repository dialog's form, built from the answer once it is in (or kept in step with it). */
 const withRepoForm = (model: Model): Model =>
 	Option.match(AsyncData.getData(model.repoConfig.data), {
 		onNone: () => model,
@@ -340,7 +352,7 @@ const pickModel = (model: Model, value: string): Return =>
 				...model,
 				modelSelect: { ...model.modelSelect, value: currentModel(settings) },
 			}
-			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !model.isAdmin)
+			if (value === currentModel(baseSettings(model)) || model.isSavingModel || !canManage(model))
 				return { model: reverted }
 			const picked = isModel(value) ? value : undefined
 			return enqueueSave(
@@ -367,7 +379,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				localSettings: isSettled ? null : model.localSettings,
 				confirmedSettings: isSettled ? null : model.confirmedSettings,
 			})
-			// `RepositoriesSection` mounts with the settings: the repositories are read then.
+			// The repositories are read once the settings are in.
 			return Option.isSome(settingsOf(next)) && AsyncData.isIdle(next.githubStatus.data)
 				? readStatus(next, context, "Load")
 				: { model: next }
@@ -395,7 +407,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}
 				: { model },
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		ClickedRetrySettings: () => readSettings(model, context, "Refresh"),
 		ClickedRetryStatus: () => readStatus(model, context, "Refresh"),
 		GotModelSelectMessage: ({ message: inner }) => {
@@ -454,7 +466,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, repoList: { ...model.repoList, search: "", filter: "all" } },
 		}),
 		ToggledRepo: ({ repositoryId, fullName, isEnabled }) =>
-			model.busy.includes(repositoryId) || !model.isAdmin
+			model.busy.includes(repositoryId) || !canManage(model)
 				? { model }
 				: {
 						model: {
@@ -471,7 +483,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						},
 						commands: [SetPrReview({ repositoryId, fullName, isEnabled })],
 					},
-		CompletedSetPrReview: ({ repositoryId, fullName, isEnabled, result }) => {
+		CompletedSetPrReview: ({ repositoryId, result }) => {
 			const busy = Arr.filter(model.busy, (id) => id !== repositoryId)
 			if (result._tag === "Failure")
 				return {
@@ -488,15 +500,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						result.failure.message,
 					),
 				}
-			return {
-				...readStatus({ ...model, busy }, context, "Supersede"),
-				outMessage: toast(
-					"success",
-					isEnabled
-						? `Maple will review pull requests on ${fullName}`
-						: `Reviews off for ${fullName}`,
-				),
-			}
+			// No success toast: the switch already shows the state, and a toast over the
+			// bottom-right rows (held open while hovered) blocks toggling the next repo.
+			return readStatus({ ...model, busy }, context, "Supersede")
 		},
 		ClickedConfigure: ({ repositoryId }) => {
 			const isSameRepo = model.configuring === repositoryId

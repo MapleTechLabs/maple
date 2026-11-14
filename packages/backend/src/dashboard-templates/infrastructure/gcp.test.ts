@@ -3,13 +3,15 @@ import { GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
 import { mapGcpTimeSeries } from "@maple/backend/services/integrations/gcp/mapping"
 import type { MetricGaugeRow } from "@maple/backend/services/warehouse/metric-rows"
 import { gcpTemplate } from "./gcp"
+import { Record as Rec, Array as Arr, Option, String as Str } from "effect"
 
 // What the poller stores under each curated name: one series per type carrying every label the
 // table keeps, run through the poller's own mapping.
 const STORED = new Map<string, { metricType: "sum" | "gauge"; rows: Array<MetricGaugeRow> }>()
 for (const group of GCP_METRIC_GROUPS) {
 	for (const metric of group.metrics) {
-		const labels = (names: ReadonlyArray<string>) => Object.fromEntries(names.map((name) => [name, "x"]))
+		const labels = (names: ReadonlyArray<string>) =>
+			Rec.fromEntries(Arr.map(names, (name) => [name, "x"]))
 		const { sumRows, gaugeRows } = mapGcpTimeSeries({ group, metric, startMs: 0, endMs: 60_000 }, [
 			{
 				metric: { labels: labels([...group.resourceMetricLabels, ...metric.labels]) },
@@ -53,9 +55,9 @@ describe("Google Cloud dashboard template", () => {
 					expect(stored.rows[0]?.service_name, widget.id).toMatch(/^gcp\//)
 				}
 
-				const attributeKeys = stored.rows.flatMap((row) => Object.keys(row.metric_attributes))
-				const resourceKeys = Object.keys(stored.rows[0]?.resource_attributes ?? {})
-				for (const token of [...query.groupBy, ...query.whereClause.split(/\s+/)]) {
+				const attributeKeys = Arr.flatMap(stored.rows, (row) => Rec.keys(row.metric_attributes))
+				const resourceKeys = Rec.keys(stored.rows[0]?.resource_attributes ?? {})
+				for (const token of [...query.groupBy, ...Str.split(/\s+/)(query.whereClause)]) {
 					if (token.startsWith("attr.")) {
 						expect(attributeKeys, `${widget.id}: ${token}`).toContain(token.slice(5))
 					}
@@ -68,7 +70,7 @@ describe("Google Cloud dashboard template", () => {
 				const quantile = /attr\.quantile = "([^"]+)"/.exec(query.whereClause)?.[1]
 				if (attributeKeys.includes("quantile")) {
 					expect(
-						stored.rows.map((row) => row.metric_attributes.quantile),
+						Arr.map(stored.rows, (row) => row.metric_attributes.quantile),
 						widget.id,
 					).toContain(quantile)
 				}
@@ -90,7 +92,7 @@ describe("Google Cloud dashboard template", () => {
 				const stored = STORED.get(name)
 				expect(stored?.metricType, `${variable.name}: ${name}`).toBe(metricType)
 				expect(
-					Object.keys(stored?.rows[0]?.resource_attributes ?? {}),
+					Rec.keys(stored?.rows[0]?.resource_attributes ?? {}),
 					`${variable.name}: ${name}`,
 				).toContain(attributeKey)
 			}
@@ -98,18 +100,20 @@ describe("Google Cloud dashboard template", () => {
 
 		// A widget filters on a variable only where its own series carry the attribute, so
 		// picking a region never empties a chart of global resources.
-		const declared = new Set(variables.map((variable) => variable.name))
+		const declared = new Set(Arr.map(variables, (variable) => variable.name))
 		for (const widget of widgets) {
 			if (widget.dataSource.kind !== "query") continue
 			for (const query of widget.dataSource.queries) {
-				for (const [, name] of query.whereClause.matchAll(/\$([A-Za-z]\w*)/g)) {
+				for (const [, name] of Str.matchAll(/\$([A-Za-z]\w*)/g)(query.whereClause)) {
 					expect(declared, `${widget.id}: $${name}`).toContain(name)
-					const variable = variables.find((candidate) => candidate.name === name)
+					const variable = Option.getOrUndefined(
+						Arr.findFirst(variables, (candidate) => candidate.name === name),
+					)
 					if (variable?.type !== "query" || variable.source.kind !== "metric") continue
 					if (query.dataSource !== "metrics") continue
 					const stored = STORED.get(query.metricName)
 					expect(
-						Object.keys(stored?.rows[0]?.resource_attributes ?? {}),
+						Rec.keys(stored?.rows[0]?.resource_attributes ?? {}),
 						`${widget.id}: $${name}`,
 					).toContain(variable.source.attributeKey)
 				}

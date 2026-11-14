@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { BreadcrumbEntry } from "../../../shell"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { navShell } from "../kit/nav-shell"
+import { navShell } from "../../kit/nav-shell"
 import { Message, type Model } from "./model"
 import { accountNavSections, accountTabLabels } from "./nav"
 import * as ProfileView from "./profile/view"
@@ -64,7 +64,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					model: tab.model,
 					view: PasskeysView.view,
 					toParentMessage: (message) => Message.GotPasskeysMessage({ message }),
-					viewInputs: { timeZone: inputs.context.timeZone },
+					viewInputs: { timeZone: inputs.context.timeZone, nowMs: model.nowMs },
 				}),
 			]
 		case "Connections":
@@ -107,9 +107,6 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					viewInputs: {},
 				}),
 			]
-		case "Unported":
-			// TODO(account): the remaining tabs are ported one by one; until then they render empty.
-			return []
 	}
 }
 

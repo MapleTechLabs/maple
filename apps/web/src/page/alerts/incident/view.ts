@@ -13,6 +13,7 @@ import {
 	signalLabels,
 } from "@maple/web-data/alerts/form-utils"
 import {
+	acknowledgedLine,
 	buildIncidentTimeline,
 	conditionPhrase,
 	holdReasonLabel,
@@ -21,7 +22,7 @@ import {
 	signalTitle,
 } from "@maple/web-data/alerts/incident-timeline"
 import { incidentTitle, isQueryIncident } from "@maple/web-data/alerts/overview-derive"
-import { formatDateInTimezone, formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatDateInTimezone, formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -34,63 +35,123 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { severityBadge } from "../shared/badges"
-import { alertsHref } from "../shared/links"
+import { alertsHref, ruleHref } from "../../kit/alert-links"
+import { sloHref, slosTabHref } from "../shared/slo-commands"
+import { monitorHref, uptimeTabHref } from "../../kit/uptime/commands"
 import { incidentChecksOf, summaryChecksOf } from "../shared/check-summary"
 import { previewIssue, previewStateOf } from "../shared/preview"
 import { providerOf } from "../shared/providers"
 import { RULE_CHART_TOKENS, ruleChart } from "../shared/rule-chart"
-import { msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { groupPreviewOf, type IncidentView, incidentViewOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { incidentRail } from "./view-rail"
+import { type EscalationData, incidentRail } from "./view-rail"
+import { activeSilenceFor } from "../shared/silences"
+import { silenceBadge, silenceButton, silenceCheckFailed } from "../shared/silence-view"
+import * as SilenceDialogView from "../silence-dialog/view"
 import { incidentTimeline } from "./view-timeline"
+import { anomalyEvidence, type AnomalyEvidenceInputs } from "./view-anomaly"
+import { ANOMALY_CHART_TOKENS } from "../../kit/anomaly-evidence"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { typography } from "@maple/views/ui/typography"
+import {
+	canManageAlerts,
+	canReadAuditLog,
+	canRespondToIncidents,
+	canRunInvestigations,
+} from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
-const statusLine = (incident: AlertIncidentDocument, now: number, timeZone: string): string => {
-	const at = (iso: string) =>
-		formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
-			? formatTimeInTimezone(iso, { timeZone })
-			: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`
+/** The rule chart's tokens and the anomaly chart's, which an anomaly rule's incident draws instead. */
+export const INCIDENT_CHART_TOKENS: ReadonlyArray<string> = Arr.dedupe([
+	...RULE_CHART_TOKENS,
+	...ANOMALY_CHART_TOKENS,
+])
+
+const statusLine = <M>(
+	h: HtmlBuilder<M>,
+	incident: AlertIncidentDocument,
+	now: number,
+	timeZone: string,
+): ReadonlyArray<Html | string> => {
+	const at = (iso: string): Html =>
+		timestamp(h, {
+			value: iso,
+			timeZone,
+			nowMs: now,
+			label:
+				formatDateInTimezone(iso, { timeZone }) === formatDateInTimezone(now, { timeZone })
+					? formatTimeInTimezone(iso, { timeZone })
+					: `${formatDateInTimezone(iso, { timeZone })} ${formatTimeInTimezone(iso, { timeZone })}`,
+		})
 	if (incident.status === "resolved")
-		return `Resolved ${incident.resolvedAt ? at(incident.resolvedAt) : ""} · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`
-	if (incident.holdReason != null) return `Waiting on data · ${holdReasonLabel[incident.holdReason]}`
-	return `Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since ${at(incident.firstTriggeredAt)}`
+		return [
+			"Resolved ",
+			...(incident.resolvedAt ? [at(incident.resolvedAt)] : []),
+			` · lasted ${formatAlertDuration(incident.firstTriggeredAt, incident.resolvedAt)}`,
+		]
+	const acked = acknowledgedLine(incident)
+	const ackSuffix: ReadonlyArray<Html | string> =
+		acked === null || incident.acknowledgedAt === null
+			? []
+			: [` · ${acked} at `, at(incident.acknowledgedAt)]
+	if (incident.holdReason != null)
+		return [`Waiting on data · ${holdReasonLabel[incident.holdReason]}`, ...ackSuffix]
+	return [
+		`Open ${formatAlertDuration(incident.firstTriggeredAt, msIso(now))} · since `,
+		at(incident.firstTriggeredAt),
+		...ackSuffix,
+	]
 }
 
-/** `IncidentHeader`'s title side. */
 export const headerTitle = <M>(
 	h: HtmlBuilder<M>,
 	incident: AlertIncidentDocument,
 	rule: AlertRuleDocument | null,
 	now: number,
 	timeZone: string,
+	badges: ReadonlyArray<Html> = [],
 ) => {
 	const group = incidentGroup(incident)
 	const isUptime = incident.signalType === "uptime"
+	const isSlo = incident.signalType === "slo_burn_rate"
 	const isQuery = isQueryIncident(incident)
-	// An uptime incident names its monitor and a query incident its rule; neither has a signal to spell out.
+	const isAnomaly = incident.signalType === "anomaly"
+	// An uptime or SLO incident names its monitor or SLO, a query incident its rule, an anomaly its group.
 	const title =
-		isUptime || isQuery
+		isUptime || isSlo || isQuery || isAnomaly
 			? incidentTitle(incident)
 			: `${signalTitle(incident.signalType)} ${formatSignalValue(incident.signalType, incident.lastObservedValue)}${group != null ? ` on ${group}` : ""}`
 	const subline = Arr.join(
 		Arr.filter(
 			isUptime
 				? ["Uptime check", group]
-				: [
-						isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
-						`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
-						rule != null && rule.environments.length > 0
-							? Arr.join(rule.environments, ", ")
-							: null,
-					],
+				: // An anomaly's severity badge says how bad it is: no threshold to read out.
+					isAnomaly
+					? [`Rule ${rule?.name ?? incident.ruleName}`, "detected by Maple's anomaly detector"]
+					: isSlo
+						? [
+								"SLO burn rate",
+								// A resolved incident's last value is the healthy burn it ended on.
+								incident.status === "resolved"
+									? null
+									: `now ${formatSignalValue(incident.signalType, incident.lastObservedValue)}`,
+								group,
+							]
+						: [
+								isQuery ? group : `Rule ${rule?.name ?? incident.ruleName}`,
+								`${isQuery ? "value" : Str.toLowerCase(signalLabels[incident.signalType])} ${conditionPhrase(incident)}${rule != null ? ` over ${rule.windowMinutes}m` : ""}`,
+								rule != null && rule.environments.length > 0
+									? Arr.join(rule.environments, ", ")
+									: null,
+							],
 			(part) => part != null,
 		),
 		" · ",
@@ -98,22 +159,79 @@ export const headerTitle = <M>(
 	return h.div(
 		[h.Class("min-w-0 space-y-2")],
 		[
-			h.div(
-				[h.Class("flex flex-wrap items-center gap-2.5")],
-				[
-					severityBadge(h, incident.severity),
-					typography(h, { size: "xs", tone: "muted" }, [statusLine(incident, now, timeZone)]),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "center", wrap: true }, [
+				severityBadge(h, incident.severity),
+				...badges,
+				typography(h, { size: "xs", tone: "muted" }, statusLine(h, incident, now, timeZone)),
+			]),
 			pageTitle(h, { title }, [title]),
 			typography(h, { size: "xs", tone: "muted", truncate: true, as: "p" }, [subline]),
 		],
 	)
 }
 
-const headerAction = (h: H, model: Model, investigation: V2Investigation | null): Html =>
-	investigation !== null
-		? linkButton(
+const isOpenIncident = (model: Model): boolean =>
+	Option.match(incidentViewOf(model), {
+		onNone: () => false,
+		onSome: ({ incident }) => incident.status === "open",
+	})
+
+/** "Silenced until 15:00" over an open incident, or a note when the silences could not be read. */
+const silenceBadges = (h: H, model: Model, view: IncidentView, timeZone: string) => {
+	if (view.incident.status !== "open") return []
+	// The unfloored clock: a silence created this minute is in force already.
+	const now = model.clockMs ?? model.nowMs ?? 0
+	if (AsyncData.isFailure(model.silences.data)) return [silenceCheckFailed(h)]
+	return Option.toArray(
+		Option.map(
+			Option.flatMap(Option.fromNullishOr(view.rule), (rule) =>
+				activeSilenceFor(
+					AsyncData.getOrElse(model.silences.data, () => []),
+					rule,
+					view.incident.groupKey,
+					now,
+					view.incident.labels ?? null,
+				),
+			),
+			(silence) => silenceBadge(h, silence, now, timeZone),
+		),
+	)
+}
+
+/** The incident header's Acknowledge or Unacknowledge button; nothing once the incident resolved. */
+export const acknowledgeAction = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		incident: AlertIncidentDocument
+		isLoading: boolean
+		onAcknowledge: (acknowledged: boolean) => M
+	}>,
+): ReadonlyArray<Html> => {
+	if (options.incident.status !== "open") return []
+	const acknowledged = options.incident.acknowledgedAt !== null
+	return [
+		button(
+			h,
+			{
+				variant: acknowledged ? "outline" : "default",
+				size: "sm",
+				isLoading: options.isLoading,
+				attributes: [h.OnClick(options.onAcknowledge(!acknowledged))],
+			},
+			acknowledged ? ["Unacknowledge"] : [icon(h, "CheckIcon"), "Acknowledge"],
+		),
+	]
+}
+
+/** A link to the incident's investigation, or the button that starts one for who may run one. */
+const investigateAction = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation | null,
+): ReadonlyArray<Html> => {
+	if (investigation !== null)
+		return [
+			linkButton(
 				h,
 				{
 					variant: "outline",
@@ -121,22 +239,27 @@ const headerAction = (h: H, model: Model, investigation: V2Investigation | null)
 					href: hrefOf(AppRoute.Investigation({ id: String(investigation.id), search: {} })),
 				},
 				[icon(h, "ChatBubbleSparkleIcon"), "Open investigation"],
-			)
-		: button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					isDisabled:
-						model.isStartingInvestigation ||
-						AsyncData.isLoading(model.investigation.data) ||
-						AsyncData.isIdle(model.investigation.data),
-					attributes: [h.OnClick(Message.ClickedInvestigate())],
-				},
-				[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
-			)
+			),
+		]
+	if (!canRunInvestigations(model)) return []
+	return [
+		button(
+			h,
+			{
+				variant: "outline",
+				size: "sm",
+				isDisabled:
+					model.isStartingInvestigation ||
+					AsyncData.isLoading(model.investigation.data) ||
+					AsyncData.isIdle(model.investigation.data),
+				attributes: [h.OnClick(Message.ClickedInvestigate())],
+			},
+			[icon(h, "ChatBubbleSparkleIcon"), "Investigate"],
+		),
+	]
+}
 
-/** What `IncidentBody` renders, from props (the page reads them off its Model, the lab off a fixture). */
+/** What `incidentBody` renders: the page reads it off its Model, the lab off a fixture. */
 export type IncidentBodyInputs<M> = Readonly<{
 	incident: AlertIncidentDocument
 	rule: AlertRuleDocument | null
@@ -153,60 +276,137 @@ export type IncidentBodyInputs<M> = Readonly<{
 	entries: ReadonlyArray<IncidentTimelineEntry>
 	isEntriesLoading: boolean
 	isEntriesFailed: boolean
+	/** The read of the incident's latest escalation run; a success of `null` means it has none. */
+	escalation?: EscalationData
+	/** An SLO or uptime incident's SLO or monitor page; its tab stands in until it is known. */
+	sourceHref?: string | null
+	/**
+	 * Whether the viewer may open the audit log; null until the session answers. An audit
+	 * incident links it only for someone who may: anyone else is sent home.
+	 */
+	canReadAuditLog?: boolean | null
 	chartId: string
 	chart: Chart.Model
 	toChartMessage: (message: Chart.Message) => M
 	colors: ThemeColors
+	/** An anomaly rule's incident: the detector's evidence, in place of the rule's chart. */
+	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
-/** `IncidentBody`: signal chart, timeline and rail. */
+/** Where an audit detection's events are listed; only org admins can open it. */
+const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
+
+/**
+ * A managed incident's note on what opened it, and a link to its SLO or monitor (its tab until
+ * known). With neither a link nor a fallback it is the note alone.
+ */
+const sourceNote = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		text: string
+		href: string | null
+		label: string
+		fallback?: Readonly<{ href: string; label: string }>
+	}>,
+): Html => {
+	const href = options.href ?? options.fallback?.href
+	return vstack(h, { gap: "3", align: "start" }, [
+		typography(h, { size: "sm", tone: "muted", as: "p" }, [options.text]),
+		href === undefined
+			? h.empty
+			: linkButton(h, { size: "sm", variant: "outline", href }, [
+					options.href === null ? (options.fallback?.label ?? options.label) : options.label,
+					icon(h, "ArrowRightIcon"),
+				]),
+	])
+}
+
+/** Signal chart, timeline and rail. */
 export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>): Html => {
 	const { incident, rule } = inputs
 	const group = incidentGroup(incident)
+	const heading = `${signalTitle(incident.signalType)}${group != null ? ` · ${group}` : ""}`
+	const anomaly = inputs.anomaly ?? null
 	return h.div(
 		[h.Class("grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]")],
 		[
 			h.div(
 				[h.Class("min-w-0 space-y-8")],
 				[
-					h.section(
-						[h.Class("space-y-3")],
-						[
-							eyebrow(h, { as: "h2" }, [
-								signalTitle(incident.signalType),
-								...(group != null ? [` · ${group}`] : []),
-							]),
-							incident.signalType === "uptime"
-								? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-										"This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
-									])
-								: rule === null
-									? typography(h, { size: "sm", tone: "muted", as: "p" }, [
-											"The rule behind this incident was deleted, so its signal cannot be replayed.",
-										])
-									: ruleChart(h, {
-											chartId: inputs.chartId,
-											chart: inputs.chart,
-											toChartMessage: inputs.toChartMessage,
-											colors: inputs.colors,
-											timeZone: inputs.timeZone,
-											preview: inputs.preview,
-											checks: inputs.checks,
-											incidents: [incident],
-											threshold: incident.threshold,
-											thresholdUpper: incident.thresholdUpper,
-											comparator: incident.comparator,
-											signalType: incident.signalType,
-											window: { min: inputs.range.start, max: inputs.range.end },
-											source: "preview",
-											isLoading: inputs.isPreviewLoading,
-											error: inputs.previewError,
-										}),
-						],
-					),
+					incident.signalType === "anomaly" && anomaly !== null
+						? anomalyEvidence(h, heading, anomaly)
+						: h.section(
+								[h.Class("space-y-3")],
+								[
+									eyebrow(h, { as: "h2" }, [
+										signalTitle(incident.signalType),
+										...(group != null ? [` · ${group}`] : []),
+									]),
+									incident.signalType === "anomaly"
+										? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+												"The anomaly behind this incident is no longer recorded, so its signal cannot be shown.",
+											])
+										: incident.signalType === "uptime"
+											? sourceNote(h, {
+													text: "This incident follows an uptime monitor: it opened when the monitor's checks went down and resolves when one passes again. The monitor's page lists each check with its failing trace.",
+													href: inputs.sourceHref ?? null,
+													label: "Open monitor",
+													fallback: {
+														href: uptimeTabHref(),
+														label: "Open monitors",
+													},
+												})
+											: incident.signalType === "slo_burn_rate"
+												? sourceNote(h, {
+														text: "This incident follows an SLO burning its error budget: it opened when the burn rate held at a tier's factor over both of its windows, and resolves when the short window cools. The SLO's page charts the budget and each window's burn rate.",
+														href: inputs.sourceHref ?? null,
+														label: "Open SLO",
+														fallback: { href: slosTabHref(), label: "Open SLOs" },
+													})
+												: incident.signalType === "audit"
+													? sourceNote(h, {
+															text: `This incident follows an audit log detection: it opened when the matching events that arrived within the detection's window reached its count, and resolves when they fall back below it. ${inputs.canReadAuditLog === false ? "The audit log lists the events; only org admins can open it." : "The audit log lists the events."}`,
+															href:
+																inputs.canReadAuditLog === true
+																	? auditLogHref()
+																	: null,
+															label: "Open audit log",
+														})
+													: rule === null
+														? typography(
+																h,
+																{ size: "sm", tone: "muted", as: "p" },
+																[
+																	"The rule behind this incident was deleted, so its signal cannot be replayed.",
+																],
+															)
+														: ruleChart(h, {
+																chartId: inputs.chartId,
+																chart: inputs.chart,
+																toChartMessage: inputs.toChartMessage,
+																colors: inputs.colors,
+																timeZone: inputs.timeZone,
+																preview: inputs.preview,
+																checks: inputs.checks,
+																incidents: [incident],
+																threshold: incident.threshold,
+																thresholdUpper: incident.thresholdUpper,
+																comparator: incident.comparator,
+																signalType: incident.signalType,
+																window: {
+																	min: inputs.range.start,
+																	max: inputs.range.end,
+																},
+																source: "preview",
+																isLoading: inputs.isPreviewLoading,
+																error: inputs.previewError,
+															}),
+								],
+							),
 					incidentTimeline(h, {
 						entries: inputs.entries,
 						timeZone: inputs.timeZone,
+						nowMs: inputs.now,
 						isLoading: inputs.isEntriesLoading,
 						isFailed: inputs.isEntriesFailed,
 					}),
@@ -219,6 +419,8 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 				ruleIncidents: inputs.ruleIncidents,
 				window: inputs.range,
 				now: inputs.now,
+				escalation: inputs.escalation ?? AsyncData.succeed(null),
+				timeZone: inputs.timeZone,
 			}),
 		],
 	)
@@ -235,9 +437,25 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 	const deliveries = AsyncData.getOrElse(model.deliveries.data, () => [])
 	const investigation = AsyncData.getOrElse(model.investigation.data, () => null)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	const sloLink = Option.flatMap(AsyncData.getData(model.slos.data), (slos) =>
+		Option.map(
+			Arr.findFirst(slos, (slo) => slo.alert_rule_id === incident.ruleId),
+			(slo) => sloHref(slo.id),
+		),
+	)
+	const monitorLink = Option.flatMap(AsyncData.getData(model.monitors.data), (monitors) =>
+		Option.map(
+			Arr.findFirst(monitors, (monitor) => monitor.alert_rule_id === incident.ruleId),
+			(monitor) => monitorHref(monitor.id),
+		),
+	)
 	return incidentBody(h, {
 		incident,
 		rule,
+		sourceHref: Option.getOrNull(incident.signalType === "uptime" ? monitorLink : sloLink),
+		// No grants yet is no answer yet: an admin must not read that the log is not theirs.
+		canReadAuditLog: model.grants.length === 0 ? null : canReadAuditLog(model),
+		escalation: model.escalation.data,
 		ruleIncidents: view.ruleIncidents,
 		states: ruleStatesOf(model, incident.ruleId),
 		preview: groupPreviewOf(previewState.preview, incident),
@@ -258,6 +476,7 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		entries: buildIncidentTimeline({
 			incident,
 			deliveries,
+			activity: AsyncData.getOrElse(model.activity.data, () => []),
 			investigation,
 			renotifyIntervalMinutes:
 				rule != null && rule.destinationIds.length > 0 ? rule.renotifyIntervalMinutes : null,
@@ -265,11 +484,26 @@ const body = (h: H, model: Model, view: IncidentView, timeZone: string, now: num
 		}),
 		isEntriesLoading:
 			AsyncData.isLoading(model.deliveries.data) || AsyncData.isIdle(model.deliveries.data),
-		isEntriesFailed: AsyncData.isFailure(model.deliveries.data),
+		isEntriesFailed:
+			AsyncData.isFailure(model.deliveries.data) || AsyncData.isFailure(model.activity.data),
 		chartId: "alert-incident-chart",
 		chart: model.chart,
 		toChartMessage: (message) => Message.GotChartMessage({ message }),
 		colors: model.themeColors ?? {},
+		anomaly:
+			incident.anomalyIncidentId == null
+				? null
+				: {
+						anomalyIncidentId: incident.anomalyIncidentId,
+						anomaly: model.anomaly.data,
+						timeseries: model.anomalyTimeseries.data,
+						chart: model.anomalyChart,
+						toChartMessage: (message) => Message.GotAnomalyChartMessage({ message }),
+						chartRuntime: model.chartRuntime,
+						colors: model.themeColors,
+						now,
+						timeZone,
+					},
 	})
 }
 
@@ -303,30 +537,61 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			return dashboardPage(
 				h,
 				{
-					titleContent: headerTitle(h, view.incident, view.rule, now, timeZone),
-					actions: headerAction(
+					titleContent: headerTitle(
 						h,
-						model,
-						AsyncData.getOrElse(model.investigation.data, () => null),
+						view.incident,
+						view.rule,
+						now,
+						timeZone,
+						silenceBadges(h, model, view, timeZone),
 					),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						...(canRespondToIncidents(model)
+							? acknowledgeAction(h, {
+									incident: view.incident,
+									isLoading: model.isUpdatingAcknowledgement,
+									onAcknowledge: (acknowledged) =>
+										Message.ClickedAcknowledge({ acknowledged }),
+								})
+							: []),
+						...(canManageAlerts(model) && isOpenIncident(model)
+							? [silenceButton(h, Message.ClickedSilence(), model.rules === null)]
+							: []),
+						...investigateAction(
+							h,
+							model,
+							AsyncData.getOrElse(model.investigation.data, () => null),
+						),
+					]),
 				},
 				[body(h, model, view, timeZone, now)],
 			)
 		},
 	})
-	return h.div([h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: RULE_CHART_TOKENS }))], [page])
+	return h.div(
+		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: INCIDENT_CHART_TOKENS }))],
+		[
+			page,
+			h.submodel({
+				slotId: "alert-incident-silence",
+				model: model.silenceDialog,
+				view: SilenceDialogView.view,
+				viewInputs: { id: "alert-incident-silence" },
+				toParentMessage: (message) => Message.GotSilenceDialogMessage({ message }),
+			}),
+		],
+	)
 })
 
-/** `DashboardPage`'s breadcrumbs per state. */
 export const breadcrumbsOf = (model: Model) =>
 	Option.match(incidentViewOf(model), {
 		onNone: () => [
 			{ label: "Alerts", href: "/alerts" },
-			{ label: model.incidents === null || model.nowMs === null ? "Loading" : "Not found" },
+			{ label: model.incidents === null || model.nowMs === null ? "Loading…" : "Not found" },
 		],
 		onSome: ({ incident, rule }) => [
 			{ label: "Alerts", href: "/alerts" },
-			{ label: rule?.name ?? incident.ruleName, href: `/alerts/${incident.ruleId}` },
+			{ label: rule?.name ?? incident.ruleName, href: ruleHref(incident.ruleId) },
 			{ label: "Incident" },
 		],
 	})

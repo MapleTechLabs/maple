@@ -1,3 +1,4 @@
+import { RequestMode } from "@maple/views/data/keyed"
 import { V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -12,10 +13,7 @@ import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import { HubWrite, WriteOutcome } from "./writes"
 import { ErrorsSummary, IssuePage, SparkSeries, VolumeRow } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { SessionGrants } from "../../kit/session-grants"
 
 /** The sidebar's single-select params. */
 export const FilterParam = Schema.Literals(["service", "env", "kind", "regressed"])
@@ -28,6 +26,7 @@ const result = <A extends Schema.Top>(schema: A) => ({
 
 export const Message = defineMessageUnion({
 	CompletedResolveWindow: { window: TimeWindow, nowMs: Schema.Number, mode: RequestMode },
+	CompletedFetchSession: SessionGrants,
 	CompletedFetchSummary: result(Schema.NullOr(ErrorsSummary)),
 	CompletedFetchServiceCounts: result(Schema.Array(V2ErrorIssueServiceCount)),
 	CompletedFetchEnvironments: result(Schema.Array(Schema.String)),
@@ -66,6 +65,7 @@ export const Message = defineMessageUnion({
 	ClickedClearSelection: {},
 	GotBulkSeverityMenuMessage: { message: Menu.Message },
 	GotBulkMoveMenuMessage: { message: Menu.Message },
+	GotBulkMergeMenuMessage: { message: Menu.Message },
 	CompletedHubWrite: {
 		ids: Schema.Array(Schema.String),
 		write: HubWrite,

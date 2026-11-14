@@ -127,7 +127,7 @@ function topLevelKey(jsonPath: string): string | null {
 	// `$.foo` / `$.foo[:]` / `$.foo.bar.baz`  ->  `foo`
 	if (!Str.startsWith("$.")(jsonPath)) return null
 	const tail = Str.slice(2)(jsonPath)
-	const head = tail.split(/[.[]/, 1)[0]
+	const head = Str.split(/[.[]/)(tail)[0]
 	return head || null
 }
 

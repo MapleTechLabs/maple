@@ -60,7 +60,7 @@ import {
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewFindingEmbeddings,
@@ -91,6 +91,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { makeRepoUpstream } from "./repo-upstream"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	applyFeedback,
@@ -197,9 +198,6 @@ export const isTrustedAuthorAssociation = (association: string | undefined): boo
 /** Automatic reviews one outside author may get per UTC day across the organization. */
 const OUTSIDE_AUTHOR_DAILY_REVIEWS = 3
 
-/** Repository permissions that make a person a maintainer, whatever the webhook's association says. */
-export const PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["admin", "maintain", "write"])
-
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
 	readonly outcome: "started" | "deferred" | "skipped" | "failed"
@@ -224,12 +222,19 @@ export interface PrReviewServiceApi {
 	 * default. Never fails: an unreadable setting reviews on the default.
 	 */
 	readonly reviewModel: (orgId: OrgId) => Effect.Effect<Option.Option<PrReviewModel>>
-	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
+	/**
+	 * The repository, pull request and commit a review reads: its checkout starts before the agent
+	 * asks, and its diff tools are pinned to them.
+	 */
 	readonly reviewTarget: (
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<
-		Option.Option<{ readonly repository: string; readonly headSha: GitCommitSha }>,
+		Option.Option<{
+			readonly repository: string
+			readonly number: number
+			readonly headSha: GitCommitSha
+		}>,
 		PrReviewPersistenceError
 	>
 	/**
@@ -256,6 +261,15 @@ export interface PrReviewServiceApi {
 	 * webhook entry: a lost tick shows unticked on the next comment, and can be ticked again.
 	 */
 	readonly onMergeStepsTicked: (orgId: OrgId, job: PullRequestChecklistJob) => Effect.Effect<void>
+	/**
+	 * Adds what a turn of this review cost the provider, in microdollars, whatever the review's
+	 * status: a superseded or failed turn was billed too.
+	 */
+	readonly addCost: (
+		orgId: OrgId,
+		reviewId: PrReviewId,
+		costMicrousd: number,
+	) => Effect.Effect<void, PrReviewPersistenceError>
 	/** The turn ended without a report. */
 	readonly failReview: (
 		orgId: OrgId,
@@ -420,7 +434,7 @@ const renderRepositoryRules = (
 const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): ReadonlyArray<string> => {
 	if (config === undefined) return []
 	const lines: Array<string> = []
-	if (config.instructions?.trim()) {
+	if (config.instructions !== undefined && Str.trim(config.instructions) !== "") {
 		lines.push(
 			"Review rules this repository's maintainers set in Maple (binding, like its CLAUDE.md):",
 			"",
@@ -620,8 +634,7 @@ const confidenceMark = (confidence: number) => CONFIDENCE_MARK[prReviewConfidenc
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
 	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
-const escapeCell = (value: string) =>
-	Str.replace(/\n/g, " ")(Str.replace(/\|/g, "\\|")(Str.replace(/\\/g, "\\\\")(value)))
+const escapeCell = (value: string) => Str.replace(/\n/g, " ")(Str.replace(/[\\|]/g, "\\$&")(value))
 
 export interface ReviewMarkdownInput {
 	readonly report: PrReviewReport
@@ -650,7 +663,13 @@ const escapeHtml = (value: string) =>
  * a fence (a markdown file, a template string) cannot close the block early.
  */
 const fenced = (content: string, info = ""): ReadonlyArray<string> => {
-	const longest = Math.max(0, ...Arr.map(content.match(/`+/g) ?? [], (run) => run.length))
+	const longest = Math.max(
+		0,
+		...Arr.map(
+			Option.getOrElse(Str.match(/`+/g)(content), () => []),
+			(run) => run.length,
+		),
+	)
 	const fence = Str.repeat(Math.max(3, longest + 1))("`")
 	return [`${fence}${info}`, content, fence]
 }
@@ -1099,12 +1118,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			// Present where webhooks are consumed; without it a push's review starts at once.
 			const syncQueueOption = yield* Effect.serviceOption(VcsSyncQueue)
 			const syncQueue = Option.getOrUndefined(syncQueueOption)
-			// Present where the agent runs; without it the feedback filter is off.
-			const embedderOption = yield* Effect.serviceOption(FindingEmbedder)
+			// None outside the agent's Worker; then the feedback filter is off.
+			const embedderOption = yield* FindingEmbedder
 			const embedder = Option.getOrUndefined(embedderOption)
-			// Present where a warehouse is wired; without it reviews read the diff alone.
-			const telemetryReaderOption = yield* Effect.serviceOption(PrReviewTelemetryService)
-			const telemetryReader = Option.getOrUndefined(telemetryReaderOption)
+			const telemetryReader = yield* PrReviewTelemetryService
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -1167,7 +1184,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								$.number.eq(number),
 							]),
 					),
-				).pipe(Effect.map((rows) => rows.map(toTracked)))
+				).pipe(Effect.map((rows) => Arr.map(rows, toTracked)))
 
 			/** The pull request's completed reviews, newest first, and whether each read the whole diff. */
 			const loadReviewHistory = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
@@ -1243,7 +1260,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				).pipe(
 					Effect.map((rows) =>
-						rows.flatMap((row): ReadonlyArray<FeedbackExample> => {
+						Arr.flatMap(rows, (row): ReadonlyArray<FeedbackExample> => {
 							const label = feedbackLabel(row)
 							return label === undefined ? [] : [{ label, embedding: row.embedding }]
 						}),
@@ -1271,7 +1288,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (findings.length === 0) return yield* keepAll("empty")
 				if (embedder === undefined) return yield* keepAll("no_embedder")
 				// Embedded even with the filter off, so turning it on later has history to read.
-				const embedded = yield* embedder.embed(findings.map(findingText)).pipe(Effect.result)
+				const embedded = yield* embedder.embed(Arr.map(findings, findingText)).pipe(Effect.result)
 				if (Result.isFailure(embedded) || embedded.success.length !== findings.length) {
 					yield* Effect.logWarning("[PrReview] could not embed findings; posting all of them").pipe(
 						Effect.annotateLogs({
@@ -1311,39 +1328,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return { kept, vectors: keptVectors, suppressed }
 			})
 
-			/** The provider, installation and reference a repository's reads and posts go through. */
-			const providerFor = Effect.fn("PrReviewService.providerFor")(function* (
-				orgId: OrgId,
-				repo: VcsRepo,
-			) {
-				const installation = yield* repositories
-					.getInstallationById(orgId, repo.installationId)
-					.pipe(Effect.mapError(toPersistence))
-				if (Option.isNone(installation)) return Option.none()
-				const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
-				if (Option.isNone(provider)) return Option.none()
-				return Option.some({
-					provider: provider.value,
-					installation: installation.value,
-					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-				})
-			})
-
-			/** Whether a person can push to the repository; an unreadable permission is no. */
-			const canPush = Effect.fn("PrReviewService.canPush")(function* (
-				orgId: OrgId,
-				repo: VcsRepo,
-				login: string | null,
-			) {
-				if (login === null) return false
-				const target = yield* providerFor(orgId, repo)
-				if (Option.isNone(target)) return false
-				const { provider, installation, ref } = target.value
-				const permission = yield* provider
-					.fetchCommenterPermission(installation, ref, login)
-					.pipe(Effect.orElseSucceed(() => "none"))
-				return PUSH_PERMISSIONS.has(permission)
-			})
+			const { upstreamFor, canPush } = yield* makeRepoUpstream
 
 			/**
 			 * The diff read against the organization's telemetry, for the kickoff and the report. Best
@@ -1351,8 +1336,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const telemetryFor = (orgId: OrgId, repo: VcsRepo, number: number, headSha: GitCommitSha) =>
 				Effect.gen(function* () {
-					if (telemetryReader === undefined) return undefined
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
@@ -1368,9 +1352,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								const hits = yield* provider
 									.searchCode(installation, ref, `"${item.name}"`, { limit: 10 })
 									.pipe(Effect.catchCause(() => Effect.succeed([])))
-								const paths = [...new Set([item.path, ...hits.map((hit) => hit.path)])]
-									.filter(isRuntimeSource)
-									.slice(0, 6)
+								const paths = Arr.filter(
+									[...new Set([item.path, ...Arr.map(hits, (hit) => hit.path)])],
+									isRuntimeSource,
+								).slice(0, 6)
 								const lines = yield* Effect.forEach(
 									paths,
 									(path) =>
@@ -1417,7 +1402,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const diffFactsFor = (orgId: OrgId, repo: VcsRepo, number: number) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref } = target.value
 					const files = yield* provider.fetchPullRequestFiles(installation, ref, number)
@@ -1455,7 +1440,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			 */
 			const repositoryRules = (orgId: OrgId, repo: VcsRepo, ref: string) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return undefined
 					const { provider, installation, ref: repoRef } = target.value
 					const files = yield* Effect.forEach(
@@ -1463,7 +1448,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						(path) => provider.fetchSourceFile(installation, repoRef, path, ref),
 						{ concurrency: "unbounded" },
 					)
-					return files.flatMap((file) =>
+					return Arr.flatMap(files, (file) =>
 						Option.isSome(file) ? [{ path: file.value.path, content: file.value.content }] : [],
 					)
 				}).pipe(
@@ -1504,7 +1489,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				notice: PrReviewStatusNotice,
 			) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
 					const attempt = yield* commentAttemptOf(orgId, reviewId)
@@ -1565,7 +1550,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				outsideAuthor: boolean,
 			) =>
 				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
+					const target = yield* upstreamFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
 					yield* provider.writePullRequestCheck(
@@ -1595,20 +1580,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				/** Files changed since the last review; unknown leaves resolved threads to the reviewer. */
 				changedPaths: ReadonlySet<string> | undefined,
 			) {
-				const open = tracked.filter((finding) => finding.status === "open")
-				const commented = tracked.filter((finding) => finding.commentId !== null)
-				const upstream = yield* providerFor(orgId, repo)
+				const open = Arr.filter(tracked, (finding) => finding.status === "open")
+				const commented = Arr.filter(tracked, (finding) => finding.commentId !== null)
+				const upstream = yield* upstreamFor(orgId, repo)
 				if (commented.length === 0 || Option.isNone(upstream)) return open
 				const { provider, installation, ref } = upstream.value
 				const threads = yield* provider
 					.fetchReviewThreads(installation, ref, number)
 					.pipe(Effect.orElseSucceed(() => []))
-				const reacted = commented.flatMap((finding) => {
+				const reacted = Arr.flatMap(commented, (finding) => {
 					const first = threadForFinding(finding, threads)?.comments[0]
 					return first === undefined ? [] : [{ finding, first }]
 				})
-				const up = reacted.reduce((sum, { first }) => sum + first.thumbsUp, 0)
-				const down = reacted.reduce((sum, { first }) => sum + first.thumbsDown, 0)
+				const up = Arr.reduce(reacted, 0, (sum, { first }) => sum + first.thumbsUp)
+				const down = Arr.reduce(reacted, 0, (sum, { first }) => sum + first.thumbsDown)
 				yield* Effect.forEach(
 					reacted,
 					({ finding, first }) =>
@@ -1624,7 +1609,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const dismissed = dismissedFindings(open, threads, changedPaths)
 				yield* setFindingStatus(
 					orgId,
-					dismissed.map((finding) => finding.id),
+					Arr.map(dismissed, (finding) => finding.id),
 					{ status: "dismissed", updatedAt: nowMs },
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -1632,7 +1617,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.reactions_up": up,
 					"maple.pr_review.reactions_down": down,
 				})
-				return open.filter((finding) => !dismissed.includes(finding))
+				return Arr.filter(open, (finding) => !dismissed.includes(finding))
 			})
 
 			/**
@@ -1650,10 +1635,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				nowMs: number,
 			) {
 				const history = yield* loadReviewHistory(orgId, repo.id, number)
-				const previousSha = history.find((review) => review.headSha !== headSha)?.headSha
+				const previousSha = Option.getOrUndefined(
+					Arr.findFirst(history, (review) => review.headSha !== headSha),
+				)?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				const upstream = yield* providerFor(orgId, repo)
+				const upstream = yield* upstreamFor(orgId, repo)
 				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
 					const { provider, installation, ref } = upstream.value
@@ -1674,7 +1661,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs, changedPaths)
 				// A defect fixed since the last whole-diff pass, or one still open that this push may
 				// fix: this pass re-reads every file, so the fix is checked in the pass that sees it.
-				const recheck = uncheckedFixes(history, tracked) > 0 || open.some(isPrReviewDefectHistory)
+				const recheck =
+					uncheckedFixes(history, tracked) > 0 || Arr.some(open, isPrReviewDefectHistory)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
 					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
@@ -1704,7 +1692,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 				yield* Effect.forEach(
-					rows.filter((row) => row.headSha !== headSha),
+					Arr.filter(rows, (row) => row.headSha !== headSha),
 					(row) =>
 						Effect.gen(function* () {
 							if (row.sessionId !== null && chatSessions !== undefined) {
@@ -1883,7 +1871,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					fork:
 						job.headRepoFullName !== undefined &&
 						job.headRepoFullName !== null &&
-						job.headRepoFullName.toLowerCase() !== repo.fullName.toLowerCase(),
+						Str.toLowerCase(job.headRepoFullName) !== Str.toLowerCase(repo.fullName),
 					body: job.body,
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
@@ -2400,15 +2388,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (Option.isNone(telemetry)) return undefined
 				// Each claim names the open break it answers, and is checked against that break's kind.
 				const kindOf = new Map(
-					openContractBreaks(telemetry.value).map((item) => [item.name, item.kind] as const),
+					Arr.map(openContractBreaks(telemetry.value), (item) => [item.name, item.kind] as const),
 				)
-				const candidates = dismissals.flatMap((item) => {
+				const candidates = Arr.flatMap(dismissals, (item) => {
 					const kind = kindOf.get(item.name)
 					return kind !== undefined && isRuntimeSource(item.path) ? [{ ...item, kind }] : []
 				})
 				if (candidates.length === 0 || Option.isNone(repository) || Option.isNone(installation))
 					return telemetry.value
-				const target = yield* providerFor(orgId, repository.value).pipe(
+				const target = yield* upstreamFor(orgId, repository.value).pipe(
 					Effect.option,
 					Effect.map(Option.flatten),
 				)
@@ -2585,7 +2573,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const beforeMerge = reconciled.steps
 				const checklistTrace = {
 					...checklistAttributes(read === undefined ? "unread" : "read", checklist),
-					"maple.pr_review.checklist.done": beforeMerge.filter((step) => step.done === true).length,
+					"maple.pr_review.checklist.done": Arr.filter(beforeMerge, (step) => step.done === true)
+						.length,
 					"maple.pr_review.checklist.obsolete": reconciled.obsolete.length,
 				}
 				yield* Effect.annotateCurrentSpan(checklistTrace)
@@ -2598,12 +2587,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 				// Earlier findings: the ones this head fixes, and the ones still open.
 				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
-				const open = tracked.filter((finding) => finding.status === "open")
-				const resolved = [
-					...resolvedByHandle(request.resolved ?? [], open),
-					...fixedContractBreaks(open, telemetry),
-				].filter((finding, i, all) => all.indexOf(finding) === i)
-				const stillOpen = open.filter((finding) => !resolved.includes(finding))
+				const open = Arr.filter(tracked, (finding) => finding.status === "open")
+				const resolved = Arr.dedupeWith(
+					[
+						...resolvedByHandle(request.resolved ?? [], open),
+						...fixedContractBreaks(open, telemetry),
+					],
+					(a, b) => a === b,
+				)
+				const stillOpen = Arr.filter(open, (finding) => !resolved.includes(finding))
 				// The model's findings weighed by production traffic, and the facts the service files
 				// itself. The repository's settings are enforced here, not only stated in the kickoff.
 				const scanned = withoutReviewerOverlap(read?.privacy ?? [], request.report.findings)
@@ -2612,7 +2604,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...telemetryFindings(telemetry),
 					...scanned,
 				]
-				const allowed = proposed.filter(
+				const allowed = Arr.filter(
+					proposed,
 					(finding) =>
 						!pathIgnored(finding.path, config.ignorePaths) &&
 						(config.categories === undefined ||
@@ -2621,7 +2614,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				)
 				const { fresh, repeated } = withoutRepeats(
 					allowed,
-					tracked.filter((finding) => !resolved.includes(finding)),
+					Arr.filter(tracked, (finding) => !resolved.includes(finding)),
 				)
 				// The team's votes on earlier findings, applied to what is left; never to security or
 				// critical findings. A suppressed finding is neither stored nor posted.
@@ -2636,20 +2629,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						Effect.annotateLogs({
 							orgId,
 							reviewId,
-							suppressed: feedback.suppressed
-								.map((finding) => `${finding.path}:${finding.line} ${finding.title}`)
-								.join(" | "),
+							suppressed: Arr.join(
+								Arr.map(
+									feedback.suppressed,
+									(finding) => `${finding.path}:${finding.line} ${finding.title}`,
+								),
+								" | ",
+							),
 						}),
 					)
 				}
 				const handles = nextHandles(
-					tracked.map((finding) => finding.handle),
+					Arr.map(tracked, (finding) => finding.handle),
 					feedback.kept.length,
 				)
-				const findings = feedback.kept.map(
+				const findings = Arr.map(
+					feedback.kept,
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
-				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
+				const hasIssues = Arr.some(
+					[...findings, ...stillOpen],
+					(finding) => finding.severity !== "info",
+				)
 				// The reviewer's steps are already merged into `beforeMerge`.
 				const { beforeMerge: _reviewerSteps, ...submitted } = request.report
 				const settled = new PrReviewReport({
@@ -2673,7 +2674,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								Effect.map(
 									(history) =>
 										uncheckedFixes(history, tracked) +
-										resolved.filter(isPrReviewDefectHistory).length,
+										Arr.filter(resolved, isPrReviewDefectHistory).length,
 								),
 							)
 				const confidence = confidencePrReview(settled, stillOpen, request.partial === true, unchecked)
@@ -2761,7 +2762,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 				}
 
-				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))
+				const keys = new Map(
+					Arr.map(findings, (finding) => [finding.handle ?? "", randomUUID()] as const),
+				)
 				// A partial's findings are never posted, so they are not tracked: a later review must not
 				// carry them forward or drop its own as repeats of findings nobody saw.
 				const tracksFindings = request.partial !== true && findings.length > 0
@@ -2769,7 +2772,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* dbExecute((db) =>
 						db.run(
 							PG.insertInto(PrReviewFindings).values(
-								findings.map((finding) => ({
+								Arr.map(findings, (finding) => ({
 									id: keys.get(finding.handle ?? "") ?? randomUUID(),
 									orgId,
 									repositoryId: review.repositoryId,
@@ -2798,7 +2801,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							db.run(
 								PG.insertInto(PrReviewFindingEmbeddings)
 									.values(
-										findings.map((finding, i) => ({
+										Arr.map(findings, (finding, i) => ({
 											findingId: keys.get(finding.handle ?? "") ?? randomUUID(),
 											orgId,
 											repositoryId: review.repositoryId,
@@ -2820,7 +2823,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 				yield* setFindingStatus(
 					orgId,
-					resolved.map((finding) => finding.id),
+					Arr.map(resolved, (finding) => finding.id),
 					{ status: "resolved", resolvedSha: review.headSha, updatedAt: nowMs },
 				)
 				// Like findings, a partial's steps were never posted, so they are not tracked.
@@ -2846,7 +2849,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
 				if (Result.isFailure(provider)) {
 					yield* update(orgId, reviewId, {
-						publishError: provider.failure.message.slice(0, 500),
+						publishError: Str.slice(0, 500)(provider.failure.message),
 						updatedAt: nowMs,
 					})
 					return
@@ -2889,7 +2892,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						).pipe(Effect.annotateLogs({ orgId, reviewId, error: published.failure.message }))
 						yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": false })
 						yield* update(orgId, reviewId, {
-							publishError: published.failure.message.slice(0, 500),
+							publishError: Str.slice(0, 500)(published.failure.message),
 							updatedAt: nowMs,
 						})
 					} else {
@@ -2941,7 +2944,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 
 				// A fixed finding's thread is answered and resolved, so the conversation shows it.
-				const toResolve = resolved.filter((finding) => finding.commentId !== null)
+				const toResolve = Arr.filter(resolved, (finding) => finding.commentId !== null)
 				if (toResolve.length === 0) return
 				const threads = yield* provider.success
 					.fetchReviewThreads(installation.value, ref, review.number)
@@ -2957,7 +2960,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								number: review.number,
 								threadId: thread.id,
 								commentId: finding.commentId,
-								reply: `Fixed in \`${review.headSha.slice(0, 7)}\`.`,
+								reply: `Fixed in \`${Str.slice(0, 7)(review.headSha)}\`.`,
 							})
 							.pipe(
 								Effect.catchCause((cause) =>
@@ -2977,6 +2980,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					{ discard: true },
 				)
 			})
+
+			const addCost: PrReviewServiceApi["addCost"] = Effect.fn("PrReviewService.addCost")(
+				function* (orgId, reviewId, costMicrousd) {
+					yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
+					yield* dbExecute((db) =>
+						db.run(
+							PG.update(PrReviews)
+								.set(($) => ({
+									costMicrousd: PG.sql(
+										PG.int4,
+									)`(coalesce(${$.costMicrousd}, 0) + ${costMicrousd})::int`,
+								}))
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(reviewId)]),
+						),
+					)
+				},
+			)
 
 			const failReview: PrReviewServiceApi["failReview"] = Effect.fn("PrReviewService.failReview")(
 				function* (orgId, reviewId, error) {
@@ -3017,6 +3037,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					.pipe(Effect.mapError(toPersistence))
 				return Option.map(repository, (repo) => ({
 					repository: repo.fullName,
+					number: review.value.number,
 					headSha: review.value.headSha,
 				}))
 			})
@@ -3044,8 +3065,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.pull_request.number": job.number,
-						"maple.pr_review.checklist.ticked": job.ticks.filter((tick) => tick.done).length,
-						"maple.pr_review.checklist.unticked": job.ticks.filter((tick) => !tick.done).length,
+						"maple.pr_review.checklist.ticked": Arr.filter(job.ticks, (tick) => tick.done).length,
+						"maple.pr_review.checklist.unticked": Arr.filter(job.ticks, (tick) => !tick.done)
+							.length,
 					})
 					const repository = yield* repositories
 						.resolveRepository(orgId, job.provider, job.externalRepoId)
@@ -3142,7 +3164,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						)
 						.pipe(Effect.mapError(toPersistence))
 					// Whether the reminder went out; the claim is released on any other end.
-					yield* providerFor(orgId, repo).pipe(
+					yield* upstreamFor(orgId, repo).pipe(
 						Effect.flatMap(
 							Option.match({
 								onNone: () => Effect.succeed(false),
@@ -3174,6 +3196,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				onMergeStepsTicked,
 				getReview,
 				submitReview,
+				addCost,
 				failReview,
 			} satisfies PrReviewServiceApi
 		}),

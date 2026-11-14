@@ -2,17 +2,22 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
-import { hashIngestKey } from "@maple/db"
-import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/domain/primitives"
+import { hashIngestKey } from "../../platform/credential-tokens"
+import { AwsAccountId, AwsRegion, OrgId, UserId } from "@maple/primitives"
+import {
+	DISABLED_ORGANIZATION_FEATURE_FLAGS,
+	type OrganizationFeatureFlags,
+} from "@maple/domain/organization-feature-flags"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import { AwsConnectionService } from "./AwsConnectionService"
+} from "@maple/backend/testing/test-pglite"
+import { AwsConnectionService, type AwsModuleInfo } from "./AwsConnectionService"
 import { MAPLE_TEST_OIDC_KEY, makeFakeAws, OTHER_TEST_OIDC_KEY, type FakeAws } from "./aws/fake-aws"
 
 const trackedDbs: TestDb[] = []
@@ -35,18 +40,27 @@ const baseConfig = {
 
 const mapleAws = { MAPLE_AWS_OIDC_SIGNING_KEY: MAPLE_TEST_OIDC_KEY.privateKey }
 
-const makeLayer = (testDb: TestDb, aws: FakeAws, config: Record<string, string> = mapleAws) =>
+/** `cloudCost` is off unless a test turns it on: the `cost` module is a rollout. */
+const makeLayer = (
+	testDb: TestDb,
+	aws: FakeAws,
+	config: Record<string, string> = mapleAws,
+	flags: Partial<OrganizationFeatureFlags> = {},
+) =>
 	Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
+		Layer.provide(
+			OrganizationFeatureFlagsService.fixed({ ...DISABLED_ORGANIZATION_FEATURE_FLAGS, ...flags }),
+		),
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(Layer.succeed(HttpClient.HttpClient, aws.client)),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...config }))),
 	)
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_aws")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_1")
-const account = Schema.decodeUnknownSync(AwsAccountId)("123456789012")
+const orgId = Schema.decodeSync(OrgId)("org_aws")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_1")
+const account = Schema.decodeSync(AwsAccountId)("123456789012")
 
 interface SourceRow {
 	readonly platform: string
@@ -77,6 +91,12 @@ const countSources = (testDb: TestDb) =>
 			"SELECT count(*)::int AS count FROM sources WHERE platform = 'aws'",
 		),
 	).pipe(Effect.map((row) => row?.count))
+
+const offeredModules = (status: { readonly modules: ReadonlyArray<AwsModuleInfo> }) =>
+	Arr.map(
+		Arr.filter(status.modules, (module) => module.available),
+		(module) => module.module,
+	)
 
 describe("AwsConnectionService", () => {
 	it.effect("connects an account once the stack it renders is deployed", () => {
@@ -223,6 +243,12 @@ describe("AwsConnectionService", () => {
 				service.create(orgId, userId, { accountId: account, modules: ["security"] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.include(error.message, "does not read security")
+			// Cost is built: an org outside its rollout is told so, not to wait for it.
+			const gated = yield* Effect.flip(
+				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+			)
+			assert.include(gated.message, "not enabled for this organization")
 			assert.strictEqual(yield* countSources(testDb), 0)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
@@ -244,11 +270,83 @@ describe("AwsConnectionService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
+	it.effect("leaves the cost module planned for an org outside the cloudCost rollout", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), [])
+			const refused = yield* Effect.flip(
+				service.create(orgId, userId, { accountId: account, modules: ["cost"] }),
+			)
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+			assert.strictEqual(yield* countSources(testDb), 0)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("offers and accepts the cost module for an org in the cloudCost rollout", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			assert.deepStrictEqual(offeredModules(yield* service.status(orgId)), ["cost"])
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: ["cost"] })
+			assert.deepStrictEqual(created.modules, ["cost"])
+			const cleared = yield* service.update(orgId, created.id, { modules: [] })
+			assert.deepStrictEqual(cleared.modules, [])
+			const restored = yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.deepStrictEqual(restored.modules, ["cost"])
+			// The flag opens `cost` alone: the other planned modules stay refused.
+			const refused = yield* Effect.flip(
+				service.update(orgId, created.id, { modules: ["cost", "security"] }),
+			)
+			assert.strictEqual(refused._tag, "@maple/http/errors/IntegrationsValidationError")
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
+	})
+
+	it.effect("the cost source follows the connection's writes, without waiting for the sync", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const costSource = (connectionId: string) =>
+			Effect.promise(() =>
+				queryFirstRow<{ enabled: boolean; org_id: string }>(
+					testDb,
+					"SELECT enabled, org_id FROM cost_sources WHERE provider = 'aws' AND connection_ref = $1",
+					[connectionId],
+				),
+			)
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			yield* later(service.check(orgId, created.id))
+
+			// Asked for, but the deployed role does not grant it yet: no source to wait on.
+			yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.isUndefined(yield* costSource(created.id))
+
+			// The setup run again grants it: the check that sees the grant makes the source.
+			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
+			const granted = yield* later(service.check(orgId, created.id))
+			assert.deepStrictEqual(granted.grantedModules, ["cost"])
+			assert.deepStrictEqual(yield* costSource(created.id), { enabled: true, org_id: orgId })
+
+			// Turned off it pauses, kept for its history; turned back on it resumes.
+			yield* service.update(orgId, created.id, { modules: [] })
+			assert.strictEqual((yield* costSource(created.id))?.enabled, false)
+			yield* service.update(orgId, created.id, { modules: ["cost"] })
+			assert.strictEqual((yield* costSource(created.id))?.enabled, true)
+
+			yield* service.delete(orgId, created.id)
+			assert.isUndefined(yield* costSource(created.id))
+		}).pipe(Effect.provide(makeLayer(testDb, aws, mapleAws, { cloudCost: true })))
+	})
+
 	it.effect("streams metrics with a secret only this connection's row can verify", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
 		const regions = Arr.map(["us-east-1", "eu-central-1"], (region) =>
-			Schema.decodeUnknownSync(AwsRegion)(region),
+			Schema.decodeSync(AwsRegion)(region),
 		)
 		const streamSecretHash = (id: string) =>
 			Effect.promise(() =>
@@ -273,7 +371,7 @@ describe("AwsConnectionService", () => {
 			assert.isDefined(accessKey)
 			assert.strictEqual(
 				yield* streamSecretHash(created.id),
-				hashIngestKey(accessKey!, "maple-test-lookup-secret"),
+				hashIngestKey(accessKey, "maple-test-lookup-secret"),
 			)
 			assert.include(setup.setupScript, "for region in us-east-1 eu-central-1; do")
 
@@ -290,7 +388,7 @@ describe("AwsConnectionService", () => {
 			// The secret is a parameter the script passes, never part of the template.
 			assert.deepStrictEqual(endpoint.AccessKey, { Ref: "AccessKey" })
 			assert.isTrue(template.Parameters.AccessKey.NoEcho)
-			assert.notInclude(setup.metricsCloudformationTemplate ?? "", accessKey!)
+			assert.notInclude(setup.metricsCloudformationTemplate ?? "", accessKey)
 
 			// Turning the stream off leaves a setup that only removes its stacks.
 			const off = yield* service.update(orgId, created.id, { metricStream: null })
@@ -312,15 +410,44 @@ describe("AwsConnectionService", () => {
 			assert.notStrictEqual(again, accessKey)
 			assert.strictEqual(
 				yield* streamSecretHash(created.id),
-				hashIngestKey(again!, "maple-test-lookup-secret"),
+				hashIngestKey(again, "maple-test-lookup-secret"),
 			)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+
+	it.effect("refuses a stored stream secret that is not in the v2 envelope", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		const region = Schema.decodeSync(AwsRegion)("us-east-1")
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			const created = yield* service.create(orgId, userId, {
+				accountId: account,
+				modules: [],
+				metricStream: { regions: [region], namespaces: ["AWS/Lambda"] },
+			})
+			const stored = {
+				ciphertext: Buffer.from("old").toString("base64"),
+				iv: Buffer.alloc(12, 1).toString("base64"),
+				tag: Buffer.alloc(16, 2).toString("base64"),
+			}
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`UPDATE aws_connections SET stream_secret_ciphertext = $1, stream_secret_iv = $2,
+					 stream_secret_tag = $3 WHERE id = $4`,
+					[stored.ciphertext, stored.iv, stored.tag, created.id],
+				),
+			)
+			const error = yield* service.setup(orgId, created.id).pipe(Effect.flip)
+			assert.strictEqual(error.message, "Failed to decrypt the AWS stream secret")
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
 	it.effect("mints a stream secret once for a connection made before streams", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const region = Schema.decodeUnknownSync(AwsRegion)("us-east-1")
+		const region = Schema.decodeSync(AwsRegion)("us-east-1")
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
@@ -353,7 +480,7 @@ describe("AwsConnectionService", () => {
 				service.create(orgId, userId, { accountId: account, modules: [] }),
 			)
 			assert.strictEqual(error._tag, "@maple/http/errors/AwsIntegrationUnavailableError")
-			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
+			assert.deepStrictEqual(yield* service.checkDue, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws, { MAPLE_AWS_OIDC_SIGNING_KEY: "not a key" })))
 	})
 
@@ -373,13 +500,13 @@ describe("AwsConnectionService", () => {
 				),
 			)
 
-			const first = yield* service.checkDue()
+			const first = yield* service.checkDue
 			assert.deepStrictEqual(first, { due: 1, checked: 1, failures: 0 })
 			const [checked] = (yield* service.status(orgId)).connections
 			assert.isNotNull(checked?.verifiedAt)
 
 			// Checked moments ago: nothing is due, and the paused one is never claimed.
-			const second = yield* service.checkDue()
+			const second = yield* service.checkDue
 			assert.deepStrictEqual(second, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
@@ -406,7 +533,7 @@ describe("AwsConnectionService", () => {
 			const service = yield* AwsConnectionService
 			const created = yield* service.create(orgId, userId, { accountId: account, modules: [] })
 			aws.deploy(account, (yield* service.setup(orgId, created.id)).cloudformationTemplate)
-			const [a, b] = yield* Effect.all([service.checkDue(), service.checkDue()], { concurrency: 2 })
+			const [a, b] = yield* Effect.all([service.checkDue, service.checkDue], { concurrency: 2 })
 			assert.strictEqual((a?.checked ?? 0) + (b?.checked ?? 0), 1)
 			assert.strictEqual(
 				Arr.filter(aws.calls, (call) => call === "AssumeRoleWithWebIdentity").length,
@@ -459,21 +586,21 @@ describe("AwsConnectionService", () => {
 				Array.from({ length: 101 }, (_, index) => index),
 				(index) =>
 					service.create(orgId, userId, {
-						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						accountId: Schema.decodeSync(AwsAccountId)(String(100000000000 + index)),
 						modules: [],
 					}),
 				{ concurrency: 10 },
 			)
-			const sweep = yield* service.checkDue()
+			const sweep = yield* service.checkDue
 			assert.deepStrictEqual(sweep, { due: 101, checked: 101, failures: 101 })
-			assert.deepStrictEqual(yield* service.checkDue(), { due: 0, checked: 0, failures: 0 })
+			assert.deepStrictEqual(yield* service.checkDue, { due: 0, checked: 0, failures: 0 })
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 
 	it.effect("a sweep checks a never-checked connection ahead of stale ones", () => {
 		const testDb = createTestDb(trackedDbs)
 		const aws = makeFakeAws()
-		const accountOf = (digits: string) => Schema.decodeUnknownSync(AwsAccountId)(digits)
+		const accountOf = (digits: string) => Schema.decodeSync(AwsAccountId)(digits)
 		return Effect.gen(function* () {
 			const service = yield* AwsConnectionService
 			const stale = yield* Effect.forEach(["111111111111", "222222222222"], (digits) =>
@@ -486,7 +613,7 @@ describe("AwsConnectionService", () => {
 				modules: [],
 			})
 			aws.assumed.length = 0
-			yield* service.checkDue()
+			yield* service.checkDue
 			// Two checks run at a time: the new connection is in the first pair, not behind both stale ones.
 			assert.include(aws.assumed.slice(0, 2), fresh.roleArn)
 			assert.lengthOf(aws.assumed, 3)
@@ -502,14 +629,14 @@ describe("AwsConnectionService", () => {
 				Array.from({ length: 80 }, (_, index) => index),
 				(index) =>
 					service.create(orgId, userId, {
-						accountId: Schema.decodeUnknownSync(AwsAccountId)(String(100000000000 + index)),
+						accountId: Schema.decodeSync(AwsAccountId)(String(100000000000 + index)),
 						modules: [],
 					}),
 				{ concurrency: 10 },
 			)
 			// Each check takes 9s, under the SDK's timers: 80 checks two at a time outlast the budget.
 			aws.beforeEachCall = TestClock.adjust("9 seconds")
-			const first = yield* service.checkDue()
+			const first = yield* service.checkDue
 			assert.strictEqual(first.due, 80)
 			assert.isAbove(first.checked, 0)
 			assert.isBelow(first.checked, 80)
@@ -517,7 +644,7 @@ describe("AwsConnectionService", () => {
 			assert.isAtMost(aws.assumed.length, first.checked)
 			aws.beforeEachCall = Effect.void
 			yield* TestClock.adjust("1 hour")
-			assert.strictEqual((yield* service.checkDue()).checked, 80)
+			assert.strictEqual((yield* service.checkDue).checked, 80)
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 })

@@ -9,7 +9,7 @@ import type { Attribute, HtmlBuilder } from "foldkit/html"
 export const rowClass = <Message>(h: HtmlBuilder<Message>, value: string): Attribute<Message> =>
 	h.Attribute("class", value)
 
-// styles: packages/ui/src/components/logs/log-attribute-chip.tsx
+/** An attribute chip's look per tone. */
 export const CHIP_TONE_CLASSES = {
 	crit: "bg-severity-error-a2 text-severity-error border-severity-error-a3 hover:bg-severity-error-a3 active:bg-severity-error-a3",
 	warn: "bg-severity-warn-a2 text-severity-warn border-severity-warn-a3 hover:bg-severity-warn-a3 active:bg-severity-warn-a3",
@@ -22,9 +22,9 @@ export const CHIP_KEY_TONE_CLASSES = {
 	warn: "opacity-70",
 	// Full muted tone keeps the key at AA against the chip; the bright value carries the hierarchy.
 	emphasis: "text-muted-foreground",
-	muted: "opacity-70",
+	muted: "text-foreground-subtle",
 } satisfies Record<ChipTone, string>
 export const CHIP_CLASS =
-	"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded-sm border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex items-center gap-1 h-[18px] min-w-0 px-1.5 rounded-sm border text-3xs font-mono leading-none whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 export const CHIP_FILTER_ACTION_CLASS =
-	"inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-2xs text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+	"inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-2xs text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

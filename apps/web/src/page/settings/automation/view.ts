@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import type { AlertDestinationDocument, IssueSeverity } from "@maple/domain/http"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -15,14 +16,15 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton, skeletonBlock, skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
 import { providerLogo, providerOf } from "../../alerts/shared/providers"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../errors/kit/severity"
+import { SEVERITY_LABEL, SEVERITY_ORDER, severityBadge, severityDot } from "../../kit/issue-severity"
 import { relativeTime } from "../../kit/relative-time"
 import { docsLink } from "../../kit/signal-empty-state"
-import { adminOnlyNote, settingsSection, settingsSections } from "../kit/section"
-import { Message, type Model, type PolicyDraft } from "./model"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
+import { canManage, Message, type Model, type PolicyDraft } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
+import { routingTabHref } from "../../alerts/shared/escalation-chains"
 
 type H = HtmlBuilder<Message>
 type Inputs = Readonly<{ nowMs: number; timeZone: string; isKnownMember: boolean }>
@@ -53,7 +55,7 @@ const destinationOptions = (h: H, model: Model, destinations: ReadonlyArray<Aler
 			onLogoError: Message.FailedLoadProviderLogo({ type: destination.type }),
 		}),
 		label: hstack(h, { gap: "2", as: "span" }, [
-			h.span([h.Class("font-medium")], [destination.name]),
+			typography(h, { weight: "medium" }, [destination.name]),
 			typography(h, { size: "xs", tone: "muted" }, [providerOf(destination.type).label]),
 		]),
 	}))
@@ -65,7 +67,7 @@ const severityRule = (
 	severity: IssueSeverity,
 	destinations: ReadonlyArray<AlertDestinationDocument>,
 ): Html => {
-	const isLocked = !model.isAdmin || model.isSaving
+	const isLocked = !canManage(model) || model.isSaving
 	const select = model.confidenceSelects[severity]
 	return h.div(
 		[h.Key(severity), h.Class("space-y-2 border-t border-border-subtle pt-3")],
@@ -89,7 +91,6 @@ const severityRule = (
 									})),
 									size: "sm",
 									className: "w-24",
-									// `<SelectValue />` without a renderer prints the raw value.
 									renderValue: (value) => [value],
 									toView: (parts) => h.div([h.Class("contents")], parts),
 								},
@@ -123,7 +124,7 @@ const destinationsBlock = (h: H, model: Model, draft: PolicyDraft): Html => {
 					"Escalation sends triaged issues to a destination. Add a Slack, email or webhook destination first.",
 				]),
 				hstack(h, { wrap: true, className: "gap-x-4 gap-y-2" }, [
-					linkButton(h, { size: "sm", variant: "outline", href: "/alerts?tab=routing" }, [
+					linkButton(h, { size: "sm", variant: "outline", href: routingTabHref() }, [
 						"Add a destination",
 					]),
 					docsLink(h, "destinations"),
@@ -151,12 +152,12 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 					description:
 						"Route issues to destinations when AI triage or a teammate sets their severity. Fires once per issue and severity level, upward only.",
 					filled: draft.enabled,
-					disabled: !model.isAdmin || model.isSaving,
+					disabled: !canManage(model) || model.isSaving,
 					control: switchControl(h, {
 						id: "escalation-enabled",
 						inputId: "escalation-enabled-input",
 						isChecked: draft.enabled,
-						isDisabled: !model.isAdmin || model.isSaving,
+						isDisabled: !canManage(model) || model.isSaving,
 						labelledBy: "escalation-enabled-label",
 						describedBy: "escalation-enabled-description",
 						isFilled: draft.enabled,
@@ -164,15 +165,16 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 					}),
 				}),
 				destinationsBlock(h, model, draft),
-				h.div(
-					[h.Class("flex justify-end border-t border-border-subtle pt-3")],
+				hstack(
+					h,
+					{ align: "stretch", justify: "end", className: "border-t border-border-subtle pt-3" },
 					[
 						button(
 							h,
 							{
 								size: "sm",
 								isLoading: model.isSaving,
-								isDisabled: !model.isAdmin,
+								isDisabled: !canManage(model),
 								attributes: [h.OnClick(Message.ClickedSavePolicy())],
 							},
 							["Save policy"],
@@ -180,9 +182,9 @@ const policyForm = (h: H, model: Model, draft: PolicyDraft, isKnownMember: boole
 					],
 				),
 			]),
-			...(model.isAdmin || !isKnownMember
+			...(canManage(model) || !isKnownMember
 				? []
-				: [adminOnlyNote(h, ["Only org admins can change the escalation policy."])]),
+				: [adminOnlyNote(h, [Policy.denialFor("error_policy:manage").message])]),
 		],
 	)
 
@@ -267,13 +269,17 @@ const decisionText = (h: H, model: Model): ReadonlyArray<Html | string> => {
 		typography(h, { size: "sm", tone: "muted" }, [
 			evaluated.outcome === "route"
 				? Arr.join(
-						Arr.map(
-							evaluated.destinationIds,
-							(id) => destinations.find((destination) => destination.id === id)?.name ?? id,
+						Arr.map(evaluated.destinationIds, (id) =>
+							Option.match(
+								Arr.findFirst(destinations, (destination) => destination.id === id),
+								{ onNone: () => id, onSome: (destination) => destination.name },
+							),
 						),
 						", ",
 					)
-				: (evaluated.skipReason?.replaceAll("_", " ") ?? ""),
+				: evaluated.skipReason === null
+					? ""
+					: Str.replaceAll("_", " ")(evaluated.skipReason),
 		]),
 	]
 }
@@ -299,7 +305,9 @@ const simulator = (h: H, model: Model): Html => {
 						className: "h-8 w-full",
 						isDisabled: isWaiting,
 						renderValue: (value) => {
-							const severity = SEVERITY_ORDER.find((entry) => entry === value) ?? null
+							const severity = Option.getOrNull(
+								Arr.findFirst(SEVERITY_ORDER, (entry) => entry === value),
+							)
 							return [
 								hstack(h, { gap: "2", as: "span" }, [
 									severityDot(h, severity),
@@ -308,7 +316,9 @@ const simulator = (h: H, model: Model): Html => {
 							]
 						},
 						renderItem: (option) => {
-							const severity = SEVERITY_ORDER.find((entry) => entry === option.value) ?? null
+							const severity = Option.getOrNull(
+								Arr.findFirst(SEVERITY_ORDER, (entry) => entry === option.value),
+							)
 							return [
 								hstack(h, { gap: "2", as: "span" }, [severityDot(h, severity), option.label]),
 							]
@@ -353,23 +363,20 @@ const simulator = (h: H, model: Model): Html => {
 				),
 			],
 		),
-		h.div(
-			[h.Class("mt-4 flex flex-wrap items-center gap-3 border-t pt-4")],
-			[
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						isLoading: model.isEvaluating,
-						isDisabled: model.isDirty || model.draft === null,
-						attributes: [h.OnClick(Message.ClickedEvaluate())],
-					},
-					["Evaluate policy"],
-				),
-				...decisionText(h, model),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", wrap: true, className: "mt-4 border-t pt-4" }, [
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					isLoading: model.isEvaluating,
+					isDisabled: model.isDirty || model.draft === null,
+					attributes: [h.OnClick(Message.ClickedEvaluate())],
+				},
+				["Evaluate policy"],
+			),
+			...decisionText(h, model),
+		]),
 	])
 }
 
@@ -408,8 +415,9 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 								Arr.map(response.attempts, (attempt) =>
 									listRow(h, {
 										divided: true,
-										leading: h.span(
-											[h.Class("flex w-32 items-center gap-2")],
+										leading: hstack(
+											h,
+											{ gap: "2", align: "center", as: "span", className: "w-32" },
 											[
 												severityBadge(h, attempt.severity),
 												h.span([h.Class("capitalize")], [attempt.status]),
@@ -425,8 +433,9 @@ const recentDeliveries = (h: H, model: Model, inputs: Inputs): Html =>
 														),
 														", ",
 													)
-												: (attempt.skipReason?.replaceAll("_", " ") ??
-													"Awaiting delivery"),
+												: attempt.skipReason === null
+													? "Awaiting delivery"
+													: Str.replaceAll("_", " ")(attempt.skipReason),
 										]),
 										trailing: relativeTime(h, {
 											value: attempt.createdAt,

@@ -1,10 +1,9 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { SessionTag } from "@maple/domain/query-engine"
 import { isSessionLive } from "@maple/ui/lib/replay-format"
-import { noiseTierOf, SESSION_TAG_LABELS } from "../../../components/replays/session-tags"
+import { noiseTierOf, SESSION_TAG_LABELS } from "./session-tags"
 import { Schema, Array as Arr, String as Str } from "effect"
 
-/** A session list row, the list's view of `replayListItemFromV2`. */
 export const SessionRow = Schema.Struct({
 	sessionId: Schema.String,
 	startTime: Schema.String,
@@ -88,25 +87,25 @@ const runItems = (
 	]
 }
 
-/** `sessionListItems`: runs of two or more adjacent low-signal sessions fold into one row. */
+/** Runs of two or more adjacent low-signal sessions fold into one row. */
 export const sessionListItems = (
 	sessions: ReadonlyArray<SessionRow>,
 	options: { readonly collapse: boolean; readonly expanded: ReadonlyArray<string>; readonly nowMs: number },
 ): ReadonlyArray<SessionListItem> => {
-	const folded = sessions.reduce<{ items: ReadonlyArray<SessionListItem>; run: ReadonlyArray<SessionRow> }>(
-		(state, session) => {
-			const lowSignal = isLowSignal(session, options.nowMs)
-			if (options.collapse && lowSignal) return { items: state.items, run: [...state.run, session] }
-			return {
-				items: [
-					...state.items,
-					...runItems(state.run, options.expanded),
-					{ kind: "session", session, lowSignal },
-				],
-				run: [],
-			}
-		},
-		{ items: [], run: [] },
-	)
+	const folded = Arr.reduce<
+		SessionRow,
+		{ items: ReadonlyArray<SessionListItem>; run: ReadonlyArray<SessionRow> }
+	>(sessions, { items: [], run: [] }, (state, session) => {
+		const lowSignal = isLowSignal(session, options.nowMs)
+		if (options.collapse && lowSignal) return { items: state.items, run: [...state.run, session] }
+		return {
+			items: [
+				...state.items,
+				...runItems(state.run, options.expanded),
+				{ kind: "session", session, lowSignal },
+			],
+			run: [],
+		}
+	})
 	return [...folded.items, ...runItems(folded.run, options.expanded)]
 }

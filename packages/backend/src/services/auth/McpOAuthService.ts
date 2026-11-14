@@ -12,7 +12,7 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, McpOAuthAuthorizations, McpOAuthClients, McpOAuthRefreshTokens } from "@maple/db/tables"
 import { REFRESH_FAMILY_ABSOLUTE_TTL_MS, revokeRefreshFamily } from "./mcp-oauth-family"
 import {
@@ -22,7 +22,6 @@ import {
 	Effect,
 	Layer,
 	Option,
-	Redacted,
 	Result,
 	Schema,
 	Array as Arr,
@@ -33,6 +32,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { McpOAuthRateLimit } from "@maple/backend/platform/bindings"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 
 const AUTHORIZATION_REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
@@ -117,10 +117,9 @@ const hashOpaqueToken = (value: string) => createHash("sha256").update(value).di
 const makeOpaqueToken = (prefix: string) => `${prefix}${randomBytes(32).toString("base64url")}`
 const decodeApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
 
-const persistenceError = (error: unknown) =>
-	new McpOAuthPersistenceError({
-		message: error instanceof Error ? error.message : "MCP OAuth persistence failed",
-	})
+// These errors answer unauthenticated callers; `makeDbExecute` has already logged the driver's message.
+const persistenceError = () =>
+	new McpOAuthPersistenceError({ message: "MCP authorization is temporarily unavailable" })
 
 const protocolError = (
 	error: string,
@@ -199,12 +198,15 @@ const parseLoopbackRedirectUri = (value: string) =>
 	Option.map(decodeLoopbackMcpOAuthRedirectUri(value), (url) => {
 		// RFC 8252 permits only the port to vary. Keep the original suffix so path and query
 		// matching does not inherit URL parser normalization.
-		const authorityStart = value.indexOf("//") + 2
-		const suffixOffset = Str.slice(authorityStart)(value).search(/[/?]/)
+		const authorityStart = Option.getOrElse(Str.indexOf("//")(value), () => -1) + 2
+		const suffixOffset = Str.search(/[/?]/)(Str.slice(authorityStart)(value))
 		return {
 			protocol: url.protocol,
 			hostname: url.hostname,
-			suffix: suffixOffset === -1 ? "" : Str.slice(authorityStart + suffixOffset)(value),
+			suffix: Option.match(suffixOffset, {
+				onNone: () => "",
+				onSome: (offset) => Str.slice(authorityStart + offset)(value),
+			}),
 		}
 	})
 
@@ -315,8 +317,8 @@ export class McpOAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(McpOAuthRateLimit)
-		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		const apiKeyHmacKey = yield* ingestKeyLookupHmacKey(
+			env,
 			(message) => new McpOAuthPersistenceError({ message }),
 		)
 
@@ -351,15 +353,15 @@ export class McpOAuthService extends Context.Service<
 		const register = fnClientErrorsOk("McpOAuthService.register")(
 			Effect.fnUntraced(function* (input: McpOAuthRegistrationInput, requesterKey: string) {
 				yield* checkRateLimit(`register:${requesterKey}`)
-				const clientName = input.clientName.trim().slice(0, 120)
+				const clientName = Str.slice(0, 120)(Str.trim(input.clientName))
 				const redirectUris = [...new Set(input.redirectUris)]
 				if (!clientName)
 					return yield* protocolError("invalid_client_metadata", "client_name is required")
 				if (
 					redirectUris.length === 0 ||
 					redirectUris.length > 10 ||
-					redirectUris.some((uri) => uri.length > 2048) ||
-					redirectUris.some((uri) => !validateMcpOAuthRedirectUri(uri))
+					Arr.some(redirectUris, (uri) => uri.length > 2048) ||
+					Arr.some(redirectUris, (uri) => !validateMcpOAuthRedirectUri(uri))
 				) {
 					return yield* protocolError(
 						"invalid_redirect_uri",
@@ -413,9 +415,9 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const client = clients[0]
-				if (!client) return yield* protocolError("invalid_request", "Unknown client_id")
+				if (client === undefined) return yield* protocolError("invalid_request", "Unknown client_id")
 				if (
-					!client.redirectUris.some((registered) =>
+					!Arr.some(client.redirectUris, (registered) =>
 						matchesMcpOAuthRedirectUri(registered, input.redirectUri),
 					)
 				) {
@@ -481,7 +483,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				return {
-					consentUrl: `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/mcp-authorize?request_id=${encodeURIComponent(requestId)}`,
+					consentUrl: `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/mcp-authorize?request_id=${encodeURIComponent(requestId)}`,
 				}
 			}),
 		)
@@ -489,7 +491,7 @@ export class McpOAuthService extends Context.Service<
 		const findAuthorization = Effect.fn("McpOAuthService.findAuthorization")(function* (
 			requestId: string,
 		) {
-			if (!requestId.startsWith("mcp_auth_") || requestId.length > 128) {
+			if (!Str.startsWith("mcp_auth_")(requestId) || requestId.length > 128) {
 				return yield* new McpOAuthAuthorizationNotFoundError({
 					message: "OAuth authorization request not found",
 				})
@@ -502,7 +504,7 @@ export class McpOAuthService extends Context.Service<
 						.limit(1),
 				),
 			)
-			if (!rows[0]) {
+			if (rows[0] === undefined) {
 				return yield* new McpOAuthAuthorizationNotFoundError({
 					message: "OAuth authorization request not found",
 				})
@@ -645,7 +647,7 @@ export class McpOAuthService extends Context.Service<
 			token_type: "Bearer" as const,
 			expires_in: ACCESS_TOKEN_TTL_MS / 1000,
 			refresh_token: refreshToken,
-			scope: scopes.join(" "),
+			scope: Arr.join(scopes, " "),
 		})
 
 		const exchangeAuthorizationCode = fnClientErrorsOk("McpOAuthService.exchangeAuthorizationCode")(
@@ -662,7 +664,7 @@ export class McpOAuthService extends Context.Service<
 				const row = rows[0]
 				const now = yield* Clock.currentTimeMillis
 				if (
-					!row ||
+					row === undefined ||
 					row.approvedAt === null ||
 					!row.approvedOrgId ||
 					!row.approvedUserId ||
@@ -712,7 +714,7 @@ export class McpOAuthService extends Context.Service<
 									name: row.clientName,
 									description: "OAuth access token for the Maple MCP server",
 									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
+									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: row.scopes,
 									metadataJson: oauthKeyMetadata(approvedRoles, row.clientId, row.resource),
@@ -765,19 +767,19 @@ export class McpOAuthService extends Context.Service<
 				const now = yield* Clock.currentTimeMillis
 				const requestedScopes = parseScopes(input.scope)
 				if (
-					!row ||
+					row === undefined ||
 					row.expiresAt <= now ||
 					row.clientId !== input.clientId ||
 					row.resource !== input.resource ||
 					!requestedScopes ||
-					requestedScopes.some((scope) => !row.scopes.includes(scope))
+					Arr.some(requestedScopes, (scope) => !row.scopes.includes(scope))
 				) {
 					return yield* protocolError("invalid_grant", "Refresh token is invalid or expired")
 				}
 				// The grant's absolute ceiling. Rotation resets `expires_at`, so this is
 				// the only thing that ever ends a grant nobody explicitly revoked.
-				// A pre-column row is anchored from the row in hand — at most one
-				// rotation window old — rather than being grandfathered in forever.
+				// A pre-column row is anchored from the row in hand (at most one
+				// rotation window old) rather than being grandfathered in forever.
 				const familyExpiresAtMs =
 					row.familyExpiresAt ?? row.createdAt + REFRESH_FAMILY_ABSOLUTE_TTL_MS
 				if (familyExpiresAtMs <= now) {
@@ -790,7 +792,7 @@ export class McpOAuthService extends Context.Service<
 				// The visible `api_keys` row is the only handle a member has on this
 				// grant in the UI, and revoking it used to be a no-op the next rotation
 				// undid. Treating it as the grant's kill switch is what makes that
-				// button — and the membership-removal sweep — actually bite.
+				// button (and the membership-removal sweep) actually bite.
 				const accessKeyRows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ApiKeys)
@@ -800,7 +802,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const accessKeyRow = accessKeyRows[0]
-				if (!accessKeyRow || accessKeyRow.revoked) {
+				if (accessKeyRow === undefined || accessKeyRow.revoked) {
 					yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 					return yield* protocolError(
 						"invalid_grant",
@@ -854,7 +856,7 @@ export class McpOAuthService extends Context.Service<
 									name: "Maple MCP client",
 									description: "OAuth access token for the Maple MCP server",
 									keyHash: hashApiKey(values.accessToken, apiKeyHmacKey),
-									keyPrefix: values.accessToken.slice(0, 12) + "...",
+									keyPrefix: Str.slice(0, 12)(values.accessToken) + "...",
 									kind: "mcp",
 									scopes: requestedScopes,
 									metadataJson: oauthKeyMetadata(row.roles, row.clientId, row.resource),
@@ -900,7 +902,7 @@ export class McpOAuthService extends Context.Service<
 
 		const revoke = Effect.fn("McpOAuthService.revoke")(function* (token: string, clientId: string) {
 			const now = yield* Clock.currentTimeMillis
-			if (token.startsWith("maple_mcp_refresh_")) {
+			if (Str.startsWith("maple_mcp_refresh_")(token)) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(McpOAuthRefreshTokens)
@@ -910,7 +912,7 @@ export class McpOAuthService extends Context.Service<
 					),
 				)
 				const row = rows[0]
-				if (row && row.clientId === clientId) {
+				if (row !== undefined && row.clientId === clientId) {
 					yield* dbExecute((db) => db.transaction(revokeRefreshFamily(db, row.familyId, now)))
 				}
 				return
@@ -927,7 +929,7 @@ export class McpOAuthService extends Context.Service<
 			const row = rows[0]
 			const metadata = row?.metadataJson
 			if (
-				row &&
+				row !== undefined &&
 				typeof metadata === "object" &&
 				metadata !== null &&
 				"source" in metadata &&
@@ -944,7 +946,7 @@ export class McpOAuthService extends Context.Service<
 									.where(($) => [$.accessKeyId.eq(row.id)])
 									.limit(1),
 							)
-							if (refreshRows[0]) {
+							if (refreshRows[0] !== undefined) {
 								yield* revokeRefreshFamily(db, refreshRows[0].familyId, now)
 								return
 							}

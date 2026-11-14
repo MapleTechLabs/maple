@@ -6,7 +6,7 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
 
-// The AI tab: `ModelProviderSection`, `AutoTriageSection` and `AiEscalationCard`.
+// The AI tab: the model provider, auto-triage and AI escalation.
 
 export const Provider = Schema.Literals(["managed", "openrouter"])
 export type Provider = typeof Provider.Type
@@ -18,6 +18,9 @@ export const TriageData = AsyncData.Schema(AiTriageSettingsDocument, LoadFailure
 export const LimitsDraft = Schema.Struct({ maxRunsPerDay: Schema.String, maxPassesPerDay: Schema.String })
 export type LimitsDraft = typeof LimitsDraft.Type
 
+export const KeyWrite = Schema.Literals(["Idle", "Saving", "Removing"])
+export type KeyWrite = typeof KeyWrite.Type
+
 export const Model = Schema.Struct({
 	/** Orgs outside the auto-triage rollout see the teaser. */
 	isTriageAvailable: Schema.Boolean,
@@ -26,10 +29,10 @@ export const Model = Schema.Struct({
 	picked: Schema.NullOr(Provider),
 	isReplacing: Schema.Boolean,
 	keyDraft: Field.Model,
-	isSavingKey: Schema.Boolean,
+	/** The one key write in flight: a save and a remove never overlap. */
+	keyWrite: KeyWrite,
 	removeDialog: Dialog.Model,
-	isRemoving: Schema.Boolean,
-	/** `AddOnUpsell`: the confirm before attaching the OpenRouter add-on, and the attach in flight. */
+	/** The confirm before attaching the OpenRouter add-on, and the attach in flight. */
 	addOnDialog: Dialog.Model,
 	isAttachingAddOn: Schema.Boolean,
 	triage: TriageData.schema,

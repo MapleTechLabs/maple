@@ -3,8 +3,8 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } fro
 import { FetchHttpClient } from "effect/http"
 import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { seedOrgRow } from "@maple/backend/platform/test-two-orgs"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { seedOrgRow } from "@maple/backend/testing/test-two-orgs"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { AutumnClient, type AutumnResult } from "@maple/backend/services/billing/autumn-http"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
@@ -24,9 +24,9 @@ const orgId = Schema.decodeUnknownSync(OrgId)
 const PAYER = orgId("org_payer")
 const MEMBER = orgId("org_member")
 const OTHER = orgId("org_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_admin")
-const ADMIN = [Schema.decodeUnknownSync(RoleName)("org:admin")]
-const MEMBER_ROLE = [Schema.decodeUnknownSync(RoleName)("org:member")]
+const USER = Schema.decodeSync(UserId)("user_admin")
+const ADMIN = [Schema.decodeSync(RoleName)("org:admin")]
+const MEMBER_ROLE = [Schema.decodeSync(RoleName)("org:member")]
 
 interface World {
 	/** Orgs whose Autumn customer holds the `billing_sub_orgs` flag. */
@@ -111,7 +111,7 @@ const layerFor = (testDb: TestDb, world: World) =>
 							const role = world.roles.get(org)
 							return role === undefined
 								? Option.none()
-								: Option.some({ orgId: org, role: Schema.decodeUnknownSync(RoleName)(role) })
+								: Option.some({ orgId: org, role: Schema.decodeSync(RoleName)(role) })
 						}),
 				}),
 				Layer.succeed(OrganizationRegionService, {
@@ -296,7 +296,7 @@ describe("BillingOrgService", () => {
 				assert.strictEqual(world.cancelCalls, 1)
 				const service = yield* BillingOrgService
 				assert.deepStrictEqual(
-					(yield* service.members(PAYER)).map((row) => row.orgId),
+					Arr.map(yield* service.members(PAYER), (row) => row.orgId),
 					[MEMBER],
 				)
 				assert.deepStrictEqual(

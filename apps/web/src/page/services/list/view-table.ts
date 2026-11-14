@@ -1,11 +1,11 @@
 import { countLabel, formatErrorRate, formatThroughput, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+import { relativeTime } from "../../kit/relative-time"
 import { TONE_COLOR } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { HEALTH_TONE } from "../../../components/dashboard/service-health"
+import { HEALTH_TONE } from "../../kit/service-health-rollup"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -23,6 +23,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
 import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import {
@@ -35,8 +36,8 @@ import {
 	hasActiveServiceFilters,
 	type HealthSummary,
 	healthOf,
-	isResolvableSha,
 	NO_NAMESPACE,
+	orderedServices,
 	resolveGroupBy,
 	type ServiceHealth,
 } from "./derive"
@@ -45,7 +46,11 @@ import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
 import { isUnnamedService, type Overlays, rowIdOf, unnamedServiceHint, withOverlays } from "./view-overlays"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { stripClass } from "@maple/views/ui/rule"
+import { isResolvableSha } from "../../kit/commit-card"
 
 /** The Throughput chart's colour, so every calls sparkline across the service pages matches. */
 export const THROUGHPUT_COLOR = "--chart-throughput"
@@ -121,19 +126,27 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 	const info = deployInfo(service.commits)
 	if (info === undefined) return typography(h, { size: "xs", tone: "muted" }, ["N/A"])
 	const age =
-		info.firstSeen !== "" ? formatRelativeTimeOrDate(info.firstSeen, ctx.model.nowMs, ctx.timeZone) : ""
+		info.firstSeen !== ""
+			? relativeTime(h, {
+					value: info.firstSeen,
+					nowMs: ctx.model.nowMs,
+					timeZone: ctx.timeZone,
+					variant: "orDate",
+				})
+			: null
 	const messages: Readonly<Record<string, string>> = Option.getOrElse(
 		FoldkitAsyncData.getData(ctx.model.commitMessages.data),
 		() => ({}),
 	)
 	const message = isResolvableSha(info.sha) ? (messages[info.sha] ?? "") : ""
 	const shortSha = truncateCommitSha(info.sha)
-	const metaText = message !== "" ? Arr.join(Arr.filter([shortSha, age], Boolean), " · ") : age
+	const meta: ReadonlyArray<Html | string> =
+		age === null ? (message !== "" ? [shortSha] : []) : message !== "" ? [shortSha, " · ", age] : [age]
 	const stateLine: Html | null = info.errorsSince
-		? h.span(
-				[h.Class("truncate text-3xs text-severity-error")],
-				[...(age !== "" ? [`${age} · `] : []), "errors ↑ since"],
-			)
+		? typography(h, { size: "3xs", tone: "error", truncate: true }, [
+				...(age !== null ? [age, " · "] : []),
+				"errors ↑ since",
+			])
 		: info.rollout !== undefined
 			? pressable(
 					h,
@@ -152,10 +165,11 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 							className: "h-[3px] w-10 shrink-0 bg-muted",
 							fillClassName: "bg-primary",
 						}),
-						h.span(
-							[h.Class("font-mono text-3xs text-primary")],
-							[String(info.rollout.percentage), "% · +", String(info.rollout.others.length)],
-						),
+						typography(h, { size: "3xs", tone: "primary", mono: true }, [
+							String(info.rollout.percentage),
+							"% · +",
+							String(info.rollout.others.length),
+						]),
 					],
 				)
 			: null
@@ -172,9 +186,9 @@ const deployCell = (h: HtmlBuilder<Message>, ctx: TableContext, service: Service
 	return vstack(h, { gap: "0.5", shrink: true }, [
 		trigger,
 		stateLine ??
-			(metaText === ""
+			(meta.length === 0
 				? null
-				: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, [metaText])),
+				: typography(h, { size: "3xs", tone: "muted", mono: true, truncate: true }, meta)),
 	])
 }
 
@@ -185,6 +199,7 @@ const serviceRow = (
 	subtitle: string,
 	baselines: ReturnType<typeof baselineMapOf> | undefined,
 	groupPath: string,
+	isFocused: boolean,
 ): Html => {
 	const health = healthOf(ctx.summary, service)
 	const series = FoldkitAsyncData.getData(ctx.model.sparklines.data).pipe(
@@ -209,17 +224,17 @@ const serviceRow = (
 		h,
 		[
 			tableCell(h, [
-				h.a(
-					[
-						h.Class(
-							"flex max-w-full items-center gap-1.5 font-medium text-foreground hover:underline active:underline",
-						),
-						h.Href(serviceHref(ctx.model, service)),
-						h.Title(service.serviceName),
-					],
+				textLink(
+					h,
+					{
+						href: serviceHref(ctx.model, service),
+						tone: "inherit",
+						className: "flex max-w-full gap-1.5 font-medium text-foreground",
+						attributes: [h.Title(service.serviceName)],
+					},
 					[
 						serviceDot(h, { serviceName: service.serviceName }),
-						h.span([h.Class("min-w-0 truncate")], [service.serviceName]),
+						typography(h, { truncate: true, className: "min-w-0" }, [service.serviceName]),
 						isUnnamedService(service.serviceName)
 							? unnamedServiceHint(h, ctx.overlays?.tooltip("unnamed", rowIdOf(service)) ?? [])
 							: null,
@@ -268,15 +283,12 @@ const serviceRow = (
 								? TONE_COLOR.crit
 								: TONE_COLOR.neutral,
 						),
-						h.div(
-							[h.Class("absolute inset-0 flex items-center justify-center")],
-							[
-								errorRateValue(h, {
-									rate: service.errorRate,
-									className: cn("text-xs font-semibold", TEXT_HALO),
-								}),
-							],
-						),
+						hstack(h, { align: "center", justify: "center", className: "absolute inset-0" }, [
+							errorRateValue(h, {
+								rate: service.errorRate,
+								className: cn("text-xs font-semibold", TEXT_HALO),
+							}),
+						]),
 					],
 				),
 			]),
@@ -298,34 +310,31 @@ const serviceRow = (
 						},
 						[
 							sparkline(h, ctx, `thr-${rowKey}`, throughput, THROUGHPUT_COLOR),
-							h.div(
-								[h.Class("absolute inset-0 flex flex-col items-center justify-center")],
-								[
-									h.span(
-										[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
-										[...(service.hasSampling ? ["~"] : []), throughputText],
-									),
-									...(service.hasSampling
-										? [
-												h.span(
-													[
-														h.Class(
-															cn(
-																"font-mono text-4xs text-muted-foreground",
-																TEXT_HALO,
-															),
+							vstack(h, { align: "center", justify: "center", className: "absolute inset-0" }, [
+								h.span(
+									[h.Class(cn("font-mono text-xs font-semibold", TEXT_HALO))],
+									[...(service.hasSampling ? ["~"] : []), throughputText],
+								),
+								...(service.hasSampling
+									? [
+											h.span(
+												[
+													h.Class(
+														cn(
+															"font-mono text-4xs text-muted-foreground",
+															TEXT_HALO,
 														),
-													],
-													[
-														"~",
-														formatThroughput(service.tracedThroughput, "/s"),
-														" traced",
-													],
-												),
-											]
-										: []),
-								],
-							),
+													),
+												],
+												[
+													"~",
+													formatThroughput(service.tracedThroughput, "/s"),
+													" traced",
+												],
+											),
+										]
+									: []),
+							]),
 						],
 					),
 				],
@@ -339,6 +348,7 @@ const serviceRow = (
 		),
 		[
 			h.Key(rowKey),
+			...rowFocusAttributes(h, isFocused),
 			h.Tabindex(0),
 			h.OnClick(open),
 			h.OnKeyDownPreventDefault((key) =>
@@ -348,7 +358,7 @@ const serviceRow = (
 	)
 }
 
-/** `serviceDetailSearch`: the row's environment plus the list's window. */
+/** The row's environment plus the list's window. */
 const serviceHref = (model: Model, service: ServiceRow): string =>
 	hrefOf(
 		AppRoute.Service({
@@ -401,6 +411,7 @@ const emptyStateBody = (h: HtmlBuilder<Message>, ctx: TableContext, isFiltered: 
 		noun: "services",
 		presence: presenceOf(ctx.model.presence, "traces"),
 		nowMs: ctx.model.nowMs,
+		timeZone: ctx.timeZone,
 		isFiltered,
 		onClearFilters: isFiltered ? Message.ClickedClearServiceFilters() : undefined,
 	})
@@ -416,6 +427,8 @@ const desktopTable = (
 		Option.map(FoldkitAsyncData.getData(ctx.model.baseline.data), baselineMapOf),
 	)
 	const subtitleFor = (service: ServiceRow) => (mode === "namespace" ? "" : service.serviceNamespace)
+	const focused =
+		ctx.model.focusedIndex === null ? undefined : orderedServices(services, mode)[ctx.model.focusedIndex]
 	const body =
 		services.length === 0
 			? [tableRow(h, [tableCell(h, [emptyState(h, ctx)], "p-0", [h.Attribute("colspan", "7")])])]
@@ -465,6 +478,7 @@ const desktopTable = (
 								subtitleFor(service),
 								baselines,
 								`${namespace}/${environment}`,
+								service === focused,
 							),
 						),
 					]),
@@ -491,8 +505,10 @@ const mobileList = (
 	ctx: TableContext,
 	services: ReadonlyArray<ServiceRow>,
 	mode: "namespace" | "environment",
-): Html =>
-	h.div(
+): Html => {
+	const focused =
+		ctx.model.focusedIndex === null ? undefined : orderedServices(services, mode)[ctx.model.focusedIndex]
+	return h.div(
 		[h.Class("overflow-hidden rounded-md border md:hidden")],
 		services.length === 0
 			? [emptyState(h, ctx)]
@@ -502,12 +518,13 @@ const mobileList = (
 						[
 							...(mode === "namespace"
 								? [
-										h.div(
-											[
-												h.Class(
-													"flex items-center gap-2 border-b bg-surface-sunken px-3 py-2",
-												),
-											],
+										hstack(
+											h,
+											{
+												gap: "2",
+												align: "center",
+												className: stripClass("bar"),
+											},
 											[
 												namespaceLabel(h, namespace),
 												typography(h, { size: "xs", tone: "muted" }, [
@@ -545,26 +562,32 @@ const mobileList = (
 											],
 										),
 										...Arr.map(rows, (service) =>
-											h.a(
-												[
-													h.Key(
-														`m-${service.serviceName}-${service.serviceNamespace}-${service.environment}`,
-													),
-													h.Href(serviceHref(ctx.model, service)),
-													h.Class(
+											selectableRow(
+												h,
+												{
+													isSelected: false,
+													isFocused: service === focused,
+													href: serviceHref(ctx.model, service),
+													className:
 														"flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-surface-sunken active:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
-													),
-												],
+													attributes: [
+														h.Key(
+															`m-${service.serviceName}-${service.serviceNamespace}-${service.environment}`,
+														),
+													],
+												},
 												[
 													h.div(
 														[h.Class("min-w-0 flex-1")],
 														[
-															h.div(
-																[
-																	h.Class(
-																		"flex items-center gap-1.5 text-sm font-medium text-foreground",
-																	),
-																],
+															hstack(
+																h,
+																{
+																	gap: "1.5",
+																	align: "center",
+																	className:
+																		"text-sm font-medium text-foreground",
+																},
 																[
 																	serviceDot(h, {
 																		serviceName: service.serviceName,
@@ -603,23 +626,24 @@ const mobileList = (
 																		),
 																	]
 																: []),
-															h.div(
-																[
-																	h.Class(
-																		"flex items-center gap-3 font-mono text-xs tabular-nums",
-																	),
-																],
-																// `MobileStat`'s `{label} `: the label and its space are two text nodes.
+															hstack(
+																h,
+																{
+																	gap: "3",
+																	align: "center",
+																	className: typographyClass({
+																		mono: true,
+																		size: "xs",
+																		numeric: true,
+																	}),
+																},
 																[
 																	h.span(
 																		[],
 																		[
-																			h.span(
-																				[
-																					h.Class(
-																						"text-foreground-subtle",
-																					),
-																				],
+																			typography(
+																				h,
+																				{ tone: "subtle" },
 																				["P99", " "],
 																			),
 																			latencyValue(h, {
@@ -631,16 +655,14 @@ const mobileList = (
 																	h.span(
 																		[],
 																		[
-																			h.span(
-																				[
-																					h.Class(
-																						"text-foreground-subtle",
-																					),
-																				],
+																			typography(
+																				h,
+																				{ tone: "subtle" },
 																				["Thru", " "],
 																			),
-																			h.span(
-																				[h.Class("text-foreground")],
+																			typography(
+																				h,
+																				{ tone: "foreground" },
 																				[
 																					...(service.hasSampling
 																						? ["~"]
@@ -668,7 +690,7 @@ const mobileList = (
 																	className: "block",
 																}),
 															}),
-															eyebrow(h, { as: "div" }, ["err"]),
+															eyebrow(h, { as: "div" }, ["Errors"]),
 														],
 													),
 												],
@@ -681,6 +703,7 @@ const mobileList = (
 					),
 				),
 	)
+}
 
 const SKELETON_COLUMNS = [
 	{ header: "Service", skeleton: "w-32" },
@@ -692,7 +715,6 @@ const SKELETON_COLUMNS = [
 	{ header: "Last deploy", headClassName: "w-[18%]", skeleton: "w-24" },
 ]
 
-/** `LoadingState`. */
 export const loadingState = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("space-y-4")],
@@ -710,12 +732,14 @@ export const loadingState = (h: HtmlBuilder<Message>): Html =>
 					h.DataAttribute("slot", "skeleton-list"),
 				],
 				Array.from({ length: 5 }, () =>
-					h.div(
-						[
-							h.Class(
-								"flex items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "3",
+							align: "center",
+							justify: "between",
+							className: "border-b px-3 py-2.5 last:border-b-0",
+						},
 						[
 							h.div(
 								[h.Class("min-w-0 flex-1 space-y-1.5")],
@@ -783,47 +807,52 @@ const body = (
 ): ReadonlyArray<Html> => [
 	...(hasNamespaces
 		? [
-				h.div(
-					[h.Class("flex items-center justify-end")],
-					[
-						segmentedSelect(h, {
-							options: [
-								{ value: "namespace", label: "Namespace" },
-								{ value: "environment", label: "Environment" },
-							],
-							value: mode,
-							onChange: (groupBy) => Message.ClickedGroupBy({ groupBy }),
-							size: "sm",
-							ariaLabel: "Group services by",
-							className: "shrink-0",
-						}),
-					],
-				),
+				hstack(h, { align: "center", justify: "end" }, [
+					segmentedSelect(h, {
+						options: [
+							{ value: "namespace", label: "Namespace" },
+							{ value: "environment", label: "Environment" },
+						],
+						value: mode,
+						onChange: (groupBy) => Message.ClickedGroupBy({ groupBy }),
+						size: "sm",
+						ariaLabel: "Group services by",
+						className: "shrink-0",
+					}),
+				]),
 			]
 		: []),
 	desktopTable(h, ctx, services, mode),
 	mobileList(h, ctx, services, mode),
-	h.div(
-		[h.Class("flex items-center justify-between text-sm text-muted-foreground")],
+	hstack(
+		h,
+		{ align: "center", justify: "between", className: typographyClass({ size: "sm", tone: "muted" }) },
 		[
 			h.span(
 				[],
 				[
 					overview.length >= SERVICE_OVERVIEW_ROW_CAP
 						? `Showing first ${SERVICE_OVERVIEW_ROW_CAP} services`
-						: `Showing ${[String(services.length), healthFilter, pluralize(services.length, "service")].filter(Boolean).join(" ")}`,
+						: `Showing ${Arr.join(
+								Arr.filter(
+									[
+										String(services.length),
+										healthFilter,
+										pluralize(services.length, "service"),
+									],
+									(part): part is string => part !== undefined && part !== "",
+								),
+								" ",
+							)}`,
 				],
 			),
 			...(unhealthy > 0 || degraded > 0
 				? [
-						h.span(
-							[h.Class("text-xs")],
-							[
-								...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
-								...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
-								...(degraded > 0 ? [`${degraded} degraded`] : []),
-							],
-						),
+						typography(h, { size: "xs" }, [
+							...(unhealthy > 0 ? [`${unhealthy} unhealthy`] : []),
+							...(unhealthy > 0 && degraded > 0 ? [" · "] : []),
+							...(degraded > 0 ? [`${degraded} degraded`] : []),
+						]),
 					]
 				: []),
 		],

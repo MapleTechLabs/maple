@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { alertCheckGroupTotalsQuery, alertChecksSummaryQuery, listRuleChecksQuery } from "./alert-checks"
@@ -6,14 +6,17 @@ import { OrgId } from "@maple/domain"
 
 const utc = (iso: string) => DateTime.makeUnsafe(iso)
 
+const SINCE = utc("2024-01-01T00:00:00.250Z")
+
 const baseParams = {
 	orgId: OrgId.make("org_1"),
 	ruleId: "rule_1",
+	since: SINCE,
 }
 
 describe("listRuleChecksQuery", () => {
-	it("compiles the minimal query with OrgId + RuleId", () => {
-		const q = listRuleChecksQuery({ limit: 500 })
+	it("compiles the minimal query with OrgId + RuleId and a lower time bound", () => {
+		const q = listRuleChecksQuery({ limit: 500, since: SINCE })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM alert_checks")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -21,19 +24,19 @@ describe("listRuleChecksQuery", () => {
 		expect(sql).toContain("ORDER BY timestamp DESC, groupKey ASC")
 		expect(sql).toContain("LIMIT 500")
 		// No optional filters present
+		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00.250'")
 		expect(sql).not.toContain("GroupKey =")
-		expect(sql).not.toContain("Timestamp >=")
 		expect(sql).not.toContain("Timestamp <=")
 	})
 
 	it("applies groupKey filter when provided", () => {
-		const q = listRuleChecksQuery({ limit: 100, groupKey: "svc=api" })
+		const q = listRuleChecksQuery({ limit: 100, since: SINCE, groupKey: "svc=api" })
 		const { sql } = compileUnsafe(q, { ...baseParams, groupKey: "svc=api" })
 		expect(sql).toContain("GroupKey = 'svc=api'")
 	})
 
 	it("omits groupKey filter when empty string", () => {
-		const q = listRuleChecksQuery({ limit: 100, groupKey: "" })
+		const q = listRuleChecksQuery({ limit: 100, since: SINCE, groupKey: "" })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).not.toContain("GroupKey =")
 	})
@@ -56,6 +59,7 @@ describe("listRuleChecksQuery", () => {
 	it("applies status and the compound keyset cursor", () => {
 		const q = listRuleChecksQuery({
 			limit: 42,
+			since: SINCE,
 			status: "breached",
 			beforeTimestamp: utc("2024-01-02T03:04:05.250Z"),
 			beforeGroupKey: "svc=worker",
@@ -120,7 +124,7 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 
 	it.effect("listRuleChecksQuery", () =>
 		Effect.gen(function* () {
-			const compiled = yield* compile(listRuleChecksQuery({ limit: 1 }), baseParams)
+			const compiled = yield* compile(listRuleChecksQuery({ limit: 1, since: SINCE }), baseParams)
 			expect(compiled.rowSchemaSource).toBe("derived")
 			const [row] = yield* compiled.decodeRows([
 				{
@@ -146,8 +150,9 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					level: "",
 				},
 			])
-			expect(DateTime.formatIso(row!.timestamp)).toBe("2024-01-01T10:00:00.250Z")
-			expect(DateTime.formatIso(row!.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
+			assert.isDefined(row)
+			expect(DateTime.formatIso(row.timestamp)).toBe("2024-01-01T10:00:00.250Z")
+			expect(DateTime.formatIso(row.windowEnd)).toBe("2024-01-01T10:00:00.000Z")
 		}),
 	)
 
@@ -172,7 +177,8 @@ describe("alert check rows decode timestamps to DateTime.Utc", () => {
 					threshold: 1,
 				},
 			])
-			expect(DateTime.toEpochMillis(row!.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
+			assert.isDefined(row)
+			expect(DateTime.toEpochMillis(row.bucket)).toBe(Date.UTC(2024, 0, 1, 10))
 		}),
 	)
 })

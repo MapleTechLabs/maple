@@ -1,17 +1,13 @@
 import type { RawSqlDisplayType } from "./raw-sql-display"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
-// The widget type table.
-//
 // A dashboard widget has two persisted axes: `visualization` (which renderer and
 // which data-source endpoint) and `display.chartId` (which `chartRegistry` entry
-// a `chart` widget mounts). A **panel type** collapses them into one closed list
-// — see `apps/web/src/lib/query-builder/panel-types.ts` for the history.
+// a `chart` widget mounts). A **panel type** collapses them into one closed list.
 //
 // This module is the single description of that list. It carries only what both
-// runtimes can agree on: no React, no `@maple/ui`, no chart components. The web
-// registry (`apps/web/src/components/dashboard-builder/widgets/widget-type-registry.tsx`)
-// layers renderers, config panels and builder logic on top of these entries.
+// runtimes can agree on: no UI framework, no chart components. The web kit
+// (`apps/web/src/page/dashboards/kit/chart-registry.ts`) layers renderers on top.
 //
 // Before this existed the same facts were forked across the web store, the
 // portable-dashboard importer, the MCP tools and the Perses importer, and they
@@ -96,8 +92,7 @@ export interface WidgetTypeMeta {
 	readonly chartId?: string
 	/**
 	 * The `chartRegistry` category this panel type corresponds to. Stored rather
-	 * than looked up because this package must not depend on `@maple/ui`; the web
-	 * side cross-checks it against the live registry.
+	 * than looked up because the chart registry lives in `apps/web`.
 	 */
 	readonly chartCategory?: string
 	/**
@@ -349,7 +344,10 @@ export const widgetTypeByVisualization = (visualization: string): WidgetTypeMeta
 
 /** The panel type a Perses panel `kind` imports as. Unknown kinds become a line chart. */
 export const widgetTypeByPersesKind = (kind: string | undefined): WidgetTypeMeta =>
-	PANEL_TYPES.find((meta) => kind != null && meta.persesKinds.includes(kind)) ?? WIDGET_TYPES.line
+	Option.getOrElse(
+		Arr.findFirst(PANEL_TYPES, (meta) => kind != null && meta.persesKinds.includes(kind)),
+		() => WIDGET_TYPES.line,
+	)
 
 /**
  * Rows a list widget shows when its limit is left blank.
@@ -367,11 +365,9 @@ export const widgetTypeByPersesKind = (kind: string | undefined): WidgetTypeMeta
  */
 export const DEFAULT_LIST_LIMIT = 50
 
-/** Narrows an arbitrary stored/user-supplied string to the closed set. */
 export const isWidgetVisualization = (value: unknown): value is WidgetVisualization =>
 	Arr.some(WIDGET_VISUALIZATIONS, (candidate) => candidate === value)
 
-/** Distinct `visualization` values the MCP dashboard tools accept. */
 export const MCP_VISUALIZATIONS: ReadonlyArray<WidgetVisualization> = [
 	...new Set(
 		Arr.map(
@@ -402,7 +398,6 @@ export const MCP_PANEL_TYPES: ReadonlyArray<PanelType> = Arr.map(
 export const isMcpPanelType = (value: unknown): value is PanelType =>
 	typeof value === "string" && isPanelType(value) && WIDGET_TYPES[value].mcpExposed
 
-/** Grid size for an auto-placed widget, by persisted `visualization`. */
 export const defaultWidgetLayout = (
 	visualization: string,
 ): { w: number; h: number; minW: number; minH: number } => ({
@@ -413,12 +408,8 @@ export const defaultWidgetLayout = (
  * Which of line/bar/area a `visualization: "chart"` widget draws, from its
  * `chartId`.
  *
- * One function because there were three, and they disagreed: this module matched
- * `chartId.includes("bar")`, `dashboard-templates/index.ts` matched
- * `endsWith("-bar")` (checking area first), and the web consulted the live chart
- * registry. No id in the registry contains both "bar" and "area", so they agreed
- * on every real input and differed only on hypotheticals — but the next id added
- * decides which of three answers a widget gets, depending on who asks.
+ * One function because there were three (substring match, suffix match, the live
+ * chart registry) and the next id added would have decided between them.
  *
  * Exact match against the canonical ids first, so the ids the builder actually
  * writes never depend on substring luck. The suffix and substring passes are the
@@ -453,9 +444,9 @@ export const rawSqlDisplayTypeFor = (visualization: string, chartId?: string): R
  * so it inverts between light and dark).
  *
  * This list is the single source of truth: the persisted schemas
- * (`dashboards.ts`, `v2/dashboards.ts`), the chart's prop type, the builder
- * state and the settings Select all derive from it. `amber` leads because it is
- * the default — it's Maple's brand hue, so an unconfigured heatmap reads as ours.
+ * (`dashboard/shared/display.ts`, domain `http/v2/dashboard-data.ts`), the chart
+ * and the editor all derive from it. `amber` leads because it is the default:
+ * it's Maple's brand hue, so an unconfigured heatmap reads as ours.
  */
 export const HEATMAP_COLOR_SCALES = ["amber", "blues", "reds", "viridis", "magma", "cividis"] as const
 

@@ -1,19 +1,22 @@
-import type { AlertSignalType } from "@maple/domain/http"
+import type { AlertSignalType, AnomalySignalType } from "@maple/domain/http"
+import { ANOMALY_SIGNAL_LABELS, ANOMALY_SIGNALS } from "@maple/web-data/alerts/anomaly-rule"
 import { GROUP_BY_OPTIONS } from "@maple/query-engine/query-builder"
 import { signalTypeToKind } from "@maple/web-data/alerts/rule-modes"
 import { cn } from "@maple/ui/lib/utils"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { card } from "@maple/views/ui/card"
+import { panel } from "@maple/views/ui/panel"
 import * as Combobox from "@maple/views/ui/combobox"
 import { chipsView } from "@maple/views/ui/combobox-view"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { label } from "@maple/views/ui/label"
 import * as RadioGroup from "@maple/views/ui/radio-group"
-import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { multiSegmentedSelect, segmentedSelect } from "@maple/views/ui/segmented-select"
 import { stableSlice } from "../../kit/stable-slice"
 import { queryPanelView } from "../../kit/query-builder/view"
+import { isProtectedDefault } from "./derive"
 import { spanAttributeKeysOf, traceFacetsOf } from "./derive-rows"
+import { metricKeysOf } from "../../kit/query-builder/where-values"
 import { baseValuesOf } from "./where-inputs"
 import type { RuleForm } from "./form"
 import type { AlertQueryTiming } from "@maple/domain/http"
@@ -22,30 +25,54 @@ import { Message, type SignalKind } from "./message"
 import type { Model } from "./model"
 import { inputGroup, inputGroupAddon, inputGroupInput, inputGroupText } from "@maple/views/ui/input-group"
 import { rawQueryEditor, REDUCER_SELECT_ID, type SqlView } from "./view-sql"
+import type * as Select from "@maple/views/ui/select"
+import { KIND_SELECT_ID } from "./form-steps"
+import { formSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `RuleQuerySection`: Built-in, the query builder's
-// `QueryPanel`, or SQL, over the same draft.
-
 type H = HtmlBuilder<Message>
 
-/** What the section reads off the Model. */
 type QueryView = SqlView &
-	Pick<Model, "kindNotice" | "queryPanels" | "combos" | "traceFacets" | "autocomplete">
+	Pick<
+		Model,
+		| "kindNotice"
+		| "queryPanels"
+		| "combos"
+		| "traceFacets"
+		| "autocomplete"
+		| "metricSearch"
+		| "metricOptions"
+		| "metricKeys"
+	> & {
+		/** Editing the org's default anomaly rule: its kind and scope are fixed. */
+		readonly isDefaultAnomaly: boolean
+		readonly kindSelect: Select.Model | undefined
+	}
 
 const KIND_OPTIONS: ReadonlyArray<{ value: SignalKind; label: string }> = [
 	{ value: "builtin", label: "Built-in" },
 	{ value: "builder_query", label: "Query builder" },
 	{ value: "raw_query", label: "SQL" },
+	{ value: "anomaly", label: "Anomaly" },
 ]
 
 const KIND_HINT = new Map<SignalKind, string>([
 	["builtin", "Five common signals on root spans. Switching modes carries the filters over."],
 	["builder_query", "Same builder as dashboards. Switching to Built-in keeps what it can express."],
 	["raw_query", "ClickHouse SQL, replayed per evaluation window."],
+	["anomaly", "No query to write: Maple's anomaly detector decides what is unusual."],
 ])
+
+const ANOMALY_DESCRIPTION =
+	"Pages when Maple detects unusual error rate, latency, throughput, error spikes or log volume. The most specific anomaly rule handles each anomaly."
+
+const SCOPE_NEEDED_NOTE =
+	"Pick at least one service, environment or signal. Maple's default anomaly rule already covers everything."
+
+const DEFAULT_ANOMALY_NOTE =
+	"This is the default anomaly rule. It handles every anomaly no narrower rule covers, so its scope stays empty and it stays on."
 
 const BUILTIN_SIGNALS: ReadonlyArray<{
 	value: AlertSignalType
@@ -86,8 +113,14 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 		Arr.flatMap(BUILTIN_SIGNALS, (signal) =>
 			RadioGroup.radio(h, config, signal.value, SIGNAL_CLASS, {
 				children: [
-					h.span(
-						[h.Class("flex items-center gap-1.5 text-sm font-medium")],
+					hstack(
+						h,
+						{
+							gap: "1.5",
+							align: "center",
+							as: "span",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						},
 						[
 							icon(h, signal.icon, {
 								size: 14,
@@ -103,7 +136,7 @@ const signalRadios = (h: H, form: RuleForm): Html => {
 	)
 }
 
-/** A `MultiSelectCombobox` in chips mode, kept by id; its selection is the form's. */
+/** A chips-mode combobox, kept by id; its selection is the form's. */
 const chipsPicker = (
 	h: H,
 	model: QueryView,
@@ -139,7 +172,7 @@ const chipsPicker = (
 	})
 }
 
-/** `GroupByMultiSelect` over traces: the built-in dimensions and the span attributes as `attr.*`. */
+/** The traces group-by choices: the built-in dimensions and the span attributes as `attr.*`. */
 const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	...new Set([
 		...Arr.map(
@@ -150,7 +183,6 @@ const groupByItems = (model: QueryView): ReadonlyArray<string> => [
 	]),
 ]
 
-/** `BuiltinRow`: a label column and the control. */
 const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefined, control: Html): Html =>
 	h.div(
 		[h.Class("grid items-start gap-1 sm:grid-cols-[120px_minmax(0,1fr)] sm:gap-3")],
@@ -177,128 +209,217 @@ const builtinRow = (h: H, text: string, htmlFor: string, hint: string | undefine
 
 const inputOf = Combobox.inputId
 
-/** `BuiltinQueryForm`: the five canned signals and their scope. */
+/** The five canned signals and their scope. */
 const builtinForm = (h: H, model: QueryView, form: RuleForm): Html => {
 	const hasServices = form.serviceNames.length > 0
 	const facets = traceFacetsOf(model)
-	return card(
-		h,
-		[
-			signalRadios(h, form),
-			h.div(
-				[h.Class("space-y-2 p-3")],
-				[
-					builtinRow(
-						h,
-						"Services",
-						inputOf("rule-services"),
-						undefined,
-						chipsPicker(h, model, "rule-services", form.serviceNames, {
-							items: facets.services,
-							placeholder: hasServices ? "Add service…" : "All services",
-							emptyText: "No services found",
-						}),
-					),
-					builtinRow(
-						h,
-						"Environment",
-						inputOf("rule-environments"),
-						undefined,
-						chipsPicker(h, model, "rule-environments", form.environments, {
-							items: facets.environments,
-							placeholder:
-								form.environments.length === 0 ? "All environments" : "Add environment…",
-							emptyText: "No environments found",
-						}),
-					),
-					builtinRow(
-						h,
-						"Split by",
-						inputOf("rule-group-by"),
-						hasServices ? "Each selected service is already its own group." : undefined,
-						chipsPicker(h, model, "rule-group-by", form.groupBy, {
-							items: groupByItems(model),
-							placeholder: form.groupBy.length === 0 ? "service.name" : "",
-							emptyText: "No fields found",
-							className: typographyClass({ size: "xs", mono: true }),
-							wrapperClassName: "w-full",
-							isDisabled: hasServices,
-						}),
-					),
-					builtinRow(
-						h,
-						"Exclude",
-						inputOf("rule-exclude"),
-						undefined,
-						chipsPicker(h, model, "rule-exclude", form.excludeServiceNames, {
-							items: facets.services,
-							placeholder: hasServices ? "Only applies to all services" : "Skip these services",
-							emptyText: "No services found",
-							isDisabled: hasServices,
-						}),
-					),
-					...(form.signalType === "apdex"
-						? [
-								builtinRow(
-									h,
-									"Apdex target",
-									"apdex-threshold",
-									undefined,
-									inputGroup(h, { className: "w-40" }, [
-										inputGroupInput(h, {
-											id: "apdex-threshold",
-											type: "number",
-											controlClassName: typographyClass({ mono: true, numeric: true }),
-											attributes: [
-												h.InputMode("numeric"),
-												h.Value(form.apdexThresholdMs),
-												h.OnInput((value) =>
-													Message.ChangedField({
-														field: "apdexThresholdMs",
-														value,
-													}),
-												),
-											],
-										}),
-										inputGroupAddon(h, { align: "inline-end" }, [
-											inputGroupText(h, {}, ["ms"]),
-										]),
+	return panel(h, {}, [
+		signalRadios(h, form),
+		h.div(
+			[h.Class("space-y-2 p-3")],
+			[
+				builtinRow(
+					h,
+					"Services",
+					inputOf("rule-services"),
+					undefined,
+					chipsPicker(h, model, "rule-services", form.serviceNames, {
+						items: facets.services,
+						placeholder: hasServices ? "Add service…" : "All services",
+						emptyText: "No services match",
+					}),
+				),
+				builtinRow(
+					h,
+					"Environment",
+					inputOf("rule-environments"),
+					undefined,
+					chipsPicker(h, model, "rule-environments", form.environments, {
+						items: facets.environments,
+						placeholder: form.environments.length === 0 ? "All environments" : "Add environment…",
+						emptyText: "No environments match",
+					}),
+				),
+				builtinRow(
+					h,
+					"Split by",
+					inputOf("rule-group-by"),
+					hasServices ? "Each selected service is already its own group." : undefined,
+					chipsPicker(h, model, "rule-group-by", form.groupBy, {
+						items: groupByItems(model),
+						placeholder: form.groupBy.length === 0 ? "service.name" : "",
+						emptyText: "No fields match",
+						className: typographyClass({ size: "xs", mono: true }),
+						wrapperClassName: "w-full",
+						isDisabled: hasServices,
+					}),
+				),
+				builtinRow(
+					h,
+					"Exclude",
+					inputOf("rule-exclude"),
+					undefined,
+					chipsPicker(h, model, "rule-exclude", form.excludeServiceNames, {
+						items: facets.services,
+						placeholder: hasServices ? "Only applies to all services" : "Skip these services",
+						emptyText: "No services match",
+						isDisabled: hasServices,
+					}),
+				),
+				...(form.signalType === "apdex"
+					? [
+							builtinRow(
+								h,
+								"Apdex target",
+								"apdex-threshold",
+								undefined,
+								inputGroup(h, { className: "w-40" }, [
+									inputGroupInput(h, {
+										id: "apdex-threshold",
+										type: "number",
+										controlClassName: typographyClass({ mono: true, numeric: true }),
+										attributes: [
+											h.InputMode("numeric"),
+											h.Value(form.apdexThresholdMs),
+											h.OnInput((value) =>
+												Message.ChangedField({
+													field: "apdexThresholdMs",
+													value,
+												}),
+											),
+										],
+									}),
+									inputGroupAddon(h, { align: "inline-end" }, [
+										inputGroupText(h, {}, ["ms"]),
 									]),
-								),
-							]
-						: []),
-				],
-			),
-			h.div(
-				[
-					h.Class(
-						"flex flex-wrap items-center justify-between gap-2 border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
-					),
-				],
-				[
-					h.span(
-						[],
-						[
-							"Measured on root spans. A service that records failures on child spans and returns success from its entry point stays healthy here.",
-						],
-					),
-					button(
-						h,
-						{
-							variant: "link",
-							size: "xs",
-							attributes: [h.OnClick(Message.ClickedOpenInBuilder())],
-						},
-						["Open in query builder"],
-					),
-				],
-			),
-		],
-		"gap-0 overflow-hidden p-0",
-	)
+								]),
+							),
+						]
+					: []),
+			],
+		),
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "border-t border-dashed px-3 py-2 text-xs text-muted-foreground",
+			},
+			[
+				h.span(
+					[],
+					[
+						"Measured on root spans. A service that records failures on child spans and returns success from its entry point stays healthy here.",
+					],
+				),
+				button(
+					h,
+					{
+						variant: "link",
+						size: "xs",
+						attributes: [h.OnClick(Message.ClickedOpenInBuilder())],
+					},
+					["Open in query builder"],
+				),
+			],
+		),
+	])
 }
 
-/** `AlertQueryPanel`: the dashboard `QueryPanel` without Clone, Remove or the visibility box. */
+/** An anomaly rule's scope: services, environments and detector signals, each empty for all. */
+const anomalyForm = (h: H, model: QueryView, form: RuleForm): Html => {
+	const facets = traceFacetsOf(model)
+	const isLocked = model.isDefaultAnomaly
+	const isUnscoped =
+		form.serviceNames.length === 0 && form.environments.length === 0 && form.anomalySignals.length === 0
+	return panel(h, {}, [
+		h.div(
+			[h.Class("space-y-1 border-b px-3 py-2.5")],
+			[
+				typography(h, { size: "sm", tone: "foreground", as: "p" }, [ANOMALY_DESCRIPTION]),
+				...(isLocked
+					? [
+							hstack(
+								h,
+								{
+									gap: "1.5",
+									align: "start",
+									className: typographyClass({ size: "xs", tone: "muted" }),
+								},
+								[
+									icon(h, "LockIcon", { size: 12, className: "mt-0.5 shrink-0" }),
+									h.span([], [DEFAULT_ANOMALY_NOTE]),
+								],
+							),
+						]
+					: isUnscoped
+						? [typography(h, { size: "xs", tone: "warning", as: "p" }, [SCOPE_NEEDED_NOTE])]
+						: []),
+			],
+		),
+		h.div(
+			[h.Class("space-y-2 p-3")],
+			[
+				builtinRow(
+					h,
+					"Services",
+					inputOf("rule-services"),
+					"Empty covers every service.",
+					chipsPicker(h, model, "rule-services", form.serviceNames, {
+						items: facets.services,
+						placeholder: form.serviceNames.length > 0 ? "Add service…" : "All services",
+						emptyText: "No services match",
+						isDisabled: isLocked,
+					}),
+				),
+				builtinRow(
+					h,
+					"Environment",
+					inputOf("rule-environments"),
+					"Empty covers every environment.",
+					chipsPicker(h, model, "rule-environments", form.environments, {
+						items: facets.environments,
+						placeholder: form.environments.length === 0 ? "All environments" : "Add environment…",
+						emptyText: "No environments match",
+						isDisabled: isLocked,
+					}),
+				),
+				builtinRow(
+					h,
+					"Signals",
+					ANOMALY_SIGNALS_ID,
+					form.anomalySignals.length === 0
+						? "None picked: every signal pages."
+						: "Only the picked signals page.",
+					h.div(
+						[h.Id(ANOMALY_SIGNALS_ID)],
+						[
+							multiSegmentedSelect<AnomalySignalType, Message>(h, {
+								options: Arr.map(ANOMALY_SIGNALS, (signal) => ({
+									value: signal,
+									label: ANOMALY_SIGNAL_LABELS[signal],
+									ariaLabel: ANOMALY_SIGNAL_LABELS[signal],
+								})),
+								value: form.anomalySignals,
+								onToggle: (signal) => Message.ToggledAnomalySignal({ signal }),
+								size: "sm",
+								ariaLabel: "Anomaly signals",
+								isDisabled: isLocked,
+								className: "flex-wrap",
+							}),
+						],
+					),
+				),
+			],
+		),
+	])
+}
+
+const ANOMALY_SIGNALS_ID = "rule-anomaly-signals"
+
+/** The dashboard query panel without Clone, Remove or the visibility box. */
 const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],
@@ -314,6 +435,9 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 					intervalPlaceholder: "Auto",
 					hasHeaderActions: false,
 					hasVisibilityToggle: false,
+					metricOptions: model.metricOptions?.options ?? [],
+					metricSearch: model.metricSearch,
+					metricBreakdownKeys: metricKeysOf(model.metricKeys, form.queryBuilderDraft),
 					autocompleteValues: baseValuesOf(model, form.queryBuilderDraft),
 				},
 				toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
@@ -326,26 +450,37 @@ const builderPanel = (h: H, model: QueryView, form: RuleForm): Html =>
 
 const query = (h: H, model: QueryView, form: RuleForm, timing: AlertQueryTiming | null): Html => {
 	const kind = signalTypeToKind(form.signalType)
+	const kinds = model.isDefaultAnomaly
+		? Arr.map(KIND_OPTIONS, (option) => ({ ...option, isDisabled: option.value !== "anomaly" }))
+		: KIND_OPTIONS
 	return h.div(
 		[h.Class("space-y-2")],
 		[
 			hstack(h, { gap: "3", wrap: true }, [
+				// Four modes outgrow a phone's width: below `sm` the switch is a select.
+				formSelect(h, model.kindSelect, KIND_SELECT_ID, kind, kinds, {
+					className: "w-full",
+					ariaLabel: "Query mode",
+					toView: (parts) => h.div([h.Class("w-full sm:hidden")], parts),
+				}),
 				segmentedSelect(h, {
-					options: KIND_OPTIONS,
+					options: kinds,
 					value: kind,
 					onChange: (next) => Message.ClickedSignalKind({ kind: next }),
 					ariaLabel: "Query mode",
-					size: "sm",
+					className: "max-sm:hidden",
 				}),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "min-w-0 flex-1" }, [
 					model.kindNotice ?? KIND_HINT.get(kind) ?? "",
 				]),
 			]),
-			kind === "builtin"
-				? builtinForm(h, model, form)
-				: kind === "builder_query"
-					? builderPanel(h, model, form)
-					: rawQueryEditor(h, model, form, timing),
+			kind === "anomaly"
+				? anomalyForm(h, model, form)
+				: kind === "builtin"
+					? builtinForm(h, model, form)
+					: kind === "builder_query"
+						? builderPanel(h, model, form)
+						: rawQueryEditor(h, model, form, timing),
 		],
 	)
 }
@@ -357,8 +492,13 @@ const viewOf = stableSlice((model: Model): QueryView => ({
 	combos: model.combos,
 	traceFacets: model.traceFacets,
 	autocomplete: model.autocomplete,
+	metricSearch: model.metricSearch,
+	metricOptions: model.metricOptions,
+	metricKeys: model.metricKeys,
 	isSqlCollapsed: model.isSqlCollapsed,
 	reducerSelect: model.selects[REDUCER_SELECT_ID],
+	kindSelect: model.selects[KIND_SELECT_ID],
+	isDefaultAnomaly: isProtectedDefault(model),
 }))
 
 /** Step 1, "What to watch"; `form` is the evaluated draft (`evaluatedFormOf`). */

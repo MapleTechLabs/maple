@@ -1,6 +1,7 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { resolveWindow } from "../../../../data/time-range"
 import {
 	loadPlatform,
 	loadStatus,
@@ -11,26 +12,9 @@ import {
 	TimeseriesInput,
 	WindowInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
-export const ResolveWindow = Command.define("ResolveCloudflareWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveCloudflareWindow", Message.CompletedResolveWindow)
 
 export const LoadStatus = Command.define("LoadCloudflareIngestStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
@@ -42,7 +26,7 @@ export const LoadStatus = Command.define("LoadCloudflareIngestStatus", {
 export const LoadUsage = Command.define("LoadCloudflareUsage", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadUsage],
-	execute: ({ key }) => Effect.map(loadUsage(), (result) => Message.CompletedLoadUsage({ key, result })),
+	execute: ({ key }) => Effect.map(loadUsage, (result) => Message.CompletedLoadUsage({ key, result })),
 })
 
 export const FetchZones = Command.define("FetchCloudflareZones", {
@@ -73,9 +57,4 @@ export const FetchPlatform = Command.define("FetchCloudflarePlatformResources", 
 		Effect.map(loadPlatform(input), (result) => Message.CompletedFetchPlatform({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteCloudflareReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteCloudflareReloadSpin", Message.CompletedReloadSpin)

@@ -1,15 +1,15 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { zonedDateParts } from "@maple/query-engine/datetime"
 import { countLabel } from "@maple/ui/lib/format"
-import { formatRelativeShortFrom } from "@maple/ui/lib/time-format"
+import { formatRelativeShortFrom, toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
-import { type ErrorSignal, densifySpark, surgeRatio } from "../../../lib/models/error-signal"
+import { type ErrorSignal, densifySpark, surgeRatio } from "../kit/error-signal"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { miniBars } from "@maple/views/ui/mini-bars"
-import { SEVERITY_TEXT } from "../kit/severity"
+import { SEVERITY_TOKEN } from "../../kit/issue-severity"
 import { investigationChip } from "../kit/state-chip"
 import { Message } from "./message"
+import { hstack } from "@maple/views/ui/stack"
 
 // Row pieces of an error signal row and its spark.
 
@@ -23,11 +23,9 @@ export const GENERIC_TYPES = new Set(["Error", "Exception", "TypeError", "Runtim
 
 export type SparkWindow = Readonly<{ startMs: number; endMs: number; bucketMs: number }>
 
-export const epochOf = (iso: string): number => new Date(warehouseDateTimeToIso(iso)).getTime()
-
 /** `formatLastSeen`: relative inside a week, a date beyond it; clock skew reads as "now". */
 export const formatLastSeen = (iso: string, timeZone: string, nowMs: number): string => {
-	const ms = epochOf(iso)
+	const ms = toEpochMs(iso)
 	if (Number.isNaN(ms)) return iso
 	if (ms > nowMs) return "now"
 	if (nowMs - ms < WEEK_MS) return formatRelativeShortFrom(ms, nowMs)
@@ -54,18 +52,20 @@ export const signalSpark = (
 			[],
 		)
 	}
-	const tone = surging
-		? "text-severity-error"
+	// Bars are marks, so they take the tone itself, not the ink a `text-severity-*` class gives.
+	const color = surging
+		? "var(--severity-error)"
 		: signal.severity === null
-			? "text-muted-foreground"
-			: SEVERITY_TEXT[signal.severity]
+			? "var(--muted-foreground)"
+			: `var(${SEVERITY_TOKEN[signal.severity]})`
 	return miniBars(h, {
 		values,
 		floor: Math.max(...values) > 0 ? 5 : 0,
 		minHeight: 12.5,
 		gap: 100 / (values.length * 3 - 1),
 		tail: 0.2,
-		className: cn("h-5 w-full overflow-visible", tone),
+		className: "h-5 w-full overflow-visible",
+		color,
 		label,
 	})
 }
@@ -75,55 +75,56 @@ export const signalSpark = (
 export const signalActivity = (h: H, signal: ErrorSignal): Html | null => {
 	const prCount = signal.openPullRequestCount + signal.mergedPullRequestCount
 	if (signal.investigation === null && signal.commentCount === 0 && prCount === 0) return null
-	return h.span(
-		[h.Class("ml-auto flex shrink-0 items-center gap-2 pl-3")],
-		[
-			...(signal.investigation === null
-				? []
-				: [
-						investigationChip(h, signal.investigation, {
-							withConfidence: false,
-							compact: true,
-							onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
-						}),
-					]),
-			...(signal.commentCount > 0
-				? [
-						h.span(
-							[
-								h.Class(
-									"flex items-center gap-1 text-2xs tabular-nums text-muted-foreground",
-								),
+	return hstack(h, { gap: "2", align: "center", as: "span", className: "ml-auto shrink-0 pl-3" }, [
+		...(signal.investigation === null
+			? []
+			: [
+					investigationChip(h, signal.investigation, {
+						withConfidence: false,
+						compact: true,
+						onOpen: Message.ClickedInvestigation({ id: signal.investigation.id }),
+					}),
+				]),
+		...(signal.commentCount > 0
+			? [
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							as: "span",
+							className: "text-2xs tabular-nums text-muted-foreground",
+							attributes: [
 								h.Title(`${countLabel(signal.commentCount, "comment")} on the timeline`),
 							],
-							[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
-						),
-					]
-				: []),
-			...(prCount > 0
-				? [
-						h.span(
-							[
-								h.Class(
-									cn(
-										"flex items-center gap-1 text-2xs tabular-nums",
-										signal.mergedPullRequestCount > 0
-											? "text-foreground-soft"
-											: "text-muted-foreground",
-									),
-								),
-								h.Title(
+						},
+						[icon(h, "ChatBubbleIcon", { size: 12 }), String(signal.commentCount)],
+					),
+				]
+			: []),
+		...(prCount > 0
+			? [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"flex items-center gap-1 text-2xs tabular-nums",
 									signal.mergedPullRequestCount > 0
-										? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
-										: countLabel(prCount, "open pull request"),
+										? "text-foreground-soft"
+										: "text-muted-foreground",
 								),
-							],
-							[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
-						),
-					]
-				: []),
-		],
-	)
+							),
+							h.Title(
+								signal.mergedPullRequestCount > 0
+									? `${countLabel(prCount, "pull request")} · ${signal.mergedPullRequestCount} merged`
+									: countLabel(prCount, "open pull request"),
+							),
+						],
+						[icon(h, "PullRequestIcon", { size: 12 }), String(prCount)],
+					),
+				]
+			: []),
+	])
 }
 
 /** The dense trend, whether it surges, and the spark's accessible name. */
@@ -133,7 +134,7 @@ export const sparkOf = (signal: ErrorSignal, window: SparkWindow) => {
 	const isSurging = surge !== null && surge >= SURGE_THRESHOLD
 	const occurrences = countLabel(signal.windowCount ?? 0, "occurrence")
 	const label = isSurging
-		? `Surging — ${occurrences} in the last 24 hours, concentrated at the end`
+		? `Surging: ${occurrences} in the last 24 hours, concentrated at the end`
 		: `${occurrences} in the last 24 hours`
 	return { dense, isSurging, label }
 }

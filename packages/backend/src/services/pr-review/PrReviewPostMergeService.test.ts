@@ -15,7 +15,7 @@ import { PrReviews } from "@maple/db/tables"
 import { DateTime, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	asOrgId,
 	asUserId,
@@ -99,6 +99,7 @@ const layerFor = (
 	const provider: VcsProviderClient = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -214,7 +215,7 @@ describe("PrReviewPostMergeService.runTick", () => {
 			yield* seedDueReview
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
 			const service = yield* PrReviewPostMergeService
-			yield* Effect.all([service.runTick(), service.runTick()], { concurrency: 2 })
+			yield* Effect.all([service.runTick, service.runTick], { concurrency: 2 })
 			assert.lengthOf(posted, 1)
 			assert.include(posted[0] ?? "", "Shipped clean")
 			assert.equal((yield* rowState)?.status, "reported")
@@ -229,14 +230,14 @@ describe("PrReviewPostMergeService.runTick", () => {
 			const now = DEPLOYED_AT + 70 * 60_000
 			yield* TestClock.setTime(now)
 			const service = yield* PrReviewPostMergeService
-			const result = yield* service.runTick()
+			const result = yield* service.runTick
 			assert.equal(result.failedRows, 1)
 			assert.lengthOf(posted, 0)
 			assert.deepStrictEqual(yield* rowState, { status: "waiting", after: now + 30 * 60_000 })
 
 			// Still failing two days after the merge: given up as failed, never reported clean.
 			yield* TestClock.setTime(MERGED_AT + 49 * 3_600_000)
-			yield* service.runTick()
+			yield* service.runTick
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "failed")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: true })))
@@ -256,7 +257,7 @@ describe("PrReviewPostMergeService.runTick, stored telemetry", () => {
 				]),
 			)
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
-			const result = yield* (yield* PrReviewPostMergeService).runTick()
+			const result = yield* (yield* PrReviewPostMergeService).runTick
 			assert.equal(result.examined, 1)
 			assert.equal(result.gaveUp, 1)
 			assert.lengthOf(posted, 0)
@@ -299,9 +300,38 @@ describe("PrReviewPostMergeService.runTick, lease", () => {
 			yield* seedDueReview
 			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
 			const service = yield* PrReviewPostMergeService
-			yield* service.runTick()
+			yield* service.runTick
 			assert.lengthOf(posted, 0)
 			assert.equal((yield* rowState)?.status, "waiting")
 		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, racing)))
+	})
+})
+
+describe("PrReviewPostMergeService.runTick, settle", () => {
+	it.effect("does not overwrite a report a later tick made while this one read the deploys", () => {
+		const testDb = createTestDb(trackedDbs)
+		const posted: Array<string> = []
+		// A later tick, holding the row's next lease, reports while this one waits on the warehouse.
+		const reportElsewhere = Effect.gen(function* () {
+			const db = yield* Database
+			yield* db.execute((client) =>
+				client.run(
+					PG.update(PrReviews)
+						.set({ postMergeStatus: "reported", postMergeAfter: null })
+						.where(($) => [$.id.eq(reviewId)]),
+				),
+			)
+		}).pipe(Effect.provide(testDb.layer), Effect.orDie)
+		const noDeployYet: PrReviewTelemetryServiceApi = {
+			...telemetryFake({ failOperations: false }),
+			deploymentsSince: () => reportElsewhere.pipe(Effect.as([])),
+		}
+		return Effect.gen(function* () {
+			yield* seedDueReview
+			yield* TestClock.setTime(DEPLOYED_AT + 70 * 60_000)
+			const result = yield* (yield* PrReviewPostMergeService).runTick
+			assert.equal(result.waiting, 0)
+			assert.deepStrictEqual(yield* rowState, { status: "reported", after: null })
+		}).pipe(Effect.provide(layerFor(testDb, posted, { failOperations: false }, noDeployYet)))
 	})
 })

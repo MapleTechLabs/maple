@@ -1,14 +1,8 @@
-import {
-	resolveDbNodeStyle,
-	resolvePlanetScaleDbStyle,
-	withAlpha,
-} from "@maple/ui/components/service-map/service-map-db-style"
-import {
-	getServiceMapNodeColor,
-	type ServiceNodeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+import { resolveDbNodeStyle, resolvePlanetScaleDbStyle, withAlpha } from "../graph/service-map-db-style"
+import { getServiceMapNodeColor, type ServiceNodeData } from "../graph/service-map-utils"
 import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { EMPTY_VALUE, formatDuration, formatRate } from "@maple/ui/lib/format"
+import { EMPTY_VALUE, formatRate } from "@maple/ui/lib/format"
+import { formatLag } from "../../charts/planetscale-metric-series"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { formatLatency } from "@maple/ui/lib/format"
 import { utilizationLevel } from "@maple/ui/lib/utilization"
@@ -33,10 +27,10 @@ import {
 	UTILIZATION_TEXT,
 } from "./node-card"
 import { formatRuntime } from "./runtime"
-import { typographyClass } from "../../ui/typography"
-import { hstack } from "../../ui/stack"
+import { typography, typographyClass } from "../../ui/typography"
+import { hstack, vstack } from "../../ui/stack"
 
-// `ServiceNode`, `DatabaseNode`, `NamespaceAggregateNode` and the `ServiceMapNode` wrapper.
+// The service, database and namespace-aggregate node cards, and the wrapper that picks one.
 
 const handles = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	flowHandle(h, id, "target", "left", HANDLE_CLASSES),
@@ -53,30 +47,27 @@ const tintedCard = (color: string, tint: number, border: number, selected: boole
 }
 
 const podsCell = <M>(h: HtmlBuilder<M>, data: ServiceNodeData): Html =>
-	h.div(
-		[h.Class("ml-auto flex flex-col items-end gap-px")],
-		[
-			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, ["pods"]),
-			data.infra
-				? tooltipTrigger(h, [
-						h.span(
-							[
-								h.Class(
-									"flex items-center gap-1 font-mono text-2xs font-medium tabular-nums text-secondary-foreground",
-								),
-							],
-							[
-								icon(h, "CubeIcon", { size: 10, className: "text-foreground-subtle" }),
-								String(data.infra.podCount),
-							],
-						),
-					])
-				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-faint")],
-						[EMPTY_VALUE],
+	vstack(h, { align: "end", className: "ml-auto gap-px" }, [
+		eyebrow(h, { variant: "mono", className: "text-4xs" }, ["pods"]),
+		data.infra
+			? tooltipTrigger(h, [
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							as: "span",
+							className:
+								"font-mono text-2xs font-medium tabular-nums text-secondary-foreground",
+						},
+						[
+							icon(h, "CubeIcon", { size: 10, className: "text-foreground-subtle" }),
+							String(data.infra.podCount),
+						],
 					),
-		],
-	)
+				])
+			: typography(h, { size: "2xs", tone: "faint", mono: true, numeric: true }, [EMPTY_VALUE]),
+	])
 
 const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
 	const {
@@ -102,7 +93,7 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			[
 				h.Class(
 					cn(
-						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
+						"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-shadow duration-150",
 						selected
 							? selectedBorderClass(errorRate)
 							: "border-border hover:border-border-strong active:border-border-strong",
@@ -111,94 +102,76 @@ const serviceNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): R
 			],
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": accentColor })]),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
-					[
-						hstack(h, { gap: "1.5" },
-							[
-								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
-								tooltipTrigger(h, [
-									icon(h, platformIcon.icon, {
-										size: 12,
-										className: cn(
-											"shrink-0",
-											!platformIcon.branded && "text-foreground-subtle",
-										),
-									}),
+				vstack(h, { gap: "2", shrink: true, grow: true, className: "px-3 py-2.5" }, [
+					hstack(h, { gap: "1.5" }, [
+						statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
+						tooltipTrigger(h, [
+							icon(h, platformIcon.icon, {
+								size: 12,
+								className: cn("shrink-0", !platformIcon.branded && "text-foreground-subtle"),
+							}),
+						]),
+						middleTruncate(h, {
+							text: label,
+							tail: 12,
+							className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
+						}),
+						...(runtimeInfo === null
+							? []
+							: [
+									runtimeInfo.icon === null
+										? eyebrow(
+												h,
+												{
+													variant: "mono",
+													className: "shrink-0 text-4xs",
+												},
+												[runtimeInfo.short],
+											)
+										: tooltipTrigger(h, [
+												icon(h, runtimeInfo.icon, {
+													size: 12,
+													className: "shrink-0 text-foreground-subtle",
+												}),
+											]),
 								]),
-								middleTruncate(h, {
-									text: label,
-									tail: 12,
-									className: typographyClass({ size: "xs", tone: "foreground", weight: "medium" }),
-								}),
-								...(runtimeInfo === null
-									? []
-									: [
-											runtimeInfo.icon === null
-												? eyebrow(
-														h,
-														{
-															className:
-																"shrink-0 text-4xs text-foreground-subtle",
-														},
-														[runtimeInfo.short],
-													)
-												: tooltipTrigger(h, [
-														icon(h, runtimeInfo.icon, {
-															size: 12,
-															className: "shrink-0 text-foreground-subtle",
-														}),
-													]),
-										]),
-							],
-						),
-						h.div(
-							[h.Class("flex gap-4")],
-							[
-								tooltipTrigger(h, [
-									metricCell(h, "req/s", rateText(throughput, hasSampling)),
-								]),
-								errCell(h, errorRate),
-								avgCell(h, avgLatencyMs),
-								// A service on a platform has no pods; the logo by its name already says where it runs.
-								...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
-							],
-						),
-					],
-				),
+					]),
+					hstack(h, { gap: "4", align: "stretch" }, [
+						tooltipTrigger(h, [metricCell(h, "req/s", rateText(throughput, hasSampling))]),
+						errCell(h, errorRate),
+						avgCell(h, avgLatencyMs),
+						// A service on a platform has no pods; the logo by its name already says where it runs.
+						...(data.infra === undefined && data.runsOn !== undefined ? [] : [podsCell(h, data)]),
+					]),
+				]),
 			],
 		),
 	]
 }
 
-const formatLag = (seconds: number): string => formatDuration(seconds * 1000)
-
 const planetscaleRow = <M>(
 	h: HtmlBuilder<M>,
 	stats: NonNullable<NonNullable<ServiceNodeData["planetscale"]>["stats"]>,
 ): Html =>
-	h.div(
-		[h.Class("flex gap-4")],
-		[
-			metricCell(h, "conns", formatRate(stats.connectionsAvg)),
-			metricCell(
-				h,
-				"cpu",
-				`${stats.cpuMaxPercent.toFixed(0)}%`,
-				UTILIZATION_TEXT[utilizationLevel(stats.cpuMaxPercent / 100)],
-			),
-			metricCell(
-				h,
-				"lag",
-				formatLag(stats.replicaLagMaxSeconds),
-				stats.replicaLagMaxSeconds > 10
-					? "text-severity-error"
-					: stats.replicaLagMaxSeconds > 1
-						? "text-severity-warn"
-						: undefined,
-			),
-		],
-	)
+	hstack(h, { gap: "4", align: "stretch" }, [
+		metricCell(h, "conns", formatRate(stats.connectionsAvg)),
+		metricCell(
+			h,
+			"cpu",
+			`${stats.cpuMaxPercent.toFixed(0)}%`,
+			UTILIZATION_TEXT[utilizationLevel(stats.cpuMaxPercent / 100)],
+		),
+		metricCell(
+			h,
+			"lag",
+			formatLag(stats.replicaLagMaxSeconds),
+			stats.replicaLagMaxSeconds > 10
+				? "text-severity-error"
+				: stats.replicaLagMaxSeconds > 1
+					? "text-severity-warn"
+					: undefined,
+		),
+	])
 
 const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): ReadonlyArray<Html> => {
 	const {
@@ -220,60 +193,58 @@ const databaseNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): 
 	const tail = p95LatencyMs ?? maxLatencyMs ?? 0
 	return [
 		...handles(h, id),
-		h.div(
-			[
-				h.Class(
-					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-[border-color,box-shadow] duration-150",
-				),
-				h.Style(tintedCard(color, 0.12, 0.4, selected)),
-			],
+		hstack(
+			h,
+			{
+				align: "stretch",
+				className:
+					"w-56 cursor-pointer overflow-hidden rounded-r-lg border bg-card transition-shadow duration-150",
+				attributes: [h.Style(tintedCard(color, 0.12, 0.4, selected))],
+			},
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": color })]),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
-					[
-						hstack(h, { gap: "1.5" },
-							[
-								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
-								tooltipTrigger(h, [
-									icon(h, DB_ICON[style.icon], {
-										size: 12,
-										className: "shrink-0",
-										style: branded ? undefined : { color },
-									}),
-								]),
-								h.span(
-									[h.Class("truncate text-xs font-medium text-foreground"), h.Title(title)],
-									[title],
-								),
-								h.span(
-									[
-										h.Class(
-											"ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide",
-										),
-										h.Style({ color }),
-									],
-									[badge],
-								),
-							],
+				vstack(h, { gap: "2", shrink: true, grow: true, className: "px-3 py-2.5" }, [
+					hstack(h, { gap: "1.5" }, [
+						statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
+						tooltipTrigger(h, [
+							icon(h, DB_ICON[style.icon], {
+								size: 12,
+								className: "shrink-0",
+								style: branded ? undefined : { color },
+							}),
+						]),
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "medium",
+								truncate: true,
+								attributes: [h.Title(title)],
+							},
+							[title],
 						),
-						h.div(
-							[h.Class("flex gap-4")],
+						h.span(
 							[
-								metricCell(h, "calls/s", rateText(throughput, hasSampling)),
-								errCell(h, errorRate),
-								avgCell(h, avgLatencyMs),
-								metricCell(
-									h,
-									p95LatencyMs === undefined ? "max" : "p95",
-									formatLatency(tail),
-									latencyToneClass(tail, "p95"),
-								),
+								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-caption"),
+								h.Style({ color }),
 							],
+							[badge],
 						),
-						...(planetscale?.stats ? [planetscaleRow(h, planetscale.stats)] : []),
-					],
-				),
+					]),
+					hstack(h, { gap: "4", align: "stretch" }, [
+						metricCell(h, "calls/s", rateText(throughput, hasSampling)),
+						errCell(h, errorRate),
+						avgCell(h, avgLatencyMs),
+						metricCell(
+							h,
+							p95LatencyMs === undefined ? "max" : "p95",
+							formatLatency(tail),
+							latencyToneClass(tail, "p95"),
+						),
+					]),
+					...(planetscale?.stats ? [planetscaleRow(h, planetscale.stats)] : []),
+				]),
 			],
 		),
 	]
@@ -288,57 +259,53 @@ const namespaceAggregateNode = <M>(
 	const color = getServiceMapNodeColor(data, colorMode ?? "service")
 	return [
 		...handles(h, id),
-		h.div(
-			[
-				h.Class(
-					"flex w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-[border-color,box-shadow] duration-150",
-				),
-				h.Style(tintedCard(color, 0.1, 0.55, selected)),
-				h.Title("Collapsed namespace. Click to expand"),
-			],
+		hstack(
+			h,
+			{
+				align: "stretch",
+				className:
+					"w-56 cursor-pointer overflow-hidden rounded-r-lg border border-dashed bg-card transition-shadow duration-150",
+				attributes: [
+					h.Style(tintedCard(color, 0.1, 0.55, selected)),
+					h.Title("Collapsed namespace. Click to expand"),
+				],
+			},
 			[
 				h.div([h.Class("w-[3px] shrink-0"), h.Style({ "background-color": color })]),
-				h.div(
-					[h.Class("flex min-w-0 flex-1 flex-col gap-2 px-3 py-2.5")],
-					[
-						hstack(h, { gap: "1.5" },
-							[
-								statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
-								h.span(
-									[
-										h.Class(
-											"truncate text-xs font-semibold uppercase tracking-wider text-foreground",
-										),
-									],
-									[label],
-								),
-								h.span(
-									[
-										h.Class(
-											"ml-auto shrink-0 text-4xs font-semibold uppercase tracking-wide",
-										),
-										h.Style({ color }),
-									],
-									[String(nsMemberCount ?? 0), " services"],
-								),
-							],
+				vstack(h, { gap: "2", shrink: true, grow: true, className: "px-3 py-2.5" }, [
+					hstack(h, { gap: "1.5" }, [
+						statusDot(h, { tone: HEALTH_TONE[errorRateLevel(errorRate)] }),
+						typography(
+							h,
+							{
+								size: "xs",
+								tone: "foreground",
+								weight: "semibold",
+								truncate: true,
+								className: "uppercase tracking-caption",
+							},
+							[label],
 						),
-						h.div(
-							[h.Class("flex gap-4")],
+						h.span(
 							[
-								metricCell(h, "req/s", formatRate(throughput)),
-								errCell(h, errorRate),
-								avgCell(h, avgLatencyMs),
+								h.Class("ml-auto shrink-0 text-4xs font-semibold uppercase tracking-caption"),
+								h.Style({ color }),
 							],
+							[String(nsMemberCount ?? 0), " services"],
 						),
-					],
-				),
+					]),
+					hstack(h, { gap: "4", align: "stretch" }, [
+						metricCell(h, "req/s", formatRate(throughput)),
+						errCell(h, errorRate),
+						avgCell(h, avgLatencyMs),
+					]),
+				]),
 			],
 		),
 	]
 }
 
-/** `ServiceMapNode`: the card for the node's kind inside the focus-dim wrapper. */
+/** The card for the node's kind inside the focus-dim wrapper. */
 export const serviceMapNode = <M>(h: HtmlBuilder<M>, id: string, data: ServiceNodeData): Html =>
 	h.div(
 		[h.Class(cn("transition-opacity duration-200", data.dimmed && "opacity-25"))],

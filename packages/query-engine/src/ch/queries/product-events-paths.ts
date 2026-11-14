@@ -22,7 +22,8 @@ import { param, from, fromQuery, inSubquery, table } from "@maple-dev/effect-orm
 import type { CHQuery, ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
-import { ProductEvents, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { CHNumber } from "../schema"
 import {
 	LINK_ALIAS,
@@ -137,17 +138,20 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 	const forward = opts.direction === "after"
 	const windowMs = opts.windowSeconds * 1000
 
-	const withIdentity = (): OpenJoinQuery<typeof ProductEvents.columns> => {
-		const base: OpenJoinQuery<typeof ProductEvents.columns> = from(ProductEvents, "e")
+	const withIdentity = (): OpenJoinQuery<typeof Datasources.productEvents.columns> => {
+		const base: OpenJoinQuery<typeof Datasources.productEvents.columns> = from(
+			Datasources.productEvents,
+			"e",
+		)
 		return keyBy === "person"
 			? base.leftJoinQuery(identityLinksByVisitor(), LINK_ALIAS, (e, link) =>
 					e.VisitorId.eq(link.VisitorId),
 				)
 			: base
 	}
-	const keyOf = ($: OpenJoinAccessor<typeof ProductEvents.columns>) =>
+	const keyOf = ($: OpenJoinAccessor<typeof Datasources.productEvents.columns>) =>
 		personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
-	const inRange = ($: OpenJoinAccessor<typeof ProductEvents.columns>) => [
+	const inRange = ($: OpenJoinAccessor<typeof Datasources.productEvents.columns>) => [
 		$.OrgId.eq(orgIdParam),
 		$.Timestamp.gte(param.dateTime("startTime")),
 		$.Timestamp.lte(param.dateTime("endTime")),
@@ -197,9 +201,10 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
 				],
 				(cond): cond is CH.Condition => cond !== undefined,
 			)
-			const narrowed = narrowing.reduce<CH.Condition | undefined>(
-				(acc, cond) => (acc ? acc.and(cond) : cond),
+			const narrowed = Arr.reduce<CH.Condition, CH.Condition | undefined>(
+				narrowing,
 				undefined,
+				(acc, cond) => (acc ? acc.and(cond) : cond),
 			)
 			return [
 				forward ? ts.gte(anchorTs) : ts.lte(anchorTs),
@@ -218,7 +223,7 @@ function pathEventsBranch(opts: ProductEventsPathsOpts, filters: ProductEventsFi
  */
 export function productEventsPathsQuery(
 	opts: ProductEventsPathsOpts,
-): Result.Result<CHQuery<ColumnDefs, ProductEventsPathsOutput, {}>, ProductEventsFunnelError> {
+): Result.Result<CHQuery<ColumnDefs, ProductEventsPathsOutput>, ProductEventsFunnelError> {
 	const invalid = validate(opts)
 	if (invalid !== undefined) return Result.fail(invalid)
 	const filters = opts.filters ?? {}
@@ -233,9 +238,7 @@ export function productEventsPathsQuery(
 	const perPerson = fromQuery(pathEventsBranch(opts, filters), "path_events")
 		.select(($) => ({
 			key: $.key,
-			evs: CH.untypedExpr<unknown>(
-				"arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, name, isAnchor)))",
-			),
+			evs: CH.untypedExpr("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, name, isAnchor)))"),
 		}))
 		.groupBy("key")
 
@@ -257,7 +260,7 @@ export function productEventsPathsQuery(
 	// have gone on.
 	const edges = fromQuery(sequences, "sequences").select(($) => ({
 		key: $.key,
-		edge: CH.untypedExpr<unknown>(
+		edge: CH.untypedExpr(
 			`arrayJoin(arrayMap(i -> tuple(i, arrayElement(seq, i), if(i < length(seq), arrayElement(seq, i + 1), '')), arrayEnumerate(seq)))`,
 		),
 	}))
@@ -290,14 +293,14 @@ export function productEventsPathsQuery(
 	const ranked = fromQuery(nodeCounts, "node_counts")
 		.select(($) => ({
 			hop: $.hop,
-			head: CH.untypedExpr<unknown>(
+			head: CH.untypedExpr(
 				`arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(name, n))), 1, ${opts.branches})`,
 			),
 		}))
 		.groupBy("hop")
 	const keptEntries = fromQuery(ranked, "ranked").select(($) => ({
 		hop: $.hop,
-		entry: CH.untypedExpr<unknown>("arrayJoin(head)"),
+		entry: CH.untypedExpr("arrayJoin(head)"),
 	}))
 	const kept = fromQuery(keptEntries, "kept_entries").select(($) => ({
 		hop: $.hop,
@@ -314,8 +317,8 @@ export function productEventsPathsQuery(
 			const hop = $.hop as CH.Expr<number>
 			const fromName = $.fromNode as CH.Expr<string>
 			const toName = $.toNode as CH.Expr<string>
-			const keptFrom = CH.coalesce($.kf.name as CH.Expr<string | null>, CH.lit(""))
-			const keptTo = CH.coalesce($.kt.name as CH.Expr<string | null>, CH.lit(""))
+			const keptFrom = CH.coalesce($.kf.name, CH.lit(""))
+			const keptTo = CH.coalesce($.kt.name, CH.lit(""))
 			return {
 				hop,
 				// Column 0 is the anchor alone, so a first hop's `fromNode` is always named.

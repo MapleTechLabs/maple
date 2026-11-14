@@ -13,12 +13,12 @@ import { dotLoader } from "./dot-loader"
 import type { TaskPart, ToolPart } from "./ui-message"
 import { agentPresentation } from "./view-cards"
 import { type PanelHost, runningClock } from "./view-tool"
-import { typography } from "@maple/views/ui/typography"
-import { vstack, vstackClass } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `TaskCard`: one sub-agent run as a line that opens its
-// sheet: the question in full, the answer, and whatever of the child's own steps reached the parent.
+// One sub-agent run as a line that opens its sheet: the question in full, the answer, and
+// whatever of the child's own steps reached the parent.
 
 /** What a task row needs from its host: its sheet, and how the answer and steps are drawn. */
 export type TaskHost<M> = Readonly<{
@@ -89,8 +89,9 @@ const taskLine = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html
 /** The answer section: live, the error, the answer, or the note that none came back. */
 const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html => {
 	if (part.status === "running")
-		return h.div(
-			[h.Class("flex items-center gap-2 text-sm text-muted-foreground")],
+		return hstack(
+			h,
+			{ gap: "2", align: "center", className: typographyClass({ size: "sm", tone: "muted" }) },
 			[
 				dotLoader(h),
 				h.span([h.Class("shimmer")], [`${agentPresentation(part.agent).activity}…`]),
@@ -102,13 +103,14 @@ const answer = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart): Html =
 			[h.Class("max-h-60 overflow-auto whitespace-pre-wrap text-xs text-severity-error")],
 			[part.errorText],
 		)
-	if (part.answer !== undefined) return h.div([h.Class("text-sm")], [host.richText(part.answer)])
+	if (part.answer !== undefined)
+		return typography(h, { size: "sm", as: "div" }, [host.richText(part.answer)])
 	return typography(h, { size: "sm", tone: "muted", as: "p" }, [
 		"The run ended without returning an answer.",
 	])
 }
 
-/** `SheetDetailHeader` (not mono) over the `SheetPanel` of answer and steps. */
+/** The sheet's header (not mono) over the panel of answer and steps. */
 const sheetContent = <M>(
 	h: HtmlBuilder<M>,
 	host: TaskHost<M>,
@@ -116,16 +118,13 @@ const sheetContent = <M>(
 	id: string,
 ): ReadonlyArray<Html> => {
 	const agent = agentPresentation(part.agent)
-	const kind = h.span(
-		[h.Class("inline-flex items-center gap-2")],
-		[
-			icon(h, agent.icon, { className: "size-3 shrink-0" }),
-			agent.label,
-			" sub-agent",
-			h.span([h.Class("text-foreground-faint")], ["·"]),
-			part.status === "running" ? "running" : (OUTCOME.get(part.status) ?? ""),
-		],
-	)
+	const kind = hstack(h, { gap: "2", align: "center", inline: true, as: "span" }, [
+		icon(h, agent.icon, { className: "size-3 shrink-0" }),
+		agent.label,
+		" sub-agent",
+		typography(h, { tone: "faint" }, ["·"]),
+		part.status === "running" ? "running" : (OUTCOME.get(part.status) ?? ""),
+	])
 	return [
 		sheetDetailHeader(h, {
 			dialogId: id,
@@ -174,7 +173,7 @@ export const taskCard = <M>(h: HtmlBuilder<M>, host: TaskHost<M>, part: TaskPart
 		toParentMessage: (message: Dialog.Message) => host.onDialog(part.toolCallId, message),
 		viewInputs: {
 			side: "right",
-			className: "sm:max-w-xl",
+			size: "detail",
 			hasDescription: true,
 			toView: ({ trigger, portal }) =>
 				trace(h, [pressable(h, { attributes: trigger }, [taskLine(h, host, part)]), portal]),

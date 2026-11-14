@@ -25,11 +25,8 @@ import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { Array as Arr, String as Str } from "effect"
 
-// The widget picker and the presets' thumbnails.
-
 type H = HtmlBuilder<Message>
 
-/** `PickerCard`: the thumbnail over its title and description. */
 const pickerCard = (h: H, title: string, description: string, onClick: Message, preview: Html): Html =>
 	cardButton(h, { onClick, className: vstackClass({ gap: "3", className: "p-4" }) }, [
 		preview,
@@ -41,14 +38,14 @@ const pickerCard = (h: H, title: string, description: string, onClick: Message, 
 		]),
 	])
 
-/** `PickerSection`: a heading on the All tab, then a three-column grid of cards. */
+/** A heading on the All tab, then a three-column grid of cards. */
 const pickerSection = (h: H, title: string, showHeading: boolean, cards: ReadonlyArray<Html>): Html =>
 	vstack(h, { gap: "3" }, [
 		...(showHeading ? [eyebrow(h, { as: "h3" }, [title])] : []),
 		h.div([h.Class("grid grid-cols-3 gap-3")], cards),
 	])
 
-/** `PreviewFrame`: the preset's title over its thumbnail, in a 4:3 box. */
+/** The preset's title over its thumbnail, in a 4:3 box. */
 const previewFrame = (
 	h: H,
 	title: string | undefined,
@@ -63,7 +60,7 @@ const previewFrame = (
 		],
 	)
 
-/** `ChartPreview`: the chart over its registry sample rows. */
+/** The chart over its registry sample rows. */
 const chartPreview = (h: H, model: Model, chartId: string, key: string): Html => {
 	const slot = `picker:${key}`
 	const content =
@@ -84,7 +81,7 @@ const chartPreview = (h: H, model: Model, chartId: string, key: string): Html =>
 	return h.div([h.Class("aspect-[4/3] w-full overflow-hidden")], [content])
 }
 
-/** `rowsPresetPreview`: a miniature table of the preset's columns over sample rows. */
+/** A miniature table of the preset's columns over sample rows. */
 const rowsPreview = (
 	h: H,
 	preset: WidgetPresetDefinition,
@@ -123,7 +120,7 @@ const rowsPreview = (
 	])
 }
 
-/** `MarkdownPresetPreview`: the note's first lines, markdown syntax stripped. */
+/** The note's first lines, markdown syntax stripped. */
 const markdownPreview = (h: H, preset: WidgetPresetDefinition): Html => {
 	const lines = Arr.filter(
 		Str.split("\n")(preset.display.markdown?.content ?? ""),
@@ -154,17 +151,14 @@ const presetPreview = (h: H, model: Model, entry: PickerSection, preset: WidgetP
 				preset.display.title,
 				"flex flex-col items-center justify-center gap-1.5",
 				[
-					h.div(
-						[h.Class("text-lg font-semibold tabular-nums")],
-						[
-							formatStatValue(
-								STAT_PRESET_SAMPLE_VALUES[preset.id] ?? 0,
-								preset.display.unit,
-								preset.display.prefix,
-								preset.display.suffix,
-							),
-						],
-					),
+					typography(h, { size: "lg", weight: "semibold", numeric: true, as: "div" }, [
+						formatStatValue(
+							STAT_PRESET_SAMPLE_VALUES[preset.id] ?? 0,
+							preset.display.unit,
+							preset.display.prefix,
+							preset.display.suffix,
+						),
+					]),
 				],
 			)
 		case "rows":
@@ -226,7 +220,7 @@ const sections = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-/** `WidgetPicker`: "Add widget", its section tabs, and the cards. */
+/** "Add widget", its section tabs, and the cards. */
 export const widgetPicker = (h: H, model: Model): Html => {
 	const id = model.pickerDialog.id
 	return h.submodel({
@@ -261,8 +255,9 @@ export const widgetPicker = (h: H, model: Model): Html => {
 					},
 					toParentMessage: (message) => Message.GotPickerTabsMessage({ message }),
 				}),
-				h.div(
-					[h.Class("flex flex-col gap-5 max-h-[60vh] overflow-y-auto py-5 px-4")],
+				vstack(
+					h,
+					{ gap: "5", className: "max-h-[60vh] overflow-y-auto py-5 px-4" },
 					sections(h, model),
 				),
 			],

@@ -12,7 +12,6 @@
  * Clocks are read inside steps only: the body replays, and a clock read there
  * would differ on every replay.
  */
-import { createDecipheriv } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgClickHouseSchemaApplyRuns, OrgClickHouseSettings } from "@maple/db/tables"
 import {
@@ -26,13 +25,31 @@ import {
 	parseEmittedStatement,
 	performanceOnlySearchColumns,
 	qualifyStatementForDatabase,
+	quoteClickHouseIdentifier,
+	recordFeatureSql,
+	recordMigrationSql,
+	selectAppliedVersionsSql,
+	selectFeatureRevisionsSql,
+	createSchemaFeaturesTableSql,
+	createSchemaMigrationsTableSql,
 	type ActualTable,
 	type ApplyStep,
 	type DesiredTable,
 } from "@maple/domain/clickhouse"
 import { OrgId } from "@maple/domain/http"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Clock, Config, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Cause,
+	Clock,
+	Config,
+	Effect,
+	Option,
+	Predicate,
+	Redacted,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { EdgeCacheService } from "@maple/cache"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -42,6 +59,15 @@ import {
 	ORG_CH_CONFIG_CACHE_BUCKET,
 } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { durableStep, type DurableStepConfig } from "@maple/backend/platform/durable-step"
+import {
+	DECRYPTION_KEYS_ENV,
+	openSecret,
+	parseSecretKeyring,
+	PRIMARY_KEY_ENV,
+	type SecretKeyring,
+} from "@maple/backend/platform/SecretBox"
+import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 
 /**
  * Bust the cached runtime config after the workflow writes to
@@ -73,20 +99,21 @@ const bustRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
 
 export interface SchemaApplyWorkflowPayload {
 	readonly orgId: string
+	/** The claim's run id (`workflow_instance_id`); every progress write is fenced on it. */
+	readonly runId: string
 }
 
 export interface SchemaApplyWorkflowResult {
-	readonly status: "succeeded" | "failed"
+	readonly status: "succeeded" | "superseded"
 	readonly appliedVersions: ReadonlyArray<number>
 }
 
-/** The one secret the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
-const ENCRYPTION_KEY_CONFIG = "MAPLE_INGEST_KEY_ENCRYPTION_KEY"
+/** The secrets the run needs, resolved by the `ConfigProvider` the Workflow class builds on the env. */
 
-interface LoadOptionalFeatureStateOptions<R> {
-	readonly ensureBookkeeping: Effect.Effect<void, unknown, R>
-	readonly readServerVersion: Effect.Effect<string, unknown, R>
-	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, unknown, R>
+interface LoadOptionalFeatureStateOptions<E, R> {
+	readonly ensureBookkeeping: Effect.Effect<void, E, R>
+	readonly readServerVersion: Effect.Effect<string, E, R>
+	readonly readAppliedFeatureRevisions: Effect.Effect<ReadonlyMap<string, number>, E, R>
 }
 
 export type OptionalFeatureState =
@@ -106,13 +133,23 @@ const causeMessage = (cause: Cause.Cause<unknown>): string => {
 	return error instanceof Error ? error.message : String(error)
 }
 
+/** An optional step may be skipped, but a lost fence must still stop the run. */
+const isSkippable = <E>(cause: Cause.Cause<E>): boolean =>
+	!Cause.hasInterrupts(cause) &&
+	!Arr.some(
+		cause.reasons,
+		(reason) =>
+			Cause.isFailReason(reason) &&
+			Predicate.isTagged(reason.error, "@maple/api/workflows/SchemaApplyRunSupersededError"),
+	)
+
 /**
  * Optional feature metadata must never decide whether the correctness schema
  * is ready for ingest. Keeping this boundary explicit also makes the workflow
  * policy testable without a live durable-workflow runtime.
  */
-export const loadOptionalFeatureState = <R>(
-	options: LoadOptionalFeatureStateOptions<R>,
+export const loadOptionalFeatureState = <E, R>(
+	options: LoadOptionalFeatureStateOptions<E, R>,
 ): Effect.Effect<OptionalFeatureState, never, R> =>
 	Effect.gen(function* () {
 		yield* options.ensureBookkeeping
@@ -127,8 +164,6 @@ export const loadOptionalFeatureState = <R>(
 	)
 
 const STEP: DurableStepConfig = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } }
-
-// --- ClickHouse exec --------------------------------------------------------
 
 interface ChConfig {
 	readonly url: string
@@ -180,7 +215,7 @@ const execClickHouse = (
 		if (response.status < 200 || response.status >= 300) {
 			return yield* new ClickHouseExecError({
 				status: response.status,
-				message: `ClickHouse ${response.status}: ${Str.split("\n")(text)[0]?.slice(0, 500) ?? ""}`,
+				message: `ClickHouse ${response.status}: ${Str.slice(0, 500)(Str.split("\n")(text)[0])}`,
 			})
 		}
 		return text
@@ -234,70 +269,48 @@ const parseSortingKeyRows = parseJsonEachRow(
 	Schema.Struct({ sorting_key: Schema.optionalKey(Schema.String) }),
 )
 
-// --- migration bookkeeping (mirrors the service + CLI) ----------------------
-
-const MIGRATIONS_TABLE = "_maple_schema_migrations"
-const FEATURES_TABLE = "_maple_schema_features"
-const quote = (name: string): string => `\`${Str.replace(/`/g, "``")(name)}\``
-
 const ensureMigrationsTable = (cfg: ChConfig) =>
-	execClickHouse(
-		cfg,
-		`CREATE TABLE IF NOT EXISTS ${quote(MIGRATIONS_TABLE)} (version UInt32, applied_at DateTime64(3) DEFAULT now64(3), description String) ENGINE = MergeTree ORDER BY version`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, createSchemaMigrationsTableSql).pipe(Effect.asVoid)
 
 const ensureFeaturesTable = (cfg: ChConfig) =>
-	execClickHouse(
-		cfg,
-		`CREATE TABLE IF NOT EXISTS ${quote(FEATURES_TABLE)} (
-  id String,
-  revision UInt32,
-  applied_at DateTime64(3) DEFAULT now64(3),
-  description String
-) ENGINE = ReplacingMergeTree(revision) ORDER BY id`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, createSchemaFeaturesTableSql).pipe(Effect.asVoid)
 
 const readAppliedVersions = (
 	cfg: ChConfig,
 ): Effect.Effect<ReadonlyArray<number>, ClickHouseExecError, HttpClient.HttpClient> =>
-	execClickHouse(cfg, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`).pipe(
+	execClickHouse(cfg, selectAppliedVersionsSql).pipe(
 		Effect.map((text) => [...new Set(Arr.map(parseVersionRows(text), (r) => r.version))]),
 	)
 
 const recordVersion = (cfg: ChConfig, version: number, description: string) =>
-	execClickHouse(
-		cfg,
-		`INSERT INTO ${quote(MIGRATIONS_TABLE)} (version, description) VALUES (${version}, '${Str.replace(/'/g, "''")(description)}')`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, recordMigrationSql(version, description)).pipe(Effect.asVoid)
 
 /** Entries rather than a Map: a step's value must survive Cloudflare's JSON persistence. */
 const readAppliedFeatureRevisions = (
 	cfg: ChConfig,
 ): Effect.Effect<ReadonlyArray<readonly [string, number]>, ClickHouseExecError, HttpClient.HttpClient> =>
-	execClickHouse(
-		cfg,
-		`SELECT id, max(revision) AS revision FROM ${quote(FEATURES_TABLE)} GROUP BY id FORMAT JSONEachRow`,
-	).pipe(
+	execClickHouse(cfg, selectFeatureRevisionsSql).pipe(
 		Effect.map((text) =>
 			Arr.map(parseFeatureRevisionRows(text), (row) => [row.id, row.revision] as const),
 		),
 	)
 
 const recordFeature = (cfg: ChConfig, id: string, revision: number, description: string) =>
-	execClickHouse(
-		cfg,
-		`INSERT INTO ${quote(FEATURES_TABLE)} (id, revision, description) VALUES ('${Str.replace(/'/g, "''")(id)}', ${revision}, '${Str.replace(/'/g, "''")(description)}')`,
-	).pipe(Effect.asVoid)
+	execClickHouse(cfg, recordFeatureSql(id, revision, description)).pipe(Effect.asVoid)
 
 const normalizeExpression = (value: string): string =>
 	Str.toLowerCase(Str.replace(/\s+/g, "")(Str.replace(/`/g, "")(value)))
-
-// --- config load + decrypt (mirror of the service helper) -------------------
 
 /** The Workflow was started with an `orgId` that is not one. */
 export class SchemaApplyPayloadError extends Schema.TaggedError<SchemaApplyPayloadError>()(
 	"@maple/api/workflows/SchemaApplyPayloadError",
 	{ message: Schema.String, rawOrgId: Schema.String },
+) {}
+
+/** A newer applySchema reclaimed the org's run row, so this instance stops writing and migrating. */
+export class SchemaApplyRunSupersededError extends Schema.TaggedError<SchemaApplyRunSupersededError>()(
+	"@maple/api/workflows/SchemaApplyRunSupersededError",
+	{ message: Schema.String, orgId: OrgId, runId: Schema.String },
 ) {}
 
 /** A settings row that cannot be turned into a usable ClickHouse target. */
@@ -306,31 +319,10 @@ export class SchemaApplyConfigError extends Schema.TaggedError<SchemaApplyConfig
 	{ message: Schema.String },
 ) {}
 
-const decryptPassword = (
-	encryptionKey: Buffer,
-	ciphertext: string,
-	iv: string,
-	tag: string,
-): Effect.Effect<string, SchemaApplyConfigError> =>
-	Effect.try({
-		try: () => {
-			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(iv, "base64"))
-			decipher.setAuthTag(Buffer.from(tag, "base64"))
-			return Buffer.concat([
-				decipher.update(Buffer.from(ciphertext, "base64")),
-				decipher.final(),
-			]).toString("utf8")
-		},
-		catch: (cause) =>
-			new SchemaApplyConfigError({
-				message: `Stored ClickHouse password could not be decrypted: ${cause instanceof Error ? cause.message : String(cause)}`,
-			}),
-	})
-
 const loadConfig = (
 	database: DatabaseApi,
 	orgId: OrgId,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 ): Effect.Effect<ChConfig, SchemaApplyConfigError | DatabaseError> =>
 	Effect.gen(function* () {
 		const rows = yield* database.execute((db) =>
@@ -342,18 +334,26 @@ const loadConfig = (
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new SchemaApplyConfigError({
 				message: `No ClickHouse settings configured for org ${orgId}`,
 			})
 		}
 		const password =
 			row.chPasswordCiphertext && row.chPasswordIv && row.chPasswordTag
-				? yield* decryptPassword(
-						encryptionKey,
-						row.chPasswordCiphertext,
-						row.chPasswordIv,
-						row.chPasswordTag,
+				? yield* openSecret(
+						keyring,
+						clickHousePasswordSlot,
+						{ orgId: row.orgId },
+						{
+							ciphertext: row.chPasswordCiphertext,
+							iv: row.chPasswordIv,
+							tag: row.chPasswordTag,
+						},
+						(message) =>
+							new SchemaApplyConfigError({
+								message: `Stored ClickHouse password could not be decrypted: ${message}`,
+							}),
 					)
 				: ""
 		const parsedUrl = yield* Effect.try({
@@ -378,8 +378,6 @@ const loadConfig = (
 		return { url: row.chUrl, user: row.chUser, password, database: row.chDatabase }
 	})
 
-// --- run-row progress (org_clickhouse_schema_apply_runs) --------------------
-
 type RunPatch = Partial<{
 	status: "queued" | "running" | "succeeded" | "failed"
 	phase: string | null
@@ -393,20 +391,80 @@ type RunPatch = Partial<{
 	finishedAt: number | null
 }>
 
-/** Stamps `updatedAt` from the clock, so it only ever runs inside a step (or on the failure path). */
-const updateRun = (database: DatabaseApi, orgId: OrgId, patch: RunPatch) =>
+type RunStatus = "queued" | "running" | "succeeded" | "failed"
+
+/** The run row this instance owns: the org's row while it still carries the claim's run id. */
+export interface RunFence {
+	readonly database: DatabaseApi
+	readonly orgId: OrgId
+	readonly runId: string
+}
+
+/**
+ * Stamps `updatedAt` from the clock, so it only ever runs inside a step (or on the failure path).
+ * Fenced on the run id and a live status: a reclaimed or settled run fails it as superseded.
+ */
+const updateRun = (fence: RunFence, patch: RunPatch) =>
 	Effect.gen(function* () {
 		const now = yield* Clock.currentTimeMillis
-		yield* database.execute((db) =>
-			db.run(
-				PG.update(OrgClickHouseSchemaApplyRuns)
-					.set({ ...patch, updatedAt: now })
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
+		yield* transitionRow<RunStatus, { readonly orgId: OrgId }, DatabaseError, never>(
+			{
+				table: "org_clickhouse_schema_apply_runs",
+				id: fence.orgId,
+				from: ["queued", "running"],
+				to: patch.status ?? "running",
+			},
+			(from) =>
+				fence.database.execute((db) =>
+					db.run(
+						PG.update(OrgClickHouseSchemaApplyRuns)
+							.set({ ...patch, updatedAt: now })
+							.where(($) => [
+								$.orgId.eq(fence.orgId),
+								$.workflowInstanceId.eq(fence.runId),
+								$.status.in_(...from),
+							])
+							.returning("orgId"),
+					),
+				),
 		)
-	})
+	}).pipe(
+		Effect.catchTag("@maple/backend/TransitionConflictError", (conflict) =>
+			Effect.fail(
+				new SchemaApplyRunSupersededError({
+					message: conflict.message,
+					orgId: fence.orgId,
+					runId: fence.runId,
+				}),
+			),
+		),
+	)
 
-// --- snapshot-diff additive (mirror of OrgClickHouseSettingsService) --------
+/** Under the 30 minute staleness window the service reclaims a silent run after. */
+const RUN_HEARTBEAT = "5 minutes"
+
+/**
+ * Runs one long statement (a backfill chunk) while touching the run row, so a live run never
+ * reads as stale. Losing the fence abandons the request (the server may still finish it).
+ */
+export const withRunHeartbeat = <A, E, R>(fence: RunFence, statement: Effect.Effect<A, E, R>) =>
+	Effect.raceFirst(
+		statement,
+		Effect.sleep(RUN_HEARTBEAT).pipe(
+			Effect.andThen(
+				updateRun(fence, {}).pipe(
+					Effect.catchTag("@maple/backend/lib/DatabaseError", (error) =>
+						Effect.logWarning("Schema apply heartbeat failed", error.message),
+					),
+				),
+			),
+			Effect.forever,
+		),
+	)
+
+/** Claims the step for this run, then runs its statement under the heartbeat. */
+const fencedExec = (fence: RunFence, cfg: ChConfig, patch: RunPatch, sql: string) =>
+	updateRun(fence, patch).pipe(Effect.andThen(withRunHeartbeat(fence, execClickHouse(cfg, sql))))
 
 const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
@@ -476,11 +534,12 @@ const reconcileSchemaSnapshot = (
 				return [qualifyStatementForDatabase(table.createStatement, cfg.database)]
 			}
 			if (entry.status !== "drifted" || entry.kind !== "table") return []
-			return Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing").flatMap((drift) => {
+			const missing = Arr.filter(entry.columnDrifts, (drift) => drift.kind === "missing")
+			return Arr.flatMap(missing, (drift) => {
 				const colDef = extractColumnDefinition(table.createStatement, drift.column)
 				return colDef
 					? [
-							`ALTER TABLE ${quote(cfg.database)}.${quote(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
+							`ALTER TABLE ${quoteClickHouseIdentifier(cfg.database)}.${quoteClickHouseIdentifier(entry.name)} ADD COLUMN IF NOT EXISTS ${colDef}`,
 						]
 					: []
 			})
@@ -489,8 +548,6 @@ const reconcileSchemaSnapshot = (
 			discard: true,
 		})
 	})
-
-// --- orchestration ----------------------------------------------------------
 
 interface SkippedFeature {
 	readonly id: string
@@ -509,12 +566,19 @@ export const runClickHouseSchemaApply = (
 	Database | Cloudflare.WorkflowStep | HttpClient.HttpClient
 > =>
 	Effect.gen(function* () {
-		const orgId = yield* Schema.decodeUnknownEffect(OrgId)(payload.orgId).pipe(
+		const orgId = yield* Schema.decodeEffect(OrgId)(payload.orgId).pipe(
 			Effect.mapError(
 				(error) => new SchemaApplyPayloadError({ message: error.message, rawOrgId: payload.orgId }),
 			),
 		)
-		const database = yield* Database
+		if (typeof payload.runId !== "string" || payload.runId.length === 0) {
+			return yield* new SchemaApplyPayloadError({
+				message: "Schema apply payload has no run id",
+				rawOrgId: payload.orgId,
+			})
+		}
+		const fence: RunFence = { database: yield* Database, orgId, runId: payload.runId }
+		const { database } = fence
 
 		// Inside the protected region below: a config-load failure (settings row
 		// deleted, missing encryption key, decrypt failure, invalid URL) must still
@@ -524,11 +588,23 @@ export const runClickHouseSchemaApply = (
 			Effect.gen(function* () {
 				const finishedAt = yield* Clock.currentTimeMillis
 				const message = causeMessage(cause)
-				yield* updateRun(database, orgId, {
+				// Only the run that still owns the row may report the org's sync error.
+				const owned = yield* updateRun(fence, {
 					status: "failed",
 					errorMessage: message,
 					finishedAt,
-				}).pipe(Effect.ignore({ log: true, message: "Failed to mark schema apply run failed" }))
+				}).pipe(
+					Effect.as(true),
+					Effect.catchTag("@maple/api/workflows/SchemaApplyRunSupersededError", () =>
+						Effect.succeed(false),
+					),
+					Effect.catch((error) =>
+						Effect.logWarning("Failed to mark schema apply run failed", error.message).pipe(
+							Effect.as(true),
+						),
+					),
+				)
+				if (!owned) return
 				yield* database
 					.execute((db) =>
 						db.run(
@@ -550,37 +626,51 @@ export const runClickHouseSchemaApply = (
 				yield* bustRuntimeConfigCache(orgId)
 			})
 
-		return yield* applySchema(database, orgId).pipe(
+		return yield* applySchema(fence).pipe(
+			// A reclaimed run ends quietly: the newer run owns the row and the org's sync status.
+			Effect.catchTag("@maple/api/workflows/SchemaApplyRunSupersededError", () =>
+				Effect.succeed<SchemaApplyWorkflowResult>({ status: "superseded", appliedVersions: [] }),
+			),
 			Effect.catchCause((cause) => markFailed(cause).pipe(Effect.andThen(Effect.failCause(cause)))),
 		)
 	})
 
-const applySchema = (database: DatabaseApi, orgId: OrgId) =>
+const applySchema = (fence: RunFence) =>
 	Effect.gen(function* () {
-		const encryptionKeyText = yield* Config.Redacted(ENCRYPTION_KEY_CONFIG).pipe(
+		const { database, orgId } = fence
+		const encryptionKeyText = yield* Config.Redacted(PRIMARY_KEY_ENV).pipe(
 			Effect.mapError(
 				(error) =>
 					new SchemaApplyConfigError({
-						message: `${ENCRYPTION_KEY_CONFIG} is not configured: ${error.message}`,
+						message: `${PRIMARY_KEY_ENV} is not configured: ${error.message}`,
 					}),
 			),
 		)
-		const encryptionKey = Buffer.from(Str.trim(Redacted.value(encryptionKeyText)), "base64")
-		// AES-256-GCM: anything else fails later as a misleading password-decryption error.
-		if (encryptionKey.length !== 32) {
-			return yield* new SchemaApplyConfigError({
-				message: `${ENCRYPTION_KEY_CONFIG} must be base64 for exactly 32 bytes`,
-			})
-		}
+		const decryptionKeysText = yield* Config.option(Config.Redacted(DECRYPTION_KEYS_ENV)).pipe(
+			Effect.mapError(
+				(error) =>
+					new SchemaApplyConfigError({
+						message: `${DECRYPTION_KEYS_ENV} is not readable: ${error.message}`,
+					}),
+			),
+		)
+		// A malformed key fails here: later it would surface as a misleading decryption error.
+		const keyring = yield* parseSecretKeyring(
+			{
+				primary: Redacted.value(encryptionKeyText),
+				decryptOnly: Option.map(decryptionKeysText, Redacted.value),
+			},
+			(message) => new SchemaApplyConfigError({ message }),
+		)
 		const appliedVersions: number[] = []
 		const skippedFeatures: SkippedFeature[] = []
 
 		const cfg = yield* durableStep(
 			"load-config",
 			Effect.gen(function* () {
-				const c = yield* loadConfig(database, orgId, encryptionKey)
+				const c = yield* loadConfig(database, orgId, keyring)
 				const startedAt = yield* Clock.currentTimeMillis
-				yield* updateRun(database, orgId, {
+				yield* updateRun(fence, {
 					status: "running",
 					phase: "connecting",
 					errorMessage: null,
@@ -614,12 +704,17 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 							// would repeat, and a clock read there would differ per replay.
 							durableStep(
 								`m${migration.version}:${s.name}`,
-								updateRun(database, orgId, {
-									phase: `migration ${migration.version} · ${s.name}`,
-									currentMigration: migration.version,
-									stepsTotal: steps.length,
-									stepsDone: index,
-								}).pipe(Effect.andThen(execClickHouse(cfg, s.sql))),
+								fencedExec(
+									fence,
+									cfg,
+									{
+										phase: `migration ${migration.version} · ${s.name}`,
+										currentMigration: migration.version,
+										stepsTotal: steps.length,
+										stepsDone: index,
+									},
+									s.sql,
+								),
 								STEP,
 							),
 						{ discard: true },
@@ -638,8 +733,8 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		// cluster + add missing columns (metadata-only, fits a step easily).
 		yield* durableStep(
 			"snapshot-diff",
-			updateRun(database, orgId, { phase: "reconciling schema snapshot" }).pipe(
-				Effect.andThen(reconcileSchemaSnapshot(cfg)),
+			updateRun(fence, { phase: "reconciling schema snapshot" }).pipe(
+				Effect.andThen(withRunHeartbeat(fence, reconcileSchemaSnapshot(cfg))),
 			),
 			STEP,
 		)
@@ -650,6 +745,8 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 		yield* durableStep(
 			"stamp-correctness",
 			Effect.gen(function* () {
+				// Only the run that still owns the row speaks for the org's settings.
+				yield* updateRun(fence, { phase: "stamping schema version" })
 				const stampedAt = yield* Clock.currentTimeMillis
 				yield* database.execute((db) =>
 					db.run(
@@ -685,12 +782,17 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 							(migrationStep, index) =>
 								durableStep(
 									`performance-m${migration.version}:${migrationStep.name}`,
-									updateRun(database, orgId, {
-										phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
-										currentMigration: migration.version,
-										stepsTotal: steps.length,
-										stepsDone: index,
-									}).pipe(Effect.andThen(execClickHouse(cfg, migrationStep.sql))),
+									fencedExec(
+										fence,
+										cfg,
+										{
+											phase: `performance migration ${migration.version} · ${index + 1}/${steps.length}`,
+											currentMigration: migration.version,
+											stepsTotal: steps.length,
+											stepsDone: index,
+										},
+										migrationStep.sql,
+									),
 									STEP,
 								),
 							{ discard: true },
@@ -705,7 +807,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 					})
 					// A performance migration that cannot be installed is skipped, never fatal.
 					return yield* applyPerformanceMigration.pipe(
-						Effect.catchCause((cause) =>
+						Effect.catchCauseIf(isSkippable, (cause) =>
 							Effect.sync(() => {
 								skippedFeatures.push({
 									id: `migration_${migration.version}`,
@@ -778,9 +880,14 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 									(statement, index) =>
 										durableStep(
 											`feature-${feature.id}:${index + 1}`,
-											updateRun(database, orgId, {
-												phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
-											}).pipe(Effect.andThen(execClickHouse(cfg, statement))),
+											fencedExec(
+												fence,
+												cfg,
+												{
+													phase: `feature ${feature.id} · ${index + 1}/${feature.statements.length}`,
+												},
+												statement,
+											),
 											STEP,
 										),
 									{ discard: true },
@@ -793,7 +900,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 							)
 						})
 						return yield* applyFeature.pipe(
-							Effect.catchCause((cause) =>
+							Effect.catchCauseIf(isSkippable, (cause) =>
 								Effect.sync(() => {
 									skippedFeatures.push({ id: feature.id, reason: causeMessage(cause) })
 								}),
@@ -808,7 +915,7 @@ const applySchema = (database: DatabaseApi, orgId: OrgId) =>
 			"finalize",
 			Effect.gen(function* () {
 				const finishedAt = yield* Clock.currentTimeMillis
-				yield* updateRun(database, orgId, {
+				yield* updateRun(fence, {
 					status: "succeeded",
 					phase: "done",
 					currentMigration: null,

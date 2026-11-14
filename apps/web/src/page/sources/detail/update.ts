@@ -1,11 +1,14 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { V2Source } from "@maple/domain/http/v2"
-import { Option, Result, String as Str } from "effect"
+import * as Policy from "@maple/domain/policy"
+import { Option, Result, String as Str, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute, hrefOf } from "../../../route"
+import type { SourceTab } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -22,41 +25,46 @@ import {
 	hasToken,
 	integrationPlatformOf,
 	scrapeTargetIdOf,
+	tabsOf,
 } from "../kit/shared"
-import { initEmbedded } from "../../integrations/embed"
-import * as Integrations from "../../integrations/update"
-import { connectionsOf as awsConnectionsOf } from "../../integrations/update-aws"
-import { gcpConnectors } from "../../integrations/update-gcp"
-import { Message as IntegrationMessage } from "../../integrations/message"
-import type { Model as IntegrationModel } from "../../integrations/model"
+import {
+	initEmbedded,
+	awsConnectionsOf,
+	gcpConnectors,
+	Message as IntegrationMessage,
+	type Model as IntegrationModel,
+} from "../../integrations/embed"
+import * as Integrations from "../../integrations/embed"
 import {
 	DeleteSource,
 	FetchSourceList,
 	FetchSourceUsage,
 	PauseSource,
 	ReadSourceClock,
+	ReadSourceGrants,
 	ResumeSource,
 	RollSourceToken,
 	SaveSource,
 } from "./command"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { Message } from "./message"
-import type { Model, SettingsForm } from "./model"
+import { canManage, type Model, type SettingsForm } from "./model"
 
 type Return = PageReturn<Model, Message>
 type SourceRoute = Extract<AppRoute, { readonly _tag: "Source" }>
 
 export const PAUSE_MENU_ID = "source-pause-menu"
-/** `PAUSE_CHOICES`, keyed by the menu item value. */
+/** The pause menu's choices, keyed by the menu item value. */
 export const PAUSE_CHOICES = [
 	{ value: "1h", label: "For 1 hour", hours: 1 },
 	{ value: "24h", label: "For 24 hours", hours: 24 },
 	{ value: "resumed", label: "Until resumed", hours: null },
 ] as const
 
-/** `useSource`: the route's source from the shared list, once it has loaded. */
+/** The route's source from the shared list, once it has loaded. */
 export const sourceOf = (model: Model): Option.Option<V2Source> =>
 	Option.flatMap(AsyncData.getData(model.list.data), (rows) =>
-		Option.fromUndefinedOr(rows.find((row) => row.id === model.sourceId)),
+		Arr.findFirst(rows, (row) => row.id === model.sourceId),
 	)
 
 const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
@@ -70,7 +78,7 @@ const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Ret
 	})
 }
 
-/** `SourceOverview` reads the usage as it mounts: the overview tab over a found source. */
+/** The overview reads the usage as it mounts: the overview tab over a found source. */
 const loadUsage = (model: Model, context: PageContext): Return => {
 	const source = sourceOf(model)
 	if (model.tab !== "overview" || Option.isNone(source)) return { model }
@@ -101,11 +109,21 @@ export const isSettingsDirty = (form: SettingsForm): boolean => {
 	)
 }
 
+/** The tabs this viewer gets: Settings only changes the source, so it needs `sources:manage`. */
+export const shownTabsOf = (model: Model, source: V2Source): ReadonlyArray<SourceTab> =>
+	canManage(model) ? tabsOf(source) : Arr.filter(tabsOf(source), (tab) => tab !== "settings")
+
+/** `?tab=` for this viewer; Settings waits for the grants before falling back to the overview. */
+const openTab = (model: Model, source: V2Source): SourceTab => {
+	const tab = effectiveTab(source, model.tab)
+	return tab === "settings" && model.grants !== null && !canManage(model) ? "overview" : tab
+}
+
 /** The open tab's state, built as its component mounts; Settings rebuilds when `updated_at` moves. */
 const withTabState = (model: Model): Model =>
 	Option.match(sourceOf(model), {
 		onNone: () => model,
-		onSome: (source) => withSourceTab({ ...model, tab: effectiveTab(source, model.tab) }, source),
+		onSome: (source) => withSourceTab({ ...model, tab: openTab(model, source) }, source),
 	})
 
 const withSourceTab = (model: Model, source: V2Source): Model => ({
@@ -181,6 +199,7 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 	const model: Model = {
 		sourceId: Option.getOrNull(fromPublicSourceId(route.sourceId)),
 		tab: route.search.tab ?? "overview",
+		grants: isClerkAuthEnabled ? null : Policy.allPermissions,
 		nowMs: null,
 		list: Keyed.idle(),
 		usage: Keyed.idle(),
@@ -197,13 +216,17 @@ export const init = (route: SourceRoute, context: PageContext): Return => {
 		settings: null,
 		connection: null,
 	}
-	const runtime = Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
+	const runtime = LoadChartRuntime()
 	const loaded = loadList(model, context, "Load")
-	return { model: loaded.model, commands: [ReadSourceClock(), runtime, ...(loaded.commands ?? [])] }
+	return {
+		model: loaded.model,
+		commands: [
+			ReadSourceClock(),
+			...(isClerkAuthEnabled ? [ReadSourceGrants()] : []),
+			runtime,
+			...(loaded.commands ?? []),
+		],
+	}
 }
 
 /** A tab link keeps the instance: the overview reads its usage again when it shows. */
@@ -231,12 +254,15 @@ const liftMenu = (model: Model, step: ReturnType<typeof Menu.update>): Return =>
 		),
 	}
 	const picked = step.outMessage?._tag === "SelectedItem" ? step.outMessage.value : null
-	const choice = PAUSE_CHOICES.find((entry) => entry.value === picked)
-	if (choice === undefined || model.sourceId === null || model.busy !== null) return lifted
+	const choice = Arr.findFirst(PAUSE_CHOICES, (entry) => entry.value === picked)
+	if (Option.isNone(choice) || model.sourceId === null || model.busy !== null) return lifted
 	return {
 		...lifted,
 		model: { ...lifted.model, busy: "pause" },
-		commands: [...(lifted.commands ?? []), PauseSource({ id: model.sourceId, hours: choice.hours })],
+		commands: [
+			...(lifted.commands ?? []),
+			PauseSource({ id: model.sourceId, hours: choice.value.hours }),
+		],
 	}
 }
 
@@ -253,7 +279,7 @@ const liftDialog = (
 	),
 })
 
-/** A write settled: refresh the list on success (`useAtomRefresh(sourcesListAtom)`), toast either way. */
+/** A write settled: refresh the list on success, toast either way. */
 const settled = <A>(
 	model: Model,
 	context: PageContext,
@@ -277,7 +303,7 @@ const withSource = (model: Model, run: (id: NonNullable<Model["sourceId"]>) => R
 const withSettings = (model: Model, write: (form: SettingsForm) => SettingsForm): Model =>
 	model.settings === null ? model : { ...model, settings: write(model.settings) }
 
-/** `SourceSettings`' save: basics for the default source and integrations, rules for token sources. */
+/** The settings form's save: basics for the default source and integrations, rules for token sources. */
 const save = (model: Model): Return => {
 	const source = sourceOf(model)
 	const form = model.settings
@@ -319,7 +345,6 @@ const leaveFor = (step: Return, url: string): Return => {
 	}
 }
 
-/**
 /** The AWS integration page keeps a removed connection's cleanup script. */
 const AWS_CLEANUP_HREF = hrefOf(AppRoute.SourcesNew({ search: { integration: "aws" } }))
 
@@ -340,8 +365,9 @@ const afterConnectionWrite = (
 		child._tag === "CompletedAwsCheck" &&
 		(child.connection?.verified_at != null ||
 			!(
-				model.connection?.awsCard.checking.find((entry) => entry.id === child.id)?.quiet ??
-				child.quiet
+				Option.getOrUndefined(
+					Arr.findFirst(model.connection?.awsCard.checking ?? [], (entry) => entry.id === child.id),
+				)?.quiet ?? child.quiet
 			))
 	const isAwsDisconnect = child._tag === "CompletedAwsDisconnect" && child.removed !== null
 	const isWrite =
@@ -386,7 +412,9 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 		const connection =
 			model.connection === null
 				? undefined
-				: awsConnectionsOf(model.connection).find((entry) => entry.id === focus)
+				: Option.getOrUndefined(
+						Arr.findFirst(awsConnectionsOf(model.connection), (entry) => entry.id === focus),
+					)
 		if (model.connection === null || connection === undefined)
 			return {
 				model,
@@ -401,11 +429,10 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 			),
 		)
 	}
-	const connector =
-		model.connection === null
-			? undefined
-			: gcpConnectors(model.connection).find((entry) => entry.id === focus)
-	if (model.connection === null || connector === undefined)
+	if (
+		model.connection === null ||
+		!Arr.some(gcpConnectors(model.connection), (entry) => entry.id === focus)
+	)
 		return {
 			model,
 			outMessage: toast("error", "Couldn't load the Google Cloud connection", "Try again in a moment."),
@@ -423,6 +450,8 @@ const clickedDelete = (model: Model, context: PageContext): Return => {
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		// A member sent to Settings lands on the overview, which reads its usage then.
+		CompletedReadGrants: ({ grants }) => loadUsage(withTabState({ ...model, grants }), context),
 		CompletedFetchList: ({ key, result }) =>
 			andThen(
 				loadUsage(withTabState({ ...model, list: Keyed.accept(model.list, key, result) }), context),
@@ -440,11 +469,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {
@@ -471,7 +496,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					commands: [...(closed.commands ?? []), PauseSource({ id, hours: null })],
 				}
 			}),
-		// A pending dialog ignores Escape and Cancel (`onOpenChange` while `pending`).
+		// A pending dialog ignores Escape and Cancel.
 		GotRollDialogMessage: ({ message: inner }) =>
 			model.busy === "roll"
 				? { model }
@@ -594,7 +619,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: inner }) => {
 			const next = CopyButton.update(model.tokenCopy, inner)
-			// `CopyableField copyLabel="Source token"`: `useCopy`'s toast for the current copy.
+			// Only the current copy toasts.
 			const isCurrent = "generation" in inner && inner.generation === model.tokenCopy.generation
 			const isDone = isCurrent && (inner._tag === "SucceededCopy" || inner._tag === "FailedCopy")
 			const step: Return = {

@@ -1,9 +1,12 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestSlot } from "../../kit/slot"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
@@ -12,7 +15,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { nextSort } from "../../../kit/table-sort"
 import { toggleFilterValue } from "../filters"
 import {
@@ -26,7 +29,7 @@ import {
 	ResolveWindow,
 } from "./command"
 import { eventsInputOf, filtersOf, insightsInputOf, timeseriesInputOf } from "./derive"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
 
 type Return = PageReturn<Model, Message>
@@ -59,10 +62,9 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOfSearch(model, search), isReplace: false }),
 })
 
-/** One slot request: the next slot and its fetch, or nothing when the key is already in hand. */
 const slot = requestSlot
 
-/** The scoped reads (`PlanetScaleDatabaseData`): they re-key whenever the resolved branch moves. */
+/** The scoped reads: they re-key whenever the resolved branch moves. */
 const requestScoped = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const { window, localWindow } = model
 	if (window === null || localWindow === null) return { model }
@@ -120,8 +122,8 @@ const requestWindowed = (model: Model, context: PageContext, mode: Keyed.Request
 const settled = (model: Model, context: PageContext): Return => requestScoped(model, context, "Load")
 
 export const init = (route: Route, context: PageContext): Return => {
-	const statusKey = requestKey(context.orgId, "planetscaleIntegration.status", {})
-	const databasesKey = requestKey(context.orgId, "planetscaleIntegration.databases", {})
+	const statusKey = integrationStatusKey(context.orgId, "planetscale")
+	const databasesKey = integrationStatusKey(context.orgId, "planetscaleDatabases")
 	const model: Model = {
 		dbName: route.dbName,
 		search: route.search,
@@ -155,11 +157,7 @@ export const init = (route: Route, context: PageContext): Return => {
 			Command.mapMessage(FilterSections.ReadRemembered(), (message) =>
 				Message.GotFilterSectionsMessage({ message }),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -185,7 +183,7 @@ export const routeChanged = (model: Model, route: Route, context: PageContext): 
 
 export const contextChanged = (model: Model): Return => ({ model })
 
-/** `setFilter`: an emptied filter leaves the URL; the legacy `?branch=` is never written back. */
+/** An emptied filter leaves the URL; the legacy `?branch=` is never written back. */
 const setFilter = (
 	model: Model,
 	key: "branches" | "branchStates" | "branchRoles" | "branchContains",
@@ -221,11 +219,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchInsights: ({ key, result }) => ({
 			model: { ...model, insights: Keyed.accept(model.insights, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedRetryTimeseries: () => {
 			if (model.window === null) return { model }
 			const input = timeseriesInputOf(model, model.window)

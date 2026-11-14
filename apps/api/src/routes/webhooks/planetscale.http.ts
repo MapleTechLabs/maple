@@ -1,6 +1,7 @@
 import { Headers, HttpRouter, HttpServerResponse, type HttpServerRequest } from "effect/http"
 import { OrgId } from "@maple/domain/http"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Result, Schema } from "effect"
+import { readBoundedText } from "@maple/backend/http/bounded-body"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleWebhookService } from "@maple/backend/services/integrations/PlanetScaleWebhookService"
 import {
@@ -25,6 +26,9 @@ import {
 // timeline persistence. Ignore/log events are acknowledged inline. Queue failures return 503.
 
 const ROUTE = "/api/integrations/planetscale/webhook/:connectionId"
+
+/** A delivery is a few kilobytes; this is read before the signature can be checked. */
+const PLANETSCALE_WEBHOOK_MAX_BYTES = 1024 * 1024
 
 const textResponse = (body: string, status: number) => HttpServerResponse.text(body, { status })
 
@@ -88,11 +92,21 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
 			const orgId = decodeOrgIdSync(connection.orgId)
 
-			const bodyOpt = yield* req.text.pipe(Effect.option)
-			if (Option.isNone(bodyOpt) || bodyOpt.value.length === 0) {
+			// An unsigned delivery is refused before its body is read.
+			const signature = Option.getOrUndefined(Headers.get(req.headers, "x-planetscale-signature"))
+			if (signature === undefined) {
+				return yield* reject(401, "signature_rejected", "Invalid signature")
+			}
+			const read = yield* Effect.result(readBoundedText(req, PLANETSCALE_WEBHOOK_MAX_BYTES))
+			if (Result.isFailure(read)) {
+				return read.failure._tag === "@maple/backend/http/RequestBodyTooLargeError"
+					? yield* reject(413, "body_too_large", "Request body too large")
+					: yield* reject(400, "unreadable_body", "Unreadable request body")
+			}
+			const rawBody = read.success
+			if (rawBody.length === 0) {
 				return yield* reject(400, "empty_body", "Missing request body")
 			}
-			const rawBody = bodyOpt.value
 
 			// Each database's webhook has its own secret. Only the database name is read before
 			// the signature is checked, to pick the secret it must match.
@@ -100,7 +114,6 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			const secret = Option.isNone(target)
 				? null
 				: yield* webhooks.secretFor(orgId, target.value.database ?? "")
-			const signature = Option.getOrUndefined(Headers.get(req.headers, "x-planetscale-signature"))
 			if (secret === null || !verifyPlanetScaleSignature(rawBody, secret, signature)) {
 				return yield* reject(401, "signature_rejected", "Invalid signature")
 			}

@@ -38,6 +38,8 @@ export type ProductEventName =
 	| "plan_started"
 	| "plan_changed"
 	| "plan_cancelled"
+	| "member_joined"
+	| "member_removed"
 
 export interface ProductEventInput {
 	readonly name: ProductEventName
@@ -156,9 +158,13 @@ export const makeProductEvents = (options: {
 		)
 
 	const track = Effect.fn("ProductEvents.track")(function* (event: ProductEventInput) {
+		// `maple.product_events.*`, not `maple.product_event.*`: a span carrying
+		// `maple.product_event.name` is itself projected into `product_events`
+		// (`Source='trace'`, see `product-event-attributes.ts`), which duplicated
+		// every server event as an unidentified trace row.
 		yield* Effect.annotateCurrentSpan({
-			"maple.product_event.name": event.name,
-			"maple.product_event.enabled": ingestKey !== undefined,
+			"maple.product_events.event": event.name,
+			"maple.product_events.enabled": ingestKey !== undefined,
 		})
 		if (ingestKey === undefined) {
 			yield* Effect.logDebug("Product event dropped: no ingest key configured").pipe(
@@ -183,7 +189,7 @@ export const makeProductEvents = (options: {
 			Effect.catchCause((cause) =>
 				Effect.logDebug("Product event dropped").pipe(
 					Effect.annotateLogs({ event: event.name, cause: String(cause) }),
-					Effect.tap(() => Effect.annotateCurrentSpan({ "maple.product_event.dropped": true })),
+					Effect.tap(() => Effect.annotateCurrentSpan({ "maple.product_events.dropped": true })),
 				),
 			),
 		)

@@ -57,7 +57,7 @@ Maple receives GitHub's `workflow_run` and `workflow_job` webhooks for the repos
 - **Failure reasons:** for a failed job, Maple reads the annotations GitHub recorded on it (test failures, compiler errors). The most specific one becomes the job span's status message and `maple.cicd.failure.reason`, and up to 20 of them, failures first, are `cicd.annotation` events on the job span with `code.file.path` and `code.line.number`.
 - **Attributes:** spans follow the OpenTelemetry CI/CD conventions (`cicd.pipeline.name`, `cicd.pipeline.run.id`, `cicd.pipeline.action.name`, `cicd.pipeline.result`, `cicd.pipeline.task.name`, `cicd.pipeline.task.run.id`, `cicd.pipeline.task.run.result`, `cicd.pipeline.task.run.url.full`, `cicd.worker.name`) plus `vcs.ref.head.name`, `vcs.ref.head.revision`, and `vcs.change.id` (the pull request number). Jobs and steps are both tasks; a step's URL links to its line in the job log. The resource carries `vcs.repository.name`, `vcs.owner.name`, and `vcs.repository.url.full`, so you can filter CI traces by repository.
 
-CI traces and logs are on by default. CI spans and logs are ingested like any other telemetry and count toward your usage. To stop both, an organization admin turns off **CI traces and logs** on the GitHub source in **Sources**; runs that finish while it is off are not recorded.
+CI traces and logs are on by default. CI spans and logs are ingested like any other telemetry and count toward your usage. To stop both, an admin or engineer turns off **CI traces and logs** on the GitHub source in **Sources**; runs that finish while it is off are not recorded.
 
 ## CI logs
 

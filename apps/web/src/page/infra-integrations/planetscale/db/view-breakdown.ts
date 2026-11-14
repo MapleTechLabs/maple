@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "../branch-selection"
 import { countLabel, EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -6,22 +6,17 @@ import { pressable } from "@maple/views/ui/pressable"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import { BRANCH_STATE_LABEL, branchStateOf, type BranchState } from "../filters"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagClass,
-	MISSING,
-	utilizationClass,
-} from "../../../../components/infra/planetscale/metrics"
-import { formatWholePercent } from "../../../../components/infra/format"
+import { lagClass, MISSING, utilizationClass } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
+import { formatWholePercent } from "../../../infra/kit/format"
 import { type BreakdownSortKey, type Measure, Message } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { columnClass } from "@maple/views/ui/column"
-
-// `PlanetScaleBranchBreakdownPanel`.
+import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -83,11 +78,10 @@ interface Row {
 	readonly isOther: boolean
 }
 
-/** `relativeRatio`. */
 const relativeRatio = (value: number, max: number): number =>
 	max > 0 && Number.isFinite(value) ? Math.max(0, value) / max : 0
 
-/** `shareBar`: the row's background filled to its share. */
+/** The row's background filled to its share. */
 export const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefined => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined
@@ -98,27 +92,26 @@ export const shareBarStyle = (share: number): Readonly<Record<string, string>> |
 }
 
 const rowsOf = (candidates: ReadonlyArray<BranchCandidate>, spec: MeasureSpec) => {
-	const scored = candidates.map((candidate) => ({
+	const scored = Arr.map(candidates, (candidate) => ({
 		candidate,
 		value: spec.of(candidate),
 		hasValue: spec.of(candidate) !== MISSING,
 	}))
-	const ordered = [...scored].sort((a, b) =>
-		a.hasValue !== b.hasValue
-			? a.hasValue
-				? -1
-				: 1
-			: b.value - a.value || a.candidate.name.localeCompare(b.candidate.name),
-	)
-	const withValues = ordered.filter((entry) => entry.hasValue)
-	const total = withValues.reduce((acc, entry) => acc + entry.value, 0)
-	const max = withValues.reduce((acc, entry) => Math.max(acc, entry.value), 0)
+	type Scored = (typeof scored)[number]
+	const ordered = Arr.sort(scored, (a: Scored, b: Scored) => {
+		if (a.hasValue !== b.hasValue) return a.hasValue ? -1 : 1
+		const diff = b.value - a.value
+		return diff > 0 ? 1 : diff < 0 ? -1 : Str.localeCompare(b.candidate.name)(a.candidate.name)
+	})
+	const withValues = Arr.filter(ordered, (entry) => entry.hasValue)
+	const total = Arr.reduce(withValues, 0, (acc, entry) => acc + entry.value)
+	const max = Arr.reduce(withValues, 0, (acc, entry) => Math.max(acc, entry.value))
 	const basis = spec.additive ? total : max
 	const tail = ordered.slice(TOP_N)
-	const tailValues = tail.filter((entry) => entry.hasValue)
-	const otherValue = spec.additive ? tailValues.reduce((acc, entry) => acc + entry.value, 0) : MISSING
+	const tailValues = Arr.filter(tail, (entry) => entry.hasValue)
+	const otherValue = spec.additive ? Arr.reduce(tailValues, 0, (acc, entry) => acc + entry.value) : MISSING
 	const rows: ReadonlyArray<Row> = [
-		...ordered.slice(0, TOP_N).map((entry) => ({
+		...Arr.map(ordered.slice(0, TOP_N), (entry) => ({
 			branch: entry.candidate.name,
 			production: entry.candidate.production,
 			state: branchStateOf(entry.candidate),
@@ -148,27 +141,24 @@ const metaChip = (h: H, text: string): Html =>
 	typography(h, { size: "3xs", tone: "subtle", mono: true }, [text])
 
 const cells = (h: H, row: Row, spec: MeasureSpec, isSelected: boolean): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex w-0 min-w-52 flex-1 items-center gap-2 overflow-hidden")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({ size: "sm", truncate: true }),
-							row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
-							isSelected && "text-primary",
-						),
+	hstack(h, { gap: "2", align: "center", grow: true, className: "w-0 min-w-52 overflow-hidden" }, [
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({ size: "sm", truncate: true }),
+						row.isOther ? "text-muted-foreground" : "font-mono text-foreground-soft",
+						isSelected && "text-primary",
 					),
-				],
-				[row.branch],
-			),
-			...(row.production ? [metaChip(h, "production")] : []),
-			...(!row.isOther && row.state !== "ready"
-				? [metaChip(h, BRANCH_STATE_LABEL[row.state].toLowerCase())]
-				: []),
-		],
-	),
+				),
+			],
+			[row.branch],
+		),
+		...(row.production ? [metaChip(h, "production")] : []),
+		...(!row.isOther && row.state !== "ready"
+			? [metaChip(h, Str.toLowerCase(BRANCH_STATE_LABEL[row.state]))]
+			: []),
+	]),
 	h.div(
 		[
 			h.Class(
@@ -196,7 +186,8 @@ const toSortRow = (row: Row) => ({ ...row, branch: row.branch, value: row.value 
 export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 	const spec: MeasureSpec = MEASURES[inputs.measure]
 	const { rows, total, max } = rowsOf(inputs.candidates, spec)
-	const sorted = sortRowsByField(rows.map(toSortRow), inputs.sort, (row) => !row.isOther && row.production)
+	const sortRows = Arr.map(rows, toSortRow)
+	const sorted = sortRowsByField(sortRows, inputs.sort, (row) => !row.isOther && row.production)
 	return panel(h, { className: "border-border-subtle" }, [
 		panelHeader(h, {
 			title: "Branches",
@@ -204,7 +195,7 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			action: segmentedSelect(h, {
 				size: "xs",
 				ariaLabel: "Measure",
-				options: MEASURE_ORDER.map((key) => ({ value: key, label: MEASURES[key].label })),
+				options: Arr.map(MEASURE_ORDER, (key) => ({ value: key, label: MEASURES[key].label })),
 				value: inputs.measure,
 				onChange: (measure) => Message.ClickedMeasure({ measure }),
 			}),
@@ -235,12 +226,18 @@ export const breakdownPanel = (h: H, inputs: BreakdownInputs): Html => {
 			],
 			sorted.length === 0
 				? [dataTableEmpty(h, [inputs.emptyMessage])]
-				: sorted.map((row) => {
+				: Arr.map(sorted, (row) => {
 						const style = shareBarStyle(row.ratio)
 						const styleAttrs = style === undefined ? [] : [h.Style(style)]
 						if (row.isOther) {
-							return h.div(
-								[h.Class("flex items-center gap-3 px-3 py-1.5"), ...styleAttrs],
+							return hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									className: "px-3 py-1.5",
+									attributes: [...styleAttrs],
+								},
 								cells(h, row, spec, false),
 							)
 						}

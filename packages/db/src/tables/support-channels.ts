@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 /**
  * The org's shared Slack channel with the Maple team: one per org, created in Maple's own
@@ -26,4 +26,3 @@ export const OrgSupportChannels = PG.table("org_support_channels", {
 })
 
 export type OrgSupportChannelRow = PG.SelectRowOf<typeof OrgSupportChannels>
-export type OrgSupportChannelInsert = PG.InsertRowOf<typeof OrgSupportChannels>

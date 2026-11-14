@@ -2,7 +2,7 @@ import { InfraSurfaceLiteral } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as Frame from "../kit/frame"
+import * as Frame from "../../kit/time-frame"
 import * as InstallModal from "../kit/install-modal"
 import { SourceId, SourceReading } from "./model"
 

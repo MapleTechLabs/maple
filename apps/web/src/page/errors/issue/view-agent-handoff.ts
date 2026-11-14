@@ -1,8 +1,8 @@
 import type { ErrorIssueDocument } from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
-import { docsUrl } from "../../../lib/docs"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
+import { docsUrl } from "../../kit/docs"
 import { AppRoute, hrefOf } from "../../../route"
 import { button, linkButton } from "@maple/views/ui/button"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -13,10 +13,9 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// `GetItFixed`: the two ways to a fix, the user's own coding agent and Maple's investigation.
+import { canRunInvestigations } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -28,22 +27,24 @@ const AGENTS: ReadonlyArray<readonly [string, IconName]> = [
 
 /** The agents the prompt is written for, as overlapping glyph tiles. */
 const agentGlyphs = (h: H): Html =>
-	h.div(
-		[h.Class("flex shrink-0 -space-x-1"), h.AriaHidden(true)],
+	hstack(
+		h,
+		{ align: "stretch", className: "shrink-0 -space-x-1", attributes: [h.AriaHidden(true)] },
 		Arr.map(AGENTS, ([name, glyph]) =>
-			h.span(
-				[
-					h.Key(name),
-					h.Class(
-						"flex size-6 items-center justify-center rounded-md border bg-surface-sunken text-foreground ring-2 ring-card",
-					),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					as: "span",
+					className: "size-6 rounded-md border bg-surface-sunken text-foreground ring-2 ring-card",
+					attributes: [h.Key(name)],
+				},
 				[icon(h, glyph, { size: 13 })],
 			),
 		),
 	)
 
-/** One way to a fix: its label and glyphs, what it does, then its actions. */
 const lane = (
 	h: H,
 	options: Readonly<{
@@ -53,20 +54,14 @@ const lane = (
 		actions: ReadonlyArray<Html>
 	}>,
 ): Html =>
-	h.div(
-		[h.Class("flex min-w-0 flex-col gap-3 p-4")],
-		[
-			h.div(
-				[h.Class("flex h-6 items-center justify-between gap-3")],
-				[
-					eyebrow(h, { as: "div" }, [options.label]),
-					...(options.adornment ? [options.adornment] : []),
-				],
-			),
-			h.div([h.Class("flex flex-1 flex-col gap-1")], options.body),
-			hstack(h, { gap: "2", wrap: true }, options.actions),
-		],
-	)
+	vstack(h, { gap: "3", shrink: true, className: "p-4" }, [
+		hstack(h, { gap: "3", align: "center", justify: "between", className: "h-6" }, [
+			eyebrow(h, { as: "div" }, [options.label]),
+			...(options.adornment ? [options.adornment] : []),
+		]),
+		vstack(h, { gap: "1", grow: true }, options.body),
+		hstack(h, { gap: "2", wrap: true }, options.actions),
+	])
 
 const lead = (h: H, text: string): Html =>
 	typography(h, { size: "sm", tone: "foreground", weight: "medium", as: "p" }, [text])
@@ -108,7 +103,7 @@ const agentLane = (h: H, model: Model, prompt: string): Html =>
 		],
 	})
 
-const sentenceCase = (text: string): string => Str.toUpperCase(text.charAt(0)) + Str.slice(1)(text)
+const sentenceCase = (text: string): string => Str.toUpperCase(Str.slice(0, 1)(text)) + Str.slice(1)(text)
 
 const investigationSummary = (investigation: V2Investigation): string =>
 	investigation.report?.suspectedCause ??
@@ -146,10 +141,9 @@ const investigationLane = (h: H, investigation: V2Investigation | null, isStarti
 					...(investigation.confidence ? [` · ${investigation.confidence} confidence`] : []),
 				]),
 				body: [
-					h.p(
-						[h.Class("line-clamp-3 text-sm text-foreground")],
-						[investigationSummary(investigation)],
-					),
+					typography(h, { size: "sm", tone: "foreground", as: "p", className: "line-clamp-3" }, [
+						investigationSummary(investigation),
+					]),
 				],
 				actions: [
 					linkButton(
@@ -191,7 +185,6 @@ const promptPreview = (h: H, prompt: string): Html =>
 		],
 	)
 
-/** `GetItFixed`: both ways to a fix side by side, the prompt preview under them. */
 export const getItFixedPanel = (
 	h: H,
 	model: Model,
@@ -199,8 +192,9 @@ export const getItFixedPanel = (
 	investigation: V2Investigation | null,
 ): Html => {
 	const maple = investigationLane(h, investigation, model.isStartingInvestigation)
-	// The prompt drives the error tools, so alert issues get Maple's lane alone.
-	if (issue.kind !== "error")
+	// The prompt drives the error tools, so alert issues get Maple's lane alone. So does a viewer
+	// who cannot run one: the prompt tells an agent to claim and fix the issue.
+	if (issue.kind !== "error" || !canRunInvestigations(model))
 		return panel(h, { className: "shrink-0 overflow-hidden" }, [
 			panelHeader(h, { title: "Get it fixed" }),
 			maple,

@@ -1,28 +1,35 @@
-import { Schema } from "effect"
-import { DATA_INTEGRATIONS } from "../../route/data-integrations"
+import { DATA_INTEGRATIONS, DataIntegration, isDataIntegration } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
 import { icon } from "@maple/views/ui/icon"
 import type { PageContext, PageReturn } from "../contract"
-import { catalogEntry, type IntegrationId } from "./catalog"
+import { catalogEntry } from "./catalog"
+import type { ProviderId } from "../kit/providers"
 import { overviewOf } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { init } from "./update"
 import { cardView, connectButton } from "./view"
-import { awsDisconnectDialog } from "./view-aws"
-import { cloudflareReconnectButton } from "./view-cloudflare"
-import { gcpDialogs } from "./view-gcp-dialogs"
+import { awsDisconnectDialog } from "../infra-integrations/aws/integration/view-aws"
+import { cloudflareReconnectButton } from "../infra-integrations/cloudflare/integration/view-cloudflare"
+import { gcpDialogs } from "../infra-integrations/gcp/integration/view-gcp-dialogs"
 import type { FlowStage } from "./flow"
 import { flowView } from "./view-flow"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstackClass, vstack } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 
 // The integrations page module, embedded by Sources: the connect step and a source's Connection tab.
+// Sources imports the module through this file only.
 
-export { DATA_INTEGRATIONS }
-export const DataIntegration = Schema.Literals(DATA_INTEGRATIONS)
-export type DataIntegration = typeof DataIntegration.Type
-export const isDataIntegration = Schema.is(DataIntegration)
+export { canManage, Model } from "./model"
+export { Message } from "./message"
+export { routeChanged, update } from "./update"
+export { subscriptions } from "./subscription"
+export { HEALTH_TONE, overviewOf } from "./derive"
+export { canContinue, type FlowSpec, FlowStage, flowOf, nextStage, previousStage } from "./flow"
+export { connectionsOf as awsConnectionsOf } from "../infra-integrations/aws/integration/update-aws"
+export { gcpConnectors } from "../infra-integrations/gcp/integration/update-gcp"
+
+export { DATA_INTEGRATIONS, DataIntegration, isDataIntegration }
 
 /** `/integrations?integration=<id>`'s state and reads, without the page around it. */
 export const initEmbedded = (
@@ -31,7 +38,7 @@ export const initEmbedded = (
 ): PageReturn<Model, Message> => init({ search: integration === null ? {} : { integration } }, context)
 
 export type EmbedInputs = Readonly<{
-	integration: IntegrationId
+	integration: ProviderId
 	timeZone: string
 	/** The integration record a source stands for (`integration_id`): its card shows only that one. */
 	focusId?: string | null
@@ -71,35 +78,32 @@ export const actionsEmbed = Submodel.defineView<Model, Message, EmbedInputs>((mo
 			: inputs.integration === "aws"
 				? [awsDisconnectDialog(h, model)]
 				: []
-	return h.div(
-		[h.Class("flex shrink-0 items-center gap-3")],
-		[
-			...(entry.docsUrl === undefined
-				? []
-				: [
-						h.a(
-							[
-								h.Href(entry.docsUrl),
-								h.Target("_blank"),
-								h.Rel("noreferrer"),
-								h.Class(
-									hstackClass({
-										gap: "1",
-										inline: true,
-										className: typographyClass({
-											size: "xs",
-											tone: "muted",
-											hoverTone: "foreground",
-										}),
+	return hstack(h, { gap: "3", align: "center", className: "shrink-0" }, [
+		...(entry.docsUrl === undefined
+			? []
+			: [
+					h.a(
+						[
+							h.Href(entry.docsUrl),
+							h.Target("_blank"),
+							h.Rel("noreferrer"),
+							h.Class(
+								hstackClass({
+									gap: "1",
+									inline: true,
+									className: typographyClass({
+										size: "xs",
+										tone: "muted",
+										hoverTone: "foreground",
 									}),
-								),
-							],
-							["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
-						),
-					]),
-			...actions,
-			...(connect === undefined ? [] : [connect]),
-			...dialogs,
-		],
-	)
+								}),
+							),
+						],
+						["Docs", icon(h, "ExternalLinkIcon", { size: 12 })],
+					),
+				]),
+		...actions,
+		...(connect === undefined ? [] : [connect]),
+		...dialogs,
+	])
 })

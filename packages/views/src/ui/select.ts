@@ -14,8 +14,6 @@ import { alignItemWithTrigger } from "./overlay/select-align"
  * move the highlight, Enter or a click selects, Escape and a press outside close it.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({
 	...PopupState.fields,
 	value: Schema.String,
@@ -41,8 +39,6 @@ export const init = (
 	scrollArrows: { up: false, down: false },
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: { selectedIndex: Schema.NullOr(Schema.Number) },
 	PressedEscape: {},
@@ -61,8 +57,6 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({ ChangedValue: { value: Schema.String } })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 export const FocusSelectItem = Command.define("FocusSelectItem", {
 	args: { id: Schema.String },
@@ -139,8 +133,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		GotAnimationMessage: ({ message: animationMessage }) =>
 			transition.foldAnimation(model, animationMessage),
 	})
-
-// MOUNT
 
 const htmlOrNull = (element: Element | null): HTMLElement | null =>
 	element instanceof HTMLElement ? element : null
@@ -226,15 +218,19 @@ const cutOutTrigger = (backdrop: Element | null, trigger: HTMLElement | null) =>
  * the trigger (`alignItemWithTrigger`); later updates keep it there, or anchor below on fallback.
  */
 export const MountSelect = Mount.defineStream("MountSelect", {
-	args: { id: Schema.String },
+	args: {
+		id: Schema.String,
+		/** Base UI `alignItemWithTrigger={false}`: the popup opens below the trigger, never over it. */
+		alignItemWithTrigger: Schema.optional(Schema.Boolean),
+	},
 	messages: [
 		Message.CompletedMountSelect,
 		Message.ChangedPlacement,
 		Message.ChangedScrollArrows,
 		Message.PressedOutside,
 	],
-	execute: ({ element, id }) => {
-		const alignment = { isFirst: true, isAligned: false }
+	execute: ({ element, id, alignItemWithTrigger: alignsItem }) => {
+		const alignment = { isFirst: alignsItem !== false, isAligned: false }
 		return anchoredPopup(element, {
 			positionerSelector: "[data-slot=select-positioner]",
 			popupSelector: "[data-slot=select-popup]",

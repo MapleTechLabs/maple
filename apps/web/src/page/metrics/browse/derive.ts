@@ -4,12 +4,10 @@ import type { MetricRow, SparklineMetricType } from "../shared"
 import type { SparklinePoint } from "./model"
 import { Array as Arr } from "effect"
 
-// Pure parts of the metric preview grid and its cards.
-
 export const PAGE_SIZE = 24
 /** Catalog rows fetched once; unique metrics are paginated client-side. */
 export const CATALOG_LIMIT = 500
-/** `MetricsTable`: rows per Load more, and the backend's cap (one extra row detects more). */
+/** The table's rows per Load more, and the backend's cap (one extra row detects more). */
 export const TABLE_PAGE_SIZE = 100
 export const TABLE_MAX_LIMIT = 1000
 
@@ -23,7 +21,7 @@ export interface PreviewEntry {
 
 export const entryKey = (metricName: string, metricType: string): string => `${metricName}::${metricType}`
 
-/** `toEntries`: per-(metric, service) catalog rows collapsed into one grid entry per metric. */
+/** Per-(metric, service) catalog rows collapsed into one grid entry per metric. */
 export const toEntries = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<PreviewEntry> => {
 	const byMetric = new Map<string, PreviewEntry>()
 	Arr.forEach(rows, (row) => {
@@ -46,7 +44,7 @@ export const toEntries = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<Preview
 	return [...byMetric.values()]
 }
 
-/** The mounted `GridPage`s: `visiblePages` pages of `PAGE_SIZE` entries. */
+/** The mounted grid pages: `visiblePages` pages of `PAGE_SIZE` entries. */
 export const gridPages = (
 	entries: ReadonlyArray<PreviewEntry>,
 	visiblePages: number,
@@ -65,7 +63,7 @@ export const namesOfType = (
 		(entry) => entry.metricName,
 	)
 
-/** `sparklineRows`: counters plot datapoints per interval, everything else the average. */
+/** Counters plot datapoints per interval, everything else the average. */
 export const sparklineValues = (
 	metricType: string,
 	points: ReadonlyArray<SparklinePoint>,
@@ -74,7 +72,7 @@ export const sparklineValues = (
 
 /**
  * One page's `getMetricSparklines` query for a metric type. Slots are stored by this key, so a
- * remounted grid reuses an answer it already has (the atom family's cache).
+ * remounted grid reuses an answer it already has.
  */
 export const sparklineRequest = (
 	orgId: string,

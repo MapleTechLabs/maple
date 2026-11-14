@@ -14,8 +14,9 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, type ActorInsert, type ActorRow } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { isReservedAgentName, SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { ensureAgentActorRow } from "./agent-actor-row"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const decodeActorIdSync = Schema.decodeUnknownSync(ActorIdSchema)
@@ -141,7 +142,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const lookupActor: ErrorActorsServiceApi["lookupActor"] = Effect.fn("ErrorActorsService.lookupActor")(
 		function* (orgId, actorId) {
 			const row = yield* selectActorRow(orgId, actorId)
-			if (!row) {
+			if (row == null) {
 				return yield* new ActorNotFoundError({
 					message: `Actor '${actorId}' not found`,
 					actorId,
@@ -189,7 +190,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		"ErrorActorsService.ensureUserActor",
 	)(function* (orgId, userId) {
 		const existing = yield* selectUserActor(orgId, userId)
-		if (existing[0]) return actorRowToDocument(existing[0])
+		if (existing[0] !== undefined) return actorRowToDocument(existing[0])
 
 		const timestamp = yield* Clock.currentTimeMillis
 		const id = newActorId()
@@ -208,7 +209,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		yield* insertActorIfAbsent(insert)
 		const after = yield* selectUserActor(orgId, userId)
 		const row = after[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new ErrorPersistenceError({ message: "Failed to ensure user actor row" })
 		}
 		return actorRowToDocument(row)
@@ -217,33 +218,20 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 	const ensureAgentActor: ErrorActorsServiceApi["ensureAgentActor"] = Effect.fn(
 		"ErrorActorsService.ensureAgentActor",
 	)(function* (orgId, agentName, opts) {
-		const selectByName = selectAgentByName(orgId, agentName)
-		const existing = yield* selectByName
-		if (existing[0]) return actorRowToDocument(existing[0])
-
 		const timestamp = yield* Clock.currentTimeMillis
-		const id = newActorId()
-		const insert: ActorInsert = {
-			id,
-			orgId,
-			type: "agent",
-			userId: null,
-			agentName,
-			model: null,
-			capabilitiesJson: opts?.capabilities ?? [],
-			createdBy: opts?.createdBy ?? null,
-			createdAt: timestamp,
-			lastActiveAt: timestamp,
-		}
-		yield* insertActorIfAbsent(insert)
-		const after = yield* selectByName
-		const row = after[0]
-		if (!row) {
+		const row = yield* dbExecute((db) =>
+			ensureAgentActorRow(db, orgId, agentName, {
+				capabilities: opts?.capabilities ?? [],
+				createdBy: opts?.createdBy ?? null,
+				timestamp,
+			}),
+		)
+		if (Option.isNone(row)) {
 			return yield* new ErrorPersistenceError({
 				message: `Failed to ensure agent actor row '${agentName}'`,
 			})
 		}
-		return actorRowToDocument(row)
+		return actorRowToDocument(row.value)
 	})
 
 	const ensureSystemActor: ErrorActorsServiceApi["ensureSystemActor"] = (orgId) =>
@@ -285,7 +273,7 @@ const make: Effect.Effect<ErrorActorsServiceApi, never, Database> = Effect.gen(f
 		yield* insertActorIfAbsent(insert)
 		const rows = yield* selectAgentByName(orgId, name)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new ErrorPersistenceError({ message: "Failed to register agent" })
 		}
 		if (row.id !== id) {

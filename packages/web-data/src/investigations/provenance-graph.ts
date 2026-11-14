@@ -23,8 +23,8 @@ import {
 	type ActionKind,
 	type ActionTarget,
 } from "./action-target"
-import { formatTimeInTimezone } from "../lib/timezone-format"
-import { Array as Arr, String as Str } from "effect"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /* -------------------------------------------------------------------------------------------------
  * Geometry
@@ -75,10 +75,6 @@ const ACTION_GAP = 8
 export const HEADING_HEIGHT = 12
 /** Column headings ride 20px above their column's top edge. */
 const HEADING_OFFSET = 20
-
-/* -------------------------------------------------------------------------------------------------
- * Node model
- * -----------------------------------------------------------------------------------------------*/
 
 /** Which glyph the node renders. Kind is carried by the icon, the tile and the fill — never colour alone. */
 export type FlowGlyph = "issue" | "check" | "incident" | "investigation" | "verdict"
@@ -231,10 +227,6 @@ export interface ProvenanceGraph {
 	readonly runningSince: number | null
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Builder
- * -----------------------------------------------------------------------------------------------*/
-
 /**
  * Columns are assembled first as lists, then positioned — so a freeform
  * investigation (no issue, no incident) starts at x=0 instead of leaving two
@@ -307,8 +299,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		nextLabel = isAlert ? "TRIPPED" : "FLARED INTO"
 	}
 
-	/* --- incident ------------------------------------------------------------ */
-
 	if (subject.type === "incident") {
 		pushColumn(
 			[
@@ -362,9 +352,13 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 					// "manual", not "opened by you": the node is 146px wide and carries a
 					// second line ("you are here") under this one, so a note that wraps to
 					// two lines pushes the id out through the bottom of the box.
-					note: [investigation.seeded_by === "system" ? "automatic" : "manual", elapsed]
-						.filter(Boolean)
-						.join(" · "),
+					note: Arr.join(
+						Arr.filter(
+							[investigation.seeded_by === "system" ? "automatic" : "manual", elapsed],
+							(part): part is string => Boolean(part),
+						),
+						" · ",
+					),
 					current: true,
 					...(running ? { live: true, phase: livePhase(investigation) } : undefined),
 				},
@@ -374,8 +368,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		"causal",
 	)
 	if (running) liveIds.add("investigation")
-
-	/* --- verdict ------------------------------------------------------------- */
 
 	/*
 	 * Still absent while the pass is running: a placeholder *verdict* is a claim
@@ -446,8 +438,6 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		)
 	}
 
-	/* --- proposed actions ---------------------------------------------------- */
-
 	const actions = report?.suggestedActions ?? []
 	const proposing = actions.length > 0 && investigation.status !== "investigating"
 	if (proposing) {
@@ -495,15 +485,17 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 		liveIds.add("action-ghost-1")
 	}
 
-	/* --- position ------------------------------------------------------------ */
-
 	const isActionColumn = (column: { nodes: Array<ProvenanceNode> }): boolean => {
 		const kind = column.nodes[0]?.type
 		return kind === "action" || kind === "actionGhost"
 	}
 	const columnHeight = (column: { nodes: Array<ProvenanceNode> }): number => {
 		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
-		return Arr.reduce(column.nodes, 0, (total, node, index) => total + node.height + (index ? gap : 0))
+		return Arr.reduce(
+			column.nodes,
+			0,
+			(total, node, index) => total + node.height + (index > 0 ? gap : 0),
+		)
 	}
 	const height = Math.max(0, ...Arr.map(columns, columnHeight))
 
@@ -555,15 +547,12 @@ export function buildProvenanceGraph(investigation: V2Investigation, timeZone = 
 	}
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Derivations
- * -----------------------------------------------------------------------------------------------*/
-
 /** The name the origin node prints — the exception, not the opaque `iss_…`. */
 const originTitle = (investigation: V2Investigation): string | null => {
 	const { snapshot } = investigation
 	const candidate = snapshot.errorLabel ?? snapshot.exceptionType ?? snapshot.title
-	const text = candidate?.trim()
+	if (candidate == null) return null
+	const text = Str.trim(candidate)
 	return text ? text : null
 }
 
@@ -579,9 +568,12 @@ const originTitle = (investigation: V2Investigation): string | null => {
  */
 const incidentTitle = (investigation: V2Investigation): string => {
 	const { snapshot, subject } = investigation
-	const signal = snapshot.facts.find((fact) => Str.toLowerCase(fact.label) === "signal")?.value.trim()
+	const signal = Option.match(
+		Arr.findFirst(snapshot.facts, (fact) => Str.toLowerCase(fact.label) === "signal"),
+		{ onNone: () => "", onSome: (fact) => Str.trim(fact.value) },
+	)
 	if (signal) return signal
-	const scope = snapshot.scope?.trim()
+	const scope = snapshot.scope == null ? "" : Str.trim(snapshot.scope)
 	if (scope) return scope
 	return subject.type === "incident" ? `${subject.incident_kind} incident` : "Incident"
 }

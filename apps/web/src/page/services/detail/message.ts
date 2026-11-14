@@ -1,8 +1,11 @@
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
+import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
@@ -19,11 +22,8 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Commit, CommitFailure, Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
-
-/** `Load` on entry or a search change; `Refresh` from Reload (no cache snap, revalidate every slot). */
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 /** The reads that can be retried from their error state. */
 export const RetryTarget = Schema.Literals([
@@ -52,16 +52,18 @@ export const Message = defineMessageUnion({
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
 	CompletedFetchUsage: result(Usage),
-	/** `isAdmin` comes with the list: only admins are offered a new monitor. */
-	CompletedFetchUptimeMonitors: { ...result(Schema.Array(V2UptimeMonitor)), isAdmin: Schema.Boolean },
+	/** The session's grants come with the list: only `uptime_monitors:manage` is offered a new monitor. */
+	CompletedFetchUptimeMonitors: {
+		...result(Schema.Array(V2UptimeMonitor)),
+		grants: Schema.Array(Policy.PermissionName),
+	},
 	CompletedFetchWorkloads: result(Schema.Array(Workload)),
 	CompletedFetchRuntimes: result(Schema.Array(ServiceRuntime)),
 	CompletedFetchDependencies: result(DependencyBundle),
 	CompletedFetchCommit: { sha: Schema.String, result: Schema.Result(Commit, CommitFailure) },
 	CompletedMountLinkedCursor: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
+	...ChartEnvMessages,
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedRetry: { target: RetryTarget },
@@ -83,5 +85,6 @@ export const Message = defineMessageUnion({
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
+	GotMarkerCardMessage: { message: HoverCard.Message },
 })
 export type Message = typeof Message.Type

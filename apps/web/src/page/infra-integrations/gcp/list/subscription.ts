@@ -2,19 +2,19 @@ import { Clock, Duration, Effect, Schema, Stream } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import type { Resources } from "../../../../platform/resources"
 import type { PageSubscriptionInput } from "../../../contract"
-import { isSettling, metricsConnectors, noticeOf, pageStateOf, statusOf, successOf } from "./derive"
+import { isSettling, metricsConnectors, noticeOf, pageStateOf, statusOf } from "./derive"
 import { Message, type Model } from "./model"
 import { pollTicks } from "../../../../data/poll"
+import { successOf } from "../../kit/success-of"
 
-// The page's `useIntervalRefresh` calls: the status while connected (faster while a connection
-// settles), the fleet while waiting on a first read or quiet, the inventory while it is empty.
+// The status while connected (faster while a connection settles), the fleet while waiting on a
+// first read or quiet, the inventory while it is empty.
 
 const SETTLING_REFRESH = Duration.seconds(10)
 const STEADY_REFRESH = Duration.seconds(60)
 const WAITING_REFRESH = Duration.seconds(30)
 const EMPTY_RESOURCES_REFRESH = Duration.seconds(30)
 
-/** `LIVE_CLOCK_INTERVAL_MS`. */
 const LIVE_CLOCK = Duration.seconds(30)
 
 const liveClock = Stream.fromEffectRepeat(

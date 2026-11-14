@@ -7,13 +7,20 @@
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** A button on an embed. Pressing it sends the bot an `interaction.create` carrying `id`. */
 export interface HazelEmbedAction {
 	readonly id: string
 	readonly label: string
 	readonly style?: "primary" | "secondary" | "danger"
+}
+
+/** `MessageEmbedHtml`: a page published through `POST /html-renders`, as its reply names it. */
+export interface HazelEmbedHtml {
+	readonly renderId: string
+	readonly title: string
+	readonly height: number
 }
 
 /** `MessageEmbed`, as far as this connector writes one. */
@@ -35,6 +42,8 @@ export interface HazelEmbed {
 	readonly actions?: ReadonlyArray<HazelEmbedAction>
 	/** Turns live rendering on: Hazel shows the message's live state in place of its content. */
 	readonly liveState?: HazelLiveState
+	/** A sandboxed HTML page shown in the embed. */
+	readonly html?: HazelEmbedHtml
 }
 
 /** `MessageEmbedLiveState`, as far as this connector writes one. */
@@ -85,9 +94,15 @@ export const EMPTY_CONTENT = "—"
  */
 export const defuseMentions = (text: string): string => Str.replaceAll("@[", "@​[")(text)
 
-/** What one message's worth of blocks becomes. */
-export const renderHazelMessage = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
-	const { content, embeds } = renderParts(blocks)
+/**
+ * What one message's worth of blocks becomes. `pages` are the message's page blocks once published,
+ * in order; a page with none (an edit, a live message) is posted as its fallback.
+ */
+export const renderHazelMessage = (
+	blocks: ReadonlyArray<ChatBlock>,
+	pages: ReadonlyArray<HazelEmbedHtml> = [],
+): HazelMessageBody => {
+	const { content, embeds } = renderParts(blocks, pages)
 	return { content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : content, embeds }
 }
 
@@ -118,7 +133,9 @@ export interface HazelLiveBody extends HazelMessageBody {
 export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody => {
 	const last = blocks.at(-1)
 	const failure = last?.kind === "notice" && last.tone === "error" ? last : null
-	const pending = blocks.find((block) => block.kind === "notice" && block.tone === "pending")
+	const pending = Option.getOrUndefined(
+		Arr.findFirst(blocks, (block) => block.kind === "notice" && block.tone === "pending"),
+	)
 	const shown = Arr.filter(
 		blocks,
 		(block) => block !== failure && !(block.kind === "notice" && block.tone === "pending"),
@@ -135,9 +152,13 @@ export const renderHazelLive = (blocks: ReadonlyArray<ChatBlock>): HazelLiveBody
 }
 
 /** The content, possibly empty, and the embeds. */
-const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
+const renderParts = (
+	blocks: ReadonlyArray<ChatBlock>,
+	pages: ReadonlyArray<HazelEmbedHtml> = [],
+): HazelMessageBody => {
 	const lines: Array<string> = []
 	const embeds: Array<HazelEmbed> = []
+	let pageIndex = 0
 
 	for (const block of blocks) {
 		switch (block.kind) {
@@ -199,6 +220,13 @@ const renderParts = (blocks: ReadonlyArray<ChatBlock>): HazelMessageBody => {
 			case "alert":
 				embeds.push(alertEmbed(block))
 				break
+			case "page": {
+				const page = pages[pageIndex]
+				pageIndex += 1
+				if (page === undefined) lines.push(block.fallback)
+				else embeds.push({ html: page })
+				break
+			}
 			default:
 				// A block kind added to the neutral model but not to this dialect would otherwise
 				// render as nothing at all.
@@ -230,7 +258,10 @@ const defuseEmbed = (embed: HazelEmbed): HazelEmbed => ({
 
 /** An alert as a card: the title linking into Maple, the summary, the facts, the chart, a footer. */
 const alertEmbed = (block: ChatAlertBlock): HazelEmbed => {
-	const primary = block.links.find((link) => link.primary) ?? block.links[0]
+	const primary = Option.getOrElse(
+		Arr.findFirst(block.links, (link) => link.primary),
+		() => block.links[0],
+	)
 	const links = Arr.join(
 		Arr.map(block.links, (link) => `[${link.label}](${link.url})`),
 		" · ",

@@ -1,6 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { GcpCloudSqlSettings } from "@maple/domain/http"
-import { GcpConnectorId, OrgId } from "@maple/domain/primitives"
+import { GcpCloudSqlSettings } from "@maple/domain/gcp"
+import { GcpConnectorId, OrgId } from "@maple/primitives"
 import { Schema } from "effect"
 import { GcpConnectors } from "./gcp-connectors"
 
@@ -39,5 +39,3 @@ export const GcpResources = PG.table("gcp_resources", {
 	],
 	tenantColumn: "orgId",
 })
-
-export type GcpResourceRow = PG.SelectRowOf<typeof GcpResources>

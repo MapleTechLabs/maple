@@ -6,8 +6,8 @@ import {
 	FUNNEL_KEY_BY_OPTIONS,
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
-} from "../../../components/funnels/definition"
-import { parseProductEventsFilterClause } from "../../../lib/query-builder/funnel-filters"
+} from "../kit/funnel-definition"
+import { parseProductEventsFilterClause } from "./funnel-filters"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -31,12 +31,10 @@ import {
 } from "./product-selects"
 import { pageSelect } from "./view-select"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { queryPanelBar } from "../../kit/query-panel-bar"
-import { Array as Arr, String as Str } from "effect"
-
-// `QueryPanelShell` and `AddOnToggleBar`, and the rows the funnel and
-// paths panels share: the population filter, Count by, the window, the breakdown.
+import { Array as Arr, String as Str, Option } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -49,7 +47,7 @@ const SOURCE_LABEL = {
 	product_events: "Product events",
 } as const
 
-/** `QueryPanelShell` for query A on Product events; `sourceId` is its source select. */
+/** The shell of query A on Product events; `sourceId` is its source select. */
 export const panelShell = (
 	h: H,
 	model: Model,
@@ -89,7 +87,7 @@ export const panelShell = (
 								{
 									variant: "outline",
 									className: cn(
-										"font-mono text-2xs text-white border-0 shrink-0",
+										"font-mono text-2xs text-on-fill border-0 shrink-0",
 										queryBadgeColor(0),
 									),
 								},
@@ -108,15 +106,15 @@ export const panelShell = (
 
 export const FUNNEL_SOURCES = QUERY_BUILDER_DATA_SOURCES
 
-/** `AddOnToggleBar`. */
 export const addOnBar = <K extends string>(
 	h: H,
 	items: ReadonlyArray<{ key: K; label: string }>,
 	active: Readonly<Record<K, boolean>>,
 	onToggle: (key: K) => Message,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-1.5 pt-1 border-t border-dashed")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "center", wrap: true, className: stripClass("dashed") },
 		Arr.map(items, ({ key, label }) =>
 			filterChip(h, { size: "xs", isPressed: active[key], onClick: onToggle(key) }, [label]),
 		),
@@ -181,17 +179,18 @@ export const keyByRow = (h: H, model: Model, scope: StepScope, value: string): H
 			className: "w-56",
 			ariaLabel: "Count by",
 			renderItem: (option) => {
-				const description =
-					FUNNEL_KEY_BY_OPTIONS.find((candidate) => candidate.value === option.value)
-						?.description ?? ""
+				const description = Arr.findFirst(
+					FUNNEL_KEY_BY_OPTIONS,
+					(candidate) => candidate.value === option.value,
+				).pipe(
+					Option.flatMapNullishOr((found) => found.description),
+					Option.getOrElse(() => ""),
+				)
 				return [
-					h.span(
-						[h.Class("flex flex-col")],
-						[
-							h.span([], [option.label]),
-							typography(h, { size: "3xs", tone: "muted" }, [description]),
-						],
-					),
+					vstack(h, { as: "span" }, [
+						h.span([], [option.label]),
+						typography(h, { size: "3xs", tone: "muted" }, [description]),
+					]),
 				]
 			},
 			toView: (parts) => row(h, [rowLabel(h, "Count by"), ...parts]),
@@ -225,7 +224,7 @@ export const windowRow = (
 	})
 }
 
-/** `BreakdownPicker`: none, a session dimension, or `attribute:<key>` typed by hand. */
+/** None, a session dimension, or `attribute:<key>` typed by hand. */
 export const breakdownRow = (h: H, model: Model, breakdownBy: string | undefined): Html => {
 	const fromValue = breakdownBy !== undefined && Str.startsWith("attribute:")(breakdownBy)
 	const isAttribute = fromValue || (model.breakdownAttribute.isActive && breakdownBy === undefined)

@@ -3,9 +3,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon } from "@maple/views/ui/icon"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { textLink } from "@maple/views/ui/text-link"
-import { monitorHref, newMonitorHref, uptimeTabHref } from "../../alerts/shared/uptime-commands"
-import { displayStatus, formatShare, targetLine, uptimeShare } from "../../alerts/shared/uptime-derive"
-import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../alerts/shared/uptime-view"
+import { monitorHref, newMonitorHref, uptimeTabHref } from "../../kit/uptime/commands"
+import { displayStatus, formatShare, targetLine, uptimeShare } from "../../kit/uptime/derive"
+import { recentChecksStrip, uptimePanelBody, uptimeStatusChip } from "../../kit/uptime/view"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
@@ -39,19 +39,28 @@ export const uptimePanel = (h: H, model: Model): Html => {
 					return vstack(h, { gap: "1.5", as: "li", attributes: [h.Key(monitor.id)] }, [
 						hstack(h, { gap: "3", justify: "between" }, [
 							hstack(h, { gap: "2", shrink: true }, [
-								h.a(
-									[
-										h.Href(monitorHref(monitor.id)),
-										h.Class("truncate text-sm hover:underline active:underline"),
-									],
+								textLink(
+									h,
+									{
+										href: monitorHref(monitor.id),
+										tone: "inherit",
+										className: "block truncate text-sm",
+									},
 									[targetLine(monitor, nowMs)],
 								),
 								...(displayStatus(monitor) === "up"
 									? []
 									: [uptimeStatusChip(h, monitor, nowMs)]),
 							]),
-							h.span(
-								[h.Class("shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									mono: true,
+									numeric: true,
+									className: "shrink-0",
+								},
 								[isPaused ? "Paused" : formatShare(uptimeShare(monitor.state.recent))],
 							),
 						]),

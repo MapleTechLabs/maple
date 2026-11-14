@@ -56,7 +56,7 @@ The map shows at most 200 edges.
 | Control                                 | What it does                                                                                                                                                                   |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **2D** / **3D**                         | Switch between a flat layout (the default) and a 3D view.                                                                                                                      |
-| Environment                             | Show one `deployment.environment`, or **All Environments**. Defaults to `production` when it exists.                                                                           |
+| Environment                             | Show one `deployment.environment`, or **All environments**. Defaults to `production` when it exists.                                                                           |
 | Time range                              | Defaults to the last 12 hours.                                                                                                                                                 |
 | **Focus a service…**                    | Center the map on one service and its neighbors. Pick **1 hop** or **2 hops**. **Hide rest** hides everything outside the focus instead of dimming it. **Clear focus** resets. |
 | Traffic threshold                       | **All traffic**, or hide edges below 0.1%, 1%, or 5% of the busiest edge. A button shows how many services and edges are hidden.                                               |
@@ -75,7 +75,7 @@ A service panel has two tabs:
 - **Service**: **Throughput**, **Error rate**, **P50 latency**, and **P95 latency**, plus **Dependencies** and **Called by** lists. **View service** opens the [service page](/docs/explore/services).
 - **Infrastructure**: the Kubernetes workloads running the service. See [Kubernetes](/docs/infrastructure/kubernetes) to set it up.
 
-A database panel shows **Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**.
+A database panel shows **Metrics** (**Queries**, **Throughput**, **Error rate**, **P50 latency**, **P95 latency**, and **Avg latency**), **Query activity** over the time range, the **Top query shapes**, and the services it is **Called by**. A database behind a Hyperdrive config from the [Cloudflare integration](/docs/integrations/cloudflare) gets a **Hyperdrive configs** section, and one from the [PlanetScale integration](/docs/integrations/planetscale) a **PlanetScale** section.
 
 ## Query the map from an assistant
 

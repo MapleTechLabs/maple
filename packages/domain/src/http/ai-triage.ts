@@ -1,96 +1,12 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Option, Schema, SchemaGetter, Array as Arr } from "effect"
-import { IsoDateTimeString, UserId } from "../primitives"
+import { Option, Predicate, Schema, SchemaGetter, Array as Arr, String as Str } from "effect"
+import { IsoDateTimeString, UserId } from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { IssueSeverity } from "./errors"
+import { normalizeRepoFullName } from "./vcs"
 
-// Literals
-
-export const AiTriageIncidentKind = Schema.Literals(["error", "anomaly", "alert"]).annotate({
-	identifier: "@maple/AiTriageIncidentKind",
-	title: "AI Triage Incident Kind",
-})
-export type AiTriageIncidentKind = Schema.Schema.Type<typeof AiTriageIncidentKind>
-
-// Structured triage result (what the agent must submit)
-
-export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEvidence")({
-	traceIds: Schema.Array(Schema.String),
-	logPatterns: Schema.Array(Schema.String),
-	relatedServices: Schema.Array(Schema.String),
-	note: Schema.String,
-}) {}
-
-export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
-	/**
-	 * One line naming the cause, for the hub row, the verdict heading and the graph node; `summary`
-	 * and `suspectedCause` are both prompted as prose. `optionalKey` so older reports decode, and
-	 * unenforced at the tool boundary for the reason on `ruledOut`. Readers fall back to `summary`.
-	 */
-	headline: Schema.optionalKey(Schema.String),
-	summary: Schema.String,
-	suspectedCause: Schema.String,
-	/**
-	 * Shares the canonical IssueSeverity literal so the agent's assessment can be
-	 * applied to issues verbatim without a mapping layer.
-	 *
-	 * `optionalKey` for the *partial* — a validator that promoted nothing has no
-	 * cause whose severity it could assess, and the four literals give it nothing
-	 * honest to send. Required, it forced a fabricated severity onto every "we
-	 * could not tell", and the submissions that instead sent `"unclassified"`
-	 * were rejected at the tool boundary at the end of a spent investigation
-	 * budget — losing the whole run to a field that path throws away
-	 * (`applyInconclusiveWrites` writes `severity: null` regardless).
-	 *
-	 * Widening {@link IssueSeverity} itself was the alternative and is worse: that
-	 * literal is the issues system's severity, read by the severity sort rank, the
-	 * escalation policy, the list cursor, the facets and the DB enum, none of
-	 * which would ever see the new member from anywhere but here.
-	 *
-	 * Absent on a *promoted* report is a defective submission rather than a
-	 * signal, and is handled the same way for the same reason: `applyTriageSeverity`
-	 * declines to re-rank a linked issue on a judgement the model did not make.
-	 */
-	severityAssessment: Schema.optionalKey(IssueSeverity),
-	affectedScope: Schema.String,
-	evidence: Schema.Array(AiTriageEvidence),
-	suggestedActions: Schema.Array(Schema.String),
-	confidence: Schema.Literals(["high", "medium", "low"]),
-	/**
-	 * Causes that were checked and eliminated, each with the evidence that
-	 * eliminated it — "Deploy: service.version unchanged across 41k spans in the
-	 * window".
-	 *
-	 * This is what makes a report believable in either direction. A named cause is
-	 * only as credible as what else was considered, and an "unknown" that lists
-	 * nothing is indistinguishable from not having investigated at all — which is
-	 * precisely how a diagnosis of "it's an unknown error" used to be a compliant
-	 * answer.
-	 *
-	 * `optionalKey` so every report already stored still decodes, and deliberately
-	 * *not* enforced at the tool boundary: the prompts require it. A schema that
-	 * rejects a submission teaches the model to satisfy the validator rather than
-	 * to do the work, and a rejected submission at the end of a spent budget loses
-	 * the whole investigation.
-	 */
-	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
-	/**
-	 * Angles this run could NOT check, and why — "connection-pool depth:
-	 * payments-api emits no `db.client.connections.*` instrument", "the 14:02
-	 * rollout: the lane ran out of clock before it finished".
-	 *
-	 * The other half of what makes a report believable, and the half that only
-	 * matters when nothing was promoted. {@link ruledOut} says what was
-	 * eliminated; without this, everything that was neither eliminated nor
-	 * promoted is silently indistinguishable from something nobody thought of —
-	 * and a responder reading a partial cannot tell which of the two they are
-	 * looking at.
-	 *
-	 * `optionalKey` and unenforced at the tool boundary, for the same two reasons
-	 * as {@link ruledOut} directly above.
-	 */
-	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
-}) {}
+import { AiTriageResult, AiTriageSuspectCommit, SUSPECT_SHA } from "../ai-triage"
+export { AiTriageEvidence, AiTriageIncidentKind, AiTriageResult, AiTriageSuspectCommit } from "../ai-triage"
 
 /**
  * What `submit_diagnosis` accepts off the wire, as opposed to what a stored report is.
@@ -181,11 +97,33 @@ export const AiTriageSubmission = Schema.Struct({
 	confidence: Schema.optionalKey(Schema.Union([Schema.Literals(["high", "medium", "low"]), Schema.String])),
 	ruledOut: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
 	unchecked: Schema.optionalKey(lenientStrings.annotate({ description: "An ARRAY of strings." })),
+	// Unknown on the wire, sanitized by the normalizer: a mistyped sha or repo must not reject the report.
+	suspectCommit: Schema.optionalKey(
+		Schema.Unknown.annotate({
+			description:
+				'Only when one commit caused it: {"sha": "<full or short sha you observed>", "repo": "owner/name"}.',
+		}),
+	),
 })
 export type AiTriageSubmission = Schema.Schema.Type<typeof AiTriageSubmission>
 
 const TRIAGE_SEVERITIES: ReadonlySet<string> = new Set(["critical", "high", "medium", "low"])
 const TRIAGE_CONFIDENCES: ReadonlySet<string> = new Set(["high", "medium", "low"])
+
+const textOf = (value: unknown): string | undefined =>
+	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
+
+/** A malformed suspect commit is dropped, never fatal to the report. */
+const suspectCommitOf = (value: unknown): AiTriageSuspectCommit | undefined => {
+	const raw = Predicate.isObject(value) ? value : { sha: value }
+	const sha = Str.toLowerCase(
+		Str.trim(textOf(Predicate.hasProperty(raw, "sha") ? raw.sha : undefined) ?? ""),
+	)
+	if (!SUSPECT_SHA.test(sha)) return undefined
+	const repoText = textOf(Predicate.hasProperty(raw, "repo") ? raw.repo : undefined)
+	const repo = repoText === undefined ? null : normalizeRepoFullName(repoText)
+	return repo === null ? { sha } : { sha, repo }
+}
 
 /** Stand-in prose when the model filed a report without the field a reader needs. */
 const MISSING_PROSE = "The agent did not record this."
@@ -205,7 +143,7 @@ export const normalizeTriageSubmission = (
 ): { readonly report: AiTriageResult; readonly filled: ReadonlyArray<string> } => {
 	const filled: Array<string> = []
 	const text = (value: string | undefined, field: string): string => {
-		const trimmed = value?.trim()
+		const trimmed = value === undefined ? undefined : Str.trim(value)
 		if (trimmed !== undefined && trimmed.length > 0) return trimmed
 		filled.push(field)
 		return MISSING_PROSE
@@ -247,6 +185,7 @@ export const normalizeTriageSubmission = (
 	if (submission.evidence === undefined) filled.push("evidence")
 
 	const summary = text(submission.summary, "summary")
+	const suspectCommit = suspectCommitOf(submission.suspectCommit)
 	const report = new AiTriageResult({
 		...(submission.headline === undefined ? undefined : { headline: submission.headline }),
 		summary,
@@ -258,6 +197,7 @@ export const normalizeTriageSubmission = (
 		confidence,
 		...(submission.ruledOut === undefined ? undefined : { ruledOut: submission.ruledOut }),
 		...(submission.unchecked === undefined ? undefined : { unchecked: submission.unchecked }),
+		...(suspectCommit === undefined ? undefined : { suspectCommit }),
 	})
 	return { report, filled }
 }
@@ -329,8 +269,6 @@ export class AiTriageSettingsUpdateRequest extends Schema.Class<AiTriageSettings
 	),
 }) {}
 
-// Errors
-
 export class AiTriagePersistenceError extends Schema.TaggedError<AiTriagePersistenceError>()(
 	"@maple/http/ai-triage/AiTriagePersistenceError",
 	{
@@ -355,8 +293,6 @@ export class AiTriageValidationError extends Schema.TaggedError<AiTriageValidati
 	},
 	{ httpApiStatus: 400 },
 ) {}
-
-// API group
 
 export class AiTriageApiGroup extends HttpApiGroup.make("aiTriage")
 	.add(

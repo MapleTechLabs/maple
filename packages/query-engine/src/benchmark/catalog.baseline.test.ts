@@ -17,7 +17,7 @@ describe("sql catalog baseline", () => {
 	it("emits the same SQL as the recorded baseline", async () => {
 		const rendered = Arr.join(
 			Arr.map(
-				[...Effect.runSync(collectQueryCatalog())].sort((a, b) => Str.localeCompare(b.id)(a.id)),
+				[...Effect.runSync(collectQueryCatalog)].sort((a, b) => Str.localeCompare(b.id)(a.id)),
 				(entry) => `-- ${entry.id}  [${entry.fingerprint}]\n${entry.sql}`,
 			),
 			"\n\n",

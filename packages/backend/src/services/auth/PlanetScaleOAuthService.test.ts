@@ -11,7 +11,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 
 const trackedDbs: TestDb[] = []
 
@@ -46,7 +46,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 	return async (input, init) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		const organizations = options.organizations ?? [{ id: "psorg_1", name: "acme" }]
-		// Must precede the token-endpoint match — "/oauth/token/info" contains "/oauth/token".
+		// Must precede the token-endpoint match: "/oauth/token/info" contains "/oauth/token".
 		if (Str.includes("/oauth/token/info")(url)) {
 			if (!options.introspection) {
 				return jsonResponse({ code: "internal" }, 500)
@@ -60,7 +60,7 @@ const mockPlanetScaleFetch = (options: MockOptions = {}): typeof globalThis.fetc
 			if (options.introspection === "inactive") return jsonResponse({ active: false })
 			if (options.introspection === "active") return jsonResponse({ active: true })
 			if (options.introspection === "unexpected") return jsonResponse({ error: "invalid_token" })
-			// Doorkeeper answers a valid token with its details — no `active` field.
+			// Doorkeeper answers a valid token with its details: no `active` field.
 			return jsonResponse({
 				resource_owner_id: "psuser_1",
 				scope: ["user:read_organizations"],
@@ -192,7 +192,7 @@ describe("PlanetScaleOAuthService", () => {
 		"startConnect builds an authorize URL with the requested scope (no PKCE) and persists a state row",
 		() => {
 			const testDb = createTestDb(trackedDbs)
-			// PlanetScale REQUIRES the scope param — the app's configured scopes are the
+			// PlanetScale REQUIRES the scope param: the app's configured scopes are the
 			// allowed maximum, not an implicit default; omitting it fails with `invalid_scope`.
 			const scopes = "user:read_organizations organization:read_databases organization:read_branches"
 			return Effect.gen(function* () {
@@ -204,7 +204,7 @@ describe("PlanetScaleOAuthService", () => {
 				)
 
 				const url = new URL(redirectUrl)
-				// The canonical authorize host from PlanetScale's OAuth discovery doc —
+				// The canonical authorize host from PlanetScale's OAuth discovery doc;
 				// the auth.planetscale.com alias mints tokens the v1 API rejects.
 				assert.strictEqual(url.origin + url.pathname, "https://app.planetscale.com/oauth/authorize")
 				assert.strictEqual(url.searchParams.get("client_id"), "ps-client-id")
@@ -392,7 +392,7 @@ describe("PlanetScaleOAuthService", () => {
 					callbackUrl: CALLBACK_URL,
 				})
 				// The v1 API keeps rejecting a token the auth server introspects as
-				// active — "reconnect" would be a lie, so this must NOT be RevokedError.
+				// active: "reconnect" would be a lie, so this must NOT be RevokedError.
 				const fiber = yield* Effect.forkChild(
 					service.completeConnect("auth-code", state, initiatorA).pipe(Effect.flip),
 					{ startImmediately: true },
@@ -525,7 +525,7 @@ describe("PlanetScaleOAuthService", () => {
 			yield* service.completeConnect("auth-code", state, initiatorA)
 
 			// The grant dies upstream: the org listing starts answering 401. That
-			// must surface as revoked, not a generic upstream failure — the picker
+			// must surface as revoked, not a generic upstream failure; the picker
 			// keys its reconnect CTA on the tag.
 			const deadGrantFetch: typeof globalThis.fetch = async (input, init) => {
 				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
@@ -562,7 +562,7 @@ describe("PlanetScaleOAuthService", () => {
 			const first = yield* service.getValidAccessToken(asOrgId("org_a"))
 
 			// Delete the row out from under the service. A memo hit is the only way
-			// the second call can still produce a token — without the memo this is a
+			// the second call can still produce a token; without the memo this is a
 			// fresh SELECT that finds nothing and fails not-connected.
 			yield* Effect.promise(() => executeSql(testDb, "DELETE FROM oauth_connections"))
 
@@ -580,7 +580,7 @@ describe("PlanetScaleOAuthService", () => {
 			})
 			yield* service.completeConnect("auth-code", state, initiatorA)
 
-			// Populate the memo first — that is the state the invalidation has to clear.
+			// Populate the memo first: that is the state the invalidation has to clear.
 			yield* service.getValidAccessToken(asOrgId("org_a"))
 			yield* service.disconnect(asOrgId("org_a"))
 

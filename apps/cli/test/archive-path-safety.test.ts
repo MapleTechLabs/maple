@@ -207,7 +207,7 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 			writeFileSync(activePointerPath(archiveDir, "traces", "2026-06-02"), "{bad json")
 			const listing = listActiveGenerations(archiveDir)
 			strictEqual(listing.active.length, 1)
-			strictEqual(listing.active[0]!.rangeStart, "2026-06-01")
+			strictEqual(Arr.getUnsafe(listing.active, 0).rangeStart, "2026-06-01")
 			ok(listing.errors.length >= 1, "malformed pointer surfaced as error")
 			ok(
 				Arr.some(listing.errors, (e) => e.rangeStart === "2026-06-02"),

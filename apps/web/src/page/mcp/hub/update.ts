@@ -1,6 +1,9 @@
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { Option } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -12,8 +15,7 @@ import { AppRoute, hrefOf } from "../../../route"
 import type { McpServersSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { chartBucketSeconds } from "../../agent-sessions/tools-kit/model"
-import { ALL, facetValue, initFacetSelect } from "../../agent-sessions/tools-kit/toolbar"
+import { ALL, facetValue, initFacetSelect } from "../../kit/tools/toolbar"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
@@ -27,8 +29,10 @@ import {
 	OpenMcpConventions,
 	ResolveWindow,
 } from "./command"
-import { type Facet, Message, type RequestMode } from "./message"
+import { type Facet, Message } from "./message"
 import { DEFAULT_MCP_PRESET, type McpView, type Model } from "./model"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
+import { TOOL_PERCENTILES } from "@maple/web-data/lib/tool-analytics"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -79,6 +83,14 @@ const windowSearch = (search: Search): Search => ({
 	timePreset: search.timePreset,
 })
 
+/** One session's page on its server, carrying only the window. */
+export const sessionHref = (service: string, sessionId: string, search: Search): string =>
+	hrefOfView({ _tag: "Session", service, sessionId }, windowSearch(search))
+
+/** The page of the end user a session belongs to, over the same window. */
+export const userHref = (userId: string, search: Search): string =>
+	hrefOf(AppRoute.UserDetail({ userId, search: windowSearch(search) }))
+
 /** What travels between a server's tabs: the window, the client selection and failing-only, not the search box. */
 export const tabSearch = (search: Search): Search => ({
 	...windowSearch(search),
@@ -88,7 +100,7 @@ export const tabSearch = (search: Search): Search => ({
 })
 
 export const bucketSecondsOf = (window: TimeWindow): number =>
-	chartBucketSeconds(toEpochMs(window.startTime), toEpochMs(window.endTime))
+	chartBucketSecondsBetween(toEpochMs(window.startTime), toEpochMs(window.endTime))
 
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
@@ -103,7 +115,7 @@ const keyed = <A, E>(
 
 /** A blank box is no filter; the API takes at most 200 characters. */
 const blankToUndefined = (value: string | undefined) => {
-	const trimmed = value?.trim().slice(0, 200) ?? ""
+	const trimmed = value === undefined ? "" : Str.slice(0, 200)(Str.trim(value))
 	return trimmed === "" ? undefined : trimmed
 }
 
@@ -201,10 +213,15 @@ const WIDER_PRESETS = [
  * longer than the window. A preset's window is snapped, so its length alone can fall short of it.
  */
 export const widerPreset = (window: TimeWindow | null, preset: string | undefined): string | undefined => {
-	const shown = WIDER_PRESETS.findIndex(([name]) => name === preset)
-	if (shown !== -1) return WIDER_PRESETS[shown + 1]?.[0]
+	const shown = Arr.findFirstIndex(WIDER_PRESETS, ([name]) => name === preset)
+	if (Option.isSome(shown)) return WIDER_PRESETS[shown.value + 1]?.[0]
 	const length = window === null ? 0 : toEpochMs(window.endTime) - toEpochMs(window.startTime)
-	return WIDER_PRESETS.find(([, ms]) => ms > length * 1.01)?.[0]
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(WIDER_PRESETS, ([, ms]) => ms > length * 1.01),
+			([name]) => name,
+		),
+	)
 }
 
 /** The preset the page shows, or none for a custom range. */
@@ -266,14 +283,7 @@ export const init = (route: McpRoute, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(search, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(search, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -337,7 +347,10 @@ const selectStep = (model: Model, facet: Facet, message: Select.Message): Return
 	const search: Search =
 		facet === "client"
 			? { ...model.search, client: value }
-			: { ...model.search, kind: MCP_CLIENT_KINDS.find((kind) => kind === value) }
+			: {
+					...model.search,
+					kind: Option.getOrUndefined(Arr.findFirst(MCP_CLIENT_KINDS, (kind) => kind === value)),
+				}
 	return { ...navigate(updated, search), commands }
 }
 
@@ -360,11 +373,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchSession: ({ key, result }) => ({
 			model: { ...model, session: Keyed.accept(model.session, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -410,14 +419,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							identity: undefined,
 						},
 					),
-		ClickedOpenSession: ({ sessionId }) =>
-			model.view._tag === "Servers"
-				? { model }
-				: navigateTo(
-						model,
-						{ _tag: "Session", service: model.view.service, sessionId },
-						windowSearch(model.search),
-					),
 		ClickedOpenAgentSession: ({ sessionId }) => ({
 			model,
 			outMessage: PageOutMessage.RequestedNavigation({
@@ -458,16 +459,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				(m) => Message.GotPercentileMessage({ message: m }),
 				(current, next) => ({ ...current, percentileToggle: next }),
 				(value) => {
-					const percentile = (["p50", "p90", "p95"] as const).find(
-						(candidate) => candidate === value,
-					)
-					return percentile === undefined || percentile === (model.search.percentile ?? "p90")
-						? undefined
-						: {
+					return Option.getOrUndefined(
+						Option.map(
+							Option.filter(
+								Arr.findFirst(TOOL_PERCENTILES, (candidate) => candidate === value),
+								(percentile) => percentile !== (model.search.percentile ?? "p90"),
+							),
+							(percentile) => ({
 								...model.search,
 								percentile: percentile === "p90" ? undefined : percentile,
 								metric: model.view._tag === "Server" ? "duration" : model.search.metric,
-							}
+							}),
+						),
+					)
 				},
 			),
 		GotClientToggleMessage: ({ message: inner }) =>
@@ -495,25 +499,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						: undefined,
 			),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOfView(model.view, {
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOfView(model.view, {
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const next = Chart.update(model.charts[chartId] ?? Chart.init(), inner)

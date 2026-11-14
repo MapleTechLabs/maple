@@ -1,10 +1,10 @@
 import { d3Curve, defineChart, dot, lineY, type ChartPoint, type ChartValue } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
-import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
+import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { Y_GRID } from "../plot/plot-grid"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
+import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { curveMonotoneX } from "d3-shape"
 import { Option, Array as Arr } from "effect"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
@@ -71,7 +71,7 @@ export const buildPlanetScaleMetric = (
 		scales: {
 			x: axis.x,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain(yDomain),
 				axis: {
 					line: false,

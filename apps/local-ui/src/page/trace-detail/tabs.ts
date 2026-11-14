@@ -1,7 +1,7 @@
-import { findSpan } from "@maple/web/page/traces/detail/select"
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import { findSpanById } from "@maple/views/service-map/trace-flow/flow-graph"
+import * as Timeline from "@maple/views/traces/timeline"
 import { toSpanNode, type SpanNodeData, type TraceData } from "@maple/views/traces/trace-data"
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import { Option, Array as Arr } from "effect"
 import { Command } from "foldkit"
@@ -10,7 +10,7 @@ import type { PageContext } from "../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `TraceViewTabs`: the hash's `view` picks the tab (timeline by default), `spanId` the selection.
+// The trace view tabs: the hash's `view` picks the tab (timeline by default), `spanId` the selection.
 
 export type TraceView = "waterfall" | "timeline" | "flow"
 export const TAB_VALUES: ReadonlyArray<TraceView> = ["waterfall", "timeline", "flow"]
@@ -23,10 +23,10 @@ export const viewOf = (context: PageContext): TraceView => {
 	return isTraceView(raw) ? raw : "timeline"
 }
 
-/** `findSpanNode`: the hash's `spanId` in the rendered tree. */
+/** The hash's `spanId` in the rendered tree. */
 export const selectedSpanOf = (trace: TraceData, context: PageContext): SpanNodeData | undefined => {
 	const spanId = queryOf(context.location).get("spanId") || undefined
-	return spanId === undefined ? undefined : findSpan(trace.rootSpans, spanId)
+	return spanId === undefined ? undefined : findSpanById(trace.rootSpans, spanId)
 }
 
 type TabStep = Readonly<{ model: Model; commands?: ReadonlyArray<Command.Command<Message>> }>

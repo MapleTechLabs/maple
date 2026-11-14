@@ -1,0 +1,227 @@
+import type { McpToolRegistrar } from "./types"
+import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
+import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
+import {
+	checkComparisonWindows,
+	deployWindows,
+	rejectBoundsWithDeploy,
+	resolveComparisonWindows,
+} from "../lib/deploys"
+import { countOf, formatDurationFromMs, formatNumber, formatPercent, truncate } from "../lib/format"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { CompareOperationsOutput } from "@maple/domain/mcp-outputs"
+import { compareOperations } from "@maple/query-engine/observability"
+
+const TOOL = "compare_operations"
+
+type Output = typeof CompareOperationsOutput.Type
+type Row = Output["operations"][number]
+
+/** A rate or latency over no spans is not 0: show a dash for a window the operation was absent from. */
+const ifSeen = (side: { readonly spans: number }, text: string) => (side.spans === 0 ? "—" : text)
+
+const arrow = (before: string, after: string) => (before === after ? after : `${before} -> ${after}`)
+
+export function registerCompareOperationsTool(server: McpToolRegistrar) {
+	server.define({
+		name: TOOL,
+		title: "Compare Operations",
+		description:
+			"What changed in one service's operations (span names, HTTP routes) between two windows: operations that are new or gone, whose share of the service's spans doubled or halved, whose error rate rose or fell, or whose p95 moved by half again. Use after a deploy (`since_deploy`), around an incident (`around_time`), or between any two periods; compare_log_patterns does the same for its logs. Reads the per-operation rollups, so it covers whole periods, not samples.",
+		parameters: Schema.Struct({
+			service: P.text("The service (exact `service.name`)"),
+			since_deploy: P.optionalFlag(
+				"Compare the hour after the service's newest deploy (up to now) with the same length before it. The deploy is the newest version's first span; after a rollback to an older version, pass around_time instead. Overrides the period bounds",
+			),
+			around_time: P.optionalTimestamp(
+				"Compare the 30 minutes before this time with the 30 minutes after it; overrides the four period bounds",
+			),
+			current_start: P.optionalTimestamp(
+				"Start of the current period (default: 1 hour before current_end)",
+			),
+			current_end: P.optionalTimestamp("End of the current period (default: now)"),
+			previous_start: P.optionalTimestamp(
+				"Start of the previous period (default: the current period's length before previous_end)",
+			),
+			previous_end: P.optionalTimestamp("End of the previous period (default: current_start)"),
+			environment: P.environment(),
+			limit: P.limit({ default: 30, max: 100, noun: "changed operations" }),
+		}),
+		aliases: P.SERVICE_ALIASES,
+		hints: { readOnly: true },
+		phrases: ["Comparing operations", "Diffing a service's operations across a deploy"],
+		handler: Effect.fn("McpTool.compareOperations")(function* (params) {
+			const tenant = yield* CurrentMcpTenant
+			yield* rejectBoundsWithDeploy(params)
+			const fromDeploy =
+				params.since_deploy === true
+					? yield* deployWindows(TOOL, params.service, params.environment)
+					: undefined
+			const windows = fromDeploy ?? (yield* resolveComparisonWindows(params))
+			const deploy = fromDeploy?.deploy
+			yield* checkComparisonWindows(windows, MCP_SEARCH_MAX_HOURS)
+
+			const environment = params.environment ?? deploy?.environment
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				"maple.ai.service": params.service,
+				"maple.ai.environment": environment ?? "all",
+				"maple.ai.since_deploy": params.since_deploy === true,
+			})
+
+			const result = yield* withTenantExecutor(
+				compareOperations({
+					service: params.service,
+					before: { startTime: windows.previous.st, endTime: windows.previous.et },
+					after: { startTime: windows.current.st, endTime: windows.current.et },
+					environment,
+					limit: params.limit,
+				}),
+			).pipe(Effect.catchTags(warehouseToMcpHandlers(TOOL)))
+
+			yield* Effect.annotateCurrentSpan("result.rowCount", result.operations.length)
+
+			const window = (w: typeof result.before) => ({
+				timeRange: { start: w.timeRange.startTime, end: w.timeRange.endTime },
+				spans: w.spans,
+				operations: w.operations,
+			})
+			return {
+				service: params.service,
+				...(environment === undefined ? undefined : { environment }),
+				before: window(result.before),
+				after: window(result.after),
+				...(deploy === undefined ? undefined : { deploy }),
+				operations: result.operations,
+				changed: result.changed,
+				unchanged: result.unchanged,
+			}
+		}),
+		render: (output) => {
+			const w = (x: Output["before"]) =>
+				`${x.timeRange.start} to ${x.timeRange.end} (${countOf(x.spans, "span")}, ${countOf(x.operations, "operation")})`
+			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
+				["Service", output.service],
+				[
+					"Deploy",
+					output.deploy === undefined
+						? undefined
+						: `${Str.slice(0, 7)(output.deploy.commitSha)} in ${output.deploy.environment}, first seen ${output.deploy.firstSeen}`,
+				],
+				["Before", w(output.before)],
+				["After", w(output.after)],
+				["Environment", output.environment],
+			]
+			const after = output.after.timeRange
+			const logsNext = doc.next(
+				"compare_log_patterns",
+				output.deploy === undefined
+					? {
+							service: output.service,
+							environment: output.environment,
+							previous_start: output.before.timeRange.start,
+							previous_end: output.before.timeRange.end,
+							current_start: after.start,
+							current_end: after.end,
+						}
+					: { service: output.service, since_deploy: true, environment: output.environment },
+				"see what changed in the service's logs over the same windows",
+			)
+			if (output.before.spans === 0 || output.after.spans === 0) {
+				const side =
+					output.before.spans === 0 && output.after.spans === 0
+						? "before or after windows"
+						: `${output.before.spans === 0 ? "before" : "after"} window`
+				return {
+					title: "Operation Changes",
+					scope,
+					blocks: [],
+					empty: {
+						message: `${output.service} has no spans in the ${side}, so there is nothing to compare.`,
+						hints: ["Check the service name with list_services, or widen the windows."],
+					},
+				}
+			}
+			if (output.operations.length === 0) {
+				return {
+					title: "Operation Changes",
+					scope,
+					blocks: [],
+					empty: {
+						message: `No operation of ${output.service} changed significantly (${countOf(output.unchanged, "operation")} compared).`,
+					},
+					next: [logsNext],
+				}
+			}
+			const lead: Row | undefined = output.operations[0]
+			// An operation that faded is best read where it still ran: the before window.
+			const faded =
+				lead !== undefined &&
+				Arr.every(lead.flags, (f) => f === "gone" || f === "volume_down" || f === "faster")
+			const traceWindow = faded ? output.before.timeRange : after
+			const leadNext =
+				lead === undefined
+					? []
+					: [
+							doc.next(
+								"search_traces",
+								{
+									service: output.service,
+									environment: output.environment,
+									span_name: lead.operation,
+									...(Arr.contains(lead.flags, "slower")
+										? { min_duration_ms: Math.round(lead.after.p95Ms) }
+										: undefined),
+									...(Arr.contains(lead.flags, "errors_up")
+										? { has_error: true }
+										: undefined),
+									start_time: traceWindow.start,
+									end_time: traceWindow.end,
+								},
+								faded
+									? "read traces of the operation before it faded"
+									: "read traces of the top changed operation",
+							),
+						]
+			return {
+				title: `Operation Changes (${output.changed})`,
+				...(output.changed > output.operations.length
+					? {
+							truncation: {
+								shown: output.operations.length,
+								total: output.changed,
+								noun: "changed operations",
+							},
+						}
+					: undefined),
+				scope,
+				blocks: [
+					doc.table(
+						["Operation", "Change", "Spans", "Error rate", "p95"],
+						Arr.map(output.operations, (o) => [
+							truncate(o.operation, 80),
+							Arr.join(o.flags, ", "),
+							arrow(formatNumber(o.before.spans), formatNumber(o.after.spans)),
+							arrow(
+								ifSeen(o.before, formatPercent(o.before.errorRate)),
+								ifSeen(o.after, formatPercent(o.after.errorRate)),
+							),
+							arrow(
+								ifSeen(o.before, formatDurationFromMs(o.before.p95Ms)),
+								ifSeen(o.after, formatDurationFromMs(o.after.p95Ms)),
+							),
+						]),
+					),
+					doc.text(
+						`${output.unchanged === 0 ? "Every compared operation changed" : `${countOf(output.unchanged, "other operation")} did not change significantly`}. Volume changes compare each operation's share of the service's spans, so a traffic rise alone flags nothing.`,
+					),
+				],
+				next: [...leadNext, logsNext],
+			}
+		},
+	})
+}

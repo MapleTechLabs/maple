@@ -8,7 +8,7 @@ import {
 	type SignalScalar,
 	type SignalSourceDefinition,
 } from "@maple/eventing-core"
-import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { OtlpFieldError, spanIdHex, traceIdHex, type AnyValue, type KeyValue } from "../otlp/encode"
 
 const NumberOrString = Schema.Union([Schema.String, Schema.Number])
@@ -73,7 +73,7 @@ const LogsRequestSchema = Schema.Struct({
 const isOtlpFieldError = Schema.is(OtlpFieldError)
 
 const decodeLogsRequest = (request: unknown): Effect.Effect<typeof LogsRequestSchema.Type, OtlpFieldError> =>
-	Schema.decodeUnknownEffect(LogsRequestSchema)(request ?? {}).pipe(
+	Schema.decodeEffect(LogsRequestSchema)(request ?? {}).pipe(
 		Effect.mapError((error) => new OtlpFieldError({ message: `invalid OTLP logs: ${error.message}` })),
 	)
 
@@ -204,7 +204,7 @@ const anyValueJson = (
 			anyValueJson(item, `${label}[${index}]`, depth + 1, budget),
 		)
 	if (value.kvlistValue !== undefined) {
-		const output: Record<string, JsonValue> = Object.create(null)
+		const output = nullPrototypeRecord<JsonValue>()
 		for (const [index, entry] of (value.kvlistValue.values ?? []).entries()) {
 			const key = assertStringBound(entry.key ?? "", `${label}.key[${index}]`)
 			if (key.length === 0 || SENSITIVE_KEY.test(key)) continue
@@ -213,6 +213,13 @@ const anyValueJson = (
 		return output
 	}
 	return null
+}
+
+/** A record with no prototype, so untrusted keys like `__proto__` stay plain data. */
+const nullPrototypeRecord = <V>(): Record<string, V> => {
+	const record: Record<string, V> = {}
+	Reflect.setPrototypeOf(record, null)
+	return record
 }
 
 interface NormalizedAttributes {
@@ -224,7 +231,7 @@ const attributes = (values: readonly KeyValue[] | undefined, label: string): Nor
 	if ((values?.length ?? 0) > MAX_ATTRIBUTES)
 		throw new OtlpFieldError({ message: `${label} exceeds ${MAX_ATTRIBUTES} attributes` })
 	const scalars = new Map<string, SignalScalar>()
-	const data: Record<string, JsonValue> = Object.create(null)
+	const data = nullPrototypeRecord<JsonValue>()
 	for (const [index, entry] of (values ?? []).entries()) {
 		const key = assertStringBound(entry.key ?? "", `${label}[${index}].key`)
 		if (key.length === 0 || SENSITIVE_KEY.test(key)) continue
@@ -252,9 +259,11 @@ const nanosToTimestamp = (nanos: bigint): string => {
 }
 
 const stringAttribute = (attrs: NormalizedAttributes, key: string): string | null => {
-	const scalar = attrs.scalars.find((entry) => entry.key === key)?.value
+	const scalar = Option.getOrUndefined(Arr.findFirst(attrs.scalars, (entry) => entry.key === key))?.value
 	return scalar?.type === "string" ? scalar.value : null
 }
+
+const trimOrNull = (value: string | null): string | null => (value === null ? null : Str.trim(value))
 
 const boundedIdentity = (value: string, prefix: string): string =>
 	value.length <= 256
@@ -262,11 +271,11 @@ const boundedIdentity = (value: string, prefix: string): string =>
 		: `${prefix}:sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`
 
 const sourceUri = (resource: NormalizedAttributes, record: NormalizedAttributes): string => {
-	const explicit = (
-		stringAttribute(record, "event.source") ?? stringAttribute(record, "cloudevents.source")
-	)?.trim()
+	const explicit = trimOrNull(
+		stringAttribute(record, "event.source") ?? stringAttribute(record, "cloudevents.source"),
+	)
 	if (explicit) return boundedIdentity(assertStringBound(explicit, "event source"), "urn:maple:source")
-	const service = stringAttribute(resource, "service.name")?.trim()
+	const service = trimOrNull(stringAttribute(resource, "service.name"))
 	const source = service
 		? `urn:maple:source:otel:${encodeURIComponent(service)}`
 		: "urn:maple:source:otel:local"
@@ -275,7 +284,7 @@ const sourceUri = (resource: NormalizedAttributes, record: NormalizedAttributes)
 
 const sourceOccurrenceId = (record: NormalizedAttributes): string | null => {
 	for (const key of ["event.id", "cloudevents.id"]) {
-		const value = stringAttribute(record, key)?.trim()
+		const value = trimOrNull(stringAttribute(record, key))
 		if (value) return boundedIdentity(value, "source")
 	}
 	return null
@@ -308,21 +317,21 @@ const recoveryIdentity = (
 ): OtlpRecoveryIdentity | null => {
 	let occurrenceId: string | null = null
 	for (const key of ["event.id", "cloudevents.id"]) {
-		const value = recoveryStringAttribute(log.attributes, key)?.trim()
+		const value = trimOrNull(recoveryStringAttribute(log.attributes, key))
 		if (!value) continue
 		occurrenceId = recoveryBoundedIdentity(value, "source")
 		break
 	}
 	if (occurrenceId === null) return null
 
-	const explicit = (
+	const explicit = trimOrNull(
 		recoveryStringAttribute(log.attributes, "event.source") ??
-		recoveryStringAttribute(log.attributes, "cloudevents.source")
-	)?.trim()
+			recoveryStringAttribute(log.attributes, "cloudevents.source"),
+	)
 	let source: string | null
 	if (explicit) source = recoveryBoundedIdentity(explicit, "urn:maple:source")
 	else {
-		const service = recoveryStringAttribute(resourceAttributes, "service.name")?.trim()
+		const service = trimOrNull(recoveryStringAttribute(resourceAttributes, "service.name"))
 		source = recoveryBoundedIdentity(
 			service ? `urn:maple:source:otel:${encodeURIComponent(service)}` : "urn:maple:source:otel:local",
 			"urn:maple:source",
@@ -357,7 +366,8 @@ const normalizeLogRecord = (
 	if (occurredNanos === null) return null
 	const observedNanos = epochNanos(log.observedTimeUnixNano)
 	const occurredAt = nanosToTimestamp(occurredNanos)
-	const sourceObservedAt = observedNanos ? nanosToTimestamp(observedNanos) : occurredAt
+	const sourceObservedAt =
+		observedNanos !== null && observedNanos > 0n ? nanosToTimestamp(observedNanos) : occurredAt
 	const bodyScalar = anyValueScalar(log.body, "log.body")
 	const traceId = traceIdHex(log.traceId, "logRecord.traceId")
 	const spanId = spanIdHex(log.spanId, "logRecord.spanId")

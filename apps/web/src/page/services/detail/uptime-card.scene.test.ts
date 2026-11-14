@@ -1,11 +1,11 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { describe, test } from "vitest"
-import type { UptimeMonitor } from "../../alerts/shared/uptime-derive"
-import { downMonitor, httpMonitor } from "../../alerts/shared/uptime-test-monitors"
+import type { UptimeMonitor } from "../../kit/uptime/derive"
+import { downMonitor, httpMonitor } from "../../kit/uptime/test-monitors"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -19,11 +19,11 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const mounted = [
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
-	Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+	Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 ] as const
 
 /** The Overview of `checkout-api` with the org's monitors answered. */
-const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, isAdmin = true): Model => {
+const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, canCreate = true): Model => {
 	const start = init({ serviceName: "checkout-api", search: {} }, context).model
 	const resolved = pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" })).model
 	return pageUpdate(
@@ -31,7 +31,7 @@ const withMonitors = (monitors: ReadonlyArray<UptimeMonitor>, isAdmin = true): M
 		Message.CompletedFetchUptimeMonitors({
 			key: resolved.uptimeMonitors.key ?? "",
 			result: Result.succeed(monitors),
-			isAdmin,
+			grants: canCreate ? ["uptime_monitors:manage"] : [],
 		}),
 	).model
 }
@@ -73,7 +73,7 @@ describe("service detail, Uptime card", () => {
 				"href",
 				"/alerts/uptime/new?serviceName=checkout-api",
 			),
-			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts?tab=uptime"),
+			expectView(role("link", { name: "Open in Alerts" })).toHaveAttr("href", "/alerts/uptime"),
 		)
 	})
 })

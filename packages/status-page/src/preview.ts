@@ -3,7 +3,7 @@ import type {
 	StatusPageComponentStatus,
 	StatusPageId,
 	UptimeMonitorStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import {
 	deriveComponentStatus,
 	incidentComponentStatus,
@@ -58,6 +58,7 @@ export const previewSnapshot = (input: {
 		generatedAt: input.nowMs,
 		page: input.page,
 		breakGlassTokenSha256: null,
+		passwordHash: null,
 		components: Arr.map(input.components, (component) => {
 			const baseStatus = deriveComponentStatus({
 				monitorStatus: component.monitorStatus,

@@ -4,12 +4,13 @@ import type { BreadcrumbEntry } from "../../../shell"
 import type { IconName } from "@maple/views/ui/icon"
 import { dashboardPage, type DashboardPageOptions } from "../../kit/dashboard-page"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { navShell, type NavShellSection } from "../../settings/kit/nav-shell"
-import { Array as Arr } from "effect"
+import { navShell, type NavShellSection } from "../../kit/nav-shell"
+import { Array as Arr, Option } from "effect"
+import { vstack } from "@maple/views/ui/stack"
 // The frame of each Security source's page: the rail of sources, the source's title block, content.
 // The code security audit is the one source with tabs of its own (Overview, Findings, Runs).
 
-export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure"
+export type SecuritySource = "code" | "dependencies" | "runtimes" | "exposure" | "auditLog" | "detections"
 export type CodeTab = "overview" | "findings" | "runs"
 
 const SOURCE_LABEL = {
@@ -17,6 +18,8 @@ const SOURCE_LABEL = {
 	dependencies: "Dependencies",
 	runtimes: "Runtimes",
 	exposure: "Exposure",
+	auditLog: "Audit log",
+	detections: "Detections",
 } satisfies Record<SecuritySource, string>
 
 const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
@@ -51,6 +54,26 @@ const SECTIONS: ReadonlyArray<NavShellSection<never>> = [
 				label: SOURCE_LABEL.exposure,
 				icon: "GlobeIcon",
 				href: hrefOf(AppRoute.SecurityExposure()),
+			},
+		],
+	},
+	{
+		id: "activity",
+		title: "Activity",
+		items: [
+			{
+				kind: "link",
+				id: "auditLog",
+				label: SOURCE_LABEL.auditLog,
+				icon: "HistoryIcon",
+				href: hrefOf(AppRoute.SecurityAuditLog({ search: {} })),
+			},
+			{
+				kind: "link",
+				id: "detections",
+				label: SOURCE_LABEL.detections,
+				icon: "RadarIcon",
+				href: hrefOf(AppRoute.SecurityDetections()),
 			},
 		],
 	},
@@ -94,7 +117,10 @@ export const breadcrumbsOf = (
 	source: SecuritySource,
 	tab: CodeTab = "overview",
 ): ReadonlyArray<BreadcrumbEntry> => {
-	const label = CODE_TABS.find((entry) => entry.tab === tab)?.label ?? ""
+	const label = Option.match(
+		Arr.findFirst(CODE_TABS, (entry) => entry.tab === tab),
+		{ onNone: () => "", onSome: (entry) => entry.label },
+	)
 	return source === "code" && tab !== "overview"
 		? [SECURITY_CRUMB, { label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) }, { label }]
 		: [SECURITY_CRUMB, { label: SOURCE_LABEL[source] }]
@@ -105,6 +131,12 @@ export const codeCrumbs = (back: BreadcrumbEntry): ReadonlyArray<BreadcrumbEntry
 	SECURITY_CRUMB,
 	{ label: SOURCE_LABEL.code, href: hrefOf(AppRoute.SecurityCode()) },
 	back,
+]
+
+/** The crumbs above the detection editor: the list it leads back to. */
+export const detectionFormCrumbs = (): ReadonlyArray<BreadcrumbEntry> => [
+	SECURITY_CRUMB,
+	{ label: SOURCE_LABEL.detections, href: hrefOf(AppRoute.SecurityDetections()) },
 ]
 
 const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
@@ -122,17 +154,21 @@ const codeTabs = <M>(h: HtmlBuilder<M>, active: CodeTab): Html =>
 	)
 
 const DESCRIPTION = {
-	code: "Deep code audits of your connected repositories. Findings are visible to org admins only.",
+	code: "Deep code audits of your connected repositories. Findings are visible to org admins and engineers.",
 	exposure: "Scanners probing your HTTP services over the last 7 days, read from server spans.",
 	runtimes:
 		"The language runtime each service reports, checked for known vulnerabilities and end-of-life dates.",
 	dependencies:
 		"Known vulnerable packages in your connected repositories' lockfiles, rescanned on every push.",
+	auditLog:
+		"Who changed what, and what was refused, in Maple and your connected platforms. Visible to org admins.",
+	detections:
+		"A detection opens an alert incident when enough matching audit events arrive within its window.",
 } satisfies Record<SecuritySource, string>
 
 /** The page's blocks at their own height: the scroll area scrolls them, never squeezes them. */
 export const stack = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
-	h.div([h.Class("flex shrink-0 flex-col gap-6")], children)
+	vstack(h, { gap: "6", className: "shrink-0" }, children)
 
 type SecurityLayoutOptions = Readonly<{
 	source: SecuritySource
@@ -166,6 +202,14 @@ export const NARROW_TWO_COLUMNS = "md:grid-cols-2 xl:grid-cols-4 md:divide-y xl:
 
 /** A table column phones drop; what they still need from it rides in the row's first cell. */
 export const WIDE_COLUMN = "hidden sm:table-cell"
+
+/**
+ * A column a laptop screen has room for beside the sidebar and the rail. Below that, what it
+ * says rides in the row's first cell, so the row's controls stay on screen.
+ */
+export const LAPTOP_COLUMN = "hidden min-[1360px]:table-cell"
+/** The first cell's stand-in for the `LAPTOP_COLUMN`s, shown wherever they are not. */
+export const BELOW_LAPTOP = "min-[1360px]:hidden"
 
 /** A column only a wide screen has room for beside the rail. */
 export const ROOMY_COLUMN = "hidden min-[1680px]:table-cell"

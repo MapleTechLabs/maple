@@ -7,6 +7,7 @@
 //             that straddle a version boundary (`display` embeds a data source
 //             via `sparkline`, and the document embeds a widget)
 //   v1/       the shape every pre-versioning document is stored in, frozen
+//   v2/, v3/  later versions; v3 is current
 //   index.ts  unsuffixed aliases bound to the current version
 //
 // Consumers import the unsuffixed names and follow whatever the current version
@@ -66,17 +67,14 @@ export {
 	WidgetDataSourceV3,
 } from "./v3/data-source"
 export { DashboardDocumentV3, PortableDashboardDocumentV3 } from "./v3/document"
-export { DashboardWidgetV3, WidgetDisplayConfigV3 } from "./v3/widget"
-export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
-// The one-shot upgrade the backfill script runs against Postgres. Deliberately
-// not a `DashboardMigration` — see the header of `upgrade-to-v3.ts`.
 export {
-	fromLegacyDataSource,
-	isDocumentV3,
-	isV3DataSource,
-	upgradeDocumentToV3,
-	upgradeStoredDocument,
-} from "./upgrade-to-v3"
+	DashboardWidgetV3,
+	SharedDataSource,
+	SharedWidgetDisplayV3,
+	WidgetDisplayConfigV3,
+} from "./v3/widget"
+export { MARKDOWN_STATIC_ENDPOINT, QUERY_ENDPOINT_RESULT_KINDS } from "./legacy-endpoints"
+export { fromLegacyDataSource, isV3DataSource } from "./upgrade-to-v3"
 export { type DashboardParseOutcome, parseStoredDashboard, stampCurrentVersion } from "./parse"
 export { CURRENT_DASHBOARD_SCHEMA_VERSION, DashboardSchemaVersion } from "./version"
 export { makeWidgetDisplayConfigSchema } from "./shared/display"
@@ -126,13 +124,16 @@ export {
 	DashboardDocumentV3 as DashboardDocument,
 	PortableDashboardDocumentV3 as PortableDashboardDocument,
 } from "./v3/document"
-export { withWidgets } from "./document-helpers"
+export {
+	type DashboardContentFields,
+	withDocumentFields,
+	withPortableContent,
+	withWidgets,
+} from "./document-helpers"
 export { DASHBOARD_GRID_COLS, findNextPosition, type PlaceableWidget } from "./placement"
 export { DashboardDocumentV2 } from "./v2/document"
 export { WidgetDataSourceV3 as WidgetDataSourceSchema } from "./v3/data-source"
 export { WidgetDisplayConfigV3 as WidgetDisplayConfigSchema } from "./v3/widget"
 export { DashboardWidgetV3 as DashboardWidgetSchema } from "./v3/widget"
 
-// Section helpers: pure placement/repair logic shared by the API write path,
-// the web read path and the tests.
 export * from "./sections-helpers"

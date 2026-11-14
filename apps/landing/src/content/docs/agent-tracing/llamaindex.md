@@ -164,7 +164,7 @@ Long-running servers need nothing. In serverless handlers, notebooks and task wo
 
 ## Verify
 
-Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **LlamaIndex**, with one turn per `agent.run()`, a transcript, one model call per request with tokens, and `FunctionTool.acall` tool calls.
+Send two or three messages with the same conversation id, one of them using a tool, then open **Agent sessions**. Within a minute you should see one session labeled **LlamaIndex**, with one turn per `agent.run()`, a transcript, one model call per request with tokens, and `FunctionTool.acall` tool calls.
 
 Cost shows as **unpriced** and streamed model calls last about 1 ms. Both are expected.
 

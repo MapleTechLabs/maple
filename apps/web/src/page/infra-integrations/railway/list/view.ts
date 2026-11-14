@@ -1,6 +1,5 @@
 import { formatBytes } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
-import { toEpochMs } from "@maple/ui/lib/time-format"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -13,13 +12,11 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { timeControls } from "../../../kit/time-controls"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { RAILWAY_ACCENT } from "../../../integrations/catalog"
-import { integrationConnectCta } from "../../kit/integration-empty"
+import { integrationConnectCta } from "../../../kit/integration-empty"
 import { AppRoute, hrefOf } from "../../../../route"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { avgPeakContent } from "../../../infra/kit/avg-peak"
 import { countLabel, searchToolbar } from "../../../infra/kit/page-parts"
-import { formatAbsolute } from "../../../kit/relative-time"
 import type { RailwayServiceRow, RailwayStatus } from "../model"
 import { filterServices, formatVcpu, hasConfiguredLimits, unsyncedEnvironments } from "./derive"
 import { Message } from "./message"
@@ -28,8 +25,7 @@ import { DEFAULT_PRESET } from "./update"
 import { railwayFleetBand, railwayFleetBandLoading } from "./view-band"
 import { type Clock, railwayTable, railwayTableLoading, triggerIds } from "./view-table"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `RailwayPage`.
+import { providerBrand } from "../../../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -39,7 +35,6 @@ const NOTE = "Summed across replicas."
 const tooltipContent = (
 	h: H,
 	services: ReadonlyArray<RailwayServiceRow>,
-	clock: Clock,
 	triggerId: string,
 ): ReadonlyArray<Html | string> =>
 	Arr.flatMap(services, (row): ReadonlyArray<Html | string> => {
@@ -55,7 +50,6 @@ const tooltipContent = (
 			]
 		if (triggerId === ids.cpu)
 			return [avgPeakContent(h, { avg: row.cpuAvg, peak: row.cpuMax, format: formatVcpu, note: NOTE })]
-		if (triggerId === ids.seen) return [formatAbsolute(toEpochMs(row.lastSeen), clock.timeZone)]
 		return []
 	})
 
@@ -112,7 +106,7 @@ export const servicesList = (
 		toParentMessage: (message) => Message.GotRowTooltipMessage({ message }),
 		viewInputs: {
 			triggerIds: Arr.flatMap(filtered, (row) => Rec.values(triggerIds(row))),
-			toContent: (triggerId) => tooltipContent(h, filtered, clock, triggerId),
+			toContent: (triggerId) => tooltipContent(h, filtered, triggerId),
 			toView: ({ trigger, portal }) =>
 				h.div(
 					[
@@ -179,14 +173,14 @@ const FEATURES = [
 /** Nothing connected: what this page will show, and the way to the connect flow. */
 const railwayConnectCta = (h: H): Html =>
 	integrationConnectCta(h, {
-		brand: { icon: "RailwayIcon", accent: RAILWAY_ACCENT, iconClassName: "text-foreground" },
+		brand: providerBrand("railway"),
 		features: FEATURES,
 		hint: "Connecting pulls the last hour of metrics right away, then Maple keeps it fresh every 5 minutes.",
 		label: "Connect Railway",
 		href: hrefOf(AppRoute.SourcesNew({ search: { integration: "railway" } })),
 	})
 
-/** `RailwayIntegrationCard` keeps the last loaded status when a refetch fails. */
+/** Keeps the last loaded status when a refetch fails. */
 const connectedView = (h: H, model: Model, status: RailwayStatus, clock: Clock): Html =>
 	status.connected ? servicesView(h, model, status, clock) : railwayConnectCta(h)
 

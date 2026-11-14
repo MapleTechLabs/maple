@@ -1,18 +1,20 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Layer, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Schema, Tracer, Array as Arr, String as Str } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
-import { ActorId } from "@maple/domain/primitives"
+import { ActorId } from "@maple/primitives"
 import { McpToolExecutor } from "./dispatcher"
-import { listMcpTools } from "./tool-catalog"
+import { listMcpTools } from "./tool-descriptors-render"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS, recordExpectedMcpFailure } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
-import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { McpToolRuntimeRequirements } from "./tools/runtime-services"
+import type { TenantContext } from "@maple/domain/http"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { WarehouseQueryError } from "@maple/domain"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import {
 	type ConnectedSourceRepository,
 	VcsSourceService,
@@ -29,7 +31,7 @@ const TENANT: TenantContext = {
 const CONNECTOR_TENANT: TenantContext = {
 	...TENANT,
 	userId: "chat-connector" as TenantContext["userId"],
-	actorId: Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
+	actorId: Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
 	turnOrigin: {
 		kind: "connector",
 		connectorId: "testchat",
@@ -43,6 +45,8 @@ const CONNECTOR_TENANT: TenantContext = {
 const unusedRepositoryServices = Layer.mergeAll(
 	Layer.mock(RepoSandboxService, {}),
 	Layer.mock(VcsSourceService, {}),
+	Layer.mock(ExternalDataSourceService, {}),
+	OrganizationFeatureFlagsService.allEnabled,
 )
 
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
@@ -103,7 +107,9 @@ describe("MCP dispatcher", () => {
 
 	it.effect("publishes an output schema and annotations for every tool declared with define", () =>
 		Effect.gen(function* () {
-			const byName = new Map((yield* listMcpTools).map((descriptor) => [descriptor.name, descriptor]))
+			const byName = new Map(
+				Arr.map(yield* listMcpTools, (descriptor) => [descriptor.name, descriptor]),
+			)
 			for (const definition of mapleToolCatalogFor("mcp")) {
 				const descriptor = byName.get(definition.name)
 				if (definition.outputSchema === undefined) continue
@@ -158,7 +164,7 @@ describe("MCP dispatcher", () => {
 
 		it.effect("does not list an internal tool on the public transport", () =>
 			Effect.gen(function* () {
-				const listed = new Set((yield* listMcpTools).map((descriptor) => descriptor.name))
+				const listed = new Set(Arr.map(yield* listMcpTools, (descriptor) => descriptor.name))
 				expect(Arr.filter(INTERNAL_TOOLS, (name) => listed.has(name))).toEqual([])
 				// The agents' catalogs still carry them.
 				const chat = new Set(Arr.map(mapleToolCatalogFor("chat"), (d) => d.name))
@@ -178,12 +184,12 @@ describe("MCP dispatcher", () => {
 						"sandbox_exec",
 						{ repository: "acme/app", command: "git", args: ["log"] },
 						"mcp",
-					) as Effect.Effect<never, McpToolNotFoundError, never>,
+					) as Effect.Effect<never, McpToolNotFoundError>,
 				)
 				// Same answer as a name that was never registered, so probing cannot
 				// tell the two apart.
 				expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-				expect(error.name).toBe("sandbox_exec")
+				expect(error.toolName).toBe("sandbox_exec")
 			}),
 		)
 
@@ -230,12 +236,44 @@ describe("MCP dispatcher", () => {
 			const error = yield* Effect.flip(
 				executor.execute(TENANT, "not_a_maple_tool", {}, "mcp") as Effect.Effect<
 					never,
-					McpToolNotFoundError,
-					never
+					McpToolNotFoundError
 				>,
 			)
 			expect(error._tag).toBe("@maple/mcp/ToolNotFoundError")
-			expect(error.name).toBe("not_a_maple_tool")
+			expect(error.toolName).toBe("not_a_maple_tool")
+			expect(error.message).toContain("tools/list")
+		}),
+	)
+
+	it.effect("names the tools an unknown name most likely meant", () =>
+		Effect.gen(function* () {
+			const executor = yield* makeValidationExecutor
+			const error = yield* Effect.flip(
+				executor.execute(TENANT, "uptime_monitors", {}, "mcp") as Effect.Effect<
+					never,
+					McpToolNotFoundError
+				>,
+			)
+			expect(error.message).toContain("Did you mean `list_uptime_monitors`")
+		}),
+	)
+
+	// On /mcp the visibility gate hides these tools first; this is the registry's own refusal.
+	it.effect("answers a read-only key's write call as a permission problem, not a bug", () =>
+		Effect.gen(function* () {
+			const executor = yield* makeValidationExecutor
+			const result = yield* executor.execute(
+				{ ...TENANT, readOnly: true },
+				"create_alert_rule",
+				{},
+				"mcp",
+			)
+			expect({
+				isError: result.isError,
+				category: result.failureCategory,
+				lead: Str.startsWith("Permission denied:")(result.content[0]?.text ?? ""),
+				bugHint: Str.includes("send_maple_feedback")(result.content[0]?.text ?? ""),
+			}).toEqual({ isError: true, category: "permission", lead: true, bugHint: false })
 		}),
 	)
 
@@ -252,11 +290,38 @@ describe("MCP dispatcher", () => {
 					.execute(TENANT, "inspect_trace", {}, "workflow")
 					.pipe(Effect.withTracer(tracer))
 
-				const executorSpan = spans.find((s) => s.name === "McpToolExecutor.execute")
+				const executorSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolExecutor.execute"),
+				)
 				assert.isDefined(executorSpan)
 				expect(executorSpan.attributes.get("maple.mcp.tool")).toBe("inspect_trace")
 				expect(executorSpan.attributes.get("maple.mcp.surface")).toBe("workflow")
 			}),
+		)
+
+		it.effect(
+			"makes a public MCP call an identified mcp_tool_called product event, an agent turn's not",
+			() =>
+				Effect.gen(function* () {
+					const executor = yield* makeValidationExecutor
+					const { spans, tracer } = makeRecordingTracer()
+					const executorSpans = () => Arr.filter(spans, (s) => s.name === "McpToolExecutor.execute")
+
+					yield* executor
+						.execute({ ...TENANT, mcpClientName: "claude-code" }, "inspect_trace", {}, "mcp")
+						.pipe(Effect.withTracer(tracer))
+					yield* executor
+						.execute(TENANT, "inspect_trace", {}, "chat")
+						.pipe(Effect.withTracer(tracer))
+
+					const [publicCall, agentCall] = executorSpans()
+					expect(publicCall?.attributes.get("maple.product_event.name")).toBe("mcp_tool_called")
+					expect(publicCall?.attributes.get("maple.product_event.user_id")).toBe("user_test")
+					expect(publicCall?.attributes.get("maple.product_event.group_id")).toBe("org_test")
+					expect(publicCall?.attributes.get("maple.product_event.prop.tool")).toBe("inspect_trace")
+					expect(publicCall?.attributes.get("maple.product_event.prop.client")).toBe("claude-code")
+					expect(agentCall?.attributes.has("maple.product_event.name")).toBe(false)
+				}),
 		)
 
 		it.effect("marks a failed tool call on the dispatcher span", () =>
@@ -272,7 +337,9 @@ describe("MCP dispatcher", () => {
 					.pipe(Effect.withTracer(tracer))
 				expect(result.isError).toBe(true)
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("maple.mcp.tool")).toBe("inspect_trace")
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(true)
@@ -290,7 +357,9 @@ describe("MCP dispatcher", () => {
 				).pipe(Effect.withSpan("probe"), Effect.withTracer(tracer))
 
 				const recorded = String(
-					spans.find((s) => s.name === "probe")?.attributes.get("maple.mcp.error.message"),
+					Option.getOrUndefined(Arr.findFirst(spans, (s) => s.name === "probe"))?.attributes.get(
+						"maple.mcp.error.message",
+					),
 				)
 				expect(recorded.length).toBeLessThan(message.length)
 				expect(Str.startsWith(recorded)(message)).toBe(true)
@@ -307,7 +376,9 @@ describe("MCP dispatcher", () => {
 
 				yield* executor.execute(TENANT, "inspect_trace", {}, "mcp").pipe(Effect.withTracer(tracer))
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("error.type")).toBe("@maple/mcp/errors/McpDecodeError")
 				expect(dispatchSpan.attributes.get("http.response.status_code")).toBe(400)
@@ -316,7 +387,9 @@ describe("MCP dispatcher", () => {
 				// The inner registry span still FAILS with the decode error (the typed
 				// error stays in the error channel); the SDK exporter is what turns it
 				// into an Ok span, keyed off the identifier list below.
-				const registrySpan = spans.find((s) => s.name === "McpToolRegistry.execute")
+				const registrySpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolRegistry.execute"),
+				)
 				assert.isDefined(registrySpan)
 				expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).toContain(dispatchSpan.attributes.get("error.type"))
 			}),
@@ -391,12 +464,16 @@ describe("MCP dispatcher", () => {
 					.pipe(Effect.withTracer(tracer))
 				expect(result.isError).toBe(true)
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.status._tag).toBe("Ended")
 				if (dispatchSpan.status._tag === "Ended")
 					expect(dispatchSpan.status.exit._tag).toBe("Failure")
 				expect(dispatchSpan.attributes.get("maple.mcp.error.category")).toBe("query")
+				expect(dispatchSpan.attributes.get("maple.mcp.error.message")).toBe("boom")
+				expect(result.content[0]?.text).toContain("report it now with `send_maple_feedback`")
 			}),
 		)
 
@@ -411,7 +488,9 @@ describe("MCP dispatcher", () => {
 					.execute(TENANT, "describe_warehouse_tables", {}, "rpc")
 					.pipe(Effect.withTracer(tracer))
 
-				const dispatchSpan = spans.find((s) => s.name === "McpToolDispatcher.call")
+				const dispatchSpan = Option.getOrUndefined(
+					Arr.findFirst(spans, (s) => s.name === "McpToolDispatcher.call"),
+				)
 				assert.isDefined(dispatchSpan)
 				expect(dispatchSpan.attributes.get("result.isError")).toBe(false)
 			}),
@@ -445,6 +524,8 @@ describe("McpToolExecutor repository preparation", () => {
 				listRepositories: () =>
 					Effect.succeed([connected("octo/shop", false), connected("octo/legacy", true)]),
 			}),
+			Layer.mock(ExternalDataSourceService, {}),
+			OrganizationFeatureFlagsService.allEnabled,
 		)
 
 		return Effect.gen(function* () {

@@ -1,4 +1,4 @@
-import { formatWholePercent } from "../../../../components/infra/format"
+import { formatWholePercent } from "../../kit/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
@@ -11,7 +11,7 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../../kit/data-table"
+} from "../../../kit/data-table"
 import type { SortDir } from "../../../kit/table-sort"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine } from "../../kit/meta-line"
@@ -23,8 +23,6 @@ import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// `ContainerTable` / `ContainerTableLoading`.
 
 type H = HtmlBuilder<Message>
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null
@@ -112,7 +110,7 @@ const containerRow = (h: H, container: ContainerRow, inputs: ContainerTableInput
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {

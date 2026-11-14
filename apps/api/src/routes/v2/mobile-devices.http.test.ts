@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -15,15 +15,8 @@ import { SharedDashboardService } from "@maple/backend/services/dashboards/Share
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
 
 /**
  * `/v2/mobile_devices` over an embedded PGlite: register is an idempotent
@@ -34,9 +27,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_e2e")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_mobile_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_mobile_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_mobile_e2e")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_mobile_other")
+const USER = Schema.decodeSync(UserId)("user_mobile_e2e")
 const TOKEN = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 /** ActivityKit's two extra tokens: one starts an activity, one updates it. */
 const START_TOKEN = "b1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
@@ -70,14 +63,9 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(HttpApi.make("MapleApiV2").add(MapleApiV2.groups.mobileDevices)).pipe(
+		Layer.provide(HttpV2MobileDevicesLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -102,11 +90,17 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length === 0 ? null : JSON.parse(text) }
 	}
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "mobile-test", scopes })
+				return yield* service.create(ORG, USER, {
+					name: "mobile-test",
+					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+				})
 			}),
 		)
 
@@ -191,6 +185,26 @@ describe("v2 mobile devices", () => {
 
 			const empty = await harness.request("GET", "/v2/mobile_devices", key.secret)
 			expect(empty.body.data).toEqual([])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets an analyst register and remove their own device", async () => {
+		const harness = makeHarness()
+		try {
+			const key = await harness.bootstrapKey(undefined, ["org:analyst"])
+			const created = await harness.request("PUT", `/v2/mobile_devices/${TOKEN}`, key.secret, {
+				platform: "ios",
+				environment: "sandbox",
+				bundle_id: "com.maple.mobile",
+			})
+			expect(created.status).toBe(200)
+			expect(created.body.token).toBe(TOKEN)
+
+			const removed = await harness.request("DELETE", `/v2/mobile_devices/${TOKEN}`, key.secret)
+			expect(removed.status).toBe(200)
+			expect(removed.body.deleted).toBe(true)
 		} finally {
 			await harness.dispose()
 		}
@@ -290,10 +304,12 @@ describe("v2 mobile devices", () => {
 					const devices = yield* MobileDevicesService
 					const [device] = yield* devices.listForOrg(ORG)
 					// Writes are org-scoped: another org naming this device id touches nothing.
-					yield* devices.disable(OTHER_ORG, device!.id, "Unregistered")
-					yield* devices.markPushed(OTHER_ORG, [device!.id])
-					expect((yield* devices.listForOrg(ORG)).map((listed) => listed.id)).toEqual([device!.id])
-					yield* devices.disable(ORG, device!.id, "Unregistered")
+					yield* devices.disable(OTHER_ORG, device.id, "Unregistered")
+					yield* devices.markPushed(OTHER_ORG, [device.id])
+					expect(Arr.map(yield* devices.listForOrg(ORG), (listed) => listed.id)).toEqual([
+						device.id,
+					])
+					yield* devices.disable(ORG, device.id, "Unregistered")
 					expect(yield* devices.listForOrg(ORG)).toEqual([])
 				}),
 			)

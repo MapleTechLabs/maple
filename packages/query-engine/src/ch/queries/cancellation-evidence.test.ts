@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { compile, compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
@@ -48,8 +48,9 @@ describe("cancellationServiceUsageQuery", () => {
 					activeDaysPrior: "0",
 				},
 			])
-			expect(row!.recentTraceBytes).toBe(18_446_744_073)
-			expect(DateTime.formatIso(row!.lastHour)).toBe("2026-10-20T15:00:00.000Z")
+			assert.isDefined(row)
+			expect(row.recentTraceBytes).toBe(18_446_744_073)
+			expect(DateTime.formatIso(row.lastHour)).toBe("2026-10-20T15:00:00.000Z")
 		}),
 	)
 })

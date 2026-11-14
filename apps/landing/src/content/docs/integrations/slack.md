@@ -9,7 +9,7 @@ The Slack integration adds the Maple bot to a Slack workspace and links that wor
 
 ## Prerequisites
 
-- You are an admin of the Maple organization. Only organization admins can connect, change, or disconnect Slack workspaces.
+- You are an admin or engineer in the Maple organization. Only those roles can connect, change, or disconnect Slack workspaces.
 - You can install apps in the Slack workspace.
 
 ## Install the bot
@@ -85,7 +85,7 @@ On **Settings → Integrations → Slack**, click **Disconnect** next to the wor
 
 - **"The install link expired."** Start the install again from **Add to Slack**.
 - **"That workspace is already linked to a different Maple organization."** Disconnect it from the other organization first.
-- **"Only organization admins can connect Slack."** Ask an organization admin to install it.
+- **"Only org admins and engineers can manage integrations."** Ask an admin or engineer in your organization to install it.
 - **The bot does not reply.** Make sure you mentioned it, that it is in the channel (`/invite @Maple`), and that the workspace shows **Connected** in Maple.
 - **"Maple's agent can't be reached from here right now."** The assistant is temporarily unavailable. Try again later.
 - **The channel list for alerts is empty or asks you to reinstall.** The workspace was linked before the alert scopes were added. Click **Open Slack integration** and reinstall with **Add to Slack**.

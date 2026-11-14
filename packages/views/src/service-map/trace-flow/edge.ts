@@ -7,8 +7,6 @@ import type { FlowEdgeData } from "./flow-graph"
 import { typography } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
 
-// `TraceFlowEdge` (packages/ui `traces/flow-edge.tsx`).
-
 const LABEL_SHARE_THRESHOLD = 0.05
 
 const strokeWidthForShare = (share: number): number => Math.min(4, 1.5 + 2.5 * Math.sqrt(Math.max(0, share)))
@@ -56,7 +54,7 @@ const labelContent = <M>(
 				: []),
 		]
 	}
-	if (isError) return [h.span([h.Class("text-severity-error")], [formatDuration(data.durationMs)])]
+	if (isError) return [typography(h, { tone: "error" }, [formatDuration(data.durationMs)])]
 	if (count > 1) return [h.span([], ["×", String(count), " · ", formatDuration(data.durationMs)])]
 	return [h.span([], [formatDuration(data.durationMs)])]
 }
@@ -115,7 +113,7 @@ export const traceFlowEdge = <M>(
 								h.span(
 									[
 										h.Class(
-											"whitespace-nowrap rounded-sm border border-border-subtle bg-card/90 px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
+											"whitespace-nowrap rounded-sm border border-border-subtle bg-surface-float px-1.5 py-0.5 font-mono text-3xs tabular-nums text-muted-foreground backdrop-blur-sm",
 										),
 									],
 									label,

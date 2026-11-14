@@ -19,18 +19,18 @@ import { type H, narrow, wcSection } from "./view-parts"
 import { releaseNarrow } from "./view-sections"
 import { Array as Arr } from "effect"
 
-// `TablesSection` and `MiscSection`.
+// The tables and misc sections.
 
 type RulesInputs = Readonly<{ mode: Model["mode"]; nowMs: number }>
 
-/** `RulesTab` reads the hub's Model (search, show-all, menus); `status` stays unset. */
+/** The rules tab reads the hub's Model (search, show-all, menus); `status` stays unset. */
 const rulesView = Submodel.defineView<HubModel, HubMessage, RulesInputs>((hub, inputs, h) =>
 	rulesTab(h, hub, {
 		data: rulesOverview(inputs.mode, inputs.nowMs),
 		destinations: [],
 		status: undefined,
 		emptyState: alertsEmptyState(h, {
-			isAdmin: true,
+			canEdit: true,
 			hasDestinations: false,
 			serviceName: undefined,
 			onAddDestination: undefined,
@@ -50,7 +50,7 @@ export const tablesSection = (h: H, model: Model): Html =>
 		releaseNarrow(h, model),
 	])
 
-/** The two `<Tool>`s: a settled call with its argument and result, and a live one. */
+/** The two tool calls: a settled call with its argument and result, and a live one. */
 const toolParts = (toolName: string, service: string): ReadonlyArray<ToolPart> => [
 	{
 		_tag: "dynamic-tool",

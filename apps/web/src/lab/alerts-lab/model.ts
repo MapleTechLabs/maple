@@ -1,9 +1,8 @@
+import { ChartEnvMessages, ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Message as HubMessage, RuleBucket } from "../../page/alerts/hub/message"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as AlertsHub from "../../page/alerts/hub/model"
 import * as Shell from "../../shell"
 
@@ -16,11 +15,10 @@ export const Model = Schema.Struct({
 	timeZone: Schema.String,
 	/** The hub's Model, for the views that read its menus and the rules search. */
 	hub: AlertsHub.Model,
-	/** The Rules section's status chip (`useState<RuleBucket>`). */
+	/** The Rules section's status chip. */
 	status: Schema.NullOr(RuleBucket),
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	shell: Shell.Model,
 })
 export type Model = typeof Model.Type
@@ -28,9 +26,7 @@ export type Model = typeof Model.Type
 export const Message = defineMessageUnion({
 	GotHubMessage: { message: HubMessage },
 	GotChartMessage: { message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotShellMessage: { message: Shell.Message },
 })
 export type Message = typeof Message.Type

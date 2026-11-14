@@ -1,4 +1,4 @@
-import { WORKER_HEALTH_TONE, workerHealth } from "../../../../components/infra/cloudflare/list-model"
+import { WORKER_HEALTH_TONE, workerHealth } from "../list-model"
 import {
 	DURABLE_OBJECT_COLORS,
 	durableObjectRows,
@@ -9,7 +9,7 @@ import {
 	percentileRows,
 	untracedExceptions,
 	workerOutcomeTotals,
-} from "../../../../components/infra/cloudflare/worker-signals"
+} from "../worker-signals"
 import {
 	EMPTY_VALUE,
 	formatErrorRate,
@@ -38,25 +38,23 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { correlationStrips, type StripSeries } from "../../../infra/kit/correlation-strips"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
-import { formatTimeInTimezone } from "@maple/web-data/lib/timezone-format"
+import { pageTime } from "../../../kit/page-time"
+import { formatTimeInTimezone } from "@maple/ui/lib/timezone-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import type { WorkerDetail } from "../data"
 import { MountLinkedCursor } from "./command"
 import { type PageData, pageOf, type Traced } from "./derive"
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
-
-// `WorkerDetailPage` and its parts.
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { Array as Arr, String as Str, Order } from "effect"
 
 type H = HtmlBuilder<Message>
 
 /** The failure and Durable Object strips name `--severity-fatal` and `--chart-2` too. */
 const THEME_TOKENS = [...INFRA_CHART_TOKENS, "--severity-fatal", "--chart-2"]
 
-/** `CloudflareWorkerHeader`. */
 const header = (h: H, model: Model, data: PageData) => {
 	const { row, accountName, traced, currentVersion } = data
 	const tracedService = traced?.service ?? null
@@ -82,31 +80,28 @@ const header = (h: H, model: Model, data: PageData) => {
 }
 
 const figure = (h: H, value: string, caption: string, className?: string): Html =>
-	h.div(
-		[h.Class("flex flex-col items-start @2xl:items-end")],
-		[
-			h.span(
-				[
-					h.Class(
-						cn(
-							typographyClass({
-								size: "sm",
-								tone: "foreground",
-								weight: "semibold",
-								mono: true,
-								numeric: true,
-							}),
-							className,
-						),
+	vstack(h, { align: "start", className: "@2xl:items-end" }, [
+		h.span(
+			[
+				h.Class(
+					cn(
+						typographyClass({
+							size: "sm",
+							tone: "foreground",
+							weight: "semibold",
+							mono: true,
+							numeric: true,
+						}),
+						className,
 					),
-				],
-				[value],
-			),
-			typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
-		],
-	)
+				),
+			],
+			[value],
+		),
+		typography(h, { size: "3xs", tone: "muted", mono: true }, [caption]),
+	])
 
-/** `CloudflareTraceGapCallout`: failures Cloudflare saw that the Worker's spans never recorded. */
+/** Failures Cloudflare saw that the Worker's spans never recorded. */
 const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedService: string): Html =>
 	h.div(
 		[h.Class("@container rounded-md border border-severity-error-a4")],
@@ -134,12 +129,14 @@ const traceGapCallout = (h: H, exceptions: number, tracedErrors: number, tracedS
 							),
 						],
 					),
-					h.div(
-						[
-							h.Class(
-								"flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "6",
+							align: "center",
+							className:
+								"border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
+						},
 						[
 							figure(h, formatNumber(exceptions), "Cloudflare", "text-severity-error"),
 							figure(h, formatNumber(tracedErrors), "traces"),
@@ -195,7 +192,7 @@ const summary = (
 			]),
 ]
 
-/** `buildStrips`: invocations, failures, CPU and duration, then Durable Objects when bound. */
+/** Invocations, failures, CPU and duration, then Durable Objects when bound. */
 const buildStrips = (h: H, detail: WorkerDetail, data: PageData): ReadonlyArray<StripSeries> => {
 	const { row } = data
 	const totals = workerOutcomeTotals(detail.outcomeBuckets)
@@ -292,14 +289,17 @@ const signals = (
 ): Html =>
 	correlationStrips(h, {
 		strips: buildStrips(h, detail, data),
-		xDomain: [
-			...new Set(
-				Arr.map(
-					[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
-					(b) => b.bucket,
+		xDomain: Arr.sort(
+			[
+				...new Set(
+					Arr.map(
+						[...detail.outcomeBuckets, ...detail.latencyBuckets, ...detail.durableObjectBuckets],
+						(b) => b.bucket,
+					),
 				),
-			),
-		].toSorted(),
+			],
+			Order.String,
+		),
 		markers: data.markers,
 		isWaiting,
 		theme: ctx.theme,
@@ -315,7 +315,7 @@ const signals = (
 			}),
 	})
 
-/** `CloudflareWorkerOutcomes`: how each invocation ended, per Cloudflare. */
+/** How each invocation ended, per Cloudflare. */
 const outcomes = (h: H, detail: WorkerDetail): Html => {
 	const totals = workerOutcomeTotals(detail.outcomeBuckets)
 	return panel(h, {}, [
@@ -326,8 +326,9 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 				const success = status === "success"
 				const share = totals.invocations > 0 ? count / totals.invocations : 0
 				const label = outcomeLabel(status)
-				return h.div(
-					[h.Key(status), h.Class("flex items-center gap-4 px-4 py-2.5")],
+				return hstack(
+					h,
+					{ gap: "4", align: "center", className: "px-4 py-2.5", attributes: [h.Key(status)] },
 					[
 						h.span([
 							h.AriaHidden(true),
@@ -338,21 +339,18 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 								),
 							),
 						]),
-						h.div(
-							[h.Class("flex min-w-0 flex-1 items-baseline gap-2")],
-							[
-								h.span([h.Class("truncate text-xs text-foreground")], [label]),
-								...(Str.toLowerCase(label) === Str.toLowerCase(status)
-									? []
-									: [
-											typography(
-												h,
-												{ size: "3xs", tone: "muted", mono: true, truncate: true },
-												[status],
-											),
-										]),
-							],
-						),
+						hstack(h, { gap: "2", align: "baseline", shrink: true, grow: true }, [
+							typography(h, { size: "xs", tone: "foreground", truncate: true }, [label]),
+							...(Str.toLowerCase(label) === Str.toLowerCase(status)
+								? []
+								: [
+										typography(
+											h,
+											{ size: "3xs", tone: "muted", mono: true, truncate: true },
+											[status],
+										),
+									]),
+						]),
 						segmentedBar(h, {
 							className: "w-48 shrink-0",
 							minVisible: 1,
@@ -387,59 +385,56 @@ const outcomes = (h: H, detail: WorkerDetail): Html => {
 	])
 }
 
-/** `CloudflareWorkerRail`. */
 const rail = (h: H, data: PageData, timeZone: string): Html => {
 	const { row, traced } = data
 	const deploys = Arr.map(data.markers, (marker) => ({ commitSha: marker.id, firstSeen: marker.at }))
 	const present = (nodes: ReadonlyArray<Html | null>) =>
 		Arr.filter(nodes, (node): node is Html => node !== null)
-	return h.div(
-		[h.Class("flex flex-col")],
-		[
-			detailRailGroup(
-				h,
-				"Worker",
-				present([
-					detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: data.accountName }),
-					detailRailMetaRow(h, {
-						icon: "ServerIcon",
-						label: "durable objects",
-						value:
-							row === null
-								? null
-								: row.doRequests > 0
-									? `${formatNumber(row.doRequests)} calls`
-									: "none bound",
-					}),
-					detailRailMetaRow(h, {
-						icon: "StopwatchIcon",
-						label: "cpu p50",
-						value: row !== null && row.cpuP50Ms > 0 ? formatLatency(row.cpuP50Ms) : null,
-					}),
-				]),
-			),
-			detailRailGroup(
-				h,
-				"Deploys in window",
-				deploys.length === 0
-					? [
-							typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-								"No new version in this window.",
-							]),
-						]
-					: present(
-							Arr.map(deploys, (deploy) =>
-								detailRailMetaRow(h, {
-									icon: "CodeIcon",
-									label: shortId(deploy.commitSha, "sha"),
-									value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
+	return vstack(h, {}, [
+		detailRailGroup(
+			h,
+			"Worker",
+			present([
+				detailRailMetaRow(h, { icon: "UserIcon", label: "account", value: data.accountName }),
+				detailRailMetaRow(h, {
+					icon: "ServerIcon",
+					label: "durable objects",
+					value:
+						row === null
+							? null
+							: row.doRequests > 0
+								? `${formatNumber(row.doRequests)} calls`
+								: "none bound",
+				}),
+				detailRailMetaRow(h, {
+					icon: "StopwatchIcon",
+					label: "cpu p50",
+					value: row !== null && row.cpuP50Ms > 0 ? formatLatency(row.cpuP50Ms) : null,
+				}),
+			]),
+		),
+		detailRailGroup(
+			h,
+			"Deploys in this window",
+			deploys.length === 0
+				? [typography(h, { size: "2xs", tone: "muted", as: "p" }, ["No new version in this window"])]
+				: present(
+						Arr.map(deploys, (deploy) =>
+							detailRailMetaRow(h, {
+								icon: "CodeIcon",
+								label: shortId(deploy.commitSha, "sha"),
+								value: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
+								display: timestamp(h, {
+									value: deploy.firstSeen,
+									timeZone,
+									label: formatTimeInTimezone(deploy.firstSeen, { timeZone }),
 								}),
-							),
+							}),
 						),
-			),
-			detailRailGroup(h, "Traces", tracesRail(h, traced)),
-		],
-	)
+					),
+		),
+		detailRailGroup(h, "Traces", tracesRail(h, traced)),
+	])
 }
 
 const tracesRail = (h: H, traced: Traced | null): ReadonlyArray<Html> =>
@@ -506,7 +501,7 @@ const body = (
 	})
 }
 
-/** `WorkerDetailPage` below the top bar; the lab's has no time controls. */
+/** Below the top bar; the lab's has no time controls. */
 export const workerPage = (h: H, model: Model, timeZone: string, isTimed = true): Html => {
 	const data = pageOf(model)
 	const theme = model.themeColors

@@ -7,7 +7,7 @@
 // alert rule compiler.
 //
 // Its own subpath rather than `./runtime` or the root barrel, for one concrete
-// reason: `apps/web/src/api/warehouse/*` runs in the BROWSER, so everything here
+// reason: `packages/web-data/src/warehouse/*` runs in the BROWSER, so everything here
 // is browser-bundled. `./runtime` pulls the ClickHouse DSL and is API-only; the
 // root barrel is imported for small helpers all over the place and should not
 // drag the merge machinery in behind them.

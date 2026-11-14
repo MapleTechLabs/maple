@@ -1,48 +1,26 @@
-import type { McpClientKind } from "@maple/domain/http"
-import type { ToolSeriesPoint } from "../agent-sessions/tools-kit/model"
+import type {
+	McpCallItem,
+	McpClientItem,
+	McpClientKind,
+	McpErrorGroupItem,
+	McpMethodItem,
+	McpServerItem,
+	McpToolItem,
+} from "@maple/domain/http"
+import type { ToolSeriesPoint } from "../kit/tools/model"
 
 // What the MCP hub reads, per server and per tool. Every field comes from the MCP semantic
 // conventions (`mcp.method.name`, `gen_ai.tool.name`, `error.type`, `user_agent.original`).
 
 export type { McpClientKind }
 
-export type McpServerRow = Readonly<{
-	service: string
-	protocolVersion: string
-	calls: number
-	errors: number
-	p95: number
-	tools: number
-	topClient: string
-	topClientShare: number
-	lastCallMs: number
-	spark: ReadonlyArray<number>
-}>
+export type McpServerRow = McpServerItem
 
-export type McpToolRow = Readonly<{
-	tool: string
-	calls: number
-	errors: number
-	p50: number
-	p90: number
-	p95: number
-	topError: string | null
-	lastCallMs: number
-	spark: ReadonlyArray<number>
-}>
+export type McpToolRow = McpToolItem
 
-/** `connects` counts initialize requests, `sources` distinct client addresses; a quiet client has 0 calls. */
-export type McpClientRow = Readonly<{
-	name: string
-	kind: McpClientKind
-	calls: number
-	errors: number
-	connects: number
-	sources: number
-	lastSeenMs: number
-}>
+export type McpClientRow = McpClientItem
 
-export type McpMethodRow = Readonly<{ method: string; calls: number; p50: number; p95: number }>
+export type McpMethodRow = typeof McpMethodItem.Type
 
 export type McpFailureKind = Readonly<{
 	label: string
@@ -83,23 +61,10 @@ export type McpServerOverview = Readonly<{
 	coverage: ReadonlyArray<McpCoverageRow>
 }>
 
-export type McpCallRow = Readonly<{
-	timeMs: number
-	client: string
-	requestId: string
-	durationNs: number
-	errorType: string | null
-	traceId: string
-}>
+/** One call in the Calls table; the table never reads the span id. */
+export type McpCallRow = Omit<McpCallItem, "spanId">
 
-export type McpErrorGroup = Readonly<{
-	errorType: string
-	message: string | null
-	count: number
-	clients: number
-	lastSeenMs: number
-	trend: ReadonlyArray<number>
-}>
+export type McpErrorGroup = McpErrorGroupItem
 
 export type McpToolDetail = Readonly<{
 	tool: string

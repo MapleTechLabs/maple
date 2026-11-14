@@ -14,14 +14,15 @@ import {
 	RoleName,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { API_KEY_PREFIX, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { API_KEY_PREFIX, generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, type ApiKeyRow } from "@maple/db/tables"
-import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import { Clock, Effect, Layer, Option, Schema, Context, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
 import { Env } from "@maple/backend/platform/Env"
 import { revokeFamiliesForAccessKeys } from "@maple/backend/services/auth/mcp-oauth-family"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 
 export interface ResolvedApiKey {
 	readonly orgId: OrgId
@@ -204,8 +205,8 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			const database = yield* Database
 			const dbExecute = makeDbExecute(database, "ApiKeysService", toPersistenceError)
 			const env = yield* Env
-			const hmacKey = yield* parseIngestKeyLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+			const hmacKey = yield* ingestKeyLookupHmacKey(
+				env,
 				(message) => new ApiKeyPersistenceError({ message }),
 			)
 
@@ -305,7 +306,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				)
 
 				return new ApiKeysListResponse({
-					keys: rows.map((row) => rowToResponse(row)),
+					keys: Arr.map(rows, (row) => rowToResponse(row)),
 				})
 			})
 
@@ -327,9 +328,10 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				yield* Effect.annotateCurrentSpan("maple.api_key.id", id)
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
-				const expiresAt = params.expiresInSeconds ? now + params.expiresInSeconds * 1000 : undefined
+				const expiresAt =
+					params.expiresInSeconds !== undefined ? now + params.expiresInSeconds * 1000 : undefined
 				const kind: ApiKeyKind = params.kind ?? "standard"
 				const scopes = params.scopes == null ? null : [...params.scopes]
 				const createdByEmail = params.createdByEmail ?? null
@@ -427,7 +429,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const id = decodeApiKeyIdSync(randomUUID())
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
 				const expiresAt = now + params.expiresInSeconds * 1000
 				const scopes = [...params.scopes]
@@ -531,7 +533,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				const id = decodeApiKeyIdSync(randomUUID())
 				const rawKey = generateApiKey()
 				const keyHash = hashApiKey(rawKey, hmacKey)
-				const keyPrefix = rawKey.slice(0, 12) + "..."
+				const keyPrefix = Str.slice(0, 12)(rawKey) + "..."
 				const now = yield* Clock.currentTimeMillis
 				const createdByEmail = params.createdByEmail ?? null
 
@@ -628,16 +630,17 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 				// Lost the claim: either the key never existed (404) or it was already
 				// revoked, in which case the stored row — not a freshly stamped copy —
 				// is the truth to report back.
-				if (revokedRows.length === 0) {
+				const [revoked] = revokedRows
+				if (revoked === undefined) {
 					const stored = yield* requireById(orgId, keyId)
 					return rowToResponse(stored)
 				}
 
-				return rowToResponse(revokedRows[0], readTxid(revokedRows))
+				return rowToResponse(revoked, readTxid(revokedRows))
 			})
 
 			const resolveByKey = Effect.fn("ApiKeysService.resolveByKey")(function* (rawKey: string) {
-				if (!rawKey.startsWith(API_KEY_PREFIX)) return Option.none()
+				if (!Str.startsWith(API_KEY_PREFIX)(rawKey)) return Option.none()
 
 				const keyHash = hashApiKey(rawKey, hmacKey)
 				const rows = yield* dbExecute((db) =>
@@ -691,10 +694,9 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			//     and Postgres writes no WAL tuple for a row it never touched. Without
 			//     it, isolate churn would put us straight back to a write per request.
 			//
-			// The Map is built per service instance rather than at module scope for the
-			// reason spelled out in ScrapeTargetsService — module scope would share one
-			// memo across every database in a process, which breaks tests that build a
-			// fresh PGlite per case.
+			// The Map is built per service instance rather than at module scope: module
+			// scope would share one memo across every database in a process, which breaks
+			// tests that build a fresh PGlite per case.
 			const LAST_USED_HEARTBEAT_MS = 5 * 60_000
 			const lastUsedTouchMemo = new Map<string, number>()
 
@@ -726,7 +728,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()(
 			const resolveByBearer = Effect.fn("ApiKeysService.resolveByBearer")(function* (
 				bearerToken: string | undefined,
 			) {
-				if (!bearerToken || !bearerToken.startsWith(API_KEY_PREFIX)) {
+				if (!bearerToken || !Str.startsWith(API_KEY_PREFIX)(bearerToken)) {
 					return Option.none<ResolvedApiKey>()
 				}
 

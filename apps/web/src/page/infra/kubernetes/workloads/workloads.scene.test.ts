@@ -3,7 +3,7 @@ import { Result, Schema, Array as Arr } from "effect"
 import { Command, expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as WorkloadDetail from "../workload/update"
 import { Message as DetailMessage } from "../workload/message"
@@ -23,6 +23,7 @@ const resolved = Frame.Message.CompletedResolveWindow({ window, nowMs: NOW, loca
 const NO_INTEGRATIONS = {
 	cloudflare: false,
 	railway: false,
+	vercel: false,
 	planetscale: false,
 	gcp: false,
 	supabase: false,

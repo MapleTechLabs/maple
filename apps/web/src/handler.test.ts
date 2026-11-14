@@ -1,4 +1,4 @@
-import { Effect, Tracer, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Tracer, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { API_PROXY_PREFIX, apiProxyPath } from "./api-proxy"
 import { handleRequest } from "./handler"
@@ -33,6 +33,17 @@ describe("apiProxyPath", () => {
 		expect(apiProxyPath("/_apikeys")).toBeUndefined()
 		expect(apiProxyPath("/api/chat")).toBeUndefined()
 	})
+
+	it("leaves the API's reference pages on the API's own origin", () => {
+		expect(apiProxyPath("/_api/docs")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/docs/")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/docs-like")).toBe("/v2/docs-like")
+		// However the path is spelled, if the API's router would read it as a reference page.
+		expect(apiProxyPath("/_api/%64ocs")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/doc%73")).toBeUndefined()
+		expect(apiProxyPath("/_api/docs;x")).toBeUndefined()
+		expect(apiProxyPath("/_api/v2/traces%2Fdocs")).toBe("/v2/traces%2Fdocs")
+	})
 })
 
 describe("handleRequest API proxy", () => {
@@ -54,6 +65,18 @@ describe("handleRequest API proxy", () => {
 		expect(request?.headers.get("authorization")).toBe("Bearer t")
 		expect(request?.headers.get("cf-connecting-ip")).toBe("203.0.113.7")
 		expect(await request?.text()).toBe("hello")
+	})
+
+	it("keeps the page's cookies out of the forwarded request", async () => {
+		const { env, forwarded } = recordingEnv()
+		await handleRequest(
+			new Request("https://app.maple.test/_api/v2/traces", {
+				headers: { authorization: "Bearer t", cookie: "__session=s; theme=dark" },
+			}),
+			env,
+		)
+		expect(forwarded[0]?.headers.get("cookie")).toBeNull()
+		expect(forwarded[0]?.headers.get("authorization")).toBe("Bearer t")
 	})
 
 	it("sends the API's host, not the app's, so OAuth callbacks stay on the API", async () => {
@@ -107,12 +130,51 @@ describe("handleRequest API proxy", () => {
 			env,
 			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
 		)
-		const server = spans.find((span) => span.kind === "server")
-		const client = spans.find((span) => span.kind === "client")
+		const server = Option.getOrUndefined(Arr.findFirst(spans, (span) => span.kind === "server"))
+		const client = Option.getOrUndefined(Arr.findFirst(spans, (span) => span.kind === "client"))
 		expect(server?.traceId).toBe(browserTraceId)
 		expect(server?.attributes.get("http.response.status_code")).toBe(201)
 		expect(client?.attributes.get("peer.service")).toBe("maple-api")
 		expect(forwarded[0]?.headers.get("traceparent")).toBe(`00-${browserTraceId}-${client?.spanId}-01`)
+	})
+})
+
+describe("share page trace", () => {
+	it("records a server span named for the route, with the token nowhere on it", async () => {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span: (options) => {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		await handleRequest(
+			new Request("https://app.maple.test/share/mshare_secret123"),
+			{ ASSETS: assets },
+			(effect) => Effect.runPromise(effect.pipe(Effect.provideService(Tracer.Tracer, tracer))),
+		)
+		expect(
+			Arr.map(spans, (span) => [
+				span.name,
+				span.kind,
+				span.attributes.get("http.response.status_code"),
+			]),
+		).toEqual([["GET /share/:token", "server", 200]])
+		const recorded = Arr.flatMap(spans, (span) => [
+			span.name,
+			...Arr.fromIterable(span.attributes.values()),
+		])
+		expect(Arr.filter(recorded, (value) => Str.includes("mshare_secret123")(String(value)))).toEqual([])
+	})
+
+	it("leaves an app route untraced: the assets layer serves it, not the Worker", async () => {
+		const traced: Array<unknown> = []
+		await handleRequest(new Request("https://app.maple.test/traces"), { ASSETS: assets }, (effect) => {
+			traced.push(effect)
+			return Effect.runPromise(effect)
+		})
+		expect(traced).toEqual([])
 	})
 })
 
@@ -134,6 +196,20 @@ describe("document security headers", () => {
 			referrer: "strict-origin-when-cross-origin",
 			sniff: "nosniff",
 		})
+	})
+
+	it("a share document built from the app shell drops the shell's frame ban", async () => {
+		// The assets layer attaches the app set to the shell it serves at "/".
+		const shell = {
+			fetch: async () =>
+				new Response("<html></html>", {
+					headers: { "content-type": "text/html", "x-frame-options": "DENY" },
+				}),
+		}
+		const response = await handleRequest(new Request("https://app.maple.test/share/tok"), {
+			ASSETS: shell,
+		})
+		expect(response.headers.get("x-frame-options")).toBeNull()
 	})
 
 	it("share documents stay frameable and keep no-referrer", async () => {
@@ -191,10 +267,14 @@ describe("WORKER_FIRST_PATHS", () => {
 		expect(Arr.filter(paths, (path) => !routedToWorker(path))).toEqual([])
 	})
 
+	it("reaches the Worker for a share page, whose preview tags only it can inline", () => {
+		expect(routedToWorker("/share/tok_123")).toBe(true)
+	})
+
 	it("leaves app routes and hashed assets to the assets layer", () => {
 		expect(
 			Arr.filter(
-				["/", "/alerts", "/alerts/chart", "/share/tok_123", "/assets/index-abc.js", "/chat"],
+				["/", "/alerts", "/alerts/chart", "/share", "/assets/index-abc.js", "/chat"],
 				routedToWorker,
 			),
 		).toEqual([])

@@ -1,7 +1,7 @@
 import type { V2GcpConnector } from "@maple/domain/http/v2"
 import { Command, type Update } from "foldkit"
-import { initConfigure } from "../../page/integrations/gcp-configure"
-import type { ConfigureModel } from "../../page/integrations/gcp-configure-schema"
+import { initConfigure } from "../../page/infra-integrations/gcp/integration/gcp-configure"
+import type { ConfigureModel } from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { Message as IntegrationsMessage } from "../../page/integrations/message"
 import type { Resources } from "../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -9,7 +9,7 @@ import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { type GcpLabFlags, hubOf, hubStep } from "../gcp-host"
 import { fixturesAt, LAB_STATES, type LabState, type MethodApplyState } from "./fixture"
 import { Message, type Model } from "./model"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 export type Return = Update.Return<Model, Message, Resources>
 
@@ -132,7 +132,7 @@ const isMethodState = (state: LabState): boolean => state === "method" || state 
 const hubMessage = (model: Model, message: IntegrationsMessage): Return => {
 	const pinned = model.pinnedScripts
 	if (pinned !== null && isFixtureNoop(message)) return { model }
-	// `MethodLab`: Back is a `noop`, Continue closes.
+	// Back is a `noop`, Continue closes.
 	if (isMethodState(model.state) && message._tag === "ClickedGcpRunEdit") return { model }
 	if (isMethodState(model.state) && message._tag === "ClickedGcpMethodContinue")
 		return hubMessage(model, IntegrationsMessage.ClosedGcpConfigure())
@@ -158,12 +158,13 @@ export const update = (model: Model, message: Message): Return =>
 			const commands = Command.mapMessages(step.commands ?? [], (child) =>
 				Message.GotStateGroupMessage({ message: child }),
 			)
-			const next = LAB_STATES.find(
+			const found = Arr.findFirst(
+				LAB_STATES,
 				(state) => state !== model.state && step.model.values.includes(state),
 			)
-			if (next === undefined)
+			if (Option.isNone(found))
 				return { model: { ...model, stateGroup: { ...step.model, values: [model.state] } }, commands }
-			const shown = show({ ...model, stateGroup: step.model }, next)
+			const shown = show({ ...model, stateGroup: step.model }, found.value)
 			return { ...shown, commands: [...commands, ...(shown.commands ?? [])] }
 		},
 		ClickedReopen: () => show(model, model.state),

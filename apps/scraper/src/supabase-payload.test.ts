@@ -17,7 +17,7 @@ import { otlpContext } from "./Scraper"
 const body = readFileSync(join(import.meta.dirname, "__fixtures__", "supabase-metrics.txt"), "utf8")
 const REF = "abcdefghijklmnopqrst"
 
-const TARGET = Schema.decodeUnknownSync(InternalScrapeTarget)({
+const TARGET = Schema.decodeSync(InternalScrapeTarget)({
 	id: "22222222-2222-4222-8222-222222222222",
 	orgId: "org_test",
 	name: "Supabase app",

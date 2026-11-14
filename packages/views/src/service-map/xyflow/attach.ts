@@ -30,8 +30,13 @@ export const animationAttribute = (animation: {
 export const readViewport = (renderer: Element): Viewport | undefined => {
 	const leaf = renderer.querySelector(".react-flow__viewport-portal")
 	const parts = Arr.map(Str.split(",")(leaf?.getAttribute(VIEWPORT_ATTRIBUTE) ?? ""), Number)
-	return parts.length === 3 && Arr.every(parts, Number.isFinite)
-		? { x: parts[0], y: parts[1], zoom: parts[2] }
+	const [x, y, zoom] = parts
+	return parts.length === 3 &&
+		x !== undefined &&
+		y !== undefined &&
+		zoom !== undefined &&
+		Arr.every(parts, Number.isFinite)
+		? { x, y, zoom }
 		: undefined
 }
 
@@ -87,7 +92,7 @@ const sameMeasurement = (a: MeasuredNode | undefined, b: MeasuredNode): boolean 
 	a.handles.length === b.handles.length &&
 	Arr.every(
 		a.handles,
-		(handle, index) => handle.x === b.handles[index].x && handle.y === b.handles[index].y,
+		(handle, index) => handle.x === b.handles[index]?.x && handle.y === b.handles[index]?.y,
 	)
 
 /** Measures nodes as they appear or resize, batching each observer callback into one Message. */
@@ -177,7 +182,7 @@ export const followLimits = (
 ): string =>
 	raw === null || raw === applied
 		? applied
-		: Option.match(Schema.decodeUnknownOption(FlowLimitsJson)(raw), {
+		: Option.match(Schema.decodeOption(FlowLimitsJson)(raw), {
 				onNone: () => applied,
 				onSome: (limits) => {
 					apply(limits)
@@ -251,10 +256,21 @@ const attachPanZoom = (
 	const animations = new MutationObserver(() => {
 		const leaf = renderer.querySelector(".react-flow__viewport-portal")
 		const parts = Arr.map(Str.split(",")(leaf?.getAttribute(ANIMATION_ATTRIBUTE) ?? ""), Number)
-		if (parts.length !== 5 || !Arr.every(parts, Number.isFinite) || parts[0] === started.seq) return
-		started.seq = parts[0]
+		const [seq, x, y, zoom, duration] = parts
+		if (
+			parts.length !== 5 ||
+			seq === undefined ||
+			x === undefined ||
+			y === undefined ||
+			zoom === undefined ||
+			duration === undefined ||
+			!Arr.every(parts, Number.isFinite) ||
+			seq === started.seq
+		)
+			return
+		started.seq = seq
 		sync()
-		void panZoom.setViewport({ x: parts[1], y: parts[2], zoom: parts[3] }, { duration: parts[4] })
+		void panZoom.setViewport({ x, y, zoom }, { duration })
 	})
 	animations.observe(renderer, { attributes: true, subtree: true, attributeFilter: [ANIMATION_ATTRIBUTE] })
 	return () => {
@@ -267,8 +283,10 @@ const attachPanZoom = (
 
 /** A node wrapper's flow position, read back from its `translate(x, y)`. */
 const nodeOrigin = (node: HTMLElement): XY => {
-	const match = node.style.transform.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)
-	return match === null ? { x: 0, y: 0 } : { x: Number(match[1]), y: Number(match[2]) }
+	return Option.match(Str.match(/translate\(([-\d.e]+)px,\s*([-\d.e]+)px\)/)(node.style.transform), {
+		onNone: () => ({ x: 0, y: 0 }),
+		onSome: (match) => ({ x: Number(match[1]), y: Number(match[2]) }),
+	})
 }
 
 type DragTarget = Pick<Window, "addEventListener" | "removeEventListener">
@@ -348,6 +366,7 @@ const attachNodeDrag = (renderer: HTMLElement, emit: (message: MountMessage) => 
 			if (state.dragging) emit(Message.EndedNodeDrag({ id, position: state.position }))
 			if (!state.moved) return
 			window.addEventListener("click", swallowClick, { capture: true, once: true })
+			// @effect-diagnostics-next-line globalTimers:off -- DOM pointer handler; drops the listener after this click
 			setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0)
 		}
 		drag.start(move, up)

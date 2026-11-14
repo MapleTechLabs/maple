@@ -24,7 +24,7 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { statRail, statRailItem } from "../../kit/stat-rail"
 import { alertStatusBadge } from "../shared/badges"
-import { msIso } from "../shared/time"
+import { msIso } from "../../kit/alert-time"
 import { Message } from "./message"
 import type { Model, StateFilter } from "./model"
 import { incidentMenuId } from "./update"
@@ -32,8 +32,7 @@ import { sectionHeading } from "../../kit/section-heading"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// The rule detail's History tab.
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 
@@ -108,7 +107,7 @@ export const historyTab = (
 															"min-w-0 max-w-[160px] shrink justify-start text-xs",
 														attributes: [h.Title(groupKey)],
 													},
-													[h.span([h.Class("truncate")], [groupKey])],
+													[typography(h, { truncate: true }, [groupKey])],
 												),
 												meter(h, {
 													value: count,
@@ -195,20 +194,17 @@ export const historyTab = (
 					]),
 			...(visible.length < filtered.length
 				? [
-						h.div(
-							[h.Class("flex justify-center pt-3")],
-							[
-								button(
-									h,
-									{
-										variant: "outline",
-										size: "sm",
-										attributes: [h.OnClick(Message.ClickedShowAllIncidents())],
-									},
-									[`Show all ${filtered.length.toLocaleString("en-US")}`],
-								),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "center", className: "pt-3" }, [
+							button(
+								h,
+								{
+									variant: "outline",
+									size: "sm",
+									attributes: [h.OnClick(Message.ClickedShowAllIncidents())],
+								},
+								[`Show all ${filtered.length.toLocaleString("en-US")}`],
+							),
+						]),
 					]
 				: []),
 		],
@@ -233,9 +229,9 @@ const incidentRow = (
 			h.span(
 				[
 					h.Class("block max-w-[180px] truncate font-mono text-muted-foreground"),
-					h.Title(incident.groupKey ?? "all"),
+					h.Title(incident.groupLabel ?? incident.groupKey ?? "all"),
 				],
-				[incident.groupKey ?? "all"],
+				[incident.groupLabel ?? incident.groupKey ?? "all"],
 			),
 		]),
 		tableCell(h, [
@@ -269,40 +265,34 @@ const incidentRow = (
 		]),
 		tableCell(h, [
 			incident.errorIssueId != null
-				? h.a(
-						[
-							h.Href(
-								hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} })),
-							),
-							h.Class(
-								"text-xs text-primary underline-offset-4 hover:underline active:underline",
-							),
-						],
+				? textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.ErrorIssue({ issueId: incident.errorIssueId, search: {} })),
+							className: "text-xs font-normal underline-offset-4",
+						},
 						["View"],
 					)
 				: typography(h, { size: "xs", tone: "subtle" }, [EMPTY_VALUE]),
 		]),
 		tableCell(h, [
-			h.div(
-				[h.Class("flex items-center justify-end gap-1")],
-				[
-					rowActionsMenu(h, {
-						slotId: menuId,
-						model: model.menus[menuId] ?? Menu.init(menuId),
-						entries: [
-							{
-								_tag: "Item",
-								value: "investigate",
-								label: "Open investigation",
-								icon: "ChatBubbleSparkleIcon",
-							},
-							{ _tag: "Item", value: "all", label: "View all incidents" },
-						],
-						label: "Incident actions",
-						toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
-					}),
-				],
-			),
+			hstack(h, { gap: "1", align: "center", justify: "end" }, [
+				rowActionsMenu(h, {
+					slotId: menuId,
+					model: model.menus[menuId] ?? Menu.init(menuId),
+					entries: [
+						{
+							_tag: "Item",
+							value: "investigate",
+							label: "Open investigation",
+							icon: "ChatBubbleSparkleIcon",
+						},
+						{ _tag: "Item", value: "all", label: "View all incidents" },
+					],
+					label: "Incident actions",
+					toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+				}),
+			]),
 		]),
 	])
 }

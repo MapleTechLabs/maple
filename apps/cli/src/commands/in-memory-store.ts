@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statfsSync, statSync } 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { SERVER_PID_NAME } from "@maple/local-server/store-version"
-import { isProcessAlive } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { ServerStateFileError, stateFileError } from "@maple/local-server/store-errors"
 
 /**

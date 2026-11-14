@@ -12,7 +12,7 @@ import {
 } from "./flow-graph"
 import { describeSpan, SPAN_CATEGORIES, type SpanCategory } from "./span-category"
 
-/** `TraceFlowView` (packages/ui `traces/flow-view.tsx`) as a Submodel over a fixed trace. */
+/** The trace flow as a Submodel over a fixed trace. */
 
 /** Past this many nodes the layout and render cost outweighs what the graph can still show. */
 export const MAX_FLOW_NODES = 1500
@@ -104,7 +104,12 @@ export const FIT_ALL: Canvas.FitRequest = { padding: 0.2, minZoom: 0.1, maxZoom:
 /** The first real root: the node no edge points at, skipping missing-span placeholders. */
 const rootNodeId = (graph: FlowGraph): string | undefined => {
 	const targets = new Set(Arr.map(graph.edges, (edge) => edge.target))
-	return graph.nodes.find((node) => !targets.has(node.id) && node.data.span.isMissing !== true)?.id
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(graph.nodes, (node) => !targets.has(node.id) && node.data.span.isMissing !== true),
+			(node) => node.id,
+		),
+	)
 }
 
 const refit = (model: Model, graph: FlowGraph, request: Canvas.FitRequest = model.fit): Model => {

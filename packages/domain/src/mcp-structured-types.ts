@@ -14,12 +14,6 @@ export type StructuredToolOutput = {
 	}
 }[keyof typeof McpToolOutputs]
 
-/** The payload of one tool. */
-export type StructuredToolData<Tool extends StructuredToolOutput["tool"]> = Extract<
-	StructuredToolOutput,
-	{ readonly tool: Tool }
->["data"]
-
 export type AlertCheckRow = typeof Outputs.AlertCheckRow.Type
 export type AlertDestinationRow = typeof Outputs.AlertDestinationRow.Type
 export type AlertIncidentRow = typeof Outputs.AlertIncidentRow.Type

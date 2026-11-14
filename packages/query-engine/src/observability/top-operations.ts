@@ -14,6 +14,9 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 	readonly metric: TracesMetric
 	readonly timeRange: TimeRange
 	readonly limit?: number
+	readonly environment?: string
+	/** Skip the operation rollups, for a cluster that turned out not to have them. */
+	readonly rawOnly?: boolean
 }) {
 	const executor = yield* WarehouseExecutor
 
@@ -28,6 +31,8 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 			service_name: input.serviceName,
 			metric: input.metric,
 			limit: input.limit ?? 20,
+			...(input.environment === undefined ? undefined : { environment: input.environment }),
+			...(input.rawOnly === true ? { raw_only: "1" } : undefined),
 			start_time: input.timeRange.startTime,
 			end_time: input.timeRange.endTime,
 		},

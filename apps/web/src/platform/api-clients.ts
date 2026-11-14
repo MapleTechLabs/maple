@@ -1,9 +1,9 @@
 import { MapleAiApi, MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { isBillingRequest, transformMapleApiClient } from "../lib/services/common/api-client-transform"
-import { apiBaseUrl } from "../lib/services/common/api-base-url"
-import { withRequestTimeout } from "../lib/services/common/http-client"
-import { withUnauthorizedResign } from "../lib/services/common/retry-policy"
+import { isResignedOnUnauthorized, transformMapleApiClient } from "./api-client-transform"
+import { apiBaseUrl } from "./api-base-url"
+import { withRequestTimeout } from "./http-client"
+import { withUnauthorizedResign } from "./retry-policy"
 import { Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
@@ -12,7 +12,7 @@ import { SessionBearer } from "./session-bearer"
 
 /**
  * The API HTTP client: requests to the API carry the session bearer, every request has
- * the same 45 s deadline, and billing reads that 401 are resent with a fresh bearer.
+ * the same 45 s deadline, and billing reads and org creation that 401 are resent with a fresh bearer.
  */
 const MapleHttpClientLive = Layer.effect(
 	HttpClient.HttpClient,
@@ -33,7 +33,8 @@ const MapleHttpClientLive = Layer.effect(
 		// client's request mapping, so `authorize` would only ever see relative URLs.
 		const absolute = HttpClient.mapRequest(client, HttpClientRequest.prependUrl(apiBaseUrl))
 		return withUnauthorizedResign(withRequestTimeout(HttpClient.mapRequestEffect(absolute, authorize)), {
-			shouldRetry: (request) => Str.startsWith(apiBaseUrl)(request.url) && isBillingRequest(request),
+			shouldRetry: (request) =>
+				Str.startsWith(apiBaseUrl)(request.url) && isResignedOnUnauthorized(request),
 			freshToken: bearer.freshToken,
 		})
 	}),
@@ -67,7 +68,7 @@ export class MapleApiV2Client extends Context.Service<MapleApiV2Client, Effect.S
 	static readonly layer = Layer.effect(this, makeApiV2).pipe(Layer.provide(MapleHttpClientLive))
 }
 
-/** `MapleAiAtomClient`: chat and AI endpoints. */
+/** Chat and AI endpoints. */
 export class MapleAiClient extends Context.Service<MapleAiClient, Effect.Success<typeof makeAiApi>>()(
 	"@maple/web/MapleAiClient",
 ) {

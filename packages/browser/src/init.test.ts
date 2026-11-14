@@ -28,7 +28,14 @@ vi.mock("@maple/browser-session/replay", () => ({
 }))
 
 import { resetSinkForTests } from "../../browser-session/src/events/events-sink"
-import { identify, init } from "./init"
+import type { MapleBrowserConfig } from "./config"
+import { identify, init, type MapleBrowserHandle } from "./init"
+
+/** `init` as plain JS can call it, with no argument: the method form lets the required one stand in. */
+interface PlainJsInit {
+	init(config?: MapleBrowserConfig): MapleBrowserHandle
+}
+const plainJs: PlainJsInit = { init }
 
 class MemoryStorage {
 	private readonly values = new Map<string, string>()
@@ -80,6 +87,12 @@ describe("lazy replay chunk", () => {
 		expect(handle.sessionId).not.toBe("")
 		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
 		expect(handle.sessionId).toBe("replay-session")
+		// The sink the replay session starts after a rotation skips the same noise.
+		const { isErrorNoise: filter } = replay.start.mock.calls[0]?.[0] ?? {}
+		expect(
+			filter("ResizeObserver loop completed with undelivered notifications.", "window.onerror"),
+		).toBe(true)
+		expect(filter(new Error("boom"), "window.onerror", "https://app.example.com/app.js")).toBe(false)
 
 		await handle.shutdown()
 		expect(replay.shutdown).toHaveBeenCalledWith({ flush: true })
@@ -162,6 +175,47 @@ describe("browser consent lifecycle", () => {
 		expect(eventBodies).not.toContain("discard-me")
 		expect(eventBodies).toContain("keep-me")
 		expect(tracing.shutdown).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("init from a broken call site", () => {
+	it("starts on defaults when called with no config at all", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		stubBrowser()
+
+		const handle = plainJs.init()
+
+		// A live session, not the no-op handle: only the service name is missing.
+		expect(handle.sessionId).not.toBe("")
+		expect(warn.mock.calls.map((call) => String(call[0])).join("\n")).toContain("serviceName")
+		await handle.shutdown()
+		warn.mockRestore()
+	})
+
+	it("returns a handle that does nothing when startup throws, and a later init works", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		stubBrowser()
+		tracing.setup.mockImplementationOnce(() => {
+			throw new Error("tracing broke")
+		})
+		const config = {
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			replay: { enabled: false },
+		}
+
+		const broken = init(config)
+
+		expect(broken.sessionId).toBe("")
+		await broken.shutdown()
+		expect(warn.mock.calls.map((call) => String(call[0])).join("\n")).toContain("init() failed")
+
+		// The failed start left nothing behind that blocks the next one.
+		const handle = init(config)
+		await vi.waitFor(() => expect(handle.sessionId).not.toBe(""))
+		await handle.shutdown()
+		warn.mockRestore()
 	})
 })
 

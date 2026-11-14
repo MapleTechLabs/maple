@@ -3,7 +3,7 @@ import { truncate } from "../lib/format"
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListIntegrationsOutput } from "@maple/domain/mcp-outputs"
 import { INTEGRATION_PROVIDERS, type IntegrationInventory } from "@maple/domain/integration-inventory"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
@@ -20,7 +20,7 @@ const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOStrin
 type Output = typeof ListIntegrationsOutput.Type
 
 /** Providers whose data `list_infra` reads. */
-const PLATFORM_PROVIDERS: ReadonlySet<string> = new Set(["cloudflare", "railway", "planetscale"])
+const PLATFORM_PROVIDERS: ReadonlySet<string> = new Set(["cloudflare", "railway", "planetscale", "vercel"])
 
 /** Where each provider's data is read next, once the integration is known to deliver it. */
 const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<NextCall> => {
@@ -63,6 +63,23 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 					"database CPU, memory, storage and replica lag",
 				),
 			]
+		case "vercel":
+			return [
+				doc.next(
+					"list_infra",
+					{ kind: "vercel_projects" },
+					"Vercel projects' requests, 5xx rate and error logs from the log drain",
+				),
+			]
+		case "search_console":
+			return [
+				doc.next("search_console_queries", {}, "search queries with clicks, CTR and position"),
+				doc.next(
+					"search_console_pages",
+					{},
+					"search landing pages with Maple sessions, bounce rate and conversions",
+				),
+			]
 		case "chat":
 			return []
 	}
@@ -73,19 +90,18 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Integrations",
 		description:
-			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, PlanetScale, " +
+			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, Vercel, PlanetScale, Google Search Console, " +
 			"Prometheus scrape targets, chat workspaces), what Maple data each one feeds, and whether it is working: " +
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
-			"environments, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
-			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers. Which sender stopped sending: list_sources.",
+			"environments, Vercel drains, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
+			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers. Which sender stopped sending: list_ingest_sources.",
 		parameters: Schema.Struct({
 			provider: P.optionalOneOf(
 				INTEGRATION_PROVIDERS,
 				"Only this provider, with all of its resources. Omit for every provider with its worst resources",
 			),
 		}),
-		output: ListIntegrationsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking integrations", "Listing connected integrations"],
 		handler: Effect.fn("McpTool.listIntegrations")(function* ({ provider }) {

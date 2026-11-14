@@ -6,8 +6,7 @@ import { listStatusOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `useListNavigation` + `useAppHotkey("issue.status" | "issue.severity")`: the list's keys, from
-// anywhere on the page, while no dialog is open and no field has focus.
+// The list's keys, from anywhere on the page, while no dialog is open and no field has focus.
 
 const LIST_KEYS = new Set([
 	"j",

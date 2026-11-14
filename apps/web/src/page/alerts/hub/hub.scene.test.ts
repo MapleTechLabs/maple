@@ -1,5 +1,14 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
-import { AlertDestinationId, AlertRuleId } from "@maple/domain/http"
+import {
+	AlertDeliveryError,
+	AlertDeliveryAuthError,
+	AlertDeliveryRejectedError,
+	AlertDeliveryTargetMissingError,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+} from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -12,14 +21,27 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { encodePublicId, PublicIdPrefixes, publicError, V2AlertIncident } from "@maple/domain/http/v2"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
+import {
+	destinationRow,
+	hubAt,
+	type HubAt,
+	incidentRow,
+	NOW,
+	ORG,
+	ruleId,
+	ruleRow,
+	stateRow,
+} from "../../kit/alert-test-rows"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, ruleMenuId, update } from "./update"
-import { view as pageView } from "./view"
+import { init, routeChanged, ruleMenuId, update } from "./update"
+import { breadcrumbs, view as pageView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -30,10 +52,10 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const RULE_2 = Schema.decodeSync(AlertRuleId)(ruleId(2))
 const DESTINATION = Schema.decodeSync(AlertDestinationId)(destinationRow().id)
 
-const entered = (search: Model["search"] = {}) => init({ _tag: "Alerts", search }, context)
+const entered = (at: HubAt = {}) => init(hubAt(at), context)
 
 /** The four shapes and the clock have answered: rule 2 is firing, rule 4 is off. */
-const loaded = (search: Model["search"] = {}): Model =>
+const loaded = (at: HubAt = {}): Model =>
 	Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
@@ -54,9 +76,9 @@ const loaded = (search: Model["search"] = {}): Model =>
 				rows: [incidentRow({ rule_name: "Payment p95 latency" })],
 			}),
 			Message.UpdatedDestinations({ orgId: ORG, rows: [destinationRow()] }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 		],
-		entered(search).model,
+		entered(at).model,
 		(model, message) => pageUpdate(model, message).model,
 	)
 
@@ -84,11 +106,240 @@ describe("alerts hub", () => {
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(text("1 firing")).toExist(),
-			expectView(role("link", { name: "P95 latency 1.84s on all" })).toHaveAttr(
+			expectView(role("link", { name: "P95 latency 1.84s" })).toHaveAttr(
 				"href",
 				"/alerts/incidents/0199a003-0000-7000-8000-000000000001",
 			),
 		)
+	})
+
+	test("each section's own path opens it, titled by it with its crumbs", () => {
+		const sections = [
+			["rules", "Rules"],
+			["uptime", "Uptime"],
+			["slos", "SLOs"],
+			["silences", "Silences"],
+			["maintenance", "Maintenance"],
+			["on-call", "On-call"],
+			["routing", "Routing"],
+		] as const
+		for (const [tab, label] of sections) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(role("heading", { name: label })).toExist(),
+			)
+			expect(breadcrumbs(loaded({ tab }))).toEqual([{ label: "Alerts", href: "/alerts" }, { label }])
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded()),
+			expectView(role("heading", { name: "Inbox" })).toExist(),
+		)
+	})
+
+	test("each section's header has one primary action: its own, and New rule only on the Inbox and Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const moreKinds = role("button", { name: "More rule types" })
+		for (const tab of ["inbox", "rules"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).toHaveAttr("href", "/alerts/create"),
+				expectView(moreKinds).toExist(),
+			)
+		}
+		for (const tab of ["uptime", "slos", "silences", "maintenance", "on-call", "routing"] as const) {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded({ tab })),
+				expectView(newRule).not.toExist(),
+				expectView(moreKinds).not.toExist(),
+			)
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "silences" })),
+			expectView(role("button", { name: "New silence" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "routing" })),
+			expectView(role("button", { name: "Add destination" })).toExist(),
+		)
+		// A viewer who can't create a section's thing gets no header action there.
+		const asMember = pageUpdate(
+			loaded({ tab: "silences" }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: Policy.grantsOf(["org:member"]) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(asMember),
+			expectView(role("button", { name: "New silence" })).not.toExist(),
+			expectView(newRule).not.toExist(),
+		)
+	})
+
+	test("an org without rules gets the create actions from the empty state alone, on the Inbox and on Rules", () => {
+		const newRule = role("link", { name: "New rule" })
+		const firstRun = (at: HubAt, grants = ENGINEER): Model =>
+			Arr.reduce(
+				[
+					Message.ReadClock({ nowMs: NOW }),
+					Message.UpdatedRules({ orgId: ORG, rows: [] }),
+					Message.UpdatedRuleStates({ orgId: ORG, rows: [] }),
+					Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+					Message.UpdatedDestinations({ orgId: ORG, rows: [] }),
+					Message.CompletedFetchSession({ orgId: ORG, grants }),
+				],
+				entered(at).model,
+				(model, message) => pageUpdate(model, message).model,
+			)
+		const tabs: ReadonlyArray<"inbox" | "rules"> = ["inbox", "rules"]
+		Arr.forEach(tabs, (tab) => {
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab })),
+				expectView(role("link", { name: "Start from scratch" })).toExist(),
+				expectView(role("button", { name: "Add destination" })).toExist(),
+				expectView(newRule).not.toExist(),
+				expectView(role("button", { name: "More rule types" })).not.toExist(),
+			)
+			// A member's empty state offers nothing to create, so the header keeps its action.
+			scene(
+				{ update: pageUpdate, view },
+				given(firstRun({ tab }, Policy.grantsOf(["org:member"]))),
+				expectView(role("link", { name: "Start from scratch" })).not.toExist(),
+				expectView(newRule).toExist(),
+			)
+		})
+		// Still loading: nothing says the org is empty yet.
+		scene({ update: pageUpdate, view }, given(entered().model), expectView(newRule).toExist())
+	})
+
+	test("moving between sections keeps what was read: the Inbox and Rules share it, a section reads its own once", () => {
+		const inbox = loaded()
+		expect(names(routeChanged(inbox, hubAt({ tab: "rules" }), context).commands)).toEqual([
+			"ReadAlertsHubClock",
+		])
+		const uptime = routeChanged(inbox, hubAt({ tab: "uptime" }), context)
+		expect(names(uptime.commands)).toContain("FetchAlertsHubMonitors")
+		const back = routeChanged(uptime.model, hubAt(), context)
+		expect(names(routeChanged(back.model, hubAt({ tab: "uptime" }), context).commands)).not.toContain(
+			"FetchAlertsHubMonitors",
+		)
+	})
+
+	const v2Incident = Schema.decodeSync(V2AlertIncident)({
+		id: encodePublicId(PublicIdPrefixes.alertIncident, incidentRow().id),
+		object: "alert_incident",
+		rule_id: encodePublicId(PublicIdPrefixes.alertRule, ruleId(2)),
+		rule_name: "Payment p95 latency",
+		group_key: null,
+		signal_type: "p95_latency",
+		severity: "critical",
+		peak_severity: null,
+		status: "open",
+		comparator: "gt",
+		threshold: 1500,
+		threshold_upper: null,
+		first_triggered_at: new Date(NOW).toISOString(),
+		last_triggered_at: new Date(NOW).toISOString(),
+		resolved_at: null,
+		last_observed_value: 1840,
+		last_sample_count: 10,
+		dedupe_key: "d",
+		last_delivered_event_type: null,
+		last_notified_at: null,
+		hold_reason: null,
+		held_since: null,
+		acknowledged_at: null,
+		acknowledged_by: null,
+		acknowledged_via: null,
+		error_issue_id: null,
+		escalation: null,
+		silence_id: null,
+		silenced_at: null,
+	})
+
+	test("the inbox acknowledges a firing incident and moves it out of the firing count", () => {
+		const incidentId = Schema.decodeSync(AlertIncidentId)(incidentRow().id)
+		const acknowledged = pageUpdate(
+			loaded(),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					incidentRow({
+						rule_name: "Payment p95 latency",
+						acknowledged_at: new Date(NOW - 60_000).toISOString(),
+						acknowledged_by_name: "Dana Kim",
+						acknowledged_via: "slack",
+					}),
+				],
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(acknowledged),
+			expectView(text("0 firing")).toExist(),
+			expectView(text(/1 acknowledged/)).toExist(),
+			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
+			expectView(role("button", { name: "Unacknowledge P95 latency 1.84s" })).toExist(),
+		)
+		const clicked = pageUpdate(
+			loaded(),
+			Message.ClickedAcknowledgeIncident({ incidentId, acknowledged: true }),
+		)
+		expect(names(clicked.commands)).toEqual(["AcknowledgeAlertIncident"])
+		expect(clicked.model.acknowledgingIncidentIds).toEqual([incidentId])
+		const twice = pageUpdate(
+			clicked.model,
+			Message.ClickedAcknowledgeIncident({ incidentId, acknowledged: true }),
+		)
+		expect(twice.commands ?? []).toHaveLength(0)
+		const failed = pageUpdate(
+			clicked.model,
+			Message.CompletedAcknowledgeIncident({
+				incidentId,
+				acknowledged: true,
+				result: Result.fail(toLoadFailure(new Error("boom"))),
+			}),
+		)
+		expect(failed.model.acknowledgingIncidentIds).toEqual([])
+		// Success patches the synced row from the answer, so the row moves before the sync catches up.
+		const answered = Schema.decodeSync(V2AlertIncident)({
+			...Schema.encodeSync(V2AlertIncident)(v2Incident),
+			acknowledged_at: new Date(NOW - 60_000).toISOString(),
+			acknowledged_by: { user_id: null, name: "Dana Kim" },
+			acknowledged_via: "web",
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(clicked.model),
+			expectView(text(/1 acknowledged/)).not.toExist(),
+		)
+		const succeeded = pageUpdate(
+			clicked.model,
+			Message.CompletedAcknowledgeIncident({
+				incidentId,
+				acknowledged: true,
+				result: Result.succeed(answered),
+			}),
+		)
+		expect(succeeded.model.acknowledgingIncidentIds).toEqual([])
+		// Only an acknowledgement that landed is the product event.
+		expect(names(succeeded.commands)).toContain("TrackHubIncidentAcknowledged")
+		expect(names(failed.commands)).not.toContain("TrackHubIncidentAcknowledged")
+		scene(
+			{ update: pageUpdate, view },
+			given(succeeded.model),
+			expectView(text(/1 acknowledged/)).toExist(),
+			expectView(text(/^Acknowledged by Dana Kim ·/)).toExist(),
+		)
+		expect(failed.outMessage).toMatchObject({
+			_tag: "RequestedToast",
+			title: "Couldn't acknowledge the incident",
+		})
 	})
 
 	test("a live sync that stops before its first answer shows the failure with a retry, not a skeleton", () => {
@@ -155,6 +406,90 @@ describe("alerts hub", () => {
 		)
 	})
 
+	test("a rule's whole row is one link to the rule, with its actions menu beside it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "rules" })),
+			expectView(role("link", { name: "Payment p95 latency" })).toHaveAttr(
+				"href",
+				`/alerts/rules/${ruleId(2)}`,
+			),
+			expectView(role("button", { name: "Actions for Payment p95 latency" })).toExist(),
+		)
+	})
+
+	test("untagged rules alone get no group header; with a tagged rule each group is named", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded({ tab: "rules" })),
+			expectView(text("No tag")).not.toExist(),
+		)
+		const tagged = pageUpdate(
+			loaded({ tab: "rules" }),
+			Message.UpdatedRules({ orgId: ORG, rows: [ruleRow(1), ruleRow(2, { tags_json: ["api"] })] }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(tagged),
+			expectView(text("No tag")).toExist(),
+			expectView(text("api")).toExist(),
+		)
+	})
+
+	test("a quiet Inbox stays calm: no Anomalies toggle without anomalies, MTTR n/a, an ungrouped reading has no group line", () => {
+		// Nothing open, and one rule routed nowhere: a blind spot, so the last 24 hours are drawn.
+		const quiet = Arr.reduce(
+			[
+				Message.UpdatedIncidents({ orgId: ORG, rows: [] }),
+				Message.UpdatedRules({
+					orgId: ORG,
+					rows: [
+						ruleRow(1, { destination_ids_json: [] }),
+						ruleRow(2, { name: "Payment p95 latency" }),
+					],
+				}),
+			],
+			loaded(),
+			(model, message) => pageUpdate(model, message).model,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(quiet),
+			expectView(role("heading", { name: /^Nothing firing/ })).toExist(),
+			expectView(role("button", { name: /^Anomalies/ })).not.toExist(),
+			expectView(text("0 incidents · MTTR n/a · 0 rules fired")).toExist(),
+			expectView(role("link", { name: "Payment p95 latency" })).toExist(),
+			expectView(text("all")).not.toExist(),
+			expectView(text("__total__")).not.toExist(),
+		)
+	})
+
+	test("acknowledged and unacknowledged incidents both offer a button to flip the state", () => {
+		const acknowledged = pageUpdate(
+			loaded(),
+			Message.UpdatedIncidents({
+				orgId: ORG,
+				rows: [
+					incidentRow({ rule_name: "Payment p95 latency" }),
+					incidentRow({
+						id: "0199a003-0000-7000-8000-000000000002",
+						rule_name: "Payment p95 latency",
+						group_key: "checkout",
+						acknowledged_at: new Date(NOW - 60_000).toISOString(),
+						acknowledged_by_name: "Dana Kim",
+						acknowledged_via: "slack",
+					}),
+				],
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(acknowledged),
+			expectView(role("button", { name: /^Acknowledge / })).toExist(),
+			expectView(role("button", { name: /^Unacknowledge / })).toExist(),
+		)
+	})
+
 	test("a status chip writes its bucket to the URL, and pressing it again clears it", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -162,7 +497,7 @@ describe("alerts hub", () => {
 			click(role("button", { name: /^Firing/ })),
 			expectOutMessage(
 				PageOutMessage.RequestedNavigation({
-					url: "/alerts?tab=rules&status=firing",
+					url: "/alerts/rules?status=firing",
 					isReplace: false,
 				}),
 			),
@@ -172,7 +507,7 @@ describe("alerts hub", () => {
 			Message.ClickedStatusFilter({ bucket: "firing" }),
 		)
 		expect(cleared.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=rules", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/alerts/rules", isReplace: false }),
 		)
 	})
 
@@ -219,6 +554,56 @@ describe("alerts hub", () => {
 				title: "Test notification sent",
 				description: "",
 			}),
+		)
+	})
+
+	test("a failed destination test names the provider's HTTP status when it gave one", () => {
+		// The v2 client hands the page the wire envelope, not the server's class instance.
+		const rejected = (error: AlertDeliveryRejectedError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryRejectedError))(error))
+		const failed = (error: AlertDeliveryError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryError))(error))
+		const authFailed = (error: AlertDeliveryAuthError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryAuthError))(error))
+		const targetMissing = (error: AlertDeliveryTargetMissingError) =>
+			toLoadFailure(Schema.encodeSync(publicError(AlertDeliveryTargetMissingError))(error))
+		const toastFor = (failure: ReturnType<typeof toLoadFailure>) =>
+			pageUpdate(
+				loaded({ tab: "routing" }),
+				Message.CompletedTestDestination({
+					destinationId: DESTINATION,
+					result: Result.fail(failure),
+				}),
+			).outMessage
+		const toastSaying = (description: string) =>
+			PageOutMessage.RequestedToast({
+				type: "error",
+				title: "Couldn't send test notification",
+				description,
+			})
+
+		expect(
+			toastFor(rejected(new AlertDeliveryRejectedError({ message: "x", providerStatus: 405 }))),
+		).toEqual(toastSaying("The alert provider rejected the request (HTTP 405)"))
+		expect(toastFor(failed(new AlertDeliveryError({ message: "x", providerStatus: 502 })))).toEqual(
+			toastSaying("The alert provider failed (HTTP 502)"),
+		)
+		expect(
+			toastFor(authFailed(new AlertDeliveryAuthError({ message: "x", providerStatus: 401 }))),
+		).toEqual(
+			toastSaying("The destination rejected Maple's credentials. Reconnect it in settings. (HTTP 401)"),
+		)
+		expect(
+			toastFor(
+				targetMissing(new AlertDeliveryTargetMissingError({ message: "x", providerStatus: 404 })),
+			),
+		).toEqual(
+			toastSaying(
+				"The destination no longer exists or is not reachable. Update it in settings. (HTTP 404)",
+			),
+		)
+		expect(toastFor(rejected(new AlertDeliveryRejectedError({ message: "x" })))).toEqual(
+			toastSaying("The alert provider rejected the request."),
 		)
 	})
 

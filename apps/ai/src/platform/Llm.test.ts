@@ -2,10 +2,8 @@
 /**
  * Wire-level proof that OpenRouter calls are attributed and tagged.
  *
- * `LLMClient.prepare` is deliberately not used here: it returns the *protocol* body, which is built
- * before `http.body` is overlaid onto it, so it cannot see the tags at all. The only place the tags
- * and the attribution headers exist together is the outgoing HTTP request — so the test swaps
- * `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
+ * The only place the tags and the attribution headers exist together is the outgoing HTTP request,
+ * so the test swaps `FetchHttpClient.Fetch` for a capture and reads what would have gone over the wire.
  *
  * The fake responds 400, which the provider classifies as a non-retryable invalid request. That
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
@@ -21,7 +19,7 @@ import {
 	Array as Arr,
 	String as Str,
 } from "effect"
-import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/ai"
+import { Decision, DecisionModel, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
@@ -36,6 +34,7 @@ import {
 	resolveReviewModel,
 	resolveSecurityAuditModel,
 	securityAuditModelId,
+	resolveSecurityAuditDiscoveryFallback,
 	securityAuditModelIds,
 	DEFAULT_AUDIT_MODELS,
 	resolveTriageModel,
@@ -51,15 +50,20 @@ interface CapturedRequest {
 }
 
 /**
- * Run one `LLM.generate` against a fetch that records the request instead of sending it.
+ * Run one `LanguageModel.generateText` against a fetch that records the request instead of sending it.
  *
- * `resolve` picks which resolver builds the model, because the lens stage differs from triage in its
- * defaults and the only honest way to check a default is to watch what leaves.
+ * `resolve` picks which resolver builds the model, because the review model differs from triage in
+ * its defaults and the only honest way to check a default is to watch what leaves.
  */
 const captureRequest = (
 	env: LlmSettings,
 	tags?: LlmCallTags,
 	resolve: (env: LlmSettings, tags?: LlmCallTags) => ResolvedModel = resolveTriageModel,
+	declareTool = false,
+	prompt: Prompt.RawInput = [
+		{ role: "system" as const, content: "You are concise." },
+		{ role: "user" as const, content: "hi" },
+	],
 ): Effect.Effect<CapturedRequest> =>
 	Effect.gen(function* () {
 		let captured: CapturedRequest | undefined
@@ -81,12 +85,16 @@ const captureRequest = (
 
 		const model = resolve(env, tags)
 
-		yield* LanguageModel.generateText({
-			prompt: [
-				{ role: "system", content: "You are concise." },
-				{ role: "user", content: "hi" },
-			],
-		}).pipe(
+		const call = declareTool
+			? Effect.asVoid(
+					LanguageModel.generateText({
+						prompt,
+						toolkit: Toolkit.make(listServices),
+						disableToolCallResolution: true,
+					}),
+				)
+			: Effect.asVoid(LanguageModel.generateText({ prompt }))
+		yield* call.pipe(
 			Effect.provide(model.layer),
 			Effect.ignore,
 			Effect.provide(layerLlm(env)),
@@ -174,6 +182,17 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 		}).pipe(Effect.withSpan("chat")),
 	)
 
+	it.live("leaves strict off a tool with no strict annotation, since some upstreams reject null", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureRequest(openRouterEnv, tags, resolveTriageModel, true)
+
+			// An exact match: a `strict: null` key left on the function fails it.
+			expect(captured.body.tools).toEqual([
+				{ type: "function", function: { name: "list_services", parameters: expect.anything() } },
+			])
+		}),
+	)
+
 	it.live("keeps the headers and tags off the Workers AI path", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureRequest(
@@ -193,8 +212,127 @@ describe("resolveTriageModel — OpenRouter attribution", () => {
 	)
 })
 
+const WireBlock = Schema.Struct({ text: Schema.String, cache_control: Schema.optionalKey(Schema.Unknown) })
+const WireMessages = Schema.Array(
+	Schema.Struct({
+		role: Schema.String,
+		content: Schema.Union([Schema.String, Schema.Null, Schema.Array(WireBlock)]),
+	}),
+)
+
+/** Each message as the model reads it, and whether it carries the cache breakpoint. */
+const wireMessages = (body: Record<string, unknown>) =>
+	Arr.map(Schema.decodeUnknownSync(WireMessages)(body.messages), (message) => {
+		const blocks =
+			typeof message.content === "string" ? [{ text: message.content }] : (message.content ?? [])
+		return {
+			role: message.role,
+			text: Arr.join(
+				Arr.map(blocks, (block) => block.text),
+				"",
+			),
+			breakpoint: Arr.some(blocks, (block) => "cache_control" in block),
+		}
+	})
+
+const readable = (messages: ReturnType<typeof wireMessages>) =>
+	Arr.map(messages, ({ role, text }) => ({ role, text }))
+
+/** What a marked-block cache stores for a request: its messages up to the breakpoint. */
+const storedPrefix = (body: Record<string, unknown>) => {
+	const messages = wireMessages(body)
+	if ("cache_control" in body) return readable(messages)
+	return Option.match(
+		Arr.findLastIndex(messages, (message) => message.breakpoint),
+		{ onNone: () => [], onSome: (index) => readable(Arr.take(messages, index + 1)) },
+	)
+}
+
+const runStatus = (turn: number) => ({
+	role: "user" as const,
+	content: `<run-status>turn ${turn}/500 · tool-calls ${turn - 1}/500 · elapsed ${turn * 3}s/600s</run-status>`,
+})
+
+const REVIEW_TASK = [
+	{ role: "system" as const, content: "You review one pull request." },
+	{ role: "user" as const, content: "Review pull request #7." },
+]
+
+/** Two consecutive model calls of an unattended run, as the engine sends them. */
+const FIRST_CALL: Prompt.RawInput = [...REVIEW_TASK, runStatus(1)]
+const SECOND_CALL: Prompt.RawInput = [
+	...REVIEW_TASK,
+	{
+		role: "assistant",
+		content: [
+			{
+				type: "tool-call",
+				id: "call_0",
+				name: "pr_changed_files",
+				params: {},
+				providerExecuted: false,
+			},
+		],
+	},
+	{
+		role: "tool",
+		content: [
+			{
+				type: "tool-result",
+				id: "call_0",
+				name: "pr_changed_files",
+				isFailure: false,
+				result: "2 changed files",
+				providerExecuted: false,
+			},
+		],
+	},
+	runStatus(2),
+]
+
+const consecutiveCalls = (model: string) => {
+	const send = (prompt: Prompt.RawInput) =>
+		captureRequest(
+			{ ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: model },
+			tags,
+			resolveReviewModel,
+			false,
+			prompt,
+		)
+	return Effect.all([send(FIRST_CALL), send(SECOND_CALL)])
+}
+
+describe("prompt cache prefix under the run-status line", () => {
+	it.live.each(["openai/gpt-6.1-sol", "anthropic/claude-sonnet-5.5"])(
+		"%s: what one call stores in the cache is the start of the next call",
+		(model) =>
+			Effect.gen(function* () {
+				const [first, second] = yield* consecutiveCalls(model)
+				const stored = storedPrefix(first.body)
+
+				// Everything but the status line, which no later call repeats.
+				expect(stored).toEqual(Arr.dropRight(readable(wireMessages(first.body)), 1))
+				expect(Arr.take(readable(wireMessages(second.body)), stored.length)).toEqual(stored)
+				// And the second call stores its own history for the third.
+				expect(storedPrefix(second.body)).toEqual(
+					Arr.dropRight(readable(wireMessages(second.body)), 1),
+				)
+			}),
+	)
+
+	it.live("leaves a model that caches any repeated prefix with the messages it was given", () =>
+		Effect.gen(function* () {
+			const [first, second] = yield* consecutiveCalls(DEFAULT_REVIEW_MODEL)
+
+			expect(first.body.cache_control).toEqual({ type: "ephemeral" })
+			expect(Arr.some(wireMessages(second.body), (message) => message.breakpoint)).toBe(false)
+			expect(Arr.take(wireMessages(second.body), 2)).toEqual(Arr.dropRight(wireMessages(first.body), 1))
+		}),
+	)
+})
+
 describe("reasoning effort", () => {
-	it.live("sends no reasoning field for triage unless one is configured", () =>
+	it.live("sends no reasoning field for triage", () =>
 		Effect.gen(function* () {
 			// This resolver serves chat, AI triage and the validator at once. Adding the knob must not
 			// retune three stages as a side effect.
@@ -204,11 +342,10 @@ describe("reasoning effort", () => {
 		}),
 	)
 
-	it.live("sends the configured triage effort", () =>
+	it.live("sends the security audit's high effort", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureRequest(
-				{ ...openRouterEnv, MAPLE_TRIAGE_REASONING_EFFORT: "high" },
-				tags,
+			const captured = yield* captureRequest(openRouterEnv, tags, (env, callTags) =>
+				resolveSecurityAuditModel(env, "discovery", callTags),
 			)
 
 			expect(captured.body).toMatchObject({ reasoning: { effort: "high" } })
@@ -248,15 +385,16 @@ describe("resolveSecurityAuditModel", () => {
 		).toBe("anthropic/claude-haiku-5.5")
 	})
 
-	it("ignores a pick the region does not serve, or that cannot verify", () => {
+	it("ignores a pick the region does not serve, or that is no longer listed", () => {
 		const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
 		expect([
 			securityAuditModelId(eu, "discovery", "deepseek/deepseek-v4.1-flash-1017:nitro"),
-			securityAuditModelId(openRouterEnv, "validation", "openai/gpt-6.1-sol"),
+			// Delisted 2026-11-12: its cybersecurity filter refused hunter and verifier prompts.
+			securityAuditModelId(openRouterEnv, "discovery", "openai/gpt-6.1-sol"),
 			securityAuditModelId(openRouterEnv, "discovery", "not/a-listed-model"),
 		]).toEqual([
 			DEFAULT_AUDIT_MODELS.eu.discovery,
-			DEFAULT_AUDIT_MODELS.us.validation,
+			DEFAULT_AUDIT_MODELS.us.discovery,
 			DEFAULT_AUDIT_MODELS.us.discovery,
 		])
 	})
@@ -275,6 +413,35 @@ describe("securityAuditModelIds", () => {
 	})
 })
 
+describe("resolveSecurityAuditDiscoveryFallback", () => {
+	const eu = { ...openRouterEnv, MAPLE_REGION: "eu" }
+
+	it("falls back to the region's hunter when the org hunts on another model", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.validation,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.discovery)
+	})
+
+	it("has none when the run already hunts on the default", () => {
+		expect(
+			resolveSecurityAuditDiscoveryFallback(eu, {
+				discovery: DEFAULT_AUDIT_MODELS.eu.discovery,
+				validation: DEFAULT_AUDIT_MODELS.eu.validation,
+			}),
+		).toBeUndefined()
+	})
+
+	it("never falls back onto the verifier", () => {
+		const fallback = resolveSecurityAuditDiscoveryFallback(eu, {
+			discovery: "openai/gpt-6-luna",
+			validation: DEFAULT_AUDIT_MODELS.eu.discovery,
+		})
+		expect(fallback?.name).toBe(DEFAULT_AUDIT_MODELS.eu.validation)
+	})
+})
+
 describe("resolveReviewModel", () => {
 	it.effect("sends the review model, not the triage one", () =>
 		Effect.gen(function* () {
@@ -289,11 +456,6 @@ describe("resolveReviewModel", () => {
 			expect(overridden.body.model).toBe("anthropic/claude-sonnet-5")
 		}),
 	)
-
-	it("reads its window from the table, never the triage overrides", () => {
-		const model = resolveReviewModel({ ...openRouterEnv, MAPLE_TRIAGE_MODEL_CONTEXT: "64000" })
-		expect(model.limits.context).toBe(1_000_000)
-	})
 
 	it("runs on the organization's pick ahead of the deployment override", () => {
 		const env = { ...openRouterEnv, MAPLE_REVIEW_MODEL_OPENROUTER: "anthropic/claude-sonnet-5" }
@@ -391,31 +553,6 @@ describe("resolveTriageModel — context limits", () => {
 		})
 
 		expect(model.limits.context).toBe(128_000)
-	})
-
-	it("lets the environment override the table", () => {
-		const model = resolveTriageModel({
-			...openRouterEnv,
-			MAPLE_TRIAGE_MODEL_CONTEXT: "64000",
-			MAPLE_TRIAGE_MODEL_OUTPUT: "4000",
-		})
-
-		expect(model.limits.context).toBe(64_000)
-		expect(model.limits.output).toBe(4_000)
-	})
-
-	it("ignores an unparseable or nonsensical override rather than trusting it", () => {
-		// A zero or negative window would make every turn look overflowed on its first step.
-		// Model named for the same reason as above — the assertion is that the bad override is
-		// discarded in favour of the TABLE, not that the default happens to be this model.
-		for (const bad of ["", "not-a-number", "0", "-5", "1.5"]) {
-			const model = resolveTriageModel({
-				...openRouterEnv,
-				MAPLE_TRIAGE_MODEL_OPENROUTER: "openai/gpt-5.6-luna",
-				MAPLE_TRIAGE_MODEL_CONTEXT: bad,
-			})
-			expect(model.limits.context).toBe(1_050_000)
-		}
 	})
 })
 
@@ -525,9 +662,9 @@ const streamParts = (usage: Record<string, unknown>, options: StreamFixture = {}
 const streamFinishPart = (usage: Record<string, unknown>, options?: StreamFixture) =>
 	Effect.gen(function* () {
 		const parts = yield* streamParts(usage, options)
-		const finish = parts.find((part) => part.type === "finish")
-		if (finish === undefined) return yield* Effect.die("the stream carried no finish part")
-		return finish
+		const finish = Arr.findFirst(parts, (part) => part.type === "finish")
+		if (Option.isNone(finish)) return yield* Effect.die("the stream carried no finish part")
+		return finish.value
 	})
 
 /**
@@ -669,11 +806,15 @@ describe("streamed completion — a stream that ends without a usage block", () 
 				terminalChoices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
 			})
 
-			expect(parts.find((part) => part.type === "tool-call")).toMatchObject({
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "tool-call")),
+			).toMatchObject({
 				name: "list_services",
 				params: {},
 			})
-			expect(parts.find((part) => part.type === "finish")?.reason).toBe("tool-calls")
+			expect(
+				Option.getOrUndefined(Arr.findFirst(parts, (part) => part.type === "finish"))?.reason,
+			).toBe("tool-calls")
 		}),
 	)
 

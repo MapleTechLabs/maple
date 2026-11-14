@@ -2,14 +2,20 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import { WorkloadFacets, WorkloadRows } from "./model"
 
 export const WorkloadKindSchema = Schema.Literals(["deployment", "statefulset", "daemonset", "job"])
 export const WorkloadScope = Schema.Literals(["saturated", "elevated", "stale"])
 export type WorkloadScope = typeof WorkloadScope.Type
-export const Facet = Schema.Literals(["workloadNames", "namespaces", "clusters", "environments", "computeTypes"])
+export const Facet = Schema.Literals([
+	"workloadNames",
+	"namespaces",
+	"clusters",
+	"environments",
+	"computeTypes",
+])
 export type Facet = typeof Facet.Type
 export const WorkloadSortKey = Schema.Literals([
 	"workloadName",

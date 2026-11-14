@@ -6,7 +6,7 @@ import {
 	getAwsInfraTimeseries,
 } from "@maple/web-data/warehouse/aws-infra"
 import { Effect, Schema } from "effect"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settled } from "@maple/views/data/load-failure"
 import type { TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 
@@ -60,15 +60,12 @@ export type BucketPoint = typeof BucketPoint.Type
 export const loadStatus = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
 	return yield* client.awsIntegration.status()
-}).pipe(Effect.mapError(toLoadFailure), Effect.result)
+}).pipe(settled)
 
 export const loadFleet = (window: TimeWindow) =>
 	getAwsInfraFleet({ data: window }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<FleetRead> => response.kinds,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<FleetRead> => response.kinds),
+		settled,
 	)
 
 export const SparksInput = Schema.Struct({
@@ -81,11 +78,8 @@ export type SparksInput = typeof SparksInput.Type
 
 export const loadSparks = (input: SparksInput) =>
 	getAwsInfraSparklines({ data: { ...input, kinds: [...input.kinds] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<SparkRead> => response.kinds,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<SparkRead> => response.kinds),
+		settled,
 	)
 
 export const TimeseriesInput = Schema.Struct({
@@ -99,9 +93,6 @@ export type TimeseriesInput = typeof TimeseriesInput.Type
 
 export const loadTimeseries = (input: TimeseriesInput) =>
 	getAwsInfraTimeseries({ data: { ...input, keys: [...input.keys] } }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): ReadonlyArray<BucketPoint> => response.points,
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): ReadonlyArray<BucketPoint> => response.points),
+		settled,
 	)

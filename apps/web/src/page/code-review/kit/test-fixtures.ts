@@ -3,8 +3,6 @@ import { CodeReviewAnalytics, GithubIntegrationStatus, VcsRepositoryId } from "@
 import { Schema, Array as Arr } from "effect"
 import type { PageContext } from "../../contract"
 
-// Shared fixtures for the Code Review scene tests.
-
 export const orgId = Schema.decodeSync(OrgId)("org_acme")
 export const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 export const NOW = Date.UTC(2026, 9, 1, 12)
@@ -33,7 +31,7 @@ const totals = (reviews: number) => ({
 
 /** `reviews` reviews by `authors`, one bucket. */
 export const analyticsOf = (reviews: number, authors: ReadonlyArray<string> = []): CodeReviewAnalytics =>
-	Schema.decodeUnknownSync(CodeReviewAnalytics)({
+	Schema.decodeSync(CodeReviewAnalytics)({
 		bucketSeconds: 86_400,
 		current: totals(reviews),
 		previous: totals(0),

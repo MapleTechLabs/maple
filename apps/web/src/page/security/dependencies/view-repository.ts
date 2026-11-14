@@ -154,7 +154,7 @@ const stepAdvisories = (h: H, step: UpgradeStep): Html =>
 										{
 											onClick: Message.ClickedFinding({ findingId: finding.id }),
 											className:
-												"flex w-full min-w-0 items-center gap-3 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-raised active:bg-surface-raised",
+												"flex w-full min-w-0 items-center gap-3 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-sunken active:bg-surface-sunken",
 										},
 										[
 											h.span(
@@ -212,8 +212,14 @@ const stepRow = (h: H, step: UpgradeStep, notRunning: string, isExpanded: boolea
 			tableCell(
 				h,
 				[
-					h.span(
-						[h.Class("flex min-w-0 max-w-56 flex-col"), h.Title(Arr.join(step.lockfiles, "\n"))],
+					vstack(
+						h,
+						{
+							shrink: true,
+							as: "span",
+							className: "max-w-56",
+							attributes: [h.Title(Arr.join(step.lockfiles, "\n"))],
+						},
 						[
 							middleTruncate(h, {
 								text: step.lockfiles[0] ?? "",
@@ -251,7 +257,7 @@ const emptyPlanLine = (repository: DependencyScanRepository): string =>
 		? "Not scanned yet, so there is nothing to plan."
 		: readEverything(repository)
 			? "No open advisories in this repository's latest scan"
-			: "No open advisories in what the latest scan could read."
+			: "No open advisories in what the latest scan could read"
 
 const planPanel = (
 	h: H,
@@ -260,8 +266,10 @@ const planPanel = (
 	plan: ReadonlyArray<UpgradeStep>,
 	notRunning: string,
 ): Html =>
-	panel(h, { className: "overflow-hidden" }, [
-		...(plan.length === 0
+	panel(
+		h,
+		{ className: "overflow-hidden" },
+		plan.length === 0
 			? [emptyMessage(h, {}, [emptyPlanLine(repository)])]
 			: [
 					typography(h, { size: "xs", tone: "muted", as: "p", className: stripClass("head") }, [
@@ -289,8 +297,8 @@ const planPanel = (
 							}),
 						),
 					]),
-				]),
-	])
+				],
+	)
 
 /** Beside the switcher: the tracked branch, the GitHub link and Scan now. */
 const repositoryActions = (h: H, model: Model, repository: DependencyScanRepository): ReadonlyArray<Html> => [
@@ -328,8 +336,9 @@ const scanDetail = (h: H, repository: DependencyScanRepository, clock: Clock): H
 		...(issues.length === 0
 			? []
 			: [
-					h.ul(
-						[h.Class("flex flex-col gap-1")],
+					vstack(
+						h,
+						{ gap: "1", as: "ul" },
 						Arr.map(issues, (lockfile) => lockfileIssue(h, lockfile)),
 					),
 				]),

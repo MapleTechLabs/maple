@@ -1,5 +1,5 @@
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { muteColor } from "@maple/ui/components/plot/color-scale"
+import { focusCrosshair, focusDot } from "@maple/views/charts/plot/plot-focus"
+import { muteColor } from "@maple/views/charts/oklch"
 import { formatBucketLabel, formatLatency, formatNumber } from "@maple/ui/lib/format"
 import {
 	errorThroughput,
@@ -15,6 +15,7 @@ import { scaleTime } from "d3-scale"
 import { Option, Array as Arr, String as Str } from "effect"
 import { ChartTooltip } from "@maple/views/charts/chart-spec"
 import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
+import { gradientId, gradientUrl } from "@maple/views/charts/definitions/gradient-id"
 import {
 	AREA_FILL_END,
 	roundCapDasharray,
@@ -27,7 +28,7 @@ import {
 } from "@maple/views/charts/definitions/plot-constants"
 import { type SpikeSpec, mutedOf, MUTED_OPACITY } from "./spike-spec"
 
-// `LineSpike` / `LineLegendSpike` and `AreaSpike` / `AreaLegendSpike`, definition half.
+// The line and area spikes' definitions, with and without a legend.
 
 type Point = ChartPoint<TimeseriesSpikeRow, ChartValue, number>
 
@@ -79,7 +80,7 @@ const xScale = (axisContext: ReturnType<typeof timeseriesAxisContext>) => ({
 	},
 })
 
-/** `PlotTooltipBody` reduced to data, emphasising the series nearest the cursor. */
+/** The tooltip body as data, emphasising the series nearest the cursor. */
 const tooltipOf =
 	(
 		series: ReadonlyArray<Series>,
@@ -116,7 +117,6 @@ const dataMaxOf = (rows: ReadonlyArray<TimeseriesSpikeRow>, series: ReadonlyArra
 		Arr.reduce(series, max, (seriesMax, entry) => Math.max(seriesMax, entry.value(row))),
 	)
 
-/** `LineFigure`. */
 export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, ChartValue, number> => {
 	const rows = rowsOf(spec)
 	const series = latencySeries(spec)
@@ -179,7 +179,6 @@ export const buildLineSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	}
 }
 
-/** `AreaFigure`. */
 export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, ChartValue, number> => {
 	const rows = rowsOf(spec)
 	const series = throughputSeries(spec)
@@ -191,18 +190,14 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 	const axisContext = timeseriesAxisContext(rows)
 	const focus = tooltipFocusCapture()
 	const { solid, dashed } = splitOf(spec, rows)
-	const idPrefix = `areaSpike-${spec.arm}-`
+	const fillOf = (id: string, faded: boolean) =>
+		faded ? gradientId("areaSpike", spec.arm, id, "faded") : gradientId("areaSpike", spec.arm, id)
 	const opacityFor = (id: string) => (muted.has(id) ? MUTED_OPACITY : 1)
 	const x = (d: TimeseriesSpikeRow) => d.date
 	const definition = defineChart({
 		gradients: Arr.flatMap(series, (entry) => [
-			verticalGradient(`${idPrefix}${entry.id}`, entry.color),
-			verticalGradient(
-				`${idPrefix}${entry.id}Faded`,
-				entry.color,
-				FADED_START_OPACITY,
-				FADED_END_OPACITY,
-			),
+			verticalGradient(fillOf(entry.id, false), entry.color),
+			verticalGradient(fillOf(entry.id, true), entry.color, FADED_START_OPACITY, FADED_END_OPACITY),
 		]),
 		marks: [
 			...Arr.flatMap(series, (entry) => [
@@ -210,7 +205,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 					id: `${entry.id}Area`,
 					x,
 					y: entry.value,
-					fill: `url(#${idPrefix}${entry.id})`,
+					fill: gradientUrl(fillOf(entry.id, false)),
 					stroke: "none",
 					fillOpacity: opacityFor(entry.id),
 				}),
@@ -218,7 +213,7 @@ export const buildAreaSpike = (spec: SpikeSpec): BuiltChart<TimeseriesSpikeRow, 
 					id: `${entry.id}AreaIncomplete`,
 					x,
 					y: entry.value,
-					fill: `url(#${idPrefix}${entry.id}Faded)`,
+					fill: gradientUrl(fillOf(entry.id, true)),
 					stroke: "none",
 					fillOpacity: opacityFor(entry.id),
 				}),

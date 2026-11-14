@@ -2,12 +2,11 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 
-// `SectionHeading`: the `title` row and the
-// `eyebrow` overline.
+// A section's heading: a title row with hint, count and actions, or the eyebrow label.
 
 export type SectionHeadingOptions = Readonly<{
 	title: string
-	/** `eyebrow`: the uppercase overline above a form group or rail section, `mb-3` below. */
+	/** The eyebrow label above a form group or rail section, `mb-3` below. */
 	variant?: "title" | "eyebrow"
 	hint?: string
 	count?: Html | string

@@ -1,7 +1,8 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
-import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { openSecret, type SecretKeyring } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
 
 /**
  * `alert_destinations.config_json` is a jsonb column, so the driver hands back
@@ -44,6 +45,15 @@ const DestinationSecretConfigSchema = Schema.Union([
 		webhookUrl: Schema.String,
 	}),
 	Schema.Struct({
+		type: Schema.Literal("microsoft-teams"),
+		webhookUrl: Schema.String,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("incident-io"),
+		alertSourceConfigId: Schema.String,
+		token: Schema.String,
+	}),
+	Schema.Struct({
 		type: Schema.Literal("chat"),
 		// The `chat_workspaces` row id — no token here either: the connector's credential is
 		// opened from that row, scoped to the destination's org, at dispatch time.
@@ -80,7 +90,7 @@ export const SecretConfigFromJson = Schema.fromJsonString(DestinationSecretConfi
 /** The stored columns hydration reads, so callers holding a narrower row still fit. */
 export type StoredDestinationConfig = Pick<
 	AlertDestinationRow,
-	"configJson" | "secretCiphertext" | "secretIv" | "secretTag"
+	"id" | "orgId" | "configJson" | "secretCiphertext" | "secretIv" | "secretTag"
 >
 
 export interface HydratedDestination {
@@ -102,7 +112,7 @@ const parseSecretConfig = <E>(
 
 export const hydrateDestinationRow = <PublicConfigError, DecryptionError, SecretConfigError>(
 	row: StoredDestinationConfig,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
 	errors: {
 		onPublicConfigInvalid: (cause: unknown) => PublicConfigError
 		onDecryptFailure: () => DecryptionError
@@ -111,13 +121,15 @@ export const hydrateDestinationRow = <PublicConfigError, DecryptionError, Secret
 ): Effect.Effect<HydratedDestination, PublicConfigError | DecryptionError | SecretConfigError> =>
 	Effect.gen(function* () {
 		const publicConfig = yield* parsePublicConfig(row, errors.onPublicConfigInvalid)
-		const secretJson = yield* decryptAes256Gcm(
+		const secretJson = yield* openSecret(
+			keyring,
+			alertDestinationSecretSlot,
+			{ orgId: row.orgId, id: row.id },
 			{
 				ciphertext: row.secretCiphertext,
 				iv: row.secretIv,
 				tag: row.secretTag,
 			},
-			encryptionKey,
 			errors.onDecryptFailure,
 		)
 		const secretConfig = yield* parseSecretConfig(secretJson, errors.onSecretConfigInvalid)

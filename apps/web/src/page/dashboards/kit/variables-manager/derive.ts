@@ -1,9 +1,7 @@
 import { DashboardVariableName } from "@maple/domain/http"
 import { QUERY_BUILDER_METRIC_TYPES, type QueryBuilderMetricType } from "@maple/query-model"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Variable } from "./model"
-
-// The pure half of `VariablesManagerDialog`: labels, summaries, retyping and per-draft validation.
 
 const isValidVariableName = Schema.is(DashboardVariableName)
 
@@ -50,7 +48,7 @@ export const TYPE_OPTIONS = {
 
 export const VARIABLE_TYPES: ReadonlyArray<Variable["type"]> = ["query", "custom", "textbox"]
 
-/** `sourceSummary`: the row's second line. */
+/** The row's second line. */
 export const sourceSummary = (variable: Variable): string => {
 	if (variable.type === "custom") {
 		const listed = Arr.join(
@@ -77,7 +75,7 @@ export const newVariable = (): Variable => ({
 	source: { kind: "facet", facet: "service" },
 })
 
-/** `withType`: retyped, keeping the shared base fields. */
+/** Retyped, keeping the shared base fields. */
 export const withType = (variable: Variable, type: Variable["type"]): Variable => {
 	const base = {
 		name: variable.name,
@@ -95,7 +93,7 @@ export const withType = (variable: Variable, type: Variable["type"]): Variable =
 	}
 }
 
-/** `draftError`: the first problem with a draft, computed live. */
+/** The first problem with a draft, computed live. */
 export const draftError = (
 	draft: Variable,
 	index: number,
@@ -127,8 +125,9 @@ export const withSourceValue = (variable: QueryVariable, value: string): Variabl
 	const [kind, detail] = Str.split(":")(value)
 	const source = variable.source
 	const attributeKey = source.kind === "facet" ? "" : source.attributeKey
-	const facet = FACETS.find((candidate) => candidate === detail)
-	if (kind === "facet" && facet !== undefined) return { ...variable, source: { kind: "facet", facet } }
+	const facet = Arr.findFirst(FACETS, (candidate) => candidate === detail)
+	if (kind === "facet" && Option.isSome(facet))
+		return { ...variable, source: { kind: "facet", facet: facet.value } }
 	if (kind === "attribute" && (detail === "span" || detail === "resource"))
 		return { ...variable, source: { kind: "attribute", scope: detail, attributeKey } }
 	if (kind === "metric" && (detail === "metric" || detail === "resource"))

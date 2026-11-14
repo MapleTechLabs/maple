@@ -2,7 +2,7 @@ import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import type { PageContext } from "../../contract"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -39,7 +39,7 @@ const row = (commit: string, firstSeen: string) => ({
 	apdexScore: 1,
 })
 
-const data = Schema.decodeUnknownSync(ReleasesData)({
+const data = Schema.decodeSync(ReleasesData)({
 	releases: [row(BASE, "2026-09-30T10:00:00.000Z"), row(HEAD, "2026-10-01T10:00:00.000Z")],
 	timeline: [],
 	truncated: false,
@@ -64,7 +64,7 @@ const withReleases = (commitSha = HEAD) => {
 
 const FAILURE = toLoadFailure("injected")
 const THEME = Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const CURSOR = Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const CURSOR = Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor())
 const point = (bucket: string) => ({
 	bucket,
 	throughput: 10,
@@ -79,7 +79,7 @@ const point = (bucket: string) => ({
 	totalCount: 10,
 	partial: false,
 })
-const detail = Schema.decodeUnknownSync(ReleaseDetail)({
+const detail = Schema.decodeSync(ReleaseDetail)({
 	versions: data.releases,
 	timeline: [],
 	points: [point("2026-10-01T10:00:00.000Z")],
@@ -188,7 +188,7 @@ describe("release detail", () => {
 			{ ...route(), search: { service: "payment-svc", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReleaseWindow", "Refresh"],
 		])
 	})

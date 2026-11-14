@@ -13,7 +13,7 @@ import {
 import { HttpClient } from "effect/http"
 import { SyncConfig } from "../config"
 import { ElectricNotConfigured, ElectricUpstreamError, ElectricUpstreamUnreachable } from "../errors"
-import { lookupSubscription } from "../shapes/registry"
+import { lookupSubscription } from "@maple/domain/electric-shapes"
 import type { ScopeBinding, SyncRequest } from "../shapes/request"
 
 // The client controls only Electric's cursor and cache-buster parameters; table,
@@ -61,9 +61,7 @@ const redactSecrets = (text: string): string => Str.replace(/(secret=)[^&\s)]*/g
  * upstream failure that may or may not carry a URL in its cause.
  */
 export const describeUpstreamFailure = (error: unknown): string => {
-	// Fall back through name to the string form rather than interpolating
-	// `undefined` into a span: not every failure reaching here carries a message,
-	// and one that does not used to be the timeout itself.
+	// Not every failure carries a message; never interpolate `undefined` into a span.
 	const text = error instanceof Error ? error.message || error.name || String(error) : String(error)
 	const cause =
 		error instanceof Error && (error.cause instanceof Error || typeof error.cause === "string")
@@ -295,9 +293,7 @@ export class ElectricClient extends Context.Service<ElectricClient, ElectricClie
 						? fetched
 						: fetched.pipe(Effect.timeout(UPSTREAM_TIMEOUT))
 				).pipe(
-					// One mapping for transport failures and timeouts alike: the cause
-					// travels in the message instead of the mutable closure variable this
-					// replaces, so the span can say what actually went wrong. Mapped
+					// Transport failures and timeouts alike carry their cause in the message. Mapped
 					// INSIDE the span below: an `HttpClientError`'s raw text is
 					// "Transport error (GET <full url>)", secret included.
 					Effect.mapError(
@@ -324,7 +320,7 @@ export class ElectricClient extends Context.Service<ElectricClient, ElectricClie
 					return yield* new ElectricUpstreamError({
 						// The body is what Electric actually said; truncated because a
 						// status description is not a place to put a whole payload.
-						message: `Electric returned ${response.status} for shape ${request.shape}: ${body.slice(0, 300)}`,
+						message: `Electric returned ${response.status} for shape ${request.shape}: ${Str.slice(0, 300)(body)}`,
 						status: response.status,
 						body,
 						headers: { ...response.headers },

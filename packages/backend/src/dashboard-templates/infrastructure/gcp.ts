@@ -12,7 +12,7 @@ import {
 	templateId,
 } from "@maple/backend/dashboard-templates/helpers"
 import type { TemplateDefinition, WidgetDef } from "@maple/backend/dashboard-templates/types"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The Cloud Monitoring poller (GcpMetricsService) stores the metrics in `GCP_METRIC_GROUPS` at
 // one-minute resolution, so a widget takes its metric type and unit from that table (types sharing
@@ -74,8 +74,13 @@ function resourceVariable(opts: {
 		source: {
 			kind: "metric",
 			metricType: "gauge",
-			metricNames: opts.groups.flatMap(
-				(group) => group.metrics.find((metric) => metric.kind !== "sum")?.name ?? [],
+			metricNames: Arr.flatMap(opts.groups, (group) =>
+				Option.toArray(
+					Option.map(
+						Arr.findFirst(group.metrics, (metric) => metric.kind !== "sum"),
+						(metric) => metric.name,
+					),
+				),
 			),
 			scope: "resource",
 			attributeKey: opts.attributeKey,
@@ -428,7 +433,6 @@ function widget(tab: Tab, chart: Chart, index: number): WidgetDef {
 			...(chart.display ?? (counter ? CHART_DISPLAY_AREA : CHART_DISPLAY_LINE)),
 			unit: DISPLAY_UNITS.get(stored?.unit ?? "") ?? "number",
 		},
-		// Two charts per row, in list order, within the tab.
 		layout: { x: (index % 2) * 6, y: Math.floor(index / 2) * 6, w: 6, h: 6 },
 		sectionId: SECTION_ID,
 		tabId: tab.id,

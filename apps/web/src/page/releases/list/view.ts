@@ -1,6 +1,6 @@
 import { formatNumber, formatRate, pluralize } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import type { ReleaseHealth } from "../../../components/releases/release-model"
+import type { ReleaseHealth } from "../release-model"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
@@ -34,10 +34,8 @@ import { filtersRail } from "./view-filters"
 import { liveNow, releasesTimeline, type TimeSearch } from "./view-overview"
 import { releasesTable } from "./view-table"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// TODO(session-range): `sessionTimeRangeSearchMiddleware` (the range carried across pages).
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +43,7 @@ const chipsOf = (model: Model) => {
 	const { search } = model
 	return Arr.map(
 		[
-			...(search.excludedEnvironments?.length
+			...(search.excludedEnvironments !== undefined && search.excludedEnvironments.length > 0
 				? [
 						{
 							id: "excludedEnvironments" as const,
@@ -55,7 +53,7 @@ const chipsOf = (model: Model) => {
 						},
 					]
 				: []),
-			...(search.environments?.length
+			...(search.environments !== undefined && search.environments.length > 0
 				? [
 						{
 							id: "environments" as const,
@@ -65,7 +63,7 @@ const chipsOf = (model: Model) => {
 						},
 					]
 				: []),
-			...(search.services?.length
+			...(search.services !== undefined && search.services.length > 0
 				? [{ id: "services" as const, label: "Service", values: search.services, isNegated: false }]
 				: []),
 			...(search.impact !== undefined
@@ -89,7 +87,6 @@ const loadingSkeleton = (h: H): Html =>
 		skeleton(h, "h-52 w-full rounded-md"),
 		tableSkeleton(h, {
 			rows: 8,
-			// The loaded table sits in a card panel.
 			className: "bg-card",
 			columns: [
 				{ header: "Release", headClassName: "w-[46%] min-w-64", skeleton: "w-48" },
@@ -115,7 +112,7 @@ const vcsHint = (h: H): ReadonlyArray<Html | string> => [
 ]
 
 /** Setup copy only while traces are unknown to Maple; once they arrive, the missing attribute is the cause. */
-const releasesEmpty = (h: H, model: Model): Html => {
+const releasesEmpty = (h: H, model: Model, timeZone: string): Html => {
 	if (hasFilters(model.search))
 		return filteredEmpty(h, { noun: "releases", onClear: Message.ClickedClearFilters() })
 	const presence = presenceOf(model.presence, "traces")
@@ -124,6 +121,7 @@ const releasesEmpty = (h: H, model: Model): Html => {
 			signal: "traces",
 			presence,
 			nowMs: model.nowMs,
+			timeZone,
 			noun: "releases",
 			purpose: "Releases compare errors and latency before and after each deploy.",
 			setupDocs: "github",
@@ -157,12 +155,17 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 	)
 	const flagged = Arr.filter(groups, (group) => group.health === "regressed").length
 	const timeSearch = timeSearchOf(model)
-	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model)])
+	if (groups.length === 0) return panel(h, {}, [releasesEmpty(h, model, timeZone)])
 	const issues = AsyncData.getOrElse(model.issues.data, () => null)
 	const live_ = liveNow(h, live, timeSearch, model.search.environments)
 	return vstack(h, { gap: "3" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+		hstack(
+			h,
+			{
+				align: "center",
+				wrap: true,
+				className: "gap-x-5 gap-y-1 px-0.5 text-xs text-muted-foreground",
+			},
 			[
 				toolbarStat(h, {
 					value: formatNumber(groups.length),
@@ -179,16 +182,14 @@ const loaded = (h: H, model: Model, data: ReleasesData, isWaiting: boolean, time
 							}),
 						]
 					: []),
-				h.span(
-					[h.Class("text-foreground-subtle")],
-					["Each release is compared with the version it replaced"],
-				),
+				typography(h, { tone: "subtle" }, ["Each release is compared with the version it replaced"]),
 				...(response.truncated
 					? [
-							h.span(
-								[h.Class("text-foreground-subtle")],
-								["Showing the newest ", formatNumber(response.releases.length), " rows"],
-							),
+							typography(h, { tone: "subtle" }, [
+								"Showing the newest ",
+								formatNumber(response.releases.length),
+								" rows",
+							]),
 						]
 					: []),
 			],

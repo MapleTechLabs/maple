@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { DashboardDocument } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -23,6 +23,14 @@ const WriteResult = Schema.Result(WriteSync, Schema.String)
 
 export const Message = defineMessageUnion({
 	UpdatedDashboard: { orgId: Schema.String, maybeDocument: Schema.Option(DashboardDocument) },
+	/** The live board sat loading past the timeout. */
+	TimedOutLiveDashboard: { orgId: Schema.String },
+	CompletedFetchDashboardFallback: {
+		dashboardId: Schema.String,
+		result: Schema.Result(DashboardDocument, LoadFailure),
+	},
+	/** "Retry sync" on the snapshot banner, or Try again on the load error: reconnect, read again. */
+	ClickedRetrySync: {},
 	CompletedReadClock: { nowMs: Schema.Number },
 	MeasuredGrid: { width: Schema.Number },
 	MeasuredWidget: { widgetId: Schema.String, widthPx: Schema.Number },
@@ -36,15 +44,16 @@ export const Message = defineMessageUnion({
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
 	GotShareMessage: { message: ShareMessage },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
+	/** "Reload page" on a chart tile whose chart code failed to load. */
+	ClickedReloadPage: {},
+	ReloadedPage: {},
 	GotChartMessage: { widgetId: Schema.String, message: Chart.Message },
 	ClickedSortColumn: { widgetId: Schema.String, field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRefreshMenuMessage: { message: Menu.Message },
 	ClickedReload: {},
-	/** `useIntervalRefresh`: one auto-refresh tick, fanned out to every tile like a Reload. */
+	/** One auto-refresh tick, fanned out to every tile like a Reload. */
 	TickedAutoRefresh: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedToggleEdit: {},
@@ -63,6 +72,7 @@ export const Message = defineMessageUnion({
 	ClickedCloseHistory: {},
 	CompletedFetchVersions: {
 		generation: Schema.Number,
+		nowMs: Schema.Number,
 		result: Schema.Result(Schema.Array(VersionRow), LoadFailure),
 	},
 	ClickedVersion: { versionId: Schema.String },
@@ -89,7 +99,7 @@ export const Message = defineMessageUnion({
 	ReleasedPointer: {},
 	/** `pointercancel` or Escape: the gesture ends where it began. */
 	CancelledPointer: {},
-	/** A key on a grip (`DashboardGrid`'s keydown): Space or Enter picks up and drops, arrows move. */
+	/** A key on a grip: Space or Enter picks up and drops, arrows move. */
 	PressedGripKey: {
 		widgetId: Schema.String,
 		label: Schema.String,
@@ -99,9 +109,14 @@ export const Message = defineMessageUnion({
 	/** Focus left a picked-up tile's grip for somewhere outside it: the tile drops where it is. */
 	BlurredGrip: { widgetId: Schema.String },
 	CompletedWrite: { result: WriteResult },
-	/** "Undo" on the "Widget removed" toast: the removed tile, as it was stored. */
-	/** "Undo" after a group was deleted with its widgets: they come back on the board, the group does not. */
-	CompletedExport: {},
+	/** A drop's write: `generation` says which, so a result for an older drop is ignored. */
+	CompletedLayoutWrite: { generation: Schema.Number, result: WriteResult },
+	/** The persistence banner's Retry: editing comes back, and the next write tells whether it holds. */
+	ClickedRetryPersistence: {},
+	/** The browser came back online while the banner shows: editing comes back as with Retry. */
+	CameBackOnline: {},
+	/** Export JSON's download: `error` is why it could not be written. */
+	CompletedExport: { error: Schema.NullOr(Schema.String) },
 	/** A group's chevron: this viewer's collapse, in the URL. */
 	ClickedSectionChevron: { sectionId: Schema.String, collapsed: Schema.Boolean },
 	ClickedSectionTab: { sectionId: Schema.String, tabId: Schema.String },

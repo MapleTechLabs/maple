@@ -29,8 +29,7 @@ export interface ArchiveTuning {
 	readonly scratchRoot: string
 }
 
-/** The fixed export tuning: the values archive create has always used when no
- * calibration config was passed. */
+/** The fixed export tuning every Maple Local generation uses. */
 export const DEFAULT_ARCHIVE_TUNING = {
 	writerThreads: 1,
 	rowGroupRows: 10_000,

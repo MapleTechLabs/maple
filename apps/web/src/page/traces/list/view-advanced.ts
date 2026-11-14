@@ -1,31 +1,27 @@
-import { parseWhereClause } from "../../../lib/traces/advanced-filter-sync"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { parseWhereClause } from "../advanced-filter-sync"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "../../kit/query-builder/where-clause-highlight"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription } from "@maple/views/ui/alert"
-import { button } from "@maple/views/ui/button"
 import { kbd } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { formDialog } from "@maple/views/ui/form-dialog"
-import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { textarea } from "@maple/views/ui/textarea"
+import {
+	ADVANCED_TEXTAREA_CLASS,
+	advancedFilterDialog as kitAdvancedFilterDialog,
+} from "../../kit/advanced-filter"
 import { autocompleteOf, isSuggesting } from "./advanced"
 import { ADVANCED_TEXTAREA_ID, MountSuggestions, MountWhereEditor } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
-
-// The advanced filter dialog around `WhereClauseEditor`.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
-const TEXTAREA_CLASS = "font-mono text-sm leading-relaxed resize-y min-h-[200px] max-h-[40vh]"
+const TEXTAREA_CLASS = ADVANCED_TEXTAREA_CLASS
 
-/** The suggestions, a page-level portal (`createPortal(listbox, document.body)`). */
+/** The suggestions, portaled to `<body>`. */
 export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 	if (!isSuggesting(model)) return []
 	const { suggestions } = autocompleteOf(model)
@@ -36,7 +32,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 				h.Role("listbox"),
 				h.AriaLabel("Where clause suggestions"),
 				h.Class(
-					"fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-popup",
+					"fixed z-60 overflow-auto rounded-lg border bg-popover text-popover-foreground shadow-popup",
 				),
 				h.OnMount(MountSuggestions()),
 			],
@@ -60,11 +56,17 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 						],
 					},
 					[
-						h.span(
-							[h.Class("min-w-0 truncate font-mono"), h.Title(suggestion.label)],
+						typography(
+							h,
+							{
+								mono: true,
+								truncate: true,
+								className: "min-w-0",
+								attributes: [h.Title(suggestion.label)],
+							},
 							[suggestion.label],
 						),
-						eyebrow(h, { className: "shrink-0" }, [suggestion.kind]),
+						eyebrow(h, { variant: "mono", className: "shrink-0" }, [suggestion.kind]),
 					],
 				)
 			}),
@@ -72,7 +74,7 @@ export const suggestionList = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-/** `WhereClauseEditor`: the textarea, its highlight overlay and the suggestions. */
+/** The where editor: the textarea, its highlight overlay and the suggestions. */
 const editor = (h: H, model: Model): Html => {
 	const draft = model.advanced.draft
 	const isHighlighting = draft.length > 0
@@ -102,7 +104,7 @@ const editor = (h: H, model: Model): Html => {
 								h.AriaHidden(true),
 								h.Class(
 									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-ui",
 										TEXTAREA_CLASS,
 									),
 								),
@@ -129,33 +131,11 @@ const editor = (h: H, model: Model): Html => {
 	)
 }
 
-const warningsOf = (h: H, draft: string): ReadonlyArray<Html> => {
-	const { warnings } = parseWhereClause(draft)
-	return warnings.length === 0
-		? []
-		: [
-				alert(h, { variant: "warn", size: "sm", className: "mt-2" }, [
-					icon(h, "CircleWarningIcon", { size: 14 }),
-					alertDescription(
-						h,
-						[
-							h.ul(
-								[h.Class("space-y-1")],
-								Arr.map(warnings, (warning) => h.li([], [warning])),
-							),
-						],
-						"text-severity-warn",
-					),
-				]),
-			]
-}
-
 export const advancedFilterDialog = (h: H, model: Model): Html =>
-	formDialog(h, {
+	kitAdvancedFilterDialog(h, {
 		slotId: "traces-advanced-filter",
-		model: model.advanced.dialog,
-		toParentMessage: (message) => Message.GotAdvancedDialogMessage({ message }),
-		title: "Advanced filter",
+		dialog: model.advanced.dialog,
+		toDialogMessage: (message) => Message.GotAdvancedDialogMessage({ message }),
 		description: [
 			"Write SQL-like queries to filter traces. Use ",
 			kbd(h, undefined, ["Ctrl+Space"]),
@@ -163,18 +143,8 @@ export const advancedFilterDialog = (h: H, model: Model): Html =>
 			kbd(h, undefined, ["Cmd+Enter"]),
 			" to apply.",
 		],
-		className: "sm:max-w-3xl",
-		panelClassName: "space-y-0",
 		onSubmit: Message.SubmittedAdvanced(),
-		submitLabel: "Apply filter",
-		footerStart: button(
-			h,
-			{
-				variant: "ghost",
-				className: "text-muted-foreground",
-				attributes: [h.OnClick(Message.ClickedClearAdvanced())],
-			},
-			["Clear filter"],
-		),
-		fields: [editor(h, model), ...warningsOf(h, model.advanced.draft)],
+		onClear: Message.ClickedClearAdvanced(),
+		editor: editor(h, model),
+		warnings: parseWhereClause(model.advanced.draft).warnings,
 	})

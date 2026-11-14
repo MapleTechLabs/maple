@@ -6,11 +6,11 @@ import {
 	pageHeaderTextStyles,
 	pageLayoutStyles,
 	pageTitleStyles,
-} from "@maple/ui/styles/ui/page-layout"
+	pageTitleWrapStyles,
+} from "./page-layout.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
-// Port of the header half of packages/ui/src/components/ui/page-layout.tsx (Root, Header, Title,
-// Description, HeaderActions). The sticky area, sidebars and sheets belong to the app shell port.
+// A page's root and header: title, description and header actions.
 
 type Children = ReadonlyArray<Html | string>
 
@@ -27,12 +27,14 @@ export const pageTitle = <M>(
 		readonly attributes?: ReadonlyArray<Attribute<M>>
 		/** `2` when the page title sits under another page's `h1` (a flow in a drawer). */
 		readonly level?: 1 | 2
+		/** A title that is a sentence (a status line): wraps onto a second line, never truncates. */
+		readonly wrap?: boolean
 	},
 	children: Children,
 ): Html => {
 	const attributes = [
 		h.DataAttribute("slot", "page-title"),
-		h.Class(cn(pageTitleStyles, options.className)),
+		h.Class(cn(options.wrap === true ? pageTitleWrapStyles : pageTitleStyles, options.className)),
 		...(options.title === undefined ? [] : [h.Title(options.title)]),
 		...(options.attributes ?? []),
 	]

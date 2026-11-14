@@ -17,13 +17,14 @@ import {
 	ChatConversationKey,
 	connectorSessionId,
 } from "@maple/domain/chat-session"
-import { ExternalUserId, OrgId } from "@maple/domain/primitives"
+import { ExternalUserId, OrgId } from "@maple/primitives"
 import { ConfigProvider, Effect, Logger, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import type { AiModelSpend } from "@maple/backend/services/billing/autumn-tracker"
+import { PrReviewId } from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
-import { meterTurn } from "./turn-runner"
+import { meterTurn, recordReviewCost } from "./turn-runner"
 
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
@@ -170,6 +171,8 @@ describe("meterTurn", () => {
 		assert.deepEqual(charged, [])
 	})
 
+	// Exactly one charge per feature: a second meter keyed `chat` on the same turn would not
+	// deduplicate against this `triage` key, and every investigation turn would bill twice.
 	it("charges input and output under a key that carries the turn", async () => {
 		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1200, 340)
 
@@ -266,16 +269,6 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
 	})
 
-	it("bills an investigation turn once, not once per source", async () => {
-		// The merge hazard this guards: two meters on the same tail, one keyed `triage` and one
-		// `chat`. The source segment makes those keys disjoint, so nothing would deduplicate them
-		// and every investigation turn would bill twice.
-		await meter(`${ORG}:inv-${INVESTIGATION}`, "msg-1", 1000, 100)
-
-		assert.deepEqual(keysFor("ai_input_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:input`])
-		assert.deepEqual(keysFor("ai_output_tokens"), [`${INVESTIGATION}:turn-msg-1:triage:output`])
-	})
-
 	it("skips tracking when the secret key is set but blank", async () => {
 		// A blank key reads as unset, as an absent one does: no request with an empty bearer.
 		const blankKey = ConfigProvider.layer(ConfigProvider.fromUnknown({ AUTUMN_SECRET_KEY: "  " }))
@@ -315,8 +308,8 @@ describe("meterTurn", () => {
 	})
 
 	it("bounds the tracker request itself, not just the finalizer", async () => {
-		// Belt and braces: `METERING_TIMEOUT` abandons the wait, `TRACK_TIMEOUT_MS` aborts the
-		// request. Without the abort the fetch outlives the turn on an isolate that is winding down.
+		// Belt and braces: `METERING_TIMEOUT` abandons the wait, the tracker's `TRACK_TIMEOUT` aborts
+		// the request. Without the abort the fetch outlives the turn on an isolate that is winding down.
 		const signals: Array<AbortSignal | null | undefined> = []
 		const passthrough = globalThis.fetch
 		globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -439,5 +432,56 @@ describe("meterTurn AI credits", () => {
 			Arr.map(charged, (c) => c.key),
 			[`${ORG}:default:msg-1:chat:credits:1`],
 		)
+	})
+
+	it("bills a charge the provider priced at its cost plus the markup, not from Autumn's rates", async () => {
+		await meterCharges(`${ORG}:default`, "msg-1", [
+			{ ...charge(GLM, 1000, 200, 3000), providerCostMicrousd: 2_500_000 },
+			charge(SONNET, 1000, 300),
+		])
+
+		assert.deepEqual(
+			Arr.filter(tracked, (t) => t.featureId === "ai_credits"),
+			[{ featureId: "ai_credits", value: 3, key: `${ORG}:default:msg-1:chat:credits:0` }],
+		)
+		assert.deepEqual(
+			Arr.map(charged, (c) => [c.modelId, c.key]),
+			[[SONNET, `${ORG}:default:msg-1:chat:credits:1`]],
+		)
+	})
+})
+
+describe("recordReviewCost", () => {
+	const REVIEW = Schema.decodeSync(PrReviewId)("00000000-0000-4000-9000-000000000001")
+	const org = Schema.decodeSync(OrgId)(ORG)
+	const record = (reviewId: typeof REVIEW | undefined, charges: Array<AiModelSpend>, ownKey: boolean) => {
+		const added: Array<number> = []
+		const reviews = {
+			addCost: (_orgId: OrgId, _reviewId: typeof REVIEW, cost: number) =>
+				Effect.sync(() => void added.push(cost)),
+		}
+		return Effect.runPromise(recordReviewCost(reviews, org, reviewId, { charges }, ownKey)).then(
+			() => added,
+		)
+	}
+	const priced = (providerCostMicrousd: number): AiModelSpend => ({
+		...charge(GLM, 1000, 100),
+		providerCostMicrousd,
+	})
+
+	it("adds the reported cost of every priced call to the review", async () => {
+		assert.deepEqual(
+			await record(REVIEW, [priced(1_000), charge(SONNET, 10, 10), priced(250)], false),
+			[1_250],
+		)
+	})
+
+	it("records 0 on the org's own key, which Maple does not bill", async () => {
+		assert.deepEqual(await record(REVIEW, [priced(1_000)], true), [0])
+	})
+
+	it("records nothing outside a review, or when no call was priced", async () => {
+		assert.deepEqual(await record(undefined, [priced(1_000)], false), [])
+		assert.deepEqual(await record(REVIEW, [charge(GLM, 1000, 100)], false), [])
 	})
 })

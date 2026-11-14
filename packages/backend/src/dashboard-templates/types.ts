@@ -7,18 +7,6 @@ import type {
 	PortableDashboardDocument,
 } from "@maple/domain/http"
 
-/**
- * A template widget is just a widget.
- *
- * This used to be a hand-written structural shape with `visualization: string`
- * and `display: Record<string, unknown>`, so a template could misspell a display
- * key or name a visualization that does not exist and only fail at runtime, in
- * `decodePortableDashboard`. Aliasing the real schema type moves all 22 template
- * files onto the compiler.
- *
- * `layout` needs no widening: `WidgetLayoutSchema` already makes `minW`/`minH`
- * optional, which is what templates omit.
- */
 export type WidgetDef = typeof DashboardWidgetSchema.Type
 
 interface TemplateParameter {

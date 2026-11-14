@@ -16,8 +16,8 @@ import {
 	formatPercent,
 	pluralize,
 } from "@maple/ui/lib/format"
-import { OTHER_COLOR } from "@maple/ui/components/charts/_shared/bucket-series"
-import { Array as Arr, String as Str } from "effect"
+import { OTHER_COLOR } from "@maple/ui/lib/colors"
+import { Array as Arr, Order, String as Str } from "effect"
 
 /** Which measure the strip, the chart and the breakdown columns are reading. */
 export const TOOL_METRICS = ["calls", "sessions", "error_rate", "duration"] as const
@@ -59,10 +59,6 @@ export interface ToolBreakdownRow extends ToolMeasures {
 	/** Epoch ms of the earliest call in this row, bounded by the window. */
 	readonly firstSeen: number
 }
-
-/* -------------------------------------------------------------------------------------------------
- * The tool detail page's failures
- * -----------------------------------------------------------------------------------------------*/
 
 /** One error group a tool failed with. */
 export interface ToolErrorRow {
@@ -145,27 +141,6 @@ export interface ToolErrorOccurrenceRow {
 
 export const EMPTY_MEASURES: ToolMeasures = { calls: 0, sessions: 0, errors: 0, p50: 0, p90: 0, p95: 0 }
 
-/* -------------------------------------------------------------------------------------------------
- * Series mode
- * -----------------------------------------------------------------------------------------------*/
-
-/**
- * What the chart splits by, which is decided entirely by how far the scope has
- * been narrowed: no tool means the question is still "which tool", a tool with
- * no model means "which model runs it", and both means there is one line left.
- */
-export type ToolSeriesMode = "tools" | "models" | "single"
-
-export function toolSeriesMode(tool: string | undefined, model: string | undefined): ToolSeriesMode {
-	if (tool === undefined) return "tools"
-	if (model === undefined) return "models"
-	return "single"
-}
-
-/* -------------------------------------------------------------------------------------------------
- * Reading a metric off a row
- * -----------------------------------------------------------------------------------------------*/
-
 /**
  * The number the selected metric names, off any measures row.
  *
@@ -214,8 +189,10 @@ export function fillSeriesBuckets(
 		byBucket.delete(bucket)
 	}
 	// Anything off the grid is still a reading; keep it rather than drop it.
-	return [...filled, ...byBucket.values()].toSorted((a, b) => a.bucket - b.bucket)
+	return Arr.sort([...filled, ...byBucket.values()], byBucketTime)
 }
+
+const byBucketTime = Order.mapInput(Order.Number, (point: { readonly bucket: number }) => point.bucket)
 
 /** `errors / calls`, or 0 for a row that never ran. */
 export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): number {
@@ -253,18 +230,10 @@ export function toolMetricLabel(metric: ToolMetric, percentile: ToolPercentile):
 	return metric === "duration" ? `${Str.toUpperCase(percentile)} duration` : METRIC_LABEL[metric]
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Deltas
- * -----------------------------------------------------------------------------------------------*/
-
 /** True when a rise in this metric is bad news — every metric here but the
  *  counts. Read only by {@link toolDelta}, which is the one thing that grades a
  *  move on this page. */
 const metricRiseIsBad = (metric: ToolMetric): boolean => metric === "error_rate" || metric === "duration"
-
-/* -------------------------------------------------------------------------------------------------
- * Series colours
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * The series palette, deliberately starting at `--chart-2`.
@@ -284,9 +253,8 @@ export const TOOL_SERIES_COLOR_TOKENS = [
 /**
  * The folded tail. Grey, because it is a residue rather than a thing.
  *
- * The API folds its own tail first (it returns at most eight keys), so points
- * can already arrive under this key; `foldSeries` merges them into its own tail
- * rather than ranking them as a series, which is what keeps one legend entry.
+ * The API folds its own tail (it returns at most eight keys) under
+ * `AI_TOOLS_OTHER_SERIES_KEY`, which the mapper renames to this key.
  */
 export const OTHER_SERIES_KEY = "other"
 
@@ -310,15 +278,11 @@ export function toolSeriesColors(keys: ReadonlyArray<string>): ReadonlyMap<strin
 			out.set(key, OTHER_COLOR)
 			continue
 		}
-		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length]!)
+		out.set(key, TOOL_SERIES_COLOR_TOKENS[index % TOOL_SERIES_COLOR_TOKENS.length] ?? OTHER_COLOR)
 		index++
 	}
 	return out
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Top-N folding
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * The series keys in rank order, ranked by **calls** whatever metric is
@@ -335,14 +299,10 @@ export function rankSeriesKeys(points: ReadonlyArray<ToolSeriesPoint>): Readonly
 		calls.set(point.seriesKey, (calls.get(point.seriesKey) ?? 0) + point.calls)
 	}
 	return Arr.map(
-		[...calls.entries()].sort((a, b) => b[1] - a[1] || Str.localeCompare(b[0])(a[0])),
+		[...calls.entries()].sort((a, b) => (b[1] !== a[1] ? b[1] - a[1] : Str.localeCompare(b[0])(a[0]))),
 		([key]) => key,
 	)
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Chart title
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * What the chart is of, read left to right: the measure, then the scope it is
@@ -381,10 +341,6 @@ export function scopeSummary(totals: ToolTotals, matchedOfCalls: number, subject
 	return `${formatNumber(totals.calls)} of ${formatNumber(matchedOfCalls)} ${noun} match · ${sessions}`
 }
 
-/* -------------------------------------------------------------------------------------------------
- * Sparklines
- * -----------------------------------------------------------------------------------------------*/
-
 /**
  * A sparkline: the selected metric over the window, in bucket order.
  *
@@ -398,15 +354,8 @@ export function metricSpark(
 	metric: ToolMetric,
 	percentile: ToolPercentile,
 ): ReadonlyArray<number> {
-	return Arr.map(
-		points.toSorted((a, b) => a.bucket - b.bucket),
-		(point) => metricValue(point, metric, percentile),
-	)
+	return Arr.map(Arr.sort(points, byBucketTime), (point) => metricValue(point, metric, percentile))
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Deltas, in the unit the metric is actually read in
- * -----------------------------------------------------------------------------------------------*/
 
 /** A delta as a tile prints it: the number, and which way it moved. */
 export interface ToolDelta {
@@ -460,10 +409,6 @@ export function toolDelta(
 	const change = (after - before) / before
 	return { text: formatPercent(Math.abs(change)), direction: direction(change, 0.001), good }
 }
-
-/* -------------------------------------------------------------------------------------------------
- * Footers
- * -----------------------------------------------------------------------------------------------*/
 
 /**
  * "Showing all 26 tools · 34,412 calls · 2.4% errors" — the table's own totals,

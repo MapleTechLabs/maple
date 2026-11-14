@@ -46,7 +46,8 @@ const decodeBase64 = (value: string): Uint8Array<ArrayBuffer> | undefined =>
 	Option.liftThrowable(atob)(value).pipe(
 		Option.map((binary) => {
 			const bytes = new Uint8Array(new ArrayBuffer(binary.length))
-			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+			for (let i = 0; i < binary.length; i++)
+				bytes[i] = Option.getOrElse(Str.charCodeAt(i)(binary), () => 0)
 			return bytes
 		}),
 		Option.getOrUndefined,
@@ -61,7 +62,9 @@ const encodeBase64 = (bytes: ArrayBuffer): string => {
 const constantTimeEqual = (a: string, b: string): boolean => {
 	if (a.length !== b.length) return false
 	let diff = 0
-	for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+	for (let i = 0; i < a.length; i++)
+		diff |=
+			Option.getOrElse(Str.charCodeAt(i)(a), () => 0) ^ Option.getOrElse(Str.charCodeAt(i)(b), () => 0)
 	return diff === 0
 }
 
@@ -90,13 +93,21 @@ export const signSvix = (secret: string, id: string, timestamp: string, body: st
 		return encodeBase64(mac)
 	})
 
-export const verifySvixSignature = (options: {
-	readonly secret: string
+interface CheckedSvixHeaders {
+	readonly id: string
+	readonly timestamp: string
+	readonly signature: string
+}
+
+/**
+ * The checks that need no body: all three headers present and the timestamp inside the tolerance.
+ * A receiver runs this before reading the body.
+ */
+export const checkSvixHeaders = (options: {
 	readonly headers: SvixHeaders
-	readonly body: string
 	readonly nowMs: number
 	readonly toleranceSeconds?: number | undefined
-}): Effect.Effect<void, SvixVerificationError> =>
+}): Effect.Effect<CheckedSvixHeaders, SvixVerificationError> =>
 	Effect.gen(function* () {
 		const { id, timestamp, signature } = options.headers
 		if (!id || !timestamp || !signature) {
@@ -119,6 +130,18 @@ export const verifySvixSignature = (options: {
 				reason: "stale_timestamp",
 			})
 		}
+		return { id, timestamp, signature }
+	})
+
+export const verifySvixSignature = (options: {
+	readonly secret: string
+	readonly headers: SvixHeaders
+	readonly body: string
+	readonly nowMs: number
+	readonly toleranceSeconds?: number | undefined
+}): Effect.Effect<void, SvixVerificationError> =>
+	Effect.gen(function* () {
+		const { id, timestamp, signature } = yield* checkSvixHeaders(options)
 		const expected = yield* signSvix(options.secret, id, timestamp, options.body)
 		const provided = Arr.map(
 			Arr.filter(

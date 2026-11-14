@@ -4,6 +4,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import { emptyOnFailure } from "../../../data/enrichment"
+import { healthGapNotice, healthGapOf } from "../../kit/health-gap-notice"
 import { errorState } from "@maple/views/ui/error-state"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
@@ -28,7 +29,7 @@ const FACETS = [
 
 type ChipParam = (typeof FACETS)[number]["include" | "exclude"]
 
-/** `serviceFilterChips`: exclusions first; URL namespace chips hide while the org pin is on. */
+/** Exclusions first; URL namespace chips hide while the org pin is on. */
 const filterChips = (model: Model, pinnedNamespace: string | null) => {
 	const chipOf = (param: ChipParam, label: string, isNegated: boolean) => {
 		const values = model.search[param]
@@ -43,6 +44,14 @@ const filterChips = (model: Model, pinnedNamespace: string | null) => {
 		],
 		(chip) => pinnedNamespace === null || (chip.id !== "namespaces" && chip.id !== "excludedNamespaces"),
 	)
+}
+
+/** Above a loaded table whose health was computed without its alerts or anomalies. */
+const healthGap = (h: HtmlBuilder<Message>, model: Model): ReadonlyArray<Html> => {
+	const gap = healthGapOf(model.incidents, model.anomalies.data)
+	return gap === null || !FoldkitAsyncData.hasData(model.overview.data)
+		? []
+		: [healthGapNotice(h, gap, "mb-4")]
 }
 
 const tableArea = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {
@@ -116,6 +125,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				},
 				[
 					activeFilterChips(h, { chips: filterChips(model, inputs.context.pinnedNamespace) }),
+					...healthGap(h, model),
 					tableArea(h, model, inputs),
 				],
 			),

@@ -8,9 +8,9 @@ import { icon } from "@maple/views/ui/icon"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { accountSectionSkeleton } from "../../kit/account-skeleton"
-import { saveBar } from "../../kit/save-bar"
-import { settingsSection, settingsSections } from "../../kit/section"
-import { switchRow } from "../../kit/switch-row"
+import { saveBar } from "../../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
+import { switchRow } from "../../../kit/switch-row"
 import { fieldIds } from "../fields"
 import { Message, type Model } from "./model"
 import {
@@ -23,8 +23,9 @@ import {
 	isOpsEnabled,
 	isWebEnabled,
 } from "./update"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -57,8 +58,14 @@ const scheduleField = (h: H, model: Model): Html => {
 	const ids = { ...fieldIds("digest-day"), description: "digest-day-description" }
 	return field(h, { state: IDLE }, [
 		fieldLabel(h, { ids, state: IDLE }, "Schedule"),
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-2 text-sm text-muted-foreground")],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				wrap: true,
+				className: typographyClass({ size: "sm", tone: "muted" }),
+			},
 			[
 				h.span([], ["Every"]),
 				nativeSelect(
@@ -144,7 +151,7 @@ const scopeField = (
 				items: model.facets[options.key],
 				ariaLabelledBy: ids.label,
 				ariaDescribedBy: ids.description,
-				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}...`,
+				placeholder: values.length === 0 ? `All ${options.plural}` : `Add ${options.noun}…`,
 				emptyText: `No ${options.plural} detected`,
 				toView: (parts) => h.div([h.Class("sm:max-w-xs")], parts),
 			},
@@ -226,7 +233,7 @@ const recipient = (h: H, model: Model): ReadonlyArray<Html | string> =>
 		? ["Add a primary email address to receive digests."]
 		: [
 				"Sent to ",
-				h.span([h.Class("text-foreground")], [model.email]),
+				typography(h, { tone: "foreground" }, [model.email]),
 				...(model.orgName === null ? [] : [` for ${model.orgName}`]),
 			]
 

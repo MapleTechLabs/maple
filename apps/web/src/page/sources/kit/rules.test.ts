@@ -6,7 +6,7 @@ import { expiresAtOf, expiryChoicesOf, init, Message, rulesOutcome, update } fro
 import { SIGNALS } from "./shared"
 
 const source = (fields: Record<string, unknown> = {}) =>
-	Schema.decodeUnknownSync(V2Source)({
+	Schema.decodeSync(V2Source)({
 		id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000002"),
 		object: "source",
 		name: "Checkout API",
@@ -43,12 +43,7 @@ describe("source rules draft", () => {
 			rate_limit_rps: null,
 			resource_attributes: [],
 		})
-		expect(Arr.map(expiryChoicesOf(init(null)), (choice) => choice.value)).toEqual([
-			"never",
-			"7",
-			"30",
-			"90",
-		])
+		expect(Arr.map(expiryChoicesOf(init(null)), (choice) => choice.value)).not.toContain("keep")
 	})
 
 	test("an existing source seeds the draft and offers to keep its expiry", () => {

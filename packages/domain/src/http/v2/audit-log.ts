@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AuditLogEntryId } from "../../primitives"
+import { AuditLogEntryId } from "@maple/primitives"
 import { AuditActorType, AuditLogPersistenceError, AuditLogSource, AuditOutcome } from "../audit-log"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
@@ -145,9 +145,21 @@ export const V2AuditLogEntry = Schema.Struct({
 })
 export type V2AuditLogEntry = Schema.Schema.Type<typeof V2AuditLogEntry>
 
-/** Audit-log list query: standard pagination plus actor/action/resource/outcome/time filters. */
+/** Which part of the log a listing covers: changes, data access (reads, tool calls, SQL), or both. */
+export const V2AuditLogKind = Schema.Literals(["all", "changes", "access"]).annotate({
+	identifier: "AuditLogKind",
+	title: "Audit log kind",
+})
+export type V2AuditLogKind = Schema.Schema.Type<typeof V2AuditLogKind>
+
 export const V2AuditLogQuery = Schema.Struct({
 	...ListQuery.fields,
+	kind: Schema.optional(
+		V2AuditLogKind.annotate({
+			description:
+				"`changes` leaves out data access (`*.read`, `*.called`, `*.sql_executed`, `*.request`) unless it was denied; `access` returns only data access; `all` (the default) returns both.",
+		}),
+	),
 	actor_type: Schema.optional(
 		AuditActorType.annotate({
 			description: "Only return entries performed by this kind of actor.",

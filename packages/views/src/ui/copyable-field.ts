@@ -3,15 +3,14 @@ import {
 	copyableFieldLabelStyles,
 	copyableFieldRevealVisibleStyles,
 	copyableFieldStyles,
-} from "@maple/ui/styles/ui/copyable-field"
+} from "./copyable-field.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CopyButton from "./copy-button"
 import { icon } from "./icon"
 import { inputGroup, inputGroupAddon, inputGroupButton, inputGroupInput } from "./input-group"
 import { String as Str } from "effect"
 
-// Port of packages/ui/src/components/ui/copyable-field.tsx. The parent owns the copy status and,
-// for `masked`, whether the value is revealed.
+// A read-only value with a copy button, optionally masked. The parent owns the copy status and, for `masked`, whether the value is revealed.
 
 /** `maskKey`: the readable prefix and the last four characters. */
 export const maskKey = (key: string): string =>

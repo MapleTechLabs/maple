@@ -1,8 +1,8 @@
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import type { TraceData } from "@maple/views/traces/trace-data"
 import * as SpanPanel from "@maple/views/traces/span-panel"
 import { LOG_LIMIT } from "@maple/views/traces/span-panel/command"
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import * as TraceFlow from "@maple/views/service-map/trace-flow/trace-flow"
 import * as Tabs from "@maple/views/ui/tabs"
 import { Option, Result, Array as Arr } from "effect"
@@ -24,7 +24,7 @@ import { openLocalLog } from "../kit/log-sheet"
 export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMessage, Resources>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 
-/** `TraceViewTabs`' default colour-by. */
+/** The trace views' default colour-by. */
 const DEFAULT_COLOR_BY = "service"
 
 const traceKey = (traceId: string) => keyOf("trace", { traceId })
@@ -147,11 +147,11 @@ const followLocation = (model: Model, context: PageContext): UpdateReturn =>
 		},
 	})
 
-/** `onSelectSpan`: the span goes in the hash; re-selecting the selected span changes nothing. */
+/** The span goes in the hash; re-selecting the selected span changes nothing. */
 const selectSpan = (model: Model, context: PageContext, spanId: string): UpdateReturn =>
 	queryOf(context.location).get("spanId") === spanId ? { model } : setParams(model, context, { spanId })
 
-/** `RefreshButton` without `advance`: `invalidateQueries(["local"])` refetches the trace in place. */
+/** A refresh refetches the trace in place. */
 const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	if (model.isRefreshing || model.trace.key === null) return { model }
 	const requested = requestKeepingFailure(model.trace, model.trace.key, "Refresh")
@@ -168,7 +168,7 @@ const refresh = (model: Model, context: PageContext): UpdateReturn => {
 	}
 }
 
-/** `onBack`: history back, else the list with the detail-only params dropped. */
+/** History back, else the list with the detail-only params dropped. */
 const back = (model: Model, context: PageContext): UpdateReturn => {
 	const query = queryOf(context.location)
 	query.delete("spanId")
@@ -308,14 +308,21 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 					Message.GotTabsMessage({ message: tab }),
 				),
 			}
-			const view = TAB_VALUES.find((value) => value === next.model.selected)
-			return view === undefined || view === model.tabs.selected
-				? lifted
-				: chain(lifted, (m) =>
-						setParams({ ...m, tabs: model.tabs }, context, {
-							view: view === "timeline" ? null : view,
-						}),
-					)
+			return Option.match(
+				Option.filter(
+					Arr.findFirst(TAB_VALUES, (value) => value === next.model.selected),
+					(view) => view !== model.tabs.selected,
+				),
+				{
+					onNone: () => lifted,
+					onSome: (view) =>
+						chain(lifted, (m) =>
+							setParams({ ...m, tabs: model.tabs }, context, {
+								view: view === "timeline" ? null : view,
+							}),
+						),
+				},
+			)
 		},
 		GotTimelineMessage: ({ message: child }) => {
 			if (model.timeline === null) return { model }

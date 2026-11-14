@@ -1,11 +1,6 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import {
-	activeFilterChips,
-	FILTER_SECTION_LABEL,
-	hasActiveFilters,
-	trafficIncludes,
-} from "../../components/analytics/filters"
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { activeFilterChips, FILTER_SECTION_LABEL, hasActiveFilters, trafficIncludes } from "./filters"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "./labels"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -29,11 +24,9 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { type FilterKey, Message } from "./message"
 import type { Breakdowns, Model } from "./model"
-import { filtersOf, tabOf } from "./requests"
+import { filtersOf, searchSiteOf, tabOf } from "./requests"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { favicon, isHostLike } from "./view-icons"
-
-// `AnalyticsFilterSidebar`: the page's filter rail.
 
 type H = HtmlBuilder<Message>
 
@@ -185,3 +178,40 @@ export const filtersRail = (h: H, model: Model): Html =>
 			filterSidebarError(h, failure, undefined, showsBreakdownCards(model) ? failure : undefined),
 		onData: (breakdowns) => loadedRail(h, model, breakdowns),
 	})
+
+/**
+ * The Search tab's rail: only the event filter applies there, as the Pages table's conversion.
+ * It arrives with the tables, once the status names an imported property: until then there is
+ * nothing to filter, and a rail that flashes in and out moves the whole page.
+ */
+export const searchEventRail = (h: H, model: Model): Html | undefined => {
+	const status = Option.getOrUndefined(AsyncData.getData(model.searchStatus.data))
+	const site = searchSiteOf(model.search, status)
+	if (site === undefined || site.watermarkDate === null) return undefined
+	const eventName = filtersOf(model.search).eventName
+	// No Search panel shows this read, so the rail carries its failure and the retry.
+	if (AsyncData.isFailure(model.events.data))
+		return Option.match(AsyncData.getError(model.events.data), {
+			onNone: () => filterSidebarEmpty(h),
+			onSome: (failure) => filterSidebarError(h, failure, Message.ClickedRetryEvents()),
+		})
+	const events = Option.getOrElse(AsyncData.getData(model.events.data), () => [])
+	if (events.length === 0 && eventName === undefined)
+		return AsyncData.isLoading(model.events.data) ? filterSidebarLoading(h, 1) : filterSidebarEmpty(h)
+	return filterSidebarFrame(h, { isWaiting: AsyncData.isRefreshing(model.events.data) }, [
+		filterSidebarHeader(
+			h,
+			eventName === undefined
+				? {}
+				: { onClear: Message.ChangedFilter({ key: "eventName", value: undefined }) },
+		),
+		...filterSidebarBody(h, "analytics-search-filters", [
+			section(
+				h,
+				model,
+				"eventName",
+				Arr.map(events, (event) => ({ name: event.name, count: event.sessions })),
+			),
+		]),
+	])
+}

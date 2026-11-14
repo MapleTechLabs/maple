@@ -9,7 +9,7 @@ navLabel: "Overview"
 import GuideFilter from "../../components/docs/GuideFilter.astro"
 import GuideGrid from "../../components/docs/GuideGrid.astro"
 
-Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a Maple-specific plugin. Each guide below installs the SDK, points it at the ingest endpoint with an ingest key from **Settings → Ingestion**, and checks that the first trace arrives. New to Maple? The [Quickstart](/docs/getting-started/quickstart) gets a first trace in about five minutes. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill can do the same setup from a coding agent.
+Maple ingests OpenTelemetry over OTLP, on HTTP or gRPC, so any OTLP exporter works without a Maple-specific plugin. Each guide below installs the SDK, points it at the ingest endpoint with an ingest key from **Settings → Ingestion**, and checks that the first trace arrives. New to Maple? The [Quickstart](/docs/getting-started/quickstart) gets a first trace in about five minutes. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill can do the same setup from a coding agent.
 
 <GuideFilter />
 
@@ -75,6 +75,8 @@ export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="my-service"
 ```
+
+Maple accepts OTLP over HTTP (protobuf or JSON) and OTLP over gRPC on the same host and port 443. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to match the exporter package you installed: `http/protobuf` for an HTTP exporter, `grpc` for a gRPC one.
 
 Maple reads the standard semantic conventions; the attributes it relies on for the service map, error grouping and sampling-aware throughput are listed in [OpenTelemetry conventions](/docs/concepts/otel-conventions). To develop against a local sink instead of the cloud, run [Maple Local](/docs/local-mode) and point the endpoint at `http://localhost:4318`.
 

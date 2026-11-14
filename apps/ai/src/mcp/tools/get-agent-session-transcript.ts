@@ -15,7 +15,7 @@ import {
 import type { AiSessionSpan } from "@maple/domain/http"
 import { AgentTranscriptRow, GetAgentSessionTranscriptOutput } from "@maple/domain/mcp-outputs"
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, tableCell, truncate } from "../lib/format"
 import {
 	clipPayload,
@@ -299,7 +299,9 @@ export function failureTimeline(rows: ReadonlyArray<Row>): ReadonlyArray<Row> {
 			(row) => ({ ...row, depth: 0 }),
 		)
 			// On a tie a run's stop follows the steps that stopped it.
-			.toSorted((a, b) => at(a) - at(b) || Number(a.kind === "turn") - Number(b.kind === "turn"))
+			.toSorted((a, b) =>
+				at(a) !== at(b) ? at(a) - at(b) : Number(a.kind === "turn") - Number(b.kind === "turn"),
+			)
 	)
 }
 
@@ -424,7 +426,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 			limit: P.limit({ default: 120, max: 500, noun: "steps" }),
 			offset: P.offset({ max: 50_000 }),
 		}),
-		output: GetAgentSessionTranscriptOutput,
 		hints: { readOnly: true },
 		phrases: ["Reading an agent session"],
 		handler: Effect.fn("McpTool.getAgentSessionTranscript")(
@@ -549,10 +550,6 @@ export function registerGetAgentSessionTranscriptTool(server: McpToolRegistrar) 
 	})
 }
 
-/* -------------------------------------------------------------------------- */
-/* Rendering                                                                  */
-/* -------------------------------------------------------------------------- */
-
 const at = (row: Row): string => (row.offsetMs === undefined ? "" : `[${offsetLabel(row.offsetMs)}] `)
 const indent = (row: Row): string => Str.repeat(row.depth)("  ")
 const spanRef = (row: Row): string => (row.spanId === undefined ? "" : ` · span ${row.spanId}`)
@@ -663,18 +660,13 @@ function renderTranscript(output: Output): ToolDoc {
 	// Each turn reads as a heading over one block of its steps.
 	const sections = (timeline ? [] : output.rows).reduce<
 		ReadonlyArray<{ readonly header?: Row; readonly lines: ReadonlyArray<string> }>
-	>(
-		(acc, row) =>
-			row.kind === "turn"
-				? [...acc, { header: row, lines: [] }]
-				: acc.length === 0
-					? [{ lines: [rowLine(row)] }]
-					: [
-							...acc.slice(0, -1),
-							{ ...acc[acc.length - 1]!, lines: [...acc[acc.length - 1]!.lines, rowLine(row)] },
-						],
-		[],
-	)
+	>((acc, row) => {
+		if (row.kind === "turn") return [...acc, { header: row, lines: [] }]
+		const last = acc.at(-1)
+		return last === undefined
+			? [{ lines: [rowLine(row)] }]
+			: [...acc.slice(0, -1), { ...last, lines: [...last.lines, rowLine(row)] }]
+	}, [])
 	// A page that starts inside a turn still says which turn it is in.
 	const continued =
 		timeline || output.pagination.offset === 0 || output.rows[0]?.kind === "turn"

@@ -1,11 +1,11 @@
 import { Effect, Schema, Stream, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { OrgId } from "./primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	ChatConnectorId,
 	ChatConversationKey,
 	ChatTurnTenant,
-	chatModeFromSessionId,
+	chatSessionKind,
 	connectorSessionId,
 	connectorApprovalTenant,
 	connectorTurnTenant,
@@ -18,7 +18,6 @@ import {
 	decodeChatEventPayload,
 	encodeChatEvent,
 	encodeChatEventPayload,
-	investigationIdFromChatSessionId,
 	makeChatSessionId,
 	orgIdFromChatSessionId,
 	tabIdFromChatSessionId,
@@ -30,7 +29,7 @@ import { ChatSessionCallError, type ChatSessionRpc, chatSessionClient } from "./
 
 describe("chatSessionClient", () => {
 	const unused = () => Effect.die("not called")
-	const rpc = (overrides: Partial<ChatSessionRpc>): ChatSessionRpc => ({
+	const rpc = (overrides: Partial<ChatSessionRpc<unknown>>): ChatSessionRpc<unknown> => ({
 		cursor: unused,
 		running: unused,
 		history: unused,
@@ -101,14 +100,14 @@ describe("chat session ids", () => {
 		expect(orgIdFromChatSessionId(":leading")).toBeUndefined()
 	})
 
-	it("derives the mode from the tab prefix", () => {
-		expect(chatModeFromSessionId("o:tab-1")).toBe("default")
-		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
-		expect(chatModeFromSessionId("o:pr-r1")).toBe("pr-review")
-		expect(chatModeFromSessionId("o:prr-r1")).toBe("pr-reply")
+	it("derives the mode and the raw id from the tab prefix", () => {
+		expect(chatSessionKind("o:tab-1")).toEqual({ mode: "default" })
+		expect(chatSessionKind("o:inv-123")).toEqual({ mode: "investigate", rawId: "123" })
+		expect(chatSessionKind("o:pr-r1")).toEqual({ mode: "pr-review", rawId: "r1" })
+		expect(chatSessionKind("o:prr-r1")).toEqual({ mode: "pr-reply", rawId: "r1" })
 		// A connector thread is an ordinary chat conversation someone is answering in from
 		// elsewhere; what differs is the turn's origin, not the mode.
-		expect(chatModeFromSessionId("o:bot-testchat-c1")).toBe("default")
+		expect(chatSessionKind("o:bot-testchat-c1")).toEqual({ mode: "default" })
 	})
 
 	it("builds a connector conversation's session id, org and prefix intact", () => {
@@ -131,11 +130,6 @@ describe("chat session ids", () => {
 			expect(() => id(bad), bad).toThrow()
 		}
 		expect(id("testchat2")).toBe("testchat2")
-	})
-
-	it("recovers the investigation id only for investigate sessions", () => {
-		expect(investigationIdFromChatSessionId("o:inv-abc")).toBe("abc")
-		expect(investigationIdFromChatSessionId("o:pr-abc")).toBeUndefined()
 	})
 })
 

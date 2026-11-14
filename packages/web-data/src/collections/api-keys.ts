@@ -1,6 +1,6 @@
-import { ApiKeyId, ApiKeyKind, UserId } from "@maple/domain/http"
-import type { V2ApiKey } from "@maple/domain/http/v2"
-import { Schema } from "effect"
+import { V2ApiKey } from "@maple/domain/http/v2"
+import { Array as Arr, type Option, Schema } from "effect"
+import { liveRowDecoder } from "./live-row"
 
 /**
  * Safe browser projection of `api_keys`. This mirrors the pinned column list in
@@ -26,24 +26,31 @@ export const ApiKeyRowSchema = Schema.Struct({
 
 export type ApiKeyRow = typeof ApiKeyRowSchema.Type
 
-const asApiKeyId = Schema.decodeUnknownSync(ApiKeyId)
-const asApiKeyKind = Schema.decodeUnknownSync(ApiKeyKind)
-const asUserId = Schema.decodeUnknownSync(UserId)
+// The type side: ids arrive raw, the `key_…` public id is the wire's encoding.
+const decodeApiKey = liveRowDecoder("api_keys", Schema.toType(V2ApiKey))
 
-/** Maps the Electric row into the same decoded model returned by the v2 client. */
-export const rowToV2ApiKey = (row: ApiKeyRow): V2ApiKey => ({
-	id: asApiKeyId(row.id),
-	object: "api_key",
-	name: row.name,
-	description: row.description,
-	key_prefix: row.key_prefix,
-	kind: asApiKeyKind(row.kind),
-	scopes: row.scopes,
-	revoked: row.revoked,
-	revoked_at: row.revoked_at,
-	last_used_at: row.last_used_at,
-	expires_at: row.expires_at,
-	created_at: row.created_at,
-	created_by: asUserId(row.created_by),
-	created_by_email: row.created_by_email,
-})
+/**
+ * Maps the Electric row into the same decoded model returned by the v2 client; `None` for a
+ * row this build cannot read (e.g. a key kind added after it was built).
+ */
+export const rowToV2ApiKey = (row: ApiKeyRow): Option.Option<V2ApiKey> =>
+	decodeApiKey(row.id, {
+		id: row.id,
+		object: "api_key",
+		name: row.name,
+		description: row.description,
+		key_prefix: row.key_prefix,
+		kind: row.kind,
+		scopes: row.scopes,
+		revoked: row.revoked,
+		revoked_at: row.revoked_at,
+		last_used_at: row.last_used_at,
+		expires_at: row.expires_at,
+		created_at: row.created_at,
+		created_by: row.created_by,
+		created_by_email: row.created_by_email,
+	})
+
+/** The live keys, without rows this build cannot read. */
+export const rowsToV2ApiKeys = (rows: ReadonlyArray<ApiKeyRow>): ReadonlyArray<V2ApiKey> =>
+	Arr.getSomes(Arr.map(rows, rowToV2ApiKey))

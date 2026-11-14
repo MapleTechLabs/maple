@@ -1,5 +1,5 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { lstat, rm, statfs } from "node:fs/promises"
 import { dirname, join, parse, relative, resolve, sep } from "node:path"
@@ -28,7 +28,9 @@ import {
 	type ArchiveGenerationManifest,
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
+	verifyGenerationShards,
 } from "./manifest"
+import { sha256FileSync } from "../checkpoint-digest"
 import { ArchiveCreateRefusedError } from "./errors"
 import { NonNegativeSafeInt } from "./schemas"
 import {
@@ -183,7 +185,9 @@ export const assertNoArchiveShrink = (
 
 /** The bundled TTL raised to any configured floor: the longest a day can live. */
 const maximumRetentionDays = (dataDir: string, signal: string): number | null => {
-	const bundled = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === signal)?.ttl
+	const bundled = Option.getOrUndefined(
+		Arr.findFirst(LOCAL_SCHEMA_MANIFEST.objects, (object) => object.name === signal),
+	)?.ttl
 	const days = bundled === undefined ? null : ttlDaysFromDefinition(`TTL ${bundled}`)
 	if (days === null) return null
 	return Math.max(days, readRawTelemetryRetentionDays(dataDir) ?? 0)
@@ -221,7 +225,12 @@ const restoredRetentionDays = (
 		`SELECT engine_full FROM system.tables WHERE database = 'default' AND name = '${signal.name}'`,
 		"JSONEachRow",
 	)
-	const row = decodeEngineFullRow(Str.split("\n")(text).find((line) => Str.trim(line).length > 0) ?? "")
+	const row = decodeEngineFullRow(
+		Option.getOrElse(
+			Arr.findFirst(Str.split("\n")(text), (line) => Str.trim(line).length > 0),
+			() => "",
+		),
+	)
 	return Option.isSome(row) ? ttlDaysFromDefinition(row.value.engine_full) : null
 }
 
@@ -236,8 +245,6 @@ export interface ArchiveGenerationResult {
 
 const checkpointFingerprint = (manifest: CheckpointManifest): string =>
 	`${manifest.checkpointId}:${manifest.createdAt}:${manifest.backupBytes}`
-
-const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 
 const toShardRecord = (shard: WrittenShard): ArchiveShardRecord => ({
 	name: shard.name,
@@ -392,7 +399,8 @@ export const createArchiveGeneration = async (
 	signalName: string,
 	rangeDate: string,
 	tuning: ArchiveTuning,
-	checkpointSelector: "current" | "previous" | string = "current",
+	/** `current`, `previous` or a checkpoint id, validated by `parseCheckpointSelector`. */
+	checkpointSelector: string = "current",
 	faults: ArchiveGenerationFaults = {},
 	options: ArchiveGenerationOptions = {},
 ): Promise<ArchiveGenerationResult> => {
@@ -592,7 +600,7 @@ export const createArchiveGeneration = async (
 							...faults,
 							afterManifestWritten: async () => {
 								const manifestPath = join(building, "manifest.json")
-								const manifestSha256 = sha256File(manifestPath)
+								const manifestSha256 = sha256FileSync(manifestPath)
 								await advancePhase(
 									archiveDir,
 									operationId,
@@ -714,7 +722,7 @@ const parseCount = (text: string): number => {
 		(line) => decodeJsonRecord(line),
 	)
 	const row = rows[0]
-	if (!row) return 0
+	if (row === undefined) return 0
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -1070,7 +1078,7 @@ const verifyPublishedGeneration = async (
 	)
 	await assertNoSymlink(archiveDir, manifestPath, "archive final manifest")
 	await assertRealFile(manifestPath, "archive final manifest")
-	const actualManifestSha256 = sha256File(manifestPath)
+	const actualManifestSha256 = sha256FileSync(manifestPath)
 	if (actualManifestSha256 !== intent.manifestSha256) {
 		throw new Error(
 			`archive final manifest SHA-256 mismatch: journal ${intent.manifestSha256}, actual ${actualManifestSha256}`,
@@ -1087,23 +1095,7 @@ const verifyPublishedGeneration = async (
 			`archive final manifest checkpoint mismatch: journal ${intent.checkpointId}, manifest ${manifest.checkpointId}`,
 		)
 	}
-	for (const shard of manifest.shards) {
-		const shardPath = join(finalGeneration, "shards", shard.name)
-		await assertNoSymlink(archiveDir, shardPath, `archive shard ${shard.name}`)
-		await assertRealFile(shardPath, `archive shard ${shard.name}`)
-		const actualBytes = statSync(shardPath).size
-		if (actualBytes !== shard.bytes) {
-			throw new Error(
-				`archive shard ${shard.name} byte size mismatch: manifest ${shard.bytes}, actual ${actualBytes}`,
-			)
-		}
-		const actualSha256 = sha256File(shardPath)
-		if (actualSha256 !== shard.sha256) {
-			throw new Error(
-				`archive shard ${shard.name} SHA-256 mismatch: manifest ${shard.sha256}, actual ${actualSha256}`,
-			)
-		}
-	}
+	verifyGenerationShards(archiveDir, finalGeneration, manifest.shards, "archive shard")
 	return manifest
 }
 
@@ -1130,8 +1122,6 @@ const reconcilePrePublication = async (
 	await advancePhase(archiveDir, intent.operationId, endPhase)
 	// Quarantine incomplete building output if present (retain, don't delete).
 	if (existsSync(building)) {
-		// Move the building debris into a quarantine subdir named for the
-		// operation, retaining it for inspection.
 		const quarantineBuilding = join(
 			archiveRoot(archiveDir),
 			"quarantine",
@@ -1156,7 +1146,6 @@ const reconcilePrePublication = async (
 			await assertRealDirectory(quarantineBuilding, "archive building quarantine")
 		}
 	}
-	// Remove owned scratch.
 	await removeOwnedScratch(intent.scratchRoot, intent.scratchSubdir)
 	// Release the owned pin if it still exists. A pin absence before
 	// "pin-released" would be an error, but a pre-publication abort releasing its

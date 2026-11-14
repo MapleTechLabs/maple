@@ -6,9 +6,8 @@ import { BucketSeconds } from "./query-engine"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseReadHttpErrors } from "./warehouse"
+import { AnalystAccess } from "./analyst-access"
 
-// AI agent session endpoint schemas
-//
 // Backed by the `maple_ai.*` span attributes the ingest gateway stamps at
 // decode time; a session is resolved at trace granularity by
 // `aiSessionPageQuery` (which ranks a page and measures it off the index) and
@@ -451,13 +450,10 @@ export const AiSessionTokenTotals = Schema.Struct({
 export type AiSessionTokenTotals = Schema.Schema.Type<typeof AiSessionTokenTotals>
 
 /**
- * How a session's usage was reported, which decides which spans' figures the
- * totals sum. `per-call`: the model-call spans carry usage, and the totals are
- * theirs alone — an agent span that also carries a roll-up of its children is
- * not added on top. `roll-up`: no model-call span reported anything, so the
- * totals are what the wrapping spans reported. `none`: nothing did.
+ * How a session's usage was reported. `per-call`: the model calls carry it (the
+ * ingest gateway stamps usage on them alone). `none`: nothing did.
  */
-export const AiSessionTokenReporting = Schema.Literals(["per-call", "roll-up", "none"])
+export const AiSessionTokenReporting = Schema.Literals(["per-call", "none"])
 export type AiSessionTokenReporting = Schema.Schema.Type<typeof AiSessionTokenReporting>
 
 /**
@@ -598,10 +594,6 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
 	},
 ) {}
 
-// ---------------------------------------------------------------------------
-// Agent Sessions › Tools
-// ---------------------------------------------------------------------------
-//
 // The tool analytics page, backed by `ai-tools.ts` in the query-engine
 // integrations layer. Same source as the sessions list — `ai_trace_index`,
 // filtered to `IsToolCall = 1` — and the same session key, so a row here links
@@ -620,7 +612,6 @@ export class AiSessionTooLargeError extends HttpTaggedError<AiSessionTooLargeErr
  */
 export const AI_TOOLS_SELECTION_MAX_CHARS = 200
 
-/** Every selection field of the tools page carries the same ceiling. */
 const aiToolsSelectionText = Schema.String.check(
 	Schema.isMinLength(1),
 	Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS),
@@ -822,15 +813,9 @@ export class AiToolsBreakdownsResponse extends Schema.Class<AiToolsBreakdownsRes
 	tools: Schema.Array(AiToolsBreakdownItem),
 }) {}
 
-/* -------------------------------------------------------------------------------------------------
- * Tool detail — the failures of one tool
- *
- * Two reads, and both are keyed by a REQUIRED `tool`: they are the tool detail
- * page's, and the whole-org version of either question is the overview's error
- * rate column. Everything else about the selection is the same bag the four
- * reads above take, so the page's toolbar narrows its failures exactly as it
- * narrows its charts.
- * -----------------------------------------------------------------------------------------------*/
+// Tool detail: two reads keyed by a REQUIRED `tool`; the whole-org version of either question
+// is the overview's error rate column. The rest of the selection is the same bag the four
+// reads above take, so the toolbar narrows failures exactly as it narrows the charts.
 
 /** The selection with the tool required — the tool detail page's own scope. */
 const aiToolSelectionForTool = {
@@ -1115,4 +1100,6 @@ export class AiSessionsInternalApiGroup extends HttpApiGroup.make("aiSessionsInt
 		}),
 	)
 	.prefix("/internal/ai-sessions")
-	.middleware(SessionAuthorization) {}
+	.middleware(SessionAuthorization)
+	// Every endpoint here only reads, so an analyst may call it.
+	.annotate(AnalystAccess, "read") {}

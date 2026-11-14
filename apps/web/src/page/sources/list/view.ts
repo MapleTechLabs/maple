@@ -1,9 +1,10 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
+import { filterChipItem } from "@maple/views/ui/filter-chip"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { linkButton } from "@maple/views/ui/button"
+import { textLink } from "@maple/views/ui/text-link"
 import { empty, emptyDescription, emptyHeader, emptyMedia, emptyTitle } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
@@ -14,17 +15,17 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { platformMeta, platformTile } from "../kit/platforms"
-import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/domain/primitives"
+import { PULL_SOURCE_PLATFORMS, type PullSourcePlatform, type SourceId } from "@maple/primitives"
 import { AppRoute, hrefOf } from "../../../route"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { integrationPlatformOf, orderSources, sourceHref, viaLabel } from "../kit/shared"
 import { needsAttention, sourceStatusBadge } from "../kit/status"
 import { signalCounts, type VolumeTotals, volumeSize } from "../kit/volume"
-import { countChipItem } from "../../integrations/kit/count-chip"
 import { Message } from "./message"
-import type { Model, SourceKind } from "./model"
+import { canManage, type Model, type SourceKind } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { relativeTime } from "../../kit/relative-time"
 
 type H = HtmlBuilder<Message>
 
@@ -83,7 +84,7 @@ const volumeCell = (h: H, source: V2Source, usage: UsageBySource, isUnavailable:
 const sourceRow = (
 	h: H,
 	source: V2Source,
-	nowMs: number,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
 	usage: UsageBySource,
 	isUnavailable: boolean,
 ): Html => {
@@ -112,13 +113,13 @@ const sourceRow = (
 					]),
 				]),
 			]),
-			tableCell(h, [sourceStatusBadge(h, source, { nowMs, showTime: false })]),
+			tableCell(h, [sourceStatusBadge(h, source, { nowMs: clock.nowMs, showTime: false })]),
 			tableCell(
 				h,
 				[
 					source.health.last_data_at === null
 						? "Never"
-						: formatRelativeTime(source.health.last_data_at, nowMs),
+						: relativeTime(h, { value: source.health.last_data_at, ...clock }),
 				],
 				"text-muted-foreground hidden sm:table-cell",
 			),
@@ -139,18 +140,20 @@ const sourceRow = (
 	)
 }
 
-const emptyState = (h: H): Html =>
+const emptyState = (h: H, model: Model): Html =>
 	empty(
 		h,
 		[
 			emptyHeader(h, [
 				emptyMedia(h, { variant: "icon" }, [icon(h, "ConnectionIcon", { size: 16 })]),
-				emptyTitle(h, ["Connect your first source"]),
+				emptyTitle(h, [canManage(model) ? "Connect your first source" : "No sources added yet"]),
 				emptyDescription(h, [
-					"Give each SDK, cluster or host its own source to see what it sends, cap its rate, or pause it on its own.",
+					canManage(model)
+						? "Give each SDK, cluster or host its own source to see what it sends, cap its rate, or pause it on its own."
+						: "Org admins and engineers can connect sources.",
 				]),
 			]),
-			connectButton(h),
+			...(canManage(model) ? [connectButton(h)] : []),
 		],
 		"py-8",
 	)
@@ -161,7 +164,7 @@ const kindOf = (source: V2Source): Exclude<SourceKind, "all"> =>
 const KIND_LABELS = { all: "All", push: "OpenTelemetry", integration: "Integrations" } as const
 
 const kindChip = (h: H, kind: SourceKind, count: number): ToggleGroup.ToggleGroupItem =>
-	countChipItem(h, { value: kind, label: KIND_LABELS[kind], count })
+	filterChipItem(h, { value: kind, label: KIND_LABELS[kind], count })
 
 const kindFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): Html =>
 	ToggleGroup.view(h, {
@@ -191,7 +194,7 @@ const attentionFilter = (h: H, model: Model, sources: ReadonlyArray<V2Source>): 
 				isConnected: false,
 				size: "xs",
 				items: [
-					countChipItem(h, { value: "attention", label: "Needs attention", count, tone: "warn" }),
+					filterChipItem(h, { value: "attention", label: "Needs attention", count, tone: "warn" }),
 				],
 			})
 }
@@ -204,8 +207,9 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 		(platform: PullSourcePlatform) => !present.has(platform),
 	)
 	if (missing.length === 0) return null
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-2 rounded-md border border-dashed p-4")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", wrap: true, className: "rounded-md border border-dashed p-4" },
 		[
 			h.span([h.Class("text-muted-foreground mr-auto text-xs")], ["Pull more data in without an SDK"]),
 			...Arr.map(missing, (platform) =>
@@ -219,6 +223,9 @@ const availableStrip = (h: H, sources: ReadonlyArray<V2Source>): Html | null => 
 					[icon(h, platformMeta(platform).icon, { size: 14 }), platformMeta(platform).label],
 				),
 			),
+			typography(h, { size: "xs" }, [
+				textLink(h, { href: hrefOf(AppRoute.Integrations({ search: {} })) }, ["All integrations →"]),
+			]),
 		],
 	)
 }
@@ -247,7 +254,12 @@ const orgTotal = (
 	})
 }
 
-const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: number): Html => {
+const sourcesTable = (
+	h: H,
+	model: Model,
+	rows: ReadonlyArray<V2Source>,
+	clock: Readonly<{ nowMs: number; timeZone: string }>,
+): Html => {
 	const sources = orderSources(rows)
 	const added = Arr.filter(sources, (source) => !source.is_default)
 	const kind = model.kindFilter.values[0] ?? "all"
@@ -256,7 +268,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 		? Arr.filter(ofKind, needsAttention)
 		: ofKind
 	const attention = attentionFilter(h, model, sources)
-	const strip = availableStrip(h, sources)
+	const strip = canManage(model) ? availableStrip(h, sources) : null
 	const usage = usageBySource(model)
 	const isUnavailable = AsyncData.isFailure(model.usage.data)
 	const total = orgTotal(h, sources, usage, isUnavailable)
@@ -282,11 +294,11 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 			]),
 			tableBody(
 				h,
-				Arr.map(shown, (source) => sourceRow(h, source, nowMs, usage, isUnavailable)),
+				Arr.map(shown, (source) => sourceRow(h, source, clock, usage, isUnavailable)),
 			),
 		]),
 		...(added.length === 0
-			? [emptyState(h)]
+			? [emptyState(h, model)]
 			: shown.length === 0
 				? [filteredEmpty(h, { noun: "sources", description: "", className: "py-10 md:py-12" })]
 				: []),
@@ -297,7 +309,7 @@ const sourcesTable = (h: H, model: Model, rows: ReadonlyArray<V2Source>, nowMs: 
 const failed = (h: H, failure: Parameters<typeof errorState>[1]["failure"]): Html =>
 	errorState(h, { failure, title: "Couldn't load sources", onRetry: Message.ClickedRetry() })
 
-const body = (h: H, model: Model): Html => {
+const body = (h: H, model: Model, timeZone: string): Html => {
 	const loading = skeleton(h, "h-48 w-full")
 	const nowMs = model.nowMs
 	if (nowMs === null) return loading
@@ -306,15 +318,20 @@ const body = (h: H, model: Model): Html => {
 		onLoading: () => loading,
 		onFailure: (failure) => failed(h, failure),
 		onStale: ({ error }) => failed(h, error),
-		onSuccess: (rows) => sourcesTable(h, model, rows, nowMs),
-		onRefreshing: (rows) => sourcesTable(h, model, rows, nowMs),
+		onSuccess: (rows) => sourcesTable(h, model, rows, { nowMs, timeZone }),
+		onRefreshing: (rows) => sourcesTable(h, model, rows, { nowMs, timeZone }),
 	})
 }
 
-export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	dashboardPage(
 		h,
-		{ title: "Sources", actions: connectButton(h, showsEmptyState(model) ? "outline" : undefined) },
-		[body(h, model)],
+		{
+			title: "Sources",
+			actions: canManage(model)
+				? connectButton(h, showsEmptyState(model) ? "outline" : undefined)
+				: undefined,
+		},
+		[body(h, model, inputs.context.timeZone)],
 	),
 )

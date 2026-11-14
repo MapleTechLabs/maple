@@ -1,7 +1,7 @@
 import { formatBucketLabel, formatValueByUnit } from "@maple/ui/lib/format"
-import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "@maple/ui/components/plot/partial-buckets"
-import { bucketTimeScale, minBarLength } from "@maple/ui/components/plot/plot-scales"
-import { timeseriesXAxis } from "@maple/ui/components/plot/timeseries-axis"
+import { findFirstPartialIndex, trimEmptyTrailingBuckets } from "../plot/partial-buckets"
+import { bucketTimeScale, minBarLength } from "../plot/plot-scales"
+import { timeseriesXAxis } from "../plot/timeseries-axis"
 import { barY, type ChartValue, defineChart, group } from "@tanstack/charts"
 import { Option, Array as Arr } from "effect"
 import { thresholdMarks } from "./threshold-marks"
@@ -18,17 +18,16 @@ import { asFiniteNumber, type TimeseriesAxisContext, type TimeseriesRow } from "
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of `QueryBuilderBarChart` (packages/ui/src/components/charts/bar/query-builder-bar-chart.tsx),
-// definition half: bars centred on their bucket on a time scale padded by half a bucket, closed and
-// in-flight lanes, the hovered column kept bright.
-// TODO(bar-thresholds): thresholds, log scale, soft bounds and the "Other" bucketing past
-// `MAX_BAR_SERIES` are not ported.
+// The query-builder bar chart's definition: bars centred on their bucket on a time scale padded by
+// half a bucket, closed and in-flight lanes, the hovered column kept bright. TODO(bar-thresholds):
+// thresholds, log scale, soft bounds and the "Other" bucketing past `MAX_BAR_SERIES` are not ported.
 
 type BarSpec = Extract<ChartSpec, { readonly _tag: "QueryBuilderBar" }>
 
 /** Matches the Recharts `maxBarSize={48}`. */
 const MAX_BAR_THICKNESS = 48
 const BAR_RADIUS = 2
+const STACK_TOP_RADIUS = [BAR_RADIUS, BAR_RADIUS, 0, 0] as const
 const PARTIAL_FILL_OPACITY = 0.45
 const DIMMED_FILL_OPACITY = 0.3
 const DIMMED_PARTIAL_FILL_OPACITY = 0.15
@@ -42,9 +41,11 @@ interface BarCell {
 	/** The running total beneath it in a stack; 0 otherwise. */
 	readonly base: number
 	readonly partial: boolean
+	/** The last non-empty cell of its bucket's stack: the one whose top is the column's. */
+	readonly top: boolean
 }
 
-// copied: `bucketBandDomain` and `timeseriesBandXAxis` (plot/timeseries.tsx, a React module).
+// `bucketBandDomain` and `timeseriesBandXAxis`.
 const bucketBandDomain = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	bucketSeconds: number | undefined,
@@ -56,8 +57,8 @@ const bucketBandDomain = (
 	if (rows.length < 2 || times.length === 0) return null
 	const min = Math.min(...times)
 	const max = Math.max(...times)
-	const gaps = Arr.flatMap(times.slice(1), (time, index) =>
-		time > times[index] ? [time - times[index]] : [],
+	const gaps = Arr.flatMap(Arr.zip(times, times.slice(1)), ([previous, time]) =>
+		time > previous ? [time - previous] : [],
 	)
 	const smallestGap = gaps.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...gaps)
 	if (min === max) return null
@@ -84,7 +85,7 @@ interface Series {
 }
 
 /** The cells of every visible series per bucket, in `visible` order (the stack is bottom-up). */
-const cellsOf = (
+export const cellsOf = (
 	rows: ReadonlyArray<TimeseriesRow>,
 	visible: ReadonlyArray<Series>,
 	first: number,
@@ -92,6 +93,10 @@ const cellsOf = (
 ): ReadonlyArray<BarCell> =>
 	Arr.flatMap(rows, (row, index) => {
 		const partial = first !== -1 && index >= first
+		const topIndex = Option.getOrElse(
+			Arr.findLastIndex(visible, (entry) => asFiniteNumber(row[entry.key]) > 0),
+			() => -1,
+		)
 		return Arr.map(visible, (entry, entryIndex) => ({
 			row,
 			key: entry.key,
@@ -105,6 +110,7 @@ const cellsOf = (
 					)
 				: 0,
 			partial,
+			top: topIndex === entryIndex,
 		}))
 	})
 
@@ -138,6 +144,8 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 					logScale: axis.logScale,
 					...(axis.softMin === null ? undefined : { softMin: axis.softMin }),
 					...(axis.softMax === null ? undefined : { softMax: axis.softMax }),
+					...(axis.max === undefined ? undefined : { max: axis.max }),
+					...(axis.zeroLabel === undefined ? undefined : { zeroLabel: axis.zeroLabel }),
 					thresholds: axis.thresholds,
 				}),
 	})
@@ -159,7 +167,10 @@ export const buildQueryBuilderBar = (spec: BarSpec): BuiltChart<BarCell, ChartVa
 			fill: (cell: BarCell) => cell.color,
 			fillOpacity: partialLane ? PARTIAL_FILL_OPACITY : undefined,
 			maxThickness: MAX_BAR_THICKNESS,
-			radius: spec.stacked ? 0 : BAR_RADIUS,
+			// Only the column's top is rounded: a bar stands on the baseline, a segment on the one under it.
+			radius: spec.stacked
+				? (cell: BarCell) => (cell.top ? STACK_TOP_RADIUS : 0)
+				: { end: BAR_RADIUS, stack: "each" },
 			layout: spec.stacked ? undefined : group(),
 			states: [
 				{

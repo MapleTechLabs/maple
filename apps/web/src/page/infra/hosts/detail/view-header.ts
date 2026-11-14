@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { formatLoad, formatPercent } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
@@ -12,9 +12,7 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { hostStatusBadge } from "../../kit/status"
 import { Message } from "./message"
 import type { HostSummary } from "./model"
-import { typographyClass } from "@maple/views/ui/typography"
-
-// `HostDetailHeader` / `HostDetailHeaderLoading` and `HeroChip`.
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -37,9 +35,9 @@ type HeaderInputs = Readonly<{
 
 const noData = (h: H, inputs: HeaderInputs): HostHeaderParts => ({
 	...pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [inputs.hostName]),
+		title: typography(h, { mono: true }, [inputs.hostName]),
 		description:
-			"This host sent no metrics in the selected time window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list.",
+			"This host sent no metrics in this window. It may have stopped reporting earlier: try a wider range, or go back to the hosts list.",
 	}),
 	actions: [
 		...(inputs.canWiden
@@ -86,7 +84,7 @@ export const hostDetailHeader = (h: H, inputs: HeaderInputs): HostHeaderParts =>
 			compact: true,
 		})
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [summary.hostName]),
+		title: typography(h, { mono: true }, [summary.hostName]),
 		meta,
 		trailing: [hostStatusBadge(h, { lastSeen: summary.lastSeen, referenceMs: inputs.nowMs })],
 	})

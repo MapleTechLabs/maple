@@ -4,12 +4,27 @@
  */
 import { describe, expect, it } from "vitest"
 import { mapleToolCatalog, inputSchemaOf, toOutputSchema } from "./registry"
-import { MUTATING_TOOL_NAMES } from "./mutating"
 import { McpToolOutputs } from "@maple/domain/mcp-outputs"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { MCP_INSTRUCTIONS } from "../resources/instructions"
+import * as Prompts from "../../chat/prompts"
+import { diagnosisTool } from "../../chat/investigation"
+import { proposeEditTool, replyTool } from "../../chat/reply"
+import { recordFindingTool, reviewTool } from "../../chat/review/completion"
+import { REVIEW_FILES } from "../../chat/review/fanout"
+
+/** Every parameter name and enum value a tool publishes, at any depth. */
+const vocabulary = (node: unknown, into: Set<string>): Set<string> => {
+	if (Arr.isArray(node)) for (const item of node) vocabulary(item, into)
+	if (!isRecord(node)) return into
+	if (isRecord(node.properties)) for (const key of Rec.keys(node.properties)) into.add(key)
+	if (Arr.isArray(node.enum)) for (const value of node.enum) if (typeof value === "string") into.add(value)
+	for (const value of Rec.values(node)) vocabulary(value, into)
+	return into
+}
 
 /** Parameter names that were retired for one spelling per concept. They live on only as aliases. */
-const RETIRED_PARAMETERS = new Set(["service_name", "service_names", "since", "until"])
+const RETIRED_PARAMETERS = new Set(["service_name", "service_names", "since", "until", "timezone"])
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 	typeof value === "object" && value !== null && !Arr.isArray(value)
@@ -42,14 +57,8 @@ describe("MCP tool catalog contract", () => {
 		expect(Arr.filter(titles, (title, index) => titles.indexOf(title) !== index)).toEqual([])
 	})
 
-	it("declares each tool's output as the schema the domain catalog lists for it", () => {
-		const catalog: Readonly<Record<string, unknown>> = McpToolOutputs
-		const mismatched = Arr.map(
-			Arr.filter(mapleToolCatalog, (tool) => catalog[tool.name] !== tool.outputSchema),
-			(tool) => tool.name,
-		)
-		expect(mismatched).toEqual([])
-		expect(Rec.keys(catalog).sort()).toEqual(Arr.map(mapleToolCatalog, (tool) => tool.name).sort())
+	it("lists an output schema in the domain catalog only for a registered tool", () => {
+		expect(Rec.keys(McpToolOutputs).sort()).toEqual(Arr.map(mapleToolCatalog, (tool) => tool.name).sort())
 	})
 
 	it("publishes an object-rooted output schema for every tool", () => {
@@ -63,14 +72,6 @@ describe("MCP tool catalog contract", () => {
 			const root = ref === undefined ? document : defs[ref]
 			expect(isRecord(root) ? root.type : undefined, tool.name).toBe("object")
 		}
-	})
-
-	it("marks exactly the approval-gated tools as mutating", () => {
-		const mutating = Arr.map(
-			Arr.filter(mapleToolCatalog, (tool) => tool.hints !== undefined && !tool.hints.readOnly),
-			(tool) => tool.name,
-		).sort()
-		expect(mutating).toEqual([...MUTATING_TOOL_NAMES].sort())
 	})
 
 	it("uses one spelling per concept and describes every parameter", () => {
@@ -115,5 +116,32 @@ describe("MCP tool catalog contract", () => {
 			}
 		}
 		expect(offenders).toEqual([])
+	})
+
+	// A renamed or retired tool otherwise lives on in the guide and the system prompts, and the
+	// model calls a name that no longer exists.
+	it("names only tools that exist in the MCP guide and the agent prompts", () => {
+		const tools = new Set([
+			...Arr.map(mapleToolCatalog, (tool) => tool.name),
+			...Arr.map(
+				[diagnosisTool, proposeEditTool, recordFindingTool, replyTool, reviewTool],
+				(tool) => tool.name,
+			),
+			REVIEW_FILES,
+		])
+		const verbs = new Set(Arr.map([...tools], (name) => name.split("_")[0]))
+		const known = new Set(tools)
+		for (const tool of mapleToolCatalog) vocabulary(inputSchemaOf(tool), known)
+		const prose = [
+			MCP_INSTRUCTIONS,
+			...Arr.filter(Rec.values(Prompts), (value) => typeof value === "string"),
+		]
+		const unknown = new Set<string>()
+		for (const text of prose) {
+			for (const [word] of text.matchAll(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g)) {
+				if (verbs.has(word.split("_")[0]) && !known.has(word)) unknown.add(word)
+			}
+		}
+		expect([...unknown].sort()).toEqual([])
 	})
 })

@@ -11,6 +11,8 @@ import { Message } from "./logs-stream-message"
 import { eyebrow } from "../eyebrow"
 import type * as AttributesPanel from "../attributes/attributes-panel"
 import type { CopyStatus } from "../copy-button"
+import { findableLayers } from "../../lib/findable"
+import { ROW_LINE_CHARS, ROW_WRAPPED_CHARS, textWindow } from "../../lib/display-text"
 import { COUNT_ATTRIBUTE, LAYOUT_ATTRIBUTE, STREAM_ATTRIBUTE, VirtualizeLogStream } from "./virtualize"
 
 export interface ViewInputs {
@@ -22,7 +24,7 @@ export interface ViewInputs {
 	/** The zone the times are in, named on the Time column. */
 	readonly timeZone: string
 	readonly isWaiting: boolean
-	/** `ListFooter`'s count line, formatted by the parent (it is locale-dependent). */
+	/** The list footer's count line, formatted by the parent (it is locale-dependent). */
 	readonly footerText: string
 	/** Adds "Filter in" / "Filter out" to the attribute card. */
 	readonly canFilter: boolean
@@ -31,7 +33,7 @@ export interface ViewInputs {
 	 * /logs); the stream's own root is then `display: contents`.
 	 */
 	readonly isBare?: boolean
-	/** The row the detail sheet shows (`rowSelectedClass`). */
+	/** The row the detail sheet shows. */
 	readonly selectedIndex?: number
 }
 
@@ -44,8 +46,10 @@ export const pinnedColumnParts = (
 	key: string,
 ): Readonly<{ prefix: string; label: string; suffix: string }> => {
 	const segments = Arr.filter(Str.split(".")(key), (segment) => segment !== "")
-	const found = segments.findLastIndex((segment) => !GENERIC_SEGMENTS.has(Str.toLowerCase(segment)))
-	const at = found === -1 ? segments.length - 1 : found
+	const at = Option.getOrElse(
+		Arr.findLastIndex(segments, (segment) => !GENERIC_SEGMENTS.has(Str.toLowerCase(segment))),
+		() => segments.length - 1,
+	)
 	if (at < 0) return { prefix: "", label: key, suffix: "" }
 	const prefix = Arr.join(segments.slice(0, at), ".")
 	const suffix = Arr.join(segments.slice(at + 1), ".")
@@ -141,6 +145,16 @@ const rowView = (
 		canFilter,
 	})
 
+/** What find in page searches in a row that is not rendered: the text the row shows. */
+const findableText = (row: LogRowView, variant: string): ReadonlyArray<string> => [
+	row.severity,
+	row.serviceName,
+	...Arr.flatMap(row.pinned, (cell) => (cell.isEmpty ? [] : [cell.value])),
+	variant === "wrap"
+		? textWindow(row.body, undefined, ROW_WRAPPED_CHARS)
+		: textWindow(row.firstLine, undefined, ROW_LINE_CHARS),
+]
+
 // Rows are keyed by index; the slot is `index % 256` so the cache stays bounded
 // (a window never holds 256 rows) while each slot still renders at one position.
 const lazyRow = createKeyedLazy()
@@ -170,6 +184,13 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 						index === inputs.selectedIndex,
 					]),
 				]
+	})
+	const findable = findableLayers(h, {
+		items: model.rows,
+		textOf: findableText,
+		variant: inputs.wrap ? "wrap" : "nowrap",
+		rendered: Arr.map(model.window, (row) => row.index),
+		found: model.found,
 	})
 	return h.div(
 		inputs.isBare === true
@@ -211,13 +232,13 @@ export const view = defineView<Model, Message, ViewInputs>((model, inputs, h) =>
 									h.Style({ height: `${model.totalSize}px`, position: "relative" }),
 									h.Role("log"),
 								],
-								rows,
+								[findable.before, ...rows, findable.after],
 							),
 						],
 					),
 					h.div([
 						h.Class(
-							"absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-gradient-to-t from-background to-transparent",
+							"absolute bottom-0 left-0 right-0 h-12 pointer-events-none rounded-b-md bg-linear-to-t from-background to-transparent",
 						),
 					]),
 				],

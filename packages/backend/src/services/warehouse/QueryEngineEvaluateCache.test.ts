@@ -3,7 +3,8 @@ import { ConfigProvider, Effect, Layer, Option, Ref, Schema, Array as Arr } from
 import { strict as assert } from "node:assert"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { OrgId, UserId } from "@maple/domain"
-import { baselineWarehouseCapabilities, type QueryEngineEvaluateRequest } from "@maple/query-engine"
+import { baselineWarehouseCapabilities } from "@maple/query-engine"
+import { type QueryEngineEvaluateRequest } from "@maple/domain/query-engine"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import {
 	makeQueryEngineEvaluate,
@@ -11,7 +12,6 @@ import {
 	type AlertEvaluateRequest,
 } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
@@ -20,6 +20,7 @@ import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import type { TenantContext } from "@maple/domain/http"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -71,17 +72,16 @@ const COUNT_ROWS = [
 	traceRow({ bucket: "2026-01-01 00:10:00", count: 5 }),
 ]
 
-const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): AlertEvaluateRequest =>
-	({
-		startTime: "2026-01-01 00:00:00",
-		endTime: "2026-01-01 00:15:00",
-		source: {
-			kind: "spec",
-			query: { kind: "timeseries", source: "traces", metric: "count", bucketSeconds: 300 },
-		},
-		reducer,
-		sampleCountStrategy: "trace_count",
-	}) as AlertEvaluateRequest
+const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): AlertEvaluateRequest => ({
+	startTime: "2026-01-01 00:00:00",
+	endTime: "2026-01-01 00:15:00",
+	source: {
+		kind: "spec",
+		query: { kind: "timeseries", source: "traces", metric: "count", bucketSeconds: 300 },
+	},
+	reducer,
+	sampleCountStrategy: "trace_count",
+})
 
 const evalStub = (rows: ReadonlyArray<Record<string, unknown>>) =>
 	({
@@ -120,7 +120,7 @@ describe("makeQueryEngineEvaluate (shared alert-lowering core)", () => {
 			const result = yield* makeQueryEngineEvaluate(evalStub(rows))(tenant, {
 				...req,
 				source: { kind: "spec", query: { ...req.source.query, groupBy: ["service"] } },
-			} as AlertEvaluateRequest)
+			})
 			assert.deepStrictEqual(result, [
 				{ groupKey: "a", value: 6, sampleCount: 6, hasData: true },
 				{ groupKey: "b", value: 3, sampleCount: 3, hasData: true },
@@ -167,7 +167,7 @@ describe("makeQueryEngineEvaluateSeries (per-bucket preview core)", () => {
 			const series = yield* makeQueryEngineEvaluateSeries(evalStub(rows))(tenant, {
 				...req,
 				source: { kind: "spec", query: { ...req.source.query, groupBy: ["service"] } },
-			} as AlertEvaluateRequest)
+			})
 			assert.deepStrictEqual(series, [
 				{ bucket: "2026-01-01T00:00:00.000Z", groupKey: "a", value: 2, sampleCount: 2 },
 				{ bucket: "2026-01-01T00:00:00.000Z", groupKey: "b", value: 3, sampleCount: 3 },

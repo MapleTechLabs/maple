@@ -1,6 +1,6 @@
 import { HttpApiBuilder } from "effect/http-api"
 import { CurrentTenant } from "@maple/domain/http"
-import { ActorId, ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ActorId, ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import {
 	decodePublicId,
 	encodePublicId,
@@ -13,22 +13,13 @@ import {
 } from "@maple/domain/http/v2"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
 import type { AuditLogEntry } from "@maple/backend/services/audit/audit-event"
-import { Cause, Effect, Option, Schema, Array as Arr } from "effect"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { Effect, Option, Schema, Array as Arr } from "effect"
+import { orgMemberDirectory } from "@/routes/org-member-directory"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import type { AuditLogListFilters } from "@maple/backend/services/audit/AuditLogService"
 import { timestampMs } from "@maple/backend/platform/time"
-
-const adminOnly = () => V2InsufficientPermissions.make("Only org admins can read the audit log")
-
-/** No directory, no names — the entries still carry every id they were written with. */
-const unnamed = (cause: Cause.Cause<unknown>) =>
-	Effect.logWarning("Audit log: member directory unavailable; entries keep their ids").pipe(
-		Effect.annotateLogs({ error: summarizeCause(cause) }),
-		Effect.as(new Map<string, ActorProfile>()),
-	)
 
 const decodeApiKeyIdOption = Schema.decodeUnknownOption(ApiKeyId)
 const decodeActorIdOption = Schema.decodeUnknownOption(ActorId)
@@ -154,25 +145,17 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 		const members = yield* OrgMembersService
 
 		/**
-		 * Names and avatars for the acting users, or nothing at all: a directory
-		 * that is unconfigured (self-hosted without Clerk) or briefly unavailable
-		 * must never turn reading the audit log into an error. Ids still render.
-		 *
-		 * A member with no name set falls back to their email, which is what the
-		 * rest of the product shows and what an admin reading an audit trail
-		 * actually recognises — an opaque `user_…` is the last resort, not the
-		 * second one.
-		 *
-		 * Failures and defects both fall back; interruption is re-raised, because
-		 * a request being torn down has no page left to label.
+		 * Names and avatars for the acting users. A member with no name set falls back to their
+		 * email, which is what the rest of the product shows and what an admin reading an audit
+		 * trail recognises; an opaque `user_…` is the last resort, not the second one.
 		 */
 		const directory = (orgId: OrgId) =>
-			members.listMembers(orgId).pipe(
+			orgMemberDirectory(members, orgId).pipe(
 				Effect.map(
-					(all) =>
+					(known) =>
 						new Map(
 							Arr.map(
-								all,
+								[...known.values()],
 								(member) =>
 									[
 										member.userId,
@@ -180,9 +163,6 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 									] as const,
 							),
 						),
-				),
-				Effect.catchCause((cause) =>
-					Cause.hasInterruptsOnly(cause) ? Effect.interrupt : unnamed(cause),
 				),
 			)
 
@@ -192,7 +172,9 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 				// The log carries every member's activity, denial history, and origin
 				// IP for the whole retention window — org admins only. Scoped API keys
 				// are additionally gated by `audit_log:read`.
-				yield* requireAdmin(tenant.roles, adminOnly)
+				yield* Policy.check(tenant.roles, "audit_log:read", (denial) =>
+					V2InsufficientPermissions.make(denial.message),
+				)
 				const identity =
 					query.actor_id !== undefined ? yield* actorIdentityFilter(query.actor_id) : undefined
 				const affectedUser =
@@ -206,6 +188,9 @@ export const HttpV2AuditLogLive = HttpApiBuilder.group(MapleApiV2, "auditLog", (
 				const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 					audit
 						.list(tenant.orgId, {
+							...(query.kind !== undefined && query.kind !== "all"
+								? { actionKind: query.kind }
+								: undefined),
 							...(query.actor_type !== undefined ? { actorType: query.actor_type } : undefined),
 							...identity,
 							...(affectedUser !== undefined ? { affectedUserId: affectedUser } : undefined),

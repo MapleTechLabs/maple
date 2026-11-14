@@ -1,9 +1,11 @@
-import { Option } from "effect"
+import { Option, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	chatActionControlId,
 	chatActionDecision,
+	chatAlertAckControlId,
 	decodeChatActionControlId,
+	decodeChatAlertAckControlId,
 	encodeChatActionToken,
 } from "./action-token"
 
@@ -48,5 +50,42 @@ describe("chat action control id", () => {
 		// host logs it; one that names no decision is another app's button and is ordinary.
 		expect(Option.getOrUndefined(chatActionDecision("approve:"))).toBe("approve")
 		expect(Option.getOrUndefined(chatActionDecision(`some-other-app:${token}`))).toBeUndefined()
+	})
+})
+
+describe("alert ack control id", () => {
+	const INCIDENT = "00000000-0000-4000-8000-0000000000a1"
+	const read = (raw: string) => Option.getOrUndefined(decodeChatAlertAckControlId(raw))
+
+	it("round-trips both actions with the incident they name", () => {
+		expect(read(chatAlertAckControlId("acknowledge", INCIDENT))).toEqual({
+			action: "acknowledge",
+			incidentId: INCIDENT,
+		})
+		expect(read(chatAlertAckControlId("unacknowledge", INCIDENT))).toEqual({
+			action: "unacknowledge",
+			incidentId: INCIDENT,
+		})
+	})
+
+	it("fits the tightest platform's 100-character control id", () => {
+		expect(chatAlertAckControlId("unacknowledge", INCIDENT).length).toBeLessThanOrEqual(100)
+	})
+
+	it.each([
+		"",
+		"alert_ack:",
+		"alert_ack:not-a-uuid",
+		`alert_ack:${INCIDENT}x`,
+		`alert_ack:${Str.toUpperCase(INCIDENT)}`,
+		`alert_ack:org_other:${INCIDENT}`,
+		`alert_snooze:${INCIDENT}`,
+		`approve:${INCIDENT}`,
+	])("rejects %j", (raw) => {
+		expect(read(raw)).toBeUndefined()
+	})
+
+	it("is not mistaken for an approval control", () => {
+		expect(readControl(chatAlertAckControlId("acknowledge", INCIDENT))).toBeUndefined()
 	})
 })

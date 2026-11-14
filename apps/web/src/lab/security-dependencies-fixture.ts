@@ -7,7 +7,7 @@ import {
 	GitCommitSha,
 	VcsRepositoryId,
 } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Schema, String as Str } from "effect"
 
 // Fixtures for the Security Center's Dependencies tab, for `/lab/security` and the page's scene
 // tests. Built relative to `now` so relative times read the same.
@@ -180,14 +180,14 @@ export const repositoriesOf = (nowMs: number): DependencyScanRepositoriesRespons
 /** Connected, before the repository's first scan. */
 /** The same repositories with every lockfile read, as the clean state requires. */
 export const cleanRepositoriesOf = (nowMs: number): DependencyScanRepositoriesResponse => ({
-	repositories: repositoriesOf(nowMs).repositories.map((repository) =>
+	repositories: Arr.map(repositoriesOf(nowMs).repositories, (repository) =>
 		repository.latestScan === null
 			? repository
 			: {
 					...repository,
 					latestScan: {
 						...repository.latestScan,
-						lockfiles: repository.latestScan.lockfiles.map((lockfile) => ({
+						lockfiles: Arr.map(repository.latestScan.lockfiles, (lockfile) => ({
 							...lockfile,
 							status: "parsed" as const,
 							message: null,
@@ -481,7 +481,7 @@ export const manyRepositoriesOf = (
 ): Readonly<{ repositories: DependencyScanRepositoriesResponse; findings: DependencyFindingsResponse }> => {
 	const sources = repositoriesOf(nowMs).repositories
 	const findings = findingsOf(nowMs)
-	const copies = MANY_NAMES.flatMap((name, index) => {
+	const copies = Arr.flatMap(MANY_NAMES, (name, index) => {
 		const source = sources[index % sources.length]
 		return source === undefined
 			? []
@@ -491,7 +491,7 @@ export const manyRepositoriesOf = (
 						repository: {
 							...source,
 							id: repositoryId(
-								`00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+								`00000000-0000-4000-8000-0000000001${Str.padStart(2, "0")(String(index))}`,
 							),
 							fullName: `acme/${name}`,
 						},
@@ -499,22 +499,23 @@ export const manyRepositoriesOf = (
 				]
 	})
 	return {
-		repositories: { repositories: [...sources, ...copies.map(({ repository }) => repository)] },
+		repositories: { repositories: [...sources, ...Arr.map(copies, ({ repository }) => repository)] },
 		findings: {
 			...findings,
 			findings: [
 				...findings.findings,
-				...copies.flatMap(({ source, repository }, copy) =>
-					findings.findings
-						.filter((finding) => finding.repositoryId === source.id)
-						.map((finding, index) => ({
+				...Arr.flatMap(copies, ({ source, repository }, copy) =>
+					Arr.map(
+						Arr.filter(findings.findings, (finding) => finding.repositoryId === source.id),
+						(finding, index) => ({
 							...finding,
 							id: findingId(
-								`${String(copy).padStart(2, "0")}${String(index).padStart(2, "0")}${"c".repeat(28)}`,
+								`${Str.padStart(2, "0")(String(copy))}${Str.padStart(2, "0")(String(index))}${Str.repeat(28)("c")}`,
 							),
 							repositoryId: repository.id,
 							repositoryFullName: repository.fullName,
-						})),
+						}),
+					),
 				),
 			],
 		},
@@ -879,51 +880,56 @@ export const largeOrgOf = (
 					: {
 							...source,
 							id: repositoryId(
-								`a0000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
+								`a0000000-0000-4000-8000-${Str.padStart(12, "0")(index.toString(16))}`,
 							),
 							fullName: `acme/${word}-${index}`,
 						},
 		}
 	})
 	let next = 0
-	const findings = repositories.flatMap(({ random, ecosystem, isRunning, repository }) =>
+	const findings = Arr.flatMap(repositories, ({ random, ecosystem, isRunning, repository }) =>
 		repository === null || template === undefined
 			? []
-			: CATALOG.filter(
-					(entry) => entry.ecosystem === ecosystem && random() * 100 < entry.spread,
-				).flatMap((entry) =>
-					entry.advisories.map((item) => {
-						const roll = random()
-						next += 1
-						return {
-							...template,
-							id: findingId(next.toString(16).padStart(32, "0")),
-							repositoryId: repository.id,
-							repositoryFullName: repository.fullName,
-							lockfilePath: entry.lockfile,
-							ecosystem: entry.ecosystem,
-							packageName: entry.name,
-							advisoryId: item.id,
-							aliases: [],
-							severity: item.severity,
-							summary: item.summary,
-							versions: [entry.version],
-							fixedIn: item.fixedIn,
-							relation: roll < 0.4 ? ("direct" as const) : ("transitive" as const),
-							status:
-								roll < 0.06
-									? ("dismissed" as const)
-									: roll < 0.1
-										? ("fixed" as const)
-										: ("open" as const),
-							production: isRunning ? template.production : [],
-						}
-					}),
+			: Arr.flatMap(
+					Arr.filter(
+						CATALOG,
+						(entry) => entry.ecosystem === ecosystem && random() * 100 < entry.spread,
+					),
+					(entry: CatalogPackage) =>
+						Arr.map(entry.advisories, (item) => {
+							const roll = random()
+							next += 1
+							return {
+								...template,
+								id: findingId(Str.padStart(32, "0")(next.toString(16))),
+								repositoryId: repository.id,
+								repositoryFullName: repository.fullName,
+								lockfilePath: entry.lockfile,
+								ecosystem: entry.ecosystem,
+								packageName: entry.name,
+								advisoryId: item.id,
+								aliases: [],
+								severity: item.severity,
+								summary: item.summary,
+								versions: [entry.version],
+								fixedIn: item.fixedIn,
+								relation: roll < 0.4 ? ("direct" as const) : ("transitive" as const),
+								status:
+									roll < 0.06
+										? ("dismissed" as const)
+										: roll < 0.1
+											? ("fixed" as const)
+											: ("open" as const),
+								production: isRunning ? template.production : [],
+							}
+						}),
 				),
 	)
 	return {
 		repositories: {
-			repositories: repositories.flatMap(({ repository }) => (repository === null ? [] : [repository])),
+			repositories: Arr.flatMap(repositories, ({ repository }) =>
+				repository === null ? [] : [repository],
+			),
 		},
 		findings: { ...findingsOf(nowMs), findings },
 	}

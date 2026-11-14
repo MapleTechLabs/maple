@@ -1,11 +1,10 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgSupportChannels, type OrgSupportChannelRow } from "@maple/db/tables"
-import type { OrgId, UserId } from "@maple/domain/http"
+import type { OrgId, UserId, TenantContext } from "@maple/domain/http"
 import {
 	SupportChannelBusyError,
 	SupportChannelNoEmailError,
 	SupportChannelNotConfiguredError,
-	supportChannelName,
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
 import {
@@ -20,12 +19,40 @@ import {
 	Stream,
 	String as Str,
 } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportSlackClient } from "./SupportSlackClient"
+
+/** Slack reads `<…>` as a mention or link and `&` as an entity, so a customer's text is escaped. */
+export const escapeSlackText = (text: string): string =>
+	Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(text)))
+
+/**
+ * `maple-<org>` in Slack's channel-name alphabet: lowercase letters, digits, `-` and `_`, at most
+ * 80 characters. Falls back to the org id when the name has nothing usable in it.
+ */
+export const supportChannelName = (orgName: string | null, orgId: string, attempt = 0): string => {
+	const slug = Str.replace(
+		/^-|-$/g,
+		"",
+	)(
+		Str.replace(
+			/-+/g,
+			"-",
+		)(
+			Str.replace(
+				/[^a-z0-9_-]+/g,
+				"-",
+			)(Str.toLowerCase(Str.replace(/\p{M}+/gu, "")(Str.normalize("NFKD")(orgName ?? "")))),
+		),
+	)
+	const base = `maple-${slug.length > 0 ? slug : Str.replace(/[^a-z0-9_-]+/g, "")(Str.toLowerCase(orgId))}`
+	const suffix = attempt === 0 ? "" : `-${attempt + 1}`
+	return `${Str.replace(/-$/, "")(Str.slice(0, 80 - suffix.length)(base))}${suffix}`
+}
 
 /** How long a creation may sit unfinished before another request may take it over. */
 export const CREATE_LEASE_MS = 2 * 60 * 1000
@@ -119,6 +146,7 @@ const make = Effect.gen(function* () {
 	const slack = yield* SupportSlackClient
 	const members = yield* OrgMembersService
 	const organizations = yield* OrganizationService
+	const random = yield* SecureRandom.SecureRandom
 
 	const findRow = (orgId: OrgId) =>
 		dbExecute("find")((db) =>
@@ -144,7 +172,7 @@ const make = Effect.gen(function* () {
 	 */
 	const reserve = Effect.fn("SupportChannelService.reserve")(function* (orgId: OrgId, userId: UserId) {
 		const now = yield* Clock.currentTimeMillis
-		const reservationId = crypto.randomUUID()
+		const reservationId = yield* random.uuidV4()
 		const inserted = yield* dbExecute("reserve")((db) =>
 			db.run(
 				PG.insertInto(OrgSupportChannels)
@@ -223,13 +251,14 @@ const make = Effect.gen(function* () {
 			}
 			return slack.call("users.conversations", args).pipe(
 				Effect.map((response) => {
-					const found = response.channels?.find(
+					const found = Arr.findFirst(
+						response.channels ?? [],
 						(channel) => channel.name === name && channel.creator === botUserId,
 					)
 					const next = response.response_metadata?.next_cursor ?? ""
-					const more = found === undefined && next !== "" && page + 1 < MAX_CHANNEL_PAGES
+					const more = Option.isNone(found) && next !== "" && page + 1 < MAX_CHANNEL_PAGES
 					return [
-						found === undefined ? [] : [found],
+						Option.toArray(found),
 						more ? Option.some({ page: page + 1, cursor: next }) : Option.none(),
 					] as const
 				}),
@@ -316,7 +345,7 @@ const make = Effect.gen(function* () {
 			yield* slack
 				.call("chat.postMessage", {
 					channel: channelId,
-					text: `This is ${orgName ?? "your team"}'s shared channel with the Maple team. Ask us anything here: setup, bugs, billing or feature requests.`,
+					text: `This is ${orgName === null ? "your team" : escapeSlackText(orgName)}'s shared channel with the Maple team. Ask us anything here: setup, bugs, billing or feature requests.`,
 				})
 				.pipe(
 					Effect.tapError((error) =>
@@ -485,7 +514,12 @@ export class SupportChannelService extends Context.Service<SupportChannelService
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
-			Layer.mergeAll(SupportSlackClient.layer, OrgMembersService.layer, OrganizationService.layer),
+			Layer.mergeAll(
+				SupportSlackClient.layer,
+				OrgMembersService.layer,
+				OrganizationService.layer,
+				SecureRandom.layerWebCrypto,
+			),
 		),
 	)
 }

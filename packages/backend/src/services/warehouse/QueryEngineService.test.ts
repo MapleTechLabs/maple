@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles mirror intentionally untyped external callbacks.
+// BOUNDARY-FILE: Test doubles mirror intentionally untyped external callbacks.
 import { describe, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
 import {
@@ -15,29 +15,34 @@ import {
 import { strict as nodeAssert } from "node:assert"
 import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import {
+	type QueryBuilderQueryDraftPayload,
 	QueryEngineValidationError,
 	RawSqlValidationError,
 	WarehouseConfigError,
 	WarehouseQuotaExceededError,
 	WarehouseUpstreamError,
+	type TenantContext,
 } from "@maple/domain/http"
 import {
 	baselineWarehouseCapabilities,
 	deriveWarehouseCapabilities,
 	type WarehouseCapabilities,
+} from "@maple/query-engine"
+import {
 	QueryEngineExecuteRequest,
 	type QueryEngineResult,
 	type TimeseriesPoint,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import {
 	type AlertEvaluateRequest,
 	makeQueryEngineEvaluate,
 	makeQueryEngineExecute,
 	withAlertEvaluationScope,
 } from "@maple/query-engine/runtime"
+import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
+import { QuerySpec } from "@maple/domain/query-engine"
 import type { SqlQueryOptions } from "@maple/query-engine/profiles"
 import type { CompiledQuery } from "@maple/query-engine/ch"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const assert: typeof nodeAssert & {
@@ -323,6 +328,67 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
+	it.effect("runs a builder body filter as a Body search with the capped block size", () =>
+		Effect.gen(function* () {
+			const calls: Array<{ context?: string; sql: string; maxBlockSize?: number }> = []
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: (_tenant, sql, options) => {
+						calls.push({
+							context: options.context,
+							sql,
+							maxBlockSize: options.settings?.maxBlockSize,
+						})
+						return Effect.succeed([])
+					},
+				}),
+			)
+			const draft: QueryBuilderQueryDraftPayload = {
+				id: "q1",
+				name: "A",
+				enabled: true,
+				hidden: false,
+				dataSource: "logs",
+				aggregation: "count",
+				whereClause: 'body contains "timeout"',
+				stepInterval: "",
+				orderByDirection: "desc",
+				addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: [],
+				having: "",
+				orderBy: "",
+				limit: "",
+				legend: "",
+			}
+
+			const timeseries = buildTimeseriesQuerySpec(draft)
+			const breakdown = buildBreakdownQuerySpec({
+				...draft,
+				addOns: { ...draft.addOns, groupBy: true },
+				groupBy: ["service.name"],
+			})
+			for (const query of [{ ...timeseries.query, bucketSeconds: 300 }, breakdown.query]) {
+				yield* execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-01-01 00:00:00",
+						endTime: "2026-01-01 00:05:00",
+						query: Schema.decodeUnknownSync(QuerySpec)(query),
+					}),
+				)
+			}
+
+			assert.deepStrictEqual(
+				Arr.map(calls, (call) => [call.context, call.maxBlockSize]),
+				[
+					["logsTimeseries", 512],
+					["logsBreakdown", 512],
+				],
+			)
+			for (const call of calls) assert.include(call.sql, "Body ILIKE '%timeout%'")
+		}),
+	)
+
 	// The sidebar's two reads: a failure on the first one is what either returns.
 	const traceSidebarStub = (
 		failRollup: () => unknown,
@@ -375,8 +441,8 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 2, kind)
-				assert.ok(Str.includes("trace_facets_hourly")(queries[0]!), kind)
-				assert.ok(!Str.includes("trace_facets_hourly")(queries[1]!), kind)
+				assert.ok(Str.includes("trace_facets_hourly")(queries[0]), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[1]), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
@@ -397,7 +463,7 @@ describe("makeQueryEngineExecute", () => {
 				const response = yield* execute(tenant, sidebarRequest(kind))
 
 				assert.strictEqual(queries.length, 1, kind)
-				assert.ok(!Str.includes("trace_facets_hourly")(queries[0]!), kind)
+				assert.ok(!Str.includes("trace_facets_hourly")(queries[0]), kind)
 				assert.strictEqual(response.result.kind, kind)
 			}
 		}),
@@ -590,6 +656,71 @@ describe("makeQueryEngineExecute", () => {
 				"apdex::payments": 0.9,
 				"estimated_span_count::payments": 14,
 			})
+		}),
+	)
+
+	it.effect("serves a timeseries over the service pages' longest presets", () =>
+		Effect.gen(function* () {
+			let queried = false
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: () =>
+						Effect.sync(() => {
+							queried = true
+							return []
+						}),
+				}),
+			)
+			const exit = yield* Effect.exit(
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2025-11-06 00:00:00",
+						endTime: "2026-11-07 01:00:00", // "12mo" plus the DST hour
+						query: {
+							kind: "timeseries",
+							source: "traces",
+							metric: "count",
+							allMetrics: true,
+							groupBy: ["service"],
+							filters: { rootSpansOnly: true },
+							bucketSeconds: 86400,
+						},
+					}),
+				),
+			)
+
+			assert.isTrue(Exit.isSuccess(exit))
+			assert.isTrue(queried)
+		}),
+	)
+
+	it.effect("still refuses a breakdown wider than its own ceiling", () =>
+		Effect.gen(function* () {
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({ sqlQuery: () => Effect.die(new Error("should not be called")) }),
+			)
+			const exit = yield* Effect.exit(
+				execute(
+					tenant,
+					new QueryEngineExecuteRequest({
+						startTime: "2026-08-01 00:00:00",
+						endTime: "2026-11-01 00:00:00",
+						query: {
+							kind: "breakdown",
+							source: "traces",
+							metric: "count",
+							groupBy: "service",
+							filters: { serviceName: asServiceName("checkout") },
+						},
+					}),
+				),
+			)
+
+			assert.include(
+				(getFailure(exit) as { message?: string } | undefined)?.message ?? "",
+				"Time range too large",
+			)
 		}),
 	)
 
@@ -855,27 +986,13 @@ describe("makeQueryEngineExecute", () => {
 				makeTinybirdStub({
 					sqlQuery: () =>
 						Effect.succeed([
+							// The warehouse already combined the series; an ungrouped row has no label.
 							{
 								bucket: "2026-01-01 00:00:00",
-								serviceName: "api",
-								groupName: "api",
-								attributeValue: "",
-								avgValue: 10,
-								minValue: 5,
-								maxValue: 20,
-								sumValue: 30,
-								dataPointCount: 3,
-							},
-							{
-								bucket: "2026-01-01 00:00:00",
-								serviceName: "worker",
-								groupName: "worker",
-								attributeValue: "",
-								avgValue: 20,
-								minValue: 10,
-								maxValue: 40,
-								sumValue: 40,
-								dataPointCount: 2,
+								groupName: "",
+								value: 14,
+								dataPointCount: 5,
+								seriesCount: 2,
 							},
 						]),
 				}),
@@ -924,25 +1041,17 @@ describe("makeQueryEngineExecute", () => {
 						Effect.succeed([
 							{
 								bucket: "2026-01-01 00:00:00",
-								serviceName: "api",
 								groupName: "api",
-								attributeValue: "",
-								avgValue: 10,
-								minValue: 10,
-								maxValue: 10,
-								sumValue: 10,
+								value: 10,
 								dataPointCount: 1,
+								seriesCount: 1,
 							},
 							{
 								bucket: "2026-01-01 00:00:00",
-								serviceName: "worker",
 								groupName: "worker",
-								attributeValue: "",
-								avgValue: 20,
-								minValue: 20,
-								maxValue: 20,
-								sumValue: 20,
+								value: 20,
 								dataPointCount: 1,
+								seriesCount: 1,
 							},
 						]),
 				}),
@@ -1129,37 +1238,34 @@ describe("makeQueryEngineExecute", () => {
 		}),
 	)
 
-	it.effect("rejects breakdown queries beyond a 30-day range", () =>
+	it.effect("serves the 1mo preset across a DST change for every kind it feeds", () =>
 		Effect.gen(function* () {
-			const execute = makeQueryEngineExecute(
-				makeTinybirdStub({
-					sqlQuery: () => Effect.die(new Error("should not be called")),
-				}),
-			)
-
-			const exit = yield* Effect.exit(
-				execute(
-					tenant,
-					new QueryEngineExecuteRequest({
-						startTime: "2026-01-01 00:00:00",
-						endTime: "2026-01-31 12:00:00", // 30.5 days — between breakdown cap (30d) and global cap (31d)
-						query: {
-							kind: "breakdown",
-							source: "traces",
-							metric: "count",
-							groupBy: "service",
-							filters: { serviceName: asServiceName("checkout") },
+			// "1mo" in Europe/Berlin on 2026-11-07: 31 days plus the hour the clocks went back.
+			const window = { startTime: "2026-10-07 12:30:00", endTime: "2026-11-07 13:30:00" }
+			const queries: ReadonlyArray<QueryEngineExecuteRequest["query"]> = [
+				{
+					kind: "breakdown",
+					source: "traces",
+					metric: "count",
+					groupBy: "service",
+					filters: { serviceName: asServiceName("checkout") },
+				},
+				{ kind: "facets", source: "traces" },
+				{ kind: "stats", source: "traces" },
+			]
+			for (const query of queries) {
+				let called = false
+				const execute = makeQueryEngineExecute(
+					makeTinybirdStub({
+						sqlQuery: () => {
+							called = true
+							return Effect.succeed([])
 						},
 					}),
-				),
-			)
-
-			const failure = getFailure(exit)
-			assert.isDefined(failure)
-			assert.include(
-				(failure as { message?: string })?.message ?? "",
-				"Breakdown query time range too large",
-			)
+				)
+				yield* Effect.exit(execute(tenant, new QueryEngineExecuteRequest({ ...window, query })))
+				assert.strictEqual(called, true, query.kind)
+			}
 		}),
 	)
 
@@ -1688,14 +1794,10 @@ describe("makeQueryEngineEvaluate", () => {
 						Effect.succeed([
 							{
 								bucket: "2026-01-01 00:00:00",
-								serviceName: "api",
-								groupName: "api",
-								attributeValue: "",
-								avgValue: 18,
-								minValue: 5,
-								maxValue: 40,
-								sumValue: 90,
+								groupName: "",
+								value: 18,
 								dataPointCount: 5,
+								seriesCount: 2,
 							},
 						]),
 				}),

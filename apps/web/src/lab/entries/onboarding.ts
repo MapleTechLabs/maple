@@ -5,6 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as CreateOrg from "../../page/onboarding/create-org"
 import * as CreateOrgView from "../../page/onboarding/create-org-view"
 import * as PricingCardsView from "../../page/onboarding/pricing-cards-view"
+import { compliance } from "../../page/kit/compliance-line"
 import * as QuickStartTeamView from "../../page/onboarding/quick-start-team-view"
 import * as QuickStartView from "../../page/onboarding/quick-start-view"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -15,7 +16,7 @@ import { defineLabWithFlags } from "../define"
 import { defineMessageUnion } from "foldkit/message"
 import * as PricingCards from "../../page/onboarding/pricing-cards"
 import * as QuickStart from "../../page/onboarding/quick-start"
-import { ConnectMessage } from "../../page/onboarding/quick-start-connect"
+import { ConnectMessage, SETUP_LINK_COPY } from "../../page/onboarding/quick-start-connect"
 import { DEFAULT_QUICK_START_STATE, STEP_IDS } from "../../page/onboarding/quick-start-state"
 import { ready, TeamMessage, updateTeam } from "../../page/onboarding/quick-start-team"
 
@@ -168,6 +169,13 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 		case "GotTeamMessage":
 			return teamStep(model, message.message)
 		case "GotConnectMessage":
+			// The phone note's "Copy link" copies a sample address: the preview has no page to resume.
+			if (message.message._tag === "ClickedCopySetupLink")
+				return copyStep(
+					model,
+					SETUP_LINK_COPY,
+					CopyButton.Message.ClickedCopy({ text: "https://app.maple.dev/quick-start" }),
+				)
 			return message.message._tag === "GotSnippetCopyMessage"
 				? copyStep(model, message.message.snippet, message.message.message)
 				: { model: screenStep(model, message) }
@@ -176,7 +184,7 @@ const stepMessage = (model: Model, message: QuickStart.Message): Return => {
 		case "GotPricingMessage":
 			return message.message._tag === "ClickedPlan" ? { model: { ...model, hasPlan: true } } : { model }
 		case "ClickedContinue":
-			if (message.step === "live") return { model: { ...model, isComplete: true } }
+			if (message.step === "team") return { model: { ...model, isComplete: true } }
 			return { model: screenStep(model, message) }
 		default:
 			return { model: screenStep(model, message) }
@@ -217,17 +225,15 @@ const createOrgStep = (model: Model, message: CreateOrg.Message): Return => {
 	}
 }
 
-// VIEW
-
 const plansView = Submodel.defineView<null, PricingCards.Message>((_, h) =>
-	PricingCardsView.planCards(h, PLANS, null),
+	h.div([h.Class("space-y-6")], [PricingCardsView.planCards(h, PLANS, null), compliance(h)]),
 )
 
 const complete = (h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[h.Class("flex min-h-dvh flex-col items-center justify-center gap-6 px-6 py-16 text-center")],
 		[
-			icon(h, "MapleMark", { size: 56, className: "text-primary" }),
+			icon(h, "MapleMark", { size: 56, className: "text-brand-maple" }),
 			h.h1([h.Class("text-2xl font-semibold")], ["Preview complete"]),
 			h.p(
 				[h.Class("max-w-md text-sm text-muted-foreground")],
@@ -253,7 +259,7 @@ const stepView = Submodel.defineView<Model, QuickStart.Message>(
 			needsRegion: model.needsRegion,
 			hasPlan: model.hasPlan,
 			orgName: model.orgName,
-			teamStep: () => QuickStartTeamView.teamStep(h, model.quickStart.team),
+			teamStep: (orgName) => QuickStartTeamView.teamStep(h, model.quickStart.team, orgName),
 			planStep: QuickStartTeamView.planStep(
 				h,
 				false,

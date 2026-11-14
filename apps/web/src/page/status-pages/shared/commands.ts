@@ -10,41 +10,19 @@ import {
 	type V2StatusPageIncidentUpdateParams,
 	type V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Effect, Option, Schema, Array as Arr } from "effect"
+import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
+import { readAllPages as readAll } from "../../../platform/read-all-pages"
 import { AppRoute, hrefOf } from "../../../route"
-import { listMonitors } from "../../alerts/shared/uptime-commands"
+import { listMonitors } from "../../kit/uptime/commands"
 import { summarizePage } from "./derive"
 
 // The status page reads and writes, as Effects the pages' Commands wrap, and their links.
 
 const LIST_LIMIT = 100
-/** Pages read at most per list: 2000 rows, far past any plan's allowance. */
-const MAX_LIST_PAGES = 20
 /** Recent incidents the editor lists: the open ones plus the latest closed. */
 const INCIDENT_LIMIT = 50
-
-interface ListPage<A> {
-	readonly data: ReadonlyArray<A>
-	readonly has_more: boolean
-	readonly next_cursor: string | null
-}
-
-/** Every row of a cursor-paginated list: a summary of a truncated read would hide a failing row. */
-const readAll = <A, E, R>(
-	read: (cursor: string | undefined) => Effect.Effect<ListPage<A>, E, R>,
-	cursor?: string,
-	pages = 1,
-): Effect.Effect<ReadonlyArray<A>, E, R> =>
-	Effect.flatMap(read(cursor), (response) =>
-		response.has_more && response.next_cursor !== null && pages < MAX_LIST_PAGES
-			? Effect.map(readAll(read, response.next_cursor, pages + 1), (rest) => [
-					...response.data,
-					...rest,
-				])
-			: Effect.succeed(response.data),
-	)
 
 const listPages = Effect.gen(function* () {
 	const client = yield* MapleApiV2Client
@@ -146,6 +124,49 @@ export const rotateBreakGlass = (id: StatusPageId) =>
 		return yield* client.statusPages.rotateBreakGlass({ params: { id } })
 	}).pipe(Effect.mapError(toLoadFailure))
 
+export const setPagePassword = (id: StatusPageId, password: string) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.setPassword({ params: { id }, payload: { password } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const removePagePassword = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.removePassword({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+/** The page as visitors would see it now, whatever its visibility: how members read an internal page. */
+export const viewPage = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.view({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const retrieveCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.getCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const setCustomDomain = (id: StatusPageId, hostname: string) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.setCustomDomain({ params: { id }, payload: { hostname } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const checkCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.checkCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
+export const removeCustomDomain = (id: StatusPageId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		return yield* client.statusPages.removeCustomDomain({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const revokeBreakGlass = (id: StatusPageId) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
@@ -218,13 +239,17 @@ export const updateIncident = (id: StatusPageIncidentId, payload: V2StatusPageIn
 		return yield* client.statusPageIncidents.update({ params: { id }, payload })
 	}).pipe(Effect.mapError(toLoadFailure))
 
+export const deleteIncident = (id: StatusPageIncidentId) =>
+	Effect.gen(function* () {
+		const client = yield* MapleApiV2Client
+		yield* client.statusPageIncidents.delete({ params: { id } })
+	}).pipe(Effect.mapError(toLoadFailure))
+
 export const postIncidentUpdate = (id: StatusPageIncidentId, payload: V2StatusPageIncidentPostUpdateParams) =>
 	Effect.gen(function* () {
 		const client = yield* MapleApiV2Client
 		return yield* client.statusPageIncidents.postUpdate({ params: { id }, payload })
 	}).pipe(Effect.mapError(toLoadFailure))
-
-// LINKS
 
 const encodePublicId = Schema.encodeSync(StatusPagePublicId)
 const decodePublicId = Schema.decodeUnknownOption(StatusPagePublicId)
@@ -245,18 +270,27 @@ export const statusPageHref = (id: StatusPageId, view?: EditorView): string =>
 		}),
 	)
 
+/** The page as members read it inside Maple: an internal page's only address. */
+export const statusPageViewHref = (id: StatusPageId): string =>
+	hrefOf(AppRoute.StatusPageView({ pageId: encodePublicId(id) }))
+
 export const statusPagesHref = (): string => hrefOf(AppRoute.StatusPages())
 
 export const newStatusPageHref = (): string => hrefOf(AppRoute.StatusPageNew())
 
 /** The status Worker's origin; empty where it has no domain yet (prd today). */
-export const STATUS_PAGE_BASE_URL: string = (import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? "")
-	.trim()
-	.replace(/\/+$/u, "")
+export const STATUS_PAGE_BASE_URL: string = Str.replace(
+	/\/+$/u,
+	"",
+)(Str.trim(import.meta.env.VITE_STATUS_PAGE_BASE_URL ?? ""))
 
 /** Where visitors read the page, or `null` while no status domain is configured. */
 export const publicUrl = (baseUrl: string, slug: string): string | null =>
 	baseUrl === "" ? null : `${baseUrl}/s/${slug}`
+
+/** The page's canonical address: its active custom domain, else {@link publicUrl}. */
+export const canonicalUrl = (baseUrl: string, slug: string, customDomain: string | null): string | null =>
+	customDomain === null ? publicUrl(baseUrl, slug) : `https://${customDomain}`
 
 /** The page's address as text: the full URL when known, its `/s/<slug>` path otherwise. */
 export const publicAddress = (slug: string): string => publicUrl(STATUS_PAGE_BASE_URL, slug) ?? `/s/${slug}`

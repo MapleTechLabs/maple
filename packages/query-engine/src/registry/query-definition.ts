@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import type { Effect } from "effect"
 import type { CompiledQuery, QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { WarehouseCapabilities } from "../capabilities"
@@ -55,6 +55,12 @@ type QueryDefinitionInput<Payload, Row> = Omit<QueryDefinition<Payload, Row>, "r
 export const defineQuery = <Payload, Row>(
 	definition: QueryDefinitionInput<Payload, Row>,
 ): QueryDefinition<Payload, Row> => ({ revision: 1, ...definition })
+
+/** The tenant + time-window params nearly every compile binds. */
+export const windowParams = (
+	payload: { readonly startTime: string; readonly endTime: string },
+	orgId: OrgId,
+) => ({ orgId, startTime: payload.startTime, endTime: payload.endTime })
 
 export const makeTimeBucketQueryCachePolicy = <Payload>(options: {
 	readonly identity: (payload: Payload) => unknown

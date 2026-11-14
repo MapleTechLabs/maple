@@ -40,7 +40,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const issue = (overrides: Partial<Record<string, unknown>> = {}) =>
-	Schema.decodeUnknownSync(V2ErrorIssue)({
+	Schema.decodeSync(V2ErrorIssue)({
 		id: "iss_YoxMYDoXSr3tsBZyBLmNMv",
 		object: "error_issue",
 		kind: "error",

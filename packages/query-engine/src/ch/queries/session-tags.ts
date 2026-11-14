@@ -10,11 +10,11 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { SESSION_QUALITY_TAGS, SESSION_TAG_THRESHOLDS, type SessionTag } from "@maple/domain/query-engine"
-import { SessionReplays } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import { isBotCond } from "../user-agent"
 import { Array as Arr } from "effect"
 
-type ReplaysAccessor = ColumnAccessor<typeof SessionReplays.columns>
+type ReplaysAccessor = ColumnAccessor<typeof Datasources.sessionReplays.columns>
 type ReplaysWhere = ($: ReplaysAccessor) => Array<CH.Condition | undefined>
 
 // dateDiff(unit, start, end) as whole units; the DSL has no typed wrapper.
@@ -61,7 +61,7 @@ export function sessionQualityExpr($: ReplaysAccessor): CH.Expr<string> {
 
 /** One row per session in the window with every fact a tag is decided from. */
 function sessionTagFactsQuery(where: ReplaysWhere) {
-	return from(SessionReplays)
+	return from(Datasources.sessionReplays)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			quality: sessionQualityExpr($),

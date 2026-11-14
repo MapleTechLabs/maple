@@ -9,12 +9,12 @@ import {
 	SandboxOutput,
 	SandboxStarted,
 	SandboxResourceUse,
-} from "@maple/backend/sandbox/contract"
+} from "@maple/backend/services/sandbox/contract"
 import { Duration, Effect, Layer, Schema, Stream, String as Str } from "effect"
-import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
+import { gitPathspec, missedFile, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_git_test")
+const ORG = Schema.decodeSync(OrgId)("org_git_test")
 
 /** A file outside the checkout that no tool may ever return. */
 const SENTINEL = `${mkdtempSync(`${tmpdir()}/maple-outside-`)}/secret.txt`
@@ -42,7 +42,10 @@ const makeRepo = () => {
 	writeFileSync(`${dir}/README.md`, "# shop\n")
 	// git prints this name quoted in its index listing.
 	writeFileSync(`${dir}/src/a"b.ts`, "export const quoted = 1\n")
-	// A committed symlink out of the checkout: tracked, so `--error-unmatch` alone
+	// A directory name holding a newline: one line of a listing cannot name what is under it.
+	mkdirSync(`${dir}/odd\nsrc`)
+	writeFileSync(`${dir}/odd\nsrc/lonely.ts`, "export const lonely = 1\n")
+	// A committed symlink out of the checkout: tracked, so a tracked-file check alone
 	// would let `awk` follow it.
 	symlinkSync(SENTINEL, `${dir}/escape.txt`)
 	git("add", "-A")
@@ -84,6 +87,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 										stream: "stdout" as const,
 										text: stdout,
 										bytes: Buffer.byteLength(stdout),
+										truncated: false,
 									}),
 								]
 							: []),
@@ -95,7 +99,7 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 								wallTime: Duration.millis(1),
 								stdoutBytes: Buffer.byteLength(stdout),
 								stderrBytes: 0,
-							}) as ConstructorParameters<typeof SandboxExited>[0]["resourceUse"],
+							}),
 							artifacts: [],
 						}),
 					])
@@ -103,7 +107,6 @@ const localSandbox = (repo: string, seen: string[][] = []): Layer.Layer<Sandbox>
 			),
 	})
 
-/** The service over a real checkout, as one layer. */
 const overRepo = () => RepoSandboxService.layer.pipe(Layer.provide(localSandbox(makeRepo())))
 
 describe("gitPathspec", () => {
@@ -290,6 +293,69 @@ describe("the git commands the tools build, against a real repository", () => {
 		}).pipe(Effect.provide(overRepo())),
 	)
 
+	it.effect("says where a missed path went wrong: same-named files, and the deepest real directory", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			const miss = (path: string) =>
+				service
+					.readFile(ORG, { repository: "octo/shop" }, { path, startLine: 1, endLine: 10 })
+					.pipe(
+						Effect.map((result) => ({ exitCode: result.exitCode, ...missedFile(result.stdout) })),
+					)
+			// The name is right and the directory is not; the case of the name does not matter.
+			assert.deepStrictEqual(yield* miss("src/deep/gone/further/Nested.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ["src/deep/nested.ts"],
+				sameNameTotal: 1,
+				nearestDirectory: "src/deep",
+			})
+			assert.deepStrictEqual(yield* miss("docs/readme.md"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ["README.md"],
+				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
+			// The directory is right and no file has the name.
+			assert.deepStrictEqual(yield* miss("src/AGENTS.md"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+			})
+			// A name git would quote in its listing is still found as written.
+			assert.deepStrictEqual(yield* miss('docs/a"b.ts'), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: ['src/a"b.ts'],
+				sameNameTotal: 1,
+				nearestDirectory: ".",
+			})
+			// A namesake under a directory whose name holds a newline is left out, not half-named.
+			assert.deepStrictEqual(yield* miss("docs/lonely.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+				nearestDirectory: ".",
+			})
+			// A name with pattern characters is compared as text, not matched.
+			assert.deepStrictEqual(yield* miss("src/*.ts"), {
+				exitCode: 1,
+				isDirectory: false,
+				sameName: [],
+				sameNameTotal: 0,
+			})
+			assert.deepStrictEqual(yield* miss("src"), {
+				exitCode: 1,
+				isDirectory: true,
+				sameName: [],
+				sameNameTotal: 0,
+			})
+		}).pipe(Effect.provide(overRepo())),
+	)
+
 	it.effect("reads a file whose name git quotes, and refuses a directory holding one file", () =>
 		Effect.gen(function* () {
 			const service = yield* RepoSandboxService
@@ -318,5 +384,75 @@ describe("the git commands the tools build, against a real repository", () => {
 				.pipe(Effect.flip)
 			assert.strictEqual(cwdFailure._tag, "@maple/backend/sandbox/SandboxUnsupportedRequestError")
 		}).pipe(Effect.provide(overRepo())),
+	)
+})
+
+/** A sandbox answering every command with one stdout fragment. */
+const answering = (output: { readonly text: string; readonly bytes: number; readonly truncated: boolean }) =>
+	Layer.succeed(Sandbox, {
+		execute: (request) =>
+			Stream.fromIterable([
+				new SandboxStarted({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					runtime: request.runtime,
+				}),
+				new SandboxOutput({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					stream: "stdout",
+					...output,
+				}),
+				new SandboxExited({
+					eventVersion: 1,
+					implementation: IMPLEMENTATION,
+					exitCode: 0,
+					resourceUse: new SandboxResourceUse({
+						wallTime: Duration.millis(1),
+						stdoutBytes: output.bytes,
+						stderrBytes: 0,
+					}),
+					artifacts: [],
+				}),
+			]),
+	})
+
+describe("output the sandbox cut", () => {
+	const exec = Effect.gen(function* () {
+		const service = yield* RepoSandboxService
+		return yield* service.exec(
+			ORG,
+			{ repository: "octo/shop", ref: "main" },
+			{ command: "cat", args: ["a.bin"] },
+		)
+	})
+
+	it.effect("is reported cut when the sandbox says so, though its lossy text re-encodes larger", () =>
+		Effect.gen(function* () {
+			// 100 invalid bytes kept of 200 decode to 100 U+FFFD, which re-encode to 300 bytes.
+			const result = yield* exec.pipe(
+				Effect.provide(
+					RepoSandboxService.layer.pipe(
+						Layer.provide(
+							answering({ text: Str.repeat(100)("\uFFFD"), bytes: 200, truncated: true }),
+						),
+					),
+				),
+			)
+			assert.isTrue(result.truncated)
+		}),
+	)
+
+	it.effect("is reported whole when the sandbox kept every byte", () =>
+		Effect.gen(function* () {
+			const result = yield* exec.pipe(
+				Effect.provide(
+					RepoSandboxService.layer.pipe(
+						Layer.provide(answering({ text: "abc", bytes: 3, truncated: false })),
+					),
+				),
+			)
+			assert.isFalse(result.truncated)
+		}),
 	)
 })

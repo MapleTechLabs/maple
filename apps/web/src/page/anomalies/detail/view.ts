@@ -1,10 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
-import {
-	isStaleOpenIncident,
-	RESOLVE_REASON_LABEL,
-	SEVERITY_TONE,
-	severityToneFor,
-} from "@maple/web-data/anomalies/format"
+import { isStaleOpenIncident, RESOLVE_REASON_LABEL } from "@maple/web-data/anomalies/format"
+import { SEVERITY_TONE, severityToneFor } from "@maple/views/lib/anomaly-display"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
@@ -21,19 +17,27 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { resourceNotFound } from "../../kit/resource-not-found"
+import { alertsHref } from "../../kit/alert-links"
 import { crumbOf, pageStateOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { detailTitleSkeleton } from "../../kit/detail-header"
-import { anomalySummary, anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
+import { anomalySummary } from "../../kit/anomaly-evidence"
+import { anomalyTitle, CHART_TOKENS, linkedIssueCard, signalChart } from "./view-body"
 import { linkIssueDialog } from "./view-link-dialog"
 import { anomalySidebar } from "./view-sidebar"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// The anomaly detail page over `ResultPage`.
+import { canRespondToIncidents, canRunInvestigations } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
+
+/**
+ * The anomalies list is the Alerts Inbox's Anomalies view, which opens on open anomalies: a resolved
+ * one, or one that could not be found, links to all of them so the list can include it.
+ */
+const anomaliesHref = (status: AnomalyIncidentDocument["status"] | null): string =>
+	alertsHref(status === "open" ? { signal: "anomaly" } : { signal: "anomaly", anomalyStatus: "all" })
 
 const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, timeZone: string): Html => {
 	const isOpen = incident.status === "open"
@@ -41,8 +45,10 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 	const tone = severityToneFor(incident)
 	const isBusy = model.busy !== null
 	return hstack(h, { gap: "2" }, [
-		badge(h, { variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge }, [
-			...(isOpen && !isStale
+		badge(
+			h,
+			{ variant: "outline", className: isStale ? SEVERITY_TONE.resolved.badge : tone.badge },
+			isOpen && !isStale
 				? [
 						hstack(h, { gap: "1.5", as: "span" }, [
 							statusDot(h, { tone: tone.tone }),
@@ -62,20 +68,24 @@ const headerActions = (h: H, model: Model, incident: AnomalyIncidentDocument, ti
 							incident.resolveReason !== null
 								? RESOLVE_REASON_LABEL[incident.resolveReason]
 								: "Resolved",
-						]),
-		]),
-		button(
-			h,
-			{
-				size: "sm",
-				variant: "outline",
-				isDisabled: isBusy,
-				isLoading: model.busy === "investigate",
-				attributes: [h.OnClick(Message.ClickedInvestigate())],
-			},
-			[icon(h, "PulseIcon"), "Open investigation"],
+						],
 		),
-		...(isOpen
+		...(canRunInvestigations(model)
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isDisabled: isBusy,
+							isLoading: model.busy === "investigate",
+							attributes: [h.OnClick(Message.ClickedInvestigate())],
+						},
+						[icon(h, "PulseIcon"), "Open investigation"],
+					),
+				]
+			: []),
+		...(isOpen && canRespondToIncidents(model)
 			? [
 					button(
 						h,
@@ -112,7 +122,10 @@ const loadedBody = (
 			[
 				h.section(
 					[h.Class("space-y-4")],
-					[anomalySummary(h, incident, model.nowMs), signalChart(h, model, incident, timeZone)],
+					[
+						anomalySummary(h, incident, model.nowMs, timeZone),
+						signalChart(h, model, incident, timeZone),
+					],
 				),
 				h.section(
 					[h.AriaLabelledBy("linked-issue-heading")],
@@ -122,7 +135,7 @@ const loadedBody = (
 							{ as: "h2", className: "mb-3 block", attributes: [h.Id("linked-issue-heading")] },
 							["Linked issue"],
 						),
-						linkedIssueCard(h, model, incident, isBusy),
+						linkedIssueCard(h, model, incident, isBusy, canRespondToIncidents(model)),
 					],
 				),
 			],
@@ -156,6 +169,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						rightPanel: anomalySidebar(h, {
 							incident: state.incident,
 							isBusy: model.busy !== null,
+							canRespond: canRespondToIncidents(model),
 							nowMs: model.nowMs,
 							timeZone,
 						}),
@@ -167,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						resourceNotFound(h, {
 							title: "Anomaly not found",
 							description: "It may have been pruned, or the link is stale.",
-							back: { href: "/anomalies", label: "Back to anomalies" },
+							back: { href: anomaliesHref(null), label: "Back to anomalies" },
 						}),
 					])
 				: state._tag === "Failed"
@@ -194,7 +208,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 export const breadcrumbsOf = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const state = pageStateOf(model)
 	return [
-		{ label: "Anomalies", href: "/anomalies" },
+		{ label: "Alerts", href: alertsHref({}) },
+		{
+			label: "Anomalies",
+			href: anomaliesHref(state._tag === "Loaded" ? state.incident.status : null),
+		},
 		{
 			label:
 				state._tag === "Loaded"

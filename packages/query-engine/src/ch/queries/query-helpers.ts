@@ -9,15 +9,8 @@ import type { AttributeFilter, MetricType } from "@maple/domain/query-engine"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import type { ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
-import {
-	MetricsSum,
-	MetricsGauge,
-	MetricsHistogram,
-	MetricsExpHistogram,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 import type { AttributeIndexMode } from "../../capabilities"
@@ -50,8 +43,6 @@ export function wholeRangeEnd<Q>(
 ): CH.Condition | undefined {
 	return wholeRange ? column.lt(utcSecondsParam("endTime")) : undefined
 }
-
-// APDEX expressions
 
 /**
  * Build the standard APDEX aggregation expressions (satisfiedCount,
@@ -97,8 +88,6 @@ export function apdexExprs(
 	}
 }
 
-// Attribute map projection
-
 /**
  * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
  * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
@@ -138,8 +127,6 @@ export function buildProjectedMapExpr(
 	})
 	return CH.mapLiteral(...pairs)
 }
-
-// Traces base WHERE conditions
 
 interface TracesMatchModes {
 	serviceName?: "contains"
@@ -186,7 +173,7 @@ export function inclusionValues(
 	scalar: string | undefined,
 	list: readonly string[] | undefined,
 ): readonly string[] | undefined {
-	if (list?.length) return list
+	if (list !== undefined && list.length > 0) return list
 	if (scalar) return [scalar]
 	return undefined
 }
@@ -279,7 +266,7 @@ export function severitySpellings(level: string): readonly string[] {
 	if (trimmed === "") return []
 	const upper = Str.toUpperCase(trimmed)
 	const lower = Str.toLowerCase(trimmed)
-	const title = upper.charAt(0) + Str.slice(1)(lower)
+	const title = Str.slice(0, 1)(upper) + Str.slice(1)(lower)
 	return [...new Set([upper, title, lower])]
 }
 
@@ -320,7 +307,7 @@ export function errorsOnlyCondition(
 }
 
 type TracesBaseWhereColumns = Pick<
-	typeof Traces.columns,
+	typeof Datasources.traces.columns,
 	| "OrgId"
 	| "Timestamp"
 	| "ServiceName"
@@ -332,6 +319,18 @@ type TracesBaseWhereColumns = Pick<
 	| "ResourceAttributes"
 	| "SpanAttributes"
 >
+
+/**
+ * Every stored SpanName whose HTTP display form (`httpDisplaySpanName`) can equal `name`.
+ * A rewritten name is `<prefix> <route>`, stored as `<prefix>` or `http.server <prefix>`,
+ * so a name without a space can only match itself.
+ */
+export const rawSpanNameCandidates = (name: string): ReadonlyArray<string> => [
+	name,
+	...Arr.flatMap(Arr.range(0, name.length - 1), (i) =>
+		name[i] === " " ? [Str.slice(0, i)(name), `http.server ${Str.slice(0, i)(name)}`] : [],
+	),
+]
 
 /**
  * Build the WHERE conditions shared between traces queries and alert queries:
@@ -365,11 +364,18 @@ export function tracesBaseWhereConditions(
 				$.SpanAttributes.get("url.path"),
 			)
 			const needle = mm?.spanName === "contains" ? soleValue(v) : undefined
-			return needle === undefined
-				? inclusionCondition($.SpanName, v).or(inclusionCondition(display, v))
-				: CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
-						.gt(0)
-						.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
+			if (needle === undefined) {
+				// The `SpanName IN` conjunct is what lets idx_span_name prune: an OR with the
+				// display expression alone reads SpanAttributes for every row in range.
+				return Arr.some(v, Str.includes(" "))
+					? inclusionCondition($.SpanName, Arr.dedupe(Arr.flatMap(v, rawSpanNameCandidates))).and(
+							inclusionCondition($.SpanName, v).or(inclusionCondition(display, v)),
+						)
+					: inclusionCondition($.SpanName, v)
+			}
+			return CH.positionCaseInsensitive($.SpanName, CH.lit(needle))
+				.gt(0)
+				.or(CH.positionCaseInsensitive(display, CH.lit(needle)).gt(0))
 		}),
 		CH.when(opts.statusCode, (v: string) => $.StatusCode.eq(v)),
 		CH.whenTrue(!!opts.rootOnly, () => $.SpanKind.in_("Server", "Consumer").or($.ParentSpanId.eq(""))),
@@ -383,31 +389,33 @@ export function tracesBaseWhereConditions(
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					deploymentEnvExpr($.ResourceAttributes),
-					CH.lit(opts.environments[0]),
+					CH.lit(soleEnvironment),
 				).gt(0),
 			)
 		} else {
 			conditions.push(CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments))
 		}
 	}
-	if (opts.namespaces?.length) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
 			conditions.push(
 				CH.positionCaseInsensitive(
 					$.ResourceAttributes.get("service.namespace"),
-					CH.lit(opts.namespaces[0]),
+					CH.lit(soleNamespace),
 				).gt(0),
 			)
 		} else {
 			conditions.push(CH.inList($.ResourceAttributes.get("service.namespace"), opts.namespaces))
 		}
 	}
-	if (opts.commitShas?.length) {
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) {
 		conditions.push(CH.inList($.ResourceAttributes.get("vcs.ref.head.revision"), opts.commitShas))
 	}
 	if (opts.attributeFilters) {
@@ -420,10 +428,10 @@ export function tracesBaseWhereConditions(
 			conditions.push(buildAttrFilterCondition(rf, "ResourceAttributes", opts.attributeIndexMode))
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		// Display-name aware: exclude rows matching either the raw or rewritten span name.
 		const display = httpDisplaySpanName(
 			$.SpanName,
@@ -436,13 +444,13 @@ export function tracesBaseWhereConditions(
 			),
 		)
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList(deploymentEnvExpr($.ResourceAttributes), opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ResourceAttributes.get("service.namespace"), opts.excludedNamespaces))
 	}
-	if (opts.excludedCommitShas?.length) {
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) {
 		conditions.push(
 			CH.notInList($.ResourceAttributes.get("vcs.ref.head.revision"), opts.excludedCommitShas),
 		)
@@ -451,8 +459,6 @@ export function tracesBaseWhereConditions(
 	return conditions
 }
 
-// ServiceOverviewSpans MV compatibility
-//
 // The service_overview_spans MV pre-filters traces at write time to
 // `SpanKind IN ('Server','Consumer') OR ParentSpanId = ''` and pre-extracts
 // `DeploymentEnv` / `CommitSha` from ResourceAttributes. It is ~20-100x cheaper
@@ -463,7 +469,6 @@ export function tracesBaseWhereConditions(
 // MV's column set. The MV lacks SpanName, SpanKind, ParentSpanId,
 // SpanAttributes, and ResourceAttributes.
 
-/** Returns true iff the opts + groupBy can be served by service_overview_spans_mv. */
 export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: readonly string[]): boolean {
 	// The MV is *lossy*: it stores only entry-point spans (Server/Consumer OR
 	// root). That set is equivalent to the raw table only when the query itself
@@ -475,10 +480,10 @@ export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: rea
 	if (!opts.rootOnly) return false
 	// The MV has no SpanName column, so neither spelling of the span-name filter
 	// can be served from it.
-	if (opts.spanName || opts.spanNames?.length) return false
-	if (opts.excludedSpanNames?.length) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
+	if (opts.spanName || (opts.spanNames !== undefined && opts.spanNames.length > 0)) return false
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) return false
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
 	if (groupBy) {
 		for (const g of groupBy) {
 			if (g === "span_name" || g === "http_method" || g === "attribute") return false
@@ -494,7 +499,7 @@ export function canUseServiceOverviewMv(opts: TracesBaseWhereOpts, groupBy?: rea
  * and `canUseServiceOverviewMv` only routes rootOnly queries to it.
  */
 export function serviceOverviewWhereConditions(
-	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOverviewSpans.columns>,
 	opts: TracesBaseWhereOpts,
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
@@ -516,41 +521,41 @@ export function serviceOverviewWhereConditions(
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}
 	}
-	if (opts.namespaces?.length) {
-		if (mm?.serviceNamespace === "contains" && opts.namespaces.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(opts.namespaces[0])).gt(0))
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
+		const soleNamespace = soleValue(opts.namespaces)
+		if (mm?.serviceNamespace === "contains" && soleNamespace !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.ServiceNamespace, CH.lit(soleNamespace)).gt(0))
 		} else {
 			conditions.push(CH.inList($.ServiceNamespace, opts.namespaces))
 		}
 	}
-	if (opts.commitShas?.length) {
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) {
 		conditions.push(CH.inList($.CommitSha, opts.commitShas))
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ServiceNamespace, opts.excludedNamespaces))
 	}
-	if (opts.excludedCommitShas?.length) {
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) {
 		conditions.push(CH.notInList($.CommitSha, opts.excludedCommitShas))
 	}
 
 	return conditions
 }
 
-// TracesAggregatesHourly MV compatibility
-//
 // `traces_aggregates_hourly` is the generalized aggregating MV. Its dimensions
 // are (OrgId, Hour, ServiceName, SpanName, SpanKind, StatusCode, IsEntryPoint,
 // DeploymentEnv) and it stores sample-weighted -State columns (count, duration
@@ -573,11 +578,15 @@ export function canUseTracesAggregatesMv(
 	bucketSeconds: number | undefined,
 ): boolean {
 	if (bucketSeconds == null || bucketSeconds < 3600) return false
-	if (opts.attributeFilters?.length) return false
-	if (opts.resourceAttributeFilters?.length) return false
-	if (opts.commitShas?.length) return false // MV doesn't carry CommitSha
-	if (opts.excludedCommitShas?.length) return false // ...so it cannot exclude on one either
-	if (opts.namespaces?.length || opts.excludedNamespaces?.length) return false // MV doesn't carry ServiceNamespace
+	if (opts.attributeFilters !== undefined && opts.attributeFilters.length > 0) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) return false // MV doesn't carry CommitSha
+	if (opts.excludedCommitShas !== undefined && opts.excludedCommitShas.length > 0) return false // ...so it cannot exclude on one either
+	if (
+		(opts.namespaces !== undefined && opts.namespaces.length > 0) ||
+		(opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0)
+	)
+		return false // MV doesn't carry ServiceNamespace
 	if (opts.minDurationMs != null || opts.maxDurationMs != null) return false
 	if (groupBy) {
 		for (const g of groupBy) {
@@ -590,27 +599,23 @@ export function canUseTracesAggregatesMv(
 /**
  * Build WHERE conditions for queries against traces_aggregates_hourly.
  *
- * `hourBounds` overrides the default `[startTime, endTime]` window with raw SQL
- * expressions. Callers that union this MV with raw partial-hour edges pass the
- * whole-hour interior (`[firstFullHour, endHour)`) so the two halves tile the
- * requested window exactly instead of overlapping or leaving a gap.
+ * `hourBounds` is the `Hour` window as raw SQL expressions. Callers union this MV
+ * with raw partial-hour edges and pass the whole-hour interior
+ * (`[firstFullHour, endHour)`) so the two halves tile the requested window exactly
+ * instead of overlapping or leaving a gap.
  */
 export function tracesAggregatesWhereConditions(
-	$: ColumnAccessor<typeof TracesAggregatesHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.tracesAggregatesHourly.columns>,
 	opts: TracesBaseWhereOpts,
-	hourBounds?: { readonly gte: string; readonly lt: string },
+	hourBounds: { readonly gte: string; readonly lt: string },
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
 	const services = inclusionValues(opts.serviceName, opts.serviceNames)
 	const spanNames = inclusionValues(opts.spanName, opts.spanNames)
 	const conditions: Array<CH.Condition | undefined> = [
 		$.OrgId.eq(orgIdParam),
-		hourBounds
-			? $.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime))
-			: $.Hour.gte(utcSecondsParam("startTime")),
-		hourBounds
-			? $.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime))
-			: $.Hour.lte(utcSecondsParam("endTime")),
+		$.Hour.gte(CH.rawExpr(hourBounds.gte, T.dateTime)),
+		$.Hour.lt(CH.rawExpr(hourBounds.lt, T.dateTime)),
 		CH.when(services, (v: readonly string[]) =>
 			matchOrIn($.ServiceName, v, mm?.serviceName === "contains"),
 		),
@@ -619,20 +624,21 @@ export function tracesAggregatesWhereConditions(
 		errorsOnlyCondition($.StatusCode, opts.errorsOnly),
 	]
 
-	if (opts.environments?.length) {
-		if (mm?.deploymentEnv === "contains" && opts.environments.length === 1) {
-			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(opts.environments[0])).gt(0))
+	if (opts.environments !== undefined && opts.environments.length > 0) {
+		const soleEnvironment = soleValue(opts.environments)
+		if (mm?.deploymentEnv === "contains" && soleEnvironment !== undefined) {
+			conditions.push(CH.positionCaseInsensitive($.DeploymentEnv, CH.lit(soleEnvironment)).gt(0))
 		} else {
 			conditions.push(CH.inList($.DeploymentEnv, opts.environments))
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
 
@@ -644,16 +650,14 @@ export function tracesAggregatesWhereConditions(
 	return conditions
 }
 
-// Metrics table lookup + SELECT factory
-
 const VALUE_TABLES = {
-	sum: MetricsSum,
-	gauge: MetricsGauge,
+	sum: Datasources.metricsSum,
+	gauge: Datasources.metricsGauge,
 } as const
 
 const HISTOGRAM_TABLES = {
-	histogram: MetricsHistogram,
-	exponential_histogram: MetricsExpHistogram,
+	histogram: Datasources.metricsHistogram,
+	exponential_histogram: Datasources.metricsExponentialHistogram,
 } as const
 
 export function resolveMetricTable(metricType: MetricType) {
@@ -667,10 +671,13 @@ export function resolveMetricTable(metricType: MetricType) {
  * For value tables (sum/gauge): operates on $.Value column.
  * For histogram tables: operates on $.Sum, $.Count, $.Min, $.Max columns.
  */
-export function metricsSelectExprs($: ColumnAccessor<typeof MetricsSum.columns>, isHistogram: boolean) {
+export function metricsSelectExprs(
+	$: ColumnAccessor<typeof Datasources.metricsSum.columns>,
+	isHistogram: boolean,
+) {
 	if (isHistogram) {
 		// SAFETY: `isHistogram` selects the histogram table whose accessor includes Count/Sum/Min/Max.
-		const $h = $ as unknown as ColumnAccessor<typeof MetricsHistogram.columns>
+		const $h = $ as unknown as ColumnAccessor<typeof Datasources.metricsHistogram.columns>
 		return {
 			avgValue: finiteOrZero(CH.sum($h.Sum).div(CH.sum($h.Count))),
 			// Min/Max are Nullable (OTel histograms may omit extrema), and min/max

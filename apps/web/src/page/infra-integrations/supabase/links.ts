@@ -1,8 +1,6 @@
 import { encodeLogAttributeFilter } from "@maple/views/lib/log-attribute-filters"
 import { AppRoute, hrefOf } from "../../../route"
 
-// Links out of the Supabase pages.
-
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
 /** The logs page on the polled Supabase logs (one project's with a ref), over the same time range. */

@@ -1,4 +1,6 @@
-import { ErrorIssueId } from "@maple/domain/http"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
+import { ErrorIssueId, WorkflowState } from "@maple/domain/http"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
 import {
 	getErrorsByType,
@@ -6,15 +8,16 @@ import {
 	getErrorsSpark,
 	getErrorsSummary,
 } from "@maple/web-data/warehouse/errors"
-import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { HubWrite, runHubWrite } from "./writes"
-import { writeClipboard } from "../../kit/clipboard"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** The warehouse side's filters: the trend window plus the sidebar's service and environment. */
 export const WarehouseFilters = Schema.Struct({
@@ -25,17 +28,13 @@ export const WarehouseFilters = Schema.Struct({
 })
 export type WarehouseFilters = typeof WarehouseFilters.Type
 
-const mutable = <A>(values: ReadonlyArray<A> | undefined): Array<A> | undefined =>
-	values === undefined ? undefined : [...values]
-
 const warehouseData = (filters: WarehouseFilters) => ({
 	startTime: filters.startTime,
 	endTime: filters.endTime,
-	services: mutable(filters.services),
-	deploymentEnvs: mutable(filters.deploymentEnvs),
+	services: filters.services,
+	deploymentEnvs: filters.deploymentEnvs,
 })
 
-/** `useEffectiveTimeRange(undefined, undefined, ERRORS_WINDOW)`. */
 export const ResolveWindow = Command.define("ResolveErrorsWindow", {
 	args: { mode: RequestMode, preset: Schema.String, timeZone: Schema.String },
 	messages: [Message.CompletedResolveWindow],
@@ -49,14 +48,15 @@ export const ResolveWindow = Command.define("ResolveErrorsWindow", {
 		),
 })
 
+export const FetchHubSession = fetchSessionGrants("FetchErrorsSession", Message.CompletedFetchSession)
+
 export const FetchSummary = Command.define("FetchErrorsSummary", {
 	args: { key: Schema.String, filters: WarehouseFilters },
 	messages: [Message.CompletedFetchSummary],
 	execute: ({ key, filters }) =>
 		getErrorsSummary({ data: warehouseData(filters) }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSummary({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSummary({ key, result })),
 		),
 })
 
@@ -69,11 +69,7 @@ export const FetchServiceCounts = Command.define("FetchErrorIssueServiceCounts",
 			const client = yield* MapleApiV2Client
 			const response = yield* client.errorIssues.serviceCounts()
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchServiceCounts({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchServiceCounts({ key, result }))),
 })
 
 /** `getErrorsFacets` over the trend window: the Environment section's names. */
@@ -82,12 +78,8 @@ export const FetchEnvironments = Command.define("FetchErrorsEnvironments", {
 	messages: [Message.CompletedFetchEnvironments],
 	execute: ({ key, window }) =>
 		getErrorsFacets({ data: { startTime: window.startTime, endTime: window.endTime } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data.deploymentEnvs, (env) => env.name),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchEnvironments({ key, result })),
+			Effect.map((response) => Arr.map(response.data.deploymentEnvs, (env) => env.name)),
+			settleTo((result) => Message.CompletedFetchEnvironments({ key, result })),
 		),
 })
 
@@ -97,18 +89,13 @@ export const FetchRanking = Command.define("FetchErrorsRanking", {
 	messages: [Message.CompletedFetchRanking],
 	execute: ({ key, filters, limit }) =>
 		getErrorsByType({ data: { ...warehouseData(filters), limit } }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => Arr.map(response.data, (row) => row.fingerprintHash),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRanking({ key, result })),
+			Effect.map((response) => Arr.map(response.data, (row) => row.fingerprintHash)),
+			settleTo((result) => Message.CompletedFetchRanking({ key, result })),
 		),
 })
 
 export type ListQuery = typeof V2ErrorIssueListQuery.Type
 
-/** One `errorIssues.list` page. */
 export const FetchPage = Command.define("FetchErrorIssuesPage", {
 	args: { key: Schema.String, query: V2ErrorIssueListQuery },
 	messages: [Message.CompletedFetchPage],
@@ -117,11 +104,7 @@ export const FetchPage = Command.define("FetchErrorIssuesPage", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.errorIssues.list({ query })
 			return { data: response.data, hasMore: response.has_more, nextCursor: response.next_cursor }
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPage({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchPage({ key, result }))),
 })
 
 /** Window counts for the rows on screen, asked for by fingerprint. */
@@ -136,9 +119,8 @@ export const FetchVolume = Command.define("FetchErrorsVolume", {
 				limit: Math.max(1, fingerprintHashes.length),
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchVolume({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchVolume({ key, result })),
 		),
 })
 
@@ -154,9 +136,8 @@ export const FetchSpark = Command.define("FetchErrorsSpark", {
 		getErrorsSpark({
 			data: { ...warehouseData(filters), fingerprintHashes: [...fingerprintHashes], bucketSeconds },
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSpark({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchSpark({ key, result })),
 		),
 })
 
@@ -169,11 +150,7 @@ export const FetchInvestigations = Command.define("FetchErrorsInvestigations", {
 			const client = yield* MapleApiV2Client
 			const response = yield* client.investigations.list({ query: { limit } })
 			return response.data
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvestigations({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigations({ key, result }))),
 })
 
 export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {
@@ -183,21 +160,15 @@ export const LoadSignalPresence = Command.define("LoadErrorsSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ToolbarSearch`'s 300 ms debounce; a newer keystroke bumps the generation. */
+/** The search box's 300 ms debounce; a newer keystroke bumps the generation. */
 export const WaitSearchDebounce = Command.define("WaitErrorsSearchDebounce", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ generation }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ generation })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ generation })),
 })
 
-/** `PageRefreshProvider`: how long Reload shows its pending spinner. */
-export const CompleteReloadSpin = Command.define("CompleteErrorsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteErrorsReloadSpin", Message.CompletedReloadSpin)
 
 /** The filter rail is in the DOM; the sidebar reads as it renders, so no paint wait. */
 export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
@@ -205,12 +176,19 @@ export const MountFilterRail = Mount.define("MountErrorsFilterRail", {
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** A row's or the selection's workflow write. */
 export const RunHubWrite = Command.define("RunErrorsHubWrite", {
-	args: { ids: Schema.Array(ErrorIssueId), write: HubWrite, isBulk: Schema.Boolean },
+	args: {
+		ids: Schema.Array(ErrorIssueId),
+		write: HubWrite,
+		isBulk: Schema.Boolean,
+		/** The state each row showed when picked, so a move another tab beat is refused (409). */
+		expectedStates: Schema.Record(Schema.String, WorkflowState),
+	},
 	messages: [Message.CompletedHubWrite],
-	execute: ({ ids, write, isBulk }) =>
-		runHubWrite(ids, write, (outcome) => Message.CompletedHubWrite({ ids, write, isBulk, outcome })),
+	execute: ({ ids, write, isBulk, expectedStates }) =>
+		runHubWrite(ids, write, expectedStates, (outcome) =>
+			Message.CompletedHubWrite({ ids, write, isBulk, outcome }),
+		),
 })
 
 /**
@@ -253,7 +231,7 @@ export const MountRowSelect = Mount.defineStream("MountErrorsRowSelect", {
 		),
 })
 
-/** `useCopy({ label })` for a row; `isPath` copies an absolute link on this origin. */
+/** `isPath` copies an absolute link on this origin. */
 export const CopyRowText = Command.define("CopyErrorsRowText", {
 	args: { label: Schema.String, text: Schema.String, isPath: Schema.Boolean },
 	messages: [Message.CompletedCopy],
@@ -263,7 +241,6 @@ export const CopyRowText = Command.define("CopyErrorsRowText", {
 		),
 })
 
-/** "Open in new tab": `window.open(href, "_blank", "noopener,noreferrer")`. */
 export const OpenInNewTab = Command.define("OpenErrorsRowInNewTab", {
 	args: { path: Schema.String },
 	messages: [Message.CompletedOpenInNewTab],

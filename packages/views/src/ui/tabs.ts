@@ -3,9 +3,9 @@ import { Command, Mount, type Update } from "foldkit"
 import * as Dom from "foldkit/dom"
 import { defineMessageUnion } from "foldkit/message"
 
-// Port of packages/ui/src/components/ui/tabs.tsx (Base UI Tabs, horizontal, manual activation):
-// arrow keys and Home/End move the focused tab (Base UI's highlight), click/Enter/Space select it.
-// The indicator rect is measured like Base UI's `TabsIndicator` and written as CSS variables.
+// Base UI Tabs, horizontal, manual activation: arrow keys and Home/End move the focused tab
+// (Base UI's highlight), click/Enter/Space select it. The indicator rect is measured like Base
+// UI's `TabsIndicator` and written as CSS variables.
 
 export const ActivationDirection = Schema.Literals(["none", "left", "right"])
 export type ActivationDirection = typeof ActivationDirection.Type
@@ -19,8 +19,6 @@ export const IndicatorRect = Schema.Struct({
 	height: Schema.Number,
 })
 export type IndicatorRect = typeof IndicatorRect.Type
-
-// MODEL
 
 export const Model = Schema.Struct({
 	/** The id seed of this Tabs, so element ids follow Base UI's format (`base-ui-_r_<n>_`). */
@@ -49,8 +47,6 @@ export const init = (config: {
 export const tabId = (model: Model, index: number): string => `base-ui-_r_${model.idBase + index}_`
 export const panelId = (model: Model): string => `base-ui-_r_${model.idBase + model.values.length}_`
 
-// MESSAGE
-
 export const TabKey = Schema.Literals(["ArrowLeft", "ArrowRight", "Home", "End"])
 export type TabKey = typeof TabKey.Type
 
@@ -62,16 +58,12 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 export const FocusTab = Command.define("FocusTab", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedFocusTab],
 	execute: ({ id }) =>
 		Dom.focus(`[id="${id}"]`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusTab())),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.Return<Model, Message>
 
@@ -129,13 +121,13 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 		CompletedFocusTab: () => ({ model }),
 	})
 
-// MOUNT
-
 /** Base UI's `getCssDimensions`: the computed size unless it disagrees with the offset size. */
 const cssDimensions = (element: HTMLElement): { width: number; height: number } => {
 	const css = getComputedStyle(element)
-	const width = Number.parseFloat(css.width) || 0
-	const height = Number.parseFloat(css.height) || 0
+	const parsedWidth = Number.parseFloat(css.width)
+	const parsedHeight = Number.parseFloat(css.height)
+	const width = Number.isNaN(parsedWidth) ? 0 : parsedWidth
+	const height = Number.isNaN(parsedHeight) ? 0 : parsedHeight
 	const fallback = Math.round(width) !== element.offsetWidth || Math.round(height) !== element.offsetHeight
 	return fallback ? { width: element.offsetWidth, height: element.offsetHeight } : { width, height }
 }

@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { collapsiblePanelStyles } from "@maple/ui/styles/ui/collapsible"
+import { collapsiblePanelStyles } from "./collapsible.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /**

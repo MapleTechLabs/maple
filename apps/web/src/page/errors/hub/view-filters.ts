@@ -20,7 +20,6 @@ import { MountFilterRail } from "./command"
 import { type FilterParam, Message } from "./message"
 import type { Model } from "./model"
 
-/** `SourceLegend`: what opened the issue, one line per source. */
 const SOURCE_LEGEND = Arr.join(
 	[
 		"What opened the issue.",
@@ -54,7 +53,7 @@ const section = (
 		...extra,
 	})
 
-/** `ErrorsFilterSidebar`; its Mount asks for the counts once the rail is actually rendered. */
+/** Its Mount asks for the counts once the rail is actually rendered. */
 export const filtersRail = (h: H, model: Model): Html =>
 	h.div([h.Class("contents"), h.OnMount(MountFilterRail())], [railContent(h, model)])
 

@@ -4,6 +4,10 @@
  * value that bypasses the tokens fails CI instead of review. They read class strings: every string
  * literal and template chunk, split on whitespace, each token split into variants and a utility.
  */
+import { readdirSync, readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { ratcheted } from "./ratchet.mjs"
 
 /** `dark:hover:bg-x` → `{ variants: ["dark", "hover"], utility: "bg-x" }`, ignoring colons in brackets. */
 export const splitToken = (token) => {
@@ -54,13 +58,36 @@ const noArbitraryRadius = tokenRule(
 		!utility.endsWith("-[inherit]"),
 )
 
-const noRawShadow = tokenRule(
-	"Depth comes from surfaces, the hairline and the shadow tokens.",
-	"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control` or `shadow-accent-start` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`).",
-	({ utility }) =>
-		/^(inset-)?shadow(-(2xs|xs|sm|md|lg|xl|2xl|inner))?(\/\d+)?$/.test(utility) ||
-		/^(inset-)?shadow-\[/.test(utility),
-)
+const SHADOW_TOKENS = new Set([
+	"raised",
+	"popup",
+	"control",
+	"accent-start",
+	"overflow-up",
+	"rule-bottom",
+	"none",
+])
+const INSET_SHADOW_TOKENS = new Set(["highlight", "pressed", "none"])
+
+/** A shadow utility that is not one of the shadow tokens: a size, an arbitrary value or a colour. */
+const isRawShadow = (token) => {
+	const utility = token.replace(/^!|!$/g, "")
+	if (/^(inset-)?shadow(\/\d+)?$/.test(utility)) return true
+	const inset = /^inset-shadow-(.+)$/.exec(utility)
+	if (inset !== null) return !INSET_SHADOW_TOKENS.has(inset[1])
+	const shadow = /^shadow-(.+)$/.exec(utility)
+	return shadow !== null && !SHADOW_TOKENS.has(shadow[1])
+}
+
+const noRawShadow = ratcheted("no-raw-shadow", {
+	description: "Depth comes from surfaces, the hairline and the shadow tokens.",
+	message:
+		"`{{token}}` is not a shadow token. Use `shadow-raised`, `shadow-popup`, `shadow-control`, `shadow-accent-start`, `shadow-overflow-up` or `shadow-rule-bottom` (inset: `inset-shadow-highlight`, `inset-shadow-pressed`). A shadow's colour is part of its token; a new depth gets a new token in tokens.css.",
+	collect: (_context, push) =>
+		classStrings((node, tokens) => {
+			for (const token of tokens) if (isRawShadow(splitToken(token).utility)) push(node, { token })
+		}),
+})
 
 const noTransitionAll = tokenRule(
 	"Name the properties that move.",
@@ -83,27 +110,39 @@ const COLOR_PROPS = new Set([
 
 const isInteractive = ({ variants }) => variants.includes("hover") || variants.includes("active")
 
+/** Colour-only properties: a colour never eases, wherever its change comes from. */
+const EASED_COLOR_PROPS = new Set([...COLOR_PROPS].filter((prop) => prop !== "box-shadow"))
+
 const instantState = {
 	meta: {
 		type: "problem",
 		docs: { description: "Hover and press land in the frame they happen; only movement eases." },
 		messages: {
 			bad: "`{{token}}` eases a colour on a string with hover or press states. State is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
+			color:
+				"`{{token}}` eases a colour. A colour changes with state (a parent's hover, selection, focus, open), and state is instant: drop it, and transition only properties that move (opacity, translate, scale, rotate, size).",
 		},
 	},
 	create(context) {
 		return classStrings((node, tokens) => {
 			const parsed = tokens.map(splitToken)
-			if (!parsed.some(isInteractive)) return
+			const interactive = parsed.some(isInteractive)
 			parsed.forEach(({ variants, utility }, i) => {
 				if (variants.length > 0) return
 				const list = /^transition-\[([^\]]+)\]$/.exec(utility)
-				const eases =
-					utility === "transition" ||
+				const props = list === null ? [] : list[1].split(",")
+				if (
 					utility === "transition-colors" ||
-					utility === "transition-shadow" ||
-					(list !== null && list[1].split(",").some((prop) => COLOR_PROPS.has(prop)))
-				if (eases) context.report({ node, messageId: "bad", data: { token: tokens[i] } })
+					props.some((prop) => EASED_COLOR_PROPS.has(prop))
+				)
+					context.report({ node, messageId: "color", data: { token: tokens[i] } })
+				else if (
+					interactive &&
+					(utility === "transition" ||
+						utility === "transition-shadow" ||
+						props.some((prop) => COLOR_PROPS.has(prop)))
+				)
+					context.report({ node, messageId: "bad", data: { token: tokens[i] } })
 			})
 		})
 	},
@@ -268,8 +307,201 @@ const noDimmedIcon = {
 	},
 }
 
+/** Every `--color-*` the theme defines, read from the token stylesheets. */
+const STYLES = resolve(dirname(fileURLToPath(import.meta.url)), "../../packages/ui/src/styles")
+const COLOR_TOKENS = new Set(
+	readdirSync(STYLES)
+		.filter((file) => file.endsWith(".css"))
+		.flatMap((file) => [
+			...readFileSync(resolve(STYLES, file), "utf8").matchAll(/--color-([a-z0-9-]+)\s*:/g),
+		])
+		.map((match) => match[1]),
+)
+for (const keyword of ["transparent", "current", "inherit"]) COLOR_TOKENS.add(keyword)
+/** First segments of the colour tokens (`severity`, `surface`, `chart`): a value starting with one is a colour. */
+const COLOR_ROOTS = new Set([...COLOR_TOKENS].map((name) => name.split("-")[0]))
+const COLOR_UTILITY =
+	/^-?(?:bg|text|border(?:-[xytblrse])?|ring|outline|divide|fill|stroke|from|via|to|decoration|caret|accent|placeholder)-([a-z][a-z0-9-]*[a-z0-9])(?:\/[\w.[\]]+)?$/
+
+const noUnknownColorToken = tokenRule(
+	"Colour utilities name a colour token that exists.",
+	"`{{token}}` names a colour token that tokens.css does not define, so it draws nothing. Use an existing token (`text-success`, `bg-surface-sunken`) or add the colour to packages/ui/src/styles/tokens.css.",
+	({ utility }) => {
+		const match = COLOR_UTILITY.exec(utility)
+		if (match === null) return false
+		const name = match[1]
+		return COLOR_ROOTS.has(name.split("-")[0]) && !COLOR_TOKENS.has(name)
+	},
+)
+
+const trackingTokens = tokenRule(
+	"Letter spacing comes from the tracking tokens.",
+	"`{{token}}` is Tailwind's stock tracking. An uppercase label is the `eyebrow` kit, or `tracking-caption` (0.08em) / `tracking-overline` (0.12em); other text keeps its natural spacing (`tracking-tight` for display type).",
+	({ utility }) => /^tracking-(wide|wider|widest)$/.test(utility),
+)
+
+const fontWeightScale = tokenRule(
+	"Weights come from the type scale: normal, medium, semibold.",
+	"`{{token}}` is off the weight scale. Use `font-normal`, `font-medium` or `font-semibold` (the `typography` `weight` option).",
+	({ utility }) => /^font-(thin|extralight|light|bold|extrabold|black|\[\d+\])$/.test(utility),
+)
+
+const noOffGridSpacing = tokenRule(
+	"Spacing sits on the 2px grid.",
+	"`{{token}}` is a quarter step (an odd pixel). Spacing moves in half steps (2px): round to the neighbour, or write an offset from a scale value as `calc(--spacing(n)-1px)`.",
+	({ utility }) => {
+		const match =
+			/^-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|left|right|bottom|start|end)-(\d+\.\d+)$/.exec(
+				utility,
+			)
+		return match !== null && !Number.isInteger(Number(match[1]) * 2)
+	},
+)
+
+const LEGACY = new Map([
+	["rounded", "`rounded-sm`"],
+	["flex-grow", "`grow`"],
+	["flex-shrink", "`shrink`"],
+	["flex-shrink-0", "`shrink-0`"],
+])
+const noLegacyUtility = {
+	meta: {
+		type: "problem",
+		docs: { description: "Tailwind 4 spellings, one per look." },
+		messages: { bad: "`{{token}}` is a Tailwind 3 spelling. Write {{replacement}}." },
+	},
+	create(context) {
+		return classStrings((node, tokens) => {
+			// `flex-grow` as a style object's key is a CSS property, not a class.
+			if (node.parent?.type === "Property" && node.parent.key === node) return
+			for (const token of tokens) {
+				const { utility } = splitToken(token)
+				const gradient = /^bg-gradient-to-([a-z]{1,2})$/.exec(utility)
+				const replacement =
+					gradient !== null ? `\`bg-linear-to-${gradient[1]}\`` : LEGACY.get(utility)
+				if (replacement !== undefined)
+					context.report({ node, messageId: "bad", data: { token, replacement } })
+			}
+		})
+	},
+}
+
+const STATE_VARIANT = /^(?:\[[^\]]*\]|group-|peer-|in-)?(hover|active|focus-visible|focus-within)$/
+/**
+ * Hover fills: a row, list item or chip takes `surface-sunken` (`surface-strong` on an already
+ * sunken chip); a control (ghost button, toggle, tab, menu trigger) takes `accent`, and only the
+ * kit (`allowControlHover`) draws controls. `muted` is never a hover, and neither wash takes a `/NN`.
+ */
+const surfaceWashes = {
+	meta: {
+		type: "problem",
+		docs: { description: "Neutral washes and hover fills are the surface tokens." },
+		messages: {
+			alpha:
+				"`{{token}}` hand-picks a neutral wash. Use `bg-surface-faint`, `bg-surface-sunken` or `bg-surface-strong`; they read the same on any surface.",
+			hover:
+				"`{{token}}` is not a hover fill. A row, list item or chip hovers `bg-surface-sunken` (`bg-surface-strong` on an already sunken chip); a control's hover belongs to its kit component (`button` ghost).",
+		},
+		schema: [
+			{
+				type: "object",
+				properties: { allowControlHover: { type: "boolean" } },
+				additionalProperties: false,
+			},
+		],
+	},
+	create(context) {
+		const allowControlHover = context.options[0]?.allowControlHover === true
+		return classStrings((node, tokens) => {
+			for (const token of tokens) {
+				const { variants, utility } = splitToken(token)
+				if (/^bg-(muted|accent)\/\d+$/.test(utility))
+					context.report({ node, messageId: "alpha", data: { token } })
+				else if (
+					(utility === "bg-muted" || (utility === "bg-accent" && !allowControlHover)) &&
+					variants.some((v) => STATE_VARIANT.test(v) || /:(hover|active)\]$/.test(v))
+				)
+					context.report({ node, messageId: "hover", data: { token } })
+			}
+		})
+	},
+}
+
+/**
+ * Focus draws one ring: solid `ring-ring`, or an input's soft halo `ring-ring/24`, which is too
+ * faint alone and is carried by a `border-ring` in the same class string.
+ */
+const focusRing = {
+	meta: {
+		type: "problem",
+		docs: { description: "Focus draws one ring: solid `ring-ring`, or the input halo." },
+		messages: {
+			alpha:
+				"`{{token}}` hand-picks a focus ring alpha. A focus ring is solid `ring-ring` (`ring-1`/`ring-2`); an input's soft halo is `ring-[3px] ring-ring/24` with `border-ring`.",
+			halo: "`{{token}}` is the input halo, which is too faint to show focus alone. Add `{{border}}` (a bordered input), or use the solid `ring-2 ring-ring` (anything else).",
+		},
+	},
+	create(context) {
+		return classStrings((node, tokens) => {
+			const parsed = tokens.map(splitToken)
+			const hasBorderRing = parsed.some(({ utility }) => utility === "border-ring")
+			parsed.forEach(({ variants, utility }, i) => {
+				const match = /^ring-ring\/(\d+)$/.exec(utility)
+				if (match === null) return
+				if (match[1] !== "24") {
+					context.report({ node, messageId: "alpha", data: { token: tokens[i] } })
+					return
+				}
+				if (!hasBorderRing)
+					context.report({
+						node,
+						messageId: "halo",
+						data: { token: tokens[i], border: [...variants, "border-ring"].join(":") },
+					})
+			})
+		})
+	},
+}
+
+const DISABLED_VARIANT = /^(?:group-|peer-|in-|has-)?(?:data-|aria-)?(?:\[)?disabled\]?$/
+/** Every disabled control dims the same: `opacity-64` (`opacity-100` undoes it while loading). */
+const disabledOpacity = tokenRule(
+	"A disabled control dims to one opacity.",
+	"`{{token}}` dims a disabled state by a hand-picked amount. Disabled is `opacity-64` everywhere, the same as the kit's inputs and buttons.",
+	({ variants, utility }) => {
+		const match = /^opacity-(\d+)$/.exec(utility)
+		return (
+			match !== null &&
+			match[1] !== "64" &&
+			match[1] !== "100" &&
+			variants.some((v) => DISABLED_VARIANT.test(v))
+		)
+	},
+)
+
+const HOVER_VARIANT = /^(?:group-|peer-)?(?:hover|active)(?:\/\w+)?$/
+const HOVER_EDGE = new RegExp(`^border-(?:ring|foreground|${TONES})(?:\\/\\d+)?$`)
+/**
+ * A hover outline is not a focus ring: a pickable card or chip hovers `border-border-strong`, a
+ * toned one its tone's strong edge `-a4`. `ring` is focus only, so hover never borrows it.
+ */
+const hoverEdge = tokenRule(
+	"A hover outline is `border-border-strong` or a tone's `-a4` edge.",
+	"`{{token}}` outlines a hover with a focus or ad-hoc colour. A neutral card or chip hovers `border-border-strong`; a toned one hovers its tone's `-a4` step (`border-primary-a4`). `ring` is for focus only.",
+	({ variants, utility }) => HOVER_EDGE.test(utility) && variants.some((v) => HOVER_VARIANT.test(v)),
+)
+
 export const designRules = {
 	"couldnt-copy": couldntCopy,
+	"disabled-opacity": disabledOpacity,
+	"focus-ring": focusRing,
+	"hover-edge": hoverEdge,
+	"font-weight-scale": fontWeightScale,
+	"no-legacy-utility": noLegacyUtility,
+	"no-off-grid-spacing": noOffGridSpacing,
+	"no-unknown-color-token": noUnknownColorToken,
+	"surface-washes": surfaceWashes,
+	"tracking-tokens": trackingTokens,
 	"hover-needs-active": hoverNeedsActive,
 	"instant-state": instantState,
 	"no-arbitrary-radius": noArbitraryRadius,

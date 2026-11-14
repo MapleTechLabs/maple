@@ -1,9 +1,12 @@
-import { Option, Array as Arr } from "effect"
-import { describe, expect, it } from "vitest"
-import { StatusPageComponentId, StatusPageId } from "./primitives"
+import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { assert, describe, expect, it } from "vitest"
+import { StatusPageComponentId, StatusPageId } from "@maple/primitives"
 import {
 	applyOverlay,
 	contrastRatio,
+	customDomainIssue,
+	normalizeCustomDomain,
+	StatusPageCustomDomainHostname,
 	DEFAULT_STATUS_PAGE_THEME,
 	decodeStatusPageSnapshotJson,
 	resolveStatusPageTheme,
@@ -39,12 +42,18 @@ const snapshot = (overrides: Partial<StatusPageSnapshot> = {}): StatusPageSnapsh
 		description: null,
 		websiteUrl: null,
 		logoUrl: null,
+		logoDarkUrl: null,
+		faviconUrl: null,
+		supportUrl: null,
 		theme: DEFAULT_STATUS_PAGE_THEME,
 		showPoweredBy: true,
 		privacyUrl: null,
 		termsUrl: null,
+		customDomain: null,
+		visibility: "public",
 	},
 	breakGlassTokenSha256: null,
+	passwordHash: null,
 	components: [
 		{
 			id: API,
@@ -207,7 +216,8 @@ describe("applyOverlay", () => {
 		const merged = applyOverlay(snapshot(), { entries: [followUp, opened] })
 		expect(merged.incidents).toHaveLength(1)
 		const incident = merged.incidents[0]
-		expect(incident?.title).toBe("API errors")
+		assert.isDefined(incident)
+		expect(incident.title).toBe("API errors")
 		expect(incident?.status).toBe("identified")
 		expect(Arr.map(incident?.updates, (update) => update.body)).toEqual([
 			"A bad deploy; rolling back.",
@@ -318,7 +328,7 @@ describe("applyOverlay", () => {
 			],
 		})
 		expect(merged.incidents).toHaveLength(1)
-		expect(Arr.map(merged.incidents[0]?.updates, (update) => update.body)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(merged.incidents, 0)?.updates, (update) => update.body)).toEqual([
 			"Still working on it.",
 			"Imported.",
 		])
@@ -588,5 +598,47 @@ describe("isListedIncident", () => {
 				NOW,
 			),
 		).toBe(false)
+	})
+})
+
+describe("custom domain hostnames", () => {
+	const decode = Schema.decodeUnknownResult(StatusPageCustomDomainHostname)
+
+	it("stores one spelling: trimmed, lower-cased, no trailing dot", () => {
+		assert.strictEqual(normalizeCustomDomain("  Status.ACME.com. "), "status.acme.com")
+		assert.deepStrictEqual(Result.getOrNull(decode(" Status.Acme.com ")), "status.acme.com")
+	})
+
+	it("takes a subdomain, punycode included", () => {
+		for (const hostname of [
+			"status.acme.com",
+			"status.acme.co.uk",
+			"xn--bcher-kva.acme.io",
+			"a-b.c-d.example.org",
+		])
+			assert.isNull(customDomainIssue(hostname), hostname)
+	})
+
+	it("refuses apexes, IPs, URLs, wildcards, Maple's and Cloudflare's names", () => {
+		for (const hostname of [
+			"",
+			"acme.com",
+			"acme.co.uk",
+			"acme.com.au",
+			"acme.github.io",
+			"10.0.0.1",
+			"https://status.acme.com",
+			"status.acme.com/path",
+			"*.acme.com",
+			"-status.acme.com",
+			"status..acme.com",
+			"status.maple.dev",
+			"acme.status-pr-12.maple.dev",
+			"my-worker.acme.workers.dev",
+			"status.localhost",
+			`${Str.repeat(64)("a")}.acme.com`,
+		])
+			assert.isNotNull(customDomainIssue(normalizeCustomDomain(hostname)), hostname)
+		assert.isTrue(Result.isFailure(decode("status.maple.dev")))
 	})
 })

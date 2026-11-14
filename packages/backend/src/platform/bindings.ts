@@ -9,9 +9,7 @@
  */
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { ChatSessionClient } from "@maple/domain/chat-session-stub"
-import { Context, type Effect, type Option, Schema } from "effect"
-
-// ── Queues ───────────────────────────────────────────────────────────────────
+import { Context, type Effect, Layer, Option, Schema } from "effect"
 
 export class QueueSendError extends Schema.TaggedError<QueueSendError>()(
 	"@maple/backend/platform/QueueSendError",
@@ -61,8 +59,6 @@ export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueuePr
 	"@maple/backend/platform/AuditEventsQueueProducer",
 ) {}
 
-// ── Rate limits ──────────────────────────────────────────────────────────────
-
 export class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingError>()(
 	"@maple/backend/platform/RateLimitBindingError",
 	{
@@ -79,6 +75,10 @@ export interface RateLimiter {
 export class ApiV2RateLimit extends Context.Service<ApiV2RateLimit, RateLimiter>()(
 	"@maple/backend/platform/ApiV2RateLimit",
 ) {}
+/** Every viewer of one share link together; the per-viewer bucket stays on `ApiV2RateLimit`. */
+export class ShareLinkRateLimit extends Context.Service<ShareLinkRateLimit, RateLimiter>()(
+	"@maple/backend/platform/ShareLinkRateLimit",
+) {}
 export class CliAuthRateLimit extends Context.Service<CliAuthRateLimit, RateLimiter>()(
 	"@maple/backend/platform/CliAuthRateLimit",
 ) {}
@@ -88,8 +88,16 @@ export class McpOAuthRateLimit extends Context.Service<McpOAuthRateLimit, RateLi
 export class McpToolsRateLimit extends Context.Service<McpToolsRateLimit, RateLimiter>()(
 	"@maple/backend/platform/McpToolsRateLimit",
 ) {}
-
-// ── Object store (R2) ────────────────────────────────────────────────────────
+/** Maple's share of a production Clerk instance's API limit, keyed by data source id. */
+export class DataSourceProductionCallLimit extends Context.Service<
+	DataSourceProductionCallLimit,
+	RateLimiter
+>()("@maple/backend/platform/DataSourceProductionCallLimit") {}
+/** The same for development instances, whose own limit is a tenth of production's. */
+export class DataSourceDevelopmentCallLimit extends Context.Service<
+	DataSourceDevelopmentCallLimit,
+	RateLimiter
+>()("@maple/backend/platform/DataSourceDevelopmentCallLimit") {}
 
 export class ObjectStoreError extends Schema.TaggedError<ObjectStoreError>()(
 	"@maple/backend/platform/ObjectStoreError",
@@ -110,8 +118,6 @@ export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectSt
 	"@maple/backend/platform/ReplayBlobBucket",
 ) {}
 
-// ── Application database (Hyperdrive) ────────────────────────────────────────
-
 /** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */
 export interface DatabaseConnection {
 	readonly connectionString: string
@@ -124,8 +130,6 @@ export class MapleDbConnection extends Context.Service<
 	MapleDbConnection,
 	Option.Option<DatabaseConnection>
 >()("@maple/backend/platform/MapleDbConnection") {}
-
-// ── Workflows ────────────────────────────────────────────────────────────────
 
 export class WorkflowStartError extends Schema.TaggedError<WorkflowStartError>()(
 	"@maple/backend/platform/WorkflowStartError",
@@ -143,7 +147,7 @@ export interface WorkflowStarter<Params> {
 /** The per-org ClickHouse schema apply, hosted by the api Worker. */
 export class SchemaApplyWorkflow extends Context.Service<
 	SchemaApplyWorkflow,
-	WorkflowStarter<{ readonly orgId: string }>
+	WorkflowStarter<{ readonly orgId: string; readonly runId: string }>
 >()("@maple/backend/platform/SchemaApplyWorkflow") {}
 
 export class WorkflowCancelError extends Schema.TaggedError<WorkflowCancelError>()(
@@ -164,8 +168,6 @@ export class SecurityAuditWorkflowStarter extends Context.Service<
 	SecurityAuditWorkflowStarter,
 	SecurityAuditWorkflowControl
 >()("@maple/backend/platform/SecurityAuditWorkflowStarter") {}
-
-// ── Email (send_email) ───────────────────────────────────────────────────────
 
 export class EmailSendError extends Schema.TaggedError<EmailSendError>()(
 	"@maple/backend/platform/EmailSendError",
@@ -191,26 +193,29 @@ export interface EmailSenderClient {
 /** The `send_email` binding, or `None` on a stage that does not bind it (everything but prd). */
 export class EmailSender extends Context.Service<EmailSender, Option.Option<EmailSenderClient>>()(
 	"@maple/backend/platform/EmailSender",
-) {}
-
-// ── Service bindings to other Maple Workers ─────────────────────────────────
+) {
+	/** A host without the binding: email is off. */
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** maple-ai, which serves `/mcp`, the chat surface and incident triage. `None` where the Worker does not bind it. */
 export class AiWorkerFetcher extends Context.Service<AiWorkerFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/AiWorkerFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The repository sandbox Worker. `None` on a deployment that did not provision one. */
 export class SandboxFetcher extends Context.Service<SandboxFetcher, Option.Option<Fetcher>>()(
 	"@maple/backend/platform/SandboxFetcher",
-) {}
+) {
+	static readonly none = Layer.succeed(this, Option.none())
+}
 
 /** The Worker Loader that runs the agents' `run_code` programs in Dynamic Workers. `None` where unbound. */
 export class CodeLoader extends Context.Service<CodeLoader, Option.Option<WorkerLoader>>()(
 	"@maple/backend/platform/CodeLoader",
 ) {}
-
-// ── Chat sessions (Durable Object) ───────────────────────────────────────────
 
 /** Addresses `ChatSession` Durable Objects, bound through alchemy (`chat-sessions.ts`). A host without the binding provides nothing. */
 export interface ChatSessionsApi {

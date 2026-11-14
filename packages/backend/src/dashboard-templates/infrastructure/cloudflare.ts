@@ -75,7 +75,7 @@ function requestsRatioDataSource(opts: {
 
 /**
  * KNOWN DIVERGENCE from /infra/cloudflare, which counts `hit | stale | revalidated | updating` as
- * served from the edge (`CACHE_SERVED_STATUSES` in @maple/query-engine's `cloudflare-infra.ts`).
+ * served from the edge (`CACHE_SERVED_STATUSES` in @maple/query-engine-integrations' `cloudflare-infra.ts`).
  * This widget counts `hit` only, so it reads a little low against that page.
  *
  * Two engine limits force it, and both would have to lift to close the gap: the metrics

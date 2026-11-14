@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { StatusPageThemeAppearance, StatusPageThemePreset } from "@maple/domain/status-page"
 import { Schema } from "effect"
@@ -15,7 +16,7 @@ export type SubmitMode = typeof SubmitMode.Type
 
 export const Model = Schema.Struct({
 	nowMs: Schema.NullOr(Schema.Number),
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
 	/** The checklist is seeded from the first monitors read, then belongs to the user. */
@@ -42,3 +43,7 @@ export const Model = Schema.Struct({
 	takenSlug: Schema.NullOr(Schema.String),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`status_pages:edit`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:edit")

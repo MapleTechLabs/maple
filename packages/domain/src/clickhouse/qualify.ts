@@ -1,23 +1,12 @@
-/**
- * Source datasources that materialized views read from. Used by
- * `qualifyStatementForDatabase` to rewrite bare `FROM <name>` / `JOIN <name>`
- * references in MV bodies.
- */
-export const CLICKHOUSE_MV_SOURCE_TABLES: ReadonlyArray<string> = [
-	"traces",
-	"logs",
-	"metrics_sum",
-	"metrics_gauge",
-	"metrics_histogram",
-	"metrics_exponential_histogram",
-	"error_events",
-	"service_map_edges_hourly_ingest",
-	"service_overview_spans",
-	"service_operations_minutely",
-	"trace_list_mv",
-	"session_events",
-	"session_replays",
-]
+import { isDatasourceDefinition } from "@maple-dev/effect-orm/tinybird"
+import { replaceWith } from "@maple/strings"
+import { Array as Arr, Record as Rec } from "effect"
+import * as Datasources from "../tinybird/datasources"
+
+/** Every Maple-managed table; `qualifyStatementForDatabase` qualifies bare `FROM`/`JOIN` references to them. */
+const MANAGED_TABLES: ReadonlyArray<string> = Arr.flatMap(Rec.values(Datasources), (value: unknown) =>
+	isDatasourceDefinition(value) ? [value._name] : [],
+)
 
 /**
  * Rewrite a generated CREATE TABLE / CREATE MATERIALIZED VIEW statement to
@@ -28,28 +17,30 @@ export const CLICKHOUSE_MV_SOURCE_TABLES: ReadonlyArray<string> = [
  * `Code: 60. UNKNOWN_TABLE: <db>.<table>` at MV creation. Qualifying every
  * identifier sidesteps the analyzer's "current database" resolution entirely.
  *
- * Used by both the runtime API path (OrgClickHouseSettingsService.applySchema)
- * and the standalone CLI (`@maple/clickhouse-cli`).
+ * Used by both `ClickHouseSchemaApplyWorkflow` in the API and the standalone CLI
+ * (`@maple/clickhouse-cli`).
  */
 export const qualifyStatementForDatabase = (stmt: string, database: string): string => {
 	if (database.length === 0) return stmt
 	const ident = (name: string) => `\`${database}\`.\`${name}\``
 
-	let result = stmt.replace(
+	let result = replaceWith(
+		stmt,
 		/^(CREATE TABLE\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)/,
-		(_match, prefix: string, name: string) => `${prefix}${ident(name)}`,
+		(_match, prefix = "", name = "") => `${prefix}${ident(name)}`,
 	)
 
-	result = result.replace(
+	result = replaceWith(
+		result,
 		/^(CREATE MATERIALIZED VIEW\s+(?:IF NOT EXISTS\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s+TO\s+)([A-Za-z_][A-Za-z0-9_]*)/,
-		(_match, p1: string, view: string, mid: string, target: string) =>
-			`${p1}${ident(view)}${mid}${ident(target)}`,
+		(_match, p1 = "", view = "", mid = "", target = "") => `${p1}${ident(view)}${mid}${ident(target)}`,
 	)
 
-	for (const table of CLICKHOUSE_MV_SOURCE_TABLES) {
-		result = result.replace(
+	for (const table of MANAGED_TABLES) {
+		result = replaceWith(
+			result,
 			new RegExp(`(\\bFROM|\\bJOIN)\\s+${table}\\b`, "g"),
-			(_match, kw: string) => `${kw} ${ident(table)}`,
+			(_match, kw = "") => `${kw} ${ident(table)}`,
 		)
 	}
 

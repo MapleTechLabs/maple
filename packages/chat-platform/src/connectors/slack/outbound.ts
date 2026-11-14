@@ -36,6 +36,7 @@ import {
 	type ChatOutboundOperation,
 	type ChatTarget,
 	type ChatThreadRequest,
+	withRateLimitRetry,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import {
@@ -67,9 +68,6 @@ const MAX_MESSAGE_CHARS = 3000
  * turn instead of on 429s.
  */
 const MIN_EDIT_INTERVAL = Duration.seconds(1)
-
-/** How many times a 429 is waited out before the turn gives up on the message. */
-const MAX_RATE_LIMIT_ATTEMPTS = 3
 
 /**
  * The longest a 429 may park a turn.
@@ -173,7 +171,8 @@ const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map(
 		(code) => [code, "auth"] as const,
 	),
 	...Arr.map(
-		["channel_not_found", "not_in_channel", "is_archived"],
+		// The last two answer a direct message: the person turned off the app's messages tab, or left.
+		["channel_not_found", "not_in_channel", "is_archived", "messages_tab_disabled", "user_not_found"],
 		(code) => [code, "not_found"] as const,
 	),
 	...Arr.map(
@@ -235,6 +234,7 @@ const jsonRequest = (url: string, payload: SlackApiRequest) =>
 export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: SLACK_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	directMessages: true,
 	// The bot token is per workspace and arrives under `WORKSPACE_CREDENTIALS`; nothing is
 	// deployment-wide.
 	requiredConfig: [],
@@ -256,7 +256,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		 * three deep under the first one.
 		 */
 		const attempt = Effect.fn("Slack.request", { kind: "client" })(function* (
-			bearer: Redacted.Redacted<string>,
+			bearer: Redacted.Redacted,
 			operation: ChatOutboundOperation,
 			method: string,
 			request: HttpClientRequest.HttpClientRequest,
@@ -322,27 +322,12 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				if (Option.isNone(token)) {
 					return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
 				}
-				const bearer = token.value
-				const tryOnce = (count: number): Effect.Effect<SlackApiResult, ChatOutboundError> =>
-					attempt(bearer, operation, method, request).pipe(
-						Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
-							// A read of the conversation is CONTEXT, and the turn has not started yet —
-							// waiting a rate limit out here delays the answer to buy background the model
-							// can do without. An answer is worth waiting for; the history behind it is not.
-							// A channel listing has somebody waiting on a picker, who is better told to
-							// try again than left staring at a spinner for half a minute.
-							count >= MAX_RATE_LIMIT_ATTEMPTS ||
-							operation === "history" ||
-							operation === "destinations"
-								? Effect.fail(
-										failed(operation, "Slack kept rate limiting this message", {
-											status: 429,
-										}),
-									)
-								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
-						),
-					)
-				return tryOnce(1)
+				return withRateLimitRetry(attempt(token.value, operation, method, request), {
+					operation,
+					rateLimited: SlackRateLimited,
+					pause: (limited) => Effect.sleep(limited.wait),
+					gaveUp: (extra) => failed(operation, "Slack kept rate limiting this message", extra),
+				})
 			})
 
 		/** `thread_ts` is left out entirely when there is no thread; Slack rejects an empty one. */
@@ -491,6 +476,13 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 * something that shows nothing, the driver's first posted message is the acknowledgement.
 			 */
 			typing: () => Effect.void,
+
+			/**
+			 * `chat.postMessage` takes a user id as its `channel` and opens the direct message itself,
+			 * with only `chat:write`, so there is nothing to call here.
+			 */
+			directMessage: (workspaceId: string, userId: string) =>
+				Effect.succeed({ workspaceId, channelId: userId } satisfies ChatTarget),
 
 			/**
 			 * A Slack thread is not an object — it is every message that carries the anchor's `ts` as

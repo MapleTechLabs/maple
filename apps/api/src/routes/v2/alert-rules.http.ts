@@ -26,6 +26,7 @@ import type {
 import {
 	fromV2Threshold,
 	MapleApiV2,
+	missingReadScopes,
 	paginateArray,
 	scopeAllows,
 	timestamp,
@@ -36,6 +37,7 @@ import { AlertForbiddenError } from "@maple/domain/http"
 import { Array as Arr, DateTime, Effect, Option, Result, Schema, String as Str } from "effect"
 import { Base64Url } from "effect/encoding"
 import { auditDiff } from "@/routes/v2/audit-changes"
+import { ruleReadFamilies } from "@/routes/v2/alert-rule-read-families"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -79,6 +81,7 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	service_names: doc.serviceNames,
 	exclude_service_names: doc.excludeServiceNames,
 	environments: doc.environments,
+	...(doc.anomalySignals === undefined ? undefined : { anomaly_signals: doc.anomalySignals }),
 	tags: doc.tags,
 	group_by: doc.groupBy,
 	signal_type: doc.signalType,
@@ -111,6 +114,12 @@ const toV2Rule = (doc: AlertRuleDocument): V2AlertRule => ({
 	updated_by: doc.updatedBy,
 })
 
+/** The wire rule with every audited key present, `anomaly_signals` included when absent. */
+const toAuditedRule = (doc: AlertRuleDocument) => {
+	const rule = toV2Rule(doc)
+	return { ...rule, anomaly_signals: rule.anomaly_signals }
+}
+
 /** Update-payload fields diffable through the wire shape (drafts get summarized). */
 const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRule>({
 	fields: [
@@ -123,6 +132,7 @@ const ruleAuditDiff = auditDiff<keyof V2AlertRuleUpdateParams & keyof V2AlertRul
 		"service_names",
 		"exclude_service_names",
 		"environments",
+		"anomaly_signals",
 		"tags",
 		"group_by",
 		"signal_type",
@@ -231,6 +241,9 @@ const toUpsertRequest = (
 					}
 				: undefined),
 			...(params.environments !== undefined ? { environments: params.environments } : undefined),
+			...(params.anomaly_signals !== undefined
+				? { anomalySignals: params.anomaly_signals }
+				: undefined),
 			...(params.tags !== undefined ? { tags: params.tags } : undefined),
 			...(params.group_by !== undefined ? { groupBy: params.group_by } : undefined),
 			...(params.threshold_upper !== undefined
@@ -282,7 +295,23 @@ const mergeThresholds = (
 	const fitBound = (tier: AlertThreshold): AlertThreshold =>
 		isRangeComparator(comparator) ? tier : { ...tier, upper: null }
 	if (patch.thresholds !== undefined) {
-		return Effect.succeed(Arr.map(patch.thresholds, fromV2Threshold))
+		// A tier that leaves out its chain keeps the one stored at the same severity.
+		return Effect.succeed(
+			Arr.map(patch.thresholds, (tier) =>
+				tier.escalation_chain_id !== undefined
+					? fromV2Threshold(tier)
+					: {
+							...fromV2Threshold(tier),
+							escalationChainId: Arr.findFirst(
+								doc.thresholds,
+								(stored) => stored.severity === tier.severity,
+							).pipe(
+								Option.flatMapNullishOr((stored) => stored.escalationChainId),
+								Option.getOrNull,
+							),
+						},
+			),
+		)
 	}
 	// Legacy fields echoed back as read (a client PATCHing the document it fetched) are not edits.
 	const echoed = {
@@ -370,6 +399,12 @@ const mergeUpsertRequest = (
 			serviceNames: patch.service_names ?? doc.serviceNames,
 			excludeServiceNames: patch.exclude_service_names ?? doc.excludeServiceNames,
 			environments: patch.environments ?? doc.environments,
+			// Only an anomaly rule has a signal scope; a patch that omits it keeps the rule's.
+			...(signalType === "anomaly"
+				? { anomalySignals: patch.anomaly_signals ?? doc.anomalySignals ?? [] }
+				: patch.anomaly_signals !== undefined
+					? { anomalySignals: patch.anomaly_signals }
+					: undefined),
 			tags: patch.tags ?? doc.tags,
 			groupBy: patch.group_by !== undefined ? patch.group_by : doc.groupBy,
 			signalType,
@@ -393,6 +428,24 @@ const mergeUpsertRequest = (
 			alertOnNoData: patch.alert_on_no_data ?? doc.noDataBehavior === "alert",
 		})
 	})
+
+/**
+ * Preview and test run the rule's query and hand back what it measured, grouped by whatever
+ * the caller chose: a telemetry read. A scoped key must be able to read that telemetry itself.
+ */
+const requireRuleReadScopes = (scopes: ReadonlyArray<string> | undefined, rule: AlertRuleUpsertRequest) => {
+	const missing = missingReadScopes(scopes, ruleReadFamilies(rule))
+	return missing.length === 0
+		? Effect.void
+		: Effect.fail(
+				new AlertForbiddenError({
+					message: `Running this rule's query requires ${Arr.join(
+						Arr.map(missing, (family) => `"${family}:read"`),
+						", ",
+					)}, because it returns the telemetry it reads.`,
+				}),
+			)
+}
 
 const toV2PreviewResult = (preview: AlertRulePreviewResponse): V2AlertRulePreviewResult => ({
 	object: "alert_rule.preview",
@@ -445,13 +498,13 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 		const findRule = (orgId: Parameters<typeof rules.listRules>[0], ruleId: AlertRuleDocument["id"]) =>
 			Effect.gen(function* () {
 				const response = yield* rules.listRules(orgId)
-				const rule = response.rules.find((doc) => doc.id === ruleId)
-				if (rule === undefined)
+				const rule = Arr.findFirst(response.rules, (doc) => doc.id === ruleId)
+				if (Option.isNone(rule))
 					return yield* new AlertRuleNotFoundError({
 						message: "No such alert rule.",
 						ruleId,
 					})
-				return rule
+				return rule.value
 			})
 
 		return handlers
@@ -504,7 +557,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 
 					yield* recordHttpAudit("alert_rule.updated", {
 						resourceId: updated.id,
-						changes: ruleAuditDiff(payload, toV2Rule(current), toV2Rule(updated)),
+						changes: ruleAuditDiff(payload, toAuditedRule(current), toAuditedRule(updated)),
 						metadata: { name: updated.name },
 					})
 
@@ -529,6 +582,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const rule = yield* toUpsertRequest(payload.rule)
+					yield* requireRuleReadScopes(tenant.scopes, rule)
 					const result = yield* alerts.testRule(
 						tenant.orgId,
 						tenant.userId,
@@ -567,6 +621,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 								'Previewing a raw SQL alert requires the "alerts:write" scope, because it executes your query against the warehouse.',
 						})
 					}
+					yield* requireRuleReadScopes(tenant.scopes, rule)
 					const preview = yield* alerts.previewRule(
 						tenant.orgId,
 						tenant.roles,
@@ -597,6 +652,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 								}
 							: undefined),
 						limit: limit + 1,
+						publicApi: true,
 					})
 
 					const hasMore = response.checks.length > limit
@@ -616,6 +672,7 @@ export const HttpV2AlertRulesLive = HttpApiBuilder.group(MapleApiV2, "alertRules
 					const summary = yield* readModels.summarizeRuleChecks(tenant.orgId, params.id, {
 						since: query.since,
 						until: query.until,
+						publicApi: true,
 					})
 
 					return {

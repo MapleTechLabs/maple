@@ -1,4 +1,4 @@
-import type { FactoryLink } from "../../../components/service-map/three/factory-routing"
+import type { FactoryLink } from "./factory-routing"
 import * as THREE from "three"
 import type { Running, Scope } from "./kit"
 import { String as Str } from "effect"
@@ -67,7 +67,7 @@ export interface FactoryMotion {
 	}
 }
 
-/** `useFactoryMotion`: the route texture, the cargo phases and the shader patch. */
+/** The route texture, the cargo phases and the shader patch. */
 export function factoryMotion(
 	scope: Scope,
 	link: FactoryLink,

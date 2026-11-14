@@ -1,10 +1,13 @@
-import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "../../../../components/infra/gcp/inventory"
-import { gcpSparklineServices } from "../../../../components/infra/gcp/list-model"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY } from "../inventory"
+import { gcpSparklineServices } from "../list-model"
 import { AsyncData, Command } from "foldkit"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestSlot } from "../../kit/slot"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { Resources } from "../../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../../route"
 import * as Menu from "@maple/views/ui/menu"
@@ -12,7 +15,7 @@ import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import type { ResourcesQuery } from "../data"
 import {
 	CompleteReloadSpin,
@@ -26,7 +29,7 @@ import {
 import { stepProjectMenu } from "./project-menu"
 import { fleetOf, listScopeOf, pageStateOf, sparksWindow, statusOf } from "./derive"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -73,8 +76,8 @@ export const resourcesQueryOf = (search: Search): ResourcesQuery => {
 }
 
 /**
- * Every read the page shows right now, keyed like the atoms: the fleet once the status says it
- * collects, then the current view's sparklines, its Cloud SQL inventory, or the resource list.
+ * Every read the page shows right now: the fleet once the status says it collects, then the
+ * current view's sparklines, its Cloud SQL inventory, or the resource list.
  */
 const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const status = statusOf(model)
@@ -124,7 +127,7 @@ const sync = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 	}
 }
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "gcpIntegration.status", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "gcp")
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const key = statusKey(context)
@@ -152,11 +155,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		commands: [
 			resolveCommand(model, context, "Load"),
 			LoadStatus({ key, refresh: false }),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -217,11 +216,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchResources: ({ key, result }) => ({
 			model: { ...model, resources: Keyed.accept(model.resources, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		TickedStatusRefresh: () => {
 			const key = statusKey(context)
 			const [status, commands] = slot(model.status, key, "Refresh", () =>

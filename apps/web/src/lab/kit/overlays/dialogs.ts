@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { inputControlChromeStyles, inputControlLayoutStyles, inputStyles } from "@maple/ui/styles/ui/input"
-import { labelStyles } from "@maple/ui/styles/ui/label"
+import { inputControlChromeStyles, inputControlLayoutStyles, inputStyles } from "@maple/views/ui/input.styles"
+import { labelStyles } from "@maple/views/ui/label.styles"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import type * as Dialog from "@maple/views/ui/dialog"
@@ -20,7 +20,7 @@ type H = HtmlBuilder<Message>
 const itemRow = (h: H, children: ReadonlyArray<Html>) =>
 	h.div([h.Class("flex min-h-48 items-start")], children)
 
-/** `<Label><Input defaultValue /></Label>`: an uncontrolled input inside its label. */
+/** An uncontrolled input inside its label. */
 const labelledInput = (h: H, id: string, label: string, value: string): Html =>
 	h.label(
 		[h.Class(cn(labelStyles, "flex flex-col items-start gap-2")), h.DataAttribute("slot", "label")],

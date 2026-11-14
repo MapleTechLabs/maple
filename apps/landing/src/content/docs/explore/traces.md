@@ -12,15 +12,15 @@ The **Traces** page lists the traces Maple received in the selected time range. 
 Traces come from any OpenTelemetry SDK exporting spans over OTLP. The list and facets read these fields:
 
 - `service.name` resource attribute for **Service**, and `deployment.environment` and `service.namespace` for **Environment** and **Namespace**.
-- Span name for **Root Span**.
+- Span name for **Root span**.
 - Span status (`Ok`, `Error`, `Unset`) for **Has error** and the **Status** column.
-- `http.request.method` and `http.response.status_code` (or their older `http.method` and `http.status_code` spellings) for **HTTP Method** and **Status Code**.
+- `http.request.method` and `http.response.status_code` (or their older `http.method` and `http.status_code` spellings) for **HTTP method** and **Status code**.
 
 See [OpenTelemetry conventions](/docs/concepts/otel-conventions) for the full list of attributes Maple reads.
 
 ## The trace list
 
-The table has these columns: **Trace ID**, **Root Span** (with start time), **Services**, **Spans**, **Duration**, and **Status**. **Status** shows the HTTP status code when the root span has one, otherwise the span status. Sort by clicking **Duration**. The default order is newest first. More rows load as you scroll.
+The table has these columns: **Trace ID**, **Root span** (with start time), **Services**, **Spans**, **Duration**, and **Status**. **Status** shows the HTTP status code when the root span has one, otherwise the span status. Sort by clicking **Duration**. The default order is newest first. More rows load as you scroll.
 
 <figure class="shot">
   <img src="/screenshots/docs/traces-01-list.webp" alt="The Traces list with Trace ID, Root Span, Services, Spans, Duration and Status columns, and a filter sidebar with Has Error, Root Traces Only, environment, namespace, service and root span facets." loading="lazy" />
@@ -39,20 +39,20 @@ Click a row to open the trace in a side sheet. Use **Previous trace** and **Next
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Has error**              | Only traces with an error span.                                                                                                                    |
 | **Root traces only**       | Lists one row per trace, keyed on its entry span (a root span, or a Server or Consumer span). On by default. Turn it off to list individual spans. |
-| **Hide Single-Span Noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root traces only** is on.          |
+| **Hide single-span noise** | Hides single-span traces that are not entry points, such as orphaned client spans. On by default, shown while **Root traces only** is on.          |
 | **Environment**            | Filter by `deployment.environment`.                                                                                                                |
 | **Namespace**              | Filter by `service.namespace`.                                                                                                                     |
 | **Service**                | Filter by `service.name`.                                                                                                                          |
-| **Root Span**              | Filter by root span name.                                                                                                                          |
+| **Root span**              | Filter by root span name.                                                                                                                          |
 | **Duration**               | A minimum and maximum duration range.                                                                                                              |
-| **HTTP Method**            | Filter by request method.                                                                                                                          |
-| **Status Code**            | Filter by HTTP response status code.                                                                                                               |
+| **HTTP method**            | Filter by request method.                                                                                                                          |
+| **Status code**            | Filter by HTTP response status code.                                                                                                               |
 
 Every value facet can include or exclude a value.
 
 ### Query syntax
 
-Click **Advanced Filter** (or press `F`) to write a query. Press Ctrl+Space for autocomplete and Cmd+Enter to apply.
+Click **Advanced filter** (or press `F`) to write a query. Press Ctrl+Space for autocomplete and Cmd+Enter to apply.
 
 ```
 service.name = "checkout" AND attr.http.route != "/health"
@@ -86,16 +86,16 @@ Three views show the spans:
 
 Click a span to open the span panel. Press Esc to close it. The selected span is kept in the URL, so you can share a link to it.
 
-The span panel shows the duration and status, and an error section when the status is `Error`. It has these tabs:
+The span panel shows the duration, the self time (time not spent in child spans), the span's share of the trace, and its status. When the status is `Error`, an error section shows the message, and its sparkle button copies the error as a prompt for an AI assistant. It has these tabs:
 
-- **Details**: **Start Time**, **Span ID**, **Parent Span ID**, then **Span Attributes** and **Resource Attributes**. Each attribute row has **Filter by** and **Exclude** actions that open the trace list with that attribute filter applied.
+- **Details**: **Start time**, **Span ID**, **Parent span ID**, then **Events**, the span's events in time order with a **Stack trace** for each exception, then **Span attributes** and **Resource attributes**. Each attribute row has **Filter** and **Exclude** actions that open the trace list with that attribute filter applied.
 - **Logs**: logs emitted inside this span. Click one to open its detail.
 - **Infrastructure**: host, container, or Kubernetes details, shown when the span carries those resource attributes.
 
 ## Jump to logs and replays
 
-- **View Logs** in the trace header opens the [Logs](/docs/explore/logs) page scoped to the trace ID. The button shows a count and appears only when the trace has logs. The time window covers the trace duration plus 5 minutes on either side.
-- **View Session Replay** opens the [replay](/docs/session-replay/replays) of the browser session that made the request. It appears when a recorded session is linked to this trace ID by the [browser SDK](/docs/session-replay/browser-sdk).
+- **View logs** in the trace header opens the [Logs](/docs/explore/logs) page scoped to the trace ID. The button shows a count and appears only when the trace has logs. The time window covers the trace duration plus 5 minutes on either side.
+- **View session replay** opens the [replay](/docs/session-replay/replays) of the browser session that made the request. It appears when a recorded session is linked to this trace ID by the [browser SDK](/docs/session-replay/browser-sdk).
 
 ## Query traces from an assistant
 
@@ -111,7 +111,7 @@ The [MCP server](/docs/reference/mcp) exposes the same data:
 - **"No traces yet".** Maple has never received a span for this organization. Configure an OpenTelemetry SDK with your ingest key and the [ingest endpoint](/docs/reference/ingest). See [Instrumentation](/docs/instrumentation).
 - **"No traces in this time range".** Maple has data, just not in this window. Click **Widen time range**.
 - **"No traces match these filters".** Your exclusions removed everything. Click **Clear filters**.
-- **A trace you expect is missing.** **Root traces only** and **Hide Single-Span Noise** are on by default. Turn off **Hide Single-Span Noise** to see single-span traces, or **Root traces only** to search individual spans.
+- **A trace you expect is missing.** **Root traces only** and **Hide single-span noise** are on by default. Turn off **Hide single-span noise** to see single-span traces, or **Root traces only** to search individual spans.
 - **"Trace not found".** The trace has expired past your [retention](/docs/reference/retention) or has not been ingested yet.
 
 ## Next steps

@@ -18,20 +18,6 @@ const LINE_SEPARATOR = " "
 const PARAGRAPH_SEPARATOR = " "
 
 /**
- * CSS.escape an identifier the way browsers do, so a value like
- * `</style><script>alert(1)</script>` cannot break out of the surrounding
- * `--color-…` declaration.
- */
-export const sanitizeCssIdentifier = (key: string): string => {
-	if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-		return CSS.escape(key)
-	}
-	// Fallback for environments without CSS.escape: hex-encode anything
-	// that isn't [a-zA-Z0-9_-].
-	return key.replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch.charCodeAt(0).toString(16)} `)
-}
-
-/**
  * Returns `value` only if it parses as a known-safe CSS color expression.
  * Drops anything containing CSS structural tokens like `;`, `}`, `<` etc.
  */
@@ -87,7 +73,8 @@ export const escapeJsonInHtml = (json: string): string =>
 const REDIRECT_PROBE_ORIGIN = "https://x.invalid"
 
 // Browsers strip tabs and newlines from URLs and read `\\` as `/`, so either can turn a path into a host.
-const UNSAFE_REDIRECT_CHARS = /[\u0000-\u001f\u007f\\]/
+const isUnsafeRedirectChar = (char: string): boolean =>
+	char === "\\" || Option.exists(Str.charCodeAt(0)(char), (code) => code <= 0x1f || code === 0x7f)
 // The same characters percent-encoded, plus an encoded slash right after the leading one.
 const UNSAFE_REDIRECT_ESCAPES = /%(?:[01][0-9a-f]|7f|5c)|^\/%2f/i
 
@@ -103,7 +90,8 @@ export const validateInternalRedirect = (raw: string | undefined | null): string
 	if (trimmed.length === 0) return null
 	if (!Str.startsWith("/")(trimmed)) return null
 	if (Str.startsWith("//")(trimmed)) return null
-	if (UNSAFE_REDIRECT_CHARS.test(trimmed) || UNSAFE_REDIRECT_ESCAPES.test(trimmed)) return null
+	if (Arr.some(Arr.fromIterable(trimmed), isUnsafeRedirectChar) || UNSAFE_REDIRECT_ESCAPES.test(trimmed))
+		return null
 	if (!URL.canParse(trimmed, REDIRECT_PROBE_ORIGIN)) return null
 	if (new URL(trimmed, REDIRECT_PROBE_ORIGIN).origin !== REDIRECT_PROBE_ORIGIN) return null
 	return trimmed

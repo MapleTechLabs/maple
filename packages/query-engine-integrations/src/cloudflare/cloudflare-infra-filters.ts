@@ -15,7 +15,8 @@
 
 import * as CH from "@maple-dev/effect-orm/expr"
 import { type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import type { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
+import type * as Datasources from "@maple/domain/tinybird/datasources"
+import { Array as Arr, Record as Rec } from "effect"
 
 /** Filter key → the metric attribute it lives on. */
 export const CF_ATTR = {
@@ -50,6 +51,17 @@ export const CF_METRIC = {
 	requestsByClient: "cloudflare.http.requests.by_client",
 	firewallEvents: "cloudflare.firewall.events",
 	dnsQueries: "cloudflare.dns.queries",
+	workerRequests: "cloudflare.worker.requests",
+	workerErrors: "cloudflare.worker.errors",
+	workerSubrequests: "cloudflare.worker.subrequests",
+	workerCpuTime: "cloudflare.worker.cpu_time",
+	workerDuration: "cloudflare.worker.duration",
+	queueBacklogMessages: "cloudflare.queue.backlog.messages",
+	queueBacklogBytes: "cloudflare.queue.backlog.bytes",
+	queueConsumerConcurrency: "cloudflare.queue.consumer.concurrency",
+	durableObjectRequests: "cloudflare.durable_object.requests",
+	durableObjectErrors: "cloudflare.durable_object.errors",
+	durableObjectWallTime: "cloudflare.durable_object.wall_time",
 } as const
 
 const HTTP_CUBE_KEYS = ["host", "cacheStatus", "statusClass"] as const satisfies ReadonlyArray<CfFilterKey>
@@ -111,11 +123,11 @@ const VALUES_BY_KEY: Record<CfFilterKey, keyof CloudflareFilterOpts> = {
 	dnsResponseCode: "dnsResponseCodes",
 } satisfies Record<CfFilterKey, keyof CloudflareFilterOpts>
 
-const FILTER_KEYS = Object.keys(VALUES_BY_KEY) as ReadonlyArray<CfFilterKey>
+const FILTER_KEYS: ReadonlyArray<CfFilterKey> = Rec.keys(VALUES_BY_KEY)
 
 const valuesFor = (opts: CloudflareFilterOpts, key: CfFilterKey): ReadonlyArray<string> => {
 	const value = opts[VALUES_BY_KEY[key]]
-	return Array.isArray(value) ? value : []
+	return value === undefined || typeof value === "string" ? [] : value
 }
 
 /** Whether the caller asked for anything at all under this key. */
@@ -127,8 +139,8 @@ const isRequested = (opts: CloudflareFilterOpts, key: CfFilterKey): boolean =>
  * `metrics_sum` and `metrics_gauge` alike.
  */
 export type CloudflareMetricsAccessor =
-	| ColumnAccessor<typeof MetricsSum.columns>
-	| ColumnAccessor<typeof MetricsGauge.columns>
+	| ColumnAccessor<typeof Datasources.metricsSum.columns>
+	| ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 /**
  * Transitional host accessor: the poller emitted `http.host` before 2026-07-24 (commit 46ee9b129)
@@ -166,7 +178,7 @@ export const cloudflareFilterConditions = (
 	exclude?: CfFilterKey,
 ): Array<CH.Condition | undefined> => {
 	const active = (key: CfFilterKey) => applicable.includes(key) && key !== exclude
-	const conditions: Array<CH.Condition | undefined> = FILTER_KEYS.map((key) => {
+	const conditions: Array<CH.Condition | undefined> = Arr.map(FILTER_KEYS, (key) => {
 		const values = valuesFor(opts, key)
 		return active(key) && values.length > 0 ? CH.inList(attrExpr($, key), values) : undefined
 	})
@@ -184,13 +196,13 @@ export const cloudflareIgnoredFilters = (
 	opts: CloudflareFilterOpts,
 	applicable: ReadonlyArray<CfFilterKey>,
 ): ReadonlyArray<CfFilterKey> =>
-	FILTER_KEYS.filter((key) => isRequested(opts, key) && !applicable.includes(key))
+	Arr.filter(FILTER_KEYS, (key) => isRequested(opts, key) && !applicable.includes(key))
 
 /** Union of {@link cloudflareIgnoredFilters} across every family a panel reads, in table order. */
 export const cloudflareIgnoredFiltersFor = (
 	opts: CloudflareFilterOpts,
 	metricNames: ReadonlyArray<string>,
 ): ReadonlyArray<CfFilterKey> => {
-	const applicable = new Set(metricNames.flatMap((name) => CF_FILTERABLE[name] ?? []))
-	return FILTER_KEYS.filter((key) => isRequested(opts, key) && !applicable.has(key))
+	const applicable = new Set(Arr.flatMap(metricNames, (name) => CF_FILTERABLE[name] ?? []))
+	return Arr.filter(FILTER_KEYS, (key) => isRequested(opts, key) && !applicable.has(key))
 }

@@ -3,7 +3,7 @@ import { formatBytes, pluralize } from "@maple/ui/lib/format"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { meterRows } from "../../../infra/kit/meter-rows"
 import { avgPeak } from "../../../infra/kit/avg-peak"
 import { relativeTime } from "../../../kit/relative-time"
@@ -14,8 +14,7 @@ import { Message } from "./message"
 import type { SortKey } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// `RailwayServiceTable` and `RailwayServiceTableLoading`.
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
@@ -75,36 +74,30 @@ export const railwayTableLoading = (h: H): Html =>
 const syncNote = (h: H, sync: RailwaySync, clock: Clock): Html => {
 	switch (sync.kind) {
 		case "synced":
-			return relativeTime(h, { tooltip: "title", value: sync.at, ...clock, prefix: "synced" })
+			return relativeTime(h, { value: sync.at, ...clock, prefix: "synced" })
 		case "pending":
 			return h.span([], ["waiting on the first sync"])
 		case "unknown":
 			return h.span([], ["no longer polled"])
 		case "paused":
-			return h.span(
-				[h.Class("text-severity-error")],
-				[
-					"paused",
-					...(sync.lastSyncedAt !== null
-						? [
-								" · last data ",
-								relativeTime(h, { tooltip: "title", value: sync.lastSyncedAt, ...clock }),
-							]
-						: []),
-				],
-			)
+			return typography(h, { tone: "error" }, [
+				"paused",
+				...(sync.lastSyncedAt !== null
+					? [" · last data ", relativeTime(h, { value: sync.lastSyncedAt, ...clock })]
+					: []),
+			])
 		case "failing":
-			return h.span(
-				[h.Class("truncate text-severity-error"), h.Title(sync.error)],
-				["sync failing: ", sync.error],
-			)
+			return typography(h, { tone: "error", truncate: true, attributes: [h.Title(sync.error)] }, [
+				"sync failing: ",
+				sync.error,
+			])
 	}
 }
 
 /** Tooltip trigger ids: one per cell with a `Tooltip`. */
 export const triggerIds = (row: RailwayServiceRow) => {
 	const key = rowKey(row)
-	return { memory: `railway-mem-${key}`, cpu: `railway-cpu-${key}`, seen: `railway-seen-${key}` }
+	return { memory: `railway-mem-${key}`, cpu: `railway-cpu-${key}` }
 }
 
 const NOTE = "Summed across replicas."
@@ -136,7 +129,7 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 							mono: true,
 							truncate: true,
 							as: "div",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 							attributes: [h.Title(view.displayName)],
 						},
 						[view.displayName],
@@ -192,7 +185,6 @@ const row = (h: H, view: RailwayRowView, showLimits: boolean, clock: Clock, trig
 							tone: "muted",
 							className: "cursor-default",
 						}),
-						trigger: trigger(ids.seen),
 					}),
 				],
 			),
@@ -218,17 +210,26 @@ export const railwayTable = (h: H, inputs: RailwayTableInputs): Html =>
 		Arr.flatMap(
 			groupedRows(inputs.services, inputs.environments, inputs.authFailed, inputs.sort),
 			(group) => [
-				h.div(
-					[
-						h.Class(
-							"flex items-center gap-2.5 border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
-						),
-					],
+				hstack(
+					h,
+					{
+						gap: "2.5",
+						align: "center",
+						className:
+							"border-b border-border-subtle bg-surface-sunken px-4 py-2 font-mono text-2xs",
+					},
 					[
 						typography(h, { tone: "foreground", weight: "medium" }, [group.projectName]),
-						h.span([h.Class("text-muted-foreground")], ["/ ", group.environmentName]),
-						h.span(
-							[h.Class("ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground")],
+						typography(h, { tone: "muted" }, ["/ ", group.environmentName]),
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "center",
+								shrink: true,
+								as: "span",
+								className: "ml-auto text-muted-foreground",
+							},
 							[
 								h.span(
 									[h.Class("shrink-0")],

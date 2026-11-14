@@ -10,7 +10,7 @@ export const locationOf = (url: Url): Location => parseLocation(hashOf(url))
 export const routeOf = (location: Location): AppRoute => parseRoute(location.path)
 
 /**
- * `trackHashChange` (lib/router.ts): a replace rewrites the last entry, a return to the previous
+ * A replace rewrites the last entry, a return to the previous
  * hash pops it (Back), anything else is a new entry.
  */
 export const trackVisit = (
@@ -23,5 +23,5 @@ export const trackVisit = (
 	return [...visited, hash]
 }
 
-/** `canGoBackInApp`: the previous history entry is a page of this app. */
+/** The previous history entry is a page of this app. */
 export const canGoBack = (visited: ReadonlyArray<string>): boolean => visited.length > 1

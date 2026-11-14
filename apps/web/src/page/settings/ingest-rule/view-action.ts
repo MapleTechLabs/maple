@@ -51,26 +51,23 @@ const checkboxRow = (h: H, id: string, isChecked: boolean, text: string, onToggl
 	)
 
 const dropControls = (h: H, model: Model): ReadonlyArray<Html> => [
-	h.div(
-		[h.Class("flex max-w-56 flex-col gap-1.5")],
-		[
-			fieldLabel(h, "ingest-rule-keep", "Keep a sample"),
-			inputGroup(h, {}, [
-				inputGroupInput(h, {
-					id: "ingest-rule-keep",
-					attributes: [
-						h.Value(model.draft.keepPercent),
-						h.Attribute("inputmode", "numeric"),
-						h.OnInput((value) => Message.ChangedText({ part: "keepPercent", value })),
-					],
-				}),
-				inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, ["%"])]),
-			]),
-			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				"0 drops every match. Sampling follows the trace id, so traces stay whole.",
-			]),
-		],
-	),
+	vstack(h, { gap: "1.5", className: "max-w-56" }, [
+		fieldLabel(h, "ingest-rule-keep", "Keep a sample"),
+		inputGroup(h, {}, [
+			inputGroupInput(h, {
+				id: "ingest-rule-keep",
+				attributes: [
+					h.Value(model.draft.keepPercent),
+					h.Attribute("inputmode", "numeric"),
+					h.OnInput((value) => Message.ChangedText({ part: "keepPercent", value })),
+				],
+			}),
+			inputGroupAddon(h, { align: "inline-end" }, [inputGroupText(h, {}, ["%"])]),
+		]),
+		typography(h, { size: "xs", tone: "muted", as: "p" }, [
+			"0 drops every match. Sampling follows the trace id, so traces stay whole.",
+		]),
+	]),
 ]
 
 const redactControls = (h: H, model: Model): ReadonlyArray<Html> => {

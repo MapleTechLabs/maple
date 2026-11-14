@@ -66,7 +66,7 @@ export function mountParityBench(stage, readout) {
 			// Same step: counted numbers change in place; the reserved verdict blurs in where it already sits.
 			words.forEach((word, index) => {
 				const span = current.children[index]
-				if (span) {
+				if (span !== undefined) {
 					if (span.textContent !== textOf(word)) span.textContent = textOf(word)
 					const className = typeof word === "string" ? "pb-word" : `pb-word ${word.className}`
 					if (span.className !== className) span.className = className
@@ -240,13 +240,13 @@ export function mountParityBench(stage, readout) {
 	}
 
 	function tick(now) {
-		const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60
+		const dt = last > 0 ? Math.min((now - last) / 1000, 1 / 30) : 1 / 60
 		last = now
 		step(dt)
 		frame = visible && !still.matches ? requestAnimationFrame(tick) : 0
 	}
 	const start = () => {
-		if (!frame && visible) {
+		if (frame === 0 && visible) {
 			last = 0
 			frame = requestAnimationFrame(tick)
 		}

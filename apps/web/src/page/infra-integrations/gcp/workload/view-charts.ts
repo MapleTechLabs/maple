@@ -5,12 +5,8 @@ import {
 	gcpLineRows,
 	type GcpChart,
 	type GcpChartWindow,
-} from "../../../../components/infra/gcp/charts"
-import {
-	gcpStripDomain,
-	gcpWorkloadStrips,
-	type GcpStripSummary,
-} from "../../../../components/infra/gcp/workload-signals"
+} from "../charts"
+import { gcpStripDomain, gcpWorkloadStrips, type GcpStripSummary } from "../workload-signals"
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
 import { cn } from "@maple/ui/lib/utils"
@@ -21,7 +17,7 @@ import * as InfraMetricChart from "@maple/views/charts/infra-metric-chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../../route"
 import { icon } from "@maple/views/ui/icon"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../../kit/chart-card"
 import { LINKED_CURSOR_STYLE } from "@maple/views/charts/linked-cursor"
 import { seriesLegend } from "../../../kit/series-legend"
 import type { BucketPoint } from "../data"
@@ -31,8 +27,7 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstackClass, vstack } from "@maple/views/ui/stack"
 import { gridClass } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
-
-// `CorrelationStrips` as the workload's signals, and `GcpWorkloadCharts`.
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -111,7 +106,7 @@ export const correlationStrips = (
 					vstack(h, { gap: "0.5", className: "w-36 shrink-0" }, [
 						h.span([h.Class("font-prose text-xs font-medium text-foreground")], [strip.label]),
 						h.span([h.Class("font-prose text-3xs text-muted-foreground")], [strip.source]),
-						h.div([h.Class("mt-2 flex flex-col gap-0.5")], summaryView(h, strip.summary)),
+						vstack(h, { gap: "0.5", className: "mt-2" }, summaryView(h, strip.summary)),
 					]),
 					h.div(
 						[h.Class("min-w-0 flex-1")],
@@ -143,7 +138,7 @@ export const correlationStrips = (
 	)
 }
 
-/** `GcpWorkloadCharts`: every chart of a read, each linking its metric into the explorer. */
+/** Every chart of a read, each linking its metric into the explorer. */
 export const workloadCharts = (
 	h: H,
 	model: Model,
@@ -171,25 +166,27 @@ export const workloadCharts = (
 					? gcpClassRows(spec.metric, points, range)
 					: gcpLineRows(spec.series, points, range)
 			const metric = gcpChartMetric(spec, points)
-			const explore = h.a(
-				[
-					h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
-					h.Class("text-foreground-subtle hover:text-foreground active:text-foreground"),
-					h.Href(
-						hrefOf(
-							AppRoute.Metric({
-								metricName: metric.name,
-								search: {
-									...options.timeSearch,
-									type: metric.type,
-									where: options.where,
-									groupBy: metric.groupBy,
-								},
-							}),
-						),
+			const explore = textLink(
+				h,
+				{
+					href: hrefOf(
+						AppRoute.Metric({
+							metricName: metric.name,
+							search: {
+								...options.timeSearch,
+								type: metric.type,
+								where: options.where,
+								groupBy: metric.groupBy,
+							},
+						}),
 					),
-					h.Title(`Open ${metric.name} in the metrics explorer`),
-				],
+					tone: "inherit",
+					className: "text-foreground-subtle hover:text-foreground active:text-foreground",
+					attributes: [
+						h.AriaLabel(`Open ${metric.name} in the metrics explorer`),
+						h.Title(`Open ${metric.name} in the metrics explorer`),
+					],
+				},
 				[icon(h, "ChartLineIcon", { size: 12 })],
 			)
 			if (rows.length === 0) {

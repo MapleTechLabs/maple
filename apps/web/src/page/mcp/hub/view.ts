@@ -1,25 +1,29 @@
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
-import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import { ResolveThemeColors, resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
+import { linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
+import { icon } from "@maple/views/ui/icon"
 import { pageDescription, pageTitle } from "@maple/views/ui/page-layout"
 import { skeleton } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { serviceDot } from "@maple/views/ui/values"
-import { ToolPercentile } from "../../agent-sessions/tools-kit/model"
-import { facetSelect, toolFilterToolbar } from "../../agent-sessions/tools-kit/toolbar"
+import { ToolPercentile } from "../../kit/tools/model"
+import { facetSelect, toolFilterToolbar } from "../../kit/tools/toolbar"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { presetLabel, timeControls } from "../../kit/time-controls"
+import { timeControls } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { linkTabStrip } from "../../kit/underline-tabs"
 import type { McpFilters, McpWindow } from "../view-kit"
-import { formatClock, MCP_CHART_TOKENS, scopeText } from "../view-kit"
+import { MCP_CHART_TOKENS, scopeText } from "../view-kit"
 import { listBody } from "../view-list"
 import { serverBody } from "../view-server"
 import { sessionBody, sessionCalls, sessionsBody } from "../view-sessions"
@@ -33,11 +37,20 @@ import {
 	sessionsLoading,
 } from "../view-states"
 import { toolBody } from "../view-tool"
-import { overviewOf, serverRows, sessionsScreen, toolOf } from "./data-map"
+import { overviewOf, sessionsScreen, toolOf } from "./data-map"
 import { Message } from "./message"
 import { DEFAULT_MCP_PRESET, type Model } from "./model"
-import { bucketSecondsOf, hrefOfView, shownPreset, tabSearch, widerPreset } from "./update"
+import {
+	bucketSecondsOf,
+	hrefOfView,
+	sessionHref,
+	shownPreset,
+	tabSearch,
+	userHref,
+	widerPreset,
+} from "./update"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { formatClock } from "../../kit/timezone-zones"
 
 type H = HtmlBuilder<Message>
 
@@ -190,10 +203,11 @@ const toolbar = (
 }
 
 const loading = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-5 p-6")],
-		[skeleton(h, "h-8 max-w-2xl"), skeleton(h, "h-56"), skeleton(h, "h-80")],
-	)
+	vstack(h, { gap: "5", className: "p-6" }, [
+		skeleton(h, "h-8 max-w-2xl"),
+		skeleton(h, "h-56"),
+		skeleton(h, "h-80"),
+	])
 
 /** The charts are a lazy chunk; until it and the theme land, the page shows its skeleton. */
 const chartsReady = (h: H, model: Model, body: (theme: ThemeColors) => Html): Html =>
@@ -211,7 +225,17 @@ const chartsReady = (h: H, model: Model, body: (theme: ThemeColors) => Html): Ht
 			? loading(h)
 			: body(model.themeColors)
 
-const serverTitle = (h: H, name: string, description: string): Html =>
+type Description = ReadonlyArray<Html | string>
+
+/** `a · b · c`, keeping any timestamp parts as elements. */
+const joinParts = (parts: Description): Description =>
+	Arr.flatMap(parts, (part, index) => (index === 0 ? [part] : [" · ", part]))
+
+/** A wall-clock instant in a page description: the hub's own clock text over the timezone card. */
+const clockStamp = (h: H, epochMs: number, timeZone: string, nowMs: number): Html =>
+	timestamp(h, { value: epochMs, timeZone, nowMs, label: formatClock(epochMs, timeZone) })
+
+const serverTitle = (h: H, name: string, description: Description): Html =>
 	vstack(h, { gap: "1" }, [
 		pageTitle(h, { title: name, className: "leading-8" }, [
 			serviceDot(h, {
@@ -220,7 +244,7 @@ const serverTitle = (h: H, name: string, description: string): Html =>
 			}),
 			name,
 		]),
-		pageDescription(h, [description], "text-sm"),
+		pageDescription(h, description, "text-sm"),
 	])
 
 const openInstrumentDocs = Message.ClickedInstrument()
@@ -253,7 +277,7 @@ const serversView = (h: H, model: Model, timeZone: string): Html =>
 					data.servers.length === 0
 						? noServersState(h, { onInstrument: openInstrumentDocs })
 						: chartsReady(h, model, (theme) =>
-								listBody(h, serverRows(data), {
+								listBody(h, data.servers, {
 									onOpenServer: (service) => Message.ClickedOpenServer({ service }),
 									onInstrument: openInstrumentDocs,
 									nowMs: model.nowMs,
@@ -284,17 +308,24 @@ const serverView = (h: H, model: Model, service: string, timeZone: string): Html
 	const window = windowOf(model)
 	const filters = filtersOf(model)
 	const isNew = data !== undefined && window !== undefined && data.firstSpanMs >= window.startMs
-	const description =
+	const description: Description =
 		data === undefined || data.firstSpanMs === 0
-			? "MCP server"
-			: Arr.join(
-					[
-						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-						`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
-						...(isNew ? [`first MCP span ${formatClock(data.firstSpanMs, timeZone)}`] : []),
-					],
-					" · ",
-				)
+			? ["MCP server"]
+			: joinParts([
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+					`${data.toolCount} ${data.toolCount === 1 ? "tool" : "tools"} called`,
+					...(isNew
+						? [
+								h.span(
+									[],
+									[
+										"first MCP span ",
+										clockStamp(h, data.firstSpanMs, timeZone, model.nowMs),
+									],
+								),
+							]
+						: []),
+				])
 	const body = AsyncData.matchData(overview, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -388,10 +419,11 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 	const data = AsyncData.getOrElse(sessions, () => undefined)
 	const window = windowOf(model)
 	const filters = filtersOf(model)
-	const description =
+	const description: Description = [
 		data === undefined || data.totals.sessions === 0
 			? "MCP sessions"
-			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`
+			: `${data.totals.sessions.toLocaleString()} ${data.totals.sessions === 1 ? "session" : "sessions"} · ${data.totals.calls.toLocaleString()} ${data.totals.calls === 1 ? "tool call" : "tool calls"}`,
+	]
 	const body = AsyncData.matchData(sessions, {
 		onEmpty: () => sessionsLoading(h),
 		onFailure: (failure) =>
@@ -422,7 +454,8 @@ const sessionsView = (h: H, model: Model, service: string, timeZone: string): Ht
 					scope: scopeText("all sessions", filters),
 					isWaiting: AsyncData.isRefreshing(sessions),
 					isFailingOnly: filters.isFailingOnly,
-					onOpenSession: (sessionId) => Message.ClickedOpenSession({ sessionId }),
+					sessionHref: (sessionId) => sessionHref(service, sessionId, model.search),
+					userHref: (userId) => userHref(userId, model.search),
 					nowMs: model.nowMs,
 					timeZone,
 				}),
@@ -462,20 +495,17 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 			: data === undefined && Str.startsWith("user:")(sessionId)
 				? "User session"
 				: sessionId
-	const description =
+	const description: Description =
 		data === undefined || first === undefined
-			? `MCP session on ${service}`
-			: Arr.join(
-					[
-						...(isUserSession
-							? ["User session, no session id: split after 30 idle minutes"]
-							: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
-						callCountText(sessionCalls(data.requests).length, data.isTruncated),
-						`started ${formatClock(first.timeMs, timeZone)}`,
-						...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
-					],
-					" · ",
-				)
+			? [`MCP session on ${service}`]
+			: joinParts([
+					...(isUserSession
+						? ["User session, no session id: split after 30 idle minutes"]
+						: [data.client, ...(userLabel === undefined ? [] : [userLabel])]),
+					callCountText(sessionCalls(data.requests).length, data.isTruncated),
+					h.span([], ["started ", clockStamp(h, first.timeMs, timeZone, model.nowMs)]),
+					...(data.protocolVersion === "" ? [] : [`MCP ${data.protocolVersion}`]),
+				])
 	const body = AsyncData.matchData(session, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) =>
@@ -499,13 +529,24 @@ const sessionView = (h: H, model: Model, service: string, sessionId: string, tim
 	return dashboardPage(
 		h,
 		{
-			titleContent: h.div(
-				[h.Class("flex min-w-0 flex-col gap-1")],
-				[
-					pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
-					pageDescription(h, [description], "text-sm"),
-				],
-			),
+			titleContent: vstack(h, { gap: "1", shrink: true }, [
+				pageTitle(h, { title, className: "truncate font-mono leading-8" }, [title]),
+				pageDescription(h, description, "text-sm"),
+				...(data === undefined || data.user === null
+					? []
+					: [
+							linkButton(
+								h,
+								{
+									variant: "link",
+									size: "xs",
+									className: "h-auto self-start p-0",
+									href: userHref(data.user, model.search),
+								},
+								[icon(h, "UserIcon", { size: 12 }), `View user ${userLabel ?? data.user}`],
+							),
+						]),
+			]),
 			actions: timeActions(h, model),
 			scrollClassName: "p-0",
 		},
@@ -518,10 +559,19 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 	const data = AsyncData.getOrElse(detail, () => undefined)
 	const window = windowOf(model)
 	const filters = { ...filtersOf(model), search: "" }
-	const description =
+	const description: Description =
 		data === undefined || data.calls === 0
-			? "MCP tool"
-			: `${data.calls.toLocaleString()} calls from ${data.clients} ${data.clients === 1 ? "client" : "clients"} · last call ${formatRelativeTime(data.lastCallMs, model.nowMs)}`
+			? ["MCP tool"]
+			: [
+					`${data.calls.toLocaleString()} calls from ${data.clients} ${data.clients === 1 ? "client" : "clients"} · `,
+					timestamp(h, {
+						value: data.lastCallMs,
+						format: "relative",
+						nowMs: model.nowMs,
+						timeZone,
+						prefix: "last call",
+					}),
+				]
 	const body = AsyncData.matchData(detail, {
 		onEmpty: () => serverLoading(h),
 		onFailure: (failure) => serverError(h, { failure, onRetry: Message.ClickedReload() }),
@@ -557,7 +607,7 @@ const toolView = (h: H, model: Model, service: string, tool: string, timeZone: s
 		{
 			titleContent: vstack(h, { gap: "1" }, [
 				pageTitle(h, { title: tool, className: "font-mono leading-8" }, [tool]),
-				pageDescription(h, [description], "text-sm"),
+				pageDescription(h, description, "text-sm"),
 			]),
 			actions: timeActions(h, model),
 			scrollClassName: "p-0",

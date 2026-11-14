@@ -83,7 +83,7 @@ const execAll = (db: Chdb, signal: Signal, records: number) => {
 
 // Quoted: `system.settings` prints string values bare, and ClickHouse accepts quoted numbers.
 const setSetting = (db: Chdb, name: string | undefined, value: string | undefined) =>
-	db.exec(`SET ${name} = '${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value ?? ""))}'`)
+	db.exec(`SET ${name} = '${Str.replace(/[\\']/g, "\\$&")(value ?? "")}'`)
 
 const stages = (db: Chdb) =>
 	Arr.flatMap(signals, (signal) =>

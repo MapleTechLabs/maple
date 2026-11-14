@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 
 /**
  * One in-flight / last schema-apply run per org. The schema-apply Cloudflare
@@ -35,6 +35,3 @@ export const OrgClickHouseSchemaApplyRuns = PG.table("org_clickhouse_schema_appl
 	primaryKey: { columns: ["orgId"], name: "org_clickhouse_schema_apply_runs_org_id_pk" },
 	tenantColumn: "orgId",
 })
-
-export type OrgClickHouseSchemaApplyRunRow = PG.SelectRowOf<typeof OrgClickHouseSchemaApplyRuns>
-export type OrgClickHouseSchemaApplyRunInsert = PG.InsertRowOf<typeof OrgClickHouseSchemaApplyRuns>

@@ -39,7 +39,7 @@ withMaintenanceLock(dataDir, randomUUID(), () => reconcileArchiveGeneration(data
 		console.log("reconcile: converged")
 		process.exit(0)
 	})
-	.catch((error) => {
+	.catch((error: unknown) => {
 		const msg = error instanceof Error ? error.message : String(error)
 		console.error(`reconcile: FAILED ${msg}`)
 		process.exit(1)

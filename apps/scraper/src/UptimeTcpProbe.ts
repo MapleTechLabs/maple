@@ -1,5 +1,16 @@
 import { createConnection, isIP } from "node:net"
-import { Clock, Context, Duration, Effect, Layer, Result, Schema } from "effect"
+import {
+	Array as Arr,
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Result,
+	Schema,
+	String as Str,
+} from "effect"
 import type { UptimeTcpConfig } from "@maple/domain/uptime"
 import { isPrivateAddress, parseExternalUrl } from "@maple/safe-fetch"
 import { HostResolver } from "@maple/safe-fetch/dns"
@@ -63,7 +74,7 @@ export class UptimeTcpProbe extends Context.Service<UptimeTcpProbe, UptimeTcpPro
 			const addressFor = (configured: string) =>
 				Effect.gen(function* () {
 					// `[2001:db8::1]` is an IPv6 literal written as a URL host, not a name to resolve.
-					const host = /^\[.*\]$/u.test(configured) ? configured.slice(1, -1) : configured
+					const host = /^\[.*\]$/u.test(configured) ? Str.slice(1, -1)(configured) : configured
 					const refused = new TcpRefused({
 						message: `Refused to connect: ${host} is a loopback, private, or reserved address`,
 						kind: "ssrf_refused",
@@ -75,11 +86,14 @@ export class UptimeTcpProbe extends Context.Service<UptimeTcpProbe, UptimeTcpPro
 							() => new TcpRefused({ message: `Couldn't resolve ${host}`, kind: "dns" }),
 						),
 					)
-					const first = addresses.find((address) => !address.includes(":")) ?? addresses[0]
+					const first =
+						Option.getOrUndefined(
+							Arr.findFirst(addresses, (address) => !Str.includes(":")(address)),
+						) ?? addresses[0]
 					if (first === undefined) {
 						return yield* new TcpRefused({ message: `Couldn't resolve ${host}`, kind: "dns" })
 					}
-					if (addresses.some(isPrivateAddress)) {
+					if (Arr.some(addresses, isPrivateAddress)) {
 						return yield* new TcpRefused({
 							message: `Refused to connect: ${host} resolves to a loopback, private, or reserved address`,
 							kind: "ssrf_refused",

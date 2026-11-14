@@ -67,7 +67,7 @@ claude mcp add --transport http maple https://api.maple.dev/mcp
 
 | Path                        | What lives there                                                         |
 | --------------------------- | ------------------------------------------------------------------------ |
-| `apps/web`          | Dashboard (Foldkit, Vite)                                                |
+| `apps/web`                  | Dashboard (Foldkit, Vite)                                                |
 | `apps/api`                  | Effect HTTP API, auth and OAuth                                          |
 | `apps/ai`                   | MCP server, chat agent and investigations                                |
 | `apps/ingest`               | OTLP ingest gateway: key auth, org enrichment, forwarding                |
@@ -121,21 +121,6 @@ bun run build
 bun run test
 ```
 
-## Docker (Local)
-
-Run the local multi-service stack (API + web + ingest + otel collector):
-
-```bash
-docker compose -f docker-compose.yml up --build
-```
-
-Services:
-
-- API: `http://localhost:3472`
-- Web: `http://localhost:3471`
-- Ingest: `http://localhost:3474`
-- OTEL collector: `4317` (gRPC), `4318` (HTTP), `13133` (health/extensions)
-
 ## Cloudflare Deploy (Alchemy)
 
 Deployments run on **Alchemy v2** (Effect-based): the root `alchemy.run.ts` exports a
@@ -153,8 +138,8 @@ Stage grammar is `prd` / `pr-<number>` / dev names, resolved via
 `resolveHyperdriveRefId`, `resolveMapleProfile`). prd binds the
 dashboard-managed Hyperdrive by config ID (`resolveHyperdriveRefId`) — origin credentials
 never touch a deploy. `MAPLE_PG_URL` is only needed for dev stages, whose Hyperdrive alchemy
-manages itself. PR previews bind **no database at all** (their profile's `database` is `"none"`):
-DB-backed routes 500, everything else in the preview works.
+manages itself. PR previews get their own Neon branch, migrated by the deploy and deleted on
+teardown (`docs/pr-previews.md`).
 
 Run locally:
 
@@ -187,7 +172,8 @@ Secrets source model (CI):
       slug like `maple` would then blank out the PR-preview deployment URL
       `app-pr-<n>.maple.dev`)
     - GitHub **environment secret** `INFISICAL_MACHINE_IDENTITY_ID` in each of `production`,
-      `production-eu`, `pr-preview` and `maintenance`, each a different identity (see below).
+      `production-eu`, `pr-preview`, `preview-tinybird` and `maintenance`, each a different
+      identity (see below).
       No repo-level copy: a job outside those environments gets no identity at all.
 - Infisical environments (`prod`, `dev` — mapped from the old Doppler
   `prd`/`pr` configs) must define:
@@ -208,9 +194,10 @@ Setup note: one Infisical machine identity per GitHub environment, each with Git
 bound to the exact subject `repo:MapleTechLabs/maple:environment:<name>` (no globs: Infisical's
 `*` also matches `:` and `/`) and a custom project role that reads only its Infisical
 environment: `production` → `prod`, `production-eu` → `prod-eu`, `pr-preview` and
-`maintenance` → `dev` (or a dedicated preview environment via `PREVIEW_INFISICAL_ENV_SLUG`).
-`production`, `production-eu` and `maintenance` only deploy from `main`. The workflows select
-secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug`.
+`maintenance` → `dev` (or a dedicated preview environment via `PREVIEW_INFISICAL_ENV_SLUG`),
+`preview-tinybird` → `dev` (the parent Tinybird workspace credentials, read by name).
+`production`, `production-eu`, `preview-tinybird` and `maintenance` only deploy from `main`.
+The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug`.
 
 Runtime API URL behavior:
 
@@ -220,7 +207,6 @@ Runtime API URL behavior:
 ## Environment
 
 - Canonical env example: `.env.example`
-- API-only env example: `apps/api/.env.example`
 - Real `.env` values are local-only and should stay untracked.
 
 The web app expects `VITE_API_BASE_URL` to point to the API (defaults to `http://localhost:3472`).
@@ -238,14 +224,13 @@ For ingest + key auth, set these at minimum in your root `.env` when running the
 - `INGEST_REPLAY_MAX_SESSION_BYTES` (optional; ceiling on the decompressed rrweb
   payload one replay session may record, default 1 GiB, `0` disables)
 
-## Persistence (PostgreSQL / PGlite)
+## Persistence (PostgreSQL)
 
 Maple persists application state in PostgreSQL:
 
 - Production uses PlanetScale Postgres through Cloudflare Hyperdrive.
-- Wrangler development uses the Docker Postgres started by `bun db:up`.
-- Non-Worker local entrypoints use embedded PGlite under `apps/api/.data/pglite`; set
-  `MAPLE_DB_URL=memory://` for an ephemeral database.
+- Local development (`bun dev`) uses the Docker Postgres started by `bun db:up`, on port 5499.
+- Tests use embedded PGlite (`createTestDb()`); they need no Docker Postgres.
 
 Migration commands:
 
@@ -253,7 +238,6 @@ Migration commands:
 bun db:up
 bun db:migrate:local
 bun run --cwd packages/db db:generate
-bun run --cwd packages/db db:studio
 ```
 
 CI migrates deployed PlanetScale branches over their direct port before Alchemy deploys the
@@ -291,8 +275,7 @@ Maple supports exactly two auth modes via `MAPLE_AUTH_MODE`:
 Start apps:
 
 ```bash
-bun --filter=@maple/api dev
-bun --filter=@maple/web dev
+bun dev api web
 ```
 
 Validate behavior:

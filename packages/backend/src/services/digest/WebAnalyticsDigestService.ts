@@ -6,13 +6,11 @@ import {
 	DigestPreviewResponse,
 	DigestRenderError,
 	OrgId,
-	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { AI_CRAWLERS, AI_PRODUCTS, aiProductById } from "@maple/domain/ai-traffic"
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
-import { Array as Arr, Cause, Clock, Context, DateTime, Effect, Layer, Redacted, String as Str } from "effect"
+import { Array as Arr, Clock, Context, DateTime, Effect, Layer, Redacted, String as Str } from "effect"
 import {
 	aiProductIcon,
 	computeDelta,
@@ -32,20 +30,15 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import {
 	isMissingAiCrawlerRequests,
 	isMissingProductEvents,
 } from "@maple/backend/services/warehouse/missing-table"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import {
-	isOrgWarehouseQuarantined,
-	quarantineOnConfigClassCause,
-} from "@maple/backend/services/warehouse/warehouse-org-quarantine"
-import { digestResendCutoffMs, isDigestDue, lastDigestActivity } from "./digest-schedule"
+import { lastDigestActivity } from "./digest-schedule"
 import { resolveOrgName } from "./resolve-org-name"
-import { unsubscribeLinks } from "./unsubscribe-token"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
+import { runWeeklyDigestTick } from "./weekly-digest-tick"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 /** The email is a glance: three rows per list, the app has the rest. */
@@ -138,14 +131,9 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					endTime: formatWarehouseDateTime(currentStartMs - 1000),
 				}
 				const fortnight = { ...current, startTime: previous.startTime }
-				const currentStartDate = current.startTime.slice(0, 10)
+				const currentStartDate = Str.slice(0, 10)(current.startTime)
 
-				const tenant: TenantContext = {
-					orgId,
-					userId: UserId.make("system-web-analytics-digest"),
-					roles: [RoleName.make("root")] as ReadonlyArray<RoleNameType>,
-					authMode: "self_hosted",
-				}
+				const tenant = systemTenant(orgId, UserId.make("system-web-analytics-digest"))
 				yield* warehouse.warmRoute(tenant)
 
 				const run = <T>(compiled: CompiledQueryInput<T>, context: string) =>
@@ -260,32 +248,30 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					),
 				)
 
-				// Summary
 				const summaryOf = (rows: ReadonlyArray<CH.WebAnalyticsSummaryOutput>) => {
 					const row = rows[0]
-					const identified = row?.identifiedSessions || 0
+					const identified = row?.identifiedSessions ?? 0
 					return {
-						visitors: row?.visitors || 0,
-						sessions: row?.sessions || 0,
+						visitors: row?.visitors ?? 0,
+						sessions: row?.sessions ?? 0,
 						identified,
 						// Bounce is only measurable over sessions that report page views.
-						bounceRate: identified > 0 ? ((row?.bouncedSessions || 0) / identified) * 100 : null,
-						avgDurationMs: row?.avgDurationMs || 0,
+						bounceRate: identified > 0 ? ((row?.bouncedSessions ?? 0) / identified) * 100 : null,
+						avgDurationMs: row?.avgDurationMs ?? 0,
 					}
 				}
 				const cur = summaryOf(curSummary)
 				const prev = summaryOf(prevSummary)
 
 				const inCurrentWeek = (row: (typeof pageviewSeries)[number]) =>
-					DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate
+					Str.slice(0, 10)(DateTime.formatIso(row.bucket)) >= currentStartDate
 				const sumViews = (rows: ReadonlyArray<(typeof pageviewSeries)[number]>) =>
-					rows.reduce((sum, row) => sum + (row.pageViews || 0), 0)
-				const curPageViews = sumViews(pageviewSeries.filter(inCurrentWeek))
-				const prevPageViews = sumViews(pageviewSeries.filter((row) => !inCurrentWeek(row)))
+					Arr.reduce(rows, 0, (sum, row) => sum + row.pageViews)
+				const curPageViews = sumViews(Arr.filter(pageviewSeries, inCurrentWeek))
+				const prevPageViews = sumViews(Arr.filter(pageviewSeries, (row) => !inCurrentWeek(row)))
 
-				// Pages
 				const prevViewsByPage = new Map(
-					prevPages.map((row) => [`${row.host}${row.pagePath}`, row.pageViews || 0] as const),
+					Arr.map(prevPages, (row) => [`${row.host}${row.pagePath}`, row.pageViews] as const),
 				)
 				// Last week's list is capped, so a page missing from a FULL list may
 				// just have ranked lower: its baseline is unknown, not zero.
@@ -295,10 +281,12 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 					if (previousViews !== undefined) return computeDelta(views, previousViews)
 					return prevPagesTruncated ? { kind: "none" } : computeDelta(views, 0)
 				}
-				const pageLabel = pageLabels(curPages.map((row) => ({ host: row.host, path: row.pagePath })))
+				const pageLabel = pageLabels(
+					Arr.map(curPages, (row) => ({ host: row.host, path: row.pagePath })),
+				)
 				const topPages = withShares(
-					curPages.map((row) => {
-						const views = row.pageViews || 0
+					Arr.map(curPages, (row) => {
+						const views = row.pageViews
 						return {
 							icon: null,
 							label: pageLabel({ host: row.host, path: row.pagePath }),
@@ -312,13 +300,14 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				// Sources: session counts, shared against this week's sessions. The
 				// empty referrer is direct traffic, as the web app labels it.
 				const sources = withShares(
-					breakdowns
-						.filter((row) => row.facetType === "referrerHost")
-						.map((row) => ({
+					Arr.map(
+						Arr.filter(breakdowns, (row) => row.facetType === "referrerHost"),
+						(row) => ({
 							icon: sourceIcon(row.name),
 							label: row.name === WEB_ANALYTICS_UNSET ? "Direct" : row.name,
-							value: row.count || 0,
-						}))
+							value: row.count,
+						}),
+					)
 						.sort((a, b) => b.value - a.value)
 						.slice(0, TOP_ROWS),
 					cur.sessions,
@@ -328,24 +317,26 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 				const referralsBy = (inCurrent: boolean) => {
 					const totals = new Map<string, number>()
 					for (const row of aiReferrals) {
-						if (DateTime.formatIso(row.bucket).slice(0, 10) >= currentStartDate !== inCurrent)
+						if (
+							Str.slice(0, 10)(DateTime.formatIso(row.bucket)) >= currentStartDate !==
+							inCurrent
+						)
 							continue
-						totals.set(row.product, (totals.get(row.product) ?? 0) + (row.sessions || 0))
+						totals.set(row.product, (totals.get(row.product) ?? 0) + row.sessions)
 					}
 					return totals
 				}
 				const curReferrals = referralsBy(true)
 				const prevReferrals = referralsBy(false)
-				const sum = (values: Iterable<number>) => [...values].reduce((a, b) => a + b, 0)
+				const sum = (values: Iterable<number>) => Arr.reduce([...values], 0, (a, b) => a + b)
 				const curReferralTotal = sum(curReferrals.values())
 				const byProduct = withShares(
-					[...curReferrals.entries()]
-						.map(([product, sessions]) => ({
-							icon: aiProductIcon(product),
-							label: aiProductById(product)?.label ?? product,
-							value: sessions,
-							delta: computeDelta(sessions, prevReferrals.get(product) ?? 0),
-						}))
+					Arr.map([...curReferrals.entries()], ([product, sessions]) => ({
+						icon: aiProductIcon(product),
+						label: aiProductById(product)?.label ?? product,
+						value: sessions,
+						delta: computeDelta(sessions, prevReferrals.get(product) ?? 0),
+					}))
 						.sort((a, b) => b.value - a.value)
 						.slice(0, TOP_ROWS),
 					curReferralTotal,
@@ -353,15 +344,15 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 
 				let crawlerStats: WebAnalyticsDigestProps["ai"]["crawlers"] = null
 				if (crawlers !== null) {
-					const requests = sum(crawlers.cur.map((row) => row.requests || 0))
+					const requests = sum(Arr.map(crawlers.cur, (row) => row.requests))
 					crawlerStats = {
 						requests,
-						delta: computeDelta(requests, sum(crawlers.prev.map((row) => row.requests || 0))),
+						delta: computeDelta(requests, sum(Arr.map(crawlers.prev, (row) => row.requests))),
 						byCrawler: withShares(
-							crawlers.cur.slice(0, TOP_ROWS).map((row) => ({
+							Arr.map(crawlers.cur.slice(0, TOP_ROWS), (row) => ({
 								icon: aiProductIcon(crawlerProduct.get(row.crawler) ?? ""),
 								label: row.crawler,
-								value: row.requests || 0,
+								value: row.requests,
 							})),
 							requests,
 						),
@@ -452,144 +443,61 @@ export class WebAnalyticsDigestService extends Context.Service<WebAnalyticsDiges
 			const runTick = Effect.fn("WebAnalyticsDigestService.runTick")(function* () {
 				if (!email.isConfigured) return { sentCount: 0, errorCount: 0, skipped: true }
 
-				const now = yield* Clock.currentTimeMillis
-				const resendCutoffMs = digestResendCutoffMs(now)
-
-				const subs = yield* dbExecute((db) =>
-					db.run(
-						PG.from(DigestSubscriptions)
-							.select()
-							.where(($) => [$.webAnalyticsEnabled.eq(true)]),
-					),
-				)
-
-				const due = subs.filter((s) =>
-					isDigestDue(
-						s,
-						lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
-						now,
-					),
-				)
-				if (due.length === 0) return { sentCount: 0, errorCount: 0, skipped: false }
-
-				const byOrg = Arr.groupBy(due, (s) => s.orgId)
-
-				const results = yield* Effect.forEach(
-					Object.entries(byOrg),
-					([rawOrgId, orgSubs]) =>
-						Effect.gen(function* () {
-							const orgId = OrgId.make(rawOrgId)
-							if (yield* isOrgWarehouseQuarantined(edgeCache, rawOrgId)) return []
-
-							const claim = yield* dbExecute((db) =>
-								db.run(
-									PG.update(DigestSubscriptions)
-										.set({ webAnalyticsLastAttemptedAt: now })
-										.where(($) => [
-											PG.inList(
-												$.id,
-												orgSubs.map((s) => s.id),
-											),
-											PG.or(
-												$.webAnalyticsLastAttemptedAt.isNull(),
-												$.webAnalyticsLastAttemptedAt.lte(resendCutoffMs),
-											),
-										])
-										.returning("id"),
-								),
-							)
-							const claimed = new Set(claim.map((c) => c.id))
-							const claimedSubs = orgSubs.filter((s) => claimed.has(s.id))
-							if (claimedSubs.length === 0) return []
-
-							const props = yield* generateData(orgId)
-							// Only orgs whose browser SDK reported visits hear from us.
-							if (!hasWebAnalyticsContent(props)) return []
-
-							const { subject } = deriveWebAnalyticsHeadline(props)
-
-							return yield* Effect.forEach(
-								claimedSubs,
-								(sub) =>
-									Effect.gen(function* () {
-										const links = unsubscribeLinks(linkConfig, "web-analytics", sub.id)
-										const html = yield* render({
-											...props,
-											unsubscribeUrl: links.pageUrl,
-										})
-										yield* email.send(sub.email, subject, html, {
-											headers: links.headers,
-										})
-									}).pipe(
-										Effect.tap(() =>
-											Clock.currentTimeMillis.pipe(
-												Effect.flatMap((sentAt) =>
-													database.execute((db) =>
-														db.run(
-															PG.update(DigestSubscriptions)
-																.set({ webAnalyticsLastSentAt: sentAt })
-																.where(($) => [$.id.eq(sub.id)]),
-														),
-													),
-												),
-												// Already sent; the attempt claim still blocks a same-day resend.
-												Effect.catchCause((cause) =>
-													Cause.hasInterruptsOnly(cause)
-														? Effect.interrupt
-														: Effect.logWarning(
-																"Failed to record web analytics digest send",
-															).pipe(
-																Effect.annotateLogs({
-																	subscriptionId: sub.id,
-																	error: summarizeCause(cause),
-																}),
-															),
-												),
-											),
-										),
-										Effect.match({
-											onSuccess: () => ({ sent: true }),
-											onFailure: () => ({ sent: false }),
-										}),
-									),
-								{ concurrency: 1 },
-							)
-						}).pipe(
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.gen(function* () {
-											const quarantined = yield* quarantineOnConfigClassCause(
-												edgeCache,
-												rawOrgId,
-												cause,
-												now,
-											)
-											if (!quarantined) {
-												yield* Effect.logError(
-													"Web analytics digest failed for org",
-												).pipe(
-													Effect.annotateLogs({
-														orgId: rawOrgId,
-														error: summarizeCause(cause),
-													}),
-												)
-											}
-											return orgSubs.map(() => ({ sent: false }))
-										}),
+				const tick = yield* runWeeklyDigestTick({
+					channel: {
+						kind: "web-analytics",
+						selectEnabled: (db) =>
+							db.run(
+								PG.from(DigestSubscriptions)
+									.select()
+									.where(($) => [$.webAnalyticsEnabled.eq(true)]),
 							),
+						lastActivity: (s) =>
+							lastDigestActivity(s.webAnalyticsLastSentAt, s.webAnalyticsLastAttemptedAt),
+						claim: (db, ids, nowMs, cutoffMs) =>
+							db.run(
+								PG.update(DigestSubscriptions)
+									.set({ webAnalyticsLastAttemptedAt: nowMs })
+									.where(($) => [
+										PG.inList($.id, ids),
+										PG.or(
+											$.webAnalyticsLastAttemptedAt.isNull(),
+											$.webAnalyticsLastAttemptedAt.lte(cutoffMs),
+										),
+									])
+									.returning("id"),
+							),
+						recordSent: (db, id, sentAtMs) =>
+							db.run(
+								PG.update(DigestSubscriptions)
+									.set({ webAnalyticsLastSentAt: sentAtMs })
+									.where(($) => [$.id.eq(id)]),
+							),
+					},
+					execute: dbExecute,
+					email,
+					edgeCache,
+					linkConfig,
+					groupBy: (s) => s.orgId,
+					prepare: (head) =>
+						Effect.map(generateData(OrgId.make(head.orgId)), (props) =>
+							// Only orgs whose browser SDK reported visits hear from us.
+							hasWebAnalyticsContent(props)
+								? {
+										subject: deriveWebAnalyticsHeadline(props).subject,
+										render: (unsubscribeUrl: string) =>
+											render({ ...props, unsubscribeUrl }),
+									}
+								: undefined,
 						),
-					{ concurrency: 1 },
-				)
-
-				const all = results.flat()
-				const sentCount = all.filter((r) => r.sent).length
-				const errorCount = all.length - sentCount
-				yield* Effect.annotateCurrentSpan({
-					"maple.web_analytics_digest.sent_count": sentCount,
-					"maple.web_analytics_digest.error_count": errorCount,
+					failureMessage: "Web analytics digest failed for org",
+					logQuarantine: false,
 				})
-				return { sentCount, errorCount, skipped: false }
+				yield* Effect.annotateCurrentSpan({
+					"maple.web_analytics_digest.sent_count": tick.sentCount,
+					"maple.web_analytics_digest.error_count": tick.errorCount,
+				})
+				return { sentCount: tick.sentCount, errorCount: tick.errorCount, skipped: false }
 			})
 
 			return { generateData, preview, runTick }

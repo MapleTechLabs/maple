@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { V2GcpConnector } from "@maple/domain/http/v2"
-import { GcpConnectorId } from "@maple/domain/primitives"
+import { GcpConnectorId } from "@maple/primitives"
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { AsyncData, type Command } from "foldkit"
 import type { PageContext } from "../page/contract"

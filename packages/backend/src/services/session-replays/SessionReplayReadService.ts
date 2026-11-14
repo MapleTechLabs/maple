@@ -7,9 +7,12 @@ import { Context, Effect, Layer, Option } from "effect"
 import type { DateTime } from "effect"
 import { MAX_REPLAY_CHUNKS_PER_REQUEST, MAX_REPLAY_EVENTS_RESPONSE_BYTES } from "@maple/domain/http/v2"
 import { CH } from "@maple/query-engine"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { ReplayBlobStore, type HydratableChunk } from "@maple/backend/platform/ReplayBlobStore"
+import {
+	ReplayBlobStore,
+	type HydratableChunk,
+} from "@maple/backend/services/session-replays/ReplayBlobStore"
+import type { TenantContext } from "@maple/domain/http"
 
 /** Optional partition-pruning window around one session. */
 export interface SessionWindow {

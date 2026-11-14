@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr } from "effect"
+import type { AttackStage } from "@maple/domain/security-telemetry"
 import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -140,6 +141,32 @@ describe("security telemetry tabs", () => {
 		)
 	})
 
+	test("a source that ran every stage, or sent an agent's user agent, reads as an attack chain", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withExposure()),
+			expectView(text("2 ran an attack chain")).toExist(),
+			expectView(text("Attack chain")).toExist(),
+			expectView(text("Sweep, Exploit paths, Past a denial")).toExist(),
+			expectView(text("ARTEX user agent")).toExist(),
+		)
+	})
+
+	test("stages short of a chain show muted, with no badge and no chain count", () => {
+		const base = exposureOf(NOW)
+		const sweepOnly: ReadonlyArray<AttackStage> = ["sweep"]
+		const quiet = {
+			...base,
+			sources: Arr.map(base.sources, (source) => ({ ...source, stages: sweepOnly, agent: "" })),
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(withExposure(quiet)),
+			expectView(text("Attack chain")).toBeAbsent(),
+			expectView(text(/ran an attack chain/)).toBeAbsent(),
+		)
+	})
+
 	test("a service that answers every probe path is a likely catch-all, not an exposure", () => {
 		scene(
 			{ update: pageUpdate, view },
@@ -173,7 +200,7 @@ describe("security telemetry tabs", () => {
 
 	test("a full signature list reads its totals as floors", () => {
 		const data = exposureOf(NOW)
-		const row = data.signatures[0]!
+		const row = Arr.getUnsafe(data.signatures, 0)
 		const signatures = Array.from({ length: 5000 }, (_, index) => ({
 			...row,
 			service: `svc-${index}`,
@@ -189,7 +216,7 @@ describe("security telemetry tabs", () => {
 
 	test("a full exposed list reads as a floor", () => {
 		const data = exposureOf(NOW)
-		const row = data.exposed[0]!
+		const row = Arr.getUnsafe(data.exposed, 0)
 		const exposed = Array.from({ length: 50 }, (_, index) => ({ ...row, path: `/.env.${index}` }))
 		scene(
 			{ update: pageUpdate, view },

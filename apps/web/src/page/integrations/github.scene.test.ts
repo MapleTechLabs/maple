@@ -19,7 +19,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 const REPO = "0199a005-0000-7000-8000-000000000001"
 
-const status = Schema.decodeUnknownSync(GithubIntegrationStatus)({
+const status = Schema.decodeSync(GithubIntegrationStatus)({
 	connected: true,
 	state: "connected",
 	accountLogin: "acme-shop",
@@ -54,7 +54,7 @@ const loaded = (): Model => {
 		Message.CompletedLoadGithub({ key: model.statuses.github.key ?? "", result: Result.succeed(status) }),
 	).model
 }
-const repoId = status.repositories[0]?.id ?? Schema.decodeSync(Schema.String)(REPO)
+const repoId = Arr.getUnsafe(status.repositories, 0).id
 
 describe("github card", () => {
 	test("failed repository discovery offers authorization and shows its account choice on a connected card", () => {
@@ -184,8 +184,8 @@ describe("github card", () => {
 
 	test("a second repository can change branch while the first one's save is in flight", () => {
 		const other = "0199a005-0000-7000-8000-000000000002"
-		const [first] = status.repositories
-		const twoRepos = Schema.decodeUnknownSync(GithubIntegrationStatus)({
+		const first = Arr.getUnsafe(status.repositories, 0)
+		const twoRepos = Schema.decodeSync(GithubIntegrationStatus)({
 			...Schema.encodeSync(GithubIntegrationStatus)(status),
 			repositories: [first, { ...first, id: other, fullName: "acme-shop/api" }],
 		})

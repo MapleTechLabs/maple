@@ -5,7 +5,7 @@ import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
@@ -16,17 +16,16 @@ import { listRow } from "@maple/views/ui/list-row"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployEntry, deriveDeploys, firstLine, isResolvableSha } from "./derive-panels"
+import { type DeployEntry, deriveDeploys } from "./derive-panels"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
 import { sectionCard } from "./view-panels"
 import { relativeTime } from "../../kit/relative-time"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// `ServiceErrorsPanel` + `IssueLine`, and `ServiceRecentDeploys` (components/services/).
+import { commitAvatar, firstLine, isResolvableSha } from "../../kit/commit-card"
 
 type H = HtmlBuilder<Message>
 
@@ -60,7 +59,6 @@ const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
 					...clock,
 					variant: "orDate",
 					mono: true,
-					tooltip: "title",
 					className: "w-14 text-right text-xs text-foreground-subtle",
 				}),
 			],
@@ -80,13 +78,13 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 		children,
 	)
 
-/** `ServiceErrorsPanel`: skeleton, the "Couldn't load" line, or up to five issue rows. */
+/** Skeleton, the "Couldn't load" line, or up to five issue rows. */
 export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean): Html =>
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
-		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
-		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues."])]),
+		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
+		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
 		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited),
 		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited),
 	})
@@ -101,7 +99,7 @@ const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited
 				),
 	])
 
-/** `ErrorRateChip`: the version's window-wide error rate, shown even at ~0%. */
+/** The version's window-wide error rate, shown even at ~0%. */
 const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 	if (deploy.spanCount <= 0) return null
 	const ratio = deploy.errorCount / deploy.spanCount
@@ -125,24 +123,15 @@ const errorRateChip = (h: H, deploy: DeployEntry): Html => {
 	)
 }
 
-/** `RowFrame`: avatar · [line1 + chip / line2]. */
+/** Avatar · [line1 + chip / line2]. */
 const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyArray<Html>): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2.5 rounded-sm px-2 py-1.5")],
-		[
-			h.div([h.Class("mt-0.5 shrink-0")], [avatar]),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 leading-tight")],
-				[
-					hstack(h, { gap: "2" }, [
-						h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]),
-						chip,
-					]),
-					h.div([h.Class("flex items-baseline gap-1.5 text-2xs text-muted-foreground")], line2),
-				],
-			),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "start", className: "rounded-sm px-2 py-1.5" }, [
+		h.div([h.Class("mt-0.5 shrink-0")], [avatar]),
+		vstack(h, { gap: "0.5", shrink: true, grow: true, className: "leading-tight" }, [
+			hstack(h, { gap: "2" }, [h.div([h.Class("min-w-0 flex-1 truncate text-ui")], [line1]), chip]),
+			hstack(h, { gap: "1.5", align: "baseline", className: "text-2xs text-muted-foreground" }, line2),
+		]),
+	])
 
 const rowMeta = (
 	h: H,
@@ -151,13 +140,12 @@ const rowMeta = (
 	prefix: ReadonlyArray<Html>,
 ): ReadonlyArray<Html> => [
 	...prefix,
-	h.span([h.Class("shrink-0 tabular-nums")], [formatNumber(deploy.spanCount), " spans"]),
+	typography(h, { numeric: true, className: "shrink-0" }, [formatNumber(deploy.spanCount), " spans"]),
 	relativeTime(h, {
 		value: deploy.firstSeen,
 		...clock,
 		variant: "orDate",
 		mono: true,
-		tooltip: "title",
 		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
 	}),
 ]
@@ -166,23 +154,22 @@ const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full b
 
 const deploysEmpty = (h: H): Html =>
 	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
-		h.span([], ["No deploys detected in this window."]),
-		h.span(
-			[h.Class("text-foreground-subtle")],
-			[
-				"Deploy tracking needs spans to carry the",
-				" ",
-				inlineCode(h, {}, ["vcs.ref.head.revision"]),
-				" resource attribute.",
-			],
-		),
+		h.span([], ["No deploys detected in this window"]),
+		typography(h, { tone: "subtle" }, [
+			"Deploy tracking needs spans to carry the",
+			" ",
+			inlineCode(h, {}, ["vcs.ref.head.revision"]),
+			" resource attribute.",
+		]),
 		h.span([h.Class("mt-1")], [docsLink(h, "github")]),
 	])
 
-/** `ConnectRepoFooter`: one CTA when the first resolvable sha failed as "not connected". */
+/** One CTA when the first resolvable sha failed as "not connected". */
 const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntry>): ReadonlyArray<Html> => {
-	const first = deploys.find((deploy) => isResolvableSha(deploy.sha))
-	const commit = first === undefined ? undefined : model.commits[first.sha]
+	const commit = Option.match(
+		Arr.findFirst(deploys, (deploy) => isResolvableSha(deploy.sha)),
+		{ onNone: () => undefined, onSome: (first) => model.commits[first.sha] },
+	)
 	const isNotConnected =
 		commit !== undefined &&
 		AsyncData.isFailure(commit) &&
@@ -202,7 +189,7 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 		: []
 }
 
-/** `ServiceRecentDeploys`: newest first, eight rows until expanded (fifty at most). */
+/** Newest first, eight rows until expanded (fifty at most). */
 export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolean): Html => {
 	if (isLoading) {
 		return sectionCard(h, { title: "Recent deploys" }, [
@@ -226,7 +213,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 					? undefined
 					: typography(h, { size: "xs", tone: "subtle" }, [
 							countLabel(deploys.length, "version"),
-							" in window",
+							" in this window",
 						]),
 		},
 		deploys.length === 0
@@ -286,40 +273,18 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 /** `shortReleaseLabel`: a full sha shortened, any other reference verbatim. */
 const shortReleaseLabel = (sha: string): string => (isResolvableSha(sha) ? shortId(sha, "sha") : sha)
 
-/** `CommitAvatar compact`. TODO(avatar-error): a broken avatar URL does not fall back to initials. */
-const commitAvatar = (h: H, url: string | null, name: string): Html =>
-	url === null
-		? h.div(
-				[
-					h.Class(
-						"size-5 flex shrink-0 items-center justify-center rounded-full bg-muted text-2xs font-medium uppercase text-muted-foreground",
-					),
-				],
-				[Str.slice(0, 2)(name)],
-			)
-		: h.img([
-				h.Src(url),
-				h.Alt(""),
-				h.Class("size-5 shrink-0 rounded-full ring-1 ring-foreground/10"),
-				h.Attribute("loading", "lazy"),
-				h.Attribute("referrerpolicy", "no-referrer"),
-			])
-
-/** `CommitShaHoverCard`'s trigger. TODO(commit-hover-card): the card itself is not ported. */
+/** The commit hover card's trigger. TODO(commit-hover-card): the card itself is not ported. */
 const commitTrigger = (h: H, className: string, label: string): Html =>
 	h.span([h.Class(cn("cursor-default", className)), h.DataAttribute("slot", "hover-card-trigger")], [label])
 
 const deploySkeleton = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-start gap-2.5 px-2 py-1.5")],
-		[
-			skeleton(h, "mt-0.5 size-5 shrink-0 rounded-full"),
-			vstack(h, { gap: "1", shrink: true, grow: true }, [
-				skeleton(h, "h-3.5 w-3/4"),
-				skeleton(h, "h-3 w-1/2"),
-			]),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "start", className: "px-2 py-1.5" }, [
+		skeleton(h, "mt-0.5 size-5 shrink-0 rounded-full"),
+		vstack(h, { gap: "1", shrink: true, grow: true }, [
+			skeleton(h, "h-3.5 w-3/4"),
+			skeleton(h, "h-3 w-1/2"),
+		]),
+	])
 
 const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html => {
 	const chip = errorRateChip(h, deploy)
@@ -328,7 +293,7 @@ const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html 
 		return rowFrame(
 			h,
 			blankAvatar(h),
-			h.span([h.Class("font-mono text-xs text-foreground")], [label]),
+			typography(h, { size: "xs", tone: "foreground", mono: true }, [label]),
 			chip,
 			rowMeta(h, deploy, clock, [h.span([h.Class("shrink-0")], ["deployment reference"])]),
 		)
@@ -371,9 +336,10 @@ const resolvedRow = (
 		commitTrigger(h, "text-foreground", subject === "" ? shortReleaseLabel(deploy.sha) : subject),
 		chip,
 		rowMeta(h, deploy, clock, [
-			h.span([h.Class("min-w-0 truncate")], [author]),
-			h.span(
-				[h.Class("font-mono tabular-nums shrink-0"), h.Title(deploy.sha)],
+			typography(h, { truncate: true, className: "min-w-0" }, [author]),
+			typography(
+				h,
+				{ mono: true, numeric: true, className: "shrink-0", attributes: [h.Title(deploy.sha)] },
 				[shortId(deploy.sha, "sha")],
 			),
 		]),

@@ -1,4 +1,5 @@
 import { OrgId } from "@maple/domain"
+import * as Policy from "@maple/domain/policy"
 import {
 	ErrorIssueEventsResponse,
 	ErrorIssueId,
@@ -7,7 +8,7 @@ import {
 	IssueEscalationAttemptsResponse,
 } from "@maple/domain/http"
 import { encodePublicId, V2ErrorIssueDetail } from "@maple/domain/http/v2"
-import { Effect, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -20,7 +21,9 @@ import { view as pageView } from "../../page/errors/issue/view"
 import { defineShellLab } from "../shell-lab"
 
 // `/lab/error-issue`: the error issue page over one fixture issue, a surging high-severity error
-// with a regression. API Commands are dropped; the page is sent the answers its reads would get.
+// with a regression, as a member or an analyst, who reads it and gets no triage control
+// (`?role=member|analyst&tab=overview|occurrences|activity`). API Commands are dropped; the page
+// is sent the answers its reads would get.
 
 const context: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab"),
@@ -42,7 +45,7 @@ const timeseries = Array.from({ length: BUCKETS }, (_, i) => ({
 	count: i < 40 ? 4 + ((i * 7) % 9) : 30 + (i - 40) * 22,
 }))
 
-const detail = Schema.decodeUnknownSync(V2ErrorIssueDetail)({
+const detail = Schema.decodeSync(V2ErrorIssueDetail)({
 	id: encodePublicId("iss", issueId),
 	object: "error_issue",
 	kind: "error",
@@ -118,12 +121,28 @@ const send = (step: Step, message: Message): Step => {
 	}
 }
 
-const Flags = Schema.Struct({})
+const ROLES = ["member", "analyst"] as const
+const TABS = ["overview", "occurrences", "activity"] as const
+const Flags = Schema.Struct({ role: Schema.Literals(ROLES), tab: Schema.Literals(TABS) })
+type Flags = typeof Flags.Type
+type LabRole = Flags["role"]
+type LabTab = Flags["tab"]
 
-const init = () => {
-	const entered = pageInit({ issueId, search: {} }, context)
+const decodeRole = Schema.decodeUnknownOption(Schema.Literals(ROLES))
+const decodeTab = Schema.decodeUnknownOption(Schema.Literals(TABS))
+
+const init = (flags: Flags) => {
+	const entered = pageInit({ issueId, search: flags.tab === "overview" ? {} : { tab: flags.tab } }, context)
 	const start: Step = { model: entered.model, commands: Arr.filter(entered.commands ?? [], isLocalCommand) }
-	const windowed = send(start, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
+	// The session's grants for the role, as the page's own read would answer.
+	const granted = send(
+		start,
+		Message.CompletedFetchSession({
+			orgId: context.orgId,
+			grants: Policy.grantsOf([`org:${flags.role}`]),
+		}),
+	)
+	const windowed = send(granted, Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }))
 	const keyOf = (field: "detail" | "events" | "pullRequests" | "verifications" | "escalations") =>
 		windowed.model[field].key ?? ""
 	return Arr.reduce(
@@ -183,7 +202,13 @@ export const lab = defineShellLab("Error issue", {
 	Model,
 	Message,
 	Flags,
-	flags: Effect.succeed({}),
+	flags: Effect.sync((): Flags => {
+		const params = new URLSearchParams(globalThis.location.search)
+		return {
+			role: Option.getOrElse(decodeRole(params.get("role")), (): LabRole => "member"),
+			tab: Option.getOrElse(decodeTab(params.get("tab")), (): LabTab => "overview"),
+		}
+	}),
 	init,
 	update,
 	view,

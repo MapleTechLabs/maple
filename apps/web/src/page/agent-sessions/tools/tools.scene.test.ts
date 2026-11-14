@@ -3,7 +3,7 @@ import { Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
-import type { TotalsResult } from "../tools-kit/model"
+import type { TotalsResult } from "../../kit/tools/model"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
@@ -66,6 +66,9 @@ describe("agent tools", () => {
 		expect(cleared.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/agent-sessions/tools", isReplace: false }),
 		)
+		const unfiltered = routeChanged(answered.model, { search: {} }, context)
+		expect(names(unfiltered.commands)).not.toContain("FetchAgentToolsTotals")
+		expect(AsyncData.hasData(unfiltered.model.totals.data)).toBe(true)
 	})
 
 	test("a stale totals answer is dropped", () => {

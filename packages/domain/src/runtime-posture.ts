@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 // Runtime posture for the Security Center's Runtimes tab: which language runtime a service reports
 // (`process.runtime.*`, `telemetry.sdk.language`) and how its version stands against the release
 // cycles endoflife.date publishes. Pure, so the web bundle and the API share it.
@@ -62,8 +62,8 @@ const NODE_EMULATORS = new Map<string, RuntimeProduct>([
 export function runtimeProductOf(runtimeName: string, sdkLanguage: string): RuntimeProduct | undefined {
 	const name = Str.toLowerCase(Str.trim(runtimeName))
 	if (UNVERSIONED_RUNTIMES.has(name)) return undefined
-	const byName = BY_RUNTIME_NAME.find(([pattern]) => pattern.test(name))
-	if (byName !== undefined) return byName[1]
+	const byName = Arr.findFirst(BY_RUNTIME_NAME, ([pattern]) => pattern.test(name))
+	if (Option.isSome(byName)) return byName.value[1]
 	const language = Str.toLowerCase(Str.trim(sdkLanguage))
 	// A Node.js SDK may run on Bun or Deno, so `nodejs` only counts with the runtime name above.
 	return name === "" || language === "php" ? BY_SDK_LANGUAGE.get(language) : undefined
@@ -92,7 +92,12 @@ export function compareVersions(a: string, b: string): number {
 		{ length: Math.max(left.length, right.length) },
 		(_, index) => (left[index] ?? 0) - (right[index] ?? 0),
 	)
-	return Math.sign(differences.find((difference) => difference !== 0) ?? 0)
+	return Math.sign(
+		Option.getOrElse(
+			Arr.findFirst(differences, (difference) => difference !== 0),
+			() => 0,
+		),
+	)
 }
 
 export interface RuntimeRelease {
@@ -110,12 +115,13 @@ export function releaseCycleOf(
 	releases: ReadonlyArray<RuntimeRelease>,
 	version: string,
 ): RuntimeRelease | undefined {
-	return Arr.filter(
-		releases,
-		(release) => version === release.cycle || Str.startsWith(`${release.cycle}.`)(version),
-	).reduce<RuntimeRelease | undefined>(
-		(best, release) => (best === undefined || release.cycle.length > best.cycle.length ? release : best),
+	return Arr.reduce<RuntimeRelease, RuntimeRelease | undefined>(
+		Arr.filter(
+			releases,
+			(release) => version === release.cycle || Str.startsWith(`${release.cycle}.`)(version),
+		),
 		undefined,
+		(best, release) => (best === undefined || release.cycle.length > best.cycle.length ? release : best),
 	)
 }
 

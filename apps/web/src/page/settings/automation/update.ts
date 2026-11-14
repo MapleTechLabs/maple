@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	EscalationConfidence,
 	EscalationPolicyEvaluationRequest,
@@ -6,28 +7,31 @@ import {
 	IssueEscalationPolicyUpsertRequest,
 	type IssueSeverity,
 } from "@maple/domain/http"
-import { AlertDestinationId } from "@maple/domain/primitives"
+import { AlertDestinationId } from "@maple/primitives"
 import { Array, Effect, Option, Result, Schema, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
-import { SEVERITY_ORDER } from "../../errors/kit/severity"
-import { ConfidenceChoice, DecisionSource, Message, type Model, PolicyDraft, type RuleDraft } from "./model"
+import { SEVERITY_ORDER } from "../../kit/issue-severity"
+import {
+	canManage,
+	ConfidenceChoice,
+	DecisionSource,
+	Message,
+	type Model,
+	PolicyDraft,
+	type RuleDraft,
+} from "./model"
 
 type Return = PageReturn<Model, Message>
-
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
 
 const FetchEscalationPolicy = Command.define("FetchEscalationPolicy", {
 	messages: [Message.CompletedFetchPolicy],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.errors.getEscalationPolicy()).pipe(
-		settle((result) => Message.CompletedFetchPolicy({ result })),
+		settleTo((result) => Message.CompletedFetchPolicy({ result })),
 	),
 })
 
@@ -35,7 +39,7 @@ const FetchRecentEscalations = Command.define("FetchRecentEscalations", {
 	messages: [Message.CompletedFetchAttempts],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
 		client.errors.listRecentEscalations({ query: { limit: 20 } }),
-	).pipe(settle((result) => Message.CompletedFetchAttempts({ result }))),
+	).pipe(settleTo((result) => Message.CompletedFetchAttempts({ result }))),
 })
 
 const SaveEscalationPolicy = Command.define("SaveEscalationPolicy", {
@@ -44,7 +48,7 @@ const SaveEscalationPolicy = Command.define("SaveEscalationPolicy", {
 	execute: ({ request }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.errors.upsertEscalationPolicy({ payload: request }),
-		).pipe(settle((result) => Message.CompletedSavePolicy({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSavePolicy({ result }))),
 })
 
 const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
@@ -53,12 +57,12 @@ const EvaluateEscalationPolicy = Command.define("EvaluateEscalationPolicy", {
 	execute: ({ request, revision }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.errors.evaluateEscalationPolicy({ payload: request }),
-		).pipe(settle((result) => Message.CompletedEvaluate({ revision, result }))),
+		).pipe(settleTo((result) => Message.CompletedEvaluate({ revision, result }))),
 })
 
-export const init = (isAdmin: boolean): Return => ({
+export const init = (grants: ReadonlyArray<Policy.Permission>): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		policy: AsyncData.Loading(),
 		draft: null,
 		isDirty: false,
@@ -131,7 +135,7 @@ const isSameDraft = Schema.toEquivalence(PolicyDraft)
 
 /** An edit: dirty, and the revision moves so a stale simulation is dropped. */
 const edit = (model: Model, change: (draft: PolicyDraft) => PolicyDraft): Return =>
-	model.draft === null || !model.isAdmin || model.isSaving
+	model.draft === null || !canManage(model) || model.isSaving
 		? { model }
 		: { model: { ...model, draft: change(model.draft), isDirty: true, revision: model.revision + 1 } }
 
@@ -218,7 +222,7 @@ export const update = (model: Model, message: Message): Return =>
 				return { ...draft, [severity]: { ...draft[severity], destinationIds: next } }
 			}),
 		ClickedSavePolicy: () =>
-			model.draft === null || model.isSaving || !model.isAdmin
+			model.draft === null || model.isSaving || !canManage(model)
 				? { model }
 				: {
 						model: { ...model, isSaving: true },
@@ -261,11 +265,14 @@ export const update = (model: Model, message: Message): Return =>
 		ClickedEvaluate: () => {
 			if (model.isEvaluating || model.isDirty) return { model }
 			const severity = Option.getOrElse(
-				Schema.decodeUnknownOption(DecisionSource)(model.source),
+				Schema.decodeOption(DecisionSource)(model.source),
 				() => "ai" as const,
 			)
 			const request = new EscalationPolicyEvaluationRequest({
-				severity: SEVERITY_ORDER.find((value) => value === model.severitySelect.value) ?? "high",
+				severity: Option.getOrElse(
+					Array.findFirst(SEVERITY_ORDER, (value) => value === model.severitySelect.value),
+					() => "high" as const,
+				),
 				source: severity,
 				...(severity === "ai" && { confidence: model.confidence }),
 			})

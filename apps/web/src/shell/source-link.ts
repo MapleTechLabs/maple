@@ -1,5 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
-import type { PullSourcePlatform } from "@maple/domain/primitives"
+import type { PullSourcePlatform } from "@maple/primitives"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -8,6 +8,7 @@ import { sourceHref, toPublicSourceId } from "../page/sources/kit/shared"
 import { AppRoute, hrefOf } from "../route"
 import { linkButton } from "@maple/views/ui/button"
 import { icon } from "@maple/views/ui/icon"
+import { typography } from "@maple/views/ui/typography"
 
 // The top bar's link from a page to the source its data came from.
 
@@ -36,7 +37,7 @@ export const summarySource = <E>(
 export type SourceLink = Readonly<{ label: string; href: string; source: V2Source | null }>
 
 const byPublicId = (sources: ReadonlyArray<V2Source>, publicId: string): V2Source | null =>
-	sources.find((source) => toPublicSourceId(source.id) === publicId) ?? null
+	Option.getOrNull(Arr.findFirst(sources, (source) => toPublicSourceId(source.id) === publicId))
 
 /** The list knows the source: a fresh connect or a new token is missing until a re-read. */
 export const isResolved = (ref: PageSourceRef, sources: ReadonlyArray<V2Source>): boolean =>
@@ -85,6 +86,6 @@ export const sourceLinkButton = <M>(h: HtmlBuilder<M>, link: SourceLink): Html =
 		},
 		[
 			icon(h, link.source === null ? "ConnectionIcon" : platformMeta(link.source.platform).icon),
-			h.span([h.Class("truncate")], [link.label]),
+			typography(h, { truncate: true }, [link.label]),
 		],
 	)

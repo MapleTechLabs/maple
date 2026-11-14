@@ -3,14 +3,16 @@ import {
 	listRowBodyStyles,
 	listRowLeadingStyles,
 	listRowMetaStyles,
+	listRowMetaWrapStyles,
 	listRowTitleStyles,
 	listRowTrailingStyles,
 	listRowVariants,
 	rowSelectedClass,
-} from "@maple/ui/styles/ui/list-row"
+} from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { rowFocusAttributes } from "./row-focus"
 
-// Port of packages/ui/src/components/ui/list-row.tsx: icon + title + meta + trailing row.
+// Icon + title + meta + trailing row.
 
 type Child = Html | string
 
@@ -19,10 +21,14 @@ export interface ListRowOptions {
 	/** Hairline between rows (the last row drops it). */
 	readonly divided?: boolean
 	readonly selected?: boolean
+	/** The list page's keyboard-focused row. */
+	readonly isFocused?: boolean
 	readonly leading?: Child
 	readonly title: Child
 	/** Secondary line under the title. */
 	readonly meta?: Child
+	/** The secondary line wraps instead of being cut off with an ellipsis. */
+	readonly wrapMeta?: boolean
 	/** One child, or several (a fragment) laid out by the trailing slot. */
 	readonly trailing?: Child | ReadonlyArray<Child>
 	readonly className?: string
@@ -43,6 +49,7 @@ const leadingSlot = <M>(h: HtmlBuilder<M>, leading: Child): Html =>
 const trailingSlot = <M>(h: HtmlBuilder<M>, trailing: Child | ReadonlyArray<Child>): Html =>
 	h.span(
 		[h.Class(listRowTrailingStyles), h.DataAttribute("slot", "list-row-trailing")],
+		// @effect-diagnostics-next-line preferEffectArray:off -- Arr.isArray narrows to a mutable Array and loses the ReadonlyArray branch
 		typeof trailing === "string" || !Array.isArray(trailing) ? [trailing] : trailing,
 	)
 
@@ -54,6 +61,7 @@ export const listRow = <M>(
 ): Html => {
 	const attributes = [
 		...(options.selected === true ? [h.AriaCurrent("true"), h.DataAttribute("selected", "")] : []),
+		...rowFocusAttributes(h, options.isFocused),
 		h.Attribute(
 			"class",
 			cn(
@@ -78,7 +86,10 @@ export const listRow = <M>(
 					: [
 							h.span(
 								[
-									h.Attribute("class", listRowMetaStyles),
+									h.Attribute(
+										"class",
+										options.wrapMeta === true ? listRowMetaWrapStyles : listRowMetaStyles,
+									),
 									h.DataAttribute("slot", "list-row-meta"),
 								],
 								[options.meta],

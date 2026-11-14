@@ -223,6 +223,7 @@ const otelInstall = `npm install @opentelemetry/api \\
   @opentelemetry/sdk-node \\
   @opentelemetry/auto-instrumentations-node \\
   @opentelemetry/instrumentation \\
+  import-in-the-middle \\
   @opentelemetry/resources \\
   @opentelemetry/sdk-logs \\
   @opentelemetry/sdk-metrics \\
@@ -231,7 +232,7 @@ const otelInstall = `npm install @opentelemetry/api \\
   @opentelemetry/exporter-metrics-otlp-proto`;
 
 const tracingSnippet = `// tracing.mjs
-import { register } from "node:module"
+import { register } from "import-in-the-middle/register-hooks.mjs"
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
 import { resourceFromAttributes } from "@opentelemetry/resources"
@@ -242,7 +243,7 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
 
 // Lets the instrumentations patch ES modules. CommonJS apps can drop this line.
-register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
+register()
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "YOUR_INGEST_KEY"
@@ -655,6 +656,9 @@ const articleJsonLd = {
                             Current <code>@opentelemetry/sdk-logs</code> releases take an options object, <code>new BatchLogRecordProcessor(&#123; exporter &#125;)</code>. Older releases took the exporter as the first argument. Passing an exporter to a release that expects the object raises no error, and no log record leaves the process, so check the installed <code>.d.ts</code> if logs never arrive.
                         </p>
                     </div>
+                    <p>
+                        The <code>register()</code> import needs Node.js 22.22.3+, 24.11.1+ or 26+. On an older Node.js, import <code>register</code> from <code>node:module</code> and call <code>register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)</code> instead.
+                    </p>
                     <p>
                         An ingest key can only write telemetry to your organization; it cannot read data. To keep it out of source anyway, the SDK can take its whole configuration from the standard <code>OTEL_*</code> variables, as in <a href="/docs/guides/instrumentation-nodejs#environment-variables">the Node.js guide's environment variables section</a>.
                     </p>

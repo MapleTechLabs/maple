@@ -1,3 +1,6 @@
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { IsoDateTimeString } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
@@ -14,7 +17,7 @@ import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import {
 	CompleteRuleReloadSpin,
 	FetchBucketChecks,
@@ -26,6 +29,8 @@ import {
 	ReadDiagnosisClock,
 	ResolveRuleWindow,
 	ToggleRuleEnabled,
+	FetchRuleSession,
+	FetchRuleSilences,
 } from "./command"
 import {
 	checksPageOf,
@@ -36,8 +41,70 @@ import {
 	ruleOf,
 	timelineRangeOf,
 } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
+import * as SilenceDialog from "../silence-dialog/dialog"
+import { matchersForRule } from "../shared/silences"
+
+const silencesKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertSilences.list", { query: { status: "active", limit: 100 } })
+
+const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+		onNone: () => ({ model }),
+		onSome: (silences) => ({
+			model: { ...model, silences },
+			commands: [FetchRuleSilences({ key: silences.key })],
+		}),
+	})
+
+/** The silence dialog's outcome: a toast, and a re-read so the header shows the new silence. */
+const liftSilenceDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof SilenceDialog.update>,
+): Return => {
+	const next = { ...model, silenceDialog: step.model }
+	const commands = Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSilenceDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	return SilenceDialog.OutMessage.match(step.outMessage, {
+		RequestedToast: ({ type, title, description }) => ({
+			model: next,
+			commands,
+			outMessage: PageOutMessage.RequestedToast({ type, title, description }),
+		}),
+		CreatedSilence: () => {
+			const refreshed = requestSilences(next, context, "Supersede")
+			return {
+				model: refreshed.model,
+				commands: [...commands, ...(refreshed.commands ?? []), ReadDiagnosisClock()],
+				outMessage: PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Alerts silenced",
+					description: "",
+				}),
+			}
+		},
+	})
+}
+
+const openSilence = (model: Model, context: PageContext): Return => {
+	const rule = ruleOf(model)
+	return rule === null
+		? { model }
+		: liftSilenceDialog(
+				model,
+				context,
+				SilenceDialog.openFor(
+					model.silenceDialog,
+					{ label: rule.name, matchers: matchersForRule(rule, null) },
+					context.timeZone,
+					model.nowMs,
+				),
+			)
+}
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -62,7 +129,7 @@ const keyed = <A, E>(
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
 ): ReadonlyArray<Step> =>
-	// An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone.
+	// A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own.
 	mode === "Load" && slot.key === key
 		? []
 		: Option.match(Keyed.request(slot, key, mode), {
@@ -71,7 +138,7 @@ const keyed = <A, E>(
 			})
 
 const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+	model: Arr.reduce(steps, model, (next, step) => ({ ...next, ...step.patch })),
 	commands: Arr.flatMap(steps, (step) => step.commands),
 })
 
@@ -150,19 +217,21 @@ export const init = (route: RuleRoute, context: PageContext): Return => {
 		chart: Chart.init(),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
+		silences: Keyed.idle(),
+		silenceDialog: SilenceDialog.init("alert-rule-silence"),
+		grants: [],
 	}
-	const followed = followData(model, context, "Load")
+	const silences = requestSilences(model, context, "Load")
+	const followed = followData(silences.model, context, "Load")
 	return {
 		model: followed.model,
 		commands: [
+			...(silences.commands ?? []),
+			FetchRuleSession(),
 			resolveCommand(model, context, "Load"),
 			ReadDiagnosisClock(),
 			...(followed.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -190,7 +259,7 @@ const navigate = (model: Model, search: Model["search"]): Return => ({
 const errorToast = (title: string, message: string) =>
 	PageOutMessage.RequestedToast({ type: "error", title, description: message })
 
-/** `openInvestigation(incident)`: the incident's investigation, seeded with the rule. */
+/** The incident's investigation, seeded with the rule. */
 const investigationPayload = (
 	rule: AlertRuleDocument,
 	incident: AlertIncidentDocument,
@@ -224,12 +293,12 @@ const investigationPayload = (
 
 const openInvestigation = (model: Model, incidentId: string): Return => {
 	const rule = ruleOf(model)
-	const incident = ruleIncidentsOf(model).find((candidate) => candidate.id === incidentId)
-	return rule === null || incident === undefined || model.isOpeningInvestigation
+	const incident = Arr.findFirst(ruleIncidentsOf(model), (candidate) => candidate.id === incidentId)
+	return rule === null || Option.isNone(incident) || model.isOpeningInvestigation
 		? { model }
 		: {
 				model: { ...model, isOpeningInvestigation: true },
-				commands: [OpenRuleInvestigation({ payload: investigationPayload(rule, incident) })],
+				commands: [OpenRuleInvestigation({ payload: investigationPayload(rule, incident.value) })],
 			}
 }
 
@@ -252,7 +321,7 @@ const updateMenu = (model: Model, menuId: string, message: Menu.Message): Return
 			model: next,
 			commands,
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({ tab: "overview" }),
+				url: alertsHref({}),
 				isReplace: false,
 			}),
 		}
@@ -323,7 +392,7 @@ const withRows = (model: Model, context: PageContext, orgId: string, patch: Part
 	return { ...followed, commands: [...(followed.commands ?? []), ReadDiagnosisClock()] }
 }
 
-/** The ChecksPanel is keyed by window and status filter: either change starts it over. */
+/** The checks panel is keyed by window and status filter: either change starts it over. */
 const resetChecksPanel = (model: Model): Model => ({
 	...model,
 	extraChecks: [],
@@ -465,36 +534,34 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				timePreset: DEFAULT_PRESET,
 			}),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefOf(
-								AppRoute.AlertRule({
-									ruleId: model.ruleId,
-									search: {
-										...model.search,
-										...TimeRangePicker.searchPatchOf(next.outMessage),
-									},
-								}),
-							),
-							isReplace: false,
-						}),
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefOf(
+							AppRoute.AlertRule({
+								ruleId: model.ruleId,
+								search: {
+									...model.search,
+									...patch,
+								},
+							}),
+						),
+						isReplace: false,
+					}),
+				{ toastRejected: true },
+			)
 		},
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		...chartEnvHandlers(model),
+		CompletedFetchSilences: ({ key, result }) => ({
+			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
 		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		ClickedSilence: () => openSilence(model, context),
+		CompletedFetchSession: ({ grants }) => ({ model: { ...model, grants } }),
+		GotSilenceDialogMessage: ({ message: child }) =>
+			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

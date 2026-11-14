@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { OrgId } from "@maple/domain"
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
@@ -8,20 +9,27 @@ import * as AlertsHub from "../../page/alerts/hub/update"
 import type { PageContext } from "../../page/contract"
 import type { Resources } from "../../platform/resources"
 import { foldLabShell, initLabShell, type LabShellFlags } from "../app-shell"
+import { labGrants, LabRole, readLabRole } from "../viewer-role"
 import { Message, type Model } from "./model"
 
 export type Return = Update.Return<Model, Message, Resources>
 
-export const AlertsLabFlags = Schema.Struct({ nowMs: Schema.Number, timeZone: Schema.String })
+export const AlertsLabFlags = Schema.Struct({
+	nowMs: Schema.Number,
+	timeZone: Schema.String,
+	/** `?role=member|analyst`: an analyst gets no acknowledge, rule or routing control. */
+	role: LabRole,
+})
 export type AlertsLabFlags = typeof AlertsLabFlags.Type
 
-/** The boot clock and the browser's zone (`Intl.DateTimeFormat().resolvedOptions()`). */
+/** The boot clock, the browser's zone (`Intl.DateTimeFormat().resolvedOptions()`) and `?role=`. */
 export const alertsLabFlags: Effect.Effect<AlertsLabFlags> = Effect.all({
 	nowMs: Clock.currentTimeMillis,
 	timeZone: Effect.sync(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+	role: readLabRole,
 })
 
-/** The hub views run against a hub Model; its org is the fixture's, its admin rights on. */
+/** The hub views run against a hub Model; its org is the fixture's, its admin rights on by default. */
 const LAB_CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_alerts"),
 	pinnedNamespace: null,
@@ -35,7 +43,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 		model: {
 			nowMs: flags.nowMs,
 			timeZone: flags.timeZone,
-			hub: { ...hub, isAdmin: true, nowMs: flags.nowMs },
+			hub: { ...hub, grants: labGrants(flags.role), nowMs: flags.nowMs },
 			status: null,
 			chart: Chart.init(),
 			chartRuntime: { _tag: "Loading" },
@@ -47,11 +55,7 @@ export const init = (flags: AlertsLabFlags & LabShellFlags): Return => {
 				shell.commands ?? [],
 				Command.mapMessage((message) => Message.GotShellMessage({ message })),
 			),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -91,10 +95,6 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		...chartEnvHandlers(model),
 		GotShellMessage: ({ message: inner }) => foldShell(model, inner),
 	})

@@ -7,28 +7,31 @@ import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { icon } from "@maple/views/ui/icon"
 import { failureMessage } from "@maple/views/data/load-failure"
-import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
-import { saveBar } from "../../settings/kit/save-bar"
-import { adminOnlyNote, settingsSection, settingsSections } from "../../settings/kit/section"
-import { switchRow } from "../../settings/kit/switch-row"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { saveBar } from "../../kit/save-bar"
+import { adminOnlyNote, settingsSection, settingsSections } from "../../kit/settings-section"
+import { switchRow } from "../../kit/switch-row"
 import { publicAddress } from "../shared/commands"
 import { selectField, textareaField, textField } from "../shared/fields"
 import {
 	hasPageFieldIssues,
 	hasSettingsIssues,
-	hasThemeIssues,
+	hasAppearanceIssues,
 	type SettingsForm,
 	settingsFormOf,
 	settingsIssues,
 } from "../shared/form"
-import { appearanceSection, previewPanel } from "./view-appearance"
+import { accessSection } from "./view-access"
+import { appearanceSection, brandingSection, previewPanel } from "./view-appearance"
+import { customDomainSection } from "./view-domain"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canBreakGlass, canManage, type Model } from "./model"
 import { isSettingsDirty, settingsOf } from "./update-settings"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
-// The Settings tab: the page's fields, the break-glass token and deleting the page.
+// The Settings tab: the page's fields, who can view it, the break-glass token and deleting the page.
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +43,7 @@ const AUTO_INCIDENT_ENTRIES = [
 
 const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 	const issues = settingsIssues(form)
-	const isReadOnly = !model.isAdmin
+	const isReadOnly = !canManage(model)
 	return settingsSection(
 		h,
 		{
@@ -108,13 +111,14 @@ const pageSection = (h: H, model: Model, form: SettingsForm): Html => {
 						onInput: (value) => Message.ChangedSetting({ field: "termsUrl", value }),
 					}),
 					textField(h, {
-						id: "status-page-logo",
-						label: "Logo URL",
-						value: form.logoUrl,
-						placeholder: "https://acme.example/logo.svg",
+						id: "status-page-support",
+						label: "Support URL",
+						value: form.supportUrl,
+						placeholder: "https://acme.example/support",
 						isDisabled: isReadOnly,
-						error: issues.logoUrl,
-						onInput: (value) => Message.ChangedSetting({ field: "logoUrl", value }),
+						error: issues.supportUrl,
+						hint: "Linked in the page header as Contact support.",
+						onInput: (value) => Message.ChangedSetting({ field: "supportUrl", value }),
 					}),
 				],
 			),
@@ -132,7 +136,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 					label: "Show powered by Maple",
 					description: "A small credit in the page footer.",
 					isChecked: form.showPoweredBy,
-					isDisabled: !model.isAdmin,
+					isDisabled: !canManage(model),
 					onToggle: Message.ToggledPoweredBy(),
 					className: "p-4",
 				}),
@@ -144,7 +148,7 @@ const behaviourSection = (h: H, model: Model, form: SettingsForm): Html =>
 							label: "When a linked monitor goes down",
 							value: form.autoIncidents,
 							entries: AUTO_INCIDENT_ENTRIES,
-							isDisabled: !model.isAdmin,
+							isDisabled: !canManage(model),
 							hint: "A draft waits for you under Incidents in the editor's On this page list; a published one shows on the page at once.",
 							onInput: (value) => Message.ChangedSetting({ field: "autoIncidents", value }),
 						}),
@@ -158,32 +162,29 @@ export const revealedToken = (h: H, model: Model): ReadonlyArray<Html> =>
 	model.revealedToken === null
 		? []
 		: [
-				h.div(
-					[h.Class("flex flex-col gap-2 rounded-md border bg-surface-faint p-3")],
-					[
-						copyableField(h, {
-							id: "status-page-break-glass-token",
-							value: model.revealedToken.token,
-							copyLabel: "break-glass token",
-							copy: model.tokenCopy,
-							toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
-						}),
-						hstack(h, { gap: "3", justify: "between" }, [
-							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Store it outside Maple, in your password manager. It is not shown again.",
-							]),
-							button(
-								h,
-								{
-									size: "sm",
-									variant: "ghost",
-									attributes: [h.OnClick(Message.ClickedDismissToken())],
-								},
-								["Done"],
-							),
+				vstack(h, { gap: "2", className: "rounded-md border bg-surface-faint p-3" }, [
+					copyableField(h, {
+						id: "status-page-break-glass-token",
+						value: model.revealedToken.token,
+						copyLabel: "break-glass token",
+						copy: model.tokenCopy,
+						toCopyMessage: (message) => Message.GotTokenCopyMessage({ message }),
+					}),
+					hstack(h, { gap: "3", justify: "between" }, [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							"Store it outside Maple, in your password manager. It is not shown again.",
 						]),
-					],
-				),
+						button(
+							h,
+							{
+								size: "sm",
+								variant: "ghost",
+								attributes: [h.OnClick(Message.ClickedDismissToken())],
+							},
+							["Done"],
+						),
+					]),
+				]),
 			]
 
 const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
@@ -197,7 +198,7 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 				"If Maple itself is down, post updates straight to the page with this token at ",
 				h.code(
 					[h.Class(typographyClass({ size: "xs", mono: true }))],
-					[`${publicAddress(page.slug)}/_manage`],
+					[`${pageUrlOf(model, page) ?? publicAddress(page.slug)}/_manage`],
 				),
 				". The page keeps serving from edge storage either way.",
 			],
@@ -205,16 +206,17 @@ const breakGlassSection = (h: H, model: Model, page: V2StatusPage): Html => {
 		[
 			vstack(h, { gap: "3" }, [
 				hstack(h, { gap: "3", justify: "between", wrap: true }, [
-					h.p(
-						[h.Class("text-sm")],
+					typography(
+						h,
+						{ size: "sm", as: "p" },
 						suffix === null
-							? [h.span([h.Class("text-muted-foreground")], ["No token issued"])]
+							? [typography(h, { tone: "muted" }, ["No token issued"])]
 							: [
 									"Active token ending in ",
 									h.code([h.Class(typographyClass({ size: "xs", mono: true }))], [suffix]),
 								],
 					),
-					...(model.isAdmin
+					...(canBreakGlass(model)
 						? [
 								hstack(h, { gap: "2" }, [
 									...(suffix === null
@@ -283,63 +285,66 @@ const formView = (
 ): Html => {
 	const form = Option.getOrElse(settingsOf(model), () => settingsFormOf(page))
 	const hasIssues = hasSettingsIssues(form)
-	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasThemeIssues(form)
-	return h.div(
-		[h.Class("flex max-w-4xl flex-col xl:max-w-7xl")],
-		[
-			h.div(
-				[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
-				[
-					settingsSections(h, [
-						...(model.isAdmin
-							? []
-							: [
-									adminOnlyNote(h, [
-										"Only org admins can change a status page. You can still post incident updates.",
-									]),
+	const isHere = tab === "settings" ? hasPageFieldIssues(form) : hasAppearanceIssues(form)
+	return vstack(h, { className: "max-w-4xl xl:max-w-7xl" }, [
+		h.div(
+			[h.Class("grid gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] xl:items-start")],
+			[
+				settingsSections(h, [
+					...(canManage(model)
+						? []
+						: [
+								adminOnlyNote(h, [
+									"Only org admins and engineers can change a status page. You can still post incident updates.",
 								]),
-						...sections(form),
+							]),
+					...sections(form),
+				]),
+				previewPanel(h, model, page, form),
+			],
+		),
+		...(model.settingsFailure === null
+			? []
+			: [
+					alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
+						icon(h, "CircleXmarkIcon"),
+						alertTitle(h, ["Couldn't save the settings"]),
+						alertDescription(h, [failureMessage(model.settingsFailure)]),
 					]),
-					previewPanel(h, model, page, form),
-				],
-			),
-			...(model.settingsFailure === null
-				? []
-				: [
-						alert(h, { variant: "crit", size: "sm", className: "mt-6" }, [
-							icon(h, "CircleXmarkIcon"),
-							alertTitle(h, ["Couldn't save the settings"]),
-							alertDescription(h, [failureMessage(model.settingsFailure)]),
-						]),
-					]),
-			...saveBar(h, {
-				isDirty: isSettingsDirty(model),
-				isPending: model.isSavingSettings,
-				context: hasIssues
-					? isHere
-						? "Fix the fields marked above."
-						: `Fix the fields marked on the ${tab === "settings" ? "Appearance" : "Settings"} tab.`
-					: model.isApplyingJson
-						? "Saving waits for the JSON apply to finish."
-						: undefined,
-				onDiscard: Message.ClickedDiscardSettings(),
-				onSave: Message.ClickedSaveSettings(),
-				isSaveDisabled: hasIssues || model.isApplyingJson,
-			}),
-		],
-	)
+				]),
+		...saveBar(h, {
+			isDirty: isSettingsDirty(model),
+			isPending: model.isSavingSettings,
+			context: hasIssues
+				? isHere
+					? "Fix the fields marked above."
+					: `Fix the fields marked on the ${tab === "settings" ? "Appearance" : "Settings"} tab.`
+				: model.isApplyingJson
+					? "Saving waits for the JSON apply to finish."
+					: undefined,
+			onDiscard: Message.ClickedDiscardSettings(),
+			onSave: Message.ClickedSaveSettings(),
+			isSaveDisabled: hasIssues || model.isApplyingJson,
+		}),
+	])
 }
 
 export const settingsView = (h: H, model: Model, page: V2StatusPage): Html =>
 	formView(h, model, page, "settings", (form) => [
 		pageSection(h, model, form),
 		behaviourSection(h, model, form),
-		breakGlassSection(h, model, page),
-		...(model.isAdmin ? [deleteSection(h)] : []),
+		accessSection(h, model, page),
+		customDomainSection(h, model, page),
+		// Break-glass posts at the public address, which an internal page does not answer on.
+		...(page.visibility === "internal" ? [] : [breakGlassSection(h, model, page)]),
+		...(canManage(model) ? [deleteSection(h)] : []),
 	])
 
 export const appearanceView = (h: H, model: Model, page: V2StatusPage): Html =>
-	formView(h, model, page, "appearance", (form) => [appearanceSection(h, model, form)])
+	formView(h, model, page, "appearance", (form) => [
+		brandingSection(h, model, form),
+		appearanceSection(h, model, form),
+	])
 
 export const breakGlassDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {

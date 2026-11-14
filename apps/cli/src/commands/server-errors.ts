@@ -1,25 +1,9 @@
 import { Schema } from "effect"
 
 /**
- * Failures raised by the `start` / `stop` / `reset` / `checkpoint` / `restore`
- * commands.
- *
- * These used to be one `@maple/cli/ServerError` carrying nothing but a rendered
- * message. Grouping is by exception type first, so a bad `--host`, an unclean
- * store, a port already in use and a background boot that never came up all
- * landed in a single issue, and the CLI's error stream was one bucket nobody
- * could triage. The API has carried one tag per distinct failure for a while
- * (`@maple/http/errors/*`); this is the same taxonomy for the CLI.
- *
- * Each error carries the context that identifies the *situation* rather than
- * only the sentence shown to the user: which store, which policy, which port.
- * `message` stays because it is the remedy the user reads: `runMain` renders
- * it and the process exits non-zero, exactly as before.
- *
- * Errors that already had their own tag are no longer re-wrapped here: a bind
- * failure stays `ServerBindError`, a failed restore stays
- * `CheckpointRestoreError`. Re-wrapping them was what made the distinct tags
- * these modules already defined invisible in telemetry.
+ * Failures of `start`/`stop`/`reset`/`checkpoint`/`restore`, one tag per situation so telemetry
+ * groups them apart. `message` is the remedy the user reads; errors with their own tag
+ * (`ServerBindError`, `CheckpointRestoreError`) are not re-wrapped here.
  */
 
 /** A flag or environment variable the CLI cannot use as given. */

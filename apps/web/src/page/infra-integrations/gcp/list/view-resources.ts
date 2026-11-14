@@ -1,6 +1,6 @@
 import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
-import { gcpResourceWorkload } from "../../../../components/infra/gcp/inventory"
-import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../../../../components/infra/gcp/tabs"
+import { gcpResourceWorkload } from "../inventory"
+import { gcpAssetTypeLabel, gcpResourceName, gcpStateLabel } from "../tabs"
 import { countLabel, EMPTY_VALUE } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html } from "foldkit/html"
@@ -10,13 +10,7 @@ import { icon } from "@maple/views/ui/icon"
 import type * as Select from "@maple/views/ui/select"
 import { type SelectEntry, view as selectView } from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
-import {
-	columnHead,
-	dataTable,
-	dataTableEmpty,
-	skeletonRows,
-	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty, skeletonRows, ROW_LINK_CLASS } from "../../../kit/data-table"
 import { listToolbar, toolbarCount } from "../../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import type { Resources } from "../data"
@@ -28,10 +22,9 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, Option } from "effect"
 
-// `GcpResources`: the inventory filtered by type and project.
-// TODO(select-align): these Selects should open below the trigger (`alignItemWithTrigger={false}`).
+// TODO(select-align): these Selects should open below the trigger, not over it.
 
 const ALL = "all"
 const CELL = "truncate font-mono text-xs text-foreground-soft"
@@ -101,7 +94,7 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 		h.div(
 			[
 				h.Class(
-					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground transition-colors group-hover:text-primary",
+					"w-0 min-w-56 flex-1 truncate font-mono text-xs font-medium text-foreground group-hover:text-primary",
 				),
 				h.Title(resource.name),
 			],
@@ -128,7 +121,11 @@ const resourceRow = (h: H, resource: Resources["resources"][number], timeSearch:
 			[
 				...(labels.length === 0
 					? []
-					: [h.span([h.Class("min-w-0 truncate")], [metaChip(h, labels[0] ?? "")])]),
+					: [
+							typography(h, { truncate: true, className: "min-w-0" }, [
+								metaChip(h, labels[0] ?? ""),
+							]),
+						]),
 				...(labels.length > 1 ? [metaChip(h, `+${labels.length - 1}`)] : []),
 			],
 		),
@@ -156,11 +153,17 @@ const resourcesList = (
 	isWaiting: boolean,
 ): ReadonlyArray<Html> => {
 	const { resources, total, types, projects } = inventory
-	const projectCount = types.find((entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE)?.count ?? 0
+	const projectCount = Arr.findFirst(types, (entry) => entry.assetType === GCP_PROJECT_ASSET_TYPE).pipe(
+		Option.flatMapNullishOr((found) => found.count),
+		Option.getOrElse(() => 0),
+	)
 	const type = model.search.type || undefined
 	const project = model.search.project || undefined
 	const filtered = type !== undefined || project !== undefined
-	const summary = `${total > resources.length ? `First ${resources.length} of ${countLabel(total, "resource")}` : countLabel(total, "resource")}`
+	const summary =
+		total > resources.length
+			? `First ${resources.length} of ${countLabel(total, "resource")}`
+			: countLabel(total, "resource")
 	const toolbar = filterSelect(
 		h,
 		{

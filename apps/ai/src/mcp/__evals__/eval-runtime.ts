@@ -2,12 +2,17 @@ import { ConfigProvider, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { mcpServicesWithFeatureFlags } from "../../runtime/mcp-tool-graph"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { Env } from "@maple/backend/platform/Env"
+import type { Database } from "@maple/backend/platform/DatabaseLive"
+import type { ExternalDataSourceService } from "@maple/backend/services/data-sources/ExternalDataSourceService"
+import type { DataSourcePersistenceError } from "@maple/domain/data-sources"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { McpToolExecutor } from "../dispatcher"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { EVAL_TENANT, FIXTURES, jsonDepth, MAX_STRUCTURED_OUTPUT_DEPTH } from "./utils"
+import type { TenantContext } from "@maple/domain/http"
+import { SandboxFetcher } from "@maple/backend/platform/bindings"
+import { fakeableWarehouseLayer } from "./fake-warehouse"
 
 const INTERNAL_TOKEN = "eval-internal-token"
 
@@ -39,8 +44,8 @@ export interface EvalRuntime {
 
 /**
  * Build a node runtime for the app services backed by an in-memory PGlite DB +
- * test config (mirrors apps/api `getMapleAgentSetup`/buildSetup, swapping Hyperdrive→PGlite).
- * The warehouse client must be faked separately via `installFakeWarehouse` —
+ * test config (the Worker's service graph, with PGlite in place of Hyperdrive).
+ * The warehouse driver is faked via `installFakeWarehouse` (real otherwise):
  * this runtime uses the REAL WarehouseQueryService. The returned `requestLayer`
  * carries the already-resolved MCP tenant, matching the post-auth dispatcher
  * context shared by HTTP and RPC.
@@ -51,6 +56,8 @@ export const makeEvalRuntime = (
 		never,
 		Env
 	> = OrganizationFeatureFlagsService.layer,
+	/** Fake data source drivers; the runtime then also serves the service, for seeding. */
+	dataSources?: Layer.Layer<ExternalDataSourceService, DataSourcePersistenceError, Database | Env>,
 ): EvalRuntime => {
 	const testDb = createTestDb()
 	const env = testEnv()
@@ -60,12 +67,25 @@ export const makeEvalRuntime = (
 	const databaseLive = testDb.layer
 	const workerEnvLive = Layer.succeed(WorkerEnvironment, env as Record<string, unknown>)
 
-	const layer = mcpServicesWithFeatureFlags(featureFlags).pipe(
-		Layer.provide(Layer.mergeAll(configLive, envLive, databaseLive, workerEnvLive)),
+	const services =
+		dataSources === undefined
+			? mcpServicesWithFeatureFlags(featureFlags)
+			: Layer.mergeAll(mcpServicesWithFeatureFlags(featureFlags, dataSources), dataSources)
+	const layer = services.pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				configLive,
+				envLive,
+				databaseLive,
+				workerEnvLive,
+				SandboxFetcher.none,
+				fakeableWarehouseLayer,
+			),
+		),
 	)
-	// `as any`: the residual requirement set is satisfied at runtime (same pattern
-	// as apps/api/src/agent.ts buildSetup).
-	// oxlint-disable-next-line typescript/no-explicit-any
+	// `as any`: the residual requirement set is satisfied at runtime.
+	// The lint type checker reads `make(any)` as already `<any, never>`; tsc infers `<unknown, unknown>`.
+	// oxlint-disable-next-line typescript/no-explicit-any, typescript/no-unnecessary-type-assertion
 	const runtime = ManagedRuntime.make(layer as any) as ManagedRuntime.ManagedRuntime<any, never>
 
 	return {

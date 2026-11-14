@@ -10,15 +10,13 @@ import {
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { ScrapeTargetId, type SupabaseConnectionId } from "@maple/domain/primitives"
+import { ScrapeTargetId, type SupabaseConnectionId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { SUPABASE_SERVICE_NAME } from "@maple/query-engine-integrations"
 import { Effect, Schema, Array as Arr, Record as Rec } from "effect"
 
 /** Supabase allows 10 metrics requests a minute per project; one a minute leaves headroom. */
 export const SUPABASE_SCRAPE_INTERVAL_SECONDS = 60
-
-/** One `service.name` for every project; projects differ by their `supabase.project.*` labels. */
-export const SUPABASE_SERVICE_NAME = "supabase"
 
 /** Not-running statuses. Transient ones (COMING_UP, RESTARTING, ...) keep scraping; they last minutes. */
 const NOT_RUNNING_STATUSES: ReadonlySet<string> = new Set([
@@ -37,7 +35,6 @@ export const managedBySupabase = (connectionId: SupabaseConnectionId) => `supaba
 export const supabaseMetricsUrl = (apiBaseUrl: string, projectRef: string) =>
 	`${apiBaseUrl}/v1/projects/${projectRef}/analytics/endpoints/metrics`
 
-/** Whether a project's metrics should be scraped right now. */
 export const shouldScrape = (project: Pick<SupabaseProjectRow, "metricsEnabled" | "status" | "removedAt">) =>
 	project.removedAt === null && project.metricsEnabled && !NOT_RUNNING_STATUSES.has(project.status)
 
@@ -70,7 +67,6 @@ const sameLabels = (stored: ScrapeTargetRow["labelsJson"], desired: DesiredTarge
 	Rec.keys(stored).length === Rec.keys(desired).length &&
 	Arr.every(Rec.toEntries(desired), ([key, value]) => stored[key] === value)
 
-/** Whether a stored target already matches what its project wants. */
 const isCurrent = (target: ScrapeTargetRow, desired: DesiredTarget) =>
 	target.sourceId === desired.sourceId &&
 	target.name === desired.name &&

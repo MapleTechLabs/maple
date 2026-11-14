@@ -1,6 +1,17 @@
 import { OrgId } from "@maple/domain"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
@@ -156,12 +167,12 @@ describe("traces list", () => {
 		expect(names(filtered.commands)).toEqual([FetchFirstPage.name])
 		expect(filtered.model.window).toEqual(window)
 		const moved = routeChanged(filtered.model, { search: { hasError: true, timePreset: "1h" } }, context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveTracesWindow", "Refresh"],
 		])
 	})
 
-	test("a short first page has no next page, and a failed next page stops pagination", () => {
+	test("a short first page has no next page, and a failed next page waits for its retry", () => {
 		expect(names(pageUpdate(loaded(page(40)), windowOver(20, 40)).commands)).toEqual([])
 		const asked = pageUpdate(loaded(page(100)), windowOver(70, 95)).model
 		const failed = pageUpdate(
@@ -173,8 +184,12 @@ describe("traces list", () => {
 				result: Result.fail(toLoadFailure("injected")),
 			}),
 		)
-		expect(failed.model.pagination.isStopped).toBe(true)
+		// The list stops asking on its own, and the footer's retry asks for the same page again.
+		expect(failed.model.pagination.isFailed).toBe(true)
 		expect(names(pageUpdate(failed.model, windowOver(70, 96)).commands)).toEqual([])
+		const retried = pageUpdate(failed.model, Message.ClickedRetryNextPage())
+		expect(names(retried.commands)).toEqual([FetchNextPage.name])
+		expect(retried.model.pagination).toMatchObject({ isFailed: false, isFetching: true })
 	})
 
 	test("a next page answers only its own request: filter A, B, then A again appends page 2 once", () => {
@@ -207,6 +222,28 @@ describe("traces list", () => {
 		const appended = pageUpdate(dropped, answer(current)).model
 		expect(allRows(appended)).toHaveLength(200)
 		expect(allRows(pageUpdate(appended, answer(current)).model)).toHaveLength(200)
+	})
+
+	test("a failed next page says so in the footer, and Try again loads it", () => {
+		const asked = pageUpdate(loaded(page(100)), windowOver(70, 95)).model
+		const answer = (result: Result.Result<TracesPage, ReturnType<typeof toLoadFailure>>) =>
+			Message.CompletedFetchNextPage({
+				key: asked.pagination.key ?? "",
+				generation: asked.pagination.generation,
+				offset: 100,
+				result,
+			})
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(asked, answer(Result.fail(toLoadFailure("injected")))).model),
+			Mount.resolve(VirtualizeTraces, windowOver(70, 95)),
+			Mount.resolve(MountPeekRows, Message.ClickedPeekRow({ index: 999 })),
+			expectView(text("Couldn't load more traces")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.resolve(FetchNextPage, answer(Result.succeed(page(3)))),
+			expectView(text("Couldn't load more traces")).not.toExist(),
+			expectView(text("103 traces")).toExist(),
+		)
 	})
 
 	test("loaded rows render in the window with the footer tally", () => {

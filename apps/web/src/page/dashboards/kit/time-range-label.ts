@@ -1,16 +1,18 @@
 import type { TimeRange } from "@maple/widgets/dashboard"
-import { formatTimestampInTimezone, normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { pluralize } from "@maple/ui/lib/format"
-import { DateTime, Option } from "effect"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
-// `formatTimeRangeDisplay` and `widgetTimeRangeLabel`, with the clock passed in instead of read.
+// The clock is passed in instead of read.
 
 const MINUTE = 60_000
 const lastSpan = (count: number, unit: string) => `Last ${count} ${pluralize(count, unit)}`
 
-const epochOf = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(normalizeTimestampInput(value)), DateTime.toEpochMillis))
+const epochOf = (value: string): number | null => {
+	const ms = toEpochMs(value)
+	return Number.isNaN(ms) ? null : ms
+}
 
 /** An absolute window: "Last N units" when it ends now, else both ends in the zone. */
 export const timeRangeDisplay = (

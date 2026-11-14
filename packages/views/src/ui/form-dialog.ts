@@ -3,14 +3,14 @@ import {
 	formDialogFooterStartStyles,
 	formDialogFormStyles,
 	formDialogPanelStyles,
-} from "@maple/ui/styles/ui/form-dialog"
+} from "./form-dialog.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "./button"
 import type * as Dialog from "./dialog"
 import * as DialogView from "./dialog-view"
 
-// Port of `FormDialog` (packages/ui/src/components/ui/form-dialog.tsx) over the dialog Submodel:
-// a real `<form>`, so Enter in a field submits. The parent owns the Model and the pending state.
+// `FormDialog` over the dialog Submodel: a real `<form>`, so Enter in a field submits. The
+// parent owns the Model and the pending state.
 
 export type FormDialogOptions<M> = Readonly<{
 	slotId: string
@@ -19,7 +19,7 @@ export type FormDialogOptions<M> = Readonly<{
 	/** Rich copy (a provider logo before the text) as children. */
 	title: string | ReadonlyArray<Html | string>
 	titleClassName?: string
-	/** Rich copy (a `<Kbd>` inside) as children. */
+	/** Rich copy (a keyboard key inside) as children. */
 	description?: string | ReadonlyArray<Html | string>
 	onSubmit: M
 	submitLabel: string
@@ -28,6 +28,8 @@ export type FormDialogOptions<M> = Readonly<{
 	isSubmitDisabled?: boolean
 	/** See `DialogView`'s `isReturningFocus`. */
 	isReturningFocus?: boolean
+	/** See `DialogView`'s `isNested`: opened from inside another dialog. */
+	isNested?: boolean
 	submitVariant?: "default" | "destructive"
 	footerStart?: Html
 	className?: string
@@ -41,7 +43,10 @@ export const formDialogForm = <M>(
 	onSubmit: M | undefined,
 	children: ReadonlyArray<Html>,
 ): Html =>
-	h.form([h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])], children)
+	h.form(
+		[h.Class(formDialogFormStyles), ...(onSubmit === undefined ? [] : [h.OnSubmit(onSubmit)])],
+		children,
+	)
 
 export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>): Html => {
 	const isPending = options.isPending ?? false
@@ -54,6 +59,7 @@ export const formDialog = <M>(h: HtmlBuilder<M>, options: FormDialogOptions<M>):
 		viewInputs: {
 			hasTrigger: false,
 			isReturningFocus: options.isReturningFocus,
+			isNested: options.isNested,
 			className: options.className,
 			hasDescription: options.description !== undefined,
 			toView: ({ portal }) => portal ?? h.empty,

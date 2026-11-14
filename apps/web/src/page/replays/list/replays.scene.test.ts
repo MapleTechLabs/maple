@@ -1,18 +1,21 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import {
+	click,
 	Command,
 	expect as expectView,
 	find,
 	given,
 	label,
 	Mount,
+	role,
 	scene,
 	tap,
 	text,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
 import type { SessionRow } from "../kit/session-row"
 import {
@@ -186,7 +189,7 @@ describe("replays list", () => {
 			{ search: { browser: "Safari", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveReplaysWindow", "Refresh"],
 		])
 	})
@@ -241,7 +244,7 @@ describe("replays list", () => {
 			init({ search: { groupId } }, context).model,
 			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
 		)
-		expect(resolved.commands?.map(({ args }) => args)).toEqual([
+		expect(Arr.map(resolved.commands ?? [], ({ args }) => args)).toEqual([
 			expect.objectContaining({ search: { groupId } }),
 			expect.objectContaining({ search: { groupId } }),
 		])
@@ -303,6 +306,90 @@ describe("replays list", () => {
 		)
 	})
 
+	test("folded low-signal pages keep auto-loading until two in a row show nothing new", () => {
+		const bot = (id: string): SessionRow => ({ ...session(id), tags: ["bot"] })
+		const nextPage = (model: Model, cursor: string, result: ReplaysPage): Model =>
+			pageUpdate(
+				pageUpdate(model, Message.ReachedListEnd()).model,
+				Message.CompletedFetchNextPage({
+					key: model.pagination.key ?? "",
+					generation: model.pagination.generation,
+					cursor,
+					result: Result.succeed(result),
+				}),
+			).model
+		// The visible sentinel asks for the next page by itself; no button.
+		const sentinelOf = (model: Model) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				Mount.resolve(VirtualizeList, rowsWindow(1)),
+				expectView(text("Load more")).not.toExist(),
+				Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+				Command.resolve(
+					FetchNextPage,
+					Message.CompletedFetchNextPage({
+						key: "",
+						generation: 0,
+						cursor: "",
+						result: Result.succeed(page([])),
+					}),
+				),
+			)
+		// A short first page that ends in a folded run still auto-loads.
+		const first = loaded(page([session("a"), bot("b"), bot("c")], "cursor-1"))
+		sentinelOf(first)
+		const once = nextPage(first, "cursor-1", page([bot("d"), bot("e")], "cursor-2"))
+		sentinelOf(once)
+		// A page with a real session resets the count.
+		const shown = nextPage(once, "cursor-2", page([session("f"), bot("g"), bot("h")], "cursor-3"))
+		sentinelOf(shown)
+		const stalled = nextPage(
+			nextPage(shown, "cursor-3", page([bot("i")], "cursor-4")),
+			"cursor-4",
+			page([bot("j")], "cursor-5"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(stalled),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Load more")).toExist(),
+		)
+	})
+
+	test("a page that shows a real session is not stalled even when it folds an earlier lone bot", () => {
+		const bot = (id: string): SessionRow => ({ ...session(id), tags: ["bot"] })
+		const nextPage = (model: Model, cursor: string, result: ReplaysPage): Model =>
+			pageUpdate(
+				pageUpdate(model, Message.ReachedListEnd()).model,
+				Message.CompletedFetchNextPage({
+					key: model.pagination.key ?? "",
+					generation: model.pagination.generation,
+					cursor,
+					result: Result.succeed(result),
+				}),
+			).model
+		const first = loaded(page([session("a"), bot("b")], "cursor-1"))
+		const shown = nextPage(first, "cursor-1", page([bot("c"), session("d")], "cursor-2"))
+		const once = nextPage(shown, "cursor-2", page([bot("e"), bot("f")], "cursor-3"))
+		scene(
+			{ update: pageUpdate, view },
+			given(once),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Load more")).not.toExist(),
+			Mount.resolve(WatchListEnd, Message.ReachedListEnd()),
+			Command.resolve(
+				FetchNextPage,
+				Message.CompletedFetchNextPage({
+					key: "",
+					generation: 0,
+					cursor: "",
+					result: Result.succeed(page([])),
+				}),
+			),
+		)
+	})
+
 	test("an empty org shows a skeleton until presence is known, never the 'No sessions found' copy", () => {
 		expect(names(init({ search: {} }, context).commands)).toContain("LoadReplaysSignalPresence")
 		scene(
@@ -315,6 +402,35 @@ describe("replays list", () => {
 			{ update: pageUpdate, view },
 			given(withPresence(loaded(page([])), "absent")),
 			expectView(text("No sessions yet")).toExist(),
+		)
+	})
+
+	test("a failed next page shows Try again in place of the end sentinel", () => {
+		const model = pageUpdate(
+			loaded(page([session("a", "Maria Garcia")], "cursor-1")),
+			rowsWindow(1),
+		).model
+		const asked = pageUpdate(model, Message.ReachedListEnd()).model
+		const answer = (result: Result.Result<ReplaysPage, ReturnType<typeof toLoadFailure>>) =>
+			Message.CompletedFetchNextPage({
+				key: model.pagination.key ?? "",
+				generation: model.pagination.generation,
+				cursor: "cursor-1",
+				result,
+			})
+		const failed = pageUpdate(asked, answer(Result.fail(toLoadFailure("injected")))).model
+		// The sentinel coming back into view does not ask again on its own.
+		expect(names(pageUpdate(failed, Message.ReachedListEnd()).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(VirtualizeList, rowsWindow(1)),
+			expectView(text("Couldn't load more sessions")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.resolve(FetchNextPage, answer(Result.succeed(page([session("b", "Li Wei")])))),
+			// The retry brought the sentinel back; the last page then took it away.
+			Mount.expectEnded(WatchListEnd),
+			expectView(text("Couldn't load more sessions")).not.toExist(),
 		)
 	})
 
@@ -332,7 +448,7 @@ describe("replays list", () => {
 		expect(names(pageUpdate(answered, Message.ReachedListEnd()).commands)).toEqual([])
 	})
 
-	test("the end sentinel re-observes once a refreshed first page settles, like ReachEndSentinel", () => {
+	test("the end sentinel re-observes once a refreshed first page settles", () => {
 		const model = pageUpdate(loaded(page([session("a")], "cursor-1")), rowsWindow(1)).model
 		const refreshing = pageUpdate(
 			model,

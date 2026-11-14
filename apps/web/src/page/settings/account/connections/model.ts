@@ -3,8 +3,6 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Dialog from "@maple/views/ui/dialog"
 import { AccountUser } from "../user"
 
-// The Connected accounts tab.
-
 export const ProviderId = Schema.Literals(["google", "github"])
 export type ProviderId = typeof ProviderId.Type
 
@@ -23,7 +21,10 @@ export const Message = defineMessageUnion({
 	ClickedConnect: { provider: ProviderId },
 	ClickedRetry: { provider: ProviderId, accountId: Schema.String },
 	/** `null` redirect: the provider gave no consent URL. */
-	CompletedStart: { provider: ProviderId, result: Schema.Result(Schema.NullOr(Schema.String), Schema.String) },
+	CompletedStart: {
+		provider: ProviderId,
+		result: Schema.Result(Schema.NullOr(Schema.String), Schema.String),
+	},
 	CompletedRedirect: {},
 	ClickedDisconnect: { provider: ProviderId, accountId: Schema.String },
 	GotRemoveDialogMessage: { message: Dialog.Message },

@@ -19,12 +19,6 @@ export const CancellationReviewLive = CancellationReviewService.layer.pipe(
 )
 
 /**
- * Must match `maxRetries` on the cancellation-reviews consumer
- * (`worker/consumers.ts`). The attempt past it logs the drop and acks.
- */
-const CANCELLATION_REVIEW_MAX_RETRIES = 5
-
-/**
  * 1, 2, 4, 8, 16 minutes: about half an hour for Clerk, Autumn, Postgres or
  * Slack to come back. A review waiting out another delivery's claim (a
  * five-minute lease) spends three attempts at most.
@@ -42,7 +36,7 @@ const settle = (outcome: "reviewed" | "retried" | "interrupted" | "dropped" | "m
  * that could not finish retries with backoff; any outcome it reached acks. The
  * review's claim row dedupes queue redelivery and a cancellation queued twice.
  */
-export const processCancellationReviewBatch = (batch: QueueBatch) =>
+export const processCancellationReviewBatch = (batch: QueueBatch, maxRetries: number) =>
 	Effect.gen(function* () {
 		const reviews = yield* CancellationReviewService
 		yield* Effect.forEach(
@@ -84,7 +78,7 @@ export const processCancellationReviewBatch = (batch: QueueBatch) =>
 											}),
 											error: summarizeCause(cause),
 										}
-										return message.attempts > CANCELLATION_REVIEW_MAX_RETRIES
+										return message.attempts > maxRetries
 											? Effect.logError(
 													"Cancellation review exhausted its retries; dropped",
 												).pipe(

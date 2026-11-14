@@ -1,13 +1,12 @@
+import { encodeJson } from "@maple/views/data/request-key"
 import { SOURCE_LIMITS } from "@maple/domain/http"
 import { V2Source, type V2SourceUpdateParams } from "@maple/domain/http/v2"
-import { SourceAttributeMode, SourceSignal } from "@maple/domain/primitives"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { SourceAttributeMode, SourceSignal } from "@maple/primitives"
+import { Schema, Array as Arr, String as Str, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { SIGNALS } from "./shared"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 // The rules draft and its outcome.
 
@@ -58,7 +57,6 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** `useRulesDraft(existing)`. */
 export const init = (existing: V2Source | null): Model => ({
 	existing,
 	signals: existing?.allowed_signals ?? Arr.map(SIGNALS, (signal) => signal.value),
@@ -153,8 +151,9 @@ export const update = (model: Model, message: Message): Return =>
 			},
 		}),
 		GotModeMessage: ({ rowId, message: inner }) => {
-			const row = model.attributes.find((entry) => entry.rowId === rowId)
-			if (row === undefined) return { model }
+			const found = Arr.findFirst(model.attributes, (entry) => entry.rowId === rowId)
+			if (Option.isNone(found)) return { model }
+			const row = found.value
 			return pick(
 				toggleModel(modeGroupLabel(row), ["set", "default"], row.mode),
 				inner,
@@ -209,7 +208,7 @@ export interface RulesOutcome {
 	readonly payload: V2SourceUpdateParams
 }
 
-/** `rulesOutcome`: validation and the wire payload derived from the draft. */
+/** Validation and the wire payload derived from the draft. */
 export const rulesOutcome = (model: Model): RulesOutcome => {
 	const trimmedRate = Str.trim(model.rateLimitText)
 	const rateLimit = trimmedRate.length === 0 ? null : Number(trimmedRate)
@@ -218,20 +217,22 @@ export const rulesOutcome = (model: Model): RulesOutcome => {
 		(Number.isInteger(rateLimit) && rateLimit >= 1 && rateLimit <= MAX_RATE_LIMIT_RPS)
 	const filled = Arr.filter(model.attributes, (attribute) => Str.trim(attribute.key).length > 0)
 	const keys = Arr.map(filled, (attribute) => Str.trim(attribute.key))
-	const reserved = keys.find((key) => {
+	const reserved = Arr.findFirst(keys, (key) => {
 		const lower = Str.toLowerCase(key)
 		return lower === "org_id" || Str.startsWith("maple_")(lower)
 	})
-	const missingValue = filled.find((attribute) => attribute.value.length === 0)
-	const duplicate = keys.find((key, index) => keys.indexOf(key) !== index)
-	const attributeProblem =
-		reserved !== undefined
-			? `"${reserved}" is reserved by Maple.`
-			: duplicate !== undefined
-				? `"${duplicate}" is listed twice.`
-				: missingValue !== undefined
-					? `Give "${Str.trim(missingValue.key)}" a value, or remove it.`
-					: null
+	const missingValue = Arr.findFirst(filled, (attribute) => attribute.value.length === 0)
+	const duplicate = Arr.findFirst(keys, (key, index) => keys.indexOf(key) !== index)
+	const attributeProblem = Option.getOrNull(
+		Option.firstSomeOf([
+			Option.map(reserved, (key) => `"${key}" is reserved by Maple.`),
+			Option.map(duplicate, (key) => `"${key}" is listed twice.`),
+			Option.map(
+				missingValue,
+				(attribute) => `Give "${Str.trim(attribute.key)}" a value, or remove it.`,
+			),
+		]),
+	)
 	const valid = model.signals.length > 0 && rateLimitValid && attributeProblem === null
 	const payload: V2SourceUpdateParams = {
 		allowed_signals:

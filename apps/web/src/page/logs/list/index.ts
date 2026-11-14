@@ -5,7 +5,7 @@ import { subscriptions } from "./subscription"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
 
-/** `/logs`: the logs stream. One instance per org; search changes arrive as `routeChanged`. */
+/** One instance per org; search changes arrive as `routeChanged`. */
 export const page = definePage(
 	"LogsList",
 	{ Model, Message },

@@ -1,19 +1,22 @@
 /** Offline graph fixtures. Every external operation fails rather than reaching a real service. */
 import { StatusPageStore } from "@maple/backend/services/status-pages/StatusPageStore"
 import { Effect, Layer, Option } from "effect"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import {
 	ApiV2RateLimit,
 	AuditEventsQueueProducer,
 	CancellationReviewQueueProducer,
 	CliAuthRateLimit,
+	DataSourceDevelopmentCallLimit,
+	DataSourceProductionCallLimit,
 	EmailSender,
 	MapleDbConnection,
 	McpOAuthRateLimit,
 	PlanetScaleWebhookQueueProducer,
 	ReplayBlobBucket,
 	SchemaApplyWorkflow,
+	ShareLinkRateLimit,
 	VcsBackfillQueueProducer,
 	VcsSyncQueueProducer,
 } from "@maple/backend/platform/bindings"
@@ -27,8 +30,11 @@ export const offlinePorts = Layer.mergeAll(
 	Layer.succeed(AuditEventsQueueProducer, queue),
 	Layer.succeed(CancellationReviewQueueProducer, queue),
 	Layer.succeed(ApiV2RateLimit, limiter),
+	Layer.succeed(ShareLinkRateLimit, limiter),
 	Layer.succeed(CliAuthRateLimit, limiter),
 	Layer.succeed(McpOAuthRateLimit, limiter),
+	Layer.succeed(DataSourceProductionCallLimit, limiter),
+	Layer.succeed(DataSourceDevelopmentCallLimit, limiter),
 	Layer.succeed(ReplayBlobBucket, { getBytes: rejectIO }),
 	StatusPageStore.inMemory,
 	Layer.succeed(MapleDbConnection, Option.none()),

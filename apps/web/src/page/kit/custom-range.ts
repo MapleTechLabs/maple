@@ -9,9 +9,8 @@ import type { Update } from "foldkit"
 import * as Calendar from "foldkit/calendar"
 import { defineMessageUnion } from "foldkit/message"
 
-// The custom range picker: a two-month range calendar and two time inputs in the selected
-// zone's wall clock. The view is
-// `custom-range-view.ts`.
+// The custom range picker: a two-month range calendar and two time inputs in the selected zone's
+// wall clock.
 
 export const CalendarDate = Calendar.CalendarDate
 export type CalendarDate = Calendar.CalendarDate
@@ -21,9 +20,9 @@ export const Model = Schema.Struct({
 	/** The first of the two months shown (starts on today's month). */
 	viewYear: Schema.Number,
 	viewMonth: Schema.Number,
-	/** `dateLib.today()`: the browser's day, which carries the today dot. */
+	/** The browser's day, which carries the today dot. */
 	today: CalendarDate,
-	/** `disabled={{ after: today }}`, today judged in the selected zone. */
+	/** Days after this are disabled, today judged in the selected zone. */
 	lastDay: CalendarDate,
 	maybeFrom: Schema.Option(CalendarDate),
 	maybeTo: Schema.Option(CalendarDate),

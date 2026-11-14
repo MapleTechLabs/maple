@@ -10,7 +10,7 @@ import { sortRowsBy } from "../../page/kit/table-sort"
 import { listFooter } from "@maple/views/ui/list-footer"
 import { Message, type Model } from "./model"
 
-// `WcSection`, `Narrow`, `FormattersSection` and `InfraSection`.
+// The section frame, the narrow box, and the formatters and infra sections.
 
 export type H = HtmlBuilder<Message>
 
@@ -100,7 +100,7 @@ export const formattersSection = (h: H, model: Model): Html =>
 		),
 	])
 
-/** `<PodTable pods timeSearch={{}} />`, `<HostTable hosts />`, one finding and the image chips. */
+/** The pod and host tables, one finding and the image chips. */
 export const infraSection = (h: H, model: Model): Html =>
 	wcSection(h, "wc-infra", "Infra: pods, hosts, findings, image chip", [
 		podTable(h, pods(model.mode), {
@@ -130,14 +130,14 @@ export const infraSection = (h: H, model: Model): Html =>
 		]),
 	])
 
-/** `ModeToggle`: the fixed pill that swaps every section between its demo and worst-case twin. */
+/** The fixed pill that swaps every section between its demo and worst-case twin. */
 export const modeToggle = (h: H, model: Model): Html =>
 	// An opaque band, so rows scroll under it instead of colliding with the pill; the page's pb-24 clears it.
 	h.div(
 		[h.Class("fixed inset-x-0 bottom-0 z-50 flex justify-center border-t bg-background py-3")],
 		[
 			h.div(
-				[h.Class("flex gap-0.5 rounded-full bg-neutral-200 p-1")],
+				[h.Class("flex gap-0.5 rounded-full bg-muted p-1")],
 				Arr.map(
 					[
 						{ value: "demo", label: "Demo data" },
@@ -152,8 +152,8 @@ export const modeToggle = (h: H, model: Model): Html =>
 								h.OnClick(Message.ClickedMode({ mode: option.value })),
 								h.Class(
 									model.mode === option.value
-										? "rounded-full px-3 py-1 text-xs bg-white text-neutral-900"
-										: "rounded-full px-3 py-1 text-xs text-neutral-600",
+										? "rounded-full px-3 py-1 text-xs bg-background text-foreground"
+										: "rounded-full px-3 py-1 text-xs text-muted-foreground",
 								),
 							],
 							[option.label],

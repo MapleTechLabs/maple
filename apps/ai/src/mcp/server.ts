@@ -1,10 +1,15 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/ai"
 import { Context, Effect, Layer, Array as Arr, String as Str } from "effect"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { McpToolExecutorLoader, McpToolsUnavailableError } from "./executor-loader"
-import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
-import type { McpToolResult } from "./tools/types"
+import {
+	McpToolExecutorLoader,
+	type McpToolExecutorBuildKind,
+	McpToolsUnavailableError,
+} from "./executor-loader"
+import { CurrentMcpRequestTenant } from "./tenant"
+import { refusesAnalyst, refusesReadOnlyCredential, type McpToolResult } from "./tools/types"
 import type { McpToolDescriptor } from "@maple/domain/mcp-tool-contract"
+import * as Policy from "@maple/domain/policy"
 
 /**
  * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
@@ -64,6 +69,21 @@ const annotateToolFailure = (result: McpToolResult) =>
 			})
 		: Effect.void
 
+/**
+ * Hides a tool from the `tools/list` of a caller the registry would refuse, and answers a call to
+ * it as unknown: a listed tool invites the call.
+ */
+const hiddenFrom = (isRefused: (tenant: { readOnly?: true; roles: ReadonlyArray<string> }) => boolean) =>
+	EffectMcpServer.visibility(() =>
+		Effect.gen(function* () {
+			const tenant = yield* CurrentMcpRequestTenant
+			return tenant === undefined || !isRefused(tenant)
+		}),
+	)
+
+const HiddenFromReadOnlyKeys = hiddenFrom((tenant) => tenant.readOnly === true)
+const HiddenFromAnalysts = hiddenFrom((tenant) => tenant.readOnly === true || Policy.isAnalyst(tenant.roles))
+
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
 	toCallToolResult({
 		isError: true,
@@ -80,15 +100,25 @@ export class McpToolRegistration extends Context.Service<
 	{
 		/** Adds every public tool to the server, once per isolate, before the first `tools/*` request. */
 		readonly ensureRegistered: Effect.Effect<void, McpToolsUnavailableError>
-		/** Builds the executor before a `tools/call`; `built` marks the request that paid for it. */
-		readonly ensureExecutor: Effect.Effect<{ readonly built: boolean }, McpToolsUnavailableError>
+		/** Builds the executor before a `tools/call`, saying how the request came by it. */
+		readonly ensureExecutor: Effect.Effect<McpToolExecutorBuildKind, McpToolsUnavailableError>
+		/** Starts the executor build in the background, for a request that runs no tool. */
+		readonly prewarmExecutor: Effect.Effect<void>
 	}
 >()("@maple/ai/mcp/McpToolRegistration", {
 	make: Effect.gen(function* () {
 		const server = yield* EffectMcpServer.McpServer
 		const loader = yield* McpToolExecutorLoader
+		const keyGate = yield* Layer.build(HiddenFromReadOnlyKeys.layer)
+		const analystGate = yield* Layer.build(HiddenFromAnalysts.layer)
+		// A dashboard tool is hidden from read-only keys alone; every other change from analysts too.
+		const gateFor = (name: string, readOnly: boolean) => {
+			if (refusesAnalyst(name, readOnly)) return { services: analystGate }
+			return refusesReadOnlyCredential(name, readOnly) ? { services: keyGate } : undefined
+		}
 		const addTool = (descriptor: McpToolDescriptor) =>
 			server.addTool({
+				...gateFor(descriptor.name, descriptor.annotations?.readOnlyHint === true),
 				tool: new McpSchema.Tool({
 					name: descriptor.name,
 					title: descriptor.title,
@@ -112,6 +142,10 @@ export class McpToolRegistration extends Context.Service<
 							})
 						}
 
+						// The hub tells clients apart by this; the stateless transport issues no session id.
+						if (tenant.mcpClientName !== undefined) {
+							yield* Effect.annotateCurrentSpan("maple.mcp.client.name", tenant.mcpClientName)
+						}
 						// Already built by the transport before the call; this reads the cached executor.
 						const executor = yield* loader.load
 						return yield* executor
@@ -144,7 +178,8 @@ export class McpToolRegistration extends Context.Service<
 		)
 		return {
 			ensureRegistered: yield* cachedRecoverable(register),
-			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ built }) => ({ built })),
+			ensureExecutor: Effect.map(loader.loadReportingBuild, ({ build }) => build),
+			prewarmExecutor: loader.prewarm,
 		}
 	}),
 }) {

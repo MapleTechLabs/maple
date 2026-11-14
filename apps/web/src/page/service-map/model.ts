@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import type {
 	getPlanetScaleBranchStats,
 	getServiceDbQuerySummary,
@@ -7,21 +8,18 @@ import type {
 } from "@maple/web-data/warehouse/service-map"
 import { type Effect, Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import { ServiceMapSearch } from "../../route/search"
 import * as ServiceMap from "@maple/views/service-map/map/service-map"
-import { Snapshot, ViewPrefs } from "@maple/views/service-map/map/state"
+import { Stored } from "@maple/views/service-map/map/state"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import * as Scene3d from "./scene3d"
-
-// `/service-map`.
+import * as Tiles from "./tiles/update"
 
 // The warehouse answers feed `buildFlowElements` unchanged, so they stay the web-data shapes,
 // boxed as opaque values (as `SourceGraph` is) rather than re-declared as Schemas.
@@ -65,10 +63,6 @@ export const HyperdriveConfig = Schema.Struct({
 })
 export type HyperdriveConfig = typeof HyperdriveConfig.Type
 
-/** What the page keeps in localStorage per org: declutter prefs and the layout snapshots. */
-export const Stored = Schema.Struct({ prefs: ViewPrefs, snapshots: Schema.Array(Snapshot) })
-export type Stored = typeof Stored.Type
-
 export const MapBundleSchema = Schema.instanceOf(MapBundle)
 export const CloudflareStatsSchema = Schema.instanceOf(CloudflareStats)
 export const PlanetScaleStatsSchema = Schema.instanceOf(PlanetScaleStats)
@@ -96,7 +90,7 @@ export const Model = Schema.Struct({
 	/** The selected database node's query summary and PlanetScale branches. */
 	dbSummary: KeyedSchema(DbSummarySchema, LoadFailure),
 	branchStats: KeyedSchema(BranchStatsSchema, LoadFailure),
-	/** The service panel's Service / Infrastructure tabs (`defaultValue="service"`, reset per node). */
+	/** The service panel's Service / Infrastructure tabs, back on Service per node. */
 	serviceTabs: Tabs.Model,
 	/** The database panel's query volume and latency plots. */
 	dbCharts: Schema.Struct({ volume: Chart.Model, latency: Chart.Model }),
@@ -104,10 +98,11 @@ export const Model = Schema.Struct({
 	timePicker: TimeRangePicker.Model,
 	/** The 3D view's own state; fresh each time the view switches to 3D. */
 	scene3d: Scene3d.Model,
-	/** `useSignalPresence("traces")` of the empty canvas, requested once it painted. */
+	/** The tile view's board; kept across view switches, laid out again as the map changes. */
+	tiles: Tiles.Model,
+	/** Traces presence for the empty canvas, requested once it painted. */
 	presence: SignalPresenceData.schema,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 })

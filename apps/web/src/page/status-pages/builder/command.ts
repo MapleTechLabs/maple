@@ -1,27 +1,25 @@
+import { readClock } from "@maple/views/data/timing"
 import { StatusPagePreviewParams, V2StatusPageCreateParams } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { UptimeMonitorKind } from "@maple/primitives"
+import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
-import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
+import { trackProduct } from "../../../data/analytics"
+import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { createPage, previewPage } from "../shared/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
 import { SubmitMode } from "./model"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 /** How long the builder waits after the last edit before it asks for a new preview. */
 export const PREVIEW_DEBOUNCE_MS = 400
 
-export const ReadBuilderClock = Command.define("ReadStatusPageBuilderClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadBuilderClock = readClock("ReadStatusPageBuilderClock", Message.ReadClock)
 
-export const FetchBuilderSession = Command.define("FetchStatusPageBuilderSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
-})
+export const FetchBuilderSession = fetchSessionGrants(
+	"FetchStatusPageBuilderSession",
+	Message.CompletedFetchSession,
+)
 
 export const FetchBuilderMonitors = Command.define("FetchStatusPageBuilderMonitors", {
 	args: { key: Schema.String },
@@ -71,6 +69,20 @@ export const CreateBuilderPage = Command.define("CreateStatusPage", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedCreate({ mode, result })),
 		),
+})
+
+/** A created page is the `status_page_created` product event. */
+export const TrackPageCreated = Command.define("TrackStatusPageCreated", {
+	messages: [Message.CompletedTrackProduct],
+	execute: trackProduct("status_page_created").pipe(Effect.as(Message.CompletedTrackProduct())),
+})
+
+/** A monitor created from the picker is the `uptime_monitor_created` product event. */
+export const TrackMonitorCreated = Command.define("TrackStatusPageMonitorCreated", {
+	args: { kind: UptimeMonitorKind },
+	messages: [Message.CompletedTrackProduct],
+	execute: ({ kind }) =>
+		trackProduct("uptime_monitor_created", { kind }).pipe(Effect.as(Message.CompletedTrackProduct())),
 })
 
 export const FocusBuilderField = Command.define("FocusStatusPageBuilderField", {

@@ -3,7 +3,7 @@
 // fills that table, so without it every complete hour drops off the map.
 
 import * as CH from "@maple/query-engine/ch"
-import { Clock, Duration, Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Chdb } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import { LOCAL_ORG_ID } from "@maple/query-engine/local"
@@ -119,9 +119,13 @@ const firstTraceHourMs = (db: LocalServiceMapRollupDeps["db"], sinceMs: number, 
 		)
 		const presenceText = yield* runQuery(db, sql, "signal presence")
 		const rows = yield* decodeRows(decodePresenceRows, presenceText, "presence")
-		const firstSeen = rows.find((row) => row.signal === "traces")?.firstSeen
-		const parsed =
-			firstSeen === undefined ? Number.NaN : Date.parse(`${Str.replace(" ", "T")(firstSeen)}Z`)
+		const parsed = Option.match(
+			Arr.findFirst(rows, (row) => row.signal === "traces"),
+			{
+				onNone: () => Number.NaN,
+				onSome: (row) => Date.parse(`${Str.replace(" ", "T")(row.firstSeen)}Z`),
+			},
+		)
 		return Number.isFinite(parsed) && parsed >= sinceMs ? hourFloor(parsed) : undefined
 	})
 

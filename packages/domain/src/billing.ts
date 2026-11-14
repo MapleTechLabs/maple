@@ -1,10 +1,10 @@
-import { Predicate, Record as Rec } from "effect"
+import { Array as Arr, Option, Predicate, Record as Rec, Schema, String as Str } from "effect"
 
 /**
  * Shared billing gate — the single source of truth for "is this an actively
  * selected paid plan?", used by both the web redirect gate
- * (apps/web/src/lib/billing/plan-gating.ts) and the API customer-cache TTL
- * (apps/api/src/routes/autumn.http.ts) so the two can't drift. Structurally
+ * (apps/web/src/page/kit/billing/plan-gating.ts) and the API customer-cache TTL
+ * (packages/backend/src/services/billing/autumn-client.ts) so the two can't drift. Structurally
  * typed so `autumn-js` stays out of `@maple/domain`; Autumn's `Subscription`
  * shape satisfies it.
  */
@@ -26,7 +26,8 @@ export interface PlanGatingSubscription {
 export function isPlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	if (!sub) return false
 	if (sub.addOn || sub.autoEnable) return false
-	if (sub.planId?.toLowerCase() === "free" || sub.plan?.name?.toLowerCase() === "free") return false
+	const isFree = (name: string | null | undefined) => name != null && Str.toLowerCase(name) === "free"
+	if (isFree(sub.planId) || isFree(sub.plan?.name)) return false
 	return true
 }
 
@@ -50,6 +51,10 @@ export const BILLING_SUB_ORGS_FEATURE_ID = "billing_sub_orgs"
 
 /** AI usage in dollars: one credit is one dollar. Chat, triage, reviews and security audits draw on it. */
 export const AI_CREDITS_FEATURE_ID = "ai_credits"
+
+/** The surface an AI credit charge is tracked under, as Autumn's `properties.source`. */
+export const AiCreditSource = Schema.Literals(["chat", "triage", "review", "bot", "security_audit"])
+export type AiCreditSource = typeof AiCreditSource.Type
 
 /** Uptime monitors an org has, metered as continuous use: +1 on create, -1 on delete. */
 export const UPTIME_MONITORS_FEATURE_ID = "uptime_monitors"
@@ -111,6 +116,11 @@ export interface FeatureUsagePricing {
 	 * it per feature on the customer's balances.
 	 */
 	readonly overageAllowed?: boolean
+	/**
+	 * The org's overage cap for this feature, in units past the allotment. Usage
+	 * beyond it is rejected at the gateway, so it bounds both spend and projection.
+	 */
+	readonly overageLimit?: number | undefined
 }
 
 export interface CycleSpend {
@@ -139,11 +149,12 @@ export const meteredUsage = (
 	aggregate: number | null | undefined,
 ): number => balance?.usage ?? aggregate ?? 0
 
-/** Units of `feature` beyond its included allotment. Never negative. */
+/** Units of `feature` beyond its included allotment, up to its overage cap. Never negative. */
 export function overageUnits(feature: FeatureUsagePricing): number {
 	if (feature.unlimited) return 0
 	if (feature.included == null) return 0
-	return Math.max(0, feature.used - feature.included)
+	const over = Math.max(0, feature.used - feature.included)
+	return feature.overageLimit === undefined ? over : Math.min(over, Math.max(0, feature.overageLimit))
 }
 
 /** Can this feature bill past its allotment at all? */
@@ -285,7 +296,11 @@ export const resolveSubscriptionPlan = <P extends PlanLike>(
 	const own = subscription.plan
 	if (own && (own.price != null || (own.items != null && own.items.length > 0))) return own
 	const planId = subscription.planId
-	return (planId ? catalog.find((plan) => plan.id === planId) : undefined) ?? own ?? null
+	return (
+		(planId ? Option.getOrUndefined(Arr.findFirst(catalog, (plan) => plan.id === planId)) : undefined) ??
+		own ??
+		null
+	)
 }
 
 /** Is this plan's pricing knowable — i.e. can we quote a bill from it at all? */

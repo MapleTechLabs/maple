@@ -35,7 +35,7 @@ export type Cell = Readonly<{
 	height: number
 	widget: Widget
 	state: TileState
-	/** The stat's trend series, supplied instead of fetched (`SparklineSeriesScope`). */
+	/** The stat's trend series, supplied instead of fetched. */
 	sparkline: TileState | null
 	rowLimit?: number | undefined
 }>

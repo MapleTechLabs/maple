@@ -1,9 +1,16 @@
 import type { OrganizationFeatureFlags } from "@maple/domain/organization-feature-flags"
-import { Option, Schema } from "effect"
+import { Option, Predicate, Schema } from "effect"
 import { AppRoute } from "./app-route"
 import { hrefOf } from "./routers"
 import { DATA_INTEGRATIONS } from "./data-integrations"
-import { ErrorsSearch } from "./search"
+import {
+	type AlertsHubSearch,
+	type AlertsSearch,
+	AlertsSection,
+	type AlertsTab,
+	type AnomaliesSearch,
+	ErrorsSearch,
+} from "./search"
 
 /** Where a route sends the browser instead of rendering, and whether it replaces history. */
 export const Redirect = Schema.Struct({ url: Schema.String, isReplace: Schema.Boolean })
@@ -36,12 +43,53 @@ const errorsSearchOf = ({ search }: typeof AppRoute.ErrorIssues.Type): typeof Er
 	)
 }
 
+const decodeServices = Schema.decodeUnknownOption(
+	Schema.Union([Schema.NonEmptyString, Schema.Array(Schema.String)]),
+)
+
+/** The one service an old anomalies link named, under either spelling, or none. */
+const anomalyServiceOf = (search: typeof AnomaliesSearch.Type): string | undefined => {
+	const named = Option.match(decodeServices(search.services ?? search.service), {
+		onNone: (): ReadonlyArray<string> => [],
+		onSome: (value): ReadonlyArray<string> => (Predicate.isString(value) ? [value] : value),
+	})
+	return named.length === 1 ? named[0] : undefined
+}
+
+const anomaliesViewSearch = (search: typeof AnomaliesSearch.Type): typeof AlertsSearch.Type => {
+	const serviceName = anomalyServiceOf(search)
+	return {
+		signal: "anomaly",
+		...(serviceName === undefined ? undefined : { serviceName }),
+		...(search.status === "resolved" || search.status === "all"
+			? { anomalyStatus: search.status }
+			: undefined),
+	}
+}
+
+const decodeAlertsSection = Schema.decodeUnknownOption(AlertsSection)
+
+/** The section an old `?tab=` named: "oncall" and "settings" were renamed, the rest is the Inbox. */
+const legacyAlertsSection = (tab: string): AlertsTab =>
+	tab === "oncall"
+		? "on-call"
+		: tab === "settings"
+			? "routing"
+			: Option.getOrElse(decodeAlertsSection(tab), (): "inbox" => "inbox")
+
+/** `/alerts` for the Inbox, else `/alerts/<section>`, with the hub's filters. */
+export const alertsSectionRoute = (
+	section: AlertsTab,
+	search: typeof AlertsHubSearch.Type,
+): Extract<AppRoute, { readonly _tag: "Alerts" | "AlertsSection" }> =>
+	section === "inbox" ? AppRoute.Alerts({ search }) : AppRoute.AlertsSection({ section, search })
+
 const DATA_INTEGRATION_IDS: ReadonlySet<string> = new Set(DATA_INTEGRATIONS)
 
 const redirect = (to: AppRoute, isReplace: boolean) =>
 	Option.some(Redirect.make({ url: hrefOf(to), isReplace }))
 
-/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, security) and moved integrations. */
+/** Redirects of retired paths (connectors, developer, infra, errors/issues, alerts status pages, anomalies, security) and moved integrations. */
 export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	AppRoute.matchOrElse<Option.Option<Redirect>>(
 		route,
@@ -73,9 +121,18 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			InfraDiscover: () => redirect(AppRoute.Infra({ search: {} }), true),
 			InfraLegacyHost: ({ hostName }) => redirect(AppRoute.InfraHost({ hostName, search: {} }), true),
 			AlertIncidentsIndex: () => redirect(AppRoute.Alerts({ search: {} }), true),
-			/** Status pages left the Alerts hub for their own sidebar entry. */
-			Alerts: ({ search }) =>
-				search.tab === "status-pages" ? redirect(AppRoute.StatusPages(), true) : Option.none(),
+			/** A rule moved under Rules; old links (notifications, the apps) keep their tab and window. */
+			AlertRuleLegacy: ({ ruleId, search }) => redirect(AppRoute.AlertRule({ ruleId, search }), true),
+			/** The anomalies list is the Alerts Inbox's Anomalies view; one service and the status carry over. */
+			Anomalies: ({ search }) =>
+				redirect(AppRoute.Alerts({ search: anomaliesViewSearch(search) }), true),
+			/** A legacy `?tab=` opens its section's own path; status pages left the hub for the sidebar. */
+			Alerts: ({ search: { tab, ...search } }) =>
+				tab === undefined
+					? Option.none()
+					: tab === "status-pages"
+						? redirect(AppRoute.StatusPages(), true)
+						: redirect(alertsSectionRoute(legacyAlertsSection(tab), search), true),
 			AlertsStatusPage: ({ pageId, search }) =>
 				redirect(
 					AppRoute.StatusPage({
@@ -99,13 +156,37 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 		() => Option.none(),
 	)
 
-const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage"])
+const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage", "StatusPageView"])
 
-/** A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`). */
+const isCostRoute = AppRoute.isAnyOf(["Cost"])
+
+/**
+ * A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`,
+ * `/cost` without `cloudCost`).
+ */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "statusPages">,
+	flags: Pick<OrganizationFeatureFlags, "statusPages" | "cloudCost">,
 ): Option.Option<Redirect> =>
-	!flags.statusPages && isStatusPageRoute(route)
+	(!flags.statusPages && isStatusPageRoute(route)) || (!flags.cloudCost && isCostRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
+
+const isSecurityRoute = AppRoute.isAnyOf([
+	"Security",
+	"SecurityCode",
+	"SecurityCodeFindings",
+	"SecurityCodeRuns",
+	"SecurityExposure",
+	"SecurityRuntimes",
+	"SecurityDependencies",
+	"SecurityAuditLog",
+	"SecurityDetections",
+	"SecurityDetectionNew",
+	"SecurityRun",
+	"SecurityFinding",
+])
+
+/** The Security Center is for org admins and engineers: anyone else opening it goes home. */
+export const securityRouteRedirect = (route: AppRoute, canReadSecurity: boolean): Option.Option<Redirect> =>
+	!canReadSecurity && isSecurityRoute(route) ? redirect(AppRoute.Home({ search: {} }), true) : Option.none()

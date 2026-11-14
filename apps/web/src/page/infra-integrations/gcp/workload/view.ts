@@ -1,15 +1,10 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import { formatWarehouseDateTime } from "@maple/query-engine/datetime"
-import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "../../../../components/infra/gcp/charts"
-import { gcpSqlEngine, gcpSqlSize } from "../../../../components/infra/gcp/cloud-sql-signals"
-import { gcpConsoleLinks, gcpExplorerWhere } from "../../../../components/infra/gcp/inventory"
-import {
-	gcpWorkloadLocation,
-	gcpWorkloadName,
-	gcpWorkloadNoun,
-	gcpWorkloadProject,
-} from "../../../../components/infra/gcp/tabs"
-import type { GcpTraceGap } from "../../../../components/infra/gcp/workload-signals"
+import { GCP_GKE_NODE_CHARTS, GCP_INFRA_CHARTS } from "../charts"
+import { gcpSqlEngine, gcpSqlSize } from "../cloud-sql-signals"
+import { gcpConsoleLinks, gcpExplorerWhere } from "../inventory"
+import { gcpWorkloadLocation, gcpWorkloadName, gcpWorkloadNoun, gcpWorkloadProject } from "../tabs"
+import type { GcpTraceGap } from "../workload-signals"
 import type { ErrorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -28,10 +23,10 @@ import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { CHART_HEIGHT } from "../../kit/chart-card"
+import { CHART_HEIGHT } from "../../../kit/chart-card"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import type { PresetValue } from "../../../kit/time-controls"
 import { sectionHeading } from "../../../kit/section-heading"
 import { gcpServiceIcon } from "../service-icon"
@@ -46,8 +41,7 @@ import { queryPeekSheet } from "./view-sql-peek"
 import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
-
-// `GcpWorkloadPage`.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 type TimeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
@@ -71,7 +65,6 @@ const HEALTH_TONE = { crit: "crit", warn: "warn", neutral: "ok" } as const satis
 const BARE_IDENTITY = ["Region", "Zone", "Location"]
 const RAIL_IDENTITY = ["Project"]
 
-/** `GcpWorkloadHeader`, with `GcpCloudSqlChips` as a Cloud SQL instance's meta. */
 const header = (h: H, model: Model, data: PageData) => {
 	const service = model.service
 	const keys = data.keys
@@ -107,24 +100,21 @@ const header = (h: H, model: Model, data: PageData) => {
 				}),
 			]
 	return pageHeroParts(h, {
-		title: hstack(h, { gap: "3", as: "span" }, [
-			h.span(
-				[h.Class("relative")],
-				[
-					gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
-					...(data.health === null
-						? []
-						: [
-								statusDot(h, {
-									tone: HEALTH_TONE[data.health],
-									className:
-										"absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
-								}),
-							]),
-				],
-			),
-			h.span([], [gcpWorkloadName(service, keys)]),
-		]),
+		leading: h.span(
+			[h.Class("relative shrink-0")],
+			[
+				gcpServiceIcon(h, { service, databaseVersion: data.databaseVersion, size: "lg" }),
+				...(data.health === null
+					? []
+					: [
+							statusDot(h, {
+								tone: HEALTH_TONE[data.health],
+								className: "absolute -right-0.5 -bottom-0.5 size-2.5 ring-2 ring-background",
+							}),
+						]),
+			],
+		),
+		title: gcpWorkloadName(service, keys),
 		meta,
 	})
 }
@@ -150,7 +140,7 @@ const GAP_COPY = {
 	},
 } as const
 
-/** `GcpTraceGapCallout`: Google counted clearly more server errors than the spans did. */
+/** Google counted clearly more server errors than the spans did. */
 const traceGapCallout = (
 	h: H,
 	service: "cloudRun" | "cloudFunctions",
@@ -196,18 +186,22 @@ const traceGapCallout = (
 									". ",
 									// An identifier wraps whole, never at its hyphens.
 									...copy.why(
-										h.span([h.Class("whitespace-nowrap font-mono")], [tracedService]),
+										typography(h, { mono: true, className: "whitespace-nowrap" }, [
+											tracedService,
+										]),
 									),
 								],
 							),
 						],
 					),
-					h.div(
-						[
-							h.Class(
-								"flex items-center gap-6 border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "6",
+							align: "center",
+							className:
+								"border-t px-4 py-3 @2xl:self-stretch @2xl:border-t-0 @2xl:border-l @2xl:px-5",
+						},
 						[
 							figure(h, formatNumber(gap.platformErrors), copy.platform, "text-severity-error"),
 							figure(h, formatNumber(gap.tracedErrors), "traces"),
@@ -388,7 +382,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	}),
 )
 
-/** `GcpWorkloadPage` over its derived data: the route reads it off its slots, the lab off fixtures. */
+/** The route reads its data off its slots, the lab off fixtures. */
 export const workloadPageView = (
 	h: H,
 	model: Model,
@@ -429,6 +423,7 @@ export const workloadPageView = (
 									: AsyncData.Success({ data: data.traceSide }),
 							timeSearch,
 							timeZone: options.timeZone,
+							nowMs: model.nowMs,
 						}),
 					]),
 			dashboardPage(

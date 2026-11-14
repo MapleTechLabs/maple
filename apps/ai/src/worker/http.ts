@@ -1,5 +1,7 @@
 import { IsolateAge, isolateStampHeaders } from "@maple/infra/isolate-age"
-import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/worker-http"
+import { WorkerPlatformLive, forIsolate, bridgeHandler, waitUntilOfEvent } from "@maple/infra/worker-http"
+import type { RuntimeContext } from "alchemy/RuntimeContext"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 /**
  * The AI Worker's request path: the route graph built once per isolate on the
  * first request, and the `fetch` handler the bridge serves around it.
@@ -8,7 +10,7 @@ import { WorkerPlatformLive, forIsolate, bridgeHandler } from "@maple/infra/work
  * are shared with the API through @maple/infra/worker-http.
  */
 import type { HttpEffect } from "alchemy/Http"
-import { type Context, Effect, Exit, Layer, String as Str } from "effect"
+import { type Context, Effect, Exit, Layer, Array as Arr, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { MapleDbConnection } from "@maple/backend/platform/bindings"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
@@ -87,6 +89,12 @@ export const makeFetch = <E, EMcp = E>(
 	app: Effect.Effect<HttpEffect, E>,
 	ports: Layer.Layer<MapleDbConnection>,
 	mcpApp: Effect.Effect<HttpEffect, E | EMcp> = app,
+	/** How this event defers work past its response (audit writes, the MCP executor prewarm). */
+	afterResponseRunner: Effect.Effect<
+		(work: Effect.Effect<void>) => Effect.Effect<void>,
+		never,
+		RuntimeContext
+	> = waitUntilOfEvent,
 ) =>
 	IsolateAge.useSync((isolateAge) =>
 		Effect.gen(function* () {
@@ -109,8 +117,10 @@ export const makeFetch = <E, EMcp = E>(
 					headers: isolateStampHeaders(stamp),
 				})
 			}
+			const afterResponse = yield* afterResponseRunner
 			return yield* withPgConnectionScope(built.value).pipe(
 				Effect.map(HttpServerResponse.setHeaders(isolateStampHeaders(stamp))),
+				Effect.provideService(AfterResponse, afterResponse),
 			)
 		}).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request IS the boundary the ports belong to.
@@ -119,6 +129,5 @@ export const makeFetch = <E, EMcp = E>(
 	)
 
 const pathOf = (url: string): string => {
-	const query = url.indexOf("?")
-	return query === -1 ? url : Str.slice(0, query)(url)
+	return Arr.headNonEmpty(Str.split("?")(url))
 }

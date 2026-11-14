@@ -4,7 +4,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId } from "@maple/domain/http"
 import { Effect, Layer, Schema } from "effect"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { processPlanetScaleWebhookBatch } from "./planetscale-webhook-runtime"
 import {
 	projectPlanetScaleWebhookEvent as projectPlanetScaleWebhookEventResult,
@@ -19,7 +19,7 @@ const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_1")
+const orgId = Schema.decodeSync(OrgId)("org_1")
 
 const basePayload: PlanetScaleWebhookPayload = {
 	timestamp: 1,
@@ -65,7 +65,7 @@ const makeBatch = (body: unknown) => {
 			messages: [message],
 			ackAll: () => undefined,
 			retryAll: () => undefined,
-		} as MessageBatch<unknown>,
+		} as MessageBatch,
 		acknowledged: () => acknowledged,
 		retried: () => retried,
 	}
@@ -252,7 +252,7 @@ describe("PlanetScale webhook queue consumer", () => {
 		const testDb = createTestDb(trackedDbs)
 		const delivery = makeBatch({
 			...job,
-			event: { ...job.event, tenantid: Schema.decodeUnknownSync(OrgId)("org_2") },
+			event: { ...job.event, tenantid: Schema.decodeSync(OrgId)("org_2") },
 		})
 		return processPlanetScaleWebhookBatch(delivery.batch).pipe(
 			Effect.tap(() =>

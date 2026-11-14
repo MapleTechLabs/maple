@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import type { DatabaseList } from "../data"
@@ -56,7 +56,7 @@ describe("planetscale database", () => {
 			{ ...route, search: { branch: "dev", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])?.[0]).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])[0]).toEqual([
 			"ResolvePlanetscaleDatabaseWindow",
 			"Refresh",
 		])
@@ -80,7 +80,9 @@ describe("planetscale database", () => {
 	})
 
 	test("the events read uses the window's browser-local epochs from the resolve", () => {
-		const events = windowed().commands?.find((command) => command.name === "FetchPlanetscaleEvents")
+		const events = Option.getOrUndefined(
+			Arr.findFirst(windowed().commands ?? [], (command) => command.name === "FetchPlanetscaleEvents"),
+		)
 		expect(JSON.stringify(events?.args)).toContain(`"startTime":${LOCAL.startMs}`)
 		expect(JSON.stringify(events?.args)).toContain(`"endTime":${LOCAL.endMs}`)
 	})

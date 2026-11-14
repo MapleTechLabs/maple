@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { Result, String as Str } from "effect"
+import { Result, String as Str, Array as Arr } from "effect"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	productEventsFunnelQuery,
@@ -30,8 +30,6 @@ const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 	Result.isFailure(built) ? built.failure : undefined
 
-// productEventsFunnelQuery
-//
 // One `windowFunnel` per person over the rows matching any step, then
 // `countIf(level >= n)` per step, unpacked to `{ step, count }` rows.
 
@@ -52,7 +50,9 @@ describe("productEventsFunnelQuery", () => {
 		expect(compiled.sql).toContain("FROM product_events")
 		expect(compiled.sql).toContain("FROM session_replays")
 		expect(compiled.sql).toContain("FROM identity_links")
-		expect(compiled.sql.match(/OrgId = 'org_1'/g)?.length).toBeGreaterThanOrEqual(4)
+		expect(
+			Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(compiled.sql)).length,
+		).toBeGreaterThanOrEqual(4)
 	})
 
 	it("emits one windowFunnel condition per step and one output row per step", () => {
@@ -217,7 +217,7 @@ describe("productEventsFunnelQuery", () => {
 		expect(
 			rejection(
 				productEventsFunnelQuery({
-					steps: [STEPS[0]!, REFERRAL],
+					steps: [Arr.getUnsafe(STEPS, 0), REFERRAL],
 					keyBy: "person",
 					windowSeconds: 60,
 				}),
@@ -229,7 +229,7 @@ describe("productEventsFunnelQuery", () => {
 		expect(
 			rejection(
 				productEventsFunnelQuery({
-					steps: Array.from({ length: 11 }, () => STEPS[1]!),
+					steps: Array.from({ length: 11 }, () => Arr.getUnsafe(STEPS, 1)),
 					keyBy: "person",
 					windowSeconds: 60,
 				}),
@@ -237,8 +237,6 @@ describe("productEventsFunnelQuery", () => {
 		).toMatch(/at most 10 steps/)
 	})
 })
-
-// productEventsFunnelBreakdownQuery
 
 describe("productEventsFunnelBreakdownQuery", () => {
 	it("groups persons by the first non-empty dimension value and keeps the top N by step-1 count", () => {
@@ -336,8 +334,6 @@ describe("productEventsFunnelBreakdownQuery", () => {
 	})
 })
 
-// productEventNamesQuery
-
 describe("productEventNamesQuery", () => {
 	it("lists names with counts, sessions and persons, most frequent first", () => {
 		const compiled = compileUnsafe(productEventNamesQuery({ limit: 25 }), params)
@@ -370,8 +366,6 @@ describe("productEventNamesQuery", () => {
 	})
 })
 
-// productEventsFunnelTimingQuery / productEventsFunnelLeaversQuery
-//
 // The drop-off view's extras. Both walk each person's chain from the first
 // step-1 event (`t1..tN`); timing takes quantiles of the gaps, leavers join
 // every event of the population back onto the chain to find what came next.
@@ -417,7 +411,7 @@ describe("funnel drop-off details", () => {
 	})
 
 	it("need two steps — there is no 'between' with one", () => {
-		const one = [STEPS[0]!]
+		const one = [Arr.getUnsafe(STEPS, 0)]
 		expect(
 			rejection(productEventsFunnelTimingQuery({ steps: one, keyBy: "person", windowSeconds: 60 })),
 		).toBeInstanceOf(ProductEventsFunnelError)

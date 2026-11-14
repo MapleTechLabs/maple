@@ -8,7 +8,7 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatCondition, invalidRuleInput, ruleNotFound } from "../lib/alert-rules"
 import { minSampleCountWarning } from "../lib/alert-rule-evaluation"
 import { truncate } from "../lib/format"
@@ -147,7 +147,6 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 			"Pass rule_id to preview a saved rule, optionally with overrides, or a create_alert_rule definition to dry-run a new one. Run it before saving a raw_query rule.",
 		parameters: Parameters,
 		aliases: { service_names: "services", since: "start_time", until: "end_time" },
-		output: PreviewAlertRuleOutput,
 		hints: { readOnly: true },
 		phrases: ["Previewing an alert rule"],
 		handler: Effect.fn("McpTool.previewAlertRule")(function* (params) {
@@ -176,6 +175,14 @@ export function registerPreviewAlertRuleTool(server: McpToolRegistrar) {
 					(error) => new McpInvalidInputError({ message: `Invalid alert rule: ${String(error)}` }),
 				),
 			)
+
+			if (request.rule.signalType === "anomaly") {
+				return yield* new McpInvalidInputError({
+					message:
+						"An anomaly rule has no query to replay: it pages on the anomaly detector's open incidents. Use list_alert_incidents to see what it opened.",
+					parameter: "signal_type",
+				})
+			}
 
 			const alerts = yield* AlertsService
 			const preview = yield* alerts.previewRule(tenant.orgId, tenant.roles, request).pipe(

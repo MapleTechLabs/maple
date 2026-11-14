@@ -1,4 +1,4 @@
-import { resolveDbNodeStyle, withAlpha } from "@maple/ui/components/service-map/service-map-db-style"
+import { resolveDbNodeStyle, withAlpha } from "@maple/views/service-map/graph/service-map-db-style"
 import { formatRate } from "@maple/ui/lib/format"
 import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import {
@@ -59,11 +59,16 @@ export const databasePanel = <M>(
 		h,
 		{ as: "span", gap: "1", className: typographyClass({ size: "3xs", tone: "muted" }) },
 		[
-			h.span(
-				[
-					h.Class("inline-flex size-3.5 items-center justify-center rounded-sm"),
-					h.Style({ "background-color": withAlpha(db.color, 0.16), color: db.color }),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					inline: true,
+					as: "span",
+					className: "size-3.5 rounded-sm",
+					attributes: [h.Style({ "background-color": withAlpha(db.color, 0.16), color: db.color })],
+				},
 				[icon(h, DB_ICON[db.icon], { size: 10 })],
 			),
 			db.systemLabel,
@@ -80,7 +85,7 @@ export const databasePanel = <M>(
 					h,
 					"Max latency",
 					metricValue(h, undefined, [latencyValue(h, { ms: max, scale: "p95" })]),
-					["slowest call in the window"],
+					["slowest call in this window"],
 				)
 	return sidePanelFrame(h, [
 		detailPanelHeader(

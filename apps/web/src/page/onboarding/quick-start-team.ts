@@ -1,16 +1,16 @@
-import { makeOnboardingTeamActions } from "../../components/onboarding/team-actions"
+import { makeOnboardingTeamActions } from "./team-actions"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
+import { trackProduct } from "../../data/analytics"
 import { clerkTeamOrganization, clerkTry } from "../../platform/clerk"
 
-// `StepTeamConnected` / `StepTeam` (apps/web/src/components/onboarding): rename the workspace and
-// invite teammates through the Clerk organization, or the self-hosted notice.
+// The team step: rename the workspace and invite teammates through the Clerk organization, or the self-hosted notice.
 
 const Operation = Schema.Literals(["rename", "invite"])
 
 export const Team = Schema.Struct({
-	/** `!isLoaded || invitations.isLoading`: "Loading your workspace…". */
+	/** False until the workspace and its invitations are read ("Loading your workspace…"). */
 	isLoaded: Schema.Boolean,
 	name: Schema.String,
 	savedName: Schema.String,
@@ -56,10 +56,12 @@ export const TeamMessage = defineMessageUnion({
 	SubmittedInvite: {},
 	SucceededTeamOperation: { operation: Operation, value: Schema.String },
 	FailedTeamOperation: { message: Schema.String },
+	/** `trackProduct("member_invited")` was handed to the session SDK. */
+	TrackedMemberInvited: {},
 })
 export type TeamMessage = typeof TeamMessage.Type
 
-/** `useOrganization({ invitations })`: the org's name and, for an admin, its pending invitations. */
+/** The org's name and, for an admin, its pending invitations. */
 export const LoadTeam = Command.define("LoadOnboardingTeam", {
 	messages: [TeamMessage.LoadedTeam],
 	execute: Effect.gen(function* () {
@@ -67,14 +69,14 @@ export const LoadTeam = Command.define("LoadOnboardingTeam", {
 		if (Option.isNone(maybeOrganization))
 			return TeamMessage.LoadedTeam({ name: "My workspace", canManage: false, invitations: [] })
 		const organization = maybeOrganization.value
-		const invitations = organization.isAdmin
+		const invitations = organization.canManageMembers
 			? yield* clerkTry("Couldn't load invitations", organization.pendingInvitations).pipe(
 					Effect.orElseSucceed(() => []),
 				)
 			: []
 		return TeamMessage.LoadedTeam({
 			name: organization.name,
-			canManage: organization.isAdmin,
+			canManage: organization.canManageMembers,
 			invitations,
 		})
 	}),
@@ -102,6 +104,14 @@ export const RunTeamOperation = Command.define("RunOnboardingTeamOperation", {
 				Effect.succeed(TeamMessage.FailedTeamOperation({ message: error.message })),
 			),
 		),
+})
+
+/** A sent invitation is the `member_invited` product event; onboarding invites members only. */
+const TrackMemberInvited = Command.define("TrackOnboardingMemberInvited", {
+	messages: [TeamMessage.TrackedMemberInvited],
+	execute: trackProduct("member_invited", { role: "org:member" }).pipe(
+		Effect.as(TeamMessage.TrackedMemberInvited()),
+	),
 })
 
 export const isNameDirty = (team: Team): boolean => Str.trim(team.name) !== team.savedName
@@ -153,10 +163,11 @@ export const updateTeam = (team: Team, message: TeamMessage): TeamStep =>
 							invited: [...team.invited, value],
 							feedback: { message: `Invitation sent to ${value}.`, isError: false },
 						},
-			commands: [],
+			commands: operation === "invite" ? [TrackMemberInvited()] : [],
 		}),
 		FailedTeamOperation: ({ message: failure }) => ({
 			team: { ...team, pending: null, feedback: { message: failure, isError: true } },
 			commands: [],
 		}),
+		TrackedMemberInvited: () => ({ team, commands: [] }),
 	})

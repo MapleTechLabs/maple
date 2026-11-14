@@ -22,7 +22,7 @@ export const LoadExternal = Command.define("LoadLocalExternal", {
 	execute: ({ href }) => load(href).pipe(Effect.as(Message.CompletedNavigate())),
 })
 
-/** `goBack`: history back within the app. */
+/** History back within the app. */
 export const GoBack = Command.define("GoBackLocal", {
 	messages: [Message.CompletedNavigate],
 	execute: Effect.sync(() => {
@@ -55,11 +55,16 @@ export const ProbeServer = Command.define("ProbeLocalServer", {
 /** `useSignalPresence`: a read younger than `staleTime` is reused, else the store is asked again. */
 export const FetchSignalPresence = Command.define("FetchLocalSignalPresence", {
 	args: { apiBase: Schema.String, lastReadAtMs: Schema.NullOr(Schema.Number) },
-	messages: [Message.SucceededFetchSignalPresence, Message.FailedFetchSignalPresence, Message.ReusedSignalPresence],
+	messages: [
+		Message.SucceededFetchSignalPresence,
+		Message.FailedFetchSignalPresence,
+		Message.ReusedSignalPresence,
+	],
 	execute: ({ apiBase, lastReadAtMs }) =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
-			if (lastReadAtMs !== null && nowMs - lastReadAtMs < PRESENCE_STALE_MS) return Message.ReusedSignalPresence()
+			if (lastReadAtMs !== null && nowMs - lastReadAtMs < PRESENCE_STALE_MS)
+				return Message.ReusedSignalPresence()
 			return yield* fetchSignalPresence(apiBase).pipe(
 				Effect.map((result) => Message.SucceededFetchSignalPresence({ result })),
 				Effect.catch((failure) => Effect.succeed(Message.FailedFetchSignalPresence({ failure }))),
@@ -81,7 +86,7 @@ export const ApplyTheme = Command.define("ApplyLocalTheme", {
 		}),
 })
 
-/** `SidebarProvider` keeps the open state in a cookie for a week. */
+/** The sidebar's open state, kept in a cookie for a week. */
 export const SaveSidebarState = Command.define("SaveLocalSidebarState", {
 	args: { isOpen: Schema.Boolean },
 	messages: [Message.CompletedSaveSidebarState],
@@ -92,7 +97,7 @@ export const SaveSidebarState = Command.define("SaveLocalSidebarState", {
 		}),
 })
 
-export const WaitBeforeProbe =Command.define("WaitBeforeLocalProbe", {
+export const WaitBeforeProbe = Command.define("WaitBeforeLocalProbe", {
 	args: { version: Schema.Number, delayMs: Schema.Number },
 	messages: [Message.ElapsedProbeDelay],
 	execute: ({ version, delayMs }) =>

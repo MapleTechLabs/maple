@@ -16,9 +16,9 @@ import {
 	WarehouseUpstreamError,
 } from "@maple/domain/http"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { AlertsService, type AlertsServiceApi } from "./AlertsService"
+import { type AlertsServiceApi } from "./AlertsService"
 import { baselineWarehouseCapabilities } from "@maple/query-engine"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import {
@@ -32,6 +32,7 @@ import {
 	createWebhookDestination,
 	createErrorRateRule,
 	okFetch,
+	alertServices,
 } from "./alerts-service-test-support"
 
 const trackedDbs: TestDb[] = []
@@ -96,7 +97,7 @@ describe("AlertsService evaluation error persistence", () => {
 		}
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_retry")
 			const userId = asUserId("user_alert_retry")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -128,7 +129,7 @@ describe("AlertsService evaluation error persistence", () => {
 			assert.deepStrictEqual([...failing, recovered], [1, 2, 3])
 			// Healthy again, it waits for its 5-minute slot.
 			const later = yield* Effect.forEach(Arr.range(1, 4), () => tickAndCount)
-			assert.isBelow(later[3]! - recovered, 4)
+			assert.isBelow(later[3] - recovered, 4)
 		}).pipe(Effect.provide(makeLayer(testDb, failingWarehouseStub(state), { fetch: okFetch })))
 	})
 
@@ -154,7 +155,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_errors")
 			const userId = asUserId("user_alert_errors")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -231,7 +232,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_outage")
 			const userId = asUserId("user_alert_outage")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -296,7 +297,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_outage_breaker")
 			const userId = asUserId("user_alert_outage_breaker")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -330,7 +331,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_rejected")
 			const userId = asUserId("user_alert_rejected")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -349,7 +350,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_on_no_data")
 			const userId = asUserId("user_alert_on_no_data")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -391,7 +392,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_on_no_data_shapes")
 			const userId = asUserId("user_alert_on_no_data_shapes")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -442,7 +443,7 @@ describe("AlertsService evaluation error persistence", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_alert_skip_reason")
 			const userId = asUserId("user_alert_skip_reason")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -485,7 +486,7 @@ describe("AlertsService.previewRule", () => {
 		}
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_preview")
 
 			// No destinations picked yet — preview must not require them.
@@ -514,7 +515,7 @@ describe("AlertsService.previewRule", () => {
 			assert.strictEqual(response.bucketSeconds, 300)
 			assert.strictEqual(response.windowMinutes, 5)
 			assert.lengthOf(response.series, 1)
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			// 30-minute range at 5-minute windows = 6 evaluation buckets, with the
 			// three data-less windows filled in as skipped.
 			assert.lengthOf(points, 6)
@@ -538,7 +539,7 @@ describe("AlertsService.previewRule", () => {
 		const state = { tracesAggregateRows: [bucketRow("2026-01-01 00:00:00", 10)] }
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_preview_full_range")
 
 			const request = decodePreviewRequest({
@@ -566,7 +567,7 @@ describe("AlertsService.previewRule", () => {
 
 			// 288 windows — the bucket cap used to stop at 200, so the chart drew
 			// only the newest 16h40m of a full-width 24h axis.
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			assert.lengthOf(points, 288)
 			assert.isNull(response.truncatedToStart)
 			assert.strictEqual(points[0]?.bucket, "2026-01-01T00:00:00.000Z")
@@ -579,7 +580,7 @@ describe("AlertsService.previewRule", () => {
 		const state = { tracesAggregateRows: [bucketRow("2026-01-01 00:00:00", 10)] }
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_preview_clamped")
 
 			const request = decodePreviewRequest({
@@ -606,7 +607,7 @@ describe("AlertsService.previewRule", () => {
 
 			const response = yield* alerts.previewRule(orgId, adminRoles, request)
 
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			assert.lengthOf(points, 1500)
 			// The clamped start is what the chart frames its axis on.
 			assert.strictEqual(response.truncatedToStart, "2026-01-29T23:00:00.000Z")
@@ -625,7 +626,7 @@ describe("AlertsService.previewRule", () => {
 		}
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_preview_partial")
 
 			const request = decodePreviewRequest({
@@ -652,11 +653,11 @@ describe("AlertsService.previewRule", () => {
 			const response = yield* alerts.previewRule(orgId, adminRoles, request)
 
 			assert.lengthOf(response.series, 1)
-			const points = response.series[0]!.points
+			const points = response.series[0].points
 			// 6 complete windows plus the in-progress [00:30, 00:32:30) one.
 			assert.lengthOf(points, 7)
 			assert.isUndefined(points[5]?.provisional)
-			const last = points[6]!
+			const last = points[6]
 			assert.strictEqual(last.bucket, "2026-01-01T00:30:00.000Z")
 			assert.strictEqual(last.provisional, true)
 			assert.strictEqual(last.status, "breached")
@@ -676,7 +677,7 @@ describe("AlertsService.previewRule", () => {
 		const state = { rawQueryRows: [{ bucket: "2026-01-01 00:10:00", value: 42, samples: 20 }] }
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_preview_raw")
 
 			const request = decodePreviewRequest({
@@ -718,7 +719,7 @@ describe("AlertsService.previewRule", () => {
 			const state = { rawQueryRows: [{ value: 0, samples: 1 }] }
 
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const request = decodePreviewRequest({
 					rule: {
 						name: "Raw untimed",
@@ -781,7 +782,7 @@ describe("AlertsService.previewRule", () => {
 		it.effect("times one check and says which intervals the query fits", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_fits"),
 					adminRoles,
@@ -808,7 +809,7 @@ describe("AlertsService.previewRule", () => {
 		it.effect("reports a query that ran past every limit as too slow for all of them", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_slow"),
 					adminRoles,
@@ -839,7 +840,7 @@ describe("AlertsService.previewRule", () => {
 		it.effect("keeps the timing when the range is too heavy to chart, instead of failing", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_heavy"),
 					adminRoles,
@@ -871,7 +872,7 @@ describe("AlertsService.previewRule", () => {
 		it.effect("leaves timing off a builder rule, whose queries read rollups", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const preview = yield* alerts.previewRule(
 					asOrgId("org_timing_builder"),
 					adminRoles,
@@ -899,7 +900,7 @@ describe("AlertsService.previewRule", () => {
 		const state = { rawQueryRows: [] }
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const request = decodePreviewRequest({
 				rule: {
 					name: "Raw preview empty",
@@ -935,7 +936,7 @@ describe("AlertsService.previewRule", () => {
 		}
 
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const request = decodePreviewRequest({
 				rule: {
 					name: "Raw grouped no data",
@@ -975,7 +976,7 @@ describe("AlertsService.previewRule", () => {
 		// still notifies once, and the surviving order is first-occurrence — the
 		// same contract `[...new Set()]` gave before.
 		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_dedupe")
 			const userId = asUserId("user_dedupe")
 			const first = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1072,7 +1073,7 @@ describe("AlertsService.previewRule", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_roundtrip")
 			const userId = asUserId("user_roundtrip")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -1118,7 +1119,7 @@ describe("AlertsService.previewRule", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_orphan_guard")
 			const userId = asUserId("user_orphan_guard")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)

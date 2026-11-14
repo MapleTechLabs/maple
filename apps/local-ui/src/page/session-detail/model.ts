@@ -62,7 +62,7 @@ export const Model = Schema.TaggedStruct("SessionDetailPage", {
 	detail: KeyedSchema(Schema.NullOr(SessionDetail), LoadFailure),
 	transcript: KeyedSchema(Schema.Array(TranscriptEvent), LoadFailure),
 	traces: KeyedSchema(Schema.Array(SessionTrace), LoadFailure),
-	/** `dataUpdatedAt` of the detail, for the "New data" pill. */
+	/** When the detail last loaded, for the "New data" pill. */
 	detailUpdatedAtMs: Schema.Number,
 	isRefreshing: Schema.Boolean,
 	copies: Copies,

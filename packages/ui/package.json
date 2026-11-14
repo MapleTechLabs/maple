@@ -6,9 +6,8 @@
 		"**/*.css"
 	],
 	"exports": {
-		"./styles/tokens.css": "./src/styles/tokens.css",
-		"./styles/ui/*": "./src/components/ui/*.styles.ts",
-		"./*": "./src/*"
+		"./styles/*.css": "./src/styles/*.css",
+		"./*": "./src/*.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
@@ -17,18 +16,12 @@
 	"dependencies": {
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
-		"@tanstack/charts": "catalog:charts",
-		"@tanstack/charts-scales": "catalog:charts",
-		"@xyflow/system": "0.0.84",
-		"class-variance-authority": "catalog:ui",
+		"@maple/strings": "workspace:*",
 		"clsx": "catalog:ui",
-		"d3-scale": "^4.0.2",
 		"effect": "catalog:effect",
-		"elkjs": "^0.12.1",
 		"tailwind-merge": "catalog:tailwind"
 	},
 	"devDependencies": {
-		"@types/d3-scale": "^4.0.9",
 		"@vitest/browser-playwright": "catalog:",
 		"playwright": "catalog:",
 		"typescript": "catalog:tooling",

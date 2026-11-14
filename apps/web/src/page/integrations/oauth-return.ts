@@ -7,6 +7,7 @@ import {
 	type OAuthCompleteResponse,
 } from "@maple/domain/http"
 import { Clock, Effect, Option, Schema } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { MapleInternalApiClient } from "../../platform/api-clients"
 import { browserStorage, type ReturnStorage, takeOAuthReturn } from "../../platform/oauth-return-stash"
 import { ConnectProvider } from "./connect"
@@ -19,6 +20,7 @@ import { ConnectProvider } from "./connect"
 const PROVIDER_OF = {
 	cloudflare: "cloudflare",
 	linear: "linear",
+	google: "google-search-console",
 	github: "github",
 	planetscale: "planetscale",
 	supabase: "supabase",
@@ -57,7 +59,7 @@ const isOpener = (value: unknown): value is Opener =>
 /** Same-origin tabs hear a return here when a provider page's COOP severed `window.opener`. */
 export const RELAY_CHANNEL = "maple:integration-return"
 /** This document's relays, so its own listener skips them: it reports its outcome itself. */
-const RELAY_SENDER = crypto.randomUUID()
+const RELAY_SENDER = SecureRandom.uuidV4Unsafe()
 
 export const RelayMessage = Schema.Struct({
 	sender: Schema.String,

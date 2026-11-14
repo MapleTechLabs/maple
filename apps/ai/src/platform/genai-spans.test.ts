@@ -3,11 +3,9 @@
  * and tool results run to 50k, so these paths run in production far more often than the happy one.
  */
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Schema, String as Str } from "effect"
-import { Tool } from "effect/ai"
+import { Array as Arr, Effect, Exit, Option, String as Str } from "effect"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import {
-	invokeAgentAttributes,
 	messagesJson,
 	toolCallJson,
 	withReturnedToolFailuresOk,
@@ -128,30 +126,6 @@ describe("toolCallJson", () => {
 	})
 })
 
-describe("invokeAgentAttributes", () => {
-	it("drops schemas and shortens descriptions when the definitions outweigh their budget", () => {
-		const attributes = invokeAgentAttributes({
-			agentName: "lens",
-			agentDescription: "",
-			conversationId: "pass-1",
-			providerName: "openrouter",
-			model: "test-model",
-			tools: Array.from({ length: 40 }, (_, index) =>
-				Tool.make(`tool_${index}`, {
-					description: Str.repeat(1_000)("d"),
-					parameters: Schema.Struct({ query: Schema.String }),
-				}),
-			),
-		})
-		const definitions = JSON.parse(String(attributes["gen_ai.tool.definitions"]))
-
-		assert.strictEqual(definitions.length, 40)
-		assert.notProperty(definitions[0], "parameters")
-		assert.strictEqual(definitions[0].description, `${Str.repeat(128)("d")}${TRUNCATION_MARKER}`)
-		assert.notProperty(attributes, "gen_ai.agent.description")
-	})
-})
-
 describe("withToolCallContent", () => {
 	it.effect("leaves the handler and its span alone when there is no tool span to describe", () =>
 		Effect.gen(function* () {
@@ -250,7 +224,8 @@ describe("withRunSessionAttributes", () => {
 				Effect.withTracer(withRunSessionAttributes(tracer, SESSION)),
 			)
 
-			const byName = (name: string) => spans.find((span) => span.name === name)
+			const byName = (name: string) =>
+				Option.getOrUndefined(Arr.findFirst(spans, (span) => span.name === name))
 			for (const name of ["invoke_agent pr-review-worker", "execute_tool pr_changed_files"]) {
 				assert.strictEqual(byName(name)?.attributes.get("maple_ai.session.id"), "review_1", name)
 				assert.strictEqual(byName(name)?.attributes.get("maple_ai.turn.id"), "turn_1", name)

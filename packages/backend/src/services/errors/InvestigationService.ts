@@ -10,6 +10,7 @@ import {
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
 	InvestigationStartFailedError,
+	InvestigationTransitionError,
 	InvestigationSnapshotFact,
 	InvestigationSubjectSnapshot,
 	InvestigationsListResponse,
@@ -17,30 +18,33 @@ import {
 	type InvestigationStatus,
 	InvestigationSubject,
 	type AnomalyTriageStatus,
+	MANUAL_INVESTIGATION_TRANSITIONS,
+	RESTARTABLE_INVESTIGATION_STATUSES,
+	reopenedInvestigationStatus,
 	type OrgId,
 	type SubmitDiagnosisRequest,
 	type UserId,
 } from "@maple/domain/http"
-import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/domain/primitives"
+import { AnomalyIncidentId, ErrorIssueId, InvestigationId } from "@maple/primitives"
+import { productEventSpanAttributes } from "@maple/domain/tinybird/product-event-attributes"
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AnomalyIncidents, Investigations, type InvestigationRow } from "@maple/db/tables"
-import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import {
 	applyDiagnosisWrites,
 	applyInconclusiveWrites,
 	subjectTypeOf,
 } from "@maple/backend/services/errors/apply-diagnosis"
-import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
+import { admitManualStart, InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import {
-	STALE_MS,
 	isInvestigationStale,
-	staleTimeoutMessage,
 	storedProgressJson,
+	sweepAbandonedInvestigations,
 } from "@maple/backend/services/errors/investigation-stale"
-import { ChatSessions } from "@maple/backend/platform/bindings"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 
 const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
@@ -129,6 +133,7 @@ export interface InvestigationServiceApi {
 		InvestigationDocument,
 		| InvestigationPersistenceError
 		| InvestigationNotFoundError
+		| InvestigationTransitionError
 		| InvestigationAgentUnavailableError
 		| InvestigationStartFailedError
 		| InvestigationDataCorruptionError
@@ -139,7 +144,10 @@ export interface InvestigationServiceApi {
 		status: InvestigationStatus,
 	) => Effect.Effect<
 		InvestigationDocument,
-		InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
+		| InvestigationPersistenceError
+		| InvestigationNotFoundError
+		| InvestigationTransitionError
+		| InvestigationDataCorruptionError
 	>
 	readonly submitDiagnosis: (
 		orgId: OrgId,
@@ -174,7 +182,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const chatSessions = yield* Effect.serviceOption(ChatSessions)
+			const starter = yield* InvestigationStarter
 
 			const dbExecute = makeDbExecute(database, "InvestigationService", makePersistenceError)
 
@@ -187,7 +195,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							? subject.title
 							: subject.type === "fix_verification"
 								? "Fix verification"
-								: `${subject.incidentKind[0]?.toUpperCase() ?? ""}${subject.incidentKind.slice(1)} incident`,
+								: `${Str.toUpperCase(Str.slice(0, 1)(subject.incidentKind))}${Str.slice(1)(subject.incidentKind)} incident`,
 					scope: null,
 					status: "open",
 					severity: null,
@@ -352,9 +360,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			const isStale = (row: StoredInvestigationRow, nowMs: number): boolean =>
 				isInvestigationStale(row, nowMs)
 
-			// An anomaly's AI triage is an investigation anchored on the incident, so
-			// every status change of that investigation (start, restart, end, manual)
-			// sets the incident's triage status. Best-effort: it is display-only.
+			// An anomaly's AI triage is an investigation anchored on the incident: a (re)start
+			// re-arms it, and the run's first settled status settles it once. Display-only.
 			const settleAnomalyTriage = (
 				orgId: OrgId,
 				runs: ReadonlyArray<Pick<InvestigationRow, "incidentKind" | "incidentId">>,
@@ -370,32 +377,25 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					),
 				)
 				if (first === undefined) return Effect.void
+				// Settling only moves a triage not yet settled (a diagnosis can beat the detector's
+				// `pending`), so a late or manual change cannot overwrite one. A restart re-arms it.
 				return dbExecute((db) =>
 					db.run(
 						PG.update(AnomalyIncidents)
 							.set({ triageStatus, updatedAt: nowMs })
-							.where(($) => [$.orgId.eq(orgId), $.id.in_(first, ...rest)]),
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.id.in_(first, ...rest),
+								triageStatus === "pending"
+									? undefined
+									: $.triageStatus.in_("none", "pending"),
+							]),
 					),
 				).pipe(Effect.ignore({ log: "Warn", message: "Failed to settle anomaly triage status" }))
 			}
 
 			const failStaleInvestigations = Effect.fnUntraced(function* (orgId: OrgId, nowMs: number) {
-				const failed = yield* dbExecute((db) =>
-					db.run(
-						PG.update(Investigations)
-							.set({
-								status: "failed",
-								error: staleTimeoutMessage(STALE_MS),
-								updatedAt: nowMs,
-							})
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.status.eq("investigating"),
-								$.startedAt.lt(nowMs - STALE_MS),
-							])
-							.returning("incidentKind", "incidentId"),
-					),
-				)
+				const failed = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs, orgId))
 				yield* settleAnomalyTriage(orgId, failed, "failed", nowMs)
 			})
 
@@ -409,14 +409,15 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				doc: InvestigationDocument,
 				nowMs: number,
 			) {
-				const started = yield* startInvestigationTurn({
-					orgId,
-					investigationId: doc.id,
-					subject: doc.subject,
-					snapshot: doc.snapshot,
-					chatSessions: Option.getOrUndefined(chatSessions),
-					nowMs,
-				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
+				const started = yield* starter
+					.startTurn({
+						orgId,
+						investigationId: doc.id,
+						subject: doc.subject,
+						snapshot: doc.snapshot,
+						nowMs,
+					})
+					.pipe(Effect.mapError(makePersistenceError))
 				if (started.started) return
 				if (started.reason === "no_binding") {
 					return yield* new InvestigationAgentUnavailableError({
@@ -456,9 +457,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				)
 				const firstPage = yield* selectPage
 				const nowMs = yield* Clock.currentTimeMillis
-				// Sweep only when this page actually contains a timed-out run, then
-				// re-read so the caller sees the corrected status.
-				const rows = firstPage.some((row) => isStale(row, nowMs))
+				const rows = Arr.some(firstPage, (row) => isStale(row, nowMs))
 					? yield* failStaleInvestigations(orgId, nowMs).pipe(Effect.andThen(selectPage))
 					: firstPage
 				return new InvestigationsListResponse({
@@ -478,7 +477,6 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}
 				const nowMs = yield* Clock.currentTimeMillis
 				if (!isStale(row, nowMs)) return yield* documentFor(orgId, row)
-				// This run timed out: settle it, then report the corrected status.
 				yield* failStaleInvestigations(orgId, nowMs)
 				const settled = yield* loadRow(orgId, id)
 				return yield* documentFor(orgId, settled ?? row)
@@ -579,24 +577,38 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							}
 						}
 						const doc = yield* createInvestigation(orgId, userId, request)
+						// A manual start spends the day's budget but is never refused by it.
 						const claimed = yield* dbExecute((db) =>
-							db.run(
-								PG.update(Investigations)
-									.set(($) => ({
-										startedAt: nowMs,
-										autonomousTurns: $.autonomousTurns.add(1),
-										updatedAt: nowMs,
-									}))
-									.where(($) => [
-										$.orgId.eq(orgId),
-										$.id.eq(doc.id),
-										$.status.eq("investigating"),
-										$.startedAt.isNull(),
-									])
-									.returning("id"),
+							admitManualStart(
+								db,
+								orgId,
+								db.run(
+									PG.update(Investigations)
+										.set(($) => ({
+											startedAt: nowMs,
+											autonomousTurns: $.autonomousTurns.add(1),
+											updatedAt: nowMs,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(doc.id),
+											$.status.eq("investigating"),
+											$.startedAt.isNull(),
+										])
+										.returning("id"),
+								),
 							),
 						)
 						if (claimed.length === 0) return doc
+						// Maple's own `investigation_started` product event, projected from this span.
+						yield* Effect.annotateCurrentSpan(
+							productEventSpanAttributes({
+								name: "investigation_started",
+								userId: userId ?? "",
+								groupId: orgId,
+								props: { subject_type: request.subject.type },
+							}),
+						)
 						yield* sendAutonomousTurn(orgId, doc, nowMs)
 						return yield* getInvestigation(orgId, doc.id).pipe(
 							Effect.catchTag("@maple/http/investigations/InvestigationNotFoundError", () =>
@@ -616,22 +628,59 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* getInvestigation(orgId, id)
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(Investigations)
-							.set(($) => ({
-								status: "investigating",
-								error: null,
-								startedAt: nowMs,
-								autonomousTurns: $.autonomousTurns.add(1),
-								updatedAt: nowMs,
-							}))
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
-							.returning("incidentKind", "incidentId"),
+				// A run in flight is not restarted underneath itself; a stale one was failed by the read
+				// above, and one whose start never claimed it (no `startedAt`) is not in flight.
+				const restarted = yield* dbExecute((db) =>
+					admitManualStart(
+						db,
+						orgId,
+						transitionRow(
+							{
+								table: "investigations",
+								id,
+								from: RESTARTABLE_INVESTIGATION_STATUSES,
+								to: "investigating",
+							},
+							(from) =>
+								db.run(
+									PG.update(Investigations)
+										.set(($) => ({
+											status: "investigating",
+											error: null,
+											startedAt: nowMs,
+											autonomousTurns: $.autonomousTurns.add(1),
+											updatedAt: nowMs,
+										}))
+										.where(($) => [
+											$.orgId.eq(orgId),
+											$.id.eq(id),
+											// Only from the status read above, so a concurrent resolve is a conflict.
+											$.status.eq(existing.status),
+											PG.or(
+												$.status.in_(...from),
+												PG.and($.status.eq("investigating"), $.startedAt.isNull()),
+											),
+										])
+										.returning("incidentKind", "incidentId"),
+								),
+						),
 					),
 				).pipe(
-					Effect.tap((restarted) => settleAnomalyTriage(orgId, restarted, "investigating", nowMs)),
+					Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+						Effect.fail(
+							new InvestigationTransitionError({
+								message:
+									existing.status === "investigating"
+										? "This investigation is still running; wait for it to finish before restarting it."
+										: "The investigation changed while restarting it. Reload and retry.",
+								investigationId: id,
+								fromStatus: existing.status,
+								toStatus: "investigating",
+							}),
+						),
+					),
 				)
+				yield* settleAnomalyTriage(orgId, [restarted], "investigating", nowMs)
 				const restarting = new InvestigationDocument({
 					...existing,
 					status: "investigating",
@@ -651,20 +700,56 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					"maple.investigation.status": status,
 				})
 				const nowMs = yield* Clock.currentTimeMillis
-				const updated = yield* dbExecute((db) =>
-					db.run(
-						PG.update(Investigations)
-							.set({ status, updatedAt: nowMs })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(id)])
-							.returning("id", "incidentKind", "incidentId"),
-					),
-				)
-				if (updated.length === 0) {
+				const current = yield* loadRow(orgId, id)
+				if (!current) {
 					return yield* new InvestigationNotFoundError({
 						message: `No such investigation: '${id}'`,
 					})
 				}
-				yield* settleAnomalyTriage(orgId, updated, status, nowMs)
+				const fromStatus = current.status
+				if (fromStatus === status) return yield* documentFor(orgId, current)
+				const refuse = (message: string) =>
+					new InvestigationTransitionError({
+						message,
+						investigationId: id,
+						fromStatus,
+						toStatus: status,
+					})
+				// A resolved run reopens only to the verdict it reached, so that is its one allowed target.
+				const reopened =
+					fromStatus === "resolved"
+						? reopenedInvestigationStatus({
+								failed: current.error !== null,
+								diagnosed: current.diagnosedAt !== null,
+								hasReport: current.reportJson !== null,
+							})
+						: null
+				const allowed: ReadonlyArray<InvestigationStatus> =
+					reopened === null ? MANUAL_INVESTIGATION_TRANSITIONS[fromStatus] : [reopened]
+				if (!allowed.includes(status)) {
+					return yield* refuse(
+						fromStatus === "investigating"
+							? "This investigation is still running; its status settles when the run ends."
+							: reopened !== null
+								? `A resolved investigation can only reopen to '${reopened}', the verdict its run reached, not '${status}'.`
+								: `An investigation cannot move from '${fromStatus}' to '${status}' by hand. From '${fromStatus}' it can go to: ${Arr.join(allowed, ", ")}.`,
+					)
+				}
+				const updated = yield* dbExecute((db) =>
+					transitionRow({ table: "investigations", id, from: [fromStatus], to: status }, (from) =>
+						db.run(
+							PG.update(Investigations)
+								.set({ status, updatedAt: nowMs })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(id), $.status.in_(...from)])
+								.returning("id", "incidentKind", "incidentId"),
+						),
+					),
+				).pipe(
+					Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+						Effect.fail(refuse("The investigation changed while updating it. Reload and retry.")),
+					),
+				)
+				yield* settleAnomalyTriage(orgId, [updated], status, nowMs)
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
 					return yield* new InvestigationNotFoundError({
@@ -726,16 +811,18 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								nowMs,
 								...(request.turnId === undefined ? undefined : { turnId: request.turnId }),
 							})
-				yield* write.pipe(
+				const outcome = yield* write.pipe(
 					Effect.mapError(makePersistenceError),
 					Effect.provideService(Database, database),
 				)
-				yield* settleAnomalyTriage(
-					orgId,
-					[row],
-					request.partial === true ? "inconclusive" : "diagnosed",
-					nowMs,
-				)
+				if (outcome === "applied") {
+					yield* settleAnomalyTriage(
+						orgId,
+						[row],
+						request.partial === true ? "inconclusive" : "diagnosed",
+						nowMs,
+					)
+				}
 
 				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto
 				// the row above for display, but the charge is raised per *turn* in
@@ -800,5 +887,5 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(InvestigationStarter.layer))
 }

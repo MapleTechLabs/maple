@@ -3,10 +3,10 @@ import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
-import * as Frame from "../../kit/frame"
-import { routeFrame } from "../../kit/frame-step"
+import * as Frame from "../../../kit/time-frame"
+import { routeFrame } from "../../../kit/time-frame-step"
 import * as InstallModal from "../../kit/install-modal"
-import { applySteps, keyed } from "../../kit/requests"
+import { applySteps, keyed } from "../../../kit/keyed-step"
 import { nextSort } from "../../../kit/table-sort"
 import { FetchHosts, HOST_LIST_LIMIT } from "./command"
 import { Message } from "./message"
@@ -23,7 +23,7 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 	timeZone: context.timeZone,
 })
 
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const input = { startTime: window.startTime, endTime: window.endTime, limit: HOST_LIST_LIMIT }
@@ -38,7 +38,6 @@ const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode)
 	])
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, ...patch }) })`. */
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -67,8 +66,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 	return {
 		model: install.model,
 		commands: [
-			Command.mapMessage(Frame.resolve(install.model.frame, scopeOf(install.model, context), "Load"), (message) =>
-				Message.GotFrameMessage({ message }),
+			Command.mapMessage(
+				Frame.resolve(install.model.frame, scopeOf(install.model, context), "Load"),
+				(message) => Message.GotFrameMessage({ message }),
 			),
 			...(install.commands ?? []),
 		],
@@ -86,7 +86,9 @@ export const routeChanged = (
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = { ...model, search: route.search }
 	const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
-	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) => requestAll(moved, context, mode))
+	return routeFrame(model.search, next, scopeOf(next, context), toFrame, (moved, mode) =>
+		requestAll(moved, context, mode),
+	)
 }
 
 export const contextChanged = (model: Model, context: PageContext): Return =>
@@ -117,7 +119,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			navigate(model, { ...model.search, q: value === "" ? undefined : value }),
 		ChangedScope: ({ scope }) => navigate(model, { ...model.search, scope }),
 		ClickedClearSearch: () => navigate(model, { ...model.search, q: undefined, scope: undefined }),
-		ClickedSort: ({ key }) => ({ model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["hostName"] }) } }),
+		ClickedSort: ({ key }) => ({
+			model: { ...model, sort: nextSort(model.sort, key, { stringKeys: ["hostName"] }) },
+		}),
 		GotFrameMessage: ({ message: inner }) => updateFrame(model, inner, context),
 		GotInstallMessage: ({ message: inner }) =>
 			liftInstall(model, InstallModal.update(model.install, inner)),

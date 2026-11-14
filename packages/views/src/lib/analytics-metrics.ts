@@ -14,7 +14,7 @@ import type {
 	WebAnalyticsSummary,
 	WebAnalyticsTimeseriesPoint,
 } from "@maple/web-data/warehouse/web-analytics"
-import { Array as EArr, String as Str } from "effect"
+import { Array as EArr, Option, String as Str } from "effect"
 
 export type AnalyticsMetricKey =
 	| "visitors"
@@ -255,7 +255,10 @@ export const ANALYTICS_METRICS: Arr.NonEmptyReadonlyArray<AnalyticsMetricDescrip
 ]
 
 export const findMetric = (key: AnalyticsMetricKey): AnalyticsMetricDescriptor =>
-	ANALYTICS_METRICS.find((metric) => metric.key === key) ?? ANALYTICS_METRICS[0]
+	Option.getOrElse(
+		EArr.findFirst(ANALYTICS_METRICS, (metric) => metric.key === key),
+		() => ANALYTICS_METRICS[0],
+	)
 
 /**
  * Whether a descriptor can be shown at all for this window.

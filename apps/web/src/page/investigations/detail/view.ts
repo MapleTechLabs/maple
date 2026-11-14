@@ -1,6 +1,14 @@
-import type { IssueSeverity } from "@maple/domain/http"
+import {
+	type InvestigationStatus,
+	MANUAL_INVESTIGATION_TRANSITIONS,
+	RESTARTABLE_INVESTIGATION_STATUSES,
+} from "@maple/domain/http"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { investigationHeadline, investigationScope } from "@maple/web-data/investigations/display"
+import {
+	investigationHeadline,
+	investigationScope,
+	investigationSeverity,
+} from "@maple/web-data/investigations/display"
 import { Mount, Submodel } from "foldkit"
 import {
 	Message as ConversationMessageUnion,
@@ -26,7 +34,7 @@ import { dashboardPage, pageScrollArea } from "../../kit/dashboard-page"
 import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
 import { resourceNotFound } from "../../kit/resource-not-found"
 import { linkTabStrip } from "../../kit/underline-tabs"
-import { severityBadge } from "../../errors/kit/severity"
+import { severityBadge } from "../../kit/issue-severity"
 import { investigationKindLabel, statusBadge } from "../kit"
 import { breadcrumbLabel, type Tab, tabOf, traceTips } from "./derive"
 import { Message } from "./message"
@@ -42,20 +50,15 @@ import {
 	type TipTrigger,
 } from "./view-sections"
 import { verdictCard } from "./view-verdict"
-import { hstack } from "@maple/views/ui/stack"
+import { handoffButton } from "./view-handoff"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
-
-// The investigation page: `InvestigationView`, `InvestigationHeader`, `InvestigationTabs`.
 
 type H = HtmlBuilder<Message>
 
-/** Only the four canonical severities render as a badge. */
-const asIssueSeverity = (value: string | null | undefined): IssueSeverity | null =>
-	value === "critical" || value === "high" || value === "medium" || value === "low" ? value : null
-
 const titleContent = (h: H, investigation: V2Investigation): Html => {
 	const scope = investigationScope(investigation)
-	const severity = asIssueSeverity(investigation.severity ?? investigation.snapshot.severity)
+	const severity = investigationSeverity(investigation)
 	return detailTitle(h, {
 		kind: ["Investigation", investigationKindLabel(investigation.subject)],
 		title: [investigationHeadline(investigation)],
@@ -77,32 +80,55 @@ const titleContent = (h: H, investigation: V2Investigation): Html => {
 	})
 }
 
-/** `InvestigationActions`: the status's primary verb, and the overflow menu. */
+/** The status's primary verb, and the overflow menu. */
 const headerActions = (h: H, model: Model, investigation: V2Investigation): Html => {
 	const status = investigation.status
 	const isBusy = model.busy !== null
+	// The server's own rules: a run in flight can be neither resolved nor restarted.
+	const manualMoves: ReadonlyArray<InvestigationStatus> = MANUAL_INVESTIGATION_TRANSITIONS[status]
+	const restartable: ReadonlyArray<InvestigationStatus> = RESTARTABLE_INVESTIGATION_STATUSES
+	const canResolve = manualMoves.includes("resolved")
+	// A run whose start never claimed it (no `started_at`) is not in flight and can be restarted.
+	const canRestart =
+		restartable.includes(status) || (status === "investigating" && investigation.started_at === null)
 	const primary =
 		status === "failed"
-			? { label: "Retry", variant: "default" as const }
+			? { label: "Run again", variant: "default" as const }
 			: status === "inconclusive"
 				? { label: "Run again", variant: "default" as const }
 				: status === "resolved"
 					? { label: "Reopen", variant: "outline" as const }
 					: { label: "Resolve", variant: "default" as const }
+	const primaryAllowed = status === "diagnosed" || status === "investigating" ? canResolve : canRestart
 	const entries: ReadonlyArray<MenuView.MenuEntry> = [
-		{ _tag: "Item", value: "restart", label: "Run again", icon: "ArrowPathIcon", isDisabled: isBusy },
+		{
+			_tag: "Item",
+			value: "restart",
+			label: "Run again",
+			icon: "ArrowPathIcon",
+			isDisabled: isBusy || !canRestart,
+		},
 		...(status === "resolved"
 			? []
-			: [{ _tag: "Item" as const, value: "resolve", label: "Mark resolved", isDisabled: isBusy }]),
+			: [
+					{
+						_tag: "Item" as const,
+						value: "resolve",
+						label: "Mark resolved",
+						isDisabled: isBusy || !canResolve,
+					},
+				]),
 	]
+	const handoff = handoffButton(h, model, investigation)
 	return detailActions(h, [
 		hstack(h, { gap: "2" }, [
+			...(handoff === null ? [] : [handoff]),
 			button(
 				h,
 				{
 					size: "sm",
 					variant: primary.variant,
-					isDisabled: isBusy,
+					isDisabled: isBusy || !primaryAllowed,
 					attributes: [h.OnClick(Message.ClickedPrimary())],
 				},
 				[primary.label],
@@ -143,7 +169,7 @@ const TABS: ReadonlyArray<{ value: Tab; label: string }> = [
 	{ value: "transcript", label: "Transcript" },
 ]
 
-/** `InvestigationTabs`: links, so the open tab is in the URL; Evidence only when there is some. */
+/** Links, so the open tab is in the URL; Evidence only when there is some. */
 const tabs = (h: H, investigation: V2Investigation, active: Tab): Html => {
 	const evidenceCount = investigation.report?.evidence.length ?? 0
 	return linkTabStrip(
@@ -175,6 +201,7 @@ const documentTab = (
 	tab: Tab,
 	timeZone: string,
 	trigger: TipTrigger,
+	canDrive: boolean,
 ): ReadonlyArray<Html> => {
 	const isResolved = investigation.status === "resolved"
 	const canvas = provenanceCanvas(h, model, investigation, timeZone)
@@ -190,16 +217,13 @@ const documentTab = (
 				]
 	return [
 		pageScrollArea(h, {}, [
-			h.div(
-				[h.Class("flex flex-col gap-7")],
-				[...sections, investigationMeta(h, model, investigation)],
-			),
+			vstack(h, { className: "gap-7" }, [...sections, investigationMeta(h, model, investigation)]),
 		]),
-		...(isResolved ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
+		...(isResolved || !canDrive ? [] : [h.div([h.Class("shrink-0 px-4 pb-4")], [followUpComposer(h)])]),
 	]
 }
 
-/** `InvestigationLead`: what a thread with no turns says, read off the subject's own status. */
+/** What a thread with no turns says, read off the subject's own status. */
 const investigationLead = (h: H, investigation: V2Investigation): Html =>
 	investigation.status === "investigating"
 		? emptyNotice(
@@ -219,13 +243,14 @@ const investigationLead = (h: H, investigation: V2Investigation): Html =>
 					`This ${investigationNoun(contextOf(investigation).kind)} is attached to every message in the thread. Start with a suggestion or ask your own question.`,
 				)
 
-/** `ChatConversation mode="investigation"`: the thread, led by the report until its own turn lands. */
+/** The thread, led by the report until its own turn lands. */
 const conversationTab = (
 	h: H,
 	model: Model,
 	investigation: V2Investigation,
 	timeZone: string,
 	trigger: TipTrigger,
+	canDrive: boolean,
 ): ReadonlyArray<Html> => {
 	const { conversation } = model
 	if (conversation === null) return []
@@ -237,6 +262,7 @@ const conversationTab = (
 			toMessage,
 			timeZone,
 			textareaId: `investigation-chat-${model.id}`,
+			canReply: canDrive,
 			placeholder: placeholderOf(investigation),
 			emptyState: () => investigationLead(h, investigation),
 			scrollerMount: Mount.mapMessage(MountMessageScroller({ focusMessageId: null }), () =>
@@ -258,7 +284,14 @@ const conversationTab = (
 	]
 }
 
-const readyPage = (h: H, model: Model, investigation: V2Investigation, timeZone: string): Html => {
+// `canDrive` is false for an analyst, who follows an investigation: no status actions, no composer.
+const readyPage = (
+	h: H,
+	model: Model,
+	investigation: V2Investigation,
+	timeZone: string,
+	canDrive: boolean,
+): Html => {
 	const tab = tabOf(model)
 	const isConversation = tab === "chat" || tab === "transcript"
 	const tips = traceTips(investigation)
@@ -276,14 +309,14 @@ const readyPage = (h: H, model: Model, investigation: V2Investigation, timeZone:
 					h,
 					{
 						titleContent: titleContent(h, investigation),
-						actions: headerActions(h, model, investigation),
+						actions: canDrive ? headerActions(h, model, investigation) : undefined,
 						tabs: tabs(h, investigation, tab),
 						fill: true,
 					},
 					[
 						...(isConversation
-							? conversationTab(h, model, investigation, timeZone, trigger)
-							: documentTab(h, model, investigation, tab, timeZone, trigger)),
+							? conversationTab(h, model, investigation, timeZone, trigger, canDrive)
+							: documentTab(h, model, investigation, tab, timeZone, trigger, canDrive)),
 						actionSheet(h, model, investigation, timeZone, trigger),
 						...(portal === null ? [] : [portal]),
 					],
@@ -296,7 +329,13 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const timeZone = inputs.context.timeZone
 	switch (model.sync._tag) {
 		case "Ready":
-			return readyPage(h, model, model.sync.investigation, timeZone)
+			return readyPage(
+				h,
+				model,
+				model.sync.investigation,
+				timeZone,
+				inputs.context.audience !== "analyst",
+			)
 		case "Missing":
 			return dashboardPage(h, {}, [
 				resourceNotFound(h, {

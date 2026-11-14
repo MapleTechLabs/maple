@@ -10,14 +10,13 @@ import { keyValue, keyValueList } from "@maple/views/ui/key-value"
 import { pressable } from "@maple/views/ui/pressable"
 import { moreChip } from "../kit/more-chip"
 import { sessionIdentity } from "../kit/session-name"
-import { vendorColor, vendorIcon } from "../kit/vendor"
+import { vendorColor, vendorIcon } from "@maple/views/lib/ai-vendor"
 import { detailTitle } from "../../kit/detail-header"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
-
-// The session header: what ran, when, on what.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -26,16 +25,13 @@ const ID_PREFIX_LENGTH = 32
 /** "agent-runner +9": the first name, the rest as a chip that names them on hover. */
 const firstPlusRest = (h: H, names: ReadonlyArray<string>): Html => {
 	const [first, ...rest] = names
-	return h.span(
-		[h.Class("inline-flex min-w-0 items-baseline gap-1.5")],
-		[
-			h.span([h.Class("min-w-0 truncate")], [first ?? ""]),
-			...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
-		],
-	)
+	return hstack(h, { gap: "1.5", align: "baseline", shrink: true, inline: true, as: "span" }, [
+		typography(h, { truncate: true, className: "min-w-0" }, [first ?? ""]),
+		...(rest.length > 0 ? [moreChip(h, { count: rest.length, names: rest })] : []),
+	])
 }
 
-/** `CopyableValue`: the id that copies itself, tinted by the copy's outcome. */
+/** The id that copies itself, tinted by the copy's outcome. */
 const copyableId = (
 	h: H,
 	model: Model,
@@ -49,7 +45,7 @@ const copyableId = (
 			onClick: Message.GotCopyMessage({ message: CopyButton.Message.ClickedCopy({ text: value }) }),
 			label: `Copy ${label}`,
 			className: cn(
-				"-mx-0.5 rounded-sm px-0.5 text-left transition-colors",
+				"-mx-0.5 rounded-sm px-0.5 text-left",
 				model.copy.status === "idle" && "hover:bg-surface-sunken active:bg-surface-sunken",
 				model.copy.status === "copied" && "bg-severity-info-a3",
 				model.copy.status === "error" && "bg-severity-error-a3",
@@ -86,7 +82,6 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 					relativeTime(h, {
 						value: summary.startMs,
 						variant: "orDate",
-						tooltip: "title",
 						nowMs: model.nowMs,
 						timeZone,
 						className: "",
@@ -101,10 +96,9 @@ export const sessionHeader = (h: H, model: Model, summary: SessionSummary, timeZ
 					: []),
 				keyValue(h, { label: idLabel, title: id }, [
 					copyableId(h, model, id, idLabel, [
-						h.span(
-							[h.Class("min-w-0 truncate")],
-							[shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true })],
-						),
+						typography(h, { truncate: true, className: "min-w-0" }, [
+							shortId(id, "generic", { length: ID_PREFIX_LENGTH, ellipsis: true }),
+						]),
 						icon(h, "CopyIcon", {
 							size: 12,
 							className: "shrink-0 text-muted-foreground",

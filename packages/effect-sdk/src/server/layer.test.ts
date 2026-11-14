@@ -1,5 +1,5 @@
-import { describe, it } from "@effect/vitest"
-import { Data, Effect, Layer, Tracer, Array as Arr, String as Str } from "effect"
+import { assert, describe, it } from "@effect/vitest"
+import { Data, Effect, Layer, Option, pipe, Tracer, Array as Arr, String as Str } from "effect"
 import { OtlpExporter } from "effect/observability"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import { layer } from "./layer.js"
@@ -7,6 +7,8 @@ import { layer } from "./layer.js"
 interface ExportCall {
 	readonly url: string
 	readonly authorization: string | null
+	readonly sdk: string | null
+	readonly userAgent: string | null
 	readonly body: ExportBody
 }
 interface ExportBody {
@@ -30,23 +32,25 @@ interface ExportedSpan {
 // Installed for the whole file: `FetchHttpClient` resolves `globalThis.fetch`
 // once, so a per-test swap would be missed after the first export.
 const calls: Array<ExportCall> = []
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 	const request = new Request(input, init)
 	const text = await request.text()
 	calls.push({
 		url: request.url,
 		authorization: request.headers.get("authorization"),
+		sdk: request.headers.get("x-maple-sdk"),
+		userAgent: request.headers.get("user-agent"),
 		body: text ? JSON.parse(text) : {},
 	})
 	return new Response(null, { status: 200 })
-}) as typeof fetch
+}
 
 const exportedSpans = (): Array<ExportedSpan> =>
-	Arr.flatMap(
-		Arr.filter(calls, (call) => Str.endsWith("/v1/traces")(call.url)).flatMap(
-			(call) => call.body.resourceSpans ?? [],
-		),
-		(resourceSpan) => resourceSpan.scopeSpans.flatMap((scope) => scope.spans),
+	pipe(
+		calls,
+		Arr.filter((call) => Str.endsWith("/v1/traces")(call.url)),
+		Arr.flatMap((call) => call.body.resourceSpans ?? []),
+		Arr.flatMap((resourceSpan) => Arr.flatMap(resourceSpan.scopeSpans, (scope) => scope.spans)),
 	)
 
 class DuplicateDocument extends Data.TaggedError("DuplicateDocument")<{}> {}
@@ -129,12 +133,32 @@ describe("Maple.layer span options", () => {
 	it("exports spans on shutdown with the ingest key and resource", async () => {
 		await run(config, Effect.void.pipe(Effect.withSpan("hello")))
 
-		const traces = calls.find((call) => call.url === "https://collector.test/v1/traces")
-		expect(traces?.authorization).toBe("Bearer secret")
-		const keys = traces?.body.resourceSpans?.[0]?.resource.attributes.map((attribute) => attribute.key)
+		const traces = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => call.url === "https://collector.test/v1/traces"),
+		)
+		expect(traces.authorization).toBe("Bearer secret")
+		const keys = Arr.map(
+			traces.body.resourceSpans?.[0]?.resource.attributes ?? [],
+			(attribute) => attribute.key,
+		)
 		expect(keys).toContain("service.name")
 		expect(keys).toContain("deployment.environment.name")
 		expect(Arr.map(exportedSpans(), (span) => span.name)).toEqual(["hello"])
+	})
+
+	it("names the SDK and its version on export requests, with or without an ingest key", async () => {
+		await run(
+			{ serviceName: "unit-test", endpoint: "https://collector.test" },
+			Effect.void.pipe(Effect.withSpan("hello")),
+		)
+
+		const traces = Option.getOrThrow(
+			Arr.findFirst(calls, (call) => call.url === "https://collector.test/v1/traces"),
+		)
+		expect(traces.authorization).toBeNull()
+		expect(traces.sdk).toMatch(/^maple-effect-sdk-server\/\d+\.\d+\.\d+$/)
+		// The exporter keeps its own agent after ours.
+		expect(traces.userAgent).toMatch(/^maple-effect-sdk-server\/\d+\.\d+\.\d+ /)
 	})
 
 	// The signal layers share one memoized `layerFlusher`, so its flush drains them all.
@@ -163,12 +187,13 @@ describe("Maple.layer span options", () => {
 
 		const spans = exportedSpans()
 		expect(Arr.map(spans, (span) => span.name)).toEqual(["job.process"])
-		const logTraceIds = Arr.flatMap(
-			Arr.filter(calls, (call) => Str.endsWith("/v1/logs")(call.url)).flatMap(
-				(call) => call.body.resourceLogs ?? [],
-			),
-			(resourceLog) => resourceLog.scopeLogs.flatMap((scope) => scope.logRecords),
-		).map((record) => record.traceId)
+		const logTraceIds = pipe(
+			calls,
+			Arr.filter((call) => Str.endsWith("/v1/logs")(call.url)),
+			Arr.flatMap((call) => call.body.resourceLogs ?? []),
+			Arr.flatMap((resourceLog) => Arr.flatMap(resourceLog.scopeLogs, (scope) => scope.logRecords)),
+			Arr.map((record) => record.traceId),
+		)
 		expect(logTraceIds).toContain(spans[0]?.traceId)
 	})
 
@@ -179,16 +204,18 @@ describe("Maple.layer span options", () => {
 		)
 
 		const [span] = exportedSpans()
-		expect(span?.status.code).toBe(1)
-		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(false)
+		assert.isDefined(span)
+		expect(span.status.code).toBe(1)
+		expect(Arr.some(span.events, (event) => event.name === "exception")).toBe(false)
 	})
 
 	it("still records unexpected failures as Error", async () => {
 		await run(config, Effect.fail(new DuplicateDocument()).pipe(Effect.withSpan("documents.insert")))
 
 		const [span] = exportedSpans()
-		expect(span?.status.code).toBe(2)
-		expect(Arr.some(span?.events, (event) => event.name === "exception")).toBe(true)
+		assert.isDefined(span)
+		expect(span.status.code).toBe(2)
+		expect(Arr.some(span.events, (event) => event.name === "exception")).toBe(true)
 	})
 
 	// The no-option recipe the docs point to: a Debug span under an Info

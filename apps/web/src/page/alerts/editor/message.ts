@@ -1,5 +1,12 @@
-import { AlertDestinationId, AlertRulePreviewResponse, DashboardDocument } from "@maple/domain/http"
-import { V2ChatConnector } from "@maple/domain/http/v2"
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import * as Policy from "@maple/domain/policy"
+import {
+	AlertDestinationId,
+	AlertRulePreviewResponse,
+	AnomalySignalType,
+	DashboardDocument,
+} from "@maple/domain/http"
+import { V2ChatConnector, V2EscalationChain } from "@maple/domain/http/v2"
 import {
 	AlertDestinationRowSchema,
 	AlertIncidentRowSchema,
@@ -9,7 +16,6 @@ import {
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -18,11 +24,14 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Select from "@maple/views/ui/select"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
 import * as QueryPanel from "../../kit/query-builder/panel"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as DestinationDialog from "../destination/dialog"
 import * as ChatConnect from "../shared/chat-connect"
 import { PreviewFailure } from "../shared/preview"
+import { RuleCard, Tier } from "./form"
 import { DryRun, TraceFacets } from "./model"
 
 /** The form's free-text fields, each one input. */
@@ -45,12 +54,11 @@ export const TextField = Schema.Literals([
 ])
 export type TextField = typeof TextField.Type
 
-export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query"])
+export const SignalKind = Schema.Literals(["builtin", "builder_query", "raw_query", "anomaly"])
 export type SignalKind = typeof SignalKind.Type
 
 /** The warning tier's destinations, or the critical tier's. */
-export const Tier = Schema.Literals(["warning", "critical"])
-export type Tier = typeof Tier.Type
+export { Tier }
 
 const Failure = Schema.Struct({ title: Schema.String, message: Schema.String })
 
@@ -68,30 +76,41 @@ export const Message = defineMessageUnion({
 	ReloadedPage: {},
 	GeneratedDraftId: { id: Schema.String },
 	CompletedReadClock: { nowMs: Schema.Number },
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchConnectors: { connectors: Schema.Array(V2ChatConnector) },
+	/** Back on this tab: a chain made from "Create a chain" (a new tab) can now be picked. */
+	ReturnedToTab: {},
+	CompletedFetchEscalationChains: { chains: Schema.NullOr(Schema.Array(V2EscalationChain)) },
 	CompletedFetchTraceFacets: { key: Schema.String, result: Schema.Result(TraceFacets, LoadFailure) },
 	CompletedFetchAutocomplete: {
 		key: Schema.String,
 		lookup: AutocompleteLookup,
 		result: Schema.Result(LookupNames, LoadFailure),
 	},
+	CompletedFetchMetricOptions: {
+		search: Schema.String,
+		result: Schema.Result(MetricPageSchema, LoadFailure),
+	},
+	CompletedFetchMetricKeys: {
+		metric: Schema.String,
+		result: Schema.Result(MetricKeysSchema, LoadFailure),
+	},
 	CompletedFetchPreview: {
 		key: Schema.String,
 		isSaved: Schema.Boolean,
 		result: Schema.Result(AlertRulePreviewResponse, PreviewFailure),
 	},
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	ClickedSignalKind: { kind: SignalKind },
 	GotRadioMessage: {
-		group: Schema.Literals(["signal", "severity", "interval"]),
+		group: Schema.Literals(["signal", "severity"]),
 		message: RadioGroup.Message,
 	},
 	ClickedOpenInBuilder: {},
+	/** An anomaly rule's signal toggle: on adds the signal to its scope, off takes it out. */
+	ToggledAnomalySignal: { signal: AnomalySignalType },
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotComboMessage: { id: Schema.String, message: Combobox.Message },
@@ -123,6 +142,15 @@ export const Message = defineMessageUnion({
 	BlurredTagInput: {},
 	ClickedRemoveTag: { tag: Schema.String },
 	ClickedAddNotes: {},
+	/** A closed sentence card's summary: opens the card for editing. */
+	ClickedExpandCard: { card: RuleCard },
+	/** An open card's Done, or Escape inside it: back to its summary. */
+	ClickedCollapseCard: { card: RuleCard },
+	CompletedFocusCard: {},
+	/** A form control lost focus (by element id): its error may show from now on. */
+	BlurredField: { id: Schema.String },
+	/** One of the action bar's "Fix before saving" items: opens its card and focuses its field. */
+	ClickedIssue: { issue: Schema.String },
 	ToggledSqlCollapsed: {},
 	ClickedSqlToken: { token: Schema.String },
 	CompletedInsertSqlToken: { sql: Schema.String, caret: Schema.Number },

@@ -1,8 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
-import type { OrgId } from "@maple/domain/http"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { breachSideFor, chartWindow, loadChartSeries, type ChartSeriesWarehouse } from "./alert-chart-series"
+import { DateTime, Effect, Fiber, Array as Arr } from "effect"
+import { TestClock } from "effect/testing"
+import type { OrgId, TenantContext } from "@maple/domain/http"
+import {
+	AlertChartSeriesUnavailableError,
+	chartWindow,
+	loadChartSeries,
+	readChartSeries,
+	type ChartSeriesWarehouse,
+} from "./alert-chart-series"
 
 const ORG_ID = "org_1" as OrgId
 const tenant = { orgId: ORG_ID } as TenantContext
@@ -30,26 +36,13 @@ const warehouseFailing = (): ChartSeriesWarehouse => ({
 	compiledQuery: () => Effect.die(new Error("warehouse down")),
 })
 
+const warehouseHanging = (): ChartSeriesWarehouse => ({
+	compiledQuery: () => Effect.never,
+})
+
 const checkRow = (minutesAgo: number, observedValue: number | null) => ({
 	timestamp: DateTime.makeUnsafe(Date.UTC(2026, 7, 18, 14, 0) - minutesAgo * 60_000),
 	observedValue,
-})
-
-describe("breachSideFor", () => {
-	it("maps the half-plane comparators to a side", () => {
-		assert.strictEqual(breachSideFor("gt"), "above")
-		assert.strictEqual(breachSideFor("gte"), "above")
-		assert.strictEqual(breachSideFor("lt"), "below")
-		assert.strictEqual(breachSideFor("lte"), "below")
-	})
-
-	it("shades nothing for the comparators with no single bad side", () => {
-		// Pointing the reader's eye at half a chart is worse than not shading it.
-		assert.strictEqual(breachSideFor("between"), "none")
-		assert.strictEqual(breachSideFor("not_between"), "none")
-		assert.strictEqual(breachSideFor("eq"), "none")
-		assert.strictEqual(breachSideFor("neq"), "none")
-	})
 })
 
 describe("chartWindow", () => {
@@ -85,7 +78,7 @@ describe("loadChartSeries", () => {
 				baseOptions,
 			)
 			assert.deepStrictEqual(
-				series?.points.map((p) => p[1]),
+				Arr.map(series?.points ?? [], (p) => p[1]),
 				[1, 2, 3],
 			)
 		}),
@@ -101,7 +94,7 @@ describe("loadChartSeries", () => {
 				baseOptions,
 			)
 			assert.deepStrictEqual(
-				series?.points.map((p) => p[1]),
+				Arr.map(series?.points ?? [], (p) => p[1]),
 				[1, 2, 3],
 			)
 		}),
@@ -124,6 +117,35 @@ describe("loadChartSeries", () => {
 			// to delay or drop a page.
 			const series = yield* loadChartSeries(warehouseFailing(), tenant, baseOptions)
 			assert.isNull(series)
+		}),
+	)
+})
+
+describe("readChartSeries", () => {
+	it.effect("fails as unavailable, not empty, when the warehouse does not answer in time", () =>
+		Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(
+				Effect.flip(readChartSeries(warehouseHanging(), tenant, baseOptions)),
+			)
+			yield* TestClock.adjust("3 seconds")
+			const error = yield* Fiber.join(fiber)
+			assert.instanceOf(error, AlertChartSeriesUnavailableError)
+			assert.strictEqual(error.reason, "timeout")
+		}),
+	)
+
+	it.effect("fails as unavailable when the warehouse read fails", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(readChartSeries(warehouseFailing(), tenant, baseOptions))
+			assert.strictEqual(error.reason, "failed")
+		}),
+	)
+
+	it.effect("still answers null for a timeout through loadChartSeries, so a page is never held", () =>
+		Effect.gen(function* () {
+			const fiber = yield* Effect.forkChild(loadChartSeries(warehouseHanging(), tenant, baseOptions))
+			yield* TestClock.adjust("3 seconds")
+			assert.isNull(yield* Fiber.join(fiber))
 		}),
 	)
 })

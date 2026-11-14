@@ -5,6 +5,7 @@ export {
 	makeTimeBucketQueryCachePolicy,
 	queryDefinitionCacheIdentity,
 	resolveQueryDefinitionCache,
+	windowParams,
 	type QueryCachePolicy,
 	type QueryDefinition,
 	type TimeBucketQueryCachePolicy,

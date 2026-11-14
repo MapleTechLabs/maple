@@ -31,7 +31,7 @@ The reusable machinery lives in two workspace libraries:
 Browser (apps/web)
   TanStack DB collections, one set per active org
     read:  ShapeStream → GET {VITE_ELECTRIC_SYNC_URL}/api/sync/shape?shape=<name>&offset=…&handle=…
-           (mapleSyncFetch in lib/collections/shape-fetch.ts injects the Clerk / self-hosted bearer)
+           (MapleSyncHttpClient in apps/web/src/platform/api-clients.ts injects the Clerk / self-hosted bearer)
     write: typed HTTP endpoints on apps/api (dashboards use public `/v2`; Electric is read-path only)
 
 apps/electric-sync Worker: /api/sync/shape  (src/routes/shape.http.ts, a raw HttpRouter)
@@ -53,7 +53,7 @@ writes: endpoint captures the Postgres txid on the mutating statement
   state once that transaction arrives on the shape stream.
 ```
 
-### Shapes (server-pinned whitelist, `apps/electric-sync/src/shapes/registry.ts`)
+### Shapes (server-pinned whitelist, `packages/domain/src/electric-shapes.ts`)
 
 | shape                   | table              | pinned columns / extra WHERE (besides org scope)                |
 | ----------------------- | ------------------ | --------------------------------------------------------------- |
@@ -61,8 +61,7 @@ writes: endpoint captures the Postgres txid on the mutating statement
 | `alert_rules`           | alert_rules        | none                                                            |
 | `alert_rule_states`     | alert_rule_states  | none                                                            |
 | `alert_incidents`       | alert_incidents    | none                                                            |
-| `alert_destinations`    | alert_destinations | columns: drops the encrypted `secret_*` (previous builds only)  |
-| `alert_destinations_v2` | alert_destinations | columns: as v1, plus `disabled_at` / `disabled_reason`          |
+| `alert_destinations_v2` | alert_destinations | columns: drops the encrypted `secret_*`                         |
 | `api_keys`              | api_keys           | columns: drops `key_hash` / `metadata_json`                     |
 | `investigation_v2`      | investigations     | scoped to one `id` (client supplies the value as `$2`); columns |
 
@@ -264,7 +263,7 @@ never reads the shared one, so a preview can never proxy shapes at another stage
    `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
    `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
    migrations carry protects nothing, and it is exactly what hid the EU failure.
-2. Add the shape to the whitelist in `apps/electric-sync/src/shapes/registry.ts`.
+2. Add the shape to the whitelist in `packages/domain/src/electric-shapes.ts`.
 3. Add a collection in `apps/web/src/data/collections/` via
    `createEffectCollection`. Model it on `dashboards.ts` for a write vertical or the
    `alertRules` collection in `org-collections.ts` for a read-only one: an identity `Schema.Struct` row schema that

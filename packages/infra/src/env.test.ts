@@ -2,9 +2,11 @@ import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it } from "vitest"
 import {
 	appUrlsEnv,
+	commitShaEnv,
+	configKeysEnv,
 	derived,
 	optionalPlain,
 	optionalSecret,
@@ -79,8 +81,11 @@ describe("primitives", () => {
 
 	it("redacts optional secrets", () => {
 		const record = run(optionalSecret("CLERK_JWT_KEY"), { CLERK_JWT_KEY: "jwt-secret" })
+		// oxlint-disable-next-line typescript/no-base-to-string -- asserts Redacted's runtime toString hides the value.
 		expect(String(record.CLERK_JWT_KEY)).not.toContain("jwt-secret")
-		expect(Redacted.value(record.CLERK_JWT_KEY!)).toBe("jwt-secret")
+		const secret = record.CLERK_JWT_KEY
+		assert.isDefined(secret)
+		expect(Redacted.value(secret)).toBe("jwt-secret")
 	})
 
 	it("applies an optionalPlain fallback only when the key is absent", () => {
@@ -184,7 +189,7 @@ describe("selfObservabilityEnv", () => {
 
 	it("binds the ingest key redacted, under the MAPLE_INGEST_KEY name", () => {
 		const env = run(selfObservabilityEnv({ kind: "prd" }), base)
-		expect(Redacted.value(env.MAPLE_INGEST_KEY as Redacted.Redacted<string>)).toBe("maple_ak_test")
+		expect(Redacted.value(env.MAPLE_INGEST_KEY as Redacted.Redacted)).toBe("maple_ak_test")
 		expect("MAPLE_OTEL_INGEST_KEY" in env).toBe(false)
 	})
 
@@ -203,8 +208,44 @@ describe("selfObservabilityEnv", () => {
 
 	it("still binds the ingest key on a dev stage when one is set", () => {
 		const env = run(selfObservabilityEnv({ kind: "dev", name: "x" }), base)
-		expect(Redacted.value(env.MAPLE_INGEST_KEY as Redacted.Redacted<string>)).toBe("maple_ak_test")
+		expect(Redacted.value(env.MAPLE_INGEST_KEY as Redacted.Redacted)).toBe("maple_ak_test")
 		expect("MAPLE_OTEL_INGEST_KEY" in env).toBe(false)
+	})
+})
+
+describe("commitShaEnv", () => {
+	it("lets a preferred key outrank the deployed commit, as ingest's own revision does", () => {
+		const env = { INGEST_COMMIT_SHA: "ingest1", COMMIT_SHA: "def456", GITHUB_SHA: "abc123" }
+		expect(run(commitShaEnv("INGEST_COMMIT_SHA"), env)).toEqual({ COMMIT_SHA: "ingest1" })
+		expect(run(commitShaEnv("INGEST_COMMIT_SHA"), { GITHUB_SHA: "abc123" })).toEqual({
+			COMMIT_SHA: "abc123",
+		})
+	})
+
+	it("skips a blank preferred key rather than stamping an empty revision", () => {
+		expect(
+			run(commitShaEnv("INGEST_COMMIT_SHA"), { INGEST_COMMIT_SHA: " ", COMMIT_SHA: "def456" }),
+		).toEqual({
+			COMMIT_SHA: "def456",
+		})
+	})
+})
+
+describe("configKeysEnv", () => {
+	const keys = [
+		{ name: "SLACK_CLIENT_ID", secret: false },
+		{ name: "SLACK_CLIENT_SECRET", secret: true },
+	]
+
+	it("binds secret keys redacted and plain keys as strings", () => {
+		const env = run(configKeysEnv(keys), { SLACK_CLIENT_ID: "id", SLACK_CLIENT_SECRET: "shh" })
+		expect(env.SLACK_CLIENT_ID).toBe("id")
+		assert(Redacted.isRedacted(env.SLACK_CLIENT_SECRET))
+		expect(Redacted.value(env.SLACK_CLIENT_SECRET)).toBe("shh")
+	})
+
+	it("omits unset keys, so a connector without its config stays unavailable", () => {
+		expect(run(configKeysEnv(keys), {})).toEqual({})
 	})
 })
 

@@ -1,6 +1,6 @@
 /**
- * `/index.md` — the agent-readable twin of the home page, and the target of
- * `Accept: text/markdown` on `/` (see `src/worker.ts`).
+ * `/index.md`: the agent-readable twin of the home page, and the target of
+ * `Accept: text/markdown` on `/` (see `src/handler.ts`).
  *
  * Same facts the homepage states for AI extraction (the FAQ, the three steps,
  * the feature sheet), reduced to headings, lists, and links. No marketing
@@ -20,7 +20,7 @@ export const GET: APIRoute = ({ site }) => {
 
 	return markdown(
 		blocks(
-			docHeader("Maple: open-source observability for traces, logs, and metrics", m.page_home_desc()),
+			docHeader("Maple: OpenTelemetry observability for traces, logs, and metrics", m.page_home_desc()),
 			`${m.hero_title()} ${m.hero_title_sub()} ${m.hero_title_accent()} ${m.hero_subtitle()}`,
 
 			"## What Maple is",

@@ -9,11 +9,11 @@ import { countLabel, formatBytes, formatPercent, formatUptime } from "@maple/ui/
 import { formatClock } from "@maple/ui/lib/replay-format"
 
 import type { ListHostsResponse, ListPodsResponse } from "@maple/domain/http"
-import type { Finding } from "../components/infra/overview/summaries"
-import type { ReleaseServiceImpact } from "../components/releases/release-model"
+import type { Finding } from "../page/infra/overview/summaries"
+import type { ReleaseServiceImpact } from "../page/releases/release-model"
 import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
-import { formatUsage } from "../lib/billing/usage"
+import { formatUsage } from "../page/kit/billing/usage"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 // Relative and domain-typed imports keep this fixture loadable from apps/web.
@@ -209,7 +209,7 @@ export function legend(mode: WorstCaseMode): LegendFixture {
 	const series = Array.from({ length: count + 1 }, (_, i) => ({
 		key: `s${i + 1}`,
 		label: i === count ? (mode === "demo" ? "idle" : "service.name=, http.route=") : label(i),
-		color: COLORS[i % COLORS.length]!,
+		color: Arr.getUnsafe(COLORS, i % COLORS.length),
 	}))
 	// The last series has no stats entry at all: what an all-null column computes to.
 	const stats = Rec.fromEntries(

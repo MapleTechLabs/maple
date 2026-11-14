@@ -8,13 +8,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage } from "../../contract"
-import {
-	type EditorView,
-	pageIdFromUrl,
-	publicUrl,
-	STATUS_PAGE_BASE_URL,
-	statusPageHref,
-} from "../shared/commands"
+import { type EditorView, pageIdFromUrl, STATUS_PAGE_BASE_URL, statusPageHref } from "../shared/commands"
 import { emptyComponentForm, emptyIncidentForm } from "../shared/form"
 import { emptyPicker } from "../shared/picker"
 import { historyFrom } from "../shared/preview"
@@ -22,7 +16,6 @@ import {
 	FetchEditorPreview,
 	FetchEditorSession,
 	FocusEditorElement,
-	OpenPublicPage,
 	ReadEditorClock,
 	WaitEditorPreview,
 } from "./command"
@@ -57,19 +50,35 @@ import {
 	submitAdd,
 } from "./update-components"
 import {
+	askDeleteIncident,
+	backToIncidentWrite,
+	backToUpdateWrite,
 	changeIncident,
-	changeUpdate,
-	createdIncident,
+	changeIncidentEdit,
 	changeIncidentKind,
+	changeUpdate,
+	composeDialog,
+	confirmDeleteIncident,
+	createdIncident,
+	deletedIncident,
+	deleteIncidentDialog,
+	editIncidentDialog,
 	openComposer,
+	openIncidentEdit,
 	openUpdate,
 	postedUpdate,
 	publishedIncident,
 	publishIncident,
+	reviewIncident,
+	reviewUpdate,
+	savedIncident,
 	selectIncident,
 	submitIncident,
+	submitIncidentEdit,
 	submitUpdate,
 	toggleIncidentComponent,
+	toggleIncidentEditComponent,
+	updateDialog,
 } from "./update-incidents"
 import {
 	askBreakGlass,
@@ -90,6 +99,15 @@ import {
 	updateTokenCopy,
 } from "./update-settings"
 import {
+	cancelPassword,
+	changedAccess,
+	changePassword,
+	openPassword,
+	pickVisibility,
+	removePassword,
+	submitPassword,
+} from "./update-access"
+import {
 	appliedJson,
 	applyJson,
 	cancelJson,
@@ -98,6 +116,19 @@ import {
 	rebaseJsonDraft,
 	updateJsonCopy,
 } from "./update-json"
+import {
+	changeCustomDomain,
+	checkCustomDomain,
+	checkedCustomDomain,
+	confirmRemoveCustomDomain,
+	readCustomDomain,
+	removeCustomDomainDialog,
+	removedCustomDomain,
+	savedCustomDomain,
+	submitCustomDomain,
+	updateDnsCopy,
+} from "./update-domain"
+import { acceptGrants } from "../../kit/session-grants"
 
 type EditorRoute = Extract<AppRoute, { readonly _tag: "StatusPage" }>
 
@@ -118,11 +149,13 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		incidents: Keyed.idle(),
 		config: Keyed.idle(),
 		monitors: Keyed.idle(),
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		pageMenu: Menu.init(PAGE_MENU_ID),
 		panel: null,
 		previewScheme: "light",
+		previewWidth: "desktop",
+		previewState: "live",
 		previewGeneration: 0,
 		previewShown: 0,
 		previewHistory: [],
@@ -136,13 +169,21 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		addPicker: emptyPicker,
 		isAddingComponents: false,
 		addSession: 0,
+		composeDialog: Dialog.init("status-page-compose", "dialog"),
+		composeStep: "write",
 		incidentForm: emptyIncidentForm("incident"),
 		isCreatingIncident: false,
 		incidentFailure: null,
-		updateForm: null,
-		isPostingUpdate: false,
-		updateFailure: null,
+		updateDialog: Dialog.init("status-page-update", "dialog"),
+		updateForm: { _tag: "Closed" },
 		publishingIncidentIds: [],
+		editIncidentDialog: Dialog.init("status-page-edit-incident", "dialog"),
+		incidentEdit: null,
+		isSavingIncident: false,
+		incidentEditFailure: null,
+		confirmDeleteIncidentId: null,
+		deleteIncidentDialog: Dialog.init("status-page-delete-incident", "alert-dialog"),
+		isDeletingIncident: false,
 		publicBaseUrl: STATUS_PAGE_BASE_URL,
 		urlCopy: CopyButton.init(),
 		settingsEdits: null,
@@ -156,9 +197,17 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		tokenCopy: CopyButton.init(),
 		deletePageDialog: Dialog.init("status-page-delete", "alert-dialog"),
 		isDeletingPage: false,
-		jsonDraft: null,
-		jsonBase: null,
-		isRebasingJson: false,
+		accessAction: null,
+		passwordDraft: null,
+		accessFailure: null,
+		customDomain: Keyed.idle(),
+		customDomainDraft: null,
+		customDomainAction: null,
+		customDomainFailure: null,
+		removeCustomDomainDialog: Dialog.init("status-page-remove-custom-domain", "alert-dialog"),
+		dnsCopy: CopyButton.init(),
+		dnsCopyKey: null,
+		jsonEdit: null,
 		isApplyingJson: false,
 		jsonFailure: null,
 		jsonCopy: CopyButton.init(),
@@ -169,6 +218,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		readComponents(context, "Load"),
 		readIncidents(context, "Load"),
 		readMonitors(context, "Load"),
+		readCustomDomain(context, "Load"),
 		whenJson(context, "Load"),
 	)
 	return {
@@ -187,9 +237,19 @@ const whenJson =
 	(model: Model): Return =>
 		resolveView(model.search.view) === "json" ? readConfig(context, mode)(model) : { model }
 
+/** The custom domain moves on the server's schedule: opening Settings shows where it is now. */
+const whenSettings =
+	(context: PageContext, mode: Keyed.ReadMode) =>
+	(model: Model): Return =>
+		resolveView(model.search.view) === "settings" ? readCustomDomain(context, mode)(model) : { model }
+
 /** A view switch is a search change; opening JSON re-reads the config, since other views write too. */
 export const routeChanged = (model: Model, route: EditorRoute, context: PageContext): Return =>
-	whenJson(context, "Refresh")({ ...model, search: route.search, panel: null })
+	chain(
+		{ ...model, search: route.search, panel: null },
+		whenJson(context, "Refresh"),
+		whenSettings(context, "Refresh"),
+	)
 
 /** The dialogs ignore dismissal while their write is in flight, as `ConfirmDialog` does. */
 const whenIdle = (isBusy: boolean, model: Model, run: () => Return): Return => (isBusy ? { model } : run())
@@ -232,7 +292,7 @@ const closePanel = (model: Model): Return => {
 	return panel === null
 		? { model }
 		: {
-				model: { ...model, panel: null, updateForm: null },
+				model: { ...model, panel: null },
 				commands: [FocusEditorElement({ id: target })],
 			}
 }
@@ -255,16 +315,6 @@ const updatePageMenu = (model: Model, message: Menu.Message): Return => {
 			return navigate(`${statusPageHref(model.pageId, "settings")}#status-page-settings-break-glass`)
 		case "delete":
 			return deletePageDialog(next, Dialog.open(next.deletePageDialog))
-		case "public":
-			return Option.match(
-				Option.flatMap(pageOf(model), (page) =>
-					Option.fromNullishOr(publicUrl(model.publicBaseUrl, page.slug)),
-				),
-				{
-					onNone: () => ({ model: next, commands }),
-					onSome: (url) => ({ model: next, commands: [...commands, OpenPublicPage({ url })] }),
-				},
-			)
 		default:
 			return { model: next, commands }
 	}
@@ -274,10 +324,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
 		// Each fresh read re-reads the clock, so "published 2m ago" and update times never drift into the future.
-		CompletedFetchPage: ({ key, result }) => ({
-			model: { ...model, page: Keyed.accept(model.page, key, result) },
-			commands: [ReadEditorClock()],
-		}),
+		// The preview's history needs the page too: when the components came first, read it now.
+		CompletedFetchPage: ({ key, result }) => {
+			const next = { ...model, page: Keyed.accept(model.page, key, result) }
+			const awaitsHistory =
+				key === model.page.key &&
+				Result.isSuccess(result) &&
+				model.previewShown === 0 &&
+				Option.isSome(AsyncData.getData(model.components.data))
+			if (!awaitsHistory) return { model: next, commands: [ReadEditorClock()] }
+			const scheduled = schedulePreview(next)
+			return { model: scheduled.model, commands: [ReadEditorClock(), ...(scheduled.commands ?? [])] }
+		},
 		// New components mean new monitors to show history for: the preview reads it again.
 		CompletedFetchComponents: ({ key, result }) => {
 			const next = { ...model, components: Keyed.accept(model.components, key, result) }
@@ -300,8 +358,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchMonitors: ({ key, result }) => ({
 			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		ClickedRetry: () =>
 			chain(
 				model,
@@ -309,11 +368,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				readComponents(context, "Supersede"),
 				readIncidents(context, "Supersede"),
 				readMonitors(context, "Supersede"),
+				readCustomDomain(context, "Supersede"),
 				whenJson(context, "Supersede"),
 			),
 		GotPageMenuMessage: ({ message: child }) => updatePageMenu(model, child),
 		CompletedFocus: () => ({ model }),
-		OpenedPublicPage: () => ({ model }),
 		// Preview and selection
 		ElapsedPreviewDebounce: ({ generation }) =>
 			generation !== model.previewGeneration
@@ -337,14 +396,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 						}),
 					}),
 		ReceivedPreviewSelection: ({ kind, id }) => {
-			const component = componentsOf(model).find((row) => row.id === id)
 			return kind === "component"
-				? component === undefined
-					? { model }
-					: selectComponent(model, component.id)
+				? Option.match(
+						Arr.findFirst(componentsOf(model), (row) => row.id === id),
+						{
+							onNone: () => ({ model }),
+							onSome: (component) => selectComponent(model, component.id),
+						},
+					)
 				: Option.match(
-						Option.fromNullishOr(
-							AsyncData.getOrElse(model.incidents.data, () => []).find((row) => row.id === id),
+						Arr.findFirst(
+							AsyncData.getOrElse(model.incidents.data, () => []),
+							(row) => row.id === id,
 						),
 						{
 							onNone: () => ({ model }),
@@ -381,26 +444,51 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedAddComponent: () => openAdd(model),
 		GotAddPickerMessage: ({ message: child }) => addPickerStep(model, child),
 		CompletedCreateMonitor: ({ session, result }) => addMonitorCreated(model, session, result),
+		CompletedTrackMonitorCreated: () => ({ model }),
 		ClickedSubmitAdd: () => submitAdd(model),
 		CompletedAddComponents: ({ session, result }) => addedComponents(model, session, result, context),
 		// Incidents
 		ClickedNewIncident: ({ kind }) => openComposer(model, kind),
+		GotComposeDialogMessage: ({ message: child }) =>
+			whenIdle(model.isCreatingIncident, model, () =>
+				composeDialog(model, Dialog.update(model.composeDialog, child)),
+			),
 		ChangedIncidentKind: ({ kind }) => changeIncidentKind(model, kind),
 		ChangedIncidentField: ({ field, value }) => changeIncident(model, field, value),
 		ToggledIncidentComponent: ({ componentId }) => toggleIncidentComponent(model, componentId),
-		PickedIncidentPublished: ({ isPublished }) => ({
-			model: { ...model, incidentForm: { ...model.incidentForm, isPublished } },
-		}),
-		SubmittedIncident: () => submitIncident(model, context),
+		SubmittedIncidentWrite: () => reviewIncident(model, context),
+		ClickedIncidentBack: () => backToIncidentWrite(model),
+		SubmittedIncident: ({ isPublished }) => submitIncident(model, context, isPublished),
 		CompletedCreateIncident: ({ result }) => createdIncident(model, result, context),
 		ClickedPostUpdate: ({ incidentId, isResolving }) => openUpdate(model, incidentId, isResolving),
+		GotUpdateDialogMessage: ({ message: child }) =>
+			whenIdle(model.updateForm._tag === "Posting", model, () =>
+				updateDialog(model, Dialog.update(model.updateDialog, child)),
+			),
 		ChangedUpdateField: ({ field, value }) => changeUpdate(model, field, value),
-		SubmittedUpdate: () => submitUpdate(model),
-		ClickedCancelUpdate: () => ({ model: { ...model, updateForm: null, updateFailure: null } }),
+		SubmittedUpdateWrite: () => reviewUpdate(model, context),
+		ClickedUpdateBack: () => backToUpdateWrite(model),
+		SubmittedUpdate: () => submitUpdate(model, context),
 		CompletedPostUpdate: ({ result }) => postedUpdate(model, result, context),
 		ClickedPublishIncident: ({ incidentId }) => publishIncident(model, incidentId),
 		CompletedPublishIncident: ({ incidentId, result }) =>
 			publishedIncident(model, incidentId, result, context),
+		ClickedEditIncident: ({ incidentId }) => openIncidentEdit(model, incidentId, context),
+		GotEditIncidentDialogMessage: ({ message: child }) =>
+			whenIdle(model.isSavingIncident, model, () =>
+				editIncidentDialog(model, Dialog.update(model.editIncidentDialog, child)),
+			),
+		ChangedIncidentEditField: ({ field, value }) => changeIncidentEdit(model, field, value),
+		ToggledIncidentEditComponent: ({ componentId }) => toggleIncidentEditComponent(model, componentId),
+		SubmittedIncidentEdit: () => submitIncidentEdit(model, context),
+		CompletedSaveIncident: ({ result }) => savedIncident(model, result, context),
+		ClickedDeleteIncident: ({ incidentId }) => askDeleteIncident(model, incidentId),
+		ClickedConfirmDeleteIncident: () => confirmDeleteIncident(model),
+		CompletedDeleteIncident: ({ result }) => deletedIncident(model, result, context),
+		GotDeleteIncidentDialogMessage: ({ message: child }) =>
+			whenIdle(model.isDeletingIncident, model, () =>
+				deleteIncidentDialog(model, Dialog.update(model.deleteIncidentDialog, child)),
+			),
 		// Live
 		GotUrlCopyMessage: ({ message: child }) => {
 			const step = CopyButton.update(model.urlCopy, child)
@@ -421,6 +509,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		PickedThemeRadius: ({ radius }) => changeTheme(model, { radius }),
 		PickedThemeFont: ({ font }) => changeTheme(model, { font }),
 		PickedPreviewScheme: ({ scheme }) => ({ model: { ...model, previewScheme: scheme } }),
+		PickedPreviewWidth: ({ width }) => ({ model: { ...model, previewWidth: width } }),
+		PickedPreviewState: ({ state }) => ({ model: { ...model, previewState: state } }),
 		ClickedDiscardSettings: () => ({ model: { ...model, settingsEdits: null, settingsFailure: null } }),
 		ClickedSaveSettings: () => saveSettings(model),
 		CompletedSaveSettings: ({ result }) => savedSettings(model, result),
@@ -437,6 +527,32 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		GotTokenCopyMessage: ({ message: child }) => updateTokenCopy(model, child),
 		ClickedDismissToken: () => ({ model: { ...model, revealedToken: null } }),
+		// Access
+		PickedVisibility: ({ visibility }) => pickVisibility(model, visibility),
+		ClickedChangePassword: () => openPassword(model),
+		ChangedPassword: ({ value }) => changePassword(model, value),
+		ClickedCancelPassword: () => cancelPassword(model),
+		SubmittedPassword: () => submitPassword(model),
+		ClickedRemovePassword: () => removePassword(model),
+		CompletedAccessChange: ({ action, result }) => changedAccess(model, action, result),
+		// Custom domain
+		CompletedFetchCustomDomain: ({ key, result }) => ({
+			model: { ...model, customDomain: Keyed.accept(model.customDomain, key, result) },
+		}),
+		ChangedCustomDomain: ({ value }) => changeCustomDomain(model, value),
+		SubmittedCustomDomain: () => submitCustomDomain(model),
+		CompletedSetCustomDomain: ({ result }) => savedCustomDomain(model, result),
+		ClickedCheckCustomDomain: () => checkCustomDomain(model),
+		CompletedCheckCustomDomain: ({ result }) => checkedCustomDomain(model, result),
+		ClickedRemoveCustomDomain: () =>
+			removeCustomDomainDialog(model, Dialog.open(model.removeCustomDomainDialog)),
+		ClickedConfirmRemoveCustomDomain: () => confirmRemoveCustomDomain(model),
+		CompletedRemoveCustomDomain: ({ result }) => removedCustomDomain(model, result),
+		GotRemoveCustomDomainDialogMessage: ({ message: child }) =>
+			whenIdle(model.customDomainAction === "remove", model, () =>
+				removeCustomDomainDialog(model, Dialog.update(model.removeCustomDomainDialog, child)),
+			),
+		GotDnsCopyMessage: ({ key, message: child }) => updateDnsCopy(model, key, child),
 		// Page
 		ClickedDeletePage: () => deletePageDialog(model, Dialog.open(model.deletePageDialog)),
 		ClickedConfirmDeletePage: () => confirmDeletePage(model),

@@ -3,35 +3,42 @@ import {
 	buildRuleTestParamsV2,
 	isRulePreviewReady,
 } from "@maple/web-data/alerts/form-utils"
-import { Result } from "effect"
+import { Array as Arr, Result } from "effect"
 import { PageOutMessage } from "../../contract"
-import { alertsHref } from "../shared/links"
-import { RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
-import { previewIdentityKey, saveIssues } from "./derive"
+import { alertsHref } from "../../kit/alert-links"
+import { sentenceCardHeadingId } from "../../kit/sentence-card"
+import { FocusRuleCard, RunRuleTest, SaveRule, TrackRuleCreated } from "./command"
+import { isProtectedDefault, previewIdentityKey, saveIssues } from "./derive"
 import { draftTimingOf } from "./derive-rows"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import type { Return } from "./steps"
-
-// The writes: Dry run and Send test (`runTest`), and Create / Save changes (`handleSave`).
+import { cardOfIssue, issueFieldId } from "./summary"
 
 const errorToast = (title: string, description = ""): PageOutMessage =>
 	PageOutMessage.RequestedToast({ type: "error", title, description })
 
-/** `runTest`: a form that cannot be previewed yet says so instead of asking. */
+/** A form that cannot be previewed yet says so instead of asking. */
 export const runTest = (model: Model, isSending: boolean): Return => {
 	const form = model.form
 	if (form === null || model.isDryRunning || model.isSendingTest) return { model }
 	if (!isRulePreviewReady(form))
-		return { model, outMessage: errorToast("Complete the rule name, query, and threshold before testing") }
+		return {
+			model,
+			outMessage: errorToast("Complete the rule name, query, and threshold before testing"),
+		}
 	return {
 		model: isSending ? { ...model, isSendingTest: true } : { ...model, isDryRunning: true },
-		commands: [RunRuleTest({ key: previewIdentityKey(form), payload: buildRuleTestParamsV2(form, isSending) })],
+		commands: [
+			RunRuleTest({ key: previewIdentityKey(form), payload: buildRuleTestParamsV2(form, isSending) }),
+		],
 	}
 }
 
 export const completeTest = (model: Model, message: Extract<Message, { _tag: "CompletedTest" }>): Return => {
-	const settled: Model = message.isSending ? { ...model, isSendingTest: false } : { ...model, isDryRunning: false }
+	const settled: Model = message.isSending
+		? { ...model, isSendingTest: false }
+		: { ...model, isDryRunning: false }
 	return Result.match(message.result, {
 		onSuccess: (dryRun) => ({
 			model: { ...settled, dryRun },
@@ -41,15 +48,35 @@ export const completeTest = (model: Model, message: Extract<Message, { _tag: "Co
 				description: "",
 			}),
 		}),
-		onFailure: (error) => ({ model: settled, outMessage: errorToast("Couldn't preview rule", error.message) }),
+		onFailure: (error) => ({
+			model: settled,
+			// A failed Send test is a delivery failure, not a preview one: say which.
+			outMessage: errorToast(
+				message.isSending ? "Couldn't send test notification" : "Couldn't preview rule",
+				error.message,
+			),
+		}),
 	})
 }
 
-/** `handleSave`: the ready form as create (or update) params; success lands on `/alerts`. */
+/** The ready form as create (or update) params; success lands on `/alerts`. */
 export const save = (model: Model): Return => {
 	const form = model.form
 	if (form === null || model.isSaving) return { model }
-	if (saveIssues(form, draftTimingOf(model, form)).length > 0) return { model }
+	const issues = saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model))
+	const first = issues[0]
+	// A blocked save shows every field's error and lands on the first thing to fix.
+	if (first !== undefined) {
+		const card = cardOfIssue(first)
+		return {
+			model: {
+				...model,
+				hasAttemptedSave: true,
+				expandedCards: Arr.union(model.expandedCards, [card]),
+			},
+			commands: [FocusRuleCard({ id: issueFieldId(first) ?? sentenceCardHeadingId(card) })],
+		}
+	}
 	return {
 		model: { ...model, isSaving: true },
 		commands: [SaveRule({ ruleId: model.editingRuleId, payload: buildRuleCreateParamsV2(form) })],
@@ -61,9 +88,11 @@ export const completeSave = (model: Model, message: Extract<Message, { _tag: "Co
 		onSuccess: () => ({
 			model: { ...model, isSaving: false },
 			commands:
-				model.editingRuleId === null && model.form !== null ? [TrackRuleCreated({ signal: model.form.signalType })] : [],
+				model.editingRuleId === null && model.form !== null
+					? [TrackRuleCreated({ signal: model.form.signalType })]
+					: [],
 			outMessage: PageOutMessage.RequestedNavigation({
-				url: alertsHref({}),
+				url: alertsHref({}, "rules"),
 				isReplace: false,
 				toast: {
 					type: "success",

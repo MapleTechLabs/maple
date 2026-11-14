@@ -1,6 +1,6 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
 import { AlertDestinationId, parseGoogleChatWebhookUrl } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { assert, describe, it } from "@effect/vitest"
 import { Option, Schema, String as Str } from "effect"
 import type { DispatchContext } from "../context"
@@ -11,7 +11,7 @@ const WEBHOOK_URL =
 	"https://chat.googleapis.com/v1/spaces/AAAAbc-12_x/messages?key=api-key&token=secret-token"
 
 const destinationRow: AlertDestinationRow = {
-	id: Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
+	id: Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726"),
 	orgId: Schema.decodeSync(OrgId)("org_1"),
 	name: "Ops space",
 	type: "google-chat",

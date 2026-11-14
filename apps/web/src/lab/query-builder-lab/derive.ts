@@ -26,7 +26,7 @@ export const toRunPoints = (
 		),
 	}))
 
-/** `debugWarnings`: the queries that fell back to a wider range. */
+/** The queries that fell back to a wider range. */
 export const debugWarnings = (diagnostics: TimeseriesQuerySetDiagnostics): ReadonlyArray<string> =>
 	Arr.map(
 		Arr.filter(diagnostics.queries, (entry) => entry.fallbackUsed),
@@ -52,13 +52,10 @@ export const metricOptionsOf = (rows: ReadonlyArray<MetricRow>): ReadonlyArray<M
 		const value = `${row.metricName}::${metricType}`
 		return [{ value, label: `${row.metricName} (${metricType})`, metricName: row.metricName, metricType }]
 	})
-	return Arr.filter(
-		options,
-		(option, index) => options.findIndex((other) => other.value === option.value) === index,
-	)
+	return Arr.dedupeWith(options, (a, b) => a.value === b.value)
 }
 
-/** `parseMetricSelection`: `name::type` back into its parts. */
+/** `name::type` back into its parts. */
 export const parseMetricSelection = (
 	raw: string,
 ): Readonly<{ metricName: string; metricType: QueryBuilderMetricType }> | null => {
@@ -87,7 +84,7 @@ export const relabelQueries = (queries: ReadonlyArray<QueryDraft>): ReadonlyArra
 export const relabelFormulas = (formulas: ReadonlyArray<FormulaDraft>): ReadonlyArray<FormulaDraft> =>
 	Arr.map(formulas, (formula, index) => ({ ...formula, name: formulaLabel(index) }))
 
-// copied: the lab's own `GROUP_BY_OPTIONS` (not query-engine's, which lists other fields).
+// The lab's own `GROUP_BY_OPTIONS` (not query-engine's, which lists other fields).
 const GROUP_BY_OPTIONS = {
 	traces: ["service.name", "span.name", "status.code", "http.method", "none"],
 	logs: ["service.name", "severity", "none"],
@@ -95,7 +92,7 @@ const GROUP_BY_OPTIONS = {
 	product_events: ["event.name", "page.path", "none"],
 } satisfies Record<QueryDraft["dataSource"], ReadonlyArray<string>>
 
-/** `GroupByAutocomplete`'s options: the static fields, then span attributes as `attr.*` for traces. */
+/** The group-by options: the static fields, then span attributes as `attr.*` for traces. */
 export const groupByOptionsOf = (
 	dataSource: QueryDraft["dataSource"],
 	attributeKeys: ReadonlyArray<string>,

@@ -15,7 +15,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_service_map_uptime_e2e")
 const ORG_ID = OrgId.make("org_service_map_uptime")
@@ -85,7 +85,7 @@ const SEED_SPANS: ReadonlyArray<SeedSpan> = Arr.flatMap(CALL_TIMES, (ms) => [
 	...callPair(ms + MINUTE_MS, UPTIME),
 ])
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const insertSpans = async (spans: ReadonlyArray<SeedSpan>): Promise<void> => {
 	const rows = Arr.join(

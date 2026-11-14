@@ -120,14 +120,14 @@ const settle = (
 ): PageReturn<PageModel, PageMessage> => {
 	const pending = answers(result.model, isFailed)
 	if (pending.length === 0 || depth > 6) return result
-	const next = pending.reduce<PageReturn<PageModel, PageMessage>>((acc, message) => {
+	const next = Arr.reduce(pending, result, (acc, message): PageReturn<PageModel, PageMessage> => {
 		const answered = DetailUpdate.update(acc.model, message, CONTEXT)
 		return {
 			model: answered.model,
 			commands: [...(acc.commands ?? []), ...(answered.commands ?? [])],
 			outMessage: acc.outMessage ?? answered.outMessage,
 		}
-	}, result)
+	})
 	return settle(next, isFailed, depth + 1)
 }
 

@@ -1,40 +1,36 @@
 import { type ChatConnectorManifest, chatConnectorManifests } from "@maple/chat-platform/manifests"
-import { ChatConnectorId } from "@maple/domain/primitives"
-import { docsUrl } from "../../lib/docs"
-import { Array, Option, Schema, String as Str } from "effect"
+import { ChatConnectorId } from "@maple/primitives"
+import { Option, Schema, String as Str, Array as Arr } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
-import { PLANETSCALE_COLOR } from "../infra-integrations/planetscale/notices"
-import { SUPABASE_ACCENT } from "../infra-integrations/supabase/connect"
-
-// The integration catalog's data.
+import { type Provider, type ProviderId, PROVIDERS } from "../kit/providers"
 
 export type ChatIntegrationId = `chat-${string}`
-export type IntegrationId =
-	| "cloudflare"
-	| "prometheus"
-	| "planetscale"
-	| "gcp"
-	| "aws"
-	| "railway"
-	| "supabase"
-	| "warpstream"
-	| "linear"
-	| "github"
-	| ChatIntegrationId
-
-export const GITHUB_ACCENT = "#181717"
-export const LINEAR_ACCENT = "#5E6AD5"
-export const CLOUDFLARE_ACCENT = "#F38020"
-export const RAILWAY_ACCENT = "#0B0D0E"
-export const GCP_ACCENT = "#4285F4"
-export const AWS_ACCENT = "#FF9900"
+export type IntegrationId = ProviderId | ChatIntegrationId
 
 /** A generated icon, or a chat connector's manifest mark (rendered from its path data). */
 export type EntryIcon =
 	| Readonly<{ _tag: "Named"; name: IconName }>
 	| Readonly<{ _tag: "Manifest"; icon: ChatConnectorManifest["icon"] }>
 
-export type IntegrationCategory = "infrastructure" | "code" | "notifications"
+export type IntegrationCategory = "infrastructure" | "code" | "analytics" | "notifications"
+
+/** What a connection does for Maple: the hub's row chips and filters. */
+export const CAPABILITIES = ["telemetry", "query", "alerts", "analytics"] as const
+export type Capability = (typeof CAPABILITIES)[number]
+
+export const HubFilter = Schema.Literals(["all", ...CAPABILITIES, "attention"])
+export type HubFilter = typeof HubFilter.Type
+
+/** The row chip's word, then the filter chip's. */
+export const CAPABILITY_LABEL = {
+	telemetry: { chip: "Telemetry", filter: "Telemetry" },
+	query: { chip: "Query", filter: "Query" },
+	alerts: { chip: "Alerts", filter: "Alerts & chat" },
+	analytics: { chip: "Analytics", filter: "Analytics" },
+} as const satisfies Record<Capability, { readonly chip: string; readonly filter: string }>
+
+export const capabilityOf = (category: IntegrationCategory): Capability =>
+	category === "notifications" ? "alerts" : category === "analytics" ? "analytics" : "telemetry"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -55,6 +51,7 @@ export const INTEGRATION_CATEGORIES: ReadonlyArray<{
 	{ id: "infrastructure", label: "Infrastructure" },
 	{ id: "code", label: "Code & deploys" },
 	{ id: "notifications", label: "Chat & alerts" },
+	{ id: "analytics", label: "Web analytics" },
 ]
 
 const named = (name: IconName): EntryIcon => ({ _tag: "Named", name })
@@ -68,139 +65,124 @@ export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
 	Str.startsWith("chat-")(id) ? Option.getOrNull(decodeConnectorId(Str.slice("chat-".length)(id))) : null
 
 export const chatManifestOf = (connector: string): ChatConnectorManifest | undefined =>
-	chatConnectorManifests.find((manifest) => manifest.id === connector)
+	Option.getOrUndefined(Arr.findFirst(chatConnectorManifests, (manifest) => manifest.id === connector))
 
-const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Array.map(chatConnectorManifests, (manifest) => ({
+/** A chat connector's entry, from its manifest. */
+export const chatEntry = (manifest: ChatConnectorManifest): CatalogEntry => ({
 	id: chatIntegrationId(manifest.id),
 	name: manifest.name,
 	description: manifest.description,
 	icon: { _tag: "Manifest", icon: manifest.icon },
 	accent: manifest.accent,
 	category: "notifications",
-}))
+})
 
-const CLOUDFLARE_ENTRY: CatalogEntry = {
-	id: "cloudflare",
-	category: "infrastructure",
-	name: "Cloudflare",
-	description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
-	icon: named("CloudflareBrandIcon"),
-	accent: CLOUDFLARE_ACCENT,
-	docsUrl: docsUrl("cloudflare"),
-}
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = Arr.map(chatConnectorManifests, chatEntry)
 
-export const CATALOG: ReadonlyArray<CatalogEntry> = [
-	CLOUDFLARE_ENTRY,
-	{
-		id: "prometheus",
+type ProviderCopy = Readonly<{ description: string; category: IntegrationCategory; isNew?: boolean }>
+
+const PROVIDER_COPY = {
+	cloudflare: {
 		category: "infrastructure",
-		name: "Prometheus",
-		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
-		icon: named("PrometheusIcon"),
-		accent: "#E6522C",
-		docsUrl: docsUrl("prometheus"),
+		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
 	},
-	{
-		id: "planetscale",
+	prometheus: {
 		category: "infrastructure",
-		name: "PlanetScale",
+		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
+	},
+	planetscale: {
+		category: "infrastructure",
 		description:
 			"Authorize your organization with one click. Maple tracks every database branch automatically.",
-		icon: named("PlanetScaleIcon"),
-		accent: PLANETSCALE_COLOR,
-		docsUrl: docsUrl("planetscale"),
 	},
-	{
-		id: "gcp",
+	gcp: {
 		category: "infrastructure",
 		isNew: true,
-		name: "Google Cloud",
 		description: "Logs, metrics and resources from a project, folder or organization.",
-		icon: named("GoogleCloudIcon"),
-		accent: GCP_ACCENT,
-		docsUrl: docsUrl("gcp"),
 	},
-	{
-		id: "aws",
+	aws: {
 		category: "infrastructure",
 		isNew: true,
-		name: "AWS",
 		description: "Connect an AWS account through a read-only role you deploy with CloudFormation.",
-		icon: named("AwsIcon"),
-		accent: AWS_ACCENT,
-		iconClassName: "text-foreground",
-		docsUrl: docsUrl("aws"),
 	},
-	{
-		id: "railway",
+	railway: {
 		category: "infrastructure",
 		isNew: true,
-		name: "Railway",
 		description:
 			"Paste a Railway token to collect CPU, memory, network and disk metrics for every service.",
-		icon: named("RailwayIcon"),
-		accent: RAILWAY_ACCENT,
-		iconClassName: "text-foreground",
-		docsUrl: docsUrl("railway"),
 	},
-	{
-		id: "supabase",
+	supabase: {
 		category: "infrastructure",
 		isNew: true,
-		name: "Supabase",
 		description:
 			"Authorize your Supabase organization to collect CPU, memory, disk and Postgres metrics for every project.",
-		icon: named("SupabaseIcon"),
-		accent: SUPABASE_ACCENT,
-		docsUrl: docsUrl("supabase"),
 	},
-	{
-		id: "warpstream",
+	vercel: {
 		category: "infrastructure",
-		name: "WarpStream",
-		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
-		icon: named("WarpStreamIcon"),
-		accent: "#E52344",
-		docsUrl: docsUrl("warpstream"),
+		isNew: true,
+		description: "Paste a Vercel token to drain request logs, traces and AI Gateway usage from a team.",
 	},
-	{
-		id: "linear",
+	warpstream: {
+		category: "infrastructure",
+		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
+	},
+	linear: {
 		category: "notifications",
-		name: "Linear",
 		description:
 			"Open one Linear issue per alert rule, then comment as it fires again, changes severity or resolves.",
-		icon: named("LinearIcon"),
-		accent: LINEAR_ACCENT,
 	},
-	{
-		id: "github",
+	github: {
 		category: "code",
-		name: "GitHub",
 		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
-		icon: named("GithubIcon"),
-		accent: GITHUB_ACCENT,
-		iconClassName: "text-foreground",
-		docsUrl: docsUrl("github"),
 	},
+	"google-search-console": {
+		category: "analytics",
+		isNew: true,
+		description: "Import the search queries, pages and positions that bring people to your sites.",
+	},
+} as const satisfies { readonly [K in ProviderId]: ProviderCopy }
+
+const providerEntry = (provider: Provider, copy: ProviderCopy): CatalogEntry => ({
+	id: provider.id,
+	name: provider.name,
+	description: copy.description,
+	icon: named(provider.icon),
+	accent: provider.accent,
+	category: copy.category,
+	iconClassName: provider.iconClassName,
+	docsUrl: provider.docsUrl,
+	isNew: copy.isNew,
+})
+
+/** The hub's order. */
+const PROVIDER_ORDER: ReadonlyArray<ProviderId> = [
+	"cloudflare",
+	"prometheus",
+	"planetscale",
+	"gcp",
+	"aws",
+	"railway",
+	"supabase",
+	"vercel",
+	"warpstream",
+	"linear",
+	"github",
+	"google-search-console",
+]
+
+/** A provider's entry; every provider has one. */
+export const catalogEntry = (id: ProviderId): CatalogEntry => providerEntry(PROVIDERS[id], PROVIDER_COPY[id])
+
+/** Every entry, in the hub's order: the providers, then the chat connectors. */
+export const CATALOG: ReadonlyArray<CatalogEntry> = [
+	...Arr.map(PROVIDER_ORDER, catalogEntry),
 	...CHAT_ENTRIES,
 ]
 
-/** What `/integrations` lists: chat and alert connectors. Data integrations live under Sources. */
-export const HUB_CATALOG: ReadonlyArray<CatalogEntry> = Array.filter(
-	CATALOG,
-	(entry) => entry.category === "notifications",
-)
-
-export const catalogEntry = (id: IntegrationId): CatalogEntry =>
-	Option.getOrElse(
-		Array.findFirst(CATALOG, (entry) => entry.id === id),
-		() => CLOUDFLARE_ENTRY,
-	)
-
-/** Whether a URL value names a catalog entry (the OAuth callbacks append `?integration=`). */
-export const isIntegrationId = (value: string): value is IntegrationId =>
-	Array.some(CATALOG, (entry) => entry.id === value)
+/** The entry a URL value names (the OAuth callbacks append `?integration=`), or `null`. */
+export const entryOfSearch = (value: string | undefined): CatalogEntry | null =>
+	value === undefined ? null : Option.getOrNull(Arr.findFirst(CATALOG, (entry) => entry.id === value))
 
 /** The `?integration=` the page shows: a known id, else the hub. */
 export const integrationOfSearch = (value: string | undefined): IntegrationId | null =>
-	value !== undefined && isIntegrationId(value) ? value : null
+	entryOfSearch(value)?.id ?? null

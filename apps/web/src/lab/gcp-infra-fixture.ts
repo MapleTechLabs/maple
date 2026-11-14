@@ -3,9 +3,13 @@
 
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 
-import type { GcpCloudSqlInstance } from "../components/infra/gcp/inventory"
-import type { GcpFleetRead, GcpProjectHealth, GcpSparklinePoint } from "../components/infra/gcp/list-model"
-import type { GcpMetricPoint, GcpView } from "../components/infra/gcp/tabs"
+import type { GcpCloudSqlInstance } from "../page/infra-integrations/gcp/inventory"
+import type {
+	GcpFleetRead,
+	GcpProjectHealth,
+	GcpSparklinePoint,
+} from "../page/infra-integrations/gcp/list-model"
+import type { GcpMetricPoint, GcpView } from "../page/infra-integrations/gcp/tabs"
 import { Array as Arr } from "effect"
 
 // Three projects over the last 12 hours, as the Paper artboards draw them: a Cloud Run service
@@ -369,7 +373,11 @@ const instance = (
 	...settings,
 })
 
-const [ORDERS, REPLICA, ANALYTICS, USERS, STAGING] = DATABASES
+const ORDERS = Arr.getUnsafe(DATABASES, 0)
+const REPLICA = Arr.getUnsafe(DATABASES, 1)
+const ANALYTICS = Arr.getUnsafe(DATABASES, 2)
+const USERS = Arr.getUnsafe(DATABASES, 3)
+const STAGING = Arr.getUnsafe(DATABASES, 4)
 
 export const CLOUD_SQL_INSTANCES: ReadonlyArray<GcpCloudSqlInstance> = [
 	instance(ORDERS, {

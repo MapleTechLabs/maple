@@ -1,9 +1,5 @@
-/** Output schemas for the CI and commit MCP tools. */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
-
-// ---------------------------------------------------------------------------------------------
-// ci_runs
 
 export const CiFailedJobRow = Schema.Struct({
 	job: Schema.String,
@@ -75,9 +71,6 @@ export const CiRunsOutput = Schema.Struct({
 	failedJobsCapped: Schema.optionalKey(Schema.Boolean),
 })
 
-// ---------------------------------------------------------------------------------------------
-// compare_commits
-
 export const CommitRow = Schema.Struct({
 	sha: Schema.String,
 	/** First line of the commit message. */
@@ -95,11 +88,14 @@ export const CompareCommitsOutput = Schema.Struct({
 	service: Schema.optionalKey(Schema.String),
 	environment: Schema.optionalKey(Schema.String),
 	status: Schema.Literals(["resolved", "unavailable"]),
-	repository: Schema.String,
+	/** The repository the commits are in; absent when neither end was found in one. */
+	repository: Schema.optionalKey(Schema.String),
 	/** Commits after `base` up to and including `head`; a lower bound when `truncated`. */
 	totalCount: Schema.Number,
 	truncated: Schema.Boolean,
 	commits: Schema.Array(CommitRow),
 	/** Why the range could not be read, when it could not. */
 	reason: Schema.optionalKey(Schema.String),
+	/** GitHub's compare view for the two ends, when Maple could not list the range itself. */
+	compareUrl: Schema.optionalKey(Schema.String),
 })

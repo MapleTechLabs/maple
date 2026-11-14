@@ -1,6 +1,6 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { anomalyIncidentFromV2 } from "../../../lib/services/anomalies"
+import { anomalyIncidentFromV2 } from "../../../data/anomaly-incidents"
 import { SIGNAL_LABEL } from "@maple/web-data/anomalies/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
@@ -9,13 +9,12 @@ import type { Model } from "./model"
 
 const NOT_FOUND_TAG = "@maple/http/anomalies/AnomalyIncidentNotFoundError"
 
-/** `isIncidentNotFound`: a typed 404 renders the not-found body, not the error. */
+/** A typed 404 renders the not-found body, not the error. */
 export const isNotFound = (failure: LoadFailure): boolean => failure._tag === NOT_FOUND_TAG
 
 export const incidentOf = (model: Model): Option.Option<AnomalyIncidentDocument> =>
 	Option.map(AsyncData.getData(model.incident.data), anomalyIncidentFromV2)
 
-/** The page state `ResultPage` switches on. */
 export type PageState =
 	| { readonly _tag: "Loading" }
 	| { readonly _tag: "NotFound" }
@@ -46,7 +45,6 @@ export const crumbOf = (incident: AnomalyIncidentDocument): string =>
 		" · ",
 	)
 
-/** The `investigations.create` payload `investigate` sends. */
 export const investigationPayload = (incident: AnomalyIncidentDocument): V2InvestigationCreateParams => ({
 	subject:
 		incident.errorIssueId !== null

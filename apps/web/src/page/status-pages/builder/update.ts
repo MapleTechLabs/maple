@@ -11,7 +11,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { statusPageHref } from "../shared/commands"
 import {
 	draftComponents,
@@ -32,10 +32,13 @@ import {
 	FetchBuilderSession,
 	FocusBuilderField,
 	ReadBuilderClock,
+	TrackMonitorCreated,
+	TrackPageCreated,
 	WaitBuilderPreview,
 } from "./command"
 import { Message } from "./message"
-import type { Model, SubmitMode } from "./model"
+import { canManage, type Model, type SubmitMode } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 export type Return = PageReturn<Model, Message>
 
@@ -61,8 +64,6 @@ const readMonitors = (model: Model, context: PageContext, mode: Keyed.ReadMode):
 
 export const monitorsOf = (model: Model) => AsyncData.getOrElse(model.monitors.data, () => [])
 
-// ISSUES
-
 export const nameIssue = (model: Model): string | null =>
 	model.isNameTouched && Str.trim(model.name) === "" ? "Add a name." : null
 
@@ -76,15 +77,13 @@ export const slugError = (model: Model): string | null =>
 
 /** Every check a create must pass, so neither button sends a page the API would refuse. */
 export const canSubmit = (model: Model): boolean =>
-	model.isAdmin &&
+	canManage(model) &&
 	model.submitting === null &&
 	!model.picker.isCreatingMonitor &&
 	Str.trim(model.name) !== "" &&
 	slugIssue(model.slug) === null &&
 	model.takenSlug !== model.slug &&
 	!hasRowIssues(model.picker)
-
-// DRAFT
 
 /** The preset carries its own font and corners; the builder offers no other choice of either. */
 const themeOf = (model: Model) => ({
@@ -121,7 +120,7 @@ const edited = (model: Model): Return => {
 export const init = (_route: BuilderRoute, context: PageContext): Return => {
 	const model: Model = {
 		nowMs: null,
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		monitors: Keyed.idle(),
 		isSeeded: false,
@@ -198,8 +197,9 @@ const submit = (model: Model, mode: SubmitMode): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		CompletedFetchMonitors: ({ key, result }) => acceptMonitors(model, key, result),
 		ClickedRetry: () => readMonitors(model, context, "Supersede"),
 		ChangedName: ({ value }) =>
@@ -217,15 +217,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotPickerMessage: ({ message: child }) => pickerStep(model, child),
 		CompletedCreateMonitor: ({ result }) =>
 			Result.match(result, {
-				onSuccess: (monitor): Return =>
-					edited({
+				onSuccess: (monitor): Return => {
+					const next = edited({
 						...model,
 						monitors: {
 							...model.monitors,
 							data: AsyncData.map(model.monitors.data, (monitors) => [...monitors, monitor]),
 						},
 						picker: monitorCreated(model.picker, monitor),
-					}),
+					})
+					return {
+						...next,
+						commands: [...(next.commands ?? []), TrackMonitorCreated({ kind: monitor.kind })],
+					}
+				},
 				onFailure: (failure): Return => ({
 					model: { ...model, picker: monitorFailed(model.picker, failure.message) },
 				}),
@@ -269,6 +274,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Result.match(result, {
 				onSuccess: (page): Return => ({
 					model: { ...model, submitting: null },
+					commands: [TrackPageCreated()],
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: statusPageHref(page.id, mode === "publish" ? "live" : undefined),
 						isReplace: true,
@@ -291,4 +297,5 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}
 						: { model: { ...model, submitting: null, createFailure: failure } },
 			}),
+		CompletedTrackProduct: () => ({ model }),
 	})

@@ -1,8 +1,9 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr } from "effect"
+import { Result, Schema, Array as Arr, Option } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	click,
+	Command,
 	expect as expectView,
 	expectOutMessage,
 	given,
@@ -10,6 +11,8 @@ import {
 	Mount,
 	role,
 	scene,
+	selector,
+	Subscription,
 	text,
 	withViewInputs,
 } from "foldkit/scene"
@@ -28,7 +31,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceRow } from "./model"
-import { init, overviewInput, routeChanged, update } from "./update"
+import { init, overviewInput, routeChanged, ScrollFocusedRow, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -119,8 +122,8 @@ describe("services list", () => {
 				FetchAnomalies.name,
 			]),
 		)
-		const fetch = resolved.commands?.find(({ name }) => name === FetchOverview.name)
-		expect(fetch?.args).toMatchObject({
+		const fetch = Arr.findFirst(resolved.commands ?? [], ({ name }) => name === FetchOverview.name)
+		expect(Option.getOrUndefined(fetch)?.args).toMatchObject({
 			input: { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" },
 		})
 		expect(resolved.model.overview.key).toBe(overviewKey())
@@ -177,6 +180,8 @@ describe("services list", () => {
 			Mount.resolve(MountTable, Message.PaintedTable()),
 			expectView(role("table", { name: "Services" })).toExist(),
 			expectView(text("checkout")).toExist(),
+			// The table still paints, and says its health is not known.
+			expectView(text("Couldn't load alert status or anomalies")).toExist(),
 		)
 	})
 
@@ -195,6 +200,7 @@ describe("services list", () => {
 			expectView(role("table", { name: "Services" })).toExist(),
 			expectView(text("checkout")).toExist(),
 			expectView(text("Showing 2 services")).toExist(),
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
 		)
 	})
 
@@ -292,5 +298,68 @@ describe("services list", () => {
 		expect(opened.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/services/checkout", isReplace: false }),
 		)
+	})
+})
+
+describe("services list keys", () => {
+	const press = (key: string) => Subscription.emit(Message.PressedListKey({ key }))
+	const scrolled = () => Command.resolve(ScrollFocusedRow, Message.CompletedScrollFocusedRow())
+	const focusedRow = selector("tr[data-focused]")
+	// Below `md` the same rows draw as a list of links; it marks the same one.
+	const focusedListRow = selector("a[data-focused]")
+	// Grouped by environment, production first: checkout, then the staging cart.
+	const rows = [row("cart", "staging"), row("checkout")]
+
+	test("J and K move the focus through the rows in the table's order, and Escape clears it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(rows)),
+			themeResolved(),
+			Mount.resolve(MountTable, Message.PaintedTable()),
+			expectView(focusedRow).toBeAbsent(),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("checkout"),
+			expectView(focusedListRow).toContainText("checkout"),
+			press("ArrowDown"),
+			scrolled(),
+			expectView(focusedRow).toContainText("cart"),
+			expectView(focusedListRow).toContainText("cart"),
+			press("j"),
+			scrolled(),
+			expectView(focusedRow).toContainText("cart"),
+			press("k"),
+			scrolled(),
+			expectView(focusedRow).toContainText("checkout"),
+			press("Escape"),
+			expectView(focusedRow).toBeAbsent(),
+			expectView(focusedListRow).toBeAbsent(),
+		)
+	})
+
+	test("Enter opens the focused service as a click on its row does", () => {
+		const focused = pageUpdate(loaded(rows), Message.PressedListKey({ key: "j" })).model
+		const clicked = pageUpdate(
+			focused,
+			Message.ClickedServiceRow({ serviceName: "checkout", environment: "production" }),
+		)
+		const entered = pageUpdate(focused, Message.PressedListKey({ key: "Enter" }))
+		expect(entered.outMessage).toEqual(clicked.outMessage)
+		expect(entered.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/checkout?environments=%5B%22production%22%5D",
+				isReplace: false,
+			}),
+		)
+	})
+
+	test("Enter with no focused row opens nothing", () => {
+		expect(pageUpdate(loaded(rows), Message.PressedListKey({ key: "Enter" })).outMessage).toBeUndefined()
+	})
+
+	test("a new filter starts the focus over", () => {
+		const focused = pageUpdate(loaded(rows), Message.PressedListKey({ key: "j" })).model
+		const filtered = routeChanged(focused, { search: { environments: ["staging"] } }, context).model
+		expect(filtered.focusedIndex).toBeNull()
 	})
 })

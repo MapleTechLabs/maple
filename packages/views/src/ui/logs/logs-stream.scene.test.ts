@@ -302,3 +302,60 @@ describe("logs stream lazy rows", () => {
 		Lazy.expectAllReused({ view: sceneView, model: withWindow(0, 19) })
 	})
 })
+
+describe("logs stream: find in page", () => {
+	const standIn = (side: "before" | "after", index: number) =>
+		selector(`[data-findable-side="${side}"] [data-findable-index="${index}"]`)
+	const standIns = (side: "before" | "after") =>
+		all.selector(`[data-findable-side="${side}"] [data-findable-index]`)
+	const found = (index: number, side: "before" | "after" = "after") =>
+		Mount.resolve(VirtualizeLogStream, Message.FoundRow({ match: { index, side } }))
+
+	test("every row outside the window has a stand-in on its side, hidden until found", () => {
+		scene(
+			program,
+			given(withWindow(20, 39)),
+			ackVirtualizer,
+			expectAll(standIns("before")).toHaveCount(20),
+			expectAll(standIns("after")).toHaveCount(20),
+			expect(standIn("after", 59)).toHaveAttr("hidden", "until-found"),
+			expect(
+				within(standIn("before", 0), text("Synthetic wide log row 0:", { exact: false })),
+			).toExist(),
+			expect(selector('[data-findable-index="20"]')).not.toExist(),
+			expect(selector('[data-findable-index="39"]')).not.toExist(),
+		)
+	})
+
+	test("a match focuses its row and keeps the revealed stand-in until the row scrolls away", () => {
+		scene(
+			program,
+			given(withWindow(0, 24)),
+			found(50),
+			expect(standIn("after", 50)).not.toHaveAttr("hidden"),
+			// A window the virtualizer measured before the browser scrolled does not end the find.
+			Subscription.emit(windowOf(0, 25)),
+			expect(standIn("after", 50)).not.toHaveAttr("hidden"),
+			Subscription.emit(windowOf(40, 59)),
+			expect(within(rowOf(50), role("listitem"))).toHaveAttr("data-focused", "true"),
+			expect(standIn("after", 50)).not.toHaveAttr("hidden"),
+			expect(selector('[data-findable-index="51"]')).not.toExist(),
+			Subscription.emit(windowOf(0, 24)),
+			expect(standIn("after", 50)).toHaveAttr("hidden", "until-found"),
+		)
+	})
+
+	test("a match above the window is kept in the before layer, ahead of the rows", () => {
+		scene(
+			program,
+			given(withWindow(40, 59)),
+			found(10, "before"),
+			Subscription.emit(windowOf(0, 20)),
+			expect(within(rowOf(10), role("listitem"))).toHaveAttr("data-focused", "true"),
+			expect(standIn("before", 10)).not.toHaveAttr("hidden"),
+			expect(selector('[data-findable-side="after"] [data-findable-index="10"]')).not.toExist(),
+			Subscription.emit(windowOf(40, 59)),
+			expect(standIn("before", 10)).toHaveAttr("hidden", "until-found"),
+		)
+	})
+})

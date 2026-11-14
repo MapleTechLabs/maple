@@ -8,7 +8,7 @@ import { filterChip } from "@maple/views/ui/filter-chip"
 import { errorState } from "@maple/views/ui/error-state"
 import { panel, panelHeader } from "@maple/views/ui/panel"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
-import { formatClock, formatUsd, gateOf, isLive, isoOf } from "../kit/format"
+import { formatClock, formatUsd, gateOf, isLive } from "../kit/format"
 import { gateState, placeholderRows } from "../kit/parts"
 import { WIDE_COLUMN } from "../kit/layout"
 import {
@@ -26,8 +26,9 @@ import { EVENTS_PAGE } from "./command"
 import { Message, type Model, type UnitFilter } from "./model"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
-import { strip } from "@maple/views/ui/rule"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
+import { dividedList, strip, stripClass } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
 
 // The run's coverage ledger, its gaps and the event log.
@@ -177,8 +178,9 @@ export const ledgerPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Ht
 			title: "Coverage ledger",
 			action: typography(h, { size: "xs", tone: "muted" }, [`${run.unitTotal} units`]),
 		}),
-		h.div(
-			[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
+		hstack(
+			h,
+			{ gap: "1.5", align: "stretch", wrap: true, className: stripClass("header") },
 			Arr.map(
 				Arr.filter(UNIT_FILTERS, (filter) => filter === "all" || countOf(run, filter) > 0),
 				(filter) => unitChip(h, model, run, filter),
@@ -211,24 +213,12 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 		h.div(
 			[h.Class("grid grid-cols-3 divide-x border-b")],
 			Arr.map(GAP_SUMMARY, (entry) =>
-				h.div(
-					[h.Key(entry.label), h.Class("flex flex-col gap-0.5 px-4 py-3")],
-					[
-						h.span(
-							[h.Class("font-mono text-lg tabular-nums")],
-							[
-								String(
-									Arr.reduce(
-										entry.statuses,
-										0,
-										(sum, status) => sum + countOf(run, status),
-									),
-								),
-							],
-						),
-						typography(h, { size: "xs", tone: "muted" }, [entry.label]),
-					],
-				),
+				vstack(h, { gap: "0.5", className: "px-4 py-3", attributes: [h.Key(entry.label)] }, [
+					typography(h, { size: "lg", mono: true, numeric: true }, [
+						String(Arr.reduce(entry.statuses, 0, (sum, status) => sum + countOf(run, status))),
+					]),
+					typography(h, { size: "xs", tone: "muted" }, [entry.label]),
+				]),
 			),
 		),
 		unitsBody(h, model, (units) => gapUnits(units).slice(0, 5)),
@@ -236,18 +226,18 @@ export const gapsPanel = (h: H, model: Model, run: SecurityAuditRunDetail): Html
 	])
 }
 
-const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string): Html => {
+const eventRow = (h: H, event: SecurityAuditEvent, timeZone: string, nowMs: number): Html => {
 	const line = eventLineOf(event)
 	return h.li(
 		[h.Key(event.id), h.Class("grid grid-cols-[4.5rem_1fr_auto] gap-3 px-4 py-3 text-xs")],
 		[
-			h.time(
-				[
-					h.Class(typographyClass({ tone: "muted", mono: true, numeric: true })),
-					h.Title(isoOf(event.at)),
-				],
-				[formatClock(event.at, timeZone)],
-			),
+			timestamp(h, {
+				value: event.at,
+				timeZone,
+				nowMs,
+				label: formatClock(event.at, timeZone),
+				className: typographyClass({ tone: "muted", mono: true, numeric: true }),
+			}),
 			vstack(h, { gap: "0.5", shrink: true, as: "span" }, [
 				h.span(
 					[h.Class(cn("text-sm break-words", line.isProblem && "text-severity-warn"))],
@@ -273,8 +263,9 @@ const EVENT_FILTER_LABEL = {
 const EVENT_FILTERS: ReadonlyArray<EventFilter> = ["all", "problems", "leads"]
 
 const eventChips = (h: H, model: Model, events: ReadonlyArray<SecurityAuditEvent>): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1.5 border-b px-4 py-3")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "stretch", wrap: true, className: stripClass("header") },
 		Arr.map(EVENT_FILTERS, (filter) =>
 			filterChip(
 				h,
@@ -333,9 +324,10 @@ export const eventsPanel = (
 											? "No problems in the events read so far"
 											: "No events about leads read so far",
 								])
-							: h.ol(
-									[h.Class("divide-y")],
-									Arr.map(shown, (event) => eventRow(h, event, timeZone)),
+							: dividedList(
+									h,
+									{ as: "ol", bordered: false },
+									Arr.map(shown, (event) => eventRow(h, event, timeZone, model.nowMs)),
 								),
 					],
 				)

@@ -2,14 +2,30 @@ import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { type Elapsed, splitDuration } from "@maple/web-data/investigations/display"
+import type { HandoffInput } from "@maple/web-data/investigations/agent-handoff"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Option, Array as Arr, String as Str } from "effect"
+import { AppRoute, hrefOf } from "../../../route"
+import { Option, Array as Arr, String as Str, Order } from "effect"
+import type { INVESTIGATION_TABS } from "../../../route/search"
 import type { Model, OverviewRow } from "./model"
 
 export const investigationOf = (model: Model): Option.Option<V2Investigation> =>
 	model.sync._tag === "Ready" ? Option.some(model.sync.investigation) : Option.none()
 
-export type Tab = "overview" | "evidence" | "chat" | "transcript"
+/** What the "Fix in Claude Code" prompt is built from; `focus` narrows it to one proposed action. */
+export const handoffInputOf = (
+	model: Model,
+	investigation: V2Investigation,
+	focus: string | null = null,
+): HandoffInput => ({
+	investigation,
+	investigationUrl: `${model.handoff.origin}${hrefOf(AppRoute.Investigation({ id: model.id, search: {} }))}`,
+	// The commit's own repository beats the org's only one: it is where the cause was found.
+	repo: investigation.report?.suspectCommit?.repo ?? model.handoff.repo,
+	focus,
+})
+
+export type Tab = (typeof INVESTIGATION_TABS)[number]
 export const tabOf = (model: Model): Tab => model.search.tab ?? "overview"
 
 /** `breadcrumbLabel`: the first line, clamped to 64 characters. */
@@ -28,8 +44,11 @@ export const servicesTouched = (investigation: V2Investigation): ReadonlyArray<s
 		}),
 	)
 	if (seen.size === 0) {
-		const scope = investigation.snapshot.scope?.trim()
-		if (scope && !Str.includes(" ")(scope)) seen.add(scope)
+		const scope = Option.filter(
+			Option.map(Option.fromNullishOr(investigation.snapshot.scope), Str.trim),
+			(value) => value !== "" && !Str.includes(" ")(value),
+		)
+		if (Option.isSome(scope)) seen.add(scope.value)
 	}
 	return [...seen]
 }
@@ -73,16 +92,23 @@ export const signalWindowOf = (investigation: V2Investigation): SignalWindow | n
 	}
 }
 
-/** `resolveService`: the one service the signals card can speak for. */
 /** The overview is per service and environment; the busiest row for the service is the incident's. */
 export const busiestRowOf = (rows: ReadonlyArray<OverviewRow>, service: string): OverviewRow | null =>
-	Arr.filter(rows, (row) => row.serviceName === service).toSorted(
-		(left, right) => right.spanCount - left.spanCount,
-	)[0] ?? null
+	Option.getOrNull(
+		Arr.head(
+			Arr.sort(
+				Arr.filter(rows, (row) => row.serviceName === service),
+				Order.flip(Order.mapInput(Order.Number, (row: OverviewRow) => row.spanCount)),
+			),
+		),
+	)
 
 export const signalServiceOf = (investigation: V2Investigation): string | null => {
-	const named = investigation.snapshot.serviceName?.trim()
-	if (named) return named
+	const named = Option.filter(
+		Option.map(Option.fromNullishOr(investigation.snapshot.serviceName), Str.trim),
+		(value) => value !== "",
+	)
+	if (Option.isSome(named)) return named.value
 	return servicesTouched(investigation)[0] ?? null
 }
 
@@ -104,7 +130,7 @@ export const traceTips = (investigation: V2Investigation): ReadonlyMap<string, s
 		),
 	)
 
-/** `openActionIndex`: only a real non-negative integer opens the panel. */
+/** Only a real non-negative integer opens the panel. */
 export const openActionIndexOf = (model: Model): number | null => {
 	const action = model.search.action
 	return typeof action === "number" && Number.isInteger(action) && action >= 0 ? action : null

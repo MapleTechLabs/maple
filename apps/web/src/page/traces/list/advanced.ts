@@ -2,8 +2,8 @@ import {
 	applyWhereClauseSuggestion,
 	getWhereClauseAutocomplete,
 	type WhereClauseAutocompleteResult,
-} from "../../../lib/query-builder/where-clause-autocomplete"
-import { applyWhereClause, type TracesSearchLike } from "../../../lib/traces/advanced-filter-sync"
+} from "../../kit/query-builder/where-clause-autocomplete"
+import { applyWhereClause, type TracesSearchLike } from "../advanced-filter-sync"
 import { Option, type Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -13,14 +13,14 @@ import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
 import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { type AutocompleteLookup, lookupField, type LookupNames } from "../../kit/autocomplete-lookups"
+import { type AutocompleteLookup, lookupField, type LookupNames, names } from "../../kit/autocomplete-lookups"
 import { ADVANCED_LOOKUPS, type AdvancedFilter } from "./advanced-model"
 import { FetchAdvancedLookup, PlaceAdvancedCursor } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { clearedWhereClause } from "./search-edits"
 
-// `AdvancedFilterDialog`: open, edit with `useWhereClauseAutocomplete`, apply or clear.
+// The advanced filter dialog: open, edit with autocomplete, apply or clear.
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -35,11 +35,9 @@ const lookupNames = (model: Model, name: AutocompleteLookup): Array<string> => [
 	),
 ]
 
-/** The `traces` values the provider hands the editor. */
+/** The `traces` lookup values the editor suggests. */
 const valuesOf = (model: Model) => {
 	const facets = Option.getOrNull(AsyncData.getData(model.facets.data))
-	const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined) =>
-		Arr.map(rows ?? [], (row) => row.name)
 	return {
 		services: names(facets?.services),
 		spanNames: names(facets?.spanNames),
@@ -81,14 +79,16 @@ const liftDialog = (
 	),
 })
 
-/** `activate()`: the provider's lookups, once per window. */
+/** The autocomplete lookups, once per window. */
 const activate = (
 	model: Model,
 	context: PageContext,
 ): { readonly model: Model; readonly commands: ReadonlyArray<Cmd> } => {
 	const window = model.window
 	if (window === null) return { model, commands: [] }
-	return ADVANCED_LOOKUPS.reduce<{ model: Model; commands: ReadonlyArray<Cmd> }>(
+	return Arr.reduce<(typeof ADVANCED_LOOKUPS)[number], { model: Model; commands: ReadonlyArray<Cmd> }>(
+		ADVANCED_LOOKUPS,
+		{ model, commands: [] },
 		(acc, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete:${lookup}`, window)
 			const slot = acc.model.advanced.lookups[lookup] ?? Keyed.idle<LookupNames, LoadFailure>()
@@ -102,7 +102,6 @@ const activate = (
 				}),
 			})
 		},
-		{ model, commands: [] },
 	)
 }
 
@@ -181,7 +180,7 @@ const withClause = (search: Search, clause: string): Search => {
 	}
 }
 
-/** `onApply`: the clause (and the params it sets) into the URL; the dialog closes. */
+/** The clause (and the params it sets) into the URL; the dialog closes. */
 const applied = (model: Model, clause: string): Return => {
 	const closed = liftDialog(model, Dialog.close(model.advanced.dialog))
 	return { ...navigate(closed.model, withClause(model.search, clause)), commands: closed.commands }

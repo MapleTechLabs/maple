@@ -4,7 +4,7 @@ import { McpConnectionId, OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { McpConnectionsService } from "./McpConnectionsService"
 import { McpOAuthService } from "./McpOAuthService"
@@ -35,11 +35,11 @@ const makeLayer = (testDb: TestDb) => {
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_connections")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_elsewhere")
-const alice = Schema.decodeUnknownSync(UserId)("user_alice")
-const bob = Schema.decodeUnknownSync(UserId)("user_bob")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
+const orgId = Schema.decodeSync(OrgId)("org_connections")
+const otherOrgId = Schema.decodeSync(OrgId)("org_elsewhere")
+const alice = Schema.decodeSync(UserId)("user_alice")
+const bob = Schema.decodeSync(UserId)("user_bob")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -145,7 +145,7 @@ describe("McpConnectionsService", () => {
 			const claude = yield* connect("Claude Code", alice, orgId)
 			const [connection] = yield* connections.list(orgId, admin)
 
-			const revoked = yield* connections.revoke(orgId, connection!.id, {
+			const revoked = yield* connections.revoke(orgId, connection.id, {
 				userId: alice,
 				seesAll: false,
 			})
@@ -169,10 +169,10 @@ describe("McpConnectionsService", () => {
 			const [connection] = yield* connections.list(orgId, admin)
 
 			const asBob = yield* Effect.flip(
-				connections.revoke(orgId, connection!.id, { userId: bob, seesAll: false }),
+				connections.revoke(orgId, connection.id, { userId: bob, seesAll: false }),
 			)
 			expect(asBob._tag).toBe("@maple/http/errors/McpConnectionNotFoundError")
-			const unknown = Schema.decodeUnknownSync(McpConnectionId)("7c9e6679-7425-40de-944b-e07fc1f90ae7")
+			const unknown = Schema.decodeSync(McpConnectionId)("7c9e6679-7425-40de-944b-e07fc1f90ae7")
 			const missing = yield* Effect.flip(connections.revoke(orgId, unknown, admin))
 			expect(missing._tag).toBe("@maple/http/errors/McpConnectionNotFoundError")
 			expect(yield* connections.list(orgId, admin)).toHaveLength(1)

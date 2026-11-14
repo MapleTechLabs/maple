@@ -94,7 +94,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 			repositoryList(h, {
 				repositories: REPOS,
 				state: model.list,
-				isAdmin: true,
+				canEdit: true,
 				busy: [],
 				isEnabled: (repo) => isEnabled(model, repo),
 				onSearch: (value) => Message.ChangedSearch({ value }),

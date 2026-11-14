@@ -5,14 +5,12 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { filteredEmpty, presenceLoading } from "@maple/views/ui/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { SEVERITY_LABEL } from "../kit/severity"
+import { SEVERITY_LABEL } from "../../kit/issue-severity"
 import { hasErrorFilters, severityOf, viewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
-
-// The hub's empty state: what an empty view says, and what it offers.
 
 type H = HtmlBuilder<Message>
 
@@ -84,7 +82,7 @@ const searchEmpty = (h: H, search: string, view: keyof typeof VIEW_LABEL): Html 
 	)
 
 /** Narrowed views say so; an un-narrowed one is an all-clear only once traces have arrived. */
-export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html => {
+export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean, timeZone: string): Html => {
 	const view = viewOf(model.search)
 	const severity = severityOf(model.search)
 	const search = model.search.q ?? ""
@@ -98,6 +96,7 @@ export const hubEmpty = (h: H, model: Model, isNarrowedBySidebar: boolean): Html
 			signal: "traces",
 			presence,
 			nowMs: model.nowMs,
+			timeZone,
 			noun: "errors",
 			purpose: ERRORS_PURPOSE,
 			guideDocs: "errors",

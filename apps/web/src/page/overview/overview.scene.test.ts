@@ -1,9 +1,20 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { expect as expectView, given, label, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	all,
+	expect as expectView,
+	expectAll,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
@@ -12,6 +23,7 @@ import type { FacetsHint, HealthSnapshot, Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 import { healthData } from "./view-health"
+import type { HealthIncident } from "../kit/service-health"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -46,15 +58,17 @@ const withFacets = (model: Model, environments: ReadonlyArray<string>) =>
 	)
 
 /** Everything the health sections block on has loaded, with `rows` in the snapshot. */
-const loaded = (rows: ReadonlyArray<HealthSnapshot>): Model => {
+const loaded = (
+	rows: ReadonlyArray<HealthSnapshot>,
+	incidents: ReadonlyArray<HealthIncident> = [
+		{ status: "open", groupKey: null, severity: "critical", signalType: "error_rate" },
+	],
+): Model => {
 	const facets = withFacets(entered().model, ["production"]).model
 	const steps: ReadonlyArray<Message> = [
 		Message.CompletedFetchSnapshot({ key: facets.snapshot.key ?? "", result: Result.succeed(rows) }),
 		Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
-		Message.UpdatedIncidents({
-			orgId,
-			incidents: [{ status: "open", groupKey: null, severity: "critical", signalType: "error_rate" }],
-		}),
+		Message.UpdatedIncidents({ orgId, incidents }),
 		Message.UpdatedRules({ orgId, enabled: [true, false] }),
 	]
 	return Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)
@@ -76,7 +90,7 @@ const withPresence = (model: Model, traces: Presence, logs: Presence = traces): 
 
 const themeResolved = () =>
 	Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} }))
-const cursorMounted = () => Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor())
+const cursorMounted = () => Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor())
 
 describe("overview", () => {
 	test("entry reads the clock and hint; downstream queries wait for facets", () => {
@@ -239,9 +253,59 @@ describe("overview", () => {
 			given(failed),
 			Mount.resolveAll(
 				[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
-				[MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()],
+				[MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()],
 			),
-			expectView(text("All clear")).toBeAbsent(),
+			expectView(text("Firing now:")).toBeAbsent(),
+		)
+	})
+
+	test("health computed without alert status says so, and says nothing once alerts are known", () => {
+		const facets = withFacets(entered().model, ["production"]).model
+		const steps: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({ key: facets.anomalies.key ?? "", result: Result.succeed([]) }),
+			Message.FailedLoadIncidents({ orgId }),
+		]
+		const mounts = Mount.resolveAll(
+			[ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })],
+			[MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()],
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(Arr.reduce(steps, facets, (model, message) => pageUpdate(model, message).model)),
+			mounts,
+			expectView(text("Couldn't load alert status")).toExist(),
+			// The notice, and the services list's caption further down.
+			expectAll(all.text("Service health leaves out firing alerts.")).toHaveCount(2),
+			expectView(text("Status reflects active alerts and baseline anomalies.")).toBeAbsent(),
+		)
+		const withoutAnomalies: ReadonlyArray<Message> = [
+			Message.CompletedFetchSnapshot({
+				key: facets.snapshot.key ?? "",
+				result: Result.succeed([snapshotRow("checkout")]),
+			}),
+			Message.CompletedFetchAnomalies({
+				key: facets.anomalies.key ?? "",
+				result: Result.fail(toLoadFailure("boom")),
+			}),
+			Message.UpdatedIncidents({ orgId, incidents: [] }),
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(Arr.reduce(withoutAnomalies, facets, (model, message) => pageUpdate(model, message).model)),
+			mounts,
+			expectView(text("Couldn't load anomalies")).toExist(),
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([snapshotRow("checkout")])),
+			mounts,
+			expectView(text("Couldn't load alert status")).toBeAbsent(),
+			expectView(text("Status reflects active alerts and baseline anomalies.")).toExist(),
 		)
 	})
 
@@ -271,10 +335,44 @@ describe("overview", () => {
 			given(loaded([snapshotRow("checkout"), snapshotRow("cart")])),
 			themeResolved(),
 			cursorMounted(),
-			expectView(text("Firing now")).toExist(),
-			expectView(text("1 critical")).toExist(),
+			expectView(text("Firing now:")).toExist(),
+			expectView(text("1 incident · 1 critical")).toExist(),
 			expectView(role("link", { name: "View healthy services" })).toExist(),
 			expectView(role("link", { name: /checkout/ })).toExist(),
+		)
+	})
+
+	test("an open anomaly-rule incident is an open anomaly, not a firing incident", () => {
+		const anomaly: HealthIncident = {
+			status: "open",
+			groupKey: null,
+			severity: "critical",
+			signalType: "anomaly",
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([snapshotRow("checkout")], [anomaly])),
+			themeResolved(),
+			cursorMounted(),
+			expectView(role("link", { name: /1 open anomaly/ })).toHaveAttr("href", "/alerts?signal=anomaly"),
+			expectView(text("Firing now:")).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				loaded(
+					[snapshotRow("checkout")],
+					[
+						anomaly,
+						{ status: "open", groupKey: null, severity: "warning", signalType: "error_rate" },
+					],
+				),
+			),
+			themeResolved(),
+			cursorMounted(),
+			expectView(text("Firing now:")).toExist(),
+			expectView(text("1 incident · 1 warning")).toExist(),
+			expectView(role("link", { name: /1 open anomaly/ })).toHaveAttr("href", "/alerts?signal=anomaly"),
 		)
 	})
 
@@ -404,5 +502,23 @@ describe("overview", () => {
 			Message.CompletedReloadSpin({ version: reloaded.model.refreshVersion }),
 		)
 		expect(settled.model.isReloading).toBe(false)
+	})
+})
+
+describe("chart zoom", () => {
+	test("a drag across an Overview chart opens that span as the window", () => {
+		const zoomed = pageUpdate(
+			loaded([snapshotRow("checkout")]),
+			Message.SelectedChartRange({
+				startMs: Date.parse("2026-10-01T09:00:00Z"),
+				endMs: Date.parse("2026-10-01T09:45:00Z"),
+			}),
+		)
+		expect(zoomed.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/?startTime=2026-10-01+09%3A00%3A00&endTime=2026-10-01+09%3A45%3A00",
+				isReplace: false,
+			}),
+		)
 	})
 })

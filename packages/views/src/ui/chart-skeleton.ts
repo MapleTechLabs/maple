@@ -12,8 +12,8 @@ import {
 } from "./chart-skeleton-shapes"
 import { Array as Arr } from "effect"
 
-// Port of `ChartSkeleton` (packages/ui/src/components/charts/_shared/chart-skeleton.tsx), every
-// ghost shape. `ChartLoading` is in `chart-state.ts`; the newer ghosts are in `chart-skeleton-shapes.ts`.
+// The chart loading skeleton, in every ghost shape. `chartLoading` is in `chart-state.ts`; the
+// newer ghosts are in `chart-skeleton-shapes.ts`.
 
 export type ChartSkeletonVariant =
 	| "line"
@@ -93,7 +93,7 @@ const trendGhost = <M>(h: HtmlBuilder<M>, variant: "line" | "area"): Html =>
 const BAR_HEIGHTS = [46, 70, 34, 86, 56, 96, 62]
 const HISTOGRAM_HEIGHTS = [14, 28, 46, 68, 86, 96, 84, 64, 42, 26, 13]
 
-/** `Bars`: ghost columns. */
+/** Ghost columns. */
 const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>) =>
 	Arr.map(heights, (height) =>
 		h.div([h.Class("flex-1 rounded-xs bg-foreground/15"), h.Style({ height: `${height}%` })]),
@@ -102,7 +102,7 @@ const bars = <M>(h: HtmlBuilder<M>, heights: ReadonlyArray<number>) =>
 const barGhost = <M>(h: HtmlBuilder<M>, variant: "bar" | "histogram"): Html =>
 	variant === "bar"
 		? h.div([h.Class("flex h-full w-full items-end gap-1.5 p-3")], bars(h, BAR_HEIGHTS))
-		: h.div([h.Class("flex h-full w-full items-end gap-[3px] p-3")], bars(h, HISTOGRAM_HEIGHTS))
+		: h.div([h.Class("flex h-full w-full items-end gap-1 p-3")], bars(h, HISTOGRAM_HEIGHTS))
 
 const ghostOf = <M>(h: HtmlBuilder<M>, variant: ChartSkeletonVariant): Html => {
 	switch (variant) {

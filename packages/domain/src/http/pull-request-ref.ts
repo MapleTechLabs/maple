@@ -108,7 +108,7 @@ export const extractIssueIdsFromText = (text: string, appBaseUrl: string): Reado
 	if (Option.isSome(appOrigin)) {
 		const origin = appOrigin.value
 		const urlPattern = new RegExp(`https?://[^\\s<>"')\\]]*/errors/issues/(${uuid})`, "gi")
-		for (const match of text.matchAll(urlPattern)) {
+		for (const match of Str.matchAll(urlPattern)(text)) {
 			const id = match[1]
 			if (id === undefined) continue
 			// The regex can match a URL on any host; only this deployment's counts.
@@ -121,7 +121,7 @@ export const extractIssueIdsFromText = (text: string, appBaseUrl: string): Reado
 	// Form 2: an explicit token, for anyone writing the reference by hand or
 	// working against a deployment whose base URL they do not know.
 	const tokenPattern = new RegExp(`maple-issue:(${uuid})`, "gi")
-	for (const match of text.matchAll(tokenPattern)) {
+	for (const match of Str.matchAll(tokenPattern)(text)) {
 		const id = match[1]
 		if (id !== undefined) found.add(Str.toLowerCase(id))
 	}

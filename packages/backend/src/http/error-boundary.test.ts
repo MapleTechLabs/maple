@@ -9,6 +9,7 @@ import {
 	Tracer,
 	Array as Arr,
 	String as Str,
+	Option,
 } from "effect"
 import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
@@ -162,8 +163,10 @@ describe("unversioned HTTP error boundary", () => {
 			const response = await harness.request("GET", "/declared", undefined, { context })
 			expect(response.status).toBe(502)
 
-			const log = logs.find((entry) =>
-				Str.includes("Route answered with a server error")(entry.message),
+			const log = Option.getOrUndefined(
+				Arr.findFirst(logs, (entry) =>
+					Str.includes("Route answered with a server error")(entry.message),
+				),
 			)
 			expect(log).toBeDefined()
 			expect(log?.level).toBe("Error")
@@ -175,7 +178,9 @@ describe("unversioned HTTP error boundary", () => {
 				message: "SELECT failed: memory limit exceeded",
 			})
 
-			const span = spans.find((s) => s.attributes.get("error.type") === "@maple/test/UpstreamError")
+			const span = Option.getOrUndefined(
+				Arr.findFirst(spans, (s) => s.attributes.get("error.type") === "@maple/test/UpstreamError"),
+			)
 			expect(span).toBeDefined()
 			expect(span?.attributes.get("http.response.status_code")).toBe(502)
 		} finally {

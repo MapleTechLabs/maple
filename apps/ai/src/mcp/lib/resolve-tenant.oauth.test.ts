@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -50,9 +50,9 @@ const makeLayer = (testDb: TestDb, apiBaseUrl = "https://api.example.com") => {
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_mcp")
-const userId = Schema.decodeUnknownSync(UserId)("user_mcp")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
+const orgId = Schema.decodeSync(OrgId)("org_mcp")
+const userId = Schema.decodeSync(UserId)("user_mcp")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -110,6 +110,16 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 
+	it.effect("treats a request with cookies and no bearer as carrying no credential", () => {
+		const db = createTestDb(createdDbs)
+		return Effect.gen(function* () {
+			const failure = yield* resolveMcpTenantContext(
+				new Request(resource, { headers: { cookie: "__session=anything" } }),
+			).pipe(Effect.flip)
+			expect(failure._tag).toBe("@maple/mcp/errors/McpAuthMissingError")
+		}).pipe(Effect.provide(makeLayer(db)))
+	})
+
 	it.effect("is refused for a resource it was not bound to", () => {
 		const db = createTestDb(createdDbs)
 		return Effect.gen(function* () {
@@ -146,8 +156,8 @@ describe("an MCP OAuth token, resolved by the AI worker", () => {
 })
 
 describe("an agent named in x-maple-agent-id", () => {
-	const otherUser = Schema.decodeUnknownSync(UserId)("user_other")
-	const otherOrg = Schema.decodeUnknownSync(OrgId)("org_other")
+	const otherUser = Schema.decodeSync(UserId)("user_other")
+	const otherOrg = Schema.decodeSync(OrgId)("org_other")
 
 	it.effect("is acted as only when it is the key user's own agent in the key's org", () => {
 		const db = createTestDb(createdDbs)

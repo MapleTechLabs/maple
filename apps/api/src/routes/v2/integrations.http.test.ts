@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import {
 	IntegrationsNotConnectedError,
 	IntegrationsPersistenceError,
@@ -16,7 +16,7 @@ import {
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -38,13 +38,8 @@ import {
 	type PlanetScaleServiceApi,
 } from "@maple/backend/services/integrations/PlanetScaleService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
 
 /**
  * End-to-end HTTP tests for the `planetscaleIntegration` v2 group: a real router
@@ -142,13 +137,12 @@ const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.planetscaleIntegration),
+	).pipe(
+		Layer.provide(HttpV2PlanetScaleIntegrationsLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(planetscaleServiceLayer(planetscale)),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -158,8 +152,8 @@ const makeHarness = (planetscale: PlanetScaleFakes = {}) => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_integrations_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_integrations_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_integrations_e2e")
+	const USER = Schema.decodeSync(UserId)("user_integrations_e2e")
 
 	/** Root-role key (API keys resolve as `root` unless their metadata pins roles). */
 	const bootstrapAdminKey = (scopes?: ReadonlyArray<string>) =>
@@ -236,7 +230,7 @@ describe("v2 planetscale integration over HTTP", () => {
 		apiMetrics: null,
 		webhooks: null,
 		scrapeTarget: {
-			id: Schema.decodeUnknownSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
+			id: Schema.decodeSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
 			scrapeIntervalSeconds: 60,
 			includeBranches: ["main"],

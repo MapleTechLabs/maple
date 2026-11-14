@@ -29,7 +29,7 @@ import {
 	FetchRuntimes,
 	FetchWorkloads,
 } from "./command"
-import { LinkedCursorMessage, MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
@@ -342,7 +342,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(model),
 			themeResolved(),
-			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+			expectView(text("No downstream dependencies in this window")).toBeAbsent(),
 		)
 		const empty = pageUpdate(
 			model,
@@ -355,7 +355,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(empty),
 			themeResolved(),
-			expectView(text("No downstream dependencies in this window.")).toExist(),
+			expectView(text("No downstream dependencies in this window")).toExist(),
 		)
 	})
 
@@ -373,7 +373,7 @@ describe("service detail view", () => {
 			given(failed),
 			themeResolved(),
 			expectView(text("Couldn't load dependencies")).toExist(),
-			expectView(text("No downstream dependencies in this window.")).toBeAbsent(),
+			expectView(text("No downstream dependencies in this window")).toBeAbsent(),
 		)
 	})
 
@@ -434,7 +434,7 @@ describe("service detail view", () => {
 			{ update: pageUpdate, view },
 			given(loaded),
 			themeResolved(),
-			Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(text("10 versions")).toExist(),
 			expectView(text("v1.0.1")).not.toExist(),
 			click(role("button", { name: "Show all 10 deploys" })),
@@ -477,6 +477,7 @@ describe("where the service runs", () => {
 		railwayServiceId: "",
 		railwayEnvironmentId: "",
 		railwayEnvironmentName: "",
+		vercelProjectId: "",
 	}
 	const withRuntimes = (runtimes: ReadonlyArray<typeof CLOUD_RUN>) => {
 		const model = entered()
@@ -498,7 +499,7 @@ describe("where the service runs", () => {
 	const RUN_HREF = "/infra/gcp/cloudRun/payment-svc?project=acme-prod&region=europe-west1"
 	const settled = [
 		themeResolved(),
-		Mount.resolve(MountLinkedCursor, LinkedCursorMessage.CompletedMountLinkedCursor()),
+		Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 	]
 
 	test("a service on Cloud Run lists it under Runs on, linked to its Google Cloud page", () => {
@@ -697,7 +698,25 @@ describe("the API tab's endpoint drawer", () => {
 			themeResolved(),
 			expectView(text("/a")).toExist(),
 			click(role("button", { name: "Rejecting > 5%" })),
-			expectView(text("No endpoint matches this filter")).toExist(),
+			expectView(text("No endpoints match these filters")).toExist(),
+		)
+	})
+})
+
+describe("chart zoom", () => {
+	test("a drag across a chart opens that span as the window, as a push so Back returns", () => {
+		const zoomed = pageUpdate(
+			entered({ timePreset: "24h", tab: "operations" }),
+			Message.SelectedChartRange({
+				startMs: Date.parse("2026-10-01T09:00:00Z"),
+				endMs: Date.parse("2026-10-01T09:45:00Z"),
+			}),
+		)
+		expect(zoomed.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?tab=operations&startTime=2026-10-01+09%3A00%3A00&endTime=2026-10-01+09%3A45%3A00",
+				isReplace: false,
+			}),
 		)
 	})
 })

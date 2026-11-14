@@ -16,7 +16,7 @@ import { Array as Arr, Record as Rec, String as Str } from "effect"
  * the public API is full of genuinely nullable fields: 649 rendered positions
  * (83 in request bodies, 566 in responses) really do accept and emit `null`.
  * Collapsing those would publish a spec that rejects the server's own output.
- * The MCP fix (`collapseNullableUnions` in `apps/api/src/mcp/tools/registry.ts`)
+ * The MCP fix (`collapseNullableUnions` in `apps/ai/src/mcp/tools/registry.ts`)
  * could collapse a whole document only because no MCP parameter was nullable;
  * transplanting it here would be wrong at 88% of the sites it touched.
  *
@@ -62,7 +62,7 @@ const COMPONENT_PREFIX = "#/components/schemas/"
 
 const componentName = (ref: JsonValue | undefined): string | undefined => {
 	const value = asString(ref)
-	return value?.startsWith(COMPONENT_PREFIX) === true
+	return value !== undefined && Str.startsWith(COMPONENT_PREFIX)(value)
 		? Str.slice(COMPONENT_PREFIX.length)(value)
 		: undefined
 }

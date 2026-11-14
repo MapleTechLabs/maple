@@ -1,12 +1,12 @@
 import { Clock, Effect, Schema, Array as Arr, String as Str } from "effect"
 import {
-	QueryEngineExecuteRequest,
 	coerceServiceOverviewRows,
 	formatWarehouseDateTime,
 	parseWarehouseDateTime,
 	serviceHealthSnapshotHours,
 	windowDurationSeconds,
 } from "@maple/query-engine"
+import { QueryEngineExecuteRequest } from "@maple/domain/query-engine"
 import {
 	CommitSha,
 	DeploymentEnvironment,
@@ -49,12 +49,12 @@ export {
 const GetServiceOverviewInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	excludedCommitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 
 export type GetServiceOverviewInput = (typeof GetServiceOverviewInput)["Encoded"]
@@ -106,8 +106,6 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	}
 })
 
-// Fast service-health snapshot (main overview)
-
 export interface ServiceHealthSnapshot {
 	serviceName: string
 	environment: string
@@ -121,10 +119,10 @@ export interface ServiceHealthSnapshot {
 const GetServiceHealthSnapshotInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	// traces_aggregates_hourly has no ServiceNamespace column — lowered to
 	// service membership (see `scopeServicesToNamespaces`) after the query.
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 export type GetServiceHealthSnapshotInput = (typeof GetServiceHealthSnapshotInput)["Encoded"]
@@ -186,8 +184,6 @@ const getServiceHealthSnapshotEffect = Effect.fn("QueryEngine.getServiceHealthSn
 	}
 })
 
-// Service latency baseline (baseline-relative health)
-
 export interface ServiceLatencyBaseline {
 	serviceName: string
 	serviceNamespace: string
@@ -205,8 +201,8 @@ const GetServiceHealthBaselineInput = Schema.Struct({
 	// days BEFORE this point so an ongoing regression can't inflate its own
 	// baseline. Optional — defaults to "now".
 	rangeStartTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 export type GetServiceHealthBaselineInput = (typeof GetServiceHealthBaselineInput)["Encoded"]
@@ -262,7 +258,6 @@ const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBa
 	return result
 })
 
-// Service overview time series types
 export interface ServiceTimeSeriesPoint {
 	bucket: string
 	throughput: number
@@ -272,7 +267,7 @@ export interface ServiceTimeSeriesPoint {
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
-	return rows.toSorted((left, right) => Str.localeCompare(right.bucket)(left.bucket))
+	return Arr.sort(rows, (left: T, right: T) => Str.localeCompare(right.bucket)(left.bucket))
 }
 
 function fillServiceApdexPoints(
@@ -310,7 +305,6 @@ function fillServiceApdexPoints(
 	return trimSparseLeadingBuckets(filled, (row) => row.totalCount ?? 0)
 }
 
-// Service facets types
 interface FacetItem {
 	name: string
 	count: number
@@ -393,7 +387,6 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 	}
 })
 
-// Service detail types
 export interface ServiceDetailTimeSeriesPoint {
 	bucket: string
 	throughput: number

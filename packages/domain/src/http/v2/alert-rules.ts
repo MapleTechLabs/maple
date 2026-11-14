@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Array as Arr, Effect, Schema } from "effect"
 import { QueryEngineAlertReducer, QueryEngineNoDataBehavior } from "../../query-engine"
-import { PostgresTransactionId, UserId } from "../../primitives"
+import { PostgresTransactionId, UserId } from "@maple/primitives"
 import {
 	AlertCheckStatus,
 	AlertSkipReason,
@@ -20,6 +20,7 @@ import {
 	AlertRuleDestinationNotFoundError,
 	AlertRuleNotFoundError,
 	AlertRuleStoredConfigInvalidError,
+	AlertSeriesFailure,
 	AlertSeverity,
 	AlertSignalType,
 	AlertValidationError,
@@ -27,8 +28,10 @@ import {
 	AlertBreachWindow,
 	AlertEvaluationIntervalMinutes,
 	AlertEvaluationErrorKind,
+	AlertRuleTags,
 	type AlertThreshold,
 } from "../alerts"
+import { AnomalySignalType } from "../anomalies"
 import { AlertDestinationPublicId } from "./alert-destinations"
 
 const EVALUATION_INTERVAL_DESCRIPTION =
@@ -38,7 +41,7 @@ import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
 import { publicError, publicErrors } from "./public-error"
 import { V2ManagedWarehouseErrors, V2QueryEngineRouteErrors, V2WarehouseErrors } from "./query-errors"
-import { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
+import { AlertIncidentPublicId, AlertRulePublicId, EscalationChainPublicId } from "./resource-ids"
 
 export { AlertIncidentPublicId, AlertRulePublicId } from "./resource-ids"
 
@@ -73,6 +76,13 @@ export const V2AlertThreshold = Schema.Struct({
 		description:
 			"Destinations (`dest_…`) this severity notifies. A `critical` incident also notifies every `warning` destination.",
 	}),
+	// Optional rather than defaulted: a PATCH tier without it keeps the stored chain.
+	escalation_chain_id: Schema.optionalKey(
+		Schema.NullOr(EscalationChainPublicId).annotate({
+			description:
+				"Escalation chain (`esc_…`) an incident at this severity starts, on top of `destination_ids`, or `null` for none. It pages step by step until the incident is acknowledged or resolved. Omitted on create means none; omitted on update keeps the tier's current chain.",
+		}),
+	),
 }).annotate({
 	identifier: "AlertThreshold",
 	title: "Alert threshold",
@@ -93,6 +103,7 @@ export const fromV2Threshold = (tier: V2AlertThreshold): AlertThreshold => ({
 	upper: tier.upper,
 	recoveryValue: tier.recovery_value,
 	destinationIds: tier.destination_ids,
+	escalationChainId: tier.escalation_chain_id ?? null,
 })
 
 export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
@@ -101,10 +112,8 @@ export const toV2Threshold = (tier: AlertThreshold): V2AlertThreshold => ({
 	upper: tier.upper,
 	recovery_value: tier.recoveryValue,
 	destination_ids: tier.destinationIds,
+	escalation_chain_id: tier.escalationChainId ?? null,
 })
-
-/** Mirrors the v1 caps (alerts.ts): 32-char tags, at most 20 per rule. */
-const RuleTags = Schema.Array(Schema.String.check(Schema.isMaxLength(32))).check(Schema.isMaxLength(20))
 
 /**
  * The dashboard query-builder draft backing `builder_query` rules, passed
@@ -143,6 +152,7 @@ const alertRuleExample = {
 			upper: null,
 			recovery_value: null,
 			destination_ids: ["dest_oybbpTBhtSFGShMjjLiCrh"],
+			escalation_chain_id: null,
 		},
 	],
 	window_minutes: 5,
@@ -215,6 +225,13 @@ export const V2AlertRule = Schema.Struct({
 			"Deployment environments the rule is scoped to. Empty for all environments. Always empty for `builder_query` / `raw_query`, whose queries carry their own filters.",
 		examples: [["production"]],
 	}),
+	anomaly_signals: Schema.optionalKey(
+		Schema.Array(AnomalySignalType).annotate({
+			description:
+				"`anomaly` rules only: the detector signals the rule pages on. Empty for every signal. Absent on other rules.",
+			examples: [["error_rate", "latency_p95"]],
+		}),
+	),
 	tags: Schema.Array(Schema.String).annotate({
 		description: "Free-form tags used to group and filter rules.",
 		examples: [["payments"]],
@@ -402,7 +419,14 @@ const createParamsFields = {
 			examples: [["production"]],
 		}),
 	),
-	tags: Schema.optionalKey(RuleTags),
+	anomaly_signals: Schema.optionalKey(
+		Schema.Array(AnomalySignalType).annotate({
+			description:
+				"`anomaly` rules only: the detector signals to page on. Omit or pass `[]` for every signal.",
+			examples: [["error_rate"]],
+		}),
+	),
+	tags: Schema.optionalKey(AlertRuleTags),
 	group_by: Schema.optionalKey(Schema.NullOr(GroupBy)),
 	signal_type: AlertSignalType.annotate({
 		description: "What the rule measures.",
@@ -491,6 +515,7 @@ export const V2AlertRuleUpdateParams = Schema.Struct({
 	service_names: createParamsFields.service_names,
 	exclude_service_names: createParamsFields.exclude_service_names,
 	environments: createParamsFields.environments,
+	anomaly_signals: createParamsFields.anomaly_signals,
 	tags: createParamsFields.tags,
 	group_by: createParamsFields.group_by,
 	threshold_upper: createParamsFields.threshold_upper,
@@ -672,9 +697,7 @@ export const V2AlertRulePreviewResult = Schema.Struct({
 	query_timing: Schema.optionalKey(V2AlertQueryTiming).annotate({
 		description: "Raw SQL rules only: one check timed against the time limit of the rule's interval.",
 	}),
-	series_failure: Schema.optionalKey(
-		Schema.Literals(["query_too_slow", "query_too_much_memory", "not_time_grouped"]),
-	).annotate({
+	series_failure: Schema.optionalKey(AlertSeriesFailure).annotate({
 		description:
 			"Raw SQL rules only: `series` is empty. `query_too_slow` / `query_too_much_memory`: the range was too heavy to chart within the longest limit (`query_timing` still says whether one check fits; preview a shorter range). `not_time_grouped`: the SQL returns no `bucket` column, so it has one value for the whole range and no per-window series; select `$__timeGroup(<time column>) AS bucket` to chart it.",
 	}),
@@ -989,7 +1012,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: AlertRulePublicId },
 			success: V2AlertRuleDeleteResponse,
-			error: [alertForbidden, alertPersistence, alertRuleNotFound],
+			error: [alertForbidden, alertValidation, alertPersistence, alertRuleNotFound],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteAlertRule",
@@ -1019,7 +1042,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				identifier: "testAlertRule",
 				summary: "Test an alert rule",
 				description:
-					"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role and the `alerts:write` scope.",
+					"Evaluates a rule definition once against live data without saving it, optionally delivering a test notification. Requires an org-admin role, the `alerts:write` scope, and read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
 			}),
 		),
 	)
@@ -1039,7 +1062,7 @@ export class V2AlertRulesApiGroup extends HttpApiGroup.make("alertRules")
 				identifier: "previewAlertRule",
 				summary: "Preview an alert rule",
 				description:
-					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope.",
+					"Replays a rule definition over a historical range and returns the per-window observations and would-have-fired spans. Read-only (sends nothing). Requires the `alerts:read` scope (`alerts:write` for `raw_query`) plus read scopes for the telemetry the rule queries (`traces:read` for the built-in signals, the draft's source for `builder_query`, and all of `traces:read`, `logs:read`, `metrics:read` for `raw_query`).",
 			}),
 		),
 	)

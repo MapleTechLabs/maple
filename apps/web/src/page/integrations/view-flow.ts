@@ -2,20 +2,19 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { DataIntegration } from "../../route/data-integrations"
 import { flowColumns, liveChecklist, savedBanner } from "../kit/connect-flow"
 import { overviewOf } from "./derive"
+import { relativeTime } from "../kit/relative-time"
 import type { FlowStage } from "./flow"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { cardView } from "./view"
-import { railwayFlowView } from "./view-flow-railway"
-import { gcpFlowView } from "./view-flow-gcp"
-import { planetscaleFlowView } from "./view-flow-planetscale"
+import { railwayFlowView } from "../infra-integrations/railway/integration/view-flow-railway"
+import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
+import { planetscaleFlowView } from "../infra-integrations/planetscale/integration/view-flow-planetscale"
 import { prometheusFlowView } from "./view-flow-prometheus"
-import { cloudflareFlowView } from "./view-flow-cloudflare"
+import { cloudflareFlowView } from "../infra-integrations/cloudflare/integration/view-flow-cloudflare"
 import { githubFlowView } from "./view-flow-github"
-import { supabaseFlowView } from "./view-flow-supabase"
-import { awsFlowView } from "./view-flow-aws"
-
-// The body of `/sources/new`'s current step for a data integration: the step card and its rail.
+import { supabaseFlowView } from "../infra-integrations/supabase/integration/view-flow-supabase"
+import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
 type H = HtmlBuilder<Message>
 
@@ -52,7 +51,15 @@ const genericFlowView = (
 							: {
 									state: "done",
 									title: "Receiving data",
-									meta: connected.lastSyncLabel,
+									meta:
+										connected.lastSync === null
+											? null
+											: relativeTime(h, {
+													value: connected.lastSync.at,
+													nowMs: model.nowMs,
+													timeZone,
+													prefix: connected.lastSync.verb,
+												}),
 								},
 				],
 			}),
@@ -85,7 +92,7 @@ export const flowView = (
 		case "github":
 			return githubFlowView(h, model, stage)
 		case "supabase":
-			return supabaseFlowView(h, model, stage)
+			return supabaseFlowView(h, model, stage, timeZone)
 		default:
 			return genericFlowView(h, model, integration, stage, timeZone)
 	}

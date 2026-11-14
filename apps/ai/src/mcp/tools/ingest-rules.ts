@@ -1,16 +1,10 @@
 /**
  * Ingest rules: drop or redact telemetry before Maple stores or bills it. Anyone may list and
- * preview them; creating, changing and deleting is admin-only, like the REST routes, since a
+ * preview them; creating, changing and deleting needs an engineer or admin, like the REST routes, since a
  * rule rewrites or discards the whole organization's incoming data.
  */
 import { Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
-import {
-	DeleteIngestRuleOutput,
-	IngestRuleMutationOutput,
-	ListIngestRulesOutput,
-	PreviewIngestRuleOutput,
-	type IngestRuleRow,
-} from "@maple/domain/mcp-outputs"
+import { type IngestRuleRow } from "@maple/domain/mcp-outputs"
 import {
 	decodePublicId,
 	encodePublicId,
@@ -28,9 +22,9 @@ import {
 	type IngestRuleSpec,
 } from "@maple/domain/ingest-rules"
 import { IngestRuleValidationError, type SelfDescribingHttpError } from "@maple/domain/http"
-import type { ListLogsOutput } from "@maple/domain/tinybird"
-import type { OrgId } from "@maple/domain/primitives"
-import { requireAdmin } from "@maple/backend/services/auth/auth"
+import type { ListLogsRow as ListLogsOutput } from "@maple/query-engine/ch"
+import type { OrgId } from "@maple/primitives"
+import * as Policy from "@maple/domain/policy"
 import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -44,7 +38,7 @@ import {
 	type RuleRecord,
 } from "@maple/ingest-rules"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { truncate } from "../lib/format"
@@ -59,18 +53,18 @@ const PREVIEW_SALT = "preview"
 const adminOnly = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
-		yield* requireAdmin(
+		yield* Policy.check(
 			tenant.roles,
+			"ingest_rules:manage",
 			() =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's ingest rules, which only org admins may do. Ask an admin, or change it in Settings → Ingestion.`,
+					message: `${tool} changes the organization's ingest rules, which only org admins and engineers may do. Ask an admin or engineer, or change it in Settings → Ingestion.`,
 					capability: "org_admin",
 				}),
 		)
 		return tenant
 	})
 
-/** Validation failures name the parameter, so the model can fix the call. */
 /** The tool parameter a validator problem is about, so the model knows which argument to fix. */
 export const parameterOfProblem = (problem: string): string => {
 	if (Str.startsWith("condition ")(problem) || Str.includes("needs at least one condition")(problem))
@@ -165,10 +159,8 @@ const renderRule = (title: string, row: IngestRuleRow) => ({
 	next: [doc.next("preview_ingest_rule", { rule: row.id }, "what the rule does to recent data")],
 })
 
-// PREVIEW
-
 const parseAttributes = (raw: string): Effect.Effect<Readonly<Record<string, string>>> =>
-	Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(raw).pipe(
+	Schema.decodeEffect(Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)))(raw).pipe(
 		Effect.orElseSucceed(() => ({})),
 	)
 
@@ -214,7 +206,7 @@ const sampleRecords = Effect.fnUntraced(function* (
 
 /** A changed value as transcript text: strings raw, maps and lists as JSON rather than `[object Object]`. */
 const valueText = (value: AttrValue): string =>
-	typeof value === "string" ? value : (stringifyJson(value) ?? String(value))
+	typeof value === "string" ? value : (stringifyJson(value) ?? "[unserializable value]")
 
 /** `key -> after` for every top-level value a rule changed; the value before stays out of the transcript. */
 const changedValues = (before: RuleRecord, after: RuleRecord): ReadonlyArray<string> => {
@@ -306,8 +298,8 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		description:
 			"The organization's ingest rules: what telemetry is dropped or redacted before Maple stores or bills it, in the order they run (drop rules first, then redact rules by position).",
 		parameters: Schema.Struct({}),
-		output: ListIngestRulesOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Listing ingest rules"],
 		handler: Effect.fn("McpTool.listIngestRules")(function* () {
 			const tenant = yield* CurrentMcpTenant
@@ -326,7 +318,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 							message:
 								"This organization has no ingest rules; all telemetry is stored as sent.",
 							hints: [
-								"create_ingest_rule adds one (org admins only); preview_ingest_rule tries one first.",
+								"create_ingest_rule adds one (org admins and engineers only); preview_ingest_rule tries one first.",
 							],
 						},
 					}
@@ -367,8 +359,8 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			limit: P.limit({ default: 200, max: 500, noun: "sample records" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: PreviewIngestRuleOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Previewing an ingest rule"],
 		handler: Effect.fn("McpTool.previewIngestRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -457,15 +449,15 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "create_ingest_rule",
 		title: "Create Ingest Rule",
 		description:
-			"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Admin only. Applies to new data within 30 seconds.",
+			"Add a rule that drops or redacts telemetry before Maple stores or bills it. Dropped data is never billed. Drop rules need at least one condition. Preview with preview_ingest_rule first. Org admins and engineers only. Applies to new data within 30 seconds.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the rule"),
 			...SPEC_FIELDS,
 			enabled: P.optionalFlag("Start disabled with false; default true"),
 			position: P.optionalNumber("Run order among redact rules; default after the last rule"),
 		}),
-		output: IngestRuleMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
+		scopeFamily: "ingest_rules",
 		phrases: ["Adding an ingest rule"],
 		handler: Effect.fn("McpTool.createIngestRule")(function* (params) {
 			const tenant = yield* adminOnly("create_ingest_rule")
@@ -491,7 +483,7 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "update_ingest_rule",
 		title: "Update Ingest Rule",
 		description:
-			"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or action. Fields left out keep their value. Admin only.",
+			"Change an ingest rule: turn it off (enabled=false) or on, rename it, move it (position), or replace its signals, conditions or action. Fields left out keep their value. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 			name: P.optionalText("A new name"),
@@ -501,8 +493,8 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 			conditions: conditionsParam,
 			action: P.optionalJson(V2IngestRuleAction, `Replaces the action: ${actionDescription}`),
 		}),
-		output: IngestRuleMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
+		scopeFamily: "ingest_rules",
 		phrases: ["Updating an ingest rule"],
 		handler: Effect.fn("McpTool.updateIngestRule")(function* (params) {
 			const tenant = yield* adminOnly("update_ingest_rule")
@@ -539,13 +531,13 @@ export function registerIngestRuleTools(server: McpToolRegistrar) {
 		name: "delete_ingest_rule",
 		title: "Delete Ingest Rule",
 		description:
-			"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true. Admin only.",
+			"Delete an ingest rule. Telemetry it would have dropped or redacted is stored as sent from then on. Requires confirm=true. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			rule: P.text("The rule's name or id (list_ingest_rules lists them)"),
 			confirm: P.flag("Must be true"),
 		}),
-		output: DeleteIngestRuleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "ingest_rules",
 		phrases: ["Deleting an ingest rule"],
 		handler: Effect.fn("McpTool.deleteIngestRule")(function* (params) {
 			if (params.confirm !== true) {

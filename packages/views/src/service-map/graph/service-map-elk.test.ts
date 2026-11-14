@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vitest"
+import type { EdgeBase as Edge, NodeBase as Node } from "@xyflow/system"
+import { buildElkGraph } from "./service-map-elk"
+import { DEFAULT_LAYOUT_CONFIG, type ServiceEdgeData, type ServiceNodeData } from "./service-map-utils"
+import { Array as Arr, Option } from "effect"
+
+const node = (id: string, namespace?: string): Node<ServiceNodeData> => ({
+	id,
+	type: "serviceNode",
+	position: { x: 0, y: 0 },
+	data: {
+		label: id,
+		kind: "service",
+		throughput: 1,
+		tracedThroughput: 1,
+		hasSampling: false,
+		samplingWeight: 1,
+		errorRate: 0,
+		avgLatencyMs: 1,
+		selected: false,
+		namespace,
+	},
+})
+
+const edge = (source: string, target: string): Edge<ServiceEdgeData> => ({
+	id: `edge:${source}:${target}`,
+	source,
+	target,
+	type: "serviceEdge",
+	data: {
+		callCount: 1,
+		callsPerSecond: 1,
+		estimatedCallsPerSecond: 1,
+		errorCount: 0,
+		errorRate: 0,
+		avgDurationMs: 1,
+		maxDurationMs: 1,
+		hasSampling: false,
+	},
+})
+
+describe("buildElkGraph", () => {
+	it("flat graphs pack connected components (no hierarchy handling)", () => {
+		const graph = buildElkGraph([node("a"), node("b")], [edge("a", "b")], DEFAULT_LAYOUT_CONFIG)
+		expect(graph.layoutOptions!["elk.separateConnectedComponents"]).toBe("true")
+		expect(graph.layoutOptions!["elk.hierarchyHandling"]).toBeUndefined()
+		expect(Arr.map(graph.children!, (c) => c.id).sort()).toEqual(["a", "b"])
+	})
+
+	it("namespaced graphs get compound containers with label padding instead", () => {
+		const graph = buildElkGraph(
+			[node("a", "payments"), node("b", "payments"), node("c")],
+			[edge("a", "b")],
+			DEFAULT_LAYOUT_CONFIG,
+		)
+		expect(graph.layoutOptions!["elk.hierarchyHandling"]).toBe("INCLUDE_CHILDREN")
+		expect(graph.layoutOptions!["elk.separateConnectedComponents"]).toBeUndefined()
+		const container = Option.getOrUndefined(
+			Arr.findFirst(graph.children!, (c) => c.id === "elkns:payments"),
+		)
+		expect(container).toBeDefined()
+		expect(Arr.map(container!.children!, (c) => c.id).sort()).toEqual(["a", "b"])
+		expect(container!.layoutOptions!["elk.padding"]).toContain("top=")
+		// namespace-less node stays top-level
+		expect(Arr.some(graph.children!, (c) => c.id === "c")).toBe(true)
+	})
+
+	it("switches to bounded node placement above the large-graph threshold", () => {
+		const small = buildElkGraph([node("a")], [], DEFAULT_LAYOUT_CONFIG)
+		expect(small.layoutOptions!["elk.layered.nodePlacement.strategy"]).toBe("NETWORK_SIMPLEX")
+
+		const many = Array.from({ length: 301 }, (_, i) => node(`svc-${i}`))
+		const large = buildElkGraph(many, [], DEFAULT_LAYOUT_CONFIG)
+		expect(large.layoutOptions!["elk.layered.nodePlacement.strategy"]).toBe("BRANDES_KOEPF")
+	})
+})
+
+describe("layout anchoring", () => {
+	const graph = (count: number) => {
+		const nodes = Array.from({ length: count }, (_, i) => node(`s${i}`))
+		const edges = Array.from({ length: count - 1 }, (_, i) => edge(`s${i}`, `s${i + 1}`))
+		return { nodes, edges }
+	}
+
+	it("lays out from model order when there is no previous layout", () => {
+		const { nodes, edges } = graph(10)
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG)
+
+		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBe("NODES_AND_EDGES")
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
+		expect(Arr.every(g.children ?? [], (child) => child.x === undefined)).toBe(true)
+	})
+
+	it("seeds coordinates and switches to interactive when a previous layout covers the graph", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map(Arr.map(nodes, (n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.layering.strategy"]).toBe("INTERACTIVE")
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBe("INTERACTIVE")
+		expect(g.layoutOptions?.["elk.layered.cycleBreaking.strategy"]).toBe("INTERACTIVE")
+		// Model order competes with the positional hints for the same decision.
+		expect(g.layoutOptions?.["elk.layered.considerModelOrder.strategy"]).toBeUndefined()
+		const seeded = Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s3"))
+		expect(seeded).toMatchObject({ x: 300, y: 30 })
+	})
+
+	it("ignores a previous layout that covers too little of the graph", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map([["s0", { x: 5, y: 5 }]])
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBeUndefined()
+		expect(Arr.every(g.children ?? [], (child) => child.x === undefined)).toBe(true)
+	})
+
+	it("still seeds when the topology gained a node the previous layout never saw", () => {
+		const { nodes, edges } = graph(10)
+		const previous = new Map(Arr.map(nodes.slice(0, 9), (n, i) => [n.id, { x: i * 100, y: i * 10 }]))
+
+		const g = buildElkGraph(nodes, edges, DEFAULT_LAYOUT_CONFIG, previous)
+
+		expect(g.layoutOptions?.["elk.layered.crossingMinimization.strategy"]).toBe("INTERACTIVE")
+		// The known nodes carry hints; the new one is left for ELK to place.
+		expect(Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s8"))?.x).toBe(
+			800,
+		)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(g.children ?? [], (child) => child.id === "s9"))?.x,
+		).toBeUndefined()
+	})
+})

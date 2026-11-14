@@ -12,16 +12,13 @@ import { pickAttr } from "./cloud-platforms"
 import type { AggregatedDuration, FlowNodeData } from "./flow-graph"
 import type { SpanDescription } from "./span-category"
 import { describeSpan } from "./span-category"
-import { typographyClass } from "../../ui/typography"
+import { typography, typographyClass } from "../../ui/typography"
 import { toneBoxClass } from "../../ui/tone-box"
 import { hstack, vstack } from "../../ui/stack"
-import { Array as Arr } from "effect"
-
-// `FlowSpanNode` (packages/ui `traces/flow-node.tsx`).
+import { Array as Arr, String as Str } from "effect"
 
 const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
-/** `<ServiceDot>` (packages/ui `service-dot.tsx`). */
 export const serviceDot = <M>(h: HtmlBuilder<M>, serviceName: string, className: string): Html =>
 	h.span([
 		h.AriaHidden(true),
@@ -41,45 +38,15 @@ const formatCombinedDuration = (isCombined: boolean, single: number, aggregated:
 	}
 }
 
-const REDIS_LAYERS = [
-	[
-		"M22.5 13.7c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 14.9 1.6 14.2 1.5 13.7v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V13.7z",
-		"0.4",
-	],
-	[
-		"M22.5 9.2c-.1.5-1.6 1.2-4.6 2.3-1.7.7-3.8 1.3-5.9 1.7-2.1-.4-4.2-1-5.9-1.7C3.1 10.4 1.6 9.7 1.5 9.2v2.5c0 .6 1.5 1.3 4.5 2.3 1.7.7 3.8 1.3 5.9 1.7 2.1-.4 4.2-1 5.9-1.7 3-1 4.6-1.7 4.6-2.3V9.2z",
-		"0.6",
-	],
-	[
-		"M22.5 4.7c0 .6-1.5 1.3-4.6 2.3C16.2 7.7 14.1 8.3 12 8.7 9.9 8.3 7.8 7.7 6.1 7 3.1 6 1.5 5.3 1.5 4.7S3.1 3.4 6.1 2.4C7.8 1.7 9.9 1.1 12 .7c2.1.4 4.2 1 5.9 1.7 3 1 4.6 1.7 4.6 2.3z",
-		"0.9",
-	],
-] as const
-
 const cacheSystemIcon = <M>(h: HtmlBuilder<M>, system: CacheInfo["system"], size: number): Html =>
-	system?.toLowerCase() === "redis"
-		? h.svg(
-				[
-					h.Attribute("width", String(size)),
-					h.Attribute("height", String(size)),
-					h.Attribute("viewBox", "0 0 24 24"),
-					h.Attribute("fill", "none"),
-					h.Class("shrink-0"),
-				],
-				Arr.map(REDIS_LAYERS, ([d, opacity]) =>
-					h.path([
-						h.Attribute("d", d),
-						h.Attribute("fill", "currentColor"),
-						h.Attribute("opacity", opacity),
-					]),
-				),
-			)
+	system !== null && Str.toLowerCase(system) === "redis"
+		? flowIcon(h, "RedisIcon", { size, className: "shrink-0" })
 		: flowIcon(h, "DatabaseIcon", { size, className: "shrink-0 text-current" })
 
 const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string => {
 	const { httpInfo, cacheInfo, category } = desc
 	if (category.id === "cache" && cacheInfo) {
-		const op = cacheInfo.operation?.toUpperCase()
+		const op = cacheInfo.operation === null ? undefined : Str.toUpperCase(cacheInfo.operation)
 		const name = cacheInfo.name ?? span.spanName
 		return op ? `${op} ${name}` : name
 	}
@@ -93,7 +60,7 @@ const primaryText = (span: FlowNodeData["span"], desc: SpanDescription): string 
 	return span.spanName
 }
 
-/** `outcomeBadgeStyle` (packages/ui `lib/cloud-platforms/types.ts`). */
+/** An outcome badge's tone box: error when bad, else info. */
 const outcomeBadgeStyle = (bad: boolean): string => toneBoxClass(bad ? "error" : "info")
 
 const statusBadge = <M>(
@@ -159,26 +126,25 @@ const missingCard = <M>(
 			),
 		],
 		[
-			h.div(
-				[h.Class("flex items-center gap-1.5 min-w-0 text-2xs")],
-				[
-					h.span([h.Class("font-semibold text-muted-foreground")], ["Missing span"]),
-					h.span([h.Class("flex-1")]),
-					h.span(
-						[
-							h.Class(
-								cn(
-									typographyClass({ mono: true, numeric: true }),
-									typographyClass({ tone: "subtle", truncate: true }),
-								),
+			hstack(h, { gap: "1.5", align: "center", shrink: true, className: "text-2xs" }, [
+				typography(h, { tone: "muted", weight: "semibold" }, ["Missing span"]),
+				h.span([h.Class("flex-1")]),
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ mono: true, numeric: true }),
+								typographyClass({ tone: "subtle", truncate: true }),
 							),
-							h.Title(data.span.spanId),
-						],
-						[shortId(data.span.spanId, "span")],
-					),
-				],
-			),
-			h.div([h.Class("text-3xs italic text-foreground-faint")], ["Not ingested or dropped"]),
+						),
+						h.Title(data.span.spanId),
+					],
+					[shortId(data.span.spanId, "span")],
+				),
+			]),
+			typography(h, { size: "3xs", tone: "faint", as: "div", className: "italic" }, [
+				"Not ingested or dropped",
+			]),
 		],
 	),
 	flowHandle(h, nodeId, "source", "bottom", HANDLE_CLASSES),
@@ -215,7 +181,7 @@ export const flowSpanNode = <M>(
 				h.Class(
 					cn(
 						"relative w-[280px] rounded-lg border bg-card shadow-raised hover:shadow-popup active:shadow-popup",
-						isError && "border-severity-error-a3 bg-severity-error-a1 shadow-severity-error/10",
+						isError && "border-severity-error-a3 bg-severity-error-a1",
 						isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-popup",
 						isCombined &&
 							"before:absolute before:inset-0 before:-z-10 before:translate-x-1.5 before:translate-y-1.5 before:rounded-lg before:border before:bg-card",
@@ -235,57 +201,64 @@ export const flowSpanNode = <M>(
 							),
 						]
 					: []),
-				h.div(
-					[h.Class("flex items-center gap-2 p-2 pb-2.5 pr-2.5")],
-					[
-						h.span(
-							[
-								h.Class(
-									cn(
-										"flex size-6 shrink-0 items-center justify-center rounded-md",
-										isError
-											? "bg-severity-error-a2 text-severity-error"
-											: cn(category.accent.soft, category.accent.text),
-									),
+				hstack(h, { gap: "2", align: "center", className: "p-2 pb-2.5 pr-2.5" }, [
+					h.span(
+						[
+							h.Class(
+								cn(
+									"flex size-6 shrink-0 items-center justify-center rounded-md",
+									isError
+										? "bg-severity-error-a2 text-severity-error"
+										: cn(category.accent.soft, category.accent.text),
 								),
-							],
+							),
+						],
+						[
+							category.id === "cache" && cacheInfo?.system
+								? cacheSystemIcon(h, cacheInfo.system, 14)
+								: flowIcon(h, category.icon, { size: 14 }),
+						],
+					),
+					vstack(h, { gap: "0.5", shrink: true, grow: true }, [
+						hstack(h, { gap: "1.5", shrink: true }, [
+							h.span(
+								[
+									h.Class(
+										cn(
+											"block min-w-0 truncate",
+											"font-mono",
+											"flex-1 text-2xs font-medium text-foreground",
+										),
+									),
+									h.Title(text),
+								],
+								[text],
+							),
+							...(badge === null ? [] : [badge]),
+						]),
+						hstack(
+							h,
+							{
+								gap: "1.5",
+								align: "center",
+								shrink: true,
+								className: typographyClass({ size: "3xs", tone: "muted" }),
+							},
 							[
-								category.id === "cache" && cacheInfo?.system
-									? cacheSystemIcon(h, cacheInfo.system, 14)
-									: flowIcon(h, category.icon, { size: 14 }),
+								serviceDot(h, span.serviceName, "size-1.5"),
+								typography(h, { truncate: true }, [span.serviceName]),
+								typography(h, { tone: "faint", className: "shrink-0" }, ["·"]),
+								h.span([h.Class("shrink-0")], [category.label]),
+								h.span([h.Class("flex-1")]),
+								typography(
+									h,
+									{ numeric: true, className: "shrink-0", attributes: [h.Title(tooltip)] },
+									[main],
+								),
 							],
 						),
-						vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-							hstack(h, { gap: "1.5", shrink: true }, [
-								h.span(
-									[
-										h.Class(
-											cn(
-												"block min-w-0 truncate",
-												"font-mono",
-												"flex-1 text-2xs font-medium text-foreground",
-											),
-										),
-										h.Title(text),
-									],
-									[text],
-								),
-								...(badge === null ? [] : [badge]),
-							]),
-							h.div(
-								[h.Class("flex min-w-0 items-center gap-1.5 text-3xs text-muted-foreground")],
-								[
-									serviceDot(h, span.serviceName, "size-1.5"),
-									h.span([h.Class("truncate")], [span.serviceName]),
-									h.span([h.Class("shrink-0 text-foreground-faint")], ["·"]),
-									h.span([h.Class("shrink-0")], [category.label]),
-									h.span([h.Class("flex-1")]),
-									h.span([h.Class("shrink-0 tabular-nums"), h.Title(tooltip)], [main]),
-								],
-							),
-						]),
-					],
-				),
+					]),
+				]),
 				h.div(
 					[
 						h.Class(

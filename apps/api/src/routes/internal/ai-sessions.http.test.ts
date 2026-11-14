@@ -16,6 +16,7 @@ import { HttpRouter } from "effect/http"
 import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AiSessionReadService } from "@maple/backend/services/ai-sessions/AiSessionReadService"
 import { makeWarehouseServiceStub } from "../v2/v2-test-support"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiSessionsInternalLive } from "./ai-sessions.http"
@@ -76,6 +77,7 @@ const spanRow = (index: number) => ({
 const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 	const routes = HttpApiBuilder.layer(AiSessionsOnlyApi).pipe(
 		Layer.provide(HttpAiSessionsInternalLive),
+		Layer.provide(Layer.effect(AiSessionReadService, AiSessionReadService.make)),
 		Layer.provide(ApiErrorBoundaryLive),
 		Layer.provideMerge(AuthorizationStubLayer),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseServiceStub(overrides))),
@@ -96,7 +98,7 @@ const makeHarness = (overrides: Partial<WarehouseQueryServiceApi>) => {
 				},
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {
@@ -650,7 +652,11 @@ describe("POST /internal/ai-sessions/details", () => {
 			expect(sql).toContain("Timestamp >= '2026-08-19 08:50:00.000000000'")
 			expect(sql).toContain("Timestamp <= '2026-08-19 11:40:00.000000000'")
 			expect(sql).not.toContain("INTERVAL")
-			expect(sql?.split("Timestamp >= '2026-08-19 09:50:00.000000000'").length).toBe(3)
+			expect(
+				sql === undefined
+					? undefined
+					: Str.split("Timestamp >= '2026-08-19 09:50:00.000000000'")(sql).length,
+			).toBe(3)
 			// Exactly the page's ids, and the page's counted filters, so a trace
 			// resolves to the session it was ranked into.
 			for (const sessionId of DETAILS_BODY.sessionIds) expect(sql).toContain(`'${sessionId}'`)
@@ -965,7 +971,8 @@ describe("POST /internal/ai-sessions/spans — pages and scopes", () => {
 			expect(sql()).toContain(`trace_index.TraceId IN ('${TRACE_ID}', '${other}')`)
 			expect(sql()).toContain("SpanAttributes['maple_ai.vendor.id'] = ''")
 			// The spans read alone: no session-detection read over `traces`.
-			expect(sql()?.split("FROM traces").length).toBe(2)
+			const spansSql = sql()
+			expect(spansSql === undefined ? undefined : Str.split("FROM traces")(spansSql).length).toBe(2)
 		} finally {
 			await harness.dispose()
 		}
@@ -1015,12 +1022,8 @@ describe("POST /internal/ai-sessions/summary", () => {
 		inputTokens: "0",
 		outputTokens: "0",
 		cacheReadTokens: "0",
-		llmInputTokens: "0",
-		llmOutputTokens: "0",
-		llmCacheReadTokens: "0",
 		costReporters: "0",
 		cost: "0",
-		llmCost: "0",
 		models: ["gpt-5"],
 		agentNames: ["slack-agent"],
 		...overrides,
@@ -1058,12 +1061,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 	it("reports the session's own row as the totals, and the turn rows beside it", async () => {
 		const { harness, sqls } = summaryHarness(
 			[
-				turnRow({
-					inputTokens: "300",
-					llmInputTokens: "150",
-					outputTokens: "60",
-					llmOutputTokens: "30",
-				}),
+				turnRow({ inputTokens: "150", outputTokens: "30" }),
 				turnRow({
 					turnKey: "turn_1",
 					conversationId: "turn_1",
@@ -1072,14 +1070,11 @@ describe("POST /internal/ai-sessions/summary", () => {
 					endTime: "2026-08-19 10:00:35.500000000",
 					errorSpanCount: "1",
 					inputTokens: "100",
-					llmInputTokens: "100",
 					models: ["gpt-5", "claude-opus-5"],
 					agentNames: [],
 				}),
 			],
 			[
-				// Usage reported per model call AND rolled up onto the agent span:
-				// the per-call figures are the total, the roll-up is not added on top.
 				totalsRow({
 					traceCount: "2",
 					spanCount: "80",
@@ -1089,13 +1084,10 @@ describe("POST /internal/ai-sessions/summary", () => {
 					errorSpanCount: "1",
 					endTime: "2026-08-19 10:00:35.500000000",
 					durationMs: "35500",
-					inputTokens: "400",
-					llmInputTokens: "250",
-					outputTokens: "60",
-					llmOutputTokens: "30",
+					inputTokens: "250",
+					outputTokens: "30",
 					costReporters: "4",
-					cost: "0.02",
-					llmCost: "0.01",
+					cost: "0.01",
 					models: ["gpt-5", "claude-opus-5"],
 				}),
 			],
@@ -1135,28 +1127,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 		}
 	})
 
-	// The rule is applied to the session's row, never to the turn rows summed:
-	// a turn span's roll-up and its model calls can land in different rows.
-	it("does not double usage split across a turn row and its trace's row", async () => {
-		const { harness } = summaryHarness(
-			[
-				turnRow({ inputTokens: "300", llmCalls: "0" }),
-				turnRow({ turnKey: TRACE_ID, conversationId: "", inputTokens: "300", llmInputTokens: "300" }),
-			],
-			[totalsRow({ inputTokens: "600", llmInputTokens: "300" })],
-		)
-		try {
-			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
-			expect(response.body).toMatchObject({
-				tokens: { input: 300, output: 0, cacheRead: 0 },
-				tokenReporting: "per-call",
-			})
-		} finally {
-			await harness.dispose()
-		}
-	})
-
-	it("counts a roll-up when no model call reported usage", async () => {
+	it("reports no cost when nothing priced a call", async () => {
 		const { harness } = summaryHarness(
 			[turnRow({ inputTokens: "300", outputTokens: "60" })],
 			[totalsRow({ inputTokens: "300", outputTokens: "60" })],
@@ -1165,7 +1136,7 @@ describe("POST /internal/ai-sessions/summary", () => {
 			const response = await harness.post("/internal/ai-sessions/summary", SPANS_BODY)
 			expect(response.body).toMatchObject({
 				tokens: { input: 300, output: 60, cacheRead: 0 },
-				tokenReporting: "roll-up",
+				tokenReporting: "per-call",
 			})
 			expect(response.body).not.toHaveProperty("cost")
 		} finally {
@@ -1205,10 +1176,6 @@ describe("POST /internal/ai-sessions/summary", () => {
 		}
 	})
 })
-
-// ---------------------------------------------------------------------------
-// Agent Sessions › Tools
-// ---------------------------------------------------------------------------
 
 const TOOLS_WINDOW = { startTime: "2026-08-19 09:00:00", endTime: "2026-08-19 11:00:00" }
 

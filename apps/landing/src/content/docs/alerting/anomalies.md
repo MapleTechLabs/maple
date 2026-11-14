@@ -56,7 +56,7 @@ Traffic loss and error logs are always warnings.
 
 ## Where anomalies show up
 
-- **Anomalies** in the sidebar lists every anomaly, filterable by service, environment, signal and severity.
+- **Alerts → Inbox** lists anomalies when you turn on the **Anomalies** filter, with a choice of **Open**, **Resolved** or **All**.
 - Each anomaly has a page with the observed signal charted against its baseline, and the values at open, now, baseline, threshold and deviation.
 - On [Services](/docs/explore/services), a service with an open anomaly shows as degraded, or unhealthy when the anomaly is critical.
 - **Open investigation** on an anomaly hands it to the AI agent. With AI triage turned on under **Settings → AI**, an agent investigates each new anomaly by itself and attaches a triage summary.

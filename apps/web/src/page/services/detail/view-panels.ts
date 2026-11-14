@@ -15,6 +15,9 @@ import { callsPerSecond, windowSeconds } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
+import { hstack } from "@maple/views/ui/stack"
+import { dividedList } from "@maple/views/ui/rule"
+import { typography } from "@maple/views/ui/typography"
 
 // The Overview tab's quiet panels.
 
@@ -23,7 +26,7 @@ type H = HtmlBuilder<Message>
 /** Calls and requests draw in the Throughput chart's colour on every tab. */
 export const SPARKLINE_TOKEN = "--chart-throughput"
 
-/** `SectionCard`: a `Panel` with a header title, an optional trailing action, and a body. */
+/** A `Panel` with a header title, an optional trailing action, and a body. */
 export const sectionCard = (
 	h: H,
 	options: Readonly<{ title: string; action?: Html; className?: string }>,
@@ -34,7 +37,7 @@ export const sectionCard = (
 		panelBody(h, children),
 	])
 
-/** `ViewAllButton`: jumps from an Overview card to the full tab. */
+/** Jumps from an Overview card to the full tab. */
 export const viewAllButton = (h: H, onClick: Message): Html =>
 	textLink(h, { className: "text-xs", onClick }, ["View all →"])
 
@@ -42,7 +45,7 @@ const PANEL_LIMIT = 5
 const SPARKLINE_MODEL = Chart.init()
 const toSparkline = (message: Chart.Message) => Message.GotChartMessage({ chartId: "sparkline", message })
 
-/** `ServiceTopOperationsPanel`: nothing while loading or empty, five rows otherwise. */
+/** Nothing while loading or empty, five rows otherwise. */
 export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null): Html => {
 	const operations = AsyncData.getOrElse(model.operations.data, () => []).slice(0, PANEL_LIMIT)
 	if (operations.length === 0 || model.window === null) return null
@@ -58,8 +61,9 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 			action: viewAllButton(h, onViewAll),
 		},
 		[
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				Arr.map(operations, (op) =>
 					h.li(
 						[h.Key(op.spanName)],
@@ -82,23 +86,22 @@ export const topOperationsPanel = (h: H, model: Model, theme: ThemeColors | null
 										mono: true,
 										className: "relative flex-1 text-xs text-foreground",
 									}),
-									h.span(
+									hstack(
+										h,
+										{
+											gap: "3",
+											align: "center",
+											as: "span",
+											className: "relative shrink-0 font-mono text-2xs tabular-nums",
+										},
 										[
-											h.Class(
-												"relative flex shrink-0 items-center gap-3 font-mono text-2xs tabular-nums",
-											),
-										],
-										[
-											h.span(
-												[h.Class("text-foreground")],
-												[
-													...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
-													formatThroughput(
-														callsPerSecond(op.estimatedSpanCount, seconds),
-														"/s",
-													),
-												],
-											),
+											typography(h, { tone: "foreground" }, [
+												...(op.estimatedSpanCount > op.spanCount ? ["~"] : []),
+												formatThroughput(
+													callsPerSecond(op.estimatedSpanCount, seconds),
+													"/s",
+												),
+											]),
 											errorRateValue(h, { rate: op.errorRate }),
 											latencyValue(h, { ms: op.p95DurationMs, scale: "p95" }),
 										],

@@ -15,15 +15,18 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { emptyValue, serviceDot } from "@maple/views/ui/values"
-import { metricTypeBadge, type MetricRow } from "../shared"
+import { metricTypeBadge } from "@maple/views/ui/metric-type"
+import type { MetricRow } from "../shared"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricLink } from "./update"
 import { relativeTime } from "../../kit/relative-time"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
@@ -62,7 +65,7 @@ export const loadingTable = (h: H): Html =>
 		tableClassName: "table-fixed",
 	})
 
-const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Html =>
+const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string, isFocused: boolean): Html =>
 	tableRow(
 		h,
 		[
@@ -85,10 +88,9 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 					...(metric.metricDescription === ""
 						? []
 						: [
-								h.span(
-									[h.Class("text-3xs text-muted-foreground line-clamp-1")],
-									[metric.metricDescription],
-								),
+								typography(h, { size: "3xs", tone: "muted", className: "line-clamp-1" }, [
+									metric.metricDescription,
+								]),
 							]),
 				]),
 			]),
@@ -109,7 +111,9 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 								},
 								[
 									serviceDot(h, { serviceName: metric.serviceName, size: "sm" }),
-									h.span([h.Class("min-w-0 truncate")], [metric.serviceName]),
+									typography(h, { truncate: true, className: "min-w-0" }, [
+										metric.serviceName,
+									]),
 								],
 							),
 				],
@@ -118,11 +122,12 @@ const metricRow = (h: H, model: Model, metric: MetricRow, timeZone: string): Htm
 			tableCell(h, [formatNumber(metric.dataPointCount)], `${MD_CELL} font-mono text-xs`),
 			tableCell(
 				h,
-				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone, tooltip: "title" })],
+				[relativeTime(h, { value: metric.lastSeen, nowMs: model.nowMs, timeZone })],
 				`${MD_CELL} text-xs text-muted-foreground`,
 			),
 		],
 		"hover:bg-surface-sunken active:bg-surface-sunken",
+		rowFocusAttributes(h, isFocused),
 	)
 
 /** The loaded table: rows up to `tableLimit`, dimmed while the next page loads. */
@@ -153,7 +158,9 @@ export const metricsTable = (
 						]),
 						tableBody(
 							h,
-							Arr.map(metrics, (metric) => metricRow(h, model, metric, timeZone)),
+							Arr.map(metrics, (metric, index) =>
+								metricRow(h, model, metric, timeZone, model.focusedIndex === index),
+							),
 						),
 					]),
 				],

@@ -1,15 +1,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
-import { supportChannelName } from "@maple/domain/support-channel"
+import { Effect, Exit, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { OrgId, UserId, type TenantContext } from "@maple/domain/http"
+import { supportChannelName } from "./SupportChannelService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+} from "@maple/backend/testing/test-pglite"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SupportChannelService } from "./SupportChannelService"
@@ -18,8 +18,8 @@ import { SupportSlackClient, SupportSlackRefusedError, type SupportSlackMethod }
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_support")
-const USER = Schema.decodeUnknownSync(UserId)("user_support")
+const ORG = Schema.decodeSync(OrgId)("org_support")
+const USER = Schema.decodeSync(UserId)("user_support")
 const tenant: TenantContext = { orgId: ORG, userId: USER, roles: [], authMode: "clerk" }
 
 const die = () => Effect.die(new Error("not exercised by this test"))
@@ -32,6 +32,7 @@ interface World {
 	/** Runs while Slack is "creating", to stage a concurrent takeover. */
 	duringCreate: (() => Promise<void>) | null
 	takenNames: Set<string>
+	orgName: string
 	calls: Array<{ method: SupportSlackMethod; body: Record<string, unknown> }>
 }
 
@@ -41,6 +42,7 @@ const freshWorld = (): World => ({
 	duringCreate: null,
 	botChannels: [],
 	takenNames: new Set(),
+	orgName: "Acme Inc.",
 	calls: [],
 })
 
@@ -107,7 +109,7 @@ const stubs = (world: World) =>
 			retrieve: (orgId) =>
 				Effect.succeed({
 					id: orgId,
-					name: "Acme Inc.",
+					name: world.orgName,
 					slug: "acme",
 					imageUrl: null,
 					createdAtMs: 0,
@@ -118,7 +120,7 @@ const stubs = (world: World) =>
 
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(SupportChannelService, SupportChannelService.make).pipe(
-		Layer.provide(Layer.mergeAll(stubs(world), testDb.layer)),
+		Layer.provide(Layer.mergeAll(stubs(world), testDb.layer, SecureRandom.layerWebCrypto)),
 	)
 
 const methods = (world: World) => Arr.map(world.calls, (call) => call.method)
@@ -178,6 +180,23 @@ describe("SupportChannelService", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
+	it.effect("posts an org name as text, never as a mention or a link", () => {
+		const world = freshWorld()
+		world.orgName = "<!channel> & <https://example.test|Acme>"
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* invite(tenant)
+			const welcome = Arr.findFirst(world.calls, (call) => call.method === "chat.postMessage")
+			assert.isTrue(Option.isSome(welcome))
+			if (Option.isSome(welcome)) {
+				assert.include(
+					String(welcome.value.body.text),
+					"This is &lt;!channel&gt; &amp; &lt;https://example.test|Acme&gt;'s shared channel",
+				)
+			}
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
 	it.effect("keeps the channel it created when the invite that follows fails", () => {
 		const world = freshWorld()
 		world.inviteFails = true
@@ -221,7 +240,9 @@ describe("SupportChannelService", () => {
 			const result = yield* invite(tenant)
 			assert.notStrictEqual(result.channel.channelId, "C_internal")
 			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
-			const invited = world.calls.find((call) => call.method === "conversations.inviteShared")
+			const invited = Option.getOrUndefined(
+				Arr.findFirst(world.calls, (call) => call.method === "conversations.inviteShared"),
+			)
 			assert.notStrictEqual(invited?.body.channel, "C_internal")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})

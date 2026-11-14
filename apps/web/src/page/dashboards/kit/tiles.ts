@@ -1,10 +1,10 @@
-// BOUNDARY: tiles render whatever their endpoint answered; rows are untyped query results.
+// BOUNDARY-FILE: tiles render whatever their endpoint answered; rows are untyped query results.
 import type { DashboardDocument } from "@maple/domain/http"
 import { EMPTY_VALUE, formatValueByUnit } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { cn } from "@maple/ui/lib/utils"
-import { dataSourceTransform } from "@maple/widgets/dashboard"
-import { Formatter, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { dataSourceTransform, type SharedWidgetDisplayV3 } from "@maple/widgets/dashboard"
+import { Formatter, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Chart from "@maple/views/charts/chart"
 import type { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -29,24 +29,21 @@ import { chartWidgetTile, CHART_WIDGETS } from "./tiles-chart"
 import { frame, timeRangeLabelOf, titleOf } from "./tiles-frame"
 import { gaugeDial } from "./gauge-view"
 import { statTile, thresholdColor } from "./tiles-stat"
+import { typography } from "@maple/views/ui/typography"
+import { textLink } from "@maple/views/ui/text-link"
+import { isNumericString, SortState, sortRowsByField } from "../../kit/table-sort"
 
 export { formatStatValue } from "./tiles-stat"
 
-// The tiles: stat, gauge, table, list and note here, every registry
-// chart through `chartWidgetTile` (./tiles-chart.ts).
-
 /** What a tile reads of its widget; a share's redacted widget satisfies it too. */
-export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "display" | "timeRange"> &
-	Readonly<{ visualization: string; dataSource: unknown }>
+export type TileWidget = Pick<DashboardDocument["widgets"][number], "id" | "timeRange"> &
+	Readonly<{ visualization: string; dataSource: unknown; display: typeof SharedWidgetDisplayV3.Type }>
 type Widget = TileWidget
 type Row = Readonly<Record<string, unknown>>
 
-/** `useTableSort`: per table widget, the active key and direction. */
-export const TableSort = Schema.Struct({
-	key: Schema.NullOr(Schema.String),
-	dir: Schema.Literals(["asc", "desc"]),
-})
-export type TableSort = typeof TableSort.Type
+/** Per table widget, the active key and direction. */
+export const TableSort = SortState
+export type TableSort = SortState
 
 /** Everything a tile reads besides its widget, and the Messages it sends back. */
 export type TileContext<M> = Readonly<{
@@ -74,11 +71,11 @@ export type TileContext<M> = Readonly<{
 	variables?: VariableValues
 	/** "Show last 7 days" on a list wider than the cap, when the surface offers narrowing. */
 	narrowRange?: M | null
+	/** Reloads the page when the chart code failed to load, on surfaces that offer it. */
+	reloadPage?: M | null
 	/** The "Details" popover under a failed tile's message, when the surface renders one. */
 	errorDetails?: ((message: string) => Html) | null
 }>
-
-// VALUES
 
 /** A cell as text: primitives as themselves, objects and arrays as JSON-like text. */
 const cellText = (value: unknown): string =>
@@ -88,17 +85,29 @@ const cellText = (value: unknown): string =>
 			? String(value)
 			: Formatter.format(value)
 
-/** `formatCellValue`: units format numbers; unitless cells stay raw. */
+/**
+ * A unitless number, readable but exact: float noise trimmed (`0.1 + 0.2` is `0.3`), 10,000 and up
+ * grouped. Strings stay raw: ids, versions (`3.10`) and UInt64 counts arrive as strings.
+ */
+const plainNumber = (value: unknown): string | undefined =>
+	typeof value === "number" && Number.isFinite(value)
+		? value.toLocaleString("en-US", {
+				useGrouping: Math.abs(value) >= 10_000,
+				...(Math.abs(value) < 1 && value !== 0
+					? { maximumSignificantDigits: 3 }
+					: { maximumFractionDigits: 2 }),
+			})
+		: undefined
+
+/** Units format numbers; unitless measures are trimmed, other cells stay raw. */
 export const formatCell = (value: unknown, unit?: string): string => {
 	if (value === null || value === undefined) return EMPTY_VALUE
 	const num = Number(value)
-	if (Number.isNaN(num) || unit === undefined || unit === "") return cellText(value)
+	if (Number.isNaN(num) || unit === undefined || unit === "") return plainNumber(value) ?? cellText(value)
 	return formatValueByUnit(num, unit)
 }
 
-const isNumericCell = (value: unknown): boolean =>
-	typeof value === "number" ||
-	(typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value)))
+const isNumericCell = (value: unknown): boolean => typeof value === "number" || isNumericString(value)
 
 const COLUMN_VISIBILITY = [
 	"",
@@ -141,22 +150,6 @@ const columnsOf = (
 	return Arr.filter(base, (column) => column.hidden !== true)
 }
 
-/** `compareValues` (use-table-sort.ts). */
-const compareValues = (a: unknown, b: unknown, dir: "asc" | "desc"): number => {
-	if (
-		(typeof a === "number" && typeof b === "number") ||
-		(isNumericCell(a) && isNumericCell(b) && typeof a === "string" && typeof b === "string")
-	) {
-		const an = Number(a)
-		const bn = Number(b)
-		const cmp = an < bn ? -1 : an > bn ? 1 : 0
-		return dir === "asc" ? cmp : -cmp
-	}
-	return dir === "asc" ? Str.localeCompare(String(b))(String(a)) : Str.localeCompare(String(a))(String(b))
-}
-
-// TILES
-
 const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Column, isText: boolean): Html =>
 	sortButton(
 		h,
@@ -166,7 +159,7 @@ const sortableHeader = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, column: Colum
 			onClick: ctx.onSort(column.field, isText),
 			align: column.align === "right" ? "right" : "left",
 		},
-		[h.span([h.Class("truncate")], [column.header])],
+		[typography(h, { truncate: true }, [column.header])],
 	)
 
 const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<string, string>> = {}) =>
@@ -176,7 +169,7 @@ const cellStyle = <M>(h: HtmlBuilder<M>, column: Column, extra: Readonly<Record<
 			: { "text-align": column.align ?? "left", width: `${column.width}px`, ...extra },
 	)
 
-/** `TableWidget`: sortable headers, unit-formatted cells, progressive column reveal. */
+/** Sortable headers, unit-formatted cells, progressive column reveal. */
 const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 overflow-auto p-0",
@@ -190,9 +183,7 @@ const tableTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 		const columns = columnsOf(widget, rows, () => true)
 		const sort = ctx.tableSort
 		const textFields = Arr.filter(Rec.keys(rows[0] ?? {}), (field) => !isNumericCell(rows[0]?.[field]))
-		const sortKey = sort.key
-		const sorted =
-			sortKey === null ? rows : rows.toSorted((a, b) => compareValues(a[sortKey], b[sortKey], sort.dir))
+		const sorted = sortRowsByField(rows, sort)
 		return [
 			table(h, {}, [
 				tableHeader(h, [
@@ -252,57 +243,76 @@ const KNOWN_MAP_FIELDS = ["rootSpan.attributes", "logAttributes", "resourceAttri
 /** One property of an untyped row value, by name. */
 const property = (value: unknown, key: string): unknown =>
 	value !== null && typeof value === "object"
-		? Rec.toEntries(value).find(([name]) => name === key)?.[1]
+		? Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(Rec.toEntries(value), ([name]) => name === key),
+					([, entry]) => entry,
+				),
+			)
 		: undefined
 
 const nested = (value: unknown, parts: ReadonlyArray<string>): unknown =>
-	parts.reduce<unknown>((current, part) => property(current, part), value)
+	Arr.reduce(parts, value, (current, part) => property(current, part))
 
 const resolveFieldPath = (row: Row, path: string): unknown => {
-	const mapField = KNOWN_MAP_FIELDS.find((field) => Str.startsWith(`${field}.`)(path))
-	if (mapField === undefined) return nested(row, Str.split(".")(path))
-	const map = nested(row, Str.split(".")(mapField))
-	return property(map, Str.slice(mapField.length + 1)(path))
+	return Option.match(
+		Arr.findFirst(KNOWN_MAP_FIELDS, (field) => Str.startsWith(`${field}.`)(path)),
+		{
+			onNone: () => nested(row, Str.split(".")(path)),
+			onSome: (mapField) =>
+				property(nested(row, Str.split(".")(mapField)), Str.slice(mapField.length + 1)(path)),
+		},
+	)
 }
+
+/** A list column's text: array items joined with their own formatting, anything else as one cell. */
+export const listCellText = (value: unknown, unit?: string): string =>
+	Arr.isArray(value)
+		? Arr.join(
+				Arr.map(value, (item) => (item === null || item === undefined ? "" : cellText(item))),
+				", ",
+			)
+		: formatCell(value, unit)
 
 const listCell = <M>(h: HtmlBuilder<M>, column: Column, index: number, row: Row): Html => {
 	const value = resolveFieldPath(row, column.field)
-	const display = Arr.isArray(value) ? value.join(", ") : formatCell(value, column.unit)
+	const display = listCellText(value, column.unit)
 	const className = cn("text-xs", columnVisibilityClass(index))
 	const content: Html | string =
 		column.field === "traceId" && typeof value === "string" && value !== ""
 			? (() => {
 					const raw = row.timestamp ?? row.startTime
 					const t = typeof raw === "string" ? raw : undefined
-					return h.a(
-						[
-							h.Href(
-								hrefOf(
-									AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
-								),
+					return textLink(
+						h,
+						{
+							href: hrefOf(
+								AppRoute.Trace({ traceId: value, search: t === undefined ? {} : { t } }),
 							),
-							h.Target("_blank"),
-							h.Class(
-								"font-mono text-primary underline decoration-primary-a3 underline-offset-2 hover:decoration-primary active:decoration-primary",
-							),
-						],
+							isMono: true,
+							className:
+								"inline font-normal underline decoration-primary-a3 hover:decoration-primary active:decoration-primary",
+							attributes: [h.Target("_blank")],
+						},
 						[shortId(value, "trace")],
 					)
 				})()
 			: column.field === "spanName" && typeof value === "string" && value !== ""
-				? h.a(
-						[
-							h.Href(hrefOf(AppRoute.Traces({ search: { spanNames: [value] } }))),
-							h.Target("_blank"),
-							h.Class("hover:underline active:underline underline-offset-2"),
-						],
+				? textLink(
+						h,
+						{
+							href: hrefOf(AppRoute.Traces({ search: { spanNames: [value] } })),
+							tone: "inherit",
+							className: "inline",
+							attributes: [h.Target("_blank")],
+						},
 						[display],
 					)
 				: display
 	return tableCell(h, [content], className, [cellStyle(h, column)])
 }
 
-/** `ListWidget`: raw rows, trace ids and span names as links. TODO(list): `TruncatedCell` bodies. */
+/** Raw rows, trace ids and span names as links. TODO(list): truncated cell bodies. */
 const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 overflow-auto p-0",
@@ -343,7 +353,7 @@ const listTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Ht
 	})
 }
 
-/** `MarkdownWidget`: a static note, no data state; empty reads as a prompt to edit. */
+/** A static note, no data state; empty reads as a prompt to edit. */
 const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const content = widget.display.markdown?.content ?? ""
 	return widgetShell(
@@ -360,16 +370,15 @@ const markdownTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget)
 		},
 		[
 			Str.trim(content) === ""
-				? h.div(
-						[h.Class("text-xs text-muted-foreground italic")],
-						["Empty note. Edit to add markdown content."],
-					)
+				? typography(h, { size: "xs", tone: "muted", as: "div", className: "italic" }, [
+						"Empty note. Edit to add markdown content.",
+					])
 				: h.div([h.Class("text-xs text-foreground space-y-2")], renderMarkdown(h, content)),
 		],
 	)
 }
 
-/** `GaugeWidget`: the segmented dial; one `glowId` per tile, as `useId` gives. */
+/** The segmented dial; one `glowId` per tile. */
 const gaugeTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	const options = frame(ctx, widget, {
 		contentClassName: "flex-1 min-h-0 flex items-center justify-center p-1 @min-[200px]/widget:p-2",
@@ -391,7 +400,6 @@ const gaugeTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): H
 	})
 }
 
-/** `visualizationFor(widget.visualization)`. */
 export const widgetTile = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget): Html => {
 	switch (widget.visualization) {
 		case "stat":

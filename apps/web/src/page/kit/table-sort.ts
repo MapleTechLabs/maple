@@ -1,11 +1,11 @@
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Order } from "effect"
 
 // The click-to-sort state as Model data, and the comparator.
 
 export const SortDir = Schema.Literals(["asc", "desc"])
 export type SortDir = typeof SortDir.Type
 
-/** `useSortState`: the sorted column (`null` = source order) and its direction. */
+/** The sorted column (`null` = source order) and its direction. */
 export const SortState = Schema.Struct({ key: Schema.NullOr(Schema.String), dir: SortDir })
 export type SortState = typeof SortState.Type
 
@@ -14,10 +14,10 @@ export const sortStateOf = <K extends Schema.Top>(key: K) =>
 	Schema.Struct({ key: Schema.NullOr(key), dir: SortDir })
 export type Sort<K = string> = Readonly<{ key: K | null; dir: SortDir }>
 
-/** A sortable cell value. */
-export type SortValue = number | string
+/** A sortable cell value; a missing one sorts as text. */
+export type SortValue = number | string | undefined
 
-/** `handleSort`: same key flips the direction (desc, asc, then source order when resettable); a new key starts asc for names, desc otherwise. */
+/** Same key flips the direction (desc, asc, then source order when resettable); a new key starts asc for names, desc otherwise. */
 export const nextSort = <K>(
 	sort: Sort<K>,
 	key: K,
@@ -30,7 +30,8 @@ export const nextSort = <K>(
 	return { key, dir: options.stringKeys?.includes(key) === true ? "asc" : "desc" }
 }
 
-const isNumericString = (value: unknown): value is string =>
+/** A string a number reads from, not blank. */
+export const isNumericString = (value: unknown): value is string =>
 	typeof value === "string" && Str.trim(value) !== "" && Number.isFinite(Number(value))
 
 /** `compareValues`: numeric when both sides are numbers (or numeric strings), else text. */
@@ -48,15 +49,38 @@ export const compareValues = (a: unknown, b: unknown, dir: SortDir): number => {
 	return dir === "asc" ? Str.localeCompare(bs)(as) : Str.localeCompare(as)(bs)
 }
 
-/** `useTableSort`'s `sorted`: a stable sort by the active column, source order without one. */
+/** A URL-held sort after a header click: the active column flips, another starts descending, and the default order leaves the URL. */
+export const urlSortPatch = <K extends string>(
+	current: Readonly<{ sortBy: K; sortDir: SortDir }>,
+	key: K,
+	defaults: Readonly<{ sortBy: K; sortDir: SortDir }>,
+): Readonly<{ sortBy: K | undefined; sortDir: SortDir | undefined }> => {
+	const sortDir: SortDir = key === current.sortBy && current.sortDir === "desc" ? "asc" : "desc"
+	return key === defaults.sortBy && sortDir === defaults.sortDir
+		? { sortBy: undefined, sortDir: undefined }
+		: { sortBy: key, sortDir }
+}
+
+/** A stable sort by the active column, source order without one. */
 export const sortRows = <Row>(
 	rows: ReadonlyArray<Row>,
 	sort: Sort,
 	read: (row: Row, key: string) => SortValue,
 ): ReadonlyArray<Row> => {
 	const key = sort.key
-	return key === null ? rows : rows.toSorted((a, b) => compareValues(read(a, key), read(b, key), sort.dir))
+	return key === null
+		? rows
+		: Arr.sort(
+				rows,
+				orderOf((a: Row, b: Row) => compareValues(read(a, key), read(b, key), sort.dir)),
+			)
 }
+
+/** A native numeric comparator as an `Order`: only its sign counts, as with `toSorted`. */
+const orderOf =
+	<Row>(compare: (a: Row, b: Row) => number): Order.Order<Row> =>
+	(a, b) =>
+		Order.Number(compare(a, b), 0)
 
 /** `sortRows` on the row field named by the key, `pinned` rows first. */
 export const sortRowsByField = <Row, K extends keyof Row>(
@@ -66,11 +90,14 @@ export const sortRowsByField = <Row, K extends keyof Row>(
 ): ReadonlyArray<Row> => {
 	const key = sort.key
 	if (key === null) return rows
-	const compare = (a: Row, b: Row) => compareValues(a[key], b[key], sort.dir)
-	if (pinned === undefined) return rows.toSorted(compare)
+	const compare = orderOf((a: Row, b: Row) => compareValues(a[key], b[key], sort.dir))
+	if (pinned === undefined) return Arr.sort(rows, compare)
 	return [
-		...Arr.filter(rows, pinned).toSorted(compare),
-		...Arr.filter(rows, (row) => !pinned(row)).toSorted(compare),
+		...Arr.sort(Arr.filter(rows, pinned), compare),
+		...Arr.sort(
+			Arr.filter(rows, (row) => !pinned(row)),
+			compare,
+		),
 	]
 }
 

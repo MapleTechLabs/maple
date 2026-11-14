@@ -5,6 +5,7 @@ import { type IngestConfig, ingestHeaders, postToIngest } from "../platform/tran
 import type { EntryContext } from "../session/session"
 import { parseUserAgent } from "../platform/user-agent"
 import { scrubUrl } from "../platform/url-privacy"
+import { isCommitSha } from "../platform/commit-sha"
 
 /** ClickHouse-style `YYYY-MM-DD HH:MM:SS.mmm` in UTC (matches the ingest gateway). */
 export function formatCHDateTime(date: Date): string {
@@ -140,7 +141,7 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 					}
 				: undefined),
 			// Only a SHA-shaped version is a head revision; a semver string stays out of `vcs.*`.
-			...(input.serviceVersion && /^[0-9a-f]{7,40}$/i.test(input.serviceVersion)
+			...(isCommitSha(input.serviceVersion)
 				? { "vcs.ref.head.revision": input.serviceVersion }
 				: undefined),
 		},

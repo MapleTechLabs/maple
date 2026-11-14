@@ -12,7 +12,6 @@ const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const DaysBeforeCancel = Schema.Int
 /** A volume in GB: finite, never negative. */
 const Volume = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
-/** A fraction from 0 to 1. */
 const Share = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 
 /** Billable GB per signal over one 30-day window, as the plan meters it. */

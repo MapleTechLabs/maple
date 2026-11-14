@@ -5,12 +5,10 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
-import { WORKFLOW_LABEL } from "../kit/workflow"
+import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
 import { EvaluateEscalation, RunIssueWrite } from "./command"
 import { type IssueWrite, Message } from "./message"
 import type { Model } from "./model"
-
-// The rail's writes (`transitionTo`, `claim`, `heartbeat`, `release`, `changeSeverity` in the route).
 
 type Return = PageReturn<Model, Message>
 type Busy = Model["busy"][number]
@@ -21,15 +19,16 @@ const BUSY = {
 	Heartbeat: "heartbeat",
 	Release: "release",
 	SetSeverity: "severity",
+	Unmerge: "unmerge",
 } satisfies Readonly<Record<IssueWrite["_tag"], Busy>>
 
-/** `useMutationAction`'s failure toast: the title, the error's user-facing message. */
 const ERROR_TITLE = {
 	Transition: "Couldn't change state",
 	Claim: "Couldn't claim issue",
 	Heartbeat: "Couldn't extend lease",
 	Release: "Couldn't release issue",
 	SetSeverity: "Couldn't change severity",
+	Unmerge: "Couldn't unmerge issue",
 } satisfies Readonly<Record<IssueWrite["_tag"], string>>
 
 const successTitle = (write: IssueWrite, severity: string | null): string => {
@@ -44,6 +43,8 @@ const successTitle = (write: IssueWrite, severity: string | null): string => {
 			return "Released"
 		case "SetSeverity":
 			return severity === null ? "Severity cleared" : `Severity set to ${severity}`
+		case "Unmerge":
+			return "Unmerged"
 	}
 }
 
@@ -61,32 +62,30 @@ export const startWrite = (model: Model, write: IssueWrite): Return => {
 			}
 }
 
-/** Drops one in-flight entry of the write's kind. */
 const settledBusy = (busy: Model["busy"], kind: Busy): Model["busy"] => {
 	const at = busy.indexOf(kind)
 	return at === -1 ? busy : [...busy.slice(0, at), ...busy.slice(at + 1)]
 }
 
-const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim"]
+const BUSY_PRIORITY: ReadonlyArray<Busy> = ["state", "severity", "heartbeat", "release", "claim", "unmerge"]
 
-/** The sidebar's busy state: the first in-flight kind by its priority chain. */
 export const sidebarBusy = (model: Model): Busy | null =>
-	BUSY_PRIORITY.find((kind) => model.busy.includes(kind)) ?? null
+	Option.getOrNull(Arr.findFirst(BUSY_PRIORITY, (kind) => model.busy.includes(kind)))
 
 const currentIssue = (model: Model) => Option.getOrNull(AsyncData.getData(model.detail.data))
 
-/** `StateSelect`'s `change`: only a reachable state other than the current one moves the issue. */
+/** Only a reachable state other than the current one moves the issue. */
 export const pickedState = (model: Model, value: string): Return => {
 	const issue = currentIssue(model)
 	if (issue === null) return { model }
 	const allowed = allowedTransitionsForAll([issue.workflow_state])
-	const next = allowed.find((state) => state === value)
-	return next === undefined || next === issue.workflow_state
+	const next = Arr.findFirst(allowed, (state) => state === value)
+	return Option.isNone(next) || next.value === issue.workflow_state
 		? { model }
-		: startWrite(model, { _tag: "Transition", toState: next })
+		: startWrite(model, { _tag: "Transition", fromState: issue.workflow_state, toState: next.value })
 }
 
-/** `changeSeverity`: clearing writes at once, a level asks the escalation policy first. */
+/** Clearing writes at once; a level asks the escalation policy first. */
 export const pickedSeverity = (model: Model, severity: IssueSeverity | null): Return => {
 	const picked = { ...model, severityPick: model.severityPick + 1 }
 	return severity === null
@@ -116,9 +115,11 @@ export const evaluatedEscalation = (
 		}),
 		onSuccess: (preview) => {
 			if (preview.outcome !== "route") return startWrite(model, { _tag: "SetSeverity", severity })
-			const names = Arr.map(
-				preview.destinationIds,
-				(id) => model.destinations.find((destination) => destination.id === id)?.name ?? id,
+			const names = Arr.map(preview.destinationIds, (id) =>
+				Arr.findFirst(model.destinations, (destination) => destination.id === id).pipe(
+					Option.flatMapNullishOr((found) => found.name),
+					Option.getOrElse(() => id),
+				),
 			)
 			return liftConfirm(
 				{ ...model, pendingSeverity: { severity, destinationNames: names } },
@@ -157,10 +158,14 @@ export const completedWrite = (
 ): Return => {
 	const settled = { ...model, busy: settledBusy(model.busy, BUSY[write._tag]) }
 	return Result.match(result, {
-		onFailure: (failure) => ({
-			model: settled,
-			outMessage: toast("error", ERROR_TITLE[write._tag], failure.message),
-		}),
+		// A conflict means this tab is stale: re-read so it shows the state that won.
+		onFailure: (failure) =>
+			failure.type === "conflict_error"
+				? {
+						...refresh(settled),
+						outMessage: toast("error", ERROR_TITLE[write._tag], failure.message),
+					}
+				: { model: settled, outMessage: toast("error", ERROR_TITLE[write._tag], failure.message) },
 		onSuccess: ({ severity }) => {
 			const refreshed = refresh(settled)
 			return {

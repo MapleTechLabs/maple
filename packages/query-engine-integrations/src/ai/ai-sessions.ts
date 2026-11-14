@@ -132,16 +132,9 @@ import {
 	unionAll,
 	type CHUnionQuery,
 	type ColumnAccessor,
-	type CompiledQueryRowSchema,
 } from "@maple-dev/effect-orm/clickhouse"
-import {
-	AiTraceIndex,
-	Traces,
-	exactDateTime64,
-	inTraces,
-	orgIdParam,
-	paramTraceWindow,
-} from "@maple/query-engine/ch/tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { exactDateTime64, inTraces, orgIdParam, paramTraceWindow } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import {
 	AI_SESSION_SPANS_MAX_SPANS,
@@ -151,17 +144,11 @@ import {
 	type AiSessionSpanScope,
 } from "@maple/domain/http"
 import {
-	AI_AGENT_OPERATIONS,
-	AI_INFERENCE_OPERATIONS,
-	AI_MEMORY_OPERATIONS,
-	AI_RETRIEVAL_OPERATIONS,
-	AI_TOOL_OPERATIONS,
 	MAPLE_AI_SESSION_ID_ATTR,
 	MAPLE_AI_STAMP_ATTRS,
 	MAPLE_AI_TRACE_SESSION_PREFIX,
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_NATIVE_TURN_ID_ATTR,
-	type AiGenAiField,
 } from "@maple/domain/gen-ai"
 import { aiFieldSourceKeys, aiSpanAttributeKeys, aiSpanAttributePrefixes } from "./ai-integrations"
 import {
@@ -175,13 +162,14 @@ import {
 
 const SESSION_ID_ATTR = MAPLE_AI_SESSION_ID_ATTR
 const VENDOR_ID_ATTR = MAPLE_AI_VENDOR_ID_ATTR
-const ERROR_TYPE_ATTR = "error.type"
-const RESPONSE_STATUS_ATTR = "gen_ai.response.status"
-/** `gen_ai.response.status` values that mean the generation failed — semconv's
- *  `failed` plus the pre-enum `error` dialect. Mirrors `spanFailed` in
- *  `@maple/agent-sessions`' `session-turns.ts`; the list badge and the
- *  detail's Failures panel must count the same spans. */
-const FAILED_RESPONSE_STATUSES = ["failed", "error"]
+/** Whether a span failed, as `spanFailed` in `@maple/agent-sessions`'
+ *  `session-turns.ts` reads it: the gateway's verdict on a span it stamped,
+ *  else the span status. The list badge and the detail's Failures panel must
+ *  count the same spans. */
+const spanFailedCond = ($: SpanColumns): CH.Condition =>
+	$.SpanAttributes.get(MAPLE_AI_STAMP_ATTRS.error)
+		.eq("1")
+		.or($.SpanAttributes.get(MAPLE_AI_STAMP_ATTRS.llmCall).eq("").and($.StatusCode.eq("Error")))
 
 /**
  * Sorts every span that does NOT carry a fact behind every one that does, so a
@@ -227,7 +215,7 @@ const WINDOW_PAD_SECONDS = 86_400
 const hasSessionId = (attrs: CH.Expr<Record<string, string>>, get: CH.Expr<string>) =>
 	CH.mapContains(attrs, SESSION_ID_ATTR).and(get.neq(""))
 
-/** Not in the builder's function set; same local helper `tracesDetailQuery` uses. */
+/** Not in the builder's function set; same local helper `traceListQuery` uses. */
 const fromUnixTimestamp64Nano = (nanos: CH.Expr<number>): CH.Expr<string> =>
 	compileFnCall<string>("fromUnixTimestamp64Nano", nanos)
 
@@ -415,7 +403,7 @@ export interface AiSessionPageOutput {
 	/** Tokens across every bucket, deepest reporter counted, one claim per response id — see `sessionUsageSum`. */
 	readonly totalTokens: number
 	// The five disjoint buckets `totalTokens` is the sum of, counted the same
-	// way — zeros on a session whose rows predate migration 0031.
+	// way.
 	readonly inputTokens: number
 	readonly cacheReadTokens: number
 	readonly cacheWriteTokens: number
@@ -478,7 +466,7 @@ export function idSearchPattern(search: string): string {
 		needle = Str.slice(MAPLE_AI_TRACE_SESSION_PREFIX.length)(needle)
 	}
 	while (Str.endsWith("…")(needle)) needle = Str.slice(0, -1)(needle)
-	return `${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+	return `${Str.replace(/[\\%_]/g, "\\$&")(needle)}%`
 }
 
 /** Distinct models/agents collected per trace for the list row. */
@@ -519,10 +507,10 @@ const MAX_NAMES_PER_TRACE = 20
  *
  * The measures are collected here per trace and summed per session one level
  * up. Usage travels as the trace's reporters rather than a sum, because a
- * wrapper's roll-up of its children cannot be undone one row at a time — see
- * `traceUsageColumns`.
+ * model call that restates the calls beneath it cannot be undone one row at a
+ * time — see `traceUsageColumns`.
  */
-type IndexColumns = ColumnAccessor<typeof AiTraceIndex.columns>
+type IndexColumns = ColumnAccessor<typeof Datasources.aiTraceIndex.columns>
 
 /** What ranks a trace's session, per trace: its key, its extent and the two
  *  measures the session filters and sorts read. All `aiSessionRankQuery`
@@ -551,10 +539,11 @@ const indexTracesOf = <Bounds extends IndexBounds, Row extends { readonly traceI
 	sessionIds: readonly string[] | undefined,
 	select: ($: IndexColumns) => Row,
 ) => {
-	const values = (list: readonly string[] | undefined) => (list?.length ? list : undefined)
-	const search = opts.search?.trim() || undefined
+	const values = (list: readonly string[] | undefined) =>
+		list !== undefined && list.length > 0 ? list : undefined
+	const search = opts.search === undefined ? undefined : Str.trim(opts.search) || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(select)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -786,7 +775,7 @@ const pagePlan = (opts: AiSessionPageOpts) => {
 
 	// The `HAVING` and `WHERE` levels see the aliases by name only.
 	const column = {
-		sessionId: CH.dynamicColumn<string>("sessionId", T.string),
+		sessionId: CH.dynamicColumn("sessionId", T.string),
 		errorAgentSpans: CH.dynamicColumn<number>("errorAgentSpans", T.float64),
 		agentDurationMs: CH.dynamicColumn<number>("agentDurationMs", T.float64),
 		cost: CH.dynamicColumn<number>("cost", T.float64),
@@ -984,30 +973,12 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 
 	// Per trace: every span of a page trace, session-bearing or not, inside the
 	// page's padded window.
-	const perTrace = from(Traces)
+	const perTrace = from(Datasources.traces)
 		.select(($) => {
 			return {
 				traceId: $.TraceId,
 				spanCount: CH.count(),
-				// Span status, or an attribute-declared failure on a vendor-stamped
-				// span: frameworks record failed model/tool calls as values on `Ok`
-				// spans, and the badge must agree with the detail page's counting.
-				errorSpanCount: CH.countIf(
-					$.StatusCode.eq("Error").or(
-						$.SpanAttributes.get(VENDOR_ID_ATTR)
-							.neq("")
-							.and(
-								$.SpanAttributes.get(ERROR_TYPE_ATTR)
-									.neq("")
-									.or(
-										CH.inList(
-											$.SpanAttributes.get(RESPONSE_STATUS_ATTR),
-											FAILED_RESPONSE_STATUSES,
-										),
-									),
-							),
-					),
-				),
+				errorSpanCount: CH.countIf(spanFailedCond($)),
 				serviceNames: CH.groupUniqArray($.ServiceName),
 				// Named apart from the outer `startTime`/`endTime` on purpose: an
 				// outer alias shadows the derived table's column of the same name,
@@ -1021,7 +992,7 @@ export function aiSessionDetailsQuery(opts: AiSessionDetailsOpts) {
 				// single long span reports a duration of 0, and every other session
 				// under-reports by exactly the last-starting span's duration, which
 				// is invisible because it always looks like plausible jitter. Same
-				// idiom as `tracesDetailQuery`.
+				// idiom as `traceListQuery`.
 				traceEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
 			}
 		})
@@ -1158,8 +1129,6 @@ export function mergeAiSessionDetails(
 	return [...merged.values()]
 }
 
-// List facets (UNION ALL — one branch per index dimension)
-
 export interface AiSessionFacetsOutput {
 	readonly name: string
 	readonly count: number
@@ -1200,9 +1169,9 @@ export type AiSessionFacetType = "vendor" | "service" | "environment" | "model" 
 export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 	const facet = (
 		facetType: AiSessionFacetType,
-		name: ($: ColumnAccessor<typeof AiTraceIndex.columns>) => CH.Expr<string>,
+		name: ($: ColumnAccessor<typeof Datasources.aiTraceIndex.columns>) => CH.Expr<string>,
 	) => {
-		const perTrace = from(AiTraceIndex)
+		const perTrace = from(Datasources.aiTraceIndex)
 			.select(($) => ({
 				traceId: $.TraceId,
 				// Over EVERY span of the trace, not only those carrying the value:
@@ -1246,8 +1215,6 @@ export function aiSessionFacetsQuery(): CHUnionQuery<AiSessionFacetsOutput> {
 		facet("tool", ($) => $.ToolName),
 	).format("JSON")
 }
-
-// Range distributions (the sidebar's histograms and percentile presets)
 
 /** The session measures the list's range filters read, by the name the list row gives each. */
 export type AiSessionDistributionMeasure = "durationMs" | "cost" | "totalTokens" | "llmCalls" | "toolCalls"
@@ -1351,8 +1318,6 @@ export function aiSessionDistributionsQuery() {
 		.format("JSON")
 }
 
-// Session window resolution (id → bounds)
-
 export interface AiSessionWindowOutput {
 	/** Warehouse datetime literals, already padded — feed them straight back in. */
 	readonly startTime: string
@@ -1379,7 +1344,7 @@ export interface AiSessionWindowOutput {
  * must read `spanCount` to tell an unknown session from a real one.
  */
 export function aiSessionWindowQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
@@ -1410,7 +1375,7 @@ export function aiSessionWindowQuery() {
  * the two are interchangeable to a caller holding only an id.
  */
 export function aiTraceWindowQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			startTime: CH.toString_(CH.intervalSub(CH.min_($.Timestamp), WINDOW_PAD_SECONDS)),
 			endTime: CH.toString_(CH.intervalAdd(CH.max_($.Timestamp), WINDOW_PAD_SECONDS)),
@@ -1440,21 +1405,7 @@ export interface AiTraceSpansOpts extends AiSessionSpansOpts {
 	readonly traceIds?: readonly string[]
 }
 
-export interface AiSessionSpansOutput {
-	readonly traceId: string
-	readonly spanId: string
-	readonly parentSpanId: string
-	readonly spanName: string
-	readonly spanKind: string
-	readonly serviceName: string
-	readonly durationMs: number
-	readonly statusCode: string
-	readonly statusMessage: string
-	readonly timestamp: string
-	readonly spanAttributes: Record<string, string>
-}
-
-export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutput> = Schema.Struct({
+export const aiSessionSpansRowSchema = Schema.Struct({
 	traceId: Schema.String,
 	spanId: Schema.String,
 	parentSpanId: Schema.String,
@@ -1470,6 +1421,8 @@ export const aiSessionSpansRowSchema: CompiledQueryRowSchema<AiSessionSpansOutpu
 	// observability path, which reads maps already serialized to a string.
 	spanAttributes: Schema.Record(Schema.String, Schema.String),
 })
+
+export type AiSessionSpansOutput = typeof aiSessionSpansRowSchema.Type
 
 /**
  * A span's attribute map cut down to what `mapAiSpan` reads. Measured on
@@ -1489,7 +1442,7 @@ export const aiSpanAttributes = (
 
 /** Shared by both span reads, so a session keyed by id and one keyed by trace
  *  cannot drift apart in shape — {@link aiSessionSpansRowSchema} decodes both. */
-const spanProjection = ($: ColumnAccessor<typeof Traces.columns>) => ({
+const spanProjection = ($: ColumnAccessor<typeof Datasources.traces.columns>) => ({
 	traceId: $.TraceId,
 	spanId: $.SpanId,
 	parentSpanId: $.ParentSpanId,
@@ -1541,7 +1494,7 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	const sessionTraceIds = sessionTraceIdsSubquery()
 
 	return (
-		from(Traces)
+		from(Datasources.traces)
 			.select(spanProjection)
 			.where(($) => [
 				$.OrgId.eq(orgIdParam),
@@ -1561,12 +1514,12 @@ export function aiSessionSpansQuery(opts: AiSessionSpansOpts = {}) {
 	)
 }
 
-type SpanColumns = ColumnAccessor<typeof Traces.columns>
+type SpanColumns = ColumnAccessor<typeof Datasources.traces.columns>
 
 /** The traces carrying the session id, within the window — the detection half
  *  of every session-keyed read. */
 const sessionTraceIdsSubquery = () =>
-	from(Traces)
+	from(Datasources.traces)
 		.select(($) => ({ TraceId: $.TraceId }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1616,7 +1569,7 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 	const limit = opts.limit ?? AI_SESSION_SPANS_MAX_SPANS
 	const traceIds = opts.traceIds
 
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(spanProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1633,59 +1586,6 @@ export function aiTraceSpansQuery(opts: AiTraceSpansOpts = {}) {
 		.format("JSON")
 }
 
-// ---------------------------------------------------------------------------
-// Session summary — the whole session's totals, computed where the spans are
-// ---------------------------------------------------------------------------
-
-/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
-export interface AiSessionTotalsOutput {
-	readonly traceCount: number
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly llmInputTokens: number
-	readonly llmOutputTokens: number
-	readonly llmCacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly llmCost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
-}
-
-export interface AiSessionSummaryOutput {
-	readonly turnKey: string
-	readonly conversationId: string
-	readonly traceIds: readonly string[]
-	readonly startTime: string
-	readonly endTime: string
-	readonly durationMs: number
-	readonly spanCount: number
-	readonly aiSpanCount: number
-	readonly llmCalls: number
-	readonly toolCalls: number
-	readonly errorSpanCount: number
-	readonly inputTokens: number
-	readonly outputTokens: number
-	readonly cacheReadTokens: number
-	readonly llmInputTokens: number
-	readonly llmOutputTokens: number
-	readonly llmCacheReadTokens: number
-	readonly costReporters: number
-	readonly cost: number
-	readonly llmCost: number
-	readonly models: readonly string[]
-	readonly agentNames: readonly string[]
-}
-
 const summaryMeasures = {
 	startTime: Schema.String,
 	endTime: Schema.String,
@@ -1698,27 +1598,28 @@ const summaryMeasures = {
 	inputTokens: CHNumber,
 	outputTokens: CHNumber,
 	cacheReadTokens: CHNumber,
-	llmInputTokens: CHNumber,
-	llmOutputTokens: CHNumber,
-	llmCacheReadTokens: CHNumber,
 	costReporters: CHNumber,
 	cost: CHNumber,
-	llmCost: CHNumber,
 	models: Schema.Array(Schema.String),
 	agentNames: Schema.Array(Schema.String),
 }
 
-export const aiSessionSummaryRowSchema: CompiledQueryRowSchema<AiSessionSummaryOutput> = Schema.Struct({
+export const aiSessionSummaryRowSchema = Schema.Struct({
 	turnKey: Schema.String,
 	conversationId: Schema.String,
 	traceIds: Schema.Array(Schema.String),
 	...summaryMeasures,
 })
 
-export const aiSessionTotalsRowSchema: CompiledQueryRowSchema<AiSessionTotalsOutput> = Schema.Struct({
+export type AiSessionSummaryOutput = typeof aiSessionSummaryRowSchema.Type
+
+export const aiSessionTotalsRowSchema = Schema.Struct({
 	traceCount: CHNumber,
 	...summaryMeasures,
 })
+
+/** The whole session, in one row — every field of a turn row that is not the turn's own key. */
+export type AiSessionTotalsOutput = typeof aiSessionTotalsRowSchema.Type
 
 /** Distinct values one turn row keeps of an open-ended dimension. */
 const SUMMARY_ARRAY_CAP = 50
@@ -1734,25 +1635,12 @@ const SUMMARY_ARRAY_CAP = 50
  * span: it groups under its trace, so the rows partition the session exactly
  * while a turn row may hold fewer spans than the page's turn of the same id.
  *
- * Every attribute is read the way `mapAiSpan` reads it: the first non-empty
- * value across that field's source keys. An "llm call" and a "tool call" are
- * the page's `classifyAiSpan` reduced to what an aggregation can see —
- * operation name, model, tool name — without the span-name heuristics.
- *
- * Usage is summed twice: over every span, and over the model-call spans alone.
- * A framework that reports usage per call AND rolls it up onto the agent span
- * would double under a plain sum; the handler picks the model-call figures
- * when there are any (`per-call`) and the plain sum otherwise (`roll-up`),
- * which is the deepest-reporter rule the page applies, at turn granularity.
- *
- * A span the ingest gateway stamped (`MAPLE_AI_STAMP_ATTRS.llmCall` present) is
- * read by the gateway's verdicts, names and buckets instead, the facts the
- * list and the detail page read too. Only its model call carries usage, so a
- * session of such spans is always per-call; its `input` is the prompt not read
- * from cache (uncached plus cache write) and its `output` the completion
- * (visible plus reasoning), so the three add up to its total. The rules above
- * serve the spans ingested before the gateway stamped them, until they age out
- * of the 30-day TTL.
+ * Every count, name and bucket is the ingest gateway's stamp
+ * (`MAPLE_AI_STAMP_ATTRS`), the facts the list and the detail page read too; a
+ * span it did not stamp counts only as a span, and as a failure by its status.
+ * Only a model call carries usage: `input` is the prompt not read from cache
+ * (uncached plus cache write) and `output` the completion (visible plus
+ * reasoning), so the three add up to its total.
  *
  * Every Float64 aggregate is guarded with `ifNotFinite`: `toFloat64OrZero`
  * parses `nan` and `inf` successfully, one such attribute would poison the
@@ -1762,68 +1650,12 @@ const summaryMeasures_ = ($: SpanColumns) => {
 	// `coalesce(nullIf(a, ''), nullIf(b, ''), …, '')`: the first key with a value.
 	const attr = (keys: readonly string[]) =>
 		CH.coalesce(...Arr.map(keys, (key) => CH.nullIf($.SpanAttributes.get(key), "")), CH.lit(""))
-	const field = (name: AiGenAiField) => attr(aiFieldSourceKeys(name))
-	const number = (name: AiGenAiField) => CH.toFloat64OrZero(field(name))
-
-	const vendorId = $.SpanAttributes.get(VENDOR_ID_ATTR)
-	const isAi = vendorId.neq("")
-	const operation = field("operationName")
 	const stamp = (key: string) => $.SpanAttributes.get(key)
-	const stamped = stamp(MAPLE_AI_STAMP_ATTRS.llmCall).neq("")
-	const unstamped = CH.not(stamped)
-	const byGateway = <T>(gateway: CH.Expr<T>, reported: CH.Expr<T>) => CH.if_(stamped, gateway, reported)
-	// Response model first, request model second — `spanModel` on the page.
-	const reportedModel = attr([...aiFieldSourceKeys("responseModel"), ...aiFieldSourceKeys("requestModel")])
-	const reportedToolName = field("toolName")
-	const model = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.model), reportedModel)
-	const agentName = byGateway(stamp(MAPLE_AI_STAMP_ATTRS.agentName), field("agentName"))
-	const isLlmCall = stamp(MAPLE_AI_STAMP_ATTRS.llmCall)
-		.eq("1")
-		.or(
-			unstamped.and(
-				operation.in_(...AI_INFERENCE_OPERATIONS).or(
-					operation
-						.notIn(
-							...AI_RETRIEVAL_OPERATIONS,
-							...AI_TOOL_OPERATIONS,
-							...AI_AGENT_OPERATIONS,
-							...AI_MEMORY_OPERATIONS,
-						)
-						.and(reportedModel.neq(""))
-						.and(reportedToolName.eq("")),
-				),
-			),
-		)
-	const isToolCall = stamp(MAPLE_AI_STAMP_ATTRS.toolCall)
-		.eq("1")
-		.or(
-			unstamped.and(
-				operation
-					.in_(...AI_TOOL_OPERATIONS)
-					.or(operation.eq("").and(isAi).and(reportedToolName.neq(""))),
-			),
-		)
-	// The list's error rule, so the summary and the list badge agree.
-	// On a stamped span the gateway's verdict alone, as `spanFailed`: it leaves
-	// out a paused tool call's copy that its framework ended in error.
-	const failed = stamp(MAPLE_AI_STAMP_ATTRS.error)
-		.eq("1")
-		.or(
-			unstamped.and(
-				$.StatusCode.eq("Error").or(
-					isAi.and(
-						field("errorType")
-							.neq("")
-							.or(
-								CH.inList(
-									$.SpanAttributes.get(RESPONSE_STATUS_ATTR),
-									FAILED_RESPONSE_STATUSES,
-								),
-							),
-					),
-				),
-			),
-		)
+	const count = (key: string) => CH.toFloat64OrZero(stamp(key))
+
+	const isLlmCall = stamp(MAPLE_AI_STAMP_ATTRS.llmCall).eq("1")
+	const model = stamp(MAPLE_AI_STAMP_ATTRS.model)
+	const agentName = stamp(MAPLE_AI_STAMP_ATTRS.agentName)
 	const conversationId = attr([
 		// First, as `mapleIntegration` reads it: Maple's turn id wins over the
 		// conversation id its engine's tool spans carry, which names the session.
@@ -1832,17 +1664,14 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		// What `eveIntegration` lifts into the field.
 		"eve.turn.id",
 	])
-	const inputTokens = byGateway(
-		number("mapleInputTokens").add(number("mapleCacheWriteTokens")),
-		number("usageInputTokens"),
+	const inputTokens = count(MAPLE_AI_STAMP_ATTRS.inputTokens).add(
+		count(MAPLE_AI_STAMP_ATTRS.cacheWriteTokens),
 	)
-	const outputTokens = byGateway(
-		number("mapleOutputTokens").add(number("mapleReasoningTokens")),
-		number("usageOutputTokens"),
+	const outputTokens = count(MAPLE_AI_STAMP_ATTRS.outputTokens).add(
+		count(MAPLE_AI_STAMP_ATTRS.reasoningTokens),
 	)
-	const cacheReadTokens = byGateway(number("mapleCacheReadTokens"), number("usageCacheReadInputTokens"))
-	const costField = byGateway(field("mapleCost"), field("usageCost"))
-	const cost = CH.toFloat64OrZero(costField)
+	const cacheReadTokens = count(MAPLE_AI_STAMP_ATTRS.cacheReadTokens)
+	const costField = stamp(MAPLE_AI_STAMP_ATTRS.cost)
 
 	const finite = (expr: CH.Expr<number>) => CH.ifNotFinite(expr, 0)
 
@@ -1859,21 +1688,17 @@ const summaryMeasures_ = ($: SpanColumns) => {
 			1_000_000,
 		),
 		spanCount: CH.count(),
-		aiSpanCount: CH.countIf(isAi),
+		aiSpanCount: CH.countIf(stamp(VENDOR_ID_ATTR).neq("")),
 		llmCalls: CH.countIf(isLlmCall),
-		toolCalls: CH.countIf(isToolCall),
-		errorSpanCount: CH.countIf(failed),
+		toolCalls: CH.countIf(stamp(MAPLE_AI_STAMP_ATTRS.toolCall).eq("1")),
+		errorSpanCount: CH.countIf(spanFailedCond($)),
 		inputTokens: finite(CH.sum(inputTokens)),
 		outputTokens: finite(CH.sum(outputTokens)),
 		cacheReadTokens: finite(CH.sum(cacheReadTokens)),
-		llmInputTokens: finite(CH.sumIf(inputTokens, isLlmCall)),
-		llmOutputTokens: finite(CH.sumIf(outputTokens, isLlmCall)),
-		llmCacheReadTokens: finite(CH.sumIf(cacheReadTokens, isLlmCall)),
 		// Spans that reported a cost at all: zero means "not measured", which the
 		// page distinguishes from "free".
 		costReporters: CH.countIf(costField.neq("")),
-		cost: finite(CH.sum(cost)),
-		llmCost: finite(CH.sumIf(cost, isLlmCall)),
+		cost: finite(CH.sum(CH.toFloat64OrZero(costField))),
 		models: CH.groupUniqArrayIf(SUMMARY_ARRAY_CAP)(model, isLlmCall.and(model.neq(""))),
 		agentNames: CH.groupUniqArrayIf(SUMMARY_ARRAY_CAP)(agentName, agentName.neq("")),
 	}
@@ -1906,7 +1731,7 @@ const totalsProjection = ($: SpanColumns) => {
  * span read — required, bounding both levels.
  */
 export function aiSessionSummaryQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1922,7 +1747,7 @@ export function aiSessionSummaryQuery() {
 
 /** The summary of a `trace:` session — {@link aiTraceSpansQuery}'s shape. */
 export function aiTraceSummaryQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(summaryProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1938,7 +1763,7 @@ export function aiTraceSummaryQuery() {
 
 /** The whole session's measures in one row — {@link aiSessionSummaryQuery} ungrouped. */
 export function aiSessionTotalsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1951,7 +1776,7 @@ export function aiSessionTotalsQuery() {
 
 /** The whole `trace:` session's measures in one row. */
 export function aiTraceTotalsQuery() {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(totalsProjection)
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1968,7 +1793,7 @@ export function aiTraceTotalsQuery() {
  * page would not show as a session links nowhere.
  */
 export function aiSessionsOfTracesQuery(traceIds: readonly string[]) {
-	return from(AiTraceIndex)
+	return from(Datasources.aiTraceIndex)
 		.select(($) => ({ traceId: $.TraceId, sessionId: sessionKey(CH.max_($.SessionId), $.TraceId) }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),

@@ -14,7 +14,7 @@ const context: Context = {
 }
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const typed = (model: Model, value: string) =>
 	update(model, Message.GotListMessage({ message: Combobox.Message.ChangedInput({ value }) }), context)
@@ -106,7 +106,7 @@ describe("command palette", () => {
 		const model = typed(open().model, "logs").model
 		const pressed = update(
 			model,
-			Message.PressedEnter({ visibleFlagged: ["/releases", "/security"] }),
+			Message.PressedEnter({ visibleFlagged: ["/releases", "/security"], audience: "operator" }),
 			context,
 		)
 		expect(pressed.outMessage).toEqual(OutMessage.Navigated({ href: "/logs" }))
@@ -136,12 +136,53 @@ describe("command palette", () => {
 				Arr.filter(browsed, (entry) => entry.group === "Integrations"),
 				(entry) => entry.title,
 			),
-		).toEqual(["Connect Google Cloud", "Connect AWS", "Connect Railway", "Connect Supabase"])
+		).toEqual([
+			"Connect Google Cloud",
+			"Connect AWS",
+			"Connect Railway",
+			"Connect Supabase",
+			"Connect Vercel",
+			"Connect Google Search Console",
+		])
 	})
 
 	test("every chat connector is typeable as Connect <name>, with no per-org gate", () => {
 		const titles = Arr.map(paletteEntries({ ...context, serviceNames: [] }), (entry) => entry.title)
 		expect(titles).toEqual(expect.arrayContaining(["Connect Slack", "Connect Discord"]))
+	})
+
+	test("an analyst finds their own pages and dashboards, not setup or the explorers", () => {
+		const model = loadedWith(["storefront"])
+		const shown = (query: string) =>
+			Arr.map(
+				shownEntries(typed(model, query).model, context, ["/releases", "/cost"], "analyst").entries,
+				(entry) => entry.title,
+			)
+		expect(shown("analytics")).toContain("Web analytics")
+		// Their sidebar calls the alerts inbox Incidents, so that is what they search for and see.
+		expect(shown("incidents")).toContain("Incidents")
+		expect(shown("alerts")).not.toContain("Alerts")
+		expect(shown("checkout")).toContain("Checkout health")
+		expect(shown("traces")).not.toContain("Traces")
+		expect(shown("connect")).toEqual([])
+		expect(shown("storefront")).not.toContain("storefront")
+		expect(shown("settings")).not.toContain("Settings")
+		// The same queries still find them for everyone else.
+		const operator = Arr.map(
+			shownEntries(typed(model, "traces").model, context, ALL_FLAGGED, "operator").entries,
+			(entry) => entry.title,
+		)
+		expect(operator).toContain("Traces")
+	})
+
+	test("Enter opens the page an analyst sees highlighted, not the full list's", () => {
+		const model = typed(loadedWith([]), "uptime").model
+		const result = update(
+			model,
+			Message.PressedEnter({ visibleFlagged: [], audience: "analyst" }),
+			context,
+		)
+		expect(result.outMessage).toEqual(OutMessage.Navigated({ href: "/alerts/uptime" }))
 	})
 
 	test("a flagged-off row is not shown", () => {

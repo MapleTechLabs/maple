@@ -11,8 +11,7 @@ import type { Model } from "./model"
 import { PAUSE_CHOICES, PAUSE_MENU_ID } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// `SourceActions`, `IntegrationActions` and `PauseMenu`.
+import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -135,8 +134,9 @@ const integrationDeleteDialog = (h: H, model: Model, source: V2Source): Html => 
 		title: ["Delete ", name(h, source), "?"],
 		description: "This disconnects the integration. To stop it for a while instead, pause it.",
 		children: [
-			h.ul(
-				[h.Class("bg-muted flex flex-col gap-1.5 rounded-lg p-3 text-xs")],
+			vstack(
+				h,
+				{ gap: "1.5", as: "ul", className: "bg-muted rounded-lg p-3 text-xs" },
 				Arr.map(deleteConsequences(source), (line) => h.keyed("li")(line, [], [line])),
 			),
 		],

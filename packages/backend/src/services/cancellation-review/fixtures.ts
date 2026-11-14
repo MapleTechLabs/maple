@@ -73,6 +73,15 @@ export const CANCELLATION_FIXTURES: ReadonlyArray<CancellationFixture> = [
 		adoption: noAdoption,
 		billing: { lastInvoiceTotal: null, previousInvoiceTotal: null, overAllowance: [] },
 	}),
+	// Signed up and scheduled the cancellation the same morning, then kept using the trial.
+	fixture("same-day", "same_day_cancel", {
+		plan: { ...healthy.plan, trial: true, tenureDays: 0, daysUntilEnd: 14 },
+		org: { ageDays: 0, members: 1, everReceivedData: false, supportChannel: false },
+		ingest: { recent: volume(0, 0), prior: volume(0, 0), daysSinceLastData: null },
+		visits: noVisits,
+		adoption: noAdoption,
+		billing: { lastInvoiceTotal: 0, previousInvoiceTotal: null, overAllowance: [] },
+	}),
 	fixture("trial-run", "never_activated", {
 		plan: { ...healthy.plan, tenureDays: 21, daysUntilEnd: 9 },
 		org: { ageDays: 23, members: 2, everReceivedData: true, supportChannel: false },

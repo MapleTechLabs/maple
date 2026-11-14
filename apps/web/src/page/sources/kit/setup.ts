@@ -1,6 +1,6 @@
-import type { SourcePlatform } from "@maple/domain/primitives"
-import { ingestUrl } from "../../../lib/services/common/ingest-url"
-import { Schema, Array as Arr } from "effect"
+import type { SourcePlatform } from "@maple/primitives"
+import { ingestUrl } from "../../../platform/ingest-url"
+import { Schema, Array as Arr, Option } from "effect"
 import { Command, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -10,12 +10,12 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel } from "@maple/views/ui/panel"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { codeBlock } from "../../settings/kit/code-block"
+import { codeBlock } from "../../kit/code-block"
 import { maskedToken, sourceSnippets } from "./snippets"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// `SourceSetup`: endpoint, header and the platform's setup snippets. The parent embeds it and passes the
+// Endpoint, header and the platform's setup snippets. The parent embeds it and passes the
 // token only right after a create or roll.
 
 export const Model = Schema.Struct({
@@ -34,7 +34,7 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-/** The snippet tabs start on the first snippet, as `useState(snippets[0]?.id)`. */
+/** The snippet tabs start on the first snippet. */
 export const init = (platform: SourcePlatform, idBase = 60): Model => {
 	const values = Arr.map(sourceSnippets(platform, "", ""), (snippet) => snippet.id)
 	return {
@@ -100,7 +100,10 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 	const { model, toParentMessage, token } = config
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
-	const snippet = snippets.find((entry) => entry.id === model.tabs.selected) ?? snippets[0]
+	const snippet = Option.getOrElse(
+		Arr.findFirst(snippets, (entry) => entry.id === model.tabs.selected),
+		() => snippets[0],
+	)
 	return vstack(h, { gap: "4" }, [
 		panel(h, { padded: true, className: "gap-3" }, [
 			vstack(h, { gap: "1.5" }, [

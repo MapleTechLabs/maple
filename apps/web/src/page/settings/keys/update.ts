@@ -1,4 +1,5 @@
-import type { ApiKeyKind } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
+import type { CreatableApiKeyKind } from "@maple/domain/http"
 import { Array, Option, Result } from "effect"
 import { Command } from "foldkit"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -9,16 +10,18 @@ import * as Select from "@maple/views/ui/select"
 import { RevokeApiKey } from "./command"
 import * as CreateDialog from "./create-dialog"
 import { Message } from "./message"
-import { KeyStatusFilter, type Model } from "./model"
+import { canManage, KeyStatusFilter, type Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 
 type Return = PageReturn<Model, Message>
 
 export const STATUS_VALUES = KeyStatusFilter.literals
 
-export const init = (options: Readonly<{ isAdmin: boolean; userId: string | null }>): Return => ({
+export const init = (
+	options: Readonly<{ grants: ReadonlyArray<Policy.Permission>; userId: string | null }>,
+): Return => ({
 	model: {
-		isAdmin: options.isAdmin,
+		grants: options.grants,
 		userId: options.userId,
 		apiKeys: null,
 		isLoadFailed: false,
@@ -40,8 +43,6 @@ export const init = (options: Readonly<{ isAdmin: boolean; userId: string | null
 
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
-
-// CHILDREN
 
 const liftRevoke = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: { ...model, revokeDialog: step.model },
@@ -69,7 +70,7 @@ const liftRoll = (model: Model, step: ReturnType<typeof RollDialog.update>): Ret
 			: toast(step.outMessage.type, step.outMessage.title, step.outMessage.description),
 })
 
-export const openCreate = (model: Model, kind: ApiKeyKind): Return =>
+export const openCreate = (model: Model, kind: CreatableApiKeyKind): Return =>
 	liftCreate(model, CreateDialog.open(model.create, kind))
 
 /** A row menu's pick: roll or revoke the key it belongs to. */
@@ -112,7 +113,7 @@ export const update = (model: Model, message: Message): Return =>
 	Message.match<Return>(message, {
 		UpdatedApiKeys: ({ rows }) => ({ model: { ...model, apiKeys: rows, isLoadFailed: false } }),
 		FailedLoadApiKeys: () => ({ model: { ...model, isLoadFailed: true } }),
-		// `retryOrgCollections`: a stopped shape syncs again only on fresh collections. The failure
+		// A stopped shape syncs again only on fresh collections. The failure
 		// stays up until the sync answers, so an auto-retry probe does not flash the skeleton.
 		ClickedRetryLoad: () => ({
 			model,
@@ -139,7 +140,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ChangedSearch: ({ value }) => ({ model: { ...model, search: value } }),
 		ClickedClearSearch: () => ({ model: { ...model, search: "" } }),
-		ClickedCreateKey: () => openCreate(model, model.isAdmin ? "standard" : "mcp"),
+		ClickedCreateKey: () => openCreate(model, canManage(model) ? "standard" : "mcp"),
 		GotCreateMenuMessage: ({ message: child }) =>
 			updateMenu(
 				model,

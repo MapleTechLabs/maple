@@ -1,8 +1,8 @@
-import type { StatusPageComponentStatus } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus } from "@maple/primitives"
 import {
 	overallStatus,
 	type StatusPageFreshness,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotIncident,
 } from "@maple/domain/status-page"
 import { activeIncidents } from "./select"
@@ -33,6 +33,7 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
 	status: incident.status,
 	impact: incident.impact,
 	created_at: iso(incident.startedAt),
+	started_at: iso(incident.startedAt),
 	updated_at: iso(incident.updates[0]?.at ?? incident.startedAt),
 	resolved_at: iso(incident.resolvedAt),
 	component_ids: incident.componentIds,
@@ -44,8 +45,15 @@ const incidentJson = (incident: StatusPageSnapshotIncident) => ({
 	})),
 })
 
-/** A statuspage.io-style `summary.json`, plus whether live checks are delayed. */
-export const renderStatusJson = (snapshot: StatusPageSnapshot, freshness: StatusPageFreshness) => {
+/**
+ * A statuspage.io-style `summary.json`, plus whether live checks are delayed. `pageUrl` is the
+ * page's canonical address (its custom domain once active), published as `status_url`.
+ */
+export const renderStatusJson = (
+	snapshot: StatusPagePublicSnapshot,
+	freshness: StatusPageFreshness,
+	pageUrl: string,
+) => {
 	const overall = overallStatus(snapshot)
 	const active = activeIncidents(snapshot)
 	return {
@@ -53,6 +61,7 @@ export const renderStatusJson = (snapshot: StatusPageSnapshot, freshness: Status
 			id: snapshot.pageId,
 			name: snapshot.page.name,
 			url: snapshot.page.websiteUrl,
+			status_url: pageUrl,
 			time_zone: "Etc/UTC",
 			updated_at: iso(freshness.updatedAt),
 		},

@@ -1,14 +1,4 @@
-import {
-	Clock,
-	Config,
-	DateTime,
-	Duration,
-	Effect,
-	Option,
-	Schema,
-	Array as Arr,
-	String as Str,
-} from "effect"
+import { Clock, DateTime, Duration, Effect, Option, Array as Arr, String as Str } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/cli/Command"
 import * as Flag from "effect/cli/Flag"
@@ -25,13 +15,10 @@ import {
 	remoteAuthFromEnv,
 } from "@maple/local-server/remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "@maple/local-server/schema-identity"
+import { storeBlocker, type StoreBlocker } from "@maple/local-server/store-gate"
 import {
-	checkStoreCompatible,
 	dataDirSidecarPath,
-	isSchemaIdentityStale,
-	isStoreDirty,
 	legacySidecarPath,
-	newerStoreSchemaVersion,
 	ownsLegacySidecars,
 	SERVER_PID_NAME,
 	serverDiscoveryPath,
@@ -40,12 +27,14 @@ import {
 	UNVERSIONED_STORE,
 } from "@maple/local-server/store-version"
 import { durableWrite } from "@maple/local-server/durable-files"
-import { abandonLocalStoreMigration, localMigrationIsIncomplete } from "../server/local-store-migrations"
+import {
+	abandonLocalStoreMigration,
+	localMigrationIsIncomplete,
+} from "@maple/local-server/local-store-migrations"
 import {
 	adoptLegacyStoreFiles,
 	claimPidFileExclusive,
 	ignoreFailure,
-	isProcessAlive,
 	locatePidFile,
 	pidOwner,
 	readPidSnapshot,
@@ -54,6 +43,7 @@ import {
 	sameSnapshot,
 	STALE_PID,
 } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { readDiscovery, removeDiscoveryFor, removeStaleDiscovery } from "@maple/local-server/server-discovery"
 import {
 	describeError,
@@ -73,6 +63,7 @@ import {
 	checkpointRefreshBackoff,
 	createCheckpoint,
 	formatCheckpointRefreshBackoff,
+	maintenanceInProgress,
 	parseCheckpointId,
 	reconcileCheckpointRecovery,
 	resetLiveStorePreservingCheckpoints,
@@ -118,34 +109,23 @@ import {
 	PID_HANDOVER_ENV,
 	prettyPath,
 	resolveAdvertiseHost,
-	resolveBindHost,
 	ServerDiscovery,
 	serverProbeUrl,
 	serverUrl,
 	validateHost,
 } from "./server-args"
 import {
+	configuredBindHost,
+	configuredLocalUiUrl,
 	DEFAULT_LOCAL_PORT,
-	DEFAULT_REMOTE_UI_URL,
+	defaultBindHost,
 	isLoopbackHostname,
+	optionalEnvString,
 } from "@maple/local-server/local-address"
 import { encodeJsonPretty } from "@maple/local-server/json"
 
-/** An unset or empty env var reads as `undefined`; never fails. */
-const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
-	Config.String(key).pipe(
-		Config.option,
-		Effect.map(Option.getOrUndefined),
-		Effect.orElseSucceed(() => undefined),
-	)
-
-const localUiUrlConfig = Effect.map(
-	optionalEnvString("MAPLE_LOCAL_UI_URL"),
-	(raw) => raw?.trim() || DEFAULT_REMOTE_UI_URL,
-)
-
 const remoteUiUrl = (): Effect.Effect<string, ServerOptionError> =>
-	Effect.flatMap(localUiUrlConfig, (configured) =>
+	Effect.flatMap(configuredLocalUiUrl, (configured) =>
 		Effect.try({
 			try: () => {
 				hostedUiOrigin(configured)
@@ -271,10 +251,6 @@ const adoptSidecars = (dataDir: string): Effect.Effect<void, ServerStateFileErro
 		}),
 	)
 
-// ---------------------------------------------------------------------------
-// Discovery file and status probe.
-// ---------------------------------------------------------------------------
-
 /**
  * `GET /local/status`, untraced: readiness polls hit ECONNREFUSED until the
  * child binds, and each would otherwise close an `http.client` span as `Error`
@@ -293,20 +269,16 @@ const fetchLocalStatus = (
 		Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
 	)
 
-// ---------------------------------------------------------------------------
-// Flags.
-// ---------------------------------------------------------------------------
-
 const port = Flag.Int("port").pipe(
 	Flag.withDescription("Port for OTLP/HTTP ingest, the query API, and the bundled UI"),
-	Flag.withDefault(4318),
+	Flag.withDefault(DEFAULT_LOCAL_PORT),
 )
 
 const host = Flag.String("host").pipe(
 	Flag.withDescription(
 		`Local server host (env: MAPLE_LOCAL_BIND_HOST; off loopback, set ${INGEST_KEY_ENV} and ${ACCESS_TOKEN_ENV})`,
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const checkpointPort = Flag.optional(
@@ -321,7 +293,7 @@ const checkpointHost = Flag.String("host").pipe(
 	Flag.withDescription(
 		"Host of the running `maple start` server to checkpoint (env: MAPLE_LOCAL_BIND_HOST)",
 	),
-	Flag.withDefault(resolveBindHost(process.env.MAPLE_LOCAL_BIND_HOST)),
+	Flag.withDefault(defaultBindHost()),
 )
 
 const advertiseHostFlag = Flag.optional(
@@ -422,7 +394,6 @@ const offlineFlag = Flag.Boolean("offline").pipe(
 	Flag.withDefault(false),
 )
 
-// Log file for `--background` runs, beside the PID file (e.g. ~/.maple/maple.log).
 const logFilePath = (dataDir: string): string => dataDirSidecarPath(dataDir, "maple.log")
 
 /** `maple.log` is rotated to `maple.log.1` at a background start once it passes this. */
@@ -483,8 +454,9 @@ const BACKGROUND_ABORT_GRACE_MS = 20_000
 export const parseCheckpointInterval = (value: string): Duration.Duration | undefined | "invalid" => {
 	const raw = Str.toLowerCase(Str.trim(value))
 	if (raw === "off" || raw === "0" || raw === "none") return undefined
-	const match = raw.match(/^(\d+)\s*(s|m|h)$/)
-	if (!match) return "invalid"
+	const parsed = Str.match(/^(\d+)\s*(s|m|h)$/)(raw)
+	if (Option.isNone(parsed)) return "invalid"
+	const match = parsed.value
 	const amount = Number(match[1])
 	if (amount <= 0) return undefined
 	return match[2] === "s"
@@ -723,8 +695,12 @@ const childFailureLine = (logPath: string, fromByte: number): string =>
 					),
 					(line) => line.length > 0,
 				)
-				return (
-					[...lines].reverse().find((line) => Str.startsWith("error:")(line)) ?? lines.at(-1) ?? ""
+				return Option.getOrElse(
+					Option.orElse(
+						Arr.findLast(lines, (line) => Str.startsWith("error:")(line)),
+						() => Arr.last(lines),
+					),
+					() => "",
 				)
 			},
 			catch: stateFileError(logPath, "read"),
@@ -883,7 +859,7 @@ const startDetached = (options: DetachedStart) =>
 			})
 		}
 
-		const assets = options.offline ? yield* resolveUiAssets() : undefined
+		const assets = options.offline ? yield* resolveUiAssets : undefined
 		const dashboardUrl = options.offline
 			? assets !== undefined
 				? `${connectAddr}/`
@@ -1110,8 +1086,6 @@ export const start = Command.make("start", {
 						})
 					}
 
-					// `--reset`: wipe the store (and its version marker) so we bootstrap
-					// fresh. Preserve the checkpoint registry under dataDir/backups.
 					if (a.reset) {
 						const { preserved } = yield* resetLiveStorePreservingCheckpoints(dataDir)
 						yield* reportPreserved(preserved.length, scope)
@@ -1124,63 +1098,81 @@ export const start = Command.make("start", {
 
 					yield* fs.makeDirectory(dataDir, { recursive: true })
 
-					// A downgrade: the store is not stale, this build is. Checked before
-					// the chDB-build gate, whose remedy (a reset) would destroy it.
-					const newerSchema = newerStoreSchemaVersion(dataDir, CURRENT_LOCAL_SCHEMA.version)
-					if (newerSchema !== undefined) {
-						return yield* new LocalStoreFromNewerMapleError({
-							dataDir,
-							storeSchemaVersion: newerSchema,
-							currentSchemaVersion: CURRENT_LOCAL_SCHEMA.version,
-							message:
-								`the local store at ${prettyPath(dataDir)} was written by a newer maple ` +
-								`(schema v${newerSchema}; this maple ${MAPLE_VERSION} supports up to ` +
-								`v${CURRENT_LOCAL_SCHEMA.version}). Nothing was changed. Reinstall a maple newer than ` +
-								`${MAPLE_VERSION} with \`${bold("maple update")}\` (or \`${bold("brew upgrade maple")}\`), ` +
-								`or a specific release with \`${bold("maple update --tag <version>")}\`.`,
+					// The same gate the embedded runtime runs; this one adds recovery and
+					// command hints. An unclean store is recovered per policy, then re-checked.
+					const refuse = (blocker: StoreBlocker) =>
+						Effect.gen(function* () {
+							switch (blocker.kind) {
+								case "newer-schema":
+									// A downgrade: the store is not stale, this build is.
+									return yield* new LocalStoreFromNewerMapleError({
+										dataDir,
+										storeSchemaVersion: blocker.storeSchemaVersion,
+										currentSchemaVersion: CURRENT_LOCAL_SCHEMA.version,
+										message:
+											`the local store at ${prettyPath(dataDir)} was written by a newer maple ` +
+											`(schema v${blocker.storeSchemaVersion}; this maple ${MAPLE_VERSION} supports up to ` +
+											`v${CURRENT_LOCAL_SCHEMA.version}). Nothing was changed. Reinstall a maple newer than ` +
+											`${MAPLE_VERSION} with \`${bold("maple update")}\` (or \`${bold("brew upgrade maple")}\`), ` +
+											`or a specific release with \`${bold("maple update --tag <version>")}\`.`,
+									})
+								case "incompatible":
+									// Re-loading its persisted materialized views crashes the C++ runtime
+									// natively (SIGTRAP), which we cannot catch.
+									return yield* new LocalStoreIncompatibleError({
+										dataDir,
+										storeBuild: blocker.found,
+										currentBuild: blocker.current,
+										message:
+											`the local store at ${prettyPath(dataDir)} is incompatible with this build's chDB ` +
+											`(store: ${blocker.found}; build: ${blocker.current}); loading it would crash chDB. ` +
+											`If a newer maple wrote it, reinstall that one (\`${bold("maple update")}\`). ` +
+											`Otherwise wipe it with \`${bold(mapleCommand("reset", scope))}\`, or start fresh via ` +
+											`\`${bold(mapleCommand("start --reset", scope))}\`.` +
+											// The marker is a sidecar beside the data dir, so a volume mounted at
+											// the data dir itself loses it on every container re-creation.
+											(blocker.found === UNVERSIONED_STORE
+												? ` The version marker lives beside the data dir (${prettyPath(storeMarkerPath(dataDir))}); ` +
+													`if ${prettyPath(dataDir)} is a mounted volume, mount its parent directory instead.`
+												: ""),
+									})
+								case "dirty": {
+									const availability = yield* Effect.promise(() =>
+										checkpointAvailability(dataDir),
+									)
+									return yield* new LocalStoreDirtyError({
+										dataDir,
+										policy: "fail",
+										checkpointAvailable: availability.available,
+										message:
+											`the local store at ${prettyPath(dataDir)} was not cleanly closed. ` +
+											dirtyStoreRecoveryAdvice(availability, scope),
+									})
+								}
+								case "schema-stale":
+									// `CREATE … IF NOT EXISTS` is a no-op on existing tables, so an older
+									// store can't be evolved in place; never delete telemetry silently.
+									return yield* new LocalStoreSchemaStaleError({
+										dataDir,
+										message:
+											`the local store at ${prettyPath(dataDir)} was built from a different schema identity. ` +
+											`Maple preserved it and its checkpoints. Inspect the supported path with ` +
+											`\`${bold(mapleCommand("schema plan", scope))}\`; run ` +
+											`\`${bold(mapleCommand("schema migrate --yes", scope))}\` when the printed ` +
+											`preservation envelope is acceptable. If no path is registered, use the explicit ` +
+											`destructive \`${bold(mapleCommand("start --reset", scope))}\` or ` +
+											`\`${bold(mapleCommand("reset --yes", scope))}\`.`,
+									})
+							}
 						})
-					}
-
-					// Refuse to open a store written by an incompatible chDB build: re-loading
-					// its persisted materialized views crashes the C++ runtime natively
-					// (SIGTRAP), which we cannot catch. Fresh/matching stores pass through.
-					const compat = checkStoreCompatible(dataDir)
-					if (!compat.compatible) {
-						return yield* new LocalStoreIncompatibleError({
-							dataDir,
-							storeBuild: compat.found,
-							currentBuild: compat.current,
-							message:
-								`the local store at ${prettyPath(dataDir)} is incompatible with this build's chDB ` +
-								`(store: ${compat.found}; build: ${compat.current}); loading it would crash chDB. ` +
-								`If a newer maple wrote it, reinstall that one (\`${bold("maple update")}\`). ` +
-								`Otherwise wipe it with \`${bold(mapleCommand("reset", scope))}\`, or start fresh via ` +
-								`\`${bold(mapleCommand("start --reset", scope))}\`.` +
-								// The marker is a sidecar beside the data dir, so a volume mounted at
-								// the data dir itself loses it on every container re-creation.
-								(compat.found === UNVERSIONED_STORE
-									? ` The version marker lives beside the data dir (${prettyPath(storeMarkerPath(dataDir))}); ` +
-										`if ${prettyPath(dataDir)} is a mounted volume, mount its parent directory instead.`
-									: ""),
-						})
-					}
 
 					// A store left "open" (the previous server died without running its close
-					// finalizer) may be inconsistent: reopening it can crash chDB natively,
-					// which we cannot catch. (`--reset` already wiped above, so the marker is gone.)
-					if (isStoreDirty(dataDir)) {
-						const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
-						if (onDirtyStore === "fail") {
-							return yield* new LocalStoreDirtyError({
-								dataDir,
-								policy: "fail",
-								checkpointAvailable: availability.available,
-								message:
-									`the local store at ${prettyPath(dataDir)} was not cleanly closed. ` +
-									dirtyStoreRecoveryAdvice(availability, scope),
-							})
-						}
+					// finalizer) may be inconsistent: reopening it can crash chDB natively.
+					// (`--reset` already wiped above, so the marker is gone.)
+					const blocker = yield* storeBlocker(dataDir)
+					if (blocker?.kind === "dirty" && onDirtyStore !== "fail") {
 						if (onDirtyStore === "restore-checkpoint") {
+							const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
 							if (!availability.available) {
 								return yield* new LocalStoreDirtyError({
 									dataDir,
@@ -1219,24 +1211,9 @@ export const start = Command.make("start", {
 							yield* reportPreserved(preserved.length, scope)
 							yield* fs.makeDirectory(dataDir, { recursive: true })
 						}
-					}
-
-					// A store bootstrapped from an older bundled schema can't be evolved in
-					// place: `CREATE … IF NOT EXISTS` is a no-op on existing tables. Do not
-					// silently delete telemetry or checkpoints: require an explicit choice.
-					if (isSchemaIdentityStale(dataDir, CURRENT_LOCAL_SCHEMA)) {
-						return yield* new LocalStoreSchemaStaleError({
-							dataDir,
-							message:
-								`the local store at ${prettyPath(dataDir)} was built from a different schema identity. ` +
-								`Maple preserved it and its checkpoints. Inspect the supported path with ` +
-								`\`${bold(mapleCommand("schema plan", scope))}\`; run ` +
-								`\`${bold(mapleCommand("schema migrate --yes", scope))}\` when the printed ` +
-								`preservation envelope is acceptable. If no path is registered, use the explicit ` +
-								`destructive \`${bold(mapleCommand("start --reset", scope))}\` or ` +
-								`\`${bold(mapleCommand("reset --yes", scope))}\`.`,
-						})
-					}
+						const recovered = yield* storeBlocker(dataDir)
+						if (recovered !== undefined) return yield* refuse(recovered)
+					} else if (blocker !== undefined) return yield* refuse(blocker)
 
 					const requestedRetentionDays = Option.getOrUndefined(a.minimumRawTelemetryRetentionDays)
 					// No backups config in memory: nothing is ever checkpointed.
@@ -1251,7 +1228,7 @@ export const start = Command.make("start", {
 							dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
 						),
 					)
-					const assets = yield* resolveUiAssets()
+					const assets = yield* resolveUiAssets
 
 					const { port: boundPort } = yield* startServer({
 						hostname: bindHost,
@@ -1373,29 +1350,6 @@ const STOP_POLL_MS = 100
  *  shutdown waits for its child, so stop keeps waiting while one runs. */
 const STOP_CHECKPOINT_TIMEOUT_MS = 15 * 60_000
 
-const MaintenanceOwner = Schema.Struct({ pid: Schema.Int })
-const decodeMaintenanceOwner = Schema.decodeUnknownOption(Schema.fromJsonString(MaintenanceOwner))
-
-/**
- * Is a checkpoint/restore/archive operation running against this store? Read
- * from the maintenance lock's on-disk contract (`<dataDir>.maple-maintenance-lock`,
- * owned by `server/checkpoints.ts`), since the server itself may be too busy
- * in `BACKUP` to answer.
- */
-const maintenanceInProgress = (dataDir: string): boolean =>
-	Effect.runSync(
-		Effect.try({
-			try: () => readFileSync(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "utf8"),
-			catch: stateFileError(`${resolve(dataDir)}.maple-maintenance-lock/owner.json`, "read"),
-		}).pipe(
-			Effect.map((raw) => {
-				const owner = decodeMaintenanceOwner(raw)
-				return Option.isSome(owner) && isProcessAlive(owner.value.pid)
-			}),
-			Effect.orElseSucceed(() => false),
-		),
-	)
-
 /** Does a server that answers for this store report `pid`? The positive
  *  identity check, preferred over the process start-time heuristic. */
 const statusConfirmsPid = (
@@ -1405,12 +1359,10 @@ const statusConfirmsPid = (
 ): Effect.Effect<boolean, never, HttpClient.HttpClient> =>
 	Effect.gen(function* () {
 		const discovery = yield* readDiscovery(serverDiscoveryPath(dataDir))
-		const probeHost =
-			scope.host ??
-			(yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST").pipe(Effect.map(resolveBindHost)))
+		const probeHost = scope.host ?? (yield* configuredBindHost)
 		const urls = [
 			...(Option.isSome(discovery) && discovery.value.pid === pid ? [discovery.value.url] : []),
-			serverProbeUrl(probeHost, scope.port ?? 4318),
+			serverProbeUrl(probeHost, scope.port ?? DEFAULT_LOCAL_PORT),
 		]
 		for (const url of urls) {
 			const status = yield* fetchLocalStatus(url, "1 second")
@@ -1530,7 +1482,6 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			const scope = commandScope({ dataDir })
 			yield* adoptSidecars(dataDir)
 
-			// Refuse while a server still owns the store.
 			yield* refuseIfRunning(dataDir, runningRefusal(scope))
 
 			// Deleting a store is irreversible: require explicit confirmation, and

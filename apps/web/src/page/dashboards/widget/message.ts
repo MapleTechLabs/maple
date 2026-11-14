@@ -1,8 +1,8 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { DashboardDocument, HEATMAP_SCALE_TYPES } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import * as Combobox from "@maple/views/ui/combobox"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Select from "@maple/views/ui/select"
@@ -15,7 +15,8 @@ import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { WhereFieldMessage } from "../../kit/where-field"
 import { WidgetFailure } from "../kit/widget-data"
 import { LegendPosition, PointsMode } from "./editor-state"
-import { MetricPageSchema } from "./metric-option"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { ProductEdit } from "./product-edit"
 import { Suggestion, SuggestionLookup } from "./suggestions"
 
@@ -36,21 +37,18 @@ export const Message = defineMessageUnion({
 		key: Schema.String,
 		result: Schema.Result(Schema.Array(Schema.String), WidgetFailure),
 	},
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 	GotChartMessage: { message: Chart.Message },
 	GotSparklineChartMessage: { message: Chart.Message },
 	ClickedSortColumn: { field: Schema.String, isText: Schema.Boolean },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRangePickerMessage: { message: TimeRangePicker.Message },
-	CompletedSaveTimeRange: { error: Schema.NullOr(Schema.String) },
 	GotSourceTabsMessage: { message: Tabs.Message },
 	GotSelectMessage: { id: Schema.String, message: Select.Message },
 	GotQueryPanelMessage: { message: QueryPanel.Message },
 	ClickedAddQuery: {},
 	ClickedAddFormula: {},
-	/** A fresh id for what was asked (`crypto.randomUUID()`). */
+	/** A fresh id for what was asked. */
 	GeneratedId: {
 		purpose: GeneratedIdPurpose,
 		source: Schema.String,
@@ -86,6 +84,7 @@ export const Message = defineMessageUnion({
 	ToggledSparkline: {},
 	ChangedGaugeBound: { bound: Schema.Literals(["min", "max"]), value: Schema.String },
 	ChangedTableLimit: { value: Schema.String },
+	ChangedStatValueField: { value: Schema.String },
 	ChangedHeatmapScaleType: { scaleType: Schema.Literals(HEATMAP_SCALE_TYPES) },
 	ClickedApply: {},
 	CompletedSave: { error: Schema.NullOr(Schema.String) },
@@ -95,14 +94,14 @@ export const Message = defineMessageUnion({
 	FocusedQueryEditor: {},
 	/** An edit of the list, funnel or paths panel. */
 	ChangedProduct: { edit: ProductEdit },
-	/** A step's suggesting input (`SuggestingInput`), by combobox id. */
+	/** A step's suggesting input, by combobox id. */
 	GotStepComboMessage: { id: Schema.String, message: Combobox.Message },
 	FocusedListField: { index: Schema.Number },
-	/** The list, population and step filters' suggestions (`WhereFields`). */
+	/** The list, population and step filters' suggestions. */
 	GotWhereFieldMessage: { message: WhereFieldMessage },
 	ToggledProductPanel: {},
 	BlurredListField: {},
-	/** The key typed under `BreakdownPicker`'s "Attribute…" mode. */
+	/** The key typed under the breakdown picker's "Attribute…" mode. */
 	ChangedBreakdownAttribute: { value: Schema.String },
 	CompletedFetchSuggestions: {
 		key: Schema.String,
@@ -115,7 +114,7 @@ export const Message = defineMessageUnion({
 	},
 	CompletedFetchMetricKeys: {
 		metric: Schema.String,
-		result: Schema.Result(Schema.Array(Schema.String), LoadFailure),
+		result: Schema.Result(MetricKeysSchema, LoadFailure),
 	},
 	CompletedFetchAutocomplete: {
 		key: Schema.String,

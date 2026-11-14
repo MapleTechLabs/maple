@@ -9,8 +9,8 @@ import {
 	type MobilePushEnvironment,
 	type ResolvedMobileDevicePreferences,
 } from "@maple/domain/http"
-import { MobileDeviceId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { MobileDeviceId, type OrgId, type UserId } from "@maple/primitives"
+import { Array as Arr, Clock, Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -170,7 +170,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 						: undefined),
 				}
 
-				if (existing) {
+				if (existing != null) {
 					const rows = yield* dbExecute((db) =>
 						db.run(
 							PG.update(MobileDevices)
@@ -222,7 +222,12 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.returning(),
 					),
 				)
-				return toDevice(rows[0]!)
+				const [row] = rows
+				if (row === undefined)
+					return yield* new MobileDevicePersistenceError({
+						message: "Device insert returned no row",
+					})
+				return toDevice(row)
 			})
 
 			const unregister = Effect.fn("MobileDevicesService.unregister")(function* (
@@ -272,7 +277,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.where(($) => [$.orgId.eq(orgId), $.userId.eq(userId)]),
 					),
 				)
-				return rows.map(toDevice)
+				return Arr.map(rows, toDevice)
 			})
 
 			const listForOrg = Effect.fn("MobileDevicesService.listForOrg")(function* (orgId: OrgId) {
@@ -284,7 +289,7 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 							.where(($) => [$.orgId.eq(orgId), $.disabledAt.isNull()]),
 					),
 				)
-				return rows.map(toDevice)
+				return Arr.map(rows, toDevice)
 			})
 
 			const disable = Effect.fn("MobileDevicesService.disable")(function* (
@@ -308,17 +313,12 @@ export class MobileDevicesService extends Context.Service<MobileDevicesService, 
 			) {
 				if (ids.length === 0) return
 				const now = yield* Clock.currentTimeMillis
-				yield* Effect.forEach(
-					ids,
-					(id) =>
-						dbExecute((db) =>
-							db.run(
-								PG.update(MobileDevices)
-									.set({ lastPushedAt: now })
-									.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
-							),
-						),
-					{ discard: true },
+				yield* dbExecute((db) =>
+					db.run(
+						PG.update(MobileDevices)
+							.set({ lastPushedAt: now })
+							.where(($) => [$.orgId.eq(orgId), PG.inList($.id, ids)]),
+					),
 				)
 			})
 

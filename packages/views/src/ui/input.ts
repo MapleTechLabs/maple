@@ -6,7 +6,7 @@ import {
 	inputSearchStyles,
 	inputSmStyles,
 	inputStyles,
-} from "@maple/ui/styles/ui/input"
+} from "./input.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 /** Base UI's field state, which it mirrors as data attributes on every field part. */
@@ -31,7 +31,7 @@ export const fieldStateAttributes = <Message>(
 
 export type InputSize = "sm" | "default" | "lg"
 
-/** The inner `<input>` classes, shared with Combobox/Autocomplete (`<Input nativeInput>`). */
+/** The inner `<input>` classes, shared with Combobox and Autocomplete. */
 export const inputControlClassName = (size: InputSize, type?: string, controlClassName?: string): string =>
 	cn(
 		inputStyles,
@@ -55,7 +55,7 @@ export type InputOptions<Message> = Readonly<{
 	attributes?: ReadonlyArray<Attribute<Message>>
 }>
 
-/** `<Input>` from @maple/ui: the `input-control` span around Base UI's input. */
+/** The `input-control` span around Base UI's input. */
 export const input = <Message>(h: HtmlBuilder<Message>, options: InputOptions<Message>): Html => {
 	const size = options.size ?? "default"
 	const isDisabled = options.isDisabled ?? false

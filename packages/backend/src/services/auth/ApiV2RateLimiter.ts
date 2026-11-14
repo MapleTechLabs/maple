@@ -15,7 +15,7 @@ export interface RateLimiterApi {
 	 * Takes an opaque string rather than an `ApiKeyId` because the v2 API is no
 	 * longer the only caller: the public share surface limits per share token and
 	 * per client IP, neither of which is an API key. The `v2:` / `share:` scoping
-	 * prefix therefore belongs to the caller — see `makeApiV2RateLimitKey`.
+	 * prefix therefore belongs to the caller: see `apiV2RateLimitKey`.
 	 */
 	readonly check: (key: string) => Effect.Effect<RateLimitOutcome>
 }
@@ -30,14 +30,14 @@ export const deviceRateLimitKey = (credentialId: string): string => `v2dev:${cre
 /** The token endpoint is unauthenticated, so it is also limited per client IP before any work. */
 export const deviceTokenIpRateLimitKey = (ip: string): string => `v2devip:${ip}`
 
-/** Share links are limited per token, and separately per client IP. */
+/** Share links are limited per token (`ShareLinkRateLimit`), and separately per client IP. */
 export const shareTokenRateLimitKey = (tokenHashPrefix: string): string => `share:${tokenHashPrefix}`
 export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
 
 /**
  * Social-preview traffic, bucketed apart from the viewer keys above.
  *
- * The unfurl path is machine traffic — every chat client that sees the link
+ * The unfurl path is machine traffic: every chat client that sees the link
  * fetches it, and the page worker asks on each document request. Sharing the
  * viewer's bucket would let that crowd rate-limit the humans the link was sent
  * to, which is the failure this separation exists to prevent.

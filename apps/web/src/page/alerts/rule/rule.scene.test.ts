@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
-import { AlertCheckDocument, AlertRuleId } from "@maple/domain/http"
+import { AlertCheckDocument, AlertRuleId, AlertSilenceId } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	all,
@@ -21,12 +22,12 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../shared/test-rows"
+import { destinationRow, incidentRow, NOW, ORG, ruleId, ruleRow, stateRow } from "../../kit/alert-test-rows"
 import { ToggleRuleEnabled } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, routeChanged, update } from "./update"
-import { view as pageView } from "./view"
+import { breadcrumbsOf, view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -137,7 +138,7 @@ describe("alert rule", () => {
 
 	test("the Overview and History tab links keep the time range", () => {
 		const search = { timePreset: "7d" }
-		const href = (tab: string) => `/alerts/${RULE}?tab=${tab}&timePreset=7d`
+		const href = (tab: string) => `/alerts/rules/${RULE}?tab=${tab}&timePreset=7d`
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(search)),
@@ -153,7 +154,7 @@ describe("alert rule", () => {
 		expect(tabbed.commands ?? []).toEqual([])
 		expect(tabbed.model.search).toEqual({ tab: "history" })
 		const moved = routeChanged(tabbed.model, route({ tab: "history", timePreset: "1h" }), context)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveAlertRuleWindow", "Refresh"],
 		])
 	})
@@ -168,7 +169,16 @@ describe("alert rule", () => {
 			given(model),
 			themeResolved(),
 			expectView(text("Rule not found")).toExist(),
+			expectView(role("link", { name: "Back to rules" })).toHaveAttr("href", "/alerts/rules"),
 		)
+	})
+
+	test("the crumbs go through Rules to the rule", () => {
+		expect(breadcrumbsOf(loaded())).toEqual([
+			{ label: "Alerts", href: "/alerts" },
+			{ label: "Rules", href: "/alerts/rules" },
+			{ label: "Payment p95 latency" },
+		])
 	})
 
 	test("a raw SQL rule slowed down by its timeouts shows its query time per check and why", () => {
@@ -252,7 +262,7 @@ describe("alert rule", () => {
 			slowed_at: new Date(NOW - 30 * 60_000).toISOString(),
 		})
 		const model = loaded({}, rule)
-		const timed = Schema.decodeUnknownSync(AlertCheckDocument)({
+		const timed = Schema.decodeSync(AlertCheckDocument)({
 			timestamp: new Date(NOW - 10 * 60_000).toISOString(),
 			groupKey: "__total__",
 			status: "healthy",
@@ -347,7 +357,62 @@ describe("alert rule", () => {
 			}),
 		)
 		expect(viewAll.outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: "/alerts?tab=overview", isReplace: false }),
+			PageOutMessage.RequestedNavigation({ url: "/alerts", isReplace: false }),
+		)
+	})
+})
+
+describe("alert rule page, silences", () => {
+	const silence = {
+		id: Schema.decodeSync(AlertSilenceId)("22222222-2222-4222-8222-222222222222"),
+		object: "alert_silence" as const,
+		reason: "Deploying payments",
+		matchers: { rule_ids: [RULE] },
+		status: "active" as const,
+		starts_at: new Date(NOW - 60_000).toISOString(),
+		ends_at: new Date(NOW + 60 * 60_000).toISOString(),
+		maintenance_window_id: null,
+		created_by: "user_1",
+		created_at: new Date(NOW).toISOString(),
+		updated_at: new Date(NOW).toISOString(),
+	}
+	const withGrants = (model: Model, roles: ReadonlyArray<string>) =>
+		pageUpdate(model, Message.CompletedFetchSession({ grants: Policy.grantsOf(roles) })).model
+	const withSilences = (
+		model: Model,
+		result: Parameters<typeof Message.CompletedFetchSilences>[0]["result"],
+	) => pageUpdate(model, Message.CompletedFetchSilences({ key: model.silences.key ?? "", result })).model
+
+	test("offers Silence only to a role that can manage alerts", () => {
+		expect(names(init(route(), context).commands)).toEqual(
+			expect.arrayContaining(["FetchAlertRuleSilences", "FetchAlertRuleSession"]),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(loaded(), ["org:member"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withGrants(loaded(), ["org:engineer"])),
+			themeResolved(),
+			expectView(role("button", { name: "Silence" })).toExist(),
+		)
+	})
+
+	test("shows the silence in force, and says so when silences could not be read", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(withSilences(loaded(), Result.succeed([silence]))),
+			themeResolved(),
+			expectView(text(/^Silenced until /u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(withSilences(loaded(), Result.fail(toLoadFailure(new Error("down"))))),
+			themeResolved(),
+			expectView(text("Couldn't check silences")).toExist(),
 		)
 	})
 })

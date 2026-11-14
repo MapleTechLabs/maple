@@ -6,7 +6,7 @@ import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import * as Keyed from "@maple/views/data/keyed"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { Resources } from "../../../../platform/resources"
@@ -28,7 +28,10 @@ export type Peek = Readonly<{
 
 /** The peek over the table's visible rows; a span name no row matches means the drawer is closed. */
 export const resolvePeek = (rows: ReadonlyArray<Endpoint>, spanName: string | undefined): Peek | null => {
-	const index = spanName === undefined ? -1 : rows.findIndex((row) => row.spanName === spanName)
+	const found =
+		spanName === undefined ? Option.none() : Arr.findFirstIndex(rows, (row) => row.spanName === spanName)
+	if (Option.isNone(found)) return null
+	const index = found.value
 	const endpoint = rows[index]
 	if (endpoint === undefined) return null
 	const neighbors = Arr.filter(
@@ -68,11 +71,7 @@ export const FetchEndpointDetail = Command.define("FetchServiceEndpointDetail", 
 				...input,
 				environments: input.environments === undefined ? undefined : [...input.environments],
 			},
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDetail({ spanName, key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchDetail({ spanName, key, result }))),
 })
 
 export const SeriesInput = Schema.Struct({
@@ -96,9 +95,8 @@ export const FetchEndpointPeekSeries = Command.define("FetchServiceEndpointPeekS
 				spanNames: [input.spanName],
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.buckets, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSeries({ spanName, key, result })),
+			Effect.map((response) => response.buckets),
+			settleTo((result) => Message.CompletedFetchSeries({ spanName, key, result })),
 		),
 })
 
@@ -118,24 +116,21 @@ const requestDetails = (
 	endpoints: ReadonlyArray<Endpoint>,
 	mode: Keyed.RequestMode,
 ): Return =>
-	endpoints.reduce<Return>(
-		(acc, endpoint) => {
-			const input = detailInputOf(scope, window, endpoint.spanName)
-			const key = requestKey(scope.context.orgId, "getServiceEndpointDetail", { data: input })
-			const slot = acc.model.details[endpoint.spanName] ?? Keyed.idle()
-			return Option.match(Keyed.request(slot, key, mode), {
-				onNone: () => acc,
-				onSome: (next) => ({
-					model: { ...acc.model, details: { ...acc.model.details, [endpoint.spanName]: next } },
-					commands: [
-						...(acc.commands ?? []),
-						FetchEndpointDetail({ spanName: endpoint.spanName, key: next.key, input }),
-					],
-				}),
-			})
-		},
-		{ model },
-	)
+	Arr.reduce<Endpoint, Return>(endpoints, { model }, (acc, endpoint) => {
+		const input = detailInputOf(scope, window, endpoint.spanName)
+		const key = requestKey(scope.context.orgId, "getServiceEndpointDetail", { data: input })
+		const slot = acc.model.details[endpoint.spanName] ?? Keyed.idle()
+		return Option.match(Keyed.request(slot, key, mode), {
+			onNone: () => acc,
+			onSome: (next) => ({
+				model: { ...acc.model, details: { ...acc.model.details, [endpoint.spanName]: next } },
+				commands: [
+					...(acc.commands ?? []),
+					FetchEndpointDetail({ spanName: endpoint.spanName, key: next.key, input }),
+				],
+			}),
+		})
+	})
 
 /** The peeked endpoint's buckets when the tab's sparkline read leaves it out. */
 const requestSeries = (

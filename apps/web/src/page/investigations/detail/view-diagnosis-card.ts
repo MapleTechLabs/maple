@@ -20,9 +20,8 @@ import { evidenceChips, type TipTrigger } from "./view-sections"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `DiagnosisReportCard`: the report an investigation's
-// Chat and Transcript tabs lead with until the thread's own `submit_diagnosis` turn lands. Its
-// action rows open the action sheet from local state, not `?action=`.
+// The report an investigation's Chat and Transcript tabs lead with until the thread's own
+// `submit_diagnosis` turn lands. Its action rows open the action sheet from local state, not `?action=`.
 
 type H = HtmlBuilder<Message>
 type Report = NonNullable<V2Investigation["report"]>
@@ -62,30 +61,31 @@ export const reportActions = (report: Report): ReadonlyArray<ActionNodeData> =>
 
 /** The card's own action sheet: the whole action and its evidence, from the card's local choice. */
 const reportSheet = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const action =
-		reportActions(report).find((candidate) => candidate.index === model.reportActionIndex) ?? null
+	const action = Option.getOrNull(
+		Arr.findFirst(reportActions(report), (candidate) => candidate.index === model.reportActionIndex),
+	)
 	const dialogId = model.reportSheet.id
 	return h.submodel({
 		slotId: `${dialogId}-slot`,
 		model: model.reportSheet,
 		view: DialogView.view,
 		viewInputs: {
-			className: "sm:max-w-lg",
+			size: "detail",
 			side: "right",
 			hasTrigger: false,
 			hasDescription: action !== null,
 			toView: ({ portal }) => portal,
 			toContent: () =>
-				action === null ? [] : actionSheetContent(h, dialogId, action, report, trigger),
+				action === null ? [] : actionSheetContent(h, model, dialogId, action, report, trigger),
 		},
 		toParentMessage: (message) => Message.GotReportSheetMessage({ message }),
 	})
 }
 
-/** `DiagnosisReportCard`: cause, summary, scope, evidence and the recommended actions. */
 export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger: TipTrigger): Html => {
-	const evidence = report.evidence.filter(
-		(item) => item.note || item.traceIds.length > 0 || item.logPatterns.length > 0,
+	const evidence = Arr.filter(
+		report.evidence,
+		(item) => Boolean(item.note) || item.traceIds.length > 0 || item.logPatterns.length > 0,
 	)
 	const actions = reportActions(report)
 	return card(
@@ -97,7 +97,7 @@ export const diagnosisReportCard = (h: H, model: Model, report: Report, trigger:
 					hstack(h, { gap: "1.5" }, [
 						icon(h, "PulseIcon", { className: "size-3.5 text-muted-foreground" }),
 						eyebrow(h, { variant: "label" }, ["AI Diagnosis"]),
-						h.span([h.Class("text-foreground-faint")], ["·"]),
+						typography(h, { tone: "faint" }, ["·"]),
 						h.span(
 							[
 								h.Class(
@@ -192,12 +192,15 @@ const actionRow = (h: H, action: ActionNodeData): Html => {
 						"-mx-2 flex w-[calc(100%+1rem)] items-start gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 				},
 				[
-					h.span(
-						[
-							h.Class(
-								"mt-px flex size-5 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-2xs tabular-nums text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							as: "span",
+							className:
+								"mt-px size-5 shrink-0 rounded-md bg-muted font-mono text-2xs tabular-nums text-muted-foreground",
+						},
 						[String(action.index + 1)],
 					),
 					icon(h, glyph.icon, {

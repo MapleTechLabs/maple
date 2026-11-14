@@ -1,6 +1,7 @@
 import { OrgId, TraceId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr, String as Str } from "effect"
 import {
+	click,
 	Command,
 	expect as expectView,
 	expectOutMessage,
@@ -158,6 +159,31 @@ describe("logs list", () => {
 		expect(appended.model.pagination.isFetching).toBe(false)
 	})
 
+	test("a failed next page waits for Try again instead of ending the list", () => {
+		const nearEnd = pageUpdate(withFirstPage(), windowOf(60, 85)).model
+		const answer = (result: Result.Result<ReturnType<typeof page>, ReturnType<typeof toLoadFailure>>) =>
+			Message.CompletedFetchNextPage({
+				key: nearEnd.firstPage.key ?? "",
+				generation: nearEnd.pagination.generation,
+				result,
+			})
+		const failed = pageUpdate(nearEnd, answer(Result.fail(toLoadFailure("injected")))).model
+		// Scrolling does not ask again on its own.
+		expect(names(pageUpdate(failed, windowOf(61, 86)).commands)).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			Mount.resolve(ResolveThemeColors, ThemeMessage.ResolvedThemeColors({ colors: {} })),
+			Mount.resolve(VirtualizeLogStream, streamWindow(60, 85)),
+			Mount.resolve(MountFilterRail, Message.MountedFilterRail()),
+			expectView(text("Couldn't load more logs")).toExist(),
+			click(role("button", { name: "Try again" })),
+			Command.resolve(FetchNextPage, answer(Result.succeed(page(100, 3, null)))),
+			expectView(text("Couldn't load more logs")).not.toExist(),
+			expectView(text("103 logs")).toExist(),
+		)
+	})
+
 	test("a later page started under an older first page is dropped", () => {
 		const nearEnd = pageUpdate(withFirstPage(), windowOf(60, 85)).model
 		const reloaded = pageUpdate(
@@ -299,7 +325,7 @@ describe("logs list", () => {
 			{ search: { severities: ["ERROR"], timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveLogsWindow", "Refresh"],
 		])
 	})
@@ -319,13 +345,17 @@ describe("logs list", () => {
 				message: Chart.Message.ChangedChartFocus({ maybeKey: Option.some(key) }),
 			})
 		const pressed = Arr.reduce(
-			[focus(buckets[0].bucket), Message.PressedVolumeChart(), focus(buckets[1].bucket)],
+			[
+				focus(Arr.getUnsafe(buckets, 0).bucket),
+				Message.PressedVolumeChart(),
+				focus(Arr.getUnsafe(buckets, 1).bucket),
+			],
 			loaded,
 			(model, message) => pageUpdate(model, message).model,
 		)
 		expect(pressed.volumeBrush).toEqual({
-			left: buckets[0].bucket,
-			right: buckets[1].bucket,
+			left: Arr.getUnsafe(buckets, 0).bucket,
+			right: Arr.getUnsafe(buckets, 1).bucket,
 			isSelecting: true,
 		})
 		const released = pageUpdate(pressed, Message.ReleasedVolumeChart())

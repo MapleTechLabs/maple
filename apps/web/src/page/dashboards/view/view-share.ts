@@ -1,3 +1,5 @@
+import type { PageContext } from "../../contract"
+import { shareLinkRangeOf } from "./plan"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
@@ -17,8 +19,6 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
-
-// `ShareDashboardDialog` and `ShareLinkRow`: the share dialog and one link's row.
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +45,7 @@ const ACCESS: ReadonlyArray<Readonly<{ value: Access; icon: IconName; title: str
 	},
 ]
 
-/** `NoticeRow`: a muted (or error) line with the warning glyph. */
+/** A muted (or error) line with the warning glyph. */
 export const noticeRow = (h: H, tone: "muted" | "error", children: ReadonlyArray<Html | string>): Html =>
 	h.div(
 		[
@@ -62,7 +62,7 @@ export const noticeRow = (h: H, tone: "muted" | "error", children: ReadonlyArray
 		],
 	)
 
-/** `ShareLinkRow`: the copyable link, and Replace behind a confirmation. */
+/** The copyable link, and Replace behind a confirmation. */
 export const shareLinkRow = (
 	h: H,
 	model: Model,
@@ -119,11 +119,12 @@ const accessOption = (
 		[
 			icon(h, option.icon, {
 				size: 16,
-				className:
-					"mt-0.5 shrink-0 text-muted-foreground transition-colors group-has-[[data-checked]]:text-primary",
+				className: "mt-0.5 shrink-0 text-muted-foreground group-has-[[data-checked]]:text-primary",
 			}),
 			spaced(h, { space: "0.5", fill: true }, [
-				h.div([h.Class("font-medium text-sm leading-5")], [option.title]),
+				typography(h, { size: "sm", weight: "medium", as: "div", className: "leading-5" }, [
+					option.title,
+				]),
 				typography(h, { size: "xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 					option.body,
 				]),
@@ -132,7 +133,7 @@ const accessOption = (
 		],
 	)
 
-const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
+const panelContent = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
 	const shares = AsyncData.getOrElse(model.sharing.shares, () => [])
 	const boardShare = boardShareOf(shares)
 	const serverAccess: Access = boardShare?.mode ?? "off"
@@ -149,7 +150,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	return [
 		RadioGroup.radioGroup(
 			h,
-			{ className: "gap-0 divide-y divide-border overflow-hidden rounded-md border" },
+			{ className: "gap-0 divide-y divide-border-subtle overflow-hidden rounded-md border" },
 			Arr.map(ACCESS, (option) => accessOption(h, config, option)),
 		),
 		...(boardShare === undefined
@@ -157,7 +158,11 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 			: shareLinkRow(
 					h,
 					model,
-					shareUrl(model.sharing.origin, boardShare.token),
+					shareUrl(
+						model.sharing.origin,
+						boardShare.token,
+						shareLinkRangeOf(model, context.timeZone),
+					),
 					"Anyone using the current link loses access to this dashboard. Chart embeds keep working.",
 				)),
 		...(unsupported.length > 0 && boardShare !== undefined
@@ -182,7 +187,7 @@ const panelContent = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-export const shareDialog = (h: H, model: Model): Html => {
+export const shareDialog = (h: H, model: Model, context: PageContext): Html => {
 	const id = model.sharing.dialog.id
 	return h.submodel({
 		slotId: "dashboard-share-dialog",
@@ -205,7 +210,7 @@ export const shareDialog = (h: H, model: Model): Html => {
 						"Anyone you share with sees this dashboard's data, but cannot edit it.",
 					),
 				]),
-				DialogView.dialogPanel(h, "dialog", id, panelContent(h, model), "space-y-4"),
+				DialogView.dialogPanel(h, "dialog", id, panelContent(h, model, context), "space-y-4"),
 				DialogView.dialogFooter(h, "dialog", [
 					button(h, { variant: "outline", attributes: close }, ["Done"]),
 				]),

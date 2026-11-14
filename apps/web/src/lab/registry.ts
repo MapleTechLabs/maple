@@ -33,7 +33,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/infra",
 		title: "Infrastructure",
 		description:
-			"The infra overview, hosts list and Railway list over fixture rows, no warehouse needed.",
+			"The infra overview, hosts list, Railway list and the Vercel list, AI Gateway and project pages over fixture rows, no warehouse needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -50,6 +50,102 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Uptime monitor",
 		description:
 			"An HTTP monitor's response time, phase breakdown and every-check charts over a fixture shaped like production checks.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/heartbeat",
+		title: "Heartbeat monitor",
+		description:
+			"The new-monitor form filled in for a nightly cron heartbeat, and the heartbeat's page with its Ping URL panel (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/list-keys",
+		title: "List keys",
+		description:
+			"The services, metrics table, investigations, dashboards and alerts Inbox lists over fixture rows, each taking the row keys: J / K / arrows move the focus, Enter opens, Escape clears (`?page=services|metrics|investigations|dashboards|alerts`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/alerts-hub",
+		title: "Alerts hub",
+		description:
+			"The alerts Inbox, Rules and Silences tabs loading, failing and populated, with a rule skipped for too few samples and a cancelled silence, and the silence side panel empty, picking a time and filled in (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/audit-log",
+		title: "Audit log",
+		description:
+			"The settings audit log over fixtures: changes, data access, filters, an expanded entry, an unknown lookup, empty, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/members",
+		title: "Members",
+		description:
+			"The settings members tab as an admin, with a role change on its inline confirm strip and saving (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/slos",
+		title: "SLOs",
+		description:
+			"The SLOs tab, an SLO page healthy, burning, out of budget or failing its status read, and the SLO form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation",
+		title: "Escalation chains",
+		description:
+			"The Routing tab's escalation chains empty and populated, a rule tier's chain picker, and the incident rail escalating, paused or finished (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/escalation-editor",
+		title: "Escalation chain editor",
+		description:
+			"The escalation chain editor page new, populated, with a step inserted, invalid, asking to delete or to leave, read-only and with a long chain (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/oncall",
+		title: "On-call schedules",
+		description:
+			"The On-call tab empty and populated, the inbox's who-is-on-call strip, the schedule form new, editing, invalid and failing, the week calendar with overrides and a DST week, the override dialog and its delete confirmation, the chain dialog with people and schedules, and an incident timeline with pages (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/maintenance",
+		title: "Maintenance windows",
+		description:
+			"The Maintenance tab populated and empty, the window dialog weekly and once with a validation error, and the Silences tab with window silences, unfiltered and filtered to one window (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/anomaly-alerts",
+		title: "Anomaly alerts",
+		description:
+			"Anomaly rules in the rule editor (scoped and the protected default), an anomaly rule's incident with the detector's evidence, the Inbox's Anomalies view and the Overview's alert banner with open anomalies (`?state=`). The hub and the incident as an admin, a member or an analyst, who gets no Acknowledge (`?role=member|analyst`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/ai-credits",
+		title: "AI credits",
+		description:
+			"The AI credits page under Settings › Billing: spend by feature and model, and code review by repository and pull request (`?state=` code-review, chat, empty, loading, error).",
 		kind: "lab",
 		session: "none",
 	},
@@ -82,6 +178,38 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Google Cloud connections",
 		description:
 			"A Google Cloud connection in each state, healthy to failing, over fixture connectors, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/cost",
+		title: "Cost",
+		description:
+			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/vercel",
+		title: "Vercel integration",
+		description:
+			"Integrations → Vercel not connected, the connect steps, and a connected team healthy, with a broken drain and with a rejected token, over fixtures.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/analytics-search",
+		title: "Web analytics: Search",
+		description:
+			"The Search tab's tiles, trend, queries and pages over a young site's Search Console data; sorting, the tiles and the filters work. Conversions, loading, an empty window, failing (all reads, or some), importing, revoked, no property and not connected too, and the Overview tab's pointer to Search (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/search-console",
+		title: "Google Search Console",
+		description:
+			"The Google Search Console card from connect to revoked, the connecting states included, over fixtures, no API needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -189,6 +317,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/investigation",
+		title: "Investigation",
+		description:
+			"The investigation page over the diagnosed fixture, with one connected repository: the Fix in Claude Code button, its agent menu and the action sheet's handoff.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/filter-rail",
+		title: "Filter rail",
+		description:
+			"The `/replays` filter rail over a day of facets: list, range and identity sections, to judge the kit sections' density.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:
@@ -205,6 +349,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-map-tiles",
+		title: "Service map tiles",
+		description:
+			"The service map as a landscape of hex tiles: touching tiles share a road, the rest go by rail. Deal the tiles and place them, or rearrange the automatic layout.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/agent-sessions",
 		title: "Agent sessions list",
 		description:
@@ -217,6 +369,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Session replays list",
 		description:
 			"The `/replays` list over a day of mostly bots, bounces and idle tabs, with an errored bot and a live bounce that must not fold into a low-signal run.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/users",
+		title: "Users",
+		description:
+			"The `/users` directory and one user's page over a fixture week: an id-only user, a backend-only service account, a very long email, no requests, and the six detail tabs (?view=list|detail|empty|loading&tab=activity|sessions|errors|traces|logs|events).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/sources",
+		title: "Sources",
+		description:
+			"The `/sources` list, one source and the connect page as an engineer or a member, who reads sources but cannot change them (?page=list|detail|new&role=engineer|member).",
 		kind: "lab",
 		session: "none",
 	},
@@ -292,6 +460,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/aws-connection",
+		title: "AWS connection",
+		description:
+			"The AWS integration around its Cost module over one synthetic account: the connected card with the module not offered, off, waiting for the stack, granted and as a member, the card before its stack is deployed, with a failing role, a stopped stream and metrics off, and the connect flow with and without the Cost choice (?state=before|off|waiting|granted|member|pending|failing|stopped|metrics-off|flow|flow-before).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/aws",
 		title: "AWS infrastructure",
 		description:
@@ -311,7 +487,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/errors",
 		title: "Errors list",
 		description:
-			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity.",
+			"The `/errors` list over a fixture holding every row state at once: surging critical with an open incident, live and diagnosed investigations, a truncating message, a fingerprint gone quiet, an unset severity. As a member or an analyst, who gets no checkbox, picker or bulk bar (?role=member|analyst).",
 		kind: "lab",
 		session: "none",
 	},
@@ -319,7 +495,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/error-issue",
 		title: "Error issue",
 		description:
-			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail.",
+			"The error issue page over one surging, regressed high-severity TypeError: the occurrence chart and its tooltip, the Get it fixed panel, the stat rail and the rail. As a member or an analyst, who reads it and gets no triage control (?role=member|analyst&tab=overview|occurrences|activity).",
 		kind: "lab",
 		session: "none",
 	},
@@ -327,7 +503,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/alerts",
 		title: "Alerts",
 		description:
-			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation.",
+			"The `/alerts` Inbox, Rules and Routing tabs and the incident page over one fixture org: two firing, one held, four blind spots, a delivery retry and a diagnosed investigation. As an admin, a member or an analyst, who gets no Acknowledge (`?role=member|analyst`).",
 		kind: "lab",
 		session: "none",
 	},
@@ -343,7 +519,23 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/status-pages",
 		title: "Status pages",
 		description:
-			"The status pages list, the look picker and the form fields (hint and error) over fixture pages.",
+			"The status pages list, the look picker and the form fields (hint and error) over fixture pages, or a page's editor open on an incident (`?page=list|editor`). As an admin, a member or an analyst, who gets no control that posts, edits or deletes an incident (`?role=member|analyst`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/condition-builder",
+		title: "Condition builder",
+		description:
+			"The query panel's where clause as field, operator and value rows: empty, populated, a clause the rows can't show, and text mode.",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/rule-editor",
+		title: "Rule editor",
+		description:
+			"The alert rule editor over fixture rows: a saved error rate rule (?variant=populated), a blank new rule (new) and a scoped anomaly rule (anomaly). ?theme=light|dark.",
 		kind: "lab",
 		session: "none",
 	},
@@ -404,6 +596,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/analyst-home",
+		title: "Analyst overview",
+		description:
+			"The Overview an analyst gets, in the analyst's shell: nothing wrong, incidents open and checks failing, nothing set up, loading and one read failing (`?state=clear|attention|empty|loading|failed`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/shell",
+		title: "Shell states",
+		description:
+			"The real sidebar with foldable groups and the on-call pill's three states, and a right sheet held in ?sheet= with a demo form.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/query-builder",
 		title: "Query builder",
 		description: "MVP query builder against real warehouse data for the signed-in org.",
@@ -421,15 +629,21 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
 		path: "/lab/bench/service-detail",
 		title: "Service detail charts",
-		description:
-			"The service-detail MetricsGrid with synthetic rows; ?mode=recharts|cursor picks the sync strategy.",
+		description: "The service-detail MetricsGrid with synthetic rows.",
+		kind: "bench",
+		session: "none",
+	},
+	{
+		path: "/lab/bench/service-detail-markers",
+		title: "Service detail markers",
+		description: "The service-detail MetricsGrid with deploy markers; hover a label for its commit card.",
 		kind: "bench",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/infra",
 		title: "Infra charts",
-		description: "Host and k8s detail ChartViews on one page with synthetic rows; ?mode=recharts|cursor.",
+		description: "Host and k8s detail ChartViews on one page with synthetic rows.",
 		kind: "bench",
 		session: "none",
 	},
@@ -467,16 +681,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	{
 		path: "/lab/charts",
 		title: "TanStack charts",
-		description:
-			"Production charts beside their TanStack counterparts over identical rows; ?renderer=tanstack-svg|tanstack-canvas.",
+		description: "Production charts beside their TanStack counterparts over identical rows.",
 		kind: "lab",
 		session: "none",
 	},
 	{
 		path: "/lab/bench/tanstack",
 		title: "TanStack Charts pilot",
-		description:
-			"The three overview charts off identical rows; ?renderer=recharts|tanstack-svg|tanstack-canvas.",
+		description: "The three overview charts off identical rows, on the canvas renderer.",
 		kind: "bench",
 		session: "none",
 	},

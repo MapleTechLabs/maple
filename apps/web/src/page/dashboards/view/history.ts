@@ -4,9 +4,6 @@ import { Schema, String as Str } from "effect"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 
-// Version history: the panel's timeline, the previewed version and
-// its snapshot, read through `dashboards.listVersions` / `retrieveVersion`.
-
 export const VersionRow = Schema.Struct({
 	id: Schema.String,
 	versionNumber: Schema.Number,
@@ -71,11 +68,13 @@ export const HistoryState = Schema.Struct({
 	 * `Keyed` slot: the read has no org-scoped request key and reopening resets to `Loading`.
 	 */
 	versionsGeneration: Schema.Number,
+	/** When the version list was read: its relative times count from here, not from page load. */
+	listedAtMs: Schema.Number,
 	previewed: Schema.NullOr(VersionRow),
 	snapshot: SnapshotData.schema,
 	restoreDialog: Dialog.Model,
 	isRestoring: Schema.Boolean,
-	/** `PreviewedCanvas`'s local section state: browsing a preview's groups never touches the URL. */
+	/** A preview's local section state: browsing a preview's groups never touches the URL. */
 	sectionView: Schema.Struct({
 		collapsed: Schema.optionalKey(Schema.String),
 		expanded: Schema.optionalKey(Schema.String),
@@ -88,6 +87,7 @@ export const initHistory = (): HistoryState => ({
 	isOpen: false,
 	versions: AsyncData.Idle(),
 	versionsGeneration: 0,
+	listedAtMs: 0,
 	previewed: null,
 	snapshot: AsyncData.Idle(),
 	restoreDialog: Dialog.init("dashboard-restore-version", "alert-dialog"),
@@ -95,7 +95,6 @@ export const initHistory = (): HistoryState => ({
 	sectionView: {},
 })
 
-/** `actorInitials`: the first two alphanumerics of the opaque user id. */
 export const actorInitials = (userId: string): string => {
 	const upper = Str.toUpperCase(Str.trim(userId))
 	if (upper === "") return "?"

@@ -3,6 +3,7 @@ import {
 	CodeReviewListResponse,
 	CodeReviewSortKey,
 	PrReviewId,
+	VcsRepositoryId,
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
@@ -14,8 +15,6 @@ import { Frame, FrameMessage } from "../kit/frame"
 import { ResponseCache } from "../kit/page-steps"
 import { ReviewSheet, SheetMessage } from "../kit/review-sheet"
 
-// `/code-review/pull-requests` and its review sheet.
-
 export const Model = Schema.Struct({
 	search: CodeReviewPullRequestsSearch,
 	frame: Frame,
@@ -25,7 +24,7 @@ export const Model = Schema.Struct({
 	/** The filters' author list (`codeReview.analytics` without the author). */
 	authors: KeyedSchema(CodeReviewAnalytics, LoadFailure),
 	authorsCache: ResponseCache(CodeReviewAnalytics),
-	/** `useState(PAGE)`: Load more adds a page; a filter change starts over. */
+	/** Load more adds a page; a filter change starts over. */
 	limit: Schema.Number,
 	statusSelect: Select.Model,
 	/** The search box's input and its debounce generation. */
@@ -47,6 +46,9 @@ export const Message = defineMessageUnion({
 	ClickedRetry: {},
 	ClickedClearFilters: {},
 	ClickedReview: { reviewId: PrReviewId },
+	/** A row's author or repository, which narrows the list to it. */
+	ClickedAuthor: { author: Schema.String },
+	ClickedRepository: { repo: VcsRepositoryId },
 	ClickedLoadMore: {},
 	ClickedSort: { key: CodeReviewSortKey },
 	TickedPoll: {},

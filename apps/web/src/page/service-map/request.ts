@@ -1,9 +1,9 @@
-import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/ui/components/service-map/service-map-utils"
+import { applySteps, keyed, type Step as KitStep } from "../kit/keyed-step"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { DB_NODE_PREFIX, parseDbNodeId } from "@maple/views/service-map/graph/service-map-utils"
 import { Option, Array as Arr, String as Str } from "effect"
-import type { Command } from "foldkit"
-import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import type { Resources } from "../../platform/resources"
+import { integrationStatusKey } from "../kit/integration-status-keys"
 import { AppRoute, hrefOf } from "../../route"
 import type { PageContext, PageReturn } from "../contract"
 import { PageOutMessage } from "../contract"
@@ -21,35 +21,14 @@ import {
 	ResolveWindow,
 } from "./command"
 import { DEFAULT_PRESET, deploymentEnvOf, durationSecondsOf, type Search } from "./derive"
-import type { Message, RequestMode } from "./message"
+import type { Message } from "./message"
 import type { Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
 
-// The page's requests: one `Keyed` slot per read (S6), and its navigation.
+// The page's requests: one `Keyed` slot per read, and its navigation.
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
-
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
-const keyed = <A, E>(
-	slot: Keyed.Keyed<A, E>,
-	key: string,
-	mode: Keyed.RequestMode,
-	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
-	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	Option.match(Keyed.request(slot, key, mode), {
-		onNone: () => ({ patch: {}, commands: [] }),
-		onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-	})
-
-export const applySteps = (model: Model, steps: ReadonlyArray<Step>): Return => ({
-	model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
-	commands: Arr.flatMap(steps, (step) => step.commands),
-})
+type Step = KitStep<Model, Message>
 
 export const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =>
 	ResolveWindow({
@@ -114,8 +93,8 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 		),
 		keyed(
 			model.planetscaleInventory,
-			requestKey(org, "planetscaleIntegration.databases", {}),
-			// `useAtomValue`, not page-refreshable: Reload leaves the inventories alone.
+			integrationStatusKey(org, "planetscaleDatabases"),
+			// Not page-refreshable: Reload leaves the inventories alone.
 			"Load",
 			(planetscaleInventory) => ({ planetscaleInventory }),
 			(key) => FetchPlanetScaleInventory({ key }),
@@ -130,7 +109,7 @@ const overlaySteps = (model: Model, context: PageContext, mode: RequestMode): Re
 	]
 }
 
-/** `pickDbSummaryBucketSeconds`. */
+/** The bucket sizes the query engine's db summary query is built for (5 and 15 min, 1 h, 6 h). */
 const dbSummaryBucketSeconds = (durationSeconds: number): number =>
 	durationSeconds <= 6 * 60 * 60
 		? 5 * 60
@@ -148,12 +127,14 @@ export const selectedDatabase = (model: Model) =>
 			(id) => ({
 				id,
 				...parseDbNodeId(id),
-				planetscale: map.source.rawNodes.find((node) => node.id === id)?.data.planetscale,
+				planetscale: Option.getOrUndefined(
+					Arr.findFirst(map.source.rawNodes, (node) => node.id === id),
+				)?.data.planetscale,
 			}),
 		),
 	)
 
-/** What `DatabaseDetailPanel` requests: the query summary, and the branches of a PlanetScale node. */
+/** What the database panel requests: the query summary, and the branches of a PlanetScale node. */
 export const databaseSteps = (model: Model, context: PageContext, mode: RequestMode): ReadonlyArray<Step> => {
 	const window = model.window
 	const database = selectedDatabase(model)
@@ -197,14 +178,12 @@ export const databaseSteps = (model: Model, context: PageContext, mode: RequestM
 
 /** Every query the page reads for the resolved windows, keyed by its inputs. */
 export const requestAll = (model: Model, context: PageContext, mode: RequestMode): Return =>
-	applySteps(model, [
+	applySteps<Model, Message>(model, [
 		facetsStep(model, context, mode),
 		bundleStep(model, context, mode),
 		...overlaySteps(model, context, mode),
 		...databaseSteps(model, context, mode),
 	])
-
-// NAVIGATION
 
 export const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,

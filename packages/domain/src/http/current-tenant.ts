@@ -1,7 +1,9 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/http-api"
 import { Schema, Context as EffectContext } from "effect"
-import { AuthMode, OrgId, RoleName, UserId } from "../primitives"
+import { type ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/primitives"
+import type { ChatTurnOrigin } from "../chat-session"
 import { MapleRegion } from "../organization-regions"
+import { analystMessage } from "../policy"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -89,6 +91,42 @@ export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWr
 	},
 ) {}
 
+/** An analyst asked to operate the organization. 403: the session is fine, the role does not reach it. */
+export class LimitedRoleError extends HttpTaggedError<LimitedRoleError>()(
+	"@maple/http/errors/LimitedRoleError",
+	{ message: Schema.String },
+	{
+		status: 403,
+		code: "limited_role",
+		title: "Limited role",
+		message: analystMessage,
+		retry: "never",
+		recovery: "request_access",
+		exposure: "public_message",
+	},
+) {}
+
+/**
+ * Who a request, tool call or job acts as. `TenantSchema` is the form the HTTP middleware
+ * provides; the optional fields below it are set only by the MCP and chat surfaces.
+ */
+export interface TenantContext {
+	readonly orgId: OrgId
+	readonly userId: UserId
+	readonly roles: ReadonlyArray<RoleName>
+	readonly authMode: AuthMode
+	/** A scoped API key's scopes. Unset for unscoped keys, OAuth tokens and sessions. */
+	readonly scopes?: ReadonlyArray<string> | undefined
+	/** Set for a scoped API key that grants read access only: MCP tools that change data refuse it. */
+	readonly readOnly?: true
+	/** Pre-resolved actor for an API-key-backed agent, preferred over `ensureUserActor(userId)`. */
+	readonly actorId?: ActorId
+	/** The MCP client's `clientInfo.name`; issue writes attribute to that agent when no `actorId`. */
+	readonly mcpClientName?: string
+	/** Who drove the chat-engine turn this invocation belongs to; audit attribution keys on it. */
+	readonly turnOrigin?: ChatTurnOrigin
+}
+
 export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	orgId: OrgId,
 	userId: UserId,
@@ -113,6 +151,7 @@ export class Authorization extends HttpApiMiddleware.Service<
 		UnauthorizedError,
 		AuthorizationUnavailableError,
 		OrganizationAccessDeniedError,
+		LimitedRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -162,6 +201,7 @@ export class SessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
+		LimitedRoleError,
 		OrganizationWrongRegionError,
 	],
 	security: {
@@ -206,6 +246,7 @@ export class RegionlessSessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
+		LimitedRoleError,
 	],
 	security: {
 		bearer: HttpApiSecurity.bearer,

@@ -1,13 +1,14 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument } from "@maple/domain/http"
-import { Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../contract"
 import { applySectionEdit, SectionEdit } from "./section-edit"
-import { EditSections, FetchWidget } from "./command"
+import { EditSections, UpdateWidgetLayouts } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { init, update } from "./update"
+import { canvasGridOf } from "./grid"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -69,6 +70,76 @@ const ready = (): Model =>
 const nowIso = document.updatedAt
 
 describe("dashboard groups", () => {
+	test("a widget whose group was deleted draws on the board's root grid and can still be dragged", () => {
+		const orphaned = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [stat("root"), stat("orphan", { sectionId: "gone", tabId: "x" })],
+		})
+		const model = Arr.reduce(
+			[
+				Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(orphaned) }),
+				Message.MeasuredGrid({ width: 1200 }),
+			],
+			ready(),
+			(current, message) => pageUpdate(current, message).model,
+		)
+		expect(Arr.map(canvasGridOf(model)?.widgets ?? [], (widget) => widget.id)).toEqual(["root", "orphan"])
+		const pressed = pageUpdate(
+			model,
+			Message.PressedGrip({ widgetId: "orphan", clientX: 10, clientY: 10 }),
+		)
+		expect(pressed.model.gesture?.widgetId).toBe("orphan")
+	})
+
+	test("a tile moved to another group mid-drag ends the drag without writing the old group's preview", () => {
+		const moved = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [
+				stat("root"),
+				stat("in-a", { sectionId: "s2", tabId: "c" }),
+				stat("in-b", { sectionId: "s1", tabId: "b" }),
+			],
+		})
+		const editing = pageUpdate(ready(), Message.MeasuredGrid({ width: 1200 })).model
+		const pressed = pageUpdate(
+			editing,
+			Message.PressedGrip({ widgetId: "in-a", clientX: 10, clientY: 10 }),
+		).model
+		const dragged = pageUpdate(
+			pressed,
+			Message.MovedPointer({ clientX: 700, clientY: 10, gridLeft: 0, gridTop: 0 }),
+		).model
+		expect(dragged.gesture?.isStarted).toBe(true)
+		const updated = pageUpdate(
+			dragged,
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(moved) }),
+		)
+		expect(updated.model.gesture).toBeNull()
+		expect(names(pageUpdate(updated.model, Message.ReleasedPointer()).commands)).toEqual([])
+	})
+
+	test("a tile moved to another group during a keyboard move goes back without a write", () => {
+		const moved = Schema.decodeUnknownSync(DashboardDocument)({
+			...Schema.encodeSync(DashboardDocument)(document),
+			widgets: [
+				stat("root"),
+				stat("in-a", { sectionId: "s2", tabId: "c" }),
+				stat("in-b", { sectionId: "s1", tabId: "b" }),
+			],
+		})
+		const editing = pageUpdate(ready(), Message.MeasuredGrid({ width: 1200 })).model
+		const key = (value: string) =>
+			Message.PressedGripKey({ widgetId: "in-a", label: "In A", key: value, isShift: false })
+		const nudged = pageUpdate(pageUpdate(editing, key(" ")).model, key("ArrowRight")).model
+		expect(nudged.keyboardMove?.widgetId).toBe("in-a")
+		const updated = pageUpdate(
+			nudged,
+			Message.UpdatedDashboard({ orgId, maybeDocument: Option.some(moved) }),
+		)
+		expect(updated.model.keyboardMove).toBeNull()
+		expect(names(updated.commands)).not.toContain(UpdateWidgetLayouts.name)
+	})
+
 	test("a chevron collapses the group for this viewer only, in the URL", () => {
 		expect(
 			pageUpdate(ready(), Message.ClickedSectionChevron({ sectionId: "s1", collapsed: true }))
@@ -105,20 +176,6 @@ describe("dashboard groups", () => {
 		expect(pageUpdate(opened, Message.ClickedAddWidget()).model.pickerTarget).toBeNull()
 	})
 
-	test("a stat's sparkline series is asked for only once the stat has its value", () => {
-		const route = { dashboardId: "dash_grouped", search: {} }
-		const model = routeChanged(ready(), route, context).model
-		const revealed = pageUpdate(model, Message.RevealedWidget({ widgetId: "root" }))
-		expect(names(revealed.commands)).toEqual([FetchWidget.name])
-		expect(revealed.model.widgets.root?.sparkGate ?? null).toBeNull()
-		const key = Rec.keys(revealed.model.requests)[0] ?? ""
-		const answered = pageUpdate(
-			revealed.model,
-			Message.CompletedFetchWidget({ key, result: Result.succeed({ data: [] }) }),
-		)
-		expect(answered.model.requests[key]).toBeDefined()
-	})
-
 	test("deleting a tab moves its widgets to the first remaining tab, below what it holds", () => {
 		const next = applySectionEdit(
 			SectionEdit.DeleteTab({ sectionId: "s1", tabId: "b", action: "move" }),
@@ -126,9 +183,9 @@ describe("dashboard groups", () => {
 			nowIso,
 			() => "unused",
 		)
-		expect(next.sections?.[0]?.tabs.map((tab) => tab.id)).toEqual(["a"])
+		expect(Arr.map(next.sections?.[0]?.tabs ?? [], (tab) => tab.id)).toEqual(["a"])
 		expect(next.sections?.[0]?.title).toBe("Overview")
-		const moved = next.widgets.find((widget) => widget.id === "in-b")
+		const moved = Option.getOrUndefined(Arr.findFirst(next.widgets, (widget) => widget.id === "in-b"))
 		expect(moved?.tabId).toBe("a")
 		expect(moved?.layout.y).toBe(2)
 	})
@@ -140,7 +197,7 @@ describe("dashboard groups", () => {
 			nowIso,
 			() => "unused",
 		)
-		expect(next.sections?.map((section) => section.id)).toEqual(["s2"])
+		expect(Arr.map(next.sections ?? [], (section) => section.id)).toEqual(["s2"])
 		expect(
 			Arr.map(
 				Arr.filter(next.widgets, (widget) => widget.sectionId === undefined),

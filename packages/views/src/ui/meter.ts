@@ -4,16 +4,23 @@ import {
 	backdropBarLeftStyles,
 	backdropBarRightStyles,
 	backdropBarStyles,
+	levelMeterPipBadStyles,
+	levelMeterPipGoodStyles,
+	levelMeterPipMidStyles,
+	levelMeterPipOffStyles,
+	levelMeterPipOnStyles,
+	levelMeterPipStyles,
+	levelMeterStyles,
 	meterFillStyles,
 	meterFillUntonedStyles,
 	meterStyles,
 	segmentedBarSegmentStyles,
 	segmentedBarStyles,
-} from "@maple/ui/styles/ui/meter"
+} from "./meter.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/meter.tsx: Meter, SegmentedBar and BackdropBar.
+// Meter, SegmentedBar, BackdropBar and LevelMeter.
 
 /** Width for a fraction: clamped to 0..1, and a non-zero value is never thinner than `minVisible`%. */
 const widthPercent = (fraction: number, minVisible: number): number =>
@@ -137,3 +144,46 @@ export const backdropBar = <M>(
 /** The classes of a bar's fill pinned to the left of its `relative` track, sized by an inline width. */
 export const barFillClass = (className?: string): string =>
 	cn("absolute inset-y-0 left-0 rounded-xs", className)
+
+/** Which end of a level scale is the good one, for `ramp`. */
+export type LevelRamp = "low-is-good" | "high-is-good"
+
+/** Lit pips by where the level sits: the bottom two fifths, the middle fifth or the top two. */
+const rampFill = (value: number, max: number, ramp: LevelRamp): string => {
+	const fraction = max > 0 ? value / max : 0
+	if (fraction > 0.4 && fraction <= 0.6) return levelMeterPipMidStyles
+	const isLow = fraction <= 0.4
+	return isLow === (ramp === "low-is-good") ? levelMeterPipGoodStyles : levelMeterPipBadStyles
+}
+
+/**
+ * `LevelMeter`: a rating as `max` pips with the first `value` lit, such as a price from 1 to 5.
+ * `ramp` colours the lit pips green, amber or red by level, green at the end named good.
+ */
+export const levelMeter = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		value: number
+		max?: number
+		label: string
+		ramp?: LevelRamp
+		className?: string
+	}>,
+): Html => {
+	const max = options.max ?? 5
+	const litFill =
+		options.ramp === undefined ? levelMeterPipOnStyles : rampFill(options.value, max, options.ramp)
+	return h.div(
+		[
+			h.Class(cn(levelMeterStyles, options.className)),
+			h.DataAttribute("slot", "level-meter"),
+			h.Role("img"),
+			h.AriaLabel(options.label),
+		],
+		Arr.makeBy(max, (index) =>
+			h.div([
+				h.Class(cn(levelMeterPipStyles, index < options.value ? litFill : levelMeterPipOffStyles)),
+			]),
+		),
+	)
+}

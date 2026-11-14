@@ -1,4 +1,4 @@
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { Effect, Option, Schema } from "effect"
 import type { Runtime } from "foldkit"
 import type { Url } from "foldkit/url"
@@ -23,14 +23,13 @@ export { subscriptions } from "./subscription"
 export { update } from "./update"
 export { view } from "./view"
 
-// FLAGS
-
 /** Read before the first render, so a signed-out visit paints the page, not the boot splash. */
 export const Flags = Schema.Struct({
 	hasStoredSession: Schema.Boolean,
 	timeZone: Schema.String,
 	knownToRenderApp: Schema.Record(Schema.String, Schema.Boolean),
 	shell: Schema.Struct({
+		isSidebarOpen: Schema.optionalKey(Schema.Boolean),
 		isMobile: Schema.Boolean,
 		isFilterCollapsed: Schema.optionalKey(Schema.Boolean),
 		isBelowSm: Schema.optionalKey(Schema.Boolean),
@@ -39,6 +38,7 @@ export const Flags = Schema.Struct({
 		dashboardFavorites: Schema.Array(Schema.String),
 		rememberedSurfaces: Schema.optionalKey(Schema.Record(Schema.String, Schema.Array(Shell.NavSurface))),
 		isQuotaApproachingDismissed: Schema.optionalKey(Schema.Boolean),
+		platform: Schema.optionalKey(Shell.Platform),
 	}),
 })
 export type Flags = typeof Flags.Type
@@ -49,8 +49,6 @@ export const flags: Effect.Effect<Flags> = Effect.all({
 	knownToRenderApp: readKnownToRenderApp,
 	shell: Shell.readShellFlags,
 })
-
-// INIT
 
 export const init: Runtime.RoutingApplicationInit<Model, Message, Flags, Resources> = (flags, url: Url) => {
 	const route = urlToAppRoute(url)

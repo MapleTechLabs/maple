@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { InspectSpanOutput, InspectTraceOutput, SearchLogsOutput } from "@maple/domain/mcp-outputs"
 import { installFakeWarehouse, readsTraceSpans, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
@@ -37,11 +37,9 @@ const LAGGED_AI_SPAN_ID = "e2e2e2e2e2e2e2e2"
 const NON_HEX_TRACE_ID = "trace-2026-08-19-checkout"
 const NON_HEX_AI_SPAN_ID = "d1d1d1d1d1d1d1d1"
 
-// Deterministic full-execution regression guards for the Part-1 work. These run
-// the REAL tool handlers + renderer against a fake warehouse (no LLM — tool
-// SELECTION is covered by the prediction evals; here we lock in the rendered
-// OUTPUT). They run in the normal `test` suite, so they're always-on and need no
-// API key. Fixtures route by the trace/span id literal baked into the compiled
+// Deterministic full-execution regression guards. These run the REAL tool handlers + renderer
+// against a fake warehouse (no LLM: tool SELECTION is covered by the prediction evals; here we lock
+// in the rendered OUTPUT). Fixtures route by the trace/span id literal baked into the compiled
 // SQL (see fake-warehouse.ts), so one rule set serves every scenario.
 
 /** How often the trace-bounds lookup ran — see the `traces` rule below. */
@@ -125,8 +123,9 @@ const regressionFixtures: FixtureRule[] = [
 	{
 		match: (sql) => Str.includes("firstHourSpanCount")(sql),
 		rows: (sql: string) => {
-			const [start, end] = Arr.map([...sql.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)], (m) =>
-				Date.parse(`${m[1]}Z`),
+			const [start, end] = Arr.map(
+				Arr.fromIterable(Str.matchAll(/'(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)'/g)(sql)),
+				(m) => Date.parse(`${m[1]}Z`),
 			)
 			const hours = start === undefined || end === undefined ? 0 : (end - start) / 3_600_000
 			return [
@@ -177,7 +176,6 @@ describe("inspect_trace bounded-overview rendering", () => {
 	it("caps a large trace and keeps the error span + omitted marker", async () => {
 		const result = await runToolDirect(rt, "inspect_trace", { trace_id: FIXTURES.traceId })
 		const text = markdown(result)
-		// Bounded overview note.
 		expect(text).toContain(`of ${LARGE_TRACE_SPAN_COUNT} spans (errors and longest first)`)
 		// The single error span survives selection even though it's low-duration.
 		expect(text).toContain("[Error]")
@@ -251,7 +249,9 @@ describe("inspect_span drill-down", () => {
 		// The call's result is captured on the tool span, not on this one.
 		expect(text).toContain("table orders does not exist")
 		// The raw maps are still there, and still below the decoded view.
-		expect(text.indexOf("why is checkout failing?")).toBeLessThan(text.indexOf("`gen_ai.request.model`"))
+		expect(Option.getOrThrow(Str.indexOf("why is checkout failing?")(text))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("`gen_ai.request.model`")(text)),
+		)
 		expect(text).toContain('get_agent_session session_id="wrun_01KZEVAL"')
 	})
 

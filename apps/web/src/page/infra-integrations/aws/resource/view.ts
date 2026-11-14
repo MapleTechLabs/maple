@@ -27,7 +27,7 @@ import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
 import { metricChartCards, metricChartsLoading } from "../../kit/metric-charts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import type { TracedService } from "../../kit/traced"
 import type { BucketPoint } from "../data"
 import { HOT, type Judgement, judge, perMinute, tracedAs } from "../derive"
@@ -37,8 +37,6 @@ import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-
-// `/infra/aws/$kind/$name`: one resource's CloudWatch metrics, and the service it runs as.
 
 type H = HtmlBuilder<Message>
 
@@ -65,7 +63,7 @@ const percentTile = (eyebrow: string, figure: Figure | null): Tile => ({
 const perMinuteTile = (eyebrow: string, figure: Figure | null, context: TileContext): Tile => ({
 	eyebrow,
 	value: figure === null ? EMPTY_VALUE : formatRate(perMinute(figure.value, context.windowMs)),
-	subline: figure === null ? "not reported" : `${formatRate(figure.value)} in the window`,
+	subline: figure === null ? "not reported" : `${formatRate(figure.value)} in this window`,
 	spark: figure?.trend,
 })
 
@@ -216,8 +214,13 @@ const tracedPanel = (h: H, service: TracedService | null, kind: AwsInfraKindId, 
 						),
 					]
 				: [
-						h.div(
-							[h.Class("flex flex-wrap items-center gap-x-6 gap-y-2 font-mono tabular-nums")],
+						hstack(
+							h,
+							{
+								align: "center",
+								wrap: true,
+								className: "gap-x-6 gap-y-2 font-mono tabular-nums",
+							},
 							[
 								h.span(
 									[],
@@ -271,7 +274,7 @@ const body = (
 		return integrationNotConnected(h, {
 			icon: icon(h, "AwsIcon", { size: 16 }),
 			title: "No metrics in this window",
-			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in the window. Widen the time range, or check that its region is streamed.`,
+			description: `CloudWatch sent nothing for this ${AWS_INFRA_KINDS[kind].noun} in this window. Widen the time range, or check that its region is streamed.`,
 			integration: "aws",
 			actionLabel: "Check the connection",
 			actionVariant: "outline",

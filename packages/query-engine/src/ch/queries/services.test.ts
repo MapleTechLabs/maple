@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { DateTime, Effect, Array as Arr } from "effect"
+import { assert, describe, expect, it } from "vitest"
+import { DateTime, Effect, Array as Arr, String as Str } from "effect"
 import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceOverviewQuery,
@@ -42,8 +42,6 @@ describe("serviceCatalogQuery", () => {
 		expect(sql).toContain("OFFSET 20")
 	})
 })
-
-// serviceHealthSnapshotQuery
 
 describe("serviceHealthSnapshotQuery", () => {
 	it("reads the hourly aggregate and merges weighted golden signals", () => {
@@ -90,8 +88,6 @@ describe("serviceHealthSnapshotQuery", () => {
 	})
 })
 
-// serviceOverviewQuery
-
 describe("serviceOverviewQuery exclusions", () => {
 	it("emits NOT IN for every excluded dimension", () => {
 		const { sql } = compileUnsafe(
@@ -112,7 +108,7 @@ describe("serviceOverviewQuery exclusions", () => {
 		// only one tier would drop the excluded rows for part of the range and keep them for the
 		// rest, which reads as the filter half-working.
 		const { sql } = compileUnsafe(serviceOverviewQuery({ excludedEnvironments: ["staging"] }), baseParams)
-		const occurrences = (sql.match(/DeploymentEnv NOT IN \('staging'\)/g) ?? []).length
+		const occurrences = Arr.fromIterable(Str.matchAll(/DeploymentEnv NOT IN \('staging'\)/g)(sql)).length
 		expect(occurrences).toBeGreaterThanOrEqual(2)
 	})
 })
@@ -206,10 +202,11 @@ describe("serviceOverviewQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
 		expect(decoded.commits).toHaveLength(2)
-		const [sha, spans, errors, firstSeen] = decoded.commits[0]!
+		const [sha, spans, errors, firstSeen] = Arr.getUnsafe(decoded.commits, 0)
 		expect([sha, spans, errors, DateTime.formatIso(firstSeen)]).toEqual([
 			"abc123",
 			80,
@@ -219,8 +216,6 @@ describe("serviceOverviewQuery", () => {
 		expect(DateTime.formatIso(decoded.firstSeen)).toBe("2024-01-01T00:00:00.000Z")
 	})
 })
-
-// serviceHealthBaselineQuery
 
 describe("serviceHealthBaselineQuery", () => {
 	it("compiles a per-service p95 baseline scoped to the org", () => {
@@ -237,8 +232,6 @@ describe("serviceHealthBaselineQuery", () => {
 		expect(sql).toContain("LIMIT 200")
 	})
 })
-
-// serviceReleasesTimelineQuery
 
 describe("serviceReleasesTimelineQuery", () => {
 	it("compiles releases timeline on the hourly tier for hour-multiple buckets", () => {
@@ -278,8 +271,6 @@ describe("serviceReleasesTimelineQuery", () => {
 	})
 })
 
-// serviceEnvironmentsQuery
-
 describe("serviceEnvironmentsQuery", () => {
 	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
 		const q = serviceEnvironmentsQuery({ serviceName: "api" })
@@ -290,8 +281,6 @@ describe("serviceEnvironmentsQuery", () => {
 		expect(sql).toContain("GROUP BY environment")
 	})
 })
-
-// serviceApdexTimeseriesQuery
 
 describe("serviceApdexTimeseriesQuery", () => {
 	it("compiles apdex timeseries with default threshold", () => {
@@ -361,12 +350,11 @@ describe("serviceApdexTimeseriesQuery", () => {
 				},
 			]),
 		)
+		assert.isDefined(decoded)
 		expect(decoded.totalCount).toBe(100)
 		expect(decoded.apdexScore).toBe(0.85)
 	})
 })
-
-// serviceUsageQuery
 
 describe("serviceUsageQuery", () => {
 	it("compiles basic usage query", () => {
@@ -415,7 +403,7 @@ describe("serviceUsageWithPreviousQuery", () => {
 		const q = serviceUsageWithPreviousQuery({})
 		const { sql } = compileUnsafe(q, params)
 		// Single scan of the union window [previousStartTime, endTime].
-		expect((sql.match(/FROM service_usage/g) || []).length).toBe(1)
+		expect(Arr.fromIterable(Str.matchAll(/FROM service_usage/g)(sql)).length).toBe(1)
 		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
 		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-03 00:00:00'))")
 		// Current totals are sumIf over [startTime, endTime].
@@ -430,13 +418,11 @@ describe("serviceUsageWithPreviousQuery", () => {
 	})
 })
 
-// servicesFacetsQuery
-
 describe("servicesFacetsQuery", () => {
 	it("emits a non-empty-filtered branch per facet type the UI keys on", () => {
 		const q = servicesFacetsQuery()
 		const { sql } = compileUnionUnsafe(q, baseParams)
-		const facetTypes = Arr.map([...sql.matchAll(/'(\w+)' AS facetType/g)], (m) => m[1])
+		const facetTypes = Arr.map(Arr.fromIterable(Str.matchAll(/'(\w+)' AS facetType/g)(sql)), (m) => m[1])
 		expect(facetTypes).toEqual(
 			expect.arrayContaining(["environment", "namespace", "commit_sha", "service"]),
 		)

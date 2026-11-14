@@ -1,15 +1,17 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
-import { Schema } from "effect"
+import { Schema, String as Str } from "effect"
 import {
 	AwsAccountId,
 	GcpProjectId,
 	GcpResourceNumber,
 	GcpScopeType,
 	ScrapeTargetId,
+	SearchConsoleSiteId,
+	SearchConsoleSiteUrl,
 	SourceId,
 	SupabaseProjectRef,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { SessionAuthorization } from "./current-tenant"
 import { OAuthCompleteRequest, OAuthCompleteResponse } from "./oauth-return"
 import { HttpTaggedError } from "./error-policy"
@@ -28,6 +30,19 @@ import {
 	VcsRepositoryId,
 	VcsRepositoryDiscovery,
 } from "./vcs"
+
+import { GcpCloudSqlSettings } from "../gcp"
+export { GcpCloudSqlSettings } from "../gcp"
+
+import { SupabaseAdvisorLint, SupabaseLogDrainSummary, SupabaseTopQuery } from "../supabase"
+import { AnalystAccess } from "./analyst-access"
+export {
+	SupabaseAdvisorKind,
+	SupabaseAdvisorLevel,
+	SupabaseAdvisorLint,
+	SupabaseLogDrainSummary,
+	SupabaseTopQuery,
+} from "../supabase"
 
 const RETURN_PATH_MAX_LENGTH = 2048
 // One leading `/`, never `//` or `/\` (protocol-relative or backslash origin
@@ -106,6 +121,99 @@ export class LinearDisconnectResponse extends Schema.Class<LinearDisconnectRespo
 	"LinearDisconnectResponse",
 )({
 	disconnected: Schema.Boolean,
+}) {}
+
+/** One saved Search Console property and where its daily import stands. */
+export class SearchConsoleSiteStatus extends Schema.Class<SearchConsoleSiteStatus>("SearchConsoleSiteStatus")(
+	{
+		id: SearchConsoleSiteId,
+		siteUrl: SearchConsoleSiteUrl,
+		permissionLevel: Schema.String,
+		enabled: Schema.Boolean,
+		/** Newest day (YYYY-MM-DD) imported, possibly today's partial day; null before the first import. */
+		watermarkDate: Schema.NullOr(Schema.String),
+		/** Oldest day (YYYY-MM-DD) imported so far; history before it is still importing. */
+		backfillDate: Schema.NullOr(Schema.String),
+		lastSyncedAt: Schema.NullOr(Schema.Number),
+		lastError: Schema.NullOr(Schema.String),
+	},
+) {}
+
+export class SearchConsoleIntegrationStatus extends Schema.Class<SearchConsoleIntegrationStatus>(
+	"SearchConsoleIntegrationStatus",
+)({
+	/** False when this deployment has no Google OAuth client, so connecting cannot work. */
+	configured: Schema.Boolean,
+	connected: Schema.Boolean,
+	/** The Google account that granted access. */
+	accountEmail: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	/** Set once Google rejected the grant; the org must reconnect. */
+	revoked: Schema.Boolean,
+	sites: Schema.Array(SearchConsoleSiteStatus),
+}) {}
+
+const DOMAIN_PROPERTY_PREFIX = "sc-domain:"
+
+/** A Search Console property as people read it: `sc-domain:maple.dev` is "maple.dev (domain)". */
+export const searchConsoleSiteLabel = (siteUrl: string): string =>
+	Str.startsWith(DOMAIN_PROPERTY_PREFIX)(siteUrl)
+		? `${Str.slice(DOMAIN_PROPERTY_PREFIX.length)(siteUrl)} (domain)`
+		: siteUrl
+
+/** A property the connected Google account can see, for the site picker. */
+export class SearchConsoleSiteChoice extends Schema.Class<SearchConsoleSiteChoice>("SearchConsoleSiteChoice")(
+	{
+		siteUrl: Schema.String,
+		permissionLevel: Schema.String,
+		/** False for unverified properties, which have no data to import. */
+		selectable: Schema.Boolean,
+		enabled: Schema.Boolean,
+	},
+) {}
+
+export class SearchConsoleAvailableSitesResponse extends Schema.Class<SearchConsoleAvailableSitesResponse>(
+	"SearchConsoleAvailableSitesResponse",
+)({
+	sites: Schema.Array(SearchConsoleSiteChoice),
+}) {}
+
+export const SEARCH_CONSOLE_MAX_SELECTED_SITES = 100
+
+/** The full set of properties to import; every other saved property is turned off. */
+export class SearchConsoleSaveSitesRequest extends Schema.Class<SearchConsoleSaveSitesRequest>(
+	"SearchConsoleSaveSitesRequest",
+)({
+	siteUrls: Schema.Array(SearchConsoleSiteUrl).check(Schema.isMaxLength(SEARCH_CONSOLE_MAX_SELECTED_SITES)),
+}) {}
+
+export class SearchConsoleStartConnectRequest extends Schema.Class<SearchConsoleStartConnectRequest>(
+	"SearchConsoleStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(IntegrationReturnPath),
+}) {}
+
+export class SearchConsoleStartConnectResponse extends Schema.Class<SearchConsoleStartConnectResponse>(
+	"SearchConsoleStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class SearchConsoleDisconnectResponse extends Schema.Class<SearchConsoleDisconnectResponse>(
+	"SearchConsoleDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+/** Result of the import the dashboard runs right after saving properties, so data lands without the cron. */
+export class SearchConsolePrimeResponse extends Schema.Class<SearchConsolePrimeResponse>(
+	"SearchConsolePrimeResponse",
+)({
+	/** False when the org has no live Google grant, so nothing imported. */
+	connected: Schema.Boolean,
+	/** False when the import hit its time budget; the next cron tick resumes it. */
+	complete: Schema.Boolean,
 }) {}
 
 /** Per-zone edge-analytics collection state (from the GraphQL Analytics poller). */
@@ -376,6 +484,13 @@ export class PlanetScaleApiMetricsStatus extends Schema.Class<PlanetScaleApiMetr
 	lastError: Schema.NullOr(Schema.String),
 }) {}
 
+export const PlanetScaleWebhookState = Schema.Literals([
+	"active",
+	"pending",
+	"failing",
+	"needs_reauthorization",
+])
+
 /** The webhooks Maple registers on the bound organization's databases. */
 export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookStatus>(
 	"PlanetScaleWebhookStatus",
@@ -384,7 +499,7 @@ export class PlanetScaleWebhookStatus extends Schema.Class<PlanetScaleWebhookSta
 	 * `needs_reauthorization`: the grant predates the `write_databases` access webhooks need.
 	 * `pending`: not every database has one yet. `failing`: registering one failed.
 	 */
-	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]),
+	state: PlanetScaleWebhookState,
 	registeredDatabases: Schema.Number,
 	databases: Schema.Number,
 	/** The most recent registration failure, or null. */
@@ -506,7 +621,6 @@ export class PlanetScaleBranchSummary extends Schema.Class<PlanetScaleBranchSumm
 export class PlanetScaleDatabaseSummary extends Schema.Class<PlanetScaleDatabaseSummary>(
 	"PlanetScaleDatabaseSummary",
 )({
-	/** PlanetScale's database id. */
 	id: Schema.String,
 	name: Schema.String,
 	/** Product kind: "mysql" (Vitess) or "postgresql". */
@@ -852,12 +966,6 @@ export class GithubPrReviewSettingsResponse extends Schema.Class<GithubPrReviewS
 	settings: PrReviewOrgSettings,
 }) {}
 
-/**
- * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
- * neutral: any connected VCS provider resolves into this same shape. `resolved`
- * distinguishes a DB hit ("stored") from an on-the-fly provider fetch ("fetched")
- * — purely diagnostic.
- */
 /** Ceiling on `vcsPullRequests`, matching one provider page. */
 export const VCS_PULL_REQUESTS_MAX_LIMIT = 100
 /** What the picker asks for when it does not say. */
@@ -875,6 +983,10 @@ export class VcsPullRequestsResponse extends Schema.Class<VcsPullRequestsRespons
 	},
 ) {}
 
+/**
+ * A resolved commit for the commit-SHA hover card, from any connected VCS provider. `resolved`
+ * tells a DB hit ("stored") from a provider fetch ("fetched"), for diagnostics only.
+ */
 export class VcsCommitDetailResponse extends Schema.Class<VcsCommitDetailResponse>("VcsCommitDetailResponse")(
 	{
 		provider: VcsProviderId,
@@ -931,31 +1043,6 @@ export class VcsCommitRangesResponse extends Schema.Class<VcsCommitRangesRespons
 		ranges: Schema.Array(VcsCommitRangeResponse),
 	},
 ) {}
-
-/** A Cloud SQL instance's settings, read off its Cloud Asset Inventory resource. */
-export const GcpCloudSqlSettings = Schema.Struct({
-	/** `POSTGRES_15`, `MYSQL_8_0`, `SQLSERVER_2022_STANDARD`, ... */
-	databaseVersion: Schema.NullOr(Schema.String),
-	/** `ENTERPRISE` or `ENTERPRISE_PLUS`. */
-	edition: Schema.NullOr(Schema.String),
-	tier: Schema.NullOr(Schema.String),
-	/** Read off the tier; null for a tier Maple does not know. */
-	cpus: Schema.NullOr(Schema.Finite),
-	memoryGb: Schema.NullOr(Schema.Finite),
-	/** `REGIONAL` is high availability, `ZONAL` is not. */
-	availabilityType: Schema.NullOr(Schema.String),
-	/** The primary of a read replica, as `<project>:<instance>`. */
-	primary: Schema.NullOr(Schema.String),
-	diskSizeGb: Schema.NullOr(Schema.Finite),
-	queryInsightsEnabled: Schema.Boolean,
-	/**
-	 * The `max_connections` flag, or PostgreSQL's default for the memory of the larger of the
-	 * instance and its primary. Null when neither is known.
-	 */
-	maxConnections: Schema.NullOr(Schema.Finite),
-	maxConnectionsSource: Schema.NullOr(Schema.Literals(["flag", "default"])),
-})
-export type GcpCloudSqlSettings = Schema.Schema.Type<typeof GcpCloudSqlSettings>
 
 /** Rows one read of the Google Cloud resource inventory returns. */
 export const GCP_RESOURCES_LIMIT = 500
@@ -1026,23 +1113,171 @@ export class RailwayDisconnectResponse extends Schema.Class<RailwayDisconnectRes
 	disconnected: Schema.Boolean,
 }) {}
 
-/**
- * A log drain configured on a Supabase project, as discovery last listed it. Only the destination
- * host is kept: drain configs carry API keys and auth headers.
- */
-export const SupabaseLogDrainSummary = Schema.Struct({
+export const VercelProjectScope = Schema.Literals(["all", "some"])
+export type VercelProjectScope = Schema.Schema.Type<typeof VercelProjectScope>
+
+export const VercelDrainStatusValue = Schema.Literals([
+	"enabled",
+	"disabled",
+	"errored",
+	"missing",
+	"unknown",
+])
+export type VercelDrainStatusValue = Schema.Schema.Type<typeof VercelDrainStatusValue>
+
+/** What the last check of one drain found (stored on the connection row). */
+export const VercelDrainState = Schema.Struct({
+	status: VercelDrainStatusValue,
+	lastError: Schema.NullOr(Schema.String),
+})
+export type VercelDrainState = Schema.Schema.Type<typeof VercelDrainState>
+
+const VercelProjectIds = Schema.Array(
+	Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+).check(Schema.isMaxLength(500))
+const VercelSamplingRate = Schema.Number.check(
+	Schema.isGreaterThanOrEqualTo(0.01),
+	Schema.isLessThanOrEqualTo(1),
+)
+/** Trimmed on decode: a pasted token often carries a trailing newline. */
+const VercelToken = Schema.Trim.check(Schema.isMinLength(8), Schema.isMaxLength(512))
+const VercelTeamId = Schema.String.check(Schema.isTrimmed(), Schema.isMinLength(1), Schema.isMaxLength(128))
+
+export class VercelTeam extends Schema.Class<VercelTeam>("VercelTeam")({
+	id: Schema.String,
+	slug: Schema.String,
+	name: Schema.String,
+	/** Vercel's `billing.plan` (`hobby`, `pro`, `enterprise`) when the lookup read it; drains need Pro or Enterprise. */
+	plan: Schema.optionalKey(Schema.NullOr(Schema.String)),
+}) {}
+
+export class VercelDrainStatus extends Schema.Class<VercelDrainStatus>("VercelDrainStatus")({
+	/** Null when the drain is missing on Vercel and could not be re-created. */
+	id: Schema.NullOr(Schema.String),
+	status: VercelDrainStatusValue,
+	lastError: Schema.NullOr(Schema.String),
+}) {}
+
+export class VercelDeploymentSummary extends Schema.Class<VercelDeploymentSummary>("VercelDeploymentSummary")(
+	{
+		id: Schema.String,
+		projectId: Schema.String,
+		url: Schema.String,
+		target: Schema.NullOr(Schema.String),
+		/** Vercel's `readyState`: `READY`, `ERROR`, `CANCELED`, `BUILDING`, `QUEUED`, … */
+		state: Schema.String,
+		branch: Schema.NullOr(Schema.String),
+		commitSha: Schema.NullOr(Schema.String),
+		commitMessage: Schema.NullOr(Schema.String),
+		creator: Schema.NullOr(Schema.String),
+		createdAt: Schema.Number,
+		/** When the build started; with `readyAt`, the build's duration. */
+		buildingAt: Schema.NullOr(Schema.Number),
+		readyAt: Schema.NullOr(Schema.Number),
+		/** Why an `ERROR` or `CANCELED` deployment stopped, as Vercel reports it. */
+		errorCode: Schema.NullOr(Schema.String),
+		errorMessage: Schema.NullOr(Schema.String),
+		inspectorUrl: Schema.NullOr(Schema.String),
+	},
+) {}
+
+export class VercelProjectStatus extends Schema.Class<VercelProjectStatus>("VercelProjectStatus")({
 	id: Schema.String,
 	name: Schema.String,
-	/** Supabase's `backend_type`: `otlp`, `datadog`, `s3`, `webhook`, ... */
-	backendType: Schema.String,
-	/** Host, bucket or region the drain sends to; null when the config names none. */
-	destination: Schema.NullOr(Schema.String),
-	/** The drain sends to this Maple deployment's ingest gateway. */
-	toMaple: Schema.Boolean,
-	/** Maple's integration created it (the project's managed drain). */
-	managedByMaple: Schema.Boolean,
-})
-export type SupabaseLogDrainSummary = typeof SupabaseLogDrainSummary.Type
+	framework: Schema.NullOr(Schema.String),
+	/** Whether the drains forward this project (scope `all`, or listed in `projectIds`). */
+	forwarded: Schema.Boolean,
+	productionDeployment: Schema.NullOr(VercelDeploymentSummary),
+	latestDeployment: Schema.NullOr(VercelDeploymentSummary),
+}) {}
+
+/** Connection state of the Vercel integration (token-based, one team per org). */
+export class VercelIntegrationStatus extends Schema.Class<VercelIntegrationStatus>("VercelIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		team: Schema.NullOr(VercelTeam),
+		projectScope: VercelProjectScope,
+		projectIds: Schema.Array(Schema.String),
+		samplingRate: Schema.Number,
+		logsEnabled: Schema.Boolean,
+		tracesEnabled: Schema.Boolean,
+		aiGatewayEnabled: Schema.Boolean,
+		speedInsightsEnabled: Schema.Boolean,
+		webAnalyticsEnabled: Schema.Boolean,
+		auditLogEnabled: Schema.Boolean,
+		drains: Schema.Struct({
+			logs: Schema.NullOr(VercelDrainStatus),
+			traces: Schema.NullOr(VercelDrainStatus),
+			aiGateway: Schema.NullOr(VercelDrainStatus),
+			speedInsights: Schema.NullOr(VercelDrainStatus),
+			webAnalytics: Schema.NullOr(VercelDrainStatus),
+			auditLog: Schema.NullOr(VercelDrainStatus),
+		}),
+		projects: Schema.Array(VercelProjectStatus),
+		/** True when Vercel rejected the stored token; polling is paused until a new one is saved. */
+		authFailed: Schema.Boolean,
+		connectedAt: Schema.NullOr(Schema.Number),
+		lastSuccessAt: Schema.NullOr(Schema.Number),
+		lastError: Schema.NullOr(Schema.String),
+	},
+) {}
+
+export class VercelDiscoverRequest extends Schema.Class<VercelDiscoverRequest>("VercelDiscoverRequest")({
+	token: VercelToken,
+	teamId: Schema.optionalKey(VercelTeamId),
+}) {}
+
+export class VercelDiscoverResponse extends Schema.Class<VercelDiscoverResponse>("VercelDiscoverResponse")({
+	teams: Schema.Array(VercelTeam),
+	/** Projects of the requested team, or of the only team; empty when the team is ambiguous. */
+	projects: Schema.Array(
+		Schema.Struct({ id: Schema.String, name: Schema.String, framework: Schema.NullOr(Schema.String) }),
+	),
+}) {}
+
+export class VercelConnectRequest extends Schema.Class<VercelConnectRequest>("VercelConnectRequest")({
+	token: VercelToken,
+	teamId: VercelTeamId,
+	projectScope: VercelProjectScope,
+	projectIds: VercelProjectIds,
+	samplingRate: VercelSamplingRate,
+	logsEnabled: Schema.Boolean,
+	tracesEnabled: Schema.Boolean,
+	/** Absent from older clients; treated as true. */
+	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
+	/** Opt-in drains; absent is false. */
+	speedInsightsEnabled: Schema.optionalKey(Schema.Boolean),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
+	auditLogEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class VercelSettingsRequest extends Schema.Class<VercelSettingsRequest>("VercelSettingsRequest")({
+	projectScope: Schema.optionalKey(VercelProjectScope),
+	projectIds: Schema.optionalKey(VercelProjectIds),
+	samplingRate: Schema.optionalKey(VercelSamplingRate),
+	logsEnabled: Schema.optionalKey(Schema.Boolean),
+	tracesEnabled: Schema.optionalKey(Schema.Boolean),
+	aiGatewayEnabled: Schema.optionalKey(Schema.Boolean),
+	speedInsightsEnabled: Schema.optionalKey(Schema.Boolean),
+	webAnalyticsEnabled: Schema.optionalKey(Schema.Boolean),
+	auditLogEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
+export class VercelDisconnectResponse extends Schema.Class<VercelDisconnectResponse>(
+	"VercelDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+	/** False when a drain could not be deleted on Vercel; remove it in the team's drain settings. */
+	drainsRemoved: Schema.Boolean,
+}) {}
+
+export const VERCEL_DEPLOYMENTS_MAX_LIMIT = 50
+
+export class VercelDeploymentsResponse extends Schema.Class<VercelDeploymentsResponse>(
+	"VercelDeploymentsResponse",
+)({
+	deployments: Schema.Array(VercelDeploymentSummary),
+}) {}
 
 /** One project discovered under the connected Supabase organization. */
 export class SupabaseProjectStatus extends Schema.Class<SupabaseProjectStatus>("SupabaseProjectStatus")({
@@ -1121,49 +1356,6 @@ export class SupabaseDisconnectResponse extends Schema.Class<SupabaseDisconnectR
 )({
 	disconnected: Schema.Boolean,
 }) {}
-
-export const SupabaseAdvisorLevel = Schema.Literals(["ERROR", "WARN", "INFO"])
-export type SupabaseAdvisorLevel = typeof SupabaseAdvisorLevel.Type
-
-/** Which Management API advisor reported a lint. */
-export const SupabaseAdvisorKind = Schema.Literals(["performance", "security"])
-export type SupabaseAdvisorKind = typeof SupabaseAdvisorKind.Type
-
-/** One advisor finding (a Splinter lint such as `unindexed_foreign_keys`), as stored and served. */
-export const SupabaseAdvisorLint = Schema.Struct({
-	advisor: SupabaseAdvisorKind,
-	/** The lint id, e.g. `rls_disabled_in_public`. */
-	name: Schema.String,
-	title: Schema.String,
-	level: SupabaseAdvisorLevel,
-	/** `PERFORMANCE`, `SECURITY`, `HEALTH`. */
-	categories: Schema.Array(Schema.String),
-	description: Schema.String,
-	/** The finding itself, naming the object (markdown-ish text from Supabase). */
-	detail: Schema.String,
-	/** A docs URL. */
-	remediation: Schema.String,
-	/** The database object the lint is about, when it names one. */
-	schema: Schema.NullOr(Schema.String),
-	object: Schema.NullOr(Schema.String),
-	/** `table`, `view`, `function`, `extension`, `auth`... */
-	objectType: Schema.NullOr(Schema.String),
-	cacheKey: Schema.String,
-})
-export type SupabaseAdvisorLint = typeof SupabaseAdvisorLint.Type
-
-/** One `pg_stat_statements` entry, ranked by total execution time. */
-export const SupabaseTopQuery = Schema.Struct({
-	/** `queryid` as text (a 64-bit hash). */
-	queryId: Schema.String,
-	/** Normalized statement text (`$1` placeholders), cut at 2000 chars. */
-	query: Schema.String,
-	calls: Schema.Number,
-	totalExecMs: Schema.Number,
-	meanExecMs: Schema.Number,
-	rows: Schema.Number,
-})
-export type SupabaseTopQuery = typeof SupabaseTopQuery.Type
 
 export class SupabaseAdvisorsByLevel extends Schema.Class<SupabaseAdvisorsByLevel>("SupabaseAdvisorsByLevel")(
 	{
@@ -1265,6 +1457,22 @@ export class IntegrationsNotConnectedError extends HttpTaggedError<IntegrationsN
 		title: "Integration not connected",
 		retry: "never",
 		recovery: "reconnect",
+		exposure: "public_message",
+	},
+) {}
+
+/** The org's grant moved to another account (or was revoked) while a write was checked against it. */
+export class IntegrationsConnectionChangedError extends HttpTaggedError<IntegrationsConnectionChangedError>()(
+	"@maple/http/errors/IntegrationsConnectionChangedError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "integration_connection_changed",
+		title: "Integration connection changed",
+		retry: "never",
+		recovery: "refresh",
 		exposure: "public_message",
 	},
 ) {}
@@ -1409,24 +1617,6 @@ export class AwsIntegrationUnavailableError extends HttpTaggedError<AwsIntegrati
 	},
 ) {}
 
-export type IntegrationHttpError =
-	| IntegrationsForbiddenError
-	| IntegrationsConfigurationError
-	| IntegrationsNotFoundError
-	| IntegrationsNotConnectedError
-	| IntegrationsRevokedError
-	| IntegrationsValidationError
-	| IntegrationsUpstreamError
-	| IntegrationsPersistenceError
-
-/**
- * Dashboard control surface for the Linear, Cloudflare, Railway and GitHub
- * integrations, plus VCS lookups. Internal transport: session-only, absent from
- * the public docs. PlanetScale and chat connectors are public v2 resources.
- *
- * The OAuth callbacks and webhook receivers are raw routers under `/api/...`,
- * not part of this group: providers store those URLs on their side.
- */
 /** Connected or not; `null` when that provider's lookup failed, so one failure leaves the rest. */
 const ProviderConnected = Schema.NullOr(Schema.Boolean)
 
@@ -1437,6 +1627,7 @@ export class InfraSurfacesResponse extends Schema.Class<InfraSurfacesResponse>("
 	integrations: Schema.Struct({
 		cloudflare: ProviderConnected,
 		railway: ProviderConnected,
+		vercel: ProviderConnected,
 		planetscale: ProviderConnected,
 		gcp: ProviderConnected,
 		supabase: ProviderConnected,
@@ -1444,6 +1635,10 @@ export class InfraSurfacesResponse extends Schema.Class<InfraSurfacesResponse>("
 	}),
 }) {}
 
+/**
+ * Dashboard control surface for the integrations and VCS lookups; session-only, absent from the
+ * public docs. OAuth callbacks and webhook receivers are raw `/api/...` routers: providers store those URLs.
+ */
 export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.get("linearStatus", "/linear/status", {
@@ -1482,10 +1677,66 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.get("searchConsoleStatus", "/google-search-console/status", {
+			success: SearchConsoleIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchConsoleStart", "/google-search-console/start", {
+			payload: SearchConsoleStartConnectRequest,
+			success: SearchConsoleStartConnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsConfigurationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Live from Google: the connected account's properties, merged with the saved choice.
+		HttpApiEndpoint.get("searchConsoleSites", "/google-search-console/sites", {
+			success: SearchConsoleAvailableSitesResponse,
+			error: [
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("searchConsoleSaveSites", "/google-search-console/sites", {
+			payload: SearchConsoleSaveSitesRequest,
+			success: SearchConsoleIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotConnectedError,
+				IntegrationsConnectionChangedError,
+				IntegrationsRevokedError,
+				IntegrationsValidationError,
+				IntegrationsConfigurationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("searchConsoleDisconnect", "/google-search-console", {
+			success: SearchConsoleDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Bounded first import of the saved properties, run on demand right after a save.
+		HttpApiEndpoint.post("searchConsolePrime", "/google-search-console/prime", {
+			success: SearchConsolePrimeResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.post("infraSurfaces", "/infra-surfaces", {
 			payload: InfraPresenceRequest,
 			success: InfraSurfacesResponse,
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
@@ -1510,7 +1761,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.post("cloudflareStart", "/cloudflare/start", {
@@ -1634,6 +1885,77 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.delete("supabaseDisconnect", "/supabase", {
 			success: SupabaseDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("vercelStatus", "/vercel/status", {
+			success: VercelIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		// Lists the teams a pasted token sees, and one team's projects, before anything is stored.
+		HttpApiEndpoint.post("vercelDiscover", "/vercel/discover", {
+			payload: VercelDiscoverRequest,
+			success: VercelDiscoverResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsUpstreamError],
+		}),
+	)
+	.add(
+		// Validates the token, creates the drains on the team, stores the token and syncs once.
+		HttpApiEndpoint.put("vercelConnect", "/vercel", {
+			payload: VercelConnectRequest,
+			success: VercelIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		// Saves what the drains forward and re-applies them on Vercel.
+		HttpApiEndpoint.patch("vercelSettings", "/vercel", {
+			payload: VercelSettingsRequest,
+			success: VercelIntegrationStatus,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsNotConnectedError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("vercelSync", "/vercel/sync", {
+			success: VercelIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("vercelDisconnect", "/vercel", {
+			success: VercelDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("vercelDeployments", "/vercel/deployments", {
+			query: Schema.Struct({
+				/** The whole team's newest deployments when absent. */
+				projectId: Schema.optional(
+					Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+				),
+				limit: Schema.optional(
+					Schema.NumberFromString.check(
+						Schema.isInt(),
+						Schema.isBetween({ minimum: 1, maximum: VERCEL_DEPLOYMENTS_MAX_LIMIT }),
+					),
+				),
+			}),
+			success: VercelDeploymentsResponse,
+			error: IntegrationsPersistenceError,
 		}),
 	)
 	.add(

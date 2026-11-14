@@ -5,10 +5,10 @@ import {
 	skeletonListRowStyles,
 	skeletonListStyles,
 	skeletonStyles,
-} from "@maple/ui/styles/ui/skeleton"
+} from "./skeleton.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/skeleton.tsx.
+// Loading placeholders: a pulse block, its list, meter and switch shapes, and the slow-load note.
 
 export const skeleton = <M>(
 	h: HtmlBuilder<M>,

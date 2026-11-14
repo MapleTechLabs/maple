@@ -1,11 +1,11 @@
 import { OPENROUTER_BYOK_ADDON_ID } from "@maple/domain/billing"
 import { AiTriageSettingsUpdateRequest, AttachRequest, OpenRouterKeyUpdateRequest } from "@maple/domain/http"
-import { buildCheckoutSuccessUrl } from "../../../lib/billing/checkout-return"
-import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { limitsUpdate } from "../kit/ai-triage-limits"
 import { Effect, Option, Result, Schema, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { trackProduct } from "../../../data/analytics"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
@@ -15,22 +15,17 @@ import { type LimitsDraft, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const settle =
-	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
-	<E, R>(effect: Effect.Effect<A, E, R>) =>
-		effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
-
 export const FetchOpenRouterKey = Command.define("FetchOpenRouterKey", {
 	messages: [Message.CompletedFetchKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.get()).pipe(
-		settle((result) => Message.CompletedFetchKey({ result })),
+		settleTo((result) => Message.CompletedFetchKey({ result })),
 	),
 })
 
 export const FetchTriageSettings = Command.define("FetchAiTriageSettings", {
 	messages: [Message.CompletedFetchTriage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.aiTriage.getSettings()).pipe(
-		settle((result) => Message.CompletedFetchTriage({ result })),
+		settleTo((result) => Message.CompletedFetchTriage({ result })),
 	),
 })
 
@@ -40,17 +35,17 @@ const SaveOpenRouterKey = Command.define("SaveOpenRouterKey", {
 	execute: ({ apiKey }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.openRouterKey.set({ payload: new OpenRouterKeyUpdateRequest({ apiKey }) }),
-		).pipe(settle((result) => Message.CompletedSaveKey({ result }))),
+		).pipe(settleTo((result) => Message.CompletedSaveKey({ result }))),
 })
 
 const RemoveOpenRouterKey = Command.define("RemoveOpenRouterKey", {
 	messages: [Message.CompletedRemoveKey],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openRouterKey.remove()).pipe(
-		settle((result) => Message.CompletedRemoveKey({ result })),
+		settleTo((result) => Message.CompletedRemoveKey({ result })),
 	),
 })
 
-/** `attach({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl })`: Stripe returns to this tab. */
+/** Stripe's checkout returns to this tab. */
 const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 	messages: [Message.CompletedAttachAddOn],
 	execute: Effect.gen(function* () {
@@ -59,10 +54,9 @@ const AttachAddOn = Command.define("AttachOpenRouterAddOn", {
 		return yield* client.billing.attach({
 			payload: new AttachRequest({ planId: OPENROUTER_BYOK_ADDON_ID, successUrl }),
 		})
-	}).pipe(settle((result) => Message.CompletedAttachAddOn({ result }))),
+	}).pipe(settleTo((result) => Message.CompletedAttachAddOn({ result }))),
 })
 
-/** `plan_checkout_started`, then the tab leaves for Stripe (`useBillingActions().attach`). */
 const OpenAddOnCheckout = Command.define("OpenOpenRouterAddOnCheckout", {
 	args: { url: Schema.String },
 	messages: [Message.CompletedOpenAddOnCheckout],
@@ -95,7 +89,7 @@ const UpdateTriage = Command.define("UpdateAiTriageSettings", {
 				}),
 			}),
 		).pipe(
-			settle((result) =>
+			settleTo((result) =>
 				purpose === "toggle"
 					? Message.CompletedToggleTriage({ isEnabled: enabled ?? false, result })
 					: Message.CompletedSaveLimits({ result }),
@@ -110,9 +104,8 @@ export const init = (isTriageAvailable: boolean): Return => ({
 		picked: null,
 		isReplacing: false,
 		keyDraft: Field.init(),
-		isSavingKey: false,
+		keyWrite: "Idle",
 		removeDialog: Dialog.init("openrouter-remove", "alert-dialog"),
-		isRemoving: false,
 		addOnDialog: Dialog.init("openrouter-add-on", "alert-dialog"),
 		isAttachingAddOn: false,
 		triage: isTriageAvailable ? AsyncData.Loading() : AsyncData.Idle(),
@@ -128,7 +121,7 @@ export const init = (isTriageAvailable: boolean): Return => ({
 const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
-/** `reactivityKeys`: a write refetches the document behind it, keeping it on screen. */
+/** A write refetches the document behind it, keeping it on screen. */
 const refresh = <A, E>(data: AsyncData.AsyncData<A, E>) =>
 	Option.getOrElse(AsyncData.revalidate(data), () => data)
 
@@ -224,7 +217,7 @@ export const update = (model: Model, message: Message): Return =>
 				})),
 				() => null,
 			)
-			// `isSaveSettled`: the committed edits go once the saved value moved off its base or reached them.
+			// The committed edits go once the saved value moved off its base or reached them.
 			const isSettled =
 				model.committedOver !== null &&
 				fetched !== null &&
@@ -246,26 +239,29 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 		PickedProvider: ({ provider }) =>
 			provider === "managed" && isKeyInUse(model)
-				? liftRemoveDialog(model, Dialog.open(model.removeDialog))
+				? model.keyWrite !== "Idle"
+					? { model }
+					: liftRemoveDialog(model, Dialog.open(model.removeDialog))
 				: { model: { ...model, picked: provider } },
 		CompletedFocusProvider: () => ({ model }),
 		ClickedReplace: () => ({ model: { ...model, isReplacing: true } }),
 		ClickedCancelReplace: () => ({ model: { ...model, isReplacing: false, keyDraft: Field.init() } }),
-		GotKeyDraftMessage: ({ message: child }) => ({
-			model: { ...model, keyDraft: Field.update(model.keyDraft, child).model },
-		}),
+		GotKeyDraftMessage: ({ message: child }) =>
+			model.keyWrite === "Saving"
+				? { model }
+				: { model: { ...model, keyDraft: Field.update(model.keyDraft, child).model } },
 		SubmittedKey: () => {
 			const apiKey = Str.trim(model.keyDraft.value)
-			return apiKey === "" || model.isSavingKey
+			return apiKey === "" || model.keyWrite !== "Idle"
 				? { model }
-				: { model: { ...model, isSavingKey: true }, commands: [SaveOpenRouterKey({ apiKey })] }
+				: { model: { ...model, keyWrite: "Saving" }, commands: [SaveOpenRouterKey({ apiKey })] }
 		},
 		CompletedSaveKey: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => ({
 					model: {
 						...model,
-						isSavingKey: false,
+						keyWrite: "Idle",
 						isReplacing: false,
 						keyDraft: Field.init(),
 						key: refresh(model.key),
@@ -274,19 +270,22 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("success", "OpenRouter key saved"),
 				}),
 				onFailure: (error) => ({
-					model: { ...model, isSavingKey: false },
+					model: { ...model, keyWrite: "Idle" },
 					outMessage: toast("error", "Couldn't save the key", error.message),
 				}),
 			}),
-		ClickedRemoveKey: () => liftRemoveDialog(model, Dialog.open(model.removeDialog)),
+		ClickedRemoveKey: () =>
+			model.keyWrite !== "Idle" ? { model } : liftRemoveDialog(model, Dialog.open(model.removeDialog)),
 		GotRemoveDialogMessage: ({ message: child }) =>
-			model.isRemoving ? { model } : liftRemoveDialog(model, Dialog.update(model.removeDialog, child)),
-		ClickedConfirmRemove: () =>
-			model.isRemoving
+			model.keyWrite === "Removing"
 				? { model }
-				: { model: { ...model, isRemoving: true }, commands: [RemoveOpenRouterKey()] },
+				: liftRemoveDialog(model, Dialog.update(model.removeDialog, child)),
+		ClickedConfirmRemove: () =>
+			model.keyWrite !== "Idle"
+				? { model }
+				: { model: { ...model, keyWrite: "Removing" }, commands: [RemoveOpenRouterKey()] },
 		CompletedRemoveKey: ({ result }) => {
-			const closed = liftRemoveDialog({ ...model, isRemoving: false }, Dialog.close(model.removeDialog))
+			const closed = liftRemoveDialog({ ...model, keyWrite: "Idle" }, Dialog.close(model.removeDialog))
 			return Result.match(result, {
 				onSuccess: () => ({
 					model: { ...closed.model, picked: null, key: refresh(closed.model.key) },
@@ -366,11 +365,20 @@ export const update = (model: Model, message: Message): Return =>
 					outMessage: toast("error", "Couldn't update auto-triage settings", error.message),
 				}),
 			}),
-		ChangedLimit: ({ field, value }) => ({
-			model: { ...model, limits: { ...limitsDraftOf(model), [field]: value }, committedOver: null },
-		}),
+		// The save in flight sends what was typed; edits wait for it, as the disabled inputs do.
+		ChangedLimit: ({ field, value }) =>
+			model.isSavingLimits
+				? { model }
+				: {
+						model: {
+							...model,
+							limits: { ...limitsDraftOf(model), [field]: value },
+							committedOver: null,
+						},
+					},
 		ToggledAdvanced: () => ({ model: { ...model, isAdvancedOpen: !model.isAdvancedOpen } }),
-		ClickedDiscardLimits: () => ({ model: { ...model, limits: null, committedOver: null } }),
+		ClickedDiscardLimits: () =>
+			model.isSavingLimits ? { model } : { model: { ...model, limits: null, committedOver: null } },
 		ClickedSaveLimits: () => saveLimits(model),
 		CompletedSaveLimits: ({ result }) =>
 			Result.match(result, {

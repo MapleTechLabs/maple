@@ -18,7 +18,7 @@ import {
 } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { relativeTime } from "../../../kit/relative-time"
-import { settingsSection, settingsSections } from "../../kit/section"
+import { settingsSection, settingsSections } from "../../../kit/settings-section"
 import { Message, type Model, type SessionRow } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -98,7 +98,7 @@ const body = (h: H, model: Model, inputs: Inputs): ReadonlyArray<Html> => {
 							size: "sm",
 							attributes: [h.OnClick(Message.ClickedRetry())],
 						},
-						["Retry"],
+						["Try again"],
 					),
 				]),
 			]

@@ -13,7 +13,9 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { serviceDot } from "@maple/views/ui/values"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
-import { presetLabel, timeControls } from "../../kit/time-controls"
+import { environmentEntries, environmentSwitcher } from "../../kit/environment-switcher"
+import { timeControls } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import {
 	ALL_ENVIRONMENTS,
@@ -36,31 +38,27 @@ import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
-// TODO(unnamed-service): `UnnamedServiceHint` beside an unnamed service's title is not ported.
+// TODO(unnamed-service): the unnamed-service hint beside the title is not ported.
 
 type H = HtmlBuilder<Message>
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessage({ message })
 
-/** `ServiceEnvironmentSwitcher`: the overview's environments, the active one kept selectable. */
+/** The environment switcher's items: the overview's environments, the active one kept selectable. */
 const environmentItems = (model: Model): ReadonlyArray<SelectView.SelectEntry> => {
 	const loaded = AsyncData.getOrElse(
 		AsyncData.map(model.overview.data, (data) => data.environments),
 		() => [],
 	)
 	const current = environmentsOf(model.search)?.[0]
-	const options = [...new Set([...loaded, ...(current === undefined ? [] : [current])])].toSorted((a, b) =>
-		Str.localeCompare(b)(a),
+	const options = Arr.sort(
+		[...new Set([...loaded, ...(current === undefined ? [] : [current])])],
+		(a: string, b: string) => Str.localeCompare(b)(a),
 	)
-	return [
-		{ _tag: "Item", item: { value: ALL_ENVIRONMENTS, label: "All environments" } },
-		...Arr.map(options, (env): SelectView.SelectEntry => ({
-			_tag: "Item",
-			item: { value: env, label: env },
-		})),
-	]
+	return environmentEntries(ALL_ENVIRONMENTS, options)
 }
 
 const createAlert = (h: H, model: Model): Html =>
@@ -100,7 +98,7 @@ const runsOn = (h: H, model: Model): Html => {
 		[
 			icon(h, first.icon),
 			h.span([h.Class("hidden sm:inline")], [first.label]),
-			...(more > 0 ? [h.span([h.Class("text-muted-foreground")], [`+${more}`])] : []),
+			...(more > 0 ? [typography(h, { tone: "muted" }, [`+${more}`])] : []),
 		],
 	)
 }
@@ -133,24 +131,20 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		model: { ...model.environmentSelect, value: environmentsOf(model.search)?.[0] ?? ALL_ENVIRONMENTS },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: environmentItems(model),
-			size: "sm",
-			ariaLabel: "Environment",
-			className: "w-full sm:w-auto",
-			toView: (parts) =>
-				hstack(h, { gap: "2", wrap: true }, [
-					...parts,
-					runsOn(h, model),
-					createAlert(h, model),
-					controls,
-				]),
-		},
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: environmentsOf(model.search)?.[0] ?? ALL_ENVIRONMENTS,
+		entries: environmentItems(model),
+		toMessage: toSelect,
+		ariaLabel: "Environment",
+		className: "w-full sm:w-auto",
+		toView: (parts) =>
+			hstack(h, { gap: "2", wrap: true }, [
+				...parts,
+				runsOn(h, model),
+				createAlert(h, model),
+				controls,
+			]),
 	})
 }
 
@@ -165,7 +159,7 @@ const titleContent = (h: H, model: Model): Html =>
 		model.serviceName,
 	])
 
-/** `UnderlineTabStrip navigation`: route links; TanStack marks a link whose search the URL contains `active`. */
+/** Route links. As TanStack Router did, a link whose search the URL contains is `active`, so Overview always is. */
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
 	return underlineTabStrip(
@@ -224,7 +218,8 @@ const windowMs = (model: Model) =>
 
 /** "ingest · production · last 12 hours": what the drawer's numbers are scoped to. */
 const scopeLabel = (model: Model): string => {
-	const environment = environmentsOf(model.search)?.join(", ") ?? "all environments"
+	const environments = environmentsOf(model.search)
+	const environment = environments === undefined ? "all environments" : Arr.join(environments, ", ")
 	const preset =
 		model.search.timePreset ?? (model.search.startTime === undefined ? DEFAULT_PRESET : undefined)
 	const range = preset === undefined ? "custom range" : Str.toLowerCase(presetLabel(preset))
@@ -271,6 +266,7 @@ const endpointDrawer = (h: H, model: Model, inputs: PageViewInputs, bucketSecond
 				),
 			alertHref: hrefOf(AppRoute.AlertsCreate({ search: { serviceName: model.serviceName } })),
 			timeZone: inputs.context.timeZone,
+			nowMs: model.nowMs ?? 0,
 		},
 		toParentMessage: (message) => Message.GotEndpointPeekMessage({ message }),
 	})

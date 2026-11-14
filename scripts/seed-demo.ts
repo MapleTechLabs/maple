@@ -56,8 +56,6 @@ interface Target {
 
 const env = (name: string) => Option.fromNullishOr(process.env[name]?.trim() || undefined)
 
-// ── preflight ───────────────────────────────────────────────────────────────
-
 const checkIngest = Effect.fn("seedDemo.checkIngest")(function* (target: Target) {
 	const client = yield* HttpClient.HttpClient
 	const response = yield* client.execute(HttpClientRequest.get(`${target.endpoint}/health`)).pipe(
@@ -118,8 +116,6 @@ const checkWarehouse = Effect.fn("seedDemo.checkWarehouse")(function* () {
 		)
 	}
 })
-
-// ── reset ───────────────────────────────────────────────────────────────────
 
 const ERROR_STATE_TABLES = [
 	"error_fingerprint_candidates",
@@ -210,8 +206,6 @@ const resetDemo = Effect.fn("seedDemo.reset")(function* (orgId: string, incident
 	yield* Console.log(`  reset: ${datasources.length} datasources truncated, error state cleared`)
 })
 
-// ── sending ─────────────────────────────────────────────────────────────────
-
 const encodeJsonEffect = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeStateJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: "\t" }))
 
@@ -261,8 +255,6 @@ const count = <T>(groups: ReadonlyArray<Grouped<T>>) =>
 	Arr.reduce(groups, 0, (total, group) => total + group.items.length)
 
 const clock = (ms: number) => Str.slice(0, 5)(new Date(ms).toTimeString())
-
-// ── command ─────────────────────────────────────────────────────────────────
 
 const seed = Command.make(
 	"seed-demo",
@@ -335,7 +327,7 @@ const seed = Command.make(
 			onNone: () =>
 				flags.anchor === "now"
 					? Math.floor(Date.now() / (5 * MINUTE)) * 5 * MINUTE
-					: Option.match(Schema.decodeUnknownOption(Schema.DateTimeUtcFromString)(flags.anchor), {
+					: Option.match(Schema.decodeOption(Schema.DateTimeUtcFromString)(flags.anchor), {
 							onSome: DateTime.toEpochMillis,
 							onNone: () => Number.NaN,
 						}),

@@ -6,18 +6,16 @@ import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 import { Message, type FilterKey } from "./message"
 import type { Model } from "./model"
 
-// `Favicon` and `analyticsRowIcon`: a breakdown row's leading icon.
-
 type H = HtmlBuilder<Message>
 
 const ICON_BOX = "size-4 shrink-0"
 
 const faviconUrl = (host: string): string => `https://favicon.maple.dev/?url=${encodeURIComponent(host)}`
 
-/** `isHostLike`: a dotted name a favicon could exist for. */
+/** A dotted name a favicon could exist for. */
 export const isHostLike = (value: string): boolean => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(value)
 
-/** `Favicon`: the site's icon, or its reserved box once the image failed. */
+/** The site's icon, or its reserved box once the image failed. */
 export const favicon = (h: H, model: Model, host: string, className?: string): Html =>
 	model.failedFavicons.includes(host)
 		? h.span([h.Class(cn(ICON_BOX, className)), h.AriaHidden(true)], [])

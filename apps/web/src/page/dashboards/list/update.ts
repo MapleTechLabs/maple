@@ -24,10 +24,11 @@ import {
 } from "./command"
 import { countLabel } from "@maple/ui/lib/format"
 import * as TagEditor from "../kit/tag-editor"
-import { displayName, queryOf, tagsOf } from "./derive"
+import { displayName, queryOf, sectionsOf, tagsOf } from "./derive"
+import { focusedIndexOf, listKeyAction, scrollFocusedRowCommand } from "../../kit/list-keys"
 import * as Combobox from "@maple/views/ui/combobox"
 import { INITIAL_LOCALE } from "@maple/views/lib/locale"
-import { Message } from "./message"
+import { Message, type WriteFailure } from "./message"
 import type { ListDashboard, Model } from "./model"
 
 export type Return = PageReturn<Model, Message>
@@ -61,24 +62,26 @@ export const init = (route: Route, _context: PageContext): Return => ({
 		persistenceError: null,
 		isCreating: false,
 		fallback: { _tag: "Idle" },
+		focusedId: null,
 	},
 	commands: [ReadClock(), LoadPreferences()],
 })
 
-/** `ToolbarSearch`'s resync: an outside change to `q` replaces the input, its own echo does not. */
+/** An outside change to `q` replaces the search input, its own echo does not. */
 export const routeChanged = (model: Model, route: Route): Return => {
 	const query = queryOf(route.search)
 	return {
 		model: {
 			...model,
 			search: route.search,
+			// A new search, tag, scope or sort is a new row set: the focus starts over.
+			focusedId: null,
 			searchDraft: query === Str.trim(model.searchDraft) ? model.searchDraft : query,
 			tagFilter: { ...model.tagFilter, selected: tagsOf(route.search) },
 		},
 	}
 }
 
-/** `navigate({ search: (prev) => ({ ...prev, [key]: value }), replace: true })`. */
 const navigateSearch = (model: Model, patch: Partial<Search>, isReplace = true): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -104,17 +107,41 @@ const dashboardHref = (id: string, mode?: "edit") =>
 export const listedOf = (model: Model): ReadonlyArray<ListDashboard> | null =>
 	model.dashboards ?? (model.fallback._tag === "Ready" ? model.fallback.dashboards : null)
 
-/** `degraded`: reading the snapshot, so writes are off. */
+/** Reading the snapshot, so writes are off. */
 export const isDegraded = (model: Model): boolean =>
 	model.dashboards === null && model.fallback._tag === "Ready"
 
-/** `isError`: neither the live list nor the snapshot could be read. */
+/** Neither the live list nor the snapshot could be read. */
 export const isLoadFailed = (model: Model): boolean =>
 	model.dashboards === null && model.fallback._tag === "Failed"
 
 export const isReadOnly = (model: Model): boolean => model.persistenceError !== null || isDegraded(model)
 
-/** `navigate(...)` then a success toast. */
+/** The rows on screen, starred first: what the list keys step over. */
+export const focusableOf = (model: Model): ReadonlyArray<ListDashboard> => {
+	const listed = listedOf(model)
+	if (listed === null || model.nowMs === null || !model.isPrefsLoaded) return []
+	const sections = sectionsOf(model, listed)
+	return [...sections.favorited, ...sections.others]
+}
+
+export const ScrollFocusedRow = scrollFocusedRowCommand(
+	"ScrollDashboardsFocusedRow",
+	Message.CompletedScrollFocusedRow,
+)
+
+/** Enter follows the focused row's link. */
+const pressedListKey = (model: Model, key: string): Return => {
+	const ids = Arr.map(focusableOf(model), (dashboard) => dashboard.id)
+	const action = listKeyAction(key, focusedIndexOf(ids, model.focusedId), ids.length)
+	if (action._tag === "Focus") {
+		const focusedId = action.index === null ? null : (ids[action.index] ?? null)
+		return { model: { ...model, focusedId }, commands: focusedId === null ? [] : [ScrollFocusedRow()] }
+	}
+	const id = action._tag === "Open" ? ids[action.index] : undefined
+	return id === undefined ? { model } : navigateTo(model, dashboardHref(id))
+}
+
 const navigateWithToast = (model: Model, url: string, title: string): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -124,7 +151,6 @@ const navigateWithToast = (model: Model, url: string, title: string): Return => 
 	}),
 })
 
-/** `toastManager.add({ title: errorMessage(error), type: "error" })`. */
 const toastFailure = (model: Model, message: string): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedToast({
@@ -137,7 +163,7 @@ const toastFailure = (model: Model, message: string): Return => ({
 })
 
 const findDashboard = (model: Model, id: string): Option.Option<ListDashboard> =>
-	Option.fromNullishOr((listedOf(model) ?? []).find((dashboard) => dashboard.id === id))
+	Arr.findFirst(listedOf(model) ?? [], (dashboard) => dashboard.id === id)
 
 const dialogStep = (
 	model: Model,
@@ -248,11 +274,13 @@ const warningsToast = (warnings: ReadonlyArray<string>): WarningToast => ({
 })
 
 /**
- * A failed write turns the list read-only; the banner says so, so no toast repeats it. A list still
- * waiting on live sync reads the HTTP snapshot now, so the skeleton resolves instead of waiting out the timer.
+ * A refused write (a taken name, a stale edit) only toasts. A store failure turns the list read-only;
+ * the banner says so, so no toast repeats it. A list still waiting on live sync reads the HTTP snapshot
+ * now, so the skeleton resolves instead of waiting out the timer.
  */
-const failedWrite = (model: Model, message: string, orgId: string): Return => {
-	const next: Model = { ...model, persistenceError: message, isCreating: false }
+const failedWrite = (model: Model, failure: WriteFailure, orgId: string): Return => {
+	if (failure.isRejected) return toastFailure({ ...model, isCreating: false }, failure.message)
+	const next: Model = { ...model, persistenceError: failure.message, isCreating: false }
 	return model.dashboards === null && model.fallback._tag === "Idle"
 		? {
 				model: { ...next, fallback: { _tag: "Loading" } },
@@ -267,9 +295,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedLoadPreferences: ({ favorites, sort }) => ({
 			model: { ...model, favorites, storedSort: sort, isPrefsLoaded: true },
 		}),
+		// A live update is a healthy sync: writes come back on.
 		UpdatedDashboards: ({ orgId, dashboards }) =>
-			orgId === context.orgId ? { model: { ...model, dashboards } } : { model },
-		// `handleCollectionStuck` recreates the collections while the snapshot loads.
+			orgId !== context.orgId ? { model } : { model: { ...model, dashboards, persistenceError: null } },
+		// The collections are recreated while the snapshot loads.
 		TimedOutLiveDashboards: ({ orgId }) =>
 			orgId !== context.orgId || model.dashboards !== null || model.fallback._tag !== "Idle"
 				? { model }
@@ -290,9 +319,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							}),
 						},
 					},
-		// `retryOrgCollections`: a failed snapshot may be read again after the reconnect.
+		// Writes come back on, and a failed snapshot may be read again after the reconnect.
 		ClickedRetrySync: () => ({
-			model: model.fallback._tag === "Failed" ? { ...model, fallback: { _tag: "Idle" } } : model,
+			model: {
+				...model,
+				persistenceError: null,
+				fallback: model.fallback._tag === "Failed" ? { _tag: "Idle" } : model.fallback,
+			},
 			outMessage: PageOutMessage.RequestedReconnectOrgCollections(),
 		}),
 		ChangedSearchDraft: ({ value }) => {
@@ -309,6 +342,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model }
 				: navigateSearch(model, { q: trimmed === "" ? undefined : trimmed })
 		},
+		PressedListKey: ({ key }) => pressedListKey(model, key),
+		CompletedScrollFocusedRow: () => ({ model }),
 		ChangedScope: ({ scope }) => navigateSearch(model, { scope: scope === "all" ? undefined : scope }),
 		ClickedClearSearch: () => navigateSearch({ ...model, searchDraft: "" }, { q: undefined }),
 		ClickedShowAllTags: () => navigateSearch(model, { tags: undefined }),
@@ -365,7 +400,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedSavePreferences: () => ({ model }),
 		GotSortMenuMessage: ({ message: inner }) => sortMenuStep(model, inner),
 		GotRowMenuMessage: ({ rowId, message: inner }) => rowMenuStep(model, context, rowId, inner),
-		CompletedExportDashboard: () => ({ model }),
+		CompletedExportDashboard: ({ error }) => (error === null ? { model } : toastFailure(model, error)),
 		CompletedDuplicateDashboard: ({ result }) =>
 			Result.match(result, {
 				onFailure: (error) => failedWrite(model, error, context.orgId),

@@ -129,15 +129,17 @@ describe("encodeTraceExport", () => {
 		const request = encodeTraceExport([check(), check({ monitor: unnamed }), check()])
 		assert.lengthOf(request.resourceSpans, 2)
 		const [first, second] = request.resourceSpans
-		assert.deepStrictEqual(attrs(first!.resource.attributes), {
+		assert.isDefined(second)
+		assert.isDefined(first)
+		assert.deepStrictEqual(attrs(first.resource.attributes), {
 			"service.name": { stringValue: "maple-uptime" },
 			"service.namespace": { stringValue: "maple-services" },
 			"maple.uptime.monitor_id": { stringValue: MONITOR_A },
 			"maple.uptime.monitor_name": { stringValue: "Checkout health" },
 			"maple.uptime.service_name": { stringValue: "checkout" },
 		})
-		assert.lengthOf(first!.scopeSpans[0]!.spans, 2)
-		assert.notProperty(attrs(second!.resource.attributes), "maple.uptime.service_name")
+		assert.lengthOf(Arr.getUnsafe(first.scopeSpans, 0).spans, 2)
+		assert.notProperty(attrs(second.resource.attributes), "maple.uptime.service_name")
 	})
 })
 

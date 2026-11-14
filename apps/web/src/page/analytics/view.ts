@@ -1,4 +1,4 @@
-import { activeFilterChips } from "../../components/analytics/filters"
+import { activeFilterChips } from "./filters"
 import { formatNumber, pluralize } from "@maple/ui/lib/format"
 import { TONE_BORDER, TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
@@ -12,7 +12,7 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statusDot } from "@maple/views/ui/status-dot"
 import type { PageViewInputs } from "../contract"
-import { pageTime } from "../infra-integrations/kit/page-time"
+import { pageTime } from "../kit/page-time"
 import { dashboardPage } from "../kit/dashboard-page"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
@@ -22,17 +22,16 @@ import type { Model } from "./model"
 import { filtersOf, tabOf } from "./requests"
 import { DEFAULT_PRESET } from "./update"
 import { aiTab } from "./view-ai"
+import { searchTab } from "./view-search"
 import { TRAFFIC_TOKENS } from "./view-chart"
 import { expandDialog } from "./view-expand"
-import { filtersRail, showsBreakdownCards } from "./view-filters"
+import { filtersRail, searchEventRail, showsBreakdownCards } from "./view-filters"
 import { overviewContent, sharedPageFailure } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 
-// The web analytics page.
-
 type H = HtmlBuilder<Message>
 
-/** `AnalyticsLiveBadge`: silent until its first poll lands, then the last number it saw. */
+/** The live badge: silent until its first poll lands, then the last number it saw. */
 const liveBadge = (h: H, model: Model): ReadonlyArray<Html> => {
 	const live = Option.getOrUndefined(AsyncData.getData(model.live.data))
 	if (live === undefined) return []
@@ -86,12 +85,14 @@ const replaysLink = (h: H, model: Model): Html => {
 	)
 }
 
+const TAB_LABELS = { overview: "Overview", ai: "AI traffic", search: "Search" } as const
+
 const tabs = (h: H, model: Model): Html => {
 	const active = tabOf(model.search)
 	return underlineTabStrip(
 		h,
 		{ label: "Analytics views", navigation: true },
-		Arr.map(["overview", "ai"] as const, (tab) => {
+		Arr.map(["overview", "ai", "search"] as const, (tab) => {
 			const isCurrent = tab === active
 			// TanStack's partial search match: Overview's link (no `tab`) matches every tab.
 			const isLinkActive = tab === "overview" || isCurrent
@@ -109,7 +110,7 @@ const tabs = (h: H, model: Model): Html => {
 						),
 					),
 				],
-				[tab === "overview" ? "Overview" : "AI traffic"],
+				[TAB_LABELS[tab]],
 			)
 		}),
 	)
@@ -117,7 +118,9 @@ const tabs = (h: H, model: Model): Html => {
 
 /** The active filters, removable one at a time. */
 const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
-	const chips = activeFilterChips(filtersOf(model.search))
+	const all = activeFilterChips(filtersOf(model.search))
+	// Only the event filter applies on the Search tab; the rest stay in the URL for the other tabs.
+	const chips = tabOf(model.search) === "search" ? Arr.filter(all, (chip) => chip.key === "eventName") : all
 	if (chips.length === 0) return []
 	return [
 		hstack(h, { gap: "1.5", wrap: true }, [
@@ -151,12 +154,14 @@ const chipsRow = (h: H, model: Model): ReadonlyArray<Html> => {
 
 const body = (h: H, model: Model, timeZone: string, isNarrow: boolean): Html => {
 	if (tabOf(model.search) === "ai") return aiTab(h, model, timeZone)
+	if (tabOf(model.search) === "search") return searchTab(h, model, isNarrow)
 	const presence = presenceOf(model.presence, "sessions")
 	if (!showsBreakdownCards(model))
 		return signalEmptyState(h, {
 			signal: "sessions",
 			presence,
 			nowMs: model.nowMs,
+			timeZone,
 			noun: "visits",
 			purpose: "See your visitors, top pages and where they came from.",
 			action: "Set up web analytics",
@@ -175,7 +180,8 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				{
 					title: "Web analytics",
 					gap: "lg",
-					filters: filtersRail(h, model),
+					filters:
+						tabOf(model.search) === "search" ? searchEventRail(h, model) : filtersRail(h, model),
 					actions: hstack(h, { gap: "2", wrap: true }, [
 						...liveBadge(h, model),
 						replaysLink(h, model),

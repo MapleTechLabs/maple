@@ -81,9 +81,6 @@ export const DashboardTemplateCategory = Schema.Literals([
 })
 export type DashboardTemplateCategory = Schema.Schema.Type<typeof DashboardTemplateCategory>
 
-export const IngestKeyId = MapleId("@maple/IngestKeyId", "Ingest Key ID")
-export type IngestKeyId = Schema.Schema.Type<typeof IngestKeyId>
-
 export const ApiKeyId = MapleUuidId("@maple/ApiKeyId", "API Key ID")
 export type ApiKeyId = Schema.Schema.Type<typeof ApiKeyId>
 
@@ -131,8 +128,24 @@ export const GcpResourceNumber = Schema.String.check(Schema.isPattern(/^[0-9]{1,
 )
 export type GcpResourceNumber = Schema.Schema.Type<typeof GcpResourceNumber>
 
+export const SearchConsoleSiteId = MapleUuidId("@maple/SearchConsoleSiteId", "Search Console Site ID")
+export type SearchConsoleSiteId = Schema.Schema.Type<typeof SearchConsoleSiteId>
+
+/** A Search Console property: `sc-domain:example.com` or a URL prefix like `https://example.com/`. */
+export const SearchConsoleSiteUrl = Schema.String.check(
+	Schema.isMaxLength(2048),
+	Schema.isPattern(/^(sc-domain:[a-z0-9.-]+|https?:\/\/[^\s]+)$/iu),
+).pipe(
+	Schema.brand("@maple/SearchConsoleSiteUrl"),
+	Schema.annotate({ identifier: "@maple/SearchConsoleSiteUrl", title: "Search Console Site URL" }),
+)
+export type SearchConsoleSiteUrl = Schema.Schema.Type<typeof SearchConsoleSiteUrl>
+
 export const AwsConnectionId = MapleUuidId("@maple/AwsConnectionId", "AWS Connection ID")
 export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
+
+export const CostSourceId = MapleUuidId("@maple/CostSourceId", "Cost Source ID")
+export type CostSourceId = Schema.Schema.Type<typeof CostSourceId>
 
 // Twelve digits, as AWS prints it. It is interpolated into role ARNs and setup scripts.
 export const AwsAccountId = Schema.String.check(Schema.isPattern(/^[0-9]{12}$/u)).pipe(
@@ -195,6 +208,26 @@ export type AlertIncidentId = Schema.Schema.Type<typeof AlertIncidentId>
 
 export const AlertDeliveryEventId = MapleUuidId("@maple/AlertDeliveryEventId", "Alert Delivery Event ID")
 export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventId>
+
+export const AlertSilenceId = MapleUuidId("@maple/AlertSilenceId", "Alert Silence ID")
+export type AlertSilenceId = Schema.Schema.Type<typeof AlertSilenceId>
+
+export const AlertMaintenanceWindowId = MapleUuidId(
+	"@maple/AlertMaintenanceWindowId",
+	"Alert Maintenance Window ID",
+)
+export type AlertMaintenanceWindowId = Schema.Schema.Type<typeof AlertMaintenanceWindowId>
+
+export const AlertIncidentEventId = MapleUuidId("@maple/AlertIncidentEventId", "Alert Incident Event ID")
+export type AlertIncidentEventId = Schema.Schema.Type<typeof AlertIncidentEventId>
+export const EscalationChainId = MapleUuidId("@maple/EscalationChainId", "Escalation Chain ID")
+export type EscalationChainId = Schema.Schema.Type<typeof EscalationChainId>
+export const AlertEscalationRunId = MapleUuidId("@maple/AlertEscalationRunId", "Alert Escalation Run ID")
+export type AlertEscalationRunId = Schema.Schema.Type<typeof AlertEscalationRunId>
+export const OnCallScheduleId = MapleUuidId("@maple/OnCallScheduleId", "On-Call Schedule ID")
+export type OnCallScheduleId = Schema.Schema.Type<typeof OnCallScheduleId>
+export const OnCallOverrideId = MapleUuidId("@maple/OnCallOverrideId", "On-Call Override ID")
+export type OnCallOverrideId = Schema.Schema.Type<typeof OnCallOverrideId>
 
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
@@ -330,6 +363,27 @@ export const UptimeIntervalSeconds = Schema.Number.check(
 )
 export type UptimeIntervalSeconds = Schema.Schema.Type<typeof UptimeIntervalSeconds>
 
+export const SloId = MapleUuidId("@maple/SloId", "SLO ID")
+export type SloId = Schema.Schema.Type<typeof SloId>
+
+/** The rolling window an SLO's error budget is measured over. */
+export const SloWindowDays = Schema.Literals([7, 28, 30]).annotate({
+	identifier: "@maple/SloWindowDays",
+	title: "SLO Window Days",
+})
+export type SloWindowDays = Schema.Schema.Type<typeof SloWindowDays>
+
+/**
+ * Latency SLI thresholds: the ladder the service rollups count spans under, so any
+ * threshold on it reads the rollups instead of raw spans.
+ */
+export const SLO_LATENCY_THRESHOLDS_MS = [50, 100, 250, 500, 1000, 2500, 5000, 10000] as const
+export const SloLatencyThresholdMs = Schema.Literals(SLO_LATENCY_THRESHOLDS_MS).annotate({
+	identifier: "@maple/SloLatencyThresholdMs",
+	title: "SLO Latency Threshold (ms)",
+})
+export type SloLatencyThresholdMs = Schema.Schema.Type<typeof SloLatencyThresholdMs>
+
 export const StatusPageId = MapleUuidId("@maple/StatusPageId", "Status Page ID")
 export type StatusPageId = Schema.Schema.Type<typeof StatusPageId>
 
@@ -386,6 +440,31 @@ export const StatusPageAutoIncidents = Schema.Literals(["off", "draft", "publish
 })
 export type StatusPageAutoIncidents = Schema.Schema.Type<typeof StatusPageAutoIncidents>
 
+/**
+ * Who can read a status page: anyone, visitors who know its password, or only signed-in members
+ * of its org inside Maple (never served at the edge).
+ */
+export const StatusPageVisibility = Schema.Literals(["public", "password", "internal"]).annotate({
+	identifier: "@maple/StatusPageVisibility",
+	title: "Status Page Visibility",
+})
+export type StatusPageVisibility = Schema.Schema.Type<typeof StatusPageVisibility>
+
+/**
+ * Where a page's custom domain stands: waiting for the customer's DNS (CNAME and ownership),
+ * waiting for its certificate, serving the page, or stopped with an error to fix.
+ */
+export const StatusPageCustomDomainStatus = Schema.Literals([
+	"pending_dns",
+	"pending_ssl",
+	"active",
+	"failed",
+]).annotate({
+	identifier: "@maple/StatusPageCustomDomainStatus",
+	title: "Status Page Custom Domain Status",
+})
+export type StatusPageCustomDomainStatus = Schema.Schema.Type<typeof StatusPageCustomDomainStatus>
+
 export const StatusPageUpdateSource = Schema.Literals([
 	"dashboard",
 	"api",
@@ -422,6 +501,10 @@ export type IngestRuleId = Schema.Schema.Type<typeof IngestRuleId>
 export const SourceId = MapleUuidId("@maple/SourceId", "Source ID")
 export type SourceId = Schema.Schema.Type<typeof SourceId>
 
+/** A connected system Maple queries in place (a database or an API); not an ingest `Source`. */
+export const ExternalDataSourceId = MapleUuidId("@maple/ExternalDataSourceId", "External Data Source ID")
+export type ExternalDataSourceId = Schema.Schema.Type<typeof ExternalDataSourceId>
+
 /** Platforms that send telemetry to Maple with their own source token. */
 export const PUSH_SOURCE_PLATFORMS = [
 	"opentelemetry",
@@ -447,6 +530,7 @@ export const PULL_SOURCE_PLATFORMS = [
 	"cloudflare",
 	"gcp",
 	"railway",
+	"vercel",
 	"planetscale",
 	"github",
 	"aws",
@@ -472,6 +556,19 @@ export const SourcePlatform = Schema.Literals([...PUSH_SOURCE_PLATFORMS, ...PULL
 export type SourcePlatform = Schema.Schema.Type<typeof SourcePlatform>
 
 export const isPushSourcePlatform = Schema.is(PushSourcePlatform)
+
+/** A source token: the gateway resolves anything with this prefix by its hash. */
+export const SOURCE_TOKEN_PREFIX = "maple_src_"
+
+/** A public source token: still a source token, but made to ship in client code (browsers). */
+export const PUBLIC_SOURCE_TOKEN_PREFIX = `${SOURCE_TOKEN_PREFIX}pk_`
+
+/** Platforms whose code ships to end users, so their source token is a public one. */
+export const isPublicSourcePlatform = (platform: SourcePlatform): boolean => platform === "browser"
+
+/** The token's prefix for a source on this platform. */
+export const sourceTokenPrefix = (platform: SourcePlatform): string =>
+	isPublicSourcePlatform(platform) ? PUBLIC_SOURCE_TOKEN_PREFIX : SOURCE_TOKEN_PREFIX
 
 /**
  * `default` stands for the org's public/private ingest keys, `token` carries its own
@@ -510,17 +607,6 @@ export type SourceResourceAttribute = Schema.Schema.Type<typeof SourceResourceAt
 export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
 export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>
 
-export const TinybirdDeploymentId = MapleId("@maple/TinybirdDeploymentId", "Tinybird Deployment ID")
-export type TinybirdDeploymentId = Schema.Schema.Type<typeof TinybirdDeploymentId>
-
-export const TinybirdProjectRevision = MapleId("@maple/TinybirdProjectRevision", "Tinybird Project Revision")
-export type TinybirdProjectRevision = Schema.Schema.Type<typeof TinybirdProjectRevision>
-
-export const TinybirdHost = MapleId("@maple/TinybirdHost", "Tinybird Host")
-export type TinybirdHost = Schema.Schema.Type<typeof TinybirdHost>
-
-// Telemetry dimension primitives
-
 export const ServiceName = MapleTelemetry("@maple/ServiceName", "Service Name")
 export type ServiceName = Schema.Schema.Type<typeof ServiceName>
 
@@ -541,8 +627,6 @@ export type FingerprintHash = Schema.Schema.Type<typeof FingerprintHash>
 
 export const MetricName = MapleTelemetry("@maple/MetricName", "Metric Name")
 export type MetricName = Schema.Schema.Type<typeof MetricName>
-
-// OpenTelemetry enums (closed value sets → modeled as literal unions)
 
 // Title Case per the repo's span status convention; verified distinct values in the
 // warehouse are exactly Ok / Error / Unset.
@@ -574,16 +658,8 @@ export const HttpMethod = Schema.Literals([
 })
 export type HttpMethod = Schema.Schema.Type<typeof HttpMethod>
 
-// External / audit / dashboard reference IDs
-
 export const ExternalUserId = MapleId("@maple/ExternalUserId", "External User ID")
 export type ExternalUserId = Schema.Schema.Type<typeof ExternalUserId>
-
-export const WidgetId = MapleId("@maple/WidgetId", "Widget ID")
-export type WidgetId = Schema.Schema.Type<typeof WidgetId>
-
-export const ChartId = MapleId("@maple/ChartId", "Chart ID")
-export type ChartId = Schema.Schema.Type<typeof ChartId>
 
 /**
  * Which chat connector a conversation reached Maple through.

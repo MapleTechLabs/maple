@@ -1,0 +1,227 @@
+import * as Policy from "@maple/domain/policy"
+import { OrgId } from "@maple/domain"
+import { Result, Schema, Array as Arr } from "effect"
+import { EscalationChainId } from "@maple/domain/http"
+import * as Menu from "@maple/views/ui/menu"
+import * as Dialog from "@maple/views/ui/dialog"
+import { MountDialog } from "@maple/views/ui/dialog"
+import { expect as expectView, given, Mount, role, scene, text, within, withViewInputs } from "foldkit/scene"
+import { describe, expect, test } from "vitest"
+import type { V2EscalationChain } from "@maple/domain/http/v2"
+import type { PageContext } from "../../contract"
+import { CHAIN_IN_USE_CODE } from "../shared/escalation-chains"
+import { chainDestinations, chainUuid, populatedChains } from "../shared/escalation-test-fixtures"
+import { hubAt, NOW, ORG, ruleId, ruleRow } from "../../kit/alert-test-rows"
+import { Message } from "./message"
+import type { Model } from "./model"
+import { chainMenuId, init, update } from "./update"
+import { view as pageView } from "./view"
+
+const orgId = Schema.decodeSync(OrgId)(ORG)
+const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+const pageUpdate = (model: Model, message: Message) => update(model, message, context)
+const view = withViewInputs(pageView, { context })()
+const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
+	Arr.map(commands ?? [], ({ name }) => name)
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
+const RULES = [ruleRow(1, { name: "Checkout errors" }), ruleRow(2, { name: "Checkout p95" }), ruleRow(3)]
+const CHAINS = populatedChains([ruleId(1), ruleId(2), ruleId(3)])
+
+const onRouting = (grants: ReturnType<typeof Policy.grantsOf>, chains: ReadonlyArray<V2EscalationChain>) => {
+	const entered = init(hubAt({ tab: "routing" }), context)
+	expect(names(entered.commands)).toContain("FetchAlertsHubChains")
+	return Arr.reduce(
+		[
+			Message.ReadClock({ nowMs: NOW }),
+			Message.CompletedFetchSession({ orgId: ORG, grants }),
+			Message.UpdatedDestinations({ orgId: ORG, rows: chainDestinations }),
+			Message.UpdatedRules({ orgId: ORG, rows: RULES }),
+			Message.CompletedFetchChains({
+				key: entered.model.chains.key ?? "",
+				result: Result.succeed(chains),
+			}),
+		],
+		entered.model,
+		(model, message) => pageUpdate(model, message).model,
+	)
+}
+
+describe("alerts hub, escalation chains", () => {
+	test("an org without chains learns what one is and can create the first", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onRouting(ENGINEER, [])),
+			expectView(text("No escalation chains yet")).toExist(),
+			expectView(text(/waits for someone to acknowledge, then pages the next/u)).toExist(),
+			expectView(role("link", { name: "Create chain" })).toHaveAttr(
+				"href",
+				"/alerts/escalation-chains/new",
+			),
+		)
+	})
+
+	test("each chain reads as its steps in one line and the rules that start it", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onRouting(ENGINEER, CHAINS)),
+			expectView(text("Checkout on-call")).toExist(),
+			expectView(
+				text(
+					"Slack #alerts-api, then PagerDuty Checkout after 10m, then Email on-call after 15m; repeats twice",
+				),
+			).toExist(),
+			expectView(text("Used by 2 rules")).toExist(),
+			expectView(text("Not used by any rule")).toExist(),
+			expectView(role("button", { name: "Actions for Checkout on-call" })).toExist(),
+			expectView(role("link", { name: "New chain" })).toHaveAttr(
+				"href",
+				"/alerts/escalation-chains/new",
+			),
+			expectView(role("link", { name: "Checkout on-call" })).toExist(),
+		)
+	})
+
+	test("a chain counts the rules that start it before the rules list has loaded", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...onRouting(ENGINEER, CHAINS), rules: null }),
+			expectView(text("Used by 2 rules")).toExist(),
+		)
+	})
+
+	test("a member sees the chains but cannot create, edit or delete one", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(onRouting(MEMBER, [])),
+			expectView(role("link", { name: "Create chain" })).not.toExist(),
+			expectView(text(/Ask an org admin to create one/u)).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(onRouting(MEMBER, CHAINS)),
+			expectView(role("button", { name: "Actions for Checkout on-call" })).not.toExist(),
+		)
+	})
+
+	test("Edit in a chain's menu opens its editor page", () => {
+		const chainId = Schema.decodeSync(EscalationChainId)(chainUuid(1))
+		const picked = pageUpdate(
+			onRouting(ENGINEER, CHAINS),
+			Message.GotRowMenuMessage({
+				menuId: chainMenuId(chainId),
+				message: Menu.Message.ClickedItem({ index: 0, item: { kind: "Item", value: "edit" } }),
+			}),
+		)
+		expect(picked.outMessage).toMatchObject({
+			_tag: "RequestedNavigation",
+			url: expect.stringMatching(/^\/alerts\/escalation-chains\/esc_/u),
+		})
+	})
+
+	test("Delete on a chain that rules start lists them and holds the delete, as its own page does", () => {
+		const askToDelete = (n: number) =>
+			pageUpdate(
+				onRouting(ENGINEER, CHAINS),
+				Message.GotRowMenuMessage({
+					menuId: chainMenuId(Schema.decodeSync(EscalationChainId)(chainUuid(n))),
+					message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+				}),
+			).model
+		const confirm = within(role("alertdialog"), role("button", { name: "Delete chain" }))
+		scene(
+			{ update: pageUpdate, view },
+			given(askToDelete(1)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/These rules would stop escalating/u)).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout errors"))).toExist(),
+			expectView(within(role("alertdialog"), text("Checkout p95"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// Before the rules list has loaded they are counted instead of named, and still hold it.
+		scene(
+			{ update: pageUpdate, view },
+			given({ ...askToDelete(1), rules: null }),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(within(role("alertdialog"), text("2 rules"))).toExist(),
+			expectView(confirm).toBeDisabled(),
+		)
+		// A chain no rule starts deletes as before.
+		scene(
+			{ update: pageUpdate, view },
+			given(askToDelete(3)),
+			Mount.resolve(MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text(/Escalations already running finish on their own copy/u)).toExist(),
+			expectView(confirm).not.toBeDisabled(),
+		)
+	})
+
+	test("a refused delete stays open and names the rules that still start the chain", () => {
+		const model = onRouting(ENGINEER, CHAINS)
+		const chainId = Schema.decodeSync(EscalationChainId)(chainUuid(1))
+		const asked = pageUpdate(
+			pageUpdate(
+				model,
+				Message.GotRowMenuMessage({
+					menuId: chainMenuId(chainId),
+					message: Menu.Message.ClickedItem({ index: 2, item: { kind: "Item", value: "delete" } }),
+				}),
+			).model,
+			Message.ClickedConfirmDeleteChain(),
+		)
+		expect(names(asked.commands)).toEqual(["DeleteEscalationChain"])
+		const refused = pageUpdate(
+			asked.model,
+			Message.CompletedDeleteChain({
+				chainId,
+				result: Result.fail({
+					_tag: "@maple/http/errors/EscalationChainInUseError",
+					type: "conflict_error",
+					code: CHAIN_IN_USE_CODE,
+					title: "Escalation chain is in use",
+					message: "The escalation chain is used by one or more alert rules.",
+					retryable: false,
+					recovery: "fix_request",
+				}),
+			}),
+		)
+		expect(refused.model.deleteChainError).toBe(
+			"Still used by Checkout errors, Checkout p95. Remove it from their severity tiers first.",
+		)
+		expect(refused.model.confirmDeleteChainId).toBe(chainId)
+		// The chains are read again, so a retry names a rule attached since the tab opened.
+		expect(names(refused.commands)).toContain("FetchAlertsHubChains")
+		const reread = pageUpdate(
+			refused.model,
+			Message.CompletedFetchChains({
+				key: refused.model.chains.key ?? "",
+				// A rule attached since the tab opened now holds the chain.
+				result: Result.succeed(populatedChains([ruleId(3)])),
+			}),
+		)
+		expect(reread.model.deleteChainError).toBe(
+			"Still used by Rule 3. Remove it from its severity tiers first.",
+		)
+
+		// Before the rules list has loaded the rules cannot be named, only counted.
+		const unloaded = pageUpdate(
+			{ ...asked.model, rules: null },
+			Message.CompletedDeleteChain({
+				chainId,
+				result: Result.fail({
+					_tag: "@maple/http/errors/EscalationChainInUseError",
+					type: "conflict_error",
+					code: CHAIN_IN_USE_CODE,
+					title: "Escalation chain is in use",
+					message: "The escalation chain is used by one or more alert rules.",
+					retryable: false,
+					recovery: "fix_request",
+				}),
+			}),
+		)
+		expect(unloaded.model.deleteChainError).toBe(
+			"Alert rules still start this chain. Remove it from their severity tiers first.",
+		)
+	})
+})

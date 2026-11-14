@@ -1,11 +1,17 @@
-import { AlertRuleId, AnomalyIncidentId, DashboardId, ErrorIssueId } from "@maple/domain/http"
+import {
+	AlertRuleId,
+	AnomalyIncidentId,
+	DashboardId,
+	END_USER_ID_MAX_LENGTH,
+	ErrorIssueId,
+} from "@maple/domain/http"
 import { SecurityAuditRunId, SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { pipe, Schema, Record as Rec } from "effect"
 import { Route } from "foldkit"
 import { query, schemaSegment, slash } from "foldkit/route"
 import { AppRoute } from "./app-route"
 import * as Search from "./search"
-import { boundedSegment, path, restSegments, segment } from "./segment"
+import { boundedRestSegments, boundedSegment, path, restSegments, segment } from "./segment"
 import { tanstackSearch } from "./tanstack-search"
 
 const search = <A, I>(schema: Schema.Codec<A, I>) => query(tanstackSearch(schema))
@@ -65,10 +71,17 @@ const routers = {
 		Route.mapTo(AppRoute.AgentSession),
 	),
 	AlertRule: pipe(
-		path("alerts"),
+		path("alerts", "rules"),
 		slash(schemaSegment("ruleId", AlertRuleId)),
 		search(Search.AlertRuleSearch),
 		Route.mapTo(AppRoute.AlertRule),
+	),
+	// A rule's page before it moved under Rules; notifications still link here, `routeRedirect` sends them on.
+	AlertRuleLegacy: pipe(
+		path("alerts"),
+		slash(schemaSegment("ruleId", AlertRuleId)),
+		search(Search.AlertRuleSearch),
+		Route.mapTo(AppRoute.AlertRuleLegacy),
 	),
 	AlertsCreate: pipe(
 		path("alerts", "create"),
@@ -86,6 +99,39 @@ const routers = {
 		search(Search.AlertsUptimeMonitorSearch),
 		Route.mapTo(AppRoute.AlertsUptimeMonitor),
 	),
+	AlertsSloNew: pipe(
+		path("alerts", "slos", "new"),
+		search(Search.AlertsSloNewSearch),
+		Route.mapTo(AppRoute.AlertsSloNew),
+	),
+	AlertsSlo: pipe(
+		path("alerts", "slos"),
+		slash(segment("sloId")),
+		search(Search.AlertsSloSearch),
+		Route.mapTo(AppRoute.AlertsSlo),
+	),
+	AlertsScheduleNew: pipe(
+		path("alerts", "schedules", "new"),
+		search(Search.AlertsScheduleNewSearch),
+		Route.mapTo(AppRoute.AlertsScheduleNew),
+	),
+	AlertsSchedule: pipe(
+		path("alerts", "schedules"),
+		slash(segment("scheduleId")),
+		search(Search.AlertsScheduleSearch),
+		Route.mapTo(AppRoute.AlertsSchedule),
+	),
+	AlertsEscalationChainNew: pipe(
+		path("alerts", "escalation-chains", "new"),
+		search(Search.AlertsEscalationChainSearch),
+		Route.mapTo(AppRoute.AlertsEscalationChainNew),
+	),
+	AlertsEscalationChain: pipe(
+		path("alerts", "escalation-chains"),
+		slash(segment("chainId")),
+		search(Search.AlertsEscalationChainSearch),
+		Route.mapTo(AppRoute.AlertsEscalationChain),
+	),
 	IngestRuleNew: pipe(
 		path("settings", "ingestion", "rules", "new"),
 		search(Search.IngestRuleNewSearch),
@@ -96,6 +142,7 @@ const routers = {
 		slash(segment("ruleId")),
 		Route.mapTo(AppRoute.IngestRule),
 	),
+	BillingAiCredits: pipe(path("settings", "billing", "ai-credits"), Route.mapTo(AppRoute.BillingAiCredits)),
 	// Retired: `routeRedirect` sends it to `/status-pages/$pageId`.
 	AlertsStatusPage: pipe(
 		path("alerts", "status-pages"),
@@ -110,6 +157,12 @@ const routers = {
 		slash(segment("pageId")),
 		search(Search.StatusPageSearch),
 		Route.mapTo(AppRoute.StatusPage),
+	),
+	StatusPageView: pipe(
+		path("status-pages"),
+		slash(segment("pageId")),
+		slash(path("view")),
+		Route.mapTo(AppRoute.StatusPageView),
 	),
 	Anomaly: pipe(
 		path("anomalies"),
@@ -155,6 +208,17 @@ const routers = {
 		path("security", "dependencies"),
 		search(Search.SecurityDependenciesSearch),
 		Route.mapTo(AppRoute.SecurityDependencies),
+	),
+	SecurityAuditLog: pipe(
+		path("security", "audit-log"),
+		search(Search.SecurityAuditLogSearch),
+		Route.mapTo(AppRoute.SecurityAuditLog),
+	),
+	SecurityDetections: pipe(path("security", "detections"), Route.mapTo(AppRoute.SecurityDetections)),
+	SecurityDetectionNew: pipe(
+		path("security", "detections", "new"),
+		search(Search.SecurityDetectionNewSearch),
+		Route.mapTo(AppRoute.SecurityDetectionNew),
 	),
 	SecurityRun: pipe(
 		path("security", "code", "runs"),
@@ -256,9 +320,16 @@ const routers = {
 		Route.mapTo(AppRoute.AgentSessions),
 	),
 	Alerts: pipe(path("alerts"), search(Search.AlertsSearch), Route.mapTo(AppRoute.Alerts)),
+	AlertsSection: pipe(
+		path("alerts"),
+		slash(schemaSegment("section", Search.AlertsSection)),
+		search(Search.AlertsHubSearch),
+		Route.mapTo(AppRoute.AlertsSection),
+	),
 	Analytics: pipe(path("analytics"), search(Search.AnalyticsSearch), Route.mapTo(AppRoute.Analytics)),
 	Anomalies: pipe(path("anomalies"), search(Search.AnomaliesSearch), Route.mapTo(AppRoute.Anomalies)),
 	CodeReview: pipe(path("code-review"), search(Search.CodeReviewSearch), Route.mapTo(AppRoute.CodeReview)),
+	Cost: pipe(path("cost"), search(Search.CostSearch), Route.mapTo(AppRoute.Cost)),
 	Dashboards: pipe(path("dashboards"), search(Search.DashboardsSearch), Route.mapTo(AppRoute.Dashboards)),
 	Errors: pipe(path("errors"), search(Search.ErrorsSearch), Route.mapTo(AppRoute.Errors)),
 	Infra: pipe(path("infra"), search(Search.InfraSearch), Route.mapTo(AppRoute.Infra)),
@@ -273,6 +344,14 @@ const routers = {
 	Replays: pipe(path("replays"), search(Search.ReplaysSearch), Route.mapTo(AppRoute.Replays)),
 	Services: pipe(path("services"), search(Search.ServicesSearch), Route.mapTo(AppRoute.Services)),
 	Traces: pipe(path("traces"), search(Search.TracesSearch), Route.mapTo(AppRoute.Traces)),
+	Users: pipe(path("users"), search(Search.UsersSearch), Route.mapTo(AppRoute.Users)),
+	UserDetail: pipe(
+		path("users"),
+		// The rest of the path: Cloudflare turns an encoded `%2F` in a user id back into a slash.
+		slash(boundedRestSegments("userId", END_USER_ID_MAX_LENGTH)),
+		search(Search.UserDetailSearch),
+		Route.mapTo(AppRoute.UserDetail),
+	),
 	AgentSessionTool: pipe(
 		path("agent-sessions", "tools"),
 		slash(segment("toolName")),
@@ -320,6 +399,12 @@ const routers = {
 		slash(segment("serviceId")),
 		search(Search.InfraRailwayServiceSearch),
 		Route.mapTo(AppRoute.InfraRailwayService),
+	),
+	InfraVercelProject: pipe(
+		path("infra", "vercel"),
+		slash(segment("projectId")),
+		search(Search.InfraVercelProjectSearch),
+		Route.mapTo(AppRoute.InfraVercelProject),
 	),
 	InfraSupabaseProject: pipe(
 		path("infra", "supabase"),
@@ -398,6 +483,11 @@ const routers = {
 		path("infra", "railway"),
 		search(Search.InfraRailwaySearch),
 		Route.mapTo(AppRoute.InfraRailway),
+	),
+	InfraVercel: pipe(
+		path("infra", "vercel"),
+		search(Search.InfraVercelSearch),
+		Route.mapTo(AppRoute.InfraVercel),
 	),
 	InfraSupabase: pipe(
 		path("infra", "supabase"),
@@ -485,13 +575,22 @@ const routers = {
 // Literal routes come before the param routes that would also match them (`/infra/hosts`).
 export const urlToAppRoute = Route.parseUrlWithFallback(
 	Route.oneOf(
+		routers.AlertsSection,
 		routers.AlertsCreate,
 		routers.AlertsUptimeNew,
 		routers.AlertsUptimeMonitor,
+		routers.AlertsSloNew,
+		routers.AlertsSlo,
+		routers.AlertsScheduleNew,
+		routers.AlertsSchedule,
+		routers.AlertsEscalationChainNew,
+		routers.AlertsEscalationChain,
 		routers.IngestRuleNew,
 		routers.IngestRule,
+		routers.BillingAiCredits,
 		routers.AlertsStatusPage,
 		routers.StatusPageNew,
+		routers.StatusPageView,
 		routers.StatusPage,
 		routers.DashboardsTemplates,
 		routers.SourcesNew,
@@ -504,6 +603,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.InfraKubernetes,
 		routers.InfraPlanetscale,
 		routers.InfraRailway,
+		routers.InfraVercel,
 		routers.InfraSupabase,
 		routers.McpServerSession,
 		routers.McpServerSessions,
@@ -511,6 +611,7 @@ export const urlToAppRoute = Route.parseUrlWithFallback(
 		routers.McpServer,
 		routers.AgentSessionTools,
 		routers.ErrorIssues,
+		routers.UserDetail,
 		...Rec.values(routers),
 	),
 	AppRoute.NotFound,

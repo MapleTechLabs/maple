@@ -1,0 +1,44 @@
+name: preview caps
+description: >-
+    The live preview caps, shared by deploy-pr-preview.yml (which refuses a preview over
+    them) and preview-tinybird-branch.yml (which then creates no Tinybird branch for it).
+    Counts open PRs carrying a preview label, this one included.
+
+inputs:
+    web-only:
+        description: '"1" for a `preview:web`-only preview, which holds no VPC.'
+        required: false
+        default: ""
+    github-token:
+        description: Token that can list pull requests.
+        required: true
+
+outputs:
+    over:
+        description: '"true" when this preview would exceed a cap.'
+        value: ${{ steps.count.outputs.over }}
+
+runs:
+    using: composite
+    steps:
+        - id: count
+          shell: bash
+          env:
+              GH_TOKEN: ${{ inputs.github-token }}
+              WEB_ONLY: ${{ inputs.web-only }}
+              # Each full preview holds a VPC in the prd AWS account, whose us-east-1 quota of
+              # 5 leaves 3 beside the default and prd VPCs.
+              MAX_LIVE_PREVIEWS: 3
+              # Every preview, `preview:web` included, takes 1 of the account's 25 Hyperdrive configs.
+              MAX_TOTAL_PREVIEWS: 8
+          run: |
+              set -euo pipefail
+              list() { gh pr list --repo "$GITHUB_REPOSITORY" --state open --label "$1" --limit 200 --json number --jq '.[].number'; }
+              full=$(list preview | wc -l | tr -d ' ')
+              total=$({ list preview; list preview:web; } | sort -u | wc -l | tr -d ' ')
+              echo "full previews: $full (cap $MAX_LIVE_PREVIEWS), all previews: $total (cap $MAX_TOTAL_PREVIEWS)"
+              if { [ "$WEB_ONLY" != "1" ] && [ "$full" -gt "$MAX_LIVE_PREVIEWS" ]; } || [ "$total" -gt "$MAX_TOTAL_PREVIEWS" ]; then
+                echo "over=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "over=false" >> "$GITHUB_OUTPUT"
+              fi

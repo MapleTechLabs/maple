@@ -13,7 +13,8 @@ const localeStorage = new AsyncLocalStorage<{ locale: Locale }>()
 
 overwriteServerAsyncLocalStorage({
 	getStore: () => localeStorage.getStore(),
-	run: (store, callback) => localeStorage.run(store, callback),
+	// The generated runtime types `callback` as `any`; the type parameter keeps it typed.
+	run: <T>(store: { locale: Locale }, callback: () => T): T => localeStorage.run(store, callback),
 })
 
 export const onRequest = defineMiddleware((context, next) => {

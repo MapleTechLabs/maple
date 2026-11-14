@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { compilePipeQuery as lowerPipeQuery } from "./pipe-dispatch"
+import { baselineWarehouseCapabilities } from "../capabilities"
 
 /** Lower and compile in one step — the tests want a value, and a fixture that
  *  will not compile should fail the test loudly. */
@@ -40,6 +41,71 @@ describe("compilePipeQuery", () => {
 			})!.sql
 			expect(sql).toContain("'production'")
 		}
+	})
+
+	it("service_apdex_time_series filters by deployment_env on every tier", () => {
+		// Minute and hour rollups, then the raw entry-point spans (a sub-minute bucket,
+		// or a threshold the rollups did not pre-count).
+		for (const tier of [
+			{ bucket_seconds: 300 },
+			{ bucket_seconds: 3600 },
+			{ bucket_seconds: 30 },
+			{ bucket_seconds: 300, apdex_threshold_ms: 1000 },
+		]) {
+			const sql = compilePipeQuery("service_apdex_time_series", {
+				...baseParams(),
+				service_name: "checkout",
+				deployment_env: "production",
+				...tier,
+			})!.sql
+			expect(sql, JSON.stringify(tier)).toContain("DeploymentEnv IN ('production')")
+		}
+	})
+
+	it("list_logs pages by offset", () => {
+		const first = compilePipeQuery("list_logs", { ...baseParams(), limit: 30 })!.sql
+		const second = compilePipeQuery("list_logs", { ...baseParams(), limit: 30, offset: 30 })!.sql
+		expect(second).not.toBe(first)
+		expect(second).toContain("OFFSET 30")
+	})
+
+	it("list_traces filters by http_method", () => {
+		const sql = compilePipeQuery("list_traces", { ...baseParams(), http_method: "POST" })!.sql
+		expect(sql).toContain("'POST'")
+	})
+
+	describe("top_operations", () => {
+		const params = { ...baseParams(), service_name: "api", metric: "p95_duration" }
+
+		it("reads the operation rollups, raw spans only at the window edges", () => {
+			const sql = compilePipeQuery("top_operations", params)!.sql
+			expect(sql).toContain("FROM service_operations_hourly")
+			expect(sql).toContain("FROM service_operations_minutely")
+			expect(sql).toContain("ServiceName = 'api'")
+		})
+
+		it("reads raw spans for apdex, which needs each span's duration", () => {
+			const sql = compilePipeQuery("top_operations", { ...params, metric: "apdex" })!.sql
+			expect(sql).not.toContain("service_operations_")
+			expect(sql).toContain("FROM traces")
+		})
+
+		it("reads raw spans when asked to, or for an empty service the edge branch would not filter", () => {
+			for (const extra of [{ raw_only: "1" }, { service_name: "" }]) {
+				const sql = compilePipeQuery("top_operations", { ...params, ...extra })!.sql
+				expect(sql).not.toContain("service_operations_")
+			}
+		})
+
+		it("reads raw spans on a cluster the probe found without the rollups", () => {
+			const capabilities = {
+				...baselineWarehouseCapabilities(),
+				absentTables: new Set(["service_operations_minutely", "service_operations_hourly"]),
+			}
+			const sql = compilePipeQuery("top_operations", params, capabilities)!.sql
+			expect(sql).not.toContain("service_operations_")
+			expect(sql).toContain("FROM traces")
+		})
 	})
 
 	it("returns undefined for unknown pipes", () => {
@@ -85,7 +151,8 @@ describe("compilePipeQuery", () => {
 					pipe,
 					hasError === undefined ? baseParams() : { ...baseParams(), has_error: hasError },
 				)?.sql ?? ""
-			const statusFilters = (sql: string) => sql.match(/StatusCode (=|!=) 'Error'/g) ?? []
+			const statusFilters = (sql: string) =>
+				Arr.fromIterable(Str.matchAll(/StatusCode (=|!=) 'Error'/g)(sql))
 
 			it("applies no status filter when has_error is absent", () => {
 				const sql = sqlFor()

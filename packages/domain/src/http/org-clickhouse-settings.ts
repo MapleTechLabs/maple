@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
 import { SessionAuthorization } from "./current-tenant"
-import { IsoDateTimeString } from "../primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import {
 	OrgClickHouseSettingsEncryptionError,
 	OrgClickHouseSettingsForbiddenError,

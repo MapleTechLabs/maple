@@ -6,15 +6,15 @@ import type { ChartSpec } from "./chart-spec"
 import { bucketTooltipBody } from "./bucket-tooltip"
 import { plotFrame } from "./plot-frame"
 
-// The `PlotFrame` half of `ThroughputAreaChart`, `ErrorRateAreaChart` and `LatencyLineChart`, with
-// `PlotTooltipBody` as the tooltip. Embed it with `h.submodel`; the definition is built in the Mount.
+// The plot frame of the throughput, error rate and latency charts, with the bucket tooltip.
+// Embed it with `h.submodel`; the definition is built in the Mount.
 
 export interface FixedMetricChartInputs {
 	readonly chartId: string
 	readonly ariaLabel: string
 	readonly spec: Extract<ChartSpec, { readonly _tag: "FixedMetric" }>
 	readonly className?: string
-	/** `legend="visible"`: the `FixedMetricLegend` strip under the plot. */
+	/** The legend strip under the plot. */
 	readonly legend?: Html
 	/** Drawn over the plot (deploy markers); `reportPlot` makes the chart report its geometry for it. */
 	readonly overlay?: Html

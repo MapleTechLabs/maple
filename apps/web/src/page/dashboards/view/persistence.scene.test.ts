@@ -20,7 +20,7 @@ const run = (model: Model, messages: ReadonlyArray<Message>) =>
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_rw",
 	name: "Writes",
 	timeRange: { type: "relative", value: "6h" },
@@ -58,6 +58,18 @@ describe("a write failing behind an open dialog", () => {
 			Message.GotTagEditorMessage({ message: TagEditor.Message.ClickedSaveTags() }),
 		)
 		expect(names(saved.commands)).toContain(SaveTags.name)
+	})
+
+	test("Retry on the banner brings editing back without writing anything", () => {
+		const failed = run(ready(), [failedWrite])
+		expect(failed.persistenceError).toBe("Conflict")
+		expect(names(pageUpdate(failed, menuPick("add-group")).commands)).toEqual([])
+		const retried = pageUpdate(failed, Message.ClickedRetryPersistence())
+		expect(retried.model.persistenceError).toBeNull()
+		expect(names(retried.commands)).toEqual([])
+		expect(names(pageUpdate(retried.model, menuPick("add-group")).commands)).toEqual([
+			"EditDashboardSections",
+		])
 	})
 
 	test("the widget picker closes, and a pick then says editing is unavailable", () => {

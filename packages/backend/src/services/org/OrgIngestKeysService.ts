@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IsoDateTimeString,
 	IngestKeyEncryptionError,
@@ -10,36 +9,28 @@ import {
 import {
 	computeHmacFingerprint,
 	createIngestKeyId,
+	generatePrivateIngestKey,
+	generatePublicIngestKey,
 	hashIngestKey,
 	inferIngestKeyType,
-	parseIngestKeyLookupHmacKey,
 	type ResolvedIngestKey,
-} from "@maple/db"
+} from "../../platform/credential-tokens"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgIngestKeys, type OrgIngestKeyRow, Sources } from "@maple/db/tables"
 import { defaultSourceRow } from "./source-rows"
-import {
-	DateTime,
-	Array as Arr,
-	Clock,
-	Context,
-	Effect,
-	Layer,
-	Option,
-	Redacted,
-	Result,
-	Schema,
-} from "effect"
-import {
-	decryptAes256Gcm,
-	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
-	type EncryptedValue,
-} from "@maple/backend/platform/Crypto"
+import { DateTime, Array as Arr, Clock, Context, Effect, Layer, Option, Result, Schema } from "effect"
+import { ingestKeyLookupHmacKey, type EncryptedValue } from "@maple/backend/platform/Crypto"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { Env } from "@maple/backend/platform/Env"
+import { Env, type EnvApi } from "@maple/backend/platform/Env"
 import { makeExpiringStore } from "@maple/backend/platform/expiring-store"
+import {
+	openSecret,
+	sealSecret,
+	secretKeyringFromEnv,
+	type SecretKeyring,
+} from "@maple/backend/platform/SecretBox"
+import { ingestPrivateKeySlot } from "@maple/backend/platform/secret-slots"
 import { SharedIngestKeysMemo } from "./shared-ingest-keys-memo"
 
 const toPersistenceError = (error: unknown) =>
@@ -65,38 +56,29 @@ const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
 // provides `SharedIngestKeysMemo`.
 const ORG_INGEST_KEYS_MEMO_TTL_MS = 300_000
 
-const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, IngestKeyEncryptionError> =>
-	parseBase64Aes256GcmKey(raw, (message) =>
-		toEncryptionError(
-			message === "Expected a non-empty base64 encryption key"
-				? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-				: message === "Expected base64 for exactly 32 bytes"
-					? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-					: message,
-		),
-	)
-
-const parseLookupHmacKey = (raw: string): Effect.Effect<string, IngestKeyEncryptionError> =>
-	parseIngestKeyLookupHmacKey(raw, toEncryptionError)
+const parseLookupHmacKey = (env: EnvApi): Effect.Effect<string, IngestKeyEncryptionError> =>
+	ingestKeyLookupHmacKey(env, toEncryptionError)
 
 const encryptPrivateKey = (
+	keyring: SecretKeyring,
+	orgId: OrgId,
 	plaintext: string,
-	encryptionKey: Buffer,
 ): Effect.Effect<EncryptedValue, IngestKeyEncryptionError> =>
-	encryptAes256Gcm(plaintext, encryptionKey, () =>
+	sealSecret(keyring, ingestPrivateKeySlot, { orgId }, plaintext, () =>
 		toEncryptionError("Failed to encrypt private ingest key"),
 	)
 
 const decryptPrivateKey = (
-	encrypted: EncryptedValue,
-	encryptionKey: Buffer,
+	keyring: SecretKeyring,
+	row: OrgIngestKeyRow,
 ): Effect.Effect<string, IngestKeyEncryptionError> =>
-	decryptAes256Gcm(encrypted, encryptionKey, () =>
-		toEncryptionError("Failed to decrypt private ingest key"),
+	openSecret(
+		keyring,
+		ingestPrivateKeySlot,
+		{ orgId: row.orgId },
+		{ ciphertext: row.privateKeyCiphertext, iv: row.privateKeyIv, tag: row.privateKeyTag },
+		() => toEncryptionError("Failed to decrypt private ingest key"),
 	)
-
-const generatePublicKey = () => `maple_pk_${randomBytes(24).toString("base64url")}`
-const generatePrivateKey = () => `maple_sk_${randomBytes(24).toString("base64url")}`
 
 export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>()(
 	"@maple/backend/services/OrgIngestKeysService",
@@ -108,12 +90,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const ingestKeysMemo =
 				(yield* SharedIngestKeysMemo) ?? (yield* makeExpiringStore<OrgIngestKeyRow>())
 			const env = yield* Env
-			const encryptionKey = yield* parseEncryptionKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			)
-			const lookupHmacKey = yield* parseLookupHmacKey(
-				Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
-			)
+			const keyring = yield* secretKeyringFromEnv(env, toEncryptionError)
+			const lookupHmacKey = yield* parseLookupHmacKey(env)
 
 			// One-way fingerprint of the configured HMAC key. Operators diff this
 			// against the ingest gateway's `maple.ingest.hmac_fingerprint` to detect
@@ -124,8 +102,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			// Untraced: this wraps a single `Database.execute`, which already emits its
 			// own client span. A named `Effect.fn` here only added a second span of
-			// byte-identical duration on a hot path — the exact noise CLAUDE.md warns
-			// against ("be careful adding spans to per-request hot paths").
+			// byte-identical duration on a hot path, the noise CLAUDE.md says to avoid.
 			const selectRow = Effect.fnUntraced(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
 					db.run(
@@ -141,14 +118,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 			// Untraced: synchronous AES-GCM decrypt, ~0ms — never worth a span.
 			const toResponse = Effect.fnUntraced(function* (row: OrgIngestKeyRow) {
-				const privateKey = yield* decryptPrivateKey(
-					{
-						ciphertext: row.privateKeyCiphertext,
-						iv: row.privateKeyIv,
-						tag: row.privateKeyTag,
-					},
-					encryptionKey,
-				)
+				const privateKey = yield* decryptPrivateKey(keyring, row)
 
 				return new IngestKeysResponse({
 					publicKey: row.publicKey,
@@ -179,11 +149,11 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 					return existing.value
 				}
 
-				const publicKey = generatePublicKey()
-				const privateKey = generatePrivateKey()
+				const publicKey = generatePublicIngestKey()
+				const privateKey = generatePrivateIngestKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
-				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
+				const encryptedPrivate = yield* encryptPrivateKey(keyring, orgId, privateKey)
 
 				yield* dbExecute((db) =>
 					db
@@ -277,13 +247,13 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 
 				const withoutRow = Arr.difference(
 					misses,
-					selected.map((row) => row.orgId),
+					Arr.map(selected, (row) => row.orgId),
 				)
 				const created = yield* Effect.forEach(withoutRow, (orgId) =>
 					ensureRow(orgId, userId).pipe(Effect.map((row) => [orgId, row] as const)),
 				)
 				const responses = yield* Effect.forEach(
-					[...memoHits, ...selected.map((row) => [row.orgId, row] as const), ...created],
+					[...memoHits, ...Arr.map(selected, (row) => [row.orgId, row] as const), ...created],
 					([orgId, row]) =>
 						toResponse(row).pipe(Effect.map((response) => [orgId, response] as const)),
 				)
@@ -297,7 +267,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				yield* ensureRow(orgId, userId)
 
 				const now = yield* Clock.currentTimeMillis
-				const publicKey = generatePublicKey()
+				const publicKey = generatePublicIngestKey()
 				const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 
 				yield* dbExecute((db) =>
@@ -336,9 +306,9 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				yield* ensureRow(orgId, userId)
 
 				const now = yield* Clock.currentTimeMillis
-				const privateKey = generatePrivateKey()
+				const privateKey = generatePrivateIngestKey()
 				const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
-				const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)
+				const encryptedPrivate = yield* encryptPrivateKey(keyring, orgId, privateKey)
 
 				yield* dbExecute((db) =>
 					db.run(

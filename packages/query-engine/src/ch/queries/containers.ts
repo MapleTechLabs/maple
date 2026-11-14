@@ -26,7 +26,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, MetricsSum, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { containerRuntimeExpr, deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { avgIfOrZero, facetAttrExpr, maxIfOrZero, type FacetOutput } from "./query-helpers"
 import type { SortDirection } from "./infra"
@@ -115,7 +116,7 @@ export interface ListContainersOutput {
 }
 
 const containerBaseConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	metricNames: ReadonlyArray<string> = CONTAINER_METRIC_NAMES,
 ): Array<CH.Condition | undefined> => [
 	$.OrgId.eq(orgIdParam),
@@ -145,7 +146,7 @@ const CONTAINER_FACETS = [
 }>
 
 const containerFilterConditions = (
-	$: ColumnAccessor<typeof MetricsGauge.columns>,
+	$: ColumnAccessor<typeof Datasources.metricsGauge.columns>,
 	opts: ListContainersOpts,
 ): Array<CH.Condition | undefined> => [
 	CH.when(opts.search, (v: string) =>
@@ -156,8 +157,8 @@ const containerFilterConditions = (
 		const included = opts[include]
 		const excluded = opts[exclude]
 		return [
-			included?.length ? CH.inList(expr, included) : undefined,
-			excluded?.length ? CH.notInList(expr, excluded) : undefined,
+			included !== undefined && included.length > 0 ? CH.inList(expr, included) : undefined,
+			excluded !== undefined && excluded.length > 0 ? CH.notInList(expr, excluded) : undefined,
 		]
 	}),
 ]
@@ -170,7 +171,7 @@ export function listContainersQuery(opts: ListContainersOpts = {}) {
 		...Arr.filter(CONTAINER_SORT_TIEBREAK, ([key]) => key !== sortBy),
 	]
 
-	const grouped = from(MetricsGauge)
+	const grouped = from(Datasources.metricsGauge)
 		.select(($) => ({
 			// Docker container names are unique per host only — `redis` on five
 			// hosts must be five rows, so identity is (name, host).
@@ -259,7 +260,7 @@ export interface ListContainersSummaryOutput {
 }
 
 export function listContainersSummaryQuery(opts: ListContainersOpts = {}) {
-	const perContainer = from(MetricsGauge)
+	const perContainer = from(Datasources.metricsGauge)
 		.select(($) => ({
 			containerName: $.ResourceAttributes.get("container.name"),
 			hostName: $.ResourceAttributes.get("host.name"),
@@ -311,7 +312,7 @@ export interface ContainerDetailSummaryOutput {
 }
 
 export function containerDetailSummaryQuery(opts: ContainerDetailSummaryOpts) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			containerName: $.ResourceAttributes.get("container.name"),
 			hostName: CH.any_($.ResourceAttributes.get("host.name")),
@@ -362,7 +363,7 @@ export function containerCountersSummaryQuery(opts: ContainerCountersSummaryOpts
 	// max−min over two hosts' independent cumulative counters fabricates a
 	// restart delta out of their offset. Per-host deltas sum correctly even
 	// when the caller omits `hostName`.
-	const perHost = from(MetricsSum)
+	const perHost = from(Datasources.metricsSum)
 		.select(($) => ({
 			hostName: $.ResourceAttributes.get("host.name"),
 			memoryBytesAvg: avgIfOrZero($.Value, $.MetricName.eq("container.memory.usage.total")),
@@ -420,11 +421,14 @@ export interface ContainerTimeseriesOutput {
 }
 
 export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts) {
-	return from(MetricsGauge)
+	return from(Datasources.metricsGauge)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 			attributeValue: CH.lit(""),
-			avgValue: opts.divideBy ? CH.avg($.Value).div(opts.divideBy) : CH.avg($.Value),
+			avgValue:
+				opts.divideBy !== undefined && opts.divideBy !== 0
+					? CH.avg($.Value).div(opts.divideBy)
+					: CH.avg($.Value),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -441,9 +445,8 @@ export function containerGaugeTimeseriesQuery(opts: ContainerGaugeTimeseriesOpts
 }
 
 // Container sum time-series — metrics_sum families. Cumulative counters
-// (network, block IO) surface bucketed sums — same crude caveat as
-// hostNetworkTimeseriesQuery: the UI renders relative shape, not exact
-// bytes/sec. Sampled non-monotonic sums (memory bytes) must set `average`
+// (network, block IO) surface bucketed sums: the UI renders relative shape,
+// not exact bytes/sec. Sampled non-monotonic sums (memory bytes) must set `average`
 // instead: summing samples would inflate the chart by samples-per-bucket.
 
 export interface ContainerSumTimeseriesOpts {
@@ -463,20 +466,22 @@ export interface ContainerSumTimeseriesOpts {
 
 export function containerSumTimeseriesQuery(opts: ContainerSumTimeseriesOpts) {
 	const labels = opts.metricLabels
-	return from(MetricsSum)
+	return from(Datasources.metricsSum)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
-			attributeValue: labels?.length
-				? CH.multiIf(
-						Arr.map(
-							labels,
-							([metricName, label]) => [$.MetricName.eq(metricName), CH.lit(label)] as const,
-						) as Array<[CH.Condition, CH.Expr<string>]>,
-						CH.lit(""),
-					)
-				: opts.groupByAttributeKey
-					? $.Attributes.get(opts.groupByAttributeKey)
-					: CH.lit(""),
+			attributeValue:
+				labels !== undefined && labels.length > 0
+					? CH.multiIf(
+							Arr.map(
+								labels,
+								([metricName, label]) =>
+									[$.MetricName.eq(metricName), CH.lit(label)] as const,
+							),
+							CH.lit(""),
+						)
+					: opts.groupByAttributeKey
+						? $.Attributes.get(opts.groupByAttributeKey)
+						: CH.lit(""),
 			sumValue: opts.average ? CH.avg($.Value) : CH.sum($.Value),
 		}))
 		.where(($) => [
@@ -506,7 +511,7 @@ const makeContainerFacet = (
 	facetType: string,
 	perFacetLimit: number,
 ) =>
-	from(MetricsGauge)
+	from(Datasources.metricsGauge)
 		.select(($) => ({
 			name: facetAttrExpr($.ResourceAttributes, attrKey),
 			count: CH.uniq($.ResourceAttributes.get("container.id")),

@@ -3,16 +3,16 @@
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, Duration, Effect, Schema, Array as Arr } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { type AlertDestinationId, AlertRuleUpsertRequest, OrgId } from "@maple/domain/http"
-import { AlertsService } from "./AlertsService"
 import {
 	cleanupTestDbs,
 	createTestDb,
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, UptimeMonitorStates, UptimeMonitors } from "@maple/db/tables"
@@ -20,7 +20,7 @@ import {
 	AlertRuleId as AlertRuleIdSchema,
 	UptimeMonitorId as UptimeMonitorIdSchema,
 	type UptimeMonitorStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import type { UptimeMonitorConfig } from "@maple/domain/uptime"
 import { uptimeRuleFields } from "./AlertRuleModel"
 import {
@@ -31,6 +31,7 @@ import {
 	asUserId,
 	adminRoles,
 	createWebhookDestination,
+	alertServices,
 } from "./alerts-service-test-support"
 
 /** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
@@ -68,8 +69,8 @@ const seedUptimeMonitor = (
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
-		const ruleId = AlertRuleIdSchema.make(crypto.randomUUID())
-		const monitorId = UptimeMonitorIdSchema.make(crypto.randomUUID())
+		const ruleId = AlertRuleIdSchema.make(SecureRandom.uuidV4Unsafe())
+		const monitorId = UptimeMonitorIdSchema.make(SecureRandom.uuidV4Unsafe())
 		const enabled = input.enabled ?? true
 		yield* database.execute((db) =>
 			db.transaction(
@@ -97,7 +98,8 @@ const seedUptimeMonitor = (
 							failuresToDown: 1,
 							serviceName: input.serviceName,
 							alertRuleId: ruleId,
-							heartbeatToken: input.config._tag === "heartbeat" ? crypto.randomUUID() : null,
+							heartbeatToken:
+								input.config._tag === "heartbeat" ? SecureRandom.uuidV4Unsafe() : null,
 							enabled,
 							createdBy: asUserId("user_uptime"),
 							createdAt: now,
@@ -162,7 +164,7 @@ describe("AlertsService uptime rules", () => {
 
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_down")
 			const userId = asUserId("user_uptime_down")
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
@@ -183,7 +185,7 @@ describe("AlertsService uptime rules", () => {
 			assert.strictEqual(opened[0]?.groupKey, "checkout-api")
 			assert.strictEqual(opened[0]?.signalType, "uptime")
 			assert.strictEqual(opened[0]?.severity, "critical")
-			const trigger = Schema.decodeUnknownSync(
+			const trigger = Schema.decodeSync(
 				Schema.fromJsonString(
 					Schema.Struct({
 						eventType: Schema.String,
@@ -213,7 +215,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_status_page")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -224,9 +226,9 @@ describe("AlertsService uptime rules", () => {
 				status: "down",
 			})
 			const pages = [
-				{ id: crypto.randomUUID(), slug: "published-page", autoIncidents: "publish" },
-				{ id: crypto.randomUUID(), slug: "draft-page", autoIncidents: "draft" },
-				{ id: crypto.randomUUID(), slug: "off-page", autoIncidents: "off" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "published-page", autoIncidents: "publish" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "draft-page", autoIncidents: "draft" },
+				{ id: SecureRandom.uuidV4Unsafe(), slug: "off-page", autoIncidents: "off" },
 			]
 			yield* Effect.forEach(pages, (page) =>
 				Effect.promise(() =>
@@ -286,7 +288,7 @@ describe("AlertsService uptime rules", () => {
 			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			assert.deepStrictEqual(
-				(yield* pageIncidents()).map((row) => [row.slug, row.status, row.updates]),
+				Arr.map(yield* pageIncidents(), (row) => [row.slug, row.status, row.updates]),
 				[
 					["draft-page", "resolved", 2],
 					["published-page", "resolved", 2],
@@ -299,7 +301,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_backfill")
 			const { ruleId, monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -342,7 +344,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_backfill_isolated")
 			const seed = (name: string) =>
 				seedUptimeMonitor(testDb, {
@@ -384,7 +386,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_paused")
 			yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -428,11 +430,67 @@ describe("AlertsService uptime rules", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
 	})
 
+	it.effect("a probe with no recent check stops reading healthy, and a down one keeps its incident", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_uptime_stale")
+			const up = yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Checkout health",
+				serviceName: "checkout-api",
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "up",
+			})
+			yield* seedUptimeMonitor(testDb, {
+				orgId,
+				name: "Billing health",
+				serviceName: "billing-api",
+				destinationIds: [],
+				config: httpMonitorConfig,
+				status: "down",
+				error: "Status 503, expected 2xx",
+			})
+			const tickAt = (minutes: number) =>
+				Effect.gen(function* () {
+					yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS + minutes * 60_000)
+					yield* alerts.runSchedulerTick()
+					const state = yield* Effect.promise(() =>
+						queryFirstRow<{ readonly last_status: string }>(
+							testDb,
+							"select last_status from alert_rule_states where rule_id = $1",
+							[up.ruleId],
+						),
+					)
+					return {
+						upRule: state?.last_status,
+						incidents: Arr.map((yield* alerts.listIncidents(orgId)).incidents, (incident) => [
+							incident.groupKey,
+							incident.status,
+						]),
+					}
+				})
+
+			// The monitors run every minute, so a check vouches for 5 minutes (the floor).
+			assert.deepStrictEqual(yield* tickAt(5), {
+				upRule: "healthy",
+				incidents: [["billing-api", "open"]],
+			})
+			// No report since: the up monitor has no data, and the down one is still down.
+			assert.deepStrictEqual(yield* tickAt(6), {
+				upRule: "skipped",
+				incidents: [["billing-api", "open"]],
+			})
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+	})
+
 	it.effect("a heartbeat goes down only once its interval and grace have passed", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_heartbeat")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -478,7 +536,7 @@ describe("AlertsService uptime rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* AlertsService
+			const alerts = yield* alertServices
 			const orgId = asOrgId("org_uptime_heartbeat_page")
 			const { monitorId } = yield* seedUptimeMonitor(testDb, {
 				orgId,
@@ -527,7 +585,7 @@ describe("AlertsService uptime rules", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
 				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-				const alerts = yield* AlertsService
+				const alerts = yield* alertServices
 				const orgId = asOrgId("org_uptime_generic")
 				const userId = asUserId("user_uptime_generic")
 				const request = new AlertRuleUpsertRequest({

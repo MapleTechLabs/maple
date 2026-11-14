@@ -20,6 +20,9 @@ const job: CancellationToReview = {
 	receivedAt: 1_761_840_001_000,
 }
 
+/** The consumer's `maxRetries`: the attempt past it is the last. */
+const MAX_RETRIES = 5
+
 /** One queue message, recording which terminal call the consumer made on it. */
 const message = (body: unknown, attempts = 1) => {
 	const calls: Array<string> = []
@@ -63,7 +66,7 @@ describe("cancellation reviews queue consumer", () => {
 		const service = reviews()
 		const delivery = message(job)
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(delivery))
+			yield* processCancellationReviewBatch(batchOf(delivery), MAX_RETRIES)
 			assert.deepStrictEqual(service.reviewed, [job])
 			assert.deepStrictEqual(delivery.calls, ["ack"])
 		}).pipe(Effect.provide(service.layer))
@@ -74,8 +77,8 @@ describe("cancellation reviews queue consumer", () => {
 		const first = message(job, 1)
 		const third = message(job, 3)
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(first))
-			yield* processCancellationReviewBatch(batchOf(third))
+			yield* processCancellationReviewBatch(batchOf(first), MAX_RETRIES)
+			yield* processCancellationReviewBatch(batchOf(third), MAX_RETRIES)
 			assert.deepStrictEqual(first.calls, ["retry:60"])
 			assert.deepStrictEqual(third.calls, ["retry:240"])
 		}).pipe(Effect.provide(service.layer))
@@ -85,7 +88,7 @@ describe("cancellation reviews queue consumer", () => {
 		const service = reviews("die")
 		const second = message(job, 2)
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(second))
+			yield* processCancellationReviewBatch(batchOf(second), MAX_RETRIES)
 			assert.deepStrictEqual(second.calls, ["retry:120"])
 		}).pipe(Effect.provide(service.layer))
 	})
@@ -94,16 +97,16 @@ describe("cancellation reviews queue consumer", () => {
 		const service = reviews("interrupt")
 		const third = message(job, 3)
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(third))
+			yield* processCancellationReviewBatch(batchOf(third), MAX_RETRIES)
 			assert.deepStrictEqual(third.calls, ["retry:default"])
 		}).pipe(Effect.provide(service.layer))
 	})
 
 	it.effect("drops a review that failed on its last attempt", () => {
 		const service = reviews("fail")
-		const last = message(job, 6)
+		const last = message(job, MAX_RETRIES + 1)
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(last))
+			yield* processCancellationReviewBatch(batchOf(last), MAX_RETRIES)
 			assert.deepStrictEqual(last.calls, ["ack"])
 		}).pipe(Effect.provide(service.layer))
 	})
@@ -112,7 +115,7 @@ describe("cancellation reviews queue consumer", () => {
 		const service = reviews()
 		const malformed = message({ ...job, orgId: 42 })
 		return Effect.gen(function* () {
-			yield* processCancellationReviewBatch(batchOf(malformed))
+			yield* processCancellationReviewBatch(batchOf(malformed), MAX_RETRIES)
 			assert.deepStrictEqual(service.reviewed, [])
 			assert.deepStrictEqual(malformed.calls, ["ack"])
 		}).pipe(Effect.provide(service.layer))

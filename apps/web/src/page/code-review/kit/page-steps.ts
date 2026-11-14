@@ -3,7 +3,7 @@ import { AsyncData, type Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import type { Resources } from "../../../platform/resources"
 
-// `Keyed.request` steps shared by the Code Review pages (S6): two slots that may read the same
+// `Keyed.request` steps shared by the Code Review pages: two slots that may read the same
 // request (the page's own and the filters' list) send it once, and its answer fills both.
 
 export type Step<Patch, M> = Readonly<{
@@ -24,7 +24,7 @@ export const keyedStep = <Patch, M, A, E>(
 		onSome: (next) => ({ patch: write(next), commands: [fetch(key)], keys: [key] }),
 	})
 
-/** `DEFAULT_QUERY_TTL`: a retained answer serves a revisit of its key for a minute. */
+/** A retained answer serves a revisit of its key for a minute. */
 export const CACHE_TTL_MS = 60_000
 
 /** Answers by request key and when they were last used, kept across tabs. */
@@ -59,14 +59,11 @@ export const remember = <A>(
 
 /** Merges steps; a key already being fetched by an earlier step is not sent again. */
 export const mergeSteps = <Patch, M>(steps: ReadonlyArray<Step<Patch, M>>): Step<Patch, M> =>
-	steps.reduce<Step<Patch, M>>(
-		(acc, step) => {
-			const isDuplicate = step.keys.length > 0 && Arr.every(step.keys, (key) => acc.keys.includes(key))
-			return {
-				patch: { ...acc.patch, ...step.patch },
-				commands: isDuplicate ? acc.commands : [...acc.commands, ...step.commands],
-				keys: [...acc.keys, ...step.keys],
-			}
-		},
-		{ patch: {}, commands: [], keys: [] },
-	)
+	Arr.reduce<Step<Patch, M>, Step<Patch, M>>(steps, { patch: {}, commands: [], keys: [] }, (acc, step) => {
+		const isDuplicate = step.keys.length > 0 && Arr.every(step.keys, (key) => acc.keys.includes(key))
+		return {
+			patch: { ...acc.patch, ...step.patch },
+			commands: isDuplicate ? acc.commands : [...acc.commands, ...step.commands],
+			keys: [...acc.keys, ...step.keys],
+		}
+	})

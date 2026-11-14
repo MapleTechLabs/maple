@@ -16,9 +16,9 @@ import {
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -34,14 +34,18 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { makeSyntheticAttestation } from "@maple/backend/testing/app-attest-fixture"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
+	WarehouseServiceStubLayer,
 	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "./device-credentials.http"
+import { HttpV2WidgetSummaryLive } from "./widget-summary.http"
+import { HttpV2ServicesLive } from "./telemetry.http"
+import { HttpV2ErrorIssuesLive } from "./error-issues.http"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
+import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
 
 /**
  * `/v2/device_credentials` + `/v2/device_tokens` + `Authorization: DPoP` over an embedded
@@ -55,9 +59,9 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const BASE = "http://maple.test"
 const TEAM_ID = "TEAMID1234"
 const APP_ID = `${TEAM_ID}.com.maple.mobile`
-const ORG = Schema.decodeUnknownSync(OrgId)("org_device_cred")
-const USER = Schema.decodeUnknownSync(UserId)("user_device_cred")
-const OTHER_USER = Schema.decodeUnknownSync(UserId)("user_device_other")
+const ORG = Schema.decodeSync(OrgId)("org_device_cred")
+const USER = Schema.decodeSync(UserId)("user_device_cred")
+const OTHER_USER = Schema.decodeSync(UserId)("user_device_other")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const SIGNING_KEY = generateKeyPairSync("ec", {
 	namedCurve: "P-256",
@@ -137,7 +141,7 @@ const proof = async (key: DeviceKey, options: ProofOptions) => {
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 /** The same 32 bytes spelled differently: the last character's unused low bit set. */
 const nonCanonical = (coordinate: string) =>
-	`${Str.slice(0, -1)(coordinate)}${ALPHABET[ALPHABET.indexOf(Str.slice(-1)(coordinate)) | 1]}`
+	`${Str.slice(0, -1)(coordinate)}${ALPHABET[Option.getOrElse(Str.indexOf(Str.slice(-1)(coordinate))(ALPHABET), () => -1) | 1]}`
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -188,13 +192,33 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 		devices,
 	).pipe(Layer.provideMerge(base))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.deviceCredentials,
+			MapleApiV2.groups.deviceTokens,
+			MapleApiV2.groups.widgetSummary,
+			MapleApiV2.groups.services,
+			MapleApiV2.groups.errorIssues,
+			MapleApiV2.groups.apiKeys,
+			MapleApiV2.groups.mobileDevices,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2DeviceCredentialsLive,
+				HttpV2DeviceTokensLive,
+				// The groups a device key must be refused by, beside the one it may read.
+				Layer.mergeAll(HttpV2WidgetSummaryLive, HttpV2ServicesLive).pipe(
+					Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make)),
+				),
+				HttpV2ErrorIssuesLive,
+				HttpV2ApiKeysLive,
+				HttpV2MobileDevicesLive,
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
+		Layer.provide(WarehouseServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
@@ -306,7 +330,7 @@ const makeHarness = (trustAnchor?: Uint8Array, limited?: (key: string) => boolea
 	/** Whoever the self-hosted session resolves to, read back from the registered row. */
 	const sessionUser = Effect.promise(() =>
 		testDb.pglite.query<{ user_id: string }>("select user_id from device_credentials limit 1"),
-	).pipe(Effect.map((result) => Schema.decodeUnknownSync(UserId)(result.rows[0]?.user_id)))
+	).pipe(Effect.map((result) => Schema.decodeSync(UserId)(result.rows[0]?.user_id)))
 
 	const sql = (statement: string, params: ReadonlyArray<unknown>) =>
 		testDb.pglite.query(statement, [...params])

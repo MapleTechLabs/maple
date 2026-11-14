@@ -11,8 +11,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 
-// `ImageDropzone` and `TypeToConfirmField`. The parent owns `isDragging` and checks the picked
-// file with `checkImage`.
+// The parent owns `isDragging` and checks the picked file with `checkImage`.
 
 const MAX_BYTES = 10 * 1024 * 1024
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif"
@@ -26,7 +25,7 @@ export const checkImage = (file: File.File): Option.Option<string> =>
 			? Option.some(`Image must be ${Math.round(MAX_BYTES / (1024 * 1024))} MB or smaller`)
 			: Option.none()
 
-/** `fileInputRef.current?.click()`: opens the hidden input's picker. */
+/** Opens the hidden input's picker. */
 export const clickFileInput = (inputId: string) =>
 	Effect.sync(() => {
 		document.getElementById(inputId)?.click()
@@ -93,11 +92,11 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 					: [h.AriaDisabled(!isInteractive), h.AriaLabel(options.targetLabel), h.Role("button")]),
 				h.Class(
 					cn(
-						"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none transition-colors",
+						"relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-dashed p-1 outline-none",
 						isReadOnly
 							? null
 							: isInteractive
-								? "cursor-pointer hover:border-primary active:border-primary focus-visible:ring-2 focus-visible:ring-ring"
+								? "cursor-pointer hover:border-primary-a4 active:border-primary-a4 focus-visible:ring-2 focus-visible:ring-ring"
 								: "cursor-not-allowed opacity-60",
 						// The dashed outline is a drop cue: shown on hover, focus and drag, not at rest.
 						options.isDragging ? "border-primary ring-2 ring-primary" : "border-transparent",
@@ -121,12 +120,14 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 				options.preview,
 				...(options.isDragging
 					? [
-							h.div(
-								[
-									h.Class(
-										"absolute inset-0 flex items-center justify-center rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
-									),
-								],
+							hstack(
+								h,
+								{
+									align: "center",
+									justify: "center",
+									className:
+										"absolute inset-0 rounded-md bg-primary-a2 text-center text-3xs font-medium text-primary",
+								},
 								["Drop image"],
 							),
 						]
@@ -153,7 +154,7 @@ export const imageDropzone = <M>(h: HtmlBuilder<M>, options: ImageDropzoneOption
 	])
 }
 
-/** `TypeToConfirmField`: "Type X to confirm." over its input. */
+/** "Type X to confirm." over its input. */
 export const typeToConfirmField = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ id: string; expected: string; value: string; onInput: (value: string) => M }>,
@@ -163,7 +164,7 @@ export const typeToConfirmField = <M>(
 		[
 			label(h, { className: "text-xs", attributes: [h.For(options.id)] }, [
 				"Type ",
-				h.span([h.Class("font-mono font-semibold")], [options.expected]),
+				typography(h, { weight: "semibold", mono: true }, [options.expected]),
 				" to confirm.",
 			]),
 			input(h, {

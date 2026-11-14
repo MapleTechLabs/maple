@@ -10,8 +10,7 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   administrative connection.
 - **Wrangler development:** Docker Postgres on port 5499 through Hyperdrive's
   `localConnectionString`.
-- **Non-Worker local entrypoints and tests:** embedded PGlite. `MAPLE_DB_URL` is a PGlite data
-  directory, or `memory://` for an ephemeral database. It is not a remote database URL.
+- **Tests and evals:** embedded PGlite, in memory.
 - **PR previews:** a Neon branch `pr-<n>` per preview, migrated by the deploy like prd's
   `main` and deleted on teardown, behind one Hyperdrive config (`docs/pr-previews.md`).
 
@@ -58,9 +57,6 @@ Start and migrate the Docker Postgres used by Wrangler:
 bun db:up
 bun db:migrate:local
 ```
-
-Persistent PGlite is created automatically for non-Worker local entrypoints under
-`apps/api/.data/pglite`. Set `MAPLE_DB_URL=memory://` when persistence is not wanted.
 
 ## Authoring migrations
 
@@ -124,9 +120,27 @@ mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's
 the Workers bind them from their props. No dashboard config and no hand-minted role exist there
 (its `resolveMapleProfile` database mode is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
-The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
-`PLANETSCALE_ORGANIZATION` from the instance's Infisical environment. `bun dev` leaves the
-PlanetScale provider out.
+The deploy stores no PlanetScale credential. `deploy-prd-instance.yml` trades the job's GitHub
+OIDC token for a service token through `planetscale/auth-action` and hands it to alchemy as
+`PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN`. The token lives 45 minutes, the job
+timeout, since alchemy resolves it once and migrations run late in the deploy.
+`PLANETSCALE_ORGANIZATION` still comes from the instance's Infisical environment, masked in the
+public run logs. Each instance has its own trust, conditioned on its GitHub environment
+(`production`, `production-eu`), whose ID is that environment's `PLANETSCALE_OIDC_TRUST_ID`
+variable. Only this workflow runs in those environments; a new job there could mint the token, so
+add a `workflow_ref` condition if one ever does. A trust reaches only its instance's database, with the four accesses alchemy needs:
+
+```bash
+pscale oidc-trust create --org <org> --name "github: prd deploy us" \
+  --provider github_actions --max-ttl 2700 \
+  --condition repository_id=1158615018 --condition repository_owner_id=282671153 \
+  --condition environment=production \
+  --database-access maple:read_database --database-access maple:read_branch \
+  --database-access maple:connect_production_branch \
+  --database-access maple:delete_production_branch_password
+```
+
+`bun dev` leaves the PlanetScale provider out.
 
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the

@@ -14,7 +14,7 @@ import { type RuntimeLink, runtimeLink, type ServiceRuntime, workloadLink } from
 import type { TimeSearch } from "../kit/time-controls"
 import type { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
-import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // The service panel's Infrastructure tab: the platform resources the service runs as, its
@@ -73,17 +73,14 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 					),
 				],
 			),
-			h.div(
-				[h.Class("flex flex-col items-end gap-px shrink-0")],
-				[
-					eyebrow(h, {}, ["pods"]),
-					typography(
-						h,
-						{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
-						[String(workload.podCount)],
-					),
-				],
-			),
+			vstack(h, { align: "end", className: "gap-px shrink-0" }, [
+				eyebrow(h, {}, ["Pods"]),
+				typography(
+					h,
+					{ size: "sm", tone: "foreground", weight: "semibold", mono: true, numeric: true },
+					[String(workload.podCount)],
+				),
+			]),
 		]),
 		keyValueList(h, { className: "grid grid-cols-2 gap-2 text-3xs" }, [
 			keyValue(h, { label: "CPU", mono: true, className: "rounded-sm bg-surface-sunken px-2 py-1" }, [
@@ -95,15 +92,12 @@ const workloadRow = (h: H, workload: ServiceWorkload, time: TimeSearch): Html =>
 				[utilization(workload.avgMemoryLimitUtilization)],
 			),
 		]),
-		h.div(
-			[h.Class("flex items-center gap-3 pt-0.5")],
-			[
-				...(kind === null
-					? []
-					: [h.a([h.Class(LINK), h.Href(workloadLink(workload, time).href)], ["View workload →"])]),
-				h.a([h.Class(LINK), h.Href(podsHref(workload, kind, time))], ["View pods →"]),
-			],
-		),
+		hstack(h, { gap: "3", align: "center", className: "pt-0.5" }, [
+			...(kind === null
+				? []
+				: [h.a([h.Class(LINK), h.Href(workloadLink(workload, time).href)], ["View workload →"])]),
+			h.a([h.Class(LINK), h.Href(podsHref(workload, kind, time))], ["View pods →"]),
+		]),
 	])
 }
 
@@ -118,34 +112,38 @@ const runtimeRow = (h: H, link: RuntimeLink): Html =>
 			),
 		],
 		[
-			panel(
-				h,
-				{ padded: "sm", className: "space-y-1 transition-colors group-hover:bg-surface-sunken" },
-				[
-					eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
-						icon(h, link.icon, { size: 12 }),
-						h.span([], [link.label]),
-					]),
-					hstack(h, { gap: "2", justify: "between" }, [
-						h.p(
-							[h.Class("min-w-0 truncate font-mono text-xs font-medium text-foreground")],
-							[link.name],
-						),
-						icon(h, "ArrowRightIcon", {
-							size: 12,
-							className: "shrink-0 text-muted-foreground group-hover:text-primary",
-						}),
-					]),
-					...(link.location.length === 0
-						? []
-						: [
-								h.p(
-									[h.Class("truncate text-3xs text-muted-foreground")],
-									[Arr.join(link.location, " · ")],
-								),
+			panel(h, { padded: "sm", className: "space-y-1 group-hover:bg-surface-sunken" }, [
+				eyebrow(h, { as: "div", className: hstackClass({ gap: "1.5" }) }, [
+					icon(h, link.icon, { size: 12 }),
+					h.span([], [link.label]),
+				]),
+				hstack(h, { gap: "2", justify: "between" }, [
+					typography(
+						h,
+						{
+							size: "xs",
+							tone: "foreground",
+							weight: "medium",
+							mono: true,
+							truncate: true,
+							as: "p",
+							className: "min-w-0",
+						},
+						[link.name],
+					),
+					icon(h, "ArrowRightIcon", {
+						size: 12,
+						className: "shrink-0 text-muted-foreground group-hover:text-primary",
+					}),
+				]),
+				...(link.location.length === 0
+					? []
+					: [
+							typography(h, { size: "3xs", tone: "muted", truncate: true, as: "p" }, [
+								Arr.join(link.location, " · "),
 							]),
-				],
-			),
+						]),
+			]),
 		],
 	)
 
@@ -163,7 +161,7 @@ const infraEmptyState = (h: H): Html =>
 			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 				"Set ",
 				inlineCode(h, {}, ["OTEL_SERVICE_NAME"]),
-				" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure.",
+				" to the name of its Cloud Run service, Lambda function, ECS service, Railway service or Cloudflare Worker, and connect that platform under Infrastructure. A Vercel project links once its team is connected.",
 			]),
 			typography(h, { size: "2xs", tone: "muted", as: "p", className: "leading-relaxed" }, [
 				"On Kubernetes, install the maple-k8s-infra Helm chart and label the namespace so spans carry ",

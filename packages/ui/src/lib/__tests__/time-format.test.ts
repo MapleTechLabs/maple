@@ -90,6 +90,22 @@ describe("formatRelativeFrom", () => {
 		expect(formatRelativeFrom(NOW + 2 * HOUR, NOW)).toBe("in 2h")
 	})
 
+	it("reads an event a little ahead of the page clock as just now", () => {
+		expect(formatRelativeFrom(NOW + 30 * SECOND, NOW)).toBe("just now")
+		expect(formatRelativeFrom(NOW + 90 * SECOND, NOW)).toBe("just now")
+		expect(formatRelativeShortFrom(NOW + 90 * SECOND, NOW)).toBe("now")
+	})
+
+	it("keeps genuinely future times past the skew window", () => {
+		expect(formatRelativeFrom(NOW + 5 * MINUTE, NOW)).toBe("in 5m")
+		expect(formatRelativeShortFrom(NOW + 5 * MINUTE, NOW)).toBe("5m")
+	})
+
+	it("leaves past values alone", () => {
+		expect(formatRelativeFrom(ago(90 * SECOND), NOW)).toBe("1m ago")
+		expect(formatRelativeShortFrom(ago(90 * SECOND), NOW)).toBe("1m")
+	})
+
 	it("renders an em dash for unparseable input", () => {
 		expect(formatRelativeTime("nonsense", NOW)).toBe("—")
 	})

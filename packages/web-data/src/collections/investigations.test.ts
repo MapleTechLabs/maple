@@ -128,7 +128,7 @@ describe("rowsToInvestigation", () => {
 
 	/**
 	 * A row we cannot read is reported, not guessed at. The server raises
-	 * `InvestigationSubjectDecodeError` at the same point; here the page shows its
+	 * `InvestigationDataCorruptionError` at the same point; here the page shows its
 	 * retry rather than a chain built on an id nothing can open.
 	 */
 	it("returns null rather than a half-built object when the subject will not decode", () => {

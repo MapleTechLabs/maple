@@ -63,6 +63,7 @@ export const markOutside = (
 	Effect.acquireRelease(
 		// Wait a task: portals mounted in the same render (the toast regions) reach <body> first.
 		Effect.andThen(
+			// @effect-diagnostics-next-line effectSleepZeroToYieldNow:off -- needs a macrotask so same-render portals reach <body> first
 			Effect.sleep(0),
 			Effect.sync(() => {
 				const kept = [
@@ -135,6 +136,26 @@ export const containEscape = (container: EventTarget): Effect.Effect<void, never
 			return onKeyDown
 		}),
 		(onKeyDown) => Effect.sync(() => container.removeEventListener("keydown", onKeyDown)),
+	).pipe(Effect.asVoid)
+
+const OWN_FOCUS = "input, textarea, select, button, a[href]"
+
+/**
+ * A press in `container` that is not on one of its controls leaves focus where it is: a list's
+ * options are not focus targets, so the input that handles the keys keeps them (Base UI's combobox).
+ */
+export const keepFocusOnPress = (container: EventTarget): Effect.Effect<void, never, Scope.Scope> =>
+	Effect.acquireRelease(
+		Effect.sync(() => {
+			const onMouseDown = (event: Event) => {
+				const target = event.target
+				if (typeof Element === "undefined" || !(target instanceof Element)) return
+				if (target.closest(OWN_FOCUS) === null) event.preventDefault()
+			}
+			container.addEventListener("mousedown", onMouseDown)
+			return onMouseDown
+		}),
+		(onMouseDown) => Effect.sync(() => container.removeEventListener("mousedown", onMouseDown)),
 	).pipe(Effect.asVoid)
 
 const TABBABLE =

@@ -1,6 +1,6 @@
 import { MapleFoldkit } from "@maple-dev/effect-sdk/foldkit"
 import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { selfIngestUrl } from "../lib/services/common/ingest-url"
+import { selfIngestUrl } from "./ingest-url"
 import { Option } from "effect"
 import { fromString } from "foldkit/url"
 import { urlToAppRoute } from "../route"
@@ -40,7 +40,9 @@ const maple = MapleFoldkit.make({
 	keepCommands: ["LoadClerk"],
 	// One frame: a view or patch over 16ms drops a frame, which the SDK's 50ms default does not report.
 	slowPhases: { View: 16, Patch: 16 },
-	// The perf bench builds with VITE_MAPLE_REPLAY=off and VITE_MAPLE_CAPTURE=off.
+	// LCP, INP and CLS as `browser.web_vital` logs, linked to the pageload span.
+	webVitals: true,
+	// A developer turns self-recording off with VITE_MAPLE_REPLAY=off (see .env.example).
 	replay: {
 		enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off",
 		// Dashboard charts draw to <canvas>, which replays leave blank without this.
@@ -50,7 +52,6 @@ const maple = MapleFoldkit.make({
 		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
 			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }
 			: undefined),
-		...(import.meta.env.VITE_MAPLE_CAPTURE === "off" ? { requireConsent: true } : undefined),
 	},
 })
 

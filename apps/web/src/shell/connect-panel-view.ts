@@ -1,13 +1,9 @@
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { ingestUrl } from "../lib/services/common/ingest-url"
-import { mcpUrl } from "../lib/services/common/mcp-url"
-import {
-	claudeCodeCommand,
-	cursorInstallUrl,
-	vscodeInstallUrl,
-} from "../components/settings/mcp-client-config"
-import { ONBOARD_SKILL_COMMAND } from "../components/ingest/onboard-skill"
+import { ingestUrl } from "../platform/ingest-url"
+import { mcpUrl } from "../platform/mcp-url"
+import { claudeCodeCommand, cursorInstallUrl, vscodeInstallUrl } from "../page/kit/mcp-client-config"
+import { ONBOARD_SKILL_COMMAND } from "../page/kit/onboard-skill"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../route"
@@ -27,7 +23,9 @@ import { toneBoxClass } from "@maple/views/ui/tone-box"
 import { type CopyField, Message, type Model, POPOVER_ID, realServices } from "./connect-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
+import { dividedList } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
 
@@ -40,7 +38,7 @@ const COPY_CLASS = "shrink-0 [&_svg:not([class*='size-'])]:size-4"
 const toCopy = (field: CopyField) => (message: CopyButton.Message) =>
 	Message.GotCopyMessage({ field, message })
 
-/** `ConnectionStatusPill`: amber while waiting, green once telemetry is observed, grey when the read failed. */
+/** Amber while waiting, green once telemetry is observed, grey when the read failed. */
 const statusPill = (h: H, model: Model): Html => {
 	const services = realServices(model)
 	const isConnected = services.length > 0
@@ -54,10 +52,7 @@ const statusPill = (h: H, model: Model): Html => {
 		h,
 		{
 			pill: true,
-			className: cn(
-				"gap-1.5 text-2xs transition-colors sm:text-2xs",
-				toneBoxClass(isConnected ? "info" : "primary"),
-			),
+			className: cn("gap-1.5 text-2xs sm:text-2xs", toneBoxClass(isConnected ? "info" : "primary")),
 		},
 		isConnected
 			? [statusDot(h, { tone: "ok" }), `Connected · ${countLabel(services.length, "service")}`]
@@ -65,14 +60,14 @@ const statusPill = (h: H, model: Model): Html => {
 	)
 }
 
-/** `CopyableFieldSkeleton`: a labelled field whose value is still loading. */
+/** A labelled field whose value is still loading. */
 const fieldSkeleton = (h: H, label: string): Html =>
 	h.div(
 		[h.Class("space-y-1")],
 		[typography(h, { size: "xs", tone: "muted" }, [label]), skeleton(h, "h-8 w-full")],
 	)
 
-/** `IngestKeysUnavailableNote`: members cannot read the org's ingest keys. */
+/** Members cannot read the org's ingest keys. */
 const keysUnavailable = (h: H): Html =>
 	h.p(
 		[
@@ -82,14 +77,14 @@ const keysUnavailable = (h: H): Html =>
 		],
 		[
 			"Ask an org admin for your ingest keys, or open ",
-			h.a(
-				[
-					h.Href(hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))),
-					h.AriaLabel("Ingestion settings"),
-					h.Class(
-						"inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline active:no-underline",
-					),
-				],
+			textLink(
+				h,
+				{
+					href: hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } })),
+					tone: "inherit",
+					className: "font-medium text-foreground underline hover:no-underline active:no-underline",
+					attributes: [h.AriaLabel("Ingestion settings")],
+				},
 				[
 					"Settings",
 					icon(h, "ArrowRightIcon", { size: 12, attributes: [h.AriaHidden(true)] }),
@@ -100,7 +95,7 @@ const keysUnavailable = (h: H): Html =>
 		],
 	)
 
-/** `ConnectCredentials`: the endpoint and both keys, masked. */
+/** The endpoint and both keys, masked. */
 const credentials = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-3")],
@@ -149,44 +144,44 @@ type ClientMark = Readonly<{ name: IconName; className: string }>
 
 /** A client's brand mark on a tile, as the setup pages show agents. */
 const clientMark = (h: H, mark: ClientMark): Html =>
-	h.span(
-		[h.Class("flex size-6 shrink-0 items-center justify-center rounded-md border bg-background")],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className: "size-6 shrink-0 rounded-md border bg-background",
+		},
 		[icon(h, mark.name, { size: 14, className: mark.className })],
 	)
 
 /** `McpClientRow`: a client's mark and name, then its one way in. */
 const clientRow = (h: H, mark: ClientMark, label: string, action: Html): Html =>
-	h.li(
-		[h.Class("flex min-h-10 items-center gap-2.5 px-3 py-1.5")],
-		[
-			clientMark(h, mark),
-			h.span([h.Class("shrink-0 font-prose text-xs font-medium text-foreground")], [label]),
-			h.div([h.Class("flex min-w-0 flex-1 items-center justify-end gap-1")], [action]),
-		],
-	)
+	hstack(h, { gap: "2.5", align: "center", as: "li", className: "min-h-10 px-3 py-1.5" }, [
+		clientMark(h, mark),
+		h.span([h.Class("shrink-0 font-prose text-xs font-medium text-foreground")], [label]),
+		hstack(h, { gap: "1", align: "center", justify: "end", shrink: true, grow: true }, [action]),
+	])
 
 /** A copyable value at the end of a client row. */
 const copyAction = (h: H, model: Model, value: string, field: CopyField, label: string): Html =>
-	h.div(
-		[h.Class("flex min-w-0 items-center gap-1")],
-		[
-			h.code(
-				[
-					h.Class(
-						"min-w-0 overflow-x-auto whitespace-nowrap font-mono text-2xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
-					),
-				],
-				[value],
-			),
-			CopyButton.view(h, {
-				model: model.copies[field],
-				toParentMessage: toCopy(field),
-				value,
-				label,
-				className: COPY_CLASS,
-			}),
-		],
-	)
+	hstack(h, { gap: "1", align: "center", shrink: true }, [
+		h.code(
+			[
+				h.Class(
+					"min-w-0 overflow-x-auto whitespace-nowrap font-mono text-2xs text-muted-foreground scroll-fade-x [scrollbar-width:none]",
+				),
+			],
+			[value],
+		),
+		CopyButton.view(h, {
+			model: model.copies[field],
+			toParentMessage: toCopy(field),
+			value,
+			label,
+			className: COPY_CLASS,
+		}),
+	])
 
 /** A one-click install that hands the server entry to the editor. */
 const installAction = (h: H, href: string, label: string): Html =>
@@ -195,53 +190,45 @@ const installAction = (h: H, href: string, label: string): Html =>
 		icon(h, "ExternalLinkIcon", { size: 12, className: "text-muted-foreground" }),
 	])
 
-/** `McpCard`: each client's fastest way to add Maple, the endpoint for any other. */
+/** Each client's fastest way to add Maple, the endpoint for any other. */
 const mcpCard = (h: H, model: Model): Html =>
 	h.div(
 		[h.Class("space-y-2")],
 		[
 			hstack(h, { gap: "2", align: "baseline", justify: "between" }, [
 				eyebrow(h, { variant: "label" }, ["Connect your own agent · MCP"]),
-				h.a(
-					[
-						h.Href(settingsHref("mcp")),
-						h.Class(
-							"inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground",
-						),
-					],
-					["All clients", icon(h, "ArrowRightIcon", { size: 12 })],
-				),
+				textLink(h, { href: settingsHref("mcp"), tone: "muted", className: "shrink-0 text-xs" }, [
+					"All clients",
+					icon(h, "ArrowRightIcon", { size: 12 }),
+				]),
 			]),
 			panel(h, { tone: "muted" }, [
-				h.ul(
-					[h.Class("divide-y")],
-					[
-						clientRow(
-							h,
-							{ name: "ClaudeIcon", className: "text-brand-claude" },
-							"Claude Code",
-							copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
-						),
-						clientRow(
-							h,
-							{ name: "CursorIcon", className: "text-foreground" },
-							"Cursor",
-							installAction(h, cursorInstallUrl(MCP_ENDPOINT), "Add to Cursor"),
-						),
-						clientRow(
-							h,
-							{ name: "VsCodeIcon", className: "text-brand-vscode" },
-							"VS Code",
-							installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
-						),
-						clientRow(
-							h,
-							{ name: "ConnectionIcon", className: "text-primary" },
-							"Any client",
-							copyAction(h, model, MCP_ENDPOINT, "mcp", "MCP endpoint"),
-						),
-					],
-				),
+				dividedList(h, { as: "ul", bordered: false }, [
+					clientRow(
+						h,
+						{ name: "ClaudeIcon", className: "text-brand-claude" },
+						"Claude Code",
+						copyAction(h, model, MCP_COMMAND, "mcpCommand", "Claude Code command"),
+					),
+					clientRow(
+						h,
+						{ name: "CursorIcon", className: "text-foreground" },
+						"Cursor",
+						installAction(h, cursorInstallUrl(MCP_ENDPOINT), "Add to Cursor"),
+					),
+					clientRow(
+						h,
+						{ name: "VsCodeIcon", className: "text-brand-vscode" },
+						"VS Code",
+						installAction(h, vscodeInstallUrl(MCP_ENDPOINT), "Add to VS Code"),
+					),
+					clientRow(
+						h,
+						{ name: "ConnectionIcon", className: "text-primary" },
+						"Any client",
+						copyAction(h, model, MCP_ENDPOINT, "mcp", "MCP endpoint"),
+					),
+				]),
 			]),
 			typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
 				"Your client opens Maple in the browser to approve access.",
@@ -251,28 +238,36 @@ const mcpCard = (h: H, model: Model): Html =>
 
 /** The command split before its first flag: each half stays on one line, so a wrap breaks only there. */
 const commandParts = (command: string): ReadonlyArray<string> => {
-	const flag = command.indexOf(" --")
-	return flag === -1 ? [command] : [Str.slice(0, flag)(command), Str.slice(flag + 1)(command)]
+	return Option.match(Str.indexOf(" --")(command), {
+		onNone: () => [command],
+		onSome: (flag) => [Str.slice(0, flag)(command), Str.slice(flag + 1)(command)],
+	})
 }
 
 /** The onboarding command, wrapping before `--skill` so no part hides under the copy button. */
 const commandBlock = (h: H, model: Model): Html =>
-	h.div(
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "start",
+			className: "rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
+		},
 		[
-			h.Class(
-				"flex items-start gap-2 rounded-lg border border-input bg-background py-1.5 pl-3 pr-1.5 dark:bg-input/32",
-			),
-		],
-		[
-			h.code(
+			h.div(
+				[h.Class("min-w-0 flex-1 py-0.5")],
 				[
-					h.Id("connect-skill-command"),
-					h.Class("min-w-0 flex-1 select-all py-0.5 font-mono text-xs leading-5 break-words"),
+					h.code(
+						[
+							h.Id("connect-skill-command"),
+							h.Class("select-all font-mono text-xs leading-5 break-words"),
+						],
+						Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
+							...(index > 0 ? [" "] : []),
+							h.span([h.Class("inline-block whitespace-nowrap")], [part]),
+						]),
+					),
 				],
-				Arr.flatMap(commandParts(ONBOARD_SKILL_COMMAND), (part, index) => [
-					...(index > 0 ? [" "] : []),
-					h.span([h.Class("inline-block whitespace-nowrap")], [part]),
-				]),
 			),
 			CopyButton.view(h, {
 				model: model.copies.skill,
@@ -288,7 +283,6 @@ const commandBlock = (h: H, model: Model): Html =>
 const LINK_CLASS =
 	"font-prose text-muted-foreground underline underline-offset-2 hover:text-foreground active:text-foreground"
 
-/** `ConnectPanel`. */
 const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 	h.div(
 		[h.Class("space-y-4")],
@@ -323,26 +317,23 @@ const connectPanel = (h: H, model: Model): ReadonlyArray<Html> => [
 				],
 			),
 			mcpCard(h, model),
-			h.div(
-				[h.Class("flex items-center justify-between text-xs")],
-				[
-					h.a([h.Href(settingsHref("ingestion")), h.Class(LINK_CLASS)], ["Open setup guide"]),
-					h.a(
-						[
-							h.Href("https://maple.dev/docs"),
-							h.Target("_blank"),
-							h.Rel("noopener noreferrer"),
-							h.Class(LINK_CLASS),
-						],
-						["Documentation"],
-					),
-				],
-			),
+			hstack(h, { align: "center", justify: "between", className: "text-xs" }, [
+				h.a([h.Href(settingsHref("ingestion")), h.Class(LINK_CLASS)], ["Open setup guide"]),
+				h.a(
+					[
+						h.Href("https://maple.dev/docs"),
+						h.Target("_blank"),
+						h.Rel("noopener noreferrer"),
+						h.Class(LINK_CLASS),
+					],
+					["Documentation"],
+				),
+			]),
 		],
 	),
 ]
 
-/** `ConnectButton`: the popover trigger and, while open, the panel. */
+/** The popover trigger and, while open, the panel. */
 export const view = Submodel.defineView<Model, Message>((model, h) =>
 	h.submodel({
 		slotId: "shell-connect-popover",

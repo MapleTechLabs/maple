@@ -5,7 +5,7 @@ import { Effect, Exit, Scope } from "effect"
 import { startLocal } from "../../src/runtime"
 
 const [dataDir = "", port = "0", mode = "scoped"] = process.argv.slice(2)
-const scope = Effect.runSync(Scope.make())
+const scope = Scope.makeUnsafe()
 const started = await Effect.runPromiseExit(
 	startLocal({ dataDir, port: Number(port) }).pipe(Scope.provide(scope)),
 )
