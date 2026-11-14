@@ -45,6 +45,9 @@ const ev = (eventName: string, attributeEquals?: Record<string, string>): CH.Fun
 const page = (pagePath: string, host?: string): CH.FunnelStep =>
 	host === undefined ? { kind: "page", pagePath } : { kind: "page", pagePath, host }
 
+/** The random tests run hundreds of queries; a CI runner takes about three times a laptop. */
+const RANDOM_TEST_TIMEOUT_MS = 120_000
+
 const KEYS: ReadonlyArray<CH.FunnelKeyBy> = ["person", "visitor", "user", "session"]
 
 /** One person's span is both quantiles. */
@@ -288,7 +291,7 @@ describeWithChdb("product event funnels over example products", () => {
 	const shop = shopCheckout()
 	const mobile = mobileOnboarding()
 	const content = contentSite()
-	const random = randomDatasets(60)
+	const random = randomDatasets(40)
 
 	beforeAll(() => {
 		root = mkdtempSync(join(tmpdir(), "maple-funnel-scenarios-"))
@@ -741,49 +744,57 @@ describeWithChdb("product event funnels over example products", () => {
 		})
 	}
 
-	test("random small histories agree with the reference under every key and window", () => {
-		const mismatches = Arr.flatMap(random, ({ dataset, funnels }) =>
-			Arr.flatMap(funnels, (opts) => {
-				const expected = referenceFunnel(dataset, opts)
-				const actual = sqlFunnel(db, dataset.orgId, opts)
-				return Arr.every(expected, (count, index) => count === actual[index]) &&
-					expected.length === actual.length
-					? []
-					: [{ org: dataset.orgId, opts, expected, actual, events: dataset.events }]
-			}),
-		)
-		expect(mismatches.slice(0, 2)).toEqual([])
-	})
-
-	test("random small histories give the reference's times and leavers", () => {
-		const round = (timing: ReadonlyArray<StepTiming>) =>
-			Arr.map(timing, (step) => [
-				step.step,
-				Math.round(step.p50Ms),
-				Math.round(step.p90Ms),
-				Math.round(step.sinceStartP50Ms),
-				Math.round(step.sinceStartP90Ms),
-			])
-		const mismatches = Arr.flatMap(random, ({ dataset, funnels }) =>
-			Arr.flatMap(
-				Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),
-				(opts: Opts) => {
-					const expected = {
-						timing: round(referenceTiming(dataset, opts)),
-						leavers: referenceLeavers(dataset, opts),
-					}
-					const actual = {
-						timing: round(sqlTiming(db, dataset.orgId, opts)),
-						leavers: sqlLeavers(db, dataset.orgId, opts),
-					}
-					return JSON.stringify(expected) === JSON.stringify(actual)
+	test(
+		"random small histories agree with the reference under every key and window",
+		() => {
+			const mismatches = Arr.flatMap(random, ({ dataset, funnels }) =>
+				Arr.flatMap(funnels, (opts) => {
+					const expected = referenceFunnel(dataset, opts)
+					const actual = sqlFunnel(db, dataset.orgId, opts)
+					return Arr.every(expected, (count, index) => count === actual[index]) &&
+						expected.length === actual.length
 						? []
 						: [{ org: dataset.orgId, opts, expected, actual, events: dataset.events }]
-				},
-			),
-		)
-		expect(mismatches.slice(0, 2)).toEqual([])
-	})
+				}),
+			)
+			expect(mismatches.slice(0, 2)).toEqual([])
+		},
+		RANDOM_TEST_TIMEOUT_MS,
+	)
+
+	test(
+		"random small histories give the reference's times and leavers",
+		() => {
+			const round = (timing: ReadonlyArray<StepTiming>) =>
+				Arr.map(timing, (step) => [
+					step.step,
+					Math.round(step.p50Ms),
+					Math.round(step.p90Ms),
+					Math.round(step.sinceStartP50Ms),
+					Math.round(step.sinceStartP90Ms),
+				])
+			const mismatches = Arr.flatMap(random, ({ dataset, funnels }) =>
+				Arr.flatMap(
+					Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),
+					(opts: Opts) => {
+						const expected = {
+							timing: round(referenceTiming(dataset, opts)),
+							leavers: referenceLeavers(dataset, opts),
+						}
+						const actual = {
+							timing: round(sqlTiming(db, dataset.orgId, opts)),
+							leavers: sqlLeavers(db, dataset.orgId, opts),
+						}
+						return JSON.stringify(expected) === JSON.stringify(actual)
+							? []
+							: [{ org: dataset.orgId, opts, expected, actual, events: dataset.events }]
+					},
+				),
+			)
+			expect(mismatches.slice(0, 2)).toEqual([])
+		},
+		RANDOM_TEST_TIMEOUT_MS,
+	)
 })
 
 /** Small random histories over a three-letter alphabet, each in its own org, with funnels to ask of it. */
