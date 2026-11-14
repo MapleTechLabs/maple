@@ -172,6 +172,7 @@ const GITHUB_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-0
 const CLOUDFLARE_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c063")
 const GITHUB_ORG = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e061")
 const VERCEL_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c063")
+const TINYBIRD_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c068")
 const PLANETSCALE_SOURCE = Schema.decodeSync(CostSourceId)("0190f2b3-0000-7000-8000-00000000c065")
 const GITHUB_LABS = Schema.decodeSync(VcsInstallationId)("0190f2b3-0000-4000-8000-00000000e062")
 
@@ -273,7 +274,7 @@ describe("cost page", () => {
 			expectView(text(/AWS bills USD.0\.01 for each request Maple makes/)).toExist(),
 			expectView(
 				text(
-					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Tinybird requests are free/,
 				),
 			).toExist(),
 			expectView(role("button", { name: /^Vercel/ })).toExist(),
@@ -674,6 +675,82 @@ describe("cost page", () => {
 		},
 	)
 
+	test("Tinybird is added by pasting a token, and its source says its cost is estimated", () => {
+		const opened = pageUpdate(entered({}, []).model, Message.ClickedAddSource()).model
+		scene(
+			{ update: pageUpdate, view },
+			given(opened),
+			resolveTheme,
+			dialogMounted,
+			expectView(role("button", { name: /^Tinybird/ })).toExist(),
+			expectView(text("Estimated daily cost from usage at list prices")).toExist(),
+		)
+		const form = pageUpdate(opened, Message.PickedProvider({ provider: "tinybird" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(form),
+			resolveTheme,
+			dialogMounted,
+			expectView(text("Add Tinybird")).toExist(),
+			expectView(role("link", { name: "static token" })).toHaveAttr(
+				"href",
+				"https://www.tinybird.co/docs/forward/administration/tokens/static-tokens",
+			),
+			expectView(
+				text("tb --cloud token create static maple_cost --scope ORG_DATASOURCES:READ"),
+			).toExist(),
+			// Tinybird has no spend report: the reader learns what the estimate leaves out before adding it.
+			expectView(text(/The plan's monthly fee, QPS overages and LLM usage are not included/)).toExist(),
+		)
+		const typed = pageUpdate(
+			form,
+			Message.GotCredentialDraftMessage({
+				message: Field.Message.ChangedValue({ value: " p.eyJ0eXAiOiJKV1QifQ.example " }),
+			}),
+		).model
+		expect(pageUpdate(typed, Message.SubmittedCredential()).commands).toMatchObject([
+			{ name: "SaveTinybirdCostToken", args: { token: "p.eyJ0eXAiOiJKV1QifQ.example" } },
+		])
+
+		const cloudflare = source({
+			id: CLOUDFLARE_SOURCE,
+			provider: "cloudflare",
+			accountId: "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+			requestsThisMonth: 0,
+		})
+		const tinybird = source({
+			id: TINYBIRD_SOURCE,
+			provider: "tinybird",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a068",
+			accountId: "7a1b2c3d-0000-4000-8000-00000000b170",
+			accountName: "Example Analytics",
+			requestsThisMonth: 0,
+		})
+		// A billed source carries no estimate mark.
+		scene(
+			{ update: pageUpdate, view },
+			given(answered(entered({}, [cloudflare]).model)),
+			resolveTheme,
+			expectView(text("Estimated")).not.toExist(),
+		)
+		const model = answered(entered({}, [cloudflare, tinybird]).model)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("Example Analytics")).toExist(),
+			expectView(text("Estimated")).toExist(),
+			expectView(text(/Estimated from usage at Tinybird's list prices/)).toExist(),
+			expectView(text(/without the plan's monthly fee/)).toExist(),
+			expectView(role("button", { name: "Replace Tinybird token" })).toExist(),
+		)
+		const removing = pageUpdate(
+			pageUpdate(model, Message.ClickedRemoveSource({ sourceId: TINYBIRD_SOURCE })).model,
+			Message.ClickedConfirmRemove(),
+		)
+		expect(names(removing.commands)).toEqual(["RemoveTinybirdCostToken"])
+	})
+
 	test("a Cloudflare source has its token replaced or is removed, and the OpenRouter source beside it stays", () => {
 		const openRouter = source({
 			id: "0190f2b3-0000-7000-8000-00000000c060",
@@ -790,7 +867,7 @@ describe("cost page", () => {
 			expectView(role("button", { name: /^GitHub/ })).toExist(),
 			expectView(
 				text(
-					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI requests are free/,
+					/OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Tinybird requests are free/,
 				),
 			).toExist(),
 		)

@@ -10,6 +10,7 @@ import * as Field from "@maple/views/ui/field"
 import { field, fieldDescription, fieldError, type FieldIds, fieldLabel, input } from "@maple/views/ui/field"
 import { formDialogForm } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
+import { inlineCode } from "@maple/views/ui/inline-code"
 import { listRow } from "@maple/views/ui/list-row"
 import { vstack } from "@maple/views/ui/stack"
 import { textLink } from "@maple/views/ui/text-link"
@@ -184,6 +185,9 @@ const credentialField = (h: H, model: Model, { field: text }: CredentialSource):
 				[text.help.link],
 			),
 			text.help.after,
+			...(text.help.command === undefined
+				? []
+				: [inlineCode(h, {}, [text.help.command.code]), text.help.command.after]),
 		]),
 	])
 }
@@ -436,6 +440,7 @@ const removeCopy = (target: CostSourceSummary | null): Readonly<{ title: string;
 		case "cloudflare":
 		case "anthropic":
 		case "openai":
+		case "tinybird":
 			return CREDENTIAL_SOURCES[target.provider].remove
 		// An AWS source has no Remove: it leaves with its connection's Cost module. The confirm is closed then.
 		default:

@@ -19053,6 +19053,38 @@ export const ICON_TREES = {
 			],
 		],
 	],
+	// Tinybird's bird mark, from the header of tinybird.co, in one tone.
+	TinybirdIcon: [
+		"svg",
+		[
+			["xmlns", "http://www.w3.org/2000/svg"],
+			["viewBox", "0 0 32 32"],
+			["width", "7777"],
+			["height", "7777"],
+			["class", "__icon_class__"],
+			["fill", "currentColor"],
+			["aria-hidden", "true"],
+		],
+		[
+			[
+				"path",
+				[
+					["d", "m7.948 32 14.415-9.413-8.808-3.33z"],
+					["opacity", "0.6"],
+				],
+				[],
+			],
+			["path", [["d", "m0 14.112 22.363 8.474 3.775-17.6z"]], []],
+			[
+				"path",
+				[
+					["d", "M32 2.93 22.077 0l-3.345 7.566z"],
+					["opacity", "0.6"],
+				],
+				[],
+			],
+		],
+	],
 	AnthropicIcon: [
 		"svg",
 		[

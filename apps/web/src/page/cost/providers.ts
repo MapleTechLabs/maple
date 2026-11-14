@@ -14,10 +14,12 @@ export type CostProviderEntry = Readonly<{
 	requestUsd: number | null
 	/** What a reader of the figures must know about how this source's days come about, on its Sources row. */
 	sourceNote?: string
+	/** The source's cost is Maple's estimate from usage, not what the provider bills: its row says so. */
+	estimated?: boolean
 }>
 
-// Not every cost provider is an integration: OpenRouter, Anthropic and OpenAI supply cost only, so
-// they are named here.
+// Not every cost provider is an integration: OpenRouter, Anthropic, OpenAI and Tinybird supply cost
+// only, so they are named here.
 // Cloudflare is one, but its cost source is a token of its own, not the integration's connection.
 // Vercel's requests are free, like OpenRouter's.
 // PlanetScale's source reads through its integration's connection, and is added and removed here.
@@ -71,13 +73,29 @@ export const COST_PROVIDERS = {
 		iconClassName: "text-foreground",
 		requestUsd: null,
 	},
+	// Tinybird has no spend API: Maple prices its usage tables at Tinybird's list prices.
+	tinybird: {
+		name: "Tinybird",
+		icon: "TinybirdIcon",
+		iconClassName: "text-foreground",
+		requestUsd: null,
+		estimated: true,
+		sourceNote:
+			"Estimated from usage at Tinybird's list prices: vCPU overage, storage and data transfer, without the plan's monthly fee.",
+	},
 } as const satisfies Record<CostProvider, CostProviderEntry>
 
 /**
  * The providers added by pasting a credential on the Cost page, which can also replace it and
  * remove the source. Each one's form and wording are in `credential-sources.ts`.
  */
-export const CredentialProvider = Schema.Literals(["openrouter", "cloudflare", "anthropic", "openai"])
+export const CredentialProvider = Schema.Literals([
+	"openrouter",
+	"cloudflare",
+	"anthropic",
+	"openai",
+	"tinybird",
+])
 export type CredentialProvider = typeof CredentialProvider.Type
 
 /** Whether a dialog step or a provider is one added by pasting a credential. */

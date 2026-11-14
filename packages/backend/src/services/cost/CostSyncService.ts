@@ -42,6 +42,7 @@ import { GithubCostProvider } from "./providers/github/GithubCostProvider"
 import { OpenAiCostProvider } from "./providers/openai/OpenAiCostProvider"
 import { OpenRouterCostProvider } from "./providers/openrouter/OpenRouterCostProvider"
 import { PlanetScaleCostProvider } from "./providers/planetscale/PlanetScaleCostProvider"
+import { TinybirdCostProvider } from "./providers/tinybird/TinybirdCostProvider"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import {
 	advanceCostSync,
@@ -182,6 +183,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				planetscale: yield* PlanetScaleCostProvider,
 				anthropic: yield* AnthropicCostProvider,
 				openai: yield* OpenAiCostProvider,
+				tinybird: yield* TinybirdCostProvider,
 			} satisfies Record<CostProvider, CostProviderAdapter>
 			const dbExecute = makeDbExecute(
 				database,
@@ -743,6 +745,7 @@ export class CostSyncService extends Context.Service<CostSyncService, CostSyncSe
 				PlanetScaleCostProvider.layer,
 				AnthropicCostProvider.layer,
 				OpenAiCostProvider.layer,
+				TinybirdCostProvider.layer,
 				WarehouseQueryService.layer,
 				OrganizationFeatureFlagsService.layer,
 			),

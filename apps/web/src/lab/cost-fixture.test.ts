@@ -28,7 +28,7 @@ describe("cost lab fixture", () => {
 					.rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "anthropic", "vercel", "openai", "cloudflare", "github", "planetscale"])
+		).toEqual(["aws", "anthropic", "vercel", "openai", "cloudflare", "github", "planetscale", "tinybird"])
 
 		// Filtered to OpenRouter there is nothing left: AWS cost must not show under that filter.
 		expect(labTotals(openRouterOnly).cost).toBeGreaterThan(0)
@@ -141,7 +141,16 @@ describe("cost lab fixture", () => {
 				labBreakdown({ ...window, without: ["vercel"], groupBy: "provider", sortBy: "cost" }).rows,
 				(row) => row.key,
 			),
-		).toEqual(["aws", "openrouter", "anthropic", "openai", "cloudflare", "github", "planetscale"])
+		).toEqual([
+			"aws",
+			"openrouter",
+			"anthropic",
+			"openai",
+			"cloudflare",
+			"github",
+			"planetscale",
+			"tinybird",
+		])
 		expect(labTotals({ days: 30, filters: { provider: ["vercel"] }, without: ["vercel"] }).cost).toBe(0)
 	})
 
@@ -189,7 +198,7 @@ describe("cost lab fixture", () => {
 		).toBe(0)
 	})
 
-	test("grouped by resource, cost splits by GitHub repository, Vercel project, PlanetScale branch, Anthropic workspace and OpenAI project, and the rest has none", () => {
+	test("grouped by resource, cost splits by GitHub repository, Vercel project, PlanetScale branch, Anthropic workspace, OpenAI project and Tinybird workspace, and the rest has none", () => {
 		expect(
 			Arr.map(labBreakdown({ ...window, groupBy: "resource", sortBy: "cost" }).rows, (row) => row.key),
 		).toEqual([
@@ -200,6 +209,7 @@ describe("cost lab fixture", () => {
 			"example-orders/main",
 			"example-api",
 			"example-docs",
+			"example_analytics",
 			"default",
 			"example-search/main",
 			"example-orders/staging",

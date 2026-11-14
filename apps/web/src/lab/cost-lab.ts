@@ -40,12 +40,14 @@ import {
 	RemoveOpenAiCostKey,
 	RemoveOpenRouterCostKey,
 	RemovePlanetScaleCostSource,
+	RemoveTinybirdCostToken,
 	RemoveVercelCostSource,
 	ResolveWindow,
 	SaveAnthropicCostKey,
 	SaveCloudflareCostToken,
 	SaveOpenAiCostKey,
 	SaveOpenRouterCostKey,
+	SaveTinybirdCostToken,
 	TimeseriesInput,
 	WindowInput,
 } from "../page/cost/command"
@@ -106,6 +108,8 @@ export const LabState = Schema.Literals([
 	"add-anthropic",
 	"add-openai",
 	"openai-no-spend",
+	"tinybird",
+	"add-tinybird",
 	"add-github",
 	"github-refused",
 	"github-none",
@@ -169,7 +173,9 @@ const searchFor = (state: LabState): Search =>
 					? { provider: ["cloudflare"] }
 					: state === "model-vendors"
 						? { provider: ["anthropic", "openai"], groupBy: "cloud_service" }
-						: {}
+						: state === "tinybird"
+							? { provider: ["tinybird"], groupBy: "cloud_service" }
+							: {}
 
 /** The states that start with nothing connected, so the dialog offers every provider. */
 const startsEmpty = (state: LabState): boolean =>
@@ -184,6 +190,7 @@ const startsEmpty = (state: LabState): boolean =>
 	state === "add-anthropic" ||
 	state === "add-openai" ||
 	state === "openai-no-spend" ||
+	state === "add-tinybird" ||
 	state === "github-none" ||
 	state === "github-reading" ||
 	state === "github-unread" ||
@@ -223,6 +230,8 @@ const openingOf = (state: LabState): ReadonlyArray<CostMessage> => {
 			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "openai" })]
 		case "openai-no-spend":
 			return submissionOf("openai", "sk-admin-0123456789abcdefghij0123456789")
+		case "add-tinybird":
+			return [CostMessage.ClickedAddSource(), CostMessage.PickedProvider({ provider: "tinybird" })]
 		case "add-github":
 		case "github-none":
 		case "github-reading":
@@ -524,6 +533,15 @@ const answerOf = (world: World, search: Search, command: CostCommand): Option.Op
 					result: state === "openai-no-spend" ? Result.fail(noSpendKey) : Result.succeed(undefined),
 				}),
 			)
+		case SaveTinybirdCostToken.name:
+			return Option.some(
+				CostMessage.CompletedSaveCredential({
+					provider: "tinybird",
+					result: Result.succeed(undefined),
+				}),
+			)
+		case RemoveTinybirdCostToken.name:
+			return Option.some(removedAnswer("tinybird"))
 		case RemoveAnthropicCostKey.name:
 			return Option.some(removedAnswer("anthropic"))
 		case RemoveOpenAiCostKey.name:

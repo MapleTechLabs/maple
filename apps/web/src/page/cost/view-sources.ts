@@ -88,7 +88,8 @@ const actions = (
 		case "openrouter":
 		case "cloudflare":
 		case "anthropic":
-		case "openai": {
+		case "openai":
+		case "tinybird": {
 			const { label } = CREDENTIAL_SOURCES[source.provider].replace
 			return [
 				rowButton(
@@ -191,6 +192,10 @@ const sourceRow = (
 							accountOf(source),
 						]),
 						badge(h, { variant: status.variant, size: "sm" }, [status.label]),
+						// Quiet beside the status: the figures are Maple's estimate, not the provider's bill.
+						...(provider.estimated === true
+							? [badge(h, { variant: "muted", size: "sm" }, ["Estimated"])]
+							: []),
 					]),
 					...(options.canManage
 						? [hstack(h, { gap: "1", className: "-my-1 shrink-0" }, actions(h, source, options))]

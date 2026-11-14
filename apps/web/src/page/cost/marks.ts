@@ -107,6 +107,13 @@ const ANTHROPIC_SERVICES: ReadonlySet<string> = new Set([
 	"Anthropic API",
 ])
 
+/** Tinybird's estimated lines, named after the provider since their products are generic words. */
+const TINYBIRD_SERVICES: ReadonlySet<string> = new Set([
+	"Tinybird compute",
+	"Tinybird storage",
+	"Tinybird data transfer",
+])
+
 /** What a PlanetScale charge that names no database and has no description is filed under. */
 const PLANETSCALE_UNNAMED = "PlanetScale"
 
@@ -121,11 +128,13 @@ const namedServiceOwner = (key: string): CostProvider | undefined =>
 			? "cloudflare"
 			: ANTHROPIC_SERVICES.has(key)
 				? "anthropic"
-				: isAwsServiceName(key)
-					? "aws"
-					: key === PLANETSCALE_UNNAMED
-						? "planetscale"
-						: undefined
+				: TINYBIRD_SERVICES.has(key)
+					? "tinybird"
+					: isAwsServiceName(key)
+						? "aws"
+						: key === PLANETSCALE_UNNAMED
+							? "planetscale"
+							: undefined
 
 /**
  * PlanetScale's service is the database, named in lowercase letters, digits, hyphens and

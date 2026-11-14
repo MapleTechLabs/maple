@@ -10,6 +10,7 @@ import { AuditTrailApiGroup } from "./audit-trail"
 import { AnthropicCostApiGroup } from "./anthropic-cost"
 import { CloudflareCostApiGroup } from "./cloudflare-cost"
 import { OpenAiCostApiGroup } from "./openai-cost"
+import { TinybirdCostApiGroup } from "./tinybird-cost"
 import { DependencyScanApiGroup } from "./dependency-scan"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
@@ -72,6 +73,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(CloudflareCostApiGroup)
 	.add(AnthropicCostApiGroup)
 	.add(OpenAiCostApiGroup)
+	.add(TinybirdCostApiGroup)
 	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)
 	.add(VercelCostApiGroup)

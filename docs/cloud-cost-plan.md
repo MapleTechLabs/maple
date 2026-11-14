@@ -522,6 +522,38 @@ newest bucket trails by about a day, inside the two open days; the key checked a
 organization with no spend, so its row shapes are still from the docs. Open: Anthropic rows from a
 real organization with spend, restated days, and how far back OpenAI serves.
 
+### Tinybird (estimated)
+
+- No invoice or spend API. Usage from the `organization.*` service data sources, priced at the
+  public list prices (tinybird.co/pricing, checked 2026-11-14). First provider with `basis:
+  "estimated"`.
+- Read with a static token the org pastes (`tb --cloud token create static maple_cost --scope
+  ORG_DATASOURCES:READ`; an org admin's workspace admin token works too), kept in
+  `cost_connections`. Queries go to `GET <host>/v0/sql`.
+- A token works on one regional host. Every allowlisted host is asked at once who the organization
+  is: a 200 picks the host. Live: another region's host answers 403 "Workspace not found", a bad
+  signature 403 "Signature verification failed". One host refusing otherwise is the token's own
+  host without the scope. No column holds the host: requests are free, so each pull finds it again.
+- Identity: the newest `organization_id` and `organization_name` of
+  `organization.shared_infra_active_seconds` in 90 days. An organization with no usage in 90 days
+  is refused, as it cannot be named yet.
+- Compute: each second's `cpu_time` above that minute's plan `vcpus`
+  (`shared_infra_active_minutes`), $0.0002 per vCPU-second. None when every live workspace is on
+  the `enterprise` (dedicated) plan.
+- Storage: per day and workspace, the sum over data sources of the day's largest `bytes +
+  bytes_quarantine`, $0.058 per GB-month, a day being 1/days-in-month of it. The plan's included
+  25 GB or 250 GB is not subtracted: at most $1.45 or $14.50 a month over.
+- Data transfer (`organization.data_transfer`): intra-region $0.01/GB, inter-region $0.10/GB, per
+  day, workspace and kind.
+- Rows: `Tinybird compute`, `Tinybird storage` or `Tinybird data transfer` (the provider's name keeps generic words apart on the page), the workspace (by name) the resource, the host's
+  region the region. Rows under a cent are left out.
+- Not counted: the plan's base fee (not readable), QPS and SaaS active-minute overages (no public
+  price), LLM usage (covered by included credits), private link.
+- Live (2026-11-14, a real organization): the schemas, host refusals and the vCPU overage query
+  above. Open: Maple's own organization reports plan `enterprise` yet has shared-infra seconds with
+  `vcpus` 1, so what the plan label means for overage is unconfirmed. History starts three months
+  back; the tables only hold data from about when the organization started.
+
 ### Railway (estimated per service, billed per workspace)
 
 - Schema: `usage(workspaceId, startDate, endDate, groupBy, measurements)` returns quantities
@@ -623,7 +655,7 @@ Each phase is one PR stack.
    Plan imports. First Maple rules, each backed by a metric already ingested: load balancers with
    no requests, databases with idle connections and low CPU, container services reserving far more
    than they use.
-3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic and OpenAI are built. Railway,
+3. **More providers.** OpenRouter, GitHub, Vercel, Cloudflare, PlanetScale, Anthropic, OpenAI and Tinybird are built. Railway,
    GCP, Supabase, one PR each. Each provider adds a literal to `CostProvider`, an adapter and a
    sync profile. One read with a pasted credential also adds itself to
    `COST_CONNECTION_PROVIDERS`, a connection service that checks the credential with the vendor,

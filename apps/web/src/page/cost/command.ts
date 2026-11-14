@@ -6,6 +6,7 @@ import {
 	OpenAiCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,
+	TinybirdCostTokenRequest,
 	VercelCostAddRequest,
 } from "@maple/domain/http"
 import { VcsInstallationId } from "@maple/domain/vcs"
@@ -221,6 +222,27 @@ export const RemoveOpenAiCostKey = Command.define("RemoveOpenAiCostKey", {
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.openaiCost.remove()).pipe(
 		Effect.asVoid,
 		settleTo((result) => Message.CompletedRemoveCredential({ provider: "openai", result })),
+	),
+})
+
+/** Saves the org's Tinybird token, which makes (or keeps) its cost source. */
+export const SaveTinybirdCostToken = Command.define("SaveTinybirdCostToken", {
+	args: { token: Schema.String },
+	messages: [Message.CompletedSaveCredential],
+	execute: ({ token }) =>
+		Effect.flatMap(MapleInternalApiClient, (client) =>
+			client.tinybirdCost.set({ payload: new TinybirdCostTokenRequest({ token }) }),
+		).pipe(
+			Effect.asVoid,
+			settleTo((result) => Message.CompletedSaveCredential({ provider: "tinybird", result })),
+		),
+})
+
+export const RemoveTinybirdCostToken = Command.define("RemoveTinybirdCostToken", {
+	messages: [Message.CompletedRemoveCredential],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.tinybirdCost.remove()).pipe(
+		Effect.asVoid,
+		settleTo((result) => Message.CompletedRemoveCredential({ provider: "tinybird", result })),
 	),
 })
 
