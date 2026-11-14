@@ -1,3 +1,4 @@
+import * as HoverCard from "@maple/views/ui/hover-card"
 import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { RequestMode } from "@maple/views/data/keyed"
 import * as Policy from "@maple/domain/policy"
@@ -84,5 +85,6 @@ export const Message = defineMessageUnion({
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },
+	GotMarkerCardMessage: { message: HoverCard.Message },
 })
 export type Message = typeof Message.Type

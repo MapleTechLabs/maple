@@ -96,7 +96,7 @@ export const seriesPoints = (model: Model, derived: ServiceDerived | undefined) 
 			: derived.detail.baselinePoints
 
 /** This release's own commit is the title's read; the markers share it (one read). */
-const commitsOf = (model: Model): Model["markerCommits"] =>
+export const commitsOf = (model: Model): Model["markerCommits"] =>
 	Option.match(AsyncData.getData(model.commit.data), {
 		onNone: () => model.markerCommits,
 		onSome: (commit) => ({

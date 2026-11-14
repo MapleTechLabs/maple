@@ -57,6 +57,7 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { commitMarkers, markerLayout } from "../../kit/service-metrics/markers"
 import { markersOverlay } from "../../kit/service-metrics/markers-view"
+import { markerCardOf } from "./view-charts"
 
 // The API tab: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
@@ -249,7 +250,11 @@ const responsesChart = (
 			? undefined
 			: Option.match(chartModel.plot, {
 					onNone: () => undefined,
-					onSome: (plot) => markersOverlay(h, markerLayout(markers, plot), plot, MARKER_LABEL_GAP),
+					onSome: (plot) =>
+						markersOverlay(h, markerLayout(markers, plot), plot, MARKER_LABEL_GAP, "all", {
+							...markerCardOf(model, inputs.timeZone),
+							scope: "markers-api-responses",
+						}),
 				})
 	const context: ChartContext | null =
 		theme === null ? null : { theme, timeZone: inputs.timeZone, nowMs: model.nowMs ?? 0 }
@@ -293,19 +298,25 @@ const responsesChart = (
 			[
 				context === null
 					? skeleton(h, "h-[200px] w-full")
-					: statusChart(h, {
-							chartId: "api-responses",
-							chart: chartModel,
-							buckets: overview.buckets,
-							bucketSeconds: inputs.bucketSeconds,
-							window: inputs.window,
-							context,
-							className: "h-[200px] w-full",
-							marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
-							overlay,
-							reportPlot: markers.length > 0,
-							toMessage: toChart("api-responses"),
-						}),
+					: // The markers sit beside the chart (their card's handlers bind to this page).
+						h.div(
+							[h.Class("relative h-[200px] w-full")],
+							[
+								statusChart(h, {
+									chartId: "api-responses",
+									chart: chartModel,
+									buckets: overview.buckets,
+									bucketSeconds: inputs.bucketSeconds,
+									window: inputs.window,
+									context,
+									className: "h-full w-full",
+									marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
+									reportPlot: markers.length > 0,
+									toMessage: toChart("api-responses"),
+								}),
+								overlay ?? null,
+							],
+						),
 			],
 			"px-4 pb-4 pt-2",
 		),

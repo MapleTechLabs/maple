@@ -1,3 +1,4 @@
+import * as HoverCard from "@maple/views/ui/hover-card"
 import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { V2UptimeMonitor } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -89,6 +90,8 @@ export const Model = Schema.Struct({
 	dependencies: KeyedSchema(DependencyBundle, LoadFailure),
 	/** Commits by sha, shared by the deploy rows and the marker labels. */
 	commits: Schema.Record(Schema.String, CommitData.schema),
+	/** The hover card a commit marker opens, shared by every chart on the page. */
+	markerCard: HoverCard.Model,
 	/** The recent deploys panel's "Show all" toggle. */
 	isDeploysExpanded: Schema.Boolean,
 	/** Each tab table's sort. */

@@ -12,6 +12,7 @@ import type { PlotGeometry } from "@maple/views/charts/chart"
 import type { CommitData, Release } from "./points"
 import { Array as Arr, Order } from "effect"
 import { firstLine, isResolvableSha } from "../commit-card"
+import { MARKER_CARD_COMMITS } from "./marker-card"
 
 // Commit markers over a chart: the markers, their commit labels and their geometry (./marker-layout.ts).
 
@@ -29,12 +30,13 @@ export const commitMarkers = (
 		return label === "" ? marker : { ...marker, label }
 	})
 
-/** Every sha a marker label resolves (one lookup per representative commit). */
+/** Every sha a marker label or its hover card resolves (the card lists up to `MARKER_CARD_COMMITS`). */
 export const markerShas = (markers: ReadonlyArray<CommitMarker>): ReadonlyArray<string> =>
-	Arr.flatMap(markers, (marker) => {
-		const sha = marker.commits[0]?.sha
-		return sha !== undefined && isResolvableSha(sha) ? [sha] : []
-	})
+	Arr.flatMap(markers, (marker) =>
+		Arr.flatMap(marker.commits.slice(0, MARKER_CARD_COMMITS), (commit) =>
+			isResolvableSha(commit.sha) ? [commit.sha] : [],
+		),
+	)
 
 const EDGE_EPSILON = 0.5
 
