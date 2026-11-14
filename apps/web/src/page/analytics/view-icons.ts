@@ -7,13 +7,11 @@ import { favicon as kitFavicon, isHostLike } from "../kit/analytics-filter-rail"
 import { Message, type FilterKey } from "./message"
 import type { Model } from "./model"
 
-// `Favicon` and `analyticsRowIcon`: a breakdown row's leading icon.
-
 type H = HtmlBuilder<Message>
 
 const ICON_BOX = "size-4 shrink-0"
 
-/** `Favicon`: the site's icon, or its reserved box once the image failed. */
+/** The site's icon, or its reserved box once the image failed. */
 export const favicon = (h: H, model: Model, host: string, className?: string): Html =>
 	kitFavicon(
 		h,

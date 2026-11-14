@@ -4,8 +4,6 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
-		".": "./src/index.ts",
-		"./collections": "./src/collections/index.ts",
 		"./collections/*": "./src/collections/*.ts",
 		"./alerts/*": "./src/alerts/*.ts",
 		"./anomalies/*": "./src/anomalies/*.ts",
@@ -19,7 +17,9 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
+		"@maple/alerting-core": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/ui": "workspace:*",

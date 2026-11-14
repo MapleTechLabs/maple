@@ -1,21 +1,22 @@
+import { canWidenTimeRange } from "../../kit/time-controls"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
 import { excludedEmptyHint } from "@maple/views/ui/filters/excluded-empty-hint"
 import { docsLink, signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
-import { canWidenRange, logFilterChips } from "./derive"
+import { type LogFilterChip, logFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { toolbar } from "./view-toolbar"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// The logs table's empty state.
+import { vstack } from "@maple/views/ui/stack"
 
 const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 	excludedEmptyHint(h, {
-		excluded: Arr.filter(logFilterChips(model.search), (chip) => chip.negated).flatMap(
-			(chip) => chip.values,
+		excluded: Arr.flatMap(
+			Arr.filter(logFilterChips(model.search), (chip) => chip.negated),
+			(chip: LogFilterChip) => chip.values,
 		),
 		onClear: Message.ClickedClearExclusions(),
 		className: "max-w-lg",
@@ -25,8 +26,14 @@ const exclusionsHint = (h: HtmlBuilder<Message>, model: Model): Html | null =>
 const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 	const { traceId, search } = model.search
 	const hint = exclusionsHint(h, model)
-	return h.div(
-		[h.Class("flex h-48 flex-col items-center justify-center gap-2 rounded-md border px-6 text-center")],
+	return vstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			justify: "center",
+			className: "h-48 rounded-md border px-6 text-center",
+		},
 		[
 			typography(
 				h,
@@ -35,26 +42,31 @@ const searchEmpty = (h: HtmlBuilder<Message>, model: Model): Html => {
 					? [
 							"No logs on trace",
 							" ",
-							h.span([h.Class("font-mono text-foreground break-all")], [traceId]),
+							typography(h, { tone: "foreground", mono: true, className: "break-all" }, [
+								traceId,
+							]),
 							" in this window",
 						]
 					: [
 							"No log message contains",
 							" ",
-							h.span(
-								[h.Class("font-mono text-foreground break-all")],
-								["“", search ?? "", "”"],
-							),
+							typography(h, { tone: "foreground", mono: true, className: "break-all" }, [
+								"“",
+								search ?? "",
+								"”",
+							]),
 						],
 			),
 			...(traceId
 				? [
-						h.span(
-							[
-								h.Class(
-									"flex max-w-md flex-col items-center gap-2 text-xs text-muted-foreground",
-								),
-							],
+						vstack(
+							h,
+							{
+								gap: "2",
+								align: "center",
+								as: "span",
+								className: "max-w-md text-xs text-muted-foreground",
+							},
 							[
 								"Logs link to a trace when your logger bridge runs inside the active span.",
 								docsLink(h, "logs"),
@@ -84,28 +96,26 @@ export const isNeverReceived = (model: Model): boolean =>
 	!model.search.traceId &&
 	logFilterChips(model.search).length === 0
 
-export const emptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.div(
-		[h.Class("flex-1 min-h-0 flex flex-col gap-4")],
-		[
-			toolbar(h, model),
-			model.search.search || model.search.traceId
-				? searchEmpty(h, model)
-				: h.div(
-						[h.Class("rounded-md border")],
-						[
-							signalEmptyState(h, {
-								signal: "logs",
-								presence: presenceOf(model.presence, "logs"),
-								nowMs: model.nowMs,
-								isFiltered: logFilterChips(model.search).length > 0,
-								onClearFilters: Message.ClickedClearFilterChips(),
-								onWidenRange: canWidenRange(model.search)
-									? Message.ClickedWidenRange()
-									: undefined,
-								detail: exclusionsHint(h, model),
-							}),
-						],
-					),
-		],
-	)
+export const emptyState = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
+	vstack(h, { gap: "4", grow: true, className: "min-h-0" }, [
+		toolbar(h, model),
+		model.search.search || model.search.traceId
+			? searchEmpty(h, model)
+			: h.div(
+					[h.Class("rounded-md border")],
+					[
+						signalEmptyState(h, {
+							signal: "logs",
+							presence: presenceOf(model.presence, "logs"),
+							nowMs: model.nowMs,
+							timeZone,
+							isFiltered: logFilterChips(model.search).length > 0,
+							onClearFilters: Message.ClickedClearFilterChips(),
+							onWidenRange: canWidenTimeRange(model.search, "")
+								? Message.ClickedWidenRange()
+								: undefined,
+							detail: exclusionsHint(h, model),
+						}),
+					],
+				),
+	])

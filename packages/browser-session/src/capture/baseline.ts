@@ -1,3 +1,4 @@
+import type { ErrorNoiseFilter } from "../platform/transport"
 import { installErrorCapture } from "./errors"
 import { installInteractionCapture } from "./interactions"
 import type { Emit } from "./shared"
@@ -20,9 +21,13 @@ import type { Emit } from "./shared"
  * keeps the listeners installed exactly once — the recorder starting and
  * stopping across visibility changes must not re-register them.
  */
-export function startBaselineCapture(emit: Emit, maskAllText: boolean): () => void {
+export function startBaselineCapture(
+	emit: Emit,
+	maskAllText: boolean,
+	isErrorNoise?: ErrorNoiseFilter,
+): () => void {
 	if (typeof window === "undefined" || typeof document === "undefined") return () => {}
-	const uninstall = [installErrorCapture(emit), installInteractionCapture(emit, maskAllText)]
+	const uninstall = [installErrorCapture(emit, isErrorNoise), installInteractionCapture(emit, maskAllText)]
 	return () => {
 		for (const off of uninstall) off()
 	}

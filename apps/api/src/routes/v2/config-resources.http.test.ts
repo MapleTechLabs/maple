@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, ScrapeTargetId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Env } from "@maple/backend/platform/Env"
@@ -23,17 +23,18 @@ import { RecommendationIssueService } from "@maple/backend/services/errors/Recom
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
 	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	SetupAuditServiceStubLayer,
-	SignalPresenceServiceStubLayer,
-	TelemetryServiceStubsLayer,
-	SourcesServiceStubsLayer,
 } from "./v2-test-support"
+import { IngestRuleService } from "@maple/backend/services/org/IngestRuleService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
+import { HttpV2IngestKeysLive } from "./ingest-keys.http"
+import { HttpV2InstrumentationRecommendationsLive } from "./recommendations.http"
+import { HttpV2OrganizationLive } from "./organization.http"
+import { HttpV2ScrapeTargetsLive } from "./scrape-targets.http"
+import { HttpV2IngestRulesLive } from "./ingest-rules.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
@@ -116,24 +117,40 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
-		SourcesServiceStubsLayer,
 		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
 			Layer.provide(warehouseLive),
 		),
 		scrapeTargetsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.attributeMappings,
+			MapleApiV2.groups.ingestKeys,
+			MapleApiV2.groups.ingestRules,
+			MapleApiV2.groups.instrumentationRecommendations,
+			MapleApiV2.groups.organization,
+			MapleApiV2.groups.scrapeTargets,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2AttributeMappingsLive,
+				HttpV2IngestKeysLive,
+				HttpV2InstrumentationRecommendationsLive,
+				HttpV2OrganizationLive,
+				HttpV2ScrapeTargetsLive,
+				HttpV2IngestRulesLive.pipe(
+					Layer.provide(
+						Layer.effect(IngestRuleService, IngestRuleService.make).pipe(
+							Layer.provide(OrganizationFeatureFlagsService.allEnabled),
+						),
+					),
+				),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SetupAuditServiceStubLayer),
-		Layer.provide(SignalPresenceServiceStubLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
-		// session_replays (in AllV2GroupLayersLive) needs the warehouse at the routes level.
-		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -167,8 +184,8 @@ const makeHarness = () => {
 		return { status: response.status, body: text.length > 0 ? JSON.parse(text) : null }
 	}
 
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_config_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_config_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_config_e2e")
+	const USER = Schema.decodeSync(UserId)("user_config_e2e")
 
 	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
 		runtime.runPromise(
@@ -191,7 +208,7 @@ const makeHarness = () => {
 	const seedScrapeChecks = (publicId: string, count: number) => {
 		const internalId = decodePublicId("scrp", publicId)
 		if (internalId === null) throw new Error(`Invalid scrape target public ID: ${publicId}`)
-		const targetId = Schema.decodeUnknownSync(ScrapeTargetId)(internalId)
+		const targetId = Schema.decodeSync(ScrapeTargetId)(internalId)
 		const now = Date.now()
 		return runtime.runPromise(
 			Effect.gen(function* () {
@@ -509,6 +526,25 @@ describe("v2 ingest_keys over HTTP", () => {
 		})
 		expect(rolledPrivate.status).toBe(200)
 		expect(rolledPrivate.body.private_key).not.toBe(initial.body.private_key)
+		await harness.dispose()
+	})
+
+	it("lets a member read the public key alone, and only engineers and admins both", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey()
+		const member = await harness.bootstrapMemberKey()
+
+		const both = await harness.request("GET", "/v2/ingest_keys", { token: admin.secret })
+		const publicOnly = await harness.request("GET", "/v2/ingest_keys/public", { token: member.secret })
+		expect(publicOnly.status).toBe(200)
+		expect(publicOnly.body).toEqual({
+			object: "public_ingest_key",
+			public_key: both.body.public_key,
+			public_rotated_at: both.body.public_rotated_at,
+		})
+
+		const denied = await harness.request("GET", "/v2/ingest_keys", { token: member.secret })
+		expect(denied.status).toBe(403)
 		await harness.dispose()
 	})
 

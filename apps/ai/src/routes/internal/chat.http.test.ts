@@ -8,7 +8,7 @@ import {
 	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/http"
@@ -99,7 +99,7 @@ const makeHarness = (session: {
 				},
 				body: JSON.stringify(body),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {

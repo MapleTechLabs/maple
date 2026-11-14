@@ -1,5 +1,5 @@
 import { Option, Schema, String as Str } from "effect"
-import { ChatConnectorId } from "../primitives"
+import { ChatConnectorId } from "@maple/primitives"
 import { VcsAccountType, VcsRepoSelection } from "./vcs"
 
 /**
@@ -12,6 +12,7 @@ import { VcsAccountType, VcsRepoSelection } from "./vcs"
 export const OAuthReturnFlow = Schema.Literals([
 	"cloudflare",
 	"linear",
+	"google",
 	"github",
 	"planetscale",
 	"supabase",

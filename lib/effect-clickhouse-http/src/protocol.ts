@@ -1,4 +1,4 @@
-import { Effect, Result, Schema, Stream, String as Str } from "effect"
+import { Effect, Option, Result, Schema, Stream, String as Str } from "effect"
 import { ClickHouseLimitError, ClickHouseProtocolError, ClickHouseServerError, serverError } from "./errors"
 
 export interface Limits {
@@ -15,7 +15,10 @@ export interface ResponseInfo {
 }
 export type ProtocolFailure = ClickHouseLimitError | ClickHouseProtocolError | ClickHouseServerError
 const ERROR_BYTES = 16 * 1024
-const encoder = new TextEncoder()
+// One char per byte, so offsets and lengths in the string are raw byte counts.
+const toByteString = (bytes: Uint8Array): string => String.fromCharCode(...bytes)
+const fromByteString = (text: string): Uint8Array =>
+	Uint8Array.from(text, (char) => Option.getOrElse(Str.charCodeAt(char, 0), () => 0))
 const isRow = Schema.is(Schema.Record(Schema.String, Schema.Unknown))
 const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 
@@ -25,9 +28,12 @@ class Decoder {
 	private length = 0
 	private bytes = 0
 	private rows = 0
+	/** Unparsed lines as a byte string (see `toByteString`), bounded by `ERROR_BYTES`. */
 	private invalid = ""
 	private invalidBytes = 0
-	private readonly utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
+	// Lenient: a cell holding raw bytes (a cut character, an aggregate state)
+	// decodes to U+FFFD instead of failing the whole response.
+	private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true })
 	constructor(
 		private readonly info: ResponseInfo,
 		private readonly limits: Limits,
@@ -54,11 +60,6 @@ class Decoder {
 			}),
 		)
 	}
-	private decode(bytes: Uint8Array): Result.Result<string, ClickHouseProtocolError> {
-		const decoded = Result.try(() => this.utf8.decode(bytes))
-		if (Result.isFailure(decoded)) return this.protocol("invalid UTF-8")
-		return Result.succeed(decoded.success)
-	}
 	private append(bytes: Uint8Array): Result.Result<void, ProtocolFailure> {
 		const max = this.invalidBytes > 0 ? ERROR_BYTES : (this.limits.maxRowBytes ?? 16 * 1024 * 1024)
 		if (this.length + bytes.length > max) {
@@ -75,24 +76,26 @@ class Decoder {
 		this.length += bytes.length
 		return Result.succeed(undefined)
 	}
-	private takeLine(): Result.Result<string, ClickHouseProtocolError> {
-		const text = this.decode(this.buffer.subarray(0, this.length))
+	/** The buffered line, valid until the next `append`. Rows are decoded whole, never per chunk. */
+	private takeLine(): Uint8Array {
+		const bytes = this.buffer.subarray(0, this.length)
 		this.length = 0
-		return text
+		return bytes
 	}
 	private line(
-		text: string,
+		bytes: Uint8Array,
 		out: Record<string, unknown>[],
 		ended = true,
 	): Result.Result<void, ProtocolFailure> {
 		if (this.invalidBytes > 0) {
-			return this.addInvalid(text, ended)
+			return this.addInvalid(bytes, ended)
 		}
+		const text = this.utf8.decode(bytes)
 		if (Str.trim(text) === "") return Result.succeed(undefined)
 		// BOUNDARY: untrusted wire data, validated as an object row below.
 		const parsed = decodeJson(text)
 		if (Result.isFailure(parsed)) {
-			return this.addInvalid(text, ended)
+			return this.addInvalid(bytes, ended)
 		}
 		const value = parsed.success
 		if (!isRow(value)) return this.protocol("expected a JSON object row")
@@ -102,8 +105,8 @@ class Decoder {
 		out.push(value)
 		return Result.succeed(undefined)
 	}
-	private addInvalid(text: string, ended: boolean): Result.Result<void, ClickHouseProtocolError> {
-		const size = encoder.encode(text).length + (ended ? 1 : 0)
+	private addInvalid(bytes: Uint8Array, ended: boolean): Result.Result<void, ClickHouseProtocolError> {
+		const size = bytes.length + (ended ? 1 : 0)
 		if (this.invalidBytes === 0 && size > ERROR_BYTES) {
 			// Discard a large incomplete JSON row, but still allow a following
 			// bounded exception frame to identify the actual server failure.
@@ -113,7 +116,7 @@ class Decoder {
 		this.invalidBytes += size
 		if (this.invalidBytes > ERROR_BYTES)
 			return this.protocol("malformed row or exception payload exceeds 16 KiB")
-		this.invalid += text + (ended ? "\n" : "")
+		this.invalid += toByteString(bytes) + (ended ? "\n" : "")
 		return Result.succeed(undefined)
 	}
 	push(chunk: Uint8Array): Result.Result<Record<string, unknown>[], ProtocolFailure> {
@@ -126,7 +129,7 @@ class Decoder {
 			for (let i = 0; i < chunk.length; i++) {
 				if (chunk[i] !== 10) continue
 				yield* this.append(chunk.subarray(start, i))
-				yield* this.line(yield* this.takeLine(), out)
+				yield* this.line(this.takeLine(), out)
 				start = i + 1
 			}
 			yield* this.append(chunk.subarray(start))
@@ -135,7 +138,13 @@ class Decoder {
 			// otherwise the ensuing transport failure would hide the server error.
 			if (
 				Str.endsWith("\r\n__exception__\r\n")(this.invalid) &&
-				this.invalid.indexOf("__exception__\r\n") !== this.invalid.lastIndexOf("__exception__\r\n")
+				Option.exists(
+					Option.all([
+						Str.indexOf("__exception__\r\n")(this.invalid),
+						Str.lastIndexOf("__exception__\r\n")(this.invalid),
+					]),
+					([first, last]) => first !== last,
+				)
 			)
 				return yield* this.finish()
 			if (
@@ -152,14 +161,15 @@ class Decoder {
 	finish(): Result.Result<Record<string, unknown>[], ProtocolFailure> {
 		return Result.gen(this, function* () {
 			const out: Record<string, unknown>[] = []
-			if (this.length > 0) yield* this.line(yield* this.takeLine(), out, false)
+			if (this.length > 0) yield* this.line(this.takeLine(), out, false)
 			if (this.invalidBytes === 0) return out
 			const text = this.invalid
-			const marker = text.indexOf("__exception__\r\n")
-			if (marker >= 0) {
+			const readable = (part: string) => this.utf8.decode(fromByteString(part))
+			const marker = Str.indexOf("__exception__\r\n")(text)
+			if (Option.isSome(marker)) {
 				// A server exception may follow an unfinished JSON row. Validate the frame,
-				// its echoed header tag, and its UTF-8 byte length before extracting it.
-				const frame = Str.slice(marker)(text)
+				// its echoed header tag, and its raw byte length before extracting it.
+				const frame = Str.slice(marker.value)(text)
 				const lines = Str.split("\r\n")(frame)
 				const tag = lines[1]
 				if (!tag || !/^[A-Za-z0-9_-]{1,128}$/.test(tag) || tag !== this.info.exceptionTag)
@@ -167,17 +177,20 @@ class Decoder {
 				if (!Str.endsWith("\r\n__exception__\r\n")(frame))
 					return yield* this.protocol("truncated exception frame")
 				const footerEnd = frame.length - "\r\n__exception__\r\n".length
-				const footerStart = frame.lastIndexOf("\n", footerEnd - 1) + 1
+				const footerStart = Option.match(Str.lastIndexOf("\n")(Str.slice(0, footerEnd)(frame)), {
+					onNone: () => 0,
+					onSome: (newline) => newline + 1,
+				})
 				const footer = Str.slice(footerStart, footerEnd)(frame)
 				const match = /^(\d+) ([A-Za-z0-9_-]+)$/.exec(footer)
 				if (!match || match[2] !== tag) return yield* this.protocol("invalid exception footer")
 				const message = Str.slice("__exception__\r\n".length + tag.length + 2, footerStart)(frame)
-				if (encoder.encode(message).length !== Number(match[1]))
+				if (message.length !== Number(match[1]))
 					return yield* this.protocol("invalid exception byte length")
-				return yield* Result.fail(serverError(message, this.info.status, this.info.queryId))
+				return yield* Result.fail(serverError(readable(message), this.info.status, this.info.queryId))
 			}
 			if (/\b(?:Code|Error):\s*\d+[^\n]*Exception:/.test(text))
-				return yield* Result.fail(serverError(text, this.info.status, this.info.queryId))
+				return yield* Result.fail(serverError(readable(text), this.info.status, this.info.queryId))
 			return yield* this.protocol("malformed or truncated JSONEachRow")
 		})
 	}

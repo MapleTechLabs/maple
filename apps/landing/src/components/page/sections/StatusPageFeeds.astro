@@ -1,0 +1,118 @@
+---
+/**
+ * Status pages · what a page publishes besides HTML: the statuspage.io-style
+ * `status.json`, the feeds, the Slack command and the badge. The JSON mirrors
+ * `renderStatusJson` (`@maple/status-page`) for the artifact's partial outage, trimmed
+ * to the fields a reader checks. Media-left so it alternates with the copy-left
+ * ledger below, like UptimeCheckTrace.
+ */
+import * as m from "../../../paraglide/messages.js";
+
+const JSON_LINES = [
+	"{",
+	'  "page": { "name": "Acme", "status_url": "https://status.acme.com" },',
+	'  "status": { "indicator": "major", "description": "Partial System Outage" },',
+	'  "components": [',
+	'    { "name": "Checkout API", "group": "API", "status": "partial_outage" },',
+	'    { "name": "Auth", "group": "API", "status": "operational" }',
+	"  ],",
+	'  "incidents": [',
+	'    { "name": "Failed payments at checkout", "status": "investigating", "impact": "major" }',
+	"  ],",
+	'  "scheduled_maintenances": [{ "name": "Database upgrade", "status": "scheduled" }]',
+	"}",
+];
+
+const ENDPOINTS = [
+	{ path: "/feed.rss", what: "RSS" },
+	{ path: "/feed.atom", what: "Atom" },
+	{ path: "/badge.svg", what: "badge" },
+];
+
+const rules = [
+	{ title: m.status_feeds_rule_1_title(), body: m.status_feeds_rule_1_body() },
+	{ title: m.status_feeds_rule_2_title(), body: m.status_feeds_rule_2_body() },
+	{ title: m.status_feeds_rule_3_title(), body: m.status_feeds_rule_3_body() },
+];
+---
+
+<section class="border-t border-border bg-bg">
+	<div class="shell py-16 md:py-32">
+		<div class="grid gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:gap-20">
+			<div class="live-frame min-w-0 self-start">
+				<div class="live-frame__head">
+					<span>GET /api/v1/status.json</span>
+					<span>200</span>
+				</div>
+				<pre class="spf-json">{JSON_LINES.join("\n")}</pre>
+				<div class="spf-endpoints">
+					{
+						ENDPOINTS.map((endpoint) => (
+							<div>
+								<span>{endpoint.path}</span>
+								<span>{endpoint.what}</span>
+							</div>
+						))
+					}
+					<div>
+						<span>/feed subscribe https://status.acme.com/feed.rss</span>
+						<span>slack</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="flex min-w-0 flex-col">
+				<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.status_feeds_eyebrow()}</p>
+				<h2
+					class="mt-4 max-w-[16ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+				>
+					{m.status_feeds_title()}
+				</h2>
+				<p class="mt-5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">{m.status_feeds_lede()}</p>
+				<dl class="mt-auto pt-8">
+					{
+						rules.map((rule) => (
+							<div class="border-t border-border py-4">
+								<dt class="text-[13px] font-medium text-fg">{rule.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">{rule.body}</dd>
+							</div>
+						))
+					}
+				</dl>
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	.spf-json {
+		margin: 0;
+		padding: 12px 14px;
+		overflow-x: auto;
+		font-size: 10.5px;
+		line-height: 1.6;
+		color: var(--foreground);
+	}
+	.spf-endpoints {
+		border-top: 1px solid var(--border);
+		padding: 10px 14px 12px;
+		font-size: 10.5px;
+	}
+	.spf-endpoints > div {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 4px 0;
+		color: var(--foreground);
+	}
+	.spf-endpoints > div > span:first-child {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.spf-endpoints > div > span:last-child {
+		flex-shrink: 0;
+		color: var(--muted-foreground);
+	}
+</style>

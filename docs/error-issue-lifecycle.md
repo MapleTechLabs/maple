@@ -7,15 +7,17 @@ This is the flow both humans and agents are meant to follow. If you are changing
 
 ## The pieces
 
-| Thing         | Where it lives                                              | What it is                                              |
-| ------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
-| Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                  |
-| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                       |
-| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet worth a row of its own. |
-| **Issue**     | `error_issues`                                              | The durable, assignable record. One per fingerprint.    |
-| Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.               |
-| Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.          |
-| Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.         |
+| Thing         | Where it lives                                              | What it is                                                           |
+| ------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| Occurrence    | ClickHouse / Tinybird                                       | One exception, one row. Never mutated.                               |
+| Fingerprint   | `cityHash64(org, service, type, frames, message signature)` | The identity of an error _class_.                                    |
+| User key      | `maple.fingerprint` span or exception-event attribute       | Replaces the fingerprint: `cityHash64(org, service, key)`, unsalted. |
+| Candidate     | `error_fingerprint_candidates`                              | A fingerprint seen, but not yet promoted (only past the day budget). |
+| **Issue**     | `error_issues`                                              | The durable, assignable record. Owns its fingerprint.                |
+| Alias         | `error_issue_fingerprints`                                  | More fingerprints an issue owns, merged or re-keyed.                 |
+| Incident      | `error_incidents`                                           | A time-bounded flare-up _under_ an issue.                            |
+| Investigation | `investigations`                                            | One AI diagnostic run. Zero or more per issue.                       |
+| Verification  | `error_issue_verifications`                                 | One post-merge "did that actually work?" check.                      |
 
 The exception comes from the first OTel `exception` event, or the status message when
 there is no event. Only spans missing both fall back to `exception.*` span attributes,
@@ -32,9 +34,12 @@ fixed once.
         occurrences
              │
              ▼
-     ┌───────────────┐   below PROMOTION_MIN_OCCURRENCES: stays here,
-     │   candidate   │   pruned by retention, notifies nobody
-     └───────┬───────┘
+     ┌───────────────┐   promoted at once while the org has opened fewer than
+     │   candidate   │   EarlyPromotionsPerDay (10) error issues in a day;
+     └───────┬───────┘   past that, held until PROMOTION_MIN_OCCURRENCES (3),
+             │           notifying nobody, pruned after 7 days unseen.
+             │           Held rows are reconsidered only when seen again,
+             │           not when budget frees up; ties go oldest first
              ▼
          ┌────────┐        the errors tick opens an incident and notifies
          │ triage │◄────┐  per the org's error notification policy
@@ -77,9 +82,23 @@ fixed once.
 └───────────┘  next person doesn't fix the same bug a second time
 ```
 
+**Why the budget, not a flat threshold.** The first thing a trial user does is throw one error
+and look for it, so a single occurrence has to become an issue. The threshold exists because one
+unapplied migration once minted 2,531 issues in three days. The budget keeps both: the count is of
+error issues the org opened in the rolling last day (`error_issues_org_kind_created_idx`), it is
+only read when a below-threshold fingerprint is waiting, and a window with more one-offs than the
+budget promotes the oldest ones. A storm spends the budget in one window and everything after it
+waits for the threshold, so it adds at most 10 one-off issues a day. Each early-promoted issue opens a
+`first_seen` incident like any other, so for an org with auto-investigation on it can also start
+up to that many extra triage passes a day, still inside the daily triage budget. An org with any
+issue is scanned every tick (`withState` in `ErrorsService.runTick`), so a trial org's first error
+now keeps it on the per-minute scan until retention clears the issue.
+
 The notification policy's `minOccurrenceCount` is compared with the count an incident opens
-with. A promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), so values of 3 or less
-only matter for regressions. Policy writes run in one transaction under the per-org advisory lock
+with. An early-promoted issue opens with its real count (often 1), so the policy applies as set;
+past the budget a promoted issue opens with at least `PROMOTION_MIN_OCCURRENCES` (3), and values of
+3 or less only matter for later incidents on the issue: a regression, or a new `first_seen` incident
+after an earlier one auto-resolved, which can open with a single occurrence. Policy writes run in one transaction under the per-org advisory lock
 that destination deletes take, and reject destinations the org does not own.
 
 `cancelled` and `wontfix` are the exits off to the side. `wontfix` takes an optional `snoozeUntil`
@@ -167,7 +186,7 @@ on an agent reading a rule is not a guarantee.
 
 The agent-facing map of this flow lives in the `maple://instructions` MCP resource
 (`apps/ai/src/mcp/resources/instructions.ts`), and the
-`apps/ai/src/mcp/__evals__/issue-workflow.eval.ts` cases check a real model still picks these tools. Keep both in sync with
+error-issue tasks in `apps/ai/src/evals/tools/tasks.ts` check a real model still picks these tools. Keep both in sync with
 this page.
 
 ### 3. Post-merge verification
@@ -192,6 +211,26 @@ loop in verification without a human ever seeing it.
 
 ## Rules worth not re-deriving
 
+- **Every state write is guarded on the state it was decided from.** `applyTransition` and the
+  alert/integration reopen go through `transitionRow`
+  (`packages/backend/src/platform/transition-row.ts`): the UPDATE carries
+  `workflow_state IN (<what was read>)`, so a concurrent move wins and the late writer gets a 409.
+  The errors tick's regression carries the same guard in its own bulk UPDATE (`applyRegressions`
+  in `error-tick-persistence.ts`, `workflow_state = 'done'`) and skips the rows it lost. A fixed
+  alert or integration issue that fires again lands in `regressed` too, never `triage`.
+- **A pull request link is verified once.** GitHub reports `merged: true` on every event after the
+  merge, so a later edit or a redelivery must not reopen a settled check. The guard is on the link
+  row, so unlinking a PR and linking it again is a new link and verifies again.
+- **One verification row cannot starve the rest.** The tick reads due rows least recently
+  touched first. A row whose issue or link is gone is settled as `abandoned`. One whose
+  occurrences cannot be read is touched and goes to the back of the queue with its window
+  unchanged: it stays `waiting` for as long as its org's warehouse keeps failing, and is tried
+  again when its turn comes round, but it no longer sits ahead of rows that can be judged.
+- **Retention deletes an issue's children by issue id.** There are no FK cascades. Incidents,
+  evaluator state, events, aliases, pull request links, verifications and escalations go with the
+  issue. Investigations stay: each keys a chat session whose storage only `apps/ai` can release.
+  Notification outbox rows in a terminal status are pruned after 30 days.
+
 - **Never make the claim a step an agent has to remember.** Any new tool that starts work on an
   issue takes the lease itself. See above for what happened when it did not.
 - **An issue with a linked PR should not be closed by hand.** The merge opens the verification
@@ -204,6 +243,16 @@ loop in verification without a human ever seeing it.
 - **Versions are compared by membership, never by ordering.** `maple-cli` reports semver and the
   Workers report git SHAs; "newer than the fix" is not a question those strings can answer.
 - **Severity has three sources with a precedence**: manual > ai > detector (`IssueSeveritySource`).
+- **Every change that moves a fingerprint bumps `FINGERPRINT_VERSION`.** A bump keeps issues:
+  while it settles, `error_fingerprint_lineage` records each new hash's previous one and the tick
+  re-keys the issue onto it. `fingerprint-version.test.ts` fails when the hash inputs move
+  without a bump.
+- **Merging moves fingerprints, not history.** A merged issue is archived with
+  `merged_into_issue_id`, and its hashes become aliases of the kept issue
+  (`error_issue_fingerprints`), so the tick lands their next occurrences there. Its timeline, PRs
+  and investigations stay on it, and its open incident is closed without a notification. Unmerge
+  hands the hashes back; the occurrences that landed on the kept issue meanwhile stay there. A
+  merged `wontfix` issue's hashes are no longer suppressed: they land on the kept issue.
 
 ## The files
 
@@ -212,6 +261,7 @@ loop in verification without a human ever seeing it.
 | State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                                                         |
 | Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                                                               |
 | Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`                                          |
+| Merging and unmerging issues            | `packages/backend/src/services/errors/ErrorIssueMergeService.ts`                                             |
 | The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`                                             |
 | Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`                                                  |
 | The gates in front of it                | `packages/backend/src/services/errors/investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |

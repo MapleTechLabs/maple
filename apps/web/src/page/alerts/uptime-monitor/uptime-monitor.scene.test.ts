@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { UptimeMonitorPublicId } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr, String as Str } from "effect"
@@ -18,14 +19,16 @@ import * as Chart from "@maple/views/charts/chart"
 import { MountChart } from "@maple/views/charts/chart-mounts"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { destinationRow, incidentRow, NOW, ORG } from "../shared/test-rows"
-import type { UptimeMonitor } from "../shared/uptime-derive"
-import { downMonitor, heartbeatMonitor, httpMonitor, MONITOR_RULE } from "../shared/uptime-test-monitors"
-import { traceHref } from "../shared/uptime-commands"
+import { destinationRow, incidentRow, NOW, ORG } from "../../kit/alert-test-rows"
+import type { UptimeMonitor } from "../../kit/uptime/derive"
+import { downMonitor, heartbeatMonitor, httpMonitor, MONITOR_RULE } from "../../kit/uptime/test-monitors"
+import { traceHref } from "../../kit/uptime/commands"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -47,7 +50,7 @@ const opened = (monitor: UptimeMonitor, extra: ReadonlyArray<Message> = []): Mod
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: NOW }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin: true }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: ENGINEER }),
 			Message.CompletedFetchMonitor({
 				key: entered.monitor.key ?? "",
 				result: Result.succeed(monitor),

@@ -4,9 +4,10 @@ import { createHash } from "node:crypto"
 import { EdgeCacheService, type EdgeCacheServiceApi } from "@maple/cache"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { alertDestinationSecretSlot } from "@maple/backend/platform/secret-slots"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 import { McpOAuthService } from "./McpOAuthService"
@@ -61,12 +62,13 @@ const makeLayer = (testDb: TestDb, edgeCache: Layer.Layer<EdgeCacheService>) => 
 	)
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_revoke")
-const otherOrgId = Schema.decodeUnknownSync(OrgId)("org_other")
-const userId = Schema.decodeUnknownSync(UserId)("user_leaver")
-const stayerId = Schema.decodeUnknownSync(UserId)("user_stayer")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
-const adminRole = Schema.decodeUnknownSync(RoleName)("org:admin")
+const orgId = Schema.decodeSync(OrgId)("org_revoke")
+const otherOrgId = Schema.decodeSync(OrgId)("org_other")
+const userId = Schema.decodeSync(UserId)("user_leaver")
+const stayerId = Schema.decodeSync(UserId)("user_stayer")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
+const adminRole = Schema.decodeSync(RoleName)("org:admin")
+const engineerRole = Schema.decodeSync(RoleName)("org:engineer")
 const resource = "https://api.example.com/mcp"
 const redirectUri = "http://127.0.0.1:49152/callback"
 const verifier = "maple-mcp-oauth-verifier-that-is-long-enough-1234567890"
@@ -82,10 +84,17 @@ const seedEmailDestination = (db: TestDb, id: string, org: OrgId, members: Array
 				name: null,
 			})),
 		})
-		const encrypted = yield* encryptAes256Gcm(
+		const onError = (message: string) => new AlertValidationError({ message, details: [] })
+		const keyring = yield* parseSecretKeyring(
+			{ primary: ENCRYPTION_KEY.toString("base64"), decryptOnly: Option.none() },
+			onError,
+		)
+		const encrypted = yield* sealSecret(
+			keyring,
+			alertDestinationSecretSlot,
+			{ orgId: org, id },
 			secret,
-			ENCRYPTION_KEY,
-			(message) => new AlertValidationError({ message, details: [] }),
+			onError,
 		)
 		yield* Effect.promise(() =>
 			db.pglite.query(
@@ -130,7 +139,8 @@ const seedChatIdentity = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 		),
 	)
 
-const issueMcpGrant = Effect.fnUntraced(function* (
+/** An MCP authorization the user approved and the client has not exchanged yet. */
+const approveMcpAuthorization = Effect.fnUntraced(function* (
 	oauth: McpOAuthService,
 	user: UserId,
 	org: OrgId,
@@ -159,17 +169,30 @@ const issueMcpGrant = Effect.fnUntraced(function* (
 		roles,
 		userEmail: null,
 	})
-	const tokens = yield* oauth.exchangeAuthorizationCode(
+	return { clientId: client.client_id, code: new URL(approved.redirectUri).searchParams.get("code")! }
+})
+
+const exchangeMcpCode = (oauth: McpOAuthService, approval: { clientId: string; code: string }) =>
+	oauth.exchangeAuthorizationCode(
 		{
-			code: new URL(approved.redirectUri).searchParams.get("code")!,
-			clientId: client.client_id,
+			code: approval.code,
+			clientId: approval.clientId,
 			redirectUri,
 			codeVerifier: verifier,
 			resource,
 		},
 		"127.0.0.1",
 	)
-	return { clientId: client.client_id, tokens }
+
+const issueMcpGrant = Effect.fnUntraced(function* (
+	oauth: McpOAuthService,
+	user: UserId,
+	org: OrgId,
+	roles: ReadonlyArray<RoleName> = [memberRole],
+) {
+	const approval = yield* approveMcpAuthorization(oauth, user, org, roles)
+	const tokens = yield* exchangeMcpCode(oauth, approval)
+	return { clientId: approval.clientId, tokens }
 })
 
 /** A digest subscriber row; `optedOut` stamps the member's own opt-out. */
@@ -178,8 +201,8 @@ const seedDigestSubscription = (db: TestDb, id: string, org: OrgId, user: UserId
 		db.pglite.query(
 			`insert into digest_subscriptions
 				(id, org_id, user_id, email, enabled, opted_out_at, created_at, updated_at)
-			 values ($1, $2, $3, $1 || '@example.com', $4, $5, now(), now())`,
-			[id, org, user, !optedOut, optedOut ? new Date() : null],
+			 values ($1, $2, $3, $1 || '@example.com', $4, CASE WHEN $5 THEN now() END, now(), now())`,
+			[id, org, user, !optedOut, optedOut],
 		),
 	)
 
@@ -437,6 +460,66 @@ describe("MembershipRevocationService", () => {
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 
+	it.effect("retires whatever was pinned above the new role, engineer keys included", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const cli = yield* CliDeviceAuthService
+			const apiKeys = yield* ApiKeysService
+			const login = (user: typeof userId, role: typeof adminRole) =>
+				Effect.gen(function* () {
+					const started = yield* cli.start("Laptop", "127.0.0.1")
+					yield* cli.approve(started.userCode, {
+						orgId,
+						userId: user,
+						roles: [role],
+						userEmail: null,
+					})
+					return yield* cli.poll(started.deviceCode)
+				})
+			const stillWorks = (token: Effect.Success<ReturnType<typeof login>>) =>
+				token.status === "complete"
+					? Effect.map(apiKeys.resolveByKey(token.token), Option.isSome)
+					: Effect.succeed(false)
+
+			// An admin demoted to engineer loses the admin key.
+			const adminToken = yield* login(userId, adminRole)
+			const toEngineer = yield* revocation.demoteMembership(orgId, userId, [engineerRole])
+			expect(toEngineer.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(adminToken)).toBe(false)
+
+			// An engineer keeps an engineer key while still an engineer, and loses it as a member.
+			const engineerToken = yield* login(stayerId, engineerRole)
+			const unchanged = yield* revocation.demoteMembership(orgId, stayerId, [engineerRole])
+			expect(unchanged.apiKeysRevoked).toBe(0)
+			expect(yield* stillWorks(engineerToken)).toBe(true)
+			const toMember = yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			expect(toMember.apiKeysRevoked).toBe(1)
+			expect(yield* stillWorks(engineerToken)).toBe(false)
+
+			// An approval made as an engineer and not yet redeemed mints nothing after the demotion.
+			const pending = yield* cli.start("Laptop", "127.0.0.1")
+			yield* cli.approve(pending.userCode, {
+				orgId,
+				userId: stayerId,
+				roles: [engineerRole],
+				userEmail: null,
+			})
+			// One approved at the role the member keeps survives.
+			const kept = yield* cli.start("Laptop", "127.0.0.1")
+			yield* cli.approve(kept.userCode, {
+				orgId,
+				userId: stayerId,
+				roles: [memberRole],
+				userEmail: null,
+			})
+			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+			expect((yield* cli.poll(pending.deviceCode)).status).toBe("expired")
+			expect((yield* cli.poll(kept.deviceCode)).status).toBe("complete")
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
 	it.effect("kills the refresh family behind a demoted member's MCP grant", () => {
 		const db = createTestDb(createdDbs)
 		const cache = recordingEdgeCache()
@@ -458,6 +541,25 @@ describe("MembershipRevocationService", () => {
 					"select count(*)::int as count from mcp_oauth_refresh_tokens where revoked_at is null",
 				),
 			).toBe(0)
+		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
+	})
+
+	it.effect("leaves nothing to exchange from an MCP approval made above the new role", () => {
+		const db = createTestDb(createdDbs)
+		const cache = recordingEdgeCache()
+		return Effect.gen(function* () {
+			const revocation = yield* MembershipRevocationService
+			const oauth = yield* McpOAuthService
+
+			const pending = yield* approveMcpAuthorization(oauth, stayerId, orgId, [engineerRole])
+			const kept = yield* approveMcpAuthorization(oauth, stayerId, orgId, [memberRole])
+			yield* revocation.demoteMembership(orgId, stayerId, [memberRole])
+
+			const refused = yield* Effect.result(exchangeMcpCode(oauth, pending))
+			expect(refused._tag).toBe("Failure")
+			if (refused._tag === "Failure") expect(refused.failure).toMatchObject({ error: "invalid_grant" })
+			// One approved at the role the member keeps is still good.
+			expect((yield* exchangeMcpCode(oauth, kept)).token_type).toBe("Bearer")
 		}).pipe(Effect.provide(makeLayer(db, cache.layer)))
 	})
 

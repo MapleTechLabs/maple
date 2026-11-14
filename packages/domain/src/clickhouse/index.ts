@@ -24,13 +24,13 @@ export { performanceOnlySearchColumns } from "./migrations/0010_search_indexes"
 export {
 	type BackfillSpec,
 	isBackfill,
-	SOURCE_TIME_COLUMNS,
 	renderBackfillFull,
 	renderStatementFull,
 	compileBackfillChunk,
 } from "./backfill"
 export { expandMigrationToSteps, expandBackfill, type ApplyStep, type ExecFn } from "./apply-plan"
-export { qualifyStatementForDatabase, CLICKHOUSE_MV_SOURCE_TABLES } from "./qualify"
+export { qualifyStatementForDatabase } from "./qualify"
+export * from "./bookkeeping"
 export {
 	computeSchemaDiff,
 	type ColumnDrift,

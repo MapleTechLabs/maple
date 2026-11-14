@@ -30,7 +30,7 @@ export interface ClientConfig {
 	readonly url: string
 	readonly database?: string
 	readonly username?: string
-	readonly password?: Redacted.Redacted<string>
+	readonly password?: Redacted.Redacted
 	readonly settings?: Readonly<Record<string, string | number>>
 }
 export interface QueryOptions {
@@ -39,6 +39,8 @@ export interface QueryOptions {
 	readonly queryId?: string
 	readonly settings?: Readonly<Record<string, string | number>>
 	readonly limits?: Limits
+	/** `JSONStringsEachRow` returns every value as a string: exact 64-bit numbers without any setting. */
+	readonly format?: "JSONEachRow" | "JSONStringsEachRow"
 }
 export type Row = Record<string, unknown>
 export interface QueryResult {
@@ -68,6 +70,7 @@ const validSettings = (settings: ClientConfig["settings"]) =>
 			(typeof value === "string" || Number.isFinite(value)),
 	)
 const validLimits = (limits: Limits | undefined) =>
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.values would need a cast
 	Arr.every(Object.values(limits ?? {}), (n) => n === undefined || (Number.isSafeInteger(n) && n >= 0))
 
 const transportError = (error: { readonly reason: object }, queryId: string) =>
@@ -156,7 +159,7 @@ export const make = (
 				const request = HttpClientRequest.post(url).pipe(
 					HttpClientRequest.setHeader("authorization", authorization),
 					HttpClientRequest.bodyText(
-						`${options.sql}\nFORMAT JSONEachRow`,
+						`${options.sql}\nFORMAT ${options.format ?? "JSONEachRow"}`,
 						"text/plain; charset=utf-8",
 					),
 				)

@@ -1,6 +1,6 @@
 ---
 title: "Limits"
-description: "Every limit in one place: ingest request size and concurrency, query time ranges, raw SQL, alert rules, event fields, and API and MCP rate limits."
+description: "Every limit in one place: ingest request size and concurrency, sources, ingest rules, query time ranges, raw SQL, alert rules, event fields, and API and MCP rate limits."
 group: "Reference"
 order: 9
 ---
@@ -17,6 +17,26 @@ See [Ingest API](/docs/reference/ingest) for status codes and retry guidance.
 | Source token rate   | Set per [source token](/docs/reference/authentication#source-tokens), in requests per second | `429`, retry after 1 s       |
 | Compression         | gzip only                                                                                    | `415`                        |
 | Session replay      | 1 GiB of uncompressed data per recording                                                     | Recording stops at the limit |
+
+### Sources
+
+| Limit                                                                           | Value                       |
+| ------------------------------------------------------------------------------- | --------------------------- |
+| Sources per organization                                                        | 100                         |
+| Resource attributes per source                                                  | 20                          |
+| Highest [source token](/docs/reference/authentication#source-tokens) rate limit | 100,000 requests per second |
+
+### Ingest rules
+
+| Limit                                  | Value                            |
+| -------------------------------------- | -------------------------------- |
+| Rules per organization                 | 50                               |
+| Conditions per rule                    | 20                               |
+| Values per condition                   | 100, up to 1,024 characters each |
+| Redacted keys per rule                 | 32                               |
+| Custom patterns per rule               | 10, up to 512 characters each    |
+| Rule name                              | 120 characters                   |
+| Bytes of one value a redact rule scans | 16 KiB                           |
 
 ## Product events and session events
 
@@ -38,9 +58,9 @@ The dashboard, the API and the MCP tools share these limits. Queries time out af
 
 | Query                                   | Longest time range |
 | --------------------------------------- | ------------------ |
-| Charts and time series                  | 31 days            |
+| Charts and time series                  | 32 days            |
 | Trace and log lists                     | 7 days             |
-| Breakdowns (top-N by service, route, …) | 30 days            |
+| Breakdowns (top-N by service, route, …) | 32 days            |
 | Breakdowns with no filter               | 24 hours           |
 | Attribute and metric discovery          | 30 days            |
 | Log pattern mining                      | 24 hours           |
@@ -62,6 +82,7 @@ See [SQL reference](/docs/reference/sql).
 
 | Limit                     | Value                                                               |
 | ------------------------- | ------------------------------------------------------------------- |
+| Enabled rules             | 100 per organization. Uptime monitor and SLO rules do not count     |
 | Evaluation window         | 1 minute to 24 hours                                                |
 | Check interval            | 1 to 60 minutes. Auto is a fifth of the window, from 1 to 5 minutes |
 | Groups per raw-SQL alert  | 100                                                                 |

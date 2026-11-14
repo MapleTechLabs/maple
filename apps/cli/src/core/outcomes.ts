@@ -2,20 +2,9 @@ import { Cause, Effect, Option } from "effect"
 import { describeFailure, formatFailure } from "../lib/failure"
 
 /**
- * Expected-outcome handling for the root `maple` span.
- *
- * A CLI failure is not automatically a *problem*. Refusing to start because the
- * server is already running, reporting that no backend is configured, a bad
- * `--since`: these are the CLI working, but they travel through Effect's error
- * channel, so `Effect.withSpan("maple", …)` in bin.ts closed the root span
- * `Error` for every one of them and buried the failures worth acting on.
- *
- * These helpers recover such outcomes *inside* the span, the same placement
- * bin.ts uses for `ArchiveError`: applied outside, the span has already closed
- * by the time recovery runs.
- *
- * They live in their own module because bin.ts executes the CLI at import time
- * and cannot be imported by a test.
+ * Expected outcomes (already running, no backend, a bad `--since`) are the CLI working, so they are
+ * recovered inside the root `maple` span to leave it `Ok`. Kept out of bin.ts, which runs the CLI
+ * at import time and so cannot be imported by a test.
  */
 
 /**

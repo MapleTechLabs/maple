@@ -1,7 +1,8 @@
 # Cancellation reviews
 
 When an org cancels its plan, Maple gathers what that org's own usage looked like around the
-cancellation and posts a report to a Slack channel in Maple's workspace.
+cancellation and posts a report to a Slack channel in Maple's workspace, a Hazel channel in Maple's
+Hazel workspace, or both.
 
 ## Setup
 
@@ -16,8 +17,12 @@ cancellation and posts a report to a Slack channel in Maple's workspace.
 
 5. For the Stripe survey, plan history and failed charges: `STRIPE_SECRET_KEY` needs Customers,
    Tax IDs, Subscriptions and Charges read. Without one, the part it feeds is left out.
+6. For Hazel: link Maple's own org (`MAPLE_INTERNAL_ORG_ID`) to its Hazel workspace (Settings →
+   Integrations → Hazel), and set `MAPLE_CANCELLATION_HAZEL_CHANNEL_ID` and `MAPLE_INTERNAL_ORG_ID`
+   on the api Worker, beside the Hazel bot's `MAPLE_HAZEL_BOT_TOKEN`. Hazel can be set up alone,
+   without the Slack steps.
 
-Without a channel id nothing is reviewed.
+Without a Slack or a Hazel channel id nothing is reviewed.
 
 ## What triggers one
 
@@ -41,6 +46,15 @@ cancellation is tried once more when the plan expires. A cancellation queued or 
 reported once: the review claims its row in `cancellation_reviews` before it gathers the report. The one
 exception is a Slack post that times out (30 s) but lands anyway: its retry, five minutes later,
 posts the report a second time.
+
+With both set, Slack is posted first and decides all of the above. Hazel is posted once Slack has
+posted or refused, and a Hazel failure is logged as an error (`maple.cancellation.hazel_posted`
+false on the span) and never retried, so a retry never posts to Slack twice. The review counts as
+posted when either took it. With Hazel alone, Hazel takes Slack's place in all of the above.
+
+Hazel gets the report as one HTML page (`chat-page.ts`, published through Hazel's `html-renders`
+API and shown in the message's embed). Should Hazel refuse the page, the markdown report
+(`chat-message.ts`) is posted instead.
 
 ## What it reads
 

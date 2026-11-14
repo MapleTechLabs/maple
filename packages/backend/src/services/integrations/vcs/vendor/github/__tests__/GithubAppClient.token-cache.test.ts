@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import type { VcsInstallation } from "@maple/domain/http"
+import { VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { makeVcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
@@ -34,7 +34,24 @@ const env = Env.layer.pipe(
 	),
 )
 
-const INSTALLATION = { externalInstallationId: "42" } as VcsInstallation
+const INSTALLATION = Schema.decodeSync(VcsInstallation)({
+	id: "00000000-0000-4000-8000-000000000042",
+	orgId: "org_test",
+	provider: "github",
+	externalInstallationId: "42",
+	accountLogin: "octo",
+	accountType: "organization",
+	externalAccountId: "1",
+	accountAvatarUrl: null,
+	repositorySelection: "all",
+	status: "active",
+	suspendedAt: null,
+	ciTracesEnabled: true,
+	repositoryDiscovery: null,
+	installedByUserId: "user_1",
+	createdAt: 0,
+	updatedAt: 0,
+})
 const REPO = { externalRepoId: "1", owner: "octo", name: "shop" }
 
 // Answers the token mint and any annotations page, recording each path.

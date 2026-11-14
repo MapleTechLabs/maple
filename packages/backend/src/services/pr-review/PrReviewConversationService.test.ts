@@ -12,10 +12,10 @@ import {
 	type PullRequestCommentJob,
 	type PullRequestHead,
 } from "@maple/domain/http"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	asOrgId,
 	asUserId,
@@ -28,7 +28,9 @@ import {
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { FindingEmbedder } from "./FindingEmbedder"
 import { PrReviewService } from "./PrReviewService"
+import { PrReviewTelemetryService } from "./telemetry/PrReviewTelemetryService"
 import { applyEdits, editablePath, PrReviewConversationService } from "./PrReviewConversationService"
 
 const trackedDbs: TestDb[] = []
@@ -82,6 +84,7 @@ const layerFor = (
 	const provider: VcsProviderClient = {
 		id: "github",
 		reviewerMention: "@maple-review-bot",
+		webhookSignatureHeader: "x-hub-signature-256",
 		webhookToJobs: unused,
 		fetchRepositories: unused,
 		fetchCommits: unused,
@@ -170,7 +173,22 @@ const layerFor = (
 			abort: async () => undefined,
 		})),
 	)
-	const base = Layer.mergeAll(testRepoLayer(testDb), registry, testDb.layer, workerEnv)
+	const base = Layer.mergeAll(
+		testRepoLayer(testDb),
+		registry,
+		testDb.layer,
+		workerEnv,
+		FindingEmbedder.none,
+		Layer.succeed(PrReviewTelemetryService, {
+			analyze: () => Effect.undefined,
+			commitTimes: () => Effect.succeed(new Map()),
+			deploymentsSince: () => Effect.succeed([]),
+			operationsIn: () => Effect.succeed([]),
+			issueCountsIn: () => Effect.succeed(new Map()),
+			issuesFirstSeenSince: () => Effect.succeed([]),
+			attributeKeysIn: () => Effect.succeed(new Set()),
+		}),
+	)
 	return Layer.effect(PrReviewConversationService, PrReviewConversationService.make).pipe(
 		Layer.provideMerge(Layer.effect(PrReviewService, PrReviewService.make)),
 		Layer.provideMerge(base),
@@ -337,8 +355,8 @@ describe("PrReviewConversationService", () => {
 			)
 			assert.equal(outcome.outcome, "started")
 			assert.deepEqual(recorded.reactions, ["901:eyes"])
-			assert.include(recorded.begun[0]!, "@octocat mentioned you on pull request #612")
-			assert.include(recorded.begun[0]!, "> @maple why does this need a lock?")
+			assert.include(recorded.begun[0], "@octocat mentioned you on pull request #612")
+			assert.include(recorded.begun[0], "> @maple why does this need a lock?")
 			yield* conversations.submitReply(
 				orgId,
 				outcome.replyId!,
@@ -347,6 +365,18 @@ describe("PrReviewConversationService", () => {
 			assert.deepEqual(recorded.posted, [
 				{ body: "Because two writers race on the cursor.", threadRootId: "800" },
 			])
+			// The session's tools are held to this pull request, whatever its comments name.
+			assert.deepEqual(
+				yield* conversations.replyTarget(orgId, outcome.replyId!),
+				Option.some({
+					repository: "octo/repo",
+					number: 612,
+				}),
+			)
+			assert.deepEqual(
+				yield* conversations.replyTarget(asOrgId("org_other"), outcome.replyId!),
+				Option.none(),
+			)
 			// Nothing staged on an ask, and a second submission posts nothing.
 			assert.include(
 				yield* conversations.stageEdit(orgId, outcome.replyId!, {
@@ -426,7 +456,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix the null check" }),
 			)
 			assert.equal(outcome.outcome, "started")
-			assert.include(recorded.begun[0]!, "They asked you to fix it")
+			assert.include(recorded.begun[0], "They asked you to fix it")
 			const replyId = outcome.replyId!
 			assert.include(
 				yield* conversations.stageEdit(orgId, replyId, {
@@ -452,8 +482,8 @@ describe("PrReviewConversationService", () => {
 					files: [{ path: "src/a.ts", content: "const a = 1\nif (x != null) {\n}\n" }],
 				},
 			])
-			assert.include(recorded.posted[0]!.body, "Guarded the null case.")
-			assert.include(recorded.posted[0]!.body, "Pushed `ccccccc` to `feat/orders`.")
+			assert.include(recorded.posted[0].body, "Guarded the null case.")
+			assert.include(recorded.posted[0].body, "Pushed `ccccccc` to `feat/orders`.")
 		}).pipe(
 			Effect.provide(
 				layerFor(testDb, recorded, { files: { "src/a.ts": "const a = 1\nif (x) {\n}\n" } }),
@@ -471,7 +501,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedA.posted[0]!.body, "write access")
+			assert.include(recordedA.posted[0].body, "write access")
 			assert.lengthOf(recordedA.begun, 0)
 		}).pipe(Effect.provide(layerFor(createTestDb(trackedDbs), recordedA, { permission: "read" })))
 
@@ -484,7 +514,7 @@ describe("PrReviewConversationService", () => {
 				comment({ body: "@maple fix it" }),
 			)
 			assert.equal(outcome.outcome, "failed")
-			assert.include(recordedB.posted[0]!.body, "fork")
+			assert.include(recordedB.posted[0].body, "fork")
 		}).pipe(
 			Effect.provide(
 				layerFor(createTestDb(trackedDbs), recordedB, {
@@ -510,7 +540,7 @@ describe("PrReviewConversationService", () => {
 			moved.current = head({ headSha: sha("2222222222222222222222222222222222222222") })
 			yield* conversations.submitReply(orgId, outcome.replyId!, "Done.")
 			assert.lengthOf(recordedC.commits, 0)
-			assert.include(recordedC.posted[0]!.body, "the branch moved")
+			assert.include(recordedC.posted[0].body, "the branch moved")
 		}).pipe(
 			Effect.provide(
 				Layer.suspend(() =>

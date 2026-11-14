@@ -6,7 +6,7 @@ import {
 	scrollAreaViewportGutterStyles,
 	scrollAreaViewportStyles,
 	scrollBarStyles,
-} from "@maple/ui/styles/ui/scroll-area"
+} from "./scroll-area.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
@@ -88,7 +88,7 @@ export type ScrollAreaOptions<Message = never> = Readonly<{
 	overflowY?: ScrollAreaOverflowY
 	/** Renders the scrollbar for a Mount to size and show (`trackScrollbar`), with no static state. */
 	hasMeasuredScrollbar?: boolean
-	/** Extra viewport attributes, e.g. a Mount that measures the overflow (`MeasureScrollOverflow`). */
+	/** Extra viewport attributes, e.g. a Mount that measures the overflow. */
 	viewportAttributes?: ReadonlyArray<Attribute<Message>>
 }>
 

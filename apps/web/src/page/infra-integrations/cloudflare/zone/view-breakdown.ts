@@ -1,4 +1,4 @@
-import type { CloudflareFilters } from "../../../../components/infra/cloudflare/filters"
+import type { CloudflareFilters } from "../filters"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { EMPTY_VALUE, formatBytes, formatErrorRate, formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -14,7 +14,7 @@ import { listFooter } from "@maple/views/ui/list-footer"
 import { panel, panelHeader, panelTitle } from "@maple/views/ui/panel"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, dataTableEmpty } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { type Sort, sortRowsByField } from "../../../kit/table-sort"
 import type { BreakdownTotal, ZoneBreakdown } from "../data"
 import { DIMENSIONS, type DimensionDef, dimensionOf } from "./derive"
@@ -27,8 +27,7 @@ import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr, String as Str } from "effect"
 
-// `CloudflareBreakdownPanel`: one ranked table per dimension, rows filter the page, and a live Cloudflare
-// lookup for the long tail.
+// One ranked table per dimension, rows filter the page, and a live Cloudflare lookup for the long tail.
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +44,7 @@ const formatCollectedFrom = (iso: string, timeZone: string): string | null =>
 		? null
 		: new Intl.DateTimeFormat("en-US", { timeZone, month: "short", day: "numeric" }).format(new Date(iso))
 
-/** `shareBar`: the row's background filled to its share. */
+/** The row's background filled to its share. */
 const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefined => {
 	const pct = Math.min(100, share * 100)
 	if (!Number.isFinite(pct) || pct < 0.5) return undefined
@@ -55,7 +54,6 @@ const shareBarStyle = (share: number): Readonly<Record<string, string>> | undefi
 	}
 }
 
-/** `CompactFilterInput`: the 24px mono filter field. */
 const compactFilterInput = (h: H, value: string, placeholder: string, label: string): Html =>
 	compactSearchInput(h, {
 		value,
@@ -67,18 +65,15 @@ const compactFilterInput = (h: H, value: string, placeholder: string, label: str
 	})
 
 const toolbar = (h: H, model: Model, dimension: DimensionDef, count: number, meta: Html | null): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 pb-2")],
-		[
-			compactFilterInput(
-				h,
-				model.breakdownSearch,
-				`Filter ${count} ${dimension.noun}`,
-				`Filter the listed ${dimension.noun}`,
-			),
-			...(meta === null ? [] : [meta]),
-		],
-	)
+	hstack(h, { align: "center", justify: "between", wrap: true, className: "gap-x-3 gap-y-2 px-3 pb-2" }, [
+		compactFilterInput(
+			h,
+			model.breakdownSearch,
+			`Filter ${count} ${dimension.noun}`,
+			`Filter the listed ${dimension.noun}`,
+		),
+		...(meta === null ? [] : [meta]),
+	])
 
 const table = (
 	h: H,
@@ -318,7 +313,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onStale: () =>
@@ -326,7 +321,7 @@ const live = (h: H, model: Model, dimension: DimensionDef): Html => {
 				[],
 				[
 					toolbar(h, model, dimension, 0, liveMeta),
-					note(["Couldn't reach Cloudflare's analytics API for this zone right now."]),
+					note(["Couldn't reach Cloudflare's analytics API for this zone right now"]),
 				],
 			),
 		onSuccess: (data) => liveBody(h, model, dimension, data, false, query, liveMeta),
@@ -443,7 +438,7 @@ export const breakdownPanel = (
 										size: "xs",
 										mono: true,
 										className:
-											"bg-background/60 font-normal hover:text-foreground active:text-foreground",
+											"bg-surface-well font-normal hover:text-foreground active:text-foreground",
 										onClick: Message.ClickedLeaveLive(),
 									},
 									["live", icon(h, "XmarkIcon")],

@@ -10,14 +10,14 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { resourceNotFound } from "../../kit/resource-not-found"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { dataStateOf } from "../kit/data-state"
 import { widgetTile } from "../kit/tiles"
 import { MeasurePreview } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { previewWidgetOf } from "./update"
+import { canApply, previewWidgetOf } from "./update"
 import type { Widget } from "./lowering"
 import { leaveDialog } from "./view-dialog"
 import { queryEditor } from "./view-query"
@@ -25,12 +25,8 @@ import { settingsRail } from "./view-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `WidgetConfigurePage` and `WidgetQueryBuilderPage`: the preview over the query editor, the
-// settings rail beside them.
-
 type H = HtmlBuilder<Message>
 
-/** `WidgetEditorSkeleton`. */
 const editorSkeleton = (h: H): Html =>
 	h.div(
 		[h.Role("status"), h.AriaLabel("Loading widget")],
@@ -46,14 +42,17 @@ const editorSkeleton = (h: H): Html =>
 					],
 					[chartSkeleton(h, "line")],
 				),
-				h.div(
-					[h.Class("flex max-w-md flex-col gap-4")],
+				vstack(
+					h,
+					{ gap: "4", className: "max-w-md" },
 					Arr.map([1, 2, 3, 4], (index) =>
-						h.div(
-							[
-								h.Class("flex flex-col gap-1.5 animate-tile-in motion-reduce:animate-none"),
-								h.Style({ "animation-delay": `${index * 40}ms` }),
-							],
+						vstack(
+							h,
+							{
+								gap: "1.5",
+								className: "animate-tile-in motion-reduce:animate-none",
+								attributes: [h.Style({ "animation-delay": `${index * 40}ms` })],
+							},
 							[skeleton(h, "h-3 w-20"), skeleton(h, "h-9 w-full")],
 						),
 					),
@@ -62,7 +61,7 @@ const editorSkeleton = (h: H): Html =>
 		],
 	)
 
-/** `ResourceNotFound`: no such widget on this board. */
+/** No such widget on this board. */
 const notFound = (h: H, widgetId: string, dashboardHref: string): Html =>
 	resourceNotFound(h, {
 		title: "Widget not found",
@@ -81,7 +80,6 @@ const timeLabel = (model: Model): string =>
 			? presetLabel(model.timeRange.value)
 			: `${model.timeRange.startTime} - ${model.timeRange.endTime}`
 
-/** The preview hero: the board's range picker over the widget as it would render. */
 /** The previewed stat's sparkline series, read like any tile's data (its own data source). */
 const sparklineState = (model: Model, widget: Widget) => {
 	const source = widget.display.sparkline?.dataSource
@@ -90,30 +88,28 @@ const sparklineState = (model: Model, widget: Widget) => {
 		: dataStateOf(model.requests, { ...widget, dataSource: source }, model.sparkGate)
 }
 
+/** The preview hero: the editor's range picker over the widget as it would render. */
 const preview = (h: H, model: Model, timeZone: string): Html => {
 	const widget = previewWidgetOf(model)
 	return h.div(
 		[h.Class("border-b bg-surface-sunken p-6")],
 		[
-			h.div(
-				[h.Class("flex justify-end mb-3")],
-				[
-					h.submodel({
-						slotId: "widget-editor-time-picker",
-						model: model.timePicker,
-						view: TimeRangePicker.view,
-						viewInputs: {
-							label: timeLabel(model),
-							selectedPreset:
-								model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
-							presets: TimeRangePicker.PRESET_VALUES,
-							timeZone,
-							hasHotkey: false,
-						},
-						toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
-					}),
-				],
-			),
+			hstack(h, { align: "stretch", justify: "end", className: "mb-3" }, [
+				h.submodel({
+					slotId: "widget-editor-time-picker",
+					model: model.timePicker,
+					view: TimeRangePicker.view,
+					viewInputs: {
+						label: timeLabel(model),
+						selectedPreset:
+							model.timeRange?.type === "relative" ? model.timeRange.value : undefined,
+						presets: TimeRangePicker.PRESET_VALUES,
+						timeZone,
+						hasHotkey: false,
+					},
+					toParentMessage: (message) => Message.GotTimePickerMessage({ message }),
+				}),
+			]),
 			h.div(
 				[h.Class("h-[420px]"), h.OnMount(MeasurePreview())],
 				widget === null
@@ -152,14 +148,23 @@ const preview = (h: H, model: Model, timeZone: string): Html => {
 
 const editor = (h: H, model: Model, timeZone: string): Html =>
 	h.div(
-		[h.Class("animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4")],
+		// Below `md` the rail stacks under the editor and the page scrolls; from `md` each pane scrolls.
+		[
+			h.Class(
+				"animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-col md:flex-row md:flex-1 md:min-h-0 -m-4",
+			),
+		],
 		[
 			h.div(
-				[h.Class("flex-1 min-w-0 overflow-y-auto")],
+				[h.Class("min-w-0 md:flex-1 md:overflow-y-auto")],
 				[preview(h, model, timeZone), queryEditor(h, model, timeZone)],
 			),
 			h.aside(
-				[h.Class("w-[272px] shrink-0 border-l overflow-y-auto p-5 bg-surface-faint")],
+				[
+					h.Class(
+						"w-full md:w-[272px] shrink-0 border-t md:border-t-0 md:border-l md:overflow-y-auto p-5 bg-surface-faint",
+					),
+				],
 				[settingsRail(h, model, timeZone)],
 			),
 		],
@@ -169,7 +174,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: WIDGET_CHART_TOKENS }))],
 		[
-			dashboardPage(h, {}, [
+			dashboardPage(h, { width: "full" }, [
 				model.status === "Ready" && model.state !== null
 					? editor(h, model, inputs.context.timeZone)
 					: model.status === "Missing"
@@ -181,7 +186,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	),
 )
 
-/** `topbarActions`: Cancel and Apply, once the widget is open. */
+/** Cancel and Apply, once the widget is open. */
 export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>((model, _inputs, h) =>
 	model.status !== "Ready" || model.state === null
 		? null
@@ -201,6 +206,7 @@ export const topbarActions = Submodel.defineView<Model, Message, PageViewInputs>
 					{
 						size: "sm",
 						isLoading: model.isSaving,
+						isDisabled: !canApply(model),
 						attributes: [h.OnClick(Message.ClickedApply())],
 					},
 					["Apply"],

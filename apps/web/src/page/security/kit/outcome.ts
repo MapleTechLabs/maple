@@ -1,12 +1,14 @@
 import type { SecurityAuditEvent, SecurityAuditUnit } from "@maple/domain/http"
-import { ORG_NO_AI_CREDITS, ORG_SPEND_LIMIT_REACHED } from "@maple/domain/security-audit"
+import {
+	ORG_BUDGET_UNAVAILABLE,
+	ORG_NO_AI_CREDITS,
+	ORG_SPEND_LIMIT_REACHED,
+} from "@maple/domain/security-audit"
 import { incompleteReasonLabel } from "./format"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 // What a run found and why it stopped, in the words a person reads: stop reasons, leads, unit
 // names and event sentences.
-
-// STOP REASONS
 
 /** `broken`: something failed under the run. `choice`: a limit or rule the run followed. */
 export type StopKind = "broken" | "choice"
@@ -100,7 +102,7 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 		}),
 	],
 	[
-		"org_budget_unavailable",
+		ORG_BUDGET_UNAVAILABLE,
 		() => ({
 			kind: "broken",
 			title: "Billing could not be reached",
@@ -162,9 +164,11 @@ const REASON_COPY = new Map<string, (detail: string) => ReasonCopy>([
 ])
 
 const reasonOf = (code: string): StopReason => {
-	const split = code.indexOf(":")
-	const key = split === -1 ? code : Str.slice(0, split)(code)
-	const copy = REASON_COPY.get(key)?.(split === -1 ? "" : Str.trim(Str.slice(split + 1)(code)))
+	const split = Str.indexOf(":")(code)
+	const key = Option.match(split, { onNone: () => code, onSome: (index) => Str.slice(0, index)(code) })
+	const copy = REASON_COPY.get(key)?.(
+		Option.match(split, { onNone: () => "", onSome: (index) => Str.trim(Str.slice(index + 1)(code)) }),
+	)
 	if (copy !== undefined) return copy
 	const label = incompleteReasonLabel(code)
 	return {
@@ -181,15 +185,19 @@ export const stopReasonsOf = (incompleteReason: string | null): ReadonlyArray<St
 	incompleteReason === null || Str.trim(incompleteReason) === ""
 		? [reasonOf("stopped_early")]
 		: Arr.map(
-				Str.split("; ")(incompleteReason).reduce<ReadonlyArray<string>>((reasons, part) => {
-					const last = reasons.at(-1)
-					if (Str.trim(part) === "") return reasons
-					// An engine detail is itself a `; ` list, so only a segment that starts with a code
-					// starts a new reason.
-					return last !== undefined && !/^[a-z_]+(?::|$)/u.test(Str.trim(part))
-						? [...reasons.slice(0, -1), `${last}; ${part}`]
-						: [...reasons, part]
-				}, []),
+				Arr.reduce<string, ReadonlyArray<string>>(
+					Str.split("; ")(incompleteReason),
+					[],
+					(reasons, part) => {
+						const last = reasons.at(-1)
+						if (Str.trim(part) === "") return reasons
+						// An engine detail is itself a `; ` list, so only a segment that starts with a code
+						// starts a new reason.
+						return last !== undefined && !/^[a-z_]+(?::|$)/u.test(Str.trim(part))
+							? [...reasons.slice(0, -1), `${last}; ${part}`]
+							: [...reasons, part]
+					},
+				),
 				reasonOf,
 			)
 
@@ -241,8 +249,6 @@ export const stopSummaryOf = (incompleteReason: string | null): string => {
 	return reasons.length > 1 ? `${first} · +${reasons.length - 1} more` : first
 }
 
-// LEADS
-
 /** `2 confirmed · 6 to validate`, `6 to validate`, or `none open`. */
 export const leadsLine = (confirmed: number, toValidate: number): string =>
 	confirmed === 0 && toValidate === 0
@@ -252,8 +258,6 @@ export const leadsLine = (confirmed: number, toValidate: number): string =>
 			: toValidate === 0
 				? `${confirmed} confirmed`
 				: `${confirmed} confirmed · ${toValidate} to validate`
-
-// UNITS
 
 /** `ATTACK-CLASSES.md#Broken-Access-Control` reads as `Broken Access Control`; `src/a.ts#POST x` as `POST x`. */
 export const plainName = (text: string): string => {
@@ -277,14 +281,16 @@ export const unitName = (unit: SecurityAuditUnit): string =>
 
 /** `subsystem · attack class` under the title. */
 export const unitContext = (unit: SecurityAuditUnit): string =>
-	[
-		unit.surface === null ? null : unit.subsystem,
-		unit.attackClass === null ? null : plainName(unit.attackClass),
-	]
-		.filter((part) => part !== null && part !== "")
-		.join(" · ")
-
-// EVENTS
+	Arr.join(
+		Arr.filter(
+			[
+				unit.surface === null ? null : unit.subsystem,
+				unit.attackClass === null ? null : plainName(unit.attackClass),
+			],
+			(part): part is string => part !== null && part !== "",
+		),
+		" · ",
+	)
 
 const ROLE_NAME = new Map([
 	["recon", "Recon agent"],

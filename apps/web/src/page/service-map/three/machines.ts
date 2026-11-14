@@ -1,15 +1,11 @@
-import {
-	dim,
-	fade,
-	type InkPalette,
-	type MachineKind,
-} from "../../../components/service-map/three/appearance"
-import { health, HEALTH_COLOR, type SpatialView } from "../../../components/service-map/three/spatial-layout"
-import type { Node3D } from "../../../components/service-map/three/types"
+import { dim, fade, type InkPalette, type MachineKind } from "./appearance"
+import { health, HEALTH_COLOR, type SpatialView } from "./spatial-layout"
+import type { Node3D } from "./types"
 import * as THREE from "three"
+import { defaultBuilding } from "../factory/catalog"
 import { resolveMachineBadge } from "./badge-art"
 import { factoryBadge } from "./brand"
-import { lantern, logPile, mapleTap, toadstools } from "./decor"
+import { lampPool, lantern, logPile, mapleTap, toadstools } from "./decor"
 import {
 	type Child,
 	group,
@@ -25,10 +21,10 @@ import {
 	boardedWindow,
 	choppingStump,
 	doorSteps,
-	eaves,
 	flowerBox,
 	gableRoof,
 	GATE_MARK,
+	hipRoof,
 	inkParts,
 	logWalls,
 	mapleGate,
@@ -44,11 +40,12 @@ import {
 	sugarRoof,
 	variant,
 	vatHoops,
+	weathervane,
 	windowDressing,
 	woodSled,
 	yard,
 } from "./props"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 /** One stacked crate module. Machines are 2×2 modules wide and grow in whole storeys. */
 export const MODULE = 0.8
@@ -71,6 +68,9 @@ export function machineStoreys(node: Pick<Node3D, "throughput">, view: SpatialVi
 
 /** The cabins' stone footing, which lifts their doors onto a porch. */
 const FOOTING = 0.14
+
+/** Ridge height of a cabin roof above its walls. */
+const ROOF = 0.56
 
 const range = (count: number) => Array.from({ length: Math.max(0, count) }, (_, i) => i)
 
@@ -144,10 +144,10 @@ function windowPane(
 function door(scope: Scope, { position, finish }: { position: Vec3; finish: Finish }) {
 	const [x, y, z] = position
 	// Lantern panes are gifts[2]; a degraded machine's lamp is out.
-	const lamp =
-		finish.trouble === "degraded"
-			? { ...finish, gifts: Arr.map(finish.gifts, (c, i) => (i === 2 ? finish.iron : c)) }
-			: finish
+	const lit = finish.trouble !== "degraded"
+	const lamp = lit
+		? finish
+		: { ...finish, gifts: Arr.map(finish.gifts, (c, i) => (i === 2 ? finish.iron : c)) }
 	return group({}, [
 		inkPlate({ size: [0.42, 0.36], position, normal: "x", color: finish.signal, ink: finish.ink }),
 		inkLines([x, y - 0.18, z, x, y + 0.18, z, x, y + 0.02, z - 0.13, x, y - 0.02, z - 0.13], finish.ink),
@@ -155,6 +155,10 @@ function door(scope: Scope, { position, finish }: { position: Vec3; finish: Fini
 			? doorSteps(scope, { door: position, finish })
 			: porch(scope, { door: position, finish }),
 		lantern(scope, { position: [x, y, z - 0.33], finish: lamp }),
+		// Under the lantern and inside the pad edge, so it never spills over the selection rail.
+		finish.night &&
+			lit &&
+			lampPool({ position: [x + 0.05, 0.006, z - 0.3], radius: 0.38, color: finish.glow }),
 	])
 }
 
@@ -191,11 +195,18 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 		Arr.map(panes, (pane) => windowPane(scope, { center: pane.center, normal: pane.normal, finish })),
 		stoneCourse(scope, { half: HALF, height: FOOTING, finish }),
 		windowDressing(scope, { windows: panes, finish }),
-		finish.trouble === "degraded" && front && boardedWindow(scope, { center: front.center, finish }),
+		finish.trouble === "degraded" &&
+			front !== undefined &&
+			boardedWindow(scope, { center: front.center, finish }),
 		variant(finish.seed, 6, 2) === 1 &&
-			front &&
+			front !== undefined &&
 			flowerBox(scope, { position: [front.center[0], front.center[1] - 0.2, HALF], finish }),
-		eaves(scope, { half: HALF, top: height, finish }),
+		// Most cabins wear a hip roof; one in three a gable, its ridge along x.
+		variant(finish.seed, 11, 3) === 0
+			? gableRoof(scope, { base: height, half: HALF + 0.1, rise: ROOF, length: HALF * 2 + 0.2, finish })
+			: hipRoof(scope, { base: height, half: HALF + 0.1, rise: ROOF - 0.06, ridge: 0.3, finish }),
+		variant(finish.seed, 12, 2) === 0 &&
+			weathervane(scope, { position: [flip ? -0.14 : 0.14, height + ROOF, 0], finish }),
 		inkPlate({
 			size: [0.42, 0.3],
 			position: [HALF + 0.002, 0.42, -0.4],
@@ -210,8 +221,14 @@ function processor(scope: Scope, { height, finish }: { height: number; finish: F
 			color: finish.face,
 			ink: finish.ink,
 		}),
-		stoneChimney(scope, { base: [flip ? 0.42 : -0.42, height, -0.42], height: 0.6, width: 0.26, finish }),
-		stovepipe(scope, { position: [flip ? -0.38 : 0.36, height, -0.38], finish }),
+		// Both stacks start inside the roof and clear its ridge.
+		stoneChimney(scope, {
+			base: [flip ? 0.42 : -0.42, height, -0.42],
+			height: 0.86,
+			width: 0.26,
+			finish,
+		}),
+		stovepipe(scope, { position: [flip ? -0.38 : 0.36, height + 0.3, -0.38], finish }),
 		door(scope, { position: [HALF + 0.002, FOOTING + 0.18, 0.36], finish }),
 		inkLines(clapboard(height), finish.ink),
 	])
@@ -316,6 +333,17 @@ function loadingBay(scope: Scope, { height, finish }: { height: number; finish: 
 			}),
 		),
 		inkBox({ size: [1.8, 0.24, 0.3], position: [0, gantry, -0.7], color: finish.face, ink: finish.ink }),
+		// A shingled canopy keeps the weather off the hoist. Its front eave stops at the beam face,
+		// so it never covers the health plate or the service mark.
+		group({ position: [0, 0, -0.75] }, [
+			gableRoof(scope, {
+				base: gantry + 0.12,
+				half: 0.2,
+				rise: 0.16,
+				length: 2,
+				finish,
+			}),
+		]),
 		inkPlate({
 			size: [0.5, 0.14],
 			position: [0, gantry, -0.549],
@@ -395,14 +423,6 @@ function shed(scope: Scope, { height, finish }: { height: number; finish: Finish
 		toadstools(scope, { position: [-0.55, -0.06, 0.95], finish }),
 		door(scope, { position: [face, 0.26, 0.36], finish }),
 	])
-}
-
-function machineKind(node: Node3D): MachineKind {
-	if (node.kind === "database") return "tank"
-	if (node.kind === "queue" || Str.endsWith("worker")(node.id)) return "loader"
-	if (node.kind === "external") return "shed"
-	if (node.kind === "edge" || node.platform === "cloudflare") return "gateway"
-	return "processor"
 }
 
 const MACHINE_MODELS = {
@@ -486,6 +506,9 @@ function selectionFrame(palette: InkPalette): Child {
 	]
 }
 
+/** Name of the group standing on a machine's pad. */
+export const MACHINE_BODY = "machine-body"
+
 /** One machine on its pad; the outer group carries `userData.pickId` for the scene's raycast. */
 export function factoryMachine(
 	scope: Scope,
@@ -497,6 +520,8 @@ export function factoryMachine(
 		selected,
 		palette,
 		running,
+		wind,
+		building,
 	}: {
 		node: Node3D
 		position: Vec3
@@ -505,9 +530,13 @@ export function factoryMachine(
 		selected: boolean
 		palette: InkPalette
 		running: Running
+		/** The map's wind clock, in seconds. */
+		wind: () => number
+		/** A customized building type; defaults to the one the node's kind implies. */
+		building?: MachineKind
 	},
 ): THREE.Group {
-	const kind = machineKind(node)
+	const kind = building ?? defaultBuilding(node)
 	const badge = resolveMachineBadge(node)
 	const height = machineStoreys(node, view) * MODULE
 	const recede = (color: string) => (dimmed ? dim(color, palette.paper, 0.72) : color)
@@ -544,8 +573,18 @@ export function factoryMachine(
 		soil: recede(palette.soil),
 		water: recede(palette.water),
 		moss: recede(palette.evergreen),
+		night: palette.night,
+		wind,
 	}
 	const model = MACHINE_MODELS[kind]
+	// Everything standing on the pad; the scene finds it by name to pop a new selection.
+	const body = group({ position: [0, 0.06, 0] }, [
+		model(scope, { height, finish }),
+		mapleState(scope, { kind, selected, finish }),
+		yard(scope, { kind, finish }),
+		badge && factoryBadge(scope, { ...badgeMount(kind, height), muted: dimmed, badge, palette }),
+	])
+	body.name = MACHINE_BODY
 	const machine = group({ position }, [
 		// The pad carries health, big enough to read with the whole map in view.
 		inkBox({
@@ -556,12 +595,7 @@ export function factoryMachine(
 		}),
 		blobShadow({ height, palette, dimmed }),
 		selected && selectionFrame(palette),
-		group({ position: [0, 0.06, 0] }, [
-			model(scope, { height, finish }),
-			mapleState(scope, { kind, selected, finish }),
-			yard(scope, { kind, finish }),
-			badge && factoryBadge(scope, { ...badgeMount(kind, height), muted: dimmed, badge, palette }),
-		]),
+		body,
 	])
 	machine.userData.pickId = node.id
 	return machine

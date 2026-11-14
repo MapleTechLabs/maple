@@ -5,11 +5,12 @@ import {
 	deriveServiceHealthFromCauses,
 	type LatencyBaselineSignal,
 	type ServiceHealth,
-	type ServiceHealthCause,
-} from "../../../components/dashboard/service-health"
-import { DateTime, Option, Array as Arr, String as Str } from "effect"
+} from "../../kit/service-health-rollup"
+import { Array as Arr, String as Str, Order } from "effect"
 import type { ServicesSearch } from "../../../route/search"
-import type { IncidentCause, ServiceRow } from "./model"
+import { type HealthIncident, serviceHealthCauses } from "../../kit/service-health"
+import { isResolvableSha } from "../../kit/commit-card"
+import type { ServiceRow } from "./model"
 
 // Pure derivations of the services table and its health summary.
 
@@ -28,59 +29,19 @@ export type HealthSummary = Readonly<{
 	counts: Readonly<Record<ServiceHealth, number>>
 }>
 
-/** An ISO-8601 instant in epoch ms; `NaN` when unparseable, like `Date.parse`. */
-export const isoMs = (iso: string): number =>
-	Option.match(DateTime.make(iso), { onNone: () => Number.NaN, onSome: DateTime.toEpochMillis })
-
-// copied: anomaly-format.ts (`isStaleOpenIncident`, `anomalyAffectsServiceHealth`); that module holds icons.
-const ANOMALY_STALE_AFTER_MS = 60 * 60 * 1000
-const anomalyAffectsHealth = (row: V2AnomalyServiceCount, nowMs: number): boolean => {
-	const lastTriggeredMs = isoMs(row.last_triggered_at)
-	const isStale = !Number.isFinite(lastTriggeredMs) || nowMs - lastTriggeredMs > ANOMALY_STALE_AFTER_MS
-	return row.signal_type !== "error_spike" && !isStale
-}
-
-/** `useServiceHealthSummary`: alert incidents by service name, open anomalies by service and environment. */
+/** Alert incidents by service name, open anomalies by service and environment. */
 export const healthSummary = (
 	overview: ReadonlyArray<ServiceRow>,
-	incidents: ReadonlyArray<IncidentCause>,
+	incidents: ReadonlyArray<HealthIncident>,
 	anomalies: ReadonlyArray<V2AnomalyServiceCount>,
 	nowMs: number,
 ): HealthSummary => {
-	const alertCauses = new Map<string, Array<ServiceHealthCause>>()
-	Arr.forEach(
-		Arr.filter(
-			incidents,
-			(incident) =>
-				incident.status === "open" && incident.groupKey !== null && incident.groupKey !== "",
-		),
-		(incident) => {
-			const key = incident.groupKey ?? ""
-			alertCauses.set(key, [
-				...(alertCauses.get(key) ?? []),
-				{ severity: incident.severity, label: "Alert firing" },
-			])
-		},
-	)
-	const anomalyCauses = new Map<string, Array<ServiceHealthCause>>()
-	Arr.forEach(
-		Arr.filter(anomalies, (row) => anomalyAffectsHealth(row, nowMs)),
-		(row) => {
-			const key = serviceHealthRowKey(row.service_name, row.deployment_env || "unknown")
-			anomalyCauses.set(key, [
-				...(anomalyCauses.get(key) ?? []),
-				{ severity: row.severity, label: "Anomaly" },
-			])
-		},
-	)
+	const causesOf = serviceHealthCauses(incidents, anomalies, nowMs, { dropEmptyGroupKey: true })
 	const byRow = new Map<string, ServiceHealth>()
 	const counts = { healthy: 0, degraded: 0, unhealthy: 0 }
 	Arr.forEach(overview, (service) => {
 		const key = serviceHealthRowKey(service.serviceName, service.environment)
-		const health = deriveServiceHealthFromCauses([
-			...(alertCauses.get(service.serviceName) ?? []),
-			...(anomalyCauses.get(key) ?? []),
-		])
+		const health = deriveServiceHealthFromCauses(causesOf(service.serviceName, service.environment))
 		byRow.set(key, health)
 		counts[health] += 1
 	})
@@ -155,25 +116,39 @@ const groupBy = (services: ReadonlyArray<ServiceRow>, keyOf: (service: ServiceRo
 }
 
 const groupByEnvironment = (services: ReadonlyArray<ServiceRow>): ReadonlyArray<EnvGroup> =>
-	groupBy(services, (service) => service.environment).toSorted(([a], [b]) => {
-		const pa = ENVIRONMENT_PRIORITY.get(Str.toLowerCase(a)) ?? (a === "unknown" ? 999 : 3)
-		const pb = ENVIRONMENT_PRIORITY.get(Str.toLowerCase(b)) ?? (b === "unknown" ? 999 : 3)
-		return pa !== pb ? pa - pb : Str.localeCompare(b)(a)
-	})
+	Arr.sort(
+		groupBy(services, (service) => service.environment),
+		Order.combine(
+			Order.mapInput(
+				Order.Number,
+				([name]: readonly [string, unknown]) =>
+					ENVIRONMENT_PRIORITY.get(Str.toLowerCase(name)) ?? (name === "unknown" ? 999 : 3),
+			),
+			([a]: readonly [string, unknown], [b]: readonly [string, unknown]) => Str.localeCompare(b)(a),
+		),
+	)
 
 /** Namespace mode nests environment groups; environment mode is one anonymous outer group. */
 export const groupServices = (services: ReadonlyArray<ServiceRow>, mode: GroupBy): ReadonlyArray<Group> =>
 	mode === "namespace"
 		? Arr.map(
-				groupBy(services, (service) => service.serviceNamespace || NO_NAMESPACE).toSorted(
-					([a], [b]) =>
+				Arr.sort(
+					groupBy(services, (service) => service.serviceNamespace || NO_NAMESPACE),
+					([a]: readonly [string, unknown], [b]: readonly [string, unknown]) =>
 						a === NO_NAMESPACE ? 1 : b === NO_NAMESPACE ? -1 : Str.localeCompare(b)(a),
 				),
 				([namespace, rows]) => [namespace, groupByEnvironment(rows)] as const,
 			)
 		: [[NO_NAMESPACE, groupByEnvironment(services)]]
 
-// DEPLOY CELL
+/** The rows in the order the table draws them, group by group: what the list keys step over. */
+export const orderedServices = (
+	services: ReadonlyArray<ServiceRow>,
+	mode: GroupBy,
+): ReadonlyArray<ServiceRow> =>
+	Arr.flatMap(groupServices(services, mode), ([, environments]) =>
+		Arr.flatMap(environments, ([, rows]) => rows),
+	)
 
 const MIN_DEPLOY_COMPARE_SPANS = 50
 const ROLLOUT_MIN_SHARE_PCT = 5
@@ -187,18 +162,23 @@ export type DeployInfo = Readonly<{
 	errorsSince: boolean
 }>
 
-/** `deriveDeployInfo`: the newest commit, a mid-rollout split, and errors up since the deploy. */
+/** The newest commit, a mid-rollout split, and errors up since the deploy. */
 export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefined => {
-	const real = commits.filter((c) => c.commitSha && c.commitSha !== "N/A" && c.commitSha !== "unknown")
+	const real = Arr.filter(
+		commits,
+		(c) => c.commitSha !== "" && c.commitSha !== "N/A" && c.commitSha !== "unknown",
+	)
 	const [first] = real
 	if (first === undefined) return undefined
 	const dated = Arr.filter(real, (c) => c.firstSeen !== "")
 	const pool = dated.length > 0 ? dated : real
-	const latest = pool.reduce((best, c) => (c.firstSeen > best.firstSeen ? c : best))
-	const dominant = real.reduce((best, c) => (c.spanCount > best.spanCount ? c : best))
-	const previous = Arr.filter(pool, (c) => c.firstSeen < latest.firstSeen).reduce<Commit | undefined>(
-		(best, c) => (best === undefined || c.firstSeen > best.firstSeen ? c : best),
+	// Seeded with `first`: it is `pool`'s head, or undated and so beaten by every dated commit.
+	const latest = Arr.reduce(pool, first, (best, c) => (c.firstSeen > best.firstSeen ? c : best))
+	const dominant = Arr.reduce(real, first, (best, c) => (c.spanCount > best.spanCount ? c : best))
+	const previous = Arr.reduce<Commit, Commit | undefined>(
+		Arr.filter(pool, (c) => c.firstSeen < latest.firstSeen),
 		undefined,
+		(best, c) => (best === undefined || c.firstSeen > best.firstSeen ? c : best),
 	)
 	const olderSpans = previous?.spanCount ?? 0
 	const latestRate = latest.spanCount > 0 ? latest.errorCount / latest.spanCount : 0
@@ -213,35 +193,34 @@ export const deployInfo = (commits: ReadonlyArray<Commit>): DeployInfo | undefin
 		meaningful.length > 1
 			? {
 					percentage: dominant.percentage,
-					others: Arr.filter(real, (c) => c !== dominant).toSorted(
-						(a, b) => b.percentage - a.percentage,
+					others: Arr.sort(
+						Arr.filter(real, (c) => c !== dominant),
+						Order.flip(Order.mapInput(Order.Number, (c: Commit) => c.percentage)),
 					),
 				}
 			: undefined
 	return { sha: latest.commitSha, firstSeen: latest.firstSeen, rollout, errorsSince }
 }
 
-const FULL_SHA = /^[0-9a-f]{40}$/i
-export const isResolvableSha = (sha: string): boolean => FULL_SHA.test(sha)
-
 /** `commitsQueryKey`: the deduped, sorted resolvable shas of the rows on screen; "" means no request. */
 export const commitsKey = (services: ReadonlyArray<ServiceRow>): string =>
 	Arr.join(
-		Arr.filter(
-			[
-				...new Set(
-					Arr.flatMap(services, (service) => {
-						const sha = deployInfo(service.commits)?.sha
-						return sha === undefined ? [] : [sha]
-					}),
-				),
-			],
-			isResolvableSha,
-		).toSorted(),
+		Arr.sort(
+			Arr.filter(
+				[
+					...new Set(
+						Arr.flatMap(services, (service) => {
+							const sha = deployInfo(service.commits)?.sha
+							return sha === undefined ? [] : [sha]
+						}),
+					),
+				],
+				isResolvableSha,
+			),
+			Order.String,
+		),
 		",",
 	)
-
-// LATENCY BASELINE
 
 const MIN_BASELINE_SPANS = 100
 

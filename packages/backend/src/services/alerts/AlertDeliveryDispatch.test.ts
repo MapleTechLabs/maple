@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
@@ -19,7 +19,7 @@ import {
 import { dispatchDelivery as dispatchDeliveryRaw } from "./delivery/dispatch"
 import { FetchHttpClient } from "effect/http"
 import type { EffectTransportDeps } from "./delivery/Transport"
-import type { TemplateRenderContext } from "./alert-formatting"
+import { formatAlertHeadline, formatObservedSummary, type TemplateRenderContext } from "./alert-formatting"
 import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
@@ -53,7 +53,7 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 }
 
 const baseContext: TemplateRenderContext = {
-	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
+	ruleId: "rule_1",
 	ruleName: "Checkout error rate",
 	eventType: "trigger",
 	severity: "critical",
@@ -65,7 +65,7 @@ const baseContext: TemplateRenderContext = {
 	sampleCount: 1200,
 	groupKey: null,
 	windowMinutes: 5,
-	incidentId: "inc_1" as TemplateRenderContext["incidentId"],
+	incidentId: "inc_1",
 	incidentStatus: "open",
 	dedupeKey: "dedupe_1",
 	template: null,
@@ -87,7 +87,7 @@ const rangeContext: TemplateRenderContext = {
 
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/alerts/rule_1"
-const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
+const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
 const noEmailDeps: EffectTransportDeps = {
@@ -222,6 +222,109 @@ describe("buildSummaryLine", () => {
 		})
 		assert.include(line, "*sum(db.query.duration)* is *1,041,923*")
 		assert.include(line, "above the 500,000 threshold")
+	})
+})
+
+describe("anomaly notifications", () => {
+	const anomalyContext: TemplateRenderContext = {
+		...baseContext,
+		ruleName: "Anomaly detection",
+		signalType: "anomaly",
+		comparator: "gte",
+		threshold: 2,
+		value: 2,
+		sampleCount: 1,
+		groupKey: "error_rate:production:checkout",
+		detail: "error rate 4.2% vs baseline 0.3% in checkout (production)",
+	}
+
+	it("leads with the detector's sentence, never the severity code it compares", () => {
+		const texts = [
+			formatAlertHeadline(anomalyContext),
+			buildSummaryLine(anomalyContext, (value) => value),
+			formatObservedSummary(anomalyContext),
+		]
+		assert.deepStrictEqual(texts, [
+			"Critical anomaly: error rate 4.2% vs baseline 0.3% in checkout (production)",
+			"Error rate 4.2% vs baseline 0.3% in checkout (production).",
+			"error rate 4.2% vs baseline 0.3% in checkout (production)",
+		])
+		Arr.forEach(texts, (text) => assert.notInclude(text, ">= 2"))
+	})
+
+	it("shows the anomaly's service and environment as its group, never its incident id", () => {
+		const keyedById = { ...anomalyContext, groupKey: "00000000-0000-4000-8000-00000000a001" }
+		const labelled = buildTemplateContext(
+			{ ...keyedById, groupLabel: "checkout (production)" },
+			LINK,
+			CHAT,
+		)
+		assert.strictEqual(labelled.group, "checkout (production)")
+		// A notification queued without a label shows no group rather than the id.
+		assert.strictEqual(buildTemplateContext(keyedById, LINK, CHAT).group, "all")
+	})
+
+	it("renders the severity code as a word in a custom template", () => {
+		const context = buildTemplateContext(anomalyContext, LINK, CHAT)
+		assert.strictEqual(context.observed, "Critical")
+		assert.strictEqual(context.threshold, "Critical")
+		assert.strictEqual(
+			buildTemplateContext({ ...anomalyContext, value: 1 }, LINK, CHAT).observed,
+			"Warning",
+		)
+	})
+
+	it("says the anomaly ended on resolve", () => {
+		const resolved = {
+			...anomalyContext,
+			eventType: "resolve" as const,
+			value: 0,
+			detail: "The anomaly ended",
+		}
+		assert.strictEqual(formatAlertHeadline(resolved), "Anomaly detection: anomaly resolved")
+		assert.strictEqual(
+			buildSummaryLine(resolved, (value) => value),
+			"The anomaly ended.",
+		)
+	})
+})
+
+describe("audit detection notifications", () => {
+	const auditContext: TemplateRenderContext = {
+		...baseContext,
+		ruleName: "Members added",
+		signalType: "audit",
+		signalDisplay: resolveSignalDisplay({ signalType: "audit" }),
+		comparator: "gte",
+		threshold: 3,
+		value: 4,
+		sampleCount: 4,
+		windowMinutes: 10,
+		detail: "4 matching audit events in the last 10 minutes",
+	}
+
+	it("says how many events matched and over which window", () => {
+		assert.deepStrictEqual(
+			[buildSummaryLine(auditContext, (value) => value), formatObservedSummary(auditContext)],
+			[
+				"4 matching audit events in the last 10 minutes",
+				"4 matching audit events in the last 10 minutes",
+			],
+		)
+	})
+
+	it("names the signal Audit log and reads the count as a whole number", () => {
+		const context = buildTemplateContext(auditContext, LINK, CHAT)
+		assert.strictEqual(context["signal.label"], "Audit log")
+		assert.strictEqual(context.observed, "4")
+		assert.strictEqual(context.threshold, "3")
+	})
+
+	// A test send observed nothing, so it describes the condition instead of a count.
+	it("a test notification describes the condition", () => {
+		const line = buildSummaryLine({ ...auditContext, eventType: "test" }, (value) => value)
+		assert.include(line, "Live alerts fire when Audit log is")
+		assert.notInclude(line, "matching audit events")
 	})
 })
 
@@ -483,11 +586,11 @@ describe("dispatchDelivery", () => {
 				Arr.map(sent, (s) => s.to),
 				["ops@acme.test", "oncall@acme.test"],
 			)
-			assert.include(sent[0]!.subject, "Test alert")
-			assert.include(sent[0]!.subject, "Test")
-			assert.include(sent[0]!.html, "Test alert")
-			assert.include(sent[0]!.html, LINK)
-			assert.notInclude(sent[0]!.html, CHAT)
+			assert.include(sent[0].subject, "Test alert")
+			assert.include(sent[0].subject, "Test")
+			assert.include(sent[0].html, "Test alert")
+			assert.include(sent[0].html, LINK)
+			assert.notInclude(sent[0].html, CHAT)
 			assert.strictEqual(result.providerMessage, "Emailed 2 members")
 			assert.strictEqual(result.responseCode, null)
 		}),

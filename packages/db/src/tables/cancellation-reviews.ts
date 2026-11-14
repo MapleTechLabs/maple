@@ -1,6 +1,10 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { CancellationModelRead, CancellationReason, CancellationSnapshot } from "@maple/domain/http"
-import { OrgId } from "@maple/domain/primitives"
+import {
+	CancellationModelRead,
+	CancellationReason,
+	CancellationSnapshot,
+} from "@maple/domain/cancellation-review"
+import { OrgId } from "@maple/primitives"
 
 /**
  * One review per cancelled subscription: the usage snapshot taken when Autumn
@@ -35,5 +39,3 @@ export const CancellationReviews = PG.table("cancellation_reviews", {
 	],
 	tenantColumn: "orgId",
 })
-
-export type CancellationReviewRow = PG.SelectRowOf<typeof CancellationReviews>

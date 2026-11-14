@@ -16,10 +16,20 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, Dashboards, ErrorIssues, VcsCommits } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema, String as Str } from "effect"
+import {
+	Context,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import {
 	analyzeTelemetry,
@@ -36,7 +46,6 @@ export const TELEMETRY_WINDOW_DAYS = 7
 /** How recently an issue must have occurred to count as open for the review. */
 const OPEN_ISSUE_WINDOW = Duration.days(14)
 
-/** A deployed version's first-seen time, decoded where the warehouse string enters. */
 /** Issues no longer anyone's problem. */
 const CLOSED_STATES = ["done", "cancelled", "wontfix"] as const
 const CATALOG_ISSUE_COLUMNS = [
@@ -98,7 +107,6 @@ export interface PrReviewTelemetryServiceApi {
 		start: DateTime.Utc,
 		end: DateTime.Utc,
 	) => Effect.Effect<ReadonlyMap<string, number>, PrReviewTelemetryReadError>
-	/** Error issues first seen in these services since a moment. */
 	readonly issuesFirstSeenSince: (
 		orgId: OrgId,
 		services: ReadonlyArray<string>,
@@ -158,7 +166,7 @@ export class PrReviewTelemetryService extends Context.Service<
 			orgId: OrgId,
 			now: DateTime.Utc,
 		) {
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const params = {
 				orgId,
 				...window(DateTime.subtractDuration(now, Duration.days(TELEMETRY_WINDOW_DAYS)), now),
@@ -203,15 +211,16 @@ export class PrReviewTelemetryService extends Context.Service<
 				],
 				{ concurrency: "unbounded" },
 			)
-			const logCount = usage.reduce((sum, row) => sum + row.totalLogCount, 0)
-			const logBytes = usage.reduce((sum, row) => sum + row.totalLogSizeBytes, 0)
-			const attributeKeys = [...spanKeys, ...resourceKeys].reduce(
-				(keys, row) => keys.set(row.attributeKey, (keys.get(row.attributeKey) ?? 0) + row.usageCount),
+			const logCount = Arr.reduce(usage, 0, (sum, row) => sum + row.totalLogCount)
+			const logBytes = Arr.reduce(usage, 0, (sum, row) => sum + row.totalLogSizeBytes)
+			const attributeKeys = Arr.reduce(
+				[...spanKeys, ...resourceKeys],
 				new Map<string, number>(),
+				(keys, row) => keys.set(row.attributeKey, (keys.get(row.attributeKey) ?? 0) + row.usageCount),
 			)
 			const catalog: TelemetryCatalog = {
 				windowDays: TELEMETRY_WINDOW_DAYS,
-				operations: operations.map((row): CatalogOperation => ({
+				operations: Arr.map(operations, (row): CatalogOperation => ({
 					service: row.serviceName,
 					spanName: row.spanName,
 					count: row.spanCount,
@@ -219,7 +228,9 @@ export class PrReviewTelemetryService extends Context.Service<
 					p95Ms: row.p95DurationMs,
 				})),
 				attributeKeys,
-				metricNames: new Map(metrics.map((row) => [row.metricName, row.dataPointCount] as const)),
+				metricNames: new Map(
+					Arr.map(metrics, (row) => [row.metricName, row.dataPointCount] as const),
+				),
 				bytesPerLogRecord: logCount > 0 ? logBytes / logCount : DEFAULT_BYTES_PER_LOG_RECORD,
 			}
 			return catalog
@@ -258,7 +269,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				{ concurrency: "unbounded" },
 			)
 			return [
-				...rules.map((rule): ReferenceSource => ({
+				...Arr.map(rules, (rule): ReferenceSource => ({
 					kind: "alert",
 					id: rule.id,
 					name: rule.name,
@@ -269,7 +280,7 @@ export class PrReviewTelemetryService extends Context.Service<
 						rule.groupBy,
 					]),
 				})),
-				...boards.map((board): ReferenceSource => ({
+				...Arr.map(boards, (board): ReferenceSource => ({
 					kind: "dashboard",
 					id: board.id,
 					name: board.name,
@@ -299,7 +310,7 @@ export class PrReviewTelemetryService extends Context.Service<
 						.limit(ISSUE_SCAN_LIMIT),
 				),
 			)
-			return rows.map(toCatalogIssue)
+			return Arr.map(rows, toCatalogIssue)
 		})
 
 		const analyze: PrReviewTelemetryServiceApi["analyze"] = (orgId, files) =>
@@ -347,7 +358,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				services.length === 0 ? [undefined] : services,
 				(serviceName) =>
 					warehouse.compiledQuery(
-						systemTenant(orgId),
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 						CH.compile(
 							CH.serviceDeploymentsQuery({ serviceName, minutePrecision: true, limit: 50 }),
 							{ orgId, ...window(DateTime.subtractDuration(since, Duration.hours(1)), now) },
@@ -360,7 +371,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				// `firstSeen` is decoded by the row schema: a malformed one fails the read, which the
 				// tick retries, rather than dropping the deploy.
 				Effect.map((perService) =>
-					perService.flat().map((row): Deployment => ({
+					Arr.map(perService.flat(), (row): Deployment => ({
 						service: row.serviceName,
 						environment: row.environment,
 						commitSha: row.commitSha,
@@ -368,9 +379,9 @@ export class PrReviewTelemetryService extends Context.Service<
 					})),
 				),
 				Effect.map((versions) =>
-					versions
-						.filter((version) => DateTime.isGreaterThanOrEqualTo(version.firstSeen, since))
-						.sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen)),
+					Arr.filter(versions, (version) =>
+						DateTime.isGreaterThanOrEqualTo(version.firstSeen, since),
+					).sort((a, b) => DateTime.Order(a.firstSeen, b.firstSeen)),
 				),
 				orFail("deployments"),
 				Effect.withSpan("PrReviewTelemetryService.deploymentsSince"),
@@ -385,7 +396,7 @@ export class PrReviewTelemetryService extends Context.Service<
 		) =>
 			warehouse
 				.compiledQuery(
-					systemTenant(orgId),
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 					CH.compile(
 						CH.operationTrafficMinutelyQuery({ serviceNames: services, spanNames, limit: 200 }),
 						{ orgId, ...window(start, end) },
@@ -394,7 +405,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				)
 				.pipe(
 					Effect.map((rows) =>
-						rows.map((row) => ({
+						Arr.map(rows, (row) => ({
 							service: row.serviceName,
 							spanName: row.spanName,
 							count: row.spanCount,
@@ -415,7 +426,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				? Effect.succeed(new Map())
 				: warehouse
 						.compiledQuery(
-							systemTenant(orgId),
+							systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 							CH.compile(
 								CH.errorIssuesQuery({ fingerprintHashes, limit: fingerprintHashes.length }),
 								{ orgId, ...window(start, end) },
@@ -425,7 +436,9 @@ export class PrReviewTelemetryService extends Context.Service<
 						.pipe(
 							Effect.map(
 								(rows) =>
-									new Map(rows.map((row) => [row.fingerprintHash, row.count] as const)),
+									new Map(
+										Arr.map(rows, (row) => [row.fingerprintHash, row.count] as const),
+									),
 							),
 							orFail("issue counts"),
 						)
@@ -453,15 +466,15 @@ export class PrReviewTelemetryService extends Context.Service<
 							),
 						)
 						.pipe(
-							Effect.map((rows) => rows.map(toCatalogIssue)),
+							Effect.map((rows) => Arr.map(rows, toCatalogIssue)),
 							orFail("new issues"),
 						)
 
 		const attributeKeysIn: PrReviewTelemetryServiceApi["attributeKeysIn"] = (orgId, start, end) =>
 			Effect.all(
-				(["span", "resource"] as const).map((scope) =>
+				Arr.map(["span", "resource"] as const, (scope) =>
 					warehouse.compiledQuery(
-						systemTenant(orgId),
+						systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
 						CH.compile(CH.attributeKeysQuery({ scope, limit: 2_000 }), {
 							orgId,
 							...window(start, end),
@@ -471,7 +484,7 @@ export class PrReviewTelemetryService extends Context.Service<
 				),
 				{ concurrency: "unbounded" },
 			).pipe(
-				Effect.map((scopes) => new Set(scopes.flat().map((row) => row.attributeKey))),
+				Effect.map((scopes) => new Set(Arr.map(scopes.flat(), (row) => row.attributeKey))),
 				orFail("attribute keys"),
 			)
 
@@ -487,8 +500,8 @@ export class PrReviewTelemetryService extends Context.Service<
 										$.orgId.eq(orgId),
 										$.repositoryId.eq(repositoryId),
 										$.sha.in_(
-											...shas.flatMap((sha) =>
-												Option.toArray(decodeSha(sha.toLowerCase())),
+											...Arr.flatMap(shas, (sha) =>
+												Option.toArray(decodeSha(Str.toLowerCase(sha))),
 											),
 										),
 									]),
@@ -498,10 +511,11 @@ export class PrReviewTelemetryService extends Context.Service<
 							Effect.map(
 								(rows) =>
 									new Map(
-										rows.map(
+										Arr.map(
+											rows,
 											(row) =>
 												[
-													row.sha.toLowerCase(),
+													Str.toLowerCase(row.sha),
 													DateTime.makeUnsafe(row.committedAt),
 												] as const,
 										),

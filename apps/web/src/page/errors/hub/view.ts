@@ -15,8 +15,7 @@ import { isNarrowedBySidebar } from "./view-empty"
 import { listBody } from "./view-list"
 import { statStrip, toolbar } from "./view-toolbar"
 import { Array as Arr } from "effect"
-
-// The errors page: sidebar, Reload, chips and the hub.
+import { canTriageIssues } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
@@ -24,7 +23,6 @@ type H = HtmlBuilder<Message>
 const countReadout = (model: Model, shown: number): ReadonlyArray<string> | null => {
 	if (listStatusOf(model) !== "ready") return null
 	if (pagingOf(model) !== "end") return [`${shown}+ issues`]
-	// Split where the JSX interpolates, so the text runs match.
 	return [String(shown), " ", pluralize(shown, "issue")]
 }
 
@@ -38,6 +36,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	const status = listStatusOf(model)
 	const sparkWindow = stableSparkWindow(model.window)
 	const isSelecting = model.selectedIds.length > 0
+	const canTriage = canTriageIssues(model)
 	const strip = statStrip(h, model)
 	return h.div(
 		[],
@@ -47,6 +46,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 				status,
 				signals,
 				isNarrowed: isNarrowedBySidebar(model),
+				timeZone: inputs.context.timeZone,
 				rowState: (signal) => ({
 					isSelected: model.selectedIds.includes(signal.id),
 					isSelecting,
@@ -62,6 +62,7 @@ const hub = (h: H, model: Model, inputs: PageViewInputs): Html => {
 						isMounted(model.rowMenu.isOpen, model.rowMenu.animation)
 							? model.rowMenu
 							: null,
+					canTriage,
 				}),
 			}),
 		],

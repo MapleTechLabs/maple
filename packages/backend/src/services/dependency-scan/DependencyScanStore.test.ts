@@ -1,10 +1,14 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import type { DependencyScanLockfile, DependencyScanTrigger } from "@maple/domain/dependency-scan"
+import type {
+	DependencyScanId,
+	DependencyScanLockfile,
+	DependencyScanTrigger,
+} from "@maple/domain/dependency-scan"
 import { GitCommitSha, VcsRepositoryId } from "@maple/domain/http/vcs"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	DependencyScanStore,
 	type DependencyScanMatchInput,
@@ -99,23 +103,25 @@ describe("DependencyScanStore bulk reads", () => {
 				yield* TestClock.adjust("1 second")
 				yield* scan(store, "c", [match("axios")], { trigger: "production" })
 				assert.deepStrictEqual(
-					(yield* store.latestBranchScans({ orgId: orgA })).map((row) => row.id),
+					Arr.map(yield* store.latestBranchScans({ orgId: orgA }), (row) => row.id),
 					[second.id],
 				)
 				assert.deepStrictEqual(
-					(yield* store.scansAtCommits({
-						orgId: orgA,
-						repositoryIds: [repo],
-						commitShas: [sha("a"), sha("c")],
-					}))
-						.map((row) => row.commitSha)
-						.sort(),
+					Arr.map(
+						yield* store.scansAtCommits({
+							orgId: orgA,
+							repositoryIds: [repo],
+							commitShas: [sha("a"), sha("c")],
+						}),
+						(row) => row.commitSha,
+					).sort(),
 					[sha("a"), sha("c")],
 				)
 				assert.deepStrictEqual(
-					(yield* store.matchesOfScans({ orgId: orgA, scanIds: [first.id, second.id] }))
-						.map((row) => row.packageName)
-						.sort(),
+					Arr.map(
+						yield* store.matchesOfScans({ orgId: orgA, scanIds: [first.id, second.id] }),
+						(row) => row.packageName,
+					).sort(),
 					["lodash", "minimist"],
 				)
 				assert.deepStrictEqual(yield* store.matchesOfScans({ orgId: orgA, scanIds: [] }), [])
@@ -131,6 +137,63 @@ describe("DependencyScanStore bulk reads", () => {
 				assert.deepStrictEqual(
 					yield* store.listFindings({ orgId: orgA, repositoryIds: [], limit: 10 }),
 					[],
+				)
+			}),
+		),
+	)
+
+	it.effect("keeps the matches of a commit's latest scan only, while other commits keep theirs", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const other = yield* scan(store, "a", [match("axios")])
+				yield* TestClock.adjust("1 second")
+				const first = yield* scan(store, "b", [match("lodash")])
+				yield* TestClock.adjust("1 second")
+				const rescan = yield* scan(store, "b", [match("lodash"), match("minimist")])
+				assert.deepStrictEqual(yield* store.scanMatches({ orgId: orgA, scanId: first.id }), [])
+				assert.deepStrictEqual(
+					Arr.map(
+						yield* store.matchesOfScans({ orgId: orgA, scanIds: [other.id, rescan.id] }),
+						(row) => row.packageName,
+					).sort(),
+					["axios", "lodash", "minimist"],
+				)
+			}),
+		),
+	)
+
+	it.effect("drops the matches of a scan that settles after a newer scan of its commit", () =>
+		withStore((store) =>
+			Effect.gen(function* () {
+				const start = () =>
+					store.startScan({
+						orgId: orgA,
+						repositoryId: repo,
+						commitSha: sha("a"),
+						ref: "main",
+						trigger: "schedule",
+						defaultBranchHead: true,
+					})
+				const complete = (scanId: DependencyScanId, name: string) =>
+					store.completeScan({
+						orgId: orgA,
+						scanId,
+						lockfiles: [lockfile("bun.lock")],
+						packageCount: 10,
+						matches: [match(name)],
+					})
+				const slow = yield* start()
+				yield* TestClock.adjust("1 second")
+				const fast = yield* start()
+				yield* complete(fast.id, "minimist")
+				yield* complete(slow.id, "lodash")
+				assert.deepStrictEqual(yield* store.scanMatches({ orgId: orgA, scanId: slow.id }), [])
+				assert.deepStrictEqual(
+					Arr.map(
+						yield* store.scanMatches({ orgId: orgA, scanId: fast.id }),
+						(row) => row.packageName,
+					),
+					["minimist"],
 				)
 			}),
 		),
@@ -194,7 +257,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 				assert.strictEqual(settled.error, "12 known vulnerabilities were left out")
 				assert.strictEqual((yield* store.scanMatches({ orgId: orgA, scanId: started.id })).length, 1)
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.packageName, row.status]),
+					Arr.map(yield* findings(store), (row) => [row.packageName, row.status]),
 					[["lodash", "open"]],
 				)
 			}),
@@ -214,13 +277,14 @@ describe("DependencyScanStore findings lifecycle", () => {
 				])
 				// Each match keeps its own id: renaming one onto the other would collapse them into one row.
 				assert.deepStrictEqual(
-					(yield* store.scanMatches({ orgId: orgA, scanId: second.id }))
-						.map((row) => row.advisoryId)
-						.sort(),
+					Arr.map(
+						yield* store.scanMatches({ orgId: orgA, scanId: second.id }),
+						(row) => row.advisoryId,
+					).sort(),
 					["GHSA-bbbb", "GO-2026-1"],
 				)
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					Arr.map(yield* findings(store), (row) => [row.advisoryId, row.status]).sort(),
 					[
 						["GHSA-bbbb", "open"],
 						["GO-2026-1", "open"],
@@ -241,7 +305,7 @@ describe("DependencyScanStore findings lifecycle", () => {
 					match("x/net", { ecosystem: "Go", advisoryId: "GHSA-cccc", aliases: ["GO-2026-1"] }),
 				])
 				assert.deepStrictEqual(
-					(yield* findings(store)).map((row) => [row.advisoryId, row.status]).sort(),
+					Arr.map(yield* findings(store), (row) => [row.advisoryId, row.status]).sort(),
 					[
 						["GHSA-cccc", "open"],
 						["GO-2026-1", "open"],

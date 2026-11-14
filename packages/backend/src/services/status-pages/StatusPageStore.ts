@@ -1,11 +1,11 @@
-import { StatusPageId } from "@maple/domain/primitives"
+import { StatusPageId } from "@maple/primitives"
 import {
 	decodeStatusPageOverlayEntryJson,
 	StatusPageKeys,
 	type StatusPageOverlayEntry,
 	type StatusPagePublisherHeartbeat,
 } from "@maple/domain/status-page"
-import { Context, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Order, Ref, Schema, Array as Arr, String as Str } from "effect"
 
 // Edge storage for status pages: the snapshot (KV, mirrored to R2), routes, the publisher
 // heartbeat and the break-glass entries the status Worker writes while Maple is down.
@@ -72,8 +72,14 @@ export interface StatusPageStoreApi {
 	) => Effect.Effect<void, StatusPageStoreError>
 	/** The page id the slug's KV route points at, or null. */
 	readonly readSlugRoute: (slug: string) => Effect.Effect<string | null, StatusPageStoreError>
+	/** The page id a custom hostname's KV route points at, or null. */
+	readonly readHostRoute: (hostname: string) => Effect.Effect<string | null, StatusPageStoreError>
 	/** Removes the routes from KV and R2. */
 	readonly deleteRoutes: (routes: StatusPageRoutes) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes one custom hostname's route from KV and R2. */
+	readonly deleteHostRoute: (hostname: string) => Effect.Effect<void, StatusPageStoreError>
+	/** Removes the snapshot from KV and R2; break-glass entries stay for the reconciler to import. */
+	readonly deleteSnapshot: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	/** Removes the snapshot (KV and R2) and every break-glass entry of the page. */
 	readonly deletePage: (pageId: StatusPageId) => Effect.Effect<void, StatusPageStoreError>
 	readonly putHeartbeat: (
@@ -106,12 +112,14 @@ export const parseOverlayKey = (
 ): Option.Option<{ readonly pageId: StatusPageId; readonly entryId: string }> => {
 	if (!Str.startsWith(StatusPageKeys.overlayAll)(key)) return Option.none()
 	const rest = Str.slice(StatusPageKeys.overlayAll.length)(key)
-	const split = rest.indexOf(":")
-	if (split <= 0 || split === rest.length - 1) return Option.none()
-	return Option.map(decodePageId(Str.slice(0, split)(rest)), (pageId) => ({
-		pageId,
-		entryId: Str.slice(split + 1)(rest),
-	}))
+	return Option.flatMap(
+		Option.filter(Str.indexOf(":")(rest), (split) => split > 0 && split !== rest.length - 1),
+		(split) =>
+			Option.map(decodePageId(Str.slice(0, split)(rest)), (pageId) => ({
+				pageId,
+				entryId: Str.slice(split + 1)(rest),
+			})),
+	)
 }
 
 /** Low-level key/value operations both layers implement. */
@@ -169,6 +177,15 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 			{ concurrency: 4, discard: true },
 		),
 	readSlugRoute: (slug) => backend.kvGet(StatusPageKeys.slug(slug)),
+	readHostRoute: (hostname) => backend.kvGet(StatusPageKeys.host(hostname)),
+	deleteHostRoute: (hostname) =>
+		Effect.all(
+			[
+				backend.kvDelete(StatusPageKeys.host(hostname)),
+				backend.objectDelete(StatusPageKeys.hostObject(hostname)),
+			],
+			{ concurrency: 2, discard: true },
+		),
 	deleteRoutes: (routes) =>
 		Effect.all(
 			[
@@ -180,6 +197,14 @@ const makeApi = (backend: StoreBackend): StatusPageStoreApi => ({
 				]),
 			],
 			{ concurrency: 4, discard: true },
+		),
+	deleteSnapshot: (pageId) =>
+		Effect.all(
+			[
+				backend.kvDelete(StatusPageKeys.snapshot(pageId)),
+				backend.objectDelete(StatusPageKeys.snapshotObject(pageId)),
+			],
+			{ concurrency: 2, discard: true },
 		),
 	deletePage: (pageId) =>
 		Effect.all(
@@ -327,9 +352,10 @@ export class StatusPageStore extends Context.Service<StatusPageStore, StatusPage
 						Effect.map((map) => {
 							const size = options.listPageSize ?? STATUS_PAGE_KV_LIST_LIMIT
 							const offset = cursor === null ? 0 : Number(cursor)
-							const matching = Arr.filter([...map.keys()], (key) =>
-								Str.startsWith(prefix)(key),
-							).toSorted()
+							const matching = Arr.sort(
+								Arr.filter([...map.keys()], (key) => Str.startsWith(prefix)(key)),
+								Order.String,
+							)
 							const end = offset + size
 							return {
 								keys: matching.slice(offset, end),

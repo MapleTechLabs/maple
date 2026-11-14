@@ -1,3 +1,5 @@
+import { Record as Rec } from "effect"
+
 /**
  * The span-attribute contract that turns an instrumented span into a product
  * event. A customer marks a span they already emit:
@@ -121,6 +123,25 @@ export const PRODUCT_EVENTS_TRACE_PROJECTION_SQL = `OrgId,
   ) AS Attributes,
   TraceId,
   SpanId`
+
+/**
+ * Maple's own spans that ARE a product event (`mcp_tool_called`,
+ * `investigation_started`): the span attributes that project it with exactly
+ * `props` as `Attributes` (an empty `include`, so none of the span's other keys
+ * leak into a 365-day table) and the member and org as `UserId` / `GroupId`.
+ */
+export const productEventSpanAttributes = (event: {
+	readonly name: string
+	readonly userId: string
+	readonly groupId: string
+	readonly props: Readonly<Record<string, string>>
+}): Record<string, string> => ({
+	[PRODUCT_EVENT_NAME_KEY]: event.name,
+	[PRODUCT_EVENT_USER_ID_KEY]: event.userId,
+	[PRODUCT_EVENT_GROUP_ID_KEY]: event.groupId,
+	[PRODUCT_EVENT_INCLUDE_KEY]: "",
+	...Rec.mapKeys(event.props, (key) => `${PRODUCT_EVENT_PROP_PREFIX}${key}`),
+})
 
 /**
  * The predicate, also shared. `!= ''` rather than `mapContains`: a key present

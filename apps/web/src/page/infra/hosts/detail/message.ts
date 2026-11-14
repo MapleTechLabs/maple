@@ -1,11 +1,11 @@
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
-import * as Frame from "../../kit/frame"
-import { SeriesResult } from "../../kit/series"
+import * as Frame from "../../../kit/time-frame"
+import { SeriesResult } from "../../../kit/series"
 import { HostSummary } from "./model"
 
 export const HostMetric = Schema.Literals(["cpu", "memory", "filesystem", "network", "load15"])
@@ -16,10 +16,9 @@ export const Message = defineMessageUnion({
 	CompletedFetchSeries: { metric: HostMetric, key: Schema.String, result: SeriesResult },
 	ClickedRetrySummary: {},
 	ClickedWidenRange: {},
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
-	ResolvedThemeColors: { colors: ThemeColors },
+	...ChartEnvMessages,
 	CompletedMountLinkedCursor: {},
+	SelectedChartRange: { startMs: Schema.Number, endMs: Schema.Number },
 	GotChartMessage: { metric: HostMetric, message: Chart.Message },
 	GotCopyMessage: { label: Schema.String, message: CopyButton.Message },
 	GotFrameMessage: { message: Frame.Message },

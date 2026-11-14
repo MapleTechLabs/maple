@@ -100,6 +100,14 @@ An `update` over 16ms, or a `view` or DOM patch over 50ms, becomes a `foldkit.up
 
 Change the budgets with `slowPhases: { Update: 8 }` (`0` records every run), or turn the spans off with `slowPhases: false`. A `slow.thresholdOverrides` in your Foldkit config wins over `slowPhases`.
 
+### Navigation length
+
+A navigation ends 150ms after its last Command, and never runs past 30 seconds from its start. One that hits the cap, or that is still open when the page goes away, carries `maple.navigation.interrupted: true`.
+
+### Web vitals
+
+With `webVitals: true`, LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events, linked to the `pageload` span once the app has started it (TTFB and FCP can come in earlier, without the link). CLS, INP and LCP are final when the page is hidden, so they arrive then.
+
 ## Name navigations by route
 
 Without `routeName`, a navigation span is named after the path: `navigate /services/checkout-api`. That gives every service, trace and dashboard id its own span name. Map the path to your route instead, so the span is `navigate ServiceDetail`:
@@ -137,7 +145,7 @@ The full path stays on the span as `url.path`.
 | `routeName`            | `(pathname: string) => string`          | the path                              | Navigation span name suffix, e.g. a route name or template                     |
 | `slowPhases`           | `false \| { Update?, View?, Patch? }`   | `{ Update: 16, View: 50, Patch: 50 }` | Slow-phase budgets in ms, or `false` to turn them off                          |
 
-The returned object has `instrument`, plus the `layer`, `flush()` and `dispose()` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.
+The returned object has `instrument`, plus the `layer`, `flush()`, `dispose()` and `captureException(error)` of [`MapleFlush.make`](/docs/sdks/effect-client#mapleflushmake). `dispose()` also ends any open navigation so it goes out with the final flush.
 
 ## Verify
 

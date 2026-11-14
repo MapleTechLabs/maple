@@ -1,3 +1,8 @@
+import { zoomSearchPatch } from "../kit/chart-zoom"
+import { pickerStep } from "../kit/page-time"
+import { keyed as keyedStep, runSteps, type Step as KitStep } from "../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { formatWarehouseDateTime, parseWarehouseDateTime, snapRangeForCache } from "@maple/query-engine"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -11,7 +16,7 @@ import { AppRoute, hrefOf } from "../../route"
 import type { HomeSearch } from "../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
-import { SignalPresenceData } from "@maple/views/data/signal-presence"
+import { presenceOf, SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import {
 	DEFAULT_HINT,
@@ -40,30 +45,34 @@ import {
 	facetsReady,
 	timePresetOf,
 } from "./derive"
-import { Message, type RequestMode, type RetryTarget } from "./message"
-import { IncidentsData, type Model, RulesData } from "./model"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
+import { Message, type RetryTarget } from "./message"
+import { stepEnvironmentSelect } from "../kit/environment-switcher"
+import { type Model, RulesData } from "./model"
+import { anomaliesKey, failedIncidents, IncidentsData, receivedIncidents } from "../kit/service-health"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { storageKeyOf } from "../onboarding/quick-start-state"
 import type * as SetupChecklist from "./setup-checklist"
 import { Message as SetupMessage } from "./setup-checklist"
 import * as Setup from "./setup-checklist-update"
+import type { Message as AnalystMessage } from "./analyst/message"
+import type * as AnalystModel from "./analyst/model"
+import * as Analyst from "./analyst/update"
 
 export type Return = PageReturn<Model, Message>
 type Search = typeof HomeSearch.Type
 
-/** The grid's cards, in `OVERVIEW_CHARTS` order. */
 export const CHART_IDS = ["throughput", "error-rate", "latency", "log-volume"] as const
 
 const FACETS_RANGE_MS = 24 * 60 * 60 * 1000
 
-/** `facetsRange`: a fixed 24 h, snapped to the cache grid, once per mount. */
+/** The facets range: a fixed 24 h, snapped to the cache grid, once per mount. */
 const facetsWindowAt = (nowMs: number): TimeWindow =>
 	snapRangeForCache({
 		startTime: formatWarehouseDateTime(nowMs - FACETS_RANGE_MS),
 		endTime: formatWarehouseDateTime(nowMs),
 	})
 
-/** `useEffectiveTimeRange` for the URL and the current default preset; snapped until a Reload. */
+/** The window for the URL and the current default preset; snapped until a Reload. */
 export const windowOf = (model: Model, context: PageContext, nowMs: number): TimeWindow =>
 	resolveWindow(
 		{
@@ -76,7 +85,7 @@ export const windowOf = (model: Model, context: PageContext, nowMs: number): Tim
 		nowMs,
 	)
 
-/** `shiftRangeBack`: the equally long window that ends where this one starts. */
+/** The window plus the equally long one that ends where it starts. */
 export const usageInput = (window: TimeWindow): UsageInput => {
 	const start = parseWarehouseDateTime(window.startTime)
 	const end = parseWarehouseDateTime(window.endTime)
@@ -88,41 +97,18 @@ export const usageInput = (window: TimeWindow): UsageInput => {
 	}
 }
 
-// REQUESTS
-
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
+type Step = KitStep<Model, Message>
 
 const NONE: Step = { patch: {}, commands: [] }
 
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
+/** `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload. */
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
 	mode: Keyed.RequestMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	// `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload.
-	mode === "Load" && slot.key === key && AsyncData.isFailure(slot.data)
-		? NONE
-		: Option.match(Keyed.request(slot, key, mode), {
-				onNone: () => NONE,
-				onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-			})
-
-/** Steps run in order, each against the Model the previous ones patched. */
-const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>, prior?: Return): Return =>
-	steps.reduce<Return>((result, step) => {
-		const next = step(result.model)
-		return {
-			...result,
-			model: { ...result.model, ...next.patch },
-			commands: [...(result.commands ?? []), ...next.commands],
-		}
-	}, prior ?? { model })
+): Step => keyedStep(slot, key, mode, write, fetch, { keepFailure: true })
 
 const environmentsInput = (model: Model) => {
 	const environments = environmentFilter(model)
@@ -135,7 +121,7 @@ export const scopedInput = (model: Model, window: TimeWindow): ScopedInput => ({
 	...environmentsInput(model),
 })
 
-/** Sampling verdict from the loaded overview series (`overviewSamplingActive`). */
+/** Sampling verdict from the loaded overview series. */
 const samplingActive = (model: Model): boolean =>
 	canFetch(model) &&
 	Option.match(AsyncData.getData(model.overviewSeries.data), {
@@ -156,7 +142,7 @@ const alwaysSteps = (
 			keyed(
 				model.facets,
 				requestKey(context.orgId, "getServicesFacets", { data: facetsWindow }),
-				// Reload leaves the facets probe alone (`useAtomValue`, not refreshable).
+				// Reload leaves the facets probe alone: it is not refreshable.
 				"Load",
 				(facets) => ({ facets }),
 				(key) => FetchFacets({ key, window: facetsWindow, refresh: false }),
@@ -164,7 +150,7 @@ const alwaysSteps = (
 		(model) =>
 			keyed(
 				model.anomalies,
-				requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" }),
+				anomaliesKey(context.orgId),
 				mode,
 				(anomalies) => ({ anomalies }),
 				(key) => FetchAnomalies({ key, refresh: mode === "Refresh" }),
@@ -240,7 +226,7 @@ const gatedSteps = (
 const isSameHint = (a: Model["hint"], b: Model["hint"]) =>
 	a.environment === b.environment && a.preset === b.preset && a.seen === b.seen
 
-/** `FacetsHintPersister`: once facets are ready, store the derived defaults when they changed. */
+/** Once facets are ready, store the derived defaults when they changed. */
 const persistHint =
 	(context: PageContext) =>
 	(model: Model): Step => {
@@ -266,8 +252,6 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	])
 }
 
-// SETUP CHECKLIST
-
 /** Runs a setup-checklist step on top of `result`, lifting its Commands and OutMessage. */
 const withSetup = (
 	result: Return,
@@ -287,7 +271,18 @@ const withSetup = (
 	return next.outMessage === undefined ? lifted : { ...lifted, outMessage: next.outMessage }
 }
 
-/** `useIngestConnection`'s `useEffectiveTimeRange(undefined, undefined, "1h")`. */
+const toAnalyst = (message: AnalystMessage) => Message.GotAnalystMessage({ message })
+
+/** Runs an analyst step; the Submodel starts empty when the role arrived after `init`. */
+const withAnalyst = (model: Model, step: (analyst: AnalystModel.Model) => Analyst.Return): Return => {
+	const next = step(model.analyst ?? Analyst.EMPTY)
+	return {
+		model: { ...model, analyst: next.model },
+		commands: Command.mapMessages(next.commands ?? [], toAnalyst),
+	}
+}
+
+/** The setup card's last-hour window. */
 const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	const nowMs = result.model.nowMs
 	if (nowMs === null) return result
@@ -298,8 +293,6 @@ const resolveSetupWindow = (result: Return, context: PageContext): Return => {
 	return withSetup(result, (setup) => Setup.windowResolved(setup, window, context.pinnedNamespace))
 }
 
-// NAVIGATION
-
 const navigate = (model: Model, search: Search): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
@@ -308,20 +301,16 @@ const navigate = (model: Model, search: Search): Return => ({
 	}),
 })
 
-// ENTRY POINTS
+const loadChartRuntime = () => LoadChartRuntime()
 
-const loadChartRuntime = () =>
-	Command.mapMessage(LoadChartRuntime(), (message) =>
-		message._tag === "CompletedLoadChartRuntime"
-			? Message.CompletedLoadChartRuntime()
-			: Message.FailedLoadChartRuntime({ reason: message.reason }),
-	)
-
-/** `init`, with the Clerk gate as an input (`{isClerkAuthEnabled && <SetupChecklist />}`). */
+/** `init`, with the Clerk gate as an input: the setup checklist shows only in Clerk mode. */
 export const initWith =
 	(isClerk: boolean) =>
 	(route: { readonly search: Search }, context: PageContext): Return => {
-		const setup = isClerk ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
+		// An analyst gets their own page: the engineers' reads and setup card never start.
+		const analyst = context.audience === "analyst" ? Analyst.init(context) : null
+		const setup =
+			isClerk && analyst === null ? Setup.init(storageKeyOf(Option.some(context.orgId))) : null
 		const model: Model = {
 			search: route.search,
 			nowMs: null,
@@ -349,7 +338,10 @@ export const initWith =
 			refreshVersion: 0,
 			isReloading: false,
 			setup: setup?.model ?? null,
+			analyst: analyst?.model ?? null,
 		}
+		if (analyst !== null)
+			return { model, commands: Command.mapMessages(analyst.commands ?? [], toAnalyst) }
 		return {
 			model,
 			commands: [
@@ -379,9 +371,14 @@ export const init = initWith(isClerkAuthEnabled)
 
 /** Back after leaving: the last data stays on screen while entry re-reads the clock (snapped, so cached reads serve). */
 export const revive = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
+	if (context.audience === "analyst")
+		return withAnalyst({ ...model, search: route.search }, (analyst) => Analyst.revive(analyst, context))
 	// The open-anomalies key never changes, so entry alone would keep the parked counts.
-	const anomaliesKey = requestKey(context.orgId, "anomalies.serviceCounts", { status: "open" })
-	const anomalies = Keyed.request(Keyed.forgetFailure(model.anomalies), anomaliesKey, "Refresh")
+	const anomalies = Keyed.request(
+		Keyed.forgetFailure(model.anomalies),
+		anomaliesKey(context.orgId),
+		"Refresh",
+	)
 	// A runtime that failed before parking is asked for again, as entry does.
 	const isRuntimeFailed = model.chartRuntime._tag === "Failed"
 	const revived: Return = {
@@ -403,7 +400,9 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 		commands: [
 			ReadEntry({ orgId: context.orgId }),
 			LoadSignalPresence({ orgId: context.orgId }),
-			...(Option.isSome(anomalies) ? [FetchAnomalies({ key: anomaliesKey, refresh: false })] : []),
+			...(Option.isSome(anomalies)
+				? [FetchAnomalies({ key: anomaliesKey(context.orgId), refresh: false })]
+				: []),
 			...(isRuntimeFailed ? [loadChartRuntime()] : []),
 		],
 	}
@@ -413,7 +412,7 @@ export const revive = (model: Model, route: { readonly search: Search }, context
 export const contextChanged = (model: Model, context: PageContext): Return =>
 	resolveSetupWindow(sync(model, context, "Load"), context)
 
-/** Retry (`useAtomRefresh` on a failed read): forget the slot, so the next sync requests it again. */
+/** Retry a failed read: forget the slot, so the next sync requests it again. */
 const RETRY_SLOT = {
 	Facets: "facets",
 	Overview: "overviewSeries",
@@ -469,44 +468,33 @@ const retryPage = (model: Model, context: PageContext): Return => {
 }
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (picker) =>
-			Message.GotTimePickerMessage({ message: picker }),
-		),
-	}
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					...TimeRangePicker.searchPatchOf(next.outMessage),
-				}).outMessage,
-			}
+	// A preset: the absolute bounds leave the URL.
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(model, {
+				...model.search,
+				...patch,
+			}).outMessage,
+	)
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" leaves the URL.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(model, {
-					...model.search,
-					environment:
-						next.outMessage.value === ALL_ENVIRONMENTS ? undefined : next.outMessage.value,
-				}).outMessage,
-			}
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: false,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(model, { ...model.search, environment }).outMessage,
+		}),
+	})
 }
 
 const withChart = (model: Model, chartId: string, message: Chart.Message): Return => {
@@ -524,6 +512,7 @@ const withChart = (model: Model, chartId: string, message: Chart.Message): Retur
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedMountLinkedCursor: () => ({ model }),
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }),
 		CompletedReadEntry: ({ nowMs, hint }) =>
 			resolveSetupWindow(
 				sync({ ...model, nowMs, hint, facetsWindow: facetsWindowAt(nowMs) }, context, "Load"),
@@ -555,14 +544,14 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, refinement: Keyed.accept(model.refinement, key, result) },
 		}),
 		CompletedSaveFacetsHint: () => ({ model }),
-		UpdatedIncidents: ({ orgId, incidents }) =>
-			orgId === context.orgId
-				? { model: { ...model, incidents: IncidentsData.Success({ data: incidents }) } }
-				: { model },
-		FailedLoadIncidents: ({ orgId }) =>
-			orgId === context.orgId && AsyncData.isLoading(model.incidents)
-				? { model: { ...model, incidents: IncidentsData.Failure({ error: "Unavailable" }) } }
-				: { model },
+		UpdatedIncidents: ({ orgId, incidents }) => {
+			const next = receivedIncidents(orgId, context.orgId, incidents)
+			return { model: next === undefined ? model : { ...model, incidents: next } }
+		},
+		FailedLoadIncidents: ({ orgId }) => {
+			const next = failedIncidents(model.incidents, orgId, context.orgId)
+			return { model: next === undefined ? model : { ...model, incidents: next } }
+		},
 		FailedLoadRules: ({ orgId }) =>
 			orgId === context.orgId && AsyncData.isLoading(model.rules)
 				? { model: { ...model, rules: RulesData.Failure({ error: "Unavailable" }) } }
@@ -572,14 +561,20 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				? { model: { ...model, rules: RulesData.Success({ data: enabled }) } }
 				: { model },
 		UpdatedRuleStates: () => ({ model }),
-		CompletedLoadSignalPresence: ({ result }) => ({
-			model: { ...model, presence: AsyncData.settle(model.presence, result) },
-		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedLoadSignalPresence: ({ result }) => {
+			const presence = AsyncData.settle(model.presence, result)
+			// Traces seen before, even outside the card's last hour, mean the org is past its first connection;
+			// a failed read says nothing, so the card falls back to waiting.
+			const hasTraces = presenceOf(presence, "traces").status === "present"
+			return {
+				model: {
+					...model,
+					presence,
+					setup: model.setup === null ? null : { ...model.setup, hasTraces },
+				},
+			}
+		},
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -603,4 +598,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
 		GotSetupMessage: ({ message: inner }) =>
 			withSetup({ model }, (setup) => Setup.update(setup, inner, context)),
+		GotAnalystMessage: ({ message: inner }) =>
+			withAnalyst(model, (analyst) => Analyst.update(analyst, inner, context)),
 	})

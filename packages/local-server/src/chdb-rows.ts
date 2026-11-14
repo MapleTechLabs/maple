@@ -1,10 +1,5 @@
-// Decoding rows out of chDB's JSONEachRow output.
-//
-// Nine copies of a `split("\n") … JSON.parse(line) as A` helper used to live
-// across the migration coordinator, the physical-schema inspector, and every
-// versioned edge — each one ending in an unchecked cast at the point where an
-// external process hands us bytes. The shape is declared once here and the
-// rows are decoded, not asserted.
+// Decoding rows out of chDB's JSONEachRow output: rows are decoded against a
+// schema, never cast, since they are bytes an external engine hands us.
 import { Schema, Array as Arr, String as Str } from "effect"
 import { decodeJsonSync } from "./json"
 
@@ -15,7 +10,7 @@ import { decodeJsonSync } from "./json"
  * than what the caller asked for, which is a bug in the SQL rather than data to
  * be tolerated — so this throws instead of skipping the row.
  */
-export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown, never, never>>(
+export const decodeJsonEachRow = <S extends Schema.Codec<unknown, unknown>>(
 	rowSchema: S,
 ): ((value: string) => Array<S["Type"]>) => {
 	const decodeRow = Schema.decodeUnknownSync(rowSchema)

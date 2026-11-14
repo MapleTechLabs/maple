@@ -7,7 +7,7 @@ import {
 } from "@maple/domain/status-page"
 import { FIXTURE_NOW, FIXTURE_PAGE_ID } from "@maple/status-page/fixtures"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
-import { handleRequest } from "./handler"
+import { handleRequest, sharedHostMatcher } from "./handler"
 import { type CachedValue, type StatusEnv, type StatusStorage, StatusStorageError } from "./ports"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -39,8 +39,14 @@ export const makeFakeStorage = () => {
 	const unlisted = new Set<string>()
 	// Runs once inside the next `list`, to land a concurrent write while it is in flight.
 	const duringList: ListHook = { run: null }
+	// Every key a KV `get` asked for, in order.
+	const kvReads = new Array<string>()
 	const storage: StatusStorage = {
-		kvGet: (key) => guard("kv", key, () => kv.get(key) ?? null),
+		kvGet: (key) =>
+			guard("kv", key, () => {
+				kvReads.push(key)
+				return kv.get(key) ?? null
+			}),
 		kvPut: (key, value) => guard("kv-put", key, () => void kv.set(key, value)),
 		kvList: (prefix, limit) =>
 			guard("kv", prefix, () => {
@@ -66,7 +72,7 @@ export const makeFakeStorage = () => {
 	}
 	// Shared across requests, so two posts get distinct entry ids.
 	const ids = { next: 0 }
-	return { storage, kv, r2, cache, failing, limits, unlisted, duringList, ids }
+	return { storage, kv, kvReads, r2, cache, failing, limits, unlisted, duringList, ids }
 }
 
 export type FakeStorage = ReturnType<typeof makeFakeStorage>
@@ -118,6 +124,7 @@ export const send = (
 		storage: fake.storage,
 		nowMs: options.nowMs ?? FIXTURE_NOW,
 		randomId: () => `id-${++fake.ids.next}`,
+		isSharedHost: sharedHostMatcher(null),
 	}
 	return Effect.runPromise(handleRequest(typeof input === "string" ? new Request(input) : input, env))
 }

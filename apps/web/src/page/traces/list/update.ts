@@ -1,3 +1,5 @@
+import { pickerStep } from "../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Array as Arr, Option, Result } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -34,29 +36,26 @@ import {
 	syncPeek,
 	traceHrefFrom,
 } from "./peek"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model, Pagination, TraceRow } from "./model"
 import { durationDraftOf } from "./search-edits"
+import { appendedPage, fetchingNext, freshLaterPages, pagedRows } from "../../kit/infinite-pages"
+import { listStepOf, steppedFocus } from "../../kit/list-keys"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>
 
 export const DEFAULT_PRESET = "12h"
-/** `useInfiniteTraces`: rows kept across pages, and rows from the end that ask for the next page. */
+/** Rows kept across pages, and rows from the end that ask for the next page. */
 export const MAX_RETAINED_TRACES = 2_000
 const FETCH_THRESHOLD = 20
 
-// ROWS
-
-/** `allData`: the first page then every later one, capped. */
+/** The first page then every later one, capped. */
 export const allRows = (model: Model): ReadonlyArray<TraceRow> => {
 	const first = AsyncData.getData(model.firstPage.data)
 	return Option.isNone(first)
 		? []
-		: [...first.value.rows, ...Arr.flatMap(model.pagination.pages, (page) => page.rows)].slice(
-				0,
-				MAX_RETAINED_TRACES,
-			)
+		: pagedRows(first.value.rows, model.pagination.pages, (page) => page.rows, MAX_RETAINED_TRACES)
 }
 
 export const hiddenCount = (model: Model): number =>
@@ -80,8 +79,6 @@ export const hasNextPage = (model: Model): boolean => {
 	)
 }
 
-// REQUESTS
-
 const resolveCommand = (model: Model, context: PageContext, mode: RequestMode): Cmd =>
 	ResolveWindow({
 		mode,
@@ -98,16 +95,13 @@ const firstPageKey = (model: Model, context: PageContext, window: TimeWindow) =>
 
 const freshPagination = (key: string | null, generation: number): Pagination => ({
 	key,
-	generation,
-	pages: [],
-	isFetching: false,
-	isStopped: false,
+	...freshLaterPages(generation),
 })
 
 const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode: RequestMode): Return => {
 	const facetsKey = requestKey(context.orgId, "getTracesFacets", { data: window })
 	const listKey = firstPageKey(model, context, window)
-	// Reload refreshes the table (`useTableRefreshTimeRange`); the facet atom is not refreshed.
+	// Reload refreshes the table; the facets are not refreshed.
 	const facets = Keyed.request(model.facets, facetsKey, "Load")
 	const cached =
 		mode === "Load" && model.firstPage.key !== listKey ? model.firstPageCache[listKey] : undefined
@@ -137,9 +131,12 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 				cached === undefined
 					? Option.getOrElse(firstPage, () => model.firstPage)
 					: { key: listKey, data: AsyncData.Success({ data: cached }) },
+			// A reload of the same list keeps its pages and lets a failed one be asked again.
 			pagination:
 				model.pagination.key === listKey
-					? model.pagination
+					? mode === "Refresh"
+						? { ...model.pagination, isFailed: false }
+						: model.pagination
 					: freshPagination(listKey, model.pagination.generation + 1),
 		},
 		commands,
@@ -148,25 +145,13 @@ const requestAll = (model: Model, context: PageContext, window: TimeWindow, mode
 
 const nextOffset = (pagination: Pagination): number => (pagination.pages.length + 1) * PAGE_SIZE
 
-/** `useVirtualReachEnd`: the rendered window nears the end of the loaded rows. */
-const reachEnd = (model: Model, context: PageContext): Return => {
-	const lastIndex = Option.getOrElse(
-		Option.map(Arr.last(model.virtualRows), (row) => row.index),
-		() => -1,
-	)
-	const count = allRows(model).length
+/** Asks for the next page, one at a time; also the retry of a page that failed. */
+const fetchNext = (model: Model, context: PageContext): Return => {
 	const { window, pagination } = model
-	if (
-		lastIndex < 0 ||
-		window === null ||
-		pagination.key === null ||
-		pagination.isFetching ||
-		!hasNextPage(model) ||
-		lastIndex < count - FETCH_THRESHOLD
-	)
+	if (window === null || pagination.key === null || pagination.isFetching || !hasNextPage(model))
 		return { model }
 	return {
-		model: { ...model, pagination: { ...pagination, isFetching: true } },
+		model: { ...model, pagination: fetchingNext(pagination) },
 		commands: [
 			FetchNextPage({
 				key: pagination.key,
@@ -180,12 +165,21 @@ const reachEnd = (model: Model, context: PageContext): Return => {
 	}
 }
 
+/** The rendered window nears the end of the loaded rows. A failed page waits for its retry. */
+const reachEnd = (model: Model, context: PageContext): Return => {
+	const lastIndex = Option.getOrElse(
+		Option.map(Arr.last(model.virtualRows), (row) => row.index),
+		() => -1,
+	)
+	if (lastIndex < 0 || model.pagination.isFailed || lastIndex < allRows(model).length - FETCH_THRESHOLD)
+		return { model }
+	return fetchNext(model, context)
+}
+
 const navigate = (model: Model, search: Search, isReplace = false): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({ url: hrefOf(AppRoute.Traces({ search })), isReplace }),
 })
-
-// ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
@@ -236,7 +230,7 @@ const listSearchOf = (search: Search): Search => ({
 
 const searchHref = (search: Search) => hrefOf(AppRoute.Traces({ search }))
 
-/** The route loader warms only the facet sidebar (`getTracesFacetsResultAtom`) for the snapped window. */
+/** The route loader warms only the facet sidebar for the snapped window. */
 export const preload = (route: { readonly search: Search }, context: PageContext, nowMs: number) => {
 	const { model } = init(route, context)
 	const window = resolveWindow(
@@ -300,10 +294,10 @@ const lift = <A>(
 	commands: Command.mapMessages(commands ?? [], wrap),
 })
 
-/** A settled first page or later page, then the reach-end check `useVirtualReachEnd` re-runs. */
+/** A settled first page or later page, then the reach-end check again. */
 const settled = (model: Model, context: PageContext): Return => reachEnd(model, context)
 
-/** `onTraceClick` below `md`: the row's trace page, keeping the list's search. */
+/** Below `md`: the row's trace page, keeping the list's search. */
 const openRow = (model: Model, index: number): Return => {
 	const row = allRows(model)[index]
 	return row === undefined
@@ -322,26 +316,16 @@ const openRow = (model: Model, index: number): Return => {
 			}
 }
 
-/** `useListNavigation` over the rows, and the peek's own keys while it is open. */
+/** List navigation over the rows, and the peek's own keys while it is open. */
 const pressedListKey = (model: Model, key: string, isMobile: boolean, context: PageContext): Return => {
-	const isDown = key === "j" || key === "J" || key === "ArrowDown"
-	const isUp = key === "k" || key === "K" || key === "ArrowUp"
+	const step = listStepOf(key)
 	if (model.search.peek !== undefined && !isMobile) {
-		if (isDown || isUp) return steppedPeek(model, isDown ? 1 : -1)
+		if (step !== null) return steppedPeek(model, step)
 		return key === "Enter" ? openPeekedTrace(model) : { model }
 	}
 	const count = allRows(model).length
-	if ((isDown || isUp) && count > 0) {
-		const current = model.focusedIndex ?? -1
-		const next = isDown
-			? current < 0
-				? 0
-				: Math.min(current + 1, count - 1)
-			: current <= 0
-				? 0
-				: current - 1
-		return { model: { ...model, focusedIndex: next } }
-	}
+	if (step !== null && count > 0)
+		return { model: { ...model, focusedIndex: steppedFocus(model.focusedIndex, step, count) } }
 	if (key === "Enter" && model.focusedIndex !== null)
 		return isMobile ? openRow(model, model.focusedIndex) : peekRow(model, model.focusedIndex)
 	if (key === "Escape") return { model: { ...model, focusedIndex: null } }
@@ -366,7 +350,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				onFailure: () => model.firstPageCache,
 			})
 			const done = settled({ ...model, firstPage, firstPageCache }, context)
-			// A peek whose row just loaded gains the row's time (`resolvePeek`).
+			// A peek whose row just loaded gains the row's time.
 			const peeked = syncPeek(done.model, context)
 			return { ...peeked, commands: [...(done.commands ?? []), ...(peeked.commands ?? [])] }
 		},
@@ -380,19 +364,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				offset !== nextOffset(current)
 			)
 				return { model }
-			const pagination: Pagination = Result.match(result, {
-				onSuccess: (page) => ({
-					...model.pagination,
-					pages: [...model.pagination.pages, page],
-					isFetching: false,
-				}),
-				// A failed page ends pagination, so the list stops asking (a backend offset cap).
-				onFailure: () => ({ ...model.pagination, isFetching: false, isStopped: true }),
-			})
-			return settled({ ...model, pagination }, context)
+			// A failed page pauses pagination: the footer says so and offers the retry.
+			return settled({ ...model, pagination: appendedPage(current, result) }, context)
 		},
 		ChangedVirtualWindow: ({ rows, totalSize }) =>
 			reachEnd({ ...model, virtualRows: rows, totalSize }, context),
+		ClickedRetryNextPage: () => fetchNext(model, context),
 		CompletedLoadSignalPresence: ({ result }) => ({
 			model: { ...model, presence: AsyncData.settle(model.presence, result) },
 		}),
@@ -438,18 +415,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted = lift(model, next.commands, (m) => Message.GotTimePickerMessage({ message: m }), {
-				timePicker: next.model,
-			})
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					navigate(model, {
+						...model.search,
+						...patch,
+					}).outMessage,
+			)
 		},
 	})

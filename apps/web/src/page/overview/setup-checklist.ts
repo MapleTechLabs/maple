@@ -7,14 +7,14 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Tabs from "@maple/views/ui/tabs"
 import { QuickStartState } from "../onboarding/quick-start-state"
 
-// The setup checklist: Clerk mode's
-// "Connect your app" card over `useQuickStart` and `useIngestConnection`.
+// The setup checklist: Clerk mode's "Connect your app" card.
 
-/** `readIngestKeys`: both keys from one admin-only read. */
+/** Both keys for an engineer and up, the public one alone for a member (`retrieveSetupKeys`). */
 export const Keys = Schema.Union([
 	// Not "Loading": the keys are read only while the card shows, so this can hold for the whole visit.
 	Schema.TaggedStruct("Pending", {}),
-	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.String }),
+	/** `privateKey` is null for a member, who reads the public key only. */
+	Schema.TaggedStruct("Ready", { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) }),
 	Schema.TaggedStruct("Failed", {}),
 ])
 export type Keys = typeof Keys.Type
@@ -29,17 +29,22 @@ export const CopyField = Schema.Literals(["endpoint", "privateKey"])
 export type CopyField = typeof CopyField.Type
 
 export const Model = Schema.Struct({
-	/** `maple-onboarding-v6-<org>`, the quick-start atom's storage key. */
+	/** `maple-onboarding-v6-<org>`, the quick-start state's storage key. */
 	storageKey: Schema.String,
 	/** `null` until the stored state was read; nothing renders before. */
 	state: Schema.NullOr(QuickStartState),
 	keys: Keys,
 	/** The last hour's overview; data already found is kept when a later poll fails. */
 	services: ServicesData.schema,
-	/** `useEffectiveTimeRange(.., "1h")`: snapped on entry, unsnapped after a Reload. */
+	/** The last hour: snapped on entry, unsnapped after a Reload. */
 	window: Schema.NullOr(TimeWindow),
 	/** An overview read is out: a poll waits for it, so a slow answer still matches `window`. */
 	isOverviewInFlight: Schema.Boolean,
+	/**
+	 * Traces reached the org before (signal presence), so nothing waits for a first one; `null` until
+	 * presence settles, so the waiting card never flashes for an org that turns out to have data.
+	 */
+	hasTraces: Schema.NullOr(Schema.Boolean),
 	copies: Schema.Struct({ endpoint: CopyButton.Model, privateKey: CopyButton.Model }),
 	isPrivateKeyVisible: Schema.Boolean,
 	setupTabs: Tabs.Model,
@@ -50,11 +55,11 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
 	ReadState: { state: QuickStartState },
-	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.String },
+	SucceededLoadKeys: { publicKey: Schema.String, privateKey: Schema.NullOr(Schema.String) },
 	FailedLoadKeys: {},
 	SucceededLoadOverview: { window: TimeWindow, services: Schema.Array(ServiceRow) },
 	FailedLoadOverview: { window: TimeWindow, failure: LoadFailure },
-	/** `useIntervalRefresh(refresh, { intervalMs: 15000 })` while the card is mounted. */
+	/** A poll tick while the card is mounted. */
 	TickedPoll: {},
 	/** A poll read the clock: the last hour up to now. */
 	ResolvedPollWindow: { window: TimeWindow },

@@ -15,9 +15,10 @@ import {
 	type QueryError,
 	type RailwayGlobalError,
 } from "@distilled.cloud/railway"
-import { Array as Arr, Duration, Effect, Redacted, Schedule, Stream } from "effect"
+import { Array as Arr, Duration, Effect, Order, Record as Rec, Redacted, Stream, String as Str } from "effect"
 import { HttpClient } from "effect/http"
 import { RailwayApiError } from "./errors"
+import { VENDOR_TRANSIENT_RETRY } from "../vendor-retry"
 
 const REQUEST_TIMEOUT = Duration.seconds(30)
 
@@ -37,7 +38,7 @@ const toApiError = (error: SdkError): RailwayApiError => {
 			? undefined
 			: error.retryAfter
 	const retry = retryAfter === undefined ? undefined : { retryAfterSeconds: retryAfter }
-	if (status === 429 || issues.some((issue) => issue._tag === "RailwayRateLimited")) {
+	if (status === 429 || Arr.some(issues, (issue) => issue._tag === "RailwayRateLimited")) {
 		return new RailwayApiError({
 			message: "Railway API rate limit reached",
 			kind: "rate_limited",
@@ -47,12 +48,12 @@ const toApiError = (error: SdkError): RailwayApiError => {
 	if (
 		status === 401 ||
 		status === 403 ||
-		issues.some((issue) => AUTH_TAGS.has(issue._tag) || isAuthMessage(issue.message))
+		Arr.some(issues, (issue) => AUTH_TAGS.has(issue._tag) || isAuthMessage(issue.message))
 	) {
 		return new RailwayApiError({ message: "Railway rejected the API token", kind: "unauthorized" })
 	}
 	return new RailwayApiError({
-		message: `Railway API error: ${error.message.slice(0, 300)}`,
+		message: `Railway API error: ${Str.slice(0, 300)(error.message)}`,
 		kind: "upstream",
 	})
 }
@@ -62,23 +63,17 @@ const isTransient = (error: SdkError): boolean => {
 	const issues = error instanceof GraphQLFailure ? error.errors : [error]
 	return (
 		(error instanceof GraphQLTransportError && error.status !== undefined && error.status >= 500) ||
-		issues.some((issue) => /problem processing request/i.test(issue.message))
+		Arr.some(issues, (issue) => /problem processing request/i.test(issue.message))
 	)
 }
 
-const TRANSIENT_RETRY = Schedule.max([
-	Schedule.jittered(Schedule.exponential("500 millis")),
-	Schedule.recurs(2),
-])
-
-/** Run one SDK query with the given token over the caller's HttpClient. */
 const run = <A>(
 	httpClient: HttpClient.HttpClient,
 	token: string,
 	effect: Effect.Effect<A, SdkError, GqlTransport>,
 ) =>
 	effect.pipe(
-		Effect.retry({ schedule: TRANSIENT_RETRY, while: isTransient }),
+		Effect.retry({ schedule: VENDOR_TRANSIENT_RETRY, while: isTransient }),
 		Effect.mapError(toApiError),
 		Effect.timeoutOrElse({
 			duration: REQUEST_TIMEOUT,
@@ -96,10 +91,6 @@ const run = <A>(
 		Effect.provideService(HttpClient.HttpClient, httpClient),
 		Effect.annotateSpans("peer.service", "railway"),
 	)
-
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
 
 const tokenWorkspaces = Query.fn(() =>
 	Railway.apiToken().workspaces.pipe(
@@ -165,38 +156,37 @@ export const discover = Effect.fn("RailwayApi.discover")(function* (
 		(workspace) => run(httpClient, token, workspaceProjects(workspace.id)),
 		{ concurrency: 2 },
 	)
-	const projects = pages.flat()
+	const projects = Arr.flatten(pages)
+	const discovered = Arr.flatMap(projects, (project) => {
+		const services = Rec.fromEntries(
+			Arr.map(project.services, (service) => [service.id, service.name] as const),
+		)
+		return Arr.map(
+			Arr.filter(project.environments, (environment) => environment.isEphemeral !== true),
+			(environment): RailwayDiscoveredEnvironment => ({
+				projectId: project.id,
+				projectName: project.name,
+				environmentId: environment.id,
+				environmentName: environment.name,
+				services,
+			}),
+		)
+	})
 	// First occurrence wins: a project listed by two workspaces is discovered once.
-	const environments = Arr.dedupeWith(
-		projects.flatMap((project) => {
-			const services = Object.fromEntries(
-				project.services.map((service) => [service.id, service.name] as const),
-			)
-			return project.environments
-				.filter((environment) => environment.isEphemeral !== true)
-				.map((environment): RailwayDiscoveredEnvironment => ({
-					projectId: project.id,
-					projectName: project.name,
-					environmentId: environment.id,
-					environmentName: environment.name,
-					services,
-				}))
-		}),
-		(a, b) => a.environmentId === b.environmentId,
+	const environments = Arr.dedupeWith(discovered, (a, b) => a.environmentId === b.environmentId)
+	const truncatedProjectIds = Arr.map(
+		Arr.filter(projects, (project) => project.environments.length >= NESTED_PAGE_SIZE),
+		(project) => project.id,
 	)
-	const truncatedProjectIds = projects
-		.filter((project) => project.environments.length >= NESTED_PAGE_SIZE)
-		.map((project) => project.id)
 	return {
-		workspaceNames: workspaces.map((workspace) => workspace.name).sort(),
+		workspaceNames: Arr.sort(
+			Arr.map(workspaces, (workspace) => workspace.name),
+			Order.String,
+		),
 		environments,
 		truncatedProjectIds,
 	} satisfies RailwayDiscovery
 })
-
-// ---------------------------------------------------------------------------
-// Metrics
-// ---------------------------------------------------------------------------
 
 export const RAILWAY_MEASUREMENTS = [
 	"CPU_USAGE",

@@ -77,7 +77,6 @@ const sliceToLines = (text: string, maxLines: number): string => {
 	let cut = -1
 	for (let i = 0; i < maxLines; i++) {
 		const next = text.indexOf("\n", cut + 1)
-		// Fewer lines than the cap — nothing to cut.
 		if (next === -1) return text
 		cut = next
 	}
@@ -97,7 +96,7 @@ const sliceToBytes = (text: string, maxBytes: number): string => {
 	const bytes = encoder.encode(text)
 	if (bytes.length <= maxBytes) return text
 	let end = maxBytes
-	while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--
+	while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--
 	return decoder.decode(bytes.subarray(0, end))
 }
 
@@ -252,13 +251,32 @@ export const renderToolDocWithinBudget = (tool: ToolDoc, maxChars: number = MAX_
 }
 
 /**
- * The tool's paging line once the budget has cut its body. Its next-page call would start after rows
- * the model never received, so it is dropped (the budget notice says to lower `limit` instead), and
- * the shown count follows the clipped table when that table is the page.
+ * The tool's paging line once the budget has cut its body. When the clipped table is the page and
+ * the next-page call pages by `offset`, it is moved back to the first row the model did not get
+ * (and its `limit` to the rows that fit); any other next-page call would skip rows, so it is dropped.
  */
 const clippedPaging = (tool: ToolDoc, clipped: ClippedBlock | undefined): ToolDoc["truncation"] => {
 	if (tool.truncation === undefined) return undefined
-	const { shown, total, noun } = tool.truncation
+	const { shown, total, noun, next } = tool.truncation
 	const isPage = clipped !== undefined && clipped.unit === "rows" && clipped.total === shown
-	return { shown: isPage ? clipped.shown : shown, noun, ...(total === undefined ? undefined : { total }) }
+	const offset = next?.args.offset
+	const resumed =
+		isPage && next !== undefined && typeof offset === "number"
+			? {
+					next: {
+						...next,
+						args: {
+							...next.args,
+							offset: offset - shown + clipped.shown,
+							...(next.args.limit === undefined ? undefined : { limit: clipped.shown }),
+						},
+					},
+				}
+			: undefined
+	return {
+		shown: isPage ? clipped.shown : shown,
+		noun,
+		...(total === undefined ? undefined : { total }),
+		...resumed,
+	}
 }

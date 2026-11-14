@@ -6,7 +6,8 @@ import { AppRoute } from "../route"
 import type { PageContext } from "./contract"
 import { enterRoute, PageMessage, type PageSlot, parkPages, updatePage } from "./registry"
 import { DEFAULT_QUICK_START_STATE } from "./onboarding/quick-start-state"
-import { IncidentsData, RulesData } from "./overview/model"
+import { RulesData } from "./overview/model"
+import { IncidentsData } from "./kit/service-health"
 import * as Setup from "./overview/setup-checklist-update"
 import { Message as OverviewMessage } from "./overview/message"
 import { initWith, revive as reviveOverview } from "./overview/update"
@@ -187,15 +188,16 @@ describe("reviving a page left earlier", () => {
 
 	test("an overview whose live alert sync failed is parked: failure is an end state", () => {
 		const entered = enterRoute(null, home, context, 1).slot
-		const failed = [
-			OverviewMessage.FailedLoadIncidents({ orgId }),
-			OverviewMessage.FailedLoadRules({ orgId }),
-			OverviewMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
-			OverviewMessage.CompletedLoadChartRuntime(),
-		].reduce<PageSlot | null>(
+		const failed = Arr.reduce<OverviewMessage, PageSlot | null>(
+			[
+				OverviewMessage.FailedLoadIncidents({ orgId }),
+				OverviewMessage.FailedLoadRules({ orgId }),
+				OverviewMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+				OverviewMessage.CompletedLoadChartRuntime(),
+			],
+			entered,
 			(slot, message) =>
 				slot === null ? null : updatePage(slot, stampOverview(slot, message), context).slot,
-			entered,
 		)
 		expect(
 			Arr.map(

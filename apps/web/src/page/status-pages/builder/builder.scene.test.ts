@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { StatusPageSlugTakenError } from "@maple/domain/http"
 import { StatusPagePreviewParams, type V2UptimeMonitor } from "@maple/domain/http/v2"
@@ -18,13 +19,8 @@ import {
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../../contract"
-import { ORG } from "../../alerts/shared/test-rows"
-import {
-	downMonitor,
-	heartbeatMonitor,
-	httpMonitor,
-	monitorId,
-} from "../../alerts/shared/uptime-test-monitors"
+import { ORG } from "../../kit/alert-test-rows"
+import { downMonitor, heartbeatMonitor, httpMonitor, monitorId } from "../../kit/uptime/test-monitors"
 import { statusPageHref } from "../shared/commands"
 import { monitorKey, PickerMessage } from "../shared/picker"
 import { statusPage } from "../shared/test-pages"
@@ -33,6 +29,9 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { init, previewDraft as BuilderUpdatePreviewDraft, update } from "./update"
 import { view as builderView } from "./view"
+
+const ENGINEER = Policy.grantsOf(["org:engineer"])
+const MEMBER = Policy.grantsOf(["org:member"])
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -50,12 +49,12 @@ const tcpMonitor = () =>
 		config: { type: "tcp", host: "db.acme.dev", port: 5432, timeout_ms: 10000 },
 	})
 
-const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, isAdmin = true): Model => {
+const withMonitors = (monitors: ReadonlyArray<V2UptimeMonitor>, canEdit = true): Model => {
 	const start = init({ _tag: "StatusPageNew" }, context).model
 	return Arr.reduce(
 		[
 			Message.ReadClock({ nowMs: Date.UTC(2026, 9, 1, 12) }),
-			Message.CompletedFetchSession({ orgId: ORG, isAdmin }),
+			Message.CompletedFetchSession({ orgId: ORG, grants: canEdit ? ENGINEER : MEMBER }),
 			Message.CompletedFetchMonitors({
 				key: start.monitors.key ?? "",
 				result: Result.succeed(monitors),
@@ -152,12 +151,16 @@ describe("status page builder", () => {
 			{ name: "CreateStatusPageMonitor", args: { url: "https://api.acme.com" } },
 		])
 		const monitor = httpMonitor({ id: monitorId(8), name: "api.acme.com" })
-		const created = builderUpdate(
+		const answered = builderUpdate(
 			creating.model,
 			Message.CompletedCreateMonitor({ result: Result.succeed(monitor) }),
-		).model
+		)
+		const created = answered.model
 		expect(created.picker.rows.at(-1)).toMatchObject({ monitorId: monitor.id, isChecked: true })
 		expect(created.picker.url).toBe("")
+		expect(answered.commands).toContainEqual(
+			expect.objectContaining({ name: "TrackStatusPageMonitorCreated", args: { kind: "http" } }),
+		)
 	})
 
 	test("a URL the uptime form would refuse is refused here, without a create", () => {
@@ -386,7 +389,7 @@ describe("status page builder", () => {
 		scene(
 			{ update: builderUpdate, view },
 			given(withMonitors([httpMonitor()], false)),
-			expectView(text("Only org admins can create status pages")).toExist(),
+			expectView(text("Only org admins and engineers can create status pages")).toExist(),
 			expectView(role("button", { name: "Publish page" })).not.toExist(),
 		)
 	})

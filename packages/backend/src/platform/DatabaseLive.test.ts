@@ -2,12 +2,12 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOnboardingState } from "@maple/db/tables"
-import { OrgId } from "@maple/domain/primitives"
-import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str } from "effect"
+import { OrgId } from "@maple/primitives"
+import { Cause, Effect, Exit, Schema, Tracer, Array as Arr, String as Str, Clock, Option } from "effect"
 import { ConnectionError, SqlError, UniqueViolation } from "effect/sql/SqlError"
 import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
-import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
+import { PGLITE_DB_NAMESPACE } from "../testing/DatabasePgliteLive"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../testing/test-pglite"
 
 const trackedDbs: TestDb[] = []
 
@@ -206,7 +206,7 @@ describe("Database execute span instrumentation", () => {
 		Effect.gen(function* () {
 			const { spans, tracer } = makeRecordingTracer()
 			const database = yield* Database
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 
 			yield* database
 				.execute((db) =>
@@ -295,12 +295,16 @@ describe("Database execute span instrumentation", () => {
 
 			const texts = Arr.map(dbSpans(spans), (span) => span.attributes.get("db.query.text") as string)
 			assert.strictEqual(texts.length, 2)
-			const selectSpan = texts.find((text) => Str.includes("org_onboarding_state")(text))
-			const probeSpan = texts.find((text) => Str.includes("concurrent_probe")(text))
+			const selectSpan = Option.getOrUndefined(
+				Arr.findFirst(texts, (text) => Str.includes("org_onboarding_state")(text)),
+			)
+			const probeSpan = Option.getOrUndefined(
+				Arr.findFirst(texts, (text) => Str.includes("concurrent_probe")(text)),
+			)
 			assert.isDefined(selectSpan)
 			assert.isDefined(probeSpan)
-			assert.notInclude(selectSpan as string, "concurrent_probe")
-			assert.notInclude(probeSpan as string, "org_onboarding_state")
+			assert.notInclude(selectSpan, "concurrent_probe")
+			assert.notInclude(probeSpan, "org_onboarding_state")
 			for (const span of dbSpans(spans)) {
 				assert.strictEqual(span.attributes.get("db.statement_count"), 1)
 			}

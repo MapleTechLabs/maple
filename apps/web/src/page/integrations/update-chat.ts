@@ -1,5 +1,5 @@
-import type { ChatWorkspaceId } from "@maple/domain/primitives"
-import { Option } from "effect"
+import type { ChatWorkspaceId } from "@maple/primitives"
+import { Option, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -12,12 +12,11 @@ import {
 	LinkChatIdentity,
 	UnlinkChatIdentity,
 } from "./chat"
+import { TrackDisconnected } from "./command"
 import { disconnectSpec } from "./disconnect"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chain, requestStatus } from "./update-status"
-
-// The chat card's writes: install, account link, workspace disconnect (`ChatIntegrationCard`).
 
 type Return = PageReturn<Model, Message>
 
@@ -40,9 +39,8 @@ const platformOf = (model: Model) => {
 export const chatConnectorStatus = (model: Model) => {
 	const connector = connectorOfPage(model)
 	return Option.getOrNull(
-		Option.map(
-			AsyncData.getData(model.statuses.chat.data),
-			(response) => response.data.find((entry) => entry.id === connector) ?? null,
+		Option.map(AsyncData.getData(model.statuses.chat.data), (response) =>
+			Option.getOrNull(Arr.findFirst(response.data, (entry) => entry.id === connector)),
 		),
 	)
 }
@@ -52,7 +50,7 @@ const toast = (model: Model, type: "success" | "error", title: string, descripti
 	outMessage: PageOutMessage.RequestedToast({ type, title, description }),
 })
 
-/** `toastExit`: a success title (optional) or the error title with the failure's message. */
+/** A success title (optional), or the error title with the failure's message. */
 const outcome = (
 	model: Model,
 	context: PageContext,
@@ -122,7 +120,7 @@ const withDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Retur
 export const clickedDisconnect = (model: Model, workspaceId: ChatWorkspaceId): Return =>
 	withDialog(withCard(model, { confirmId: workspaceId }), Dialog.open(model.disconnect.dialog))
 
-/** The dialog stays open, pending, until the workspace is gone (`pending={busy === confirmId}`). */
+/** The dialog stays open, pending, until the workspace is gone. */
 export const confirmedDisconnect = (model: Model): Return => {
 	const id = model.chatCard.confirmId
 	if (id === null || model.chatCard.busy !== null) return { model }
@@ -138,9 +136,13 @@ export const completedDisconnect = (
 		withCard(model, { busy: null, confirmId: null }),
 		Dialog.close(model.disconnect.dialog),
 	)
+	const connector = connectorOfPage(model)
 	return chain(closed.model, [
 		() => closed,
+		(next) => outcome(next, context, failure, disconnectSpec("chat")),
 		(next) =>
-			outcome(next, context, failure, disconnectSpec("chat")),
+			failure === null && connector !== null
+				? { model: next, commands: [TrackDisconnected({ provider: connector })] }
+				: { model: next },
 	])
 }

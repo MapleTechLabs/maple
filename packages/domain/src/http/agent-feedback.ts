@@ -62,3 +62,12 @@ export class AgentFeedbackPersistenceError extends HttpTaggedError<AgentFeedback
 		exposure: "redacted",
 	},
 ) {}
+
+/**
+ * A cross-org feedback read from any org but Maple's own. Never on HTTP: each org reads its
+ * own feedback on v2, and only the Maple team reads across orgs.
+ */
+export class AgentFeedbackTriageForbiddenError extends Schema.TaggedError<AgentFeedbackTriageForbiddenError>()(
+	"@maple/http/errors/AgentFeedbackTriageForbiddenError",
+	{ message: Schema.String },
+) {}

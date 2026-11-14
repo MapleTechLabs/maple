@@ -10,11 +10,12 @@ import {
 	type ChatTarget,
 } from "@maple/chat-platform"
 import { ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Duration, Effect, Fiber, Layer, Option, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import { parseSecretKeyring } from "@maple/backend/platform/SecretBox"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import {
 	ChatConnectorRegistry,
@@ -104,6 +105,7 @@ const makeConnector = (
 				whisper: unreachable,
 				typing: unreachable,
 				openThread: unreachable,
+				directMessage: unreachable,
 				conversation: unreachable,
 				history: unreachable,
 				destinations: () =>
@@ -166,9 +168,13 @@ const makeLayer = (
 /** Link a workspace with a sealed credential, as a completed install leaves it. */
 const linkWorkspace = (testDb: TestDb, id: ChatWorkspaceId, externalWorkspaceId: string) =>
 	Effect.gen(function* () {
+		const keyring = yield* parseSecretKeyring(
+			{ primary: KEY.toString("base64"), decryptOnly: Option.none() },
+			(message) => message,
+		).pipe(Effect.orDie)
 		const sealed = yield* sealChatWorkspaceCredentials(
 			"a-workspaces-own-token",
-			KEY,
+			keyring,
 			{ orgId: ORG, connector: TESTCHAT, externalWorkspaceId },
 			(message) => message,
 		).pipe(Effect.orDie)

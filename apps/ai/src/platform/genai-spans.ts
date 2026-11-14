@@ -19,6 +19,7 @@ import {
 	MAPLE_GENAI_MODEL_DURATION_MS_ATTR,
 } from "@maple/domain/gen-ai"
 import {
+	Context,
 	Duration,
 	Effect,
 	Exit,
@@ -36,7 +37,7 @@ import * as AiError from "effect/ai/AiError"
 import type * as LanguageModel from "effect/ai/LanguageModel"
 import type * as Prompt from "effect/ai/Prompt"
 import * as Telemetry from "effect/ai/Telemetry"
-import * as Tool from "effect/ai/Tool"
+import type * as Tool from "effect/ai/Tool"
 import type * as Toolkit from "effect/ai/Toolkit"
 import { coalesceDeltas } from "./coalesce-deltas"
 
@@ -51,8 +52,6 @@ const INPUT_MESSAGES_BUDGET = 20_000
 const OUTPUT_MESSAGES_BUDGET = 8_000
 const TOOL_JSON_BUDGET = 8_000
 const SYSTEM_INSTRUCTIONS_BUDGET = 8_000
-const TOOL_DEFINITIONS_BUDGET = 16_000
-const AGENT_DESCRIPTION_BUDGET = 1_024
 
 type SerializedPart =
 	| { readonly type: "text"; readonly content: string }
@@ -178,6 +177,8 @@ const summarizeResponse = (response: ResponseParts) => {
 			case "error":
 				errored = true
 				break
+			default:
+				break
 		}
 	}
 	const message: SerializedMessage = {
@@ -218,7 +219,7 @@ const fitFrom = (encoded: ReadonlyArray<string>, budget: number): number => {
 	let total = Arr.reduce(encoded, 1, (sum, json) => sum + json.length + 1)
 	let start = 0
 	while (total > budget && start < encoded.length - 1) {
-		total -= encoded[start]!.length + 1
+		total -= (encoded[start]?.length ?? 0) + 1
 		start += 1
 	}
 	return start
@@ -349,6 +350,7 @@ const modelCallTransformer =
 				: { [MAPLE_GENAI_MODEL_DURATION_MS_ATTR]: finishedMs - timing.startedMs }),
 			...telemetry.sessionAttributes,
 		}
+		// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 		for (const [key, value] of Object.entries(attributes)) {
 			if (value !== undefined) span.attribute(key, value)
 		}
@@ -539,69 +541,9 @@ export const toolCallJson = (value: unknown): string => {
 	if (Predicate.isString(value)) return resultJson(value)
 	if (!Predicate.isObjectOrArray(value)) return encodeJson({ result: value })
 	const json = stringify(value)
-	if (json === undefined) return resultJson(String(value))
+	if (json === undefined) return resultJson("[unserializable value]")
 	if (json.length <= TOOL_JSON_BUDGET) return json
 	return withinToolBudget(json, (prefix) => encodeJson({ truncated: true, prefix }))
-}
-
-/**
- * `gen_ai.tool.definitions`: `[{type, name, description, parameters}]`. Schemas are the bulk, so over
- * budget they are the first thing dropped — names and the opening of each description are what the
- * session view needs, and 128 characters keeps the chat agent's ~60 MCP tools inside the budget.
- */
-const toolDefinitionsJson = (tools: ReadonlyArray<Tool.Any>): string | undefined => {
-	if (tools.length === 0) return undefined
-	const described = Arr.map(tools, (tool) => ({
-		type: "function",
-		name: tool.name,
-		description: Tool.getDescription(tool) ?? "",
-	}))
-	// A schema that cannot be expressed as JSON Schema throws here; it degrades to the compact form.
-	const full = Option.getOrUndefined(
-		Option.liftThrowable(() =>
-			encodeJson(
-				Arr.map(tools, (tool, index) => ({
-					...described[index],
-					parameters: Tool.getJsonSchema(tool),
-				})),
-			),
-		)(),
-	)
-	if (full !== undefined && full.length <= TOOL_DEFINITIONS_BUDGET) return full
-	return encodeJson(
-		Arr.map(described, (tool) => ({ ...tool, description: truncated(tool.description, 128) })),
-	)
-}
-
-/**
- * The `invoke_agent` half of a headless agent pass: which agent ran, on what, with which tools.
- *
- * Tool definitions go here rather than on every model call: they are the same for the whole pass,
- * and at up to 16k characters each they would otherwise be repeated on every step.
- */
-export const invokeAgentAttributes = (options: {
-	readonly agentName: string
-	readonly agentDescription: string
-	/** The engine's thread id, which its `execute_tool` spans carry as `gen_ai.conversation.id`. */
-	readonly conversationId: string
-	readonly providerName: string
-	readonly model: string
-	readonly tools: ReadonlyArray<Tool.Any>
-}): Readonly<Record<string, string>> => {
-	const definitions = toolDefinitionsJson(options.tools)
-	return {
-		"gen_ai.operation.name": "invoke_agent",
-		"gen_ai.agent.name": options.agentName,
-		// Bounded: hypothesis agents put planner-written text there, the one description with no
-		// length guarantee.
-		...(options.agentDescription === ""
-			? undefined
-			: { "gen_ai.agent.description": truncated(options.agentDescription, AGENT_DESCRIPTION_BUDGET) }),
-		"gen_ai.conversation.id": options.conversationId,
-		"gen_ai.provider.name": options.providerName,
-		"gen_ai.request.model": options.model,
-		...(definitions === undefined ? undefined : { "gen_ai.tool.definitions": definitions }),
-	}
 }
 
 const EXECUTE_TOOL_SPAN_PREFIX = "execute_tool "
@@ -623,7 +565,6 @@ const executeToolSpan = (span: Tracer.Span): Option.Option<Tracer.Span> =>
 		? Option.some(span)
 		: Option.filter(span.parent, isExecuteToolSpan)
 
-/** A tool failure handed back to the model as the call's result: it retries, the run carries on. */
 /** Handed back to whoever called the tool: the model, or a `run_code` program (`returned-to-caller`). */
 const RETURNED_FAILURES: ReadonlySet<unknown> = new Set(["returned-to-model", "returned-to-caller"])
 
@@ -724,6 +665,8 @@ export const withToolCallContent = <A, E, R>(
 		readonly description?: string | undefined
 		readonly params: unknown
 		readonly sessionAttributes?: Readonly<Record<string, string>>
+		/** How a failure reads on the span; a tool whose failure carries more than a message sets it. */
+		readonly failureText?: (error: E) => string
 	},
 ): Effect.Effect<A, E, R> =>
 	annotateExecuteToolSpan({
@@ -736,9 +679,46 @@ export const withToolCallContent = <A, E, R>(
 		Effect.andThen(handler),
 		Effect.tap((result) => annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(result) })),
 		Effect.tapError((error) =>
-			annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(failureText(error)) }),
+			annotateExecuteToolSpan({
+				"gen_ai.tool.call.result": toolCallJson((call.failureText ?? failureText)(error)),
+			}),
 		),
 	)
+
+/** What `Toolkit.toLayer` registers per tool: the handler and the services it captured. */
+const isToolHandler = (entry: unknown): entry is Tool.Handler<string> =>
+	Predicate.hasProperty(entry, "handler") &&
+	Predicate.isFunction(entry.handler) &&
+	Predicate.hasProperty(entry, "context")
+
+/**
+ * A handler layer the engine built for `tool` (`run_code`), with that handler recording its own
+ * call content: the engine's `toLayer` call is out of `toolHandlersWithContent`'s reach, so the
+ * span would carry neither arguments nor result. `failure` renders the tool's own failure type.
+ */
+export const toolLayerWithContent = <S extends Schema.Top, A, E, R>(
+	tool: { readonly id: string; readonly failureSchema: S },
+	layer: Layer.Layer<A, E, R>,
+	failure: (failure: S["Type"]) => string,
+): Layer.Layer<A, E, R> =>
+	Layer.flatMap(layer, (context) => {
+		const entry: unknown = context.mapUnsafe.get(tool.id)
+		if (!isToolHandler(entry)) return Layer.succeedContext(context)
+		const isOwnFailure = Schema.is(tool.failureSchema)
+		const handler = (params: unknown, handlerContext: unknown) => {
+			const run: Effect.Effect<unknown, unknown> = Effect.suspend(() =>
+				entry.handler(params, handlerContext),
+			)
+			// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- a registered handler is type-erased
+			return withToolCallContent(run, {
+				params,
+				failureText: (error) => (isOwnFailure(error) ? failure(error) : failureText(error)),
+			})
+		}
+		return Layer.succeedContext(
+			Context.makeUnsafe<A>(new Map([...context.mapUnsafe, [tool.id, { ...entry, handler }]])),
+		)
+	})
 
 /**
  * A toolkit's handler map and its layer, with every handler recording its own call content.
@@ -769,6 +749,7 @@ export const toolHandlersWithContent = <
 			name,
 			(params: never, context: never) =>
 				withToolCallContent(
+					// @effect-diagnostics-next-line anyUnknownInErrorContext:off -- each handler keeps its own types; the map is re-typed as `Handlers` below
 					Effect.suspend(() => handler(params, context)),
 					{
 						description: toolkit.tools[name]?.description,

@@ -44,13 +44,14 @@ import {
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import {
 	deleteSourcesOf,
 	upsertWithSource,
 	integrationSourceName,
 	type PollOutcome,
 	reportPoll,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 // Postgres caps bind parameters at 65535. Chunk unbounded `in_(...)` filters
 // and bulk inserts so a large installation (every repo/commit at once) stays well
@@ -67,10 +68,10 @@ const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
 // a malformed SHA throws and is caught into a VcsRepoDecodeError on write.
 const decodeGitSha = Schema.decodeUnknownSync(GitCommitSha)
-const newInstallationId = () => Schema.decodeUnknownSync(VcsInstallationId)(randomUUID())
-const newRepositoryId = () => Schema.decodeUnknownSync(VcsRepositoryId)(randomUUID())
-const newCommitRowId = () => Schema.decodeUnknownSync(VcsCommitRowId)(randomUUID())
-const newBranchId = () => Schema.decodeUnknownSync(VcsBranchId)(randomUUID())
+const newInstallationId = () => Schema.decodeSync(VcsInstallationId)(randomUUID())
+const newRepositoryId = () => Schema.decodeSync(VcsRepositoryId)(randomUUID())
+const newCommitRowId = () => Schema.decodeSync(VcsCommitRowId)(randomUUID())
+const newBranchId = () => Schema.decodeSync(VcsBranchId)(randomUUID())
 
 // Share-lock a repository row for the child upserts' purge gate (see upsertRepositories).
 const lockRepositoryRow = (orgId: OrgId, repositoryId: VcsRepositoryId) =>
@@ -215,9 +216,19 @@ interface UpsertInstallationInput {
 
 interface RepoSyncStatusUpdate {
 	readonly status: VcsRepoSyncStatus
+	/** The states this writer expects; a repo another sync moved since is left alone. */
+	readonly from: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus>
 	readonly error?: string | null
 	readonly syncedAt?: number | null
 }
+
+/** Every sync status: a fresh sync start, or a provider verdict that holds whatever the walk state. */
+export const ANY_REPO_SYNC_STATUS: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus> = [
+	"pending",
+	"backfilling",
+	"ready",
+	"error",
+]
 
 /**
  * Read scope for repository queries — a required argument so every caller must
@@ -484,7 +495,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 						.where(($) => [$.installationId.eq(installationId), $.status.eq("active")])
 						.orderBy(($) => [[$.fullName, "asc"]]),
 				)
-				const failing = repos.filter(repoFailing)
+				const failing = Arr.filter(repos, repoFailing)
 				const resources =
 					repos.length >= 2 ? { resources: { total: repos.length, unhealthy: failing.length } } : {}
 				const first = failing[0]
@@ -654,7 +665,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 			) {
 				if (repos.length === 0) return
 				const now = yield* Clock.currentTimeMillis
-				const values = repos.map((r) => ({
+				const values = Arr.map(repos, (r) => ({
 					id: newRepositoryId(),
 					orgId: installation.orgId,
 					provider: installation.provider,
@@ -784,51 +795,54 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				return true
 			})
 
-			// Write a sync-status transition. `last_synced_at` is touched ONLY when the
-			// caller passes `syncedAt` (i.e. a sync actually completed) — so marking a repo
-			// "backfilling" at the start of / mid a run never stamps a misleading sync time;
-			// it stays whatever the last *successful* sync left.
+			// Write a sync-status transition, guarded on the states the caller expects and on the
+			// repo still being active. `last_synced_at` is touched ONLY when the caller passes
+			// `syncedAt` (a sync actually completed). Reports whether the write applied.
 			const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
 				repositoryId: VcsRepositoryId,
 				update: RepoSyncStatusUpdate,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(VcsRepositories)
-							.set({
-								syncStatus: update.status,
-								lastSyncError: update.error ?? null,
-								...("syncedAt" in update
-									? { lastSyncedAt: update.syncedAt ?? null }
-									: undefined),
-								updatedAt: now,
-							})
-							.where(($) => [$.id.eq(repositoryId)]),
-					),
+				const applied = yield* transitionRow(
+					{ table: "vcs_repositories", id: repositoryId, from: update.from, to: update.status },
+					(from) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(VcsRepositories)
+									.set({
+										syncStatus: update.status,
+										lastSyncError: update.error ?? null,
+										...("syncedAt" in update
+											? { lastSyncedAt: update.syncedAt ?? null }
+											: undefined),
+										updatedAt: now,
+									})
+									.where(($) => [
+										$.id.eq(repositoryId),
+										$.status.eq("active"),
+										$.syncStatus.in_(...from),
+									])
+									.returning("id"),
+							),
+						),
+				).pipe(
+					Effect.as(true),
+					Effect.catchTag("@maple/backend/TransitionConflictError", () => Effect.succeed(false)),
 				)
 				// Only a settled sync speaks for the installation; a start or a backfill step does not.
-				if (update.status === "ready" || update.status === "error") {
+				if (applied && (update.status === "ready" || update.status === "error")) {
 					yield* reportInstallationSync(repositoryId, now)
 				}
+				return applied
 			})
 
 			// Flag a single repo's sync as errored without touching its cursor /
 			// last-synced time (a failed fetch must not wipe prior progress).
-			const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
+			const markRepoSyncError = (
 				repositoryId: VcsRepositoryId,
 				message: string,
-			) {
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(VcsRepositories)
-							.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
-							.where(($) => [$.id.eq(repositoryId)]),
-					),
-				)
-				yield* reportInstallationSync(repositoryId, now)
-			})
+				from: Arr.NonEmptyReadonlyArray<VcsRepoSyncStatus>,
+			) => updateRepoSyncStatus(repositoryId, { status: "error", from, error: message })
 
 			// Persist commits for an already-resolved repository. Commits belong to the
 			// repo only (no commit↔branch link — a repo tracks one branch at a time).
@@ -842,9 +856,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				const now = yield* Clock.currentTimeMillis
 				// Decode every SHA through the branded type before writing — a bad SHA
 				// throws here and is mapped to VcsRepoDecodeError below.
-				const values = yield* Effect.try({
+				const decoded = yield* Effect.try({
 					try: () =>
-						commits.map((c) => {
+						Arr.map(commits, (c) => {
 							const sha = decodeGitSha(c.sha)
 							return {
 								id: newCommitRowId(),
@@ -870,6 +884,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							column: "sha",
 						}),
 				})
+				// Postgres refuses one INSERT ... ON CONFLICT that touches a row twice, and a push
+				// payload can list a commit twice. Keep the last copy of each SHA.
+				const values = Array.from(new Map(Arr.map(decoded, (v) => [v.sha, v] as const)).values())
 
 				// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
 				// Gated on the share-locked repo row (see upsertRepositories): a worker that
@@ -979,7 +996,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 				const now = yield* Clock.currentTimeMillis
 				const values = yield* Effect.try({
 					try: () =>
-						branches.map((b) => {
+						Arr.map(branches, (b) => {
 							const isDefault = b.name === repository.defaultBranch
 							return {
 								id: newBranchId(),
@@ -1258,9 +1275,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 							.where(($) => [$.repositoryId.eq(repositoryId)]),
 					),
 				)
-				const stale = rows.filter((r) => !remoteNames.has(r.name))
-				yield* deleteBranchesByIds(stale.map((r) => r.id))
-				const staleNames: ReadonlyArray<string> = stale.map((r) => r.name)
+				const stale = Arr.filter(rows, (r) => !remoteNames.has(r.name))
+				yield* deleteBranchesByIds(Arr.map(stale, (r) => r.id))
+				const staleNames: ReadonlyArray<string> = Arr.map(stale, (r) => r.name)
 				return staleNames
 			})
 
@@ -1312,7 +1329,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()(
 									.select("id")
 									.where(($) => [$.orgId.eq(orgId), $.installationId.eq(installationId)]),
 							)
-							const repoIds = repoRows.map((r) => r.id)
+							const repoIds = Arr.map(repoRows, (r) => r.id)
 							yield* db.run(
 								PG.deleteFrom(VcsRepositories).where(($) => [
 									$.orgId.eq(orgId),

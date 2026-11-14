@@ -1,5 +1,5 @@
 import * as S from "@maple-dev/effect-orm/schema"
-import { Effect, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { latestSnapshotStatements } from "../generated/clickhouse-schema"
 import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
@@ -10,7 +10,13 @@ import * as Materializations from "../tinybird/materializations"
 // so moving the self-managed and CLI schemas onto effect-orm migrations changes nothing.
 
 const nameOf = (sql: string): string =>
-	sql.match(/CREATE (?:MATERIALIZED VIEW|TABLE) (?:IF NOT EXISTS )?(?:\S+\.)?`?(\w+)`?/)?.[1] ?? sql
+	Option.getOrElse(
+		Option.flatMap(
+			Str.match(/CREATE (?:MATERIALIZED VIEW|TABLE) (?:IF NOT EXISTS )?(?:\S+\.)?`?(\w+)`?/)(sql),
+			(match) => Option.fromNullishOr(match[1]),
+		),
+		() => sql,
+	)
 
 /** `body` split at commas outside parentheses and quotes. */
 const topLevelParts = (body: string): Array<string> => {
@@ -57,7 +63,7 @@ const normalize = (sql: string): string => {
 		),
 	)
 	if (!Str.startsWith("CREATE TABLE")(flat)) return flat
-	const open = flat.indexOf("(")
+	const open = Option.getOrElse(Str.indexOf("(")(flat), () => -1)
 	let depth = 0
 	let close = open
 	for (; close < flat.length; close++) {
@@ -82,6 +88,10 @@ const objects: ReadonlyArray<S.SchemaObject> = [
 const KNOWN_DIFFERENCES = {
 	// The emitter drops ENGINE_VER, so live self-managed and CLI tables keep no version.
 	session_replays: "ENGINE = ReplacingMergeTree(Version)",
+	// Ingest-pinned to managed Tinybird, which keeps the version; self-managed copies stay empty.
+	search_console_daily: "ENGINE = ReplacingMergeTree(IngestedAt)",
+	audit_trail_events: "ENGINE = ReplacingMergeTree(Version)",
+	cost_daily: "ENGINE = ReplacingMergeTree(IngestedAt)",
 } satisfies Record<string, string>
 
 describe("effect-orm DDL parity", () => {

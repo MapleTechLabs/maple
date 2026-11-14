@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { OrgId } from "@maple/domain"
 import { Effect, Option, Result, Schema, Array as Arr, Record as Rec } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
@@ -102,7 +103,12 @@ const ANSWERS: ReadonlyArray<Answer> = [
 	),
 	slot(
 		(model) => model.uptimeMonitors,
-		(key) => PageMessage.CompletedFetchUptimeMonitors({ key, result: Result.succeed([]), isAdmin: true }),
+		(key) =>
+			PageMessage.CompletedFetchUptimeMonitors({
+				key,
+				result: Result.succeed([]),
+				grants: Policy.allPermissions,
+			}),
 	),
 	(model) =>
 		Arr.flatMap(Rec.toEntries(model.commits), ([sha, data]) => {
@@ -123,14 +129,14 @@ const settle = (
 ): PageReturn<PageModel, PageMessage> => {
 	const pending = answers(result.model)
 	if (pending.length === 0 || depth > 6) return result
-	const next = pending.reduce<PageReturn<PageModel, PageMessage>>((acc, message) => {
+	const next = Arr.reduce(pending, result, (acc, message): PageReturn<PageModel, PageMessage> => {
 		const answered = DetailUpdate.update(acc.model, message, CONTEXT)
 		return {
 			model: answered.model,
 			commands: [...(acc.commands ?? []), ...(answered.commands ?? [])],
 			outMessage: acc.outMessage ?? answered.outMessage,
 		}
-	}, result)
+	})
 	return settle(next, depth + 1)
 }
 

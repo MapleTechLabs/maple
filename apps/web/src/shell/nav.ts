@@ -1,6 +1,7 @@
-import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../components/infra/kubernetes/views"
+import { KUBERNETES_ROOT, KUBERNETES_VIEWS } from "../page/infra/kubernetes/views"
 import { Schema, Array as Arr, String as Str } from "effect"
 import type { IconName } from "@maple/views/ui/icon"
+import { PROVIDERS } from "../page/kit/providers"
 
 // The sidebar's nav tree and helpers, with generated icon names.
 
@@ -13,6 +14,7 @@ export const NavSurface = Schema.Literals([
 	"cloudflare",
 	"planetscale",
 	"railway",
+	"vercel",
 	"supabase",
 	"gcp",
 	"aws",
@@ -34,6 +36,12 @@ export interface NavSubItem {
 	}>
 	/** The command palette's title, when the row's own reads ambiguously there. */
 	readonly paletteTitle?: string
+	/** Pages under another path that this row stands in for (schedules under On-call). */
+	readonly alsoActive?: ReadonlyArray<string>
+	/** A live count beside the title, read by the shell (the Inbox's unacknowledged incidents). */
+	readonly count?: "alertsInbox"
+	/** Starts a group of rows: a small gap above it, no heading. */
+	readonly startsGroup?: boolean
 }
 
 export interface NavItem {
@@ -52,8 +60,16 @@ export interface NavGroup {
 	readonly items: ReadonlyArray<NavItem>
 }
 
-/** `PLANETSCALE_COLOR` (packages/ui/src/components/service-map/service-map-db.tsx). */
-const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
+type InfraProvider = "cloudflare" | "planetscale" | "railway" | "vercel" | "supabase" | "gcp" | "aws"
+
+/** A provider's `/infra` page row, named and marked by the provider registry. */
+const providerItem = (id: InfraProvider, iconColor?: string): NavSubItem => ({
+	title: PROVIDERS[id].name,
+	href: PROVIDERS[id].infraHref,
+	icon: PROVIDERS[id].icon,
+	iconColor,
+	surfaces: [id],
+})
 
 export const NAV_PREVIEW_MAX_GLYPHS = 7
 
@@ -84,26 +100,15 @@ const infrastructureItem: NavItem = {
 			surfaces: ["k8sPods", "k8sNodes", "k8sWorkloads"],
 			views: KUBERNETES_VIEWS,
 		},
-		{
-			title: "Cloudflare",
-			href: "/infra/cloudflare",
-			icon: "CloudflareBrandIcon",
-			surfaces: ["cloudflare"],
-		},
-		{
-			title: "PlanetScale",
-			href: "/infra/planetscale",
-			icon: "PlanetScaleIcon",
-			iconColor: PLANETSCALE_COLOR,
-			surfaces: ["planetscale"],
-		},
-		{ title: "Railway", href: "/infra/railway", icon: "RailwayIcon", surfaces: ["railway"] },
-		{ title: "Supabase", href: "/infra/supabase", icon: "SupabaseIcon", surfaces: ["supabase"] },
-		{ title: "Google Cloud", href: "/infra/gcp", icon: "GoogleCloudIcon", surfaces: ["gcp"] },
-		{ title: "AWS", href: "/infra/aws", icon: "AwsIcon", surfaces: ["aws"] },
+		providerItem("cloudflare"),
+		providerItem("planetscale", PROVIDERS.planetscale.accent),
+		providerItem("railway"),
+		providerItem("vercel"),
+		providerItem("supabase"),
+		providerItem("gcp"),
+		providerItem("aws"),
 	],
 }
-// GROUPS
 
 const servicesItem: NavItem = {
 	title: "Services",
@@ -129,11 +134,121 @@ const exploreItem: NavItem = {
 	],
 }
 
-/** The org rollout flags that gate a nav row each. */
-export type NavFlags = Readonly<{ releases: boolean; securityAudit: boolean; statusPages: boolean }>
+const alertsItem: NavItem = {
+	title: "Alerts",
+	href: "/alerts",
+	icon: "BellIcon",
+	alsoActive: ["/anomalies"],
+	subItems: [
+		{
+			title: "Inbox",
+			href: "/alerts",
+			icon: "BellIcon",
+			paletteTitle: "Alerts",
+			alsoActive: ["/anomalies"],
+			count: "alertsInbox",
+		},
+		{
+			title: "Rules",
+			href: "/alerts/rules",
+			icon: "ChartLineIcon",
+			paletteTitle: "Alert rules",
+			alsoActive: ["/alerts/create"],
+			startsGroup: true,
+		},
+		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
+		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
+		{ title: "Silences", href: "/alerts/silences", icon: "BellSlashIcon", startsGroup: true },
+		{
+			title: "Maintenance",
+			href: "/alerts/maintenance",
+			icon: "CalendarIcon",
+			paletteTitle: "Maintenance windows",
+		},
+		{
+			title: "On-call",
+			href: "/alerts/on-call",
+			icon: "UsersIcon",
+			alsoActive: ["/alerts/schedules"],
+			startsGroup: true,
+		},
+		{
+			title: "Routing",
+			href: "/alerts/routing",
+			icon: "BranchForkIcon",
+			paletteTitle: "Alert routing",
+			alsoActive: ["/alerts/escalation-chains"],
+		},
+	],
+}
 
-/** `navGroups(flags)`; `releases`, `securityAudit` and `statusPages` gate a row each. */
-export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+/** The analyst's Alerts: what is wrong now and how reliable things are, without the setup pages. */
+const analystIncidentsItem: NavItem = {
+	title: "Incidents",
+	href: "/alerts",
+	icon: "BellIcon",
+	alsoActive: ["/anomalies"],
+	subItems: [
+		{
+			title: "Inbox",
+			href: "/alerts",
+			icon: "BellIcon",
+			paletteTitle: "Incidents",
+			alsoActive: ["/anomalies"],
+			count: "alertsInbox",
+		},
+		{ title: "Uptime", href: "/alerts/uptime", icon: "GlobeIcon", paletteTitle: "Uptime checks" },
+		{ title: "SLOs", href: "/alerts/slos", icon: "GaugeIcon" },
+	],
+}
+
+/**
+ * Who the sidebar is drawn for. An analyst follows the product without operating it, so they get
+ * the pages that answer "is it working and how is it doing", not the ones for digging or setup.
+ */
+export const NavAudience = Schema.Literals(["operator", "analyst"])
+export type NavAudience = typeof NavAudience.Type
+
+/** The org rollout flags that gate a nav row each. */
+export type NavFlags = Readonly<{
+	cloudCost: boolean
+	releases: boolean
+	securityAudit: boolean
+	statusPages: boolean
+}>
+
+const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
+	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
+	{
+		id: "reliability",
+		label: "Reliability",
+		items: [
+			analystIncidentsItem,
+			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				: []),
+		],
+	},
+	{
+		id: "product",
+		label: "Product",
+		items: [
+			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			{ title: "Users", href: "/users", icon: "UsersIcon" },
+			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
+			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
+			...(flags.releases
+				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
+				: []),
+			...(flags.cloudCost
+				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
+				: []),
+		],
+	},
+]
+
+const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 	{ id: "overview", items: [{ title: "Overview", href: "/", icon: "HouseIcon" }] },
 	{
 		id: "monitor",
@@ -146,13 +261,13 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 					...(flags.statusPages ? [] : ["/status-pages"]),
 				],
 			},
-			...(flags.statusPages
-				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
-				: []),
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
 			infrastructureItem,
+			...(flags.cloudCost
+				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
+				: []),
 		],
 	},
 	{
@@ -162,6 +277,7 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
 			{ title: "Product analytics", href: "/product-analytics", icon: "ChartBarTrendUpIcon" },
+			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
 	},
@@ -170,20 +286,29 @@ export const navGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		label: "Triage",
 		items: [
 			{ title: "Errors", href: "/errors", icon: "CircleWarningIcon" },
-			{ title: "Alerts", href: "/alerts", icon: "BellIcon", alsoActive: ["/anomalies"] },
+			alertsItem,
 			{
-				title: "Code review",
+				title: "Review & CI",
 				href: "/code-review",
-				icon: "CodeIcon",
-				badge: "Beta",
+				icon: "PullRequestIcon",
 				alsoActive: flags.securityAudit ? [] : ["/security"],
 			},
 			...(flags.securityAudit
 				? [{ title: "Security", href: "/security", icon: "ShieldCheckIcon", badge: "Beta" } as const]
 				: []),
+			...(flags.statusPages
+				? [{ title: "Status pages", href: "/status-pages", icon: "WindowChartLineIcon" } as const]
+				: []),
 		],
 	},
 ]
+
+/**
+ * `navGroups(flags, audience)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a
+ * row each, and an analyst gets {@link analystNavGroups}.
+ */
+export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>
+	audience === "analyst" ? analystNavGroups(flags) : operatorNavGroups(flags)
 
 /** Segment-aware prefix match: `/services` must not claim `/service-map`. */
 export const isPathActive = (currentPath: string, href: string): boolean =>
@@ -192,17 +317,22 @@ export const isPathActive = (currentPath: string, href: string): boolean =>
 		: currentPath === href || Str.startsWith(`${href}/`)(currentPath)
 
 export const matchSubItem = (currentPath: string, sub: NavSubItem): string | undefined =>
-	Arr.filter([sub.href, ...Arr.map(sub.views ?? [], (view) => view.href)], (href) =>
-		isPathActive(currentPath, href),
-	).reduce<string | undefined>(
-		(best, href) => (best === undefined || href.length > best.length ? href : best),
+	Arr.reduce<string, string | undefined>(
+		Arr.filter(
+			[sub.href, ...Arr.map(sub.views ?? [], (view) => view.href), ...(sub.alsoActive ?? [])],
+			(href) => isPathActive(currentPath, href),
+		),
 		undefined,
+		(best, href) => (best === undefined || href.length > best.length ? href : best),
 	)
 
 export const isNavItemActive = (currentPath: string, item: NavItem): boolean =>
 	isPathActive(currentPath, item.href) ||
-	(item.alsoActive?.some((href) => isPathActive(currentPath, href)) ?? false) ||
-	(item.subItems?.some((sub) => matchSubItem(currentPath, sub) !== undefined) ?? false)
+	Arr.some(item.alsoActive ?? [], (href) => isPathActive(currentPath, href)) ||
+	Arr.some(item.subItems ?? [], (sub) => matchSubItem(currentPath, sub) !== undefined)
+
+/** The Alerts row is open here, so its Inbox count is shown (and worth reading). */
+export const isAlertsOpenAt = (currentPath: string): boolean => isNavItemActive(currentPath, alertsItem)
 
 export interface NavPreview {
 	readonly glyphs: ReadonlyArray<NavSubItem>
@@ -221,10 +351,7 @@ export const navPreview = (item: NavItem, shown: ReadonlyArray<NavSubItem>): Nav
 		Arr.filter(list, (sub) => sub.href !== item.href && sub.icon !== undefined)
 	const reporting = marked(shown)
 	const candidates = reporting.length > 0 ? reporting : marked(subItems)
-	const unique = Arr.filter(
-		candidates,
-		(sub, index) => candidates.findIndex((other) => other.icon === sub.icon) === index,
-	)
+	const unique = Arr.dedupeWith(candidates, (a, b) => a.icon === b.icon)
 	if (unique.length <= NAV_PREVIEW_MAX_GLYPHS) return { glyphs: unique, overflow: 0 }
 	const glyphs = unique.slice(0, NAV_PREVIEW_MAX_GLYPHS - 1)
 	return { glyphs, overflow: unique.length - glyphs.length }

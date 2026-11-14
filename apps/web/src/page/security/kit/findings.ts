@@ -1,5 +1,5 @@
 import type { SecurityAuditFinding, SecurityAuditRunFindingCounts } from "@maple/domain/http"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Schema, Array as Arr, String as Str, Order } from "effect"
 
 // Findings by what to fix first: a confirmed finding under its severity, a lead under its estimated
 // one, and an unscored lead or a disproved claim under its verdict.
@@ -56,10 +56,10 @@ const ZERO = {
 } satisfies BucketCounts
 
 export const countByBucket = (findings: ReadonlyArray<SecurityAuditFinding>): BucketCounts =>
-	findings.reduce<BucketCounts>((counts, finding) => {
+	Arr.reduce<SecurityAuditFinding, BucketCounts>(findings, ZERO, (counts, finding) => {
 		const bucket = bucketOf(finding)
 		return { ...counts, [bucket]: counts[bucket] + 1 }
-	}, ZERO)
+	})
 
 export const countsFromRun = (counts: SecurityAuditRunFindingCounts): BucketCounts => ({
 	critical: counts.critical,
@@ -82,11 +82,18 @@ export const sectionsOf = (findings: ReadonlyArray<SecurityAuditFinding>): Reado
 	Arr.filter(
 		Arr.map(SEVERITY_BUCKETS, (bucket) => ({
 			bucket,
-			rows: Arr.filter(findings, (finding) => bucketOf(finding) === bucket).toSorted(
-				(a, b) =>
-					Number(isUnverified(a)) - Number(isUnverified(b)) ||
-					b.updatedAt - a.updatedAt ||
-					Str.localeCompare(b.fingerprint)(a.fingerprint),
+			rows: Arr.sort(
+				Arr.filter(findings, (finding) => bucketOf(finding) === bucket),
+				Order.combineAll([
+					Order.mapInput(Order.Number, (finding: SecurityAuditFinding) =>
+						Number(isUnverified(finding)),
+					),
+					Order.flip(
+						Order.mapInput(Order.Number, (finding: SecurityAuditFinding) => finding.updatedAt),
+					),
+					(a: SecurityAuditFinding, b: SecurityAuditFinding) =>
+						Str.localeCompare(b.fingerprint)(a.fingerprint),
+				]),
 			),
 		})),
 		(section) => section.rows.length > 0,

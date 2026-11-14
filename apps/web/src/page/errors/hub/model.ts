@@ -1,4 +1,5 @@
 import { V2ErrorIssue, V2ErrorIssueServiceCount, V2Investigation } from "@maple/domain/http/v2"
+import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -11,8 +12,6 @@ import * as QuickPick from "../kit/quick-pick"
 import * as Select from "@maple/views/ui/select"
 import * as Tabs from "@maple/views/ui/tabs"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
-
-// The errors list.
 
 /** `ErrorsSummary` (`@maple/query-engine` route-rows). */
 export const ErrorsSummary = Schema.Struct({
@@ -58,13 +57,15 @@ export type PageSlot = typeof PageSlot.Type
 
 export const Model = Schema.Struct({
 	search: ErrorsSearch,
+	/** What the viewer may do; an analyst reads the list and gets no triage control. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** The trend window (`ERRORS_WINDOW`) and the clock it was resolved at. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
 	summary: KeyedSchema(Schema.NullOr(ErrorsSummary), LoadFailure),
 	serviceCounts: KeyedSchema(Schema.Array(V2ErrorIssueServiceCount), LoadFailure),
 	environments: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
-	/** `ErrorsFilterSidebar` has mounted: until then its counts and environments are not requested. */
+	/** The filter sidebar has mounted: until then its counts and environments are not requested. */
 	isFilterRailMounted: Schema.Boolean,
 	/** The volume sort's warehouse ranking (fingerprints by window volume). */
 	ranking: KeyedSchema(Schema.Array(Schema.String), LoadFailure),
@@ -83,6 +84,7 @@ export const Model = Schema.Struct({
 	focusedId: Schema.NullOr(Schema.String),
 	bulkSeverityMenu: Menu.Model,
 	bulkMoveMenu: Menu.Model,
+	bulkMergeMenu: Menu.Model,
 	/** Rows with a write in flight; another write on them waits. */
 	writingIds: Schema.Array(Schema.String),
 	/** The right-click menu, on the row last pressed. */
@@ -96,7 +98,7 @@ export const Model = Schema.Struct({
 			quickPick: QuickPick.Model,
 		}),
 	),
-	/** `ToolbarSearch`'s input and its debounce generation. */
+	/** The search box's input and its debounce generation. */
 	searchDraft: Schema.String,
 	searchGeneration: Schema.Number,
 	tabs: Tabs.Model,

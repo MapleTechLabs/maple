@@ -13,6 +13,7 @@ import {
 	CodeReviewListResponse,
 	type CodeReviewSortKey,
 	CodeReviewRepositoryCount,
+	CodeReviewSpend,
 	CodeReviewTotals,
 	CodeReviewVerdicts,
 	PrReviewNotFoundError,
@@ -22,10 +23,11 @@ import {
 	type PrReviewId,
 	type VcsRepositoryId,
 } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
+import { aiCreditsUsd } from "@maple/domain/billing"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
-import { Context, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Order, Schema, String as Str, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 
@@ -46,6 +48,14 @@ export interface PrReviewAnalyticsServiceApi {
 		orgId: OrgId,
 		query: CodeReviewFindingsQuery,
 	) => Effect.Effect<CodeReviewFindingsResponse, PrReviewPersistenceError>
+	/**
+	 * Where code review credits went between two epoch-ms bounds (a billing cycle), over every org
+	 * the bill covers: a billing org and the orgs it pays for.
+	 */
+	readonly spend: (
+		orgIds: ReadonlyArray<OrgId>,
+		window: { readonly start: number; readonly end: number },
+	) => Effect.Effect<CodeReviewSpend, PrReviewPersistenceError>
 }
 
 const HOUR = 3_600
@@ -53,6 +63,13 @@ const DAY = 86_400
 const DEFAULT_PAGE = 50
 /** The repository and author lists are a leaderboard, not an index. */
 const TOP = 8
+
+/** Most pull requests first, then most findings, then author name. */
+const authorRank = Order.combineAll<CodeReviewAuthorCount>([
+	Order.flip(Order.mapInput(Order.Number, (author: CodeReviewAuthorCount) => author.pullRequests)),
+	Order.flip(Order.mapInput(Order.Number, (author: CodeReviewAuthorCount) => author.findings)),
+	Order.make((a, b) => Str.localeCompare(b.author)(a.author)),
+])
 /** The longest window analytics reads; an older start is moved up, which caps the bucket series. */
 const MAX_SPAN_MS = 366 * DAY * 1000
 
@@ -68,6 +85,10 @@ const decodeFinding = Schema.decodeUnknownEffect(CodeReviewFinding)
 const decodeReport = Schema.decodeUnknownOption(PrReviewReport)
 const decodePostMerge = Schema.decodeUnknownOption(PrReviewPostMerge)
 const decodeTotals = Schema.decodeUnknownEffect(CodeReviewTotals)
+const decodeSpend = Schema.decodeUnknownEffect(CodeReviewSpend)
+
+/** A provider cost in microdollars as the AI credits the org pays for it. */
+const creditsOf = (costMicrousd: number) => aiCreditsUsd(costMicrousd / 1_000_000)
 
 const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Effect<A, Schema.SchemaError>) =>
 	Effect.forEach(rows, decode).pipe(
@@ -76,14 +97,14 @@ const decodeRows = <I, A>(rows: ReadonlyArray<I>, decode: (row: I) => Effect.Eff
 
 const encodeCursor = (createdAtMs: number, id: string) => `${createdAtMs}_${id}`
 const decodeCursor = (cursor: string) => {
-	const at = cursor.indexOf("_")
+	const at = Option.getOrElse(Str.indexOf("_")(cursor), () => -1)
 	return { createdAt: Number(Str.slice(0, at)(cursor)), id: Str.slice(at + 1)(cursor) }
 }
 /** A sorted list's cursor: `<value>:` (`n` for none) ahead of the row's `encodeCursor`. */
 const encodeSortedCursor = (value: number | null, createdAtMs: number, id: string) =>
 	`${value === null ? "n" : String(value)}:${encodeCursor(createdAtMs, id)}`
 const decodeSortedCursor = (cursor: string) => {
-	const colon = cursor.indexOf(":")
+	const colon = Option.getOrElse(Str.indexOf(":")(cursor), () => -1)
 	const head = colon === -1 ? undefined : Str.slice(0, colon)(cursor)
 	return {
 		value: head === undefined || head === "n" ? null : Number(head),
@@ -93,11 +114,11 @@ const decodeSortedCursor = (cursor: string) => {
 
 /** A list's `q`: a substring pattern (LIKE wildcards escaped), and the number when it reads as one. */
 const searchOf = (q: string | undefined) => {
-	const term = q?.trim() ?? ""
+	const term = q === undefined ? "" : Str.trim(q)
 	if (term === "") return undefined
 	const number = /^#?(\d{1,9})$/u.exec(term)?.[1]
 	return {
-		pattern: `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`,
+		pattern: `%${Str.replace(/[\\%_]/g, "\\$&")(term)}%`,
 		number: number === undefined ? undefined : Number(number),
 	}
 }
@@ -522,18 +543,19 @@ export class PrReviewAnalyticsService extends Context.Service<
 			}
 
 			const verdictCount = (verdict: string) =>
-				verdicts.find((row) => row.verdict === verdict)?.reviews ?? 0
-			const findingsByRepo = new Map(repoFindings.map((row) => [row.repositoryId, row]))
-			const reviewsByRepo = new Map(repoReviews.map((row) => [row.repositoryId, row]))
+				Option.getOrUndefined(Arr.findFirst(verdicts, (row) => row.verdict === verdict))?.reviews ?? 0
+			const findingsByRepo = new Map(Arr.map(repoFindings, (row) => [row.repositoryId, row]))
+			const reviewsByRepo = new Map(Arr.map(repoReviews, (row) => [row.repositoryId, row]))
 			const repositoryIds = [...new Set([...reviewsByRepo.keys(), ...findingsByRepo.keys()])]
-			const findingsByAuthor = new Map(authorFindings.map((row) => [row.author, row.findings]))
+			const findingsByAuthor = new Map(Arr.map(authorFindings, (row) => [row.author, row.findings]))
 
 			return new CodeReviewAnalytics({
 				bucketSeconds,
 				current,
 				previous: before,
-				series: [...series].map(([bucket, slot]) => new CodeReviewBucket({ bucket, ...slot })),
-				categories: categories.map(
+				series: Arr.map([...series], ([bucket, slot]) => new CodeReviewBucket({ bucket, ...slot })),
+				categories: Arr.map(
+					categories,
 					(row) => new CodeReviewCategoryCount({ category: row.category, findings: row.findings }),
 				),
 				verdicts: new CodeReviewVerdicts({
@@ -541,7 +563,7 @@ export class PrReviewAnalyticsService extends Context.Service<
 					issues: verdictCount("issues"),
 					notApplicable: verdictCount("not_applicable"),
 				}),
-				repositories: repositoryIds.map((repositoryId) => {
+				repositories: Arr.map(repositoryIds, (repositoryId) => {
 					const reviewed = reviewsByRepo.get(repositoryId)
 					const found = findingsByRepo.get(repositoryId)
 					return new CodeReviewRepositoryCount({
@@ -553,8 +575,8 @@ export class PrReviewAnalyticsService extends Context.Service<
 				}),
 				// Ranked here, not in SQL: a tie on pull requests (most authors have one or two) goes
 				// to the author with more issues, which lives in the other query.
-				authors: authorReviews
-					.flatMap((row) =>
+				authors: Arr.sort(
+					Arr.flatMap(authorReviews, (row) =>
 						row.author === null
 							? []
 							: [
@@ -564,14 +586,9 @@ export class PrReviewAnalyticsService extends Context.Service<
 										findings: findingsByAuthor.get(row.author) ?? 0,
 									}),
 								],
-					)
-					.toSorted(
-						(a, b) =>
-							b.pullRequests - a.pullRequests ||
-							b.findings - a.findings ||
-							a.author.localeCompare(b.author),
-					)
-					.slice(0, TOP),
+					),
+					authorRank,
+				).slice(0, TOP),
 			})
 		})
 
@@ -807,7 +824,141 @@ export class PrReviewAnalyticsService extends Context.Service<
 			})
 		})
 
-		return { analytics, listReviews, getReview, listFindings } satisfies PrReviewAnalyticsServiceApi
+		const spend = Effect.fn("PrReviewAnalyticsService.spend")(function* (
+			orgIds: ReadonlyArray<OrgId>,
+			window: Window,
+		) {
+			yield* Effect.annotateCurrentSpan({
+				"maple.code_review.orgs": orgIds.length,
+				"maple.code_review.span_ms": window.end - window.start,
+			})
+			// Every review that ran a model: a superseded one started and was billed; a queued one, or
+			// one skipped or failed before it began, was not.
+			const ran = ($: Reviews) => [
+				$.orgId.in_(...orgIds),
+				$.createdAt.gte(window.start),
+				$.createdAt.lt(window.end),
+				PG.or(
+					$.costMicrousd.isNotNull(),
+					$.startedAt.isNotNull(),
+					$.status.in_("running", "completed"),
+				),
+			]
+			const costSum = ($: Reviews) => PG.sql(PG.float8)`coalesce(sum(${$.costMicrousd}), 0)::float8`
+			// One row per pull request: its reviews, their cost, and the first one's cost.
+			const perPullRequest = () =>
+				PG.from(PrReviews)
+					.innerJoin(VcsRepositories, "repo", (review, repo) => repo.id.eq(review.repositoryId))
+					.select(($) => ({
+						repositoryId: $.repositoryId,
+						fullName: $.repo.fullName,
+						number: $.number,
+						reviews: PG.count(),
+						cost: costSum($),
+						firstCost: PG.sql(
+							PG.float8,
+						)`coalesce((array_agg(${$.costMicrousd} order by ${$.createdAt}))[1], 0)::float8`,
+						title: PG.sql(
+							PG.nullable(PG.text),
+						)`(array_agg(${$.title} order by ${$.createdAt} desc))[1]`,
+						url: PG.sql(PG.text)`(array_agg(${$.url} order by ${$.createdAt} desc))[1]`,
+					}))
+					.where(ran)
+					.groupBy("repositoryId", "fullName", "number")
+
+			const [totalRows, repeatRows, repositoryRows, pullRequestRows] = yield* Effect.all(
+				[
+					dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.select(($) => ({
+									reviews: PG.count(),
+									pullRequests: pullRequestCountOf($),
+									cost: costSum($),
+									// Every turn records its cost, so one that ran without it ran before costs were
+									// kept (a running review just has not ended its turn yet).
+									unpriced: PG.countIf(
+										PG.and($.costMicrousd.isNull(), $.status.neq("running")),
+									),
+								}))
+								.where(ran),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.fromQuery(perPullRequest(), "pr").select(($) => ({
+								reReviews: PG.sql(PG.float8)`coalesce(sum(${$.reviews} - 1), 0)::float8`,
+								reReviewCost: PG.sql(
+									PG.float8,
+								)`coalesce(sum(${$.cost} - ${$.firstCost}), 0)::float8`,
+							})),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.from(PrReviews)
+								.innerJoin(VcsRepositories, "repo", (review, repo) =>
+									repo.id.eq(review.repositoryId),
+								)
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.repo.fullName,
+									pullRequests: pullRequestCountOf($),
+									reviews: PG.count(),
+									cost: costSum($),
+								}))
+								.where(ran)
+								.groupBy("repositoryId", "fullName")
+								.orderBy(["cost", "desc"], ["reviews", "desc"])
+								.limit(TOP),
+						),
+					),
+					dbExecute((db) =>
+						db.run(
+							PG.fromQuery(perPullRequest(), "pr")
+								.select(($) => ({
+									repositoryId: $.repositoryId,
+									fullName: $.fullName,
+									number: $.number,
+									title: $.title,
+									url: $.url,
+									reviews: $.reviews,
+									cost: $.cost,
+								}))
+								.orderBy(["cost", "desc"], ["reviews", "desc"])
+								.limit(TOP),
+						),
+					),
+				],
+				{ concurrency: 4 },
+			)
+			const total = totalRows[0]
+			const repeat = repeatRows[0]
+			return yield* decodeSpend({
+				reviews: total?.reviews ?? 0,
+				pullRequests: total?.pullRequests ?? 0,
+				credits: creditsOf(total?.cost ?? 0),
+				unpricedReviews: total?.unpriced ?? 0,
+				reReviews: repeat?.reReviews ?? 0,
+				reReviewCredits: creditsOf(repeat?.reReviewCost ?? 0),
+				repositories: Arr.map(repositoryRows, ({ cost, ...row }) => ({
+					...row,
+					credits: creditsOf(cost),
+				})),
+				topPullRequests: Arr.map(pullRequestRows, ({ cost, ...row }) => ({
+					...row,
+					credits: creditsOf(cost),
+				})),
+			}).pipe(Effect.mapError(toPersistence))
+		})
+
+		return {
+			analytics,
+			listReviews,
+			getReview,
+			listFindings,
+			spend,
+		} satisfies PrReviewAnalyticsServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

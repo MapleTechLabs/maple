@@ -25,6 +25,7 @@ import {
 	WaitSubmenuDelay,
 } from "./menu"
 import { type MenuEntry, view } from "./menu-view"
+import { Array as Arr } from "effect"
 
 /** Dropdown menu: arrows move the highlight, ArrowRight opens the submenu, ArrowLeft returns. */
 const ID = "row-actions"
@@ -159,7 +160,10 @@ describe("dropdown menu scene", () => {
 			Message.ElapsedSubmenuDelay({ generation, index: 1, value: "dashboards" }),
 		)
 		assert({
-			commands: hovered.commands?.map((command) => command.name),
+			commands:
+				hovered.commands === undefined
+					? undefined
+					: Arr.map(hovered.commands, (command) => command.name),
 			stale: stale.model.submenu,
 			opened: opened.model.submenu?.value,
 		}).toEqual({ commands: ["FocusMenuItem", WaitSubmenuDelay.name], stale: null, opened: "dashboards" })

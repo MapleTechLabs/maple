@@ -7,7 +7,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { WIDGET_CHART_TOKENS } from "../kit/chart-tokens"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
-import { alert, alertDescription } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { chartSkeleton } from "@maple/views/ui/chart-skeleton"
 import {
@@ -31,6 +31,8 @@ import { docsLink } from "../../kit/signal-empty-state"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { dashboardSections } from "./view-grid"
+import { isWriteBlocked } from "./mode"
+import { snapshotBanner } from "../kit/live-sync"
 import * as TagEditor from "../kit/tag-editor"
 import * as VariablesManagerView from "../kit/variables-manager/view"
 import { widgetPicker } from "./picker"
@@ -44,13 +46,11 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 
-// The dashboard view page.
-
 type H = HtmlBuilder<Message>
 
-/** `InlineEditableTitle`: the heading, or its input while renaming. */
+/** The heading, or its input while renaming. */
 const title = (h: H, model: Model, name: string): Html => {
-	const isReadOnly = model.persistenceError !== null || model.history.previewed !== null
+	const isReadOnly = isWriteBlocked(model) || model.history.previewed !== null
 	if (model.titleDraft !== null && !isReadOnly)
 		return h.form(
 			[h.OnSubmit(Message.SubmittedTitle())],
@@ -94,7 +94,7 @@ const title = (h: H, model: Model, name: string): Html => {
 	)
 }
 
-/** `DashboardViewSkeleton`. TODO(skeleton): ghost tiles use the line ghost for every variant. */
+/** TODO(skeleton): ghost tiles use the line ghost for every variant. */
 const viewSkeleton = (h: H): Html => {
 	const ghost = (index: number, className: string) =>
 		h.div(
@@ -105,7 +105,7 @@ const viewSkeleton = (h: H): Html => {
 				h.Style({ "animation-delay": `${index * 40}ms` }),
 			],
 			[
-				h.div([h.Class("flex items-center px-3 pt-3 pb-2")], [skeleton(h, "h-3 w-24")]),
+				hstack(h, { align: "center", className: "px-3 pt-3 pb-2" }, [skeleton(h, "h-3 w-24")]),
 				h.div([h.Class("min-h-0 flex-1 p-2 pt-0")], [chartSkeleton(h, "line")]),
 			],
 		)
@@ -125,7 +125,6 @@ const viewSkeleton = (h: H): Html => {
 	)
 }
 
-/** `ResourceNotFound`: the id resolved to nothing. */
 const notFound = (h: H, dashboardId: string): Html =>
 	resourceNotFound(h, {
 		title: "Dashboard not found",
@@ -143,14 +142,14 @@ const GRID_PREVIEW = [
 	{ glyph: "TextWrapIcon", className: "h-16 w-10" },
 ] as const
 
-/** `BlankDashboardEmpty`: the board exists and holds nothing. */
 const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 	empty(
 		h,
 		[
 			emptyMedia(h, {}, [
-				h.div(
-					[h.AriaHidden(true), h.Class("flex w-64 gap-2")],
+				hstack(
+					h,
+					{ gap: "2", align: "stretch", className: "w-64", attributes: [h.AriaHidden(true)] },
 					Arr.map(GRID_PREVIEW, ({ glyph, className }) =>
 						h.div(
 							[
@@ -195,8 +194,8 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 					]),
 					typography(h, { size: "2xs", tone: "muted", mono: true, as: "p" }, [
 						isReadOnly
-							? "Read-only. You can’t add widgets to this dashboard."
-							: "Templates create a new dashboard from this org’s data.",
+							? "Read-only. You can't add widgets to this dashboard."
+							: "Templates create a new dashboard from this org's data.",
 					]),
 				],
 				"max-w-none",
@@ -208,15 +207,41 @@ const blankDashboard = (h: H, isReadOnly: boolean): Html =>
 const persistenceBanner = (h: H, error: string): Html =>
 	alert(h, { variant: "crit", size: "sm", className: "mb-4" }, [
 		alertDescription(h, [error, ". Dashboard editing is temporarily disabled."], TONE_TEXT.crit),
+		alertAction(h, [
+			button(
+				h,
+				{
+					size: "sm",
+					variant: "outline",
+					attributes: [h.OnClick(Message.ClickedRetryPersistence())],
+				},
+				["Try again"],
+			),
+		]),
 	])
 
 const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => {
 	const timeZone = context.timeZone
 	if (model.status === "Loading") return [viewSkeleton(h)]
+	if (model.snapshot._tag === "Failed")
+		return [
+			errorState(h, {
+				// Reading the board again is always worth offering: live sync may be back.
+				failure: { ...model.snapshot.failure, recovery: "retry" },
+				title: "Couldn't load dashboard",
+				onRetry: Message.ClickedRetrySync(),
+				className: "min-h-64",
+			}),
+		]
 	if (model.status === "Missing" || model.document === null) return [notFound(h, model.dashboardId)]
 	const document = model.document
 	const isBlank = document.widgets.length === 0 && (document.sections?.length ?? 0) === 0
-	const banner = model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]
+	const banner = [
+		...(model.persistenceError === null ? [] : [persistenceBanner(h, model.persistenceError)]),
+		...(model.snapshot._tag === "Shown"
+			? [snapshotBanner(h, "this dashboard", Message.ClickedRetrySync())]
+			: []),
+	]
 	const previewed = model.history.previewed
 	if (previewed !== null) {
 		const clock = { nowMs: model.nowMs ?? 0, timeZone }
@@ -232,7 +257,7 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 				},
 				snap,
 			)
-		// `PreviewedCanvas`: the snapshot through the sectioned canvas, read-only.
+		// The snapshot through the sectioned canvas, read-only.
 		const snapshot = AsyncData.match(model.history.snapshot, {
 			onIdle: () => viewSkeleton(h),
 			onLoading: () => viewSkeleton(h),
@@ -246,7 +271,7 @@ const body = (h: H, model: Model, context: PageContext): ReadonlyArray<Html> => 
 	return [
 		...banner,
 		isBlank
-			? blankDashboard(h, model.persistenceError !== null)
+			? blankDashboard(h, isWriteBlocked(model))
 			: dashboardSections(
 					h,
 					{ model, timeZone, variables: variablesOf(model, context).values },
@@ -262,14 +287,15 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				model.document === null
-					? {}
+					? { width: "full" }
 					: {
+							width: "full",
 							titleContent: title(h, model, model.document.name),
 							actions: toolbar(h, model, inputs.context),
 							...(model.history.isOpen
 								? {
 										rightPanel: historyPanel(h, model, {
-											nowMs: model.nowMs ?? 0,
+											nowMs: Math.max(model.nowMs ?? 0, model.history.listedAtMs),
 											timeZone: inputs.context.timeZone,
 										}),
 										rightPanelWidth: "w-80",
@@ -293,7 +319,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 				viewInputs: { slotId: "dashboard-variables-dialog" },
 				toParentMessage: (message) => Message.GotVariablesManagerMessage({ message }),
 			}),
-			shareDialog(h, model),
+			shareDialog(h, model, inputs.context),
 			embedDialog(h, model, inputs.context),
 			...sectionDialogs(h, model),
 		],

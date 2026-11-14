@@ -24,7 +24,7 @@ Add these dependencies to `Cargo.toml`. The `opentelemetry*` crates must share o
 [dependencies]
 opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
-opentelemetry-otlp = "0.31"
+opentelemetry-otlp = { version = "0.31", features = ["reqwest-rustls"] }
 opentelemetry-appender-tracing = "0.31"
 tracing-opentelemetry = "0.32"
 tracing = "0.1"
@@ -32,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full"] }
 ```
 
-The default features of `opentelemetry-otlp` export OTLP over HTTP with protobuf encoding, using a blocking HTTP client on the SDK's own background threads.
+The default features of `opentelemetry-otlp` export OTLP over HTTP with protobuf encoding, using a blocking HTTP client on the SDK's own background threads. That client is built without TLS, so the `reqwest-rustls` feature is what lets it reach Maple's `https://` endpoint.
 
 ## Configure
 
@@ -301,7 +301,7 @@ Your service also appears on the **Services** page once its first spans arrive.
 ## Troubleshooting
 
 - **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
-- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Build exporters with `.with_http()`, not `.with_tonic()`. `with_endpoint` takes the full URL including `/v1/traces`; `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Wrong path or port.** Maple accepts OTLP over HTTP and gRPC on port 443. This guide uses `.with_http()`. `.with_tonic()` also works with the base URL and no port, but needs one of the crate's TLS features. With HTTP, `with_endpoint` takes the full URL including `/v1/traces`; `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
 - **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
 - **Nothing exported.** Shut the providers down before the process exits so buffered data is sent. If the build fails with trait errors between `tracing-opentelemetry` and `opentelemetry`, the versions do not match.
 

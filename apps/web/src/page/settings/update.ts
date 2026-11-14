@@ -1,7 +1,8 @@
-import { withoutCheckoutReturn } from "../../lib/billing/checkout-return"
-import { hasBringYourOwnCloudAddOn } from "../../lib/billing/plan-gating"
-import { isClerkAuthEnabled } from "../../lib/services/common/auth-mode"
-import { rowToV2ApiKey } from "@maple/web-data/collections/api-keys"
+import * as Policy from "@maple/domain/policy"
+import { withoutCheckoutReturn } from "../kit/billing/checkout-return"
+import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
+import { isClerkAuthEnabled } from "../../platform/auth-mode"
+import { rowsToV2ApiKeys } from "@maple/web-data/collections/api-keys"
 import { Array, Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { AppRoute, hrefOf } from "../../route"
@@ -24,6 +25,7 @@ import * as Billing from "./billing/update"
 import * as Members from "./members/update"
 import * as General from "./general/update"
 import * as DataPlatform from "./data-platform/update"
+import * as DataSources from "./data-sources/update"
 import * as AuditLog from "./audit-log/update"
 import * as Automation from "./automation/update"
 import type * as KeysMessage from "./keys/message"
@@ -43,29 +45,36 @@ import {
 type Return = PageReturn<Model, Message>
 type SettingsRoute = Extract<AppRoute, { readonly _tag: "Settings" }>
 
-// VISIBILITY (`useVisibleSettingsSections`)
-
 export const visibilityOf = (model: Model): Visibility => {
-	const isAdmin = isClerkAuthEnabled
-		? AsyncData.getOrElse(
-				AsyncData.map(model.session, (session) => session.isAdmin),
-				() => false,
-			)
-		: true
+	const grants = grantsOf(model)
+	const canManageWarehouse = Policy.has(grants, "warehouse:manage")
 	const hasByoc = AsyncData.getOrElse(AsyncData.map(model.customer, hasBringYourOwnCloudAddOn), () => false)
 	return {
 		isClerk: isClerkAuthEnabled,
-		isAdmin,
-		canAccessDataPlatform: isAdmin && hasByoc,
-		isDataPlatformLocked: isClerkAuthEnabled && isAdmin && !hasByoc,
+		grants,
+		canAccessDataPlatform: canManageWarehouse && hasByoc,
+		hasDataSources: AsyncData.getOrElse(
+			AsyncData.map(model.session, (session) => session.hasDataSources),
+			() => false,
+		),
+		isDataPlatformLocked: isClerkAuthEnabled && canManageWarehouse && !hasByoc,
 	}
 }
 
-/** The session read answered and says the viewer is a member, not an admin: only then do notices say so. */
+/** The session's permissions: every one off Clerk, none until (or unless) the session answers. */
+export const grantsOf = (model: Model): ReadonlyArray<Policy.Permission> =>
+	isClerkAuthEnabled
+		? AsyncData.getOrElse(
+				AsyncData.map(model.session, (session) => session.grants),
+				(): ReadonlyArray<Policy.Permission> => [],
+			)
+		: Policy.allPermissions
+
+/** The session read answered, so the viewer's role is known: only then do tabs say what it lacks. */
 export const isKnownMember = (model: Model): boolean =>
 	isClerkAuthEnabled &&
 	AsyncData.getOrElse(
-		AsyncData.map(model.session, (session) => !session.isAdmin),
+		AsyncData.map(model.session, () => true),
 		() => false,
 	)
 
@@ -80,31 +89,35 @@ export const isSettingsLoading = (model: Model): boolean =>
 export const activeTabOf = (model: Model): SettingsTab =>
 	resolveActiveSettingsTab(model.search.tab, visibleTabs(visibleSections(visibilityOf(model))))
 
-// TABS
-
-const TAB_TAGS = new Map<SettingsTab, TabModel["_tag"]>([
-	["mcp", "Mcp"],
-	["keys", "Keys"],
-	["ingestion", "Ingestion"],
-	["setup-health", "SetupHealth"],
-	["ai", "Ai"],
-	["automation", "Automation"],
-	["audit-log", "AuditLog"],
-	["data-platform", "DataPlatform"],
-	["general", "General"],
-	["members", "Members"],
-	["billing", "Billing"],
-])
-const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS.get(tab) ?? "Unported"
+const TAB_TAGS = {
+	mcp: "Mcp",
+	keys: "Keys",
+	ingestion: "Ingestion",
+	"setup-health": "SetupHealth",
+	ai: "Ai",
+	automation: "Automation",
+	"audit-log": "AuditLog",
+	"data-platform": "DataPlatform",
+	"data-sources": "DataSources",
+	general: "General",
+	members: "Members",
+	billing: "Billing",
+} as const satisfies Record<SettingsTab, TabModel["_tag"]>
+const tabTag = (tab: SettingsTab): TabModel["_tag"] => TAB_TAGS[tab]
 
 const isTabCurrent = (current: TabModel | null, tab: SettingsTab): boolean =>
-	current !== null && current._tag === tabTag(tab) && (current._tag !== "Unported" || current.tab === tab)
+	current !== null && current._tag === tabTag(tab)
 
 type TabOf<T extends TabModel["_tag"]> = Extract<TabModel, { readonly _tag: T }>
 
 /** The open tab or a kept one: a kept tab still takes the answers to what it asked for. */
 const tabNamed = <T extends TabModel["_tag"]>(model: Model, tag: T): TabOf<T> | undefined =>
-	[model.tab, ...model.kept].find((tab): tab is TabOf<T> => tab !== null && tab._tag === tag)
+	Option.getOrUndefined(
+		Array.findFirst(
+			[model.tab, ...model.kept],
+			(tab): tab is TabOf<T> => tab !== null && tab._tag === tag,
+		),
+	)
 
 /** Writes a tab back where it lives: open, or kept. */
 const putTab = (model: Model, tab: TabModel): Model =>
@@ -114,7 +127,7 @@ const putTab = (model: Model, tab: TabModel): Model =>
 
 /** Closes the open tab, keeping its state for a return. */
 const leaveTab = (model: Model): Model =>
-	model.tab === null || model.tab._tag === "Unported"
+	model.tab === null
 		? { ...model, tab: null }
 		: {
 				...model,
@@ -123,7 +136,7 @@ const leaveTab = (model: Model): Model =>
 			}
 
 const sessionOf = (model: Model) => ({
-	isAdmin: visibilityOf(model).isAdmin,
+	grants: grantsOf(model),
 	userId: AsyncData.getOrElse(
 		AsyncData.map(model.session, (session) => session.userId),
 		() => null,
@@ -132,7 +145,7 @@ const sessionOf = (model: Model) => ({
 
 /** The Ingestion tab's options: the quick-start key is the org in Clerk mode, `default` self-hosted. */
 export const ingestionOptionsOf = (model: Model, context: PageContext): Ingestion.InitOptions => ({
-	isAdmin: visibilityOf(model).isAdmin,
+	grants: grantsOf(model),
 	orgKey: isClerkAuthEnabled ? context.orgId : "default",
 	timeZone: context.timeZone,
 	pinnedNamespace: context.pinnedNamespace,
@@ -187,12 +200,14 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Ai": {
-			// `canAccessAi`: an admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
+			// An admin of an org in the `aiAutoTriage` rollout (self-hosted has every rollout).
 			const hasFlag = AsyncData.getOrElse(
 				AsyncData.map(model.session, (session) => session.hasAiAutoTriage),
 				() => false,
 			)
-			const step = Ai.init(visibilityOf(model).isAdmin && (!isClerkAuthEnabled || hasFlag))
+			const step = Ai.init(
+				Policy.has(grantsOf(model), "llm_keys:manage") && (!isClerkAuthEnabled || hasFlag),
+			)
 			return {
 				model: { ...model, tab: { _tag: "Ai", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -201,7 +216,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Automation": {
-			const step = Automation.init(visibilityOf(model).isAdmin)
+			const step = Automation.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "Automation", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -227,8 +242,22 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
+		case "DataSources": {
+			// Connecting is admin-only, so a shared connect link opens the list for members.
+			const step = DataSources.init(
+				Policy.has(grantsOf(model), "data_sources:manage")
+					? model.search
+					: { source: model.search.source },
+			)
+			return {
+				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataSourcesMessage({ message }),
+				),
+			}
+		}
 		case "General": {
-			const step = General.init(visibilityOf(model).isAdmin)
+			const step = General.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "General", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -237,7 +266,7 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Members": {
-			const step = Members.init(visibilityOf(model).isAdmin)
+			const step = Members.init(grantsOf(model))
 			return {
 				model: { ...model, tab: { _tag: "Members", model: step.model } },
 				commands: Command.mapMessages(step.commands ?? [], (message) =>
@@ -246,11 +275,10 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 			}
 		}
 		case "Billing": {
-			const visibility = visibilityOf(model)
 			const step = Billing.init(
-				visibility.isAdmin,
+				grantsOf(model),
 				model.search.checkout === "complete",
-				visibility.isClerk,
+				isClerkAuthEnabled,
 			)
 			return {
 				model: { ...model, tab: { _tag: "Billing", model: step.model } },
@@ -259,8 +287,6 @@ const initTab = (model: Model, tab: SettingsTab, context: PageContext): Return =
 				),
 			}
 		}
-		case "Unported":
-			return { model: { ...model, tab: { _tag: "Unported", tab } } }
 	}
 }
 
@@ -345,6 +371,15 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				),
 			}
 		}
+		case "DataSources": {
+			const step = DataSources.revisit(kept.model)
+			return {
+				model: { ...model, tab: { _tag: "DataSources", model: step.model } },
+				commands: Command.mapMessages(step.commands ?? [], (message) =>
+					Message.GotDataSourcesMessage({ message }),
+				),
+			}
+		}
 		case "General": {
 			const step = General.revisit(kept.model)
 			return {
@@ -372,22 +407,24 @@ const revisitTab = (model: Model, kept: TabModel, context: PageContext): Return 
 				),
 			}
 		}
-		case "Unported":
-			return { model: { ...model, tab: kept } }
 	}
 }
 
 /** Opens `tab`, keeping the one left: a kept tab comes back with its data, any other starts fresh. */
 const enterTab = (model: Model, tab: SettingsTab, context: PageContext): Return => {
 	const left = leaveTab(model)
-	const returning = left.kept.find((kept) => isTabCurrent(kept, tab))
-	return returning === undefined
-		? initTab(left, tab, context)
-		: revisitTab(
-				{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
-				returning,
-				context,
-			)
+	return Option.match(
+		Array.findFirst(left.kept, (kept) => isTabCurrent(kept, tab)),
+		{
+			onNone: () => initTab(left, tab, context),
+			onSome: (returning) =>
+				revisitTab(
+					{ ...left, kept: Array.filter(left.kept, (kept) => kept !== returning) },
+					returning,
+					context,
+				),
+		},
+	)
 }
 
 /** Mounts the active tab's section once the nav can resolve it, keeping the previous one. */
@@ -427,8 +464,6 @@ const syncTab = (model: Model, context: PageContext): Return => {
 	return { model }
 }
 
-// NAVIGATION
-
 const redirectUrl = (redirect: LegacySettingsRedirect): string => {
 	switch (redirect.kind) {
 		case "integrations":
@@ -440,7 +475,7 @@ const redirectUrl = (redirect: LegacySettingsRedirect): string => {
 	}
 }
 
-/** `pickAuditLogSearch`: the audit filters ride along on a tab switch. */
+/** The audit filters ride along on a tab switch. */
 const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	range: search.range,
 	since: search.since,
@@ -450,7 +485,7 @@ const auditLogSearchOf = (search: SettingsSearch): SettingsSearch => ({
 	outcome: search.outcome,
 })
 
-/** Retired `?tab=` values `<Navigate replace>` to their new home before the page renders. */
+/** Retired `?tab=` values are replaced by their new home before the page renders. */
 const enter = (model: Model, context: PageContext): Return =>
 	Option.match(resolveLegacySettingsTab(model.search.tab), {
 		onNone: () => syncTab(model, context),
@@ -459,8 +494,6 @@ const enter = (model: Model, context: PageContext): Return =>
 			outMessage: PageOutMessage.RequestedNavigation({ url: redirectUrl(redirect), isReplace: true }),
 		}),
 	})
-
-// ENTRY
 
 export const init = (route: SettingsRoute, context: PageContext): Return => {
 	const entered = enter(
@@ -554,7 +587,7 @@ const clearCheckoutMarker = (model: Model, isConfirmed: boolean) =>
 /** Lifts a Billing step: its commands, a stale customer read, and the cleared checkout marker. */
 const liftBilling = (model: Model, { step, isCustomerStale, checkout }: Billing.Step): Return => {
 	const next = putTab(model, { _tag: "Billing", model: step.model })
-	// `BILLING_CUSTOMER_KEY`: a cap save, the portal, a plan change or Retry read the customer again.
+	// A cap save, the portal, a plan change or Retry read the customer again.
 	return {
 		model: isCustomerStale
 			? {
@@ -685,6 +718,18 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 				outMessage: step.outMessage,
 			}
 		},
+		GotDataSourcesMessage: ({ message: inner }) => {
+			const tab = tabNamed(model, "DataSources")
+			if (tab === undefined) return { model }
+			const step = DataSources.update(tab.model, inner)
+			return {
+				model: putTab(model, { _tag: "DataSources", model: step.model }),
+				commands: Command.mapMessages(step.commands ?? [], (child) =>
+					Message.GotDataSourcesMessage({ message: child }),
+				),
+				outMessage: step.outMessage,
+			}
+		},
 		GotGeneralMessage: ({ message: inner }) => {
 			const tab = tabNamed(model, "General")
 			if (tab === undefined) return { model }
@@ -739,7 +784,7 @@ const updateMessage = (model: Model, message: Message, context: PageContext): Re
 		},
 		UpdatedApiKeys: ({ orgId, rows }) => {
 			if (orgId !== context.orgId) return { model }
-			const apiKeys = Array.map(rows, rowToV2ApiKey)
+			const apiKeys = rowsToV2ApiKeys(rows)
 			const next = { ...model, apiKeys, isApiKeysLoadFailed: false }
 			return next.tab !== null && next.tab._tag === "Keys"
 				? liftKeys(next, next.tab.model, KeysMessageValue.UpdatedApiKeys({ rows: apiKeys }))

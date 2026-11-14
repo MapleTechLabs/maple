@@ -22,7 +22,7 @@ const renderedModuleResult = await format(outputPath, renderTinybirdProjectManif
 })
 if (renderedModuleResult.errors.length > 0) {
 	throw new Error(
-		`Failed to format generated Tinybird project manifest: ${renderedModuleResult.errors[0]!.message}`,
+		`Failed to format generated Tinybird project manifest: ${renderedModuleResult.errors[0].message}`,
 	)
 }
 const renderedModule = renderedModuleResult.code

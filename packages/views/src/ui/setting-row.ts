@@ -10,13 +10,14 @@ import {
 	settingRowLeadStyles,
 	settingRowStyles,
 	settingRowTextStyles,
-} from "@maple/ui/styles/ui/setting-row"
+	settingRowTitleStyles,
+} from "./setting-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/setting-row.tsx. The React row is a Base UI `Field`: its
-// label points at the control's input, and the field state (`data-filled`, `data-disabled`) is
-// mirrored onto the root, label and description. Ids are the caller's (the control uses them too).
+// A settings row: label, description and a control. It is a Base UI `Field`: its label points at the control's input, and the field
+// state (`data-filled`, `data-disabled`) is mirrored onto the root, label and description. Ids are
+// the caller's (the control uses them too).
 
 export interface SettingRowIds {
 	/** The control's form input, the label's `for`. */
@@ -37,6 +38,8 @@ export interface SettingRowOptions {
 	/** Text, or a node (`label={<span>Google<Badge /></span>}`). */
 	readonly label: string | Html
 	readonly description?: string | Html | ReadonlyArray<Html | string>
+	/** A status beside the label (a badge), outside it so the control's name stays the label. */
+	readonly status?: Html
 	readonly icon?: Html
 	/** The control, with its hidden form input when it has one (a Base UI Switch renders two nodes). */
 	readonly control: ReadonlyArray<Html>
@@ -58,6 +61,10 @@ export const settingRow = <M>(
 		...((options.disabled ?? false) ? [h.DataAttribute("disabled", "")] : []),
 		...((options.filled ?? false) ? [h.DataAttribute("filled", "")] : []),
 	]
+	const label = h.label(
+		[h.Class(settingRowLabelStyles), ...fieldState, h.For(options.ids.control), h.Id(options.ids.label)],
+		[options.label],
+	)
 	return h.div(
 		[
 			...fieldState,
@@ -84,15 +91,9 @@ export const settingRow = <M>(
 							h.div(
 								[h.Class(settingRowTextStyles)],
 								[
-									h.label(
-										[
-											h.Class(settingRowLabelStyles),
-											...fieldState,
-											h.For(options.ids.control),
-											h.Id(options.ids.label),
-										],
-										[options.label],
-									),
+									...(options.status === undefined
+										? [label]
+										: [h.div([h.Class(settingRowTitleStyles)], [label, options.status])]),
 									...(options.description === undefined
 										? []
 										: [

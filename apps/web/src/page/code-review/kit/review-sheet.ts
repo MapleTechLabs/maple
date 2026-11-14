@@ -13,8 +13,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { getReview, listCiRuns } from "./api"
 import { ResponseCache } from "./page-steps"
 
-// `ReviewDetailSheet` with its `PullRequestCiRuns`:
-// one review opened from a list, driven by the route's `review` param.
+// One review opened from a list, driven by the route's `review` param.
 
 export const ReviewSheet = Schema.Struct({
 	dialog: Dialog.Model,
@@ -22,7 +21,9 @@ export const ReviewSheet = Schema.Struct({
 	reviewId: Schema.NullOr(PrReviewId),
 	detail: KeyedSchema(CodeReviewDetail, LoadFailure),
 	detailCache: ResponseCache(CodeReviewDetail),
-	/** The pull request's runs over 90 days up to `ciNowMs` (read once the detail is in). */
+	/**
+	 * The pull request's runs over 90 days up to the clock read when they mount (once the detail is in).
+	 */
 	ciRuns: KeyedSchema(CodeReviewCiRunsResponse, LoadFailure),
 	ciCache: ResponseCache(CodeReviewCiRunsResponse),
 	nowMs: Schema.Number,
@@ -57,7 +58,7 @@ export const FetchReviewDetail = Command.define("FetchCodeReviewDetail", {
 		),
 })
 
-/** `useState(() => Date.now())` in `PullRequestCiRuns`, read when the runs mount. */
+/** The clock the runs' window ends at, read when the runs mount. */
 export const ReadCiClock = Command.define("ReadCodeReviewCiClock", {
 	args: { key: Schema.String },
 	messages: [SheetMessage.ReadCiClock],

@@ -1,0 +1,152 @@
+/**
+ * What a review pass has read. Fed the real renderers' answers, since the tracker reads them back.
+ */
+import type { PullRequestFile } from "@maple/domain/http"
+import { renderFollowUp, renderIgnoredPaths } from "@maple/backend/services/pr-review/findings"
+import { assert, describe, it } from "vitest"
+import { renderChangedFiles, renderFileDiffs } from "../../mcp/tools/pull-request"
+import { makeReviewCoverage, unreadRefusal } from "./coverage"
+import { Array as Arr } from "effect"
+
+const file = (path: string): PullRequestFile => ({
+	path,
+	previousPath: null,
+	status: "modified",
+	additions: 1,
+	deletions: 0,
+	patch: "@@ -1 +1 @@\n+x",
+})
+
+const FILES = [file("src/a.ts"), file("src/b.ts"), file("src/a.test.ts"), file("docs/a.md")]
+const listing = Arr.getUnsafe(renderChangedFiles("octo/shop", 7, FILES).content, 0).text
+const diffs = (...paths: Array<string>) =>
+	Arr.getUnsafe(renderFileDiffs("octo/shop", 7, FILES, paths).content, 0).text
+
+describe("makeReviewCoverage", () => {
+	it("owes nothing before the file list is read", () => {
+		assert.deepEqual(makeReviewCoverage("Review pull request #7.").unread(), [])
+	})
+
+	it("owes every reviewed file until a diff answer shows it", () => {
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe("pr_changed_files", listing)
+		assert.deepEqual(coverage.unread(), ["src/a.ts", "src/b.ts", "src/a.test.ts"])
+		coverage.observe("pr_file_diff", diffs("src/a.ts", "src/a.test.ts"))
+		assert.deepEqual(coverage.unread(), ["src/b.ts"])
+		coverage.observe("pr_file_diff", diffs("src/b.ts"))
+		assert.deepEqual(coverage.unread(), [])
+	})
+
+	it("never owes a file the repository's settings ignore", () => {
+		const coverage = makeReviewCoverage(
+			`Review pull request #7.\n${renderIgnoredPaths(["src/b.ts", "*.test.ts"])}`,
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.deepEqual(coverage.unread(), ["src/a.ts"])
+	})
+
+	// submit_review refuses exactly while `unread()` is non-empty.
+	it("never owes a lockfile or a tool's output, so one left unread refuses nothing", () => {
+		const changed = [
+			...FILES,
+			file("packages/artifact-sdk/vendor.lock.json"),
+			file("skills-lock.json"),
+			file("deploy/k8s-infra/Chart.lock"),
+			file("apps/api/worker-configuration.d.ts"),
+			file("apps/api/drizzle/meta/0002_snapshot.json"),
+			file("apps/web/.open-next/server-functions/default/handler.mjs"),
+			file("apps/web/public/embed/outer-60c368c1e1eddba7bd149e4b4f5408df.js"),
+		]
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe(
+			"pr_changed_files",
+			Arr.getUnsafe(renderChangedFiles("octo/shop", 7, changed).content, 0).text,
+		)
+		coverage.observe("pr_file_diff", diffs("src/a.ts", "src/b.ts", "src/a.test.ts"))
+		assert.deepEqual(coverage.unread(), [])
+	})
+
+	it("still owes a source file listed beside a lockfile, and a string catalog", () => {
+		const changed = [file("bun.lock"), file("src/a.ts"), file("ios/Localizable.xcstrings")]
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe(
+			"pr_changed_files",
+			Arr.getUnsafe(renderChangedFiles("octo/shop", 7, changed).content, 0).text,
+		)
+		assert.deepEqual(coverage.unread(), ["src/a.ts", "ios/Localizable.xcstrings"])
+	})
+
+	it("counts only pr_file_diff answers as reads", () => {
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		coverage.observe("pr_changed_files", listing)
+		coverage.observe("sandbox_read_file", diffs("src/a.ts", "src/b.ts", "src/a.test.ts"))
+		assert.lengthOf(coverage.unread(), 3)
+	})
+
+	it("owes a later push only the files its kickoff says changed", () => {
+		const followUp = renderFollowUp({
+			previousSha: "abcdef1234",
+			changes: { paths: ["src/b.ts"], rewritten: false },
+			open: [],
+		})
+		const coverage = makeReviewCoverage(Arr.join(["Review pull request #7.", ...followUp], "\n"))
+		coverage.observe("pr_changed_files", listing)
+		assert.deepEqual(coverage.unread(), ["src/b.ts"])
+
+		const nothing = makeReviewCoverage(
+			Arr.join(
+				renderFollowUp({
+					previousSha: "abcdef1234",
+					changes: { paths: [], rewritten: false },
+					open: [],
+				}),
+				"\n",
+			),
+		)
+		nothing.observe("pr_changed_files", listing)
+		assert.deepEqual(nothing.unread(), [])
+		assert.isFalse(coverage.wholeDiff())
+	})
+
+	it("owes the pass after an unchecked fix every file, whatever changed since", () => {
+		const coverage = makeReviewCoverage(
+			Arr.join(
+				[
+					"Review pull request #7.",
+					...renderFollowUp({
+						previousSha: "abcdef1234",
+						changes: { paths: ["src/b.ts"], rewritten: false },
+						open: [],
+						recheck: true,
+					}),
+				],
+				"\n",
+			),
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.lengthOf(coverage.unread(), 3)
+		assert.isTrue(coverage.wholeDiff())
+	})
+
+	// Without a listing nothing is due, so an empty unread list proves nothing was checked.
+	it("is no whole-diff read until a file listing arrives", () => {
+		const coverage = makeReviewCoverage("Review pull request #7.")
+		assert.isFalse(coverage.wholeDiff())
+		coverage.observe("pr_changed_files", listing)
+		assert.isTrue(coverage.wholeDiff())
+	})
+})
+
+describe("unreadRefusal", () => {
+	it("names the files and says a second call goes through", () => {
+		const message = unreadRefusal(["src/b.ts"])
+		assert.include(message, "1 reviewed file: src/b.ts.")
+		assert.include(message, "call submit_review again now")
+	})
+
+	it("bounds a long list", () => {
+		const message = unreadRefusal(Array.from({ length: 45 }, (_, i) => `src/f${i}.ts`))
+		assert.include(message, "src/f29.ts, and 15 more.")
+		assert.notInclude(message, "src/f30.ts")
+	})
+})

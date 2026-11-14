@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { Effect, Schema, Array as Arr } from "effect"
 import { makeIncidentPushBudget, type IncidentPushClaim } from "./alert-push-budget"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_budget_test")
+const ORG = Schema.decodeSync(OrgId)("org_budget_test")
 
 const claim = (ruleId: string, kind: IncidentPushClaim["kind"] = "firing"): IncidentPushClaim => ({
 	orgId: ORG,

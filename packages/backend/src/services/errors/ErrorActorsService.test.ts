@@ -1,9 +1,9 @@
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
-import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
+import { ActorId, OrgId, UserId } from "@maple/primitives"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 

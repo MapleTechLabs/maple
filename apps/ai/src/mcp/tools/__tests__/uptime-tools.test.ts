@@ -6,8 +6,8 @@ import {
 	UptimeMonitorMutationOutput,
 } from "@maple/domain/mcp-outputs"
 import { UptimeMonitorLimitReachedError } from "@maple/domain/http"
-import { RoleName } from "@maple/domain/primitives"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { RoleName } from "@maple/primitives"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import type { McpToolResult } from "../types"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import {
@@ -27,8 +27,8 @@ afterAll(async () => {
 	await member.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeSync(schema)(result.structuredContent)
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 
@@ -78,15 +78,15 @@ describe("create_uptime_monitor", () => {
 		expect(markdown(result)).toContain("structured output")
 	})
 
-	it("refuses a timezone with an interval heartbeat instead of dropping it", async () => {
+	it("refuses a time zone with an interval heartbeat instead of dropping it", async () => {
 		const created = await runToolDirect(admin, "create_uptime_monitor", {
 			name: "hb-zone",
 			kind: "heartbeat",
 			heartbeat_interval_seconds: 3600,
-			timezone: "Europe/Berlin",
+			time_zone: "Europe/Berlin",
 		})
 		expect(created.isError).toBe(true)
-		expect(markdown(created)).toContain("timezone applies to a cron schedule")
+		expect(markdown(created)).toContain("time_zone applies to a cron schedule")
 
 		await runToolDirect(admin, "create_uptime_monitor", {
 			name: "hb-zone-update",
@@ -96,10 +96,11 @@ describe("create_uptime_monitor", () => {
 		const updated = await runToolDirect(admin, "update_uptime_monitor", {
 			monitor: "hb-zone-update",
 			heartbeat_interval_seconds: 7200,
+			// The retired spelling is still read, as the same parameter.
 			timezone: "Europe/Berlin",
 		})
 		expect(updated.isError).toBe(true)
-		expect(markdown(updated)).toContain("timezone applies to a cron schedule")
+		expect(markdown(updated)).toContain("time_zone applies to a cron schedule")
 	})
 
 	it("refuses probe-only settings for a heartbeat, naming the field", async () => {

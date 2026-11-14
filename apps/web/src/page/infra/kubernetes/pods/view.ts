@@ -1,4 +1,4 @@
-import { summarizePodRestarts } from "../../../../components/infra/pod-restarts"
+import { summarizePodRestarts } from "../pod-restarts"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
@@ -12,15 +12,15 @@ import { activeFilterChips } from "@maple/views/ui/filters/active-filter-chips"
 import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import { facetChips } from "../../kit/facets"
+import { facetChips } from "../../../kit/facets"
 import { fleetBand, fleetBandLoading } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { offsetPager, pageRangeLabel } from "../../kit/offset-pager"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
-import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
+import { kubernetesViewTabs, pickTimeSearch } from "../../../kit/view-tabs"
 import * as PeekView from "../peek/view"
 import { MountPodPeek } from "../peek-rows"
 import type { PodsPage } from "../pod-data"
@@ -31,8 +31,6 @@ import type { Model, PodCounts } from "./model"
 import { DEFAULT_PRESET, filtersOf, pageIndexOf, peekOf, sortOf } from "./update"
 import { filtersRail } from "./view-filters"
 import { Array as Arr, Record as Rec, String as Str } from "effect"
-
-// `PodsPage` in `KubernetesShell`.
 
 type H = HtmlBuilder<Message>
 
@@ -259,7 +257,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					tabs: kubernetesViewTabs(h, "pods", model.search),
 					filters: filtersRail(h, model),
 				},
-				[h.div([h.Class("space-y-5")], [summaryBand(h, model), podsArea(h, model, inputs)])],
+				[h.div([h.Class("space-y-4")], [summaryBand(h, model), podsArea(h, model, inputs)])],
 			),
 			h.submodel({
 				slotId: "pod-peek",

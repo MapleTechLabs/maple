@@ -1,0 +1,439 @@
+import type { V2OnCallOverride, V2OnCallSchedule, V2OnCallShift, V2OnCallShifts } from "@maple/domain/http/v2"
+import { Option, Array as Arr } from "effect"
+import { AsyncData, Submodel } from "foldkit"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { borderedBox } from "@maple/views/ui/bordered-box"
+import { button, linkButton } from "@maple/views/ui/button"
+import { confirmDialog } from "@maple/views/ui/confirm-dialog"
+import { errorState } from "@maple/views/ui/error-state"
+import { fieldErrorText } from "@maple/views/ui/field"
+import { formDialog } from "@maple/views/ui/form-dialog"
+import { icon } from "@maple/views/ui/icon"
+import { iconButton } from "@maple/views/ui/icon-button"
+import { input } from "@maple/views/ui/input"
+import { label } from "@maple/views/ui/label"
+import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
+import { personLabel } from "@maple/views/ui/person-avatar"
+import { skeleton } from "@maple/views/ui/skeleton"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import type { PageViewInputs } from "../../contract"
+import { dashboardPage } from "../../kit/dashboard-page"
+import { detailActions, detailTitle, detailTitleSkeleton } from "../../kit/detail-header"
+import { resourceNotFound } from "../../kit/resource-not-found"
+import { sectionHeading } from "../../kit/section-heading"
+import { coveragePreview, type PreviewShift } from "../shared/coverage-preview"
+import { editScheduleHref, formatShiftEdge, oncallTabHref } from "../shared/oncall-schedules"
+import { gapsOf } from "../shared/schedule-coverage"
+import { memberName, memberOf, type OrgMember } from "../shared/org-members"
+import { Message } from "./message"
+import { type Model } from "./model"
+import {
+	CALENDAR_SCOPE,
+	DELETE_OVERRIDE_DIALOG_ID,
+	OVERRIDE_DIALOG_ID,
+	overrideIssue,
+	overridesOf,
+	rangeOf,
+	readRangeOf,
+	scheduleOf,
+} from "./update"
+import { dividedList } from "@maple/views/ui/rule"
+import { canManageAlerts } from "../../kit/session-grants"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+
+type H = HtmlBuilder<Message>
+
+const imageOf = (members: ReadonlyArray<OrgMember> | null, userId: string) =>
+	Option.getOrUndefined(Option.map(memberOf(members, userId), (member) => member.imageUrl))
+
+const rangeText = (startMs: number, endMs: number, timeZone: string) =>
+	`${formatShiftEdge(startMs, timeZone)} to ${formatShiftEdge(endMs, timeZone)}`
+
+const onCallLine = (model: Model, schedule: V2OnCallSchedule): string =>
+	Option.match(Option.fromNullishOr(schedule.on_call_now), {
+		onNone: () => "Nobody is on call right now",
+		onSome: (now) =>
+			`${memberName(model.members, now.user_id)} is on call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
+	})
+
+const previewShiftOf = (shift: V2OnCallShift): PreviewShift => ({
+	userId: shift.user_id,
+	startMs: toEpochMs(shift.starts_at),
+	endMs: toEpochMs(shift.ends_at),
+	isOverride: shift.source.kind === "override",
+})
+
+/** The calendar: the same coverage timeline the editor previews, from the server's shifts. */
+const calendarSection = (h: H, model: Model, schedule: V2OnCallSchedule, viewerZone: string): Html => {
+	const range = rangeOf(model)
+	const nowMs = model.nowMs ?? 0
+	// The axis names the schedule's zone; the note only says when the viewer's differs.
+	const noteParts = [
+		...(viewerZone === schedule.time_zone ? [] : [`Your time zone is ${viewerZone}.`]),
+		...(canManageAlerts(model) ? ["Pick a shift in the final row to cover it with an override."] : []),
+	]
+	const note = noteParts.length === 0 ? undefined : Arr.join(noteParts, " ")
+	const preview = (
+		fromMs: number,
+		toMs: number,
+		shifts: Option.Option<V2OnCallShifts>,
+		placeholder?: Html,
+	): Html => {
+		const final = Option.match(shifts, {
+			onNone: () => [],
+			onSome: (s) => Arr.map(s.final, previewShiftOf),
+		})
+		return coveragePreview(h, {
+			scope: CALENDAR_SCOPE,
+			title: `Shifts for ${schedule.name}`,
+			timeZone: schedule.time_zone,
+			fromMs,
+			toMs,
+			nowMs,
+			weekOffset: model.weekOffset,
+			rangeDays: model.rangeDays,
+			lanes: Arr.map(schedule.layers, (layer, index) => ({
+				key: `layer-${index}`,
+				label: layer.name,
+				detail: `Layer ${index + 1}`,
+				shifts: Option.map(shifts, (s) => Arr.map(s.layers[index] ?? [], previewShiftOf)),
+				emptyText: "Not active in this period",
+			})),
+			final,
+			gaps: gapsOf(final, Math.max(fromMs, nowMs), toMs),
+			nameOf: (userId) => memberName(model.members, userId),
+			onPrevious: Message.ClickedPreviousWeek(),
+			onNext: Message.ClickedNextWeek(),
+			onToday: Message.ClickedThisWeek(),
+			onRange: (days) => Message.PickedRange({ days }),
+			onFocusGap: (index) => Message.ClickedGap({ index }),
+			// Only a final shift that has not ended opens an override, and only for someone who may add one.
+			onFinalShift: (shift) =>
+				canManageAlerts(model) && shift.endMs > nowMs
+					? Option.some(Message.ClickedShift({ startMs: shift.startMs, endMs: shift.endMs }))
+					: Option.none(),
+			note,
+			placeholder,
+		})
+	}
+	const loading = (fromMs: number, toMs: number) =>
+		preview(fromMs, toMs, Option.none(), skeleton(h, "h-40 w-full"))
+	// Shifts kept from another range (a read in flight, either end moved) draw as the skeleton: a
+	// shorter read on a longer axis would show its missing days as one long gap.
+	const loaded = (fromMs: number, toMs: number, shifts: V2OnCallShifts): Html =>
+		Option.exists(
+			readRangeOf(model),
+			(read) => toEpochMs(shifts.from) === read.fromMs && toEpochMs(shifts.to) === read.toMs,
+		)
+			? preview(fromMs, toMs, Option.some(shifts))
+			: loading(fromMs, toMs)
+	const body = Option.match(range, {
+		onNone: () => skeleton(h, "h-40 w-full"),
+		onSome: ({ fromMs, toMs }) =>
+			AsyncData.match(model.shifts.data, {
+				onIdle: () => loading(fromMs, toMs),
+				onLoading: () => loading(fromMs, toMs),
+				onFailure: (failure) =>
+					preview(
+						fromMs,
+						toMs,
+						Option.none(),
+						errorState(h, {
+							failure,
+							title: "Couldn't load the shifts",
+							onRetry: Message.ClickedRetryShifts(),
+						}),
+					),
+				onRefreshing: (shifts) => loaded(fromMs, toMs, shifts),
+				onStale: ({ data }) => loaded(fromMs, toMs, data),
+				onSuccess: (shifts) => loaded(fromMs, toMs, shifts),
+			}),
+	})
+	return h.section([h.Class("space-y-3")], [body])
+}
+
+const overrideRow = (h: H, model: Model, schedule: V2OnCallSchedule, override: V2OnCallOverride): Html => {
+	const name = memberName(model.members, override.user_id)
+	return h.li(
+		[h.Key(override.id), h.Class("px-4 py-3")],
+		[
+			hstack(h, { gap: "3", justify: "between" }, [
+				personLabel(h, {
+					name,
+					imageUrl: imageOf(model.members, override.user_id),
+					detail: rangeText(
+						toEpochMs(override.starts_at),
+						toEpochMs(override.ends_at),
+						schedule.time_zone,
+					),
+				}),
+				...(canManageAlerts(model)
+					? [
+							iconButton(
+								h,
+								{
+									label: `Delete ${name}'s override, ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}`,
+									isDisabled: model.deletingOverrideId === override.id,
+									className: "text-muted-foreground",
+									attributes: [
+										h.OnClick(Message.ClickedDeleteOverride({ overrideId: override.id })),
+									],
+								},
+								[icon(h, "TrashIcon")],
+							),
+						]
+					: []),
+			]),
+		],
+	)
+}
+
+const overridesSection = (h: H, model: Model, schedule: V2OnCallSchedule): Html => {
+	const overrides = overridesOf(model)
+	return h.section(
+		[h.Class("space-y-3")],
+		[
+			sectionHeading(h, { title: "Upcoming overrides" }),
+			AsyncData.isFailure(model.overrides.data)
+				? errorState(h, {
+						failure: model.overrides.data.error,
+						title: "Couldn't load the overrides",
+						onRetry: Message.ClickedRetryOverrides(),
+					})
+				: overrides.length === 0
+					? typography(h, { size: "sm", tone: "muted", as: "p" }, [
+							AsyncData.isLoading(model.overrides.data)
+								? "Loading overrides…"
+								: "No overrides. One puts a person on call for a time range, over every layer.",
+						])
+					: borderedBox(h, { overflow: "hidden" }, [
+							dividedList(
+								h,
+								{ as: "ul", bordered: false },
+								Arr.map(overrides, (override) => overrideRow(h, model, schedule, override)),
+							),
+						]),
+		],
+	)
+}
+
+const dialogField = (h: H, id: string, text: string, control: Html): Html =>
+	vstack(h, { gap: "1.5" }, [
+		label(h, { className: typographyClass({ size: "xs", tone: "muted" }), attributes: [h.For(id)] }, [
+			text,
+		]),
+		control,
+	])
+
+/** "Add override": who covers, from when to when on the schedule's clock. */
+const overrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html => {
+	const issue = overrideIssue(model.overrideDraft, schedule.time_zone, model.nowMs ?? 0)
+	const id = OVERRIDE_DIALOG_ID
+	return formDialog(h, {
+		slotId: `${id}-dialog`,
+		model: model.overrideDialog,
+		toParentMessage: (message) => Message.GotOverrideDialogMessage({ message }),
+		title: "Add override",
+		description: `Put one person on call for a time range, over every layer. Times in ${schedule.time_zone}.`,
+		panelClassName: "space-y-4",
+		fields: [
+			dialogField(
+				h,
+				`${id}-person`,
+				"Who covers",
+				nativeSelect(
+					h,
+					{
+						defaultValue: model.overrideDraft.userId,
+						className: "w-full",
+						isDisabled: model.isMembersFailed,
+						attributes: [
+							h.Key(`${id}-person-${model.overrideOpenCount}-${(model.members ?? []).length}`),
+							h.Id(`${id}-person`),
+							h.OnChange((value) => Message.ChangedOverrideUser({ value })),
+						],
+					},
+					[
+						nativeOption(
+							"",
+							model.isMembersFailed
+								? "Couldn't load members, try reloading the page"
+								: "Pick a person",
+						),
+						...Arr.map(model.members ?? [], (member) => nativeOption(member.userId, member.name)),
+					],
+				),
+			),
+			hstack(h, { gap: "3", wrap: true }, [
+				dialogField(
+					h,
+					`${id}-start`,
+					"From",
+					input(h, {
+						id: `${id}-start`,
+						type: "datetime-local",
+						attributes: [
+							h.Value(model.overrideDraft.startsAt),
+							h.OnInput((value) => Message.ChangedOverrideStart({ value })),
+						],
+					}),
+				),
+				dialogField(
+					h,
+					`${id}-end`,
+					"To",
+					input(h, {
+						id: `${id}-end`,
+						type: "datetime-local",
+						attributes: [
+							h.Value(model.overrideDraft.endsAt),
+							h.OnInput((value) => Message.ChangedOverrideEnd({ value })),
+						],
+					}),
+				),
+			]),
+			...(model.isShowingOverrideErrors
+				? Option.match(issue, {
+						onNone: () => [],
+						onSome: (text) => [fieldErrorText(h, { attributes: [h.Role("alert")] }, text)],
+					})
+				: []),
+			...(model.overrideError === null
+				? []
+				: [
+						alert(h, { variant: "crit", size: "sm" }, [
+							icon(h, "CircleXmarkIcon"),
+							alertTitle(h, ["Couldn't create the override"]),
+							alertDescription(h, [model.overrideError]),
+						]),
+					]),
+		],
+		onSubmit: Message.ClickedCreateOverride(),
+		submitLabel: "Add override",
+		isPending: model.isCreatingOverride,
+	})
+}
+
+/** "Delete {person}'s override?": the layers decide that window again. */
+const deleteOverrideDialog = (h: H, model: Model, schedule: V2OnCallSchedule): Html => {
+	const target = Arr.findFirst(
+		overridesOf(model),
+		(override) => override.id === model.confirmDeleteOverrideId,
+	)
+	const name = Option.getOrElse(
+		Option.map(target, (override) => `${memberName(model.members, override.user_id)}'s override`),
+		() => "this override",
+	)
+	return confirmDialog(h, {
+		slotId: DELETE_OVERRIDE_DIALOG_ID,
+		model: model.deleteOverrideDialog,
+		toParentMessage: (message) => Message.GotDeleteOverrideDialogMessage({ message }),
+		title: `Delete ${name}?`,
+		description: Option.match(target, {
+			onNone: () => "The layers decide who is on call again.",
+			onSome: (override) =>
+				`The layers decide who is on call again from ${rangeText(toEpochMs(override.starts_at), toEpochMs(override.ends_at), schedule.time_zone)}.`,
+		}),
+		confirmLabel: "Delete override",
+		isPending: model.deletingOverrideId !== null,
+		onConfirm: Message.ClickedConfirmDeleteOverride(),
+	})
+}
+
+const page = (h: H, model: Model, viewerZone: string): Html => {
+	const notFound = dashboardPage(h, {}, [
+		resourceNotFound(h, {
+			title: "Schedule not found",
+			description: "It may have been deleted, or the link is stale.",
+			back: { href: oncallTabHref(), label: "Back to on-call" },
+		}),
+	])
+	if (model.scheduleId === null) return notFound
+	const data = model.schedule.data
+	if (AsyncData.isFailure(data))
+		return data.error.code === "oncall_schedule_not_found"
+			? notFound
+			: dashboardPage(h, {}, [
+					errorState(h, {
+						failure: data.error,
+						title: "Couldn't load the schedule",
+						onRetry: Message.ClickedRetry(),
+					}),
+				])
+	return Option.match(scheduleOf(model), {
+		onNone: () =>
+			dashboardPage(h, { titleContent: detailTitleSkeleton(h) }, [
+				skeleton(h, "h-48 w-full"),
+				skeleton(h, "h-24 w-full"),
+			]),
+		onSome: (schedule) =>
+			h.div(
+				[h.Class("contents")],
+				[
+					dashboardPage(
+						h,
+						{
+							titleContent: detailTitle(h, {
+								kind: ["On-call schedule", schedule.time_zone],
+								title: [schedule.name],
+								meta: [
+									Option.match(Option.fromNullishOr(schedule.on_call_now), {
+										onNone: () =>
+											typography(h, { size: "sm", tone: "muted" }, [
+												onCallLine(model, schedule),
+											]),
+										onSome: (now) =>
+											personLabel(h, {
+												name: memberName(model.members, now.user_id),
+												imageUrl: imageOf(model.members, now.user_id),
+												detail: `On call until ${formatShiftEdge(toEpochMs(now.ends_at), schedule.time_zone)}`,
+											}),
+									}),
+								],
+							}),
+							actions: canManageAlerts(model)
+								? detailActions(h, [
+										linkButton(
+											h,
+											{
+												size: "sm",
+												variant: "outline",
+												href: editScheduleHref(schedule.id),
+											},
+											[icon(h, "PencilIcon"), "Edit schedule"],
+										),
+										button(
+											h,
+											{
+												size: "sm",
+												attributes: [h.OnClick(Message.ClickedNewOverride())],
+											},
+											[icon(h, "PlusIcon"), "Add override"],
+										),
+									])
+								: undefined,
+							gap: "lg",
+						},
+						[
+							calendarSection(h, model, schedule, viewerZone),
+							overridesSection(h, model, schedule),
+						],
+					),
+					overrideDialog(h, model, schedule),
+					deleteOverrideDialog(h, model, schedule),
+				],
+			),
+	})
+}
+
+export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
+	page(h, model, inputs.context.timeZone),
+)
+
+/** The H1 names the schedule, so the trail stops at the tab. */
+export const breadcrumbsOf = () => [
+	{ label: "Alerts", href: "/alerts" },
+	{ label: "On-call", href: oncallTabHref() },
+]

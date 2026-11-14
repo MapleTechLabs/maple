@@ -199,6 +199,21 @@ export type CapabilityCompile<T> = (
  */
 export type { CompiledQueryInput } from "../ch"
 
+export interface IngestOptions {
+	/**
+	 * The caller drops the rows when the write fails (the audit log): the insert
+	 * failure is logged at Warn and swallowed inside its span, so it never shows
+	 * as an Error span. Scope and routing failures still fail.
+	 */
+	readonly bestEffort?: boolean
+	/**
+	 * Retry a transient 5xx/520. Opt-in: a 520 can arrive after the rows landed,
+	 * so only callers that tolerate a duplicate row (the audit log) set it.
+	 * Summed rollups such as `service_map_edges_hourly` must not.
+	 */
+	readonly retryTransient?: boolean
+}
+
 export interface WarehouseQueryServiceApi {
 	readonly query: (
 		tenant: ExecutionTenant,
@@ -288,6 +303,7 @@ export interface WarehouseQueryServiceApi {
 		tenant: ExecutionTenant,
 		datasource: string,
 		rows: ReadonlyArray<T>,
+		options?: IngestOptions,
 	) => Effect.Effect<void, WarehouseClassifiedError | WarehouseScopeError>
 	/**
 	 * Present this service as the package-level `WarehouseExecutor` for a given

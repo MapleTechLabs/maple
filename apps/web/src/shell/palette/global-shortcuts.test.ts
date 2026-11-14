@@ -1,4 +1,4 @@
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Dialog from "@maple/views/ui/dialog"
 import { Message } from "../message"
@@ -7,7 +7,7 @@ import { update } from "../update"
 import * as Palette from "./model"
 import { displayAlternates, SHORTCUTS } from "./shortcuts"
 
-// `GlobalShortcuts` in the shell: Mod+K, the palette's actions, the shortcuts dialog.
+// The global shortcuts in the shell: Mod+K, the palette's actions, the shortcuts dialog.
 
 const signedIn = (): Model => ({
 	...init({ isMobile: false, theme: "dark", pinnedNamespaces: {}, dashboardFavorites: [] }),
@@ -18,7 +18,7 @@ const step = (model: Model, message: Message) => update(model, message)
 const toPalette = (message: Palette.Message) => Message.GotPaletteMessage({ message })
 
 const commandNames = (result: { commands?: ReadonlyArray<{ name: string }> }) =>
-	result.commands?.map((command) => command.name) ?? []
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 describe("global shortcuts", () => {
 	test("Mod+K opens the palette, and pressed again keeps it as it is", () => {
@@ -59,7 +59,12 @@ describe("global shortcuts", () => {
 		const opened = step(signedIn(), Message.ClickedSearch()).model
 		const entered = step(
 			opened,
-			toPalette(Palette.Message.PressedEnter({ visibleFlagged: ["/releases", "/security"] })),
+			toPalette(
+				Palette.Message.PressedEnter({
+					visibleFlagged: ["/releases", "/security"],
+					audience: "operator",
+				}),
+			),
 		)
 		expect(entered.outMessage).toEqual({ _tag: "RequestedNavigation", url: "/" })
 	})

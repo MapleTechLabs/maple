@@ -1,6 +1,6 @@
 // SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
-import { createHash, randomUUID } from "node:crypto"
-import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs"
 import { lstat, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { durableRename, syncDirectory } from "../durable-files"
@@ -21,7 +21,10 @@ import {
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
 	type ArchiveGenerationManifest,
+	type ShardEvidence,
+	verifyGenerationShards,
 } from "./manifest"
+import { sha256FileSync } from "../checkpoint-digest"
 import { archiveSignal, ARCHIVE_SIGNALS } from "./signals"
 import {
 	archiveCompletedOperation,
@@ -52,12 +55,6 @@ import { Array as Arr } from "effect"
 // `reconcileArchiveGeneration` entry point (dispatched on `kind: "gc"`). So a
 // crashed GC must be reconcilable or it blocks all future archive work.
 
-export interface GcShardEvidence {
-	readonly name: string
-	readonly bytes: number
-	readonly sha256: string
-}
-
 export interface GcDeleteCandidate {
 	readonly signal: string
 	readonly rangeStart: string
@@ -65,7 +62,7 @@ export interface GcDeleteCandidate {
 	readonly createdAt: string
 	readonly manifestSha256: string
 	readonly bytes: number
-	readonly shards: ReadonlyArray<GcShardEvidence>
+	readonly shards: ReadonlyArray<ShardEvidence>
 	readonly recordedActiveGenerationId: string
 	readonly sourcePath: string
 }
@@ -126,9 +123,6 @@ export interface GcFaults {
 	readonly afterCatalogRebuilt?: () => void | Promise<void>
 }
 
-/** SHA-256 of a file's contents (whole-file read; GC targets are bounded shards). */
-const sha256File = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
-
 /** Validate a generation dir + manifest + shards, returning the evidence. Throws on any defect. */
 const verifyGenerationEvidence = (
 	archiveDir: string,
@@ -139,14 +133,14 @@ const verifyGenerationEvidence = (
 	readonly manifest: ArchiveGenerationManifest
 	readonly manifestSha256: string
 	readonly bytes: number
-	readonly shards: ReadonlyArray<GcShardEvidence>
+	readonly shards: ReadonlyArray<ShardEvidence>
 } => {
 	const sourcePath = generationRoot(archiveDir, signal, rangeStart, generationId)
 	assertNoSymlinkSync(archiveDir, sourcePath, "archive generation")
 	const manifestPath = generationManifestPath(archiveDir, signal, rangeStart, generationId)
 	assertNoSymlinkSync(archiveDir, manifestPath, "archive generation manifest")
 	assertRealFileSync(manifestPath, "archive generation manifest")
-	const manifestSha256 = sha256File(manifestPath)
+	const manifestSha256 = sha256FileSync(manifestPath)
 	const manifest = readArchiveGenerationManifest(archiveDir, signal, rangeStart, generationId)
 	if (
 		manifest.generationId !== generationId ||
@@ -155,25 +149,8 @@ const verifyGenerationEvidence = (
 	) {
 		throw new Error(`archive generation manifest identity mismatch: ${sourcePath}`)
 	}
-	let bytes = 0
-	const shards: GcShardEvidence[] = []
-	for (const shard of manifest.shards) {
-		const shardPath = join(sourcePath, "shards", shard.name)
-		assertNoSymlinkSync(archiveDir, shardPath, `archive shard ${shard.name}`)
-		assertRealFileSync(shardPath, `archive shard ${shard.name}`)
-		const actualBytes = statSync(shardPath).size
-		if (actualBytes !== shard.bytes) {
-			throw new Error(
-				`archive shard ${shard.name} byte mismatch: manifest ${shard.bytes}, actual ${actualBytes}`,
-			)
-		}
-		const actualSha = sha256File(shardPath)
-		if (actualSha !== shard.sha256) {
-			throw new Error(`archive shard ${shard.name} SHA-256 mismatch (tampered)`)
-		}
-		bytes += actualBytes
-		shards.push({ name: shard.name, bytes: actualBytes, sha256: actualSha })
-	}
+	const shards = verifyGenerationShards(archiveDir, sourcePath, manifest.shards, "archive shard")
+	const bytes = Arr.reduce(shards, 0, (total, shard) => total + shard.bytes)
 	return { manifest, manifestSha256, bytes, shards }
 }
 
@@ -226,7 +203,6 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 		for (const rangeStart of ranges) {
 			const gensRoot = generationsRoot(archiveDir, signal, rangeStart)
 			if (!existsSync(gensRoot)) continue
-			// Resolve the active generation for this range strictly.
 			let activeGenerationId: string | null
 			try {
 				activeGenerationId = readActiveGenerationIdStrict(archiveDir, signal, rangeStart)
@@ -262,7 +238,7 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 				createdAt: string
 				manifestSha256: string
 				bytes: number
-				shards: ReadonlyArray<GcShardEvidence>
+				shards: ReadonlyArray<ShardEvidence>
 			}> = []
 			try {
 				for (const generationId of generationIds) {
@@ -320,7 +296,6 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 					reason: "active",
 				})
 			}
-			// Keep newest N superseded; delete the older ones.
 			const keepers = superseded.slice(0, keep)
 			const targets = superseded.slice(keep)
 			for (const g of keepers) {
@@ -392,7 +367,7 @@ const revalidateSource = (archiveDir: string, target: GcTarget | GcDeleteCandida
 	)
 	assertNoSymlinkSync(archiveDir, manifestPath, "archive generation manifest")
 	assertRealFileSync(manifestPath, "archive generation manifest")
-	const actualManifestSha = sha256File(manifestPath)
+	const actualManifestSha = sha256FileSync(manifestPath)
 	if (actualManifestSha !== target.manifestSha256) {
 		throw new Error(`archive gc target manifest changed after planning: ${sourcePath}`)
 	}
@@ -405,15 +380,7 @@ const revalidateSource = (archiveDir: string, target: GcTarget | GcDeleteCandida
 	if (manifest.generationId !== target.generationId) {
 		throw new Error(`archive gc target identity changed after planning: ${sourcePath}`)
 	}
-	for (const shardEv of target.shards) {
-		const shardPath = join(sourcePath, "shards", shardEv.name)
-		assertNoSymlinkSync(archiveDir, shardPath, `archive shard ${shardEv.name}`)
-		assertRealFileSync(shardPath, `archive shard ${shardEv.name}`)
-		const actualSha = sha256File(shardPath)
-		if (actualSha !== shardEv.sha256) {
-			throw new Error(`archive gc target shard ${shardEv.name} changed after planning: ${sourcePath}`)
-		}
-	}
+	verifyGenerationShards(archiveDir, sourcePath, target.shards, "archive gc target shard")
 }
 
 const revalidatePointer = (archiveDir: string, target: GcTarget | GcDeleteCandidate): void => {
@@ -539,8 +506,7 @@ const collectTargets = async (
 	faults?: GcFaults,
 ): Promise<GcTarget[]> => {
 	const completed: GcTarget[] = []
-	for (let i = 0; i < targets.length; i++) {
-		const target = targets[i]!
+	for (const [i, target] of targets.entries()) {
 		await collectOneTarget(archiveDir, operationId, target, faults)
 		completed.push(target)
 		// Persist the NONTERMINAL gc-collecting phase with the advanced cursor.
@@ -549,8 +515,7 @@ const collectTargets = async (
 		// gc-collecting with a full cursor, NOT complete.
 		await persistGcProgress(archiveDir, operationId, i + 1, "gc-collecting")
 		// Awaited crash seam: fires after the durable progress write. For a
-		// nonfinal target (index < total-1) this is the window where the old code
-		// wrote a premature complete; a SIGKILL here must leave gc-collecting.
+		// nonfinal target (index < total-1) a SIGKILL here must leave gc-collecting.
 		await faults?.afterTargetProgress?.(i, targets.length)
 	}
 	return completed
@@ -606,18 +571,10 @@ const removeTombstone = async (tomb: string): Promise<void> => {
 	await syncDirectory(dirname(tomb))
 }
 
-/**
- * Reconcile an interrupted GC operation. Drives the FROZEN target set to
- * completion idempotently — NEVER re-expands the set. A pointer change or source
- * divergence at any stage stops collection and preserves remaining state.
- *
- * State machine (the core fix for the premature-complete defect):
- * - `gc-collecting` (any cursor, including a full cursor after the final
- *   deletion but before catalog repair): resume collection from the cursor,
- *   collect the remainder, then rebuild + assert affected catalogs.
- * - `complete`: prove all terminal invariants (verifyCompletedGcInvariants),
- *   then retire the journal. A phase label is NEVER proof — observe the reality.
- */
+// Reconciling an interrupted GC drives the FROZEN target set to completion
+// idempotently and never re-expands it. A pointer change or source divergence
+// at any stage stops collection and preserves remaining state.
+
 /**
  * Verify a complete GC operation's terminal invariants, then archive it.
  * NO repair — a phase label is never proof. Called directly by the
@@ -642,12 +599,15 @@ export const resumeFrozenTargetsAndCompleteGc = async (
 	intent: GcOperationIntent,
 ): Promise<void> => {
 	if (intent.kind !== "gc") throw new Error(`resumeFrozenTargetsAndCompleteGc called on non-gc intent`)
-	for (let i = intent.completedTargets; i < intent.targets.length; i++) {
-		const target = intent.targets[i]!
+	for (const [offset, target] of intent.targets.slice(intent.completedTargets).entries()) {
 		await collectOneTarget(archiveDir, intent.operationId, target)
-		await persistGcProgress(archiveDir, intent.operationId, i + 1, "gc-collecting")
+		await persistGcProgress(
+			archiveDir,
+			intent.operationId,
+			intent.completedTargets + offset + 1,
+			"gc-collecting",
+		)
 	}
-	// Rebuild ALL affected catalogs + assert exact.
 	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name
@@ -678,24 +638,14 @@ const revalidateTombstone = (
 	if (!info.isDirectory()) {
 		throw new Error(`archive gc tombstone is not a real directory: ${tomb}`)
 	}
-	// Verify the tombstone's manifest matches the frozen evidence.
 	const tombManifestPath = join(tomb, "manifest.json")
 	assertNoSymlinkSync(archiveDir, tombManifestPath, "archive gc tombstone manifest")
 	assertRealFileSync(tombManifestPath, "archive gc tombstone manifest")
-	const actualManifestSha = sha256File(tombManifestPath)
+	const actualManifestSha = sha256FileSync(tombManifestPath)
 	if (actualManifestSha !== target.manifestSha256) {
 		throw new Error(`archive gc tombstone manifest evidence mismatch: ${tomb}`)
 	}
-	// Verify each shard matches the frozen evidence.
-	for (const shardEv of target.shards) {
-		const shardPath = join(tomb, "shards", shardEv.name)
-		assertNoSymlinkSync(archiveDir, shardPath, `archive gc tombstone shard ${shardEv.name}`)
-		assertRealFileSync(shardPath, `archive gc tombstone shard ${shardEv.name}`)
-		const actualSha = sha256File(shardPath)
-		if (actualSha !== shardEv.sha256) {
-			throw new Error(`archive gc tombstone shard ${shardEv.name} evidence mismatch: ${tomb}`)
-		}
-	}
+	verifyGenerationShards(archiveDir, tomb, target.shards, "archive gc tombstone shard")
 }
 
 /**
@@ -716,8 +666,7 @@ const revalidateTombstone = (
  * fails.
  */
 export const preflightGcTargets = async (archiveDir: string, intent: GcOperationIntent): Promise<void> => {
-	for (let i = 0; i < intent.targets.length; i++) {
-		const target = intent.targets[i]!
+	for (const [i, target] of intent.targets.entries()) {
 		const sourcePath = generationRoot(archiveDir, target.signal, target.rangeStart, target.generationId)
 		const tomb = tombstonePath(archiveDir, intent.operationId, target)
 		const sourceTopology = classifyArchivePathSync(archiveDir, sourcePath, "archive gc source")
@@ -793,14 +742,12 @@ export const verifyCompletedGcInvariants = async (
 		if (sourceTopology !== "absent") {
 			throw new Error(`archive gc complete but target source still exists: ${sourcePath}`)
 		}
-		// No operation tombstone may hold a generation dir.
 		const tomb = tombstonePath(archiveDir, intent.operationId, target)
 		const tombTopology = classifyArchivePathSync(archiveDir, tomb, "archive gc complete tombstone")
 		if (tombTopology !== "absent") {
 			throw new Error(`archive gc complete but tombstone still exists: ${tomb}`)
 		}
 	}
-	// Every affected active pointer must still equal its recorded identity.
 	for (const target of intent.targets) {
 		const current = readActiveGenerationIdStrict(archiveDir, target.signal, target.rangeStart)
 		if (current !== target.recordedActiveGenerationId) {
@@ -810,7 +757,6 @@ export const verifyCompletedGcInvariants = async (
 			)
 		}
 	}
-	// Every affected catalog must be exact.
 	const affectedSignals = new Set(Arr.map(intent.targets, (t) => t.signal))
 	for (const signal of affectedSignals) {
 		const sigName = archiveSignal(signal).name

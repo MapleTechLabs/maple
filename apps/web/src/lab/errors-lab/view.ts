@@ -11,15 +11,15 @@ import type { Model as HubModel } from "../../page/errors/hub/model"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import { labSignals } from "./hub-step"
-import { LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
+import { LAB_ROLES, LAB_STATES, LAB_WIDTHS, type LabState, Message, type Model } from "./model"
+import { canTriageIssues } from "../../page/errors/kit/grants"
 import { Array as Arr } from "effect"
 
-// `LabControls`, `LabStatStrip` and `ErrorsHubView` over the fixture.
+// The lab controls, stat strip and errors hub view over the fixture.
 // Shell-free (the entry wraps it), so scene tests can render it.
 
 type Option<T> = Readonly<{ value: T; label: string }>
 
-/** `LabToggleGroup`. */
 const toggleGroup = <M, T>(
 	h: HtmlBuilder<M>,
 	label: string,
@@ -40,7 +40,7 @@ const toggleGroup = <M, T>(
 							h.OnClick(onChange(option.value)),
 							h.Class(
 								cn(
-									"h-6 rounded-sm px-2 text-xs transition-colors",
+									"h-6 rounded-sm px-2 text-xs",
 									option.value === active
 										? "bg-muted text-foreground"
 										: "text-muted-foreground hover:text-foreground active:text-foreground",
@@ -79,7 +79,7 @@ const labStatStrip = <M>(h: HtmlBuilder<M>, summary: { totalErrors: number; erro
 
 type HubInputs = Readonly<{ state: LabState; timeZone: string }>
 
-/** `ErrorsHubView`: the stat strip and toolbar over the skeleton, retry card, rows or empty state. */
+/** The stat strip and toolbar over the skeleton, retry card, rows or empty state. */
 const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, inputs, h) => {
 	const fixture = buildErrorsLabFixture(hub.nowMs)
 	const signals = labSignals(hub, inputs.state)
@@ -93,6 +93,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 				status,
 				signals,
 				isNarrowed: false,
+				timeZone: inputs.timeZone,
 				rowState: (signal) => ({
 					isSelected: hub.selectedIds.includes(signal.id),
 					isSelecting,
@@ -106,6 +107,7 @@ const hubView = Submodel.defineView<HubModel, HubMessage, HubInputs>((hub, input
 						isMounted(hub.rowMenu.isOpen, hub.rowMenu.animation)
 							? hub.rowMenu
 							: null,
+					canTriage: canTriageIssues(hub),
 				}),
 			}),
 		],
@@ -146,6 +148,13 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 						Arr.map(LAB_STATES, (value) => ({ value, label: value })),
 						model.state,
 						(state) => Message.ClickedState({ state }),
+					),
+					toggleGroup(
+						h,
+						"Role",
+						Arr.map(LAB_ROLES, (value) => ({ value, label: value })),
+						model.role,
+						(role) => Message.ClickedRole({ role }),
 					),
 					toggleGroup(h, "Width", LAB_WIDTHS, model.width, (width) =>
 						Message.ClickedWidth({ width }),

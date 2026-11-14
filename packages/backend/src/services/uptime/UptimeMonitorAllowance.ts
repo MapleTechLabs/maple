@@ -9,7 +9,7 @@ import {
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorPersistenceError,
 } from "@maple/domain/http"
-import type { UptimeMonitorId } from "@maple/domain/primitives"
+import type { UptimeMonitorId } from "@maple/primitives"
 import { EdgeCacheService } from "@maple/cache"
 import { Context, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"

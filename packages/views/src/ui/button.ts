@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { buttonLoadingIndicatorStyles, buttonVariants } from "@maple/ui/styles/ui/button"
-import { spinnerStyles } from "@maple/ui/styles/ui/spinner"
+import { buttonLoadingIndicatorStyles, buttonVariants } from "./button.styles"
+import { spinnerStyles } from "./spinner.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { LoaderIcon } from "./control-icons"
@@ -17,13 +17,13 @@ export type ButtonOptions<Message> = VariantProps<typeof buttonVariants> &
 		attributes?: ReadonlyArray<Attribute<Message> | ChildAttribute>
 	}>
 
-// Every variant dims to the same 50% when disabled; a loading button stays solid so its spinner shows.
-const STATE_CLASSES = "disabled:opacity-50 data-loading:disabled:opacity-100"
+// Every variant dims to the same 64% when disabled; a loading button stays solid so its spinner shows.
+const STATE_CLASSES = "disabled:opacity-64 data-loading:disabled:opacity-100"
 
 const buttonClasses = (options: VariantProps<typeof buttonVariants> & Readonly<{ className?: string }>) =>
 	cn(buttonVariants({ size: options.size, variant: options.variant }), STATE_CLASSES, options.className)
 
-/** `<Button>`: the same class composition, attributes and loading spinner as @maple/ui. */
+/** The Button: variant and size classes, attributes and a loading spinner. */
 export const button = <Message>(
 	h: HtmlBuilder<Message>,
 	options: ButtonOptions<Message>,
@@ -63,7 +63,7 @@ export const button = <Message>(
 	)
 }
 
-/** `<Button render={<Link to=... />}>`: the button classes on an anchor, which the router follows. */
+/** The button classes on an anchor, which the router follows. */
 export const linkButton = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Omit<ButtonOptions<Message>, "type" | "isLoading" | "isDisabled"> & Readonly<{ href: string }>,

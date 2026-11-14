@@ -1,6 +1,7 @@
 import { formatCost } from "@maple/agent-sessions"
 import type { SecurityAuditFinding, SecurityAuditRun, SecurityAuditTarget } from "@maple/domain/http"
 import {
+	ORG_BUDGET_UNAVAILABLE,
 	ORG_NO_AI_CREDITS,
 	ORG_SPEND_LIMIT_REACHED,
 	securityAuditModelOption,
@@ -142,7 +143,7 @@ export const modelLabel = (id: string): string => securityAuditModelOption(id)?.
 const INCOMPLETE_REASON_LABEL = new Map<string, string>([
 	[ORG_SPEND_LIMIT_REACHED, "reached the monthly spend limit"],
 	[ORG_NO_AI_CREDITS, "the organization ran out of AI credits"],
-	["org_budget_unavailable", "billing could not be reached, so no more agents were started"],
+	[ORG_BUDGET_UNAVAILABLE, "billing could not be reached, so no more agents were started"],
 	["cancelled", "cancelled"],
 ])
 

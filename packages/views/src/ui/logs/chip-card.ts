@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { Array, Effect, Option, Schema } from "effect"
+import { Array, Effect, Option, Schema, String as Str } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { copyButton } from "../copy-button"
@@ -8,7 +8,7 @@ import { icon } from "../icon"
 import type { LogChip } from "./log-row-view"
 import type { Model } from "./logs-stream"
 import { Message } from "./logs-stream-message"
-import { hoverCardContentStyles } from "@maple/ui/styles/ui/hover-card"
+import { hoverCardContentStyles } from "../hover-card.styles"
 import { CHIP_FILTER_ACTION_CLASS } from "./styles"
 
 /** Base UI PreviewCard positioning for `side="bottom" align="start"`, offsets 4, collision padding 5. */
@@ -19,7 +19,10 @@ const COLLISION_PADDING = 5
 const findChip = (index: number, key: string): HTMLElement | undefined =>
 	Array.findFirst(
 		document.querySelectorAll<HTMLElement>(`[role='log'] > [data-index="${index}"] button[aria-label]`),
-		(button) => button.getAttribute("aria-label")?.startsWith(`Copy ${key}=`) === true,
+		(button) => {
+			const label = button.getAttribute("aria-label")
+			return label !== null && Str.startsWith(`Copy ${key}=`)(label)
+		},
 	).pipe(Option.getOrUndefined)
 
 /** Flips side, then alignment, then shifts into the viewport, as Floating UI does for Base UI. */
@@ -85,7 +88,7 @@ export const PlaceChipCard = Mount.define("PlaceChipCard", {
 		).pipe(Effect.as(Message.PlacedChipCard())),
 })
 
-/** `<CopyButton iconSize={10}>` in its idle state, as `SelectableValue` renders it. */
+/** A 10px copy button in its idle state. */
 const valueCopyButton = (h: HtmlBuilder<Message>, label: string, onClick: Message): Html =>
 	copyButton(h, {
 		label,

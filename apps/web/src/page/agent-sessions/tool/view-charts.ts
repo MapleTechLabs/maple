@@ -2,19 +2,17 @@ import { formatWarehouseDateTime } from "@maple/query-engine"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import { errorRate } from "@maple/web-data/lib/tool-analytics"
-import { Option, Record, Array as Arr } from "effect"
+import { Option, Array as Arr, Record as Rec, Order } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartEmpty } from "@maple/views/ui/chart-state"
 import { panelHeader } from "@maple/views/ui/panel"
 import { seriesLegend } from "../../kit/series-legend"
-import type { ToolSeriesPoint } from "../tools-kit/model"
-import { type ToolPlotInputs, toolPlotView } from "../tools-kit/series-chart"
+import type { ToolSeriesPoint } from "../../kit/tools/model"
+import { type ToolPlotInputs, toolPlotView } from "../../kit/tools/series-chart"
 import { Message } from "./message"
 import { vstackClass } from "@maple/views/ui/stack"
-
-// The tool detail charts: four readings of one tool.
 
 type H = HtmlBuilder<Message>
 
@@ -71,7 +69,10 @@ export const GRID_TOKENS = [
 
 const rowsOf = (series: ReadonlyArray<ToolSeriesPoint>) =>
 	Arr.map(
-		series.toSorted((a, b) => a.bucket - b.bucket),
+		Arr.sort(
+			series,
+			Order.mapInput(Order.Number, (point: (typeof series)[number]) => point.bucket),
+		),
 		(bucket) => ({
 			bucket: formatWarehouseDateTime(bucket.bucket),
 			calls: bucket.calls,
@@ -121,7 +122,7 @@ const cell = (
 				? chartEmpty(h, { height: PLOT_HEIGHT }, [CHART_EMPTY_MESSAGE])
 				: h.submodel({
 						slotId: chartId,
-						model: Option.getOrElse(Record.get(charts, chartId), () => Chart.init()),
+						model: Option.getOrElse(Rec.get(charts, chartId), () => Chart.init()),
 						view: toolPlotView,
 						toParentMessage: (message) => Message.GotChartMessage({ chartId, message }),
 						viewInputs: {

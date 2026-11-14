@@ -10,8 +10,6 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// `/releases`.
-
 /** `Release` (`@maple/web-data/warehouse/releases`): a release row, `firstSeen` in ISO. */
 export const ReleaseRow = Schema.Struct({
 	serviceName: ServiceName,
@@ -26,7 +24,6 @@ export const ReleaseRow = Schema.Struct({
 	apdexScore: Schema.Number,
 })
 
-/** `ReleaseTimelineBucket`. */
 export const TimelineBucket = Schema.Struct({
 	bucket: Schema.String,
 	serviceName: ServiceName,
@@ -56,14 +53,14 @@ export const Model = Schema.Struct({
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 	releases: KeyedSchema(ReleasesData, LoadFailure),
-	/** What `ReleasesTable` reads once it mounts: issue counts, commit messages, commit ranges. */
+	/** What the table reads once it mounts: issue counts, commit messages, commit ranges. */
 	hasPaintedTable: Schema.Boolean,
 	issues: KeyedSchema(IssuePage, LoadFailure),
 	commits: KeyedSchema(Schema.Array(VcsCommitDetailResponse), LoadFailure),
 	ranges: KeyedSchema(Schema.Array(VcsCommitRangeResponse), LoadFailure),
-	/** `useTrackWidth`: the timeline's first track, for the marker merge distance. */
+	/** The timeline's first track, for the marker merge distance. */
 	trackWidth: Schema.Number,
-	/** `ReleasesTableRows`' expanded commits. */
+	/** The table rows' expanded commits. */
 	expanded: Schema.Array(Schema.String),
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,

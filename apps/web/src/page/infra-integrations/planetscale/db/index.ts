@@ -3,6 +3,7 @@ import { Message, Model } from "./model"
 import { contextChanged, init, routeChanged, update } from "./update"
 import { view } from "./view"
 import { platformSource } from "../../../../shell/source-link"
+import { PROVIDERS } from "../../../kit/providers"
 
 /** `/infra/planetscale/$dbName`: one database's branches; a new database is a new instance. */
 export const page = definePage(
@@ -19,7 +20,7 @@ export const page = definePage(
 		source: () => platformSource("planetscale"),
 		breadcrumbs: (model) => [
 			{ label: "Infrastructure", href: "/infra" },
-			{ label: "PlanetScale", href: "/infra/planetscale" },
+			{ label: PROVIDERS.planetscale.name, href: PROVIDERS.planetscale.infraHref },
 			{ label: model.dbName },
 		],
 	},

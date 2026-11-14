@@ -1,22 +1,24 @@
+import { zoomSearchPatch } from "../../kit/chart-zoom"
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { NEW_ISSUE_SLACK_MS, previousSha } from "../../../components/releases/release-model"
+import { NEW_ISSUE_SLACK_MS, previousSha } from "../release-model"
 import { Option } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { commitDetailKey } from "../../kit/commit-card"
+import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import type { TimeWindow } from "../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { chain, slotStep } from "../../kit/keyed-step"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { commitRangesKey, isResolvableSha } from "../kit"
+import { commitRangesKey } from "../kit"
 import { DEFAULT_PRESET } from "../list/derive"
-import type { RequestMode } from "../list/message"
 import {
 	CompleteReleaseReloadSpin,
 	FetchChangeset,
@@ -49,7 +51,7 @@ const requestReleases = (
 	mode: RequestMode,
 ): Return => {
 	const environments = model.search.environments
-	// `globalNamespace: "top"`: the pin is part of the read and its key.
+	// The pin is part of the read and its key.
 	const namespaces = context.pinnedNamespace === null ? undefined : [context.pinnedNamespace]
 	const key = requestKey(context.orgId, "getReleases", {
 		data: { startTime: window.startTime, endTime: window.endTime, environments, namespaces },
@@ -60,14 +62,15 @@ const requestReleases = (
 		(releases) => ({ releases }),
 		key,
 		mode,
-		() => FetchDeployReleases({
-			key,
-			refresh: mode === "Refresh",
-			startTime: window.startTime,
-			endTime: window.endTime,
-			environments,
-			namespaces,
-		}),
+		() =>
+			FetchDeployReleases({
+				key,
+				refresh: mode === "Refresh",
+				startTime: window.startTime,
+				endTime: window.endTime,
+				environments,
+				namespaces,
+			}),
 	)
 }
 
@@ -166,10 +169,14 @@ export const routeChanged = (model: Model, route: ReleaseRoute, context: PageCon
 	if (searchHref(model.commitSha, model.search) === searchHref(route.commitSha, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	const resolve = (): Return => ({ model: next, commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))] })
+	const resolve = (): Return => ({
+		model: next,
+		commands: [resolveCommand(next, context, snapModeOf(model.refreshVersion))],
+	})
 	return routeWindowStep(model.search, route.search, {
 		resolve,
-		requestAll: (mode) => (next.window === null ? resolve() : requestAll(next, context, next.window, mode)),
+		requestAll: (mode) =>
+			next.window === null ? resolve() : requestAll(next, context, next.window, mode),
 	})
 }
 
@@ -193,10 +200,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const next = Overlays.update(model.overlays, inner, context.orgId)
 			return {
 				model: { ...model, overlays: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (overlay) => Message.GotOverlaysMessage({ message: overlay })),
+				commands: Command.mapMessages(next.commands ?? [], (overlay) =>
+					Message.GotOverlaysMessage({ message: overlay }),
+				),
 			}
 		},
-		CompletedResolveWindow: ({ window, nowMs, mode }) => requestAll({ ...model, nowMs }, context, window, mode),
+		CompletedResolveWindow: ({ window, nowMs, mode }) =>
+			requestAll({ ...model, nowMs }, context, window, mode),
 		CompletedFetchCommit: ({ key, result }) => ({
 			model: { ...model, commit: Keyed.accept(model.commit, key, result) },
 		}),
@@ -236,12 +246,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				),
 			}
 		},
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: ChartRuntime.Ready() } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: ChartRuntime.Failed({ reason }) },
-		}),
+		...chartEnvHandlers(model),
 		CompletedMountLinkedCursor: () => ({ model }),
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -254,7 +261,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// The service body's retry refreshes its detail bundle (`useAtomRefresh(atom)`), not the list.
+		// The service body's retry refreshes its detail bundle, not the list.
 		ClickedRetry: () =>
 			model.window === null
 				? { model }
@@ -269,21 +276,16 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				timePreset: DEFAULT_PRESET,
 			}),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: navigate(model, {
-							...model.search,
-							...TimeRangePicker.searchPatchOf(next.outMessage),
-						}).outMessage,
-					}
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					navigate(model, {
+						...model.search,
+						...patch,
+					}).outMessage,
+				{ toastRejected: true },
+			)
 		},
 	})

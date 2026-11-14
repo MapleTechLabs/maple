@@ -33,7 +33,13 @@ import { AiError, LanguageModel, Prompt, Tool, Toolkit } from "effect/ai"
 import type { Response as AiResponse } from "effect/ai"
 import { FetchHttpClient } from "effect/http"
 import { instrumentLanguageModel } from "./genai-spans"
-import { layerLlm, MODEL_ATTEMPT_CAP, MODEL_CALL_OUTPUT_TOKENS, resolveTriageModel } from "./Llm"
+import {
+	layerLlm,
+	MODEL_ATTEMPT_CAP,
+	MODEL_CALL_OUTPUT_TOKENS,
+	resolveSecurityAuditModel,
+	resolveTriageModel,
+} from "./Llm"
 
 /** A stubbed fetch body as text: the client sends the JSON as bytes. */
 const requestBodyText = (body: BodyInit | null | undefined): string =>
@@ -137,8 +143,11 @@ const runModelCall = <A extends { readonly type: string }, E, R>(
 			Effect.withTracer(recorder.tracer),
 		)
 
-		const span = recorder.spans.find(
-			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+		const span = Option.getOrUndefined(
+			Arr.findFirst(
+				recorder.spans,
+				(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+			),
 		)
 		assert.isDefined(span, "no model-call span was opened")
 		return { exit, delivered, attributes: span?.endedWith ?? new Map<string, unknown>() }
@@ -217,7 +226,9 @@ const runFakeProviderCall = (parts: Stream.Stream<AiResponse.StreamPartEncoded>)
 			disableToolCallResolution: true,
 		}).pipe(Stream.runDrain, Effect.exit, Effect.provide(model), Effect.withTracer(recorder.tracer))
 
-		const attributes = recorder.spans.find((span) => span.name === "LanguageModel.streamText")?.endedWith
+		const attributes = Option.getOrUndefined(
+			Arr.findFirst(recorder.spans, (span) => span.name === "LanguageModel.streamText"),
+		)?.endedWith
 		assert.isDefined(attributes, "no model-call span was opened")
 		return { exit, attributes: attributes ?? new Map<string, unknown>() }
 	})
@@ -239,8 +250,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.attributes.get("gen_ai.response.id"), "gen-1")
@@ -271,8 +285,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const modelCall = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const modelCall = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)
 			assert.isDefined(modelCall, "no model-call span was opened")
 			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_SESSION_ID_ATTR), "org_1:inv-1")
@@ -293,7 +310,6 @@ describe("the model-call span", () => {
 	it.live("carries the conversation, the usage buckets, the cost and the timings", () =>
 		Effect.gen(function* () {
 			const recorder = recordingTracer()
-			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
 			const sse = Arr.join(
 				[
 					'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
@@ -316,7 +332,10 @@ describe("the model-call span", () => {
 			}).pipe(
 				Stream.runDrain,
 				Effect.ignore,
-				Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+				// The security audit reasons at high effort, so the span records a reasoning level.
+				Effect.provide(
+					Layer.provideMerge(resolveSecurityAuditModel(ENV, "discovery").layer, layerLlm(ENV)),
+				),
 				Effect.provideService(FetchHttpClient.Fetch, () =>
 					Promise.resolve(
 						new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
@@ -325,8 +344,11 @@ describe("the model-call span", () => {
 				Effect.withTracer(recorder.tracer),
 			)
 
-			const attributes = recorder.spans.find(
-				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			const attributes = Option.getOrUndefined(
+				Arr.findFirst(
+					recorder.spans,
+					(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+				),
 			)?.endedWith
 			assert.isDefined(attributes, "no model-call span was opened")
 			const json = (key: string) => JSON.parse(String(attributes?.get(key)))
@@ -598,18 +620,14 @@ describe("the model-call span", () => {
 		}),
 	)
 
-	it.live("asks for no reasoning level when reasoning is off", () =>
+	it.live("asks for no reasoning level when the model has no effort", () =>
 		Effect.gen(function* () {
-			const attributes = yield* endedModelCall(
-				"hi",
-				[
-					{
-						...chunk({ role: "assistant", content: "hi" }, "stop"),
-						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-					},
-				],
-				{ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "off" },
-			)
+			const attributes = yield* endedModelCall("hi", [
+				{
+					...chunk({ role: "assistant", content: "hi" }, "stop"),
+					usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+				},
+			])
 
 			assert.strictEqual(attributes.get("gen_ai.provider.name"), "openrouter")
 			assert.isFalse(attributes.has("gen_ai.request.reasoning.level"))
@@ -686,7 +704,10 @@ describe("delta joining", () => {
 		Effect.gen(function* () {
 			const joined = yield* partsSeen(true)
 			assert.lengthOf(joined, 1)
-			assert.strictEqual(joined[0]!.type === "text-delta" ? joined[0]!.delta : "", "Looks safe.")
+			assert.strictEqual(
+				Arr.getUnsafe(joined, 0).type === "text-delta" ? Arr.getUnsafe(joined, 0).delta : "",
+				"Looks safe.",
+			)
 			assert.lengthOf(yield* partsSeen(false), 3)
 		}),
 	)
@@ -866,13 +887,13 @@ describe("model calls cut at their attempt cap", () => {
 			Effect.repeat({ until: () => bodies.length >= count, times: 400 }),
 		)
 
-	const unattendedCall = (
-		env: Parameters<typeof resolveTriageModel>[0],
-		bodies: Array<Record<string, unknown>>,
-	) =>
+	/** A security-audit call: unattended, at high reasoning effort. */
+	const unattendedCall = (bodies: Array<Record<string, unknown>>) =>
 		LanguageModel.streamText({ prompt: "hi" }).pipe(
 			Stream.runCollect,
-			Effect.provide(Layer.provideMerge(resolveTriageModel(env, undefined, true).layer, layerLlm(env))),
+			Effect.provide(
+				Layer.provideMerge(resolveSecurityAuditModel(ENV, "discovery").layer, layerLlm(ENV)),
+			),
 			Effect.provideService(FetchHttpClient.Fetch, stalledThenAnswered(bodies)),
 			Effect.forkChild,
 		)
@@ -880,7 +901,7 @@ describe("model calls cut at their attempt cap", () => {
 	it.effect("asks an unattended OpenRouter call again at low reasoning effort after the cap", () =>
 		Effect.gen(function* () {
 			const bodies: Array<Record<string, unknown>> = []
-			const fiber = yield* unattendedCall({ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }, bodies)
+			const fiber = yield* unattendedCall(bodies)
 			yield* untilSent(bodies, 1)
 			yield* TestClock.adjust(MODEL_ATTEMPT_CAP)
 			const parts = yield* Fiber.join(fiber)
@@ -888,17 +909,6 @@ describe("model calls cut at their attempt cap", () => {
 			assert.deepInclude(bodies[0], { reasoning: { effort: "high" } })
 			assert.deepInclude(bodies[1], { reasoning: { effort: "low" } })
 			assert.isTrue(Arr.some(parts, (part) => part.type === "finish"))
-		}),
-	)
-
-	it.effect("reads the cap from the deployment's settings", () =>
-		Effect.gen(function* () {
-			const bodies: Array<Record<string, unknown>> = []
-			const fiber = yield* unattendedCall({ ...ENV, MAPLE_MODEL_ATTEMPT_CAP_SECONDS: "30" }, bodies)
-			yield* untilSent(bodies, 1)
-			yield* TestClock.adjust("30 seconds")
-			yield* Fiber.join(fiber)
-			assert.lengthOf(bodies, 2)
 		}),
 	)
 

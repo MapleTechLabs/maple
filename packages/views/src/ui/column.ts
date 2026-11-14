@@ -5,7 +5,7 @@ import type { Attribute, ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 // column that takes the free width over a floor (`min`), or a fixed lane (`width`).
 
 export type ColumnMin = "0" | "48" | "52" | "56" | "60" | "64"
-export type ColumnWidth = "36" | "44"
+export type ColumnWidth = "28" | "36" | "44"
 
 const MIN = {
 	"0": "min-w-0",
@@ -17,6 +17,7 @@ const MIN = {
 } as const satisfies Record<ColumnMin, string>
 
 const WIDTH = {
+	"28": "w-28",
 	"36": "w-36",
 	"44": "w-44",
 } as const satisfies Record<ColumnWidth, string>
@@ -28,8 +29,8 @@ export type ColumnOptions<M> = Readonly<{
 	width?: ColumnWidth
 	/** `false`: `shrink-0`, the lane keeps its width when the row is tight. */
 	shrink?: boolean
-	/** `pl-6`, room from the column before it. */
-	inset?: "6"
+	/** `pl-4` or `pl-6`, room from the column before it. */
+	inset?: "4" | "6"
 	/** Hidden below this breakpoint (`hidden md:block`). */
 	from?: "md"
 	className?: string
@@ -42,6 +43,7 @@ export const columnClass = (options: Omit<ColumnOptions<never>, "attributes">): 
 		options.min !== undefined && ["w-0 flex-1", MIN[options.min]],
 		options.min === undefined && options.width !== undefined && WIDTH[options.width],
 		options.shrink === false && "shrink-0",
+		options.inset === "4" && "pl-4",
 		options.inset === "6" && "pl-6",
 		options.from === "md" && "hidden md:block",
 		options.className,

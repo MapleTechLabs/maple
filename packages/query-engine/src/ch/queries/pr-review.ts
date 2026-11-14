@@ -8,7 +8,8 @@
 import * as CH from "@maple-dev/effect-orm/expr"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
-import { ServiceOperationsHourly, ServiceOperationsMinutely, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 
 export interface OperationTrafficOpts {
 	/** Only these services; absent means every service of the org. */
@@ -32,7 +33,7 @@ const P95_MS = CH.rawExpr(
 )
 
 export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
-	return from(ServiceOperationsHourly)
+	return from(Datasources.serviceOperationsHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,
@@ -44,8 +45,12 @@ export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Hour.gte(utcSecondsParam("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
-			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
-			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.ServiceName, opts.serviceNames)
+				: undefined,
+			opts.spanNames !== undefined && opts.spanNames.length > 0
+				? CH.inList($.SpanName, opts.spanNames)
+				: undefined,
 		])
 		.groupBy("serviceName", "spanName")
 		.orderBy(["spanCount", "desc"])
@@ -54,7 +59,7 @@ export function operationTrafficHourlyQuery(opts: OperationTrafficOpts) {
 }
 
 export function operationTrafficMinutelyQuery(opts: OperationTrafficOpts) {
-	return from(ServiceOperationsMinutely)
+	return from(Datasources.serviceOperationsMinutely)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			spanName: $.SpanName,
@@ -66,8 +71,12 @@ export function operationTrafficMinutelyQuery(opts: OperationTrafficOpts) {
 			$.OrgId.eq(orgIdParam),
 			$.Minute.gte(utcSecondsParam("startTime")),
 			$.Minute.lt(utcSecondsParam("endTime")),
-			opts.serviceNames?.length ? CH.inList($.ServiceName, opts.serviceNames) : undefined,
-			opts.spanNames?.length ? CH.inList($.SpanName, opts.spanNames) : undefined,
+			opts.serviceNames !== undefined && opts.serviceNames.length > 0
+				? CH.inList($.ServiceName, opts.serviceNames)
+				: undefined,
+			opts.spanNames !== undefined && opts.spanNames.length > 0
+				? CH.inList($.SpanName, opts.spanNames)
+				: undefined,
 		])
 		.groupBy("serviceName", "spanName")
 		.orderBy(["spanCount", "desc"])

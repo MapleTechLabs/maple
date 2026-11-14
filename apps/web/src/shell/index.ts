@@ -3,17 +3,23 @@
 export { readShellFlags } from "./flags"
 export { NavSurface } from "./nav"
 export { Message, OutMessage, Theme } from "./message"
-export { init, Model, type ShellClerk } from "./model"
+export { init, Model, type ShellClerk, shellAudience } from "./model"
+export { Platform } from "./palette/shortcuts"
 
 export {
 	favoritesChanges,
 	filterViewportChanges,
+	onCallChanges,
+	onCallReadAt,
+	onCallTimer,
+	onCallWakes,
 	sidebarShortcut,
 	smallViewportChanges,
 	viewportChanges,
 } from "./subscription"
 
 export { pinnedDashboardRows } from "./dashboards-shape"
+export { alertsInboxCounts } from "./alerts-inbox"
 export { BUILT_COMMIT, versionChecks } from "./version"
 export {
 	checklistTicked,

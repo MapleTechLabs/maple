@@ -79,7 +79,7 @@ const colorsOf = (theme: ThemeColors): Readonly<Record<string, string>> => ({
 
 type ChartInputs = Readonly<{ chartId: string; ariaLabel: string; spec: ChartSpec }>
 
-/** `PlotFrame` with `PlotTooltipBody`. */
+/** The plot frame with the bucket tooltip. */
 const chartView = Submodel.defineView<Chart.Model, Chart.Message, ChartInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: inputs.chartId,

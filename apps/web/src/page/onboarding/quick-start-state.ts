@@ -1,20 +1,22 @@
-import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "../../lib/onboarding-intent"
-import { ONBOARDING_ROLE_IDS } from "../../lib/onboarding-role"
+import { ONBOARDING_INTENT_IDS, type OnboardingIntent } from "./onboarding-intent"
+import { ONBOARDING_ROLE_IDS } from "./onboarding-role"
 import {
 	frameworkOf,
 	intentsOf,
 	STACK_LANGUAGE_IDS,
 	STACK_PLATFORM_IDS,
 	type StackAnswers as StackPicks,
-} from "../../lib/onboarding-stack"
+} from "./onboarding-stack"
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, SchemaGetter, Array as Arr, Record as Rec } from "effect"
 
 // The quick start wizard's progress in localStorage `maple-onboarding-v6-<orgId>`, with normalisation
 // of older saves (their role and intent steps are gone; the answers still feed the setup checklist).
 
-export const STEP_IDS = ["plan", "stack", "connect", "team", "live"] as const
+// The user sees their data arrive before they are asked to bring in tools and teammates.
+export const STEP_IDS = ["plan", "stack", "connect", "live", "team"] as const
 export type StepId = (typeof STEP_IDS)[number]
+export const StepIdSchema = Schema.Literals(STEP_IDS)
 
 const IntentSchema = Schema.Literals(ONBOARDING_INTENT_IDS)
 const StoredIntentSchema = Schema.Literals([
@@ -77,7 +79,7 @@ export const QuickStartState = Schema.Struct({
 	completedSteps: Schema.Record(Schema.String, Schema.Boolean),
 	dismissed: Schema.Boolean,
 	selectedFramework: Schema.NullOr(Schema.String),
-	activeStep: Schema.String,
+	activeStep: StepIdSchema,
 	qualifyAnswers: QualifyAnswers,
 	stack: StackAnswers,
 	checklistDismissed: Schema.Boolean,
@@ -89,20 +91,45 @@ export type QuickStartState = typeof QuickStartState.Type
 const isLegacyFinished = (completed: Readonly<Record<string, boolean>>): boolean =>
 	("role" in completed || "intent" in completed) && completed.plan === true
 
+const decodeStepId = Schema.decodeUnknownOption(StepIdSchema)
+
+/** Team now comes after live: a save from the old order that finished team but not live has not finished. */
+const beforeLive = (completed: Readonly<Record<string, boolean>>): Readonly<Record<string, boolean>> =>
+	completed.live === true || completed.team !== true ? completed : { ...completed, team: false }
+
+/** The first step not done yet; the last one when all are. */
+const firstIncompleteStep = (completed: Readonly<Record<string, boolean>>): StepId =>
+	Option.getOrElse(
+		Arr.findFirst(STEP_IDS, (step) => completed[step] !== true),
+		(): StepId => "team",
+	)
+
 const StoredQuickStartState = Schema.fromJsonString(
 	Schema.Struct({
 		...QuickStartState.fields,
+		// An old wizard's step (or anything else) resumes at the first step still to do.
+		activeStep: Schema.String,
 		qualifyAnswers: StoredQualifyAnswers,
 		stack: Schema.optionalKey(StackAnswers),
 	}).pipe(
 		Schema.decodeTo(QuickStartState, {
-			decode: SchemaGetter.transform((stored) => ({
-				...stored,
-				stack: stored.stack ?? NO_STACK,
-				completedSteps: isLegacyFinished(stored.completedSteps)
-					? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
-					: stored.completedSteps,
-			})),
+			decode: SchemaGetter.transform((stored) => {
+				const completedSteps = beforeLive(
+					isLegacyFinished(stored.completedSteps)
+						? Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true]))
+						: stored.completedSteps,
+				)
+				const activeStep = Option.getOrElse(decodeStepId(stored.activeStep), () =>
+					firstIncompleteStep(completedSteps),
+				)
+				return {
+					...stored,
+					stack: stored.stack ?? NO_STACK,
+					completedSteps,
+					// A save from when team came first resumes on the live screen it has not seen.
+					activeStep: activeStep === "team" && completedSteps.live !== true ? "live" : activeStep,
+				}
+			}),
 			encode: SchemaGetter.transform((state) => state),
 		}),
 	),
@@ -142,10 +169,12 @@ export const writeQuickStartState = (key: string, state: QuickStartState): Effec
  */
 export const resolveQuickStartStep = (state: QuickStartState, hasPlan: boolean): StepId => {
 	const steps = Arr.filter(STEP_IDS, (step) => !(hasPlan && step === "plan"))
-	return (
-		steps.find((step) => step === state.activeStep) ??
-		steps.find((step) => state.completedSteps[step] !== true) ??
-		"team"
+	return Option.getOrElse(
+		Option.orElse(
+			Arr.findFirst(steps, (step) => step === state.activeStep),
+			() => Arr.findFirst(steps, (step) => state.completedSteps[step] !== true),
+		),
+		(): StepId => "team",
 	)
 }
 

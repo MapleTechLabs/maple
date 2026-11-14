@@ -1,4 +1,4 @@
-import { type LiftedRail, splitPageRails } from "@maple/web/shell/page-rails"
+import { type LiftedRail, splitPageRails } from "@maple/views/ui/page-rails"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as DialogView from "@maple/views/ui/dialog-view"
 import { Option, Array as Arr } from "effect"
@@ -16,7 +16,10 @@ const cloneNode = (node: VNode): VNode => ({
 	...node,
 	elm: undefined,
 	data: node.data === undefined ? undefined : { ...node.data },
-	children: node.children?.map((child) => (typeof child === "string" ? child : cloneNode(child))),
+	children:
+		node.children === undefined
+			? undefined
+			: Arr.map(node.children, (child) => (typeof child === "string" ? child : cloneNode(child))),
 })
 
 /** Legacy renders the sidebar twice while the drawer is open: hidden inline, and in the drawer. */

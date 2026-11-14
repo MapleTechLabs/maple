@@ -1,11 +1,11 @@
 /**
- * `bun run dev:signin [email]` — sign a local browser into the dev Clerk
+ * `bun run dev:signin [email]`: sign a local browser into the dev Clerk
  * instance without typing a password.
  *
  * Clerk's own sign-in tickets do the work: the Backend API mints a one-shot
  * token for a user, and `<SignIn>` at `/sign-in` completes the session when it
  * sees that token in `__clerk_ticket`. No app-side auth bypass exists, and none
- * should — this is the same flow Clerk uses for magic links.
+ * should: this is the same flow Clerk uses for magic links.
  *
  * The script refuses to run against anything but a development instance
  * (`sk_test_…`), so it cannot mint a session for a real user on a live one.
@@ -55,7 +55,7 @@ const users = (await clerkFetch(`/users?email_address=${encodeURIComponent(email
 	id: string
 }>
 const user = users[0]
-if (!user) {
+if (user === undefined) {
 	console.error(`No user with email ${email} on this Clerk instance.`)
 	process.exit(1)
 }

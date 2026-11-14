@@ -2,7 +2,7 @@ import type { V2ScrapeTarget } from "@maple/domain/http/v2"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
-import { diagnoseScrapeError } from "../../lib/scrape-error-diagnosis"
+import { diagnoseScrapeError } from "./scrape-error-diagnosis"
 import { button } from "@maple/views/ui/button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import {
@@ -36,9 +36,6 @@ import { authField, credentialFields, textField } from "./view-prometheus-form"
 import { typography } from "@maple/views/ui/typography"
 import { vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// Prometheus and WarpStream in the connect flow: save and probe an endpoint, name it, then watch
-// the first scheduled scrape land.
 
 type H = HtmlBuilder<Message>
 
@@ -140,41 +137,35 @@ const showsUpRail = (h: H, integration: ScrapeIntegration): Html =>
 
 /** WarpStream's two endpoints and where each one's URL and key come from. */
 const warpstreamGuide = (h: H): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-2 rounded-md bg-surface-sunken p-4")],
-		[
-			heading(h, { level: 3, variant: "subsection" }, ["Where to find it in WarpStream"]),
-			h.ul(
-				[h.Class("flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground")],
+	vstack(h, { gap: "2", className: "rounded-md bg-surface-sunken p-4" }, [
+		heading(h, { level: 3, variant: "subsection" }, ["Where to find it in WarpStream"]),
+		vstack(h, { gap: "1.5", as: "ul", className: "list-disc pl-4 text-xs text-muted-foreground" }, [
+			h.li(
+				[],
 				[
-					h.li(
-						[],
-						[
-							"Hosted endpoint (recommended): copy the virtual cluster ID (",
-							inlineCode(h, {}, ["vci_..."]),
-							") from the WarpStream console and put it at the end of the URL. No network changes.",
-						],
-					),
-					h.li(
-						[],
-						[
-							"Under Agent Keys, create a read-only key for the cluster. Pick Basic auth with the username ",
-							inlineCode(h, {}, ["prometheus"]),
-							" and the key as the password.",
-						],
-					),
-					h.li(
-						[],
-						[
-							"Agent /metrics: each Agent serves ",
-							inlineCode(h, {}, [":8080/metrics"]),
-							" in your VPC. It only works if Maple can reach it from the internet.",
-						],
-					),
+					"Hosted endpoint (recommended): copy the virtual cluster ID (",
+					inlineCode(h, {}, ["vci_..."]),
+					") from the WarpStream console and put it at the end of the URL. No network changes.",
 				],
 			),
-		],
-	)
+			h.li(
+				[],
+				[
+					"Under Agent Keys, create a read-only key for the cluster. Pick Basic auth with the username ",
+					inlineCode(h, {}, ["prometheus"]),
+					" and the key as the password.",
+				],
+			),
+			h.li(
+				[],
+				[
+					"Agent /metrics: each Agent serves ",
+					inlineCode(h, {}, [":8080/metrics"]),
+					" in your VPC. It only works if Maple can reach it from the internet.",
+				],
+			),
+		]),
+	])
 
 const probeRow = (h: H, integration: ScrapeIntegration, target: V2ScrapeTarget | null, probe: ProbeState) => {
 	switch (probe._tag) {
@@ -228,8 +219,13 @@ const failedRow = (
 				: [
 						vstack(h, { gap: "1.5" }, [
 							typography(h, { size: "xs", weight: "medium" }, ["How to fix it"]),
-							h.ul(
-								[h.Class("flex list-disc flex-col gap-1 pl-4 text-xs text-muted-foreground")],
+							vstack(
+								h,
+								{
+									gap: "1",
+									as: "ul",
+									className: "list-disc pl-4 text-xs text-muted-foreground",
+								},
 								Arr.map(diagnosis.fixes, (fix) => h.li([], [fix])),
 							),
 						]),

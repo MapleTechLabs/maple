@@ -1,4 +1,5 @@
 import { test } from "@e2e-dev/web"
+import { String as Str } from "effect"
 import { expect } from "e2e"
 
 import { apiUrl } from "./support"
@@ -9,7 +10,8 @@ test.setup(
 	"sign in as the preview reviewer",
 	{ sessions: ["reviewer"] },
 	async ({ app, browser, session }) => {
-		const key = process.env.PREVIEW_SIGNIN_KEY?.trim()
+		const rawKey = process.env.PREVIEW_SIGNIN_KEY
+		const key = rawKey === undefined ? undefined : Str.trim(rawKey)
 		if (!key) throw new Error("PREVIEW_SIGNIN_KEY is not set; run under `infisical run --env dev`.")
 		const response = await fetch(`${apiUrl(app.baseUrl ?? "")}/api/auth/preview/sign-in`, {
 			method: "POST",

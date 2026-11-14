@@ -4,6 +4,7 @@ import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
 	StatusPageComponentStatus,
+	StatusPageCustomDomainStatus,
 	StatusPageId,
 	StatusPageIncidentId,
 	StatusPageIncidentImpact,
@@ -11,18 +12,26 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
-} from "../../primitives"
+	StatusPageVisibility,
+} from "@maple/primitives"
 import {
 	DEFAULT_STATUS_PAGE_THEME,
+	StatusPageCustomDomainHostname,
+	StatusPageCustomDomainRecordPurpose,
 	StatusPageThemeAppearance,
 	StatusPageThemeFont,
 	StatusPageThemePreset,
-	StatusPageSnapshot,
+	StatusPagePublicSnapshot,
 	StatusPageThemeRadius,
+	STATUS_PAGE_UPDATE_MAX_LENGTH,
 } from "../../status-page"
+import { STATUS_PAGE_PASSWORD_MAX_LENGTH, STATUS_PAGE_PASSWORD_MIN_LENGTH } from "../../status-page-access"
 import {
 	StatusPageComponentNotFoundError,
 	StatusPageConflictError,
+	StatusPageCustomDomainNotFoundError,
+	StatusPageCustomDomainsUnavailableError,
+	StatusPageCustomDomainTakenError,
 	StatusPageIncidentNotFoundError,
 	StatusPageNotFoundError,
 	StatusPagePersistenceError,
@@ -54,8 +63,6 @@ export const StatusPageIncidentUpdatePublicId = PublicId(
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
 
-// --- Pages ---
-
 const slugField = Schema.String.annotate({
 	description:
 		"The page's address, `<slug>.<status domain>`: 3 to 48 lowercase letters, digits or inner hyphens. Unique across Maple.",
@@ -66,6 +73,12 @@ const autoIncidentsField = StatusPageAutoIncidents.annotate({
 	description:
 		"Whether a linked monitor going down opens a page incident: `off`, `draft` (unpublished until you publish it), or `publish`.",
 	examples: ["draft"],
+})
+
+const visibilityField = StatusPageVisibility.annotate({
+	description:
+		"Who can read the page: `public` (anyone), `password` (visitors who enter the page password, set with `PUT /v2/status_pages/{id}/password`; no feeds or badge without it) or `internal` (only members of your organization, in Maple; the page is not served at its address or custom domain). Omitted from an update or a config, the page keeps its visibility. Changing it needs an org admin.",
+	examples: ["public"],
 })
 
 const themeExample = {
@@ -151,12 +164,17 @@ const statusPageExample = {
 	description: "Live status of Acme's API and dashboard.",
 	website_url: "https://acme.example",
 	logo_url: null,
+	logo_dark_url: null,
+	favicon_url: null,
+	support_url: "https://acme.example/support",
 	privacy_url: "https://acme.example/privacy",
 	terms_url: null,
 	theme: themeExample,
 	show_powered_by: true,
 	auto_incidents: "draft",
 	break_glass_token_suffix: null,
+	visibility: "public",
+	has_password: false,
 	draft: false,
 	revision: 4,
 	published_revision: 4,
@@ -177,6 +195,15 @@ export const V2StatusPage = Schema.Struct({
 	description: Schema.NullOr(Schema.String).annotate({ description: "Text under the title, or `null`." }),
 	website_url: Schema.NullOr(Schema.String).annotate({ description: "Your site, linked from the page." }),
 	logo_url: Schema.NullOr(Schema.String).annotate({ description: "An https logo URL, or `null`." }),
+	logo_dark_url: Schema.NullOr(Schema.String).annotate({
+		description: "An https logo URL shown in dark mode instead of `logo_url`, or `null`.",
+	}),
+	favicon_url: Schema.NullOr(Schema.String).annotate({
+		description: "An https URL of the page's browser tab icon, or `null`.",
+	}),
+	support_url: Schema.NullOr(Schema.String).annotate({
+		description: "An https link to your support or contact page, shown in the page header, or `null`.",
+	}),
 	privacy_url: Schema.NullOr(Schema.String).annotate({
 		description: "An https link to your privacy policy, shown in the page footer, or `null`.",
 	}),
@@ -188,6 +215,10 @@ export const V2StatusPage = Schema.Struct({
 	auto_incidents: autoIncidentsField,
 	break_glass_token_suffix: Schema.NullOr(Schema.String).annotate({
 		description: "Last 6 characters of the break-glass token, or `null` when none is issued.",
+	}),
+	visibility: visibilityField,
+	has_password: Schema.Boolean.annotate({
+		description: "Whether a page password is set. The password itself is never returned.",
 	}),
 	draft: Schema.Boolean.annotate({
 		description:
@@ -220,11 +251,15 @@ export const V2StatusPageUpdateParams = Schema.Struct({
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	logo_dark_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	favicon_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	support_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	privacy_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	terms_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	theme: Schema.optionalKey(V2StatusPageThemeParams),
 	show_powered_by: Schema.optionalKey(Schema.Boolean),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	visibility: Schema.optionalKey(visibilityField),
 }).annotate({
 	identifier: "StatusPageUpdateParams",
 	title: "Status page update parameters",
@@ -290,7 +325,100 @@ export const V2StatusPageBreakGlassToken = Schema.Struct({
 })
 export type V2StatusPageBreakGlassToken = Schema.Schema.Type<typeof V2StatusPageBreakGlassToken>
 
-// --- Components ---
+export const V2StatusPagePasswordParams = Schema.Struct({
+	password: Schema.String.check(
+		Schema.isMinLength(STATUS_PAGE_PASSWORD_MIN_LENGTH),
+		Schema.isMaxLength(STATUS_PAGE_PASSWORD_MAX_LENGTH),
+	).annotate({
+		description: `The password visitors enter, ${STATUS_PAGE_PASSWORD_MIN_LENGTH} to ${STATUS_PAGE_PASSWORD_MAX_LENGTH} characters. Stored only as a slow hash.`,
+		examples: ["correct horse battery staple"],
+	}),
+}).annotate({
+	identifier: "StatusPagePasswordParams",
+	title: "Status page password parameters",
+	description: "Request body for setting a status page password.",
+	examples: [wireExample({ password: "correct horse battery staple" })],
+})
+export type V2StatusPagePasswordParams = Schema.Schema.Type<typeof V2StatusPagePasswordParams>
+
+export const V2StatusPageCustomDomainDnsRecord = Schema.Struct({
+	type: Schema.Literals(["CNAME", "TXT"]),
+	name: Schema.String.annotate({ description: "The record's name, as your DNS provider asks for it." }),
+	value: Schema.String,
+	purpose: StatusPageCustomDomainRecordPurpose.annotate({
+		description:
+			"`routing` sends the hostname to Maple (always needed), `ownership` proves you own it before the CNAME is live, `certificate` lets the certificate be issued.",
+	}),
+}).annotate({
+	identifier: "StatusPageCustomDomainDnsRecord",
+	title: "Status page custom domain DNS record",
+	description: "A DNS record to add at your DNS provider.",
+})
+
+export const V2StatusPageCustomDomain = Schema.Struct({
+	object: Schema.Literal("status_page_custom_domain"),
+	page_id: StatusPagePublicId,
+	available: Schema.Boolean.annotate({
+		description: "False when this Maple deployment cannot serve pages on custom domains.",
+	}),
+	cname_target: Schema.NullOr(Schema.String).annotate({
+		description: "The hostname to CNAME your custom domain to, or `null` when unavailable.",
+	}),
+	hostname: Schema.NullOr(Schema.String).annotate({
+		description: "The page's custom domain, or `null` when it has none.",
+		examples: ["status.acme.com"],
+	}),
+	status: Schema.NullOr(StatusPageCustomDomainStatus).annotate({
+		description:
+			"`pending_dns` waits for the DNS records below, `pending_ssl` for the certificate, `active` serves the page, `failed` needs you to act (see `last_error`). `null` without a domain.",
+	}),
+	dns_records: Schema.Array(V2StatusPageCustomDomainDnsRecord),
+	last_error: Schema.NullOr(Schema.String).annotate({
+		description: "What the last check found wrong, or `null`.",
+	}),
+	last_checked_at: Schema.NullOr(Timestamp),
+	activated_at: Schema.NullOr(Timestamp).annotate({
+		description: "When the domain first served the page.",
+	}),
+	created_at: Schema.NullOr(Timestamp),
+}).annotate({
+	identifier: "StatusPageCustomDomain",
+	title: "Status page custom domain",
+	description:
+		"A status page's custom domain (`status.acme.com`). Add the DNS records it lists; Maple checks them every minute at first and the page goes live on the domain once its certificate is issued.",
+	examples: [
+		wireExample({
+			object: "status_page_custom_domain",
+			page_id: "stp_YofPTrK9782DWwcnXhpcCw",
+			available: true,
+			cname_target: "status-domains.maple.dev",
+			hostname: "status.acme.com",
+			status: "pending_dns",
+			dns_records: [
+				{
+					type: "CNAME",
+					name: "status.acme.com",
+					value: "status-domains.maple.dev",
+					purpose: "routing",
+				},
+			],
+			last_error: null,
+			last_checked_at: "2026-07-15T09:12:00.000Z",
+			activated_at: null,
+			created_at: "2026-07-15T09:11:00.000Z",
+		}),
+	],
+})
+export type V2StatusPageCustomDomain = Schema.Schema.Type<typeof V2StatusPageCustomDomain>
+
+export const V2StatusPageCustomDomainParams = Schema.Struct({
+	hostname: StatusPageCustomDomainHostname,
+}).annotate({
+	identifier: "StatusPageCustomDomainParams",
+	title: "Status page custom domain parameters",
+	description: "The custom domain to serve the page on. Replaces a different one the page has.",
+	examples: [wireExample({ hostname: "status.acme.com" })],
+})
 
 const componentStatusField = StatusPageComponentStatus.annotate({
 	description:
@@ -401,14 +529,15 @@ const StatusPageComponentList = ListOf(V2StatusPageComponent).annotate({
 	description: "A page's components in display order.",
 })
 
-// --- Config document ---
-
 const configExample = {
 	name: "Acme Status",
 	slug: "acme-status",
 	description: "Live status of Acme's API and dashboard.",
 	website_url: "https://acme.example",
 	logo_url: null,
+	logo_dark_url: null,
+	favicon_url: null,
+	support_url: "https://acme.example/support",
 	privacy_url: "https://acme.example/privacy",
 	terms_url: null,
 	show_powered_by: true,
@@ -493,6 +622,9 @@ export const V2StatusPageCreateParams = Schema.Struct({
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	logo_dark_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	favicon_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	support_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	privacy_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	terms_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	theme: Schema.optionalKey(V2StatusPageThemeParams),
@@ -532,12 +664,16 @@ export const StatusPageConfig = Schema.Struct({
 	description: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	website_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	logo_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	logo_dark_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	favicon_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	support_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	privacy_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	terms_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	show_powered_by: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "Whether the page credits Maple. Default `true`." }),
 	),
 	auto_incidents: Schema.optionalKey(autoIncidentsField),
+	visibility: Schema.optionalKey(visibilityField),
 	theme: Schema.optionalKey(StatusPageConfigTheme),
 	components: Schema.Array(StatusPageConfigComponent)
 		.check(Schema.isMaxLength(MAX_STATUS_PAGE_COMPONENTS))
@@ -548,7 +684,7 @@ export const StatusPageConfig = Schema.Struct({
 	identifier: "StatusPageConfig",
 	title: "Status page config",
 	description:
-		"A whole status page as one document: its settings, theme and components, without incidents, the break-glass token or publish state. Applying it replaces the page; omitted optional fields take their defaults.",
+		"A whole status page as one document: its settings, visibility, theme and components, without incidents, the break-glass token, the page password or publish state. Applying it replaces the page; omitted optional fields take their defaults.",
 	examples: [wireExample(configExample)],
 })
 export type StatusPageConfig = Schema.Schema.Type<typeof StatusPageConfig>
@@ -586,12 +722,14 @@ export type StatusPagePreviewParams = Schema.Schema.Type<typeof StatusPagePrevie
 
 /** Optional text as the service stores it: trimmed, blank as `null`. */
 const textOrNull = (value: string | null | undefined): string | null => {
-	const trimmed = value?.trim() ?? ""
+	const trimmed = value == null ? "" : Str.trim(value)
 	return trimmed.length === 0 ? null : trimmed
 }
 
-const hexOrNull = (value: string | null | undefined): string | null =>
-	textOrNull(value)?.toLowerCase() ?? null
+const hexOrNull = (value: string | null | undefined): string | null => {
+	const text = textOrNull(value)
+	return text === null ? null : Str.toLowerCase(text)
+}
 
 /**
  * A config as an apply would store it: defaults filled in, text trimmed, blank text `null`,
@@ -605,10 +743,14 @@ export const normalizeStatusPageConfig = (config: StatusPageConfig) => {
 		description: textOrNull(config.description),
 		website_url: textOrNull(config.website_url),
 		logo_url: textOrNull(config.logo_url),
+		logo_dark_url: textOrNull(config.logo_dark_url),
+		favicon_url: textOrNull(config.favicon_url),
+		support_url: textOrNull(config.support_url),
 		privacy_url: textOrNull(config.privacy_url),
 		terms_url: textOrNull(config.terms_url),
 		show_powered_by: config.show_powered_by ?? true,
 		auto_incidents: config.auto_incidents ?? "off",
+		visibility: config.visibility ?? "public",
 		theme: {
 			...theme,
 			accent: hexOrNull(theme.accent),
@@ -653,7 +795,7 @@ const canonicalJson = (value: unknown): string => {
 const cyrb53 = (text: string): number => {
 	const seed: readonly [number, number] = [0xdeadbeef, 0x41c6ce57]
 	const [a, b] = Arr.reduce(
-		Array.from({ length: text.length }, (_, index) => text.charCodeAt(index)),
+		Arr.getSomes(Array.from({ length: text.length }, (_, index) => Str.charCodeAt(text, index))),
 		seed,
 		([h1, h2], code): readonly [number, number] => [
 			Math.imul(h1 ^ code, 2654435761),
@@ -678,10 +820,14 @@ const PAGE_CONFIG_FIELDS = [
 	"description",
 	"website_url",
 	"logo_url",
+	"logo_dark_url",
+	"favicon_url",
+	"support_url",
 	"privacy_url",
 	"terms_url",
 	"show_powered_by",
 	"auto_incidents",
+	"visibility",
 	"theme",
 ] as const
 
@@ -764,8 +910,6 @@ export const diffStatusPageConfig = (
 	}
 }
 
-// --- Incidents ---
-
 export const V2StatusPageIncidentUpdate = Schema.Struct({
 	id: StatusPageIncidentUpdatePublicId,
 	status: StatusPageIncidentStatus,
@@ -777,7 +921,21 @@ export const V2StatusPageIncidentUpdate = Schema.Struct({
 }).annotate({ identifier: "StatusPageIncidentUpdate", title: "Status page incident update" })
 
 const scheduledField = Timestamp.annotate({
-	description: "Maintenance only: the scheduled window bound.",
+	description:
+		"Maintenance only: the scheduled window bound. At its start the maintenance moves to `in_progress`, at its end to `completed`, each with an automatic update.",
+})
+
+/** A public message, up to `STATUS_PAGE_UPDATE_MAX_LENGTH` characters. */
+const UpdateBody = NonEmptyString.check(Schema.isMaxLength(STATUS_PAGE_UPDATE_MAX_LENGTH))
+
+const startedAtField = Timestamp.annotate({
+	description:
+		"Incident only: when it actually began, if before now (not in the future). Defaults to now; maintenance starts at `scheduled_start`.",
+})
+
+const resolvedAtField = Timestamp.annotate({
+	description:
+		"When it actually ended: not in the future and not before `started_at`. Only with a closing status; defaults to now.",
 })
 
 export const V2StatusPageIncident = Schema.Struct({
@@ -854,13 +1012,14 @@ export const V2StatusPageIncidentCreateParams = Schema.Struct({
 			description: "Defaults to `investigating` for an incident and `scheduled` for maintenance.",
 		}),
 	),
-	body: NonEmptyString.annotate({ description: "The first public update." }),
+	body: UpdateBody.annotate({ description: "The first public update." }),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
 	published: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "`false` saves a draft. Defaults to `true`." }),
 	),
 	scheduled_start: Schema.optionalKey(scheduledField),
 	scheduled_end: Schema.optionalKey(scheduledField),
+	started_at: Schema.optionalKey(startedAtField),
 }).annotate({
 	identifier: "StatusPageIncidentCreateParams",
 	title: "Status page incident create parameters",
@@ -881,21 +1040,29 @@ export const V2StatusPageIncidentUpdateParams = Schema.Struct({
 	published: Schema.optionalKey(Schema.Boolean),
 	scheduled_start: Schema.optionalKey(Schema.NullOr(scheduledField)),
 	scheduled_end: Schema.optionalKey(Schema.NullOr(scheduledField)),
+	started_at: Schema.optionalKey(startedAtField),
+	resolved_at: Schema.optionalKey(
+		resolvedAtField.annotate({
+			description:
+				"A closed incident or maintenance only: when it actually ended, not in the future and not before `started_at`.",
+		}),
+	),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
 }).annotate({
 	identifier: "StatusPageIncidentUpdateParams",
 	title: "Status page incident update parameters",
 	description:
-		"Request body for editing an incident without posting an update. Omitted fields are left unchanged.",
+		"Request body for editing an incident without posting an update. Omitted fields are left unchanged. A maintenance window must end after it starts; once completed it no longer changes, and while open it must end in the future. A scheduled maintenance cannot move its start into the past (post `in_progress` to start it now); one in progress cannot move its start into the future.",
 	examples: [wireExample({ published: true })],
 })
 export type V2StatusPageIncidentUpdateParams = Schema.Schema.Type<typeof V2StatusPageIncidentUpdateParams>
 
 export const V2StatusPageIncidentPostUpdateParams = Schema.Struct({
 	status: StatusPageIncidentStatus,
-	body: NonEmptyString.annotate({ description: "The public message." }),
+	body: UpdateBody.annotate({ description: "The public message." }),
 	impact: Schema.optionalKey(StatusPageIncidentImpact),
 	component_ids: Schema.optionalKey(Schema.Array(StatusPageComponentPublicId)),
+	resolved_at: Schema.optionalKey(resolvedAtField),
 }).annotate({
 	identifier: "StatusPageIncidentPostUpdateParams",
 	title: "Status page incident post-update parameters",
@@ -945,6 +1112,9 @@ const [
 	conflict,
 	persistence,
 	disabled,
+	customDomainNotFound,
+	customDomainTaken,
+	customDomainsUnavailable,
 ] = publicErrors(
 	StatusPageNotFoundError,
 	StatusPageComponentNotFoundError,
@@ -954,6 +1124,9 @@ const [
 	StatusPageConflictError,
 	StatusPagePersistenceError,
 	StatusPagesDisabledError,
+	StatusPageCustomDomainNotFoundError,
+	StatusPageCustomDomainTakenError,
+	StatusPageCustomDomainsUnavailableError,
 )
 
 const StatusPageList = ListOf(V2StatusPage).annotate({
@@ -1016,7 +1189,7 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 	.add(
 		HttpApiEndpoint.post("preview", "/preview", {
 			payload: StatusPagePreviewParams,
-			success: StatusPageSnapshot,
+			success: StatusPagePublicSnapshot,
 			error: [V2ParameterInvalid.schema, validation, persistence, disabled],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -1038,6 +1211,20 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				summary: "Retrieve a status page",
 				description:
 					"Returns a status page by its `stp_…` ID. Requires the `status_pages:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("view", "/:id/view", {
+			params: pageParams,
+			success: StatusPagePublicSnapshot,
+			error: [pageNotFound, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "viewStatusPage",
+				summary: "View a status page",
+				description:
+					"Builds the page as visitors would see it now, whatever its visibility: how members read an `internal` page. Writes nothing. Requires the `status_pages:read` scope.",
 			}),
 		),
 	)
@@ -1111,6 +1298,108 @@ export class V2StatusPagesApiGroup extends HttpApiGroup.make("statusPages")
 				identifier: "revokeStatusPageBreakGlassToken",
 				summary: "Revoke the break-glass token",
 				description: `Revokes the page's break-glass token. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("setPassword", "/:id/password", {
+			params: pageParams,
+			payload: V2StatusPagePasswordParams,
+			success: V2StatusPage,
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "setStatusPagePassword",
+				summary: "Set a status page password",
+				description: `Sets or replaces the password visitors enter on a \`password\` page; replacing it signs every visitor out. Setting one does not change the visibility. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.delete("removePassword", "/:id/password", {
+			params: pageParams,
+			success: V2StatusPage,
+			error: [V2InsufficientPermissions.schema, pageNotFound, validation, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "removeStatusPagePassword",
+				summary: "Remove a status page password",
+				description: `Removes the page password. A \`password\` page must be made \`public\` or \`internal\` first. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("getCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [pageNotFound, persistence, disabled],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getStatusPageCustomDomain",
+				summary: "Retrieve a status page's custom domain",
+				description:
+					"Returns the page's custom domain with its status and the DNS records to add, or `hostname: null` without one. Requires the `status_pages:read` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.put("setCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			payload: V2StatusPageCustomDomainParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				validation,
+				customDomainTaken,
+				customDomainsUnavailable,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "setStatusPageCustomDomain",
+				summary: "Set a status page's custom domain",
+				description: `Serves the page on a subdomain you control, like \`status.acme.com\`, replacing a different one it has; the same hostname again changes nothing. Add the returned DNS records; the page goes live there once the certificate is issued. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.delete("removeCustomDomain", "/:id/custom_domain", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				customDomainNotFound,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "removeStatusPageCustomDomain",
+				summary: "Remove a status page's custom domain",
+				description: `Stops serving the page on its custom domain within a minute. The page stays up at its Maple address. ${adminNote}`,
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("checkCustomDomain", "/:id/custom_domain/check", {
+			params: pageParams,
+			success: V2StatusPageCustomDomain,
+			error: [
+				V2InsufficientPermissions.schema,
+				pageNotFound,
+				customDomainNotFound,
+				customDomainsUnavailable,
+				persistence,
+				disabled,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "checkStatusPageCustomDomain",
+				summary: "Check a status page's custom domain now",
+				description: `Checks the domain's DNS and certificate now instead of waiting for the next scheduled check, and retries a failed certificate. ${adminNote}`,
 			}),
 		),
 	)

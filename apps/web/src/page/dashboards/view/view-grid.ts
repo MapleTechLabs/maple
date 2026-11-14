@@ -1,7 +1,7 @@
 import type { DashboardDocument } from "@maple/domain/http"
 import type { GridItem } from "@maple/grid-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { GRID_ROW_HEIGHT } from "../../../components/dashboard-builder/canvas/grid-breakpoints"
+import { GRID_ROW_HEIGHT } from "../kit/grid-breakpoints"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { GRID_INSTRUCTIONS_ID } from "../kit/tile-shell"
 import { MeasureGrid, WatchGridHandles, WatchWidget } from "./command"
@@ -12,11 +12,9 @@ import { isEditing } from "./update"
 import { viewTile } from "./view-widgets"
 import type { VariableValues } from "@maple/query-engine"
 import { sectionView } from "./view-sections"
-import { resolveSectionView } from "../../../lib/dashboards/section-view-state"
+import { resolveSectionView } from "../kit/section-view-state"
 import { containerKeyFor } from "@maple/domain/http"
-import { Array as Arr } from "effect"
-
-// The dashboard sections and grid: one measured container, CSS Grid placement per stored layout.
+import { Array as Arr, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 type Widget = DashboardDocument["widgets"][number]
@@ -25,7 +23,7 @@ type TileContext = Readonly<{
 	model: Model
 	timeZone: string
 	variables: VariableValues
-	/** `renderWidget`: the tile drawn in each cell (the bench lab's stand-in), else the widget's own. */
+	/** The tile drawn in each cell (the bench lab's stand-in), else the widget's own. */
 	renderTile?: (widget: Widget) => Html
 }>
 
@@ -45,7 +43,7 @@ const resizeHandle = (h: H): Html =>
 		),
 	])
 
-/** `GridCell`: the tile in its cells (or lifted under the pointer), and (editing) the resize corner. */
+/** The tile in its cells (or lifted under the pointer), and (editing) the resize corner. */
 const gridCell = (h: H, ctx: TileContext, widget: Widget, item: GridItem, isEditable: boolean): Html => {
 	const gesture = ctx.model.gesture
 	const lifted =
@@ -88,7 +86,7 @@ const gridCell = (h: H, ctx: TileContext, widget: Widget, item: GridItem, isEdit
 	)
 }
 
-/** `Placeholder` under a dragged tile, and the dashed resize ghost. */
+/** The placeholder under a dragged tile, and the dashed resize ghost. */
 const gestureLayers = (h: H, model: Model, shown: ReadonlyArray<GridItem>): ReadonlyArray<Html> => {
 	const gesture = model.gesture
 	if (gesture === null || !gesture.isStarted) return []
@@ -107,17 +105,20 @@ const gestureLayers = (h: H, model: Model, shown: ReadonlyArray<GridItem>): Read
 				}),
 			]),
 		]
-	const item = shown.find((candidate) => candidate.i === gesture.widgetId)
-	return item === undefined
-		? []
-		: [
+	return Option.match(
+		Arr.findFirst(shown, (candidate) => candidate.i === gesture.widgetId),
+		{
+			onNone: () => [],
+			onSome: (item) => [
 				h.div([
 					h.AriaHidden(true),
 					h.DataAttribute("grid-placeholder", ""),
 					h.Class("rounded-lg border border-dashed border-primary/60 bg-primary-a1"),
 					h.Style(gridArea(item)),
 				]),
-			]
+			],
+		},
+	)
 }
 
 const dashboardGrid = (h: H, ctx: TileContext, grid: CanvasGrid): Html => {

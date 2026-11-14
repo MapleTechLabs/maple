@@ -13,33 +13,31 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
 import { Message } from "./message"
 
-// `GithubIntegrationCard`: state and writes.
-
 export const GithubCardModel = Schema.Struct({
 	selection: Schema.NullOr(GithubInstallationSelection),
 	selectingInstallation: Schema.NullOr(Schema.String),
 	/** The Refresh button's 700 ms spinner (`refreshing`), versioned so a late timer is ignored. */
 	isRefreshing: Schema.Boolean,
 	refreshVersion: Schema.Number,
-	/** `CiTracesSetting`: the optimistic value (null = the server's) and the write in flight. */
+	/** The CI traces switch: the optimistic value (null = the server's) and the write in flight. */
 	ciTraces: Schema.NullOr(Schema.Boolean),
 	/** The server value the optimistic one was set against; a new server value wins. */
 	ciTracesServer: Schema.NullOr(Schema.Boolean),
 	isSavingCiTraces: Schema.Boolean,
-	/** Re-read every 3 s for 10 s after a branch change queues a backfill (`forcePoll`). */
+	/** Re-read every 3 s for 10 s after a branch change queues a backfill. */
 	isForcePolling: Schema.Boolean,
 	forcePollVersion: Schema.Number,
 	/** Removed repository awaiting the delete confirmation, and the one being deleted. */
 	repoToDelete: Schema.NullOr(VcsRepositoryId),
 	deletingRepo: Schema.NullOr(VcsRepositoryId),
 	deleteDialog: Dialog.Model,
-	/** `BranchSelector`: one popover open at a time; its repo, search and the pending change. */
+	/** The branch selector: one popover open at a time; its repo, search and the pending change. */
 	branchRepo: Schema.NullOr(VcsRepositoryId),
 	branchPopover: Popover.Model,
 	branchQuery: Schema.String,
 	pendingBranch: Schema.NullOr(Schema.Struct({ repoId: VcsRepositoryId, branch: Schema.String })),
 	branchDialog: Dialog.Model,
-	/** The optimistic tracked branches whose saves are in flight, one per repository (`useAsyncAction` per row). */
+	/** The optimistic tracked branches whose saves are in flight, one per repository. */
 	savingBranches: Schema.Array(Schema.Struct({ repoId: VcsRepositoryId, branch: Schema.String })),
 })
 export type GithubCardModel = typeof GithubCardModel.Type

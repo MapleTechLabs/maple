@@ -3,16 +3,14 @@ import { createQueryDraft } from "@maple/query-engine/query-builder"
 import { makeQueryDataSource, makeRouteDataSource } from "@maple/widgets/dashboard"
 import type { EditorState, ListColumn, ListDataSource } from "./editor-state"
 import { buildListLogsParams } from "./list-logs-params"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
-// The list widget's halves: configured by `ListConfigPanel`, not the
-// query builder, so it owns its whole display.
+// The list widget is configured by its own panel, not the query builder, so it owns its whole display.
 
 type Widget = DashboardDocument["widgets"][number]
 type Display = Widget["display"]
 type DataSource = Widget["dataSource"]
 
-/** `parsePositiveNumber`. */
 export const parsePositiveNumber = (raw: string): number | undefined => {
 	const parsed = Number.parseInt(Str.trim(raw), 10)
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
@@ -21,7 +19,10 @@ export const parsePositiveNumber = (raw: string): number | undefined => {
 const LIST_DATA_SOURCES: ReadonlyArray<ListDataSource> = ["traces", "logs", "product_events"]
 
 export const toListDataSource = (value: unknown): ListDataSource =>
-	LIST_DATA_SOURCES.find((candidate) => candidate === value) ?? "traces"
+	Option.getOrElse(
+		Arr.findFirst(LIST_DATA_SOURCES, (candidate) => candidate === value),
+		() => "traces",
+	)
 
 /** The columns a new list widget starts with. */
 export const DEFAULT_LIST_COLUMNS = {
@@ -70,7 +71,7 @@ export const listInitialState = (
 	}
 }
 
-/** `listWidgetType.buildDataSource`: logs on `list_logs`, the rest through the query engine. */
+/** Logs read `list_logs`, the rest go through the query engine. */
 export const listDataSourceOf = (state: EditorState): DataSource => {
 	const limit = parsePositiveNumber(state.listLimit) ?? DEFAULT_LIST_LIMIT
 	if (state.listDataSource === "logs")
@@ -99,7 +100,7 @@ export const listDataSourceOf = (state: EditorState): DataSource => {
 	})
 }
 
-/** `listWidgetType.buildDisplay`: built from scratch, so nothing of the previous type survives. */
+/** Built from scratch, so nothing of the previous type survives. */
 export const listDisplayOf = (state: EditorState): Display => ({
 	title: Str.trim(state.title) || undefined,
 	description: Str.trim(state.description) || undefined,

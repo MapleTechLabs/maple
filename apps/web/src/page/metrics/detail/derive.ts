@@ -5,9 +5,7 @@ import {
 } from "@maple/query-engine/query-builder"
 import { type MetricsQueryDraftSchema, toQueryBuilderMetricType } from "@maple/query-model"
 import type { MetricRow } from "../shared"
-import { Array as Arr, String as Str } from "effect"
-
-// Pure parts of the metric detail and its breakdown.
+import { Array as Arr, String as Str, Option } from "effect"
 
 export interface QueryState {
 	readonly type?: QueryBuilderMetricType | undefined
@@ -18,7 +16,7 @@ export interface QueryState {
 	readonly bd?: string | undefined
 }
 
-/** `MetricCatalogSummary`: the union of the catalog rows for one metric name. */
+/** The union of the catalog rows for one metric name. */
 export interface CatalogSummary {
 	readonly metricName: string
 	readonly metricType: QueryBuilderMetricType
@@ -31,7 +29,6 @@ export interface CatalogSummary {
 	readonly isMonotonic: boolean
 }
 
-/** `summarizeCatalogRows`. */
 export const summarizeCatalogRows = (
 	rows: ReadonlyArray<MetricRow>,
 	metricName: string,
@@ -58,8 +55,20 @@ export const summarizeCatalogRows = (
 				),
 			),
 		],
-		description: Arr.map(matches, (row) => row.metricDescription).find((d) => d.length > 0) ?? "",
-		unit: Arr.map(matches, (row) => row.metricUnit).find((u) => u.length > 0) ?? "",
+		description: Option.getOrElse(
+			Arr.findFirst(
+				Arr.map(matches, (row) => row.metricDescription),
+				(d) => d.length > 0,
+			),
+			() => "",
+		),
+		unit: Option.getOrElse(
+			Arr.findFirst(
+				Arr.map(matches, (row) => row.metricUnit),
+				(u) => u.length > 0,
+			),
+			() => "",
+		),
 		dataPointCount: Arr.reduce(matches, 0, (total, row) => total + row.dataPointCount),
 		firstSeen: Arr.reduce(matches, first.firstSeen, (min, row) =>
 			row.firstSeen < min ? row.firstSeen : min,
@@ -74,7 +83,7 @@ export const summarizeCatalogRows = (
 export const defaultAggregation = (metricType: QueryBuilderMetricType, isMonotonic: boolean): string =>
 	resetAggregationForMetricType(metricType === "sum" ? "rate" : "avg", metricType, isMonotonic)
 
-/** `buildMetricExplorerDraft`: the stable-id draft the chart, breakdown and actions share. */
+/** The stable-id draft the chart, breakdown and actions share. */
 export const buildMetricExplorerDraft = (summary: CatalogSummary, state: QueryState): MetricsQueryDraft => ({
 	id: "metrics-explorer-a",
 	name: "A",
@@ -119,7 +128,7 @@ export const queryLabel = (draft: MetricsQueryDraft): string =>
 export const SERVICE_KEY = "service.name"
 export const BREAKDOWN_LIMIT = 10
 
-/** `breakdownAggregation`: breakdown supports plain aggregations; counters fall back to count. */
+/** Breakdown supports plain aggregations; counters fall back to count. */
 export const breakdownAggregation = (aggregation: string): "avg" | "sum" | "count" =>
 	aggregation === "avg" || aggregation === "sum" || aggregation === "count" ? aggregation : "count"
 
@@ -137,7 +146,7 @@ export const buildBreakdownDraft = (draft: MetricsQueryDraft, groupBy: string): 
 
 const quoteFilterValue = (value: string): string => `"${Str.replaceAll('"', '\\"')(value)}"`
 
-/** `appendWhereFilter`: adds `key = "value"`, replacing an existing clause for the same key. */
+/** Adds `key = "value"`, replacing an existing clause for the same key. */
 export const appendWhereFilter = (where: string, key: string, value: string): string => {
 	const clause = `${key} = ${quoteFilterValue(value)}`
 	const trimmed = Str.trim(where)

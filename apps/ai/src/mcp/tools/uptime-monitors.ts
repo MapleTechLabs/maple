@@ -1,15 +1,10 @@
 /**
  * Uptime monitors: Maple checks a URL, port or DNS name on a schedule, or waits for a job's
- * heartbeat pings. Anyone may list them; creating, changing and deleting is admin-only, like
+ * heartbeat pings. Anyone may list them; creating, changing and deleting needs an engineer or admin, like
  * the REST routes, since a monitor makes Maple request an operator-chosen host on a schedule.
  */
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import {
-	DeleteUptimeMonitorOutput,
-	ListUptimeMonitorsOutput,
-	UptimeMonitorMutationOutput,
-	type UptimeMonitorRow,
-} from "@maple/domain/mcp-outputs"
+import { type UptimeMonitorRow } from "@maple/domain/mcp-outputs"
 import { decodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
 import {
 	UptimeIntervalSeconds,
@@ -17,12 +12,12 @@ import {
 	UptimeMonitorStatus,
 	type AlertDestinationId,
 	type OrgId,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import { UptimeDnsRecordType, UptimeHttpMethod } from "@maple/domain/uptime"
-import { isAdmin, requireAdmin } from "@maple/backend/services/auth/auth"
+import * as Policy from "@maple/domain/policy"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import {
@@ -38,11 +33,12 @@ import {
 const adminOnly = (tool: string) =>
 	Effect.gen(function* () {
 		const tenant = yield* CurrentMcpTenant
-		yield* requireAdmin(
+		yield* Policy.check(
 			tenant.roles,
+			"uptime_monitors:manage",
 			() =>
 				new McpUnavailableError({
-					message: `${tool} changes the organization's uptime monitors, which only org admins may do. Ask an admin, or change it in Alerts → Uptime.`,
+					message: `${tool} changes the organization's uptime monitors, which only org admins and engineers may do. Ask an admin or engineer, or change it in Alerts → Uptime.`,
 					capability: "org_admin",
 				}),
 		)
@@ -52,7 +48,7 @@ const adminOnly = (tool: string) =>
 const decodeInterval = (raw: number | undefined) =>
 	raw === undefined
 		? Effect.undefined
-		: Schema.decodeUnknownEffect(UptimeIntervalSeconds)(raw).pipe(
+		: Schema.decodeEffect(UptimeIntervalSeconds)(raw).pipe(
 				Effect.mapError(
 					() =>
 						new McpInvalidInputError({
@@ -187,7 +183,7 @@ const renderMonitor = (title: string, row: typeof UptimeMonitorRow.Type) => ({
 			],
 		]),
 		// The ping URL is a credential and rendered text can be relayed to chat: it stays in
-		// the structured result (admins only) and the monitor's page in Maple.
+		// the structured result (engineers and admins) and the monitor's page in Maple.
 		...(row.kind === "heartbeat"
 			? [
 					doc.text(
@@ -218,7 +214,7 @@ const configParameters = {
 	expected: P.optionalText("dns: up when any answer equals this; omit to only require that it resolves"),
 	heartbeat_interval_seconds: P.optionalNumber("heartbeat: expected seconds between pings (at least 60)"),
 	cron: P.optionalText("heartbeat: cron expression of the expected pings, instead of an interval"),
-	timezone: P.optionalText("heartbeat: IANA timezone the cron expression runs in (default UTC)"),
+	time_zone: P.optionalText("heartbeat: IANA time zone the cron expression runs in (default UTC)"),
 	grace_seconds: P.optionalNumber(
 		`heartbeat: how late a ping may be before the monitor goes down (0 to 86400, default ${DEFAULT_GRACE_SECONDS})`,
 	),
@@ -229,7 +225,7 @@ const configParameters = {
 	service: P.service("The `service.name` the monitor belongs to: links its failures to that service"),
 } as const
 
-const ALIASES = { ...P.SERVICE_ALIASES, hostname: "host" } as const
+const ALIASES = { ...P.SERVICE_ALIASES, hostname: "host", timezone: "time_zone" } as const
 
 const configFields = (params: UptimeConfigFields): UptimeConfigFields => ({
 	url: params.url,
@@ -243,7 +239,7 @@ const configFields = (params: UptimeConfigFields): UptimeConfigFields => ({
 	expected: params.expected,
 	heartbeat_interval_seconds: params.heartbeat_interval_seconds,
 	cron: params.cron,
-	timezone: params.timezone,
+	time_zone: params.time_zone,
 	grace_seconds: params.grace_seconds,
 })
 
@@ -260,8 +256,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			service: P.service("Only monitors linked to this service (exact `service.name`)"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: ListUptimeMonitorsOutput,
 		hints: { readOnly: true, destructive: false, idempotent: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Checking uptime monitors"],
 		handler: Effect.fn("McpTool.listUptimeMonitors")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
@@ -269,7 +265,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			const monitors = yield* service
 				.list(tenant.orgId)
 				.pipe(Effect.mapError(toMcpUptimeError("list_uptime_monitors")))
-			const canWrite = isAdmin(tenant.roles)
+			const canWrite = Policy.can(tenant.roles, "uptime_monitors:manage")
 			const rows = Arr.map(monitors, (monitor) => toMonitorRow(monitor, canWrite))
 			const count = (status: keyof typeof STATUS_ORDER) =>
 				Arr.filter(rows, (row) => row.status === status).length
@@ -306,7 +302,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 								output.statusFilter === undefined && output.serviceFilter === undefined
 									? "This organization has no uptime monitors."
 									: "No uptime monitor matches these filters.",
-							hints: ["create_uptime_monitor adds one (org admins only)."],
+							hints: ["create_uptime_monitor adds one (org admins and engineers only)."],
 						},
 					}
 				: undefined),
@@ -351,7 +347,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "create_uptime_monitor",
 		title: "Create Uptime Monitor",
 		description:
-			"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Admin only. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
+			"Start monitoring an endpoint. kind=http requests `url` and expects `expected_status` (default 2xx), optionally under `max_response_ms` and with `body_contains`; kind=tcp connects to `host`:`port`; kind=dns resolves `host` (`record_type`, optional `expected` answer); kind=heartbeat waits for your job to ping a URL every `heartbeat_interval_seconds` or on a `cron` schedule, plus `grace_seconds`. A monitor that goes down opens an alert incident and notifies `destination_ids`. Org admins and engineers only. Returns the monitor and, for a heartbeat, its ping URL and a curl line for the job.",
 		parameters: Schema.Struct({
 			name: P.text("A label for the monitor, unique among the org's monitors and alert rules"),
 			kind: P.oneOf(UptimeMonitorKind.literals, "What the monitor checks"),
@@ -362,8 +358,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
-		output: UptimeMonitorMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Adding an uptime monitor"],
 		handler: Effect.fn("McpTool.createUptimeMonitor")(function* (params) {
 			const tenant = yield* adminOnly("create_uptime_monitor")
@@ -401,7 +397,7 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "update_uptime_monitor",
 		title: "Update Uptime Monitor",
 		description:
-			"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind. Admin only.",
+			"Change an uptime monitor: pause it (enabled=false) or resume it (enabled=true, which restarts it from pending), or change its name, target, assertions, schedule, interval, service or destinations. Fields left out keep their value; a monitor cannot change kind. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			monitor: P.text("The monitor's name or id (list_uptime_monitors lists them)"),
 			enabled: P.optionalFlag("false pauses the monitor, true resumes it"),
@@ -421,8 +417,8 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 			),
 		}),
 		aliases: ALIASES,
-		output: UptimeMonitorMutationOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true, openWorld: true },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Updating an uptime monitor"],
 		handler: Effect.fn("McpTool.updateUptimeMonitor")(function* (params) {
 			const tenant = yield* adminOnly("update_uptime_monitor")
@@ -473,13 +469,13 @@ export function registerUptimeMonitorTools(server: McpToolRegistrar) {
 		name: "delete_uptime_monitor",
 		title: "Delete Uptime Monitor",
 		description:
-			"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, update_uptime_monitor enabled=false instead. Admin only.",
+			"Delete an uptime monitor and its alert rule. Check spans already in the traces stay. Irreversible; requires confirm=true. To stop it for a while, update_uptime_monitor enabled=false instead. Org admins and engineers only.",
 		parameters: Schema.Struct({
 			monitor: P.text("The monitor's name or id"),
 			confirm: P.flag("Must be true. There is no undo."),
 		}),
-		output: DeleteUptimeMonitorOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },
+		scopeFamily: "uptime_monitors",
 		phrases: ["Deleting an uptime monitor"],
 		handler: Effect.fn("McpTool.deleteUptimeMonitor")(function* (params) {
 			// A member is refused before being asked to confirm, as create and update are.

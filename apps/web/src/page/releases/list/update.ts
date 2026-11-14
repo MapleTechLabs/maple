@@ -1,5 +1,7 @@
+import { pickerStep } from "../../kit/page-time"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import { isReleaseHealth } from "../../../components/releases/release-model"
+import { isReleaseHealth } from "../release-model"
 import { AsyncData, Command } from "foldkit"
 import * as Overlays from "../overlays"
 import * as Keyed from "@maple/views/data/keyed"
@@ -24,7 +26,8 @@ import {
 	type ReleasesInput,
 } from "./command"
 import { DEFAULT_PRESET, deriveOf, rangesKeyOf, type Search, shasKeyOf } from "./derive"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
+import { editFacet, excludedValue, onlyValue, toggledValue } from "../../kit/facets"
 import type { Model } from "./model"
 import { Array as Arr } from "effect"
 
@@ -68,8 +71,7 @@ const requestReleases = (
 }
 
 /**
- * What the table reads once it mounts (`ReleasesTableWithIssues`): the issues introduced in the
- * window, then the commit ranges and the commit messages of the rows on screen.
+ * What the table reads once it mounts: the issues introduced in the window, then the commit ranges and the commit messages of the rows on screen.
  */
 const followTable = (model: Model, context: PageContext, mode: RequestMode): Return => {
 	const data = AsyncData.getOrElse(model.releases.data, () => null)
@@ -188,23 +190,7 @@ const navigate = (model: Model, search: Search): Return => ({
 	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(search), isReplace: false }),
 })
 
-const listOrUndefined = (values: ReadonlyArray<string>) => (values.length === 0 ? undefined : values)
-
-/** `FilterSection`'s tri-state toggle over a facet and its excluded twin. */
-const toggled = (
-	selected: ReadonlyArray<string> | undefined,
-	excluded: ReadonlyArray<string> | undefined,
-	name: string,
-) => ({
-	selected: listOrUndefined(
-		(selected ?? []).includes(name)
-			? Arr.filter(selected ?? [], (value) => value !== name)
-			: [...(selected ?? []), name],
-	),
-	excluded: (excluded ?? []).includes(name)
-		? listOrUndefined(Arr.filter(excluded ?? [], (value) => value !== name))
-		: excluded,
-})
+const ENVIRONMENT = { include: "environments", exclude: "excludedEnvironments" } as const
 
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
@@ -266,28 +252,26 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				...model.search,
 				impact: name !== model.search.impact && isReleaseHealth(name) ? name : undefined,
 			}),
-		ToggledEnvironment: ({ name }) => {
-			const next = toggled(model.search.environments, model.search.excludedEnvironments, name)
-			return navigate(model, {
-				...model.search,
-				environments: next.selected,
-				excludedEnvironments: next.excluded,
-			})
-		},
+		ToggledEnvironment: ({ name }) =>
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, (lists) => toggledValue(lists, name)),
+			),
 		ClickedOnlyEnvironment: ({ name }) =>
-			navigate(model, { ...model.search, environments: [name], excludedEnvironments: undefined }),
-		ClickedExcludeEnvironment: ({ name }) => {
-			const next = toggled(model.search.excludedEnvironments, model.search.environments, name)
-			return navigate(model, {
-				...model.search,
-				excludedEnvironments: next.selected,
-				environments: next.excluded,
-			})
-		},
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, () => onlyValue(name)),
+			),
+		ClickedExcludeEnvironment: ({ name }) =>
+			navigate(
+				model,
+				editFacet(model.search, ENVIRONMENT, (lists) => excludedValue(lists, name)),
+			),
 		ToggledService: ({ name }) =>
 			navigate(model, {
 				...model.search,
-				services: toggled(model.search.services, undefined, name).selected,
+				services: toggledValue({ selected: model.search.services, excluded: undefined }, name)
+					.selected,
 			}),
 		ClickedClearFilters: () =>
 			navigate(model, {
@@ -315,24 +299,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands, (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? TimeRangePicker.unpicked(lifted, next.outMessage)
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: searchHref({
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: searchHref({
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+				{ toastRejected: true },
+			)
 		},
 	})

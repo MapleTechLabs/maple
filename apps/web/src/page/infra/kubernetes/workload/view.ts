@@ -1,4 +1,4 @@
-import { severityLevel } from "../../../../components/infra/format"
+import { severityLevel } from "../../kit/format"
 import { countLabel, EMPTY_VALUE, formatPercent } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -11,9 +11,9 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { switchControl } from "@maple/views/ui/switch"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { heroChip } from "../../kit/hero-chip"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
 import {
@@ -23,14 +23,13 @@ import {
 } from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem, statRailLoading } from "../../../kit/stat-rail"
-import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
+import { kubernetesViewTabs, pickTimeSearch } from "../../../kit/view-tabs"
 import { podTable, podTableLoading } from "../pod-table"
 import { Message } from "./message"
 import { type Model, seriesId, type WorkloadKind, type WorkloadMetric, type WorkloadSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { hstack } from "@maple/views/ui/stack"
-
-// `WorkloadDetailPage` and `WorkloadDetailChart`.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<WorkloadSummary>
@@ -135,35 +134,33 @@ const chartArea = (h: H, model: Model, inputs: PageViewInputs): Html => {
 	return h.div(
 		[h.Class("space-y-3")],
 		[
-			hstack(h, { gap: "3", justify: "between", wrap: true },
-				[
-					segmentedSelect(h, {
-						size: "xs",
-						options: METRIC_OPTIONS,
-						value: metric,
-						onChange: (value) => Message.ClickedMetric({ metric: value }),
-						ariaLabel: "Metric",
-					}),
-					// The label wraps the switch's hidden input, so a click on the text toggles too.
-					label(
-						h,
-						{
-							className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
-							attributes: [h.Id("workload-group-by-pod-label")],
-						},
-						[
-							...switchControl(h, {
-								id: "workload-group-by-pod",
-								inputId: "workload-group-by-pod-input",
-								isChecked: model.groupByPod,
-								labelledBy: "workload-group-by-pod-label",
-								onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
-							}),
-							"Per-pod breakdown",
-						],
-					),
-				],
-			),
+			hstack(h, { gap: "3", justify: "between", wrap: true }, [
+				segmentedSelect(h, {
+					size: "xs",
+					options: METRIC_OPTIONS,
+					value: metric,
+					onChange: (value) => Message.ClickedMetric({ metric: value }),
+					ariaLabel: "Metric",
+				}),
+				// The label wraps the switch's hidden input, so a click on the text toggles too.
+				label(
+					h,
+					{
+						className: "cursor-pointer font-normal text-2xs text-muted-foreground sm:text-2xs",
+						attributes: [h.Id("workload-group-by-pod-label")],
+					},
+					[
+						...switchControl(h, {
+							id: "workload-group-by-pod",
+							inputId: "workload-group-by-pod-input",
+							isChecked: model.groupByPod,
+							labelledBy: "workload-group-by-pod-label",
+							onToggle: Message.ToggledGroupByPod({ isChecked: !model.groupByPod }),
+						}),
+						"Per-pod breakdown",
+					],
+				),
+			]),
 			k8sChart(h, {
 				slot: model.series[seriesId(model)],
 				chart: model.charts[metric],
@@ -184,7 +181,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const namespace = model.search.namespace
 	const kindLabel = KIND_LABEL.get(model.kind) ?? model.kind
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.workloadName]),
+		title: typography(h, { mono: true }, [model.workloadName]),
 		description: `${kindLabel}${namespace ? ` in namespace ${namespace}` : ""}, aggregated from pod metrics.`,
 		meta: [
 			...(namespace ? [heroChip(h, ["ns ", namespace])] : []),

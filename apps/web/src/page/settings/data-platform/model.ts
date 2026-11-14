@@ -10,8 +10,6 @@ import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 
-// `OrgClickHouseSettingsSection` and `DataPlatformUsageSection` (apps/web/src/components/settings/).
-
 export const Totals = Schema.Struct({
 	logs: Schema.Number,
 	traces: Schema.Number,
@@ -20,7 +18,11 @@ export const Totals = Schema.Struct({
 })
 export type Totals = typeof Totals.Type
 
-export const ConnectionDraft = Schema.Struct({ url: Schema.String, user: Schema.String, database: Schema.String })
+export const ConnectionDraft = Schema.Struct({
+	url: Schema.String,
+	user: Schema.String,
+	database: Schema.String,
+})
 export type ConnectionDraft = typeof ConnectionDraft.Type
 
 export const ConnectionField = Schema.Literals(["url", "user", "database"])
@@ -29,7 +31,7 @@ export type ConnectionField = typeof ConnectionField.Type
 export const Model = Schema.Struct({
 	settings: AsyncData.Schema(OrgClickHouseSettingsResponse, LoadFailure).schema,
 	diff: AsyncData.Schema(OrgClickHouseSchemaDiffResponse, LoadFailure).schema,
-	/** Read once the cluster is configured (`SchemaSection` mounts then). */
+	/** Read once the cluster is configured. */
 	applyStatus: AsyncData.Schema(OrgClickHouseApplySchemaStatus, LoadFailure).schema,
 	/** Status reads sent and the newest one answered: an older answer arriving late is dropped. */
 	applyStatusSent: Schema.Number,

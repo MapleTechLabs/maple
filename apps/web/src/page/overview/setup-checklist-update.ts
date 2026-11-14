@@ -1,5 +1,6 @@
-import type { FrameworkId } from "../../components/quick-start/sdk-snippets"
-import type { OnboardingRole } from "../../lib/onboarding-role"
+import type { FrameworkId } from "../kit/sdk-snippets"
+import { isOwnService, TEST_TRACE_SERVICE } from "../kit/own-services"
+import type { OnboardingRole } from "../onboarding/onboarding-role"
 import { AsyncData, Command } from "foldkit"
 import type { TimeWindow } from "../../data/time-range"
 import { AppRoute, hrefOf } from "../../route"
@@ -16,7 +17,7 @@ import {
 	SaveSetupState,
 } from "./setup-checklist-command"
 import { type CopyField, Message, type Model, type ServiceRow, ServicesData } from "./setup-checklist"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr } from "effect"
 
 type Return = PageReturn<Model, Message>
 
@@ -40,6 +41,7 @@ export const init = (storageKey: string): Return => ({
 		services: ServicesData.Idle(),
 		window: null,
 		isOverviewInFlight: false,
+		hasTraces: null,
 		copies: { endpoint: CopyButton.init(), privateKey: CopyButton.init() },
 		isPrivateKeyVisible: false,
 		setupTabs: Tabs.init({ idBase: 40, values: SETUP_TAB_VALUES, selected: "install" }),
@@ -64,21 +66,37 @@ export const revived = (model: Model): Return => ({
 /** `SetupChecklist` renders (and polls) once the state is read and the checklist is not dismissed. */
 export const isMounted = (model: Model): boolean => model.state !== null && !model.state.checklistDismissed
 
-/** `useGuidedFramework`: the picked framework, else the role's default. */
+/** The picked framework, else the role's default. */
 export const frameworkOf = (state: QuickStartState): string =>
 	state.selectedFramework ??
 	(state.qualifyAnswers.role === null ? "nodejs" : ROLE_DEFAULT_FRAMEWORK[state.qualifyAnswers.role])
 
-/** `useIngestConnection`: the org's own services; the seeded `demo-` ones do not count. */
+/** The org's own services; seeded `demo-` ones and onboarding's test trace do not count. */
 export const realServices = (model: Model): ReadonlyArray<ServiceRow> =>
 	Arr.filter(
 		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
-		(row) => !Str.startsWith("demo-")(row.serviceName),
+		(row) => isOwnService(row.serviceName),
 	)
+
+/** Traces arrived, but only onboarding's test trace: the app itself is still to connect. */
+const hasOnlyTestTraces = (model: Model): boolean =>
+	model.hasTraces === true &&
+	realServices(model).length === 0 &&
+	Arr.some(
+		AsyncData.getOrElse(model.services, (): ReadonlyArray<ServiceRow> => []),
+		(row) => row.serviceName === TEST_TRACE_SERVICE,
+	)
+
+/** The card waits for a first trace once presence says the org has sent none of its own. */
+export const isWaitingForFirstTrace = (model: Model): boolean =>
+	(model.hasTraces === false || hasOnlyTestTraces(model)) && realServices(model).length === 0
 
 /** The card polls only while it waits for the first real service: the celebration needs no reads. */
 export const isPolling = (model: Model): boolean =>
-	isMounted(model) && model.window !== null && realServices(model).length === 0
+	isMounted(model) &&
+	model.window !== null &&
+	realServices(model).length === 0 &&
+	(model.hasTraces !== true || hasOnlyTestTraces(model))
 
 const fetchOverview = (model: Model, pinnedNamespace: string | null): Return =>
 	model.window === null
@@ -110,7 +128,7 @@ const toast = (type: "success" | "error", title: string) =>
 const dismissed = (model: Model): Return =>
 	model.state === null ? { model } : saveState(model, { ...model.state, checklistDismissed: true })
 
-/** `FirstTraceCelebration`'s explore: dismiss, then the traces of the first real service. */
+/** The celebration's explore: dismiss, then the traces of the first real service. */
 const explore = (model: Model): Return => {
 	const first = realServices(model)[0]
 	const url = hrefOf(
@@ -161,7 +179,7 @@ export const update = (model: Model, message: Message, context: SetupContext): R
 		ReadState: ({ state }) => {
 			const next = { ...model, state }
 			if (!isMounted(next)) return { model: next }
-			// The card mounts: `useIngestConnection` reads the keys and the overview.
+			// The card mounts: it reads the keys and the overview.
 			const overview = fetchOverview(next, pinnedNamespace)
 			return { model: overview.model, commands: [FetchSetupKeys(), ...(overview.commands ?? [])] }
 		},

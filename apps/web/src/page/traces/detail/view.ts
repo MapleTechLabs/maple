@@ -24,18 +24,16 @@ import { type LoadedTrace, loadedTrace, selectedSpanOf } from "./select"
 import { MeasureSplit } from "./split"
 import { spanSheetOf } from "./update"
 import type { TraceData } from "@maple/views/traces/trace-data"
-import * as Timeline from "./timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import { headerActions, titleContent } from "./view-header"
 import { errorCallout, productEvents, traceErrors } from "./view-findings"
 import { detailLoading, traceNotFound } from "./view-states"
 import { anatomyStrip } from "./view-summary"
 import { spanPanelSubmodel } from "./view-span-panel"
-import * as Waterfall from "./waterfall"
-import { vstackClass } from "@maple/views/ui/stack"
+import * as Waterfall from "@maple/views/traces/waterfall"
+import { vstack, vstackClass } from "@maple/views/ui/stack"
 
-// The trace detail page on `ResultPage`.
-
-/** `ResultPage`'s crumb: the short id once loaded or failed, else the state it is in. */
+/** The crumb: the short id once loaded or failed, else the state it is in. */
 export const breadcrumbs = (model: Model): ReadonlyArray<BreadcrumbEntry> => {
 	const crumb = Option.isNone(decodeTraceId(model.traceId))
 		? "Not found"
@@ -197,24 +195,15 @@ const desktopSplit = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInp
 
 const body = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs, trace: LoadedTrace): Html => {
 	const selected = selectedSpanOf(model)
-	return h.div(
-		[h.Class("flex flex-1 flex-col gap-y-3 min-h-0"), h.OnMount(MeasureSplit())],
-		[
-			anatomySlot(lazyAnatomy, [
-				h,
-				trace.data,
-				trace.traceStartTime,
-				inputs.context.timeZone,
-				model.nowMs,
-			]),
-			calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
-			productEvents(
-				h,
-				Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),
-			),
-			...(inputs.isMobile === true ? mobileSplit(h, model, inputs) : [desktopSplit(h, model, inputs)]),
-		],
-	)
+	return vstack(h, { grow: true, className: "gap-y-3 min-h-0", attributes: [h.OnMount(MeasureSplit())] }, [
+		anatomySlot(lazyAnatomy, [h, trace.data, trace.traceStartTime, inputs.context.timeZone, model.nowMs]),
+		calloutSlot(lazyCallout, [h, trace.data, selected?.spanId]),
+		productEvents(
+			h,
+			Option.getOrElse(AsyncData.getData(model.productEvents.data), () => []),
+		),
+		...(inputs.isMobile === true ? mobileSplit(h, model, inputs) : [desktopSplit(h, model, inputs)]),
+	])
 }
 
 const pageBody = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {
@@ -266,6 +255,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	return dashboardPage(
 		h,
 		{
+			width: "full",
 			// A failed load still gets a header naming the trace, so the error sits under a title.
 			titleContent:
 				trace !== undefined

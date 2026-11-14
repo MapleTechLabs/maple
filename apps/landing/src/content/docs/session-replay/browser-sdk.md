@@ -34,7 +34,7 @@ MapleBrowser.init({
 })
 ```
 
-Use a **public** ingest key (`maple_pk_…`) from **Settings → Ingestion**. It is safe to ship in browser code. Ingest keys belong to one region, so set `region: "eu"` if your organization is in the EU region.
+Use a **public** ingest key (`maple_pk_…`) from **Settings → Ingestion**, or the public token of a **Browser** source you connect under **Sources** (`maple_src_pk_…`). Both are safe to ship in browser code. Ingest keys belong to one region, so set `region: "eu"` if your organization is in the EU region.
 
 That single call:
 
@@ -620,6 +620,7 @@ Load a page with the SDK installed, click around for a few seconds, then leave t
 
 ## Next steps
 
+- [Frontend tracing](/docs/frontend): navigation, data-loading and error spans for your framework, linked to your backend.
 - [Replays](/docs/session-replay/replays): find and play back sessions.
 - [Product events](/docs/product-events/overview): funnels on `track()` and server-side events.
 - [Web analytics](/docs/product-events/web-analytics): visitors, pages and referrers from the same SDK.

@@ -3,14 +3,19 @@ import {
 	type BreachStats,
 	formatBreachDuration,
 } from "@maple/web-data/alerts/breach-stats"
-import { displaySignalType, formatSignalValue } from "@maple/web-data/alerts/form-utils"
+import {
+	displaySignalType,
+	formatSignalValue,
+	isFilledNumber,
+	isRangeComparator,
+} from "@maple/web-data/alerts/form-utils"
 import {
 	countSkippedWindows,
 	draftThresholds,
 	focusPreviewOnClosestGroups,
 } from "@maple/web-data/alerts/preview-insights"
 import { cn } from "@maple/ui/lib/utils"
-import { Struct, Array as Arr } from "effect"
+import { Struct, Array as Arr, String as Str } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { button } from "@maple/views/ui/button"
@@ -19,12 +24,12 @@ import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { stableSlice } from "../../kit/stable-slice"
-import { presetLabel } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { alertStatusBadge } from "../shared/badges"
 import { previewStateOf } from "../shared/preview"
 import { ruleChart } from "../shared/rule-chart"
 import { conditionSubject, groupBySummary, previewIdentityKey } from "./derive"
-import { draftPreviewOf, windowMsOf } from "./derive-rows"
+import { draftPreviewOf, hasPreviewPayload, windowMsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { DryRun, Model } from "./model"
@@ -32,45 +37,45 @@ import { editImpact, type ImpactView } from "./view-impact"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `RuleLiveChartHero`: the evaluator's replay of the
-// draft with the threshold, would-fire bands and the dry-run verdict.
-
 type H = HtmlBuilder<Message>
+
+// The verdict is the point of the chart: a phone gives it its own line under the title, and from
+// `sm` it sits beside the title as before.
+const verdictClass = (tone: string): string =>
+	typographyClass({ size: "xs", className: cn("basis-full sm:basis-auto", tone) })
 
 const breachPill = (h: H, stats: BreachStats): ReadonlyArray<Html> => {
 	if (stats.bucketCount === 0) return []
 	if (stats.breachCount === 0)
 		return [
-			h.span(
-				[h.Class("hidden items-center gap-1 text-xs text-severity-info sm:inline-flex")],
-				[icon(h, "CheckIcon", { size: 12 }), "No breaches in this window"],
-			),
+			hstack(h, { gap: "1", inline: true, as: "span", className: verdictClass("text-severity-info") }, [
+				icon(h, "CheckIcon", { size: 12 }),
+				"No breaches in this window",
+			]),
 		]
 	return [
-		h.span(
-			[h.Class("hidden items-center gap-1 text-xs text-severity-error sm:inline-flex")],
-			[
-				icon(h, "FireIcon", { size: 12 }),
-				"Would have fired",
-				" ",
-				h.span([h.Class("font-mono font-semibold tabular-nums")], [String(stats.breachCount), "×"]),
-				...(stats.longestRunMs === null
-					? []
-					: [
-							" ",
-							"· longest",
-							" ",
-							h.span(
-								[h.Class("font-mono font-semibold tabular-nums")],
-								[formatBreachDuration(stats.longestRunMs)],
-							),
+		hstack(h, { gap: "1", inline: true, as: "span", className: verdictClass("text-severity-error") }, [
+			icon(h, "FireIcon", { size: 12 }),
+			"Would have fired",
+			" ",
+			typography(h, { weight: "semibold", mono: true, numeric: true }, [
+				String(stats.breachCount),
+				"×",
+			]),
+			...(stats.longestRunMs === null
+				? []
+				: [
+						" ",
+						"· longest",
+						" ",
+						typography(h, { weight: "semibold", mono: true, numeric: true }, [
+							formatBreachDuration(stats.longestRunMs),
 						]),
-			],
-		),
+					]),
+		]),
 	]
 }
 
-/** `PreviewBadge`: the dry run's value and verdict. */
 const dryRunBadge = (h: H, dryRun: DryRun, form: RuleForm): Html => {
 	if (dryRun.status === "skipped")
 		return typography(h, { size: "xs", tone: "muted" }, ["Skipped · insufficient samples"])
@@ -104,10 +109,11 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 	const summary = groupBySummary(form)
 	const dryRun =
 		model.dryRun !== null && model.dryRun.key === previewIdentityKey(form) ? model.dryRun : null
-	return h.div(
-		[h.Class("flex flex-wrap items-center justify-between gap-2 px-4 pt-3 pb-2")],
+	return hstack(
+		h,
+		{ gap: "2", align: "center", justify: "between", wrap: true, className: "px-4 pt-3 pb-2" },
 		[
-			hstack(h, { gap: "2", shrink: true }, [
+			hstack(h, { gap: "2", shrink: true, wrap: true }, [
 				badge(h, { variant: "outline", className: typographyClass({ size: "xs", mono: true }) }, [
 					conditionSubject(form),
 				]),
@@ -152,14 +158,25 @@ const header = (h: H, model: HeaderView, form: RuleForm, timeZone: string): Html
 	)
 }
 
+/** The threshold (both bounds of a range) is a number; blank is missing, where `Number("")` is 0. */
+const hasThreshold = (form: RuleForm): boolean =>
+	isFilledNumber(form.threshold) &&
+	(!isRangeComparator(form.comparator) || isFilledNumber(form.thresholdUpper))
+
 /** The chart with the threshold and would-fire bands, and the notes under it. */
-type ChartView = Pick<Model, "preview" | "previewWindow" | "chart" | "themeColors" | "chartRuntime">
+type ChartView = Pick<
+	Model,
+	"preview" | "previewWindow" | "previewPreset" | "chart" | "themeColors" | "chartRuntime"
+>
 
 const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Html => {
 	const preview = draftPreviewOf(model, form)
 	const thresholds = draftThresholds(form)
 	const focused = focusPreviewOnClosestGroups(preview.preview)
 	const isChartReady = model.themeColors !== null && isChartRuntimeReady(model.chartRuntime)
+	const range = Str.toLowerCase(presetLabel(model.previewPreset))
+	// No request to wait for: the rule has nothing previewable yet (no query, or a blank threshold).
+	const isIdle = !hasPreviewPayload(model, form)
 	return h.div(
 		[h.Class("space-y-2 px-4 pt-3 pb-4")],
 		[
@@ -177,7 +194,19 @@ const chartBody = (h: H, model: ChartView, form: RuleForm, timeZone: string): Ht
 				comparator: form.comparator,
 				signalType: displaySignalType(form),
 				window: windowMsOf(model),
-				isLoading: preview.isLoading || !isChartReady,
+				// With nothing to draw the text states need no chart runtime, so they never flash "Loading".
+				isLoading: preview.isLoading || (!isChartReady && preview.preview !== null),
+				loadingText: `Loading the ${range}…`,
+				emptyText: isIdle
+					? {
+							title: hasThreshold(form)
+								? `Pick a signal to preview it against the ${range}`
+								: `Enter a number for the threshold to preview it against the ${range}`,
+						}
+					: {
+							title: `No data for this signal in the ${range}`,
+							hint: "Pick another signal or widen the range",
+						},
 				error: preview.error,
 			}),
 			...(focused.hiddenGroupCount > 0
@@ -215,7 +244,7 @@ const impactOf = stableSlice((model: Model): ImpactView =>
 	]),
 )
 const chartOf = stableSlice((model: Model): ChartView =>
-	Struct.pick(model, ["preview", "previewWindow", "chart", "themeColors", "chartRuntime"]),
+	Struct.pick(model, ["preview", "previewWindow", "previewPreset", "chart", "themeColors", "chartRuntime"]),
 )
 
 /** Step 2's chart card; the comparison block joins it while editing with unsaved changes. */
@@ -238,7 +267,7 @@ export const liveChartHero = (
 	)
 }
 
-/** `SkippedWindowsWarning`: windows the evaluator would skip can never fire. */
+/** Windows the evaluator would skip can never fire. */
 const skippedWarning = (h: H, slot: Model["preview"], form: RuleForm): ReadonlyArray<Html> => {
 	const preview = previewStateOf(slot, true, null).preview
 	const skipped = countSkippedWindows(preview)

@@ -7,6 +7,8 @@
  */
 import { AlertsService, type AlertSchedulerLane } from "@maple/backend/services/alerts/AlertsService"
 import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { AlertMaintenanceWindowsService } from "@maple/backend/services/alerts/AlertMaintenanceWindowsService"
+import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
 import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
@@ -18,16 +20,20 @@ import { FixVerificationTickService } from "@maple/backend/services/errors/FixVe
 import { GcpMetricsService } from "@maple/backend/services/integrations/GcpMetricsService"
 import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
-import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleMetricsService } from "@maple/backend/services/integrations/PlanetScaleMetricsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { PrReviewPostMergeService } from "@maple/backend/services/pr-review/PrReviewPostMergeService"
 import { RailwayMetricsService } from "@maple/backend/services/integrations/RailwayMetricsService"
+import { SearchConsoleImportService } from "@maple/backend/services/integrations/SearchConsoleImportService"
 import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { CostSyncService } from "@maple/backend/services/cost/CostSyncService"
+import { SecretResealService } from "@maple/backend/services/secrets/SecretResealService"
 import { SupabaseConnectionService } from "@maple/backend/services/integrations/SupabaseConnectionService"
 import { SupabaseInsightsService } from "@maple/backend/services/integrations/SupabaseInsightsService"
 import { SupabaseLogsService } from "@maple/backend/services/integrations/SupabaseLogsService"
-import { ServiceMapRollupService } from "@maple/backend/services/dashboards/ServiceMapRollupService"
+import { ServiceMapRollupService } from "@maple/backend/services/service-map/ServiceMapRollupService"
+import { VercelIntegrationService } from "@maple/backend/services/integrations/VercelIntegrationService"
+import { StatusPageCustomDomainsService } from "@maple/backend/services/status-pages/StatusPageCustomDomainsService"
 import { StatusPagePublisher } from "@maple/backend/services/status-pages/StatusPagePublisher"
 import { StatusPageReconciler } from "@maple/backend/services/status-pages/StatusPageReconciler"
 import {
@@ -40,18 +46,24 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import { EmailSender, type EmailSenderClient } from "@maple/backend/platform/bindings"
 import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
 import { envPorts } from "@maple/backend/platform/env-ports"
-import { Cause, Clock, Effect, Layer, Match, Option, Array as Arr, Record as Rec } from "effect"
+import { Cause, Clock, Effect, Layer, Option, Array as Arr, Record as Rec } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { isLaneOf, scheduleFor, type TickLane } from "./schedule.ts"
 import type { AlertingWorkerEnv } from "./worker.ts"
 
-/** The status page publisher, only when its KV and R2 bindings exist on this Worker. */
+/**
+ * The status page publisher, only when its KV and R2 bindings exist on this Worker. Custom domains
+ * ride along: unavailable (a no-op poll) where the Cloudflare for SaaS zone is not configured.
+ */
 const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
 	Option.match(bindings, {
 		onNone: () => Layer.empty,
 		onSome: ({ kv, bucket }) =>
-			Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
-				Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+			Layer.mergeAll(
+				Layer.mergeAll(StatusPagePublisher.layer, StatusPageReconciler.layer).pipe(
+					Layer.provide(StatusPageStore.fromBindings(kv, bucket)),
+				),
+				StatusPageCustomDomainsService.layer,
 			),
 	})
 
@@ -70,13 +82,19 @@ export const layerTick = (
 ) =>
 	Layer.mergeAll(
 		AlertsService.layer,
+		AlertMaintenanceWindowsService.layer,
 		AnomalyDetectionService.layer,
+		AnomalyAlertSource.layer,
 		CloudflareAnalyticsService.layer,
 		GcpMetricsService.layer,
 		PlanetScaleService.layer,
 		PlanetScaleMetricsService.layer,
 		RailwayMetricsService.layer,
+		VercelIntegrationService.layer,
+		SearchConsoleImportService.layer,
 		AwsConnectionService.layer,
+		CostSyncService.layer,
+		SecretResealService.layer,
 		SupabaseConnectionService.layer,
 		SupabaseLogsService.layer,
 		SupabaseInsightsService.layer,
@@ -92,7 +110,6 @@ export const layerTick = (
 		IncidentClassifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
-		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
 		Layer.provideMerge(
 			Layer.mergeAll(
@@ -170,11 +187,8 @@ const schedulerTick = (lane: AlertSchedulerLane, spanKey: string) =>
 		}),
 	)
 
-const alertTick = schedulerTick("standard", "scheduler")
-const alertLongQueryTick = schedulerTick("long_query", "scheduler_long_query")
-
 const errorTick = makeTick(
-	ErrorsService.use((errors) => errors.runTick()),
+	ErrorsService.use((errors) => errors.runTick),
 	"error",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -190,7 +204,7 @@ const errorTick = makeTick(
 )
 
 const fixVerificationTick = makeTick(
-	FixVerificationTickService.use((service) => service.runTick()),
+	FixVerificationTickService.use((service) => service.runTick),
 	"fix_verification",
 	(result) => ({
 		examined: result.examined,
@@ -203,7 +217,7 @@ const fixVerificationTick = makeTick(
 )
 
 const escalationTick = makeTick(
-	EscalationService.use((escalations) => escalations.runEscalationTick()),
+	EscalationService.use((escalations) => escalations.runEscalationTick),
 	"escalation",
 	(result) =>
 		result.processed > 0
@@ -247,7 +261,7 @@ const digestTick = Effect.andThen(opsDigestTick, webAnalyticsDigestTick)
 // four `*_email_sent_at` columns, which are what the portal's backfill reads.
 
 const serviceMapRollupTick = makeTick(
-	ServiceMapRollupService.use((rollup) => rollup.runRollupTick()),
+	ServiceMapRollupService.use((rollup) => rollup.runRollupTick),
 	"service_map_rollup",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -260,8 +274,8 @@ const serviceMapRollupTick = makeTick(
 	}),
 )
 
-const anomalyTick = makeTick(
-	AnomalyDetectionService.use((anomalies) => anomalies.runTick()),
+const anomalyDetectionTick = makeTick(
+	AnomalyDetectionService.use((anomalies) => anomalies.runTick),
 	"anomaly",
 	(result) => ({
 		orgsProcessed: result.orgsProcessed,
@@ -275,8 +289,38 @@ const anomalyTick = makeTick(
 	}),
 )
 
+// Gives each org with an open anomaly its default anomaly alert rule. Its own tick, so a
+// failure only logs and never touches detection.
+const anomalyDefaultRulesTick = makeTick(
+	AnomalyAlertSource.use((source) => source.backfillDefaultRules),
+	"anomaly_default_rules",
+	(created) => (created > 0 ? { defaultAnomalyRulesCreated: created } : undefined),
+)
+
+const anomalyTick = Effect.andThen(anomalyDetectionTick, anomalyDefaultRulesTick)
+
+// Its own lane, so a failure only logs and never touches the digest or another lane.
+const maintenanceWindowsTick = makeTick(
+	Effect.gen(function* () {
+		const nowMs = yield* Clock.currentTimeMillis
+		const windows = yield* AlertMaintenanceWindowsService
+		return yield* windows.materialize(nowMs)
+	}),
+	"maintenance_windows",
+	(result) =>
+		result.windows > 0
+			? {
+					maintenanceWindows: result.windows,
+					maintenanceSilencesUpserted: result.silencesUpserted,
+					maintenanceWindowFailures: result.failures,
+					maintenanceWindowPages: result.pages,
+					maintenanceWindowBudgetExhausted: result.budgetExhausted,
+				}
+			: undefined,
+)
+
 const cloudflareAnalyticsTick = makeTick(
-	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs()),
+	CloudflareAnalyticsService.use((analytics) => analytics.pollAllOrgs),
 	"cloudflare_analytics",
 	(result) => ({
 		orgs: result.orgs,
@@ -288,7 +332,7 @@ const cloudflareAnalyticsTick = makeTick(
 )
 
 const gcpMetricsTick = makeTick(
-	GcpMetricsService.use((gcp) => gcp.pollAll()),
+	GcpMetricsService.use((gcp) => gcp.pollAll),
 	"gcp_metrics",
 	(result) =>
 		result.polled + result.deferred > 0
@@ -304,7 +348,7 @@ const gcpMetricsTick = makeTick(
 )
 
 const planetScaleTick = makeTick(
-	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs()),
+	PlanetScaleService.use((planetscale) => planetscale.pollAllOrgs),
 	"planetscale",
 	(result) =>
 		result.orgs > 0
@@ -319,7 +363,7 @@ const planetScaleTick = makeTick(
 )
 
 const planetScaleMetricsTick = makeTick(
-	PlanetScaleMetricsService.use((metrics) => metrics.pollAll()),
+	PlanetScaleMetricsService.use((metrics) => metrics.pollAll),
 	"planetscale_metrics",
 	(result) =>
 		result.polled > 0
@@ -334,7 +378,7 @@ const planetScaleMetricsTick = makeTick(
 )
 
 const awsConnectionsTick = makeTick(
-	AwsConnectionService.use((aws) => aws.checkDue()),
+	AwsConnectionService.use((aws) => aws.checkDue),
 	"aws_connections",
 	(result) =>
 		result.due > 0
@@ -346,8 +390,19 @@ const awsConnectionsTick = makeTick(
 			: undefined,
 )
 
+const secretResealTick = makeTick(
+	SecretResealService.use((secrets) => secrets.resealDue),
+	"secret_reseal",
+	// Logged every pass, zeros included: a key is only retired once this reports nothing remaining.
+	(result) => ({
+		secretsResealed: result.resealed,
+		secretsResealFailed: result.failed,
+		secretsResealRemaining: result.remaining,
+	}),
+)
+
 const railwayMetricsTick = makeTick(
-	RailwayMetricsService.use((railway) => railway.pollAllOrgs()),
+	RailwayMetricsService.use((railway) => railway.pollAllOrgs),
 	"railway_metrics",
 	(result) =>
 		result.orgs > 0
@@ -360,8 +415,55 @@ const railwayMetricsTick = makeTick(
 			: undefined,
 )
 
+const costSyncTick = makeTick(
+	CostSyncService.use((cost) => cost.pollAllSources),
+	"cost_sync",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					synced: result.synced,
+					skipped: result.skipped,
+					failures: result.failures,
+					rowsWritten: result.rowsWritten,
+					requests: result.requests,
+				}
+			: undefined,
+)
+
+const vercelTick = makeTick(
+	VercelIntegrationService.use((vercel) => vercel.pollAllOrgs),
+	"vercel",
+	(result) =>
+		result.orgs > 0
+			? {
+					orgs: result.orgs,
+					deploymentsUpserted: result.deploymentsUpserted,
+					drainsRepaired: result.drainsRepaired,
+					skipped: result.skipped,
+					failures: result.failures,
+				}
+			: undefined,
+)
+
+const searchConsoleTick = makeTick(
+	SearchConsoleImportService.use((searchConsole) => searchConsole.pollAllSites),
+	"search_console",
+	(result) =>
+		result.due > 0
+			? {
+					due: result.due,
+					imported: result.imported,
+					skipped: result.skipped,
+					failures: result.failures,
+					rowsWritten: result.rowsWritten,
+					days: result.days,
+				}
+			: undefined,
+)
+
 const supabaseDiscoveryTick = makeTick(
-	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs()),
+	SupabaseConnectionService.use((supabase) => supabase.discoverAllOrgs),
 	"supabase_discovery",
 	(result) =>
 		result.orgs > 0
@@ -375,7 +477,7 @@ const supabaseDiscoveryTick = makeTick(
 )
 
 const supabaseLogsTick = makeTick(
-	SupabaseLogsService.use((supabase) => supabase.pollAllOrgs()),
+	SupabaseLogsService.use((supabase) => supabase.pollAllOrgs),
 	"supabase_logs",
 	(result) =>
 		result.orgs > 0
@@ -389,7 +491,7 @@ const supabaseLogsTick = makeTick(
 )
 
 const supabaseInsightsTick = makeTick(
-	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs()),
+	SupabaseInsightsService.use((supabase) => supabase.pollAllOrgs),
 	"supabase_insights",
 	(result) =>
 		result.orgs > 0
@@ -404,7 +506,7 @@ const supabaseInsightsTick = makeTick(
 )
 
 const prReviewPostMergeTick = makeTick(
-	PrReviewPostMergeService.use((service) => service.runTick()),
+	PrReviewPostMergeService.use((service) => service.runTick),
 	"pr_review_post_merge",
 	(result) =>
 		result.examined > 0
@@ -419,16 +521,19 @@ const prReviewPostMergeTick = makeTick(
 )
 
 /**
- * Imports break-glass updates, repairs auto incidents, then sweeps: edge cleanups, lagging pages
- * and the heartbeat (written by the sweep only once it reached the database). Each step isolated.
+ * Imports break-glass updates, repairs auto incidents, starts and completes maintenance whose
+ * window began or ended, checks custom domains due a check, then
+ * sweeps: edge cleanups, lagging pages and the heartbeat (written by the sweep only once it
+ * reached the database). Each step isolated.
  */
 const statusPagesTick = Effect.gen(function* () {
 	const publisher = yield* Effect.serviceOption(StatusPagePublisher)
 	const reconciler = yield* Effect.serviceOption(StatusPageReconciler)
-	if (Option.isNone(publisher) || Option.isNone(reconciler)) {
+	const domains = yield* Effect.serviceOption(StatusPageCustomDomainsService)
+	if (Option.isNone(publisher) || Option.isNone(reconciler) || Option.isNone(domains)) {
 		return yield* Effect.logInfo("Status page storage is not bound; skipping status page publishing")
 	}
-	yield* makeTick(reconciler.value.reconcileAll(), "status_page_reconcile", (result) =>
+	yield* makeTick(reconciler.value.reconcileAll, "status_page_reconcile", (result) =>
 		result.imported + result.cleared + result.failed > 0
 			? {
 					statusPageImported: result.imported,
@@ -437,10 +542,26 @@ const statusPagesTick = Effect.gen(function* () {
 				}
 			: undefined,
 	)
-	yield* makeTick(reconciler.value.repairAutoIncidents(), "status_page_repair", (repaired) =>
+	yield* makeTick(reconciler.value.repairAutoIncidents, "status_page_repair", (repaired) =>
 		repaired > 0 ? { statusPageAutoIncidentsRepaired: repaired } : undefined,
 	)
+	// Before the sweep, so a window that just began or ended is on the page this same minute.
+	yield* makeTick(reconciler.value.advanceMaintenance, "status_page_maintenance", (advanced) =>
+		advanced > 0 ? { statusPageMaintenanceAdvanced: advanced } : undefined,
+	)
 	const nowMs = yield* Clock.currentTimeMillis
+	// Before the sweep, so a domain that just went live is routed in this same minute.
+	yield* makeTick(domains.value.poll(nowMs), "status_page_custom_domains", (result) =>
+		result.checked + result.errored + result.expired > 0
+			? {
+					statusPageCustomDomainsChecked: result.checked,
+					statusPageCustomDomainsActivated: result.activated,
+					statusPageCustomDomainsFailed: result.failed,
+					statusPageCustomDomainsErrored: result.errored,
+					statusPageCustomDomainsExpired: result.expired,
+				}
+			: undefined,
+	)
 	yield* makeTick(publisher.value.sweep(nowMs), "status_page_publish", (result) =>
 		result.due + result.cleaned + result.cleanupsFailed > 0
 			? {
@@ -455,55 +576,84 @@ const statusPagesTick = Effect.gen(function* () {
 	)
 })
 
-export interface ScheduledTickPrograms<R = never> {
-	readonly alert: Effect.Effect<void, never, R>
-	readonly alertLongQuery: Effect.Effect<void, never, R>
-	readonly anomaly: Effect.Effect<void, never, R>
-	readonly awsConnections: Effect.Effect<void, never, R>
-	readonly cloudflareAnalytics: Effect.Effect<void, never, R>
-	readonly digest: Effect.Effect<void, never, R>
-	readonly error: Effect.Effect<void, never, R>
-	readonly escalation: Effect.Effect<void, never, R>
-	readonly fixVerification: Effect.Effect<void, never, R>
-	readonly gcpMetrics: Effect.Effect<void, never, R>
-	readonly planetScale: Effect.Effect<void, never, R>
-	readonly planetScaleMetrics: Effect.Effect<void, never, R>
-	readonly prReviewPostMerge: Effect.Effect<void, never, R>
-	readonly railwayMetrics: Effect.Effect<void, never, R>
-	readonly serviceMapRollup: Effect.Effect<void, never, R>
-	readonly statusPages: Effect.Effect<void, never, R>
-	readonly supabaseDiscovery: Effect.Effect<void, never, R>
-	readonly supabaseLogs: Effect.Effect<void, never, R>
-	readonly supabaseInsights: Effect.Effect<void, never, R>
+/** Every tick the alerting Worker runs, by name. */
+const scheduledTicks = {
+	alert: schedulerTick("standard", "scheduler"),
+	alertLongQuery: schedulerTick("long_query", "scheduler_long_query"),
+	anomaly: anomalyTick,
+	awsConnections: awsConnectionsTick,
+	cloudflareAnalytics: cloudflareAnalyticsTick,
+	costSync: costSyncTick,
+	digest: digestTick,
+	error: errorTick,
+	escalation: escalationTick,
+	fixVerification: fixVerificationTick,
+	gcpMetrics: gcpMetricsTick,
+	maintenanceWindows: maintenanceWindowsTick,
+	planetScale: planetScaleTick,
+	planetScaleMetrics: planetScaleMetricsTick,
+	prReviewPostMerge: prReviewPostMergeTick,
+	railwayMetrics: railwayMetricsTick,
+	searchConsole: searchConsoleTick,
+	secretReseal: secretResealTick,
+	serviceMapRollup: serviceMapRollupTick,
+	statusPages: statusPagesTick,
+	supabaseDiscovery: supabaseDiscoveryTick,
+	supabaseLogs: supabaseLogsTick,
+	supabaseInsights: supabaseInsightsTick,
+	vercel: vercelTick,
 }
 
-/** The program each lane runs; every tick belongs to exactly one lane. */
+export type ScheduledTickName = keyof typeof scheduledTicks
+type ScheduledServices = {
+	readonly [Name in ScheduledTickName]: Effect.Services<(typeof scheduledTicks)[Name]>
+}[ScheduledTickName]
+
+export type ScheduledTickPrograms<R = never> = {
+	readonly [Name in ScheduledTickName]: Effect.Effect<void, never, R>
+}
+
+export const scheduledTickNames: ReadonlyArray<ScheduledTickName> = Rec.keys(scheduledTicks)
+
+/** A program per tick name, for driving the lanes with stand-in ticks. */
+export const tickProgramsFrom = <R>(
+	make: (name: ScheduledTickName) => Effect.Effect<void, never, R>,
+): ScheduledTickPrograms<R> => Rec.map(scheduledTicks, (_, name) => make(name))
+
+/** The ticks each lane runs, in order; every tick belongs to exactly one lane. */
+const LANE_TICKS = {
+	alert: ["alert"],
+	alert_long_query: ["alertLongQuery"],
+	// `fixVerification` is chained onto `error` rather than given its own lane: a window this
+	// minute's error tick just refuted must already be settled when the verification tick looks at it.
+	error: ["error", "fixVerification"],
+	// Status pages ride the escalation lane: the minute cron is one connection under its cap.
+	escalation: ["escalation", "statusPages"],
+	anomaly: ["anomaly"],
+	cloudflare_analytics: ["cloudflareAnalytics"],
+	gcp_metrics: ["gcpMetrics"],
+	// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
+	// they read the branch list the inventory just refreshed.
+	planetscale: ["planetScale", "planetScaleMetrics"],
+	railway_metrics: ["railwayMetrics"],
+	pr_review_post_merge: ["prReviewPostMerge"],
+	digest: ["digest"],
+	service_map_rollup: ["serviceMapRollup"],
+	aws_connections: ["awsConnections"],
+	// Moves stored credentials onto the current key (docs/secret-encryption.md).
+	secret_reseal: ["secretReseal"],
+	supabase_discovery: ["supabaseDiscovery"],
+	supabase_logs: ["supabaseLogs"],
+	supabase_insights: ["supabaseInsights"],
+	maintenance_windows: ["maintenanceWindows"],
+	search_console: ["searchConsole"],
+	cost_sync: ["costSync"],
+	vercel: ["vercel"],
+} as const satisfies Record<TickLane, ReadonlyArray<ScheduledTickName>>
+
+/** The program a lane runs: its ticks one after another. */
 const laneProgram = <R>(lane: TickLane, ticks: ScheduledTickPrograms<R>): Effect.Effect<void, never, R> =>
-	Match.value(lane).pipe(
-		Match.when("alert", () => ticks.alert),
-		Match.when("alert_long_query", () => ticks.alertLongQuery),
-		// `fixVerification` is chained onto `error` rather than given its own lane:
-		// a window this minute's error tick just refuted must already be settled
-		// when the verification tick looks at it.
-		Match.when("error", () => Effect.andThen(ticks.error, ticks.fixVerification)),
-		// Status pages ride the escalation lane: the minute cron is one connection under its cap.
-		Match.when("escalation", () => Effect.andThen(ticks.escalation, ticks.statusPages)),
-		Match.when("anomaly", () => ticks.anomaly),
-		Match.when("cloudflare_analytics", () => ticks.cloudflareAnalytics),
-		Match.when("gcp_metrics", () => ticks.gcpMetrics),
-		// Metrics ride the inventory's lane: the 5-minute cron is at its six-connection cap, and
-		// they read the branch list the inventory just refreshed.
-		Match.when("planetscale", () => Effect.andThen(ticks.planetScale, ticks.planetScaleMetrics)),
-		Match.when("railway_metrics", () => ticks.railwayMetrics),
-		Match.when("pr_review_post_merge", () => ticks.prReviewPostMerge),
-		Match.when("digest", () => ticks.digest),
-		Match.when("service_map_rollup", () => ticks.serviceMapRollup),
-		Match.when("aws_connections", () => ticks.awsConnections),
-		Match.when("supabase_discovery", () => ticks.supabaseDiscovery),
-		Match.when("supabase_logs", () => ticks.supabaseLogs),
-		Match.when("supabase_insights", () => ticks.supabaseInsights),
-		Match.exhaustive,
-	)
+	Effect.forEach(LANE_TICKS[lane], (name) => ticks[name], { discard: true })
 
 /**
  * One lane of `cron`, bounded by the cron's deadline. Kept apart from the
@@ -537,48 +687,6 @@ export const selectLaneProgram = <R>(
 	)
 }
 
-type ScheduledServices =
-	| AlertsService
-	| AnomalyDetectionService
-	| AwsConnectionService
-	| CloudflareAnalyticsService
-	| DigestService
-	| WebAnalyticsDigestService
-	| ErrorsService
-	| EscalationService
-	| FixVerificationTickService
-	| GcpMetricsService
-	| PlanetScaleService
-	| PlanetScaleMetricsService
-	| PrReviewPostMergeService
-	| RailwayMetricsService
-	| ServiceMapRollupService
-	| SupabaseConnectionService
-	| SupabaseLogsService
-	| SupabaseInsightsService
-
-export const scheduledTicks: ScheduledTickPrograms<ScheduledServices> = {
-	alert: alertTick,
-	alertLongQuery: alertLongQueryTick,
-	anomaly: anomalyTick,
-	awsConnections: awsConnectionsTick,
-	cloudflareAnalytics: cloudflareAnalyticsTick,
-	digest: digestTick,
-	error: errorTick,
-	escalation: escalationTick,
-	fixVerification: fixVerificationTick,
-	gcpMetrics: gcpMetricsTick,
-	planetScale: planetScaleTick,
-	planetScaleMetrics: planetScaleMetricsTick,
-	prReviewPostMerge: prReviewPostMergeTick,
-	railwayMetrics: railwayMetricsTick,
-	serviceMapRollup: serviceMapRollupTick,
-	statusPages: statusPagesTick,
-	supabaseDiscovery: supabaseDiscoveryTick,
-	supabaseLogs: supabaseLogsTick,
-	supabaseInsights: supabaseInsightsTick,
-}
-
 /**
  * One lane of a cron fire, over the layer graph built from this invocation's
  * env and released when the lane completes. Each lane has its own Postgres
@@ -593,8 +701,8 @@ export const runScheduled = (
 	email: Option.Option<EmailSenderClient>,
 	chatSessions: ChatSessionNamespace,
 	statusPages: Option.Option<StatusPageBindings>,
-): Effect.Effect<void, unknown> =>
-	withPgConnectionScope(selectLaneProgram(cron, lane, scheduledTicks)).pipe(
+) =>
+	withPgConnectionScope(selectLaneProgram<ScheduledServices>(cron, lane, scheduledTicks)).pipe(
 		// One lane is one application run: the layer is built here and released
 		// with it, as the async entry's ManagedRuntime was.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide

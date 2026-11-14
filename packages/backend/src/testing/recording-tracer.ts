@@ -11,7 +11,7 @@ import { Tracer, Array as Arr } from "effect"
  *
  * `Tracer.NativeSpan` exposes `name`, `kind` and `attributes`; it does NOT
  * expose the exit status. A test that needs the recorded status has to capture
- * it separately (see `apps/api/src/http/server-error-span.test.ts`).
+ * it separately.
  */
 export const makeRecordingTracer = () => {
 	const spans: Array<Tracer.NativeSpan> = []

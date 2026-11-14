@@ -15,7 +15,7 @@
  * else: the path they are requested at, the operation that resolves them, and
  * how long the answer may be cached. {@link CHART_KINDS} is those three facts.
  */
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { chartCard, rankedCard, type ChartCard } from "./chart-card"
 import { renderNode, type AssetFetcher } from "./render"
 import type { ShareChartResponse } from "@maple/domain/http"
@@ -70,8 +70,9 @@ export const chartRequestFromPath = (
 	pathname: string,
 ): { readonly kind: ChartKind; readonly chartId: string } | undefined => {
 	if (!Str.endsWith(CHART_SUFFIX)(pathname)) return undefined
-	const kind = CHART_KINDS.find((candidate) => Str.startsWith(candidate.pathPrefix)(pathname))
-	if (kind === undefined) return undefined
+	const matched = Arr.findFirst(CHART_KINDS, (candidate) => Str.startsWith(candidate.pathPrefix)(pathname))
+	if (Option.isNone(matched)) return undefined
+	const kind = matched.value
 
 	const encoded = Str.slice(kind.pathPrefix.length, pathname.length - CHART_SUFFIX.length)(pathname)
 	let chartId: string

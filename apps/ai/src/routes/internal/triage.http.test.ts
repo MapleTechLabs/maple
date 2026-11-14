@@ -112,7 +112,7 @@ const makeHarness = () => {
 					priorDiagnoses: [],
 				}),
 			}),
-			Context.empty() as never,
+			Context.empty(),
 		)
 		const text = await response.text()
 		return {

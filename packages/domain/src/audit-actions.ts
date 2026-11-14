@@ -1,6 +1,6 @@
 import { ErrorIssueEventType } from "./http/errors"
 import { type PublicIdPrefix, PublicIdPrefixes } from "./http/v2/public-id"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Record as Rec, String as Str } from "effect"
 
 /**
  * Every audited action in Maple, grouped by the resource it acts on.
@@ -26,6 +26,11 @@ export const AuditResources = {
 		verbs: ["created", "updated", "deleted"],
 	},
 	alert_rule: { prefix: PublicIdPrefixes.alertRule, verbs: ["created", "updated", "deleted"] },
+	alert_silence: { prefix: PublicIdPrefixes.alertSilence, verbs: ["created", "updated", "ended"] },
+	alert_maintenance_window: {
+		prefix: PublicIdPrefixes.alertMaintenanceWindow,
+		verbs: ["created", "updated", "deleted"],
+	},
 	anomaly_incident: { prefix: PublicIdPrefixes.anomalyIncident, verbs: ["resolved"] },
 	/** Org-singleton settings, no resource id. */
 	anomaly_settings: { verbs: ["updated"] },
@@ -37,6 +42,11 @@ export const AuditResources = {
 		verbs: ["created", "updated", "deleted"],
 	},
 	ingest_rule: { prefix: PublicIdPrefixes.ingestRule, verbs: ["created", "updated", "deleted"] },
+	/** External data sources; `metadata` says whether a secret changed, never its value. */
+	data_source: {
+		prefix: PublicIdPrefixes.dataSource,
+		verbs: ["created", "updated", "deleted", "tested", "catalog_refreshed", "catalog_curated"],
+	},
 	dashboard: {
 		prefix: PublicIdPrefixes.dashboard,
 		verbs: ["created", "updated", "deleted", "version_restored"],
@@ -67,6 +77,18 @@ export const AuditResources = {
 	device_credential: { prefix: PublicIdPrefixes.deviceCredential, verbs: ["registered", "revoked"] },
 	/** Verbs mirror the issue event types: `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },
+	escalation_chain: {
+		prefix: PublicIdPrefixes.escalationChain,
+		verbs: ["created", "updated", "deleted"],
+	},
+	oncall_schedule: {
+		prefix: PublicIdPrefixes.oncallSchedule,
+		verbs: ["created", "updated", "deleted"],
+	},
+	oncall_override: {
+		prefix: PublicIdPrefixes.oncallOverride,
+		verbs: ["created", "deleted"],
+	},
 	/** One connected Google Cloud scope; the scope and what it collects are in `metadata`. */
 	gcp_connector: {
 		prefix: PublicIdPrefixes.gcpConnector,
@@ -84,13 +106,13 @@ export const AuditResources = {
 	},
 	/** Org-singleton public/private pair; which one rolled is in `metadata`. */
 	ingest_key: { verbs: ["rolled"] },
+	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
+	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
 	/**
 	 * Every MCP tool invocation, whichever surface drove it (MCP transport, the
 	 * in-app chat, workflows, internal RPC). The tool and its parameters are in
 	 * `metadata`; a tool that also mutates a resource records that action too.
 	 */
-	/** An MCP client's OAuth grant; the client and the member who approved it are in `metadata`. */
-	mcp_connection: { prefix: PublicIdPrefixes.mcpConnection, verbs: ["revoked"] },
 	mcp_tool: { verbs: ["called"] },
 	investigation: {
 		prefix: PublicIdPrefixes.investigation,
@@ -107,6 +129,10 @@ export const AuditResources = {
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
 	cloudflare_integration: { verbs: ["zones_updated"] },
+	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
+	cost_source_key: { verbs: ["updated", "deleted"] },
+	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
+	cost_source: { verbs: ["created", "deleted"] },
 	/**
 	 * Org membership, learned from Clerk's webhook; the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
@@ -120,7 +146,11 @@ export const AuditResources = {
 	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	uptime_monitor: { prefix: PublicIdPrefixes.uptimeMonitor, verbs: ["created", "updated", "deleted"] },
-	/** A public status page; component reorders and break-glass token changes are page-level. */
+	slo: { prefix: PublicIdPrefixes.slo, verbs: ["created", "updated", "deleted"] },
+	/**
+	 * A public status page; component reorders, break-glass token and custom domain changes are
+	 * page-level (the hostname is in `metadata`).
+	 */
 	status_page: {
 		prefix: PublicIdPrefixes.statusPage,
 		verbs: [
@@ -132,6 +162,10 @@ export const AuditResources = {
 			"config_applied",
 			"break_glass_rotated",
 			"break_glass_revoked",
+			"custom_domain_set",
+			"custom_domain_removed",
+			"password_set",
+			"password_removed",
 		],
 	},
 	status_page_component: {
@@ -163,6 +197,8 @@ export const AuditResources = {
 	 */
 	telemetry: { verbs: ["read", "sql_executed"] },
 	/** Org-singleton BYO-ClickHouse connection; holds warehouse credentials. */
+	/** Org-singleton Vercel team connection; the team and what the drains forward are in `metadata`. */
+	vercel_integration: { verbs: ["connected", "updated", "disconnected"] },
 	warehouse_settings: { verbs: ["updated", "deleted", "schema_applied"] },
 	/** Short-lived device credentials for the mobile widget; keyed by installation. */
 	widget_credential: { verbs: ["minted", "revoked"] },
@@ -187,12 +223,18 @@ export const AuditResourceLabels = {
 	ai_provider_key: "AI provider key",
 	alert_destination: "Alert destination",
 	alert_rule: "Alert rule",
+	escalation_chain: "Escalation chain",
+	oncall_schedule: "On-call schedule",
+	oncall_override: "On-call override",
+	alert_silence: "Alert silence",
+	alert_maintenance_window: "Maintenance window",
 	anomaly_incident: "Anomaly",
 	anomaly_settings: "Anomaly detection",
 	api: "API",
 	api_key: "API key",
 	attribute_mapping: "Attribute mapping",
 	ingest_rule: "Ingest rule",
+	data_source: "Data source",
 	dashboard: "Dashboard",
 	chat_integration: "Chat integration",
 	dashboard_share: "Dashboard share",
@@ -207,10 +249,13 @@ export const AuditResourceLabels = {
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
+	cost_source_key: "Cost source key",
+	cost_source: "Cost source",
 	member: "Member",
 	organization: "Organization",
 	scrape_target: "Scrape target",
 	uptime_monitor: "Uptime monitor",
+	slo: "SLO",
 	status_page: "Status page",
 	status_page_component: "Status page component",
 	status_page_incident: "Status page incident",
@@ -221,6 +266,7 @@ export const AuditResourceLabels = {
 	session_replay: "Session replay",
 	support_channel: "Support channel",
 	telemetry: "Telemetry",
+	vercel_integration: "Vercel integration",
 	warehouse_settings: "Warehouse connection",
 	widget_credential: "Widget credential",
 } as const satisfies Record<AuditResourceType, string>
@@ -237,6 +283,20 @@ export const AuditActionLabels = {
 	"alert_rule.created": "Created alert rule",
 	"alert_rule.updated": "Updated alert rule",
 	"alert_rule.deleted": "Deleted alert rule",
+	"escalation_chain.created": "Created escalation chain",
+	"escalation_chain.updated": "Updated escalation chain",
+	"escalation_chain.deleted": "Deleted escalation chain",
+	"oncall_schedule.created": "Created on-call schedule",
+	"oncall_schedule.updated": "Updated on-call schedule",
+	"oncall_schedule.deleted": "Deleted on-call schedule",
+	"oncall_override.created": "Created on-call override",
+	"oncall_override.deleted": "Deleted on-call override",
+	"alert_silence.created": "Silenced alerts",
+	"alert_silence.updated": "Updated alert silence",
+	"alert_silence.ended": "Ended alert silence",
+	"alert_maintenance_window.created": "Created maintenance window",
+	"alert_maintenance_window.updated": "Updated maintenance window",
+	"alert_maintenance_window.deleted": "Deleted maintenance window",
 	"anomaly_incident.resolved": "Resolved anomaly",
 	"anomaly_settings.updated": "Updated anomaly detection",
 	"api.request": "Made API request",
@@ -249,6 +309,12 @@ export const AuditActionLabels = {
 	"ingest_rule.created": "Created ingest rule",
 	"ingest_rule.updated": "Updated ingest rule",
 	"ingest_rule.deleted": "Deleted ingest rule",
+	"data_source.created": "Connected data source",
+	"data_source.updated": "Updated data source",
+	"data_source.deleted": "Deleted data source",
+	"data_source.tested": "Tested data source",
+	"data_source.catalog_refreshed": "Refreshed data source catalog",
+	"data_source.catalog_curated": "Curated data source catalog entry",
 	"dashboard.created": "Created dashboard",
 	"dashboard.updated": "Updated dashboard",
 	"dashboard.deleted": "Deleted dashboard",
@@ -283,6 +349,8 @@ export const AuditActionLabels = {
 	"error_issue.pr_merged": "Merged linked pull request",
 	"error_issue.verification_started": "Started fix verification",
 	"error_issue.verification_verdict": "Recorded fix verification result",
+	"error_issue.merge": "Merged issues",
+	"error_issue.unmerge": "Unmerged issue",
 	"gcp_connector.created": "Connected Google Cloud",
 	"gcp_connector.updated": "Updated Google Cloud connector",
 	"gcp_connector.removal_confirmed": "Confirmed Google Cloud resources removed",
@@ -308,6 +376,10 @@ export const AuditActionLabels = {
 	"planetscale_integration.metrics_token_set": "Set PlanetScale metrics token",
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
+	"cost_source_key.updated": "Updated cost source key",
+	"cost_source_key.deleted": "Removed cost source key",
+	"cost_source.created": "Added cost source",
+	"cost_source.deleted": "Removed cost source",
 	"member.added": "Added member",
 	"member.role_changed": "Changed member role",
 	"member.removed": "Removed member",
@@ -319,6 +391,9 @@ export const AuditActionLabels = {
 	"uptime_monitor.created": "Created uptime monitor",
 	"uptime_monitor.updated": "Updated uptime monitor",
 	"uptime_monitor.deleted": "Deleted uptime monitor",
+	"slo.created": "Created SLO",
+	"slo.updated": "Updated SLO",
+	"slo.deleted": "Deleted SLO",
 	"status_page.created": "Created status page",
 	"status_page.updated": "Updated status page",
 	"status_page.deleted": "Deleted status page",
@@ -327,6 +402,10 @@ export const AuditActionLabels = {
 	"status_page.config_applied": "Applied status page config",
 	"status_page.break_glass_rotated": "Rotated status page break-glass token",
 	"status_page.break_glass_revoked": "Revoked status page break-glass token",
+	"status_page.custom_domain_set": "Set status page custom domain",
+	"status_page.custom_domain_removed": "Removed status page custom domain",
+	"status_page.password_set": "Set status page password",
+	"status_page.password_removed": "Removed status page password",
 	"status_page_component.created": "Created status page component",
 	"status_page_component.updated": "Updated status page component",
 	"status_page_component.deleted": "Deleted status page component",
@@ -342,6 +421,9 @@ export const AuditActionLabels = {
 	"support_channel.invite_sent": "Sent support channel invite",
 	"telemetry.read": "Read telemetry",
 	"telemetry.sql_executed": "Ran SQL query",
+	"vercel_integration.connected": "Connected Vercel",
+	"vercel_integration.updated": "Updated Vercel forwarding",
+	"vercel_integration.disconnected": "Disconnected Vercel",
 	"warehouse_settings.updated": "Updated warehouse connection",
 	"warehouse_settings.deleted": "Disconnected warehouse",
 	"warehouse_settings.schema_applied": "Applied warehouse schema",
@@ -355,9 +437,21 @@ export const auditActions = (): ReadonlyArray<string> =>
 		Arr.map(verbs, (verb) => `${resource}.${verb}`),
 	)
 
-const isAuditAction = (action: string): action is AuditAction => Object.hasOwn(AuditActionLabels, action)
+const isAuditAction = (action: string): action is AuditAction =>
+	Rec.has<string, string>(AuditActionLabels, action)
 const isAuditResourceType = (type: string): type is AuditResourceType =>
-	Object.hasOwn(AuditResourceLabels, type)
+	Rec.has<string, string>(AuditResourceLabels, type)
+
+/**
+ * Actions that record access rather than a change: reads, tool calls, SQL runs
+ * and API requests. A heavy agent user writes hundreds of these a day. The
+ * server filters by them and the web mutes them, so both read this one list.
+ */
+export const AUDIT_ACCESS_ACTION_SUFFIXES = [".read", ".called", ".sql_executed", ".request"] as const
+
+/** True for an access action (see {@link AUDIT_ACCESS_ACTION_SUFFIXES}). */
+export const isAuditAccessAction = (action: string): boolean =>
+	Arr.some(AUDIT_ACCESS_ACTION_SUFFIXES, (suffix) => Str.endsWith(suffix)(action))
 
 /** Label for an action string read off a row; null for one this build does not know. */
 export const auditActionLabel = (action: string): string | null =>

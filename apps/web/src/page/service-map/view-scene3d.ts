@@ -1,5 +1,6 @@
-import { liveTopology } from "../../components/service-map/three/live-topology"
-import { mapPalette, paperBackground } from "../../components/service-map/three/palette"
+import { encodeJson } from "@maple/views/data/request-key"
+import { liveTopology } from "./three/live-topology"
+import { mapPalette, paperBackground } from "./three/palette"
 import {
 	connectedIds,
 	type District,
@@ -7,14 +8,14 @@ import {
 	formatRate,
 	HEALTH_COLOR,
 	HEALTH_LABEL,
-} from "../../components/service-map/three/spatial-layout"
-import type { Edge3D, Topology3D } from "../../components/service-map/three/types"
-import { Option, Schema, Array as Arr } from "effect"
+} from "./three/spatial-layout"
+import type { Edge3D, Topology3D } from "./three/types"
+import type { WorldEntity } from "@maple/domain/http"
+import { Option, Array as Arr } from "effect"
 import { Mount } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as ServiceMap from "@maple/views/service-map/map/service-map"
 import { button } from "@maple/views/ui/button"
-import { heading } from "@maple/views/ui/heading"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
@@ -30,12 +31,15 @@ import {
 	STATE_ATTRIBUTE,
 	TOPOLOGY_ATTRIBUTE,
 	WatchTheme,
+	WORLD_ATTRIBUTE,
 } from "./scene3d"
-import { type LinkLabel, linkLabels, spatialLayoutOf } from "./scene-layout"
-import { hstack } from "@maple/views/ui/stack"
+import { type CustomLayout, customLayoutOf, type LinkLabel, linkLabels, topologyKeyOf } from "./scene-layout"
+import { optimisticEntities } from "./factory/edits"
+import { customizeControls, editPanel } from "./view-customize"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { layer } from "@maple/views/ui/layer"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+import { typography } from "@maple/views/ui/typography"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The 3D viewport: the perspective bar, the
 // paper section with the canvas wrappers, the timber sign labels, the HUD, legend and camera
@@ -79,7 +83,7 @@ export type Scene3dOptions<M> = Readonly<{
 	toMessage: (message: Message) => M
 }>
 
-/** `ServiceMap3DViewport`'s props: a fixed topology, as the 3D lab passes it with `sample`. */
+/** The viewport's options: a fixed topology, as the 3D lab passes it with `sample`. */
 export type ViewportOptions<M> = Readonly<{
 	model: Model
 	topology: Topology3D
@@ -91,67 +95,73 @@ export type ViewportOptions<M> = Readonly<{
 
 type Palette = ReturnType<typeof mapPalette>
 
-/** `topology` as `LiveServiceMap3D` builds it from the effective graph and its dimming. */
-export const topologyOf = (map: ServiceMap.Model): Topology3D =>
-	liveTopology(
+const topologies = new WeakMap<ServiceMap.Model["graph"], Topology3D>()
+
+/** The 3D topology from the map's effective graph and its dimming, built once per graph. */
+export const topologyOf = (map: ServiceMap.Model): Topology3D => {
+	const known = topologies.get(map.graph)
+	if (known !== undefined) return known
+	const topology = liveTopology(
 		map.graph.nodes,
 		map.graph.edges,
 		map.graph.declutter.dimmedNodeIds,
 		map.graph.declutter.dimmedEdgeIds,
 	)
+	topologies.set(map.graph, topology)
+	return topology
+}
 
 const perspectiveBar = <M>(
 	h: HtmlBuilder<M>,
 	{ model, reducedMotion, toMessage }: ViewportOptions<M>,
 ): Html => {
 	const flowing = model.traffic ?? !reducedMotion
-	return h.div(
-		[h.Class("flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2")],
-		[
-			ToggleGroup.view(h, {
-				model: model.perspectiveGroup,
-				toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
-				variant: "outline",
-				size: "xs",
-				items: [
-					{
-						value: "atlas",
-						label: "Atlas",
-						children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
-					},
-					{
-						value: "cascade",
-						label: "Cascade",
-						children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
-					},
-				],
-			}),
-			h.span(
-				[h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block")],
-				[VIEW_COPY[model.perspective].encoding],
-			),
-			// Reduced motion starts the traffic paused; the button still turns it on.
-			button(
-				h,
+	return hstack(h, { gap: "2", align: "center", wrap: true, className: stripClass("head", "shrink-0") }, [
+		ToggleGroup.view(h, {
+			model: model.perspectiveGroup,
+			toParentMessage: (message) => toMessage(Message.GotPerspectiveMessage({ message })),
+			variant: "outline",
+			size: "xs",
+			items: [
 				{
-					size: "sm",
-					variant: "ghost",
-					className: "ml-auto text-xs",
-					attributes: [
-						h.AriaPressed(String(flowing)),
-						h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
-						...(reducedMotion && !flowing
-							? [h.Title("Paused for your reduced-motion setting")]
-							: []),
-					],
+					value: "atlas",
+					label: "Atlas",
+					children: [icon(h, "CubeIcon", { size: 14 }), "Atlas"],
 				},
-				[
-					icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
-					flowing ? "Pause traffic" : "Play traffic",
+				{
+					value: "cascade",
+					label: "Cascade",
+					children: [icon(h, "LayersIcon", { size: 14 }), "Cascade"],
+				},
+			],
+		}),
+		h.span(
+			[
+				h.Class("ml-3 hidden text-2xs text-muted-foreground sm:block"),
+				h.Title(VIEW_COPY[model.perspective].description),
+			],
+			[VIEW_COPY[model.perspective].encoding],
+		),
+		...customizeControls(h, model, toMessage),
+		// Reduced motion starts the traffic paused; the button still turns it on.
+		button(
+			h,
+			{
+				size: "sm",
+				variant: "ghost",
+				className: "ml-auto text-xs",
+				attributes: [
+					h.AriaPressed(String(flowing)),
+					h.OnClick(toMessage(Message.ClickedTraffic({ isFlowing: flowing }))),
+					...(reducedMotion && !flowing ? [h.Title("Paused for your reduced-motion setting")] : []),
 				],
-			),
-		],
-	)
+			},
+			[
+				icon(h, flowing ? "MediaPauseIcon" : "MediaPlayIcon"),
+				flowing ? "Pause traffic" : "Play traffic",
+			],
+		),
+	])
 }
 
 /** The labels' inline style before the rig first places them. */
@@ -186,7 +196,7 @@ const nodeLabels = <M>(
 				onClick: toMessage(Message.PickedNode({ nodeId: isSelected ? null : node.id })),
 				isSelected,
 				label: `Select ${node.label}${badge ? `, ${badge.label}` : ""}`,
-				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
+				className: `pointer-events-auto absolute top-0 left-0 flex max-w-40 border font-mono text-4xs leading-normal whitespace-nowrap focus-visible:outline-2 focus-visible:outline-ring focus-visible:ring-0 ${SIGN_CLASS} ${isSelected ? "border-current" : "border-current/60 hover:border-current active:border-current"}`,
 				attributes: [
 					h.Key(node.id),
 					h.Attribute(LABEL, node.id),
@@ -209,14 +219,19 @@ const linkTags = <M>(
 	palette: Palette,
 	toMessage: (message: Message) => M,
 ): ReadonlyArray<Html> => {
-	const labelOf = (id: string) => topology.nodes.find((node) => node.id === id)?.label
+	const labelOf = (id: string) =>
+		Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(topology.nodes, (node) => node.id === id),
+				(node) => node.label,
+			),
+		)
 	return Arr.map(
 		Arr.filter(
 			Arr.filter(links, (link) => !link.edge.relation),
+			// Rates only for the selected service's calls: on every busy belt they bury the map.
 			(link) =>
-				selectedId
-					? link.edge.source === selectedId || link.edge.target === selectedId
-					: link.prominent,
+				selectedId !== null && (link.edge.source === selectedId || link.edge.target === selectedId),
 		),
 		(link) => {
 			const rate = formatRate(link.edge.callsPerSecond, link.edge.hasSampling)
@@ -252,14 +267,16 @@ const districtPlanks = <M>(
 			[
 				h.Key(`${perspective}:${district.id}`),
 				h.Attribute(LABEL, `district:${district.id}`),
-				h.Class(`absolute top-0 left-0 font-mono text-4xs uppercase tracking-widest ${PLANK_CLASS}`),
+				h.Class(
+					`absolute top-0 left-0 font-mono text-4xs uppercase tracking-overline ${PLANK_CLASS}`,
+				),
 				h.Style({ visibility: "hidden", "background-color": palette.trunk, color: palette.tape }),
 			],
 			[district.label],
 		),
 	)
 
-/** R3F's `<Canvas style={{ position: "absolute", inset: 0 }}>`: two wrapper divs and the canvas. */
+/** Two wrapper divs and the canvas: `startScene` sizes to the inner one and listens on the outer. */
 const canvas = <M>(
 	h: HtmlBuilder<M>,
 	input: {
@@ -268,6 +285,7 @@ const canvas = <M>(
 		model: Model
 		flowing: boolean
 		isDark: boolean
+		entities: ReadonlyArray<WorldEntity>
 	},
 	toMessage: (message: Message) => M,
 ): Html =>
@@ -297,9 +315,11 @@ const canvas = <M>(
 								view: input.model.perspective,
 								flowing: input.flowing,
 								dark: input.isDark,
+								editing: input.model.isEditing,
 							}),
 						),
 						h.Attribute(COMMAND_ATTRIBUTE, encodeJson(input.model.command)),
+						h.Attribute(WORLD_ATTRIBUTE, encodeJson({ entities: input.entities })),
 						h.OnMount(Mount.mapMessage(MountScene(), toMessage)),
 					]),
 				],
@@ -312,55 +332,23 @@ const sceneFailed = <M>(h: HtmlBuilder<M>): Html =>
 		[h.Class("absolute inset-0 grid place-content-center gap-2 p-8 text-center text-sm")],
 		[
 			h.p([], ["3D rendering is unavailable."]),
-			h.p(
-				[h.Class("text-muted-foreground")],
-				["Use the service list to inspect connections, or reload to retry."],
-			),
+			typography(h, { tone: "muted", as: "p" }, [
+				"Use the service list to inspect connections, or reload to retry.",
+			]),
 		],
 	)
 
-const overlays = <M>(
-	h: HtmlBuilder<M>,
-	model: Model,
-	toMessage: (message: Message) => M,
-): ReadonlyArray<Html> => {
-	const copy = VIEW_COPY[model.perspective]
+const overlays = <M>(h: HtmlBuilder<M>, toMessage: (message: Message) => M): ReadonlyArray<Html> => {
 	const camera = (action: "reset" | "in" | "out") => h.OnClick(toMessage(Message.ClickedCamera({ action })))
+	// Only the camera controls sit on the map; the view's name lives in the bar, the legend below.
 	return [
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:hud"),
-				h.Class(`pointer-events-none absolute top-4 left-4 px-3 py-2 ${PANEL_CLASS}`),
-			],
-			[
-				heading(h, { level: 2, variant: "section", className: "font-display text-current" }, [
-					copy.title,
-				]),
-				h.p([h.Class(`mt-1 text-2xs opacity-75`)], [copy.description]),
-			],
-		),
-		h.div(
-			[
-				h.Attribute(LABEL, "overlay:legend"),
-				h.Class(
-					`pointer-events-none absolute right-4 bottom-4 flex flex-wrap gap-3 px-3 py-2 text-3xs ${PANEL_CLASS}`,
-				),
-			],
-			Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
-				hstack(h, { gap: "1.5", as: "span" }, [
-					statusDot(h, {
-						tone: "custom",
-						attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
-					}),
-					HEALTH_LABEL[status],
-				]),
-			),
-		),
 		h.fieldset(
 			[
 				h.Attribute(LABEL, "overlay:controls"),
 				// The 2D canvases' control stack: bottom left, zoom in, zoom out, then fit.
-				h.Class(`absolute bottom-4 left-4 flex flex-col gap-1 p-1 ${PANEL_CLASS}`),
+				h.Class(
+					`absolute bottom-3 left-3 flex flex-col gap-0.5 p-0.5 opacity-70 transition-opacity hover:opacity-100 active:opacity-100 focus-within:opacity-100 ${PANEL_CLASS}`,
+				),
 				h.AriaLabel("Camera controls"),
 			],
 			[
@@ -374,7 +362,30 @@ const overlays = <M>(
 	]
 }
 
-/** The 3D view: `render3D` of the map. Labels and overlays are DOM; the scene draws behind them. */
+/** The last `customLayoutOf`: the view renders on every message (hover, camera, belts), but the
+ * layout changes only with the topology, perspective or world. */
+interface LayoutCache {
+	key: string
+	value: CustomLayout | null
+}
+const layoutCache: LayoutCache = { key: "", value: null }
+
+const cachedLayout = (
+	topology: Topology3D,
+	perspective: Model["perspective"],
+	entities: ReadonlyArray<WorldEntity>,
+): CustomLayout => {
+	// Platform picks the default building, and the topology key leaves it out.
+	const platforms = Arr.map(topology.nodes, (node) => [node.id, node.platform])
+	const key = encodeJson([topologyKeyOf(topology), platforms, perspective, entities])
+	if (layoutCache.value === null || layoutCache.key !== key) {
+		layoutCache.key = key
+		layoutCache.value = customLayoutOf(topology, perspective, entities)
+	}
+	return layoutCache.value
+}
+
+/** The 3D view: the map's `renderScene` in 3D. Labels and overlays are DOM; the scene draws behind them. */
 export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Scene3dOptions<M>): Html =>
 	viewportView(h, {
 		model,
@@ -384,26 +395,33 @@ export const scene3dView = <M>(h: HtmlBuilder<M>, { model, map, toMessage }: Sce
 		toMessage,
 	})
 
-/** `ServiceMap3DViewport` over any topology. */
+/** The viewport over any topology. */
 export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>): Html => {
 	const { model, topology, selectedId, toMessage } = options
 	const isDark = model.isDark ?? true
 	const palette = mapPalette(isDark)
 	const flowing = model.traffic ?? !options.reducedMotion
-	const layout = spatialLayoutOf(topology, model.perspective)
+	const entities = Arr.map(optimisticEntities(model.world.value), ({ entity }) => entity)
+	const custom = cachedLayout(topology, model.perspective, entities)
+	const layout = custom.layout
 	const related = connectedIds(topology, selectedId)
 	const background = paperBackground(palette)
+	const isWorldPending = model.worldState === "idle" || model.worldState === "loading"
 	const scene = model.isFailed
 		? sceneFailed(h)
-		: model.isDark === null
+		: // The canvas waits for the saved world, so buildings never jump from the automatic layout.
+			model.isDark === null || isWorldPending
 			? h.div([], [])
-			: canvas(h, { topology, selectedId, model, flowing, isDark }, toMessage)
-	return h.div(
-		[
-			h.Class("flex h-full min-h-0 flex-col"),
-			h.DataAttribute("service-map-renderer", "3d"),
-			h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
-		],
+			: canvas(h, { topology, selectedId, model, flowing, isDark, entities }, toMessage)
+	return vstack(
+		h,
+		{
+			className: "h-full min-h-0",
+			attributes: [
+				h.DataAttribute("service-map-renderer", "3d"),
+				h.OnMount(Mount.mapMessage(WatchTheme(), toMessage)),
+			],
+		},
 		[
 			perspectiveBar(h, options),
 			h.section(
@@ -434,39 +452,69 @@ export const viewportView = <M>(h: HtmlBuilder<M>, options: ViewportOptions<M>):
 						},
 						[],
 					),
-					layer(h, { clip: true, attributes: [h.AriaLabel("Map nodes")] }, [
-						...nodeLabels(h, topology, selectedId, palette, toMessage),
-						...linkTags(
-							h,
-							topology,
-							linkLabels(topology, layout),
-							selectedId,
-							palette,
-							toMessage,
-						),
-						...districtPlanks(h, layout.districts, model.perspective, palette),
-					]),
-					...overlays(h, model, toMessage),
+					// Labels land with the canvas: before the saved world they would sit at the
+					// automatic layout and then jump.
+					layer(
+						h,
+						{ clip: true, attributes: [h.AriaLabel("Map nodes")] },
+						isWorldPending
+							? []
+							: [
+									...nodeLabels(h, topology, selectedId, palette, toMessage),
+									...linkTags(
+										h,
+										topology,
+										linkLabels(topology, layout),
+										selectedId,
+										palette,
+										toMessage,
+									),
+									...districtPlanks(h, layout.districts, model.perspective, palette),
+								],
+					),
+					...overlays(h, toMessage),
+					editPanel(h, { model, topology, selectedId, custom, className: PANEL_CLASS, toMessage }),
 				],
 			),
-			h.div(
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					wrap: true,
+					className: "shrink-0 border-t px-4 py-2 text-3xs text-muted-foreground",
+				},
 				[
-					h.Class(
-						"flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-3xs text-muted-foreground",
-					),
-				],
-				[
-					h.span([], ["Drag to pan · scroll to zoom"]),
 					h.span(
 						[],
 						[
-							selectedId
-								? `${related?.size ?? 0} connected nodes · click the canvas to clear`
-								: options.sample === true
-									? "Narrow belts · calls / Wide belts · queues · sample traffic"
-									: "Rates from selected time range · ~ sampled estimate",
+							model.isEditing
+								? "Drag a building to move it · drag the ground to pan"
+								: "Drag to pan · scroll to zoom",
 						],
 					),
+					hstack(h, { gap: "3", wrap: true, as: "span" }, [
+						h.span(
+							[],
+							[
+								selectedId
+									? `${related?.size ?? 0} connected nodes · click the canvas to clear`
+									: options.sample === true
+										? "Narrow belts · calls / Wide belts · queues · sample traffic"
+										: "Rates over this window · ~ sampled estimate",
+							],
+						),
+						...Arr.map(["healthy", "elevated", "degraded"] as const, (status) =>
+							hstack(h, { gap: "1", as: "span" }, [
+								statusDot(h, {
+									tone: "custom",
+									attributes: [h.Style({ "background-color": HEALTH_COLOR[status] })],
+								}),
+								HEALTH_LABEL[status],
+							]),
+						),
+					]),
 				],
 			),
 		],

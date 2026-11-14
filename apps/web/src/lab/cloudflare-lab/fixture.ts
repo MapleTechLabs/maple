@@ -4,8 +4,8 @@ import {
 	CloudflareConnectedAccountStatus,
 	CloudflareIntegrationStatus,
 } from "@maple/domain/http"
-import { cloudflareAccounts } from "../../components/infra/cloudflare/accounts"
-import { mergeWorkerRows } from "../../components/infra/cloudflare/list-model"
+import { cloudflareAccounts } from "../../page/infra-integrations/cloudflare/accounts"
+import { mergeWorkerRows } from "../../page/infra-integrations/cloudflare/list-model"
 import {
 	DEMO_ACCOUNT_STATUSES,
 	DEMO_DURABLE_OBJECTS,
@@ -126,7 +126,7 @@ const MAPLE_DEV_DNS = {
 	ignoredFilters: [],
 }
 
-/** `ZonePage`'s reads, held whatever the page asked for. */
+/** The zone page's reads, held whatever the page asked for. */
 export const pinZone = (model: ZoneModel): ZoneModel => ({
 	...model,
 	window: WINDOW,
@@ -146,7 +146,7 @@ export const pinZone = (model: ZoneModel): ZoneModel => ({
 	breakdown: loaded(MAPLE_DEV_PATHS),
 })
 
-/** `WorkerPage`'s reads: maple-api's rollup, outcomes and releases. */
+/** The Worker page's reads: maple-api's rollup, outcomes and releases. */
 export const pinWorker = (model: WorkerModel): WorkerModel => ({
 	...model,
 	// Deploys snap to 30-minute buckets from 00:00; a 48h window is what buckets so.

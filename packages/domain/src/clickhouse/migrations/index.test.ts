@@ -1,4 +1,4 @@
-import { String as Str, Array as Arr } from "effect"
+import { Option, String as Str, Array as Arr } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -19,6 +19,15 @@ import { migration_0038_external_edges_legacy_db_system } from "./0038_external_
 import { migration_0045_ttl_only_drop_parts } from "./0045_ttl_only_drop_parts"
 import { latestSnapshotStatements } from "../../generated/clickhouse-schema"
 import { migrations } from "./index"
+
+const indexWhere = <A>(xs: ReadonlyArray<A>, predicate: (a: A) => boolean): number =>
+	Option.getOrElse(Arr.findFirstIndex(xs, predicate), () => -1)
+const firstGroup =
+	(regex: RegExp) =>
+	(text: string): string | undefined =>
+		Option.getOrUndefined(
+			Option.flatMap(Str.match(regex)(text), (match) => Option.fromNullishOr(match[1])),
+		)
 
 // Full rendered SQL (structural strings + backfills rendered to their full
 // INSERT…SELECT, qualified into `default`) — what the non-chunking path runs.
@@ -41,8 +50,8 @@ describe("ClickHouse migrations", () => {
 		// they are recreated; error_events_by_time_mv shares the projection
 		// byte-for-byte and must never disagree with error_events_mv on a label.
 		for (const view of ["error_events_mv", "error_events_by_time_mv"]) {
-			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
-			const createAt = statements.findIndex((stmt) =>
+			const dropAt = indexWhere(statements, (stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = indexWhere(statements, (stmt) =>
 				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `)(stmt),
 			)
 			expect(dropAt).toBeGreaterThanOrEqual(0)
@@ -77,8 +86,8 @@ describe("ClickHouse migrations", () => {
 		// An MV's SELECT is frozen at creation, so each view is dropped and
 		// recreated from the current snapshot body.
 		for (const view of ["error_events_mv", "error_events_by_time_mv", "error_fingerprints_minutely_mv"]) {
-			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
-			const createAt = statements.findIndex((stmt) =>
+			const dropAt = indexWhere(statements, (stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = indexWhere(statements, (stmt) =>
 				Str.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `)(stmt),
 			)
 			expect(dropAt).toBeGreaterThanOrEqual(0)
@@ -90,7 +99,7 @@ describe("ClickHouse migrations", () => {
 		const lastAlter = Arr.reduce(statements, -1, (last, stmt, index) =>
 			Str.startsWith("ALTER TABLE ")(stmt) ? index : last,
 		)
-		const firstDrop = statements.findIndex((stmt) => Str.startsWith("DROP VIEW ")(stmt))
+		const firstDrop = indexWhere(statements, (stmt) => Str.startsWith("DROP VIEW ")(stmt))
 		expect(lastAlter).toBeLessThan(firstDrop)
 
 		// The recreated bodies must actually populate the columns, or the ALTERs
@@ -106,13 +115,13 @@ describe("ClickHouse migrations", () => {
 
 	it("orders 0015 so the backfill and the MV never both write", () => {
 		const kinds = Arr.map(migration_0015_service_overview_minutely.statements, (stmt) =>
-			isBackfill(stmt) ? "backfill" : Str.trim(Str.split("\n")(stmt)[0]!),
+			isBackfill(stmt) ? "backfill" : Str.trim(Str.split("\n")(stmt)[0]),
 		)
 
-		const dropIndex = kinds.findIndex((kind) => Str.startsWith("DROP VIEW")(kind))
-		const truncateIndex = kinds.findIndex((kind) => Str.startsWith("TRUNCATE")(kind))
+		const dropIndex = indexWhere(kinds, (kind) => Str.startsWith("DROP VIEW")(kind))
+		const truncateIndex = indexWhere(kinds, (kind) => Str.startsWith("TRUNCATE")(kind))
 		const backfillIndex = kinds.indexOf("backfill")
-		const createMvIndex = kinds.findIndex((kind) => Str.startsWith("CREATE MATERIALIZED VIEW")(kind))
+		const createMvIndex = indexWhere(kinds, (kind) => Str.startsWith("CREATE MATERIALIZED VIEW")(kind))
 
 		// DROP → TRUNCATE → backfill → CREATE MV. The truncate makes a re-apply
 		// converge instead of doubling, and is only safe because the view is
@@ -151,8 +160,11 @@ describe("ClickHouse migrations", () => {
 		// Two divergent copies of this SELECT would show up as a page-view count
 		// that steps at the backfill boundary — on a table with no dedup, nothing
 		// else would catch it.
-		const mvBody = Arr.filter(migration_0014_web_events.statements, (s) => typeof s === "string").find(
-			(s) => Str.includes("CREATE MATERIALIZED VIEW")(s),
+		const mvBody = Option.getOrUndefined(
+			Arr.findFirst(
+				Arr.filter(migration_0014_web_events.statements, (s) => typeof s === "string"),
+				(s) => Str.includes("CREATE MATERIALIZED VIEW")(s),
+			),
 		)
 		expect(mvBody).toContain(webEventsBackfill.select)
 		expect(webEventsBackfill.where).toBe("Type IN ('navigation', 'custom')")
@@ -165,10 +177,18 @@ describe("ClickHouse migrations", () => {
 	it("keeps the service_operations_minutely backfill aligned with its table and live MV", () => {
 		// The rollout runs this backfill by hand; a drifted SELECT or column list steps the series.
 		const statements = Arr.map(migration_0008_service_operations_minutely.statements, String)
-		const table = statements.find((s) => Str.includes("CREATE TABLE")(s)) ?? ""
-		const tableColumns = Arr.map([...table.matchAll(/^\s+(\w+) [A-Z]/gm)], (match) => match[1])
+		const table = Option.getOrElse(
+			Arr.findFirst(statements, (s) => Str.includes("CREATE TABLE")(s)),
+			() => "",
+		)
+		const tableColumns = Arr.map(
+			Arr.fromIterable(Str.matchAll(/^\s+(\w+) [A-Z]/gm)(table)),
+			(match) => match[1],
+		)
 		expect(serviceOperationsMinutelyBackfill.columns).toEqual(tableColumns)
-		const mvBody = statements.find((s) => Str.includes("CREATE MATERIALIZED VIEW")(s))
+		const mvBody = Option.getOrUndefined(
+			Arr.findFirst(statements, (s) => Str.includes("CREATE MATERIALIZED VIEW")(s)),
+		)
 		expect(mvBody).toContain(serviceOperationsMinutelyBackfill.select)
 	})
 
@@ -194,7 +214,9 @@ describe("ClickHouse migrations", () => {
 		// Gates direct ingest: the native INSERT names every column explicitly, so
 		// a BYO cluster without them must not be routed direct writes. Read off the
 		// typed array — the migration literal itself simply omits the field.
-		expect(migrations.find((m) => m.version === 11)?.requiredForIngest).toBeUndefined()
+		expect(
+			Option.getOrUndefined(Arr.findFirst(migrations, (m) => m.version === 11))?.requiredForIngest,
+		).toBeUndefined()
 	})
 
 	it("orders 0009 so a re-apply converges instead of doubling the annual rollups", () => {
@@ -207,7 +229,7 @@ describe("ClickHouse migrations", () => {
 			isBackfill(stmt) ? `backfill:${stmt.target}` : Str.trim(Str.split(stmt, "\n")[0]),
 		)
 		const at = (needle: string) => {
-			const index = kinds.findIndex((kind) => Str.startsWith(needle)(kind))
+			const index = indexWhere(kinds, (kind) => Str.startsWith(needle)(kind))
 			expect(index, needle).toBeGreaterThanOrEqual(0)
 			return index
 		}
@@ -249,8 +271,8 @@ describe("ClickHouse migrations", () => {
 		// without emptying a target that outlives its source.
 		const mergeIdempotentTargets = new Set(["identity_links", "trace_index"])
 		const skipsStored = (stmt: BackfillSpec) =>
-			stmt.where?.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`) ===
-			true
+			stmt.where !== undefined &&
+			Str.includes(`(TraceId, SpanId) NOT IN (SELECT TraceId, SpanId FROM ${stmt.target})`)(stmt.where)
 		for (const migration of migrations) {
 			Arr.forEach(migration.statements, (stmt, index) => {
 				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target) || skipsStored(stmt)) return
@@ -308,7 +330,7 @@ describe("migration 0026 — ai_trace_index filter columns", () => {
 		// — and the drop must come after the ALTERs and before the CREATE, or the
 		// recreated view maps a column its target does not yet have.
 		const drop = statements.indexOf("DROP VIEW IF EXISTS ai_trace_index_mv")
-		const create = statements.findIndex((stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
+		const create = indexWhere(statements, (stmt) => Str.startsWith("CREATE MATERIALIZED VIEW")(stmt))
 		expect(drop).toBe(alters.length)
 		expect(create).toBe(drop + 1)
 		expect(statements).toHaveLength(alters.length + 2)
@@ -339,7 +361,11 @@ describe("migration 0037: service_overview_spans records why a row is an entry p
 		expect(addRoot).toContain("ADD COLUMN IF NOT EXISTS IsRoot")
 		expect(drop).toBe("DROP VIEW IF EXISTS service_overview_spans_mv")
 		expect(create).toBe(
-			latestSnapshotStatements.find((stmt) => Str.includes("service_overview_spans_mv TO")(stmt)),
+			Option.getOrUndefined(
+				Arr.findFirst(latestSnapshotStatements, (stmt) =>
+					Str.includes("service_overview_spans_mv TO")(stmt),
+				),
+			),
 		)
 		expect(create).toContain("toUInt8(ParentSpanId = '') AS IsRoot")
 	})
@@ -351,8 +377,10 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 		expect(rest).toEqual([])
 		expect(drop).toBe("DROP VIEW IF EXISTS service_external_edges_hourly_mv")
 		expect(create).toBe(
-			latestSnapshotStatements.find((stmt) =>
-				Str.includes("service_external_edges_hourly_mv TO")(stmt),
+			Option.getOrUndefined(
+				Arr.findFirst(latestSnapshotStatements, (stmt) =>
+					Str.includes("service_external_edges_hourly_mv TO")(stmt),
+				),
 			),
 		)
 		expect(create).toContain(
@@ -363,9 +391,9 @@ describe("migration 0038: legacy db.system spans stay off the external edges", (
 
 describe("migration 0045: TTL eviction drops whole parts", () => {
 	const tables = Arr.flatMap(latestSnapshotStatements, (stmt) => {
-		const name = stmt.match(/^CREATE TABLE IF NOT EXISTS (\w+) \(/)?.[1]
-		const partition = stmt.match(/\nPARTITION BY (.+)/)?.[1]
-		const ttl = stmt.match(/\nTTL (.+)/)?.[1]
+		const name = firstGroup(/^CREATE TABLE IF NOT EXISTS (\w+) \(/)(stmt)
+		const partition = firstGroup(/\nPARTITION BY (.+)/)(stmt)
+		const ttl = firstGroup(/\nTTL (.+)/)(stmt)
 		return name === undefined || ttl === undefined ? [] : [{ name, partition, ttl }]
 	})
 	const datePartitioned = Arr.filter(
@@ -379,7 +407,10 @@ describe("migration 0045: TTL eviction drops whole parts", () => {
 	it("keys each date-partitioned TTL off the day of its partition column", () => {
 		const misaligned = Arr.map(
 			Arr.filter(datePartitioned, ({ partition, ttl }) => {
-				const column = partition?.match(/^to(?:Date|YYYYMM)\((\w+)\)$/)?.[1]
+				const column =
+					partition === undefined
+						? undefined
+						: firstGroup(/^to(?:Date|YYYYMM)\((\w+)\)$/)(partition)
 				return column === undefined || !Str.startsWith(`toDate(${column}) + INTERVAL `)(ttl)
 			}),
 			({ name }) => name,
@@ -388,8 +419,8 @@ describe("migration 0045: TTL eviction drops whole parts", () => {
 	})
 
 	it("sets ttl_only_drop_parts on every date-partitioned table, and only on those", () => {
-		const withSetting = statements.flatMap(
-			(stmt) => stmt.match(/^ALTER TABLE (\w+) MODIFY SETTING ttl_only_drop_parts = 1$/)?.[1] ?? [],
+		const withSetting = Arr.flatMap(statements, (stmt) =>
+			Arr.fromNullishOr(firstGroup(/^ALTER TABLE (\w+) MODIFY SETTING ttl_only_drop_parts = 1$/)(stmt)),
 		)
 		expect([...withSetting].sort()).toEqual(Arr.map(datePartitioned, ({ name }) => name).sort())
 	})

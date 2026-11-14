@@ -1,12 +1,8 @@
-import {
-	buildDeviceKeyRows,
-	buildKeyRows,
-	filterKeyRows,
-	type KeyTypeFilter,
-} from "../../../components/settings/keys-table"
+import { buildDeviceKeyRows, buildKeyRows, filterKeyRows, type KeyTypeFilter } from "../kit/keys-table"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
+import { splitButtonClass } from "@maple/views/ui/split-button"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { icon } from "@maple/views/ui/icon"
 import * as MenuView from "@maple/views/ui/menu-view"
@@ -17,10 +13,10 @@ import * as SelectView from "@maple/views/ui/select-view"
 import { skeletonList, skeletonSlowNote } from "@maple/views/ui/skeleton"
 import { errorState } from "@maple/views/ui/error-state"
 import { makeClientErrorBody } from "@maple/web-data/lib/error-messages"
-import { sectionNote, settingsSection, settingsSections } from "../kit/section"
+import { sectionNote, settingsSection, settingsSections } from "../../kit/settings-section"
 import * as CreateDialogView from "./create-dialog-view"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import * as RollDialog from "./roll-dialog"
 import { STATUS_VALUES } from "./update"
 import { apiReference, oauthPointer } from "./view-reference"
@@ -28,8 +24,6 @@ import { devicesTable, keysEmpty, keysTable } from "./view-table"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `ApiKeysSection`.
 
 export type ViewInputs = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -46,59 +40,56 @@ const ROLE_UNKNOWN_REASON =
 const createKeyButton = (h: H, model: Model, isRoleUnknown: boolean): Html => {
 	const plus = icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] })
 	if (isRoleUnknown)
-		return h.span(
-			[h.Class("inline-flex"), h.Title(ROLE_UNKNOWN_REASON)],
+		return hstack(
+			h,
+			{ align: "stretch", inline: true, as: "span", attributes: [h.Title(ROLE_UNKNOWN_REASON)] },
 			[button(h, { size: "sm", isDisabled: true }, [plus, "Create MCP key"])],
 		)
-	if (!model.isAdmin)
+	if (!canManage(model))
 		return button(h, { size: "sm", attributes: [h.OnClick(Message.ClickedCreateKey())] }, [
 			plus,
 			"Create MCP key",
 		])
-	return h.div(
-		[h.Class("flex")],
-		[
-			button(
-				h,
-				{
-					size: "sm",
-					className: "relative rounded-r-none before:rounded-r-none focus-visible:z-10",
-					attributes: [h.OnClick(Message.ClickedCreateKey())],
-				},
-				[plus, "New key"],
-			),
-			h.submodel({
-				slotId: "keys-create-menu",
-				model: model.createMenu,
-				view: MenuView.view,
-				toParentMessage: (message) => Message.GotCreateMenuMessage({ message }),
-				viewInputs: {
-					entries: [
-						{ _tag: "Item", value: "standard", label: "API key" },
-						{ _tag: "Item", value: "mcp", label: "MCP key" },
-					],
-					align: "end",
-					className: "min-w-40",
-					toView: ({ trigger, withTrigger }) =>
-						h.span(
-							[h.Class("contents")],
-							withTrigger(
-								button(
-									h,
-									{
-										size: "icon-sm",
-										className:
-											"relative -ml-px rounded-l-none border-l border-l-primary-foreground/20 before:rounded-l-none focus-visible:z-10",
-										attributes: [h.AriaLabel("Choose key type"), ...trigger],
-									},
-									[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
-								),
+	return hstack(h, { align: "stretch" }, [
+		button(
+			h,
+			{
+				size: "sm",
+				className: splitButtonClass("lead"),
+				attributes: [h.OnClick(Message.ClickedCreateKey())],
+			},
+			[plus, "New key"],
+		),
+		h.submodel({
+			slotId: "keys-create-menu",
+			model: model.createMenu,
+			view: MenuView.view,
+			toParentMessage: (message) => Message.GotCreateMenuMessage({ message }),
+			viewInputs: {
+				entries: [
+					{ _tag: "Item", value: "standard", label: "API key" },
+					{ _tag: "Item", value: "mcp", label: "MCP key" },
+				],
+				align: "end",
+				className: "min-w-40",
+				toView: ({ trigger, withTrigger }) =>
+					h.span(
+						[h.Class("contents")],
+						withTrigger(
+							button(
+								h,
+								{
+									size: "icon-sm",
+									className: splitButtonClass("tail"),
+									attributes: [h.AriaLabel("Choose key type"), ...trigger],
+								},
+								[icon(h, "ChevronDownIcon", { className: "size-3.5" })],
 							),
 						),
-				},
-			}),
-		],
-	)
+					),
+			},
+		}),
+	])
 }
 
 const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): Html =>
@@ -157,7 +148,7 @@ const toolbar = (h: H, model: Model, counts: ReturnType<typeof filterKeyRows>): 
 		}),
 	])
 
-/** `SyncUnavailable`: the `api_keys` stream stopped before its first answer. */
+/** The `api_keys` stream stopped before its first answer. */
 const SYNC_UNAVAILABLE = makeClientErrorBody({
 	_tag: "@maple/web/errors/SyncUnavailable",
 	code: "sync_unavailable",
@@ -185,7 +176,7 @@ const revokeDescription = (h: H, model: Model): ReadonlyArray<Html | string> | s
 		: [...subject, " will stop working immediately. This action cannot be undone."]
 }
 
-/** `MobileDevicesSection`: the widget keys phones minted, revocable here when a phone is lost. */
+/** The widget keys phones minted, revocable here when a phone is lost. */
 const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 	const rows = buildDeviceKeyRows({ apiKeys: model.apiKeys ?? [], now: inputs.nowMs })
 	return settingsSection(
@@ -222,7 +213,7 @@ const mobileDevicesSection = (h: H, model: Model, inputs: ViewInputs): Html => {
 									],
 								)
 							: rows.length === 0
-								? sectionNote(h, "No phones have Home Screen widgets for this organization.")
+								? sectionNote(h, "No phones have Home Screen widgets for this organization")
 								: devicesTable(h, model, rows, inputs),
 					]),
 		],

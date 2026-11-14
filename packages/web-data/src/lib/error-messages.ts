@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import { Cause, Exit, Option, Schema } from "effect"
 import { HttpClientError } from "effect/http"
 import {
@@ -134,7 +134,5 @@ const displayErrorInternal = (input: unknown, depth: number): AnyPublicHttpError
 
 /** Resolve any application failure to the single safe public error contract. */
 export const displayError = (input: unknown): AnyPublicHttpErrorBody => displayErrorInternal(input, 0)
-
-export const isAutomaticRetryError = (error: AnyPublicHttpErrorBody): boolean => error.retryable
 
 export const isUnexpectedError = (error: AnyPublicHttpErrorBody): boolean => error._tag === UnexpectedErrorTag

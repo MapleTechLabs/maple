@@ -11,7 +11,7 @@ export const moreChip = <M>(
 		[
 			h.Class(
 				cn(
-					"shrink-0 cursor-default rounded-sm bg-surface-strong px-1 font-mono text-2xs tabular-nums text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground",
+					"shrink-0 cursor-default rounded-sm bg-surface-sunken px-1 font-mono text-2xs tabular-nums text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground",
 					options.className,
 				),
 			),

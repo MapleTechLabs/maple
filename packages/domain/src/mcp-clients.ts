@@ -1,4 +1,4 @@
-import { String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 // Who called an MCP server, from `user_agent.original`: the spec has no per-call client attribute
 // (`clientInfo` rides on `initialize` only). Families group versions, so `claude-code/2.1.314 (...)`
 // is "Claude Code". The warehouse classifies with the same list (`ch/queries/mcp.ts`).
@@ -39,8 +39,8 @@ export const MCP_CLIENT_TOKEN_PATTERN = "^[^/ ]+"
 /** Reads the raw string, untrimmed, exactly as the SQL copy does; no product token is `unknown`. */
 export const mcpClientOf = (userAgent: string): McpClient => {
 	const lower = Str.toLowerCase(userAgent)
-	const known = KNOWN_MCP_CLIENTS.find((client) => Str.startsWith(client.prefix)(lower))
-	if (known !== undefined) return { name: known.name, kind: known.kind }
+	const known = Arr.findFirst(KNOWN_MCP_CLIENTS, (client) => Str.startsWith(client.prefix)(lower))
+	if (Option.isSome(known)) return { name: known.value.name, kind: known.value.kind }
 	return {
 		name: new RegExp(MCP_CLIENT_TOKEN_PATTERN).exec(userAgent)?.[0] ?? UNKNOWN_MCP_CLIENT,
 		kind: "unknown",

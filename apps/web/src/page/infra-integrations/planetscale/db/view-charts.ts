@@ -10,14 +10,13 @@ import { METRIC_LABELS, type PlanetScaleMetric } from "@maple/views/charts/plane
 import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { chartLoading } from "@maple/views/ui/chart-state"
 import { errorState } from "@maple/views/ui/error-state"
-import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../kit/chart-card"
+import { CHART_HEIGHT, chartCard, chartCardMessage } from "../../../kit/chart-card"
 import { scopeChip } from "../../kit/scope-chip"
 import type { TimeseriesRow } from "../data"
 import { Message, type Model } from "./model"
 import { grid as gridLayout } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `PlanetScaleChart` cards and the chart section of `PlanetScaleDatabaseData`.
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 export type Trigger = (id: string) => ReadonlyArray<ChildAttribute>
@@ -54,7 +53,7 @@ export const FALLBACK_EXPLANATION = {
 		"PlanetScale's Query Insights API answers one branch at a time, so this shows the resolved branch only.",
 } as const
 
-/** `PlanetScaleBranchScope`: the trigger ids are `${idPrefix}-all` and `${idPrefix}-fallback`. */
+/** The trigger ids are `${idPrefix}-all` and `${idPrefix}-fallback`. */
 export const branchScope = (
 	h: H,
 	options: Readonly<{
@@ -72,20 +71,17 @@ export const branchScope = (
 	}
 	if (options.selected.length === 1) return scopeChip(h, {}, [options.selected[0] ?? ""])
 	const extra = options.selected.length - 2
-	return h.span(
-		[h.Class("flex flex-wrap items-center gap-1")],
-		[
-			scopeChip(h, {}, [
-				Arr.join(options.selected.slice(0, 2), ", "),
-				...(extra > 0 ? [` +${extra}`] : []),
-			]),
-			scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
-				options.surface === "chart"
-					? "showing all branches"
-					: `showing ${options.resolved ?? "the default branch"}`,
-			]),
-		],
-	)
+	return hstack(h, { gap: "1", align: "center", wrap: true, as: "span" }, [
+		scopeChip(h, {}, [
+			Arr.join(options.selected.slice(0, 2), ", "),
+			...(extra > 0 ? [` +${extra}`] : []),
+		]),
+		scopeChip(h, { tone: "muted", trigger: options.trigger(`${options.idPrefix}-fallback`) }, [
+			options.surface === "chart"
+				? "showing all branches"
+				: `showing ${options.resolved ?? "the default branch"}`,
+		]),
+	])
 }
 
 const loadingCard = (h: H, metric: PlanetScaleMetric): Html =>

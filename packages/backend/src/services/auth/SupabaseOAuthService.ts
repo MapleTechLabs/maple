@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -9,8 +8,6 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -26,10 +23,10 @@ import {
 	deriveCodeChallenge,
 	generateCodeVerifier,
 	makeOAuthConnectionHelpers,
-	OAUTH_STATE_TTL_MS,
 	toUpstreamError,
 } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const SUPABASE_PROVIDER = "supabase"
 
@@ -67,7 +64,6 @@ const resolveConfig = Effect.fn("SupabaseOAuthService.resolveConfig")(function* 
 	}
 })
 
-/** Failures involved in resolving a usable Supabase access token. */
 export type SupabaseAccessTokenError =
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
@@ -154,25 +150,12 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
 				const config = yield* resolveConfig(env)
-				const state = randomBytes(24).toString("base64url")
+				const state = yield* newOAuthState
 				const codeVerifier = generateCodeVerifier()
-				const currentTime = yield* Clock.currentTimeMillis
-
-				yield* oauth.purgeExpiredStates(currentTime)
-				yield* oauth.dbExecute((db) =>
-					db.run(
-						PG.insertInto(OAuthAuthStates).values({
-							state,
-							orgId,
-							provider: SUPABASE_PROVIDER,
-							initiatedByUserId: userId,
-							redirectUri: options.callbackUrl,
-							returnTo: options.returnTo ?? null,
-							codeVerifier,
-							createdAt: currentTime,
-							expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-						}),
-					),
+				yield* oauth.saveState(
+					state,
+					{ orgId, userId },
+					{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null, codeVerifier },
 				)
 
 				// Scopes are configured on the OAuth app, so none are sent here.
@@ -260,8 +243,8 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 					})
 				}
 
-				const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
-				const refreshEnc = yield* oauth.encryptValue(refreshToken)
+				const accessEnc = yield* oauth.sealAccessToken(orgId, tokenResponse.access_token)
+				const refreshEnc = yield* oauth.sealRefreshToken(orgId, refreshToken)
 				const currentTime = yield* Clock.currentTimeMillis
 				const expiresAt =
 					tokenResponse.expires_in === undefined
@@ -332,7 +315,7 @@ export class SupabaseOAuthService extends Context.Service<SupabaseOAuthService, 
 				) {
 					return false
 				}
-				const refreshToken = yield* oauth.decryptValue({
+				const refreshToken = yield* oauth.openRefreshToken(row.orgId, {
 					ciphertext: row.refreshTokenCiphertext,
 					iv: row.refreshTokenIv,
 					tag: row.refreshTokenTag,

@@ -1,0 +1,62 @@
+import { OnCallScheduleId } from "@maple/domain/http"
+import { V2OnCallScheduleCreateParams } from "@maple/domain/http/v2"
+import { Clock, Effect, Schema } from "effect"
+import { Command } from "foldkit"
+import { browserZone, readSupportedTimeZones } from "../../../platform/time-zone"
+import { listOverrides, retrieveOnCallSchedule, saveOnCallSchedule } from "../shared/oncall-schedules"
+import { listOrgMembers } from "../shared/org-members"
+import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
+
+/** The browser's zone (a new schedule's default), the clock and the zones to pick from. */
+export const ReadScheduleFormDefaults = Command.define("ReadScheduleFormDefaults", {
+	messages: [Message.ReadDefaults],
+	execute: Effect.map(
+		Effect.all([browserZone, Clock.currentTimeMillis, readSupportedTimeZones]),
+		([timeZone, nowMs, zones]) => Message.ReadDefaults({ timeZone, nowMs, zones }),
+	),
+})
+
+export const FetchExistingSchedule = Command.define("FetchScheduleFormSchedule", {
+	args: { key: Schema.String, scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedFetchExisting],
+	execute: ({ key, scheduleId }) =>
+		retrieveOnCallSchedule(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchExisting({ key, result })),
+		),
+})
+
+/** The edited schedule's overrides that have not ended, for the preview. */
+export const FetchScheduleFormOverrides = Command.define("FetchScheduleFormOverrides", {
+	args: { key: Schema.String, scheduleId: OnCallScheduleId },
+	messages: [Message.CompletedFetchOverrides],
+	execute: ({ key, scheduleId }) =>
+		listOverrides(scheduleId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchOverrides({ key, result })),
+		),
+})
+
+export const FetchScheduleFormMembers = Command.define("FetchScheduleFormMembers", {
+	messages: [Message.CompletedFetchMembers],
+	execute: listOrgMembers.pipe(
+		Effect.result,
+		Effect.map((result) => Message.CompletedFetchMembers({ result })),
+	),
+})
+
+export const FetchScheduleFormSession = fetchSessionGrants(
+	"FetchScheduleFormSession",
+	Message.CompletedFetchSession,
+)
+
+export const SaveSchedule = Command.define("SaveOnCallSchedule", {
+	args: { editingId: Schema.NullOr(OnCallScheduleId), payload: V2OnCallScheduleCreateParams },
+	messages: [Message.CompletedSave],
+	execute: ({ editingId, payload }) =>
+		saveOnCallSchedule(editingId, payload).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSave({ result })),
+		),
+})

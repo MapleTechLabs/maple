@@ -29,11 +29,12 @@ import {
 	type PlanetScaleConnectionRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
-import { Clock, Context, Duration, Effect, Layer, Redacted, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { planetScaleWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
@@ -46,10 +47,14 @@ import {
 import { ScrapeTargetsService, type ScrapeTargetsServiceApi } from "./ScrapeTargetsService"
 import { planetScaleWebhookStatus, PlanetScaleWebhookService } from "./PlanetScaleWebhookService"
 import {
+	removePlanetScaleCostSources,
+	removePlanetScaleCostSourcesOfOthers,
+} from "../cost/planetscale-cost-sources"
+import {
 	deleteSourcesOf,
 	createIntegrationSource,
 	integrationSourceName,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 
 /**
  * First-class PlanetScale integration: one OAuth-backed connection per org.
@@ -62,7 +67,7 @@ import {
  * `managedBy = "planetscale:{connectionId}"` and torn down on disconnect.
  */
 
-export const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
+const managedByForConnection = (connectionId: string): string => `planetscale:${connectionId}`
 
 const PROBE_TIMEOUT = Duration.seconds(10)
 
@@ -149,10 +154,10 @@ export interface PlanetScaleConnectionServiceApi {
 	>
 }
 
-const toPersistenceError = (error: unknown) =>
-	new IntegrationsPersistenceError({
-		message: error instanceof Error ? error.message : "PlanetScale connection persistence failed",
-	})
+const toPersistenceError = makePersistenceErrorMapper(
+	IntegrationsPersistenceError,
+	"PlanetScale connection persistence failed",
+)
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
@@ -183,11 +188,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 		const discovery = yield* PlanetScaleDiscoveryService
 		const webhooks = yield* PlanetScaleWebhookService
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new IntegrationsPersistenceError({ message }),
 		)
-		const apiBase = env.MAPLE_PLANETSCALE_API_BASE_URL.replace(/\/$/, "")
+		const apiBase = Str.replace(/\/$/, "")(env.MAPLE_PLANETSCALE_API_BASE_URL)
 
 		/**
 		 * GET an absolute URL with the given Authorization header (an OAuth bearer
@@ -338,12 +343,13 @@ export class PlanetScaleConnectionService extends Context.Service<
 							),
 						)
 					: []
-			const lastPolledAt = metricsPoll.reduce<number | null>(
+			const lastPolledAt = Arr.reduce<(typeof metricsPoll)[number], number | null>(
+				metricsPoll,
+				null,
 				(latest, row) =>
 					row.databaseId === "" || row.lastSuccessAt === null
 						? latest
 						: Math.max(latest ?? 0, row.lastSuccessAt),
-				null,
 			)
 			return new PlanetScaleIntegrationStatus({
 				connected: true,
@@ -354,7 +360,9 @@ export class PlanetScaleConnectionService extends Context.Service<
 						? new PlanetScaleApiMetricsStatus({
 								lastPolledAt,
 								lastError:
-									metricsPoll.find((row) => row.databaseId === "")?.lastError ?? null,
+									Option.getOrUndefined(
+										Arr.findFirst(metricsPoll, (row) => row.databaseId === ""),
+									)?.lastError ?? null,
 							})
 						: null,
 				organization: connection.psOrganization,
@@ -405,7 +413,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 			const targetsWithConfig = yield* Effect.forEach(rows, (row) =>
 				Effect.map(decodeStoredDiscoveryConfig(row), (config) => ({ row, config })),
 			)
-			return targetsWithConfig.find(({ config }) => config.organization === organization)?.row ?? null
+			return (
+				Option.getOrUndefined(
+					Arr.findFirst(targetsWithConfig, ({ config }) => config.organization === organization),
+				)?.row ?? null
+			)
 		})
 
 		const finalizeOrgSelection = Effect.fn("PlanetScaleConnectionService.finalizeOrgSelection")(
@@ -417,14 +429,14 @@ export class PlanetScaleConnectionService extends Context.Service<
 				>,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const organization = request.organization.trim()
+				const organization = Str.trim(request.organization)
 
 				const { accessToken } = yield* psOAuth.getValidAccessToken(orgId)
 
 				// The grant is the authority on which orgs may be bound — a slug outside
 				// it would provision a scrape target that 403s on every scrape.
 				const grantedOrgs = yield* psOAuth.listOrganizations(orgId)
-				if (!grantedOrgs.some((org) => org.name === organization)) {
+				if (!Arr.some(grantedOrgs, (org) => org.name === organization)) {
 					return yield* new IntegrationsValidationError({
 						message: `The PlanetScale authorization does not grant access to organization "${organization}" — re-authorize or pick another organization.`,
 					})
@@ -526,6 +538,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 							// discovery rejects the OAuth grant, so it never scrapes.
 							enabled: false,
 						}),
+						// Marked managed below, in the connection's transaction.
+						{ allowManaged: true },
 					)
 					scrapeTargetId = created.id
 					createdTarget = true
@@ -535,9 +549,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 				// The secret is minted once and retained across organization rebindings.
 				const encryptedWebhookSecret =
 					existing === null
-						? yield* encryptAes256Gcm(
+						? yield* sealSecret(
+								keyring,
+								planetScaleWebhookSecretSlot,
+								{ orgId, id: connectionId },
 								randomBytes(32).toString("hex"),
-								encryptionKey,
 								() =>
 									new IntegrationsPersistenceError({
 										message: "Failed to encrypt PlanetScale webhook secret",
@@ -608,6 +624,11 @@ export class PlanetScaleConnectionService extends Context.Service<
 										message: "PlanetScale connection disappeared before rebinding",
 									})
 								}
+
+								// The Cost page's source reads this connection, and another organization's
+								// invoices are not its history. Decided by the source's own account, here in
+								// the transaction, not by the connection as it was read before it.
+								yield* removePlanetScaleCostSourcesOfOthers(db, orgId, organization)
 
 								const previousTargetId = existing.scrapeTargetId
 								if (previousTargetId === null || previousTargetId === scrapeTargetId) {
@@ -704,7 +725,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 			// Validate the token against the metrics discovery endpoint before
 			// storing anything — this is exactly the call the scraper will make.
-			const tokenId = request.tokenId.trim()
+			const tokenId = Str.trim(request.tokenId)
 			const sdStatus = yield* probeStatus(
 				`/v1/organizations/${encodeURIComponent(connection.psOrganization)}/metrics`,
 				`token ${tokenId}:${request.tokenSecret}`,
@@ -782,6 +803,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 							yield* db.run(
 								PG.deleteFrom(PlanetscaleConnections).where(($) => [$.id.eq(connection.id)]),
 							)
+							// The Cost page's source read through this connection.
+							yield* removePlanetScaleCostSources(db, orgId)
 							yield* deleteSourcesOf(db, orgId, [connection])
 						}),
 					),
@@ -829,13 +852,15 @@ export class PlanetScaleConnectionService extends Context.Service<
 			) {
 				return { configured: false, path: null, secret: null }
 			}
-			const secret = yield* decryptAes256Gcm(
+			const secret = yield* openSecret(
+				keyring,
+				planetScaleWebhookSecretSlot,
+				{ orgId: connection.orgId, id: connection.id },
 				{
 					ciphertext: connection.webhookSecretCiphertext,
 					iv: connection.webhookSecretIv,
 					tag: connection.webhookSecretTag,
 				},
-				encryptionKey,
 				() =>
 					new IntegrationsPersistenceError({
 						message: "Failed to decrypt PlanetScale webhook secret",

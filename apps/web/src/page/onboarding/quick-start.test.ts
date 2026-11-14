@@ -1,16 +1,19 @@
 import { CatalogPlan, CatalogPlansResponse } from "@maple/domain/http"
-import { Effect, Result } from "effect"
+import { Effect, Result, Array as Arr, Record as Rec, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import * as PricingCards from "./pricing-cards"
 import { init, Message, type Model, update as updateWith } from "./quick-start"
 import {
 	DEFAULT_QUICK_START_STATE,
+	isQuickStartFinished,
+	type QuickStartState,
 	readQuickStartState,
 	resolveQuickStartStep,
 	STEP_IDS,
 } from "./quick-start-state"
 import { ConnectMessage } from "./quick-start-connect"
 import { LoadTeam, loadingTeam, TeamMessage, updateTeam } from "./quick-start-team"
+import * as CheckoutReturn from "../kit/checkout-return"
 
 /** An org that holds a plan, as most of these steps run for. */
 const update = (model: Model, message: Message) => updateWith(model, message, true)
@@ -18,7 +21,7 @@ const update = (model: Model, message: Message) => updateWith(model, message, tr
 const loaded = (): Model => ({ ...init("maple-onboarding-v6-org_1").model, state: DEFAULT_QUICK_START_STATE })
 
 const names = (result: { readonly commands?: ReadonlyArray<{ readonly name: string }> }) =>
-	(result.commands ?? []).map((command) => command.name)
+	Arr.map(result.commands ?? [], (command) => command.name)
 
 const stateOf = (model: Model) => {
 	if (model.state === null) throw new Error("not loaded")
@@ -33,7 +36,50 @@ describe("quick start", () => {
 
 	test("a save from the old role and intent steps resumes at the first step still to do", () => {
 		const old = { ...DEFAULT_QUICK_START_STATE, activeStep: "intent", completedSteps: { role: true } }
-		expect(resolveQuickStartStep(old, true)).toBe("stack")
+		vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(old) })
+		const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-old"))
+		vi.unstubAllGlobals()
+		expect(state.activeStep).toBe("plan")
+		expect(resolveQuickStartStep(state, true)).toBe("stack")
+	})
+
+	test("a save from when the team step came before the live screen still shows the live screen", () => {
+		const read = (save: QuickStartState) => {
+			vi.stubGlobal("localStorage", { getItem: () => JSON.stringify(save) })
+			const state = Effect.runSync(readQuickStartState("maple-onboarding-v6-old-order"))
+			vi.unstubAllGlobals()
+			return state
+		}
+		const onTeam = read({
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "team",
+			completedSteps: { plan: true, stack: true, connect: true },
+		})
+		expect(resolveQuickStartStep(onTeam, true)).toBe("live")
+		const onLastScreen = read({
+			...DEFAULT_QUICK_START_STATE,
+			activeStep: "live",
+			completedSteps: { plan: true, stack: true, connect: true, team: true },
+		})
+		expect(isQuickStartFinished(onLastScreen)).toBe(false)
+		expect(resolveQuickStartStep(onLastScreen, true)).toBe("live")
+	})
+
+	test("a save that loaded before the plan was known is settled by the first update that knows it", () => {
+		const finished = Rec.fromEntries(Arr.map(STEP_IDS, (step) => [step, true] as const))
+		const state = { ...DEFAULT_QUICK_START_STATE, completedSteps: finished }
+		const early = updateWith(
+			init("maple-onboarding-v6-org_1").model,
+			Message.LoadedQuickStartState({ state }),
+			null,
+		).model
+		expect(early.saveEntry).toBe("AwaitingPlan")
+		// Another message gets there before the root's SettledPlan: the finished save still moves on.
+		const settled = update(early, Message.ChangedLanguageQuery({ query: "py" }))
+		expect(names(settled)).toContain("FinishQuickStart")
+		expect(settled.model.saveEntry).toBe("Entered")
+		expect(settled.model.languageQuery).toBe("py")
+		expect(names(update(settled.model, Message.SettledPlan()))).not.toContain("FinishQuickStart")
 	})
 
 	test("stack picks are saved and set what the setup checklist shows", () => {
@@ -55,11 +101,12 @@ describe("quick start", () => {
 		const skipped = update(start, Message.ClickedContinue({ step: "stack" })).model
 		expect(resolveQuickStartStep(stateOf(skipped), true)).toBe("connect")
 		const connected = update(skipped, Message.ClickedContinue({ step: "connect" })).model
-		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("team")
-		const teamed = update(connected, Message.ClickedContinue({ step: "team" })).model
-		expect(resolveQuickStartStep(stateOf(teamed), true)).toBe("live")
-		const done = update(teamed, Message.ClickedContinue({ step: "live" }))
-		expect(done.commands?.map((command) => [command.name, command.args]).at(-1)).toEqual([
+		// The data arriving comes before the tools and teammates.
+		expect(resolveQuickStartStep(stateOf(connected), true)).toBe("live")
+		const seen = update(connected, Message.ClickedContinue({ step: "live" })).model
+		expect(resolveQuickStartStep(stateOf(seen), true)).toBe("team")
+		const done = update(seen, Message.ClickedContinue({ step: "team" }))
+		expect(Arr.map(done.commands ?? [], (command) => [command.name, command.args]).at(-1)).toEqual([
 			"FinishQuickStart",
 			{ url: "/traces" },
 		])
@@ -101,7 +148,7 @@ describe("quick start", () => {
 	test("a save that loads before the plan is known waits for it, then is sent on or opens its step", () => {
 		const finished = {
 			...DEFAULT_QUICK_START_STATE,
-			completedSteps: Object.fromEntries(STEP_IDS.map((id) => [id, true])),
+			completedSteps: Rec.fromEntries(Arr.map(STEP_IDS, (id) => [id, true] as const)),
 		}
 		const loading = init("maple-onboarding-v6-org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: finished }), null)
@@ -160,18 +207,18 @@ describe("quick start live step", () => {
 		Message.GotConnectMessage({
 			message: ConnectMessage.LoadedPresence({
 				result: Result.succeed(
-					Object.fromEntries(
-						present.map((signal) => [signal, { status: "present", lastSeenMs: 1 }]),
+					Rec.fromEntries(
+						Arr.map(present, (signal) => [signal, { status: "present", lastSeenMs: 1 }] as const),
 					),
 				),
 			}),
 		})
 
 	test("opened straight from a save, it reads what is arriving once the plan is known", () => {
-		const atLive = {
+		const atLive: QuickStartState = {
 			...DEFAULT_QUICK_START_STATE,
 			activeStep: "live",
-			completedSteps: { stack: true, connect: true, team: true },
+			completedSteps: { stack: true, connect: true },
 		}
 		const loading = init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model
 		const early = updateWith(loading, Message.LoadedQuickStartState({ state: atLive }), null)
@@ -183,7 +230,7 @@ describe("quick start live step", () => {
 	})
 
 	test("a signal arriving while it shows re-reads the findings; a poll with nothing new does not", () => {
-		const atLive = {
+		const atLive: Model = {
 			...init("maple-onboarding-v6-org_1", false, false, "/", "org_1").model,
 			state: { ...DEFAULT_QUICK_START_STATE, activeStep: "live" },
 		}
@@ -214,11 +261,15 @@ describe("quick start connect step", () => {
 				"LoadOnboardingConnectedProviders",
 			]),
 		)
-		const providers = (opened.commands ?? []).find(
+		const providers = Arr.findFirst(
+			opened.commands ?? [],
 			(command) => command.name === "LoadOnboardingConnectedProviders",
 		)
 		// Docker has no integration status; its sources say whether it is connected.
-		expect(providers?.args).toEqual({ orgId: "org_1", platforms: ["cloudflare", "docker"] })
+		expect(Option.getOrUndefined(providers)?.args).toEqual({
+			orgId: "org_1",
+			platforms: ["cloudflare", "docker"],
+		})
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 
@@ -235,11 +286,13 @@ describe("quick start connect step", () => {
 		expect(opened.model.connect.isActive).toBe(true)
 	})
 
-	test("it keeps polling while it shows and stops once they move on", () => {
+	test("it keeps polling through the live screen and stops once they move on to the team", () => {
 		const open = update(atStack(), Message.ClickedContinue({ step: "stack" })).model
 		const polled = update(open, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))
 		expect(names(polled)).toContain("LoadOnboardingConnectPresence")
-		const left = update(open, Message.ClickedContinue({ step: "connect" })).model
+		const live = update(open, Message.ClickedContinue({ step: "connect" })).model
+		expect(live.connect.isActive).toBe(true)
+		const left = update(live, Message.ClickedContinue({ step: "live" })).model
 		expect(left.connect.isActive).toBe(false)
 		expect(
 			names(update(left, Message.GotConnectMessage({ message: ConnectMessage.ElapsedPoll() }))),
@@ -259,7 +312,7 @@ describe("quick start team step", () => {
 			TeamMessage.ChangedTeammateEmail({ value: " grace@orbit.test " }),
 		).team
 		const sent = updateTeam(typed, TeamMessage.SubmittedInvite())
-		expect(sent.commands.map((command) => [command.name, command.args])).toEqual([
+		expect(Arr.map(sent.commands, (command) => [command.name, command.args])).toEqual([
 			["RunOnboardingTeamOperation", { operation: "invite", value: "grace@orbit.test" }],
 		])
 		expect(updateTeam(sent.team, TeamMessage.SubmittedRename()).commands).toEqual([])
@@ -326,17 +379,30 @@ describe("pricing cards", () => {
 	test("back from Stripe, the cards wait on the sync: polling the customer, then giving up", () => {
 		const returning = PricingCards.initReturning(true)
 		expect(returning.model.checkoutReturn).toBe("Confirming")
-		expect(returning.commands.map((command) => command.name)).toEqual(
+		expect(Arr.map(returning.commands, (command) => command.name)).toEqual(
 			expect.arrayContaining(["WaitCheckoutPoll", "WaitCheckoutTimeout"]),
 		)
-		const polled = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutPoll())
+		const polled = PricingCards.update(
+			returning.model,
+			PricingCards.Message.GotCheckoutReturnMessage({ message: CheckoutReturn.Message.ElapsedPoll() }),
+		)
 		expect(polled.outMessage).toEqual(PricingCards.OutMessage.RequestedCustomerRefresh())
 		expect(names(polled)).toEqual(["WaitCheckoutPoll"])
-		const timedOut = PricingCards.update(returning.model, PricingCards.Message.ElapsedCheckoutTimeout())
+		const timedOut = PricingCards.update(
+			returning.model,
+			PricingCards.Message.GotCheckoutReturnMessage({
+				message: CheckoutReturn.Message.ElapsedTimeout(),
+			}),
+		)
 		expect(timedOut.model.checkoutReturn).toBe("TimedOut")
 		expect(timedOut.outMessage).toEqual(PricingCards.OutMessage.RequestedClearCheckoutMarker())
 		expect(
-			PricingCards.update(timedOut.model, PricingCards.Message.ElapsedCheckoutPoll()).outMessage,
+			PricingCards.update(
+				timedOut.model,
+				PricingCards.Message.GotCheckoutReturnMessage({
+					message: CheckoutReturn.Message.ElapsedPoll(),
+				}),
+			).outMessage,
 		).toBeUndefined()
 	})
 

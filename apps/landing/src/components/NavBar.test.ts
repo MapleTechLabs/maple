@@ -1,18 +1,14 @@
 // @vitest-environment happy-dom
 import { MapleBrowser } from "@maple-dev/browser"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
-import type { Island } from "../foldkit-island/island"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import start from "../foldkit-island/client"
+import renderer from "../foldkit-island/server"
+import { NavBar } from "./NavBar"
 import { Array as Arr } from "effect"
 
-// The header reads the publishable key when its module loads, so the modules load after the stub.
-let NavBar: Island
-let start: typeof import("../foldkit-island/client").default
-let renderer: typeof import("../foldkit-island/server").default
-beforeAll(async () => {
+// The header reads the publishable key when its module loads; vi.hoisted runs above the imports.
+vi.hoisted(() => {
 	vi.stubEnv("PUBLIC_CLERK_PUBLISHABLE_KEY", `pk_test_${btoa("clerk.maple.test$")}`)
-	;({ NavBar } = await import("./NavBar"))
-	start = (await import("../foldkit-island/client")).default
-	renderer = (await import("../foldkit-island/server")).default
 })
 
 const props = { locale: "en", stars: 1900 }

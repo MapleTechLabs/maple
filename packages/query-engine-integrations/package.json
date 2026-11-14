@@ -6,7 +6,6 @@
 		".": "./src/index.ts",
 		"./ai": "./src/ai/index.ts",
 		"./cloudflare": "./src/cloudflare/index.ts",
-		"./planetscale": "./src/planetscale/index.ts",
 		"./product": "./src/product/index.ts",
 		"./benchmark": "./src/benchmark/index.ts"
 	},
@@ -15,7 +14,7 @@
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/effect-orm": "0.8.0",
+		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"effect": "catalog:effect"

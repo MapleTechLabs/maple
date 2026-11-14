@@ -1,11 +1,10 @@
 import type { McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatPercent, formatDurationFromMs, formatNumber } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { ListServicesOutput } from "@maple/domain/mcp-outputs"
 import { listServices } from "@maple/query-engine/observability"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -22,7 +21,6 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 			...WINDOW.fields,
 			environment: P.environment(),
 		}),
-		output: ListServicesOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing services", "Checking which services are reporting"],
 		handler: Effect.fn("McpTool.listServices")(function* (params) {
@@ -61,8 +59,8 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const minutes = windowMinutes(output.timeRange)
-			const unhealthy = Arr.filter(output.services, (s) => s.errorRate > 0).sort(
-				(a, b) => b.errorRate - a.errorRate || b.throughput - a.throughput,
+			const unhealthy = Arr.filter(output.services, (s) => s.errorRate > 0).sort((a, b) =>
+				b.errorRate !== a.errorRate ? b.errorRate - a.errorRate : b.throughput - a.throughput,
 			)
 			return {
 				title: "Services",

@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.has would need a cast
 const hasKey = <T extends object>(table: T, key: PropertyKey): key is keyof T => Object.hasOwn(table, key)
 
 /** Reads a fixed table by an arbitrary string; only own keys match, never `constructor` and friends. */

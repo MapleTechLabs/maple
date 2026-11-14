@@ -1,8 +1,10 @@
+import * as Policy from "@maple/domain/policy"
 import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
 import {
 	StatusPageConfig,
 	V2StatusPage,
 	V2StatusPageComponent,
+	V2StatusPageCustomDomain,
 	V2StatusPageIncident,
 	V2UptimeMonitor,
 } from "@maple/domain/http/v2"
@@ -13,24 +15,54 @@ import { StatusPageSearch } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
-import { ComponentForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
+import { ComponentForm, IncidentEditForm, IncidentForm, SettingsForm, UpdateForm } from "../shared/form"
 import { Picker } from "../shared/picker"
-import { PreviewHistory, PreviewScheme } from "../shared/preview"
+import { PreviewHistory, PreviewScheme, PreviewState, PreviewWidth } from "../shared/preview"
 
 // `/status-pages/$pageId`: the page itself is the editor. A component or incident picked in the
 // preview or the list opens in the side panel; Settings and JSON are views of their own.
 
+/** Where the Post incident dialog is: writing it, or reviewing what publishing it changes. */
+export const ComposeStep = Schema.Literals(["write", "review"])
+export type ComposeStep = typeof ComposeStep.Type
+
+/**
+ * The Post update dialog's form: being written, under review, posting, or showing why the post
+ * failed. `Closed` until the dialog first opens; a closed dialog keeps its last form on screen
+ * while it fades out.
+ */
+export const UpdateFormState = Schema.Union([
+	Schema.TaggedStruct("Closed", {}),
+	Schema.TaggedStruct("Writing", { form: UpdateForm }),
+	Schema.TaggedStruct("Reviewing", { form: UpdateForm }),
+	Schema.TaggedStruct("Posting", { form: UpdateForm }),
+	Schema.TaggedStruct("Failed", { form: UpdateForm, failure: LoadFailure }),
+])
+export type UpdateFormState = typeof UpdateFormState.Type
+
+export const JsonEdit = Schema.Struct({
+	draft: Schema.String,
+	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
+	base: StatusPageConfig,
+	/** After a conflict: the next good config read becomes the base, keeping the typed draft. */
+	isRebasing: Schema.Boolean,
+})
+export type JsonEdit = typeof JsonEdit.Type
+
 export const BreakGlassAction = Schema.Literals(["rotate", "revoke"])
 export type BreakGlassAction = typeof BreakGlassAction.Type
+
+/** What the Access section is saving: a visibility, a new password, or the password's removal. */
+export const AccessAction = Schema.Literals(["visibility", "password", "removePassword"])
+export type AccessAction = typeof AccessAction.Type
 
 /** A freshly issued break-glass token: shown once, never read back. */
 export const RevealedToken = Schema.Struct({ token: Schema.String, suffix: Schema.String })
 
-/** What the side panel shows: one component or incident, the incident composer, or Add component. */
+/** What the side panel shows: one component or incident, or Add component. */
 export const Panel = Schema.Union([
 	Schema.TaggedStruct("Component", { componentId: StatusPageComponentId }),
 	Schema.TaggedStruct("Incident", { incidentId: StatusPageIncidentId }),
-	Schema.TaggedStruct("Compose", {}),
 	/** `session` tells this opening of Add from earlier ones whose writes are still in flight. */
 	Schema.TaggedStruct("Add", { session: Schema.Number }),
 ])
@@ -52,12 +84,15 @@ export const Model = Schema.Struct({
 	incidents: KeyedSchema(Schema.Array(V2StatusPageIncident), LoadFailure),
 	/** The org's monitors: the component picker and each linked component's status. */
 	monitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	isSessionLoaded: Schema.Boolean,
 	pageMenu: Menu.Model,
 	panel: Schema.NullOr(Panel),
 	// Preview
 	previewScheme: PreviewScheme,
+	/** Looking only, like the scheme: neither is saved with the page. */
+	previewWidth: PreviewWidth,
+	previewState: PreviewState,
 	previewGeneration: Schema.Number,
 	previewShown: Schema.Number,
 	previewHistory: PreviewHistory,
@@ -75,13 +110,22 @@ export const Model = Schema.Struct({
 	/** The last Add session opened; each opening takes the next number. */
 	addSession: Schema.Number,
 	// Incidents
+	composeDialog: Dialog.Model,
+	composeStep: ComposeStep,
 	incidentForm: IncidentForm,
 	isCreatingIncident: Schema.Boolean,
 	incidentFailure: Schema.NullOr(LoadFailure),
-	updateForm: Schema.NullOr(UpdateForm),
-	isPostingUpdate: Schema.Boolean,
-	updateFailure: Schema.NullOr(LoadFailure),
+	updateDialog: Dialog.Model,
+	updateForm: UpdateFormState,
 	publishingIncidentIds: Schema.Array(StatusPageIncidentId),
+	editIncidentDialog: Dialog.Model,
+	/** The incident whose title, impact and components are edited; `null` until the dialog first opens. */
+	incidentEdit: Schema.NullOr(IncidentEditForm),
+	isSavingIncident: Schema.Boolean,
+	incidentEditFailure: Schema.NullOr(LoadFailure),
+	confirmDeleteIncidentId: Schema.NullOr(StatusPageIncidentId),
+	deleteIncidentDialog: Dialog.Model,
+	isDeletingIncident: Schema.Boolean,
 	// Live
 	/** The status Worker's origin; empty hides the public links (no status domain yet). */
 	publicBaseUrl: Schema.String,
@@ -99,17 +143,45 @@ export const Model = Schema.Struct({
 	tokenCopy: CopyButton.Model,
 	deletePageDialog: Dialog.Model,
 	isDeletingPage: Schema.Boolean,
+	// Access
+	accessAction: Schema.NullOr(AccessAction),
+	/** The new page password as typed; `null` while its field is closed. */
+	passwordDraft: Schema.NullOr(Schema.String),
+	accessFailure: Schema.NullOr(LoadFailure),
+	// Custom domain
+	/** The page's custom domain and whether this deployment offers them; read with the page. */
+	customDomain: KeyedSchema(V2StatusPageCustomDomain, LoadFailure),
+	/** The hostname as typed; `null` while the field shows the saved one. */
+	customDomainDraft: Schema.NullOr(Schema.String),
+	customDomainAction: Schema.NullOr(Schema.Literals(["set", "check", "remove"])),
+	customDomainFailure: Schema.NullOr(LoadFailure),
+	removeCustomDomainDialog: Dialog.Model,
+	dnsCopy: CopyButton.Model,
+	/** Which DNS value `dnsCopy` reports on. */
+	dnsCopyKey: Schema.NullOr(Schema.String),
 	// JSON
 	/** The page as `GET …/config` returns it: every component, and the revision to apply against. */
 	config: KeyedSchema(StatusPageConfig, LoadFailure),
-	/** The edited document; `null` while the tab shows the page as saved. */
-	jsonDraft: Schema.NullOr(Schema.String),
-	/** The saved document the draft was opened from: its diff base and the version an apply sends. */
-	jsonBase: Schema.NullOr(StatusPageConfig),
-	/** After a conflict: the next config read becomes the draft's base, keeping the typed draft. */
-	isRebasingJson: Schema.Boolean,
+	/** The open JSON edit; `null` while the tab shows the page as saved. */
+	jsonEdit: Schema.NullOr(JsonEdit),
 	isApplyingJson: Schema.Boolean,
 	jsonFailure: Schema.NullOr(LoadFailure),
 	jsonCopy: CopyButton.Model,
 })
 export type Model = typeof Model.Type
+
+/** The viewer may change what this page edits (`status_pages:edit`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:edit")
+
+/** The viewer may post, update, edit and delete incidents and maintenance (`status_page_incidents:post`). */
+export const canPostIncidents = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_page_incidents:post")
+
+/** The viewer may change who can read the page, its password included (`status_pages:access`). */
+export const canChangeAccess = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:access")
+
+/** The viewer may rotate or revoke the break-glass token (`status_pages:break_glass`). */
+export const canBreakGlass = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "status_pages:break_glass")

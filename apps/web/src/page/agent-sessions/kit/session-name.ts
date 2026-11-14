@@ -1,6 +1,5 @@
-import { vendorLabel } from "./vendor"
-
-// A session's identity and heading.
+import { vendorLabel } from "@maple/views/lib/ai-vendor"
+import { Option, Array as Arr } from "effect"
 
 /** The name instrumentation writes when nothing named the agent. */
 const PLACEHOLDER_AGENT_NAME = "default"
@@ -12,8 +11,8 @@ export const sessionIdentity = (summary: {
 }): string => {
 	const vendorId = summary.vendorIds[0]
 	const framework = vendorId === undefined ? undefined : vendorLabel(vendorId)
-	const agentName = summary.agentNames.find((name) => name !== PLACEHOLDER_AGENT_NAME)
-	if (agentName !== undefined) return agentName
+	const agentName = Arr.findFirst(summary.agentNames, (name) => name !== PLACEHOLDER_AGENT_NAME)
+	if (Option.isSome(agentName)) return agentName.value
 	if (framework !== undefined && framework !== "Unidentified") return `${framework} session`
 	return "Agent session"
 }

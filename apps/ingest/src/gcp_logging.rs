@@ -24,6 +24,10 @@ pub const NOT_A_LOG_ENTRY: &str = "The Pub/Sub subscription wraps each entry in 
 pub const ENTRY_NOT_STORED: &str = "Maple could not store an entry just now. Pub/Sub retries it \
     for up to a day. Nothing to do.";
 
+/// An entry the organization's ingest rules would take too long to scan.
+pub const RULES_SCAN_BUDGET: &str = "This organization's ingest rules need more work than one \
+    entry may use, so Maple drops it. Simplify or remove patterns in your ingest rules.";
+
 /// An entry refused because the organization is over its plan limit.
 pub const OVER_PLAN_LIMIT: &str = "This Maple organization is over its plan limit, so Maple \
     refuses new logs. Pub/Sub retries for up to a day. See Settings, Billing.";

@@ -4,9 +4,11 @@ import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { icon } from "@maple/views/ui/icon"
+import { separator } from "@maple/views/ui/display"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { pressable } from "@maple/views/ui/pressable"
 import { isMachineTurn, messageText, type TranscriptRow } from "./transcript-rows"
+import { typography } from "@maple/views/ui/typography"
 
 // The turn minimap: one marker per human turn down the transcript's gutter, lit while its turn
 // is on screen; hovering previews a turn, a click jumps. The pointer, keyboard and scrolling
@@ -32,7 +34,7 @@ const compactPreview = (text: string): string | null => {
 export const deriveTurnMinimap = (
 	rows: ReadonlyArray<TranscriptRow>,
 ): Readonly<{ items: ReadonlyArray<TurnItem>; turnByRowId: ReadonlyMap<string, number> }> => {
-	const items = rows.reduce<ReadonlyArray<TurnItem>>((acc, row) => {
+	const items = Arr.reduce<(typeof rows)[number], ReadonlyArray<TurnItem>>(rows, [], (acc, row) => {
 		if (row.kind !== "message") return acc
 		if (row.message.role === "user" && !isMachineTurn(row.message))
 			return [
@@ -48,7 +50,7 @@ export const deriveTurnMinimap = (
 		return current !== undefined && text !== null
 			? [...acc.slice(0, -1), { ...current, assistantText: text }]
 			: acc
-	}, [])
+	})
 	const turnByRowId = new Map(
 		Arr.flatMap(rows, (row, index) => {
 			const turns = deriveTurnCount(rows.slice(0, index + 1))
@@ -68,10 +70,10 @@ const resolveCurrentTurnIndex = (
 	visibleIds: ReadonlyArray<string>,
 	turnByRowId: ReadonlyMap<string, number>,
 ): number | null =>
-	visibleIds.reduce<number | null>((current, id) => {
+	Arr.reduce<(typeof visibleIds)[number], number | null>(visibleIds, null, (current, id) => {
 		const index = turnByRowId.get(id)
 		return index === undefined ? current : current === null || index < current ? index : current
-	}, null)
+	})
 
 const minimapHeightStyle = (count: number): string =>
 	`min(${Math.max(1, (count - 1) * ITEM_SPACING_PX)}px, ${MAX_HEIGHT_CSS})`
@@ -208,21 +210,21 @@ export const turnMinimap = <M>(
 									? "Jump to a turn"
 									: `Jump to turn: ${activeItem.userText ?? "user message"}`,
 							className:
-								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring/70",
+								"absolute inset-y-0 start-0 w-full bg-transparent focus-visible:ring-ring",
 							attributes: [
 								h.DataAttribute("turn-rail", String(items.length)),
 								h.DataAttribute("turn-current", String(currentIndex ?? 0)),
 							],
 						},
 						[
-							h.div([h.Class("absolute top-0 start-3 h-full w-px bg-border-subtle")], []),
+							separator(h, "vertical", "absolute top-0 start-3 h-full bg-border-subtle"),
 							...Arr.map(items, (item, index) =>
 								h.span(
 									[
 										h.AriaHidden(true),
 										h.Class(
 											cn(
-												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[background-color,width] duration-150",
+												"pointer-events-none absolute start-0 h-0.5 -translate-y-1/2 rounded-full transition-[width] duration-150",
 												visibleTurns.has(index)
 													? "bg-foreground/80"
 													: "bg-foreground-faint",
@@ -259,12 +261,14 @@ export const turnMinimap = <M>(
 														),
 													],
 													[
-														h.span(
-															[
-																h.Class(
-																	"block truncate text-sm font-medium leading-5",
-																),
-															],
+														typography(
+															h,
+															{
+																size: "sm",
+																weight: "medium",
+																truncate: true,
+																className: "block leading-5",
+															},
 															[activeItem.userText ?? "User message"],
 														),
 														...(activeItem.assistantText === null

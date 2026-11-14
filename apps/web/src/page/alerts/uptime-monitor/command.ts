@@ -1,26 +1,22 @@
+import { readClock } from "@maple/views/data/timing"
 import { UptimeMonitorId } from "@maple/domain"
 import { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import { getUptimeCheckStats } from "@maple/web-data/warehouse/uptime"
 import { Clock, Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { readIsAdmin } from "../shared/commands"
-import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../shared/uptime-commands"
+import { settleTo } from "@maple/views/data/load-failure"
+import { retrieveMonitor, setMonitorEnabled, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
 import { UptimeWindow } from "./model"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
-export const ReadMonitorClock = Command.define("ReadUptimeMonitorClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadMonitorClock = readClock("ReadUptimeMonitorClock", Message.ReadClock)
 
-export const FetchMonitorSession = Command.define("FetchUptimeMonitorSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
-})
+export const FetchMonitorSession = fetchSessionGrants(
+	"FetchUptimeMonitorSession",
+	Message.CompletedFetchSession,
+)
 
 export const FetchMonitor = Command.define("FetchUptimeMonitor", {
 	args: { key: Schema.String, monitorId: UptimeMonitorId },
@@ -73,9 +69,5 @@ export const FetchCheckStats = Command.define("FetchUptimeCheckStats", {
 				endTime: formatWarehouseDateTime(nowMs),
 				withPhases,
 			}).pipe(Effect.map((stats) => ({ ...stats, window })))
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchStats({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchStats({ key, result }))),
 })

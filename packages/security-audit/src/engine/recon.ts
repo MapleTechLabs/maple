@@ -2,15 +2,15 @@
  * Phase 1: the strict budget gate, reconnaissance, synthesis into `architecture.md` and the seeded
  * ledger, and the prior-run rules that turn earlier ledgers and findings into current work.
  */
-import { Effect, Ref, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Ref, Array as Arr, Record as Rec } from "effect"
 import { focusedReconPrompt, RECON_AGENTS, reconPrompt, synthesisPrompt } from "../prompts"
 import { SynthesisResult } from "../results"
-import type { CoverageUnit, Finding } from "../schema"
+import type { CoverageUnit, Finding, Profile } from "../schema"
 import { admitUnits, type LedgerUnit, scoped, seedUnit, unitRefusal } from "./ledger"
 import { type CarriedRecord, type Engine, type PriorRun, rereadPrompt, type TextAnswer } from "./state"
 
 /** The calls the skill reserves before any reconnaissance agent may launch. */
-export const minimumInvocations = (profile: "quick" | "standard" | "deep"): number =>
+export const minimumInvocations = (profile: Profile): number =>
 	// 4 baseline reconnaissance + 1 synthesis + 1 hunter + the profile's mandatory critics + 1 verifier.
 	4 + 1 + 1 + (profile === "quick" ? 1 : 2) + 1
 
@@ -47,7 +47,10 @@ export const planFromPrior = (
 		// Every open record the unit links is carried together, or none is: a unit is either re-verified
 		// (all its records unchanged) or re-hunted (any of them changed), never half of each.
 		const open = Arr.filter(linked, (record) => record.verdict !== "rejected")
-		const strongest = open.find((record) => record.verdict === "confirmed") ?? open[0]
+		const strongest = Option.getOrElse(
+			Arr.findFirst(open, (record) => record.verdict === "confirmed"),
+			() => open[0],
+		)
 		if (strongest !== undefined) {
 			const confirmed = strongest.verdict === "confirmed"
 			if (Arr.some(open, (record) => changed(recordFiles(record)))) {
@@ -90,10 +93,10 @@ export const planFromPrior = (
 			(record) => [record.fingerprint, record] as const,
 		),
 	)
-	const counts = units.reduce<Record<string, number>>((acc, unit) => {
+	const counts = Arr.reduce<LedgerUnit, Record<string, number>>(units, {}, (acc, unit) => {
 		acc[unit.prior_status] = (acc[unit.prior_status] ?? 0) + 1
 		return acc
-	}, {})
+	})
 	const summary = `Prior run ${prior.runId} at ${prior.sourceRef}: ${prior.ledger.length} units (${Arr.join(
 		Arr.map(Rec.toEntries(counts), ([status, n]) => `${n} ${status}`),
 		", ",
@@ -225,15 +228,15 @@ export const runReconnaissance = (engine: Engine) =>
 			reconResults,
 			priorSummary: prior?.summary ?? "No prior ledger exists for this repository.",
 		}
-		const synthesize = (id: string) =>
+		const synthesize = (id: string, attempt: "first" | "retry") =>
 			engine.invoke(
 				"synthesis",
 				id,
-				synthesisPrompt(synthesisInput, engine.context(id)),
+				synthesisPrompt(synthesisInput, engine.context(id), attempt),
 				SynthesisResult,
 			)
-		const first = yield* synthesize("synthesis-1")
-		const synthesis = first ?? (yield* synthesize("synthesis-2"))
+		const first = yield* synthesize("synthesis-1", "first")
+		const synthesis = first ?? (yield* synthesize("synthesis-2", "retry"))
 		if (synthesis === undefined) {
 			yield* engine.fail("reconnaissance_synthesis_failed")
 			return false

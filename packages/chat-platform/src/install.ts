@@ -25,7 +25,7 @@ import type { ConnectorConfigKey } from "./ingress"
  * install exchanges an OAuth client secret against a provider that answers with
  * failures, and a redacted value cannot be carried into one by accident.
  */
-export type ChatConnectorConfig = ReadonlyMap<string, Redacted.Redacted<string>>
+export type ChatConnectorConfig = ReadonlyMap<string, Redacted.Redacted>
 
 /**
  * Connector-defined workspace settings, as the settings form posts them and as

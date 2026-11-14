@@ -179,6 +179,14 @@ describe("value-by-unit dispatch", () => {
 		expect(formatValueByUnit(1_500, "requests_per_sec")).toBe("1.5K/s")
 		expect(formatValueByUnit(3_400, undefined)).toBe("3.4K")
 	})
+
+	it("prints dollars, keeping a fraction of a cent visible", () => {
+		expect(formatValueByUnit(12.5, "usd")).toBe("$12.50")
+		expect(formatValueByUnit(0.0042, "usd")).toBe("$0.0042")
+		// An embedding call's cost per bucket: no exponent notation.
+		expect(formatValueByUnit(0.00000024, "usd")).toBe("$0.00000024")
+		expect(formatValueByUnit(0, "usd")).toBe("$0.00")
+	})
 })
 
 describe("bucket helpers normalize warehouse timestamps", () => {
@@ -201,7 +209,31 @@ describe("bucket helpers normalize warehouse timestamps", () => {
 	it("formatBucketLabel names a midnight tick on a multi-day axis by its day alone", () => {
 		const context = { rangeMs: 7 * 86_400_000, bucketSeconds: 3 * 3600, timeZone: "UTC", locale: "en-US" }
 		expect(formatBucketLabel("2026-10-20T00:00:00Z", context, "tick")).toBe("Oct 20")
-		expect(formatBucketLabel("2026-10-20T12:00:00Z", context, "tick")).toBe("Oct 20, 12:00 PM")
+		expect(formatBucketLabel("2026-10-20T12:00:00Z", context, "tick")).toMatch(/^Oct 20, 12\sPM$/)
+	})
+
+	it("formatBucketLabel drops the minutes of a tick on the hour, on a 12-hour clock only", () => {
+		const day = { rangeMs: 6 * 3600 * 1000, bucketSeconds: 300, timeZone: "UTC" }
+		const us = { ...day, locale: "en-US" }
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", us, "tick")).toMatch(/^6\sAM$/)
+		expect(formatBucketLabel("2026-10-20T06:30:00Z", us, "tick")).toMatch(/^6:30\sAM$/)
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", { ...day, locale: "en-GB" }, "tick")).toBe("06:00")
+		// A :30 zone's hour is not UTC's.
+		expect(
+			formatBucketLabel("2026-10-20T06:30:00Z", { ...us, timeZone: "Asia/Kolkata" }, "tick"),
+		).toMatch(/^12\sPM$/)
+	})
+
+	it("formatBucketLabel finds a tick on the hour in a locale that prints its own digits", () => {
+		const context = { rangeMs: 6 * 3600 * 1000, bucketSeconds: 300, timeZone: "UTC" }
+		const arabic = { ...context, locale: "en-US-u-nu-arab" }
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", arabic, "tick")).toMatch(/^\u0666\sAM$/)
+		expect(formatBucketLabel("2026-10-20T06:30:00Z", arabic, "tick")).toMatch(/^\u0666:\u0663\u0660\sAM$/)
+	})
+
+	it("formatBucketLabel keeps the seconds of a tick on a window of minutes", () => {
+		const context = { rangeMs: 10 * 60 * 1000, bucketSeconds: 10, timeZone: "UTC", locale: "en-US" }
+		expect(formatBucketLabel("2026-10-20T06:00:00Z", context, "tick")).toMatch(/^6:00:00\sAM$/)
 	})
 
 	it("infers spacing and range from tz-less buckets", () => {

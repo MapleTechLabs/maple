@@ -1,4 +1,6 @@
 import type { AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { compareAlertThreshold } from "@maple/alerting-core/tiers"
+import { sloNameFromRuleName } from "@maple/domain/slo"
 
 import {
 	comparatorLabels,
@@ -7,6 +9,7 @@ import {
 	isRangeComparator,
 	signalLabels,
 } from "./form-utils"
+import { anomalyScopeSummary, anomalySeverityLabel } from "./anomaly-rule"
 import { incidentGroup } from "./incident-timeline"
 import { type DerivedRuleStatus, needsAttention } from "./rule-status"
 import { Array as Arr, String as Str } from "effect"
@@ -24,6 +27,8 @@ export function ruleBucket(derived: DerivedRuleStatus | undefined): RuleBucket {
 
 /** "Error rate > 5% · 5m · per service.name · checkout" */
 export function ruleConditionSummary(rule: AlertRuleDocument): string {
+	// An anomaly rule has no threshold of its own: what it covers is the whole condition.
+	if (rule.signalType === "anomaly") return `Anomaly · ${anomalyScopeSummary(rule)}`
 	// Builder rules format in the display unit (5%, not the stored 0.05) and name their aggregation.
 	const display = displaySignalType({
 		signalType: rule.signalType,
@@ -45,11 +50,17 @@ export function ruleConditionSummary(rule: AlertRuleDocument): string {
 
 type IncidentLine = Pick<
 	AlertIncidentDocument,
-	"signalType" | "ruleName" | "groupKey" | "status" | "lastObservedValue" | "threshold"
+	"signalType" | "ruleName" | "groupKey" | "groupLabel" | "status" | "lastObservedValue" | "threshold"
 >
 
 /** Uptime incidents name the monitor ("checkout-api is down"), not a signal and a value. */
 const isUptime = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "uptime"
+
+/** SLO incidents name the SLO ("Checkout API is burning its error budget"). */
+const isSlo = (incident: Pick<AlertIncidentDocument, "signalType">) => incident.signalType === "slo_burn_rate"
+
+/** The rule backing an SLO is named `SLO burn: <SLO name>`; the SLO's own name reads better. */
+export const sloNameOf = (ruleName: string): string => sloNameFromRuleName(ruleName) ?? ruleName
 
 /** Raw SQL and builder rules: "Raw SQL 5" says nothing, so the rule name is what fired. */
 export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalType">) =>
@@ -59,15 +70,22 @@ export const isQueryIncident = (incident: Pick<AlertIncidentDocument, "signalTyp
 export function incidentTitle(incident: IncidentLine): string {
 	if (isUptime(incident))
 		return `${incident.ruleName} ${incident.status === "resolved" ? "is back up" : "is down"}`
+	if (isSlo(incident))
+		return `${sloNameOf(incident.ruleName)} ${incident.status === "resolved" ? "stopped burning its error budget" : "is burning its error budget"}`
 	if (isQueryIncident(incident)) return incident.ruleName
+	if (incident.signalType === "anomaly") {
+		const group = incidentGroup(incident)
+		return group === null ? "Anomaly" : `Anomaly on ${group}`
+	}
 	const value = formatSignalValue(incident.signalType, incident.lastObservedValue)
 	const base = `${signalLabels[incident.signalType]} ${value}`
-	return incident.groupKey === null ? base : `${base} on ${incident.groupKey}`
+	const group = incidentGroup(incident)
+	return group === null ? base : `${base} on ${group}`
 }
 
-/** The group shown next to the rule name: an uptime incident's only when it is a real service. */
+/** The group shown next to the rule name: none for an ungrouped incident, never an anomaly's incident-id key. */
 export function incidentScope(incident: IncidentLine): string | null {
-	return isUptime(incident) ? incidentGroup(incident) : incident.groupKey
+	return incidentGroup(incident)
 }
 
 /** The line under the title: the rule and group, or a query rule's kind and group (its name is the title). */
@@ -81,9 +99,12 @@ export function incidentSubline(incident: IncidentLine): string {
 export const NO_THRESHOLD = "–"
 
 /** The Now / threshold cells: an uptime incident is "Down" (or "Up") with no threshold. */
-export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string }> {
+export function incidentValues(incident: IncidentLine): Readonly<{ now: string; threshold: string | null }> {
 	if (isUptime(incident))
 		return { now: incident.status === "resolved" ? "Up" : "Down", threshold: NO_THRESHOLD }
+	// An anomaly's threshold is the detector's, not the rule's: its severity is the whole reading.
+	if (incident.signalType === "anomaly")
+		return { now: anomalySeverityLabel(incident.lastObservedValue), threshold: null }
 	return {
 		now: formatSignalValue(incident.signalType, incident.lastObservedValue),
 		threshold: formatSignalValue(incident.signalType, incident.threshold),
@@ -98,29 +119,21 @@ export interface Headroom {
 	readonly breached: boolean
 	/** Fraction of the threshold left before breaching; null for range/equality comparators. */
 	readonly headroom: number | null
+	/** Past the threshold, or within `NEAR_HEADROOM` of it: what `headroomTone` reads. */
+	readonly isNear: boolean
 }
 
-const breaches = (rule: AlertRuleDocument, value: number): boolean => {
-	const upper = rule.thresholdUpper ?? rule.threshold
-	switch (rule.comparator) {
-		case "gt":
-			return value > rule.threshold
-		case "gte":
-			return value >= rule.threshold
-		case "lt":
-			return value < rule.threshold
-		case "lte":
-			return value <= rule.threshold
-		case "eq":
-			return value === rule.threshold
-		case "neq":
-			return value !== rule.threshold
-		case "between":
-			return value >= rule.threshold && value <= upper
-		case "not_between":
-			return value < rule.threshold || value > upper
-	}
-}
+/** Under a tenth of the threshold left counts as near firing, on every surface that says so. */
+export const NEAR_HEADROOM = 0.1
+
+export type HeadroomTone = "neutral" | "warning" | "error"
+
+/**
+ * How a reading against its threshold is drawn, in the rules table and the Inbox alike: neutral
+ * unless under `NEAR_HEADROOM` is left (warning) or the threshold is passed (error).
+ */
+export const headroomTone = (reading: Pick<Headroom, "breached" | "isNear">): HeadroomTone =>
+	reading.breached ? "error" : reading.isNear ? "warning" : "neutral"
 
 /** Current value against the threshold on a shared 0..max scale. */
 export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
@@ -136,11 +149,13 @@ export function ruleHeadroom(rule: AlertRuleDocument, value: number): Headroom {
 				: below
 					? (value - rule.threshold) / rule.threshold
 					: null
+	const breached = compareAlertThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
 	return {
 		fill: Math.min(1, Math.max(0, value / max)),
 		ticks: Arr.map(thresholds, (t) => Math.min(1, Math.max(0, t / max))),
-		breached: breaches(rule, value),
+		breached,
 		headroom,
+		isNear: breached || (headroom !== null && headroom < NEAR_HEADROOM),
 	}
 }
 
@@ -191,7 +206,11 @@ export function fireLanes(
 		ruleId,
 		ruleName: lane.ruleName,
 		bars: lane.bars,
-	})).sort((a, b) => b.bars.length - a.bars.length || Str.localeCompare(b.ruleName)(a.ruleName))
+	})).sort((a, b) =>
+		b.bars.length !== a.bars.length
+			? b.bars.length - a.bars.length
+			: Str.localeCompare(b.ruleName)(a.ruleName),
+	)
 }
 
 export type RibbonCell = "quiet" | "warning" | "critical"
@@ -203,20 +222,26 @@ export function ruleRibbon(
 	cells: number,
 ): RibbonCell[] {
 	const width = (range.max - range.min) / cells
-	return Array.from({ length: cells }, (_, i) => {
-		const cellStart = range.min + i * width
-		const cellEnd = cellStart + width
-		const hits = Arr.filter(incidents, (incident) => {
-			const start = Date.parse(incident.firstTriggeredAt)
-			const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
-			return end > cellStart && start < cellEnd
-		})
-		if (Arr.some(hits, (incident) => incident.severity === "critical")) return "critical"
-		return hits.length > 0 ? "warning" : "quiet"
-	})
+	const out: RibbonCell[] = Array.from({ length: cells }, () => "quiet")
+	if (!(width > 0)) return out
+	// Each incident paints only the cells it overlaps (±1 for float edges), so a row costs
+	// O(incidents + cells), not O(incidents × cells) timestamp parses.
+	for (const incident of incidents) {
+		const start = Date.parse(incident.firstTriggeredAt)
+		const end = incident.resolvedAt === null ? range.max : Date.parse(incident.resolvedAt)
+		const first = Math.max(0, Math.floor((start - range.min) / width) - 1)
+		const last = Math.min(cells - 1, Math.ceil((end - range.min) / width))
+		for (let i = first; i <= last; i++) {
+			const cellStart = range.min + i * width
+			if (!(end > cellStart && start < cellStart + width)) continue
+			if (incident.severity === "critical") out[i] = "critical"
+			else if (out[i] === "quiet") out[i] = "warning"
+		}
+	}
+	return out
 }
 
-export type BlindSpotKind = "error" | "stale" | "no-data" | "unrouted" | "delivery" | "slowed"
+export type BlindSpotKind = "error" | "stale" | "few-samples" | "no-data" | "unrouted" | "delivery" | "slowed"
 
 export interface BlindSpot {
 	readonly rule: AlertRuleDocument
@@ -227,10 +252,11 @@ export interface BlindSpot {
 const BLIND_SPOT_ORDER: Record<BlindSpotKind, number> = {
 	error: 0,
 	stale: 1,
-	"no-data": 2,
-	unrouted: 3,
-	delivery: 4,
-	slowed: 5,
+	"few-samples": 2,
+	"no-data": 3,
+	unrouted: 4,
+	delivery: 5,
+	slowed: 6,
 } satisfies Record<BlindSpotKind, number>
 
 /** Enabled rules that cannot fire, reach nobody, or were slowed to keep up. One entry per rule, worst first. */
@@ -245,6 +271,7 @@ export function blindSpots(
 		const reason = derived.reason ?? ""
 		if (derived.status === "error") spots.push({ rule, kind: "error", detail: reason })
 		else if (derived.status === "stale") spots.push({ rule, kind: "stale", detail: reason })
+		else if (derived.status === "few-samples") spots.push({ rule, kind: "few-samples", detail: reason })
 		else if (derived.status === "no-data") spots.push({ rule, kind: "no-data", detail: reason })
 		else if (derived.attention.noDestinations)
 			spots.push({ rule, kind: "unrouted", detail: "No destinations, so nobody is notified" })

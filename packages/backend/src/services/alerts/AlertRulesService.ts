@@ -15,8 +15,9 @@ import {
 	type AlertRuleUpsertRequest,
 	type OrgId,
 	type UserId,
+	isManagedSignalType,
+	MANAGED_SIGNAL_TYPES,
 } from "@maple/domain/http"
-import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
@@ -25,8 +26,9 @@ import {
 	AlertRuleClaims,
 	AlertRules,
 	AlertRuleStates,
+	EscalationChains,
 } from "@maple/db/tables"
-import { Array as Arr, Context, Effect, HashSet, Layer, Option, Schema } from "effect"
+import { Array as Arr, Context, Effect, HashSet, Layer, Option, Result, Schema } from "effect"
 import type { MapleDb } from "@maple/db/client"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
@@ -39,19 +41,64 @@ import {
 	rowToRuleDocument,
 	selectStoredAlertRules,
 	storedRuleCondition,
-	UPTIME_RULE_MANAGED_MESSAGE,
+	managedRuleMessage,
 	type RuleEvaluationState,
 } from "./AlertRuleModel"
 import { tierConditionChanged } from "./alert-thresholds"
-import { makePersistenceError } from "./alert-persistence"
+import { lockOrgAlertRules, makePersistenceError } from "./alert-persistence"
 import { AlertRuntime, type AlertRuntimeApi } from "./AlertRuntime"
+import {
+	DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE,
+	DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE,
+	DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE,
+	isDefaultAnomalyScope,
+	storedAnomalyScope,
+} from "./anomaly/anomaly-rule"
+import * as Policy from "@maple/domain/policy"
 
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeErrorKindOption = Schema.decodeUnknownOption(AlertEvaluationErrorKind)
-const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 const MAX_ACTIVE_ALERT_RULES_PER_ORG = 100
 
-const isAdmin = (roles: ReadonlyArray<RoleName>) => Arr.some(roles, (role) => adminRoles.includes(role))
+interface EvaluationStateRow {
+	readonly ruleId: string
+	readonly lastError: string | null
+	readonly lastErrorKind: string | null
+	readonly lastEvaluatedAt: number | null
+}
+
+// evaluatedAt is the newest tick across every group row (anomaly `__total__` heartbeats included).
+// The error comes from the newest row still carrying one; a successful tick clears its row's error.
+const evaluationStatesByRule = (rows: ReadonlyArray<EvaluationStateRow>) => {
+	const evaluatedAtByRule = new Map<string, number>()
+	const errorRowByRule = new Map<string, EvaluationStateRow>()
+	for (const state of rows) {
+		const at = state.lastEvaluatedAt
+		const newest = evaluatedAtByRule.get(state.ruleId)
+		if (at !== null && (newest === undefined || at > newest)) evaluatedAtByRule.set(state.ruleId, at)
+		if (state.lastError === null) continue
+		const existing = errorRowByRule.get(state.ruleId)
+		if (existing === undefined || (at ?? 0) > (existing.lastEvaluatedAt ?? 0)) {
+			errorRowByRule.set(state.ruleId, state)
+		}
+	}
+	const ruleIds = new Set([...evaluatedAtByRule.keys(), ...errorRowByRule.keys()])
+	return new Map<string, RuleEvaluationState>(
+		Arr.map(Arr.fromIterable(ruleIds), (ruleId) => {
+			const errorRow = errorRowByRule.get(ruleId)
+			return [
+				ruleId,
+				{
+					error: errorRow?.lastError ?? null,
+					errorKind:
+						errorRow === undefined
+							? null
+							: Option.getOrNull(decodeErrorKindOption(errorRow.lastErrorKind)),
+					evaluatedAt: evaluatedAtByRule.get(ruleId) ?? null,
+				},
+			]
+		}),
+	)
+}
 
 export interface AlertRulesServiceApi {
 	readonly listRules: (
@@ -72,9 +119,23 @@ export interface AlertRulesServiceApi {
 		ruleId: AlertRuleDocument["id"],
 	) => Effect.Effect<
 		AlertRuleDeleteResponse,
-		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError
+		AlertForbiddenError | AlertPersistenceError | AlertRuleNotFoundError | AlertValidationError
 	>
 }
+
+/** The org's default anomaly rule (anomaly, no scope), if it has one. */
+const findDefaultAnomalyRule = (db: MapleDb, orgId: OrgId) =>
+	db
+		.run(
+			PG.from(AlertRules)
+				.select("id", "serviceNamesJson", "environmentsJson", "anomalySignalsJson")
+				.where(($) => [$.orgId.eq(orgId), $.signalType.eq("anomaly")]),
+		)
+		.pipe(
+			Effect.map((rows) =>
+				Arr.findFirst(rows, (row) => isDefaultAnomalyScope(storedAnomalyScope(row))),
+			),
+		)
 
 /**
  * Deletes a rule with its deliveries, incidents, states and claim. Run it inside a
@@ -104,14 +165,18 @@ export const makeAlertRulePersistence = (options: {
 
 	const dbExecute = makeDbExecute(database, "AlertRulesService", makePersistenceError)
 
-	const requireAdmin = Effect.fn("AlertRulesService.requireAdmin")(function* (
+	const requireAlertsPermission = Effect.fn("AlertRulesService.requireAlertsPermission")(function* (
 		roles: ReadonlyArray<RoleName>,
 	) {
-		if (isAdmin(roles)) return
-		return yield* new AlertForbiddenError({
-			message: "Only org admins can manage alerts",
-			...(roles.length > 0 ? { roles: [...roles] } : undefined),
-		})
+		return yield* Policy.check(
+			roles,
+			"alerts:manage",
+			(denial) =>
+				new AlertForbiddenError({
+					message: denial.message,
+					...(roles.length > 0 ? { roles: [...roles] } : undefined),
+				}),
+		)
 	})
 
 	const findRuleRow = Effect.fn("AlertRulesService.findRuleRow")(function* (
@@ -193,6 +258,7 @@ export const makeAlertRulePersistence = (options: {
 			excludeServiceNamesJson:
 				normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
 			environmentsJson: normalized.environments.length > 0 ? normalized.environments : null,
+			anomalySignalsJson: normalized.anomalySignals.length > 0 ? normalized.anomalySignals : null,
 			tagsJson: normalized.tags.length > 0 ? normalized.tags : null,
 			groupBy: groupByJson,
 			signalType: normalized.signalType,
@@ -224,7 +290,7 @@ export const makeAlertRulePersistence = (options: {
 		const writeRows = yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					yield* db.execute(Orm.sql`select pg_advisory_xact_lock(hashtext(${orgId}))`)
+					yield* lockOrgAlertRules(db, orgId)
 					// Destination existence is checked INSIDE the lock: destination
 					// deletion takes the same per-org advisory lock around its reference
 					// scan, so a rule can no longer commit a reference to a destination
@@ -236,30 +302,81 @@ export const makeAlertRulePersistence = (options: {
 								.where(($) => [$.orgId.eq(orgId), $.id.in_(...normalized.destinationIds)]),
 						)
 						const existingIds = new Set(Arr.map(destinationRows, (destination) => destination.id))
-						const missingDestinationId = normalized.destinationIds.find(
+						const missingDestinationId = Arr.findFirst(
+							normalized.destinationIds,
 							(id) => !existingIds.has(id),
 						)
-						if (missingDestinationId !== undefined) {
+						if (Option.isSome(missingDestinationId)) {
 							return yield* new AlertRuleDestinationNotFoundError({
 								message: "Alert rule references an unknown destination",
-								destinationId: missingDestinationId,
+								destinationId: missingDestinationId.value,
 							})
 						}
+					}
+					// Chains likewise: their deletion scans rules for references under this lock.
+					const chainIds = Arr.dedupe(
+						Arr.filterMap(normalized.thresholds, (tier) =>
+							tier.escalationChainId == null
+								? Result.failVoid
+								: Result.succeed(tier.escalationChainId),
+						),
+					)
+					if (chainIds.length > 0) {
+						const chainRows = yield* db.run(
+							PG.from(EscalationChains)
+								.select("id")
+								.where(($) => [$.orgId.eq(orgId), $.id.in_(...chainIds)]),
+						)
+						if (chainRows.length < chainIds.length) {
+							return yield* makeAlertValidationError(
+								"Alert rule references an unknown escalation chain",
+							)
+						}
+					}
+					// One default anomaly rule per org, kept enabled and unscoped while it exists. Read
+					// under the lock for every write, so a concurrent edit cannot turn this row into it unseen.
+					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
+					// Only the backfill creates the default; it stays an enabled, unscoped anomaly rule.
+					const isTheDefault = Option.exists(defaultAnomalyRule, (rule) => rule.id === existingId)
+					if (isTheDefault) {
+						if (!normalized.enabled || normalized.signalType !== "anomaly") {
+							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
+						}
+						if (!isDefaultAnomalyScope(normalized)) {
+							return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SCOPE_MESSAGE)
+						}
+					} else if (normalized.signalType === "anomaly" && isDefaultAnomalyScope(normalized)) {
+						return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_SYSTEM_MESSAGE)
 					}
 					if (normalized.enabled) {
 						const activeRows = yield* db.run(
 							PG.from(AlertRules)
-								.select("id")
-								// Monitors' backing rules are capped by the monitor allowance instead.
+								.select(
+									"id",
+									"signalType",
+									"serviceNamesJson",
+									"environmentsJson",
+									"anomalySignalsJson",
+								)
+								// Managed rules (monitors, SLOs) are not counted against the rule cap.
 								.where(($) => [
 									$.orgId.eq(orgId),
 									$.enabled.eq(true),
-									$.signalType.neq("uptime"),
+									$.signalType.notIn(...MANAGED_SIGNAL_TYPES),
 								]),
 						)
 						const alreadyActive =
 							existingId != null && Arr.some(activeRows, (row) => row.id === existingId)
-						if (!alreadyActive && activeRows.length >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
+						// The system creates the default anomaly rule, so it takes no slot from the cap.
+						const counted = Arr.filter(
+							activeRows,
+							(row) =>
+								!(
+									row.signalType === "anomaly" &&
+									isDefaultAnomalyScope(storedAnomalyScope(row))
+								),
+						).length
+						if (!alreadyActive && counted >= MAX_ACTIVE_ALERT_RULES_PER_ORG) {
 							return yield* makeAlertValidationError(
 								`Organizations may have at most ${MAX_ACTIVE_ALERT_RULES_PER_ORG} active alert rules`,
 							)
@@ -340,6 +457,22 @@ export const makeAlertRulePersistence = (options: {
 		}
 	})
 
+	const loadEvaluationStates = Effect.fn("AlertRulesService.loadEvaluationStates")(function* (
+		orgId: OrgId,
+		ruleId?: AlertRuleId,
+	) {
+		const stateRows = yield* dbExecute((db) =>
+			db.run(
+				PG.from(AlertRuleStates)
+					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
+					.where(($) =>
+						ruleId === undefined ? [$.orgId.eq(orgId)] : [$.orgId.eq(orgId), $.ruleId.eq(ruleId)],
+					),
+			),
+		)
+		return evaluationStatesByRule(stateRows)
+	})
+
 	const upsertRuleRow = Effect.fn("AlertRulesService.upsertRuleRow")(function* (
 		orgId: OrgId,
 		userId: UserId,
@@ -353,7 +486,8 @@ export const makeAlertRulePersistence = (options: {
 				message: "Alert rule row was not readable after it was saved",
 			})
 		}
-		const document = yield* rowToRuleDocument(row)
+		const stateByRule = yield* loadEvaluationStates(orgId, ruleId)
+		const document = yield* rowToRuleDocument(row, stateByRule.get(ruleId))
 		return txid === undefined ? document : new AlertRuleDocument({ ...document, txid })
 	})
 
@@ -362,30 +496,12 @@ export const makeAlertRulePersistence = (options: {
 			db.run(
 				// Monitors' backing rules are managed through the monitor, so the rule list hides them.
 				selectStoredAlertRules()
-					.where(($) => [$.orgId.eq(orgId), $.signalType.neq("uptime")])
+					.where(($) => [$.orgId.eq(orgId), $.signalType.notIn(...MANAGED_SIGNAL_TYPES)])
 					.orderBy(["createdAt", "desc"], ["id", "desc"]),
 			),
 		)
-		const stateRows = yield* dbExecute((db) =>
-			db.run(
-				PG.from(AlertRuleStates)
-					.select("ruleId", "lastError", "lastErrorKind", "lastEvaluatedAt")
-					.where(($) => [$.orgId.eq(orgId)]),
-			),
-		)
-		const errorByRule = new Map<string, RuleEvaluationState>()
-		for (const state of stateRows) {
-			if (state.lastError == null) continue
-			const existing = errorByRule.get(state.ruleId)
-			if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
-				errorByRule.set(state.ruleId, {
-					error: state.lastError,
-					errorKind: Option.getOrNull(decodeErrorKindOption(state.lastErrorKind)),
-					evaluatedAt: state.lastEvaluatedAt,
-				})
-			}
-		}
-		const rules = yield* Effect.forEach(rows, (row) => rowToRuleDocument(row, errorByRule.get(row.id)))
+		const stateByRule = yield* loadEvaluationStates(orgId)
+		const rules = yield* Effect.forEach(rows, (row) => rowToRuleDocument(row, stateByRule.get(row.id)))
 		return new AlertRulesListResponse({ rules })
 	})
 
@@ -395,7 +511,7 @@ export const makeAlertRulePersistence = (options: {
 		roles: ReadonlyArray<RoleName>,
 		request: AlertRuleUpsertRequest,
 	) {
-		yield* requireAdmin(roles)
+		yield* requireAlertsPermission(roles)
 		const { normalized, timestamp, txid } = yield* writeRuleRow(orgId, userId, null, request)
 		return normalizedRuleToDocument(normalized, {
 			notes: normalizeOptionalString(request.notes),
@@ -410,13 +526,24 @@ export const makeAlertRulePersistence = (options: {
 		roles: ReadonlyArray<RoleName>,
 		ruleId: AlertRuleDocument["id"],
 	) {
-		yield* requireAdmin(roles)
+		yield* requireAlertsPermission(roles)
 		const row = yield* requireRuleRow(orgId, ruleId)
-		// Hidden from the generic rule APIs: a monitor's rule is deleted with its monitor.
-		if (row.signalType === "uptime") {
-			return yield* new AlertRuleNotFoundError({ message: UPTIME_RULE_MANAGED_MESSAGE, ruleId })
+		// Hidden from the generic rule APIs: a managed rule is deleted with its owner.
+		if (isManagedSignalType(row.signalType)) {
+			return yield* new AlertRuleNotFoundError({ message: managedRuleMessage(row.signalType), ruleId })
 		}
-		const deleted = yield* dbExecute((db) => db.transaction(deleteRuleRows(db, orgId, ruleId)))
+		const deleted = yield* dbExecute((db) =>
+			db.transaction(
+				Effect.gen(function* () {
+					yield* lockOrgAlertRules(db, orgId)
+					const defaultAnomalyRule = yield* findDefaultAnomalyRule(db, orgId)
+					if (Option.isSome(defaultAnomalyRule) && defaultAnomalyRule.value.id === ruleId) {
+						return yield* makeAlertValidationError(DEFAULT_ANOMALY_RULE_PROTECTED_MESSAGE)
+					}
+					return yield* deleteRuleRows(db, orgId, ruleId)
+				}),
+			),
+		)
 		const txid = readTxid(deleted)
 		return new AlertRuleDeleteResponse({
 			id: ruleId,
@@ -428,7 +555,7 @@ export const makeAlertRulePersistence = (options: {
 		listRules,
 		createRule,
 		deleteRule,
-		requireAdmin,
+		requireAlertsPermission,
 		normalizeRule,
 		normalizeRuleRow,
 		requireRuleRow,

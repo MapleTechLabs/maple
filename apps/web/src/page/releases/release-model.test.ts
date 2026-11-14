@@ -1,0 +1,394 @@
+import { describe, expect, it } from "vitest"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
+import { CommitSha, ServiceName } from "@maple/domain/http"
+import type { Release, ReleaseTimelineBucket } from "@maple/web-data/warehouse/releases"
+import {
+	attributeIssues,
+	countIssues,
+	deriveReleaseImpacts,
+	groupReleases,
+	liveVersions,
+	previousSha,
+	releaseHeadline,
+	releaseDayLabel,
+	releaseFacetCounts,
+	shortReleaseLabel,
+} from "./release-model"
+
+const sha = Schema.decodeUnknownSync(CommitSha)
+const svc = Schema.decodeUnknownSync(ServiceName)
+const SHA_A = sha(Str.repeat(40)("a"))
+const SHA_B = sha(Str.repeat(40)("b"))
+const SHA_C = sha(Str.repeat(40)("c"))
+const API = svc("api")
+const WEB = svc("web")
+
+function release(overrides: Partial<Release> & Pick<Release, "commitSha" | "serviceName">): Release {
+	return {
+		environment: "production",
+		firstSeen: "2026-09-05T09:00:00.000Z",
+		spanCount: 1000,
+		errorCount: 3,
+		p50LatencyMs: 90,
+		p95LatencyMs: 400,
+		p99LatencyMs: 1200,
+		apdexScore: 0.95,
+		...overrides,
+	}
+}
+
+function bucket(
+	iso: string,
+	serviceName: ServiceName,
+	commitSha: CommitSha,
+	count: number,
+): ReleaseTimelineBucket {
+	return { bucket: iso, serviceName, commitSha, count }
+}
+
+describe("deriveReleaseImpacts", () => {
+	it("flags a version that errors twice as often as the one it replaced", () => {
+		const rows = [
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				errorCount: 40,
+			}),
+			release({ commitSha: SHA_A, serviceName: API, errorCount: 3 }),
+		]
+		const [newer, older] = deriveReleaseImpacts(rows, [])
+		expect(newer?.health).toBe("regressed")
+		expect(newer?.errorRatio).toBeCloseTo(40 / 3, 3)
+		expect(newer?.isNewest).toBe(true)
+		expect(newer?.baseline?.commitSha).toBe(SHA_A)
+		expect(older?.health).toBe("healthy")
+		expect(older?.baseline).toBeUndefined()
+	})
+
+	it("compares against the previous version only, not every older one", () => {
+		const rows = [
+			release({
+				commitSha: SHA_C,
+				serviceName: API,
+				firstSeen: "2026-09-05T11:00:00.000Z",
+				errorCount: 3,
+			}),
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				errorCount: 3,
+			}),
+			release({
+				commitSha: SHA_A,
+				serviceName: API,
+				firstSeen: "2026-09-05T09:00:00.000Z",
+				errorCount: 400,
+			}),
+		]
+		const [newest, middle] = deriveReleaseImpacts(rows, [])
+		expect(newest?.baseline?.commitSha).toBe(SHA_B)
+		expect(newest?.errorRatio).toBeCloseTo(1, 3)
+		expect(newest?.health).toBe("healthy")
+		expect(middle?.baseline?.commitSha).toBe(SHA_A)
+	})
+
+	it("gives versions first seen in the same second no order between them", () => {
+		const rows = [
+			release({
+				commitSha: SHA_C,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 10,
+			}),
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 5000,
+			}),
+			release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		]
+		const [c, b] = deriveReleaseImpacts(rows, [])
+		expect(c?.baseline?.commitSha).toBe(SHA_A)
+		expect(b?.baseline?.commitSha).toBe(SHA_A)
+	})
+
+	it("withholds the comparison below the span floor", () => {
+		const rows = [
+			release({ commitSha: SHA_B, serviceName: API, spanCount: 20, errorCount: 10 }),
+			release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-04T09:00:00.000Z" }),
+		]
+		const [newer] = deriveReleaseImpacts(rows, [])
+		expect(newer?.errorRatio).toBeUndefined()
+		expect(newer?.health).toBe("healthy")
+	})
+
+	it("calls a latency jump a watch, not a regression", () => {
+		const rows = [
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				p95LatencyMs: 600,
+			}),
+			release({ commitSha: SHA_A, serviceName: API }),
+		]
+		const [newer] = deriveReleaseImpacts(rows, [])
+		expect(newer?.p95Delta).toBeCloseTo(0.5, 3)
+		expect(newer?.health).toBe("watch")
+	})
+
+	it("reads a partial share of the last bucket as rolling out", () => {
+		const rows = [
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_A, serviceName: API }),
+		]
+		const timeline = [
+			bucket("2026-09-05T11:00:00.000Z", API, SHA_A, 60),
+			bucket("2026-09-05T11:00:00.000Z", API, SHA_B, 40),
+		]
+		const [newer, older] = deriveReleaseImpacts(rows, timeline)
+		expect(newer?.share).toBeCloseTo(0.4, 3)
+		expect(newer?.health).toBe("rolling")
+		expect(older?.health).toBe("healthy")
+	})
+
+	it("does not call a dozen spans a rollout", () => {
+		const rows = [
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T11:00:00.000Z",
+				spanCount: 13,
+			}),
+			release({ commitSha: SHA_A, serviceName: API }),
+		]
+		const timeline = [
+			bucket("2026-09-05T11:00:00.000Z", API, SHA_A, 990),
+			bucket("2026-09-05T11:00:00.000Z", API, SHA_B, 10),
+		]
+		const [newer] = deriveReleaseImpacts(rows, timeline)
+		expect(newer?.share).toBeCloseTo(0.01, 3)
+		expect(newer?.health).toBe("healthy")
+	})
+
+	it("has no baseline for the oldest version of a service", () => {
+		const [only] = deriveReleaseImpacts([release({ commitSha: SHA_A, serviceName: API })], [])
+		expect(only?.baseline).toBeUndefined()
+		expect(only?.health).toBe("healthy")
+	})
+
+	it("keeps environments apart", () => {
+		const rows = [
+			release({ commitSha: SHA_A, serviceName: API, environment: "production" }),
+			release({ commitSha: SHA_A, serviceName: API, environment: "staging", errorCount: 500 }),
+		]
+		const impacts = deriveReleaseImpacts(rows, [])
+		expect(Arr.every(impacts, (impact) => impact.baseline === undefined)).toBe(true)
+	})
+})
+
+describe("last-bucket shares", () => {
+	it("reads 0 for a version absent from the service's last bucket", () => {
+		const rows = [
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:30:00.000Z" }),
+			release({ commitSha: SHA_A, serviceName: API }),
+		]
+		const timeline = [
+			bucket("2026-09-05T10:00:00.000Z", API, SHA_A, 10),
+			bucket("2026-09-05T11:00:00.000Z", API, SHA_B, 10),
+		]
+		const [newer, older] = deriveReleaseImpacts(rows, timeline)
+		expect(newer?.share).toBe(1)
+		expect(older?.share).toBe(0)
+	})
+})
+
+describe("groupReleases", () => {
+	it("folds one sha across services, newest first, worst health wins", () => {
+		const rows = [
+			release({ commitSha: SHA_A, serviceName: WEB, firstSeen: "2026-09-05T09:05:00.000Z" }),
+			release({
+				commitSha: SHA_A,
+				serviceName: API,
+				errorCount: 100,
+				firstSeen: "2026-09-05T09:00:00.000Z",
+			}),
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-04T09:00:00.000Z" }),
+		]
+		const groups = groupReleases(deriveReleaseImpacts(rows, []))
+		expect(Arr.map(groups, (g) => g.commitSha)).toEqual([SHA_A, SHA_B])
+		expect(Arr.map(Arr.getUnsafe(groups, 0)?.services, (s) => s.serviceName)).toEqual(["web", "api"])
+		expect(groups[0]?.firstSeen).toBe("2026-09-05T09:00:00.000Z")
+		expect(groups[0]?.health).toBe("regressed")
+		expect(groups[0]?.spanCount).toBe(2000)
+	})
+})
+
+describe("releaseFacetCounts", () => {
+	it("counts groups by health and services by appearance", () => {
+		const rows = [
+			release({ commitSha: SHA_A, serviceName: WEB }),
+			release({ commitSha: SHA_A, serviceName: API, environment: "" }),
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-04T09:00:00.000Z" }),
+		]
+		const counts = releaseFacetCounts(groupReleases(deriveReleaseImpacts(rows, [])))
+		expect(counts.health.healthy).toBe(2)
+		expect(counts.services).toEqual([
+			{ name: "api", count: 2 },
+			{ name: "web", count: 1 },
+		])
+		expect(Arr.map(counts.environments, (e) => e.name)).toEqual(["production", "unknown"])
+	})
+})
+
+describe("labels", () => {
+	it("shortens only full git shas", () => {
+		expect(shortReleaseLabel(SHA_A)).toBe("aaaaaaa")
+		expect(shortReleaseLabel("v0.41.2")).toBe("v0.41.2")
+	})
+
+	it("names today and yesterday", () => {
+		const now = new Date("2026-09-05T15:00:00").getTime()
+		const local = Intl.DateTimeFormat().resolvedOptions().timeZone
+		expect(releaseDayLabel(new Date("2026-09-05T09:00:00").toISOString(), now, local)).toBe("Today")
+		expect(releaseDayLabel(new Date("2026-09-04T23:30:00").toISOString(), now, local)).toBe("Yesterday")
+		expect(releaseDayLabel("not a date", now, local)).toBe("not a date")
+	})
+
+	it("names the day on the selected zone's calendar", () => {
+		// 23:30Z on the 4th is already the 5th in Tokyo and still the 4th in UTC;
+		// "now" (12:00Z on the 5th) is the 5th in both.
+		const now = Date.parse("2026-09-05T12:00:00Z")
+		const at = "2026-09-04T23:30:00Z"
+		expect(releaseDayLabel(at, now, "Asia/Tokyo")).toBe("Today")
+		expect(releaseDayLabel(at, now, "UTC")).toBe("Yesterday")
+	})
+})
+
+describe("releaseHeadline", () => {
+	it("picks the flagged service over the busiest one", () => {
+		const rows = [
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 9000,
+			}),
+			release({ commitSha: SHA_A, serviceName: API, spanCount: 9000 }),
+			release({
+				commitSha: SHA_B,
+				serviceName: WEB,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				errorCount: 80,
+			}),
+			release({ commitSha: SHA_A, serviceName: WEB }),
+		]
+		const [newest] = groupReleases(deriveReleaseImpacts(rows, []))
+		expect(newest !== undefined && releaseHeadline(newest).serviceName).toBe("web")
+	})
+})
+
+describe("attributeIssues", () => {
+	const rows = [
+		release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+	]
+	const impacts = deriveReleaseImpacts(rows, [])
+
+	it("credits the version that was newest when the issue appeared", () => {
+		const counts = countIssues(
+			attributeIssues(impacts, [
+				{ serviceName: "api", firstSeenAt: "2026-09-05T09:30:00.000Z", lastRegressedAt: null },
+				{ serviceName: "api", firstSeenAt: "2026-09-05T10:02:00.000Z", lastRegressedAt: null },
+				{ serviceName: "api", firstSeenAt: "2026-09-05T09:58:00.000Z", lastRegressedAt: null },
+			]),
+		)
+		expect(counts.get(SHA_A)).toEqual({ fresh: 1, regressed: 0 })
+		expect(counts.get(SHA_B)).toEqual({ fresh: 2, regressed: 0 })
+	})
+
+	it("counts a regression at its regression time, and skips other services", () => {
+		const counts = countIssues(
+			attributeIssues(impacts, [
+				{
+					serviceName: "api",
+					firstSeenAt: "2026-08-01T00:00:00.000Z",
+					lastRegressedAt: "2026-09-05T10:30:00.000Z",
+				},
+				{ serviceName: "web", firstSeenAt: "2026-09-05T10:30:00.000Z", lastRegressedAt: null },
+			]),
+		)
+		expect(counts.get(SHA_B)).toEqual({ fresh: 0, regressed: 1 })
+		expect(counts.size).toBe(1)
+	})
+})
+
+describe("liveVersions", () => {
+	const DB = svc("db-sync")
+	const rows = [
+		release({ commitSha: SHA_C, serviceName: API, firstSeen: "2026-09-05T11:00:00.000Z" }),
+		release({ commitSha: SHA_C, serviceName: WEB, firstSeen: "2026-09-05T11:00:00.000Z" }),
+		release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_B, serviceName: WEB, firstSeen: "2026-09-05T10:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: WEB, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		release({ commitSha: SHA_A, serviceName: DB, firstSeen: "2026-09-05T09:00:00.000Z" }),
+	]
+	const last = "2026-09-05T12:00:00.000Z"
+	const timeline = [
+		bucket(last, API, SHA_C, 100),
+		bucket(last, WEB, SHA_C, 100),
+		bucket(last, DB, SHA_A, 100),
+	]
+	const groups = groupReleases(deriveReleaseImpacts(rows, timeline))
+
+	it("reports a service stuck on an older co-deployed commit as behind", () => {
+		const live = liveVersions(timeline, groups)
+		expect(live[0]).toMatchObject({ serviceName: "db-sync", commitSha: SHA_A, behind: 2 })
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_C,
+			behind: 0,
+		})
+	})
+
+	it("ignores a release its siblings are still rolling out", () => {
+		const rolling = [
+			bucket(last, API, SHA_C, 10),
+			bucket(last, API, SHA_B, 90),
+			bucket(last, WEB, SHA_B, 100),
+			bucket(last, DB, SHA_A, 100),
+		]
+		const live = liveVersions(rolling, groups)
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "db-sync"))?.behind).toBe(1)
+		expect(Option.getOrUndefined(Arr.findFirst(live, (v) => v.serviceName === "api"))).toMatchObject({
+			commitSha: SHA_B,
+			behind: 0,
+		})
+	})
+
+	it("never calls an independently deployed service behind", () => {
+		const solo = [release({ commitSha: SHA_A, serviceName: DB })]
+		const soloTimeline = [bucket(last, DB, SHA_A, 10)]
+		const live = liveVersions(soloTimeline, groupReleases(deriveReleaseImpacts([...solo], soloTimeline)))
+		expect(live).toEqual([{ serviceName: "db-sync", commitSha: SHA_A, share: 1, behind: 0 }])
+	})
+})
+
+describe("previousSha", () => {
+	it("takes the predecessor most services agree on", () => {
+		const rows = [
+			release({ commitSha: SHA_C, serviceName: API, firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_C, serviceName: WEB, firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_C, serviceName: svc("db"), firstSeen: "2026-09-05T11:00:00.000Z" }),
+			release({ commitSha: SHA_B, serviceName: API, firstSeen: "2026-09-05T10:00:00.000Z" }),
+			release({ commitSha: SHA_B, serviceName: WEB, firstSeen: "2026-09-05T10:00:00.000Z" }),
+			release({ commitSha: SHA_A, serviceName: svc("db"), firstSeen: "2026-09-05T09:00:00.000Z" }),
+		]
+		const [newest, , oldest] = groupReleases(deriveReleaseImpacts(rows, []))
+		expect(newest !== undefined && previousSha(newest)).toBe(SHA_B)
+		expect(oldest !== undefined && previousSha(oldest)).toBeUndefined()
+	})
+})

@@ -14,7 +14,7 @@ import {
 	withType,
 } from "./derive"
 import { type FormField, Message, type Model, OutMessage, type Variable } from "./model"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -108,7 +108,7 @@ const withDefault = (draft: Variable, value: string): Variable => {
 	return value === "" ? rest : { ...rest, defaultValue: value }
 }
 
-/** A typed value lands in the draft, as the controlled inputs' `onChange` does. */
+/** A typed value lands in the draft. */
 const applyField = (draft: Variable, field: FormField, value: string): Variable => {
 	switch (field) {
 		case "name":
@@ -160,7 +160,7 @@ const fieldStep = (model: Model, field: FormField, message: Field.Message): Retu
 		: { model: updated }
 }
 
-/** A select step; a pick retypes the draft and re-reads the form from it (the inputs are controlled). */
+/** A select step; a pick retypes the draft and re-reads the form from it. */
 const selectStep = (
 	model: Model,
 	key: "typeSelect" | "sourceSelect" | "metricTypeSelect",
@@ -188,8 +188,10 @@ const selectStep = (
 }
 
 const applyType = (draft: Variable, value: string): Variable => {
-	const type = VARIABLE_TYPES.find((candidate) => candidate === value)
-	return type === undefined ? draft : withType(draft, type)
+	return Option.match(
+		Arr.findFirst(VARIABLE_TYPES, (candidate) => candidate === value),
+		{ onNone: () => draft, onSome: (type) => withType(draft, type) },
+	)
 }
 
 const applySource = (draft: Variable, value: string): Variable =>
@@ -205,7 +207,7 @@ const applyMetricType = (draft: Variable, value: string): Variable => {
 		: draft
 }
 
-/** `move`: the expanded form follows its draft. */
+/** The expanded form follows its draft. */
 const move = (model: Model, index: number, delta: -1 | 1): Return => {
 	const target = index + delta
 	const moved = model.drafts[index]

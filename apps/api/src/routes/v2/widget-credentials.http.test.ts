@@ -3,9 +3,9 @@ import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
@@ -16,14 +16,20 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
+	WarehouseServiceStubLayer,
 	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
+import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
+import { HttpV2WidgetCredentialsLive } from "./widget-credentials.http"
+import { HttpV2WidgetSummaryLive } from "./widget-summary.http"
+import { HttpV2ServicesLive } from "./telemetry.http"
+import { HttpV2ErrorIssuesLive } from "./error-issues.http"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
+import { HttpV2MobileDevicesLive } from "./mobile-devices.http"
+import { HttpV2AgentFeedbackLive } from "./agent-feedback.http"
 
 /**
  * `/v2/widget_credentials` over an embedded PGlite. The assertions here are
@@ -34,8 +40,8 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_widget_cred")
-const USER = Schema.decodeUnknownSync(UserId)("user_widget_cred")
+const ORG = Schema.decodeSync(OrgId)("org_widget_cred")
+const USER = Schema.decodeSync(UserId)("user_widget_cred")
 const INSTALLATION = "F9E1B4C0-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 const OTHER_INSTALLATION = "A1B2C3D4-8F2A-4C6D-9E1B-4C08F2A4C6D9"
 
@@ -67,13 +73,33 @@ const makeHarness = () => {
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(
+			MapleApiV2.groups.widgetCredentials,
+			MapleApiV2.groups.widgetSummary,
+			MapleApiV2.groups.services,
+			MapleApiV2.groups.errorIssues,
+			MapleApiV2.groups.apiKeys,
+			MapleApiV2.groups.mobileDevices,
+			MapleApiV2.groups.agentFeedback,
+		),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2WidgetCredentialsLive,
+				// The groups a widget key must be refused by, beside the one it may read.
+				Layer.mergeAll(HttpV2WidgetSummaryLive, HttpV2ServicesLive).pipe(
+					Layer.provide(Layer.effect(TelemetryReadService, TelemetryReadService.make)),
+				),
+				HttpV2ErrorIssuesLive,
+				HttpV2ApiKeysLive,
+				HttpV2MobileDevicesLive,
+				HttpV2AgentFeedbackLive.pipe(Layer.provide(AgentFeedbackService.layer)),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
+		Layer.provide(WarehouseServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),

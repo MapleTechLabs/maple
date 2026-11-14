@@ -4,7 +4,7 @@
 // rendered (services table, infra tables, service map, chat renderers).
 
 /** Emphasis steps, low → high. Warm-only: nothing is colored for being fine. */
-export type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
+type LatencyLevel = "quiet" | "nominal" | "elevated" | "slow" | "critical"
 
 /**
  * Which budget a value is measured against. p99 is *expected* to be higher than
@@ -15,7 +15,7 @@ export type LatencyScale = "p50" | "avg" | "p95" | "p99" | "cpu"
 
 /**
  * Budgets in ms. p95 is anchored on the absolute health thresholds already in
- * apps/web/src/components/dashboard/service-health.ts (P95_DEGRADED_MS = 1000,
+ * apps/web/src/page/kit/service-health-rollup.ts (P95_DEGRADED_MS = 1000,
  * P95_UNHEALTHY_MS = 3000), so a cell's tone agrees with the health badge on
  * the same row. `cpu` exists because Cloudflare Worker CPU-time lives on a
  * different scale entirely — under the p99 budget every worker reads "quiet".
@@ -56,7 +56,8 @@ export function latencyLevel(ms: number, scale: LatencyScale = "p95", budgetMs?:
 	// takes the whole WebKit content process down. Plain indexing is also less
 	// work per call.
 	for (let i = 0; i < BREAKS.length; i++) {
-		if (ratio < BREAKS[i]) return LEVELS[i]
+		const limit = BREAKS[i]
+		if (limit !== undefined && ratio < limit) return LEVELS[i] ?? "critical"
 	}
 	return "critical"
 }
@@ -83,15 +84,6 @@ export const LATENCY_BAR_TONE: Record<LatencyLevel, string> = {
 	elevated: "bg-foreground/20",
 	slow: "bg-severity-warn-a3",
 	critical: "bg-severity-error-a3",
-} satisfies Record<LatencyLevel, string>
-
-/** Raw color strings for SVG fills and inline styles (no Tailwind class). */
-export const LATENCY_COLOR: Record<LatencyLevel, string> = {
-	quiet: "var(--color-muted-foreground)",
-	nominal: "var(--color-muted-foreground)",
-	elevated: "var(--color-foreground)",
-	slow: "var(--color-severity-warn)",
-	critical: "var(--color-severity-error)",
 } satisfies Record<LatencyLevel, string>
 
 /** Level → text class in one call. Mirrors the shape of `errorRateClass`. */

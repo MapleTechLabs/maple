@@ -13,7 +13,7 @@ import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
-/** `HeadLabel`: a non-sortable column header styled as an eyebrow. */
+/** A non-sortable column header styled as an eyebrow. */
 export const headLabel = (
 	h: H,
 	children: ReadonlyArray<Html | string>,
@@ -21,7 +21,7 @@ export const headLabel = (
 	attributes: ReadonlyArray<Attribute<Message>> = [],
 ): Html => tableHead(h, children, cn(eyebrowVariants(), "h-8", className), attributes)
 
-/** `SortColumnHead`: right-aligned by default, `aria-sort` on the active column. */
+/** Right-aligned by default, `aria-sort` on the active column. */
 export const sortColumnHead = (
 	h: H,
 	options: Readonly<{
@@ -97,17 +97,16 @@ export const tableTitle = (h: H, options: Readonly<{ title: string; count?: numb
 		scope:
 			options.count === undefined
 				? undefined
-				: h.span(
-						[h.Class("font-mono text-2xs tabular-nums text-foreground-subtle")],
-						[String(options.count)],
-					),
+				: typography(h, { size: "2xs", tone: "subtle", mono: true, numeric: true }, [
+						String(options.count),
+					]),
 		action: options.action,
 	})
 
 /** Past 30 days a tab's summaries outlive the raw spans its drill-downs read. */
 export const rangeNote = (h: H, subject: string): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p" }, [
-		`${subject} summaries cover the selected range; trace drill-downs show the latest 30 days.`,
+		`${subject} summaries cover this window; trace drill-downs show the latest 30 days.`,
 	])
 
 /** A loading table's title and column-header rows, sized like the loaded ones. */

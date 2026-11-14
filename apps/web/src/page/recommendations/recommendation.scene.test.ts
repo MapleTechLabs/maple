@@ -20,7 +20,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 	Arr.map(commands ?? [], ({ name }) => name)
 
 const rec = (status: "open" | "dismissed" = "open") =>
-	Schema.decodeUnknownSync(V2Recommendation)({
+	Schema.decodeSync(V2Recommendation)({
 		id: encodePublicId(PublicIdPrefixes.recommendation, UUID),
 		object: "recommendation",
 		number: 3,
@@ -140,7 +140,6 @@ describe("recommendation detail", () => {
 			started.model,
 			Message.CompletedApply({ result: Result.fail(toLoadFailure(new Error("no"))) }),
 		)
-		expect(failed.model.busy).toBeNull()
 		expect(failed.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "error",

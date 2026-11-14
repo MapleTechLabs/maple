@@ -1,10 +1,10 @@
 import { MAPLE_SERVICES_NAMESPACE } from "@maple/domain/uptime"
-import { bucketTimeScale } from "@maple/ui/components/plot/plot-scales"
+import { bucketTimeScale } from "@maple/views/charts/plot/plot-scales"
 import { countLabel, formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { TONE_COLOR, TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { formatAlertDateTime, formatAlertTime } from "@maple/web-data/alerts/form-utils"
-import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str, Order } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
@@ -23,47 +23,44 @@ import { errorState } from "@maple/views/ui/error-state"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { relativeTime } from "../../kit/relative-time"
 import { statRail, statRailItem } from "../../kit/stat-rail"
-import { isoMs } from "../shared/time"
+import { formatSpan } from "../../kit/alert-time"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { panel, panelHeader } from "@maple/views/ui/panel"
-import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../shared/uptime-commands"
+import { traceHref, uptimeTracesHref, UPTIME_SERVICE } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatEvery,
 	formatMs,
 	formatShare,
-	formatSpan,
 	checkHealth,
 	latencyPercentiles,
-	medianOf,
 	STATUS_TONE,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
+} from "../../kit/uptime/derive"
 import { Message } from "./message"
 import type { CheckPoint, CheckSample, CheckStats, Model, PhasePoint, UptimeWindow } from "./model"
-import { CHECK_HEALTH_FILL, uptimePanelBody } from "../shared/uptime-view"
+import { CHECK_HEALTH_FILL, uptimePanelBody } from "../../kit/uptime/view"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
-
-// The monitor page's panels: response time, the checks list and the side panels.
+import { dividedList } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
+import { selectableRow } from "@maple/views/ui/selectable-row"
+import { medianOf } from "@maple/ui/lib/number"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type H = HtmlBuilder<Message>
 
 const CHECK_ROWS = 15
 
-/** A key/value row in a side panel. */
 const fact = (h: H, label: string, value: Html | string, valueClass?: string): Html =>
-	h.div(
-		[h.Class("flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm")],
-		[
-			h.span([h.Class("shrink-0 whitespace-nowrap text-muted-foreground")], [label]),
-			h.span([h.Class(cn("min-w-0 break-words text-right tabular-nums", valueClass))], [value]),
-		],
-	)
+	hstack(h, { gap: "3", align: "baseline", justify: "between", className: "px-4 py-2.5 text-sm" }, [
+		typography(h, { tone: "muted", className: "shrink-0 whitespace-nowrap" }, [label]),
+		h.span([h.Class(cn("min-w-0 break-words text-right tabular-nums", valueClass))], [value]),
+	])
 
 /** An HTTP check's phases in the order they happen, which is also the stack order from the axis up. */
 const PHASES = [
@@ -110,7 +107,7 @@ const timeLabel = (window: UptimeWindow, iso: string, timeZone: string): string 
 
 /** `3m ago`, the absolute time on hover. */
 const ago = (h: H, nowMs: number, timeZone: string, iso: string): Html =>
-	relativeTime(h, { value: isoMs(iso), nowMs, timeZone, tooltip: "title" })
+	relativeTime(h, { value: toEpochMs(iso), nowMs, timeZone })
 
 /** The figures over the page: status, the last check, uptime and the window's percentiles. */
 export const kpiRail = (
@@ -132,7 +129,7 @@ export const kpiRail = (
 		subline:
 			changed === null || status === "paused" || status === "pending"
 				? `Every ${formatEvery(monitor.interval_seconds)}`
-				: `for ${formatSpan(nowMs - isoMs(changed))}`,
+				: `for ${formatSpan(nowMs - toEpochMs(changed))}`,
 	})
 	const lastItem = isHeartbeat
 		? statRailItem(h, {
@@ -177,7 +174,7 @@ export const kpiRail = (
 				value: formatShare(share),
 				tone: share !== null && share < 1 ? "warn" : "neutral",
 				compact: true,
-				subline: `Over the last ${monitor.state.recent.length} checks`,
+				subline: `Over the last ${countLabel(monitor.state.recent.length, "check")}`,
 			}),
 		])
 	}
@@ -190,8 +187,8 @@ export const kpiRail = (
 			p50: recent.p50,
 			p95: recent.p95,
 			p99: recent.p99,
-			scope: `last ${monitor.state.recent.length} checks`,
-			subline: `last ${monitor.state.recent.length} checks`,
+			scope: `last ${countLabel(monitor.state.recent.length, "check")}`,
+			subline: `last ${countLabel(monitor.state.recent.length, "check")}`,
 		}),
 		onSome: (data) => ({
 			share: data.checks === 0 ? null : (data.checks - data.failures) / data.checks,
@@ -236,12 +233,6 @@ export const kpiRail = (
 	)
 }
 
-/**
- * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
- * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
- * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
- * each check a lone point the line never draws.
- */
 /** The monitor's check interval, 0 until it loads (the bucket width then sets the gap). */
 const checkIntervalMs = (model: Model): number =>
 	(Option.getOrNull(AsyncData.getData(model.monitor.data))?.interval_seconds ?? 0) * 1000
@@ -252,36 +243,42 @@ const breakBuckets = (stats: CheckStats, intervalMs: number): ReadonlyArray<stri
 		row.p50LatencyMs === null && typeof row.bucket === "string" ? [row.bucket] : [],
 	)
 
+/**
+ * The latency rows: buckets that ran a check, with a null row where checks stopped for longer than
+ * two check intervals, so the line breaks there instead of drawing latency nobody measured. A shorter
+ * empty bucket (a check every 5 minutes on 1-minute buckets) stays joined: a null there would leave
+ * each check a lone point the line never draws.
+ */
 export const chartRows = (stats: CheckStats, intervalMs: number) => {
 	const stepMs = bucketStepMs(stats.points, stats.windowEndMs)
 	const gapAfterMs = 2 * Math.max(intervalMs, stepMs)
-	return stats.points.reduce<{
-		rows: ReadonlyArray<Record<string, string | number | boolean | null>>
-		emptySinceMs: number | null
-	}>(
-		(acc, point) => {
-			const atMs = isoMs(point.bucket)
-			if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
-			const broken =
-				acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
-			const gap = {
-				bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
-				p50LatencyMs: null,
-				p95LatencyMs: null,
-				p99LatencyMs: null,
-				partial: false,
-			}
-			const row = {
-				bucket: point.bucket,
-				p50LatencyMs: point.p50LatencyMs,
-				p95LatencyMs: point.p95LatencyMs,
-				p99LatencyMs: point.p99LatencyMs,
-				partial: point.partial,
-			}
-			return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
-		},
-		{ rows: [], emptySinceMs: null },
-	).rows
+	return Arr.reduce<
+		CheckPoint,
+		{
+			rows: ReadonlyArray<Record<string, string | number | boolean | null>>
+			emptySinceMs: number | null
+		}
+	>(stats.points, { rows: [], emptySinceMs: null }, (acc, point) => {
+		const atMs = toEpochMs(point.bucket)
+		if (point.totalCount === 0) return { rows: acc.rows, emptySinceMs: acc.emptySinceMs ?? atMs }
+		const broken =
+			acc.rows.length > 0 && acc.emptySinceMs !== null && atMs - acc.emptySinceMs > gapAfterMs
+		const gap = {
+			bucket: new Date(acc.emptySinceMs ?? atMs).toISOString(),
+			p50LatencyMs: null,
+			p95LatencyMs: null,
+			p99LatencyMs: null,
+			partial: false,
+		}
+		const row = {
+			bucket: point.bucket,
+			p50LatencyMs: point.p50LatencyMs,
+			p95LatencyMs: point.p95LatencyMs,
+			p99LatencyMs: point.p99LatencyMs,
+			partial: point.partial,
+		}
+		return { rows: [...acc.rows, ...(broken ? [gap] : []), row], emptySinceMs: null }
+	}).rows
 }
 
 /** The plot's insets in px, shared by every chart on the page so one instant sits at one x (`pl-16`, `pr-3`). */
@@ -296,10 +293,13 @@ const windowDomain = (stats: CheckStats): readonly [number, number] => [
 
 /** The median count of checks in a bucket that holds any. */
 const checksPerBucket = (points: ReadonlyArray<CheckPoint>): number => {
-	const counts = Arr.filter(
-		Arr.map(points, (point) => point.totalCount),
-		(count) => count > 0,
-	).toSorted((a, b) => a - b)
+	const counts = Arr.sort(
+		Arr.filter(
+			Arr.map(points, (point) => point.totalCount),
+			(count) => count > 0,
+		),
+		Order.Number,
+	)
 	return counts[Math.floor(counts.length / 2)] ?? 0
 }
 
@@ -364,7 +364,7 @@ const latencyChart = (h: H, model: Model, stats: CheckStats, context: ChartConte
 
 /** The bucket width: the smallest gap between buckets, else the span from the only one to the window's end. */
 const bucketStepMs = (points: ReadonlyArray<CheckPoint>, endMs: number): number => {
-	const starts = Arr.map(points, (point) => isoMs(point.bucket))
+	const starts = Arr.map(points, (point) => toEpochMs(point.bucket))
 	const gaps = Arr.flatMap(starts.slice(1), (start, index) => {
 		const gap = start - (starts[index] ?? start)
 		return gap > 0 ? [gap] : []
@@ -389,7 +389,7 @@ const availabilityStrip = (h: H, stats: CheckStats, window: UptimeWindow, timeZo
 			h.div(
 				[h.Class("relative h-full")],
 				Arr.map(stats.points, (point) => {
-					const startMs = isoMs(point.bucket)
+					const startMs = toEpochMs(point.bucket)
 					const left = Math.max(0, xShare(startMs, domain))
 					const right = Math.min(1, xShare(startMs + stepMs, domain))
 					const failed = Math.round(point.errorRate * point.totalCount)
@@ -478,7 +478,10 @@ export const responseTimePanel = (h: H, model: Model, context: ChartContext | nu
 /** 1, 2 or 5 times a power of ten, at or above `value`. */
 const niceCeil = (value: number): number => {
 	const power = 10 ** Math.floor(Math.log10(Math.max(1, value)))
-	const step = [1, 2, 5, 10].find((candidate) => candidate * power >= value) ?? 10
+	const step = Option.getOrElse(
+		Arr.findFirst([1, 2, 5, 10], (candidate) => candidate * power >= value),
+		() => 10,
+	)
 	return step * power
 }
 
@@ -542,17 +545,20 @@ const checkBars = (
 	const width = `max(1px, min(6px, ${(70 / Math.max(1, samples.length)).toFixed(3)}%))`
 	const bar = (sample: CheckSample, index: number) => {
 		const clipped = sample.durationMs > yMax
-		return h.a(
-			[
-				h.Key(`${sample.traceId}-${index}`),
-				h.Href(traceHref(sample.traceId)),
-				h.Attribute("tabindex", "-1"),
-				h.OnMouseEnter(Message.HoveredCheck({ index })),
-				h.Class(
+		return selectableRow(
+			h,
+			{
+				href: traceHref(sample.traceId),
+				isSelected: false,
+				className:
 					"group absolute inset-y-0 -translate-x-1/2 hover:bg-surface-sunken active:bg-surface-sunken",
-				),
-				h.Style({ left: `${xShare(isoMs(sample.at), domain) * 100}%`, width }),
-			],
+				attributes: [
+					h.Key(`${sample.traceId}-${index}`),
+					h.Attribute("tabindex", "-1"),
+					h.OnMouseEnter(Message.HoveredCheck({ index })),
+					h.Style({ left: `${xShare(toEpochMs(sample.at), domain) * 100}%`, width }),
+				],
+			},
 			[
 				h.span(
 					[
@@ -618,7 +624,7 @@ const cardRow = (h: H, key: string, color: string, label: string, value: string)
 
 /** The hovered check's card: when, what it returned, and where its time went. */
 const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string): Html => {
-	const left = xShare(isoMs(sample.at), domain) * 100
+	const left = xShare(toEpochMs(sample.at), domain) * 100
 	const result = sample.statusCode === null ? (sample.ok ? "Passed" : "Failed") : String(sample.statusCode)
 	return h.div(
 		[
@@ -631,9 +637,10 @@ const hoverCard = (h: H, sample: CheckSample, domain: Domain, timeZone: string):
 			h.Style({ left: `${left}%` }),
 		],
 		[
-			h.span([h.Class("text-muted-foreground")], [formatAlertDateTime(sample.at, timeZone)]),
-			h.span(
-				[h.Class("flex items-center justify-between gap-4 font-medium")],
+			typography(h, { tone: "muted" }, [formatAlertDateTime(sample.at, timeZone)]),
+			hstack(
+				h,
+				{ gap: "4", align: "center", justify: "between", as: "span", className: "font-medium" },
 				[
 					h.span([h.Class(sample.ok ? TONE_TEXT.info : TONE_TEXT.crit)], [result]),
 					typography(h, { mono: true, numeric: true }, [formatMs(sample.durationMs)]),
@@ -669,8 +676,13 @@ const barsLegend = (h: H, samples: ReadonlyArray<CheckSample>, yMax: number): Ht
 	const untimed = Arr.some(samples, (sample) => sample.ok && sample.phases === null)
 	const failed = Arr.some(samples, (sample) => !sample.ok)
 	const clipped = Arr.some(samples, (sample) => sample.durationMs > yMax)
-	return h.div(
-		[h.Class("flex flex-wrap items-center gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground")],
+	return hstack(
+		h,
+		{
+			align: "center",
+			wrap: true,
+			className: "gap-x-4 gap-y-1 pr-3 pl-16 text-xs text-muted-foreground",
+		},
 		[
 			...(timed
 				? Arr.map(PHASES, (phase) =>
@@ -731,7 +743,7 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 			// Past the list's limit the axis starts at the oldest check shown, not the window's start.
 			const oldest = stats.samples[0]
 			const startMs =
-				stats.samplesTruncated && oldest !== undefined ? isoMs(oldest.at) : stats.windowStartMs
+				stats.samplesTruncated && oldest !== undefined ? toEpochMs(oldest.at) : stats.windowStartMs
 			const domain: Domain = { startMs, endMs: stats.windowEndMs }
 			const hovered = model.hoveredCheck === null ? undefined : stats.samples[model.hoveredCheck]
 			const yTicks = [0, 0.5, 1]
@@ -752,69 +764,66 @@ export const checksScatterPanel = (h: H, model: Model, timeZone: string): Html |
 							h.Class(cn(vstackClass({ gap: "2" }), refreshingClass(isStatsRefreshing(model)))),
 						],
 						[
-							h.div(
-								[h.Class("flex h-56 pt-2 pr-3")],
-								[
-									h.div(
-										[
-											h.AriaHidden(true),
-											h.Class(
-												"relative w-16 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums",
-											),
-										],
-										Arr.map(yTicks, (share) =>
-											h.span(
-												[
-													h.Key(String(share)),
-													h.Class("absolute right-2 translate-y-1/2"),
-													h.Style({ bottom: `${share * 100}%` }),
-												],
-												[share === 0 ? "0" : formatMs(yMax * share)],
-											),
+							hstack(h, { align: "stretch", className: "h-56 pt-2 pr-3" }, [
+								h.div(
+									[
+										h.AriaHidden(true),
+										h.Class(
+											"relative w-16 shrink-0 font-mono text-2xs text-muted-foreground tabular-nums",
+										),
+									],
+									Arr.map(yTicks, (share) =>
+										h.span(
+											[
+												h.Key(String(share)),
+												h.Class("absolute right-2 translate-y-1/2"),
+												h.Style({ bottom: `${share * 100}%` }),
+											],
+											[share === 0 ? "0" : formatMs(yMax * share)],
 										),
 									),
-									h.div(
-										[
-											h.Role("img"),
-											h.AriaLabel(
-												`${stats.samples.length} checks over the ${WINDOW_LABEL[stats.window]}, ${failed} failed`,
-											),
-											h.Class("relative min-w-0 flex-1"),
-										],
-										[
-											...Arr.map(yTicks, (share) =>
-												h.div(
-													[
-														h.Key(`grid-${share}`),
-														h.AriaHidden(true),
-														h.Class(
-															cn(
-																"pointer-events-none absolute inset-x-0 border-t",
-																share === 0
-																	? "border-border"
-																	: "border-dashed border-border-subtle",
-															),
+								),
+								h.div(
+									[
+										h.Role("img"),
+										h.AriaLabel(
+											`${stats.samples.length} checks over the ${WINDOW_LABEL[stats.window]}, ${failed} failed`,
+										),
+										h.Class("relative min-w-0 flex-1"),
+									],
+									[
+										...Arr.map(yTicks, (share) =>
+											h.div(
+												[
+													h.Key(`grid-${share}`),
+													h.AriaHidden(true),
+													h.Class(
+														cn(
+															"pointer-events-none absolute inset-x-0 border-t",
+															share === 0
+																? "border-border"
+																: "border-dashed border-border-subtle",
 														),
-														h.Style({ bottom: `${share * 100}%` }),
-													],
-													[],
-												),
+													),
+													h.Style({ bottom: `${share * 100}%` }),
+												],
+												[],
 											),
-											// Memoized: hover and other page messages do not rebuild thousands of bars.
-											barsSlot(checkBars, [
-												h,
-												stats.samples,
-												startMs,
-												stats.windowEndMs,
-												yMax,
-											]),
-											...(hovered === undefined
-												? []
-												: [hoverCard(h, hovered, domain, timeZone)]),
-										],
-									),
-								],
-							),
+										),
+										// Memoized: hover and other page messages do not rebuild thousands of bars.
+										barsSlot(checkBars, [
+											h,
+											stats.samples,
+											startMs,
+											stats.windowEndMs,
+											yMax,
+										]),
+										...(hovered === undefined
+											? []
+											: [hoverCard(h, hovered, domain, timeZone)]),
+									],
+								),
+							]),
 							h.div(
 								[
 									h.AriaHidden(true),
@@ -854,12 +863,14 @@ const untimed = (point: PhasePoint): boolean => point.timedChecks === 0
  * breaks: where checks stopped, and where checks ran but none was timed.
  */
 export const phaseSeries = (stats: CheckStats, intervalMs: number) => ({
-	rows: Arr.filter(stats.phases, (point) => !untimed(point)).flatMap((point) =>
-		PHASES.map((phase) => ({
-			bucket: point.bucket,
-			attributeValue: phase.label,
-			value: point[phase.key],
-		})),
+	rows: Arr.flatMap(
+		Arr.filter(stats.phases, (point: PhasePoint) => !untimed(point)),
+		(point: PhasePoint) =>
+			Arr.map(PHASES, (phase) => ({
+				bucket: point.bucket,
+				attributeValue: phase.label,
+				value: point[phase.key],
+			})),
 	),
 	breaks: [
 		...breakBuckets(stats, intervalMs),
@@ -1031,8 +1042,9 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 		),
 		rows.length === 0
 			? emptyMessage(h, {}, ["No checks yet"])
-			: h.ul(
-					[h.Class("divide-y")],
+			: dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.map(rows, (row, index) =>
 						h.li(
 							[h.Key(`${row.at}-${index}`), h.Class(cn(CHECK_GRID, "px-4 py-2 text-sm"))],
@@ -1076,13 +1088,13 @@ export const checksPanel = (h: H, monitor: UptimeMonitor, timeZone: string): Htm
 									? typography(h, { size: "xs", tone: "muted", className: "text-right" }, [
 											"–",
 										])
-									: h.a(
-											[
-												h.Href(traceHref(row.traceId)),
-												h.Class(
-													"text-right font-mono text-xs text-primary hover:underline active:underline",
-												),
-											],
+									: textLink(
+											h,
+											{
+												href: traceHref(row.traceId),
+												isMono: true,
+												className: "text-right text-xs font-normal",
+											},
 											[`${Str.slice(0, 4)(row.traceId)}…${Str.slice(-4)(row.traceId)}`],
 										),
 							],
@@ -1143,10 +1155,11 @@ export const setupPanel = (h: H, model: Model, monitor: UptimeMonitor, serviceHr
 			: destinations === null
 				? countLabel(count, "destination")
 				: Arr.join(
-						Arr.map(
-							monitor.destination_ids,
-							(id) =>
-								destinations.find((row) => row.id === id)?.name ?? "Unavailable destination",
+						Arr.map(monitor.destination_ids, (id) =>
+							Arr.findFirst(destinations, (row) => row.id === id).pipe(
+								Option.flatMapNullishOr((found) => found.name),
+								Option.getOrElse(() => "Unavailable destination"),
+							),
 						),
 						", ",
 					)

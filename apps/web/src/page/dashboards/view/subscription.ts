@@ -1,9 +1,10 @@
-import { resolveRefreshIntervalSeconds } from "../../../lib/dashboard-controls/search-params"
+import { resolveRefreshIntervalSeconds } from "../../../route/dashboard-controls"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
-import { Subscription } from "foldkit"
+import { Dom, Subscription } from "foldkit"
 import type { Resources } from "../../../platform/resources"
 import type { PageSubscriptionInput } from "../../contract"
-import { documentStream, orgTagsStream } from "../kit/document-stream"
+import { documentStream, orgTagsStream } from "../../../data/collections/document-stream"
+import { loadTimeout } from "../kit/live-sync"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { isEditing } from "./update"
@@ -16,7 +17,6 @@ type PointerMessage = typeof PointerMessage.Type
 const EDGE_PX = 50
 const EDGE_STEP_PX = 12
 
-/** `nearestScroller`: the first scrolling ancestor, else the document. */
 const nearestScroller = (element: HTMLElement): HTMLElement => {
 	const scrolling = (node: HTMLElement | null): HTMLElement | null => {
 		if (node === null) return null
@@ -33,7 +33,7 @@ const nearestScroller = (element: HTMLElement): HTMLElement => {
 	)
 }
 
-/** `autoScroll`: one step if the pointer is near the scroller's edge; whether it moved. */
+/** One step if the pointer is near the scroller's edge; whether it moved. */
 const autoScroll = (scroller: HTMLElement, clientY: number): boolean => {
 	const isDocument = scroller === document.scrollingElement || scroller === document.documentElement
 	const top = isDocument ? 0 : scroller.getBoundingClientRect().top
@@ -76,12 +76,19 @@ export const pointerEvents = (widgetId: string) =>
 					if (isScrolled) pointer.frame = requestAnimationFrame(step)
 				}
 				const onMove = (event: PointerEvent) => {
+					// No button held: the release came before these listeners attached (a quick tap).
+					if (event.buttons === 0) {
+						Queue.offerUnsafe(queue, Message.ReleasedPointer())
+						return
+					}
 					pointer.x = event.clientX
 					pointer.y = event.clientY
 					if (pointer.frame === 0) pointer.frame = requestAnimationFrame(step)
 				}
 				const onUp = () => Queue.offerUnsafe(queue, Message.ReleasedPointer())
 				const onCancel = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
+				// Switching windows mid-drag: the release would land elsewhere, so the tile goes back.
+				const onWindowBlur = () => Queue.offerUnsafe(queue, Message.CancelledPointer())
 				const onKey = (event: KeyboardEvent) => {
 					if (event.key !== "Escape") return
 					event.preventDefault()
@@ -91,12 +98,14 @@ export const pointerEvents = (widgetId: string) =>
 				window.addEventListener("pointerup", onUp)
 				window.addEventListener("pointercancel", onCancel)
 				window.addEventListener("keydown", onKey)
+				window.addEventListener("blur", onWindowBlur)
 				return () => {
 					cancelAnimationFrame(pointer.frame)
 					window.removeEventListener("pointermove", onMove)
 					window.removeEventListener("pointerup", onUp)
 					window.removeEventListener("pointercancel", onCancel)
 					window.removeEventListener("keydown", onKey)
+					window.removeEventListener("blur", onWindowBlur)
 				}
 			}),
 			(detach) => Effect.sync(detach),
@@ -118,16 +127,32 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					),
 			},
 		),
-		/** The org's tags, for the tag editor's suggestions. */
-		orgTags: entry(
-			{ orgId: Schema.String },
+		/** A live board still loading after the bounded wait has failed. */
+		loadWatchdog: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
 			{
-				modelToDependencies: ({ context }) => ({ orgId: context.orgId }),
+				modelToDependencies: ({ model, context }) => ({
+					orgId:
+						model.status === "Loading" && model.snapshot._tag === "Idle" ? context.orgId : null,
+				}),
 				dependenciesToStream: ({ orgId }) =>
-					orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
+					orgId === null ? Stream.empty : loadTimeout(Message.TimedOutLiveDashboard({ orgId })),
 			},
 		),
-		/** `useGridInteraction`'s window listeners, attached for the life of a pointer gesture. */
+		/** The org's tags, for the tag editor's suggestions: read only while the editor is open. */
+		orgTags: entry(
+			{ orgId: Schema.NullOr(Schema.String) },
+			{
+				modelToDependencies: ({ model, context }) => ({
+					orgId: model.tagEditor.dialog.isOpen ? context.orgId : null,
+				}),
+				dependenciesToStream: ({ orgId }) =>
+					orgId === null
+						? Stream.empty
+						: orgTagsStream(orgId, (tags) => Message.UpdatedOrgTags({ tags })),
+			},
+		),
+		/** The window listeners, attached for the life of a pointer gesture. */
 		gesturePointer: entry(
 			{ widgetId: Schema.NullOr(Schema.String) },
 			{
@@ -136,7 +161,22 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					widgetId === null ? Stream.empty : pointerEvents(widgetId),
 			},
 		),
-		/** `useIntervalRefresh`: paused in edit mode and in a preview; paused while hidden or offline. */
+		/** While a write failure blocks editing: the browser's return online lifts it. */
+		reconnect: entry(
+			{ isBlocked: Schema.Boolean },
+			{
+				modelToDependencies: ({ model }) => ({ isBlocked: model.persistenceError !== null }),
+				dependenciesToStream: ({ isBlocked }) =>
+					!isBlocked || typeof window === "undefined"
+						? Stream.empty
+						: Dom.streamFromEvent({
+								target: window,
+								type: "online",
+								mapEvent: () => Message.CameBackOnline(),
+							}),
+			},
+		),
+		/** Paused in edit mode and in a preview; paused while hidden or offline. */
 		autoRefresh: entry(
 			{ seconds: Schema.Number },
 			{

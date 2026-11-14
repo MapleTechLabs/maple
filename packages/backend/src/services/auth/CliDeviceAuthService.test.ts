@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Effect, Layer, Option, Schema, String as Str } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema, String as Str, DateTime } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import {
 	cleanupTestDbs,
@@ -8,7 +8,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { CliDeviceAuthService } from "./CliDeviceAuthService"
 
@@ -35,9 +35,9 @@ const makeLayer = (testDb: TestDb) => {
 	return CliDeviceAuthService.layer.pipe(Layer.provideMerge(apiKeys), Layer.provide(base))
 }
 
-const orgId = Schema.decodeUnknownSync(OrgId)("org_cli")
-const userId = Schema.decodeUnknownSync(UserId)("user_cli")
-const memberRole = Schema.decodeUnknownSync(RoleName)("org:member")
+const orgId = Schema.decodeSync(OrgId)("org_cli")
+const userId = Schema.decodeSync(UserId)("user_cli")
+const memberRole = Schema.decodeSync(RoleName)("org:member")
 
 describe("CliDeviceAuthService", () => {
 	it.effect("mints a CLI key with a bounded lifetime rather than a permanent one", () => {
@@ -60,11 +60,10 @@ describe("CliDeviceAuthService", () => {
 				),
 			)
 			expect(row?.kind).toBe("standard")
-			// The whole point of the fix: not null.
 			expect(row?.expires_at).not.toBe(null)
 			const ninetyDays = 90 * 24 * 60 * 60 * 1000
 			const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
-			expect(new Date(row!.expires_at!).getTime() - now).toBe(ninetyDays)
+			expect(DateTime.toEpochMillis(DateTime.makeUnsafe(row!.expires_at!)) - now).toBe(ninetyDays)
 		}).pipe(Effect.provide(makeLayer(db)))
 	})
 

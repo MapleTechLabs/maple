@@ -8,7 +8,7 @@
  * Durable Object that starts the container lives in `executor.ts`.
  */
 import { shellQuote } from "@maple/domain/sandbox"
-import { Schema, Array as Arr, String as Str } from "effect"
+import { Option, Schema, Array as Arr, String as Str } from "effect"
 
 const encodeJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.String))
 
@@ -493,11 +493,19 @@ export const assessProbe = (
 	checks: ReadonlyArray<ProbeCheck> = PROBE_CHECKS,
 ): ReadonlyArray<AssessedCheck> =>
 	Arr.map(checks, (check) => {
-		const result = results.find((r) => r.id === check.id)
 		const base = { id: check.id, question: check.question, expect: check.expect }
-		return result === undefined
-			? { ...base, verdict: "missing" }
-			: { ...base, verdict: verdictOf(check, result), exitCode: result.exitCode, output: result.output }
+		return Option.match(
+			Arr.findFirst(results, (r) => r.id === check.id),
+			{
+				onNone: (): AssessedCheck => ({ ...base, verdict: "missing" }),
+				onSome: (result): AssessedCheck => ({
+					...base,
+					verdict: verdictOf(check, result),
+					exitCode: result.exitCode,
+					output: result.output,
+				}),
+			},
+		)
 	})
 
 /** What one local run of the probe expects beyond each check's own expectation. */

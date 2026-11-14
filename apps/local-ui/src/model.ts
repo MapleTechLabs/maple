@@ -23,7 +23,7 @@ export const Model = Schema.Struct({
 	location: Location,
 	route: AppRoute,
 	/**
-	 * Hashes seen in this document (lib/router.ts `visited`), so a detail page's Back returns to
+	 * Hashes seen in this document, so a detail page's Back returns to
 	 * where it was opened from. A reload starts it over.
 	 */
 	visited: Schema.Array(Schema.String),
@@ -39,14 +39,14 @@ export const Model = Schema.Struct({
 	isSidebarOpenMobile: Schema.Boolean,
 	/** Below `md` the sidebar is a sheet. */
 	isMobile: Schema.Boolean,
-	/** `PageShell`'s Filters drawer below `md`; a new page starts it closed. */
+	/** The page shell's Filters drawer below `md`; a new page starts it closed. */
 	filterDrawer: Dialog.Model,
 	maybeServer: Schema.Option(ServerState),
 	probe: Probe,
-	/** `ConnectButton`'s latch: loud until the first telemetry lands, quiet after. */
+	/** The connect button's latch: loud until the first telemetry lands, quiet after. */
 	hasIngested: Schema.Boolean,
 	connect: Popover.Model,
-	/** `InstallCommands` on the disconnected screen. */
+	/** The install command tabs on the disconnected screen. */
 	installTabs: Tabs.Model,
 	/** The shared signal-presence query (`["local", "signal-presence"]`). */
 	presence: AsyncData.Schema(PresenceResult, LoadFailure).schema,

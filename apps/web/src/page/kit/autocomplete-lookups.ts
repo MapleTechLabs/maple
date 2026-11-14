@@ -6,12 +6,13 @@ import {
 	getSpanAttributeKeys,
 	getTracesFacets,
 } from "@maple/web-data/warehouse/traces"
-import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import type { BackendError, WarehouseApiError } from "@maple/web-data/warehouse/effect-utils"
+import type { MapleInternalHttp, WarehouseExecutor } from "@maple/web-data/warehouse/warehouse-services"
 import type { TimeWindow } from "../../data/time-range"
 
-// The autocomplete lookups a
-// query builder fetches once it is first focused, each reduced to the names it suggests.
+// The autocomplete lookups a query builder fetches once it is first focused, each reduced to the
+// names it suggests.
 
 export const AutocompleteLookup = Schema.Literals([
 	"tracesFacets",
@@ -30,10 +31,13 @@ export const AUTOCOMPLETE_LOOKUPS: ReadonlyArray<AutocompleteLookup> = Autocompl
 export const LookupNames = Schema.Record(Schema.String, Schema.Array(Schema.String))
 export type LookupNames = typeof LookupNames.Type
 
-/** `toNames`: trimmed, non-empty, each once. */
-const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): ReadonlyArray<string> =>
-	Arr.map(rows ?? [], (row) => Str.trim(row.name)).filter(
-		(name, index, all) => name !== "" && all.indexOf(name) === index,
+/** Facet rows to the names they suggest: trimmed, non-empty, each once. */
+export const names = (rows: ReadonlyArray<{ readonly name: string }> | undefined): Array<string> =>
+	Arr.dedupe(
+		Arr.filter(
+			Arr.map(rows ?? [], (row) => Str.trim(row.name)),
+			(name) => name !== "",
+		),
 	)
 const keysOf = (response: {
 	readonly data: ReadonlyArray<{ readonly attributeKey: string }>
@@ -49,7 +53,7 @@ export const lookupField = (answer: LookupNames | undefined, field: string): Rea
 export const autocompleteLookup = (
 	name: AutocompleteLookup,
 	window: TimeWindow,
-): Effect.Effect<LookupNames, unknown, WarehouseExecutor | MapleInternalHttp> => {
+): Effect.Effect<LookupNames, WarehouseApiError | BackendError, WarehouseExecutor | MapleInternalHttp> => {
 	switch (name) {
 		case "tracesFacets":
 			return Effect.map(getTracesFacets({ data: window }), ({ data }) => ({

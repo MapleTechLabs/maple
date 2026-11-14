@@ -87,7 +87,7 @@ Filtering on these scans a small column instead of doing a per-row map lookup. T
 
 ### Status badge tiers
 
-`http.status_code` / `http.response.status_code` renders as a colored badge in the trace list (`HttpStatusBadge` in [traces-table.tsx](../apps/web/src/components/traces/traces-table.tsx)):
+`http.status_code` / `http.response.status_code` renders as a colored badge in the trace list (`traceStatusBadge` in [trace-badges.ts](../packages/views/src/ui/trace-badges.ts)):
 
 | Status range | Tone                      |
 | ------------ | ------------------------- |
@@ -171,7 +171,7 @@ Source: `getCacheInfo` in [cache.ts](../packages/ui/src/lib/cache.ts).
 
 ## Errors & exceptions
 
-Drives the error banner in the log detail view ([log-error-banner.tsx](../apps/web/src/components/logs/log-error-banner.tsx)) and the highest-priority log chip.
+Drives the error banner in the log detail view ([view-panels.ts](../packages/views/src/logs/log-sheet/view-panels.ts)) and the highest-priority log chip.
 
 | Attribute           | What Maple does with it                                                                                         |
 | ------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +225,7 @@ For log records (not spans). Drives the per-row color in the log list and the tr
 | `ERROR`                  | severity-error |
 | `FATAL`                  | severity-fatal |
 
-Matching is case-insensitive. Source: `SEVERITY_COLORS` in [severity.ts](../packages/ui/src/lib/severity.ts). `ERROR` and `FATAL` also render the error banner at the top of the log detail view ([log-detail-sheet.tsx](../apps/web/src/components/logs/log-detail-sheet.tsx)).
+Matching is case-insensitive. Source: `SEVERITY_COLORS` in [severity.ts](../packages/ui/src/lib/severity.ts). `ERROR` and `FATAL` also render the error banner at the top of the log detail view ([log-sheet/view.ts](../packages/views/src/logs/log-sheet/view.ts)).
 
 ## Kubernetes & infrastructure
 

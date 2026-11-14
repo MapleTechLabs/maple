@@ -3,8 +3,7 @@ import type { SpanNode } from "@maple/ui/lib/types"
 import { describeSpan } from "./span-category"
 import { Array as Arr, String as Str } from "effect"
 
-// copied: packages/ui/src/components/traces/flow-utils.ts. It reaches React icon components
-// through describeSpan; the node and edge types are local instead of React Flow's.
+// The trace flow graph: nodes and edges from a trace's spans, typed locally.
 
 interface Node<Data, Type extends string = string> {
 	id: string
@@ -83,21 +82,19 @@ function areSpansDuplicates(a: SpanNode, b: SpanNode): boolean {
 }
 
 interface CombinedNode {
-	spans: SpanNode[]
+	spans: Arr.NonEmptyArray<SpanNode>
 	children: CombinedNode[]
 }
 
 function combineConsecutiveDuplicates(children: SpanNode[]): CombinedNode[] {
-	if (children.length === 0) return []
+	const [first, ...rest] = children
+	if (first === undefined) return []
 
 	const result: CombinedNode[] = []
-	let currentGroup: SpanNode[] = [children[0]]
+	let currentGroup: Arr.NonEmptyArray<SpanNode> = [first]
 
-	for (let i = 1; i < children.length; i++) {
-		const child = children[i]
-		const lastInGroup = currentGroup[currentGroup.length - 1]
-
-		if (areSpansDuplicates(child, lastInGroup)) {
+	for (const child of rest) {
+		if (areSpansDuplicates(child, Arr.lastNonEmpty(currentGroup))) {
 			currentGroup.push(child)
 		} else {
 			result.push(createCombinedNode(currentGroup))
@@ -110,7 +107,7 @@ function combineConsecutiveDuplicates(children: SpanNode[]): CombinedNode[] {
 	return result
 }
 
-function createCombinedNode(spans: SpanNode[]): CombinedNode {
+function createCombinedNode(spans: Arr.NonEmptyArray<SpanNode>): CombinedNode {
 	const allChildren: SpanNode[] = []
 	for (const span of spans) {
 		allChildren.push(...span.children)
@@ -144,9 +141,9 @@ function calculateAggregatedDuration(spans: SpanNode[]): AggregatedDuration {
 	}
 }
 
-function getCombinedNodeId(spans: SpanNode[]): string {
+function getCombinedNodeId(spans: Arr.NonEmptyReadonlyArray<SpanNode>): string {
 	if (spans.length === 1) {
-		return spans[0].spanId
+		return Arr.headNonEmpty(spans).spanId
 	}
 	return `combined-${Arr.join(
 		Arr.map(spans, (s) => s.spanId),
@@ -178,7 +175,7 @@ export function transformSpansToFlow(
 	function traverse(combinedNode: CombinedNode, parentId?: string, parentSpan?: SpanNode) {
 		const { spans } = combinedNode
 		const nodeId = getCombinedNodeId(spans)
-		const primarySpan = spans[0]
+		const primarySpan = Arr.headNonEmpty(spans)
 		const count = spans.length
 		const aggregatedDuration = calculateAggregatedDuration(spans)
 
@@ -339,28 +336,17 @@ export function getLayoutedElements(
 	return { nodes: layoutedNodes, edges }
 }
 
-/** Finds a span by regular or combined flow-node ID. */
-export function findSpanById(rootSpans: ReadonlyArray<SpanNode>, spanId: string): SpanNode | undefined {
-	let searchId = spanId
-	if (Str.startsWith("combined-")(spanId)) {
-		const parts = Str.split("-")(Str.slice("combined-".length)(spanId))
-		if (parts.length > 0) {
-			searchId = parts[0]
-		}
-	}
-
-	function traverse(node: SpanNode): SpanNode | undefined {
-		if (node.spanId === searchId) return node
-		for (const child of node.children) {
-			const found = traverse(child)
-			if (found) return found
-		}
-		return undefined
-	}
-
-	for (const root of rootSpans) {
-		const found = traverse(root)
-		if (found) return found
-	}
-	return undefined
+/** Finds a span by regular or combined flow-node ID (`combined-<spanId>-...` resolves to its first span). */
+export const findSpanById = <S extends { readonly spanId: string; readonly children: ReadonlyArray<S> }>(
+	rootSpans: ReadonlyArray<S>,
+	spanId: string,
+): S | undefined => {
+	const searchId = Str.startsWith("combined-")(spanId)
+		? Str.split("-")(Str.slice("combined-".length)(spanId))[0]
+		: spanId
+	const visit = (node: S): S | undefined =>
+		node.spanId === searchId
+			? node
+			: Arr.reduce<S, S | undefined>(node.children, undefined, (found, child) => found ?? visit(child))
+	return Arr.reduce<S, S | undefined>(rootSpans, undefined, (found, root) => found ?? visit(root))
 }

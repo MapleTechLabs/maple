@@ -20,7 +20,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const WORKSPACE = "chatw_YoxMqYdzUJ1tH4BqCWxPH3"
 
 const list = (withWorkspace: boolean) =>
-	Schema.decodeUnknownSync(V2ChatConnectorList)({
+	Schema.decodeSync(V2ChatConnectorList)({
 		object: "chat_connector_list",
 		data: [
 			{

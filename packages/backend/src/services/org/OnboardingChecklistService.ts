@@ -1,6 +1,11 @@
-import { BillingCustomer, BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
+import {
+	BillingCustomer,
+	BillingNotConfiguredError,
+	BillingUpstreamError,
+	type TenantContext,
+} from "@maple/domain/http"
 import { ownBillingCustomer } from "@maple/backend/services/billing/billing-customer"
-import type { OrgId } from "@maple/domain/primitives"
+import type { OrgId } from "@maple/primitives"
 import {
 	emptyOnboardingChecklistInputs,
 	evaluateOnboardingChecklist,
@@ -13,7 +18,6 @@ import {
 } from "@maple/domain/onboarding-checklist"
 import { EdgeCacheService } from "@maple/cache"
 import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
@@ -280,7 +284,7 @@ const make = Effect.gen(function* () {
 			"reserveRewardClaim",
 			onboarding.reserveRewardClaim(orgId, CLAIM_LEASE_MS),
 		)
-		if (!reserved) {
+		if (Option.isNone(reserved)) {
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Another admin is claiming the reward right now. Try again in a moment.",
 				reason: "in_progress",
@@ -288,7 +292,7 @@ const make = Effect.gen(function* () {
 		}
 
 		const release = onboarding
-			.releaseRewardClaim(orgId)
+			.releaseRewardClaim(orgId, reserved.value)
 			.pipe(
 				Effect.catchCause((cause) =>
 					Effect.logError("Onboarding reward lease could not be released").pipe(
@@ -321,30 +325,36 @@ const make = Effect.gen(function* () {
 		)
 		// The discount rides on the base plan's subscription, so an org without one has
 		// nothing to discount yet.
-		const planId = customer.subscriptions.find(
-			(subscription) => subscription.addOn !== true && subscription.status === "active",
-		)?.planId
-		if (planId === undefined) {
+		const planId = Option.flatMapNullishOr(
+			Arr.findFirst(
+				customer.subscriptions,
+				(subscription) => subscription.addOn !== true && subscription.status === "active",
+			),
+			(subscription) => subscription.planId,
+		)
+		if (Option.isNone(planId)) {
 			yield* release
 			return yield* new OnboardingRewardNotClaimableError({
 				message: "Start a plan before claiming the reward.",
 				reason: "no_subscription",
 			})
 		}
-		yield* autumn.applyReward(ownBillingCustomer(orgId), { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
-			Effect.flatMap(classifyAutumn),
-			Effect.catchTags({
-				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
-				"@maple/http/errors/BillingConflictError": releaseAndCollapse,
-				"@maple/http/errors/BillingRateLimitedError": releaseAndCollapse,
-				"@maple/http/errors/BillingRequestError": releaseAndCollapse,
-				"@maple/http/errors/BillingUpstreamError": (error) =>
-					Effect.logError(
-						"Onboarding reward apply unanswered after reservation; needs reconciliation",
-					).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
-			}),
-		)
-		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId))
+		yield* autumn
+			.applyReward(ownBillingCustomer(orgId), { planId: planId.value, rewardId: ONBOARDING_REWARD_ID })
+			.pipe(
+				Effect.flatMap(classifyAutumn),
+				Effect.catchTags({
+					"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
+					"@maple/http/errors/BillingConflictError": releaseAndCollapse,
+					"@maple/http/errors/BillingRateLimitedError": releaseAndCollapse,
+					"@maple/http/errors/BillingRequestError": releaseAndCollapse,
+					"@maple/http/errors/BillingUpstreamError": (error) =>
+						Effect.logError(
+							"Onboarding reward apply unanswered after reservation; needs reconciliation",
+						).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
+				}),
+			)
+		yield* unavailable("finalizeRewardClaim", onboarding.finalizeRewardClaim(orgId, reserved.value))
 		yield* edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 		yield* Effect.annotateCurrentSpan({ orgId, "maple.onboarding.reward_claimed": true })
 

@@ -15,9 +15,9 @@ import type { TraceFilters } from "./filters"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 
-// The toolbar of `TraceListView` and its `SpanScopeBanner`.
+// The traces list's toolbar and its span-scope banner.
 
 const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =>
 	hstack(h, { wrap: true, shrink: true, grow: true, className: "gap-x-2 gap-y-1 text-sm" }, [
@@ -25,7 +25,7 @@ const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =
 		...(filters.service
 			? [
 					typography(h, { tone: "muted" }, ["from"]),
-					badge(h, { variant: "outline", className: "font-mono text-xs" }, [
+					badge(h, { variant: "outline", className: typographyClass({ mono: true, size: "xs" }) }, [
 						serviceDot(h, { serviceName: filters.service, size: "sm" }),
 						filters.service,
 					]),

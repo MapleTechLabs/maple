@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "./ApiKeysService"
 
 const createdDbs: TestDb[] = []
@@ -30,8 +30,8 @@ const makeLayer = () => {
 	return ApiKeysService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 }
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_test")
-const USER = Schema.decodeUnknownSync(UserId)("user_test")
+const ORG = Schema.decodeSync(OrgId)("org_test")
+const USER = Schema.decodeSync(UserId)("user_test")
 
 describe("ApiKeysService scopes", () => {
 	it.effect("persists scopes on create and resolves them by key", () =>

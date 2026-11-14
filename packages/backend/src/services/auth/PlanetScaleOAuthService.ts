@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto"
 import {
 	IntegrationsConfigurationError,
 	IntegrationsNotConnectedError,
@@ -10,9 +9,21 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OAuthAuthStates, PlanetscaleConnections } from "@maple/db/tables"
+import { PlanetscaleConnections } from "@maple/db/tables"
 import * as PlanetScale from "@distilled.cloud/planetscale"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Result,
+	Schema,
+	String as Str,
+	Array as Arr,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
@@ -23,8 +34,10 @@ import {
 	type PlanetScaleTokenRejectedError,
 	runPlanetScale,
 } from "@maple/backend/services/integrations/planetscale/api"
-import { makeOAuthConnectionHelpers, OAUTH_STATE_TTL_MS, toUpstreamError } from "./oauth/connection-helpers"
+import { releasePlanetScaleCostSources } from "../cost/planetscale-cost-sources"
+import { makeOAuthConnectionHelpers, toUpstreamError } from "./oauth/connection-helpers"
 import type { OAuthFlowInitiator } from "./oauth/oauth-state"
+import { newOAuthState } from "./oauth/oauth-state"
 
 const PLANETSCALE_PROVIDER = "planetscale"
 
@@ -46,18 +59,18 @@ export const planetScaleBearerHeader = (accessToken: string): string => `Bearer 
 const REQUEST_TIMEOUT = Duration.seconds(15)
 /**
  * The exchange mints the token at auth.planetscale.com but the v1 API validates
- * it against its own store — an immediate `invalid_token` right after a
+ * it against its own store: an immediate `invalid_token` right after a
  * successful exchange smells like propagation lag, so wait once before retrying.
  */
 const TOKEN_REJECTED_RETRY_DELAY = Duration.seconds(2)
-/** Pagination caps for the org listing — same bounds as the inventory poller. */
+/** Pagination caps for the org listing: same bounds as the inventory poller. */
 const PAGE_SIZE = 100
 const MAX_PAGES = 10
 
 interface ResolvedPlanetScaleOAuthConfig {
 	readonly clientId: string
-	/** Always present — PlanetScale OAuth apps are confidential clients (no PKCE). Redacted until the wire. */
-	readonly clientSecret: Redacted.Redacted<string>
+	/** Always present: PlanetScale OAuth apps are confidential clients (no PKCE). Redacted until the wire. */
+	readonly clientSecret: Redacted.Redacted
 	readonly authorizeUrl: string
 	readonly tokenUrl: string
 	/** Space-delimited, resource-prefixed scopes sent in the authorize request. */
@@ -93,7 +106,6 @@ export interface PlanetScaleOrganization {
 	readonly name: string
 }
 
-/** Exact failures involved in resolving a usable PlanetScale OAuth token. */
 export type PlanetScaleAccessTokenError =
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
@@ -133,7 +145,7 @@ export interface PlanetScaleOAuthServiceApi {
 	>
 	/**
 	 * Exchange the callback code and persist the grant. Does NOT bind a
-	 * PlanetScale organization — the callback route auto-binds when the grant
+	 * PlanetScale organization: the callback route auto-binds when the grant
 	 * reaches exactly one org, otherwise the UI's org picker finalizes. The
 	 * accessible organizations are returned so the caller can decide without a
 	 * second API round-trip.
@@ -160,12 +172,15 @@ export interface PlanetScaleOAuthServiceApi {
 	/**
 	 * Run `use` with the org's access token. A 401 forces one refresh and a retry; when the
 	 * fresh token is rejected too, the grant is stamped revoked so pollers stop using it.
+	 * `stampRevoked: false` fails as revoked without stamping: for an endpoint whose 401 does not
+	 * prove the grant dead (invoices, which a grant without that scope has never been seen to ask).
 	 */
 	readonly withAccessToken: <A, E>(
 		orgId: OrgId,
 		use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
+		options?: { readonly stampRevoked?: boolean },
 	) => Effect.Effect<A, Exclude<E, PlanetScaleTokenRejectedError> | PlanetScaleAccessTokenError>
-	/** Organizations the stored grant can access — org-picker material. */
+	/** Organizations the stored grant can access: org-picker material. */
 	readonly listOrganizations: (
 		orgId: OrgId,
 	) => Effect.Effect<
@@ -223,11 +238,16 @@ export class PlanetScaleOAuthService extends Context.Service<
 			env,
 			// A new grant starts clean: an inventory failure from the old one must not count toward
 			// the repeated-403 revoke in PlanetScaleService.pollOrg, even if the callback fails after.
+			// The Cost page's source is due again too: the new grant may carry the invoice scope, and
+			// a grant that sees several organizations is never bound again to say so.
 			onUpsert: (db, orgId, currentTime) =>
-				db.run(
-					PG.update(PlanetscaleConnections)
-						.set({ lastInventoryError: null, updatedAt: currentTime })
-						.where(($) => [$.orgId.eq(orgId)]),
+				Effect.andThen(
+					db.run(
+						PG.update(PlanetscaleConnections)
+							.set({ lastInventoryError: null, updatedAt: currentTime })
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					releasePlanetScaleCostSources(db, orgId, currentTime),
 				),
 		})
 
@@ -238,7 +258,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 		/**
 		 * Ask PlanetScale's auth server whether a token it minted is valid. Purely
-		 * diagnostic — never fails, never logs the token. `Option.none` means the
+		 * diagnostic: never fails, never logs the token. `Option.none` means the
 		 * introspection itself was unreachable/undecodable.
 		 */
 		const introspectToken = Effect.fn("PlanetScaleOAuthService.introspectToken")(function* (
@@ -274,7 +294,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 				if (res.status === 401 || res.status === 403) {
 					yield* Effect.logError("PlanetScale auth server rejected the token on introspection", {
 						status: res.status,
-						body: text.slice(0, 200),
+						body: Str.slice(0, 200)(text),
 					})
 					return "invalid" satisfies TokenIntrospectionVerdict
 				}
@@ -310,7 +330,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 					decodeConsumed(Schema.Array(OrganizationSchema), "organizations")(items),
 				),
 				Effect.map((organizations) =>
-					organizations.map((organization): PlanetScaleOrganization => ({
+					Arr.map(organizations, (organization): PlanetScaleOrganization => ({
 						id: organization.id,
 						name: organization.name,
 					})),
@@ -341,29 +361,17 @@ export class PlanetScaleOAuthService extends Context.Service<
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const config = yield* resolveConfig(env)
-			const state = randomBytes(24).toString("base64url")
-			const currentTime = yield* Clock.currentTimeMillis
-
-			yield* oauth.purgeExpiredStates(currentTime)
-			yield* oauth.dbExecute((db) =>
-				db.run(
-					PG.insertInto(OAuthAuthStates).values({
-						state,
-						orgId,
-						provider: PLANETSCALE_PROVIDER,
-						initiatedByUserId: userId,
-						redirectUri: options.callbackUrl,
-						returnTo: options.returnTo ?? null,
-						createdAt: currentTime,
-						expiresAt: currentTime + OAUTH_STATE_TTL_MS,
-					}),
-				),
+			const state = yield* newOAuthState
+			yield* oauth.saveState(
+				state,
+				{ orgId, userId },
+				{ redirectUri: options.callbackUrl, returnTo: options.returnTo ?? null },
 			)
 
-			// PlanetScale REQUIRES the scope param — the app's configured scopes are the
+			// PlanetScale REQUIRES the scope param: the app's configured scopes are the
 			// allowed maximum, not an implicit default, so omitting it fails the authorize
 			// with `invalid_scope`. Scopes are resource-prefixed (`organization:read_databases`)
-			// and space-delimited. No PKCE — PlanetScale OAuth apps are confidential clients
+			// and space-delimited. No PKCE: PlanetScale OAuth apps are confidential clients
 			// authenticated by the client secret at token exchange.
 			const params = new URLSearchParams({
 				client_id: config.clientId,
@@ -390,14 +398,14 @@ export class PlanetScaleOAuthService extends Context.Service<
 
 			// Diagnostic: the exchange succeeds but the API rejects the token. Record
 			// the token's shape (secret-safe: prefix + length only) and what scopes
-			// PlanetScale actually granted — an opaque `pscale_oauth_` token vs a JWT,
+			// PlanetScale actually granted: an opaque `pscale_oauth_` token vs a JWT,
 			// and the granted-scope string, disambiguate why /v1 says `invalid_token`.
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.token.granted_scope": tokenResponse.scope ?? "(none)",
 				"maple.planetscale.token.type": tokenResponse.token_type ?? "(none)",
-				"maple.planetscale.token.prefix": tokenResponse.access_token.slice(0, 13),
+				"maple.planetscale.token.prefix": Str.slice(0, 13)(tokenResponse.access_token),
 				"maple.planetscale.token.length": tokenResponse.access_token.length,
-				"maple.planetscale.token.looks_jwt": tokenResponse.access_token.split(".").length === 3,
+				"maple.planetscale.token.looks_jwt": Str.split(tokenResponse.access_token, ".").length === 3,
 				"maple.planetscale.token.expires_in": tokenResponse.expires_in ?? "(none)",
 			})
 
@@ -420,7 +428,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			// Resolve what the grant can see before persisting anything: a grant with
 			// no organizations can never feed metrics, so refuse it up front.
 			//
-			// A 401 here — milliseconds after a successful exchange — cannot be a real
+			// A 401 here (milliseconds after a successful exchange) cannot be a real
 			// revocation. Retry once (auth→API token-store propagation lag), then
 			// introspect the token at the auth server to classify what remains: a dead
 			// token means reconnecting may help; an active-but-rejected token means it
@@ -452,14 +460,15 @@ export class PlanetScaleOAuthService extends Context.Service<
 					}),
 				),
 			)
-			if (organizations.length === 0) {
+			const [firstOrganization] = organizations
+			if (firstOrganization === undefined) {
 				return yield* new IntegrationsValidationError({
 					message: "The PlanetScale authorization grants access to no organizations",
 				})
 			}
 
 			// Identify the grant for display. `/v1/user` may be outside the app's
-			// scopes — fall back to the first organization id rather than failing.
+			// scopes: fall back to the first organization id rather than failing.
 			const currentUser = yield* runPlanetScale(
 				httpClient,
 				apiTarget(tokenResponse.access_token),
@@ -467,15 +476,15 @@ export class PlanetScaleOAuthService extends Context.Service<
 				PlanetScale.getCurrentUser({}),
 			).pipe(Effect.flatMap(decodeConsumed(CurrentUserSchema, "the current user")), Effect.option)
 
-			const accessEnc = yield* oauth.encryptValue(tokenResponse.access_token)
-			const refreshEnc = yield* oauth.encryptValue(tokenResponse.refresh_token)
+			const accessEnc = yield* oauth.sealAccessToken(orgId, tokenResponse.access_token)
+			const refreshEnc = yield* oauth.sealRefreshToken(orgId, tokenResponse.refresh_token)
 			const currentTime = yield* Clock.currentTimeMillis
 			const expiresAt =
 				tokenResponse.expires_in != null ? currentTime + tokenResponse.expires_in * 1000 : null
 
 			yield* oauth.upsertConnection(orgId, currentTime, {
 				externalUserId: Option.match(currentUser, {
-					onNone: () => organizations[0]!.id,
+					onNone: () => firstOrganization.id,
 					onSome: (user) => user.id,
 				}),
 				externalUserEmail: Option.match(currentUser, {
@@ -515,10 +524,11 @@ export class PlanetScaleOAuthService extends Context.Service<
 		const withAccessToken = <A, E>(
 			orgId: OrgId,
 			use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
+			options?: { readonly stampRevoked?: boolean },
 		) =>
 			resolveConfig(env).pipe(
 				Effect.flatMap((config) =>
-					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use),
+					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use, options),
 				),
 				Effect.withSpan("PlanetScaleOAuthService.withAccessToken", { attributes: { orgId } }),
 			)
@@ -550,7 +560,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			return {
 				revokedAt: row?.revokedAt ?? null,
 				expiresAt: row?.expiresAt ?? null,
-				scopes: (row?.scope ?? "").split(" ").filter((scope) => scope !== ""),
+				scopes: Arr.filter(Str.split(row?.scope ?? "", " "), (scope) => scope !== ""),
 				updatedAt: row?.updatedAt ?? null,
 			}
 		})

@@ -486,7 +486,6 @@ export const migrateV2CreateIntent = (
 		formatVersion: ARCHIVE_OPERATION_FORMAT_VERSION,
 		kind: "create",
 	} satisfies Record<string, unknown>
-	// parseArchiveOperationIntent validates all fields + the kind discriminator.
 	parseArchiveOperationIntent(archiveDir, lifted, expectedDataDir, expectedScratchRoot)
 	return lifted
 }
@@ -834,14 +833,14 @@ export const inspectActiveOperation = (
 		const reason = error instanceof Error ? error.message : String(error)
 		return { kind: "fail-closed", reason: `active operations directory is unsafe: ${reason}` }
 	}
-	if (ids.length === 0) return null
+	const [operationId] = ids
+	if (operationId === undefined) return null
 	if (ids.length > 1) {
 		return {
 			kind: "fail-closed",
 			reason: `${ids.length} active operations are ambiguous; manual inspection required`,
 		}
 	}
-	const operationId = ids[0]!
 	const dir = operationDir(archiveDir, operationId)
 	const path = intentPath(archiveDir, operationId)
 	if (!existsSync(path)) {
@@ -875,9 +874,8 @@ export const inspectActiveOperation = (
 				reason: `active v2 intent is corrupt and will not migrate: ${reason}`,
 			}
 		}
-		// Bind the directory ID to the record's operationId (the check the old
-		// migration skipped). A v2 record for operation B inside directory A is
-		// fail-closed — never rewritten.
+		// Bind the directory ID to the record's operationId. A v2 record for
+		// operation B inside directory A fails closed and is never rewritten.
 		const recordedOperationId = lifted.operationId
 		if (typeof recordedOperationId !== "string" || recordedOperationId !== operationId) {
 			return {

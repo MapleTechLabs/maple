@@ -1,4 +1,4 @@
-import { Option, Result, Schema, String as Str } from "effect"
+import { Option, Record as Rec, Result, Schema, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import { orgOfKey, type RequestKey } from "./request-key"
 
@@ -33,6 +33,10 @@ export const KeyedSchema = <A, AI, E, EI>(
 	})
 
 export const idle = <A, E>(): Keyed<A, E> => ({ key: null, data: AsyncData.Idle() })
+
+/** The slot stored under `key` (own keys only), or an idle one when the record has none yet. */
+export const at = <A, E>(slots: Readonly<Record<string, Keyed<A, E>>>, key: string): Keyed<A, E> =>
+	Option.getOrElse(Rec.get(slots, key), () => idle<A, E>())
 
 /** A superseding re-read's key: the request key plus a generation, so an older answer is dropped. */
 const GENERATION_SEPARATOR = "\u0001"
@@ -70,7 +74,8 @@ const withRetained = <A, E>(
  * revalidates. New key: always requests, keeping the previous data on screen (`Refreshing`) unless
  * the org changed.
  */
-export type RequestMode = "Load" | "Refresh"
+export const RequestMode = Schema.Literals(["Load", "Refresh"])
+export type RequestMode = typeof RequestMode.Type
 
 /** `Some(next)`: put `next` in the Model and return the fetch Command. `None`: nothing to do. */
 export const request = <A, E>(

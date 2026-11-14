@@ -18,13 +18,15 @@ import {
 	type UserId,
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
+import { generateApiKey, hashApiKey } from "../../platform/credential-tokens"
 import { ApiKeys, CliDeviceAuthorizations, type CliDeviceAuthorizationRow } from "@maple/db/tables"
-import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { Env } from "@maple/backend/platform/Env"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { cliDeviceTokenSlot } from "@maple/backend/platform/secret-slots"
 import { CliAuthRateLimit } from "@maple/backend/platform/bindings"
 
 const DEVICE_TTL_SECONDS = 15 * 60
@@ -52,10 +54,9 @@ const makeUserCode = () => {
 	return value
 }
 
-const persistenceError = (error: unknown) =>
-	new CliDevicePersistenceError({
-		message: error instanceof Error ? error.message : "CLI device authorization persistence failed",
-	})
+// These errors answer unauthenticated callers; `makeDbExecute` has already logged the driver's message.
+const persistenceError = () =>
+	new CliDevicePersistenceError({ message: "CLI device authorization is temporarily unavailable" })
 
 type ApprovalIdentity = {
 	readonly orgId: OrgId
@@ -119,12 +120,12 @@ export class CliDeviceAuthService extends Context.Service<
 		const env = yield* Env
 		// Absent outside the api Worker (tests, the CLI): the check then passes.
 		const rateLimit = yield* Effect.serviceOption(CliAuthRateLimit)
-		const apiKeyHmacKey = yield* parseIngestKeyLookupHmacKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY),
+		const apiKeyHmacKey = yield* ingestKeyLookupHmacKey(
+			env,
 			(message) => new CliDevicePersistenceError({ message }),
 		)
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new CliDevicePersistenceError({ message }),
 		)
 
@@ -185,13 +186,13 @@ export class CliDeviceAuthService extends Context.Service<
 			yield* purgeExpired(now)
 			const deviceCode = randomBytes(32).toString("base64url")
 			const userCode = makeUserCode()
-			const verificationUri = `${env.MAPLE_APP_BASE_URL.replace(/\/+$/, "")}/cli-login`
+			const verificationUri = `${Str.replace(/\/+$/, "")(env.MAPLE_APP_BASE_URL)}/cli-login`
 			yield* dbExecute((db) =>
 				db.run(
 					PG.insertInto(CliDeviceAuthorizations).values({
 						deviceCodeHash: hashCode(deviceCode),
 						userCodeHash: hashCode(userCode),
-						deviceName: deviceName.trim().slice(0, 120) || "Maple CLI",
+						deviceName: Str.slice(0, 120)(Str.trim(deviceName)) || "Maple CLI",
 						createdAt: now,
 						expiresAt: now + DEVICE_TTL_SECONDS * 1000,
 					}),
@@ -313,9 +314,11 @@ export class CliDeviceAuthService extends Context.Service<
 				return new CliDevicePendingResponse({ status: "pending", interval: POLL_INTERVAL_SECONDS })
 			}
 			if (row.tokenCiphertext && row.tokenIv && row.tokenTag) {
-				const token = yield* decryptAes256Gcm(
+				const token = yield* openSecret(
+					keyring,
+					cliDeviceTokenSlot,
+					{ deviceCodeHash: row.deviceCodeHash },
 					{ ciphertext: row.tokenCiphertext, iv: row.tokenIv, tag: row.tokenTag },
-					encryptionKey,
 					(message) => new CliDevicePersistenceError({ message }),
 				)
 				return new CliDeviceCompleteResponse({
@@ -328,9 +331,12 @@ export class CliDeviceAuthService extends Context.Service<
 
 			const apiKeyId = decodeApiKeyId(randomUUID())
 			const rawToken = generateApiKey()
-			const encrypted = yield* encryptAes256Gcm(
+			// Sealed for the row the claiming UPDATE below targets.
+			const encrypted = yield* sealSecret(
+				keyring,
+				cliDeviceTokenSlot,
+				{ deviceCodeHash: row.deviceCodeHash },
 				rawToken,
-				encryptionKey,
 				(message) => new CliDevicePersistenceError({ message }),
 			)
 			const now = yield* Clock.currentTimeMillis
@@ -356,7 +362,7 @@ export class CliDeviceAuthService extends Context.Service<
 								name: row.deviceName,
 								description: "Created by maple auth login",
 								keyHash: hashApiKey(rawToken, apiKeyHmacKey),
-								keyPrefix: rawToken.slice(0, 12) + "...",
+								keyPrefix: Str.slice(0, 12)(rawToken) + "...",
 								kind: "standard",
 								scopes: null,
 								metadataJson: {
@@ -382,13 +388,15 @@ export class CliDeviceAuthService extends Context.Service<
 					winner.value.tokenIv &&
 					winner.value.tokenTag
 				) {
-					const token = yield* decryptAes256Gcm(
+					const token = yield* openSecret(
+						keyring,
+						cliDeviceTokenSlot,
+						{ deviceCodeHash: winner.value.deviceCodeHash },
 						{
 							ciphertext: winner.value.tokenCiphertext,
 							iv: winner.value.tokenIv,
 							tag: winner.value.tokenTag,
 						},
-						encryptionKey,
 						(message) => new CliDevicePersistenceError({ message }),
 					)
 					return new CliDeviceCompleteResponse({

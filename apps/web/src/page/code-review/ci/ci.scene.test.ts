@@ -30,7 +30,7 @@ const totals = (runs: number) => ({
 	p95QueueMs: null,
 })
 const analyticsOf = (runs: number) =>
-	Schema.decodeUnknownSync(CodeReviewCiAnalytics)({
+	Schema.decodeSync(CodeReviewCiAnalytics)({
 		startTime: NOW - 7 * 86_400_000,
 		endTime: NOW,
 		bucketSeconds: 86_400,
@@ -75,7 +75,7 @@ describe("code review CI", () => {
 describe("a CI run's trace link", () => {
 	const DAY_MS = 86_400_000
 	const runAt = (startedAt: number) =>
-		Schema.decodeUnknownSync(CodeReviewCiRun)({
+		Schema.decodeSync(CodeReviewCiRun)({
 			traceId: "0af7651916cd43dd8448eb211c80319c",
 			pipeline: "CI",
 			repository: "web",

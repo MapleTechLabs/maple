@@ -3,8 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// `MetaLine` and `PlatformLabel`.
+import { typography } from "@maple/views/ui/typography"
 
 /** An item: plain text (capped and titled) or a node. Absent items are dropped. */
 export type MetaItem = Html | string | null | undefined | false
@@ -44,7 +43,7 @@ export const metaLine = <M>(
 					),
 				],
 				[
-					...(index > 0 ? [h.span([h.Class("text-foreground-faint")], ["·"])] : []),
+					...(index > 0 ? [typography(h, { tone: "faint" }, ["·"])] : []),
 					typeof item === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [item]) : item,
 				],
 			),
@@ -59,7 +58,7 @@ type Known = Readonly<{ icon?: IconName; label: string; color?: string }>
 const OS = new Map<string, Known>([
 	["linux", { icon: "LinuxIcon", label: "Linux" }],
 	["darwin", { icon: "AppleIcon", label: "macOS" }],
-	["windows", { icon: "MicrosoftIcon", label: "Windows", color: "#0078D4" }],
+	["windows", { icon: "MicrosoftIcon", label: "Windows", color: "var(--color-brand-microsoft)" }],
 ])
 
 const CLOUD = new Map<string, Known>([

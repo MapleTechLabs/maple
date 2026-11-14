@@ -1,3 +1,4 @@
+import { readClock } from "@maple/views/data/timing"
 import { TraceId } from "@maple/domain/http"
 import {
 	getReplay,
@@ -7,27 +8,24 @@ import {
 	getSessionTraceSummaries,
 } from "@maple/web-data/warehouse/replays"
 import { getSpanHierarchy } from "@maple/web-data/warehouse/traces"
-import { Clock, Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr } from "effect"
+import { Effect, Option, Queue, Result, Schedule, Schema, Stream, Array as Arr } from "effect"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { REPLAY_EVENTS, runReplayEngine } from "../kit/replay-engine-mount"
 import { Message } from "./message"
 import { EventRow, Manifest, ReplayDetail } from "./model"
 
-// The detail page's reads, each carrying its request key back (S6), and the player Mounts.
+// The detail page's reads, each carrying its request key back, and the player Mounts.
 
 const Window = {
 	windowStart: Schema.optional(Schema.String),
 	windowEnd: Schema.optional(Schema.String),
 }
 
-export const ResolveClock = Command.define("ResolveReplayClock", {
-	messages: [Message.CompletedResolveClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.CompletedResolveClock({ nowMs })),
-})
+export const ResolveClock = readClock("ResolveReplayClock", Message.CompletedResolveClock)
 
 export const FetchDetail = Command.define("FetchReplayDetail", {
 	args: { key: Schema.String, refresh: Schema.Boolean, sessionId: Schema.String, ...Window },
@@ -39,11 +37,7 @@ export const FetchDetail = Command.define("FetchReplayDetail", {
 				getReplay({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDetail({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchDetail({ key, result }))),
 })
 
 export const FetchManifest = Command.define("FetchReplayManifest", {
@@ -57,11 +51,7 @@ export const FetchManifest = Command.define("FetchReplayManifest", {
 				maxBytesPerRequest: manifest.max_bytes_per_request,
 				maxChunksPerRequest: manifest.max_chunks_per_request,
 			})),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchManifest({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchManifest({ key, result }))),
 })
 
 export const FetchTranscript = Command.define("FetchReplayTranscript", {
@@ -74,11 +64,7 @@ export const FetchTranscript = Command.define("FetchReplayTranscript", {
 				getSessionTranscript({ data: { sessionId, windowStart, windowEnd } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTranscript({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchTranscript({ key, result }))),
 })
 
 export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
@@ -86,13 +72,12 @@ export const FetchTraceSummaries = Command.define("FetchReplayTraceSummaries", {
 	messages: [Message.CompletedFetchTraceSummaries],
 	execute: ({ key, traceIds, windowStart, windowEnd }) =>
 		getSessionTraceSummaries({ data: { traceIds, windowStart, windowEnd } }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTraceSummaries({ key, result })),
+			Effect.map((response) => response.data),
+			settleTo((result) => Message.CompletedFetchTraceSummaries({ key, result })),
 		),
 })
 
-/** `decodeRange`'s per-chunk parse: a malformed chunk is skipped, not fatal. */
+/** Per-chunk parse: a malformed chunk is skipped, not fatal. */
 const decodeChunk = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 
 export const FetchRange = Command.define("FetchReplayRange", {
@@ -106,22 +91,19 @@ export const FetchRange = Command.define("FetchReplayRange", {
 	messages: [Message.CompletedFetchRange],
 	execute: ({ key, ...data }) =>
 		getReplayEvents({ data }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					Arr.map(response.chunks, (chunk) => ({
-						chunk_seq: chunk.chunk_seq,
-						events: Option.getOrElse(decodeChunk(chunk.events), () => []),
-					})),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchRange({ key, result })),
+			Effect.map((response) =>
+				Arr.map(response.chunks, (chunk) => ({
+					chunk_seq: chunk.chunk_seq,
+					events: Option.getOrElse(decodeChunk(chunk.events), () => []),
+				})),
+			),
+			settleTo((result) => Message.CompletedFetchRange({ key, result })),
 		),
 })
 
 const decodeTraceId = Schema.decodeUnknownOption(TraceId)
 
-/** `TraceSpanLane`: an expanded trace row's spans, fetched when it opens. */
+/** An expanded trace row's spans, fetched when it opens. */
 export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 	args: { traceId: Schema.String, timestamp: Schema.String },
 	messages: [Message.CompletedFetchSpans],
@@ -131,22 +113,19 @@ export const FetchSpans = Command.define("FetchReplayTraceSpans", {
 				Effect.succeed(Message.CompletedFetchSpans({ traceId, result: Result.succeed([]) })),
 			onSome: (id) =>
 				getSpanHierarchy({ data: { traceId: id, timestamp } }).pipe(
-					Effect.mapBoth({
-						onSuccess: (response) =>
-							Arr.map(response.spans, (span) => ({
-								spanId: span.spanId,
-								spanName: span.spanName,
-								serviceName: span.serviceName,
-								startTime: span.startTime,
-								durationMs: span.durationMs,
-								statusCode: span.statusCode,
-								spanAttributes: span.spanAttributes,
-								spanKind: span.spanKind,
-							})),
-						onFailure: toLoadFailure,
-					}),
-					Effect.result,
-					Effect.map((result) => Message.CompletedFetchSpans({ traceId, result })),
+					Effect.map((response) =>
+						Arr.map(response.spans, (span) => ({
+							spanId: span.spanId,
+							spanName: span.spanName,
+							serviceName: span.serviceName,
+							startTime: span.startTime,
+							durationMs: span.durationMs,
+							statusCode: span.statusCode,
+							spanAttributes: span.spanAttributes,
+							spanKind: span.spanKind,
+						})),
+					),
+					settleTo((result) => Message.CompletedFetchSpans({ traceId, result })),
 				),
 		}),
 })
@@ -209,7 +188,7 @@ export const FeedEvents = Mount.defineStream("FeedReplayEvents", {
 export const isFigureFullscreen = (fullscreen: Pick<Element, "hasAttribute"> | null): boolean =>
 	fullscreen !== null && fullscreen.hasAttribute("data-replay-figure")
 
-/** `useReplayKeyboardShortcuts` and `fullscreenchange`, for the page's lifetime. */
+/** The player's keyboard shortcuts and `fullscreenchange`, for the page's lifetime. */
 export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 	messages: [Message.ClickedPlay, Message.RequestedSeekBy, Message.ChangedFullscreen],
 	execute: () =>
@@ -261,7 +240,7 @@ export const WatchPlayerKeys = Mount.defineStream("WatchReplayPlayerKeys", {
 		),
 })
 
-/** Where a press landed along a scrub surface (`msFromClientX`), as a 0 to 1 share. */
+/** Where a press landed along a scrub surface, as a 0 to 1 share. */
 export const MeasureScrub = Command.define("MeasureReplayScrub", {
 	args: { surface: Schema.String, clientX: Schema.Number },
 	messages: [Message.MeasuredScrub],

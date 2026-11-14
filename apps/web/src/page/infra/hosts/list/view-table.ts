@@ -1,5 +1,5 @@
 import { formatLoad } from "@maple/ui/lib/format"
-import type { Html, HtmlBuilder } from "foldkit/html"
+import { createKeyedLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { skeleton, skeletonLine } from "@maple/views/ui/skeleton"
@@ -10,7 +10,7 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../../kit/data-table"
+} from "../../../kit/data-table"
 import { meterRows } from "../../kit/meter-rows"
 import { metaLine, platformLabel } from "../../kit/meta-line"
 import { listRelativeTime } from "../../../kit/relative-time"
@@ -23,14 +23,14 @@ import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
 
-// `HostTable` / `HostTableLoading`, generic over the host's Message: /infra/hosts sorts through its Model,
-// `/lab/worst-case` through its own.
+// Generic over the host's Message: /infra/hosts sorts through its Model, `/lab/worst-case` through
+// its own.
 
 type OnSort<M> = (key: HostSortKey) => M
 
 const INERT_SORT = { isActive: false, dir: "desc" } satisfies Readonly<{ isActive: boolean; dir: SortDir }>
 
-/** `HostColumns`: interactive with `sort`, inert for the skeleton. */
+/** Interactive with `sort`, inert for the skeleton. */
 const columns = <M>(h: HtmlBuilder<M>, sort: SortState | null, onSort?: OnSort<M>): ReadonlyArray<Html> => {
 	const sortOf = (key: HostSortKey) => (onSort === undefined ? INERT_SORT : headSort(sort, key, onSort))
 	return [
@@ -71,7 +71,9 @@ export type HostTableInputs<M> = Readonly<{
 	onSort: OnSort<M>
 }>
 
-const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>): Html =>
+type RowInputs = Readonly<{ nowMs: number; timeZone: string }>
+
+const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: RowInputs): Html =>
 	h.a(
 		[
 			h.Key(host.hostName),
@@ -89,7 +91,7 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {
@@ -141,6 +143,11 @@ const hostRow = <M>(h: HtmlBuilder<M>, host: HostRow, inputs: HostTableInputs<M>
 		],
 	)
 
+// One cached row per host: a keystroke or sort re-renders only rows whose host or clock changed.
+const lazyRow = createKeyedLazy()
+const renderRow = <M>(h: HtmlBuilder<M>, host: HostRow, nowMs: number, timeZone: string): Html =>
+	hostRow(h, host, { nowMs, timeZone })
+
 export const hostTable = <M>(
 	h: HtmlBuilder<M>,
 	hosts: ReadonlyArray<HostRow>,
@@ -151,6 +158,8 @@ export const hostTable = <M>(
 		{ ariaLabel: "Hosts", isWaiting: inputs.isWaiting },
 		columns(h, inputs.sort, inputs.onSort),
 		hosts.length === 0
-			? [dataTableEmpty(h, ["No hosts match your search"])]
-			: Arr.map(hosts, (host) => hostRow(h, host, inputs)),
+			? [dataTableEmpty(h, ["No hosts match these filters"])]
+			: Arr.map(hosts, (host) =>
+					lazyRow(host.hostName, renderRow, [h, host, inputs.nowMs, inputs.timeZone]),
+				),
 	)

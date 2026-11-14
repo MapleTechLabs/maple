@@ -13,8 +13,6 @@ import { authDescription, authLayout, authTitle } from "./auth-layout"
 // `/unsubscribe`: the digest email's footer link. Public: the signed token is the credential, and
 // unsubscribing waits for a click (mail scanners prefetch).
 
-// MODEL
-
 export const State = defineTaggedUnion({
 	Idle: {},
 	Pending: {},
@@ -42,16 +40,12 @@ const labelForToken = (token: string): string => {
 	return "these emails"
 }
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedUnsubscribe: {},
 	SucceededUnsubscribe: {},
 	FailedUnsubscribe: { isInvalidToken: Schema.Boolean },
 })
 export type Message = typeof Message.Type
-
-// COMMAND
 
 /** `POST /api/email/unsubscribe?token=`. */
 export const Unsubscribe = Command.define("Unsubscribe", {
@@ -74,8 +68,6 @@ export const Unsubscribe = Command.define("Unsubscribe", {
 		),
 })
 
-// UPDATE
-
 export const update = (model: Model, message: Message): Update.Return<Model, Message, Resources> =>
 	Message.match<Update.Return<Model, Message, Resources>>(message, {
 		ClickedUnsubscribe: () =>
@@ -97,8 +89,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 			}),
 		}),
 	})
-
-// VIEW
 
 type H = HtmlBuilder<Message>
 

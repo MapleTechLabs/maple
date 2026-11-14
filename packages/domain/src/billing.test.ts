@@ -120,6 +120,20 @@ describe("projectCycleSpend", () => {
 		).toBe(3_900 + 39_000)
 	})
 
+	it("stops at the overage cap, where the gateway rejects new data", () => {
+		// Day 2 of 30 at 60 GB would project 900 GB, 800 GB over; a 50 GB cap
+		// bounds it at 50 GB × $0.50 = $25.
+		const capped = { logs: { ...logs(60).logs, overageLimit: 50 } }
+		expect(
+			projectCycleSpend({ baseDollars: 39, features: capped, elapsedMs: 2 * day, totalMs: 30 * day }),
+		).toBe(3_900 + 2_500)
+		// A zero cap means no paid overage: the projection is the base fee.
+		const zero = { logs: { ...logs(60).logs, overageLimit: 0 } }
+		expect(
+			projectCycleSpend({ baseDollars: 39, features: zero, elapsedMs: 2 * day, totalMs: 30 * day }),
+		).toBe(3_900)
+	})
+
 	it("returns spend as-is at cycle end or with nothing elapsed", () => {
 		expect(
 			projectCycleSpend({ baseDollars: 39, features: logs(200), elapsedMs: 100, totalMs: 100 }),

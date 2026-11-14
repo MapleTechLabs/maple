@@ -1,21 +1,9 @@
-import type { InkPalette } from "../../../components/service-map/three/palette"
-import {
-	DEER_NECK,
-	DEER_YAW,
-	drawBird,
-	drawBlimp,
-	drawDeerHead,
-	drawDuck,
-} from "../../../components/service-map/three/maple-scenery"
-import type { Waterway } from "../../../components/service-map/three/maple-scenery-field"
-import {
-	type Bounds,
-	hash,
-	prototypes,
-	type Sketch,
-	sketchOf,
-} from "../../../components/service-map/three/maple-scenery-sketch"
+import type { InkPalette } from "./palette"
+import { DEER_NECK, DEER_YAW, drawBird, drawBlimp, drawDeerHead, drawDuck } from "./maple-scenery"
+import type { Waterway } from "./maple-scenery-field"
+import { type Bounds, hash, prototypes, type Sketch, sketchOf } from "./maple-scenery-sketch"
 import * as THREE from "three"
+import { lampPool } from "./decor"
 import { group, inkBox, inkSolid, mesh, type Running, type Scope, sketchDrawing, type Vec3 } from "./kit"
 import { Array as Arr } from "effect"
 
@@ -44,6 +32,9 @@ const AWAY = 25
  * `null` when the duck is off the lake, so the click is a plain miss. */
 export type DuckClick = { readonly seconds: number; readonly alarm: boolean } | null
 
+/** Each duck's click hit box, mapped to what a click on it does. */
+export const duckClicks = new WeakMap<THREE.Object3D, () => DuckClick>()
+
 interface Duck {
 	readonly phase: number
 	readonly lane: number
@@ -59,7 +50,7 @@ interface Duck {
 
 /** Mallards paddle a steady loop round the lake. A click makes one hop and quack; a few quick
  * clicks and the duck flies off, gliding back in a while later. Each duck's hit box carries
- * `userData.quack`, which the scene's click handler calls. */
+ * `duckClicks` entry, which the scene's click handler calls. */
 export function ducks(
 	scope: Scope,
 	{
@@ -108,7 +99,7 @@ export function ducks(
 				position: [0, 0.1, 0],
 			},
 		)
-		box.userData.quack = (): DuckClick => click(duck)
+		duckClicks.set(box, () => click(duck))
 		return box
 	}
 	// Wings hinge at the shoulders, folded out of sight until the duck takes off.
@@ -156,7 +147,7 @@ export function ducks(
 			const node = groups[i]
 			const body = node?.children[0]
 			const pair = wings[i]
-			if (!node || !body || !pair) return
+			if (node === undefined || body === undefined || pair === undefined) return
 			const s = (duck.phase * water.length + elapsed.value * duck.speed) % water.length
 			const point = water.at(s)
 			// The tangent is the outward normal turned a quarter: (-nz, nx).
@@ -281,21 +272,8 @@ export function campfire(
 ): THREE.Group {
 	const elapsed = clock(scope, running)
 	const puff = new THREE.IcosahedronGeometry(0.11, 0)
-	const disc = new THREE.CircleGeometry(0.85, 24).rotateX(-Math.PI / 2)
-	const glow = night
-		? // A steady warm pool of firelight on the ground; it never flickers.
-			mesh(
-				disc,
-				new THREE.MeshBasicMaterial({
-					color: palette.glow,
-					transparent: true,
-					opacity: 0.16,
-					depthWrite: false,
-				}),
-				{ position: [0, 0.012, 0] },
-			)
-		: null
-	if (glow) glow.renderOrder = 1
+	// A steady warm pool of firelight on the ground; it never flickers.
+	const glow = night ? lampPool({ position: [0, 0.012, 0], radius: 0.85, color: palette.glow }) : null
 	const puffs = Arr.map([0, 1, 2], () =>
 		group({}, [inkSolid({ geometry: puff, color: palette.cloud, ink: palette.ink })]),
 	)

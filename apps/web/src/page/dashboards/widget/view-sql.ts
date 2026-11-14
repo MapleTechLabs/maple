@@ -1,78 +1,35 @@
-import { rawSqlIssue } from "@maple/domain/raw-sql"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { button } from "@maple/views/ui/button"
-import { badge } from "@maple/views/ui/display"
 import { field, fieldErrorText, fieldLabel, type FieldState } from "@maple/views/ui/field"
-import { icon } from "@maple/views/ui/icon"
-import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { input } from "@maple/views/ui/input"
 import { sqlEditor } from "@maple/views/ui/sql-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { type RawSqlState, rawSqlErrorOf } from "./raw-sql"
+import { isRunnableSql, type RawSqlState, rawSqlErrorOf, rawSqlIssueOf } from "./raw-sql"
 import { SQL_TEXTAREA_ID } from "./sql-step"
 import { widgetOf } from "./update"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { queryPanelBar } from "../../kit/query-panel-bar"
-import { Array as Arr } from "effect"
-
-// `RawSqlEditorPanel` under the editor's Raw SQL
-// tab: the highlighted SQL, the macro and variable chips, the bucket, Run preview.
+import { SQL_MACRO_HINTS, sqlPanelHeader } from "../../kit/query-builder/sql-panel"
+import { Array as Arr, Option } from "effect"
+import { stripClass } from "@maple/views/ui/rule"
 
 type H = HtmlBuilder<Message>
-
-const MACRO_HINTS: ReadonlyArray<readonly [token: string, description: string]> = [
-	["$__orgFilter", "Required: expands to OrgId = '<your org>'"],
-	["$__timeFilter(Column)", "Column >= <start> AND Column <= <end>"],
-	["$__startTime", "Range start as toDateTime('...')"],
-	["$__endTime", "Range end as toDateTime('...')"],
-	["$__interval_s", "Auto-computed bucket size in seconds"],
-]
 
 /** The tooltip trigger id of a chip, by position (variable names are free text). */
 const chipTriggerId = (index: number): string => `widget-sql-chip-${index}`
 
 const CHIP = "h-auto rounded-sm px-2 py-0.5 font-mono text-2xs sm:h-auto sm:text-2xs"
 
-const header = (h: H, rawSql: RawSqlState): Html => {
-	const issue = rawSqlIssue(rawSql.draft.sql)
-	return queryPanelBar(h, [
-		iconButton(
-			h,
-			{
-				size: "icon-xs",
-				label: rawSql.isCollapsed ? "Expand SQL" : "Collapse SQL",
-				hasTooltip: false,
-				className: typographyClass({ tone: "muted", hoverTone: "foreground" }),
-				attributes: [h.OnClick(Message.ToggledSqlCollapsed())],
-			},
-			[icon(h, rawSql.isCollapsed ? "ChevronRightIcon" : "ChevronDownIcon")],
-		),
-		badge(
-			h,
-			{
-				variant: "outline",
-				className: "font-mono text-2xs text-primary-foreground border-0 shrink-0 bg-primary/80",
-			},
-			["sql"],
-		),
-		typography(h, { size: "2xs", tone: "muted" }, ["ClickHouse"]),
-		h.div([h.Class("flex-1")], []),
-		...(issue !== null && !rawSql.isCollapsed
-			? [
-					h.span(
-						[h.Class(cn("text-2xs", TONE_TEXT.crit)), h.Title(issue.message)],
-						[issue.code === "MissingOrgFilter" ? "Missing $__orgFilter" : issue.message],
-					),
-				]
-			: []),
-	])
-}
+const header = (h: H, rawSql: RawSqlState): Html =>
+	sqlPanelHeader(h, {
+		isCollapsed: rawSql.isCollapsed,
+		issue: rawSqlIssueOf(rawSql),
+		toggled: Message.ToggledSqlCollapsed(),
+	})
 
 const editor = (h: H, sql: string): Html =>
 	sqlEditor(h, {
@@ -96,7 +53,10 @@ const chip = (h: H, token: string, className: string, trigger: ReadonlyArray<Chi
 
 /** What a chip's tooltip says: the macro's expansion, or how a variable expands. */
 const chipDescription = (chips: ReadonlyArray<readonly [string, string]>, triggerId: string): string =>
-	chips.find((_, index) => chipTriggerId(index) === triggerId)?.[1] ?? ""
+	Arr.findFirst(chips, (_, index) => chipTriggerId(index) === triggerId).pipe(
+		Option.flatMapNullishOr((found) => found[1]),
+		Option.getOrElse(() => ""),
+	)
 
 const IDLE: FieldState = {
 	isInvalid: false,
@@ -117,14 +77,15 @@ const chipRow = (
 	chips: ReadonlyArray<readonly [string, string]>,
 	trigger: (id: string) => ReadonlyArray<ChildAttribute>,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap gap-1.5 flex-1 pt-2")],
+	hstack(
+		h,
+		{ gap: "1.5", align: "stretch", wrap: true, grow: true, className: "pt-2" },
 		Arr.map(chips, ([token], index) =>
 			chip(
 				h,
 				token,
-				index < MACRO_HINTS.length
-					? "bg-surface-sunken text-muted-foreground hover:bg-muted active:bg-muted hover:text-foreground active:text-foreground"
+				index < SQL_MACRO_HINTS.length
+					? "bg-surface-sunken text-muted-foreground hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground"
 					: "bg-primary-a2 text-primary hover:bg-primary-a3 active:bg-primary-a3",
 				trigger(chipTriggerId(index)),
 			),
@@ -135,7 +96,7 @@ const chipRow = (
 const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 	const variables = model.document?.variables ?? []
 	const chips = [
-		...MACRO_HINTS,
+		...SQL_MACRO_HINTS,
 		...Arr.map(
 			variables,
 			(variable) =>
@@ -166,42 +127,38 @@ const footer = (h: H, model: Model, rawSql: RawSqlState): Html => {
 
 const footerRow = (h: H, rawSql: RawSqlState, chips: Html): Html => {
 	const bucket = rawSql.draft.granularitySeconds
-	return h.div(
-		[h.Class("flex items-start gap-3 pt-1 border-t border-dashed")],
-		[
-			chips,
-			field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
-				fieldLabel(
-					h,
-					{
-						ids: BUCKET_IDS,
-						className: "font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs",
-						state: IDLE,
-					},
-					"Bucket",
-				),
-				input(h, {
-					id: BUCKET_IDS.control,
-					type: "number",
-					size: "sm",
-					className: "w-20 text-xs",
-					attributes: [
-						h.Min("1"),
-						h.Placeholder("auto"),
-						h.Value(bucket === null ? "" : String(bucket)),
-						h.OnInput((value) => Message.ChangedSqlBucket({ value })),
-					],
-				}),
-				typography(h, { size: "2xs", tone: "muted" }, ["s"]),
-			]),
-		],
-	)
+	return hstack(h, { gap: "3", align: "start", className: stripClass("dashed") }, [
+		chips,
+		field(h, { className: "flex-row items-center gap-2 pt-1.5 shrink-0", state: IDLE }, [
+			fieldLabel(
+				h,
+				{
+					ids: BUCKET_IDS,
+					className: "font-normal text-2xs text-muted-foreground whitespace-nowrap sm:text-2xs",
+					state: IDLE,
+				},
+				"Bucket",
+			),
+			input(h, {
+				id: BUCKET_IDS.control,
+				type: "number",
+				size: "sm",
+				className: "w-20 text-xs",
+				attributes: [
+					h.Min("1"),
+					h.Placeholder("auto"),
+					h.Value(bucket === null ? "" : String(bucket)),
+					h.OnInput((value) => Message.ChangedSqlBucket({ value })),
+				],
+			}),
+			typography(h, { size: "2xs", tone: "muted" }, ["s"]),
+		]),
+	])
 }
 
 /** The Raw SQL tab's body: the `$__orgFilter` message, the panel, and Run preview. */
 export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyArray<Html> => {
 	const error = rawSqlErrorOf(rawSql.draft)
-	const issue = rawSqlIssue(rawSql.draft.sql)
 	return [
 		...(error === null ? [] : [fieldErrorText(h, { className: "font-medium" }, error)]),
 		h.div(
@@ -226,14 +183,16 @@ export const rawSqlEditor = (h: H, model: Model, rawSql: RawSqlState): ReadonlyA
 						h,
 						{
 							size: "sm",
-							isDisabled: issue !== null,
+							isDisabled: !isRunnableSql(rawSql),
 							attributes: [h.OnClick(Message.ClickedRunPreview())],
 						},
 						["Run preview"],
 					),
 					typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 						"Targets ",
-						inlineCode(h, {}, [widgetOf(model)?.visualization ?? ""]),
+						inlineCode(h, {}, [
+							model.state?.visualization ?? widgetOf(model)?.visualization ?? "",
+						]),
 					]),
 				]),
 			],

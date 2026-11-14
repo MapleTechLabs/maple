@@ -27,33 +27,33 @@ import { switchControl } from "@maple/views/ui/switch"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { settingsSection } from "../kit/section"
+import { settingsSection } from "../../kit/settings-section"
 import { Message } from "./message"
-import type { Model, RecommendationTab } from "./model"
+import { canManageMappings, type Model, type RecommendationTab } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
-
-// `RecommendedMappingsSection` and `AttributeMappingsSection`.
+import { textLink } from "@maple/views/ui/text-link"
+import { RECOMMENDATION_KIND_LABEL, RECOMMENDATION_STATUS_LABEL } from "../../kit/recommendations"
 
 type H = HtmlBuilder<Message>
 
 const KIND_TAG = {
-	rename: { label: "Rename", className: TONE_TEXT.info },
-	"double-emission": { label: "Duplicate", className: TONE_TEXT.warn },
-	naming: { label: "Naming", className: TONE_TEXT.warn },
+	rename: { label: RECOMMENDATION_KIND_LABEL.rename, className: TONE_TEXT.info },
+	"double-emission": { label: RECOMMENDATION_KIND_LABEL["double-emission"], className: TONE_TEXT.warn },
+	naming: { label: RECOMMENDATION_KIND_LABEL.naming, className: TONE_TEXT.warn },
 } as const
 const STATUS_BADGE = {
-	open: { label: "Open", variant: "secondary" },
-	dismissed: { label: "Dismissed", variant: "secondary" },
-	applied: { label: "Applied", variant: "ok" },
-	resolved: { label: "Resolved", variant: "done" },
+	open: { label: RECOMMENDATION_STATUS_LABEL.open, variant: "secondary" },
+	dismissed: { label: RECOMMENDATION_STATUS_LABEL.dismissed, variant: "secondary" },
+	applied: { label: RECOMMENDATION_STATUS_LABEL.applied, variant: "ok" },
+	resolved: { label: RECOMMENDATION_STATUS_LABEL.resolved, variant: "done" },
 } as const
 
 const code = (h: H, text: string) => inlineCode(h, { variant: "plain" }, [text])
 const strong = (h: H, text: string) => typography(h, { tone: "foreground", weight: "medium" }, [text])
-const muted = (h: H, text: string) => h.span([h.Class("text-muted-foreground")], [text])
+const muted = (h: H, text: string) => typography(h, { tone: "muted" }, [text])
 
 const sentence = (h: H, issue: V2Recommendation): ReadonlyArray<Html | string> => {
 	if (issue.kind === "double-emission")
@@ -98,7 +98,7 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 	if (issue.status !== "open") return [badge(h, { variant: status.variant }, [status.label])]
 	const primary =
 		issue.kind === "rename"
-			? model.isAdmin
+			? canManageMappings(model)
 				? [
 						button(
 							h,
@@ -130,23 +130,27 @@ const recommendationActions = (h: H, model: Model, issue: V2Recommendation): Rea
 
 const recommendationRow = (h: H, model: Model, issue: V2Recommendation): Html => {
 	const kind = KIND_TAG[issue.kind]
-	return h.div(
-		[
-			h.Key(issue.id),
-			h.Class("hover:bg-surface-sunken active:bg-surface-sunken flex items-start gap-3 px-4 py-3"),
-		],
+	return hstack(
+		h,
+		{
+			gap: "3",
+			align: "start",
+			className: "hover:bg-surface-sunken active:bg-surface-sunken px-4 py-3",
+			attributes: [h.Key(issue.id)],
+		},
 		[
 			eyebrow(h, { variant: "mono", className: cn("w-20 shrink-0 pt-0.5", kind.className) }, [
 				kind.label,
 			]),
 			spaced(h, { space: "1", fill: true }, [
-				h.a(
-					[
-						h.Href(`/recommendations/${encodeURIComponent(issue.id)}`),
-						h.Class(
-							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40 hover:underline active:underline",
-						),
-					],
+				textLink(
+					h,
+					{
+						href: `/recommendations/${encodeURIComponent(issue.id)}`,
+						tone: "inherit",
+						className:
+							"block text-sm break-words underline-offset-4 decoration-muted-foreground/40",
+					},
 					sentence(h, issue),
 				),
 				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
@@ -233,8 +237,6 @@ export const recommendationsSection = (h: H, model: Model): ReadonlyArray<Html> 
 	]
 }
 
-// MAPPINGS
-
 const OPERATION_BADGE = { copy: "info", move: "warn" } as const
 const OPERATION_LABELS = { copy: "Copy", move: "Move" } as const
 const APPLIES_TO = { span: "Span attributes", resource: "Resource attributes" } as const
@@ -259,8 +261,9 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 		],
 		[
 			truncatedText(h, { text: mapping.name, className: "w-28 shrink-0 text-sm md:w-40" }),
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm")],
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", wrap: true, shrink: true, grow: true, className: "text-sm" },
 				[
 					badge(h, { variant: OPERATION_BADGE[mapping.operation], size: "sm" }, [
 						OPERATION_LABELS[mapping.operation],
@@ -280,9 +283,10 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 				[h.Class("text-muted-foreground hidden w-36 shrink-0 text-xs md:block")],
 				[APPLIES_TO[mapping.source_context]],
 			),
-			h.div(
-				[h.Class("flex w-10 shrink-0 items-center")],
-				model.isAdmin
+			hstack(
+				h,
+				{ align: "center", className: "w-10 shrink-0" },
+				canManageMappings(model)
 					? switchControl(h, {
 							id: `${menuId}-switch`,
 							inputId: `${menuId}-switch-input`,
@@ -291,37 +295,33 @@ const mappingRow = (h: H, model: Model, mapping: V2AttributeMapping): Html => {
 							ariaLabel: `${mapping.enabled ? "Turn off" : "Turn on"} ${mapping.name}`,
 							onToggle: Message.ToggledMapping({ id: mapping.id }),
 						})
-					: [h.span([h.Class("text-xs")], [mapping.enabled ? "On" : "Off"])],
+					: [typography(h, { size: "xs" }, [mapping.enabled ? "On" : "Off"])],
 			),
-			...(model.isAdmin
+			...(canManageMappings(model)
 				? [
-						h.div(
-							[h.Class("flex w-7 shrink-0 justify-end")],
-							[
-								rowActionsMenu(h, {
-									slotId: menuId,
-									model: model.rowMenus[menuId] ?? Menu.init(menuId),
-									entries: [
-										{
-											_tag: "Item",
-											value: "edit",
-											label: "Edit mapping",
-											icon: "PencilIcon",
-										},
-										{
-											_tag: "Item",
-											value: "delete",
-											label: "Delete mapping",
-											icon: "TrashIcon",
-											variant: "destructive",
-										},
-									],
-									label: `Actions for ${mapping.name}`,
-									toParentMessage: (message) =>
-										Message.GotRowMenuMessage({ menuId, message }),
-								}),
-							],
-						),
+						hstack(h, { align: "stretch", justify: "end", className: "w-7 shrink-0" }, [
+							rowActionsMenu(h, {
+								slotId: menuId,
+								model: model.rowMenus[menuId] ?? Menu.init(menuId),
+								entries: [
+									{
+										_tag: "Item",
+										value: "edit",
+										label: "Edit mapping",
+										icon: "PencilIcon",
+									},
+									{
+										_tag: "Item",
+										value: "delete",
+										label: "Delete mapping",
+										icon: "TrashIcon",
+										variant: "destructive",
+									},
+								],
+								label: `Actions for ${mapping.name}`,
+								toParentMessage: (message) => Message.GotRowMenuMessage({ menuId, message }),
+							}),
+						]),
 					]
 				: []),
 		],
@@ -332,18 +332,15 @@ const mappingsTable = (h: H, model: Model, mappings: ReadonlyArray<V2AttributeMa
 	h.div(
 		[],
 		[
-			h.div(
-				[h.Class("flex items-center gap-3 px-4 py-1.5")],
-				[
-					eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
-					eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
-					eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
-						"Applies to",
-					]),
-					eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
-					...(model.isAdmin ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: "px-4 py-1.5" }, [
+				eyebrow(h, { variant: "mono", className: "w-28 shrink-0 md:w-40", as: "div" }, ["Name"]),
+				eyebrow(h, { variant: "mono", className: "min-w-0 flex-1", as: "div" }, ["Rule"]),
+				eyebrow(h, { variant: "mono", className: "hidden w-36 shrink-0 md:block", as: "div" }, [
+					"Applies to",
+				]),
+				eyebrow(h, { variant: "mono", className: "w-10 shrink-0", as: "div" }, ["On"]),
+				...(canManageMappings(model) ? [h.div([h.Class("w-7 shrink-0")], [])] : []),
+			]),
 			...Arr.map(mappings, (mapping) => mappingRow(h, model, mapping)),
 		],
 	)
@@ -360,7 +357,7 @@ const mappingsEmpty = (h: H, model: Model): Html =>
 				]),
 			]),
 			emptyActions(h, [
-				...(model.isAdmin ? [addMappingButton(h)] : []),
+				...(canManageMappings(model) ? [addMappingButton(h)] : []),
 				docsLink(h, "otelConventions"),
 			]),
 		],
@@ -372,16 +369,10 @@ const mappingsSkeleton = (h: H): Html =>
 		rows: 2,
 		className: "px-4",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 py-3")],
-				[
-					h.div(
-						[h.Class("flex-1 space-y-2")],
-						[skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")],
-					),
-					skeletonSwitch(h),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", className: "py-3" }, [
+				h.div([h.Class("flex-1 space-y-2")], [skeleton(h, "h-4 w-40"), skeleton(h, "h-3.5 w-64")]),
+				skeletonSwitch(h),
+			]),
 	})
 
 export const mappingsSection = (h: H, model: Model): Html =>
@@ -392,7 +383,7 @@ export const mappingsSection = (h: H, model: Model): Html =>
 			title: "Attribute mappings",
 			description: ["Copy or move attribute keys as data arrives. Applies to new data only."],
 			padded: false,
-			actions: model.isAdmin ? addMappingButton(h) : undefined,
+			actions: canManageMappings(model) ? addMappingButton(h) : undefined,
 		},
 		[
 			h.div(

@@ -38,10 +38,14 @@ with `packageManager`.
   `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
   OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
-  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
+  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `Subagent` from `@yielded/agent/subagent`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
+- Analysts (`org:analyst`) read everything and build dashboards. The auth middlewares refuse them every
+  other non-GET endpoint unless it is marked `AnalystAccess` (`packages/domain/src/http/analyst-access.ts`):
+  `read` for a POST that only queries, `personal` for the caller's own state, `author` for dashboards. An
+  unmarked read-only POST is a 403 for them.
 
 ### Service conventions
 
@@ -72,7 +76,7 @@ const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limi
 - Request fields that reach `param.*` or column comparisons are validated at the HTTP boundary
   (`TinybirdDateTime`, `BucketSeconds`, `WarehouseDateTime`) so bad input is a 400, not a 500.
 - The query-engine root barrel stays driver-free (web/cli import it).
-- `packages/domain/src/tinybird/endpoints.ts` is type-only.
+- Pipe rows are typed by the query that fills them (`PipeRow`, `ch/pipe-rows.ts`); no hand-written row interfaces in domain.
 - Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
   `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 
@@ -91,7 +95,7 @@ truthiness.
   `parity.test.ts` fails when the tables and the migrations disagree.
 - One pool per invocation via `withPgConnectionScope`; connections never outlive the invocation.
   Fork DB work off a request only with `forkRequestScoped`.
-- Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
+- Tests use `createTestDb()` (PGlite, `packages/backend/src/testing/test-pglite.ts`).
 - **Migrations apply in the prd alchemy deploy.** `db:migrate` is for local databases; never point it at prd.
 - PR previews (only with the `preview` label) get their own Neon branch, migrated by the deploy (`docs/pr-previews.md`).
 
@@ -108,7 +112,7 @@ truthiness.
   `node_modules/alchemy/src/` for APIs at the installed version.
 - **Span status codes:** Title case: `"Ok"`, `"Error"`, `"Unset"`. Only 5xx is `Error` for server
   spans. Custom attributes use `maple.*`.
-- **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
+- **Self-tracing:** the API traces itself through ingest; keep the `TracerDisabledWhen` filters (`apps/api/src/http/api-observability.ts`) and avoid
   spans on hot paths like token validation.
 - **UI:** the dashboard (`apps/web`) and Maple Local (`apps/local-ui`) are Foldkit + `@foldkit/ui` +
   Tailwind 4, Nucleo icons. Dashboard pages are built from the kit only; read `apps/web/CLAUDE.md`
@@ -119,7 +123,7 @@ truthiness.
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
 - `@/` resolves to each app's source.
-- **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
+- **Tests:** assert behavior, not source. `test-slop/*` rules (`lib/oxlint-config/plugins/test-slop.mjs`)
   ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
   read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
   `.oxlintrc.json`, not tests.
@@ -175,5 +179,5 @@ form on the sign-in page with `PREVIEW_SIGNIN_KEY` (Infisical `dev`).
 
 Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
 `packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
-`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
-`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).
+`ingest-wal-durability.md`, `secret-encryption.md` (any `*_ciphertext` column), `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`,
+`dashboard-grid.md` (the dashboard canvas and `lib/grid-engine`), `status-page-custom-domains.md` (Cloudflare for SaaS on status pages), `design-rules.md` (tokens and the `maple/*` design lint rules for `apps/web` and `packages/ui`).

@@ -1,34 +1,28 @@
 import type { GcpInfraServiceId } from "@maple/domain/gcp-infra"
 import type { GcpResource } from "@maple/domain/http"
 import { windowDurationSeconds } from "@maple/query-engine"
-import { type GcpBucketPoint, gcpWindowPoints } from "../../../../components/infra/gcp/charts"
+import { type GcpBucketPoint, gcpWindowPoints } from "../charts"
 import {
 	gcpCloudSqlView,
 	gcpQueryInsightsUnavailable,
 	gcpStatements,
 	type GcpStatement,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+} from "../cloud-sql-signals"
 import {
 	type GcpCloudSqlInstance,
 	gcpCloudSqlInstances,
 	gcpMatchResource,
 	gcpWorkloadTelemetry,
-} from "../../../../components/infra/gcp/inventory"
-import {
-	gcpDatabaseRows,
-	type GcpReplica,
-	gcpSqlEngineOf,
-	NO_GCP_SPARKS,
-} from "../../../../components/infra/gcp/list-model"
-import { gcpWorkload, gcpWorkloadTone } from "../../../../components/infra/gcp/tabs"
-import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../../../../components/infra/gcp/workload-signals"
+} from "../inventory"
+import { gcpDatabaseRows, type GcpReplica, gcpSqlEngineOf, NO_GCP_SPARKS } from "../list-model"
+import { gcpWorkload, gcpWorkloadTone } from "../tabs"
+import { gcpRailFacts, gcpTraceGap, gcpTracedErrors } from "../workload-signals"
 import { chartBucketSeconds } from "@maple/views/charts/infra-metric-series"
 import type { TraceSide } from "../data"
-import { successOf } from "../list/derive"
 import type { Model } from "./model"
 import { keysOf } from "./update"
-
-// The workload page's derivations (`GcpWorkloadPage`, `GcpCloudSqlPage`).
+import { Array as Arr, Option } from "effect"
+import { successOf } from "../../kit/success-of"
 
 const NO_STATEMENTS: ReadonlyArray<GcpStatement> = []
 
@@ -57,13 +51,20 @@ export const pageOf = (model: Model) => {
 			: null
 	const inventory = successOf(model.sqlInventory.data)
 	const instances = inventory === null ? undefined : gcpCloudSqlInstances(inventory.resources)
-	const instance = instances?.find((candidate) => candidate.id === model.name)
+	const instance = Option.getOrUndefined(
+		Arr.findFirst(instances ?? [], (candidate) => candidate.id === model.name),
+	)
 	const fleet = successOf(model.fleet.data)
 	const replicas =
 		fleet === null
 			? []
-			: (gcpDatabaseRows(fleet, NO_GCP_SPARKS, instances).find((row) => row.keys[0] === model.name)
-					?.replicas ?? [])
+			: Arr.findFirst(
+					gcpDatabaseRows(fleet, NO_GCP_SPARKS, instances),
+					(row) => row.keys[0] === model.name,
+				).pipe(
+					Option.flatMapNullishOr((found) => found.replicas),
+					Option.getOrElse(() => []),
+				)
 	const traceSide = successOf(model.traceSide.data) ?? undefined
 	const statementsRaw = successOf(model.topQueries.data)
 	const statements = statementsRaw === null ? NO_STATEMENTS : gcpStatements(statementsRaw, points)
@@ -82,7 +83,7 @@ export const pageOf = (model: Model) => {
 	})
 }
 
-/** What `GcpWorkloadPage` is handed, read off the slots by the route and off fixtures by the lab. */
+/** Read off the slots by the route and off fixtures by the lab. */
 export type WorkloadInputs = Readonly<{
 	service: GcpInfraServiceId
 	keys: ReadonlyArray<string>

@@ -129,8 +129,6 @@ export const StartFirstRun = Command.define("SecurityApiStartFirstRun", {
 		Effect.map(startRun(targetId), (result) => Message.CompletedStartFirstRun({ attempt, result })),
 })
 
-// VALIDATION
-
 const isRepository = Schema.is(SecurityAuditRepository)
 const isBranch = Schema.is(SecurityAuditBranch)
 
@@ -247,12 +245,14 @@ export const fieldFailure = (
 	return field === null ? null : { field, message: failure.message }
 }
 
-// UPDATE
-
 type Return = Update.ReturnWithOutMessage<Model, Message, OutMessage, Resources>
 
 const defaultBranch = (repo: GithubRepoSummary): string =>
-	repo.trackedBranch ?? repo.branches.find((branch) => branch.isDefault)?.name ?? ""
+	repo.trackedBranch ??
+	Option.match(
+		Arr.findFirst(repo.branches, (branch) => branch.isDefault),
+		{ onNone: () => "", onSome: (branch) => branch.name },
+	)
 
 const DISMISSALS: ReadonlySet<string> = new Set(["ClickedClose", "PressedEscape", "PressedOutside"])
 
@@ -320,12 +320,14 @@ export const update = (
 			)
 			const picked = step.outMessage
 			if (picked === undefined) return { model: { ...model, repository: step.model }, commands }
-			const repo = repositories.find((candidate) => candidate.fullName === picked.value)
+			const repo = Arr.findFirst(repositories, (candidate) => candidate.fullName === picked.value)
 			return {
 				model: {
 					...model,
 					repository: { ...step.model, value: picked.value },
-					branch: Field.init(repo === undefined ? model.branch.value : defaultBranch(repo)),
+					branch: Field.init(
+						Option.match(repo, { onNone: () => model.branch.value, onSome: defaultBranch }),
+					),
 					failure: null,
 				},
 				commands,

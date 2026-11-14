@@ -2,16 +2,16 @@ import { Array, Duration, Effect, Option, Record, Schema, Stream } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { modifyFields } from "foldkit/struct"
+import { Found, foundAfterWindow, foundOf } from "../../lib/findable"
 import * as AttributesPanel from "../attributes/attributes-panel"
-import { writeClipboardApi } from "../copy-button"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
+import { afterCopyStatusHold } from "../copy-button"
 import { buildLogJsonPayload } from "./log-row-expanded"
 import { LogRowView } from "./log-row-view"
 import { Message, type NavigationKey, VirtualRow } from "./logs-stream-message"
 import { CopyLogLink, CopyText, ScrollStreamToIndex, ScrollStreamToTop } from "./virtualize"
 
 export { Message } from "./logs-stream-message"
-
-// MODEL
 
 export const ChipRef = Schema.Struct({ index: Schema.Number, key: Schema.String })
 export type ChipRef = typeof ChipRef.Type
@@ -28,6 +28,8 @@ export const Model = Schema.Struct({
 	window: Schema.Array(VirtualRow),
 	totalSize: Schema.Number,
 	focusedIndex: Schema.Option(Schema.Number),
+	/** The row find in page matched, whose stand-in holds the browser's active match. */
+	found: Schema.Option(Found),
 	expandedRows: Schema.Array(Schema.Number),
 	isHovering: Schema.Boolean,
 	isScrolledAway: Schema.Boolean,
@@ -49,6 +51,7 @@ export const init = (id: string, rows: ReadonlyArray<LogRowView>): Model => ({
 	window: [],
 	totalSize: 0,
 	focusedIndex: Option.none(),
+	found: Option.none(),
 	expandedRows: [],
 	isHovering: false,
 	isScrolledAway: false,
@@ -76,8 +79,6 @@ const syncPanels = (model: Model): Model => {
 	return isSame ? model : modifyFields(model, { panels: () => panels })
 }
 
-// OUT MESSAGE
-
 export const OutMessage = defineMessageUnion({
 	/** A row was clicked or opened from the keyboard. */
 	OpenedLog: { index: Schema.Number },
@@ -93,8 +94,6 @@ export const OutMessage = defineMessageUnion({
 })
 export type OutMessage = typeof OutMessage.Type
 
-// COMMAND
-
 /** Rest-to-reveal, so sweeping the cursor along a row of chips opens nothing. */
 export const CHIP_OPEN_DELAY = Duration.millis(300)
 /** Grace period for crossing the gap between a chip and its card. */
@@ -107,26 +106,20 @@ export const WaitChipDelay = Command.define("WaitChipDelay", {
 		Effect.sleep(Duration.millis(millis)).pipe(Effect.as(Message.ElapsedChipDelay({ generation }))),
 })
 
-const COPY_TIMEOUT = Duration.millis(2000)
-
 export const WriteLogJson = Command.define("WriteLogJson", {
 	args: { text: Schema.String, generation: Schema.Number },
 	messages: [Message.SucceededCopyJson, Message.FailedCopyJson],
 	execute: ({ text, generation }) =>
-		writeClipboardApi(text).pipe(
-			Effect.as(Message.SucceededCopyJson({ generation })),
-			Effect.orElseSucceed(() => Message.FailedCopyJson({ generation })),
+		Effect.map(writeClipboard(text), (isOk) =>
+			isOk ? Message.SucceededCopyJson({ generation }) : Message.FailedCopyJson({ generation }),
 		),
 })
 
 export const WaitLogJsonStatus = Command.define("WaitLogJsonStatus", {
 	args: { generation: Schema.Number },
 	messages: [Message.ElapsedCopyJsonStatus],
-	execute: ({ generation }) =>
-		Effect.sleep(COPY_TIMEOUT).pipe(Effect.as(Message.ElapsedCopyJsonStatus({ generation }))),
+	execute: ({ generation }) => afterCopyStatusHold(Message.ElapsedCopyJsonStatus({ generation })),
 })
-
-// UPDATE
 
 type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, OutMessage>
 
@@ -261,11 +254,23 @@ const handle = (model: Model, rows: ReadonlyArray<LogRowView>, message: Message)
 				model: modifyFields(model, {
 					window: () => rendered,
 					totalSize: () => totalSize,
+					found: (found) =>
+						foundAfterWindow(
+							found,
+							Array.map(rendered, (row) => row.index),
+						),
 					visibleChip: (visible) => Option.filter(visible, isRendered),
 					pendingOpen: (pending) => Option.filter(pending, (p) => isRendered(p.chip)),
 				}),
 			}
 		},
+		// The found row takes the keyboard focus, so it is marked and j/k carry on from it.
+		FoundRow: ({ match }) => ({
+			model: modifyFields(model, {
+				found: () => Option.some(foundOf(match)),
+				focusedIndex: () => Option.some(match.index),
+			}),
+		}),
 		ChangedScrolledAway: ({ isScrolledAway }) => ({
 			model: modifyFields(model, { isScrolledAway: () => isScrolledAway }),
 		}),
@@ -401,8 +406,6 @@ const copyLink = (model: Model, logHref: Option.Option<string>): UpdateReturn =>
 		onSome: (href) => ({ model, commands: [CopyLogLink({ href })] }),
 	})
 
-// PARENT ENTRY POINTS
-
 /** The same logs, derived again (a pinned column or the search changed). */
 export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn => ({
 	model: modifyFields(model, { rows: () => rows }),
@@ -411,7 +414,12 @@ export const setRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateRe
 /** New data (a reload that prepends rows, a filter): expansion was made on the old rows, so it goes. */
 export const replaceRows = (model: Model, rows: ReadonlyArray<LogRowView>): UpdateReturn =>
 	reportingInspect(model, {
-		model: modifyFields(model, { rows: () => rows, expandedRows: () => [], panels: () => ({}) }),
+		model: modifyFields(model, {
+			rows: () => rows,
+			expandedRows: () => [],
+			panels: () => ({}),
+			found: () => Option.none(),
+		}),
 	})
 
 /** "Jump to latest": back to the newest rows, every row collapsed. */
@@ -424,8 +432,6 @@ export const jumpToLatest = (model: Model): UpdateReturn =>
 		}),
 		commands: [ScrollStreamToTop({ streamId: model.id })],
 	})
-
-// SUBSCRIPTION
 
 const isTyping = (target: EventTarget | null) =>
 	target instanceof HTMLElement &&
@@ -448,7 +454,7 @@ const KEYS = new Map<string, NavigationKey>([
 	["Enter", "Open"],
 ])
 
-/** `useListNavigation` (j/k/↑/↓, Enter, Escape) plus the stream's →/← expand hotkeys. */
+/** List navigation (j/k/↑/↓, Enter, Escape) plus the stream's →/← expand hotkeys. */
 export const navigationKeys: Stream.Stream<Message> = Dom.streamFromEventFilterMapPreventDefault({
 	target: () => document,
 	type: "keydown",

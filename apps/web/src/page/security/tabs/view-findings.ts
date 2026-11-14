@@ -22,14 +22,19 @@ import {
 	findingsStateOf,
 	isNewFinding,
 	isReopened,
+	repositoryOf,
 	STATUS_TABS,
+	type StatusTab,
+	statusTabOf,
 	targetsOf,
 	toolbarFindings,
 } from "./derive"
 import { Message, type Model } from "./model"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
+import { linkTabStrip } from "../../kit/underline-tabs"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-import { Array as Arr } from "effect"
+import { Array as Arr, Struct } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // The Findings tab, as Linear lists issues: severity tabs, a filter toolbar, then one dense line
 // per finding under collapsible severity groups.
@@ -54,10 +59,7 @@ const selectSubmodel = (
 			size: "sm",
 			ariaLabel: label,
 			className: "h-7 w-auto min-w-28 text-xs",
-			renderValue: (value) => [
-				h.span([h.Class("text-muted-foreground")], [`${label} `]),
-				renderValue(value),
-			],
+			renderValue: (value) => [typography(h, { tone: "muted" }, [`${label} `]), renderValue(value)],
 			toView: (parts) => h.div([h.Class("contents")], parts),
 		},
 		toParentMessage: (message) => wrap(message),
@@ -68,17 +70,8 @@ const item = (value: string, label: string): SelectView.SelectEntry => ({
 	item: { value, label },
 })
 
-const toolbar = (
-	h: H,
-	model: Model,
-	findings: ReadonlyArray<SecurityAuditFinding>,
-	targets: ReadonlyArray<SecurityAuditTarget>,
-): Html => {
-	const targetLabel = (value: string) =>
-		value === "all"
-			? "All targets"
-			: (targets.find((target) => target.id === value)?.repository ?? "Removed target")
-	const statusLabel = (value: string) => STATUS_TABS.find((tab) => tab === value) ?? "open"
+const toolbar = (h: H, model: Model, targets: ReadonlyArray<SecurityAuditTarget>): Html => {
+	const targetLabel = (value: string) => (value === "all" ? "All targets" : repositoryOf(targets, value))
 	return listToolbar(h, {
 		framed: true,
 		leading: searchInput(h, {
@@ -91,16 +84,6 @@ const toolbar = (
 			onClear: Message.ChangedSearchDraft({ value: "" }),
 		}),
 		trailing: [
-			selectSubmodel(
-				h,
-				model.statusSelect,
-				Arr.map(STATUS_TABS, (tab) =>
-					item(tab, `${STATUS_TAB_LABEL[tab]} (${countForTab(findings, tab)})`),
-				),
-				"Status",
-				(value) => STATUS_TAB_LABEL[statusLabel(value)],
-				(message) => Message.GotStatusSelectMessage({ message }),
-			),
 			// One repository needs no target filter.
 			...(targets.length < 2
 				? []
@@ -146,7 +129,11 @@ const statusOf = (h: H, finding: SecurityAuditFinding, nowMs: number): ReadonlyA
 			? [badge(h, { variant: "done" }, ["New"])]
 			: finding.status === "open"
 				? []
-				: [badge(h, { variant: "meta" }, [FINDING_STATUS_LABEL[finding.status]])]
+				: [
+						badge(h, { variant: finding.status === "fixed" ? "ok" : "meta" }, [
+							FINDING_STATUS_LABEL[finding.status],
+						]),
+					]
 
 const findingsList = (
 	h: H,
@@ -177,8 +164,7 @@ const findingsList = (
 					? [
 							repositoryName(
 								h,
-								targets.find((target) => target.id === finding.targetId)?.repository ??
-									"Removed target",
+								repositoryOf(targets, finding.targetId),
 								"hidden max-w-48 text-xs lg:inline",
 							),
 						]
@@ -191,7 +177,6 @@ const findingsList = (
 							nowMs: clock.nowMs,
 							timeZone: clock.timeZone,
 							variant: "short",
-							tooltip: "title",
 						}),
 					],
 				),
@@ -199,6 +184,60 @@ const findingsList = (
 		}),
 	})
 }
+
+/** Open, Fixed, Dismissed, Accepted risk and All as tabs with their counts, so closed findings are one click away. */
+const statusStrip = (h: H, model: Model, findings: ReadonlyArray<SecurityAuditFinding>): Html => {
+	const active = statusTabOf(model.findingsSearch)
+	// The href serves new tabs from the URL's filters; a click also keeps a search still in its debounce.
+	const { status: _status, ...rest } = model.findingsSearch
+	return linkTabStrip(
+		h,
+		"Finding status",
+		Arr.map(STATUS_TABS, (tab) => ({
+			key: tab,
+			label: STATUS_TAB_LABEL[tab],
+			count: countForTab(findings, tab),
+			href: hrefOf(
+				AppRoute.SecurityCodeFindings({ search: tab === "open" ? rest : { ...rest, status: tab } }),
+			),
+			onClick: Message.PickedStatus({ status: tab }),
+			isCurrent: tab === active,
+			isRouteActive: tab === active,
+		})),
+		{ className: "border-border-subtle px-3" },
+	)
+}
+
+/** What an empty status means, and how a finding gets there. */
+const STATUS_EMPTY = {
+	open: ["No open findings", "Every finding is fixed, dismissed or accepted."],
+	fixed: [
+		"Nothing fixed yet",
+		"A later full run marks a finding fixed when it no longer finds it and the finding's files changed.",
+	],
+	dismissed: ["Nothing dismissed", "Dismiss a finding from its page when it is not a real issue."],
+	accepted_risk: ["No accepted risks", "Accept the risk from a finding's page to close it with a reason."],
+	all: ["No findings", "No audit has reported a finding yet."],
+} satisfies Record<StatusTab, readonly [string, string]>
+
+/** An empty status's copy; disproved findings hidden by the toggle say so instead. */
+const emptyCopyOf = (
+	tab: StatusTab,
+	findings: ReadonlyArray<SecurityAuditFinding>,
+): readonly [string, string] =>
+	Arr.some(
+		findings,
+		(finding) => finding.verdict === "rejected" && (tab === "all" || finding.status === tab),
+	)
+		? ["Only disproved findings here", "Turn on Show rejected to see them."]
+		: STATUS_EMPTY[tab]
+
+const emptyStatus = (h: H, [title, description]: readonly [string, string]): Html =>
+	empty(
+		h,
+		[emptyHeader(h, [emptyTitle(h, [title]), emptyDescription(h, [description])])],
+		emptyFrameClass("dashed"),
+	)
 
 /** The tab's one-line explanation above the list. The gate and the failure card go without it,
  * so the failure lines up with the other Security tabs. */
@@ -247,18 +286,14 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 							[h.Class("p-4")],
 							[
 								// Clearing keeps the status, so the status alone is not a filter.
-								Arr.some(Object.keys(model.findingsSearch), (key) => key !== "status")
+								Arr.some(Struct.keys(model.findingsSearch), (key) => key !== "status")
 									? filteredEmpty(h, {
 											noun: "findings",
 											className: emptyFrameClass("dashed"),
 											description: "Nothing in this status matches the filters.",
 											onClear: Message.ClickedClearFilters(),
 										})
-									: empty(
-											h,
-											[emptyHeader(h, [emptyTitle(h, ["No findings in this status"])])],
-											emptyFrameClass("dashed"),
-										),
+									: emptyStatus(h, emptyCopyOf(statusTabOf(model.findingsSearch), all)),
 							],
 						)
 					: findingsList(h, model, rows, targets, clock)
@@ -273,6 +308,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 				...(targets.length === 0 || state._tag !== "Ready"
 					? []
 					: [
+							statusStrip(h, model, all),
 							listToolbar(h, {
 								framed: true,
 								leading: severityTabs(h, {
@@ -284,7 +320,7 @@ export const findingsBody = (h: H, model: Model, timeZone: string): ReadonlyArra
 								}),
 								trailing: [toolbarCount(h, [countLabel(shown, "finding")])],
 							}),
-							toolbar(h, model, all, targets),
+							toolbar(h, model, targets),
 						]),
 				content,
 			],

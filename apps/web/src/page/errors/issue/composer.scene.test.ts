@@ -15,7 +15,7 @@ const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
 		[],
 		[
-			commentComposer(h, { draft: model.draft, isPosting: false, participants: [] }),
+			commentComposer(h, { draft: model.draft, isPosting: false, participants: [], canComment: true }),
 			h.output([], [`${model.submits} submits`]),
 		],
 	)

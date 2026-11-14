@@ -13,7 +13,7 @@ function failureMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): st
 	if (Exit.isSuccess(exit)) return fallback
 	const error = Cause.squash(exit.cause)
 	return typeof error === "object" && error !== null && "message" in error
-		? String((error as { message: unknown }).message)
+		? String(error.message)
 		: fallback
 }
 

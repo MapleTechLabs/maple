@@ -20,7 +20,7 @@ import {
 } from "./form"
 import { ingestionHref, ruleIdFromUrl } from "./hrefs"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canManage, type Model } from "./model"
 import type { PreviewSignal } from "./preview"
 import { draftFromRule, isTemplateId, TEMPLATES } from "./templates"
 
@@ -114,7 +114,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 		previewService: "",
 		samples: AsyncData.Idle(),
 		samplesKey: "",
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 		isSaving: false,
 		saveFailure: null,
@@ -132,7 +132,7 @@ export const init = (route: EditorRoute, context: PageContext): Return => {
 }
 
 const save = (model: Model): Return => {
-	if (model.isSaving || !model.isAdmin || draftProblems(model.draft).length > 0) return { model }
+	if (model.isSaving || !canManage(model) || draftProblems(model.draft).length > 0) return { model }
 	const spec = specOf(model.draft)
 	const payload = {
 		name: Str.trim(model.draft.name),
@@ -182,8 +182,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				},
 				onFailure: (error) => ({ model: { ...model, existing: AsyncData.fail(error) } }),
 			}),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: ({ orgId, grants }) =>
+			orgId === context.orgId ? { model: { ...model, grants, isSessionLoaded: true } } : { model },
 		CompletedFetchKeys: ({ scope, keys }) => ({
 			model:
 				scope === "span"

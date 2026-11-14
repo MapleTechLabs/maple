@@ -16,7 +16,7 @@ import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { CatalogSummary } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { metricTypeLabel } from "../shared"
+import { metricTypeLabel } from "@maple/views/ui/metric-type"
 import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
@@ -65,14 +65,13 @@ const noData = (h: H, metricName: string): Html =>
 		h.p(
 			[h.Class("mt-2 max-w-md")],
 			[
-				h.span([h.Class("font-mono")], [metricName]),
+				typography(h, { mono: true }, [metricName]),
 				" has no datapoints in this window. Widen the time range, or check that the service emitting it is still running.",
 			],
 		),
 		h.span([h.Class("mt-3")], [docsLink(h, "metrics")]),
 	])
 
-/** `MetricDetailContent`. */
 const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html => {
 	const draft = draftOf(model, summary)
 	return vstack(h, { gap: "4" }, [
@@ -88,10 +87,10 @@ const content = (h: H, model: Model, summary: CatalogSummary, timeZone: string):
 		h.div(
 			[h.Class("grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]")],
 			[
-				h.div(
-					[h.Class("flex min-w-0 flex-col gap-4")],
-					[metricChart(h, model, draft, summary.unit, timeZone), metricBreakdown(h, model, draft)],
-				),
+				vstack(h, { gap: "4", shrink: true }, [
+					metricChart(h, model, draft, summary.unit, timeZone),
+					metricBreakdown(h, model, draft),
+				]),
 				metadataPanel(h, model, summary, timeZone),
 			],
 		),
@@ -122,10 +121,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			dashboardPage(
 				h,
 				{
+					width: "full",
 					// A metric name is an identifier, so it is set in mono like elsewhere.
 					titleContent: detailTitle(h, {
 						kind: ["Metric", typeLabelOf(model)],
-						title: [h.span([h.Class("font-mono")], [model.metricName])],
+						title: [typography(h, { mono: true }, [model.metricName])],
 						titleText: model.metricName,
 					}),
 					actions: actions(h, model),

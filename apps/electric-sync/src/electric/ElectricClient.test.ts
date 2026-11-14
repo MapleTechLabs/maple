@@ -7,13 +7,18 @@ import {
 	Option,
 	Redacted,
 	Tracer,
+	Array as Arr,
 	Record as Rec,
 	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { type RecordedRequest, stubFetch, syncConfigLayer } from "../test-support"
-import { SUBSCRIPTION_NAMES, type SubscriptionName, subscriptionScopeColumn } from "../shapes/registry"
+import {
+	SUBSCRIPTION_NAMES,
+	type SubscriptionName,
+	subscriptionScopeColumn,
+} from "@maple/domain/electric-shapes"
 import type { SyncRequest } from "../shapes/request"
 import {
 	buildUpstreamSyncUrl,
@@ -44,6 +49,9 @@ const syncRequest = (
 }
 
 const base = { electricUrl: "http://electric:3000", orgId: "org_123" }
+
+const columnsOf = (params: URLSearchParams): ReadonlyArray<string> =>
+	Option.match(Option.fromNullishOr(params.get("columns")), { onNone: () => [], onSome: Str.split(",") })
 
 const buildUrl = (
 	subscription: SubscriptionName,
@@ -195,25 +203,22 @@ describe("buildUpstreamShapeUrl", () => {
 		assert.isNull(params.get("replica"))
 	})
 
-	it.each(["alert_destinations", "alert_destinations_v2"] as const)(
-		"pins %s's column projection and drops the secret columns",
-		(shape) => {
-			const columns = buildUrl(shape).params.get("columns")?.split(",") ?? []
-			// PK + org scope must be present for Electric.
-			assert.include(columns, "id")
-			assert.include(columns, "org_id")
-			// The public config the browser renders is allowed…
-			assert.include(columns, "config_json")
-			// …but the encrypted secret columns must never be projected.
-			assert.notInclude(columns, "secret_ciphertext")
-			assert.notInclude(columns, "secret_iv")
-			assert.notInclude(columns, "secret_tag")
-		},
-	)
+	it("pins alert_destinations_v2's column projection and drops the secret columns", () => {
+		const columns = columnsOf(buildUrl("alert_destinations_v2").params)
+		// PK + org scope must be present for Electric.
+		assert.include(columns, "id")
+		assert.include(columns, "org_id")
+		// The public config the browser renders is allowed…
+		assert.include(columns, "config_json")
+		// …but the encrypted secret columns must never be projected.
+		assert.notInclude(columns, "secret_ciphertext")
+		assert.notInclude(columns, "secret_iv")
+		assert.notInclude(columns, "secret_tag")
+	})
 
 	it("projects only safe API-key display fields", () => {
 		const { params } = buildUrl("api_keys")
-		const columns = params.get("columns")?.split(",") ?? []
+		const columns = columnsOf(params)
 		assert.strictEqual(params.get("table"), "api_keys")
 		assert.strictEqual(params.get("where"), `"org_id" = $1`)
 		assert.include(columns, "id")
@@ -225,12 +230,11 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 
 	it("never lets the client widen a column-restricted shape back to secrets", () => {
-		const columns =
-			buildUrl("alert_destinations", {
+		const columns = columnsOf(
+			buildUrl("alert_destinations_v2", {
 				query: "columns=id%2Corg_id%2Csecret_ciphertext%2Csecret_iv%2Csecret_tag",
-			})
-				.params.get("columns")
-				?.split(",") ?? []
+			}).params,
+		)
 		assert.notInclude(columns, "secret_ciphertext")
 		assert.include(columns, "config_json")
 	})
@@ -260,8 +264,7 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 
 	it("projects only the investigation columns the page renders", () => {
-		const columns =
-			buildUrl("investigation_v2", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
+		const columns = columnsOf(buildUrl("investigation_v2", { scopeValue: "inv_1" }).params)
 		assert.include(columns, "id")
 		assert.include(columns, "org_id")
 		assert.include(columns, "report_json")
@@ -285,11 +288,7 @@ describe("buildUpstreamShapeUrl", () => {
 	})
 })
 
-/**
- * The upstream half, driven through a stubbed `fetch` — the repo idiom from
- * `apps/scraper/src/ApiClient.test.ts`. These are the paths that had no coverage
- * at all while the transport was welded into the route.
- */
+/** The upstream half, driven through a stubbed `fetch`. */
 describe("ElectricClient.fetchShape", () => {
 	const clientLayer = (config: Parameters<typeof syncConfigLayer>[0] = {}) =>
 		ElectricClient.layer.pipe(
@@ -398,8 +397,7 @@ describe("ElectricClient.fetchShape", () => {
 			)
 
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
-			// The cause survives into the message — this is what the old mutable
-			// `upstreamFailure` closure variable existed to smuggle out.
+			// The cause survives into the message.
 			assert.include(error.message, "ECONNREFUSED")
 			assert.include(error.message, "dashboards")
 		}).pipe(Effect.provide(clientLayer())),
@@ -462,8 +460,6 @@ describe("ElectricClient.fetchShape", () => {
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
 			// The span must be able to say a timeout is what happened, not `undefined`.
-			// effect rc.116's `TimeoutException` carries its own text, so the ceiling
-			// that fired is named too; it used to carry only a tag.
 			assert.include(error.message, "timed out")
 			assert.include(error.message, "30s")
 		}).pipe(Effect.provide(clientLayer())),
@@ -541,11 +537,10 @@ describe("Electric upstream span never carries the secret", () => {
 					assert.notInclude(String(value), "sh_secret")
 				}
 			}
-			const client = spans.find((span) => span.name === "http.client GET")
-			assert.isDefined(client)
-			assert.strictEqual(client?.attributes.get("url.path"), "/v1/shape")
-			assert.strictEqual(client?.attributes.get("peer.service"), "electric")
-			assert.strictEqual(client?.attributes.get("http.response.status_code"), 200)
+			const client = Option.getOrThrow(Arr.findFirst(spans, (span) => span.name === "http.client GET"))
+			assert.strictEqual(client.attributes.get("url.path"), "/v1/shape")
+			assert.strictEqual(client.attributes.get("peer.service"), "electric")
+			assert.strictEqual(client.attributes.get("http.response.status_code"), 200)
 		}).pipe(Effect.provide(secretLayer)),
 	)
 

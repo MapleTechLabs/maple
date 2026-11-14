@@ -20,7 +20,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { listToolbar, toolbarStat } from "../../kit/list-toolbar"
-import { monitorHref, newMonitorHref } from "../shared/uptime-commands"
+import { monitorHref, newMonitorHref } from "../../kit/uptime/commands"
 import {
 	displayStatus,
 	formatMs,
@@ -34,10 +34,10 @@ import {
 	targetLine,
 	type UptimeMonitor,
 	uptimeShare,
-} from "../shared/uptime-derive"
-import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../shared/uptime-view"
+} from "../../kit/uptime/derive"
+import { recentChecksStrip, uptimeStatusChip, uptimeStatusSquare } from "../../kit/uptime/view"
 import { Message } from "./message"
-import type { Model, UptimeKindFilter } from "./model"
+import { type Model, type UptimeKindFilter } from "./model"
 import { monitorMenuId } from "./update"
 import {
 	groupMonitors,
@@ -49,8 +49,8 @@ import {
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { borderedBox } from "@maple/views/ui/bordered-box"
-
-// The hub's Uptime tab: the filters with the readout, and the monitor table.
+import { dividedList } from "@maple/views/ui/rule"
+import { canManageAlerts } from "../../kit/session-grants"
 
 type H = HtmlBuilder<Message>
 
@@ -70,8 +70,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: UptimeKindFilter; label: string }> = 
 const isKindFilter = (value: string): value is UptimeKindFilter =>
 	Arr.some(KIND_FILTERS, (kind) => kind.value === value)
 
-/** The empty org: what uptime checks are and the first one to add. */
-const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolean): Html =>
+const uptimeEmptyState = (h: H, serviceName: string | undefined, canEdit: boolean): Html =>
 	empty(
 		h,
 		[
@@ -82,7 +81,7 @@ const uptimeEmptyState = (h: H, serviceName: string | undefined, isAdmin: boolea
 					"Maple checks a URL, port or DNS record from outside on a schedule, or waits for your cron job to ping it. Each check is a trace, and a failing one opens an incident.",
 				]),
 			]),
-			...(isAdmin
+			...(canEdit
 				? [
 						emptyActions(h, [
 							linkButton(h, { size: "sm", href: newMonitorHref({ serviceName }) }, [
@@ -244,48 +243,44 @@ const monitorRow = (h: H, model: Model, monitor: UptimeMonitor, nowMs: number): 
 			h.div(
 				[h.Class(ROW_GRID)],
 				[
-					h.div(
-						[h.Class("flex min-w-0 items-start gap-3")],
-						[
-							h.span(
-								[h.Class("flex h-5 shrink-0 items-center")],
-								[uptimeStatusSquare(h, monitor)],
-							),
-							h.div(
-								[h.Class("min-w-0")],
-								[
-									hstack(h, { gap: "2", shrink: true }, [
-										rowLink(
-											h,
-											{
-												href: monitorHref(monitor.id),
-												className: typographyClass({
-													size: "sm",
-													weight: "medium",
-													truncate: true,
-												}),
-											},
-											[monitor.name],
-										),
-										...(displayStatus(monitor) === "up"
-											? []
-											: [uptimeStatusChip(h, monitor, nowMs)]),
-									]),
-									typography(
+					hstack(h, { gap: "3", align: "start", shrink: true }, [
+						hstack(h, { align: "center", as: "span", className: "h-5 shrink-0" }, [
+							uptimeStatusSquare(h, monitor),
+						]),
+						h.div(
+							[h.Class("min-w-0")],
+							[
+								hstack(h, { gap: "2", shrink: true }, [
+									rowLink(
 										h,
-										{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
-										[subline(monitor, nowMs)],
+										{
+											href: monitorHref(monitor.id),
+											className: typographyClass({
+												size: "sm",
+												weight: "medium",
+												truncate: true,
+											}),
+										},
+										[monitor.name],
 									),
-								],
-							),
-						],
-					),
+									...(displayStatus(monitor) === "up"
+										? []
+										: [uptimeStatusChip(h, monitor, nowMs)]),
+								]),
+								typography(
+									h,
+									{ size: "xs", tone: "muted", mono: true, truncate: true, as: "p" },
+									[subline(monitor, nowMs)],
+								),
+							],
+						),
+					]),
 					recentChecksStrip(h, { recent, slots: RECENT_SLOTS, isMuted: isPaused }),
 					typography(h, { size: "xs", mono: true, numeric: true, className: "text-right" }, [
 						isPaused ? "–" : formatShare(uptimeShare(recent)),
 					]),
 					...latencyCells(h, monitor),
-					...(model.isAdmin ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
+					...(canManageAlerts(model) ? [rowMenu(h, model, monitor)] : [h.span([], [])]),
 				],
 			),
 		],
@@ -298,8 +293,15 @@ const namespaceLabel = (h: H, namespace: string): Html =>
 		: badge(h, { variant: "secondary" }, [namespace])
 
 const groupHeader = (h: H, [namespace, monitors]: MonitorGroup): Html =>
-	h.li(
-		[h.Key(`ns-${namespace}`), h.Class("flex items-center gap-2 bg-surface-sunken py-2 pr-2 pl-4")],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			as: "li",
+			className: "bg-surface-sunken py-2 pr-2 pl-4",
+			attributes: [h.Key(`ns-${namespace}`)],
+		},
 		[
 			namespaceLabel(h, namespace),
 			typography(h, { size: "xs", tone: "muted" }, [countLabel(monitors.length, "monitor")]),
@@ -325,8 +327,9 @@ const table = (h: H, model: Model, groups: ReadonlyArray<MonitorGroup>, nowMs: n
 						h.span([], []),
 					],
 				),
-				h.ul(
-					[h.Class("divide-y")],
+				dividedList(
+					h,
+					{ as: "ul", bordered: false },
 					Arr.flatMap(groups, (group) => [
 						// One unnamed group is the plain list, no header.
 						...(groups.length > 1 || group[0] !== NO_NAMESPACE ? [groupHeader(h, group)] : []),
@@ -361,7 +364,7 @@ const loaded = (
 	nowMs: number,
 	pinnedNamespace: string | null,
 ): Html => {
-	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, model.isAdmin)
+	if (all.length === 0) return uptimeEmptyState(h, model.search.serviceName, canManageAlerts(model))
 	const namespaces = AsyncData.getData(model.serviceNamespaces.data)
 	const monitors = scoped(all, namespaces, pinnedNamespace)
 	if (monitors.length === 0)
@@ -420,12 +423,18 @@ const loadingState = (h: H): Html =>
 
 export const deleteMonitorDialog = (h: H, model: Model): Html => {
 	const monitors = AsyncData.getOrElse(model.monitors.data, () => [])
-	const target = monitors.find((monitor) => monitor.id === model.confirmDeleteMonitorId)
+	const targetName = Option.getOrElse(
+		Option.flatMapNullishOr(
+			Arr.findFirst(monitors, (monitor) => monitor.id === model.confirmDeleteMonitorId),
+			(monitor) => monitor.name,
+		),
+		() => "monitor",
+	)
 	return confirmDialog(h, {
 		slotId: "alerts-delete-monitor",
 		model: model.deleteMonitorDialog,
 		toParentMessage: (message) => Message.GotDeleteMonitorDialogMessage({ message }),
-		title: `Delete ${target?.name ?? "monitor"}?`,
+		title: `Delete ${targetName}?`,
 		description:
 			"Maple stops checking it and its incidents close. Recorded check traces stay. This cannot be undone.",
 		confirmLabel: "Delete monitor",

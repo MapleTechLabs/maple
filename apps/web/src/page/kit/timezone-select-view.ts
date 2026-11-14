@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import * as C from "@maple/ui/styles/ui/combobox"
+import * as C from "@maple/views/ui/combobox.styles"
 import { Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Combobox from "@maple/views/ui/combobox"
@@ -15,7 +15,7 @@ import { Array as Arr } from "effect"
 export type ZoneListInputs = Readonly<{
 	rows: ReadonlyArray<ZoneRow>
 	triggerId: string
-	/** The footer row: the list spans its width (`anchor={anchor}`, `w-(--anchor-width)`). */
+	/** The footer row: the list spans its width (`w-(--anchor-width)`). */
 	anchorId: string
 	/** The picker popover's id: a press in the list stays inside it. */
 	popoverId: string
@@ -59,7 +59,7 @@ export const zoneListView = Submodel.defineView<Combobox.Model, Combobox.Message
 			slot: "combobox",
 			items,
 			isPrefiltered: true,
-			emptyText: "No timezone matches that",
+			emptyText: "No time zones match",
 			anchorSelector: `#${inputs.triggerId}`,
 			positionSelector: `#${inputs.anchorId}`,
 			className: "w-(--anchor-width)",

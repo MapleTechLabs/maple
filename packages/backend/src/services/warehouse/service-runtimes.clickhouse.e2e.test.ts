@@ -12,7 +12,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_service_runtimes_e2e")
 const ORG = "org_runtimes"
@@ -24,7 +24,7 @@ const START_MS = END_MS - 60 * MINUTE_MS
 const chDateTime = (epochMs: number): string =>
 	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 const mapLiteral = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Arr.join(
 		Arr.flatMap(Rec.toEntries(attrs), ([key, value]) => [quote(key), quote(value)]),
@@ -81,6 +81,21 @@ const SAMPLES: ReadonlyArray<Sample> = [
 	{ service: "billing", metric: "aws.lambda.duration", resource: { "cloud.region": "us-east-1" } },
 ]
 
+interface VercelSpan {
+	readonly service: string
+	readonly resource: Readonly<Record<string, string>>
+}
+
+// Vercel sends no metrics: its projects are read off their spans.
+const VERCEL_SPANS: ReadonlyArray<VercelSpan> = [
+	// The trace drain's restated function span.
+	{ service: "storefront", resource: { "cloud.provider": "vercel", "vercel.projectId": "prj_store" } },
+	// `@vercel/otel` under a name of its own.
+	{ service: "docs-app", resource: { "cloud.provider": "vercel", "vercel.project_id": "prj_docs" } },
+	// A Vercel span on a service nobody asked about.
+	{ service: "marketing", resource: { "cloud.provider": "vercel", "vercel.projectId": "prj_marketing" } },
+]
+
 const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknown>>> => {
 	// The normalizer strips `FORMAT JSON`, so ask for it as a setting instead.
 	const body = await clickhouseExec(normalizeSqlForClickHouseClient(sql), database, {
@@ -118,6 +133,18 @@ describe.skipIf(!clickhouseE2eEnabled)("serviceRuntimesSQL against ClickHouse", 
 			`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Value, ResourceAttributes, Attributes) VALUES\n${rows}`,
 			database,
 		)
+		const spans = Arr.join(
+			Arr.map(
+				VERCEL_SPANS,
+				(span, index) =>
+					`(${quote(ORG)}, ${at}, ${quote(`trace${index}`)}, ${quote(`span${index}`)}, '', 'Invoke Function', 'Server', ${quote(span.service)}, 1000000, 'Ok', ${mapLiteral({})}, ${mapLiteral(span.resource)})`,
+			),
+			",\n",
+		)
+		await clickhouseExec(
+			`INSERT INTO traces (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, SpanAttributes, ResourceAttributes) VALUES\n${spans}`,
+			database,
+		)
 	}, 120_000)
 
 	afterAll(async () => {
@@ -150,6 +177,20 @@ describe.skipIf(!clickhouseE2eEnabled)("serviceRuntimesSQL against ClickHouse", 
 			[
 				["svc_worker", "env_prod", "production"],
 				["svc_worker", "env_stg", "staging"],
+			],
+		)
+	})
+
+	it("finds a Vercel project under any of the attribute names Vercel writes", async () => {
+		const rows = await runtimes(["storefront", "docs-app"])
+		assert.deepStrictEqual(
+			Arr.map(
+				Arr.filter(rows, (row) => row.metricName === "vercel.project"),
+				(row) => [row.metricServiceName, row.vercelProjectId],
+			),
+			[
+				["docs-app", "prj_docs"],
+				["storefront", "prj_store"],
 			],
 		)
 	})

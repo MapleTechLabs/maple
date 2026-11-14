@@ -4,7 +4,7 @@ import { Command } from "foldkit"
 import { getAnalytics } from "../kit/api"
 import { Message } from "./message"
 
-/** `retainedInternalQuery("codeReview", "analytics")`: the page's read and the filters' author list. */
+/** The page's read and the filters' author list. */
 export const FetchAnalytics = Command.define("FetchCodeReviewAnalytics", {
 	args: { key: Schema.String, query: CodeReviewAnalyticsQuery },
 	messages: [Message.CompletedFetchAnalytics],
@@ -14,4 +14,3 @@ export const FetchAnalytics = Command.define("FetchCodeReviewAnalytics", {
 			Effect.map((result) => Message.CompletedFetchAnalytics({ key, result })),
 		),
 })
-

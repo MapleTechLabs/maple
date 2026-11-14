@@ -1,12 +1,15 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AwsConnections } from "@maple/db/tables"
-import { IntegrationsNotFoundError, IntegrationsPersistenceError } from "@maple/domain/http"
-import type { AwsConnectionId } from "@maple/domain/primitives"
+import {
+	IntegrationsNotFoundError,
+	IntegrationsPersistenceError,
+	type TenantContext,
+} from "@maple/domain/http"
+import type { AwsConnectionId } from "@maple/primitives"
 import { CH, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Effect, Layer, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 
 /** A stream delivers about every minute: an hour shows what it sends without a long scan. */
@@ -80,7 +83,7 @@ export class AwsIngestService extends Context.Service<AwsIngestService>()(
 					),
 					{ profile: "aggregation", context: "awsIngest" },
 				)
-				const groups = rows.map((row): AwsIngestGroup => ({
+				const groups = Arr.map(rows, (row): AwsIngestGroup => ({
 					namespace: row.namespace,
 					region: row.region === "" ? null : row.region,
 					metrics: row.metrics,
@@ -93,9 +96,11 @@ export class AwsIngestService extends Context.Service<AwsIngestService>()(
 				return {
 					windowStart,
 					windowEnd,
-					dataPoints: groups.reduce((total, group) => total + group.dataPoints, 0),
+					dataPoints: Arr.reduce(groups, 0, (total, group) => total + group.dataPoints),
 					lastPointAt:
-						groups.length === 0 ? null : Math.max(...groups.map((group) => group.lastPointAt)),
+						groups.length === 0
+							? null
+							: Math.max(...Arr.map(groups, (group) => group.lastPointAt)),
 					groups,
 				} satisfies AwsIngest
 			})

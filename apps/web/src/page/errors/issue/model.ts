@@ -1,4 +1,7 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
+import * as Policy from "@maple/domain/policy"
 import {
+	ErrorIssueAffectedUsersResponse,
 	ErrorIssueEventsResponse,
 	ErrorIssueId,
 	ErrorIssuePullRequestsResponse,
@@ -11,8 +14,6 @@ import {
 import { V2AnomalyIncident, V2ErrorIssueDetail, V2Investigation } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
@@ -24,23 +25,25 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 
-// The issue detail page.
-
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
-/** The alert destinations the escalation confirmation names (`useAlertDestinationsList`). */
+/** The alert destinations the escalation confirmation names. */
 export const DestinationName = Schema.Struct({ id: Schema.String, name: Schema.String })
 
 export const Model = Schema.Struct({
 	issueId: ErrorIssueId,
 	search: ErrorIssueSearch,
+	/** What the viewer may do; an analyst reads the issue and gets no triage control. */
+	grants: Schema.Array(Policy.PermissionName),
 	/** The resolved window and the clock it was resolved at; `null` until the first resolve. */
 	window: Schema.NullOr(TimeWindow),
 	nowMs: Schema.Number,
-	/** `LeaseHud`'s own clock, ticking once a second while a lease is held; 0 before its first tick. */
+	/** The lease countdown's clock, ticking once a second while a lease is held; 0 before its first tick. */
 	leaseNowMs: Schema.Number,
 	detail: keyed(V2ErrorIssueDetail),
 	events: keyed(ErrorIssueEventsResponse),
+	/** The rail's Affected users group, over the window. */
+	affectedUsers: keyed(ErrorIssueAffectedUsersResponse),
 	investigations: keyed(Schema.Array(V2Investigation)),
 	pullRequests: keyed(ErrorIssuePullRequestsResponse),
 	verifications: keyed(ErrorIssueVerificationsResponse),
@@ -59,21 +62,17 @@ export const Model = Schema.Struct({
 	/** The agent handoff panel's "Copy prompt". */
 	promptCopy: CopyButton.Model,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
-	/** `PageRefreshProvider`: Reloads so far (non-zero stops snapping) and the 600 ms spinner. */
+	...ChartEnvFields,
 	/** The rail writes in flight, one entry per write kind. */
-	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release"])),
-	/** The severity raise waiting on "Notify escalation destinations?". */
-	/** `startingInvestigation`: the create is in flight. */
+	busy: Schema.Array(Schema.Literals(["state", "severity", "claim", "heartbeat", "release", "unmerge"])),
 	isStartingInvestigation: Schema.Boolean,
 	overflowMenu: Menu.Model,
 	attachDialog: Dialog.Model,
 	attachDraft: Schema.String,
-	/** `overrideRepository`: the repository picked in the attach dialog, over the suggestion. */
+	/** The repository picked in the attach dialog, over the suggestion. */
 	attachRepository: Schema.NullOr(Schema.String),
 	repositorySelect: Select.Model,
-	/** `showEarlier`: the timeline mounts its rows before the latest 50 once asked. */
+	/** The timeline mounts its rows before the latest 50 once asked. */
 	isShowingEarlier: Schema.Boolean,
 	attachCombobox: Combobox.Model,
 	isAttaching: Schema.Boolean,

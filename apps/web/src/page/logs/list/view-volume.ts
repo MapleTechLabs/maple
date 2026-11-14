@@ -2,10 +2,10 @@ import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 import { formatBucketLabel, formatNumber } from "@maple/ui/lib/format"
 import { eyebrow } from "@maple/views/ui/eyebrow"
-import { formatWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 import { computeBucketSeconds } from "@maple/web-data/warehouse/timeseries-utils"
 import { cn } from "@maple/ui/lib/utils"
-import { DateTime, Option, Array as Arr, Record as Rec, String as Str } from "effect"
+import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as Chart from "@maple/views/charts/chart"
@@ -18,7 +18,7 @@ import { Message } from "./message"
 import type { Model, VolumeBrush, VolumeBucket } from "./model"
 import { bucketTooltipBody } from "@maple/views/charts/bucket-tooltip"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 /** The strip is a scrubber above the list, not a chart in its own right. */
 export const LOGS_VOLUME_CHART_HEIGHT = 120
@@ -54,7 +54,6 @@ const volumeSpec = (
 
 type PlotInputs = Readonly<{ spec: ChartSpec }>
 
-/** `CursorPlot` with `ariaLabel="Log volume by severity"` in its 120px strip. */
 const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((model, inputs, h) =>
 	plotFrame(h, {
 		chartId: "logs-volume",
@@ -69,8 +68,6 @@ const volumePlot = Submodel.defineView<Chart.Model, Chart.Message, PlotInputs>((
 			),
 	}),
 )
-
-// EMPTY STRIP
 
 const EMPTY_STRIP_TICKS = 5
 const EMPTY_STRIP_BARS = 64
@@ -90,13 +87,7 @@ const EMPTY_STRIP_BARS_STACKED = Array.from({ length: EMPTY_STRIP_BARS }, (_, i)
 	]
 })
 
-const epochOf = (warehouseTime: string): number =>
-	Option.match(DateTime.make(warehouseDateTimeToIso(warehouseTime)), {
-		onNone: () => Number.NaN,
-		onSome: DateTime.toEpochMillis,
-	})
-
-/** `EmptyVolumeStrip`: the strip's height and gutter kept, the window and severities named. */
+/** The strip's height and gutter kept, the window and severities named. */
 const emptyStrip = (
 	h: HtmlBuilder<Message>,
 	window: Readonly<{ startTime: string; endTime: string }>,
@@ -104,8 +95,8 @@ const emptyStrip = (
 	timeZone: string,
 	locale: string,
 ): Html => {
-	const startMs = epochOf(window.startTime)
-	const rangeMs = Math.max(0, epochOf(window.endTime) - startMs)
+	const startMs = parseWarehouseDateTime(window.startTime)
+	const rangeMs = Math.max(0, parseWarehouseDateTime(window.endTime) - startMs)
 	const axisContext = { rangeMs, bucketSeconds, timeZone, locale }
 	const ticks = Array.from({ length: EMPTY_STRIP_TICKS }, (_, i) => ({
 		label: formatBucketLabel(
@@ -117,108 +108,108 @@ const emptyStrip = (
 	}))
 	const dashed = (className: string) =>
 		h.div([h.Class(`absolute inset-x-0 ${className} border-t border-dashed border-border-subtle`)])
-	return h.div(
+	return hstack(
+		h,
+		{
+			align: "stretch",
+			className: "w-full select-none pt-1 text-muted-foreground",
+			attributes: [
+				h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
+				h.AriaLabel("Log volume by severity, no logs in this window"),
+			],
+		},
 		[
-			h.Style({ height: `${LOGS_VOLUME_CHART_HEIGHT}px` }),
-			h.Class("flex w-full select-none pt-1 text-muted-foreground"),
-			h.AriaLabel("Log volume by severity, no logs in this window"),
-		],
-		[
-			h.div(
-				[
-					h.Class(
-						"flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-3xs leading-none",
-					),
-				],
+			vstack(
+				h,
+				{
+					justify: "end",
+					className: "w-10 shrink-0 pb-4.5 pr-1 text-right text-3xs leading-none",
+				},
 				["0"],
 			),
-			h.div(
-				[h.Class("relative flex min-w-0 flex-1 flex-col")],
-				[
-					h.div(
-						[h.Class("relative flex-1")],
-						[
-							dashed("top-0"),
-							dashed("top-1/2"),
-							h.div(
-								[
-									h.AriaHidden(true),
-									h.Class("absolute inset-0 flex items-end gap-px opacity-[0.18]"),
-								],
-								Arr.map(EMPTY_STRIP_BARS_STACKED, (slices) =>
-									h.div(
-										[h.Class("flex h-full min-w-0 flex-1 flex-col-reverse")],
-										Arr.map(slices, (slice) =>
-											h.div([
-												h.Style({
-													height: `${slice.height * 100}%`,
-													"background-color": SEVERITY_COLORS[slice.severity] ?? "",
-												}),
-											]),
-										),
+			vstack(h, { shrink: true, grow: true, className: "relative" }, [
+				h.div(
+					[h.Class("relative flex-1")],
+					[
+						dashed("top-0"),
+						dashed("top-1/2"),
+						hstack(
+							h,
+							{
+								align: "end",
+								className: "absolute inset-0 gap-px opacity-[0.18]",
+								attributes: [h.AriaHidden(true)],
+							},
+							Arr.map(EMPTY_STRIP_BARS_STACKED, (slices) =>
+								h.div(
+									[h.Class("flex h-full min-w-0 flex-1 flex-col-reverse")],
+									Arr.map(slices, (slice) =>
+										h.div([
+											h.Style({
+												height: `${slice.height * 100}%`,
+												"background-color": SEVERITY_COLORS[slice.severity] ?? "",
+											}),
+										]),
 									),
 								),
 							),
-							h.div(
-								[h.Class("absolute inset-0 flex flex-col items-center justify-center gap-2")],
-								[
-									h.span([h.Class("text-xs")], ["No log volume in this window"]),
-									eyebrow(
-										h,
-										{ as: "ul", className: "flex items-center gap-3 opacity-60" },
-										Arr.map(
-											Arr.filter(SEVERITY_ORDER, (s) => s !== "WARNING"),
-											(severity) =>
-												hstack(h, { gap: "1.5", as: "li" }, [
-													h.span([
-														h.Class("size-1.5 rounded-xs"),
-														h.Style({
-															"background-color":
-																SEVERITY_COLORS[severity] ?? "",
-														}),
-													]),
-													severity,
+						),
+						vstack(
+							h,
+							{ gap: "2", align: "center", justify: "center", className: "absolute inset-0" },
+							[
+								typography(h, { size: "xs" }, ["No log volume in this window"]),
+								eyebrow(
+									h,
+									{ as: "ul", className: "flex items-center gap-3 opacity-60" },
+									Arr.map(
+										Arr.filter(SEVERITY_ORDER, (s) => s !== "WARNING"),
+										(severity) =>
+											hstack(h, { gap: "1.5", as: "li" }, [
+												h.span([
+													h.Class("size-1.5 rounded-xs"),
+													h.Style({
+														"background-color": SEVERITY_COLORS[severity] ?? "",
+													}),
 												]),
-										),
+												severity,
+											]),
 									),
-								],
-							),
-						],
-					),
-					h.div(
-						[h.Class("relative h-4.5 border-t border-border")],
-						Arr.map(ticks, (tick, i) =>
-							h.span(
-								[
-									h.Class("absolute top-1 whitespace-nowrap text-3xs leading-none"),
-									h.Style({
-										left: `${tick.left}%`,
-										transform:
-											i === 0
-												? "none"
-												: i === ticks.length - 1
-													? "translateX(-100%)"
-													: "translateX(-50%)",
-									}),
-								],
-								[tick.label],
-							),
+								),
+							],
+						),
+					],
+				),
+				h.div(
+					[h.Class("relative h-4.5 border-t border-border")],
+					Arr.map(ticks, (tick, i) =>
+						h.span(
+							[
+								h.Class("absolute top-1 whitespace-nowrap text-3xs leading-none"),
+								h.Style({
+									left: `${tick.left}%`,
+									transform:
+										i === 0
+											? "none"
+											: i === ticks.length - 1
+												? "translateX(-100%)"
+												: "translateX(-50%)",
+								}),
+							],
+							[tick.label],
 						),
 					),
-				],
-			),
+				),
+			]),
 		],
 	)
 }
 
 const header = (h: HtmlBuilder<Message>, total: number): Html =>
-	h.div(
-		[h.Class("mb-1 flex items-baseline gap-2")],
-		[
-			typography(h, { size: "sm", weight: "medium" }, [formatNumber(total), " logs"]),
-			typography(h, { size: "xs", tone: "muted" }, ["in this window"]),
-		],
-	)
+	hstack(h, { gap: "2", align: "baseline", className: "mb-1" }, [
+		typography(h, { size: "sm", weight: "medium" }, [formatNumber(total), " logs"]),
+		typography(h, { size: "xs", tone: "muted" }, ["in this window"]),
+	])
 
 export const volumeChart = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
 	AsyncData.matchData(model.volume.data, {

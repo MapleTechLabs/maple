@@ -1,15 +1,21 @@
-import type { PushSourcePlatform, SourcePlatform } from "@maple/domain/primitives"
-import { PUSH_SOURCE_PLATFORMS } from "@maple/domain/primitives"
+import type { PushSourcePlatform, SourcePlatform } from "@maple/primitives"
+import { PUSH_SOURCE_PLATFORMS } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
-
-// `PLATFORMS`, `PlatformTile`.
+import { type ProviderId, PROVIDERS } from "../../kit/providers"
 
 export interface PlatformMeta {
 	readonly label: string
 	readonly description: string
 	readonly icon: IconName
 }
+
+/** An integration platform's tile: the provider's name and mark, with Sources' own line. */
+const provider = (id: ProviderId, description: string): PlatformMeta => ({
+	label: PROVIDERS[id].name,
+	description,
+	icon: PROVIDERS[id].icon,
+})
 
 export const PLATFORMS = {
 	opentelemetry: {
@@ -35,18 +41,15 @@ export const PLATFORMS = {
 		icon: "CloudflareBrandIcon",
 	},
 	claude_code: { label: "Claude Code", description: "Agent sessions and usage", icon: "ClaudeIcon" },
-	prometheus: { label: "Prometheus", description: "Scrape a metrics endpoint", icon: "PrometheusIcon" },
-	cloudflare: {
-		label: "Cloudflare",
-		description: "Zone and Workers analytics",
-		icon: "CloudflareBrandIcon",
-	},
-	gcp: { label: "Google Cloud", description: "Logs, metrics and resources", icon: "GoogleCloudIcon" },
-	aws: { label: "AWS", description: "A read-only role in an account", icon: "AwsIcon" },
-	railway: { label: "Railway", description: "Service metrics", icon: "RailwayIcon" },
-	planetscale: { label: "PlanetScale", description: "Database metrics", icon: "PlanetScaleIcon" },
-	github: { label: "GitHub", description: "Repositories, CI and deploys", icon: "GithubIcon" },
-	supabase: { label: "Supabase", description: "Project and Postgres metrics", icon: "SupabaseIcon" },
+	prometheus: provider("prometheus", "Scrape a metrics endpoint"),
+	cloudflare: provider("cloudflare", "Zone and Workers analytics"),
+	gcp: provider("gcp", "Logs, metrics and resources"),
+	aws: provider("aws", "A read-only role in an account"),
+	railway: provider("railway", "Service metrics"),
+	vercel: provider("vercel", "Logs, traces and deployments"),
+	planetscale: provider("planetscale", "Database metrics"),
+	github: provider("github", "Repositories, CI and deploys"),
+	supabase: provider("supabase", "Project and Postgres metrics"),
 } as const satisfies Record<SourcePlatform, PlatformMeta>
 
 export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORMS[platform]

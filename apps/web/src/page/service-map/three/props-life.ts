@@ -1,6 +1,6 @@
-import type { MachineKind } from "../../../components/service-map/three/palette"
-import { type Child, inkLines, type Scope, type Vec3 } from "./kit"
-import { inkParts, type MapleFinish, type Part, range, variant } from "./props-kit"
+import type { MachineKind } from "./palette"
+import { type Child, group, inkLines, type Scope, type Vec3 } from "./kit"
+import { breeze, inkParts, type MapleFinish, type Part, range, variant } from "./props-kit"
 import { Array as Arr } from "effect"
 
 /** A little sugar-bush worker in a plaid shirt and toque, holding a wrench or shouldering a log. */
@@ -49,9 +49,22 @@ export function worker(
 	]
 }
 
-/** A red warning flag on a pole at the pad corner: this service is failing. */
+/** A red warning flag on a pole at the pad corner, flapping: this service is failing. */
 function warningFlag(scope: Scope, { position, finish }: { position: Vec3; finish: MapleFinish }): Child {
 	const [x, y, z] = position
+	const cloth = group({ position: [x, y + 0.8, z] }, [
+		inkParts(scope, {
+			parts: [{ box: [0.26, 0.16, 0.012], at: [-0.14, 0, 0] }],
+			color: finish.gifts[0] ?? finish.signal,
+			ink: finish.ink,
+		}),
+	])
+	// A phase per machine, so two flags never flap in step.
+	const phase = variant(finish.seed, 15, 628) / 100
+	breeze(scope, finish, (seconds) => {
+		const t = seconds + phase
+		cloth.rotation.y = Math.sin(t * 2.6) * 0.3 + Math.sin(t * 4.3) * 0.08
+	})
 	return [
 		inkParts(scope, {
 			parts: [
@@ -61,11 +74,7 @@ function warningFlag(scope: Scope, { position, finish }: { position: Vec3; finis
 			color: finish.timber,
 			ink: finish.ink,
 		}),
-		inkParts(scope, {
-			parts: [{ box: [0.26, 0.16, 0.012], at: [x - 0.14, y + 0.8, z] }],
-			color: finish.gifts[0] ?? finish.signal,
-			ink: finish.ink,
-		}),
+		cloth,
 	]
 }
 
@@ -150,7 +159,12 @@ type Tone = (typeof TONES)[number]
 
 /** A yard solid in local terms: `a` runs along the spot, `b` across it, y up. A prism may lie
  * along a or b instead of standing. */
-type Bit = { tone: Tone; at: Vec3 } & (
+type Bit = {
+	tone: Tone
+	at: Vec3
+	/** Height of the line this bit hangs from; hung bits sway about it. */
+	hang?: number
+} & (
 	| { box: readonly [number, number, number] }
 	| { prism: readonly [number, number, number, number]; lie?: "a" | "b" }
 )
@@ -166,6 +180,14 @@ const prism = (
 	prism: size,
 	at,
 	lie,
+})
+
+/** A sheet pegged to the washing line. */
+const sheet = (tone: Tone, size: readonly [number, number, number], at: Vec3): Bit => ({
+	tone,
+	box: size,
+	at,
+	hang: 0.4,
 })
 
 /** Small homestead props, each about half a module long, built along `a`. */
@@ -207,9 +229,9 @@ const YARD_PROPS: ReadonlyArray<() => Bit[]> = [
 	() => [
 		box("timber", [0.035, 0.42, 0.035], [-0.26, 0.21, 0]),
 		box("timber", [0.035, 0.42, 0.035], [0.26, 0.21, 0]),
-		box("linen", [0.11, 0.13, 0.01], [-0.13, 0.33, 0]),
-		box("paint", [0.09, 0.1, 0.01], [0, 0.345, 0]),
-		box("linen", [0.11, 0.13, 0.01], [0.13, 0.33, 0]),
+		sheet("linen", [0.11, 0.13, 0.01], [-0.13, 0.33, 0]),
+		sheet("paint", [0.09, 0.1, 0.01], [0, 0.345, 0]),
+		sheet("linen", [0.11, 0.13, 0.01], [0.13, 0.33, 0]),
 		box("iron", [0.52, 0.008, 0.008], [0, 0.4, 0]),
 	],
 	// Pumpkin pile, it is autumn.
@@ -278,7 +300,7 @@ function placeBit(bit: Bit, { x, z, along }: Spot): Part {
 	return { prism: bit.prism, at, turn }
 }
 
-/** One or two seeded homestead props on the pad, one merged batch per colour. */
+/** One or two seeded homestead props on the pad, one merged batch per colour; washing sways. */
 export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish: MapleFinish }): Child {
 	const spots: readonly Spot[] = YARD_SPOTS[kind]
 	const count = Math.min(spots.length, 1 + variant(finish.seed, 20, 2))
@@ -286,7 +308,14 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 	const bits = Arr.flatMap(range(count), (i) => {
 		const spot = spots[(first + i * (spots.length > 2 ? 2 : 1)) % spots.length]
 		const make = YARD_PROPS[variant(finish.seed, 22 + i, YARD_PROPS.length)]
-		return spot && make ? Arr.map(make(), (bit) => ({ tone: bit.tone, part: placeBit(bit, spot) })) : []
+		return spot !== undefined && make !== undefined
+			? Arr.map(make(), (bit) => ({
+					tone: bit.tone,
+					hang: bit.hang,
+					along: spot.along,
+					part: placeBit(bit, spot),
+				}))
+			: []
 	})
 	const tones = {
 		timber: finish.timber,
@@ -299,16 +328,35 @@ export function yard(scope: Scope, { kind, finish }: { kind: MachineKind; finish
 		linen: finish.tape,
 		paint: finish.gifts[0] ?? finish.signal,
 	} satisfies Record<Tone, string>
-	return Arr.map(TONES, (tone) =>
-		inkParts(scope, {
-			parts: Arr.map(
-				Arr.filter(bits, (bit) => bit.tone === tone),
-				(bit) => bit.part,
-			),
-			color: tones[tone],
-			ink: finish.ink,
+	const hung = Arr.flatMap(bits, (bit) => (bit.hang === undefined ? [] : [{ ...bit, hang: bit.hang }]))
+	const phase = variant(finish.seed, 16, 628) / 100
+	return [
+		Arr.map(TONES, (tone) =>
+			inkParts(scope, {
+				parts: Arr.map(
+					Arr.filter(bits, (bit) => bit.tone === tone && bit.hang === undefined),
+					(bit) => bit.part,
+				),
+				color: tones[tone],
+				ink: finish.ink,
+			}),
+		),
+		Arr.map(hung, ({ tone, hang, along, part }, i) => {
+			const [x, y, z] = part.at
+			const cloth = group({ position: [x, hang, z] }, [
+				inkParts(scope, {
+					parts: [{ ...part, at: [0, y - hang, 0] }],
+					color: tones[tone],
+					ink: finish.ink,
+				}),
+			])
+			breeze(scope, finish, (seconds) => {
+				const lift = 0.08 + Math.sin(seconds * 1.9 + phase + i * 1.3) * 0.2
+				cloth.rotation.set(along === "x" ? lift : 0, 0, along === "z" ? lift : 0)
+			})
+			return cloth
 		}),
-	)
+	]
 }
 
 /** The porchless door: stone steps up to the sill and a small shingled hood. */

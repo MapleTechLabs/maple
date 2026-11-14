@@ -1,5 +1,5 @@
 import { encodeJson } from "./json"
-import { String as Str } from "effect"
+import { Config, Effect, Option, String as Str } from "effect"
 
 export const DEFAULT_LOCAL_HOST = "127.0.0.1"
 export const DEFAULT_LOCAL_PORT = 4318
@@ -7,6 +7,20 @@ export const DEFAULT_LOCAL_PORT = 4318
 /** Public origin of the deployed local-mode dashboard SPA. Overridable
  *  (`MAPLE_LOCAL_UI_URL`) for testing against another build of it. */
 export const DEFAULT_REMOTE_UI_URL = "https://local.maple.dev"
+
+/** An unset or unreadable env var reads as `undefined`; never fails. */
+export const optionalEnvString = (key: string): Effect.Effect<string | undefined> =>
+	Config.String(key).pipe(
+		Config.option,
+		Effect.map(Option.getOrUndefined),
+		Effect.orElseSucceed(() => undefined),
+	)
+
+/** The dashboard origin `maple start` and the embedded runtime trust and advertise, not yet validated. */
+export const configuredLocalUiUrl: Effect.Effect<string> = Effect.map(
+	optionalEnvString("MAPLE_LOCAL_UI_URL"),
+	(raw) => (raw === undefined ? undefined : Str.trim(raw)) || DEFAULT_REMOTE_UI_URL,
+)
 
 /** Bun expects bare IPv6 listener addresses, while users commonly copy the
  * bracketed form used in URLs. Accept either form at the CLI boundary. */
@@ -32,6 +46,15 @@ export const validateHost = (host: string): string => {
 
 export const resolveBindHost = (environmentValue: string | undefined): string =>
 	normalizeHost(environmentValue || DEFAULT_LOCAL_HOST) || DEFAULT_LOCAL_HOST
+
+/** The bind host from `MAPLE_LOCAL_BIND_HOST`, else 127.0.0.1. */
+export const configuredBindHost: Effect.Effect<string> = Effect.map(
+	optionalEnvString("MAPLE_LOCAL_BIND_HOST"),
+	resolveBindHost,
+)
+
+/** {@link configuredBindHost} read synchronously, for flag defaults built at module load. */
+export const defaultBindHost = (): string => Effect.runSync(configuredBindHost)
 
 /** Wildcard bind addresses are not connection targets. Use their matching
  * loopback address for same-machine clients and readiness probes. */
@@ -78,6 +101,14 @@ export const serverProbeUrl = (host: string, port: number): string =>
 
 export const defaultLocalUrl = (environmentHost: string | undefined): string =>
 	serverProbeUrl(resolveBindHost(environmentHost), DEFAULT_LOCAL_PORT)
+
+/** The local server URL clients use: `MAPLE_LOCAL_URL`, else the default for the bind host. */
+export const configuredLocalUrl: Effect.Effect<string> = Effect.gen(function* () {
+	const configured = yield* optionalEnvString("MAPLE_LOCAL_URL")
+	if (configured !== undefined) return configured
+	const bindHost = yield* optionalEnvString("MAPLE_LOCAL_BIND_HOST")
+	return defaultLocalUrl(bindHost)
+})
 
 /** Canonical URL hostname, including brackets for IPv6 to match URL.hostname. */
 export const canonicalUrlHostname = (host: string): string => new URL(serverUrl(host, 80)).hostname

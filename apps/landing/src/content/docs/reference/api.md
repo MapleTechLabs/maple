@@ -36,29 +36,38 @@ Keys belong to one organization. [Authentication](/docs/reference/authentication
 
 Each row is one scope family. The [interactive reference](https://api.maple.dev/v2/docs) documents every operation.
 
-| Family               | Endpoints                                                                                |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `api_keys`           | List, create, get, revoke and roll API keys                                              |
-| `ingest_keys`        | Read the organization's public and private ingest keys, and roll either one              |
-| `organization`       | The current organization                                                                 |
-| `audit_log`          | The organization's audit log                                                             |
-| `dashboards`         | Dashboards, templates, version history and restore, public share links, Perses import    |
-| `alerts`             | Alert rules (with test and preview), rule checks, destinations, incidents and deliveries |
-| `error_issues`       | Error issues and per-service issue counts                                                |
-| `traces`             | Search traces, time series and breakdowns, one trace, one span                           |
-| `logs`               | Search logs, time series and breakdowns, one log record                                  |
-| `metrics`            | List metrics, time series and breakdowns                                                 |
-| `services`           | Services, one service, and a service overview                                            |
-| `service_map`        | Service dependency edges                                                                 |
-| `environments`       | Deployment environments seen in your data                                                |
-| `session_replays`    | Search replays, the replays for a trace, one replay's manifest, events and transcript    |
-| `scrape_targets`     | Prometheus scrape targets, their checks, and a test probe                                |
-| `attribute_mappings` | Attribute mappings                                                                       |
-| `instrumentation`    | Instrumentation recommendations, the setup audit, and which signals each service sends   |
-| `integrations`       | Chat connectors, and the AWS, GCP and PlanetScale integrations                           |
-| `sources`            | Connected sources and their source tokens: create, update, pause, resume, roll, usage    |
-| `investigations`     | AI investigations: list, start, get and restart                                          |
-| `anomalies`          | Detected anomaly incidents, their time series, and anomaly detection settings            |
+| Family                  | Endpoints                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api_keys`              | List, create, get, revoke and roll API keys                                                                                                                      |
+| `ingest_keys`           | Read the organization's public and private ingest keys, and roll either one                                                                                      |
+| `organization`          | The current organization                                                                                                                                         |
+| `audit_log`             | The organization's audit log                                                                                                                                     |
+| `dashboards`            | Dashboards, templates, version history and restore, public share links, Perses import                                                                            |
+| `alerts`                | Alert rules (with test and preview), rule checks, destinations, incidents and deliveries, silences, maintenance windows, escalation chains and on-call schedules |
+| `error_issues`          | Error issues and per-service issue counts; transition, claim, release, merge and unmerge issues, and set their severity                                          |
+| `traces`                | Search traces, time series and breakdowns, one trace, one span                                                                                                   |
+| `logs`                  | Search logs, time series and breakdowns, one log record                                                                                                          |
+| `metrics`               | List metrics, time series and breakdowns                                                                                                                         |
+| `services`              | Services, one service, and a service overview                                                                                                                    |
+| `service_map`           | Service dependency edges                                                                                                                                         |
+| `environments`          | Deployment environments seen in your data                                                                                                                        |
+| `session_replays`       | Search replays, the replays for a trace, one replay's manifest, events and transcript                                                                            |
+| `users`                 | The end users your apps identified, one user, their activity and the issues they hit                                                                             |
+| `data_sources`          | External databases and APIs connected for querying in place: create, update, test, and their catalog                                                             |
+| `scrape_targets`        | Prometheus scrape targets, their checks, and a test probe                                                                                                        |
+| `ingest_rules`          | Rules that drop or redact telemetry at ingest, their order, and per-rule stats                                                                                   |
+| `uptime_monitors`       | Hosted HTTP, TCP and DNS checks and heartbeats, and a test probe                                                                                                 |
+| `slos`                  | SLOs, their current status, and their history                                                                                                                    |
+| `status_pages`          | Status pages, their components and config, publishing, and preview                                                                                               |
+| `status_page_incidents` | Incidents and maintenance on a status page, and their updates                                                                                                    |
+| `attribute_mappings`    | Attribute mappings                                                                                                                                               |
+| `instrumentation`       | Instrumentation recommendations, the setup audit, and which signals each service sends                                                                           |
+| `integrations`          | Chat connectors, and the AWS, GCP and PlanetScale integrations                                                                                                   |
+| `sources`               | Connected sources and their source tokens: create, update, pause, resume, roll, usage                                                                            |
+| `investigations`        | AI investigations: list, start, get and restart                                                                                                                  |
+| `anomalies`             | Detected anomaly incidents, their time series, and anomaly detection settings                                                                                    |
+| `mcp_connections`       | MCP clients connected over OAuth: list them and revoke one                                                                                                       |
+| `agent_feedback`        | Send feedback about Maple to the Maple team and list what you sent. Any key may call it, whatever its scopes                                                     |
 
 ## Conventions
 
@@ -118,4 +127,4 @@ To connect an AI agent without generating a client, use the [MCP server](/docs/r
 
 ## Versioning
 
-`/v2` is the major version. Changes within it are additive, and error `_tag` values do not change. The v1 endpoints under `/api/…` remain available for existing integrations but get no new features.
+`/v2` is the major version. Changes within it are additive, and error `_tag` values do not change. The v1 endpoints under `/api/…` were retired on 2026-10-08; use their `/v2` replacements.

@@ -1,14 +1,22 @@
-import { UPTIME_LIST_LIMIT } from "../../alerts/shared/uptime-commands"
-import { ENDPOINTS_LIMIT } from "../../../components/services/service-endpoints"
-import { buildServiceOpenIssuesQuery } from "../../../lib/services/error-issues"
+import * as HoverCard from "@maple/views/ui/hover-card"
+import { initMarkerCard } from "../../kit/service-metrics/marker-card"
+import { zoomSearchPatch } from "../../kit/chart-zoom"
+import { pickerStep } from "../../kit/page-time"
+import { keyed as keyedStep, runSteps, type Step as KitStep } from "../../kit/keyed-step"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import * as Policy from "@maple/domain/policy"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
+import { ENDPOINTS_LIMIT } from "./service-endpoints"
+import { buildServiceOpenIssuesQuery } from "../../../data/error-issues"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { Option, type Result, Array as Arr, Record as Rec } from "effect"
+import { Option, type Result, Array as Arr, Record as Rec, Order } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { commitDetailKey } from "../../kit/commit-card"
+import { commitDetailKey, isResolvableSha } from "../../kit/commit-card"
 import { resolveWindow, type TimeWindow } from "../../../data/time-range"
 import type { Resources } from "../../../platform/resources"
 import { AppRoute, hrefOf } from "../../../route"
@@ -48,57 +56,35 @@ import {
 	tabOf,
 	windowSeconds,
 } from "./derive"
-import { commitMarkers, markerShas } from "./derive-markers"
+import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { deriveDeploys, isResolvableSha } from "./derive-panels"
+import { deriveDeploys } from "./derive-panels"
 import { matchesFilter } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
-import { Message, type RequestMode, type RetryTarget } from "./message"
-import type { Commit, CommitFailure, Model } from "./model"
+import { Message, type RetryTarget } from "./message"
+import type { Model } from "./model"
 import type { Endpoint } from "./model-tabs"
 import { groupsOf, visibleEndpoints } from "./view-api"
+import { type Commit, type CommitFailure } from "../../kit/service-metrics/points"
+import { commitMarkers, markerShas } from "../../kit/service-metrics/markers"
 
 export type Return = PageReturn<Model, Message>
 
-type Step = Readonly<{
-	patch: Partial<Model>
-	commands: ReadonlyArray<Command.Command<Message, never, Resources>>
-}>
+type Step = KitStep<Model, Message>
 
 const NONE: Step = { patch: {}, commands: [] }
 
-/** One `Keyed.request`: `Some` writes the slot and returns its fetch (S6). */
+/** `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload. */
 const keyed = <A, E>(
 	slot: Keyed.Keyed<A, E>,
 	key: string,
 	mode: Keyed.RequestMode,
 	write: (next: Keyed.Keyed<A, E>) => Partial<Model>,
 	fetch: (key: string) => Command.Command<Message, never, Resources>,
-): Step =>
-	// `sync` runs after every answer, so a failed key is not loaded again until a retry or Reload.
-	mode === "Load" && slot.key === key && AsyncData.isFailure(slot.data)
-		? NONE
-		: Option.match(Keyed.request(slot, key, mode), {
-				onNone: () => NONE,
-				onSome: (next) => ({ patch: write(next), commands: [fetch(key)] }),
-			})
+): Step => keyedStep(slot, key, mode, write, fetch, { keepFailure: true })
 
-/** Steps run in order, each against the Model the previous ones patched. */
-const runSteps = (model: Model, steps: ReadonlyArray<(model: Model) => Step>): Return =>
-	steps.reduce<Return>(
-		(result, step) => {
-			const next = step(result.model)
-			return {
-				...result,
-				model: { ...result.model, ...next.patch },
-				commands: [...(result.commands ?? []), ...next.commands],
-			}
-		},
-		{ model },
-	)
-
-/** `useEffectiveTimeRange(startTime, endTime, timePreset ?? "12h")`; snapped until a Reload. */
+/** The URL's window, `12h` when it names none; snapped until a Reload. */
 export const windowOf = (model: Model, context: PageContext, nowMs: number): TimeWindow =>
 	resolveWindow(
 		{
@@ -119,11 +105,9 @@ export const detailInput = (model: Model, window: TimeWindow): DetailInput => ({
 	environments: environmentsOf(model.search),
 })
 
-// REQUESTS
-
 type Steps = ReadonlyArray<(model: Model) => Step>
 
-/** The header's environment switcher reads the overview on every tab (`ServiceEnvironmentSwitcher`). */
+/** The header's environment switcher reads the overview on every tab. */
 const overviewStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -137,7 +121,7 @@ const overviewStep =
 		)
 	}
 
-/** `getServiceOperationsResultAtom`: the Overview panel and the Operations tab share the key. */
+/** The Overview panel and the Operations tab share the key. */
 const operationsStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -155,7 +139,7 @@ const operationsStep =
 		)
 	}
 
-/** `getServiceDependenciesBundleResultAtom`: the strip and the Dependencies tab share the key. */
+/** The dependency strip and the Dependencies tab share the key. */
 const dependenciesStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
@@ -181,7 +165,7 @@ const samplingActive = (model: Model): boolean =>
 		onSome: (overview) => Arr.some(overview.points, (point) => point.hasSampling),
 	})
 
-/** `ServiceErrorsPanel`'s query: one selected environment scopes it to the window, capped at 90 days. */
+/** The errors panel's query: one selected environment scopes it to the window, capped at 90 days. */
 const issuesQuery = (model: Model, window: TimeWindow) => {
 	const environments = environmentsOf(model.search)
 	const environment = environments?.length === 1 ? environments[0] : undefined
@@ -215,7 +199,7 @@ const overviewShas = (model: Model): ReadonlyArray<string> =>
 export const DEPLOYS_RAIL = 8
 export const DEPLOYS_EXPANDED = 50
 
-/** `commitQueryAtom(sha)` is cached per sha for the page's life; only missing ones are requested. */
+/** A commit is cached per sha for the page's life; only missing ones are requested. */
 const commitsStep =
 	(context: PageContext) =>
 	(model: Model): Step => {
@@ -235,7 +219,6 @@ const commitsStep =
 				}
 	}
 
-/** What `OverviewTab` mounts: the panels' reads, the refinement once sampling shows, the commits. */
 /** Where the service runs, which the header links on every tab. */
 const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
@@ -264,7 +247,7 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 	operationsStep(context, window, mode),
 	(model) => {
 		const query = issuesQuery(model, window)
-		// A plain `useAtomValue`: Reload re-requests it only when its key moved (an environment's window).
+		// "Load": Reload re-requests it only when its key moved (an environment's window).
 		return keyed(
 			model.issues,
 			requestKey(context.orgId, "errorIssues.list", { query }),
@@ -292,7 +275,7 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 			: keyed(
 					model.refinement,
 					requestKey(context.orgId, "getServiceDetailThroughputRefinement", { data: input }),
-					// `useAtomValue` too: only a moved key re-requests it.
+					// "Load" too: only a moved key re-requests it.
 					"Load",
 					(refinement) => ({ refinement }),
 					(key) => FetchRefinement({ key, input }),
@@ -339,17 +322,26 @@ const isCollapsedKind = (kind: string) => kind === "probes" || kind === "unroute
 export const seriesSpanNames = (model: Model): ReadonlyArray<string> =>
 	model.endpoints.retained === true
 		? []
-		: Arr.filter(
-				groupsOf(loadedEndpoints(model), model.sorts.endpoints),
-				(group) => !isCollapsedKind(group.kind),
+		: Arr.sort(
+				Arr.map(
+					Arr.sort(
+						Arr.flatMap(
+							Arr.filter(
+								groupsOf(loadedEndpoints(model), model.sorts.endpoints),
+								(group) => !isCollapsedKind(group.kind),
+							),
+							(group: ReturnType<typeof groupsOf>[number]) => group.endpoints,
+						),
+						Order.flip(
+							Order.mapInput(Order.Number, (endpoint: Endpoint) => endpoint.estimatedSpanCount),
+						),
+					).slice(0, SPARKLINE_ENDPOINTS),
+					(endpoint) => endpoint.spanName,
+				),
+				Order.String,
 			)
-				.flatMap((group) => group.endpoints)
-				.toSorted((a, b) => b.estimatedSpanCount - a.estimatedSpanCount)
-				.slice(0, SPARKLINE_ENDPOINTS)
-				.map((endpoint) => endpoint.spanName)
-				.toSorted()
 
-/** What `ServiceApiTab` mounts: the endpoints, the KPI overview, the status rows and the sparklines. */
+/** What the API tab reads: the endpoints, the KPI overview, the status rows and the sparklines. */
 const apiTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
 		const input = { ...detailInput(model, window), limit: ENDPOINTS_LIMIT }
@@ -453,8 +445,10 @@ const liftPeek = (model: Model, result: EndpointPeekUpdate.Return): Return => {
 
 const stepTarget = (model: Model, step: 1 | -1): string | undefined => {
 	const rows = tableRows(model)
-	const index = rows.findIndex((row) => row.spanName === model.search.endpoint)
-	return index < 0 ? undefined : rows[index + step]?.spanName
+	return Option.match(
+		Arr.findFirstIndex(rows, (row) => row.spanName === model.search.endpoint),
+		{ onNone: () => undefined, onSome: (index) => rows[index + step]?.spanName },
+	)
 }
 
 /**
@@ -467,10 +461,13 @@ const reconcilePeek = (model: Model): Readonly<{ model: Model; clear: boolean }>
 	if (spanName === undefined || tabOf(model.search) !== "api" || !AsyncData.isSuccess(model.endpoints.data))
 		return { model, clear: false }
 	if (Arr.some(tableRows(model), (row) => row.spanName === spanName)) return { model, clear: false }
-	const group = groupsOf(loadedEndpoints(model), model.sorts.endpoints).find(
-		(candidate) =>
-			isCollapsedKind(candidate.kind) &&
-			Arr.some(candidate.endpoints, (row) => row.spanName === spanName),
+	const group = Option.getOrUndefined(
+		Arr.findFirst(
+			groupsOf(loadedEndpoints(model), model.sorts.endpoints),
+			(candidate) =>
+				isCollapsedKind(candidate.kind) &&
+				Arr.some(candidate.endpoints, (row) => row.spanName === spanName),
+		),
 	)
 	return group === undefined || model.expandedEndpointGroups.includes(group.kind)
 		? { model, clear: true }
@@ -518,8 +515,6 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	return syncPeek(requested, context, mode)
 }
 
-// NAVIGATION
-
 type Search = Model["search"]
 
 export const searchHref = (serviceName: string, search: Search) =>
@@ -530,14 +525,12 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 	outMessage: PageOutMessage.RequestedNavigation({ url: searchHref(model.serviceName, search), isReplace }),
 })
 
-/** `handleTabChange`: Overview leaves the URL, and the history entry is replaced. */
+/** Overview leaves the URL, and the history entry is replaced. */
 export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
 	endpoint: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
-
-// ENTRY POINTS
 
 export const CHART_IDS = ["latency", "throughput", "apdex", "error-rate"] as const
 
@@ -569,6 +562,7 @@ export const init = (
 		runtimes: Keyed.idle(),
 		dependencies: Keyed.idle(),
 		commits: {},
+		markerCard: initMarkerCard("service-marker-card"),
 		isDeploysExpanded: false,
 		sorts: {
 			operations: initialSort("operations"),
@@ -583,14 +577,7 @@ export const init = (
 		refreshVersion: 0,
 		isReloading: false,
 	},
-	commands: [
-		ResolveClock({ mode: "Load" }),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ResolveClock({ mode: "Load" }), LoadChartRuntime()],
 })
 
 /** The search changed (tab, environment, window): re-resolve and re-request. */
@@ -605,7 +592,7 @@ export const routeChanged = (
 	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
 }
 
-/** `useEffectiveTimeRange` re-resolves against now on a window or zone change. */
+/** The window re-resolves against now on a window or zone change. */
 const isWindowChange = (a: Search, b: Search) =>
 	a.startTime !== b.startTime || a.endTime !== b.endTime || a.timePreset !== b.timePreset
 
@@ -624,52 +611,42 @@ const isSameWindow = (a: TimeWindow | null, b: TimeWindow) =>
 	a !== null && a.startTime === b.startTime && a.endTime === b.endTime
 
 const withPicker = (model: Model, message: TimeRangePicker.Message): Return => {
-	const next = TimeRangePicker.update(model.timePicker, message)
-	const lifted = {
-		model: { ...model, timePicker: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotTimePickerMessage({ message: inner }),
-		),
-	}
-	// `applyTimeRangeSearch` with a preset: the absolute bounds leave the URL.
-	return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-		? TimeRangePicker.unpicked(lifted, next.outMessage)
-		: {
-				...lifted,
-				outMessage: navigate(
-					model,
-					{
-						...model.search,
-						...TimeRangePicker.searchPatchOf(next.outMessage),
-					},
-					false,
-				).outMessage,
-			}
+	// Picking a preset drops the absolute bounds from the URL.
+	return pickerStep(
+		model,
+		message,
+		(picker) => Message.GotTimePickerMessage({ message: picker }),
+		(patch) =>
+			navigate(
+				model,
+				{
+					...model.search,
+					...patch,
+				},
+				false,
+			).outMessage,
+		{ toastRejected: true },
+	)
 }
 
 const withEnvironmentSelect = (model: Model, message: Select.Message): Return => {
-	const next = Select.update(model.environmentSelect, message)
-	const lifted = {
-		model: { ...model, environmentSelect: next.model },
-		commands: Command.mapMessages(next.commands, (inner) =>
-			Message.GotEnvironmentSelectMessage({ message: inner }),
-		),
-	}
-	// `handleEnvironmentChange`: "All environments" leaves the URL.
-	return next.outMessage === undefined
-		? lifted
-		: {
-				...lifted,
-				outMessage: navigate(
-					model,
-					{
-						...model.search,
-						environments:
-							next.outMessage.value === ALL_ENVIRONMENTS ? undefined : [next.outMessage.value],
-					},
-					false,
-				).outMessage,
-			}
+	const step = stepEnvironmentSelect(model.environmentSelect, message, {
+		toMessage: (inner) => Message.GotEnvironmentSelectMessage({ message: inner }),
+		allValue: ALL_ENVIRONMENTS,
+		keepAllInUrl: false,
+	})
+	const lifted = { model: { ...model, environmentSelect: step.select }, commands: step.commands }
+	return Option.match(step.picked, {
+		onNone: () => lifted,
+		onSome: (environment) => ({
+			...lifted,
+			outMessage: navigate(
+				model,
+				{ ...model.search, environments: environment === undefined ? undefined : [environment] },
+				false,
+			).outMessage,
+		}),
+	})
 }
 
 const withChart = (model: Model, chartId: string, message: Chart.Message): Return => {
@@ -701,7 +678,7 @@ const traceWindow = (model: Model) => {
 			}
 }
 
-/** `handleRowClick` on an operation or endpoint. */
+/** The trace search a click on an operation or endpoint row opens. */
 export const traceSearch = (model: Model, spanName: string) =>
 	operationTraceSearch({
 		serviceName: model.serviceName,
@@ -818,11 +795,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
-		CompletedFetchUptimeMonitors: ({ key, result, isAdmin }) => ({
+		CompletedFetchUptimeMonitors: ({ key, result, grants }) => ({
 			model: {
 				...model,
 				uptimeMonitors: Keyed.accept(model.uptimeMonitors, key, result),
-				canCreateUptimeMonitors: isAdmin,
+				canCreateUptimeMonitors: Policy.has(grants, "uptime_monitors:manage"),
 			},
 		}),
 		CompletedFetchRuntimes: ({ key, result }) => ({
@@ -836,11 +813,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		}),
 		CompletedFetchCommit: ({ sha, result }) => ({ model: settleCommit(model, sha, result) }),
 		CompletedMountLinkedCursor: () => ({ model }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		// A push, so Back returns to the window the drag started in.
+		SelectedChartRange: (range) => navigate(model, { ...model.search, ...zoomSearchPatch(range) }, false),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -853,7 +828,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 		CompletedReloadSpin: ({ version }) =>
 			version === model.refreshVersion ? { model: { ...model, isReloading: false } } : { model },
-		// `useAtomRefresh` on the failed overview: forget the slot, so the next sync requests it again.
+		// Retrying the failed overview forgets the slot, so the next sync requests it again.
 		ClickedRetry: ({ target }) => sync(retrying(model, target), context, "Load"),
 		ClickedResetTimeRange: () =>
 			navigate(
@@ -885,4 +860,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotEnvironmentSelectMessage: ({ message: inner }) => withEnvironmentSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => withPicker(model, inner),
 		GotChartMessage: ({ chartId, message: inner }) => withChart(model, chartId, inner),
+		GotMarkerCardMessage: ({ message: inner }) => {
+			const next = HoverCard.update(model.markerCard, inner)
+			return {
+				model: { ...model, markerCard: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (card) =>
+					Message.GotMarkerCardMessage({ message: card }),
+				),
+			}
+		},
 	})

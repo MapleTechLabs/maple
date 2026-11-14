@@ -15,7 +15,7 @@ import {
 	type,
 } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { currentRegion } from "../../lib/region"
+import { currentRegion } from "../../platform/region"
 import type { ClerkOrganization } from "../../platform/clerk"
 import {
 	CreateOrganization,
@@ -37,7 +37,14 @@ const member: ClerkOrganization = {
 	homeRegion: "us",
 	isServedHere: true,
 	isRegionOpen: false,
-	flags: { aiAutoTriage: false, releases: false, securityAudit: false, statusPages: false },
+	flags: {
+		aiAutoTriage: false,
+		cloudCost: false,
+		dataSources: false,
+		releases: false,
+		securityAudit: false,
+		statusPages: false,
+	},
 }
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html => createOrgView(h, model, "david@acme.dev", [])

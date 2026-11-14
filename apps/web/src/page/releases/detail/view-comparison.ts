@@ -1,8 +1,4 @@
-import {
-	MIN_COMPARE_SPANS,
-	type ReleaseServiceImpact,
-	shortReleaseLabel,
-} from "../../../components/releases/release-model"
+import { MIN_COMPARE_SPANS, type ReleaseServiceImpact, shortReleaseLabel } from "../release-model"
 import {
 	countLabel,
 	EMPTY_VALUE,
@@ -20,7 +16,7 @@ import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { sectionCard } from "./view-sections"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Order } from "effect"
 
 // The release comparison and the versions rail.
 
@@ -148,9 +144,9 @@ const comparisonTable = <M>(h: HtmlBuilder<M>, impact: ReleaseServiceImpact, bas
 	])
 
 const OLDEST_VERSION =
-	"This is the oldest version of the service in the window, so there is nothing to compare against. Widen the time range to include the version it replaced."
+	"This is the oldest version of the service in this window, so there is nothing to compare against. Widen the time range to include the version it replaced."
 
-/** `ReleaseComparison`: this version against the one it replaced on the same service. */
+/** This version against the one it replaced on the same service. */
 export const releaseComparison = <M>(
 	h: HtmlBuilder<M>,
 	impact: ReleaseServiceImpact,
@@ -199,15 +195,16 @@ export type RailInput<M> = Readonly<{
 	timeZone: string
 }>
 
-/** `ReleaseVersionsRail`: every version of the service in the window, newest first. */
+/** Every version of the service in the window, newest first. */
 export const releaseVersionsRail = <M>(h: HtmlBuilder<M>, input: RailInput<M>): Html => {
-	const sorted = input.impacts.toSorted((a, b) =>
-		a.firstSeen < b.firstSeen ? 1 : a.firstSeen > b.firstSeen ? -1 : 0,
+	const sorted = Arr.sort(
+		input.impacts,
+		Order.flip(Order.mapInput(Order.String, (impact: ReleaseServiceImpact) => impact.firstSeen)),
 	)
 	return sectionCard(
 		h,
 		{
-			title: "Versions in window",
+			title: "Versions in this window",
 			action: typography(h, { size: "2xs", tone: "subtle" }, [countLabel(sorted.length, "version")]),
 		},
 		[
@@ -267,7 +264,6 @@ const versionLink = <M>(h: HtmlBuilder<M>, input: RailInput<M>, version: Release
 				nowMs: input.nowMs,
 				timeZone: input.timeZone,
 				variant: "orDate",
-				tooltip: "title",
 				className: "w-16 shrink-0 text-right font-mono tabular-nums text-foreground-subtle",
 			}),
 		],

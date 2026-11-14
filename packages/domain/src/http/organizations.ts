@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema } from "effect"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import { MapleRegion } from "../organization-regions"
 import {
 	RegionlessSessionAuthorization,

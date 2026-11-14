@@ -3,13 +3,11 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkTabStrip } from "../../kit/underline-tabs"
 
-// The agent sessions tabs: two route links on the kit's `linkTabStrip`.
-
 export type AgentSessionsTab = "sessions" | "tools"
 
 export type TimeRangeSearch = Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 
-/** `pickTimeRangeSearch`: only the window travels between the two tabs. */
+/** Only the window travels between the two tabs. */
 const pickWindow = (search: TimeRangeSearch | undefined): TimeRangeSearch =>
 	search === undefined
 		? {}

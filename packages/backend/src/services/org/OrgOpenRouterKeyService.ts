@@ -2,7 +2,6 @@ import { customerHasFlag, OPENROUTER_BYOK_FEATURE_ID } from "@maple/domain/billi
 import { BillingCustomerResolver } from "@maple/backend/services/billing/BillingCustomerResolver"
 import {
 	IsoDateTimeString,
-	OPENROUTER_KEY_MAX_LENGTH,
 	OpenRouterKeyAddOnRequiredError,
 	OpenRouterKeyDocument,
 	OpenRouterKeyPersistenceError,
@@ -13,13 +12,14 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { OrgOpenRouterKeys, type OrgOpenRouterKeyRow } from "@maple/db/tables"
 import { EdgeCacheService } from "@maple/cache"
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { EU_DEFAULT_OPENROUTER_MODEL, type MapleRegion } from "@maple/domain/organization-regions"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { Env } from "@maple/backend/platform/Env"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { openRouterKeySlot } from "@maple/backend/platform/secret-slots"
 import { ensureOk, readCustomerCached } from "@maple/backend/services/billing/autumn-client"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import * as OpenRouterApi from "@maple/backend/services/org/openrouter-api"
@@ -75,9 +75,6 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"OpenRouter key persistence failure",
 )
 
-/** Binds the ciphertext to its org: a row copied onto another org's id no longer decrypts. */
-const keyAad = (orgId: OrgId) => Buffer.from(`org_openrouter_keys:v1:${orgId}`, "utf8")
-
 /**
  * Whether the org holds the add-on. `unknown` is Autumn failing to answer, which callers settle
  * their own way: a write refuses, a run trusts the key it already has.
@@ -99,7 +96,7 @@ export interface OrgOpenRouterKeyServiceApi {
 	 * The key an AI turn for this org should run on, or `None` for Maple's own. Never fails: an
 	 * unreadable key falls back to Maple's, which still meters the turn.
 	 */
-	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted<string>>>
+	readonly resolveForRun: (orgId: OrgId) => Effect.Effect<Option.Option<Redacted.Redacted>>
 }
 
 export class OrgOpenRouterKeyService extends Context.Service<
@@ -113,8 +110,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const autumn = yield* AutumnClient
 		const billingCustomers = yield* BillingCustomerResolver
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new OpenRouterKeyPersistenceError({ message }),
 		)
 		const dbExecute = makeDbExecute(database, "OrgOpenRouterKeyService", toPersistenceError)
@@ -182,10 +179,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				if (env.MAPLE_REGION === "eu") yield* OpenRouterApi.createChatCompletion(EU_PLAN_PROBE)
 			}).pipe(
 				Effect.mapError(toKeyError(env.MAPLE_REGION)),
-				OpenRouterApi.withCredentials({ apiKey: Redacted.make(apiKey), apiBaseUrl }),
-				Effect.provideService(HttpClient.HttpClient, httpClient),
-				// A redirect is not OpenRouter vouching for the key, so it is not followed.
-				Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+				OpenRouterApi.withKey(httpClient, { apiKey: Redacted.make(apiKey), apiBaseUrl }),
 				Effect.timeoutOrElse({
 					duration: VALIDATE_TIMEOUT,
 					orElse: () =>
@@ -212,12 +206,8 @@ export class OrgOpenRouterKeyService extends Context.Service<
 			rawKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const apiKey = rawKey.trim()
-			if (
-				!apiKey.startsWith("sk-or-") ||
-				apiKey.length < 20 ||
-				apiKey.length > OPENROUTER_KEY_MAX_LENGTH
-			) {
+			const apiKey = Str.trim(rawKey)
+			if (!OpenRouterApi.isOpenRouterKey(apiKey)) {
 				return yield* new OpenRouterKeyValidationError({
 					message: "That is not an OpenRouter API key. They start with sk-or-.",
 				})
@@ -234,18 +224,20 @@ export class OrgOpenRouterKeyService extends Context.Service<
 				})
 			}
 			yield* validateWithOpenRouter(apiKey)
-			const encrypted = yield* encryptAes256Gcm(
+			// The org binding: a row copied onto another org's id no longer opens.
+			const encrypted = yield* sealSecret(
+				keyring,
+				openRouterKeySlot,
+				{ orgId },
 				apiKey,
-				encryptionKey,
 				(message) => new OpenRouterKeyPersistenceError({ message }),
-				keyAad(orgId),
 			)
 			const now = yield* Clock.currentTimeMillis
 			const next = {
 				keyCiphertext: encrypted.ciphertext,
 				keyIv: encrypted.iv,
 				keyTag: encrypted.tag,
-				keyHint: apiKey.slice(-4),
+				keyHint: Str.slice(-4)(apiKey),
 				updatedAt: now,
 				updatedBy: userId,
 			}
@@ -272,17 +264,18 @@ export class OrgOpenRouterKeyService extends Context.Service<
 		const resolveForRun = Effect.fn("OrgOpenRouterKeyService.resolveForRun")(
 			function* (orgId: OrgId) {
 				const row = yield* loadRow(orgId)
-				if (Option.isNone(row)) return Option.none<Redacted.Redacted<string>>()
+				if (Option.isNone(row)) return Option.none<Redacted.Redacted>()
 				// A lapsed add-on stops the key being used; Autumn being down does not.
 				if ((yield* entitlement(orgId)) === "not_entitled") {
 					yield* Effect.annotateCurrentSpan("maple.llm.byok_lapsed", true)
-					return Option.none<Redacted.Redacted<string>>()
+					return Option.none<Redacted.Redacted>()
 				}
-				const apiKey = yield* decryptAes256Gcm(
+				const apiKey = yield* openSecret(
+					keyring,
+					openRouterKeySlot,
+					{ orgId: row.value.orgId },
 					{ ciphertext: row.value.keyCiphertext, iv: row.value.keyIv, tag: row.value.keyTag },
-					encryptionKey,
 					(message) => new OpenRouterKeyPersistenceError({ message }),
-					keyAad(orgId),
 				)
 				return Option.some(Redacted.make(apiKey))
 			},
@@ -291,7 +284,7 @@ export class OrgOpenRouterKeyService extends Context.Service<
 					Effect.catchCause((cause) =>
 						Effect.logError("Could not read the org's OpenRouter key; using Maple's").pipe(
 							Effect.annotateLogs({ orgId, cause }),
-							Effect.as(Option.none<Redacted.Redacted<string>>()),
+							Effect.as(Option.none<Redacted.Redacted>()),
 						),
 					),
 				),

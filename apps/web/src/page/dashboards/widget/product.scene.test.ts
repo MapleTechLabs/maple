@@ -21,7 +21,7 @@ const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
 const NOW = Date.parse("2026-10-01T12:00:00Z")
 
-const document = Schema.decodeUnknownSync(DashboardDocument)({
+const document = Schema.decodeSync(DashboardDocument)({
 	id: "dash_platform",
 	name: "Platform overview",
 	timeRange: { type: "relative", value: "6h" },
@@ -48,10 +48,10 @@ const document = Schema.decodeUnknownSync(DashboardDocument)({
 type Step = Readonly<{ model: Model; commands: ReadonlyArray<{ readonly name: string }> }>
 
 const run = (step: Step, ...messages: ReadonlyArray<Message>): Step =>
-	messages.reduce<Step>((current, message) => {
+	Arr.reduce(messages, step, (current, message) => {
 		const next = update(current.model, message, context)
 		return { model: next.model, commands: [...current.commands, ...(next.commands ?? [])] }
-	}, step)
+	})
 
 const opened = (): Step =>
 	run(
@@ -77,7 +77,7 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.ChangedListColumnText({ index: 4, field: "header", value: "Trace" })),
 		)
 		const state = step.model.state
-		expect(state?.listColumns.map((column) => column.header)).toEqual([
+		expect(Arr.map(state?.listColumns ?? [], (column) => column.header)).toEqual([
 			"Time",
 			"Severity",
 			"Service",
@@ -86,7 +86,9 @@ describe("list, funnel and paths panels", () => {
 		])
 		const applied = run(step, Message.ClickedApply())
 		expect(names(applied)).toContain(SaveWidget.name)
-		expect(state === null ? null : buildDisplay(document.widgets[0], state).listDataSource).toBe("logs")
+		expect(
+			state === null ? null : buildDisplay(Arr.getUnsafe(document.widgets, 0), state).listDataSource,
+		).toBe("logs")
 	})
 
 	test("a column dragged past two centres lands two slots down", () => {
@@ -98,7 +100,7 @@ describe("list, funnel and paths panels", () => {
 		// Rows 40 px apart: the first row's centre dragged 85 px down passes the next two.
 		const to = targetIndex([20, 60, 100, 140], 0, 20 + 85)
 		const dragged = run(list, edit(ProductEdit.MovedListColumn({ index: 0, delta: to })))
-		expect(dragged.model.state?.listColumns.map((column) => column.header)).toEqual([
+		expect(Arr.map(dragged.model.state?.listColumns ?? [], (column) => column.header)).toEqual([
 			"Severity",
 			"Service",
 			"Time",
@@ -161,7 +163,10 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.SetKind({ index: 0, kind: "session" }) })),
 			edit(ProductEdit.Step({ scope: "funnel", edit: StepEdit.Moved({ index: 0, delta: 1 }) })),
 		)
-		expect(step.model.state?.funnel.steps.map((candidate) => candidate.kind)).toEqual(["event", "event"])
+		expect(Arr.map(step.model.state?.funnel.steps ?? [], (candidate) => candidate.kind)).toEqual([
+			"event",
+			"event",
+		])
 	})
 
 	test("typing in a step's combobox and picking its kind edit that step", () => {
@@ -192,11 +197,13 @@ describe("list, funnel and paths panels", () => {
 			edit(ProductEdit.SetFunnelVariant({ variant: "dropoff" })),
 		)
 		const state = step.model.state
-		expect(state === null ? null : buildDisplay(document.widgets[0], state).funnel).toEqual({
+		expect(
+			state === null ? null : buildDisplay(Arr.getUnsafe(document.widgets, 0), state).funnel,
+		).toEqual({
 			variant: "dropoff",
 		})
-		expect(state === null ? null : dataSourceEndpoint(document.widgets[0].dataSource)).not.toBe(
-			"product_events_funnel",
-		)
+		expect(
+			state === null ? null : dataSourceEndpoint(Arr.getUnsafe(document.widgets, 0).dataSource),
+		).not.toBe("product_events_funnel")
 	})
 })

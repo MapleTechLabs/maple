@@ -1,18 +1,17 @@
-import { cellText } from "@maple/ui/components/charts/_shared/breakdown-rows"
+import { cellText } from "./series/breakdown-rows"
 import { EMPTY_VALUE, formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr, Record as Rec } from "effect"
 import { Submodel } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
+import { bucketTooltipBody } from "./bucket-tooltip"
 import type { Message, Model } from "./chart"
 import { type CategoricalBin, ChartSpec, ChartTooltip, type NumericBin } from "./chart-spec"
 import { formatBound } from "./histogram-format"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
-import { hstack } from "../ui/stack"
 import { chartNoData } from "../ui/chart-frame"
 
-// Port of `QueryBuilderHistogramChart` (packages/ui/src/components/charts/histogram/
-// query-builder-histogram-chart.tsx), view half. Definitions are in ./definitions/histogram.ts.
+// The query-builder histogram's view. Definitions are in ./definitions/histogram.ts.
 
 export interface HistogramChartInputs {
 	readonly chartId: string
@@ -43,9 +42,12 @@ const isPrebucketed = (rows: ReadonlyArray<Record<string, unknown>>): boolean =>
 const pickValueField = (rows: ReadonlyArray<Record<string, unknown>>): string => {
 	const first = rows[0]
 	if (first === undefined) return "value"
-	return (
-		Rec.keys(first).find((key) => key !== "name" && key !== "bucket" && typeof first[key] === "number") ??
-		"value"
+	return Option.getOrElse(
+		Arr.findFirst(
+			Rec.keys(first),
+			(key) => key !== "name" && key !== "bucket" && typeof first[key] === "number",
+		),
+		() => "value",
 	)
 }
 
@@ -77,7 +79,7 @@ const numericBins = (
 	})
 }
 
-/** `CountTooltipBody`. Shared with the histogram spike, whose body is the same markup. */
+/** A count tooltip body, shared with the lab histogram: the bucket tooltip with one "Count" row. */
 export const countTooltipBody = (
 	h: HtmlBuilder<Message>,
 	heading: string,
@@ -85,31 +87,14 @@ export const countTooltipBody = (
 	color: string,
 	portal: Attribute<Message>,
 ): Html =>
-	h.div(
-		[h.Class("grid min-w-[9rem] items-start gap-1.5"), portal],
-		[
-			h.div(
-				[
-					h.Class(
-						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
-					),
-				],
-				[heading],
-			),
-			hstack(h, { gap: "2", className: "w-full" }, [
-				h.span([h.Class("size-2.5 shrink-0 rounded-xs"), h.Style({ "background-color": color })]),
-				h.div(
-					[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
-					[
-						h.span([h.Class("text-muted-foreground")], ["Count"]),
-						h.span(
-							[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-							[formatNumber(count)],
-						),
-					],
-				),
-			]),
-		],
+	bucketTooltipBody(
+		h,
+		{
+			_tag: "Bucket",
+			heading,
+			rows: [{ label: "Count", color, dashed: false, value: formatNumber(count) }],
+		},
+		portal,
 	)
 
 const histogramTooltipBody = (

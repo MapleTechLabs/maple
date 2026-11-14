@@ -1,8 +1,8 @@
 import { HttpServerRequest } from "effect/http"
-import { CurrentTenant, RoleName, UnauthorizedError } from "@maple/domain/http"
-import { Effect, Layer, Option, Schema, String as Str } from "effect"
+import { CurrentTenant, UnauthorizedError } from "@maple/domain/http"
+import { Effect, Layer, Option } from "effect"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -10,17 +10,8 @@ import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
+import { API_KEY_DEFAULT_ROLES, getBearerToken } from "./bearer-token"
+import { checkAnalystAccess } from "./analyst-gate"
 
 export const ApiAuthorizationLive = Layer.effect(
 	CurrentTenant.Authorization,
@@ -50,7 +41,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					if (Option.isSome(apiKeyResolved)) {
 						const resolved = apiKeyResolved.value
 						// Denied attempts are audited with the same attribution as
-						// successes — a key probing a surface it is not valid for is
+						// successes: a key probing a surface it is not valid for is
 						// exactly what the audit log exists to surface. This layer has
 						// no rate limiter, so coalescing is what bounds the volume.
 						const recordDenied = (denialReason: string) =>
@@ -81,9 +72,12 @@ export const ApiAuthorizationLive = Layer.effect(
 						const tenant = new CurrentTenant.TenantSchema({
 							orgId: resolved.orgId,
 							userId: resolved.userId,
-							roles: resolved.roles ?? apiKeyDefaultRoles,
+							roles: resolved.roles ?? API_KEY_DEFAULT_ROLES,
 							authMode: "self_hosted",
 						})
+						yield* checkAnalystAccess(tenant.roles, options).pipe(
+							Effect.tapError((error) => recordDenied(error.message)),
+						)
 						return yield* httpEffect.pipe(
 							Effect.provideService(CurrentTenant.Context, tenant),
 							Effect.provideService(CurrentAuditActor, {
@@ -109,6 +103,7 @@ export const ApiAuthorizationLive = Layer.effect(
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					// API keys are minted per instance; only a session can name an org from elsewhere.
 					yield* regions.ensureServedHere(tenant.orgId)
+					yield* checkAnalystAccess(tenant.roles, options)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),

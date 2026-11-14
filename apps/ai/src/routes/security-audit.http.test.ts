@@ -11,7 +11,7 @@ import {
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
 } from "@maple/domain/organization-feature-flags"
 import { aiCreditsUsd } from "@maple/domain/billing"
-import { OrgId, RoleName, UserId } from "@maple/domain/primitives"
+import { OrgId, RoleName, UserId } from "@maple/primitives"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import type { EstimatedSeverity, Finding } from "@maple/security-audit"
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
@@ -29,12 +29,9 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
-import {
-	SecurityAuditCredits,
-	SecurityAuditNoCredits,
-} from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits, AiCreditsExhausted } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditRepositorySize } from "@maple/backend/services/security-audit/SecurityAuditRepositorySize"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { Clock, Context, Duration, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
@@ -70,9 +67,9 @@ const trackedDbs: TestDb[] = []
 const NO_ESTIMATES: ReadonlyMap<string, EstimatedSeverity> = new Map()
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG_A = Schema.decodeUnknownSync(OrgId)("org_audit_a")
-const ORG_B = Schema.decodeUnknownSync(OrgId)("org_audit_b")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit")
+const ORG_A = Schema.decodeSync(OrgId)("org_audit_a")
+const ORG_B = Schema.decodeSync(OrgId)("org_audit_b")
+const USER = Schema.decodeSync(UserId)("user_audit")
 const decodeRole = Schema.decodeUnknownSync(RoleName)
 
 /** The bearer token names the caller: `<orgId>|<role>`, so one harness serves several tenants. */
@@ -86,7 +83,7 @@ const AuthorizationStubLayer = Layer.succeed(
 					Str.replace("Bearer ", "")(request.headers.authorization ?? ""),
 				)
 				const tenant = new CurrentTenant.TenantSchema({
-					orgId: Schema.decodeUnknownSync(OrgId)(org),
+					orgId: Schema.decodeSync(OrgId)(org),
 					userId: USER,
 					roles: [decodeRole(role)],
 					authMode: "clerk",
@@ -146,16 +143,18 @@ const makeHarness = (
 				starter,
 				Layer.succeed(AuditLogService, auditLog),
 				options.noCredits !== undefined
-					? Layer.succeed(SecurityAuditCredits, {
+					? Layer.succeed(AiCredits, {
 							ensure: () =>
 								Effect.fail(
-									new SecurityAuditNoCredits({
+									new AiCreditsExhausted({
 										message: NO_CREDITS,
+										reason:
+											options.noCredits?.resetsAt == null ? "no_credits" : "used_up",
 										resetsAt: options.noCredits?.resetsAt ?? null,
 									}),
 								),
 						})
-					: SecurityAuditCredits.unmetered,
+					: AiCredits.unmetered,
 				// The route reads this clock, so spend windows in the tests follow it.
 				Layer.succeed(Clock.Clock, fixedClock(NOW)),
 				SecurityAuditRepositorySize.fixed(options.repositoryBytes ?? {}),
@@ -278,7 +277,7 @@ describe("/api/security-audit access", () => {
 		}
 	})
 
-	it("lets members list targets and runs, and keeps findings, reports and writes to admins", async () => {
+	it("refuses members every read and write with a 403", async () => {
 		const harness = makeHarness()
 		try {
 			const member = `${ORG_A}|org:member`
@@ -287,6 +286,7 @@ describe("/api/security-audit access", () => {
 			const memberCalls = await Promise.all([
 				harness.call("GET", "/targets", { as: member }),
 				harness.call("GET", "/runs", { as: member }),
+				harness.call("GET", "/settings", { as: member }),
 				harness.call("GET", `/runs/${run.body.id}`, { as: member }),
 				harness.call("GET", `/runs/${run.body.id}/events`, { as: member }),
 				harness.call("GET", `/targets/${target.body.id}/findings`, { as: member }),
@@ -297,8 +297,39 @@ describe("/api/security-audit access", () => {
 				}),
 			])
 
-			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403, 403, 403])
-			expect(memberCalls[5]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
+			expect(Arr.map(memberCalls, (r) => r.status)).toEqual([403, 403, 403, 403, 403, 403, 403, 403])
+			expect(Arr.map(memberCalls, (r) => r.body._tag)).toEqual(
+				Arr.map(memberCalls, () => tag("SecurityAuditForbiddenError")),
+			)
+			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
+		} finally {
+			await harness.dispose()
+		}
+	})
+
+	it("lets engineers read and triage findings but keeps the audit budget to admins", async () => {
+		const harness = makeHarness()
+		try {
+			const engineer = `${ORG_A}|org:engineer`
+			const target = await harness.call("POST", "/targets", { body: TARGET })
+			const run = await harness.call("POST", `/targets/${target.body.id}/runs`, { body: {} })
+			const engineerCalls = await Promise.all([
+				harness.call("GET", `/runs/${run.body.id}`, { as: engineer }),
+				harness.call("GET", `/targets/${target.body.id}/findings`, { as: engineer }),
+				harness.call("POST", "/targets", { as: engineer, body: { ...TARGET, branch: "next" } }),
+				harness.call("POST", `/targets/${target.body.id}/runs`, { as: engineer, body: {} }),
+				harness.call("PUT", "/settings", {
+					as: engineer,
+					body: {
+						monthlySpendLimitUsd: 750,
+						discoveryModel: "anthropic/claude-haiku-5.5",
+						validationModel: "openai/gpt-6-luna",
+					},
+				}),
+			])
+
+			expect(Arr.map(engineerCalls, (r) => r.status)).toEqual([200, 200, 403, 403, 403])
+			expect(engineerCalls[3]?.body._tag).toBe(tag("SecurityAuditForbiddenError"))
 			expect(Arr.map(harness.started, (p) => p.runId)).toEqual([run.body.id])
 		} finally {
 			await harness.dispose()
@@ -349,7 +380,7 @@ describe("/api/security-audit targets", () => {
 						{ ...TARGET, scopePaths: ["../secrets"] },
 						{ ...TARGET, scopePaths: ["/etc/passwd"] },
 						{ ...TARGET, discoveryModel: "acme/unlisted-model" },
-						// It refused verifier prompts in the eval, so it never verifies.
+						// Delisted: its cybersecurity filter refused audit prompts.
 						{ ...TARGET, validationModel: "openai/gpt-6.1-sol" },
 					],
 					(body) => harness.call("POST", "/targets", { body }).then((r) => r.status),
@@ -790,7 +821,7 @@ describe("/api/security-audit findings", () => {
 })
 
 describe("/api/security-audit run findings", () => {
-	it("lists what each run reported with rejected ones, and counts them for admins only", async () => {
+	it("lists what each run reported with rejected ones, and counts them per run", async () => {
 		const harness = makeHarness()
 		try {
 			const target = await harness.call("POST", "/targets", { body: TARGET })
@@ -850,11 +881,7 @@ describe("/api/security-audit run findings", () => {
 				[first.body.id]: { ...zeros, high: 1, medium: 1, unverified: 1, rejected: 1 },
 				[second.body.id]: { ...zeros, high: 1, rejected: 0 },
 			})
-			expect([
-				memberRuns.status,
-				memberRuns.body.runs.length,
-				"findingCounts" in memberRuns.body,
-			]).toEqual([200, 2, false])
+			expect(memberRuns.status).toBe(403)
 		} finally {
 			await harness.dispose()
 		}
@@ -1141,7 +1168,7 @@ describe("/api/security-audit settings", () => {
 	it("serves the defaults until an admin saves, and keeps them to the org that saved them", async () => {
 		const harness = makeHarness()
 		try {
-			const before = await harness.call("GET", "/settings", { as: `${ORG_A}|org:member` })
+			const before = await harness.call("GET", "/settings", { as: `${ORG_A}|org:engineer` })
 			const body = {
 				monthlySpendLimitUsd: 750,
 				discoveryModel: "anthropic/claude-haiku-5.5",

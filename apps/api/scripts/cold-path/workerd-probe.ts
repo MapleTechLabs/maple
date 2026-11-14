@@ -21,7 +21,7 @@ export default {
 			kind: "Cloudflare.Workers.WorkerEvent",
 			type: "fetch",
 			input: request,
-		})!
+		})
 		return Effect.runPromise(Effect.scoped(response).pipe(Effect.provide(offlinePorts)))
 	},
 }

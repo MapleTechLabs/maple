@@ -35,7 +35,7 @@ Public key (base64 SPKI):
 Next steps, in order:
 
   1. Store the private key as the release workflow secret:
-       gh secret set MAPLE_RELEASE_SIGNING_KEY < ${path}
+       gh secret set MAPLE_RELEASE_SIGNING_KEY --env cli-release < ${path}
   2. Paste the public key into both places (a test keeps them equal):
        apps/cli/src/core/release-signature.ts   export const MAPLE_RELEASE_PUBLIC_KEY = "${spki}"
        scripts/install.sh                       release_public_key="${spki}"

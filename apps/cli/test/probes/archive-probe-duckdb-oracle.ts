@@ -16,7 +16,7 @@ import { execSync } from "node:child_process"
 import { ArchiveProbe, readRows } from "../archive-probe-helpers"
 import { archiveSignal } from "@maple/local-server/archives/signals"
 import { exportSignalShards } from "@maple/local-server/archives/export"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 const SCHEMA = `CREATE DATABASE IF NOT EXISTS default;
 CREATE TABLE IF NOT EXISTS default.traces (
@@ -82,7 +82,9 @@ try {
 	const hPaths = Arr.map(hShards, (s) => s.path)
 
 	// ORACLE 1 — traces row count via DuckDB equals source.
-	const srcTraces = Number(readRows(db.query(`SELECT count() c FROM traces`, "JSONEachRow"))[0]!.c)
+	const srcTraces = Number(
+		Arr.getUnsafe(readRows(db.query(`SELECT count() c FROM traces`, "JSONEachRow")), 0).c,
+	)
 	const duckTraces = Number(duckScalar(tPaths, "count()"))
 	if (duckTraces !== srcTraces) h.fail(`DuckDB traces count ${duckTraces} != source ${srcTraces}`)
 
@@ -92,12 +94,15 @@ try {
 	// value in the host timezone, but epoch_us is invariant).
 	const srcNano = BigInt(
 		String(
-			readRows(
-				db.query(
-					`SELECT toString(toUnixTimestamp64Nano(toDateTime64(Timestamp, 9))) n FROM traces WHERE TraceId='t1'`,
-					"JSONEachRow",
+			Arr.getUnsafe(
+				readRows(
+					db.query(
+						`SELECT toString(toUnixTimestamp64Nano(toDateTime64(Timestamp, 9))) n FROM traces WHERE TraceId='t1'`,
+						"JSONEachRow",
+					),
 				),
-			)[0]!.n,
+				0,
+			).n,
 		),
 	)
 	const srcMicro = srcNano / 1000n
@@ -121,15 +126,20 @@ try {
 
 	// ORACLE 3 — histogram NULL fidelity: DuckDB sees the NULL Min/Max row.
 	const srcNull = Number(
-		readRows(db.query(`SELECT count() c FROM metrics_histogram WHERE isNull(Min)`, "JSONEachRow"))[0]!.c,
+		Arr.getUnsafe(
+			readRows(db.query(`SELECT count() c FROM metrics_histogram WHERE isNull(Min)`, "JSONEachRow")),
+			0,
+		).c,
 	)
 	const duckNull = Number(duckScalar(hPaths, `count() FILTER (WHERE Min IS NULL)`))
 	if (duckNull !== srcNull) h.fail(`DuckDB NULL Min count ${duckNull} != source ${srcNull}`)
 
 	// ORACLE 4 — histogram array fidelity: BucketCounts [1,1,1] preserved.
 	const srcBuckets = String(
-		readRows(db.query(`SELECT BucketCounts FROM metrics_histogram WHERE Count=3`, "JSONEachRow"))[0]!
-			.BucketCounts,
+		Arr.getUnsafe(
+			readRows(db.query(`SELECT BucketCounts FROM metrics_histogram WHERE Count=3`, "JSONEachRow")),
+			0,
+		).BucketCounts,
 	)
 	const duckBuckets = Str.trim(
 		execSync(
@@ -141,8 +151,10 @@ try {
 		),
 	)
 	// DuckDB renders arrays as [1,1,1] or {1,1,1}; both contain three 1s.
-	const srcOnes = (srcBuckets.match(/1/g) || []).length
-	const duckOnes = (duckBuckets.match(/1/g) || []).length
+	const onesIn = (buckets: string) =>
+		Option.match(Str.match(/1/g)(buckets), { onNone: () => 0, onSome: (ones) => ones.length })
+	const srcOnes = onesIn(srcBuckets)
+	const duckOnes = onesIn(duckBuckets)
 	if (srcOnes !== duckOnes)
 		h.fail(`DuckDB BucketCounts ones ${duckOnes} != source ${srcOnes} (duck=${duckBuckets})`)
 

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorMatch, IncidentTriageVerdict } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/primitives"
 import { Schema } from "effect"
 import {
 	NOISE_CONFIDENCE_FLOOR,
@@ -113,6 +113,20 @@ describe("evaluateIssueGate", () => {
 		// the tick's sweep will fail it, and the issue must not wait on it.
 		const dead = open({ latest: diagnosed(STALE_MS + 1000, "investigating") })
 		assert.deepStrictEqual(dead, { kind: "investigate" })
+	})
+
+	it("waits on a pass past the budget that is still reporting steps", () => {
+		const closingOut = open({
+			latest: {
+				...diagnosed(STALE_MS + 60 * 1000, "investigating"),
+				progressJson: { updatedAt: NOW - 30 * 1000 },
+			},
+		})
+		assert.deepStrictEqual(closingOut, {
+			kind: "skip",
+			reason: "investigation_in_flight",
+			priorInvestigationId: PRIOR,
+		})
 	})
 
 	it("lets a failed attempt be retried", () => {

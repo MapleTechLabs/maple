@@ -30,7 +30,7 @@ import {
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_web_analytics_parity_e2e")
 const ORG_ID = "org_web_analytics_parity"
@@ -217,7 +217,7 @@ const SEED_SESSIONS: ReadonlyArray<SeedSession> = [
 	sess("s4", 1, { startTime: at(4 * HOUR_MS) }),
 ]
 
-const quote = (value: string): string => `'${Str.replace(/'/g, "\\'")(Str.replace(/\\/g, "\\\\")(value))}'`
+const quote = (value: string): string => `'${Str.replace(/[\\']/g, "\\$&")(value)}'`
 
 const seed = async (): Promise<void> => {
 	const eventRows = Arr.join(

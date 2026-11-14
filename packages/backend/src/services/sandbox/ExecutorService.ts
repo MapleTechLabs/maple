@@ -10,6 +10,7 @@ import {
 	ExecutorDestroyRequest,
 	type ExecutorInstall,
 	ExecutorPrepareRequest,
+	ExecutorReleaseRequest,
 	ExecutorRunRequest,
 	type ExecutorRunExited,
 } from "@maple/domain/executor"
@@ -28,7 +29,7 @@ import {
 	String as Str,
 } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { type ExecutorTransport, SandboxClient } from "@maple/backend/sandbox/client"
+import { type ExecutorTransport, SandboxClient } from "@maple/backend/services/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 
 export class ExecutorServiceError extends Schema.TaggedError<ExecutorServiceError>()(
@@ -50,7 +51,6 @@ export interface ExecutorCommand extends ExecutorCommandInput {
 }
 
 export interface ExecutorServiceApi {
-	/** Whether this deployment has an execution sandbox at all. */
 	readonly available: boolean
 	/** Prepares the run's executor and waits for it; answers what each lockfile's install did. */
 	readonly prepare: (
@@ -64,11 +64,15 @@ export interface ExecutorServiceApi {
 		target: ExecutorTarget,
 		command: ExecutorCommand,
 	) => Effect.Effect<ExecutorRunExited, ExecutorServiceError>
+	/**
+	 * Best effort, once an agent's invocation ends: frees its scratch, cgroup and artifacts, so a
+	 * run's agents do not add up in its one container. Destroy still frees whatever this missed.
+	 */
+	readonly release: (runId: string, agentId: string) => Effect.Effect<void>
 	/** Best effort: an executor nobody destroys stops on its own after its inactivity timeout. */
 	readonly destroy: (runId: string) => Effect.Effect<void>
 }
 
-/** A run's executor is named by the run. */
 export const executorKey = (runId: string): string =>
 	Str.slice(0, 63)(`run-${Str.replace(/[^a-z0-9-]/gu, "-")(Str.toLowerCase(runId))}`)
 
@@ -98,6 +102,8 @@ const PREPARE_POLL = Duration.seconds(5)
  * commands at once, so one may first wait out a full-length command in each slot.
  */
 const RUN_HEADROOM = Duration.sum(Duration.millis(EXECUTOR_LIMITS.maxTimeoutMs), Duration.minutes(2))
+/** The release script's own budget is a minute; past this the agent is left for destroy. */
+const RELEASE_WAIT = Duration.minutes(2)
 
 const decodeRunRequest = Schema.decodeUnknownEffect(ExecutorRunRequest)
 
@@ -230,6 +236,39 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 		},
 	)
 
+	const release: ExecutorServiceApi["release"] = (runId, agentId) =>
+		call(
+			transport.release(
+				new ExecutorReleaseRequest({
+					executorKey: executorKey(runId),
+					agentId: executorAgentId(agentId),
+				}),
+			),
+		).pipe(
+			Effect.flatMap((answer) =>
+				answer._tag === "ExecutorReleased" ? Effect.void : Effect.fail(unavailable(answer.message)),
+			),
+			Effect.timeoutOrElse({
+				duration: RELEASE_WAIT,
+				orElse: () => Effect.fail(unavailable("the execution sandbox did not answer in time")),
+			}),
+			Effect.catch((error) =>
+				Effect.logWarning("could not release a security audit agent").pipe(
+					Effect.annotateLogs({
+						"maple.security_audit.run_id": runId,
+						"maple.security_audit.agent_id": agentId,
+						"error.message": error.message,
+					}),
+				),
+			),
+			Effect.withSpan("ExecutorService.release", {
+				attributes: {
+					"maple.security_audit.run_id": runId,
+					"maple.security_audit.agent_id": agentId,
+				},
+			}),
+		)
+
 	const destroy: ExecutorServiceApi["destroy"] = (runId) =>
 		transport.destroy(new ExecutorDestroyRequest({ executorKey: executorKey(runId) })).pipe(
 			Effect.asVoid,
@@ -244,7 +283,7 @@ export const makeExecutor = (deps: ExecutorDeps): ExecutorServiceApi => {
 			Effect.withSpan("ExecutorService.destroy"),
 		)
 
-	return { available: transport.available, prepare, run, destroy }
+	return { available: transport.available, prepare, run, release, destroy }
 }
 
 export class ExecutorService extends Context.Service<ExecutorService, ExecutorServiceApi>()(

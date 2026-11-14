@@ -11,16 +11,17 @@ import {
 	Schema,
 	Array as Arr,
 	String as Str,
+	Clock,
 } from "effect"
 import { OrgId, type PullRequestSummary, type WorkflowState } from "@maple/domain/http"
-import { ErrorIssueId } from "@maple/domain/primitives"
+import { ErrorIssueId } from "@maple/primitives"
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import type { MapleDb } from "@maple/db/client"
 import { ErrorIssueEvents, ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Database, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
@@ -114,7 +115,7 @@ const seedIssue = (options: SeedIssueOptions = {}) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const id = Schema.decodeSync(ErrorIssueId)(randomUUID())
-		const now = Date.now()
+		const now = yield* Clock.currentTimeMillis
 		const spanMs = options.spanMs ?? 10 * HOUR
 		yield* database.execute((db) =>
 			db.run(
@@ -384,7 +385,7 @@ describe("linkPullRequest hydration", () => {
 		// `closed` event, so without opening the window here the issue would wait
 		// in `in_review` for a webhook that is never coming.
 		Effect.gen(function* () {
-			const mergedAtMs = Date.now() - HOUR
+			const mergedAtMs = (yield* Clock.currentTimeMillis) - HOUR
 			const layer = makeLayer({
 				pullRequest: () =>
 					summary({ state: "merged", mergedAtMs, mergeCommitSha: Str.repeat(40)("a") }),
@@ -432,11 +433,11 @@ describe("linkPullRequest hydration", () => {
 				const first = yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "user")
 				expect(first.state).toBe("open")
 
-				state = summary({ state: "merged", mergedAtMs: Date.now() - HOUR })
+				state = summary({ state: "merged", mergedAtMs: (yield* Clock.currentTimeMillis) - HOUR })
 				const second = yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "user")
 				expect(second.id).toBe(first.id)
 				expect(second.state).toBe("merged")
-				expect(yield* readVerification(issueId)).toBeDefined()
+				expect((yield* readVerification(issueId))?.status).toBe("waiting")
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -576,7 +577,7 @@ describe("onPullRequestEvent — merge", () => {
 				})
 				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
 
-				const mergedAtMs = Date.now()
+				const mergedAtMs = yield* Clock.currentTimeMillis
 				const outcome = yield* service.onPullRequestEvent(mergeEvent({ mergedAtMs }))
 				expect(outcome.verificationsOpened).toBe(1)
 
@@ -620,7 +621,7 @@ describe("onPullRequestEvent — merge", () => {
 					`https://github.com/${REPO}/pull/613`,
 					"agent",
 				)
-				const mergedAtMs = Date.now()
+				const mergedAtMs = yield* Clock.currentTimeMillis
 				yield* service.onPullRequestEvent(mergeEvent({ mergedAtMs }))
 				yield* service.onPullRequestEvent(mergeEvent({ number: 613, mergedAtMs }))
 
@@ -628,7 +629,7 @@ describe("onPullRequestEvent — merge", () => {
 				const quietWindow = (yield* readVerification(quiet))?.verifyAfter
 				expect(busyWindow).toBeDefined()
 				expect(quietWindow).toBeDefined()
-				expect(quietWindow!).toBeGreaterThan(busyWindow!)
+				expect(quietWindow).toBeGreaterThan(busyWindow)
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -645,6 +646,62 @@ describe("onPullRequestEvent — merge", () => {
 				expect(second.verificationsOpened).toBe(0)
 
 				expect(yield* readAllVerifications(issueId)).toHaveLength(1)
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+
+	// GitHub reports `merged: true` on every action after the merge, so a title
+	// edit or a redelivery months later arrives looking exactly like the merge.
+	it.effect("does not reopen a settled verification when the merged PR is edited later", () =>
+		Effect.gen(function* () {
+			const layer = makeLayer()
+			yield* Effect.gen(function* () {
+				const service = yield* IssueFixVerificationService
+				const issueId = yield* seedIssue({ severity: "low" })
+				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
+				yield* service.onPullRequestEvent(mergeEvent())
+				yield* service.applyVerdict(
+					yield* readVerification(issueId),
+					"verified",
+					"No occurrences.",
+					yield* Clock.currentTimeMillis,
+				)
+				expect((yield* readIssueState(issueId))?.workflowState).toBe("done")
+
+				const later = yield* service.onPullRequestEvent(
+					mergeEvent({ action: "edited", title: "Fix the checkout crash (typo)" }),
+				)
+				expect(later.verificationsOpened).toBe(0)
+				expect(yield* readAllVerifications(issueId)).toHaveLength(1)
+				expect((yield* readIssueState(issueId))?.workflowState).toBe("done")
+				const merges = Arr.filter(yield* readEventTypes(issueId), (type) => type === "pr_merged")
+				expect(merges).toHaveLength(1)
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+
+	// The guard is per link, not per issue: detaching a PR and attaching it again
+	// is somebody asking for the check to run again.
+	it.effect("verifies again after the PR is unlinked and linked back", () =>
+		Effect.gen(function* () {
+			const layer = makeLayer()
+			yield* Effect.gen(function* () {
+				const service = yield* IssueFixVerificationService
+				const issueId = yield* seedIssue()
+				const link = yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
+				yield* service.onPullRequestEvent(mergeEvent())
+				yield* service.applyVerdict(
+					yield* readVerification(issueId),
+					"not_fixed",
+					"Still firing.",
+					yield* Clock.currentTimeMillis,
+				)
+
+				yield* service.unlinkPullRequest(ORG, null, issueId, link.id)
+				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "user")
+				const again = yield* service.onPullRequestEvent(mergeEvent())
+				expect(again.verificationsOpened).toBe(1)
+				expect((yield* readIssueState(issueId))?.workflowState).toBe("verifying")
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -775,7 +832,12 @@ describe("refuteOnPostMergeOccurrence", () => {
 				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
 				yield* service.onPullRequestEvent(mergeEvent())
 
-				const refuted = yield* service.refuteOnPostMergeOccurrence(ORG, issueId, ["v3"], Date.now())
+				const refuted = yield* service.refuteOnPostMergeOccurrence(
+					ORG,
+					issueId,
+					["v3"],
+					yield* Clock.currentTimeMillis,
+				)
 				expect(refuted).toBe(true)
 				expect((yield* readVerification(issueId))?.status).toBe("not_fixed")
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("in_progress")
@@ -793,7 +855,12 @@ describe("refuteOnPostMergeOccurrence", () => {
 				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
 				yield* service.onPullRequestEvent(mergeEvent())
 
-				const refuted = yield* service.refuteOnPostMergeOccurrence(ORG, issueId, ["v1"], Date.now())
+				const refuted = yield* service.refuteOnPostMergeOccurrence(
+					ORG,
+					issueId,
+					["v1"],
+					yield* Clock.currentTimeMillis,
+				)
 				expect(refuted).toBe(false)
 				expect((yield* readVerification(issueId))?.status).toBe("waiting")
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("verifying")
@@ -807,9 +874,14 @@ describe("refuteOnPostMergeOccurrence", () => {
 			yield* Effect.gen(function* () {
 				const service = yield* IssueFixVerificationService
 				const issueId = yield* seedIssue()
-				expect(yield* service.refuteOnPostMergeOccurrence(ORG, issueId, ["v9"], Date.now())).toBe(
-					false,
-				)
+				expect(
+					yield* service.refuteOnPostMergeOccurrence(
+						ORG,
+						issueId,
+						["v9"],
+						yield* Clock.currentTimeMillis,
+					),
+				).toBe(false)
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -826,7 +898,12 @@ describe("applyVerdict", () => {
 				yield* service.onPullRequestEvent(mergeEvent())
 				const verification = yield* readVerification(issueId)
 
-				yield* service.applyVerdict(verification!, "verified", "No occurrences.", Date.now())
+				yield* service.applyVerdict(
+					verification,
+					"verified",
+					"No occurrences.",
+					yield* Clock.currentTimeMillis,
+				)
 				expect((yield* readVerification(issueId))?.status).toBe("verified")
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("done")
 			}).pipe(Effect.provide(layer))
@@ -843,7 +920,12 @@ describe("applyVerdict", () => {
 				yield* service.onPullRequestEvent(mergeEvent())
 				const verification = yield* readVerification(issueId)
 
-				yield* service.applyVerdict(verification!, "verified", "No occurrences.", Date.now())
+				yield* service.applyVerdict(
+					verification,
+					"verified",
+					"No occurrences.",
+					yield* Clock.currentTimeMillis,
+				)
 				// The verdict is recorded and visible; the close is a human's call.
 				expect((yield* readVerification(issueId))?.status).toBe("verified")
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("verifying")
@@ -862,7 +944,12 @@ describe("applyVerdict", () => {
 				yield* service.onPullRequestEvent(mergeEvent())
 				const verification = yield* readVerification(issueId)
 
-				yield* service.applyVerdict(verification!, "not_fixed", "Still firing.", Date.now())
+				yield* service.applyVerdict(
+					verification,
+					"not_fixed",
+					"Still firing.",
+					yield* Clock.currentTimeMillis,
+				)
 				expect((yield* readIssueState(issueId))?.workflowState).toBe("in_progress")
 			}).pipe(Effect.provide(layer))
 		}),
@@ -878,8 +965,8 @@ describe("applyVerdict", () => {
 				yield* service.onPullRequestEvent(mergeEvent())
 				const first = yield* readVerification(issueId)
 
-				const nowMs = Date.now()
-				yield* service.applyVerdict(first!, "inconclusive", "Not enough traffic.", nowMs)
+				const nowMs = yield* Clock.currentTimeMillis
+				yield* service.applyVerdict(first, "inconclusive", "Not enough traffic.", nowMs)
 				const retried = yield* readVerification(issueId)
 				expect(retried?.status).toBe("waiting")
 				expect(retried?.attempt).toBe(1)
@@ -900,9 +987,19 @@ describe("applyVerdict", () => {
 				yield* service.onPullRequestEvent(mergeEvent())
 
 				const first = yield* readVerification(issueId)
-				yield* service.applyVerdict(first!, "inconclusive", "Too quiet.", Date.now())
+				yield* service.applyVerdict(
+					first,
+					"inconclusive",
+					"Too quiet.",
+					yield* Clock.currentTimeMillis,
+				)
 				const second = yield* readVerification(issueId)
-				yield* service.applyVerdict(second!, "inconclusive", "Still too quiet.", Date.now())
+				yield* service.applyVerdict(
+					second,
+					"inconclusive",
+					"Still too quiet.",
+					yield* Clock.currentTimeMillis,
+				)
 
 				const final = yield* readVerification(issueId)
 				expect(final?.status).toBe("inconclusive")
@@ -922,15 +1019,55 @@ describe("dueVerifications", () => {
 				yield* service.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
 				yield* service.onPullRequestEvent(mergeEvent())
 
-				expect(yield* service.dueVerifications(Date.now(), 10)).toHaveLength(0)
+				expect(yield* service.dueVerifications(yield* Clock.currentTimeMillis, 10)).toHaveLength(0)
 
 				const verification = yield* readVerification(issueId)
-				const dueAtMs = verification!.verifyAfter
+				const dueAtMs = verification.verifyAfter
 				expect(yield* service.dueVerifications(dueAtMs + 1000, 10)).toHaveLength(1)
 
 				// A running row is somebody else's work, not due work.
-				yield* service.markRunning(verification!, null, Date.now())
+				yield* service.markRunning(verification, null, yield* Clock.currentTimeMillis)
 				expect(yield* service.dueVerifications(dueAtMs + 1000, 10)).toHaveLength(0)
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+
+	// A page with no order lets the same rows fill every tick while others wait.
+	it.effect("returns the least recently touched rows first, so a deferred row goes to the back", () =>
+		Effect.gen(function* () {
+			const layer = makeLayer()
+			yield* Effect.gen(function* () {
+				const service = yield* IssueFixVerificationService
+				const nowMs = yield* Clock.currentTimeMillis
+				const recent = yield* seedIssue()
+				const overdue = yield* seedIssue()
+				yield* service.linkPullRequest(ORG, null, recent, PR_URL, "agent")
+				yield* service.linkPullRequest(
+					ORG,
+					null,
+					overdue,
+					`https://github.com/${REPO}/pull/613`,
+					"agent",
+				)
+				yield* service.onPullRequestEvent(mergeEvent({ mergedAtMs: nowMs }))
+				yield* service.onPullRequestEvent(mergeEvent({ number: 613, mergedAtMs: nowMs - 30 * DAY }))
+				const dueAt = nowMs + 365 * DAY
+				const rows = yield* service.dueVerifications(dueAt, 10)
+				const defer = (issueId: ErrorIssueId, atMs: number) =>
+					Effect.forEach(
+						Arr.filter(rows, (row) => row.issueId === issueId),
+						(row) => service.deferVerification(row, atMs),
+					)
+
+				// Deferring one row puts the other ahead of it, whichever was opened first.
+				yield* defer(recent, dueAt)
+				expect(Arr.map(yield* service.dueVerifications(dueAt, 1), (row) => row.issueId)).toEqual([
+					overdue,
+				])
+				yield* defer(overdue, dueAt + 1)
+				expect(Arr.map(yield* service.dueVerifications(dueAt + 1, 1), (row) => row.issueId)).toEqual([
+					recent,
+				])
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -994,11 +1131,21 @@ describe("applyVerdict — race and failure discipline", () => {
 				const stale = yield* readVerification(issueId)
 				assert.isDefined(stale)
 				// …and the error tick refuted it before the tick's verdict landed.
-				expect(yield* service.refuteOnPostMergeOccurrence(ORG, issueId, ["v3"], Date.now())).toBe(
-					true,
-				)
+				expect(
+					yield* service.refuteOnPostMergeOccurrence(
+						ORG,
+						issueId,
+						["v3"],
+						yield* Clock.currentTimeMillis,
+					),
+				).toBe(true)
 
-				yield* service.applyVerdict(stale, "verified", "computed from a stale window", Date.now())
+				yield* service.applyVerdict(
+					stale,
+					"verified",
+					"computed from a stale window",
+					yield* Clock.currentTimeMillis,
+				)
 
 				// The refutation must stand: no overwrite, no auto-close.
 				expect((yield* readVerification(issueId))?.status).toBe("not_fixed")
@@ -1018,11 +1165,16 @@ describe("applyVerdict — race and failure discipline", () => {
 
 				const stale = yield* readVerification(issueId)
 				assert.isDefined(stale)
-				expect(yield* service.refuteOnPostMergeOccurrence(ORG, issueId, ["v3"], Date.now())).toBe(
-					true,
-				)
+				expect(
+					yield* service.refuteOnPostMergeOccurrence(
+						ORG,
+						issueId,
+						["v3"],
+						yield* Clock.currentTimeMillis,
+					),
+				).toBe(true)
 
-				yield* service.markRunning(stale, null, Date.now())
+				yield* service.markRunning(stale, null, yield* Clock.currentTimeMillis)
 				expect((yield* readVerification(issueId))?.status).toBe("not_fixed")
 			}).pipe(Effect.provide(layer))
 		}),
@@ -1047,7 +1199,7 @@ describe("applyVerdict — race and failure discipline", () => {
 				const row = yield* readVerification(issueId)
 				assert.isDefined(row)
 				const failure = yield* Effect.flip(
-					service.applyVerdict(row, "verified", "No occurrences.", Date.now()),
+					service.applyVerdict(row, "verified", "No occurrences.", yield* Clock.currentTimeMillis),
 				)
 				assert.strictEqual(failure._tag, "@maple/http/errors/ErrorPersistenceError")
 			}).pipe(Effect.provide(faulty))

@@ -42,6 +42,8 @@ const stripMention = (text: string, botUserId: string): string =>
 		)(Arr.join(Str.split(`<@!${botUserId}>`)(Arr.join(Str.split(`<@${botUserId}>`)(text), " ")), " ")),
 	)
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+
 /**
  * Acknowledge a component click.
  *
@@ -56,8 +58,6 @@ const stripMention = (text: string, botUserId: string): string =>
  * its own URL, and `onFrame` is a pure function that cannot reach an Effect
  * transport. The two halves share the base URL and nothing else here.
  */
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => ({
 	method: "POST",
 	url: `${API_BASE}/interactions/${id}/${encodeURIComponent(token)}/callback`,

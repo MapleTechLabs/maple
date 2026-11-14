@@ -5,7 +5,8 @@ import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { isMissingCiTables } from "@maple/backend/services/warehouse/missing-table"
 import { McpUnavailableError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { truncate } from "../lib/format"
 import * as P from "../lib/params"
@@ -78,7 +79,7 @@ const summarize = (runs: ReadonlyArray<SummarizedRun>): Output["pipelines"] => {
 				...(red === undefined ? undefined : { red }),
 			},
 		]
-	}).sort((a, b) => b.failed - a.failed || b.runs - a.runs)
+	}).sort((a, b) => (b.failed !== a.failed ? b.failed - a.failed : b.runs - a.runs))
 }
 
 export function registerCiRunsTool(server: McpToolRegistrar) {
@@ -95,7 +96,6 @@ export function registerCiRunsTool(server: McpToolRegistrar) {
 			result: P.optionalOneOf(RESULTS, "Only runs with this result"),
 			limit: P.limit({ default: 20, max: 100, noun: "runs to list" }),
 		}),
-		output: CiRunsOutput,
 		hints: { readOnly: true },
 		// Maple's own agents only: the org's CI history is not for third-party MCP clients.
 		audience: "agent",

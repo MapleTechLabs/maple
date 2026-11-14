@@ -19,10 +19,9 @@ import { TableSort } from "../kit/tiles"
 import { WidgetFailure, WidgetGate } from "../kit/widget-data"
 import { EditorState } from "./editor-state"
 import { RawSqlState } from "./raw-sql"
-import { MetricPageSchema } from "./metric-option"
+import { MetricKeysSchema } from "../../kit/query-builder/metrics-body"
+import { MetricPageSchema } from "../../kit/query-builder/metric-options"
 import { Suggestion } from "./suggestions"
-
-// The widget editor.
 
 export const Status = Schema.Literals(["Loading", "Ready", "Missing"])
 export type Status = typeof Status.Type
@@ -36,51 +35,51 @@ export const Model = Schema.Struct({
 	search: DashboardWidgetSearch,
 	status: Status,
 	document: Schema.NullOr(DashboardDocument),
-	/** `WidgetBuilderForm`: the editing state, seeded once from the stored widget. */
+	/** The editing state, seeded once from the stored widget. */
 	state: Schema.NullOr(EditorState),
-	/** `WidgetBuilderInitialSnapshot`: what `isDirty` compares against. */
+	/** What `isDirty` compares against. */
 	initial: Schema.NullOr(EditorState),
-	/** `WidgetBuilderPreview`: the queries the preview runs, staged by Run preview. */
+	/** The queries the preview runs, staged by Run preview. */
 	staged: Schema.NullOr(EditorState),
 	sourceMode: SourceMode,
 	/** The source the widget was opened in: switching tabs is an unsaved change. */
 	initialSourceMode: SourceMode,
 	rawSql: Schema.NullOr(RawSqlState),
-	/** `DashboardTimeRange`: the board's range, which the preview follows. */
+	/** The preview's window: the board's range on open, then the editor's own picker (never saved). */
 	timeRange: Schema.NullOr(TimeRangeSchema),
 	nowMs: Schema.NullOr(Schema.Number),
-	/** The preview pane's quantized width (`useWidgetMaxDataPoints`); `null` until measured. */
+	/** The preview pane's quantized width; `null` until measured. */
 	previewWidth: Schema.NullOr(Schema.Number),
 	gate: Schema.NullOr(WidgetGate),
 	/** A stat preview's trend series, planned once the stat has its value. */
 	sparkGate: Schema.NullOr(WidgetGate),
 	sparklineChart: Chart.Model,
 	requests: Schema.Record(Schema.String, KeyedSchema(Schema.Unknown, WidgetFailure)),
-	/** `DashboardVariablesProvider` at defaults: each query variable's option list, by name. */
+	/** Each query variable's option list at its default, by name. */
 	variableOptions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Schema.String), WidgetFailure)),
 	chart: Chart.Model,
 	tableSort: TableSort,
 	themeColors: Schema.NullOr(ThemeColors),
 	chartRuntime: ChartRuntime,
 	timePicker: TimeRangePicker.Model,
-	/** `WidgetTimeRange`'s picker under Custom: the widget's own window. */
+	/** The picker under Custom: the widget's own window. */
 	rangePicker: TimeRangePicker.Model,
 	sourceTabs: Tabs.Model,
 	/** The rail's selects, by id: unit and comparison. */
 	selects: Schema.Record(Schema.String, Select.Model),
 	/** The query panels' selects, group-by chips and collapsed set. */
 	queryPanels: QueryPanel.Model,
-	/** `AutocompleteValuesProvider lazy`: the lookups start once the query editor takes focus. */
-	/** `listMetricsResultAtom`: the metric picker's page for `metricSearch`, once a query reads metrics. */
+	/** The metric picker's search, read once a query reads metrics. */
 	metricSearch: Schema.String,
 	metricOptions: Schema.NullOr(Schema.Struct({ search: Schema.String, ...MetricPageSchema.fields })),
 	metricRequested: Schema.NullOr(Schema.String),
-	/** `useMetricScopedAutocomplete`: each picked metric's attribute keys (`name::type`), the "by" choices. */
-	metricKeys: Schema.Record(Schema.String, Schema.Array(Schema.String)),
+	/** Each picked metric's attribute keys (`name::type`), the "by" choices. */
+	metricKeys: Schema.Record(Schema.String, MetricKeysSchema),
 	metricKeysRequested: Schema.Array(Schema.String),
+	/** The lookups start once the query editor takes focus. */
 	isAutocompleteActive: Schema.Boolean,
 	autocomplete: Schema.Record(Schema.String, KeyedSchema(LookupNames, LoadFailure)),
-	/** `useFunnelSuggestions`: event names, page paths and facets, by lookup. */
+	/** Event names, page paths and facets, by lookup. */
 	suggestions: Schema.Record(Schema.String, KeyedSchema(Schema.Array(Suggestion), LoadFailure)),
 	/** The step inputs' comboboxes, by id. */
 	stepCombos: Schema.Record(Schema.String, Combobox.Model),
@@ -88,13 +87,13 @@ export const Model = Schema.Struct({
 	whereFields: WhereFields,
 	/** The list column whose field input shows its suggestions. */
 	listFieldFocus: Schema.NullOr(Schema.Number),
-	/** The funnel or paths panel's own collapse toggle (`QueryPanelShell`'s state). */
+	/** The funnel or paths panel's own collapse toggle. */
 	isProductPanelCollapsed: Schema.Boolean,
 	breakdownAttribute: Schema.Struct({ isActive: Schema.Boolean, key: Schema.String }),
 	/** The Raw SQL chips' description tooltip (one model, a trigger per chip). */
 	sqlChipTooltip: Tooltip.Model,
 	isSaving: Schema.Boolean,
-	/** The unsaved-changes confirmation (`useBlocker`). */
+	/** The unsaved-changes confirmation. */
 	leaveDialog: Dialog.Model,
 	/** Where the held navigation was going: Discard goes there (Cancel's is the dashboard). */
 	pendingLeaveUrl: Schema.NullOr(Schema.String),

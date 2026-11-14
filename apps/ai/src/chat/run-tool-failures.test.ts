@@ -12,15 +12,19 @@ import { LanguageModel } from "effect/ai"
 import type { Prompt, Response } from "effect/ai"
 import * as AiModel from "effect/ai/Model"
 import { assert, describe, it } from "vitest"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { noRepositoryWarmup } from "../../test/chat/tool-executor"
 import { layerLlm, type ResolvedModel } from "../platform/Llm"
 import type { ChatTurnEvent } from "./events"
 import { runChatTurn } from "./run"
-import { makeReviewLedger } from "./review-ledger"
-import { makeRunUsage } from "./tools"
+import { makeChildFindings } from "./review/child-findings"
+import { makeReviewLedger } from "./review/ledger"
+import { diagnosisCompletion } from "./investigation"
+import { replyCompletion } from "./reply"
+import { reviewCompletion } from "./review/completion"
+import { makeRunUsage } from "./usage"
+import type { TenantContext } from "@maple/domain/http"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -81,7 +85,6 @@ const run = (model: ResolvedModel, executor: McpToolExecutorApi) => {
 		origin: { kind: "app" },
 		toolExecutor: executor,
 		model,
-		submitDiagnosis: () => Effect.die("no investigation in a default session"),
 		text: "how many services?",
 		history: [],
 		usage: makeRunUsage(),
@@ -112,7 +115,7 @@ describe("runChatTurn tool failures", () => {
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 2, "the model is called again after the failed tool")
-		const results = Arr.flatMap(prompts[1]!.content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
@@ -181,7 +184,9 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			completion: diagnosisCompletion({ kind: "autonomous" }, (request) =>
+				Effect.sync(() => filed.push(request.report)),
+			),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -194,7 +199,7 @@ describe("runChatTurn diagnosis rejections", () => {
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.isTrue(Exit.isSuccess(exit) && exit.value.submitted)
 		// The rejection is a failed tool result the model reads, not a retried model call.
-		const results = Arr.flatMap(prompts[1]!.content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
@@ -222,7 +227,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.void,
+			completion: diagnosisCompletion({ kind: "autonomous" }, () => Effect.void),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -266,7 +271,9 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: (_org, _id, request) => Effect.sync(() => filed.push(request.report)),
+			completion: diagnosisCompletion({ kind: "autonomous" }, (request) =>
+				Effect.sync(() => filed.push(request.report)),
+			),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -313,7 +320,7 @@ describe("runChatTurn diagnosis rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: slowExecutor,
 			model,
-			submitDiagnosis: () => Effect.void,
+			completion: diagnosisCompletion({ kind: "autonomous" }, () => Effect.void),
 			text: "Investigate.",
 			history: [],
 			usage: makeRunUsage(),
@@ -351,9 +358,13 @@ describe("runChatTurn reply rejections", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.die("no investigation in a reply session"),
-			submitReply: (_org, _id, body) => Effect.sync(() => (posted.push(body), "posted")),
-			stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+			completion: replyCompletion(
+				{ kind: "autonomous" },
+				{
+					submit: (body) => Effect.sync(() => (posted.push(body), "posted")),
+					stageEdit: () => Effect.die("a malformed edit must never reach staging"),
+				},
+			),
 			text: "@maple fix this",
 			history: [],
 			usage: makeRunUsage(),
@@ -364,7 +375,7 @@ describe("runChatTurn reply rejections", () => {
 		const exit = await Effect.runPromiseExit(effect.pipe(Effect.provide(llmClients)))
 
 		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
-		const results = Arr.flatMap(prompts[1]!.content, (message) =>
+		const results = Arr.flatMap(Arr.getUnsafe(prompts, 1).content, (message) =>
 			message.role === "tool" ? message.content : [],
 		)
 		assert.deepInclude(
@@ -397,12 +408,15 @@ describe("runChatTurn review refusals", () => {
 			origin: { kind: "autonomous" },
 			toolExecutor: rejectingExecutor,
 			model,
-			submitDiagnosis: () => Effect.die("no investigation in a review session"),
-			submitReview: (_org, _id, request) => Effect.sync(() => filed.push(request)),
-			review: {
-				coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
-				ledger: makeReviewLedger(),
-			},
+			completion: reviewCompletion(
+				{ kind: "autonomous" },
+				{
+					coverage: { observe: () => {}, unread: () => ["src/b.ts"], wholeDiff: () => true },
+					ledger: makeReviewLedger(),
+					childFindings: makeChildFindings(),
+				},
+				(request) => Effect.sync(() => filed.push(request)),
+			),
 			text: "Review pull request #1.",
 			history: [],
 			usage: makeRunUsage(),

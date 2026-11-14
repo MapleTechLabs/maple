@@ -4,15 +4,15 @@
 // queries must read both.
 
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
-import { PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
+import { PROBE_SIGNATURES, attackChainReasons, attackStagesOf } from "@maple/domain/security-telemetry"
 import * as CH from "@maple/query-engine/ch"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+} from "../../testing/clickhouse-e2e-support"
+import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
 
 const database = uniqueDatabase("maple_security_telemetry_e2e")
 const ORG_ID = "org_security_telemetry_e2e"
@@ -33,6 +33,8 @@ interface SeedSpan {
 	readonly client?: string
 	readonly userAgent?: string
 	readonly resource?: Record<string, string>
+	/** Milliseconds after `BASE_MS`; defaults to one second per position in the seed. */
+	readonly offsetMs?: number
 }
 
 const NODE_RESOURCE = {
@@ -118,6 +120,28 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 		status: "200",
 		resource: { "process.runtime.name": "workerd" },
 	},
+	// ARTEX's enrichment probe, then Nuclei from the same address: max(Scanner) picks Nuclei, the
+	// agent column must still name ARTEX. norma names a client but is not an attack agent.
+	{ traceId: "x1", path: "/", status: "200", client: "192.0.2.61", userAgent: "artex-enrich/1.0" },
+	{
+		traceId: "x3",
+		path: "/",
+		status: "200",
+		client: "192.0.2.61",
+		userAgent: "Nuclei - Open-source project",
+	},
+	{ traceId: "x2", path: "/pricing", status: "200", client: "192.0.2.62", userAgent: "norma/0.4" },
+	// Refused, then a traversal that misses and a source-control probe answered 200: every stage.
+	{ traceId: "d1", path: "/.env", status: "403", client: "198.51.100.40", offsetMs: 30_000 },
+	{
+		traceId: "d2",
+		path: "/download",
+		query: "file=../../etc/passwd",
+		status: "404",
+		client: "198.51.100.40",
+		offsetMs: 120_000,
+	},
+	{ traceId: "d3", path: "/.git/config", status: "200", client: "198.51.100.40", offsetMs: 150_000 },
 ]
 
 const mapLiteral = (entries: Record<string, string>) =>
@@ -149,7 +173,7 @@ const insert = (spans: ReadonlyArray<SeedSpan>, orgId: string) =>
 						"service.name": service,
 						...(span.resource ?? NODE_RESOURCE),
 					})
-					return `('${orgId}', '${chDateTime(BASE_MS + index * 1000)}', '${span.traceId}', 'span-${span.traceId}', '', 'GET', '${span.kind ?? "Server"}', '${service}', 1000, 'Unset', '', 1, ${mapLiteral(attributes)}, ${resource})`
+					return `('${orgId}', '${chDateTime(BASE_MS + (span.offsetMs ?? index * 1000))}', '${span.traceId}', 'span-${span.traceId}', '', 'GET', '${span.kind ?? "Server"}', '${service}', 1000, 'Unset', '', 1, ${mapLiteral(attributes)}, ${resource})`
 				}),
 				"\n,",
 			)}`,
@@ -166,7 +190,7 @@ const runJson = async (sql: string): Promise<ReadonlyArray<Record<string, unknow
 const window = {
 	orgId: ORG_ID,
 	startTime: chDateTime(BASE_MS - 60_000),
-	endTime: chDateTime(BASE_MS + 60_000),
+	endTime: chDateTime(BASE_MS + 300_000),
 }
 const read = (query: Parameters<typeof CH.compileUnsafe>[0]) =>
 	runJson(Str.replace(/\s*FORMAT JSON\s*$/, "")(CH.compileUnsafe(query, window).sql))
@@ -199,6 +223,9 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			]),
 			[
 				["a2", "/server-status", "", "/server-status", 403, "203.0.113.7"],
+				["d1", "/.env", "", "/.env", 403, "198.51.100.40"],
+				["d2", "../", "", "/download", 404, "198.51.100.40"],
+				["d3", "/.git/", "", "/.git/config", 200, "198.51.100.40"],
 				["p1", "/.env", "", "/.env", 404, "203.0.113.7"],
 				["p2", "/.git/", "", "/.git/config", 404, "203.0.113.7"],
 				["p3", "/wp-login.php", "", "/wp-login.php", 404, "198.51.100.2"],
@@ -209,6 +236,9 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				["s2", "/.git/", "", "/.git/HEAD", 404, "192.0.2.9"],
 				["s3", "", "Nuclei", "/", 200, "192.0.2.9"],
 				["w1", "../", "", "/wp-content/plugins/x/../../../etc/passwd", 404, "203.0.113.7"],
+				["x1", "", "ARTEX", "/", 200, "192.0.2.61"],
+				["x2", "", "norma agent SDK", "/pricing", 200, "192.0.2.62"],
+				["x3", "", "Nuclei", "/", 200, "192.0.2.61"],
 			],
 		)
 	})
@@ -238,29 +268,41 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 			(JSON.parse(body) as { data: ReadonlyArray<{ Signature: string }> }).data,
 			(row) => row.Signature,
 		)
-		assert.deepStrictEqual(stored, Arr.map(PROBE_SIGNATURES, (signature) => signature.token).toSorted())
+		assert.deepStrictEqual(
+			stored,
+			Arr.sort(
+				Arr.map(PROBE_SIGNATURES, (signature) => signature.token),
+				Order.String,
+			),
+		)
 	}, 180_000)
 
 	it("lists only the critical probes the service answered", async () => {
 		const rows = await read(CH.scannerExposedQuery())
 		assert.deepStrictEqual(
 			Arr.map(rows, (row) => [row.path, row.signature, row.httpStatus, row.sampleTraceId]),
-			[["/api/.ENV.production", "/.env", 200, "p4"]],
+			[
+				["/.git/config", "/.git/", 200, "d3"],
+				["/api/.ENV.production", "/.env", 200, "p4"],
+			],
 		)
 	})
 
 	it("counts requests and answers per signature, and sources by address", async () => {
 		const signatures = await read(CH.scannerSignaturesQuery())
-		const bySignature = Object.fromEntries(
-			signatures.map((row) => [row.signature, [row.requests, row.answered, row.sources]]),
+		const bySignature = Rec.fromEntries(
+			Arr.map(signatures, (row): readonly [string, ReadonlyArray<unknown>] => [
+				String(row.signature),
+				[row.requests, row.answered, row.sources],
+			]),
 		)
 		assert.deepStrictEqual(bySignature, {
-			"/.env": [2, 1, 1],
-			"/.git/": [2, 0, 2],
+			"/.env": [3, 1, 2],
+			"/.git/": [3, 1, 3],
 			"/wp-login.php": [2, 1, 1],
 			"/server-status": [1, 0, 1],
-			"../": [2, 0, 1],
-			"": [2, 2, 1],
+			"../": [3, 0, 2],
+			"": [5, 5, 3],
 		})
 		const sources = await read(CH.scannerSourcesQuery())
 		assert.deepStrictEqual(
@@ -272,9 +314,33 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				row.userAgent,
 			]),
 			[
+				["192.0.2.61", 2, 0, "Nuclei", "Nuclei - Open-source project"],
 				["203.0.113.7", 6, 4, "", ""],
 				["192.0.2.9", 3, 1, "ZGrab", "Mozilla/5.0 zgrab/0.x"],
+				["198.51.100.40", 3, 3, "", ""],
 				["198.51.100.2", 2, 1, "", ""],
+				["192.0.2.62", 1, 0, "norma agent SDK", "norma/0.4"],
+			],
+		)
+		// 203.0.113.7 sweeps with exploit paths but nothing gets through after its 403; 198.51.100.40
+		// is answered 200 two minutes after one. The agent sorts first and is named past Nuclei.
+		assert.deepStrictEqual(
+			Arr.map(sources, (row) => {
+				const stages = attackStagesOf(row)
+				return [
+					row.clientAddress,
+					stages,
+					row.agent,
+					attackChainReasons({ agent: row.agent, stages }).length > 0,
+				]
+			}),
+			[
+				["192.0.2.61", [], "ARTEX", true],
+				["203.0.113.7", ["sweep", "exploit"], "", false],
+				["192.0.2.9", [], "", false],
+				["198.51.100.40", ["sweep", "exploit", "persisted"], "", true],
+				["198.51.100.2", [], "", false],
+				["192.0.2.62", [], "", false],
 			],
 		)
 	})
@@ -290,7 +356,7 @@ describe.skipIf(!clickhouseE2eEnabled)("security telemetry materialization", () 
 				row.spans,
 			]),
 			[
-				["api", "nodejs", "18.20.8", "", 14],
+				["api", "nodejs", "18.20.8", "", 20],
 				["billing", "cpython", "3.12.4", "", 1],
 				["edge", "workerd", "", "", 1],
 				["worker", "nodejs", "24.3.0", "bun", 1],

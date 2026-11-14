@@ -1,8 +1,8 @@
 import { errorState } from "@maple/views/ui/error-state"
 import type { TimeFormat } from "../kit/local-time"
-import * as Timeline from "@maple/web/page/traces/detail/timeline"
+import * as Timeline from "@maple/views/traces/timeline"
 import type { TraceData } from "@maple/views/traces/trace-data"
-import * as Waterfall from "@maple/web/page/traces/detail/waterfall"
+import * as Waterfall from "@maple/views/traces/waterfall"
 import { view as traceFlowView } from "@maple/views/service-map/trace-flow/view"
 import { button } from "@maple/views/ui/button"
 import { httpSpanLabel } from "@maple/views/ui/http-span-label"
@@ -23,9 +23,11 @@ import * as LogSheet from "@maple/views/logs/log-sheet"
 import { sheetClock, traceHash } from "../kit/log-sheet"
 import { spanTooltip } from "./view-span-tooltip"
 import { FocusSpanPanel, TrackPointer } from "./command"
-import { findSpan } from "@maple/web/page/traces/detail/select"
+import { findSpanById } from "@maple/views/service-map/trace-flow/flow-graph"
 import { traceDetailLoading, traceNotFound } from "./view-states"
 import { typography } from "@maple/views/ui/typography"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { stripClass } from "@maple/views/ui/rule"
 
 // The trace detail page.
 
@@ -50,7 +52,11 @@ const title = (h: H, trace: TraceData | undefined): ReadonlyArray<Html> => {
 					className: "min-w-0 gap-3",
 				}),
 			]
-		: [h.span([h.Class("block truncate"), h.Title(root.spanName)], [root.spanName])]
+		: [
+				typography(h, { truncate: true, className: "block", attributes: [h.Title(root.spanName)] }, [
+					root.spanName,
+				]),
+			]
 }
 
 const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | undefined => {
@@ -84,7 +90,7 @@ const tabPanel = (h: H, model: Model, value: string): ReadonlyArray<Html> | unde
 	return undefined
 }
 
-/** `TraceViewTabs`: Waterfall, Timeline and Flow over the trace (timeline by default). */
+/** Waterfall, Timeline and Flow over the trace (timeline by default). */
 const traceViewTabs = (h: H, model: Model): Html =>
 	h.submodel({
 		slotId: "trace-view-tabs",
@@ -111,31 +117,25 @@ const traceViewTabs = (h: H, model: Model): Html =>
 	})
 
 const loadedBody = (h: H, model: Model, trace: TraceData, timeFormat: TimeFormat): Html =>
-	h.div(
-		[h.Class("flex h-full min-h-0")],
-		[
-			h.div(
-				[h.Class("flex min-w-0 flex-1 flex-col")],
-				[
-					h.div([h.Class("shrink-0 border-b px-4 py-3")], [anatomyStrip(h, trace)]),
-					h.div([h.Class("min-h-0 flex-1")], [traceViewTabs(h, model)]),
-				],
-			),
-			...(model.panel === null ? [] : [spanPanel(h, model.panel, timeFormat)]),
-			...Option.match(model.maybeLogSheet, {
-				onNone: () => [],
-				onSome: (sheet) => [
-					h.submodel({
-						slotId: "span-log-sheet",
-						model: sheet,
-						view: LogSheet.view,
-						viewInputs: { ...sheetClock(timeFormat), canFilter: false, traceHref: traceHash },
-						toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
-					}),
-				],
-			}),
-		],
-	)
+	hstack(h, { align: "stretch", className: "h-full min-h-0" }, [
+		vstack(h, { shrink: true, grow: true }, [
+			h.div([h.Class(stripClass("header", "shrink-0"))], [anatomyStrip(h, trace)]),
+			h.div([h.Class("min-h-0 flex-1")], [traceViewTabs(h, model)]),
+		]),
+		...(model.panel === null ? [] : [spanPanel(h, model.panel, timeFormat)]),
+		...Option.match(model.maybeLogSheet, {
+			onNone: () => [],
+			onSome: (sheet) => [
+				h.submodel({
+					slotId: "span-log-sheet",
+					model: sheet,
+					view: LogSheet.view,
+					viewInputs: { ...sheetClock(timeFormat), canFilter: false, traceHref: traceHash },
+					toParentMessage: (message) => Message.GotLogSheetMessage({ message }),
+				}),
+			],
+		}),
+	])
 
 /** The shared span panel beside the trace; it takes focus when deep-linked so Escape closes it. */
 const spanPanel = (h: H, panel: SpanPanel.Model, timeFormat: TimeFormat): Html =>
@@ -162,7 +162,7 @@ const spanPanel = (h: H, panel: SpanPanel.Model, timeFormat: TimeFormat): Html =
 const hoverTooltip = (h: H, model: Model, trace: TraceData | undefined): ReadonlyArray<Html> => {
 	const hoveredId = model.timeline?.hoveredSpanId ?? null
 	if (trace === undefined || hoveredId === null || model.pointer === null) return []
-	const span = findSpan(trace.rootSpans, hoveredId)
+	const span = findSpanById(trace.rootSpans, hoveredId)
 	return span === undefined
 		? []
 		: [
@@ -181,7 +181,7 @@ const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load trace",
+			title: "Couldn't load trace",
 			onRetry: Message.ClickedRefresh(),
 		})
 	return Option.match(loadedTrace(model), {
@@ -192,43 +192,43 @@ const body = (h: H, model: Model, timeFormat: TimeFormat): Html => {
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const trace = Option.getOrUndefined(loadedTrace(model))
-	return h.div(
+	return vstack(
+		h,
+		{
+			className: "h-full",
+			attributes: [
+				h.OnMount(TrackPointer()),
+				h.OnKeyDownPreventDefault((key) =>
+					key === "Escape" && model.panel !== null
+						? Option.some(Message.PressedEscape())
+						: Option.none(),
+				),
+			],
+		},
 		[
-			h.Class("flex h-full flex-col"),
-			h.OnMount(TrackPointer()),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Escape" && model.panel !== null
-					? Option.some(Message.PressedEscape())
-					: Option.none(),
-			),
-		],
-		[
-			h.div(
-				[h.Class("flex shrink-0 items-center gap-3 border-b px-4 py-2")],
-				[
-					button(
-						h,
-						{
-							variant: "ghost",
-							size: "sm",
-							className: "shrink-0 gap-1.5",
-							attributes: [h.OnClick(Message.ClickedBack())],
-						},
-						[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Traces"],
-					),
-					typography(
-						h,
-						{ as: "div", size: "sm", weight: "semibold", className: "min-w-0 flex-1" },
-						title(h, trace),
-					),
-					refreshButton(h, {
-						isSpinning: model.isRefreshing,
-						hasNewData: inputs.hasNewDataSince(model.traceUpdatedAtMs),
-						onRefresh: Message.ClickedRefresh(),
-						className: "shrink-0",
-					}),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", className: stripClass("head", "shrink-0") }, [
+				button(
+					h,
+					{
+						variant: "ghost",
+						size: "sm",
+						className: "shrink-0 gap-1.5",
+						attributes: [h.OnClick(Message.ClickedBack())],
+					},
+					[icon(h, "ArrowLeftIcon"), inputs.context.canGoBack ? "Back" : "Traces"],
+				),
+				typography(
+					h,
+					{ as: "div", size: "sm", weight: "semibold", className: "min-w-0 flex-1" },
+					title(h, trace),
+				),
+				refreshButton(h, {
+					isSpinning: model.isRefreshing,
+					hasNewData: inputs.hasNewDataSince(model.traceUpdatedAtMs),
+					onRefresh: Message.ClickedRefresh(),
+					className: "shrink-0",
+				}),
+			]),
 			h.div([h.Class("min-h-0 flex-1")], [body(h, model, inputs.context.timeFormat)]),
 			...hoverTooltip(h, model, trace),
 		],

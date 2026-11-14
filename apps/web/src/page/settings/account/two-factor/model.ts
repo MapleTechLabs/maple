@@ -5,8 +5,6 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as OtpField from "@maple/views/ui/otp-field"
 import { AccountUser } from "../user"
 
-// The Two-factor tab.
-
 /**
  * Enrollment: scan the `createTOTP()` key, type a code, then the backup codes `verifyTOTP()`
  * returns, shown once.
@@ -39,7 +37,10 @@ export const Message = defineMessageUnion({
 	ClickedSetUp: {},
 	/** `null`: Clerk returned no setup key. */
 	CompletedCreateTotp: {
-		result: Schema.Result(Schema.NullOr(Schema.Struct({ uri: Schema.String, secret: Schema.String })), Schema.String),
+		result: Schema.Result(
+			Schema.NullOr(Schema.Struct({ uri: Schema.String, secret: Schema.String })),
+			Schema.String,
+		),
 	},
 	GotEnrollDialogMessage: { message: Dialog.Message },
 	ClickedCancelEnroll: {},

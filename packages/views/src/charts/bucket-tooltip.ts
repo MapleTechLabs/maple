@@ -1,15 +1,16 @@
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import type { ChartTooltip } from "./chart-spec"
-import { hstackClass } from "../ui/stack"
+import { hstack, hstackClass } from "../ui/stack"
+import { swatch } from "../ui/swatch"
 import { typography } from "../ui/typography"
 import { Array as Arr } from "effect"
 
-// `PlotTooltipBody` for a time-bucketed chart (fixed metrics, query-builder areas): the bucket
+// The tooltip body of a time-bucketed chart (fixed metrics, query-builder areas): the bucket
 // heading, then one swatch, label and value per series; a dashed swatch for a partial series.
 
 export type BucketTooltip = Extract<ChartTooltip, { readonly _tag: "Bucket" }>
 
-/** `PlotTooltipBody`: the bucket heading, then one swatch, label and value per series. */
+/** The bucket heading, then one swatch, label and value per series. */
 export const bucketTooltipBody = <Message>(
 	h: HtmlBuilder<Message>,
 	tooltip: BucketTooltip,
@@ -18,14 +19,7 @@ export const bucketTooltipBody = <Message>(
 	h.div(
 		[h.Class("grid min-w-[9rem] max-w-[22rem] items-start gap-1.5"), portal],
 		[
-			h.div(
-				[
-					h.Class(
-						"border-border-subtle border-b pb-1 font-medium text-muted-foreground tracking-tight",
-					),
-				],
-				[tooltip.heading],
-			),
+			h.div([h.Class("border-border-subtle border-b pb-1.5 text-muted-foreground")], [tooltip.heading]),
 			h.div(
 				[h.Class("grid gap-1.5")],
 				Arr.map(tooltip.rows, (row, index) =>
@@ -39,20 +33,16 @@ export const bucketTooltipBody = <Message>(
 							),
 						],
 						[
-							h.span([
-								h.Class(
-									row.dashed
-										? "size-2.5 shrink-0 rounded-xs border border-dashed"
-										: "size-2.5 shrink-0 rounded-xs",
-								),
-								h.Style(
-									row.dashed
-										? { "border-color": row.color }
-										: { "background-color": row.color },
-								),
-							]),
-							h.div(
-								[h.Class("flex flex-1 items-center justify-between gap-3 leading-none")],
+							swatch(h, { color: row.color, dashed: row.dashed }),
+							hstack(
+								h,
+								{
+									gap: "3",
+									align: "center",
+									justify: "between",
+									grow: true,
+									className: "leading-none",
+								},
 								[
 									typography(
 										h,
@@ -64,12 +54,14 @@ export const bucketTooltipBody = <Message>(
 										},
 										[row.label],
 									),
-									h.span(
-										[
-											h.Class(
-												"shrink-0 font-mono font-semibold text-foreground tabular-nums",
-											),
-										],
+									typography(
+										h,
+										{
+											tone: "foreground",
+											weight: "medium",
+											numeric: true,
+											className: "shrink-0",
+										},
 										[row.value],
 									),
 								],
@@ -81,18 +73,19 @@ export const bucketTooltipBody = <Message>(
 			...(tooltip.total === undefined
 				? []
 				: [
-						h.div(
+						hstack(
+							h,
+							{
+								gap: "3",
+								align: "center",
+								justify: "between",
+								className: "border-border-subtle border-t pt-1.5 leading-none",
+							},
 							[
-								h.Class(
-									"flex items-center justify-between gap-3 border-border-subtle border-t pt-1.5 leading-none",
-								),
-							],
-							[
-								h.span([h.Class("text-muted-foreground")], ["Total"]),
-								h.span(
-									[h.Class("font-mono font-semibold text-foreground tabular-nums")],
-									[tooltip.total],
-								),
+								typography(h, { tone: "muted" }, ["Total"]),
+								typography(h, { tone: "foreground", weight: "medium", numeric: true }, [
+									tooltip.total,
+								]),
 							],
 						),
 					]),

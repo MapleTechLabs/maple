@@ -8,7 +8,7 @@ import {
 import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
@@ -555,7 +555,7 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(found.value.status, "active")
 
 			assert.strictEqual(sent.length, 1)
-			const job = sent[0]!
+			const job = sent[0]
 			assert.strictEqual(job.kind, "installation-sync")
 			if (job.kind !== "installation-sync") return
 			assert.strictEqual(job.provider, "github")
@@ -862,7 +862,6 @@ describe("GithubConnectService", () => {
 				mode: "install",
 			})
 
-			// Advance past the 10-minute STATE_TTL_MS before the callback returns.
 			yield* TestClock.adjust("11 minutes")
 
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE, INITIATOR).pipe(Effect.exit)
@@ -1116,8 +1115,7 @@ describe("GithubConnectService", () => {
 				yield* markRemovedFor(repo, orgId, "7")
 				// getStatus surfaces removed repos (scope "all") by Maple id, with status.
 				const before = yield* svc.getStatus(orgId)
-				const removed = before.repositories.find((r) => r.id === repo7Id)
-				assert.ok(removed)
+				const removed = Option.getOrThrow(Arr.findFirst(before.repositories, (r) => r.id === repo7Id))
 				assert.strictEqual(removed.status, "removed")
 
 				const result = yield* svc.deleteRepository(orgId, repo7Id)
@@ -1403,10 +1401,7 @@ describe("GithubConnectService", () => {
 				assert.strictEqual((yield* repoFor(repo, orgId, "7")).trackedBranch, "release")
 				const backfills = Arr.filter(sent, (j) => j.kind === "sync-commits")
 				assert.strictEqual(backfills.length, 1)
-				assert.strictEqual(
-					backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
-					"release",
-				)
+				assert.strictEqual(backfills[0].kind === "sync-commits" ? backfills[0].branch : "", "release")
 			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)

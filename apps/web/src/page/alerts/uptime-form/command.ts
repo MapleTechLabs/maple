@@ -1,12 +1,13 @@
 import { UptimeMonitorId } from "@maple/domain"
-import { getTracesFacets } from "@maple/web-data/warehouse/traces"
-import { Effect, Schema, Array as Arr } from "effect"
+import { UptimeMonitorKind } from "@maple/primitives"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { currentWindow } from "../../../data/time-range"
 import { readSupportedTimeZones } from "../../../platform/time-zone"
-import { readIsAdmin } from "../shared/commands"
-import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../shared/uptime-commands"
+import { trackProduct } from "../../../data/analytics"
+import { recentServiceNames } from "../shared/services"
+import { retrieveMonitor, saveMonitor, testMonitorConfig } from "../../kit/uptime/commands"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
 export const FetchExistingMonitor = Command.define("FetchUptimeFormMonitor", {
 	args: { key: Schema.String, monitorId: UptimeMonitorId },
@@ -21,12 +22,7 @@ export const FetchExistingMonitor = Command.define("FetchUptimeFormMonitor", {
 /** The traces facets of the last day: the services a monitor can belong to. Empty on failure. */
 export const FetchFormServices = Command.define("FetchUptimeFormServices", {
 	messages: [Message.CompletedFetchServices],
-	execute: currentWindow({ preset: "24h", snap: true }).pipe(
-		Effect.flatMap((window) => getTracesFacets({ data: window })),
-		Effect.map((response) => Arr.map(response.data.services, (row) => row.name)),
-		Effect.orElseSucceed((): ReadonlyArray<string> => []),
-		Effect.map((services) => Message.CompletedFetchServices({ services })),
-	),
+	execute: Effect.map(recentServiceNames, (services) => Message.CompletedFetchServices({ services })),
 })
 
 export const ReadFormTimeZones = Command.define("ReadUptimeFormTimeZones", {
@@ -34,12 +30,7 @@ export const ReadFormTimeZones = Command.define("ReadUptimeFormTimeZones", {
 	execute: Effect.map(readSupportedTimeZones, (zones) => Message.CompletedReadTimeZones({ zones })),
 })
 
-export const FetchFormSession = Command.define("FetchUptimeFormSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
-})
+export const FetchFormSession = fetchSessionGrants("FetchUptimeFormSession", Message.CompletedFetchSession)
 
 /** The test endpoint with the draft's config; validation failures come back as the failure. */
 export const TestDraft = Command.define("TestUptimeDraft", {
@@ -60,4 +51,12 @@ export const SaveDraft = Command.define("SaveUptimeDraft", {
 			Effect.result,
 			Effect.map((result) => Message.CompletedSave({ result })),
 		),
+})
+
+/** A created monitor is the `uptime_monitor_created` product event. */
+export const TrackCreated = Command.define("TrackUptimeMonitorCreated", {
+	args: { kind: UptimeMonitorKind },
+	messages: [Message.CompletedTrackCreated],
+	execute: ({ kind }) =>
+		trackProduct("uptime_monitor_created", { kind }).pipe(Effect.as(Message.CompletedTrackCreated())),
 })

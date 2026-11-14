@@ -1,13 +1,13 @@
-import type { DeclutterResult, DeclutterState } from "@maple/ui/components/service-map/service-map-declutter"
-import { applyDeclutter } from "@maple/ui/components/service-map/service-map-declutter"
-import type { BuildFlowElementsInput } from "@maple/ui/components/service-map/service-map-utils"
+import type { DeclutterResult, DeclutterState } from "../graph/service-map-declutter"
+import { applyDeclutter } from "../graph/service-map-declutter"
+import type { BuildFlowElementsInput } from "../graph/service-map-utils"
 import {
 	buildFlowElements,
 	DB_NODE_PREFIX,
 	DEFAULT_LAYOUT_CONFIG,
 	topologyKey,
-} from "@maple/ui/components/service-map/service-map-utils"
-import { Schema, Array as Arr, String as Str } from "effect"
+} from "../graph/service-map-utils"
+import { Order, Schema, Array as Arr, String as Str } from "effect"
 
 /** The layout config in the graph signature: a config change re-lays every graph. */
 const LAYOUT_CONFIG_KEY = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(DEFAULT_LAYOUT_CONFIG)
@@ -31,14 +31,15 @@ export const SourceGraphSchema = Schema.instanceOf(SourceGraph)
 
 export const buildSourceGraph = (input: BuildFlowElementsInput): SourceGraph => {
 	const { nodes, edges } = buildFlowElements(input)
-	const services = Array.from(
+	const services = Arr.sort(
 		new Set(
 			Arr.map(
 				Arr.filter(nodes, (n) => !Str.startsWith(DB_NODE_PREFIX)(n.id)),
 				(n) => n.id,
 			),
 		),
-	).toSorted()
+		Order.String,
+	)
 	return new SourceGraph(nodes, edges, services)
 }
 

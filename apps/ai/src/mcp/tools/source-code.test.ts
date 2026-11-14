@@ -1,13 +1,13 @@
 /** The GitHub-backed source tools: typed output, and VCS failures mapped to what a model can act on. */
 import { assert, describe, it } from "@effect/vitest"
 import { IntegrationsUpstreamError, OrgId, UserId } from "@maple/domain/http"
-import { ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, ReadSourceFileOutput } from "@maple/domain/mcp-outputs"
 import {
 	VcsSourceRepositoryNotFoundError,
 	VcsSourceService,
 } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { Effect, Layer, Schema } from "effect"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
 import { matchLines, registerSourceCodeTools, splitSearchPath } from "./source-code"
 import type { McpToolError, McpToolRegistrar } from "./types"
@@ -25,11 +25,11 @@ const tools = new Map<string, Run>()
 registerSourceCodeTools({
 	define: (spec) => {
 		const run = (params: Readonly<Record<string, unknown>>) =>
-			Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+			Schema.decodeEffect(spec.parameters)(params).pipe(
 				Effect.flatMap(spec.handler),
 				Effect.map((output) => ({
 					text: renderToolDoc(spec.render(output)),
-					structured: Schema.encodeUnknownSync(spec.output)(output),
+					structured: Schema.encodeUnknownSync(McpToolOutputs[spec.name])(output),
 				})),
 			)
 		tools.set(spec.name, run as Run)
@@ -37,8 +37,8 @@ registerSourceCodeTools({
 } satisfies McpToolRegistrar)
 
 const tenant = Layer.succeed(CurrentMcpTenant, {
-	orgId: Schema.decodeUnknownSync(OrgId)("org_tools"),
-	userId: Schema.decodeUnknownSync(UserId)("user_tools"),
+	orgId: Schema.decodeSync(OrgId)("org_tools"),
+	userId: Schema.decodeSync(UserId)("user_tools"),
 	roles: [],
 	authMode: "self_hosted",
 } as CurrentMcpTenant["Service"])
@@ -80,6 +80,20 @@ describe("the source-code tools", () => {
 		}),
 	)
 
+	it.effect("does not count the trailing newline as another line", () =>
+		Effect.gen(function* () {
+			const result = yield* call(
+				"read_source_file",
+				{ repository: "octo/shop", path: "src/a.ts" },
+				{ readFile: () => Effect.succeed({ ...file, content: `${file.content}\n` }) },
+			)
+			const output = Schema.decodeUnknownSync(ReadSourceFileOutput)(result.structured)
+			assert.strictEqual(output.totalLines, 4)
+			assert.strictEqual(output.truncated, false)
+			assert.deepStrictEqual(output.lines, ["one", "two", "three", "four"])
+		}),
+	)
+
 	it.effect("reports an inverted range against end_line", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
@@ -114,6 +128,26 @@ describe("the source-code tools", () => {
 			assert.deepStrictEqual(seen, [{ query: "three filename:a.ts", path: "src" }])
 			assert.include(answer.text, "Lines: 3")
 			assert.include(answer.text, "start_line=1")
+		}),
+	)
+
+	it.effect("refuses a search path that would add a qualifier of its own", () =>
+		Effect.gen(function* () {
+			const searched: Array<string> = []
+			const error = yield* Effect.flip(
+				call(
+					"search_source_code",
+					{ repository: "octo/shop", query: "three", path: "src repo:octo/other" },
+					{
+						searchCode: (_org, repo) => {
+							searched.push(repo)
+							return Effect.succeed([])
+						},
+					},
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/mcp/errors/McpInvalidInputError")
+			assert.deepStrictEqual(searched, [])
 		}),
 	)
 

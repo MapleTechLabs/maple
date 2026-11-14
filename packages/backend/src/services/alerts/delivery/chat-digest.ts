@@ -2,7 +2,7 @@ import type { ChatBlock } from "@maple/chat-platform"
 import type { AlertSeverity } from "@maple/domain/http"
 import {
 	alertAccentColor,
-	displayGroupKey,
+	displayGroup,
 	eventTypeEmoji,
 	formatEventTypeLabel,
 	formatSeverityLabel,
@@ -22,6 +22,9 @@ export interface ChatDigestItem {
 	readonly eventType: string
 	readonly severity: AlertSeverity
 	readonly groupKey: string | null
+	/** Shown in place of the group key when set, e.g. an anomaly's "checkout (production)". */
+	readonly groupLabel?: string | null
+	readonly signalType?: string
 	readonly linkUrl: string
 }
 
@@ -29,7 +32,7 @@ export interface ChatDigestItem {
 const linkText = (value: string) => Str.replace(/[[\]]/g, "")(truncate(value, 80))
 
 const itemLine = (item: ChatDigestItem): string => {
-	const group = displayGroupKey(item.groupKey)
+	const group = displayGroup(item)
 	return Arr.join(
 		[
 			`${eventTypeEmoji(item.eventType)} [${linkText(item.ruleName)}](${item.linkUrl})`,

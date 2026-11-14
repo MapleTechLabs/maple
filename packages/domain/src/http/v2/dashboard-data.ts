@@ -25,6 +25,7 @@ import {
 } from "@maple/query-model"
 import { RawSqlText } from "../../raw-sql"
 import { Timestamp } from "./timestamp"
+import { replaceWith } from "@maple/strings"
 
 const optional = <S extends Schema.Top>(schema: S) => Schema.optionalKey(schema)
 
@@ -61,9 +62,9 @@ const mapJsonKeys = (value: unknown, mapKey: (key: string) => string): Schema.Js
 	mapDecodedJsonKeys(decodeJsonValueSync(value), mapKey)
 
 const toSnakeKey = (key: string): string =>
-	key.replace(/[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
+	replaceWith(key, /[A-Z]/g, (character) => `_${Str.toLowerCase(character)}`)
 const toCamelKey = (key: string): string =>
-	key.replace(/_([a-z])/g, (_, character: string) => Str.toUpperCase(character))
+	replaceWith(key, /_([a-z])/g, (_, character = "") => Str.toUpperCase(character))
 
 /** Opaque widget params still obey the v2 recursive snake_case wire convention. */
 const UnknownRecord = UnknownRecordWire.pipe(
@@ -102,7 +103,7 @@ const snakeCasedWire = <S extends Schema.Top>(schema: S) =>
 			decode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toCamelKey)
 				// SAFETY: Every schema passed below decodes the same object after its wire keys are camel-cased.
-				return mapped as S["Encoded"]
+				return mapped
 			}),
 			encode: SchemaGetter.transform((value) => {
 				const mapped = mapJsonKeys(value, toSnakeKey)
@@ -120,9 +121,9 @@ const snakeCasedWire = <S extends Schema.Top>(schema: S) =>
 // v2 spec.
 //
 // The cost of a clone is drift, so it is guarded rather than trusted:
-// `dashboard-widget-parity.test.ts` asserts the two are assignable and that every
-// stored field reaches the wire under its mechanical snake_case name. Add a field
-// to the stored display and that test fails until it is mirrored here.
+// `dashboard-widget-parity.test.ts` asserts that every stored field reaches the
+// wire under its mechanical snake_case name and every stored data-source kind has
+// an arm. Add a field to the stored display and that test fails until it is mirrored here.
 const V2WidgetTransform = Schema.Struct({
 	fieldMap: optional(StringRecord),
 	hideSeries: optional(

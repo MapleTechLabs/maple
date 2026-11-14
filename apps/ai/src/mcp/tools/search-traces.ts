@@ -1,12 +1,12 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
 import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
 import { resolveAttributeScope } from "../lib/attribute-scope"
 import { emptyResultHints } from "../lib/empty-result-hints"
@@ -14,6 +14,9 @@ import { emptyResultHints } from "../lib/empty-result-hints"
 const hintOf = (startTime: string | undefined) =>
 	startTime === undefined ? undefined : toSecondTimestamp(startTime)
 const startCell = (startTime: string | undefined) => hintOf(startTime) ?? ""
+
+const SPAN_NAME_MATCHES = ["exact", "contains"] as const
+type SpanNameMatch = (typeof SPAN_NAME_MATCHES)[number]
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
@@ -34,7 +37,11 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
 			http_method: P.optionalText("Only spans with this HTTP method"),
 			span_name: P.optionalText(
-				"Case-insensitive substring of the span name. Switches the search to span level; set `service` too, or a rare name across every service can run out of time",
+				"Span name. Matched exactly first (fast, index-backed); when nothing has that exact name it is matched as a case-insensitive substring. Switches the search to span level; set `service` too, or a substring across every service can run out of time",
+			),
+			span_name_match: P.optionalOneOf(
+				SPAN_NAME_MATCHES,
+				"How `span_name` matches: 'exact' or 'contains' (case-insensitive substring). Default: exact, then contains when nothing matches exactly",
 			),
 			trace_id: P.optionalText("Only this trace"),
 			attribute_key: P.optionalText(
@@ -46,7 +53,6 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 20, max: 200, noun: "traces" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: SearchTracesOutput,
 		hints: { readOnly: true },
 		phrases: ["Searching traces", "Looking through traces"],
 		handler: Effect.fn("McpTool.searchTraces")(function* (params) {
@@ -80,31 +86,50 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 							window,
 						)).scope === "resource"
 					: false
-			const result = yield* withTenantExecutor(
-				searchTraces({
-					timeRange: { startTime: st, endTime: et },
-					service: params.service,
-					spanName: params.span_name,
-					spanNameMatchMode: params.span_name ? "contains" : undefined,
-					environment: params.environment,
-					hasError: params.has_error,
-					minDurationMs: params.min_duration_ms,
-					maxDurationMs: params.max_duration_ms,
-					httpMethod: params.http_method,
-					traceId: params.trace_id,
-					attributeFilters:
-						params.attribute_key && !resourceKey
-							? [{ key: params.attribute_key, value: params.attribute_value ?? "" }]
-							: undefined,
-					resourceAttributeFilter:
-						params.attribute_key && params.attribute_value !== undefined && resourceKey
-							? { key: params.attribute_key, value: params.attribute_value }
-							: undefined,
-					rootOnly,
-					limit: params.limit,
-					offset: params.offset,
-				}),
-			).pipe(Effect.catchTags(warehouseToMcpHandlers("search_traces")))
+			const search = (spanNameMatch: SpanNameMatch | undefined) =>
+				withTenantExecutor(
+					searchTraces({
+						timeRange: { startTime: st, endTime: et },
+						service: params.service,
+						spanName: params.span_name,
+						spanNameMatchMode: spanNameMatch,
+						environment: params.environment,
+						hasError: params.has_error,
+						minDurationMs: params.min_duration_ms,
+						maxDurationMs: params.max_duration_ms,
+						httpMethod: params.http_method,
+						traceId: params.trace_id,
+						attributeFilters:
+							params.attribute_key && !resourceKey
+								? [{ key: params.attribute_key, value: params.attribute_value ?? "" }]
+								: undefined,
+						resourceAttributeFilter:
+							params.attribute_key && params.attribute_value !== undefined && resourceKey
+								? { key: params.attribute_key, value: params.attribute_value }
+								: undefined,
+						rootOnly,
+						limit: params.limit,
+						offset: params.offset,
+					}),
+				).pipe(Effect.catchTags(warehouseToMcpHandlers("search_traces")))
+
+			// An exact name prunes on idx_span_name and a miss costs almost nothing; a substring
+			// reads every SpanName in the window, so it only runs when the exact name matched nothing.
+			const firstMatch: SpanNameMatch | undefined =
+				params.span_name === undefined ? undefined : (params.span_name_match ?? "exact")
+			const first = yield* search(firstMatch)
+			// Only on the first page: past it, an empty exact page means the exact matches ran out.
+			const fallBack =
+				firstMatch === "exact" &&
+				params.span_name_match === undefined &&
+				params.offset === 0 &&
+				first.spans.length === 0
+			const result = fallBack ? yield* search("contains") : first
+			const spanNameMatch = fallBack ? "contains" : firstMatch
+			yield* Effect.annotateCurrentSpan({
+				"maple.ai.span_name_match": spanNameMatch ?? "none",
+				"maple.ai.span_name_fallback": fallBack,
+			})
 
 			const spans = result.spans
 			yield* Effect.annotateCurrentSpan("result.rowCount", spans.length)
@@ -153,6 +178,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 						: { maxDurationMs: params.max_duration_ms }),
 					...(params.http_method === undefined ? undefined : { httpMethod: params.http_method }),
 					...(params.span_name === undefined ? undefined : { spanName: params.span_name }),
+					...(spanNameMatch === undefined ? undefined : { spanNameMatch }),
 					...(params.trace_id === undefined ? undefined : { traceId: params.trace_id }),
 					...(params.attribute_key === undefined
 						? undefined
@@ -174,7 +200,14 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 				["Service", filters.service],
 				["Environment", filters.environment],
-				["Span name", filters.spanName],
+				[
+					"Span name",
+					filters.spanName === undefined
+						? undefined
+						: filters.spanNameMatch === "contains"
+							? `contains "${filters.spanName}" (case-insensitive)`
+							: filters.spanName,
+				],
 				[
 					"Offset",
 					pagination === undefined || pagination.offset === 0
@@ -202,7 +235,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 						hints: [
 							...(output.emptyHints ?? []),
 							"Widen start_time/end_time, or drop filters.",
-							"span_name is a case-insensitive substring; explore_attributes lists attribute keys and values.",
+							"span_name matches exactly, then as a case-insensitive substring; explore_attributes lists attribute keys and values.",
 						],
 					},
 				}
@@ -264,6 +297,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 										max_duration_ms: filters.maxDurationMs,
 										http_method: filters.httpMethod,
 										span_name: filters.spanName,
+										span_name_match: filters.spanNameMatch,
 										trace_id: filters.traceId,
 										attribute_key: filters.attributeKey,
 										attribute_value: filters.attributeValue,

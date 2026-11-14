@@ -2,18 +2,17 @@ import {
 	DEFAULT_FUNNEL_KEY_BY,
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
 	FUNNEL_SESSION_DIMENSIONS,
-} from "../../../components/funnels/definition"
+} from "../kit/funnel-definition"
 import { FUNNEL_MAX_STEPS } from "@maple/query-model"
 import { applyAnchorEdit, applyStepEdit, type StepEdit, type StepScope } from "../../kit/funnel-steps"
 import type { EditorState, FunnelDraft, ListColumn, PathsDraft } from "./editor-state"
 import { DEFAULT_LIST_COLUMNS } from "./lowering-list"
 import { ProductEdit } from "./product-edit"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
-// What each `ProductEdit` does to the editor state: `ListConfigPanel`'s `onChange`, the
-// `FunnelStepBuilder`'s `onChange`, and `updateFunnel` / `updatePaths`.
+// What each `ProductEdit` does to the editor state.
 
-/** `move`: an item moved within the list; out of range is a no-op. */
+/** An item moved within the list; out of range is a no-op. */
 const move = <T>(items: ReadonlyArray<T>, from: number, to: number): ReadonlyArray<T> => {
 	const item = items[from]
 	if (to < 0 || to >= items.length || item === undefined) return items
@@ -83,14 +82,16 @@ const togglePathsAddOn = (current: PathsDraft, key: keyof PathsDraft["addOns"]):
 	}
 }
 
-/** `BreakdownPicker`'s `onChange`: none, a session dimension, or a non-empty `attribute:<key>`. */
+/** None, a session dimension, or a non-empty `attribute:<key>`. */
 const withBreakdown = (current: FunnelDraft, value: string | null): FunnelDraft => {
 	const { breakdownBy: _previous, ...rest } = current
 	if (value === null) return rest
 	if (Str.startsWith("attribute:")(value) && value.length > "attribute:".length)
 		return { ...rest, breakdownBy: `attribute:${Str.slice("attribute:".length)(value)}` }
-	const dimension = FUNNEL_SESSION_DIMENSIONS.find((candidate) => candidate === value)
-	return dimension === undefined ? rest : { ...rest, breakdownBy: dimension }
+	return Option.match(
+		Arr.findFirst(FUNNEL_SESSION_DIMENSIONS, (candidate) => candidate === value),
+		{ onNone: () => rest, onSome: (dimension) => ({ ...rest, breakdownBy: dimension }) },
+	)
 }
 
 export const applyProductEdit = (state: EditorState, edit: ProductEdit): EditorState =>

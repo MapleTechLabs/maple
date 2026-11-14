@@ -1,0 +1,470 @@
+import { zonedDateParts, zonedPartsToEpochMs } from "@maple/query-engine/datetime"
+import { cn } from "@maple/ui/lib/utils"
+import { Array as Arr, Option, Result, String as Str } from "effect"
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { pressable } from "./pressable"
+import { hstack, vstack } from "./stack"
+import { toneBoxClass } from "./tone-box"
+import { tooltipTrigger } from "./tooltip-host"
+import { typography } from "./typography"
+
+// `ShiftTimeline`: rows of time bars over a day-ruled axis in one time zone, with a now line (an
+// on-call schedule's layers and its final row). Days follow the zone's wall clock, so a DST day is
+// 23 or 25 hours wide.
+
+/** A bar's look: a layer's shift, the effective shift, an override over it, or a gap nobody covers. */
+export type TimelineBarTone = "neutral" | "primary" | "info" | "gap"
+
+export type TimelineBar<M> = Readonly<{
+	key: string
+	startMs: number
+	endMs: number
+	label: string
+	/** Drawn when the label cannot fit but two characters can (a person's initials). */
+	shortLabel?: string
+	/** The tooltip and accessible name: who, and from when to when. */
+	title: string
+	tone: TimelineBarTone
+	onClick?: M
+	/** The bar's element id, so a summary elsewhere can scroll to and focus it. */
+	id?: string
+}>
+
+export type TimelineRow<M> = Readonly<{
+	key: string
+	label: string
+	detail?: string
+	bars: ReadonlyArray<TimelineBar<M>>
+	/** False keeps the row's read-only bars out of the tab order (a layer under the final row). */
+	isTabStop?: boolean
+	/** What an empty row says, for a row with no bars in the range. */
+	emptyText?: string
+}>
+
+/** One wall-clock day of the axis, as a share of the range. */
+export type TimelineDay = Readonly<{
+	startMs: number
+	endMs: number
+	weekday: string
+	dayOfMonth: number
+	/** The day in full ("Tue 10 Nov"): its name wherever the drawn label is shortened or hidden. */
+	label: string
+	leftPct: number
+	widthPct: number
+	isWeekend: boolean
+}>
+
+const weekdayFormatters = new Map<string, Intl.DateTimeFormat>()
+const weekdayOf = (ms: number, timeZone: string): string => {
+	const cached = weekdayFormatters.get(timeZone)
+	const formatter = cached ?? new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" })
+	if (cached === undefined) weekdayFormatters.set(timeZone, formatter)
+	return formatter.format(ms)
+}
+
+const monthFormatters = new Map<string, Intl.DateTimeFormat>()
+const monthOf = (ms: number, timeZone: string): string => {
+	const cached = monthFormatters.get(timeZone)
+	const formatter = cached ?? new Intl.DateTimeFormat("en-US", { timeZone, month: "short" })
+	if (cached === undefined) monthFormatters.set(timeZone, formatter)
+	return formatter.format(ms)
+}
+
+const WEEKEND = new Set(["Sat", "Sun"])
+
+/** The instant the wall-clock day containing `ms` starts in `timeZone`, `offsetDays` later. */
+export const zonedDayStart = (ms: number, timeZone: string, offsetDays = 0): number => {
+	const parts = zonedDateParts(ms, timeZone)
+	return zonedPartsToEpochMs(
+		{ ...parts, day: parts.day + offsetDays, hour: 0, minute: 0, second: 0 },
+		timeZone,
+	)
+}
+
+/** Where `[startMs, endMs)` sits in the range, clipped to it; none when it falls outside. */
+export const placeBar = (
+	fromMs: number,
+	toMs: number,
+	startMs: number,
+	endMs: number,
+): Option.Option<Readonly<{ leftPct: number; widthPct: number }>> => {
+	const span = toMs - fromMs
+	const start = Math.max(startMs, fromMs)
+	const end = Math.min(endMs, toMs)
+	return span <= 0 || end <= start
+		? Option.none()
+		: Option.some({ leftPct: ((start - fromMs) / span) * 100, widthPct: ((end - start) / span) * 100 })
+}
+
+/** The wall-clock days the range covers in `timeZone`, each clipped to the range. */
+export const timelineDays = (fromMs: number, toMs: number, timeZone: string): ReadonlyArray<TimelineDay> => {
+	const count = Math.ceil((toMs - fromMs) / 82_800_000) + 1
+	return Arr.flatMap(Arr.range(0, count), (offset): ReadonlyArray<TimelineDay> => {
+		const startMs = zonedDayStart(fromMs, timeZone, offset)
+		const endMs = zonedDayStart(fromMs, timeZone, offset + 1)
+		// The day's first instant inside the range names it.
+		const atMs = Math.max(startMs, fromMs)
+		const weekday = weekdayOf(atMs, timeZone)
+		const dayOfMonth = zonedDateParts(atMs, timeZone).day
+		return Option.match(placeBar(fromMs, toMs, startMs, endMs), {
+			onNone: () => [],
+			onSome: (place) => [
+				{
+					startMs,
+					endMs,
+					weekday,
+					isWeekend: WEEKEND.has(weekday),
+					dayOfMonth,
+					label: `${weekday} ${dayOfMonth} ${monthOf(atMs, timeZone)}`,
+					...place,
+				},
+			],
+		})
+	})
+}
+
+const BAR_TONE = {
+	neutral: "bg-surface-strong border-border text-foreground",
+	primary: toneBoxClass("primary"),
+	// An override is the one bar that must stand out, even 8px wide on a dark surface: a stronger
+	// wash and the tone's own edge.
+	info: "bg-severity-info-a3 border-severity-info text-severity-info",
+	// A gap reads as missing cover: no fill, a dashed error edge and the error tone's hatch.
+	gap: "hatch-error border-dashed border-severity-error text-severity-error",
+} as const satisfies Record<TimelineBarTone, string>
+
+/** The narrowest a bar draws, so a short shift stays visible and clickable. */
+const MIN_BAR_PX = 8
+
+const FOCUS_CLASS = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+
+// A container, so the label can leave when the bar is too narrow to hold it.
+const BAR_CLASS = "@container absolute inset-y-1 overflow-hidden rounded-sm border text-left"
+
+/** How far a bar may grow to reach its floor: up to the next bar's start in the lane, or the range's end. */
+export const barRoomPct = <M>(
+	fromMs: number,
+	toMs: number,
+	bars: ReadonlyArray<TimelineBar<M>>,
+	bar: TimelineBar<M>,
+) => {
+	const starts = Arr.filterMap(bars, (other) =>
+		other.startMs > bar.startMs
+			? Option.match(placeBar(fromMs, toMs, other.startMs, other.endMs), {
+					onNone: () => Result.failVoid,
+					onSome: ({ leftPct }) => Result.succeed(leftPct),
+				})
+			: Result.failVoid,
+	)
+	return Arr.reduce(starts, 100, (room, start) => Math.min(room, start))
+}
+
+const barView = <M>(
+	h: HtmlBuilder<M>,
+	fromMs: number,
+	toMs: number,
+	bar: TimelineBar<M>,
+	limitPct: number,
+	isTabStop: boolean,
+): ReadonlyArray<Html> =>
+	Option.match(placeBar(fromMs, toMs, bar.startMs, bar.endMs), {
+		onNone: () => [],
+		onSome: ({ leftPct, widthPct }) => {
+			// A 2px gutter keeps back-to-back shifts apart; a floor keeps an hour-long one hittable, but
+			// never reaches past the next bar's start.
+			const style = h.Style({
+				left: `${leftPct}%`,
+				width: `calc(${widthPct}% - 2px)`,
+				"min-width": `min(${MIN_BAR_PX}px, calc(${limitPct - leftPct}% - 2px))`,
+			})
+			// The label shows from 3.75rem of bar (3rem of text), the short one from two characters'
+			// room; the name stays in the tooltip.
+			const text = [
+				typography(
+					h,
+					{ size: "xs", truncate: true, className: "hidden px-1.5 leading-6 @min-[3.75rem]:block" },
+					[bar.label],
+				),
+				...(bar.shortLabel === undefined
+					? []
+					: [
+							typography(
+								h,
+								{
+									size: "xs",
+									className:
+										"hidden text-center leading-6 @min-[1.25rem]:block @min-[3.75rem]:hidden",
+									attributes: [h.AriaHidden(true)],
+								},
+								[bar.shortLabel],
+							),
+						]),
+			]
+			const attributes = [
+				h.Key(bar.key),
+				style,
+				...(bar.id === undefined ? [] : [h.Id(bar.id)]),
+				...tooltipTrigger(h, bar.title),
+			]
+			return [
+				bar.onClick === undefined
+					? h.div(
+							[
+								...attributes,
+								h.Class(cn(BAR_CLASS, BAR_TONE[bar.tone], FOCUS_CLASS)),
+								// Read-only bars still reach the keyboard and a screen reader, named by their tooltip.
+								h.Role("img"),
+								h.Tabindex(isTabStop ? 0 : -1),
+								h.AriaLabel(bar.title),
+							],
+							text,
+						)
+					: pressable(
+							h,
+							{
+								onClick: bar.onClick,
+								label: bar.title,
+								className: cn(
+									BAR_CLASS,
+									BAR_TONE[bar.tone],
+									"hover:border-border-strong active:border-border-strong",
+								),
+								attributes,
+							},
+							text,
+						),
+			]
+		},
+	})
+
+// Sized by the timeline's own width, so it stays narrow in a side panel on a wide screen.
+const LABEL_COLUMN = "sticky left-0 z-10 w-32 shrink-0 border-r bg-background px-3 @2xl:w-40"
+
+/**
+ * The timeline: a header of days, then one row per lane (label column, bars track), ruled by day,
+ * with a now line when `nowMs` is inside the range. Scrolls sideways under a phone's width.
+ */
+export const shiftTimeline = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		fromMs: number
+		toMs: number
+		timeZone: string
+		nowMs: number
+		rows: ReadonlyArray<TimelineRow<M>>
+		ariaLabel: string
+		/** Read out in place of the now line, which is drawn only ("Now, Tue 10 Nov, 11:30"). */
+		nowLabel?: string
+		/** Names the axis's zone in the label column's header ("Europe/Berlin"). */
+		zoneLabel?: string
+		/** A key under the timeline for the bar tones it uses. */
+		legend?: ReadonlyArray<Readonly<{ tone: TimelineBarTone; label: string }>>
+	}>,
+): Html => {
+	const { fromMs, toMs } = options
+	const days = timelineDays(fromMs, toMs, options.timeZone)
+	const now = placeBar(fromMs, toMs, options.nowMs, options.nowMs + 1)
+	const rules = h.div(
+		[h.AriaHidden(true), h.Class("pointer-events-none absolute inset-0")],
+		Arr.map(days, (day) =>
+			h.div(
+				[
+					h.Key(`rule-${day.startMs}`),
+					...(day.isWeekend ? [h.DataAttribute("weekend", "true")] : []),
+					h.Class(
+						cn(
+							"absolute inset-y-0 border-l border-border-subtle",
+							day.isWeekend && "bg-surface-sunken",
+						),
+					),
+					h.Style({ left: `${day.leftPct}%`, width: `${day.widthPct}%` }),
+				],
+				[],
+			),
+		),
+	)
+	const nowLine = Option.match(now, {
+		onNone: () => [],
+		onSome: ({ leftPct }) => [
+			h.div(
+				[
+					h.Key("now"),
+					h.DataAttribute("slot", "timeline-now"),
+					h.AriaHidden(true),
+					h.Class("pointer-events-none absolute inset-y-0 w-px bg-primary"),
+					h.Style({ left: `${leftPct}%` }),
+				],
+				[],
+			),
+		],
+	})
+	const header = h.div(
+		[h.Class("flex border-b"), h.Role("row")],
+		[
+			h.div(
+				[h.Class(cn(LABEL_COLUMN, "flex items-center")), h.Role("columnheader")],
+				[
+					h.span([h.Class("sr-only")], ["Lane"]),
+					...(options.zoneLabel === undefined
+						? []
+						: [
+								typography(
+									h,
+									{ size: "2xs", tone: "muted", truncate: true, className: "block" },
+									[options.zoneLabel],
+								),
+							]),
+				],
+			),
+			// One header for the track, as each row has one cell for it; the days label it visually.
+			h.div(
+				[h.Class("relative h-8 grow"), h.Role("columnheader"), h.AriaLabel("Shifts")],
+				Arr.map(days, (day, index) =>
+					h.div(
+						[
+							h.Key(`day-${day.startMs}`),
+							h.Class(
+								"@container absolute inset-y-0 overflow-hidden border-l border-border-subtle",
+							),
+							h.Style({ left: `${day.leftPct}%`, width: `${day.widthPct}%` }),
+						],
+						[
+							// Read out in full; the two drawn forms below shorten or hide it by the day's width.
+							h.span([h.Class("sr-only")], [day.label]),
+							// "Tue 10" where a day is wide enough, else the weekday's letter over the date.
+							typography(
+								h,
+								{
+									size: "xs",
+									tone: "muted",
+									numeric: true,
+									truncate: true,
+									className: "hidden px-1.5 py-1.5 @min-[3.5rem]:block",
+									attributes: [h.AriaHidden(true)],
+								},
+								[`${day.weekday} ${day.dayOfMonth}`],
+							),
+							vstack(
+								h,
+								{
+									gap: "0",
+									align: "center",
+									justify: "center",
+									className: "h-full @min-[3.5rem]:hidden",
+									attributes: [h.AriaHidden(true)],
+								},
+								[
+									typography(h, { size: "2xs", tone: "faint", className: "leading-3" }, [
+										Str.slice(0, 1)(day.weekday),
+									]),
+									typography(
+										h,
+										{
+											size: "2xs",
+											tone: "muted",
+											numeric: true,
+											// Days too narrow for two digits date only the first day and each Monday.
+											className:
+												index === 0 || day.weekday === "Mon"
+													? "leading-3"
+													: "invisible leading-3 @min-[1.25rem]:visible",
+										},
+										[String(day.dayOfMonth)],
+									),
+								],
+							),
+						],
+					),
+				),
+			),
+		],
+	)
+	const rowView = (row: TimelineRow<M>): Html =>
+		h.div(
+			[h.Key(row.key), h.Class("flex border-b last:border-b-0"), h.Role("row")],
+			[
+				vstack(
+					h,
+					{
+						gap: "0",
+						justify: "center",
+						className: cn(LABEL_COLUMN, "py-1.5"),
+						attributes: [h.Role("rowheader")],
+					},
+					[
+						typography(h, { size: "xs", weight: "medium", truncate: true }, [row.label]),
+						...(row.detail === undefined
+							? []
+							: [typography(h, { size: "2xs", tone: "muted", truncate: true }, [row.detail])]),
+					],
+				),
+				h.div(
+					[h.Class("relative h-8 grow"), h.Role("cell")],
+					// Bars wholly outside the range draw nothing, so they count as none.
+					row.emptyText !== undefined &&
+						!Arr.some(row.bars, (bar) =>
+							Option.isSome(placeBar(fromMs, toMs, bar.startMs, bar.endMs)),
+						)
+						? [
+								typography(
+									h,
+									{ size: "xs", tone: "faint", className: "block px-2 leading-8" },
+									[row.emptyText],
+								),
+							]
+						: Arr.flatMap(row.bars, (bar) =>
+								barView(
+									h,
+									fromMs,
+									toMs,
+									bar,
+									barRoomPct(fromMs, toMs, row.bars, bar),
+									row.isTabStop ?? true,
+								),
+							),
+				),
+			],
+		)
+	const legend = Arr.map(options.legend ?? [], (entry) =>
+		hstack(h, { gap: "1.5", as: "span", attributes: [h.Key(entry.label)] }, [
+			h.span([h.AriaHidden(true), h.Class(cn("size-3 rounded-xs border", BAR_TONE[entry.tone]))], []),
+			typography(h, { size: "xs", tone: "muted" }, [entry.label]),
+		]),
+	)
+	const frame = h.div(
+		[h.Class("@container overflow-x-auto rounded-md border"), h.DataAttribute("slot", "shift-timeline")],
+		[
+			h.div(
+				[
+					// Fits a frame from 30rem; a narrower one (a phone) scrolls a 45rem track sideways.
+					h.Class("relative min-w-[45rem] @min-[30rem]:min-w-0"),
+					h.Role("table"),
+					h.AriaLabel(options.ariaLabel),
+				],
+				[
+					...(options.nowLabel === undefined || Option.isNone(now)
+						? []
+						: [h.p([h.Class("sr-only")], [options.nowLabel])]),
+					header,
+					h.div(
+						[h.Class("relative")],
+						[
+							h.div(
+								[
+									h.Class(
+										"pointer-events-none absolute inset-y-0 right-0 left-32 @2xl:left-40",
+									),
+								],
+								[rules, ...nowLine],
+							),
+							...Arr.map(options.rows, rowView),
+						],
+					),
+				],
+			),
+		],
+	)
+	return legend.length === 0
+		? frame
+		: vstack(h, { gap: "2" }, [frame, hstack(h, { gap: "4", wrap: true }, legend)])
+}

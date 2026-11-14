@@ -1,4 +1,4 @@
-import type { DocsPage } from "../../../lib/docs"
+import type { DocsPage } from "../../kit/docs"
 import { countLabel as nounCount } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -21,12 +21,12 @@ import { hstack } from "@maple/views/ui/stack"
 import { spaced } from "@maple/views/ui/spaced"
 import { Array as Arr } from "effect"
 
-// `PageHero`, `SearchToolbar` and the infra empty states.
-
 type Children = ReadonlyArray<Html | string>
 
 export type PageHeroOptions = Readonly<{
 	title: Html | string
+	/** Before the title, outside its truncation: a resource's icon tile, which may carry a corner dot. */
+	leading?: Html
 	description?: Html | string
 	meta?: Children
 	actions?: Children
@@ -51,21 +51,18 @@ export const pageHeroParts = <M>(
 	title: h.div(
 		[h.Class("min-w-0 space-y-0.5")],
 		[
-			h.div(
-				// Centred, not baseline: a small chip on a baseline rides high beside the large title.
-				[h.Class("flex min-w-0 flex-wrap items-center gap-3")],
-				[
-					pageTitle(
-						h,
-						{
-							title: typeof options.title === "string" ? options.title : undefined,
-							className: "min-w-0 leading-8 text-foreground",
-						},
-						[options.title],
-					),
-					...trailingOf(options.trailing),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", wrap: true, shrink: true }, [
+				...(options.leading === undefined ? [] : [options.leading]),
+				pageTitle(
+					h,
+					{
+						title: typeof options.title === "string" ? options.title : undefined,
+						className: "min-w-0 leading-8 text-foreground",
+					},
+					[options.title],
+				),
+				...trailingOf(options.trailing),
+			]),
 			...(options.description === undefined || options.description === ""
 				? []
 				: [
@@ -82,7 +79,7 @@ export const pageHeroParts = <M>(
 			: hstack(h, { gap: "2", wrap: true }, options.meta),
 })
 
-/** `PageHero` for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
+/** A hero for a page that draws its header in the body: `pageHeroParts` with actions beside it. */
 export const pageHero = <M>(h: HtmlBuilder<M>, options: PageHeroOptions): Html => {
 	const parts = pageHeroParts(h, options)
 	return h.header(
@@ -116,7 +113,7 @@ export type SearchToolbarOptions<M> = Readonly<{
 	className?: string
 }>
 
-/** `SearchToolbar` over `SearchInput size="sm"` (w-64), on the shared list toolbar. */
+/** A small search input (w-64) on the shared list toolbar. */
 export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOptions<M>): Html =>
 	listToolbar(h, {
 		// Parents space their sections; the list toolbar's own bottom padding would double it.
@@ -139,7 +136,7 @@ export const searchToolbar = <M>(h: HtmlBuilder<M>, options: SearchToolbarOption
 				: [toolbarCount(h, [options.trailing])],
 	})
 
-/** `InfraSetupEmpty`: nothing reporting yet; the button opens the page's install modal. */
+/** Nothing reporting yet; the button opens the page's install modal. */
 export const setupEmpty = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{
@@ -175,7 +172,6 @@ export const setupEmpty = <M>(
 		"py-16",
 	)
 
-/** `NoMetricsMessage`. */
 export const noMetricsMessage = <M>(h: HtmlBuilder<M>, noun: string): Html =>
 	emptyMessage(h, { dashed: true, className: "py-12" }, [
 		`No metrics arrived for this ${noun} in this window`,

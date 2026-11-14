@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Schema, String as Str } from "effect"
-import type { InspectSpanOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, type InspectSpanOutput } from "@maple/domain/mcp-outputs"
 import type { SpanDetailResult } from "@maple/query-engine/observability"
 import { renderToolDoc } from "../../lib/tool-doc"
 import { registerInspectSpanTool, spanDetailOutput } from "../inspect-span"
@@ -12,7 +12,8 @@ let renderOutput: (output: typeof InspectSpanOutput.Type) => string = () =>
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
 		if (spec.name !== "inspect_span") return
-		renderOutput = (output) => renderToolDoc(spec.render(Schema.decodeUnknownSync(spec.output)(output)))
+		renderOutput = (output) =>
+			renderToolDoc(spec.render(Schema.decodeSync(McpToolOutputs[spec.name])(output)))
 	},
 }
 registerInspectSpanTool(registrar)

@@ -4,7 +4,7 @@ import { logs } from "../worst-case-fixture"
 import { worstCaseTrace } from "../worst-case-trace"
 import type { AlertsOverviewReady } from "@maple/web-data/alerts/overview"
 import { Option, Schema, Array as Arr } from "effect"
-import type { ActorIdentity } from "../../page/errors/kit/actor"
+import type { ActorIdentity } from "../../page/kit/issue-actor"
 import { TraceData } from "@maple/views/traces/trace-data"
 import { FIXTURE_LOG_LINKS } from "@maple/views/fixtures/logs-table-bench-fixture"
 import { logTimeFormat, toLogRowView } from "@maple/views/ui/logs/log-row-view"
@@ -15,7 +15,7 @@ import type { WorstCaseMode } from "./model"
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** `MiscSection`'s `LogsTableView pinnedColumns`. */
+/** The misc section's pinned log columns. */
 export const PINNED_COLUMNS = ["db.user"]
 
 export type LabTrace = Readonly<{ trace: TraceData; deepestSpanId: string }>
@@ -24,7 +24,7 @@ export type LabTrace = Readonly<{ trace: TraceData; deepestSpanId: string }>
 export const traceOf = (mode: WorstCaseMode): Option.Option<LabTrace> => {
 	const { detail, deepestSpanId } = worstCaseTrace(mode)
 	return Option.map(
-		Schema.decodeUnknownOption(TraceData)({ ...detail, traceId: detail.spans[0]?.traceId }),
+		Schema.decodeOption(TraceData)({ ...detail, traceId: detail.spans[0]?.traceId ?? "" }),
 		(trace) => ({ trace, deepestSpanId }),
 	)
 }
@@ -41,7 +41,7 @@ export const actorIdentities = (mode: WorstCaseMode): ReadonlyArray<ActorIdentit
 		seed: person.userId,
 	}))
 
-/** `TablesSection`'s `RulesTab data`, its timeline ending at the boot clock. */
+/** The tables section's rules data, its timeline ending at the boot clock. */
 export const rulesOverview = (mode: WorstCaseMode, nowMs: number): AlertsOverviewReady => {
 	const { rules, derived, states } = rulesFixture(mode)
 	return {

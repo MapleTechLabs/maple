@@ -9,11 +9,15 @@ import { CliUsageError } from "../lib/errors"
 import { encodeJsonEffect } from "@maple/local-server/json"
 import { bold, dim, green } from "../lib/style"
 import { isLoopbackHostname } from "@maple/local-server/local-address"
-import { maintenanceTokenPath } from "@maple/local-server/archives/retention"
+import {
+	MAINTENANCE_TOKEN_HEADER,
+	maintenanceTokenPath,
+	readMaintenanceToken,
+} from "@maple/local-server/maintenance-auth"
 import { hasSubject, ScopedDeleteReport, ScopedDeleteRequest } from "@maple/local-server/scoped-delete"
 import { jsonFormatRequested, writeJson } from "./json-output"
 import { serverDiscoveryPath } from "@maple/local-server/store-version"
-import { isProcessAlive } from "@maple/local-server/store-claim"
+import { isProcessAlive } from "@maple/local-server/process-liveness"
 import { LocalStatus, prettyPath, ServerDiscovery } from "./server-args"
 
 const LOCAL_ONLY = "maple delete removes data from a local store only"
@@ -53,14 +57,15 @@ export const buildDeleteRequest = (flags: {
 	Effect.gen(function* () {
 		const present = Arr.filter(
 			Rec.toEntries({
-				service: flags.service?.trim() || undefined,
-				namespace: flags.namespace?.trim() || undefined,
+				service: (flags.service === undefined ? undefined : Str.trim(flags.service)) || undefined,
+				namespace:
+					(flags.namespace === undefined ? undefined : Str.trim(flags.namespace)) || undefined,
 				env: flags.env,
 				beforeMs: flags.beforeMs === undefined ? undefined : Math.floor(flags.beforeMs),
 			}),
 			([, value]) => value !== undefined,
 		)
-		const request = yield* Schema.decodeUnknownEffect(ScopedDeleteRequest)(Rec.fromEntries(present)).pipe(
+		const request = yield* Schema.decodeEffect(ScopedDeleteRequest)(Rec.fromEntries(present)).pipe(
 			Effect.mapError(() =>
 				failure(
 					"invalid delete flags",
@@ -129,7 +134,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		// The token sits beside the data dir, so only the machine that owns the store can delete.
 		const tokenPath = maintenanceTokenPath(status.dataDir)
 		const token = yield* Effect.try({
-			try: () => Str.trim(readFileSync(tokenPath, "utf8")),
+			try: () => readMaintenanceToken(status.dataDir),
 			catch: () =>
 				failure(
 					`cannot read the maintenance token at ${prettyPath(tokenPath)}`,
@@ -142,7 +147,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 		const response = yield* client
 			.execute(
 				HttpClientRequest.post(`${baseUrl}/local/maintenance/delete`).pipe(
-					HttpClientRequest.setHeader("x-maple-maintenance-token", token),
+					HttpClientRequest.setHeader(MAINTENANCE_TOKEN_HEADER, token),
 					HttpClientRequest.bodyText(bodyJson, "application/json"),
 				),
 			)
@@ -155,7 +160,7 @@ const postDelete = (baseUrl: string, body: ScopedDeleteRequest & { readonly dryR
 			)
 		if (response.status < 200 || response.status >= 300)
 			return yield* failure(text || `server answered HTTP ${response.status}`)
-		return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ScopedDeleteReport))(text).pipe(
+		return yield* Schema.decodeEffect(Schema.fromJsonString(ScopedDeleteReport))(text).pipe(
 			Effect.mapError(() => failure("the server returned an unreadable delete report")),
 		)
 	})

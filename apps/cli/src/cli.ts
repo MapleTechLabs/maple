@@ -6,7 +6,7 @@ import { errors, error } from "./commands/errors"
 import { logs, logPatterns } from "./commands/logs"
 import { attributes } from "./commands/attributes"
 import { metrics, query } from "./commands/data"
-import { timeseries, breakdown, compare } from "./commands/analytics"
+import { timeseries, breakdown, compare, logDiff } from "./commands/analytics"
 import { auth, login, logout, whoami } from "./commands/auth"
 import { use } from "./commands/config"
 import { start, stop, reset, checkpoint, restore } from "./commands/server"
@@ -44,7 +44,6 @@ export const cli = Command.make("maple").pipe(
 	}),
 	Command.withGlobalFlags([OutputFormatSetting]),
 	Command.withSubcommands([
-		// Server (local mode)
 		start,
 		stop,
 		reset,
@@ -52,36 +51,27 @@ export const cli = Command.make("maple").pipe(
 		restore,
 		deleteCommand,
 		schema,
-		// Parquet archives (local mode)
 		archive,
-		// Self-update
 		update,
 		changelog,
-		// Services
 		services,
 		diagnose,
 		serviceMap,
 		topOps,
-		// Traces
 		traces,
 		trace,
 		slowTraces,
-		// Errors
 		errors,
 		error,
-		// Logs
 		logs,
 		logPatterns,
-		// Attributes & metrics
+		logDiff,
 		attributes,
 		metrics,
-		// Analytics
 		timeseries,
 		breakdown,
 		compare,
-		// Raw SQL
 		query,
-		// Auth / config
 		login,
 		auth,
 		logout,

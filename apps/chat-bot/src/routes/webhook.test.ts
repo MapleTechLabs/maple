@@ -1,7 +1,17 @@
 import type { InboundEvent } from "@maple/chat-platform"
 import type { IngressConnector } from "../config.ts"
 import { chatConnectorId } from "@maple/chat-platform"
-import { ConfigProvider, Context, Effect, Exit, Layer, Tracer, Array as Arr, Record as Rec } from "effect"
+import {
+	ConfigProvider,
+	Context,
+	Effect,
+	Exit,
+	Layer,
+	Option,
+	Tracer,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { describe, expect, it } from "vitest"
 import { InboundHandler, type InboundHandlerApi } from "../inbound.ts"
@@ -78,7 +88,9 @@ const call = async (
 	)
 	const response = await web.handler(request)
 	await web.dispose()
-	const span = ended.find((candidate) => candidate.name === "chat_bot.connector_webhook")
+	const span = Option.getOrUndefined(
+		Arr.findFirst(ended, (candidate) => candidate.name === "chat_bot.connector_webhook"),
+	)
 	return { response, received, span }
 }
 

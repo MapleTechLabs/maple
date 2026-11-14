@@ -61,7 +61,6 @@ export function playLocalTerminal(root: HTMLElement) {
 		})
 	}
 
-	// One delegated listener rather than one per line.
 	root.addEventListener("transitionend", (event) => {
 		const el = event.target as HTMLElement
 		if (event.propertyName === "filter" && el.style.filter === "blur(0px)") el.style.filter = "none"
@@ -120,7 +119,7 @@ function groupBySegment(root: HTMLElement): HTMLElement[][] {
 	const out: HTMLElement[][] = []
 	for (const el of root.querySelectorAll<HTMLElement>(".lt-line")) {
 		const idx = Number(el.dataset.segment ?? 0)
-		if (!out[idx]) out[idx] = []
+		if (out[idx] === undefined) out[idx] = []
 		out[idx].push(el)
 	}
 	return out

@@ -20,9 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-
-// The attach pull request dialog: pick a pull request
-// of the connected repository (a Select picks it when the org has several), or paste a link.
+import { textLink } from "@maple/views/ui/text-link"
 
 type Return = PageReturn<Model, Message>
 type H = HtmlBuilder<Message>
@@ -48,7 +46,7 @@ export const githubOf = (model: Model) => {
 	return { isConnected: status?.state === "connected", repository, repositories }
 }
 
-/** `resolveTypedReference`: `#123`, `123` (with a repository) or a full PR URL. */
+/** `#123`, `123` (with a repository) or a full PR URL. */
 export const typedPullRequestUrl = (draft: string, repository: string | null): string | null => {
 	const trimmed = Str.trim(draft)
 	if (trimmed.length === 0) return null
@@ -97,7 +95,7 @@ export const clearedAttach = (model: Model): Model => ({
 	attachCombobox: Combobox.init(model.attachCombobox.id, "single"),
 })
 
-/** `close`: what was typed and the picked repository are cleared whichever way the dialog closes. */
+/** What was typed and the picked repository are cleared whichever way the dialog closes. */
 export const attachDialogStep = (model: Model, message: Dialog.Message): Return => {
 	const step = Dialog.update(model.attachDialog, message)
 	const lifted = liftDialog(model, step)
@@ -124,7 +122,7 @@ export const attachComboboxStep = (model: Model, message: Combobox.Message): Ret
 		Message.GotAttachComboboxMessage({ message: inner }),
 	)
 	if (step.outMessage?._tag !== "ChangedValue") return { model: next, commands }
-	// `value={null}`: the pick attaches, the input keeps what was typed.
+	// The pick attaches; the input keeps what was typed.
 	const picked = attach({ ...next, attachDraft: model.attachDraft }, step.outMessage.value)
 	return { ...picked, commands: [...commands, ...(picked.commands ?? [])] }
 }
@@ -169,11 +167,13 @@ const pasteField = (h: H, model: Model): Html =>
 				],
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
-				h.a(
-					[
-						h.Class("underline hover:no-underline active:no-underline"),
-						h.Href(hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } }))),
-					],
+				textLink(
+					h,
+					{
+						href: hrefOf(AppRoute.SourcesNew({ search: { integration: "github" } })),
+						tone: "inherit",
+						className: "inline underline hover:no-underline active:no-underline",
+					},
 					["Connect GitHub"],
 				),
 				" ",
@@ -226,10 +226,10 @@ const pickerField = (h: H, model: Model): Html => {
 	const visible = Arr.filter(pullRequests, (pr) => matchesFilter(pr, model.attachDraft))
 	const emptyText =
 		typedOf(model) !== null
-			? "Press Enter to attach the pull request you typed."
+			? "Press Enter to attach the pull request you typed"
 			: pullRequests.length === 0
-				? "No pull requests in this repository yet."
-				: "Nothing matches that search."
+				? "No pull requests in this repository yet"
+				: "No pull requests match"
 	return field(h, { className: "items-stretch gap-1.5", state }, [
 		fieldLabel(
 			h,
@@ -248,8 +248,10 @@ const pickerField = (h: H, model: Model): Html => {
 				isUnfiltered: true,
 				className: "w-full text-xs",
 				renderItem: (url) => {
-					const pr = visible.find((candidate) => candidate.url === url)
-					return pr === undefined ? [url] : pullRequestItem(h, pr)
+					return Option.match(
+						Arr.findFirst(visible, (candidate) => candidate.url === url),
+						{ onNone: () => [url], onSome: (pr) => pullRequestItem(h, pr) },
+					)
 				},
 				toView: ({ field: group, rest }) => h.div([h.Class("contents")], [group, ...rest]),
 			},

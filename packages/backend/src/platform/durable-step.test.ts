@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Effect, Exit, Schema } from "effect"
+import { Cause, Effect, Exit, Schema, Array as Arr, Option } from "effect"
 import { durableStep } from "./durable-step"
 
 /** What alchemy's step service records for each `do`, standing in for Cloudflare's step transaction. */
@@ -77,7 +77,7 @@ describe("durableStep", () => {
 			)
 			assert.isTrue(Exit.isFailure(exit))
 			if (Exit.isFailure(exit)) {
-				assert.isDefined(exit.cause.reasons.find(Cause.isFailReason))
+				assert.isDefined(Option.getOrUndefined(Arr.findFirst(exit.cause.reasons, Cause.isFailReason)))
 				assert.strictEqual(Cause.squash(exit.cause), failure)
 			}
 		}),

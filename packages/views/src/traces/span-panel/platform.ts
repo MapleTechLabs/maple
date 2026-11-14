@@ -1,11 +1,14 @@
 import { CLOUDFLARE_ACCENT_CLASS, dbSystemAccentClass } from "@maple/ui/lib/cloud-platforms/accents"
 import { cloudflareDisplay } from "@maple/ui/lib/cloud-platforms/cloudflare-display"
 import { detectCloudflareWorker } from "@maple/domain/cloud-platform"
+import { getDbStyle } from "@maple/views/service-map/graph/service-map-db-style"
+import { DB_ICON } from "@maple/views/service-map/map/node-card"
 import type { IconName } from "@maple/views/ui/icon"
 import { toneBoxClass } from "@maple/views/ui/tone-box"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 
-// copied: packages/ui/src/lib/cloud-platforms/{types,database}.ts with `Icon` as an icon name
-// (the adapters import React icon components). Workers detection and rows are shared.
+// The span panel's cloud platform fields, with `Icon` as an icon name. Workers detection and rows
+// are shared.
 
 export interface PlatformField {
 	readonly label: string
@@ -30,9 +33,12 @@ export const outcomeBadgeStyle = (bad: boolean): string => toneBoxClass(bad ? "e
 type Attrs = Readonly<Record<string, string>>
 
 const pickAttr = (attrs: Attrs, ...keys: ReadonlyArray<string>): string | null =>
-	keys
-		.map((key) => attrs[key])
-		.find((value): value is string => value !== undefined && value.trim() !== "") ?? null
+	Option.getOrNull(
+		Arr.findFirst(
+			Arr.map(keys, (key) => attrs[key]),
+			(value): value is string => value !== undefined && Str.trim(value) !== "",
+		),
+	)
 
 const cloudflare = (attrs: Attrs): PlatformInfo | null => {
 	const worker = detectCloudflareWorker(attrs)
@@ -45,8 +51,8 @@ const cloudflare = (attrs: Attrs): PlatformInfo | null => {
 	}
 }
 
-const DB_SYSTEM_LABELS = new Map(
-	Object.entries({
+const DB_SYSTEM_LABELS = new Map<string, string>(
+	Rec.toEntries({
 		postgresql: "PostgreSQL",
 		mysql: "MySQL",
 		mariadb: "MariaDB",
@@ -82,12 +88,14 @@ const DB_SYSTEM_LABELS = new Map(
 )
 
 const humanizeDbSystem = (system: string): string =>
-	DB_SYSTEM_LABELS.get(system.toLowerCase()) ??
-	(system.split(".").pop() ?? system)
-		.split(/[_\s-]+/)
-		.filter(Boolean)
-		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-		.join(" ")
+	DB_SYSTEM_LABELS.get(Str.toLowerCase(system)) ??
+	Arr.join(
+		Arr.map(
+			Arr.filter(Str.split(/[_\s-]+/)(Arr.lastNonEmpty(Str.split(".")(system))), (word) => word !== ""),
+			(word) => Str.toUpperCase(Str.slice(0, 1)(word)) + Str.slice(1)(word),
+		),
+		" ",
+	)
 
 const database = (attrs: Attrs): PlatformInfo | null => {
 	const system = pickAttr(attrs, "db.system.name", "db.system")
@@ -118,12 +126,12 @@ const database = (attrs: Attrs): PlatformInfo | null => {
 	]
 	return {
 		label: humanizeDbSystem(system),
-		icon: "DatabaseIcon",
+		icon: DB_ICON[getDbStyle(system).icon],
 		accentClassName: dbSystemAccentClass(system),
 		edge: null,
 		location: null,
 		outcome: errorType === null ? null : { value: errorType, bad: true },
-		fields: fields.filter((field): field is PlatformField => field !== null),
+		fields: Arr.filter(fields, (field): field is PlatformField => field !== null),
 	}
 }
 

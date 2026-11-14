@@ -11,6 +11,10 @@ on:
                 description: "Name to upload the binary under; the caller downloads it into apps/ingest/dist"
                 type: string
                 default: maple-ingest
+            ref:
+                description: "Commit to build; the caller's deploy commit. Empty builds the run's own ref."
+                type: string
+                default: ""
 
 permissions:
     contents: read
@@ -23,6 +27,9 @@ jobs:
         steps:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+              with:
+                  ref: ${{ inputs.ref }}
+                  persist-credentials: false
 
             # `runner.arch` in the key: `runner.os` is "Linux" on both x86 and arm.
             - name: Cache ingest cargo build

@@ -27,10 +27,9 @@ import { Array as Arr, Record as Rec, String as Str } from "effect"
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 /**
- * Adjacencies that must compile with no whitespace between them — Vue turns any
- * newline between siblings into a rendered space, and a space here would show
- * up as a gap in the email. Cheap insurance against a stray line break in a
- * component template.
+ * Adjacencies that must compile with no whitespace between them: HTML renders a
+ * newline between siblings as a space, which would show up as a gap in the
+ * email. Cheap insurance against a stray line break in a component template.
  */
 const TIGHT_JOINS: ReadonlyArray<string> = [
 	"</span>[[message]]", // NEW badge → error message
@@ -77,7 +76,7 @@ function assertTightJoins(label: string, html: string): void {
 }
 
 function asTemplateLiteral(value: string): string {
-	return `\`${Str.replace(/\$\{/g, "\\${")(Str.replace(/`/g, "\\`")(Str.replace(/\\/g, "\\\\")(value)))}\``
+	return `\`${Str.replace(/\\|`|\$\{/g, "\\$&")(value)}\``
 }
 
 function emitModule(output: string, page: string, fragments: ReadonlyMap<string, string>): string {

@@ -237,7 +237,7 @@ On serverless platforms, inject `SdkTracerProvider` and call `tracerProvider.for
 
 ## Verify
 
-Send two or three messages with the same conversation id, including one that calls a tool. After about a minute, **Agent Sessions** in Maple shows one session for that id with framework **Spring AI**, one turn per `ChatClient` call, the transcript, and tokens on every model call. Cost shows as unpriced, because Spring AI doesn't report it.
+Send two or three messages with the same conversation id, including one that calls a tool. After about a minute, **Agent sessions** in Maple shows one session for that id with framework **Spring AI**, one turn per `ChatClient` call, the transcript, and tokens on every model call. Cost shows as unpriced, because Spring AI doesn't report it.
 
 ## Troubleshooting
 

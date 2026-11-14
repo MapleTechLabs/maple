@@ -1,17 +1,10 @@
 import { HttpServerRequest } from "effect/http"
-import { API_KEY_PREFIX } from "@maple/db"
+import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { makeResolveClerkUser } from "@maple/auth"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Layer, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
+import { getBearerToken } from "./bearer-token"
 
 /**
  * Authorization for the few requests made before the caller has an organization. A Clerk session
@@ -27,7 +20,7 @@ export const UserSessionAuthorizationLive = Layer.effect(
 			bearer: (httpEffect) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
-					if (getBearerToken(request.headers)?.startsWith(API_KEY_PREFIX)) {
+					if (Str.startsWith(API_KEY_PREFIX)(getBearerToken(request.headers) ?? "")) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})

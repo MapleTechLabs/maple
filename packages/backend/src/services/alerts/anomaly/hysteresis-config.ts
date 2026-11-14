@@ -1,15 +1,14 @@
 // Hysteresis tuning for the zero-config anomaly detector.
 //
-// The mechanic itself lives in `../incident-hysteresis`, shared with the
-// user-configured alerting path. What is anomaly-specific is only the tuning:
-// a detector nobody opted into needs a cooldown that the alerting path, whose
-// thresholds a human chose, does not.
+// The mechanic lives in `@maple/alerting-core/hysteresis`. A detector nobody
+// opted into needs a re-open cooldown that user rules, whose thresholds a human
+// chose, do not.
 
 import type { AnomalySignalType } from "@maple/domain/http"
 
-import type { HysteresisConfig } from "../incident-hysteresis"
+import type { HysteresisConfig } from "@maple/alerting-core/hysteresis"
 
-export const DEFAULT_HYSTERESIS_CONFIG: HysteresisConfig = {
+const DEFAULT_HYSTERESIS_CONFIG: HysteresisConfig = {
 	breachesToOpen: 2,
 	healthyToResolve: 3,
 	cooldownMs: 60 * 60 * 1000,

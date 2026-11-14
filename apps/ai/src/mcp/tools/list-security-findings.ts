@@ -1,6 +1,6 @@
-import { Clock, DateTime, Effect, Schema, Array as Arr } from "effect"
+import { Clock, DateTime, Effect, Schema, Array as Arr, String as Str } from "effect"
 import { ListSecurityFindingsOutput, SECURITY_AREAS, type SecurityArea } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc, type NextCall } from "../lib/tool-doc"
@@ -19,12 +19,16 @@ import {
 	readDependencies,
 	readExposure,
 	readRuntimes,
+	requireSecurityReader,
+	repositoryCoverage,
 	repositoryServicesOf,
 	runtimeArea,
 	runtimeLabelOf,
 	SEVERITY_FLOORS,
 	STATUS_FILTERS,
+	unreadRepository,
 } from "../lib/security"
+import { attackChainReasons } from "@maple/domain/security-telemetry"
 import type { McpToolRegistrar } from "./types"
 
 const TOOL = "list_security_findings"
@@ -100,15 +104,15 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			service: P.service(
 				"Only findings that reach this service (exact `service.name`); includes code and dependency findings of repositories it runs",
 			),
-			limit: P.limit({ default: 30, max: 200, noun: "findings" }),
+			limit: P.limit({ default: 20, max: 200, noun: "findings" }),
 			offset: P.offset({ max: 2000 }),
 			...WINDOW.fields,
 		}),
-		output: ListSecurityFindingsOutput,
 		hints: { readOnly: true },
 		phrases: ["Checking security findings", "Reading the Security Center"],
 		handler: Effect.fn("McpTool.listSecurityFindings")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
+			yield* requireSecurityReader(tenant)
 			const { st, et } = yield* WINDOW.resolve(params, TOOL)
 			const window = { startTime: st, endTime: et }
 			// A repository filter has nothing to keep in the per-service telemetry areas, so the overview skips them.
@@ -152,6 +156,16 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 			const matched = Arr.map(results, (result) =>
 				Arr.filter(result.rows, (row) => matchesFilters(row, filters)),
 			)
+			const coverage = repositoryCoverage(codeRead, dependencyRead)
+			// A repository never audited or scanned reads as empty, which is not the same as clear.
+			const unread = Arr.map(results, (result, i) =>
+				params.repository === undefined ||
+				(matched[i]?.length ?? 0) > 0 ||
+				(result.state !== "findings" && result.state !== "clear") ||
+				(result.area !== "code" && result.area !== "dependencies")
+					? undefined
+					: unreadRepository(result.area, params.repository, coverage),
+			)
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.security.area": params.area ?? "all",
@@ -172,11 +186,12 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 					area: result.area,
 					// Read areas say whether anything matched the call; the rest say why nothing was read.
 					state:
-						result.state === "findings" || result.state === "clear"
+						unread[i]?.state ??
+						(result.state === "findings" || result.state === "clear"
 							? (matched[i]?.length ?? 0) > 0
 								? "findings"
 								: "clear"
-							: result.state,
+							: result.state),
 					summary: result.summary,
 					// Per severity, what the call's filters kept (open findings by default).
 					counts: countBySeverity(matched[i] ?? []),
@@ -184,7 +199,21 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 				})),
 				findings: rankFindings(matched.flat()).slice(params.offset, params.offset + params.limit),
 				offset: params.offset,
-				notes: [...filterNotes(results, filters), ...Arr.flatMap(results, (result) => result.notes)],
+				notes: [
+					...Arr.flatMap(unread, (entry) => (entry === undefined ? [] : [entry.note])),
+					...filterNotes(results, filters),
+					...Arr.flatMap(results, (result) => result.notes),
+				],
+				...(params.area === undefined && coverage.length > 0
+					? {
+							repositories: Arr.filter(
+								coverage,
+								(row) =>
+									params.repository === undefined ||
+									Str.toLowerCase(row.repository) === Str.toLowerCase(params.repository),
+							),
+						}
+					: undefined),
 				...(params.area === "exposure" && exposure?._tag === "read"
 					? {
 							exposure: {
@@ -196,6 +225,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 									scanner: row.scanner,
 									userAgent: row.userAgent,
 									lastSeen: DateTime.formatIso(row.lastSeen),
+									stages: row.stages,
+									agent: row.agent,
+									attackChain: attackChainReasons(row),
 								})),
 							},
 						}
@@ -225,6 +257,14 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const matched = Arr.reduce(output.areas, 0, (n, area) => n + area.matched)
 			const nextCalls: Array<NextCall> = []
+			// A caller who could not read the code audit must not be told a repository is "not set up".
+			const codeState = output.areas.find((area) => area.area === "code")?.state
+			const auditUnknown =
+				codeState === "forbidden"
+					? "admins and engineers only"
+					: codeState === "not_enabled"
+						? "not enabled"
+						: "unknown"
 			// Telemetry ids resolve over a window: hand inspect the one this listing read.
 			const inspectArgs = (row: Output["findings"][number]) =>
 				row.area === "exposure" || row.area === "runtimes"
@@ -250,6 +290,19 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 								},
 								`every ${area.area} finding`,
 							),
+					),
+				)
+			if (
+				output.areaFilter === undefined &&
+				Arr.some(output.repositories ?? [], (r) => r.audit !== null && r.audit.lastRunId !== null)
+			)
+				nextCalls.push(
+					doc.next(
+						"list_security_audit_runs",
+						output.filters.repository === undefined
+							? {}
+							: { repository: output.filters.repository },
+						"audit run history, coverage and spend",
 					),
 				)
 			if (output.areaFilter === "exposure") {
@@ -385,6 +438,7 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										"Probe paths",
 										"Scanner",
 										"User agent",
+										"Attack chain",
 										"Last seen",
 									],
 									Arr.map(output.exposure.sources, (s) => [
@@ -393,6 +447,9 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										String(s.signatures),
 										s.scanner,
 										truncate(s.userAgent, 80),
+										s.attackChain === undefined || s.attackChain.length === 0
+											? "no"
+											: Arr.join(s.attackChain, "; "),
 										s.lastSeen,
 									]),
 								),
@@ -410,6 +467,32 @@ export function registerListSecurityFindingsTool(server: McpToolRegistrar) {
 										r.note,
 										r.advisories === null ? "not checked" : String(r.advisories),
 										r.sdk,
+									]),
+								),
+							]),
+					...(output.repositories === undefined || output.repositories.length === 0
+						? []
+						: [
+								doc.heading("Repositories"),
+								doc.table(
+									["Repository", "Code audit", "Latest audit run", "Dependency scan"],
+									Arr.map(output.repositories, (r) => [
+										r.repository,
+										!r.auditReadable
+											? auditUnknown
+											: r.audit === null
+												? "not set up"
+												: `${r.audit.branch}${r.audit.enabled ? "" : " (disabled)"}`,
+										r.audit === null
+											? ""
+											: r.audit.lastRunId === null
+												? "never run"
+												: `${r.audit.lastRunStatus} ${r.audit.lastRunAt?.slice(0, 16) ?? ""}${r.audit.lastRunStopReason === null ? "" : ` (${r.audit.lastRunStopReason})`}`,
+										r.dependencyScan === null
+											? "not connected"
+											: r.dependencyScan.status === null
+												? "never scanned"
+												: `${r.dependencyScan.status} ${r.dependencyScan.at?.slice(0, 16) ?? ""} at ${r.dependencyScan.commit ?? ""}`,
 									]),
 								),
 							]),

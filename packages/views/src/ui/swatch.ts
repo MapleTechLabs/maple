@@ -1,17 +1,25 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-/** The classes of a colour swatch, for an element the kit doesn't render. */
-export const swatchClass = (options: { readonly dashed?: boolean; readonly className?: string } = {}): string =>
-	cn("size-2 shrink-0 rounded-xs", options.dashed === true && "border border-dashed", options.className)
+const swatchClass = (
+	options: { readonly dashed?: boolean; readonly round?: boolean; readonly className?: string } = {},
+): string =>
+	cn(
+		"size-2 shrink-0",
+		options.round === true ? "rounded-full" : "rounded-xs",
+		options.dashed === true && "border border-dashed",
+		options.className,
+	)
 
 /** A small square colour key beside a legend, tooltip or table label; `dashed` draws an outline in `color`
- * instead of a fill. Without `color`, `className` colours it. */
+ * instead of a fill, `round` a dot for a series that is a share, not a line. Without `color`, `className`
+ * colours it. */
 export const swatch = <M>(
 	h: HtmlBuilder<M>,
 	options: {
 		readonly color?: string
 		readonly dashed?: boolean
+		readonly round?: boolean
 		readonly ariaHidden?: boolean
 		readonly className?: string
 	} = {},

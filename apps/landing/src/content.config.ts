@@ -1,4 +1,5 @@
-import { defineCollection, reference, z } from "astro:content"
+import { defineCollection, reference } from "astro:content"
+import { z } from "astro/zod"
 import { glob } from "astro/loaders"
 import { BRAND_MARKS, type BrandMarkId } from "./lib/brand-marks"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
@@ -67,7 +68,7 @@ const changelog = defineCollection({
 		description: z.string(),
 		date: z.coerce.date(), // ship day: sorts the timeline, drives <time>
 		category: z.enum(CHANGELOG_CATEGORIES),
-		// Keys of CONTRIBUTORS in lib/changelog.ts; unknown handles fail the build.
+		// Keys of CONTRIBUTORS in lib/changelog-meta.ts; unknown handles fail the build.
 		authors: z.array(z.enum(CONTRIBUTOR_IDS)).default([]),
 		// Served from /public/changelog, shown under the summary. Doubles as the
 		// entry's OG card; without it the page falls back to /og-image.png.
@@ -81,13 +82,13 @@ const changelog = defineCollection({
 })
 
 // Customer logos rendered in the homepage "trusted by" marquee. Frontmatter-only
-// entries (no body) — one file per company. The entry id (filename) maps to a
-// brand logo component in the LOGOS registry inside CustomerLogos.astro.
+// entries (no body), one file per company. The entry id (filename) maps to a
+// brand logo component in the LOGOS registry in lib/customer-logos.ts.
 const logos = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/logos" }),
 	schema: z.object({
 		name: z.string(),
-		href: z.string().url().optional(), // present → linked, absent → static
+		href: z.url().optional(), // present → linked, absent → static
 		order: z.number().default(0),
 	}),
 })

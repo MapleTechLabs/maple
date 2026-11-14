@@ -4,19 +4,19 @@ import type { AlertRuleRow } from "@maple/web-data/collections/alerts"
 import {
 	buildRuleStatesByRuleId,
 	rowsToAlertDestinationDocuments,
-	rowToAlertIncidentDocument,
-	rowToAlertRuleDocument,
+	rowsToAlertIncidentDocuments,
+	rowsToAlertRuleDocuments,
 } from "@maple/web-data/collections/alerts"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import { lookupField } from "../../kit/autocomplete-lookups"
 import { previewIssue, previewPayload, previewStateOf, type PreviewState } from "../shared/preview"
-import { isoMs } from "../shared/time"
+import { isProtectedDefault, saveIssues } from "./derive"
 import type { RuleForm } from "./form"
+import { revealedInvalidFields } from "./summary"
 import type { Model, TraceFacets } from "./model"
 import { Array as Arr } from "effect"
-
-// The live rows as the documents the editor reads.
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export const destinationsOf = (model: Pick<Model, "destinations">): ReadonlyArray<AlertDestinationDocument> =>
 	rowsToAlertDestinationDocuments(model.destinations ?? [])
@@ -28,20 +28,22 @@ export const tagSuggestionsOf = (
 	rows: ReadonlyArray<AlertRuleRow>,
 	previous: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
-	const tags = [...new Set(Arr.flatMap(rows, (row) => rowToAlertRuleDocument(row, NO_STATES).tags))].sort()
+	const tags = [
+		...new Set(Arr.flatMap(rowsToAlertRuleDocuments(rows, NO_STATES), (rule) => rule.tags)),
+	].sort()
 	return tags.length === previous.length && Arr.every(tags, (tag, index) => tag === previous[index])
 		? previous
 		: tags
 }
 
-/** The edited rule's open incidents (`clearedIncidents` input). */
+/** The edited rule's open incidents. */
 export const openIncidentsOf = (
 	model: Pick<Model, "incidents" | "editingRuleId">,
 ): ReadonlyArray<AlertIncidentDocument> =>
 	model.editingRuleId === null
 		? []
 		: Arr.filter(
-				Arr.map(model.incidents ?? [], rowToAlertIncidentDocument),
+				rowsToAlertIncidentDocuments(model.incidents ?? []),
 				(incident) => incident.ruleId === model.editingRuleId && incident.status === "open",
 			)
 
@@ -83,12 +85,14 @@ export const windowMsOf = (model: Pick<Model, "previewWindow">): { min: number; 
 	model.previewWindow === null
 		? { min: 0, max: 0 }
 		: {
-				min: isoMs(normalizeTimestampInput(model.previewWindow.startTime)),
-				max: isoMs(normalizeTimestampInput(model.previewWindow.endTime)),
+				min: toEpochMs(normalizeTimestampInput(model.previewWindow.startTime)),
+				max: toEpochMs(normalizeTimestampInput(model.previewWindow.endTime)),
 			}
 
-const hasPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>
+/** Whether the draft can be previewed at all: a window, and a query the preview can run. */
+export const hasPreviewPayload = (model: Pick<Model, "previewWindow">, form: RuleForm): boolean =>
 	model.previewWindow !== null && previewPayload(form, model.previewWindow)._tag === "Some"
+const hasPayload = hasPreviewPayload
 
 /** The timing of the draft's own preview: none while a new one loads, so nothing gates on an older query. */
 export const draftTimingOf = (
@@ -106,8 +110,28 @@ export const draftTimingOf = (
 			})
 		: null
 
-/** The draft's preview as `useAlertRulePreview` reads it. */
+/** The draft's preview state. */
 export const draftPreviewOf = (
 	model: Pick<Model, "preview" | "previewWindow">,
 	form: RuleForm,
 ): PreviewState => previewStateOf(model.preview, hasPayload(model, form), previewIssue(form))
+
+/**
+ * The fields that show their error (by element id), as one string: a `createLazy` slot compares it
+ * by value. Empty on a pristine form.
+ */
+export const invalidFieldsOf = (
+	model: Pick<
+		Model,
+		"preview" | "previewWindow" | "touchedFields" | "hasAttemptedSave" | "editingRuleId" | "savedForm"
+	>,
+	form: RuleForm,
+): string =>
+	Arr.join(
+		revealedInvalidFields(
+			saveIssues(form, draftTimingOf(model, form), isProtectedDefault(model)),
+			model.touchedFields,
+			model.hasAttemptedSave,
+		),
+		",",
+	)

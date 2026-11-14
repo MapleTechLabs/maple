@@ -6,12 +6,13 @@
 import { afterAll, assert, beforeAll, describe, it } from "@effect/vitest"
 import { isBackfill, migrations, renderStatementFull } from "@maple/domain/clickhouse"
 import * as CH from "@maple/query-engine/ch"
+import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
 	clickhouseExec,
 	uniqueDatabase,
-} from "./clickhouse-e2e-support"
+} from "../../testing/clickhouse-e2e-support"
 
 const database = uniqueDatabase("maple_service_api_e2e")
 const ORG_ID = "org_service_api_e2e"
@@ -23,9 +24,10 @@ const T0 = Math.floor((Date.now() - 3 * HOUR) / MINUTE) * MINUTE
 const WINDOW_START = T0 + 30_000
 // Two whole hours after the window's first hour: read from the hourly tier.
 const INTERIOR = Math.floor(T0 / HOUR) * HOUR + 2 * HOUR + 10 * MINUTE
-const chDateTime = (epochMs: number): string => new Date(epochMs).toISOString().replace("T", " ").slice(0, 19)
+const chDateTime = (epochMs: number): string =>
+	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 const chDateTime64 = (epochMs: number): string =>
-	new Date(epochMs).toISOString().replace("T", " ").slice(0, 23)
+	Str.slice(0, 23)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 
 interface SeedSpan {
 	readonly traceId: string
@@ -34,6 +36,8 @@ interface SeedSpan {
 	readonly name?: string
 	readonly durationMs: number
 	readonly attributes: Record<string, string>
+	readonly service?: string
+	readonly status?: "Unset" | "Error"
 }
 
 const server = (
@@ -79,18 +83,54 @@ const SPANS: ReadonlyArray<SeedSpan> = [
 	},
 ]
 
+/**
+ * Internal spans of a second service for the top-operations parity check: several
+ * names, errors, and an edge-minute span. Not Server spans, so the 0048 rollups
+ * asserted below never see them.
+ */
+const worker = (
+	name: string,
+	at: number,
+	durationMs: number,
+	status: "Unset" | "Error" = "Unset",
+): SeedSpan => ({
+	traceId: `w-${name}-${at}`,
+	at,
+	kind: "Internal",
+	name,
+	durationMs,
+	attributes: {},
+	service: "worker",
+	status,
+})
+const WORKER_SPANS: ReadonlyArray<SeedSpan> = [
+	worker("process", INTERIOR + 1000, 40),
+	worker("process", INTERIOR + 2000, 60, "Error"),
+	worker("process", INTERIOR + 3000, 80),
+	worker("flush", INTERIOR + 4000, 5),
+	worker("flush", T0 + 45_000, 7, "Error"),
+	// One duration on both tiers, so every quantile is exact on raw spans and t-digest alike.
+	// Four spans: no metric ties with the others (count 4/3/2, avg 60/20/6, errors 1/2, 1/3, 0).
+	worker("heartbeat", INTERIOR + 5000, 20),
+	worker("heartbeat", INTERIOR + 6000, 20),
+	worker("heartbeat", INTERIOR + 7000, 20),
+	worker("heartbeat", T0 + 50_000, 20),
+]
+
 const insert = (spans: ReadonlyArray<SeedSpan>) =>
 	clickhouseExec(
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
-		 VALUES\n${spans
-				.map((span) => {
-					const attributes = Object.entries(span.attributes)
-						.map(([key, value]) => `'${key}', '${value}'`)
-						.join(", ")
-					return `('${ORG_ID}', '${chDateTime64(span.at)}', '${span.traceId}', 's-${span.traceId}', '', '${span.name ?? "http.server GET"}', '${span.kind ?? "Server"}', 'api', ${span.durationMs * 1_000_000}, 'Unset', '', 1, map(${attributes}), map('service.name', 'api'))`
-				})
-				.join("\n,")}`,
+		 VALUES\n${Arr.join(
+				Arr.map(spans, (span) => {
+					const attributes = Arr.join(
+						Arr.map(Rec.toEntries(span.attributes), ([key, value]) => `'${key}', '${value}'`),
+						", ",
+					)
+					return `('${ORG_ID}', '${chDateTime64(span.at)}', '${span.traceId}', 's-${span.traceId}', '', '${span.name ?? "http.server GET"}', '${span.kind ?? "Server"}', '${span.service ?? "api"}', ${span.durationMs * 1_000_000}, '${span.status ?? "Unset"}', '', 1, map(${attributes}), map('service.name', '${span.service ?? "api"}'))`
+				}),
+				"\n,",
+			)}`,
 		database,
 	)
 
@@ -107,10 +147,10 @@ const window = {
 	endTime: chDateTime(Date.now()),
 }
 const read = (query: Parameters<typeof CH.compileUnsafe>[0], params: Record<string, unknown> = window) =>
-	runJson(CH.compileUnsafe(query, params).sql.replace(/\s*FORMAT JSON\s*$/, ""))
+	runJson(Str.replace(/\s*FORMAT JSON\s*$/, "")(CH.compileUnsafe(query, params).sql))
 
 const pick = (row: Record<string, unknown> | undefined, keys: ReadonlyArray<string>) =>
-	Object.fromEntries(keys.map((key) => [key, row?.[key]]))
+	Rec.fromEntries(Arr.map(keys, (key): readonly [string, unknown] => [key, row?.[key]]))
 
 const HTTP_KEYS = [
 	"spanCount",
@@ -136,11 +176,61 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		await clickhouseExec(`CREATE DATABASE ${database}`)
 		await applyRealMigrations(database)
 		await insert(SPANS)
+		await insert(WORKER_SPANS)
 	}, 180_000)
 
 	afterAll(async () => {
 		await clickhouseExec(`DROP DATABASE IF EXISTS ${database}`)
 	}, 30_000)
+
+	// The rollup route must rank exactly what raw spans rank, the edge-minute span included.
+	it("ranks top operations off the operation rollups as off raw spans", async () => {
+		const ranked = (rows: ReadonlyArray<Record<string, unknown>>) =>
+			Arr.sort(
+				Arr.map(
+					rows,
+					(row) => [String(row.name), Math.round(Number(row.value) * 1e6) / 1e6] as const,
+				),
+				Order.mapInput(Order.String, ([name]: readonly [string, number]) => name),
+			)
+		await Promise.all(
+			Arr.map(["count", "avg_duration", "error_rate"] as const, async (metric) => {
+				const rollup = await read(
+					CH.topOperationsRollupQuery({ metric, serviceName: "worker", limit: 50 }),
+				)
+				const raw = await read(CH.topOperationsQuery({ metric, limit: 50 }), {
+					...window,
+					serviceName: "worker",
+				})
+				// Two operations, errors on both, one only in the raw edge minute.
+				assert.lengthOf(rollup, 3, metric)
+				assert.deepStrictEqual(ranked(rollup), ranked(raw), metric)
+				assert.deepStrictEqual(
+					Arr.map(rollup, (row) => row.name),
+					Arr.map(raw, (row) => row.name),
+					`${metric} ranking`,
+				)
+			}),
+		)
+	})
+
+	it("reads top-operation quantiles off the rollups as off raw spans", async () => {
+		const heartbeat = (rows: ReadonlyArray<Record<string, unknown>>) =>
+			Number(Arr.findFirst(rows, (row) => row.name === "heartbeat").pipe(Option.getOrThrow).value)
+		await Promise.all(
+			Arr.map(["p50_duration", "p95_duration", "p99_duration"] as const, async (metric) => {
+				const rollup = await read(
+					CH.topOperationsRollupQuery({ metric, serviceName: "worker", limit: 50 }),
+				)
+				const raw = await read(CH.topOperationsQuery({ metric, limit: 50 }), {
+					...window,
+					serviceName: "worker",
+				})
+				assert.closeTo(heartbeat(rollup), 20, 1e-6, metric)
+				assert.closeTo(heartbeat(raw), 20, 1e-6, metric)
+			}),
+		)
+	})
 
 	it("rolls up server spans per status code and error.type", async () => {
 		assert.deepStrictEqual(await detailsRows(), [
@@ -199,9 +289,10 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 
 	it("rebuilds the same rollup from the migration's backfill", async () => {
 		const before = await detailsRows()
-		const backfill = migrations
-			.filter((migration) => migration.version === 48)
-			.flatMap((migration) => migration.statements.filter(isBackfill))
+		const backfillMigrations = Arr.filter(migrations, (migration) => migration.version === 48)
+		const backfill = Arr.flatMap(backfillMigrations, (migration) =>
+			Arr.filter(migration.statements, isBackfill),
+		)
 		assert.strictEqual(backfill.length, 1)
 		await clickhouseExec("TRUNCATE TABLE service_endpoint_details_hourly", database)
 		for (const statement of backfill)
@@ -257,10 +348,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		)
 		const interiorBucket = chDateTime(Math.floor(INTERIOR / HOUR) * HOUR)
 		const at = (rows: ReadonlyArray<Record<string, unknown>>) =>
-			pick(
-				rows.find((row) => row.bucket === interiorBucket),
-				keys,
-			)
+			pick(Option.getOrUndefined(Arr.findFirst(rows, (row) => row.bucket === interiorBucket)), keys)
 		assert.deepStrictEqual(at(merged), {
 			spanName: "",
 			httpStatusCount: 5,
@@ -276,7 +364,7 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 			CH.serviceEndpointStatusBreakdownQuery({ serviceName: "api", spanName: "GET /orders" }),
 		)
 		assert.deepStrictEqual(
-			rows.map((row) => [row.httpStatusCode, row.errorType, row.spanCount]),
+			Arr.map(rows, (row) => [row.httpStatusCode, row.errorType, row.spanCount]),
 			[
 				["200", "", 2],
 				["401", "", 1],
@@ -296,20 +384,31 @@ describe.skipIf(!clickhouseE2eEnabled)("service API tab: migration 0048 rollups 
 		assert.strictEqual(distribution?.bodyMaxBytes, 300)
 		const levels = distribution?.latencyQuantilesMs
 		assert.strictEqual(
-			Array.isArray(levels) ? levels.length : -1,
+			Arr.isArray(levels) ? levels.length : -1,
 			CH.ENDPOINT_LATENCY_QUANTILE_LEVELS.length,
 		)
 		const agents = distribution?.userAgents
-		assert.deepStrictEqual(Array.isArray(agents) ? agents.toSorted() : agents, ["Mozilla", "curl/8"])
+		assert.deepStrictEqual(
+			Arr.isArray(agents)
+				? Arr.sort(
+						agents,
+						Order.mapInput(Order.String, (agent: unknown) => String(agent)),
+					)
+				: agents,
+			["Mozilla", "curl/8"],
+		)
 		assert.deepStrictEqual(distribution?.userAgentCounts, [2, 2])
 
 		const slowest = await read(
 			CH.serviceEndpointSlowestQuery({ serviceName: "api", spanName: "GET /orders" }),
 		)
 		assert.deepStrictEqual(
-			slowest
-				.slice(0, 2)
-				.map((row) => [row.traceId, row.httpStatusCode, row.durationMs, row.bodyBytes]),
+			Arr.map(slowest.slice(0, 2), (row) => [
+				row.traceId,
+				row.httpStatusCode,
+				row.durationMs,
+				row.bodyBytes,
+			]),
 			[
 				["t503", "503", 900, 50],
 				["tedge", "500", 30, -1],

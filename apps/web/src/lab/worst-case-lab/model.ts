@@ -33,19 +33,19 @@ export const Model = Schema.Struct({
 	/** The two `TraceBox`es, rebuilt on a mode change. */
 	waterfallBox: Schema.NullOr(TraceBox.Model),
 	timelineBox: Schema.NullOr(TraceBox.Model),
-	/** `HostTable`'s own `useTableSort`: `cpuPct` descending until a head is clicked. */
+	/** The host table's sort: `cpuPct` descending until a head is clicked. */
 	hostSort: SortState,
-	/** `LegendSection`'s hidden series, shared by its three legends and kept across modes. */
+	/** The legend section's hidden series, shared by its three legends and kept across modes. */
 	hiddenSeries: Schema.Array(Schema.String),
-	/** The alerts hub's local UI behind `RulesTab`: the rules search, show-all and row menus. */
+	/** The alerts hub's local UI behind the rules tab: the rules search, show-all and row menus. */
 	hub: HubModel,
 	logs: LogsStream.Model,
 	attributes: AttributesPanel.Model,
 	/** The open tool rows, by `tool:<toolCallId>`. */
 	openTools: Schema.Array(Schema.String),
-	/** The root `ToastProvider`'s two Notifications regions. */
+	/** The two toast regions. */
 	toasts: Toast.Model,
-	/** `ReleaseComparison`'s health tooltip and commit hover card. */
+	/** The release comparison's health tooltip and commit hover card. */
 	releaseOverlays: ReleaseOverlays.Model,
 })
 export type Model = typeof Model.Type

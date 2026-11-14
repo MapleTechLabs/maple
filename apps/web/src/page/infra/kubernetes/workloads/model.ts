@@ -4,11 +4,9 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { InfraKubernetesWorkloadsSearch } from "../../../../route/search"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import { SortState } from "../../../kit/table-sort"
-
-// `/infra/kubernetes/workloads`.
 
 export const WorkloadRows = ListWorkloadsResponse.fields.data
 export type WorkloadRow = ListWorkloadsResponse["data"][number]
@@ -25,7 +23,7 @@ export const Model = Schema.Struct({
 	frame: Frame.Model,
 	workloads: KeyedSchema(WorkloadRows, LoadFailure),
 	facets: KeyedSchema(WorkloadFacets, LoadFailure),
-	/** `useTableSort` in `WorkloadTable`: no initial key (the server sorts worst first), resettable. */
+	/** No initial key (the server sorts worst first), resettable. */
 	sort: SortState,
 	filterSections: FilterSections.Model,
 	install: InstallModal.Model,

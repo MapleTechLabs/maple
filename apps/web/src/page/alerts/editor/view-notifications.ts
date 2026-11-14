@@ -1,9 +1,9 @@
-import { ALERT_TEMPLATE_VARIABLES } from "@maple/domain/http"
+import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationId, type EscalationChainId } from "@maple/domain/http"
 import { comparatorSupportsTiers } from "@maple/web-data/alerts/form-utils"
-import { Struct, Array as Arr } from "effect"
+import { Option, Struct, Array as Arr, String as Str } from "effect"
 import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { card } from "@maple/views/ui/card"
+import { triggerId } from "@maple/views/ui/overlay/popup-state"
 import { badge } from "@maple/views/ui/display"
 import { field, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
@@ -12,29 +12,46 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { pressable } from "@maple/views/ui/pressable"
 import { textarea } from "@maple/views/ui/textarea"
 import { stableSlice } from "../../kit/stable-slice"
-import { destinationsOf } from "./derive-rows"
+import { destinationsOf, invalidFieldsOf } from "./derive-rows"
 import type { RuleForm } from "./form"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { destinationList, type NotifyView } from "./view-notify"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
-
-// `NotificationsSection`: who gets notified, per tier,
-// and the optional message template.
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
+import { chainSummary, newChainHref } from "../shared/escalation-chains"
+import { chainSelectIdOf, NO_CHAIN } from "./form-steps"
+import type { Tier } from "./message"
+import { formSelect } from "./view-select"
+import { ALERT_SEVERITY_LABEL } from "../shared/badges"
 
 type H = HtmlBuilder<Message>
 
-/** What the section reads off the Model and the draft. */
 type NotificationsView = NotifyView &
-	Pick<Model, "destinations" | "isSendingTest" | "isMessageTemplateOpen" | "mountedForm">
+	Pick<
+		Model,
+		| "destinations"
+		| "isSendingTest"
+		| "isMessageTemplateOpen"
+		| "mountedForm"
+		| "escalationChains"
+		| "isEscalationChainsFailed"
+		| "selects"
+	>
 type NotificationsForm = Pick<
 	RuleForm,
-	"comparator" | "escalation" | "destinationIds" | "notificationTitle" | "notificationBody"
+	| "signalType"
+	| "comparator"
+	| "escalation"
+	| "destinationIds"
+	| "escalationChainId"
+	| "notificationTitle"
+	| "notificationBody"
 >
 
-const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
+const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }}: {{ event.label }}"
 const BODY_PLACEHOLDER = Arr.join(
 	[
 		"{{ signal.label }} is *{{ value }}* ({{ comparator.label }} {{ threshold }}) over the last {{ window }}.",
@@ -55,7 +72,132 @@ const tierHeading = (h: H, severity: "warning" | "critical", text: string): Html
 		],
 	)
 
-/** `MessageTemplate`: collapsed until opened, or open when the rule has one. */
+/** The chain select's options: None, the org's chains, and a saved one the list no longer has. */
+const chainOptions = (model: NotificationsView, chainId: EscalationChainId | null) => {
+	const chains = model.escalationChains ?? []
+	const isMissing = chainId !== null && !Arr.some(chains, (chain) => chain.id === chainId)
+	return [
+		{ value: NO_CHAIN, label: "None" },
+		...(isMissing
+			? [
+					{
+						value: chainId,
+						label: model.escalationChains === null ? "Saved chain" : "Unavailable chain",
+					},
+				]
+			: []),
+		...Arr.map(chains, (chain) => ({ value: chain.id, label: chain.name })),
+	]
+}
+
+/** The escalation chain a tier starts on top of its destinations. */
+const chainPicker = (
+	h: H,
+	model: NotificationsView,
+	tier: Tier,
+	chainId: EscalationChainId | null,
+	destinationIds: ReadonlyArray<AlertDestinationId>,
+	label: string,
+	/** Each tier needs its own route; an anomaly rule only needs someone on either tier. */
+	isRouteRequired: boolean,
+	/** The picker shows its error: the user left it unrouted, or tried to save. */
+	isRevealed: boolean,
+): Html => {
+	const id = chainSelectIdOf(tier)
+	const ids = idsOf(id, false)
+	const value = chainId ?? NO_CHAIN
+	const isUnrouted = isRevealed && isRouteRequired && chainId === null && destinationIds.length === 0
+	const state = { ...fieldStateOf(value, undefined), isInvalid: isUnrouted }
+	const destinations = destinationsOf(model)
+	const nameOf = (destinationId: AlertDestinationId) =>
+		Option.getOrElse(
+			Option.map(
+				Arr.findFirst(destinations, (destination) => destination.id === destinationId),
+				(destination) => destination.name,
+			),
+			() => "an unavailable destination",
+		)
+	const selected = Arr.findFirst(model.escalationChains ?? [], (chain) => chain.id === chainId)
+	const note = Option.match(selected, {
+		onSome: (chain) => [
+			typography(h, { size: "xs", tone: "muted", as: "p", className: "break-words" }, [
+				chainSummary(chain, nameOf),
+			]),
+		],
+		onNone: () => [
+			...(model.isEscalationChainsFailed
+				? [
+						typography(h, { size: "xs", tone: "muted", as: "p" }, [
+							chainId === null
+								? "Couldn't load escalation chains; reload the page to pick one"
+								: "Couldn't load escalation chains; reload the page to change this one",
+						]),
+					]
+				: []),
+			...(isUnrouted
+				? [
+						typography(
+							h,
+							{ size: "xs", tone: "destructive", as: "p", attributes: [h.Id(ids.error)] },
+							["Pick a destination or an escalation chain"],
+						),
+					]
+				: []),
+		],
+	})
+	return formSelect(h, model.selects[id], id, value, chainOptions(model, chainId), {
+		className: "w-full sm:w-80",
+		labelledBy: ids.label,
+		...(isUnrouted ? { errorId: ids.error } : undefined),
+		toView: (parts) =>
+			field(h, { className: "items-stretch gap-1.5", state }, [
+				hstack(h, { gap: "3", wrap: true }, [
+					fieldLabel(h, { ids, state, className: "text-xs" }, label),
+					textLink(
+						h,
+						{
+							href: newChainHref(),
+							tone: "muted",
+							className: "text-xs",
+							attributes: [h.Target("_blank"), h.Rel("noopener")],
+						},
+						["Create a chain"],
+					),
+				]),
+				...parts,
+				...note,
+			]),
+	})
+}
+
+/** One tier's destinations, then the chain it starts; `tiered` names the picker by its tier. */
+const tierRouting = (
+	h: H,
+	model: NotificationsView,
+	tier: Tier,
+	destinationIds: ReadonlyArray<AlertDestinationId>,
+	chainId: EscalationChainId | null,
+	tiered: boolean,
+	isRouteRequired: boolean,
+	isRevealed: boolean,
+	emptyText: string,
+): Html =>
+	vstack(h, { gap: "3" }, [
+		destinationList(h, model, tier, destinationIds, destinationsOf(model), emptyText),
+		chainPicker(
+			h,
+			model,
+			tier,
+			chainId,
+			destinationIds,
+			// Two tiers render two pickers, so each needs its own accessible name.
+			tiered ? `${ALERT_SEVERITY_LABEL[tier]} escalation chain` : "Escalation chain",
+			isRouteRequired,
+			isRevealed,
+		),
+	])
+
+/** Collapsed until opened, or open when the rule has one. */
 const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
 	const hasTemplate = form.notificationTitle.length > 0 || form.notificationBody.length > 0
 	const isOpen = model.isMessageTemplateOpen
@@ -64,7 +206,7 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	const titleIds = idsOf("notification-title", false)
 	const bodyIds = idsOf("notification-body", false)
 	return h.div(
-		[h.Class("mt-3")],
+		[],
 		[
 			pressable(
 				h,
@@ -139,80 +281,137 @@ const messageTemplate = (h: H, model: NotificationsView, form: NotificationsForm
 	)
 }
 
-const notifications = (h: H, model: NotificationsView, form: NotificationsForm): Html => {
+/** A tier's chain by name, for the empty destination list: "the Checkout on-call chain". */
+const chainPhrase = (model: NotificationsView, chainId: EscalationChainId | null): string | null =>
+	chainId === null
+		? null
+		: Option.match(
+				Arr.findFirst(model.escalationChains ?? [], (chain) => chain.id === chainId),
+				{ onNone: () => "its escalation chain", onSome: (chain) => `the ${chain.name} chain` },
+			)
+
+/** What a tier with no destinations of its own still reaches, so the list never contradicts the chain. */
+const emptyTextOf = (
+	model: NotificationsView,
+	form: NotificationsForm,
+	escalation: NotificationsForm["escalation"],
+	tier: Tier,
+): string => {
+	if (tier === "warning" || escalation === null) {
+		const chain = chainPhrase(model, form.escalationChainId)
+		return chain === null
+			? "No one is notified yet"
+			: `No destinations. Notifications go through ${chain}.`
+	}
+	const chain = chainPhrase(model, escalation.escalationChainId)
+	if (form.destinationIds.length > 0)
+		return `No extra destinations. Critical also goes to the warning destinations${chain === null ? "." : ` and ${chain}.`}`
+	return chain === null
+		? "No one is notified yet"
+		: `No destinations of its own. Critical goes through ${chain}.`
+}
+
+const notifications = (
+	h: H,
+	model: NotificationsView,
+	form: NotificationsForm,
+	revealedIds: string,
+): Html => {
+	const revealed = new Set(Str.split(revealedIds, ","))
+	const isRevealed = (tier: Tier) => revealed.has(triggerId(chainSelectIdOf(tier)))
 	const destinations = destinationsOf(model)
 	const escalation = comparatorSupportsTiers(form.comparator) ? form.escalation : null
+	const isRouteRequired = form.signalType !== "anomaly"
 	const isAnySelected = Arr.some(
 		destinations,
 		(d) => form.destinationIds.includes(d.id) || (escalation?.destinationIds.includes(d.id) ?? false),
 	)
-	return card(
-		h,
-		[
-			...(isAnySelected
-				? [
-						// TODO(alert-editor): the "Send a real test notification…" tooltip.
-						h.div(
-							[h.Class("-mt-1 flex justify-end")],
-							[
-								button(
-									h,
-									{
-										variant: "ghost",
-										size: "sm",
-										isLoading: model.isSendingTest,
-										className: "-my-1 px-2 text-xs",
-										attributes: [h.OnClick(Message.ClickedSendTest())],
-									},
-									[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
-								),
-							],
-						),
-					]
-				: []),
-			...(escalation === null
-				? [destinationList(h, model, "warning", form.destinationIds, destinations)]
-				: [
-						h.div(
-							[h.Class("mt-1 space-y-4")],
-							[
-								h.div(
-									[h.Class("space-y-1.5")],
-									[
-										tierHeading(h, "warning", "Warning"),
-										destinationList(
-											h,
-											model,
-											"warning",
-											form.destinationIds,
-											destinations,
-										),
-									],
-								),
-								h.div(
-									[h.Class("space-y-1.5")],
-									[
-										tierHeading(
-											h,
-											"critical",
-											"Critical, on top of the warning destinations",
-										),
-										destinationList(
-											h,
-											model,
-											"critical",
-											escalation.destinationIds,
-											destinations,
-										),
-									],
-								),
-							],
+	return vstack(h, { gap: "4" }, [
+		...(isAnySelected
+			? [
+					// TODO(alert-editor): the "Send a real test notification…" tooltip.
+					hstack(h, { align: "stretch", justify: "end" }, [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								isLoading: model.isSendingTest,
+								attributes: [h.OnClick(Message.ClickedSendTest())],
+							},
+							[icon(h, "PaperPlaneIcon", { size: 12 }), "Send test"],
 						),
 					]),
-			messageTemplate(h, model, form),
-		],
-		"p-4",
-	)
+				]
+			: []),
+		...(escalation === null
+			? [
+					tierRouting(
+						h,
+						model,
+						"warning",
+						form.destinationIds,
+						form.escalationChainId,
+						false,
+						isRouteRequired,
+						isRevealed("warning"),
+						emptyTextOf(model, form, escalation, "warning"),
+					),
+				]
+			: [
+					h.div(
+						[h.Class("space-y-4")],
+						[
+							...(form.signalType === "anomaly"
+								? [
+										typography(h, { size: "xs", tone: "muted", as: "p" }, [
+											"Maple rates each anomaly warning or critical by how far it strays from its baseline.",
+										]),
+									]
+								: []),
+							h.div(
+								[h.Class("space-y-1.5")],
+								[
+									tierHeading(h, "warning", ALERT_SEVERITY_LABEL.warning),
+									tierRouting(
+										h,
+										model,
+										"warning",
+										form.destinationIds,
+										form.escalationChainId,
+										true,
+										isRouteRequired,
+										isRevealed("warning"),
+										emptyTextOf(model, form, escalation, "warning"),
+									),
+								],
+							),
+							h.div(
+								[h.Class("space-y-1.5")],
+								[
+									tierHeading(
+										h,
+										"critical",
+										"Critical, on top of the warning destinations",
+									),
+									tierRouting(
+										h,
+										model,
+										"critical",
+										escalation.destinationIds,
+										escalation.escalationChainId,
+										true,
+										isRouteRequired,
+										isRevealed("critical"),
+										emptyTextOf(model, form, escalation, "critical"),
+									),
+								],
+							),
+						],
+					),
+				]),
+		messageTemplate(h, model, form),
+	])
 }
 
 /** "Insert a variable": one button per template variable. TODO(alert-editor): their description tooltips. */
@@ -249,19 +448,24 @@ const viewOf = stableSlice((model: Model) =>
 		"isSendingTest",
 		"isMessageTemplateOpen",
 		"mountedForm",
-		"isAdmin",
+		"grants",
 		"connectors",
 		"menus",
 		"chatConnect",
 		"chatConnectMenuId",
 		"brokenLogos",
+		"escalationChains",
+		"isEscalationChainsFailed",
+		"selects",
 	]),
 )
 const formOf = stableSlice((form: RuleForm) =>
 	Struct.pick(form, [
+		"signalType",
 		"comparator",
 		"escalation",
 		"destinationIds",
+		"escalationChainId",
 		"notificationTitle",
 		"notificationBody",
 	]),
@@ -269,4 +473,4 @@ const formOf = stableSlice((form: RuleForm) =>
 
 /** "Who gets notified": one list per tier, Send test while anything is selected, and the template. */
 export const notificationsSection = (h: H, model: Model, form: RuleForm): Html =>
-	slot(notifications, [h, viewOf(model), formOf(form)])
+	slot(notifications, [h, viewOf(model), formOf(form), invalidFieldsOf(model, form)])

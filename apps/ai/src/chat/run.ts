@@ -30,13 +30,12 @@ import { Prompt, Toolkit } from "effect/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import { withRunSessionAttributes } from "../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
-import { profileForTurn } from "./profiles"
+import { profileForRoles, profileForTurn } from "./profiles"
+import { MUTATING_TOOL_NAMES } from "./permissions"
 import {
 	makeTextSanitizer,
 	settledTurnEnd,
@@ -44,26 +43,13 @@ import {
 	type ChatTurnEvent,
 	type ProgramCall,
 } from "./events"
-import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
-import { type ChildFindings, makeChildFindings } from "./review-child-findings"
-import type { ReviewLedger } from "./review-ledger"
-import { buildReviewFanout } from "./review-fanout"
+import { buildReviewFanout } from "./review/fanout"
 import { buildCodeMode, CODE_MODE_GUIDANCE, CODE_MODE_TOOLS } from "./code-mode"
-import {
-	accumulateUsage,
-	buildChatToolkit,
-	buildDiagnosisCompletion,
-	buildReplyCompletion,
-	buildReviewCompletion,
-	isAutonomousReviewTurn,
-	type RunCompletion,
-	SUBMIT_REVIEW,
-	type RunUsage,
-	type SubmitDiagnosis,
-	type StageEdit,
-	type SubmitReply,
-	type SubmitReview,
-} from "./tools"
+import { buildChatToolkit, type SessionRepositoryScope } from "./maple-toolkit"
+import { reportedCost } from "../platform/reported-cost"
+import { accumulateUsage, type RunUsage } from "./usage"
+import type { MakeCompletion } from "./completion"
+import type { TenantContext } from "@maple/domain/http"
 
 /**
  * The transcript the model starts from.
@@ -71,11 +57,8 @@ import {
  * Supplied as run options rather than retained by the engine: `ChatSession` is the authority on what
  * was said, and a second history owner would be a second answer to the same question.
  *
- * Bounded by count and characters, and that is the whole of it. There was a durable `compaction`
- * event here once, carrying a summary and a `throughSeq` to replay from, but nothing ever wrote one:
- * the engine's compaction is per-model-call and lives inside the run, and `toChatEvents` mapped
- * `CompactionPerformed` to nothing. Summarizing *across* turns is a separate design, not a branch
- * that was already half-built.
+ * Bounded by count and characters, and that is the whole of it: the engine's compaction is
+ * per-model-call and lives inside the run. Summarizing *across* turns is a separate design.
  */
 export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<PromptMessage> => {
 	const spoken = Arr.filter(history, (message) => Str.trim(message.text) !== "")
@@ -85,8 +68,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 	// Walk backwards so the newest turns are the ones kept — the tail is what the next turn needs.
 	const kept: Array<ChatMessage> = []
 	let chars = 0
-	for (let i = spoken.length - 1; i >= 0; i--) {
-		const message = spoken[i]!
+	for (const message of Arr.reverse(spoken)) {
 		if (kept.length >= MAX_REPLAYED_MESSAGES) break
 		if (chars + message.text.length > MAX_REPLAYED_CHARS && kept.length > 0) break
 		chars += message.text.length
@@ -101,7 +83,7 @@ export const promptFromHistory = (history: ReadonlyArray<ChatMessage>): Readonly
 }
 
 /** The `n` of a program call's `<program call id>#<n>`: the order the program made its calls in. */
-const programCallIndex = (callId: string): number => Number(Str.slice(callId.lastIndexOf("#") + 1)(callId))
+const programCallIndex = (callId: string): number => Number(Arr.lastNonEmpty(Str.split("#")(callId)))
 
 /** One replayed turn, in the shape `Prompt.make` accepts. */
 export interface PromptMessage {
@@ -119,20 +101,21 @@ export interface ChatRunInput {
 	/** Who is driving this turn. Decides surface, ruleset, persona and labels — see `./profiles`. */
 	readonly origin: ChatTurnOrigin
 	readonly toolExecutor: McpToolExecutorApi
+	/** Org-specific prompt text (its connected data sources), appended to the agent's persona. */
+	readonly orgContext?: string
 	readonly model: ResolvedModel
-	readonly submitDiagnosis: SubmitDiagnosis
-	/** Absent outside a review session's runtime; a `pr-` session without it runs with no completion. */
-	readonly submitReview?: SubmitReview
-	/** Absent outside a runtime that answers pull request comments. */
-	readonly submitReply?: SubmitReply
-	readonly stageEdit?: StageEdit
+	/**
+	 * The tool this run answers through, which the caller picks for the session's row and origin
+	 * (`diagnosisCompletion`, `reviewCompletion`, `replyCompletion`). Absent, the run answers in prose.
+	 */
+	readonly completion?: MakeCompletion
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
 	/**
-	 * A review turn's own state, shared by its pass and its close-out: what was read, and the
-	 * findings saved so far. Absent, a review run makes its own coverage and offers no `record_finding`.
+	 * The pull request a review or reply session is about. Its diff and repository tools read
+	 * this one whatever repository or number the model passes; `unreadable` withholds them.
 	 */
-	readonly review?: ReviewTurnState
+	readonly pullRequest?: SessionRepositoryScope
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** Runs `run_code` programs for an agent that offers it; absent, the tool is not offered. */
@@ -157,16 +140,7 @@ export interface SettledChild {
 	readonly history: Prompt.Prompt | undefined
 }
 
-export interface ReviewTurnState {
-	readonly coverage: ReviewCoverage
-	readonly ledger: ReviewLedger
-	/** What the turn's `review_files` children answered, so a continuation still accounts for it. */
-	readonly childFindings?: ChildFindings
-}
-
 export interface ChatRunOutcome {
-	/** This run was a machine-started pass: an investigation's or a review's. */
-	readonly autonomous: boolean
 	/** The run's completion tool (`submit_diagnosis`, `submit_review`) landed a report. */
 	readonly submitted: boolean
 	/**
@@ -191,72 +165,35 @@ export const runChatTurn = (input: ChatRunInput) =>
 
 const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	const agent = input.agent ?? agentForSession(input.sessionId)
-	const profile = profileForTurn(agent, input.origin)
-	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
-	// read counts as read.
-	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
-		? (input.review?.coverage ?? makeReviewCoverage(input.text))
-		: undefined
-	// What this run's `review_files` children answer; `submit_review` checks the review against it.
-	const childFindings =
-		coverage === undefined ? undefined : (input.review?.childFindings ?? makeChildFindings())
+	const profile = profileForRoles(profileForTurn(agent, input.origin), input.tenant.roles)
+	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
+	const completion = input.completion?.({
+		turnId: input.messageId,
+		usage: input.usage,
+		modelName: input.model.name,
+		partial: input.closeOut === true,
+		sessionAttributes,
+	})
+	// A review's turn state is fed by the Maple handlers the review_files children share, so a
+	// group a child read counts as read, and `submit_review` checks the children's answers.
+	const review = completion?.review
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
 	// The same for a `run_code` program's calls (`<program call id>#<n>`), drawn when it settles.
 	const programCalls = new Map<string, ProgramCall>()
-	const sessionAttributes = agentSessionSpanAttributes(input.model.tags)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
 		profile.surface,
 		sessionAttributes,
-		coverage?.observe,
+		review?.coverage.observe,
 		(toolCallId, ui, call) =>
 			Str.includes("#")(toolCallId)
 				? programCalls.set(toolCallId, { ...call, callId: toolCallId, ui })
 				: uiByCall.set(toolCallId, ui),
+		input.pullRequest,
 	)
-	// One completion per session kind. The session id decides which, so a review session can never
-	// be handed the diagnosis tool or the other way round.
-	const completion: RunCompletion | undefined =
-		buildDiagnosisCompletion(
-			input.sessionId,
-			input.messageId,
-			input.tenant,
-			input.origin,
-			input.submitDiagnosis,
-			input.usage,
-			input.model.name,
-			input.closeOut === true,
-			sessionAttributes,
-		) ??
-		(input.submitReview === undefined
-			? undefined
-			: buildReviewCompletion(
-					input.sessionId,
-					input.tenant,
-					input.origin,
-					input.submitReview,
-					input.usage,
-					input.model.name,
-					input.closeOut === true,
-					sessionAttributes,
-					coverage,
-					input.review?.ledger,
-					childFindings,
-				)) ??
-		(input.submitReply === undefined || input.stageEdit === undefined
-			? undefined
-			: buildReplyCompletion(
-					input.sessionId,
-					input.tenant,
-					input.origin,
-					input.submitReply,
-					input.stageEdit,
-					sessionAttributes,
-				))
-
 	// Read-only tools only: a program cannot hold a proposal for approval, and a write it made before
 	// failing could not be retried safely.
 	const codeTools = Rec.fromEntries(
@@ -283,7 +220,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	// A review's own pass may hand groups of a large pull request's files to child reviewers, who
 	// read with the same tools, `run_code` included.
 	const fanout =
-		completion?.tool === SUBMIT_REVIEW && completion.autonomous
+		review !== undefined
 			? buildReviewFanout(
 					Toolkit.merge(direct, ...(codeMode === undefined ? [] : [codeMode.toolkit])),
 					input.model,
@@ -291,7 +228,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 					startedAt + Duration.toMillis(Duration.fromInputUnsafe(agent.budget.maxDuration)),
 					codeMode === undefined ? undefined : CODE_MODE_GUIDANCE,
 					Rec.keys(codeTools),
-					childFindings,
+					review.childFindings,
 				)
 			: undefined
 
@@ -318,8 +255,15 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 	)
 
 	// Not declared to the engine, which would then require the tool on every call; see
-	// `buildDiagnosisCompletion`. A landed submission still settles the run, below.
-	const prompt = codeMode === undefined ? profile.prompt : `${profile.prompt}\n\n${CODE_MODE_GUIDANCE}`
+	// `diagnosisCompletion`. A landed submission still settles the run, below.
+	const prompt = Arr.join(
+		[
+			profile.prompt,
+			...(input.orgContext === undefined ? [] : [input.orgContext]),
+			...(codeMode === undefined ? [] : [CODE_MODE_GUIDANCE]),
+		],
+		"\n\n",
+	)
 	const run = chatAgent({ ...agent, prompt }, toolkit, input.model, {
 		autonomous: input.origin.kind === "autonomous",
 	})
@@ -389,6 +333,8 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 		// reports token usage as it accrues — the event stream carries none — and `submit_diagnosis`
 		// reads the running total mid-run, so a hook that merely observes is what fills it.
 		budget,
+		// Each call's cost as OpenRouter billed it, which is what the turn's AI credits charge.
+		estimateCostMicrousd: reportedCost,
 	}).pipe(
 		// An abort clears the claim; the run notices at the next event rather than only after the
 		// in-flight model call drains.
@@ -415,10 +361,7 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			),
 		),
 		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
-		Effect.catchIf(
-			(error) => error instanceof ApprovalRequired,
-			() => Effect.void,
-		),
+		Effect.catchIf(Schema.is(ApprovalRequired), () => Effect.void),
 		// A landed submission makes any later failure moot, defects included; only an abort stays one.
 		Effect.catchCause((cause) =>
 			!submitted() || !input.holdsTurn()
@@ -449,7 +392,6 @@ const runChatTurnFrom = (input: ChatRunInput, startedAt: number) => {
 			}),
 		),
 		Effect.map((): ChatRunOutcome => ({
-			autonomous: completion?.autonomous ?? false,
 			submitted: completion?.submitted() ?? false,
 			compactions,
 		})),

@@ -1,4 +1,4 @@
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+import { countryLabel, isGoogleSearchHost, languageLabel, referrerLabel, utmLabel } from "./labels"
 import {
 	ANALYTICS_METRICS,
 	type AnalyticsMetricDescriptor,
@@ -7,8 +7,8 @@ import {
 	isMetricAvailable,
 	metricDelta,
 } from "@maple/views/lib/analytics-metrics"
-import { EMPTY_VALUE, formatNumber, formatPercent } from "@maple/ui/lib/format"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { EMPTY_VALUE, formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,28 +24,24 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { sectionHeading } from "../kit/section-heading"
 import { docsLink } from "../kit/signal-empty-state"
-import { statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
+import { METRIC_TILE, metricGrid, statRailItem, statRailItemSkeleton } from "../kit/stat-rail"
 import { Message } from "./message"
 import type { Model, Summary } from "./model"
-import { filtersOf } from "./requests"
+import { filtersOf, searchSiteOf } from "./requests"
 import { type BreakdownCard, breakdownPanel } from "./view-breakdown"
 import { trafficChart } from "./view-chart"
 import { favicon } from "./view-icons"
 import { hstack } from "@maple/views/ui/stack"
-
-// `AnalyticsContent`: bot notice, metric strip, traffic chart, the
-// breakdown cards and the traces behind a filtered event.
+import { typography } from "@maple/views/ui/typography"
+import { dividedList, stripClass } from "@maple/views/ui/rule"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
-
-const GRID =
-	"grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4"
-const TILE_NARROW = "@max-[560px]/page:px-4 @max-[560px]/page:py-3"
 
 const dataOf = <A>(slot: { readonly data: AsyncData.AsyncData<A, unknown> }): A | undefined =>
 	Option.getOrUndefined(AsyncData.getData(slot.data))
 
-/** `AnalyticsBotNotice`: shown once bots are at least 5% of the window's sessions. */
+/** Shown once bots are at least 5% of the window's sessions. */
 const botNotice = (h: H, mix: Summary, traffic: string | undefined): Html | null => {
 	if (mix.botShare === null || mix.botShare < 0.05) return null
 	const excluded =
@@ -62,10 +58,10 @@ const botNotice = (h: H, mix: Summary, traffic: string | undefined): Html | null
 		},
 		[
 			icon(h, "FaceRobotIcon", { size: 14, className: "shrink-0 text-muted-foreground" }),
-			h.span(
-				[h.Class("text-foreground")],
-				[formatPercent(mix.botShare), " of recorded sessions are bots"],
-			),
+			typography(h, { tone: "foreground" }, [
+				formatPercent(mix.botShare),
+				" of recorded sessions are bots",
+			]),
 			h.span(
 				[],
 				[
@@ -85,9 +81,10 @@ const metricStrip = (
 	previous: AnalyticsMetricSource | undefined,
 	selected: string,
 ): Html =>
-	h.div(
-		[h.Class(GRID)],
-		Arr.map(ANALYTICS_METRICS, (metric, index) => {
+	metricGrid(
+		h,
+		{},
+		Arr.map(ANALYTICS_METRICS, (metric) => {
 			const isAvailable = isMetricAvailable(metric, source)
 			const value = metric.value(source)
 			const change = isAvailable ? metricDelta(metric, source, previous) : null
@@ -100,14 +97,12 @@ const metricStrip = (
 				isSelected: metric.key === selected,
 				isDisabled: !isAvailable,
 				onSelect: Message.PickedMetric({ metric: metric.key }),
-				delay: (index % 4) * 60,
-				className: TILE_NARROW,
-				valueClassName: "@max-[560px]/page:text-xl",
+				...METRIC_TILE,
 			})
 		}),
 	)
 
-/** `pairedCompanion`: the selected metric's companion, when it reports something. */
+/** The selected metric's companion, when it reports something. */
 const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMetricSource) => {
 	if (metric.companion === undefined) return undefined
 	const companion = findMetric(metric.companion)
@@ -117,9 +112,10 @@ const pairedCompanion = (metric: AnalyticsMetricDescriptor, source: AnalyticsMet
 const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () => [
-			h.div(
-				[h.Class(GRID), h.AriaBusy(true)],
-				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, TILE_NARROW)),
+			metricGrid(
+				h,
+				{ isBusy: true },
+				Arr.map(ANALYTICS_METRICS, () => statRailItemSkeleton(h, METRIC_TILE.className)),
 			),
 			chartLoading(h, { variant: "area", height: 224 }),
 		],
@@ -145,15 +141,18 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 							timeseries: [],
 							pageviews: dataOf(model.previousPageviews) ?? [],
 						}
-			const picked =
+			const picked = Option.filter(
 				model.pickedMetric === null
-					? undefined
-					: ANALYTICS_METRICS.find((m) => m.key === model.pickedMetric)
-			const metric =
-				picked !== undefined && isMetricAvailable(picked, source)
-					? picked
-					: (ANALYTICS_METRICS.find((candidate) => isMetricAvailable(candidate, source)) ??
-						findMetric("visitors"))
+					? Option.none()
+					: Arr.findFirst(ANALYTICS_METRICS, (m) => m.key === model.pickedMetric),
+				(candidate) => isMetricAvailable(candidate, source),
+			)
+			const metric = Option.getOrElse(
+				Option.orElse(picked, () =>
+					Arr.findFirst(ANALYTICS_METRICS, (candidate) => isMetricAvailable(candidate, source)),
+				),
+				() => findMetric("visitors"),
+			)
 			const mix = dataOf(model.mix) ?? (model.mix.key === model.summary.key ? summary : undefined)
 			const notice = mix === undefined ? null : botNotice(h, mix, filtersOf(model.search).traffic)
 			return [
@@ -181,6 +180,42 @@ const summarySection = (h: H, model: Model, timeZone: string, isNarrow: boolean)
 		},
 	})
 
+/**
+ * Under the referrers, once the Search Console status is in: how many sessions Google's search
+ * sent, and the way to what they searched (the Search tab, which also holds the connect step).
+ */
+const googleSearchNote = (model: Model, referrers: ReadonlyArray<{ name: string; count: number }>) => {
+	const status = dataOf(model.searchStatus)
+	const sessions = Arr.reduce(referrers, 0, (sum, row) =>
+		isGoogleSearchHost(row.name) ? sum + row.count : sum,
+	)
+	if (status === undefined || sessions === 0) return undefined
+	const isImported = searchSiteOf(model.search, status) !== undefined
+	return (h: H): Html =>
+		hstack(
+			h,
+			{
+				justify: "between",
+				wrap: true,
+				className: stripClass("row", "gap-x-3 gap-y-1 text-2xs text-muted-foreground"),
+			},
+			[
+				hstack(h, { gap: "2", as: "span" }, [
+					icon(h, "GoogleIcon", { size: 12, className: "shrink-0" }),
+					`${formatNumber(sessions)} ${pluralize(sessions, "session")} from Google Search`,
+				]),
+				textLink(
+					h,
+					{ href: hrefOf(AppRoute.Analytics({ search: { ...model.search, tab: "search" } })) },
+					[
+						isImported ? "See what they searched" : "Connect Search Console",
+						icon(h, "ArrowRightIcon", { size: 12 }),
+					],
+				),
+			],
+		)
+}
+
 /** The overview's cards, built from the page's data (the dialog reads the same list). */
 export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
 	const breakdowns = dataOf(model.breakdowns)
@@ -199,6 +234,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 					noun: "referrer",
 					nounPlural: "referrers",
 					formatValue: referrerLabel,
+					note: googleSearchNote(model, breakdowns.referrerHosts),
 				},
 				{
 					tab: "UTM source",
@@ -363,7 +399,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 	]
 }
 
-/** `ProductEventTraceSamples`: the traces behind a filtered event, when it came from a span. */
+/** The traces behind a filtered event, when it came from a span. */
 const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): Html | null => {
 	const header = panelHeader(h, {
 		className: "justify-start gap-2 px-3 py-2",
@@ -389,8 +425,9 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 				? null
 				: panel(h, {}, [
 						header,
-						h.ul(
-							[h.Class("divide-y")],
+						dividedList(
+							h,
+							{ as: "ul", bordered: false },
 							Arr.map(samples, (sample, index) =>
 								h.li(
 									[h.Key(`${index}:${sample.traceId}:${sample.spanId}`)],
@@ -405,28 +442,24 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 												}),
 											),
 											leading: truncatedId(h, { value: sample.traceId, kind: "trace" }),
-											title: h.span(
-												[h.Class("font-normal")],
-												[
-													sample.serviceName,
-													...(sample.userId || sample.visitorId
-														? [
-																h.span(
-																	[h.Class("text-muted-foreground")],
-																	[
-																		sample.serviceName === "" ? "" : " ",
-																		"· ",
-																		sample.userId || sample.visitorId,
-																	],
-																),
-															]
-														: []),
-												],
-											),
-											trailing: h.span(
-												[h.Class("text-muted-foreground")],
-												[formatTimestampInTimezone(sample.timestamp, { timeZone })],
-											),
+											title: typography(h, { weight: "normal" }, [
+												sample.serviceName,
+												...(sample.userId || sample.visitorId
+													? [
+															typography(h, { tone: "muted" }, [
+																sample.serviceName === "" ? "" : " ",
+																"· ",
+																sample.userId || sample.visitorId,
+															]),
+														]
+													: []),
+											]),
+											trailing: timestamp(h, {
+												value: sample.timestamp,
+												timeZone,
+												nowMs: model.nowMs,
+												className: "text-muted-foreground",
+											}),
 										}),
 									],
 								),
@@ -488,7 +521,6 @@ export const sharedPageFailure = (model: Model) => {
 		: undefined
 }
 
-/** `AnalyticsContent`. */
 export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html => {
 	const shared = sharedPageFailure(model)
 	return h.div(

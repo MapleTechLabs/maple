@@ -1,5 +1,11 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { AlertIncidentDocument } from "@maple/domain/http"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
 import { formatSignalValue, signalLabels } from "@maple/web-data/alerts/form-utils"
+import {
+	formatSignalValue as formatAnomalyValue,
+	SIGNAL_LABEL as ANOMALY_SIGNAL_LABEL,
+} from "@maple/web-data/anomalies/format"
 import { incidentGroup } from "@maple/web-data/alerts/incident-timeline"
 import {
 	AlertIncidentRowSchema,
@@ -7,7 +13,7 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Option, Result, Schema, Array as Arr } from "effect"
-import { Command } from "foldkit"
+import { AsyncData, Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Keyed from "@maple/views/data/keyed"
@@ -17,51 +23,173 @@ import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchIncidentActivity,
+	FetchIncidentAnomaly,
+	FetchIncidentAnomalyTimeseries,
 	FetchIncidentChecks,
 	FetchIncidentDeliveries,
+	FetchIncidentEscalation,
 	FetchIncidentInvestigation,
+	FetchIncidentMonitors,
 	FetchIncidentPreview,
+	FetchIncidentSession,
+	FetchIncidentSilences,
+	FetchIncidentSlos,
 	ReadIncidentClock,
+	SetIncidentAcknowledged,
+	TrackAcknowledged,
 } from "./command"
+import { withAcknowledgement } from "../shared/commands"
+import { SLO_LIST_LIMIT } from "../shared/slo-commands"
+import { UPTIME_LIST_LIMIT } from "../../kit/uptime/commands"
 import { incidentViewOf, minuteOf, ruleStatesOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import * as SilenceDialog from "../silence-dialog/dialog"
+import { matchersForRule } from "../shared/silences"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 type IncidentRoute = Extract<AppRoute, { readonly _tag: "AlertIncident" }>
 
-export const init = (route: IncidentRoute, _context: PageContext): Return => ({
-	model: {
-		incidentId: route.incidentId,
-		nowMs: null,
-		incidents: null,
-		rules: null,
-		states: null,
-		preview: Keyed.idle(),
-		checks: Keyed.idle(),
-		deliveries: Keyed.idle(),
-		investigation: Keyed.idle(),
-		isStartingInvestigation: false,
-		chart: Chart.init(),
-		chartRuntime: { _tag: "Loading" },
-		themeColors: null,
-	},
-	commands: [
-		ReadIncidentClock(),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
-})
+const silencesKey = (context: PageContext) =>
+	requestKey(context.orgId, "alertSilences.list", { query: { status: "active", limit: 100 } })
 
-/** An atom never refetches a failed read on its own: a same-key `Load` leaves the slot alone. */
+const requestSilences = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	Option.match(Keyed.requestFor(model.silences, silencesKey(context), mode), {
+		onNone: () => ({ model }),
+		onSome: (silences) => ({
+			model: { ...model, silences },
+			commands: [FetchIncidentSilences({ key: silences.key })],
+		}),
+	})
+
+/** The silence dialog's outcome: a toast, and a re-read so the header shows the new silence. */
+const liftSilenceDialog = (
+	model: Model,
+	context: PageContext,
+	step: ReturnType<typeof SilenceDialog.update>,
+): Return => {
+	const next = { ...model, silenceDialog: step.model }
+	const commands = Command.mapMessages(step.commands ?? [], (message) =>
+		Message.GotSilenceDialogMessage({ message }),
+	)
+	if (step.outMessage === undefined) return { model: next, commands }
+	return SilenceDialog.OutMessage.match(step.outMessage, {
+		RequestedToast: ({ type, title, description }) => ({
+			model: next,
+			commands,
+			outMessage: PageOutMessage.RequestedToast({ type, title, description }),
+		}),
+		CreatedSilence: () => {
+			const refreshed = requestSilences(next, context, "Supersede")
+			return {
+				model: refreshed.model,
+				commands: [...commands, ...(refreshed.commands ?? []), ReadIncidentClock()],
+				outMessage: PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Alerts silenced",
+					description: "",
+				}),
+			}
+		},
+	})
+}
+
+/** Silence this incident's rule, or only its group when the rule is grouped by service. */
+const openSilence = (model: Model, context: PageContext): Return =>
+	// The rule decides whether one group or the whole rule is silenced, so wait for it.
+	model.rules === null
+		? { model }
+		: Option.match(incidentViewOf(model), {
+				onNone: () => ({ model }),
+				onSome: ({ incident, rule }) => {
+					const group = incidentGroup(incident)
+					const name = rule?.name ?? incident.ruleName
+					const service = incident.labels?.service
+					const environment = incident.labels?.environment
+					// An anomaly's group is its service and environment: silence those, not the whole rule.
+					const target =
+						incident.signalType === "anomaly" && service !== undefined
+							? {
+									label: group === null ? name : `${name} · ${group}`,
+									matchers: {
+										rule_ids: [incident.ruleId],
+										services: [service],
+										...(environment === undefined
+											? undefined
+											: { environments: [environment] }),
+									},
+								}
+							: rule === null
+								? { label: name, matchers: { rule_ids: [incident.ruleId] } }
+								: {
+										label: group === null ? name : `${name} · ${group}`,
+										matchers: matchersForRule(rule, group),
+									}
+					return liftSilenceDialog(
+						model,
+						context,
+						SilenceDialog.openFor(
+							model.silenceDialog,
+							target,
+							context.timeZone,
+							model.clockMs ?? 0,
+						),
+					)
+				},
+			})
+
+export const init = (route: IncidentRoute, context: PageContext): Return => {
+	const initial: Return = {
+		model: {
+			incidentId: route.incidentId,
+			nowMs: null,
+			incidents: null,
+			rules: null,
+			states: null,
+			preview: Keyed.idle(),
+			checks: Keyed.idle(),
+			deliveries: Keyed.idle(),
+			investigation: Keyed.idle(),
+			escalation: Keyed.idle(),
+			activity: Keyed.idle(),
+			isUpdatingAcknowledgement: false,
+			slos: Keyed.idle(),
+			monitors: Keyed.idle(),
+			anomaly: Keyed.idle(),
+			anomalyTimeseries: Keyed.idle(),
+			anomalyChart: Chart.init(),
+			isStartingInvestigation: false,
+			chart: Chart.init(),
+			chartRuntime: { _tag: "Loading" },
+			themeColors: null,
+			silences: Keyed.idle(),
+			silenceDialog: SilenceDialog.init("alert-incident-silence"),
+			grants: [],
+			clockMs: null,
+		},
+		commands: [ReadIncidentClock(), LoadChartRuntime()],
+	}
+	const silences = requestSilences(initial.model, context, "Load")
+	return {
+		model: silences.model,
+		commands: [...(initial.commands ?? []), ...(silences.commands ?? []), FetchIncidentSession()],
+	}
+}
+
+const slosKey = (context: PageContext) =>
+	requestKey(context.orgId, "slos.list", { query: { limit: SLO_LIST_LIMIT } })
+
+const monitorsKey = (context: PageContext) =>
+	requestKey(context.orgId, "uptimeMonitors.list", { query: { limit: UPTIME_LIST_LIMIT } })
+
+/** A same-key `Load` leaves the slot alone, so a failed read is not refetched on its own. */
 const sameKey = <A, E>(slot: Keyed.Keyed<A, E>, key: string) => slot.key === key
 
 /**
- * The reads `IncidentDetail` sends once it mounts: deliveries and the investigation for the
+ * The reads the incident page sends once it loads: deliveries and the investigation for the
  * incident, and the preview once the rule is known. Idempotent (`Load` keeps a same-key slot).
  */
 const followData = (model: Model, context: PageContext): Return =>
@@ -75,7 +203,55 @@ const followData = (model: Model, context: PageContext): Return =>
 			const investigationKey = requestKey(context.orgId, "investigations.list", {
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
+			// What moves an escalation: a new page, an ack, a severity change, the resolve.
+			const escalationKey = requestKey(context.orgId, "alertIncidents.retrieve", {
+				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
+				acknowledgedAt: view.incident.acknowledgedAt,
+			})
+			// Keyed on the acknowledgement, so an ack from anywhere (Slack, the API) refetches the history,
+			// and on what moves an escalation, so its pages to people land as they are sent.
+			const activityKey = requestKey(context.orgId, "alertIncidents.listEvents", {
+				id: incidentId,
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastNotifiedAt: view.incident.lastNotifiedAt,
+				// Epoch ms: the synced row and the API spell the same instant differently.
+				acknowledgedAt:
+					view.incident.acknowledgedAt === null ? null : toEpochMs(view.incident.acknowledgedAt),
+			})
+			// The anomaly's evidence is re-read whenever its alert incident moves (status, severity, a
+			// new breach): the synced row is the change signal, and the previous answer stays on screen.
+			const evidenceVersion = {
+				status: view.incident.status,
+				severity: view.incident.severity,
+				lastTriggeredAt: toEpochMs(view.incident.lastTriggeredAt),
+			}
 			const steps: ReadonlyArray<{ patch: Partial<Model>; commands: Commands }> = [
+				...Option.toArray(
+					Option.map(
+						sameKey(model.escalation, escalationKey)
+							? Option.none()
+							: Keyed.request(model.escalation, escalationKey, "Load"),
+						(escalation) => ({
+							patch: { escalation },
+							commands: [FetchIncidentEscalation({ key: escalationKey, incidentId })],
+						}),
+					),
+				),
+				...Option.toArray(
+					Option.map(
+						sameKey(model.activity, activityKey)
+							? Option.none()
+							: Keyed.request(model.activity, activityKey, "Load"),
+						(activity) => ({
+							patch: { activity },
+							commands: [FetchIncidentActivity({ key: activityKey, incidentId })],
+						}),
+					),
+				),
 				...Option.toArray(
 					Option.map(
 						sameKey(model.deliveries, deliveriesKey)
@@ -113,6 +289,71 @@ const followData = (model: Model, context: PageContext): Return =>
 					}),
 				),
 				...Option.toArray(
+					Option.flatMap(
+						view.incident.signalType === "slo_burn_rate"
+							? Option.some(slosKey(context))
+							: Option.none(),
+						(key) =>
+							Option.map(
+								sameKey(model.slos, key)
+									? Option.none()
+									: Keyed.request(model.slos, key, "Load"),
+								(slos) => ({ patch: { slos }, commands: [FetchIncidentSlos({ key })] }),
+							),
+					),
+				),
+				...Option.toArray(
+					Option.flatMap(
+						view.incident.signalType === "uptime"
+							? Option.some(monitorsKey(context))
+							: Option.none(),
+						(key) =>
+							Option.map(
+								sameKey(model.monitors, key)
+									? Option.none()
+									: Keyed.request(model.monitors, key, "Load"),
+								(monitors) => ({
+									patch: { monitors },
+									commands: [FetchIncidentMonitors({ key })],
+								}),
+							),
+					),
+				),
+				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncident", {
+							id,
+							...evidenceVersion,
+						})
+						return Option.map(
+							sameKey(model.anomaly, key)
+								? Option.none()
+								: Keyed.request(model.anomaly, key, "Load"),
+							(anomaly) => ({
+								patch: { anomaly },
+								commands: [FetchIncidentAnomaly({ key, id })],
+							}),
+						)
+					}),
+				),
+				...Option.toArray(
+					Option.flatMap(Option.fromNullishOr(view.incident.anomalyIncidentId), (id) => {
+						const key = requestKey(context.orgId, "anomalies.getIncidentTimeseries", {
+							id,
+							...evidenceVersion,
+						})
+						return Option.map(
+							sameKey(model.anomalyTimeseries, key)
+								? Option.none()
+								: Keyed.request(model.anomalyTimeseries, key, "Load"),
+							(anomalyTimeseries) => ({
+								patch: { anomalyTimeseries },
+								commands: [FetchIncidentAnomalyTimeseries({ key, id })],
+							}),
+						)
+					}),
+				),
+				...Option.toArray(
 					Option.flatMap(view.payload, (payload) => {
 						const key = requestKey(context.orgId, "alertRules.preview", payload)
 						return Option.map(
@@ -128,10 +369,31 @@ const followData = (model: Model, context: PageContext): Return =>
 				),
 			]
 			return {
-				model: steps.reduce<Model>((next, step) => ({ ...next, ...step.patch }), model),
+				model: Arr.reduce(steps, model, (next, step) => ({ ...next, ...step.patch })),
 				commands: Arr.flatMap(steps, (step) => step.commands),
 			}
 		},
+	})
+
+const thresholdFacts = (incident: AlertIncidentDocument) => [
+	{ label: "Signal", value: signalLabels[incident.signalType] },
+	{ label: "Observed", value: formatSignalValue(incident.signalType, incident.lastObservedValue) },
+	{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
+]
+
+/** An anomaly's facts are the detector's readings; its alert values are only severity codes, so nothing is sent until those load. */
+const anomalyFacts = (model: Model) =>
+	// Readings kept on screen while newer evidence loads are not sent as facts.
+	Option.match(model.anomaly.retained === true ? Option.none() : AsyncData.getData(model.anomaly.data), {
+		onNone: () => [],
+		onSome: (anomaly) => [
+			{ label: "Signal", value: ANOMALY_SIGNAL_LABEL[anomaly.signal_type] },
+			{
+				label: "Observed",
+				value: formatAnomalyValue(anomaly.signal_type, anomaly.last_observed_value),
+			},
+			{ label: "Baseline", value: formatAnomalyValue(anomaly.signal_type, anomaly.baseline_median) },
+		],
 	})
 
 const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams> =>
@@ -150,14 +412,7 @@ const createPayload = (model: Model): Option.Option<V2InvestigationCreateParams>
 			scope: incidentGroup(incident) ?? "all",
 			status: incident.status,
 			severity: incident.severity === "critical" ? ("critical" as const) : ("medium" as const),
-			facts: [
-				{ label: "Signal", value: signalLabels[incident.signalType] },
-				{
-					label: "Observed",
-					value: formatSignalValue(incident.signalType, incident.lastObservedValue),
-				},
-				{ label: "Threshold", value: formatSignalValue(incident.signalType, incident.threshold) },
-			],
+			facts: incident.signalType === "anomaly" ? anomalyFacts(model) : thresholdFacts(incident),
 			references: incident.errorIssueId
 				? [{ label: "Issue", url: `/errors/issues/${incident.errorIssueId}` }]
 				: [],
@@ -174,7 +429,10 @@ const isSameRuleRows = Schema.toEquivalence(Schema.Array(AlertRuleRowSchema))
 const isSameStateRows = Schema.toEquivalence(Schema.Array(AlertRuleStateRowSchema))
 
 const incidentRuleIdOf = (model: Model) =>
-	model.incidents?.find((row) => row.id === model.incidentId)?.rule_id
+	Option.map(
+		Arr.findFirst(model.incidents ?? [], (row) => row.id === model.incidentId),
+		(row) => row.rule_id,
+	)
 
 /**
  * The live rules and states are the whole org's and change on every alert tick. Once the incident
@@ -186,8 +444,9 @@ const withRuleRows = (
 	orgId: string,
 	patch: Readonly<{ rules: NonNullable<Model["rules"]> } | { states: NonNullable<Model["states"]> }>,
 ): Return => {
-	const ruleId = incidentRuleIdOf(model)
-	if (orgId !== context.orgId || ruleId === undefined) return withRows(model, context, orgId, patch)
+	const foundRuleId = incidentRuleIdOf(model)
+	if (orgId !== context.orgId || Option.isNone(foundRuleId)) return withRows(model, context, orgId, patch)
+	const ruleId = foundRuleId.value
 	const isUnchanged =
 		"rules" in patch
 			? model.rules !== null &&
@@ -203,9 +462,9 @@ const withRuleRows = (
 	return isUnchanged ? { model } : withRows(model, context, orgId, patch)
 }
 const incidentRowOf = (model: Model, rows: Model["incidents"]) =>
-	Option.fromNullishOr((rows ?? []).find((row) => row.id === model.incidentId))
+	Arr.findFirst(rows ?? [], (row) => row.id === model.incidentId)
 
-/** `clockAtSync`: once the incident row itself changes, the minute clock is read again. */
+/** Once the incident row itself changes, the minute clock is read again. */
 const withIncidents = (
 	model: Model,
 	context: PageContext,
@@ -223,9 +482,66 @@ const withIncidents = (
 	return isChanged ? { ...next, commands: [...(next.commands ?? []), ReadIncidentClock()] } : next
 }
 
+/** A step that only pages people changes no synced row, so the clock re-reads a run once its step is due. */
+const refreshDueEscalation = (model: Model, nowMs: number): Return => {
+	const key = model.escalation.key
+	const run = Option.getOrNull(AsyncData.getData(model.escalation.data))
+	const isDue =
+		key !== null &&
+		run !== null &&
+		run.status === "active" &&
+		run.next_step_at !== null &&
+		toEpochMs(run.next_step_at) <= nowMs
+	const view = incidentViewOf(model)
+	if (!isDue || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	return Option.match(Keyed.request(model.escalation, key, "Refresh"), {
+		onNone: () => ({ model }),
+		onSome: (escalation): Return => ({
+			model: { ...model, escalation },
+			commands: [FetchIncidentEscalation({ key: escalation.key, incidentId })],
+		}),
+	})
+}
+
+/** Re-reads the activity on its own key: pages are written without moving anything that keys it. */
+const refreshActivity = (model: Model, mode: "Refresh" | "Supersede"): Return => {
+	const key = model.activity.key
+	const view = incidentViewOf(model)
+	if (key === null || Option.isNone(view)) return { model }
+	const incidentId = view.value.incident.id
+	// A new step supersedes a read in flight, which may predate its page; the poll only refreshes,
+	// so a slow read is not discarded by the next tick.
+	return Option.match(Keyed.requestFor(model.activity, key, mode), {
+		onNone: () => ({ model }),
+		onSome: (activity): Return => ({
+			model: { ...model, activity },
+			commands: [FetchIncidentActivity({ key: activity.key, incidentId })],
+		}),
+	})
+}
+
+const isPageInFlight = (model: Model): boolean =>
+	Arr.some(
+		Option.getOrElse(AsyncData.getData(model.activity.data), () => []),
+		(event) => event.page?.status === "queued" || event.page?.status === "sending",
+	)
+
+const stepsSentOf = (model: Model): number | null =>
+	Option.getOrNull(AsyncData.getData(model.escalation.data))?.steps_sent ?? null
+
+/** The clock re-reads a due step, and the activity while a page is still on its way. */
+const tick = (model: Model, nowMs: number): Return => {
+	const escalation = refreshDueEscalation(model, nowMs)
+	if (!isPageInFlight(escalation.model)) return escalation
+	const activity = refreshActivity(escalation.model, "Refresh")
+	return { model: activity.model, commands: [...(escalation.commands ?? []), ...(activity.commands ?? [])] }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
-		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs) }, context),
+		ReadClock: ({ nowMs }) => followData({ ...model, nowMs: minuteOf(nowMs), clockMs: nowMs }, context),
+		TickedClock: ({ nowMs }) => tick({ ...model, clockMs: nowMs }, nowMs),
 		UpdatedIncidents: ({ orgId, rows }) => withIncidents(model, context, orgId, rows),
 		UpdatedRules: ({ orgId, rows }) => withRuleRows(model, context, orgId, { rules: rows }),
 		UpdatedRuleStates: ({ orgId, rows }) => withRuleRows(model, context, orgId, { states: rows }),
@@ -238,8 +554,65 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchDeliveries: ({ key, result }) => ({
 			model: { ...model, deliveries: Keyed.accept(model.deliveries, key, result) },
 		}),
+		CompletedFetchActivity: ({ key, result }) => ({
+			model: { ...model, activity: Keyed.accept(model.activity, key, result) },
+		}),
+		ClickedAcknowledge: ({ acknowledged }) =>
+			model.isUpdatingAcknowledgement
+				? { model }
+				: Option.match(incidentViewOf(model), {
+						onNone: () => ({ model }),
+						onSome: ({ incident }) => ({
+							model: { ...model, isUpdatingAcknowledgement: true },
+							commands: [SetIncidentAcknowledged({ incidentId: incident.id, acknowledged })],
+						}),
+					}),
+		CompletedSetAcknowledged: ({ acknowledged, result }) =>
+			Result.match(result, {
+				onSuccess: (incident) => {
+					const next = followData(
+						{
+							...model,
+							isUpdatingAcknowledgement: false,
+							incidents:
+								model.incidents === null
+									? null
+									: withAcknowledgement(model.incidents, incident),
+						},
+						context,
+					)
+					return acknowledged
+						? { ...next, commands: [...(next.commands ?? []), TrackAcknowledged()] }
+						: next
+				},
+				onFailure: (failure) => ({
+					model: { ...model, isUpdatingAcknowledgement: false },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: acknowledged
+							? "Couldn't acknowledge the incident"
+							: "Couldn't unacknowledge the incident",
+						description: failure.message,
+					}),
+				}),
+			}),
 		CompletedFetchInvestigation: ({ key, result }) => ({
 			model: { ...model, investigation: Keyed.accept(model.investigation, key, result) },
+		}),
+		CompletedFetchEscalation: ({ key, result }) => {
+			const next = { ...model, escalation: Keyed.accept(model.escalation, key, result) }
+			// A step that paged people shows in the activity, which no synced row re-keys.
+			const before = stepsSentOf(model)
+			const after = stepsSentOf(next)
+			return before !== null && after !== null && after !== before
+				? refreshActivity(next, "Supersede")
+				: { model: next }
+		},
+		CompletedFetchSlos: ({ key, result }) => ({
+			model: { ...model, slos: Keyed.accept(model.slos, key, result) },
+		}),
+		CompletedFetchMonitors: ({ key, result }) => ({
+			model: { ...model, monitors: Keyed.accept(model.monitors, key, result) },
 		}),
 		ClickedInvestigate: () =>
 			model.isStartingInvestigation
@@ -251,6 +624,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							commands: [CreateInvestigation({ payload })],
 						}),
 					}),
+		CompletedTrackAcknowledged: () => ({ model }),
 		CompletedCreateInvestigation: ({ result }) =>
 			Result.match(result, {
 				onSuccess: (id) => ({
@@ -269,11 +643,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					}),
 				}),
 			}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
+		...chartEnvHandlers(model),
+		CompletedFetchAnomaly: ({ key, result }) => ({
+			model: { ...model, anomaly: Keyed.accept(model.anomaly, key, result) },
 		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		CompletedFetchAnomalyTimeseries: ({ key, result }) => ({
+			model: { ...model, anomalyTimeseries: Keyed.accept(model.anomalyTimeseries, key, result) },
+		}),
+		GotAnomalyChartMessage: ({ message: child }) => {
+			const next = Chart.update(model.anomalyChart, child)
+			return {
+				model: { ...model, anomalyChart: next.model },
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotAnomalyChartMessage({ message }),
+				),
+			}
+		},
+		CompletedFetchSilences: ({ key, result }) => ({
+			model: { ...model, silences: Keyed.accept(model.silences, key, result) },
+		}),
+		ClickedSilence: () => openSilence(model, context),
+		CompletedFetchSession: ({ grants }) => ({ model: { ...model, grants } }),
+		GotSilenceDialogMessage: ({ message: child }) =>
+			liftSilenceDialog(model, context, SilenceDialog.update(model.silenceDialog, child)),
 		GotChartMessage: ({ message: child }) => {
 			const next = Chart.update(model.chart, child)
 			return {

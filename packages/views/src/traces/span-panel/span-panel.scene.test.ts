@@ -1,5 +1,5 @@
 import { SpanId, TraceId } from "@maple/domain"
-import { Effect, Result, Schema, Array as Arr } from "effect"
+import { Effect, Option, Result, Schema, Array as Arr } from "effect"
 import { click, expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { inertHtml as ih } from "foldkit/html"
 import { describe, expect, test } from "vitest"
@@ -184,7 +184,9 @@ describe("span panel", () => {
 	})
 
 	test("a span the source has no row for falls back to the trace's trimmed attributes", async () => {
-		const command = init(input).commands?.find(({ name }) => name === FetchSpanDetail.name)
+		const command = Option.getOrUndefined(
+			Arr.findFirst(init(input).commands ?? [], ({ name }) => name === FetchSpanDetail.name),
+		)
 		const source = TraceSource.of({
 			spanDetail: () => Effect.succeedNone,
 			spanLogs: () => Effect.succeed([]),

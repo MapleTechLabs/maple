@@ -2,7 +2,7 @@ import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { errorState } from "@maple/views/ui/error-state"
 import { parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
 import { EMPTY_VALUE, formatNumber, formatValueByUnit } from "@maple/ui/lib/format"
-import { formatRelativeFrom } from "@maple/ui/lib/time-format"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { spinner } from "@maple/views/ui/spinner"
 import {
@@ -30,16 +30,23 @@ import type { Model } from "./model"
 import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 
-// The body of `MetricDetailView`: the chart section and the per-service breakdown.
+// The metric detail page's body: the chart section and the per-service breakdown.
 
 type H = HtmlBuilder<Message>
 
-const relative = (value: string, nowMs: number): string => {
+const relative = (h: H, value: string, nowMs: number, timeZone: string): Html | string => {
 	const ms = parseClickHouseDateTime(value)
-	return ms === null ? "-" : formatRelativeFrom(ms, nowMs)
+	return ms === null ? "-" : timestamp(h, { value: ms, format: "relative", nowMs, timeZone })
 }
 
-const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds, clockMs: number): Html => {
+const chartSection = (
+	h: H,
+	model: Model,
+	entry: MetricEntry,
+	bounds: TimeBounds,
+	clockMs: number,
+	timeZone: string,
+): Html => {
 	const counter = isCounter(entry)
 	const unitLabel = humanizeUnit(entry.metricUnit, entry.metricName)
 	const chartUnit = counter ? undefined : chartUnitFromOtel(entry.metricUnit, entry.metricName)
@@ -59,13 +66,13 @@ const chartSection = (h: H, model: Model, entry: MetricEntry, bounds: TimeBounds
 					formatNumber(entry.dataPointCount),
 					" datapoints · last seen",
 					" ",
-					relative(entry.lastSeen, Math.max(model.nowMs, clockMs)),
+					relative(h, entry.lastSeen, Math.max(model.nowMs, clockMs), timeZone),
 				]),
 			]),
 			Option.isSome(failure)
 				? errorState(h, {
 						failure: failure.value,
-						title: "Couldn’t load timeseries",
+						title: "Couldn't load timeseries",
 						onRetry: Message.ClickedRefresh(),
 					})
 				: seriesChart(h, {
@@ -92,10 +99,10 @@ const breakdownRow = (h: H, row: BreakdownRow, chartUnit: string | undefined, sh
 			h,
 			[
 				row.name
-					? h.span(
-							[h.Class("flex items-center gap-1.5")],
-							[serviceDot(h, { serviceName: row.name, size: "sm" }), row.name],
-						)
+					? hstack(h, { gap: "1.5", align: "center", as: "span" }, [
+							serviceDot(h, { serviceName: row.name, size: "sm" }),
+							row.name,
+						])
 					: EMPTY_VALUE,
 			],
 			"font-mono text-xs",
@@ -113,11 +120,13 @@ const breakdownSection = (h: H, model: Model, entry: MetricEntry): Html => {
 	const failure = failureWithoutData(model.breakdown)
 	const body = (): Html => {
 		if (isAwaitingFirstData(model.breakdown))
-			return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
+			return hstack(h, { align: "center", justify: "center", className: "h-24 rounded-md border" }, [
+				spinner(h),
+			])
 		if (Option.isSome(failure))
 			return errorState(h, {
 				failure: failure.value,
-				title: "Couldn’t load breakdown",
+				title: "Couldn't load breakdown",
 				onRetry: Message.ClickedRefresh(),
 			})
 		const rows = Option.getOrElse(AsyncData.getData(model.breakdown.data), () => [])
@@ -154,6 +163,7 @@ export const detailBody = (
 	entry: MetricEntry,
 	bounds: TimeBounds,
 	clockMs: number,
+	timeZone: string,
 ): Html =>
 	h.div(
 		[h.Class("space-y-6 p-4")],
@@ -161,7 +171,7 @@ export const detailBody = (
 			...(entry.metricDescription
 				? [typography(h, { as: "p", size: "sm", tone: "muted" }, [entry.metricDescription])]
 				: []),
-			chartSection(h, model, entry, bounds, clockMs),
+			chartSection(h, model, entry, bounds, clockMs, timeZone),
 			breakdownSection(h, model, entry),
 		],
 	)

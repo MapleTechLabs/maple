@@ -2,7 +2,7 @@ import * as Command from "effect/cli/Command"
 import * as Argument from "effect/cli/Argument"
 import * as Flag from "effect/cli/Flag"
 import { Effect, Option, Array as Arr, String as Str } from "effect"
-import type { TracesMetric } from "@maple/query-engine"
+import type { TracesMetric } from "@maple/domain/query-engine"
 import * as f from "../lib/flags"
 import { CliNotFoundError } from "../lib/errors"
 import { isEmptyResult, printResult } from "../lib/output"
@@ -55,7 +55,7 @@ export const services = Command.make("services", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
-			const needle = Option.getOrUndefined(a.service)?.toLowerCase()
+			const needle = Option.getOrUndefined(Option.map(a.service, Str.toLowerCase))
 			const all = yield* Ops.listServices({ range, environment: Option.getOrUndefined(a.environment) })
 			const matching = Arr.filter(
 				[...all],

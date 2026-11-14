@@ -4,7 +4,7 @@ name: Release
 # the public npm packages, so the next run finds unpublished versions and publishes them
 # (scripts/publish-packages.ts), then pushes the tags and cuts GitHub releases. The private CLI
 # is not on npm, so a new apps/cli version is tagged `v<version>` here and the local binary
-# release is dispatched on that tag.
+# release is dispatched for that tag.
 
 on:
     push:
@@ -66,7 +66,7 @@ jobs:
                   NPM_CONFIG_PROVENANCE: "true"
 
             # A tag pushed with GITHUB_TOKEN starts no workflows, so the binary release is
-            # dispatched on the new tag explicitly.
+            # dispatched explicitly, on main: its signing environment deploys from main only.
             - name: Tag and release the CLI
               if: steps.changesets.outputs.has-changesets == 'false'
               env:
@@ -78,4 +78,4 @@ jobs:
                     exit 0
                   fi
                   gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA"
-                  gh workflow run local-binary-release.yml --ref "$tag"
+                  gh workflow run local-binary-release.yml --ref main -f tag="$tag"

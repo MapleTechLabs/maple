@@ -1,5 +1,5 @@
-import { gcpFleet } from "../../../components/infra/gcp/tabs"
-import { HOST_LIST_LIMIT } from "../../../components/infra/host-scopes"
+import { gcpFleet } from "../../infra-integrations/gcp/tabs"
+import { HOST_LIST_LIMIT } from "../kit/host-scopes"
 import {
 	summarizeCloudflare,
 	summarizeContainers,
@@ -8,20 +8,22 @@ import {
 	summarizePlanetScale,
 	summarizePods,
 	summarizeRailway,
+	summarizeVercel,
 	summarizeSupabase,
-} from "../../../components/infra/overview/summaries"
+} from "./summaries"
 import { getCloudflareZones } from "@maple/web-data/warehouse/cloudflare-infra"
 import { getAwsInfraFleet } from "@maple/web-data/warehouse/aws-infra"
 import { getGcpInfraFleet } from "@maple/web-data/warehouse/gcp-infra"
 import { containersSummary, listHosts, podsSummary } from "@maple/web-data/warehouse/infra"
 import { getRailwayServices } from "@maple/web-data/warehouse/railway-infra"
+import { getVercelProjects } from "@maple/web-data/warehouse/vercel-infra"
 import { getSupabaseProjects } from "@maple/web-data/warehouse/supabase-infra"
 import { getServiceMapPlanetScale } from "@maple/web-data/warehouse/service-map"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { IntegrationStatuses } from "../../../data/integration-statuses"
 import { loadInfraPresence } from "../../../data/infra-surfaces"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { Message } from "./message"
 import { SourceId, type SourceReading } from "./model"
@@ -49,6 +51,10 @@ const read = (source: SourceId, window: TimeWindow) => {
 		case "railway":
 			return Effect.map(getRailwayServices({ data }), ({ services }) =>
 				reading(summarizeRailway(services)),
+			)
+		case "vercel":
+			return Effect.map(getVercelProjects({ data }), ({ projects }) =>
+				reading(summarizeVercel(projects)),
 			)
 		// Discovery names the projects; without it the findings fall back to refs.
 		case "supabase":
@@ -80,15 +86,13 @@ const read = (source: SourceId, window: TimeWindow) => {
 	}
 }
 
-/** `infraPresenceResultAtom({ data: window })`, one cache entry with the sidebar's when the windows match. */
+/** The presence probe for a window, one cache entry with the sidebar's when the windows match. */
 export const FetchPresence = Command.define("FetchInfraOverviewPresence", {
 	args: { orgId: Schema.String, key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchPresence],
 	execute: ({ orgId, key, window }) =>
 		loadInfraPresence(orgId, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchPresence({ key, result })),
+			settleTo((result) => Message.CompletedFetchPresence({ key, result })),
 		),
 })
 
@@ -97,8 +101,6 @@ export const FetchSource = Command.define("FetchInfraOverviewSource", {
 	messages: [Message.CompletedFetchSource],
 	execute: ({ source, key, window }) =>
 		read(source, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSource({ source, key, result })),
+			settleTo((result) => Message.CompletedFetchSource({ source, key, result })),
 		),
 })

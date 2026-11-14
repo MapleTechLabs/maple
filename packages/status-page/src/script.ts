@@ -14,13 +14,30 @@ function tip(d,c){var s=state(c);return fday(d)+": "+(s==="none"?"No data":s==="
 function pct(p){return(Math.floor(+(p*100).toFixed(6))/100).toFixed(2).replace(/\\.?0+$/,"")+"%"}
 function cells(y,m){var lead=(new Date(Date.UTC(y,m-1,1)).getUTCDay()+6)%7,n=new Date(Date.UTC(y,m,0)).getUTCDate(),t=Math.ceil((lead+n)/7)*7,r=[];for(var i=0;i<t;i++){var d=i-lead+1;r.push(d>=1&&d<=n?d:0)}return r}
 function mback(d,b){var p=d.split("-"),i=p[0]*12+(p[1]-1)-b;return Math.floor(i/12)+"-"+pad(i%12+1)}
+function stamp(y,mo,d,h,mi,tz,cy){return M[mo]+" "+d+", "+(y===cy?"":y+", ")+pad(h)+":"+pad(mi)+(tz?" "+tz:"")}
 `
 
-/** DOM glue: relative times and the delayed banner, then paging and the calendar's day panel. */
+/** DOM glue: times in the visitor's zone, relative times and the delayed banner, the subscribe dialog and its copy buttons, paging, the calendar's day panel and bar tooltips. */
 const PAGE_SCRIPT_DOM = `var b=document.body,u=+b.getAttribute("data-updated-at"),s=+b.getAttribute("data-stale-after");
 function age(ms){var m=Math.floor(Math.max(0,ms)/6e4);if(m<1)return"just now";if(m<60)return m+" min ago";var h=Math.floor(m/60);return h<48?h+" h ago":Math.floor(h/24)+" d ago"}
-function tick(){var g=Date.now()-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false}
+var Z=[];try{Z=[new Intl.DateTimeFormat("en-US",{timeZoneName:"short"}),new Intl.DateTimeFormat("en-GB",{timeZoneName:"short"})]}catch(x){}
+function tzn(t){var n="";Z.some(function(f){f.formatToParts(t).forEach(function(p){if(p.type==="timeZoneName")n=p.value});return!/^GMT[+-]/.test(n)});return n}
+function times(now){document.querySelectorAll("time[datetime]").forEach(function(e){var t=new Date(e.getAttribute("datetime")),g=now-t;if(isNaN(g))return;var a=stamp(t.getFullYear(),t.getMonth(),t.getDate(),t.getHours(),t.getMinutes(),tzn(t),new Date(now).getFullYear());if(e.closest(".updates")&&g>=0&&g<864e5){e.textContent=age(g);e.title=a}else{e.textContent=a;e.removeAttribute("title")}})}
+function tick(){var n=Date.now(),g=n-u,e=document.getElementById("updated"),d=document.getElementById("delayed");if(e)e.textContent="Updated "+age(g);if(d&&g>s)d.hidden=false;times(n)}
 tick();setInterval(tick,3e4);
+b.classList.add("js");
+var dlg=document.getElementById("subscribe"),box=dlg?dlg.querySelector(".modal-box"):null,opener=null;
+document.querySelectorAll("[data-copy]").forEach(function(c){c.hidden=false});
+function isOpen(){return!!dlg&&dlg.classList.contains("open")}
+function openSub(){if(!dlg)return;opener=document.activeElement;dlg.classList.add("open");box.focus({preventScroll:true})}
+function closeSub(){dlg.classList.remove("open");if(location.hash==="#subscribe")history.replaceState(null,"",location.pathname+location.search);if(opener&&opener.focus)opener.focus()}
+function pick(c){c.focus();c.select()}
+function copy(a){var c=a.parentNode.querySelector("input"),k=function(){pick(c)};if(navigator.clipboard)navigator.clipboard.writeText(c.value).then(function(){a.setAttribute("data-copied","");setTimeout(function(){a.removeAttribute("data-copied")},1500)},k);else k()}
+document.addEventListener("click",function(ev){var t=ev.target;if(!t||!t.closest)return;var a=t.closest("[data-copy]");if(a)copy(a);
+if(t.closest('a[href="#subscribe"]')){ev.preventDefault();openSub()}else if(t.closest("[data-sub-close]")){ev.preventDefault();closeSub()}});
+document.addEventListener("keydown",function(ev){if(ev.key==="Escape"&&isOpen())closeSub()});
+document.addEventListener("focusin",function(ev){if(isOpen()&&!dlg.contains(ev.target))box.focus({preventScroll:true})});
+if(location.hash==="#subscribe")openSub();
 var src=document.getElementById("sp-data");if(!src)return;var D=JSON.parse(src.textContent),W=0,C=0;
 function mk(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
 function nav(n,pos,max){document.querySelectorAll('[data-nav="'+n+'"]').forEach(function(a){a.hidden=false;a.disabled=a.getAttribute("data-dir")==="older"?pos>=max-1:pos<=0})}
@@ -32,7 +49,12 @@ function dayNode(day,n){var k=D.days[day],e;if(k){e=mk("button","day t-"+k[0],St
 function drawMonth(){var ym=mback(D.today,C),y=+ym.slice(0,4),m=+ym.slice(5,7),l=document.getElementById("month-label"),body=document.getElementById("cal-body");if(l)l.textContent=M[m-1]+" "+y;if(!body)return;body.textContent="";var cs=cells(y,m),tr=null;for(var i=0;i<cs.length;i++){if(i%7===0){tr=mk("tr");body.appendChild(tr)}var td=mk("td");tr.appendChild(td);if(cs[i])td.appendChild(dayNode(ym+"-"+pad(cs[i]),cs[i]))}closePanel();nav("month",C,D.months)}
 function openPanel(a){var day=a.getAttribute("data-day"),k=D.days[day],p=document.getElementById("cal-panel"),was=a.getAttribute("aria-expanded")==="true";closePanel();if(was||!k||!p)return;a.setAttribute("aria-expanded","true");p.appendChild(mk("h3",null,fday(day)));var ul=mk("ul");k[1].forEach(function(i){var x=D.entries[i],li=mk("li","s-"+x.tone),t;if(x.href){t=mk("a","title",x.title);t.href=x.href}else t=mk("span","title",x.title);li.appendChild(t);li.appendChild(mk("span","meta",x.meta));ul.appendChild(li)});p.appendChild(ul);p.hidden=false}
 document.addEventListener("click",function(ev){var a=ev.target&&ev.target.closest?ev.target.closest("button"):null;if(!a)return;var n=a.getAttribute("data-nav"),older=a.getAttribute("data-dir")==="older";if(n==="window"){W=Math.max(0,Math.min(D.windows-1,W+(older?1:-1)));drawWindow()}else if(n==="month"){C=Math.max(0,Math.min(D.months-1,C+(older?1:-1)));drawMonth()}else if(a.hasAttribute("data-day"))openPanel(a)});
-nav("window",W,D.windows);nav("month",C,D.months);`
+nav("window",W,D.windows);nav("month",C,D.months);
+var T=mk("div","tip");T.hidden=true;T.setAttribute("role","tooltip");b.appendChild(T);
+function hideTip(){T.hidden=true}
+function showTip(li){var t=li.getAttribute("aria-label");if(!t){t=li.title;li.setAttribute("aria-label",t);li.removeAttribute("title")}T.textContent=t;T.hidden=false;var r=li.getBoundingClientRect(),w=T.offsetWidth,top=r.top-T.offsetHeight-6;T.style.left=Math.max(8,Math.min(window.innerWidth-w-8,r.left+r.width/2-w/2))+"px";T.style.top=(top<8?r.bottom+6:top)+"px"}
+document.addEventListener("pointerover",function(ev){var t=ev.target,p=t&&t.parentNode;if(p&&p.className==="bars")showTip(t);else hideTip()});
+window.addEventListener("scroll",hideTip,true);`
 
 /** Ages "Updated ..." and the delayed banner, and pages the bars and calendar from the embedded data. */
 export const PAGE_SCRIPT = `(function(){${PAGE_SCRIPT_LOGIC}${PAGE_SCRIPT_DOM}})();`

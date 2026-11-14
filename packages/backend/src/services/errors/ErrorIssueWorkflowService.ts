@@ -34,17 +34,18 @@ import {
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
-	IssueEscalations,
 } from "@maple/db/tables"
 import { Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/backend/services/auth/system-actors"
+import { SYSTEM_ERRORS_AGENT_NAME } from "@maple/domain/system-agents"
 import { currentTxid, readTxid } from "@maple/backend/platform/electric-txid"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { makeErrorDatabaseExecute } from "./error-persistence"
-import { escalationDedupeKey, escalationReasonFor } from "./issue-severity"
+import { issueFingerprintHashes } from "./issue-fingerprints"
+import { writeIssueSeverity } from "./issue-severity"
 
 const StoredJsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 type StoredJsonRecord = typeof StoredJsonRecord.Type
@@ -56,6 +57,18 @@ const decodeIssueDateTimeSync = Schema.decodeUnknownSync(ErrorIssueDocument.fiel
 
 const DEFAULT_EVENTS_LIMIT = 100
 const DEFAULT_LEASE_DURATION_MS = 30 * 60_000
+
+/** The 409 for an issue somebody else holds. `row` is the holder's row, when one was read. */
+export const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
+	new ErrorIssueLeaseConflictError({
+		message: "Issue is held by another actor",
+		issueId,
+		currentHolderActorId: row?.leaseHolderActorId ?? null,
+		leaseExpiresAt:
+			row?.leaseExpiresAt == null
+				? null
+				: decodeIssueDateTimeSync(new Date(row.leaseExpiresAt).toISOString()),
+	})
 
 export interface ErrorIssueWorkflowPublicApi {
 	readonly heartbeatIssue: (
@@ -125,6 +138,7 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 		hasOpenIncident: boolean,
 		actorMap: Map<ActorId, ActorDocument>,
 		activity: IssueActivityRollup,
+		fingerprintHashes: ReadonlyArray<string>,
 	) => ErrorIssueDocument
 	readonly requireIssue: (
 		orgId: OrgId,
@@ -171,6 +185,19 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly payload?: StoredJsonRecord
 		},
 	) => ErrorIssueEventInsert
+	/** Every fingerprint the issue owns, its own first. */
+	readonly fingerprintHashesOf: (
+		orgId: OrgId,
+		row: ErrorIssueRow,
+	) => Effect.Effect<ReadonlyArray<string>, ErrorPersistenceError>
+	/** Mirror an actor-attributed issue event into the org audit log. Never fails. */
+	readonly recordEventAudit: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		actorId: ActorId,
+		type: ErrorIssueEventType,
+		opts: { readonly fromState?: WorkflowState | null; readonly toState?: WorkflowState | null },
+	) => Effect.Effect<void>
 	readonly applyTransition: (
 		orgId: OrgId,
 		actorId: ActorId | null,
@@ -181,6 +208,10 @@ export interface ErrorIssueWorkflowServiceApi extends ErrorIssueWorkflowPublicAp
 			readonly snoozeUntilMs?: number | null
 			readonly timestamp?: number
 			readonly payload?: StoredJsonRecord
+			/** Only apply while the snooze has elapsed by this time, so a renewed snooze wins. */
+			readonly snoozeElapsedBy?: number
+			/** Only apply while nobody holds the lease, so a claim taken since the read wins. */
+			readonly unleased?: boolean
 		},
 	) => Effect.Effect<
 		ErrorIssueRow,
@@ -215,11 +246,13 @@ const make: Effect.Effect<
 		hasOpenIncident,
 		actorMap,
 		activity,
+		fingerprintHashes,
 	) =>
 		new ErrorIssueDocument({
 			id: row.id,
 			kind: row.kind,
 			fingerprintHash: row.fingerprintHash,
+			fingerprintHashes,
 			serviceName: row.serviceName,
 			exceptionType: row.exceptionType,
 			exceptionMessage: row.exceptionMessage,
@@ -246,6 +279,7 @@ const make: Effect.Effect<
 			resolvedVersions: row.resolvedVersionsJson,
 			snoozeUntil: row.snoozeUntil == null ? null : isoFromMs(row.snoozeUntil),
 			archivedAt: row.archivedAt == null ? null : isoFromMs(row.archivedAt),
+			mergedIntoIssueId: row.mergedIntoIssueId,
 			hasOpenIncident,
 			commentCount: activity.commentCount,
 			openPullRequestCount: activity.openPullRequestCount,
@@ -282,7 +316,7 @@ const make: Effect.Effect<
 			),
 		)
 		const row = rows[0]
-		if (!row) {
+		if (row === undefined) {
 			return yield* new ErrorIssueNotFoundError({
 				message: "Error issue not found",
 				issueId,
@@ -296,26 +330,33 @@ const make: Effect.Effect<
 		issueIds,
 	) => {
 		if (issueIds.length === 0) return Effect.succeed(new Set<ErrorIssueId>())
-		return Effect.all([
-			dbExecute((db) =>
-				db.run(
-					PG.from(ErrorIncidents)
-						.select("issueId")
-						.where(($) => [$.orgId.eq(orgId), $.status.eq("open"), $.issueId.in_(...issueIds)]),
+		return Effect.all(
+			[
+				dbExecute((db) =>
+					db.run(
+						PG.from(ErrorIncidents)
+							.select("issueId")
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.status.eq("open"),
+								$.issueId.in_(...issueIds),
+							]),
+					),
 				),
-			),
-			dbExecute((db) =>
-				db.run(
-					PG.from(AlertIncidents)
-						.select(($) => ({ issueId: $.errorIssueId }))
-						.where(($) => [
-							$.orgId.eq(orgId),
-							$.status.eq("open"),
-							$.errorIssueId.in_(...issueIds),
-						]),
+				dbExecute((db) =>
+					db.run(
+						PG.from(AlertIncidents)
+							.select(($) => ({ issueId: $.errorIssueId }))
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.status.eq("open"),
+								$.errorIssueId.in_(...issueIds),
+							]),
+					),
 				),
-			),
-		]).pipe(
+			],
+			{ concurrency: "unbounded" },
+		).pipe(
 			Effect.map(
 				([errorRows, alertRows]) =>
 					new Set([
@@ -341,28 +382,31 @@ const make: Effect.Effect<
 			if (issueIds.length === 0) return rollups
 			const upsert = (issueId: ErrorIssueId, patch: Partial<IssueActivityRollup>) =>
 				rollups.set(issueId, { ...(rollups.get(issueId) ?? EMPTY_ACTIVITY), ...patch })
-			const [commentRows, prRows] = yield* Effect.all([
-				dbExecute((db) =>
-					db.run(
-						PG.from(ErrorIssueEvents)
-							.select(($) => ({ issueId: $.issueId, count: PG.count() }))
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.issueId.in_(...issueIds),
-								$.type.in_("comment", "agent_note"),
-							])
-							.groupBy("issueId"),
+			const [commentRows, prRows] = yield* Effect.all(
+				[
+					dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssueEvents)
+								.select(($) => ({ issueId: $.issueId, count: PG.count() }))
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.issueId.in_(...issueIds),
+									$.type.in_("comment", "agent_note"),
+								])
+								.groupBy("issueId"),
+						),
 					),
-				),
-				dbExecute((db) =>
-					db.run(
-						PG.from(ErrorIssuePullRequests)
-							.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
-							.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
-							.groupBy("issueId", "state"),
+					dbExecute((db) =>
+						db.run(
+							PG.from(ErrorIssuePullRequests)
+								.select(($) => ({ issueId: $.issueId, state: $.state, count: PG.count() }))
+								.where(($) => [$.orgId.eq(orgId), $.issueId.in_(...issueIds)])
+								.groupBy("issueId", "state"),
+						),
 					),
-				),
-			])
+				],
+				{ concurrency: "unbounded" },
+			)
 			for (const row of commentRows) upsert(row.issueId, { commentCount: row.count })
 			for (const row of prRows) {
 				if (row.state === "open") upsert(row.issueId, { openPullRequestCount: row.count })
@@ -371,26 +415,45 @@ const make: Effect.Effect<
 			return rollups
 		})
 
-	const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
+	const hydrateNonEmpty = (orgId: OrgId, rows: Arr.NonEmptyReadonlyArray<ErrorIssueRow>) =>
 		Effect.gen(function* () {
-			if (rows.length === 0) return []
 			const issueIds = Arr.map(rows, (row) => row.id)
-			const openSet = yield* issuesWithOpenIncidents(orgId, issueIds)
-			const activityMap = yield* issueActivityRollups(orgId, issueIds)
-			const actorMap = yield* actorsService.collectActorDocs(
-				orgId,
-				Arr.flatMap(rows, (row) => [row.assignedActorId ?? null, row.leaseHolderActorId ?? null]),
+			// Independent reads, run on every list call and after every mutation.
+			// The invocation's pool bounds how many are really in flight.
+			const [openSet, activityMap, hashesByIssue, actorMap] = yield* Effect.all(
+				[
+					issuesWithOpenIncidents(orgId, issueIds),
+					issueActivityRollups(orgId, issueIds),
+					dbExecute((db) => issueFingerprintHashes(db, orgId, rows)),
+					actorsService.collectActorDocs(
+						orgId,
+						Arr.flatMap(rows, (row) => [
+							row.assignedActorId ?? null,
+							row.leaseHolderActorId ?? null,
+						]),
+					),
+				],
+				{ concurrency: "unbounded" },
 			)
 			return Arr.map(rows, (row) =>
-				rowToIssue(row, openSet.has(row.id), actorMap, activityMap.get(row.id) ?? EMPTY_ACTIVITY),
+				rowToIssue(
+					row,
+					openSet.has(row.id),
+					actorMap,
+					activityMap.get(row.id) ?? EMPTY_ACTIVITY,
+					hashesByIssue.get(row.id) ?? [row.fingerprintHash],
+				),
 			)
 		})
+
+	const hydrateIssueRows: ErrorIssueWorkflowServiceApi["hydrateIssueRows"] = (orgId, rows) =>
+		Arr.isReadonlyArrayNonEmpty(rows) ? hydrateNonEmpty(orgId, rows) : Effect.succeed([])
 
 	const hydrateIssue: ErrorIssueWorkflowServiceApi["hydrateIssue"] = Effect.fn(
 		"ErrorIssueWorkflowService.hydrateIssue",
 	)(function* (orgId, row) {
-		const hydrated = yield* hydrateIssueRows(orgId, [row])
-		return hydrated[0]!
+		const hydrated = yield* hydrateNonEmpty(orgId, [row])
+		return Arr.headNonEmpty(hydrated)
 	})
 
 	const buildEventInsert = (
@@ -600,13 +663,28 @@ const make: Effect.Effect<
 		// One transaction, because a `done` that committed the issue but lost the
 		// incident resolution or its timeline event could never be repaired: a
 		// retry sees `fromState === toState` and returns before reaching them.
+		// Guarded on the state that was validated: a concurrent transition that landed first
+		// makes this one a 409 instead of a silent overwrite, and rolls the transaction back.
 		yield* dbExecute((db) =>
 			db.transaction(
 				Effect.gen(function* () {
-					yield* db.run(
-						PG.update(ErrorIssues)
-							.set(update)
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(row.id)]),
+					yield* transitionRow(
+						{ table: "error_issues", id: row.id, from: [fromState], to: toState },
+						(from) =>
+							db.run(
+								PG.update(ErrorIssues)
+									.set(update)
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.eq(row.id),
+										$.workflowState.in_(...from),
+										opts.snoozeElapsedBy === undefined
+											? undefined
+											: $.snoozeUntil.lte(opts.snoozeElapsedBy),
+										opts.unleased === true ? $.leaseHolderActorId.isNull() : undefined,
+									])
+									.returning("id"),
+							),
 					)
 					if (toState === "done") {
 						yield* db.run(
@@ -623,6 +701,17 @@ const make: Effect.Effect<
 					yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert))
 				}),
 			),
+		).pipe(
+			Effect.catchTag("@maple/backend/TransitionConflictError", () =>
+				Effect.fail(
+					new ErrorIssueTransitionError({
+						message: `The issue moved out of '${fromState}' while this change to '${toState}' was in flight. Re-read it and retry.`,
+						issueId: row.id,
+						fromState,
+						toState,
+					}),
+				),
+			),
 		)
 		if (actorId) {
 			yield* recordEventAudit(orgId, row.id, actorId, "state_change", { fromState, toState })
@@ -630,14 +719,6 @@ const make: Effect.Effect<
 		}
 		return yield* requireIssue(orgId, row.id)
 	})
-
-	const leaseConflict = (issueId: ErrorIssueId, row: ErrorIssueRow | null) =>
-		new ErrorIssueLeaseConflictError({
-			message: "Issue is held by another actor",
-			issueId,
-			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromMs(row.leaseExpiresAt),
-		})
 
 	const heartbeatIssue: ErrorIssueWorkflowServiceApi["heartbeatIssue"] = Effect.fn(
 		"ErrorIssueWorkflowService.heartbeatIssue",
@@ -706,7 +787,8 @@ const make: Effect.Effect<
 		if (current.leaseHolderActorId !== null && current.leaseHolderActorId !== actorId) {
 			return yield* leaseConflict(issueId, current)
 		}
-		yield* dbExecute((db) =>
+		// Guard on the holder the check above saw: a claim committed in between wins.
+		const released = yield* dbExecute((db) =>
 			db.run(
 				PG.update(ErrorIssues)
 					.set({
@@ -715,9 +797,18 @@ const make: Effect.Effect<
 						claimedAt: null,
 						updatedAt: timestamp,
 					})
-					.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)]),
+					.where(($) => [
+						$.orgId.eq(orgId),
+						$.id.eq(issueId),
+						PG.or($.leaseHolderActorId.isNull(), $.leaseHolderActorId.eq(actorId)),
+					])
+					.returning("id"),
 			),
 		)
+		if (released.length === 0) {
+			const winner = yield* requireIssue(orgId, issueId)
+			return yield* leaseConflict(issueId, winner)
+		}
 		yield* recordEvent(orgId, issueId, actorId, "release", {
 			payload: opts?.note ? { note: opts.note } : {},
 			timestamp,
@@ -765,34 +856,6 @@ const make: Effect.Effect<
 		return txid === undefined ? doc : new ErrorIssueDocument({ ...doc, txid })
 	})
 
-	/** The outbox row a severity change owes, or none when the change does not escalate. */
-	const severityEscalationInsert = (
-		orgId: OrgId,
-		issueId: ErrorIssueId,
-		from: IssueSeverity | null,
-		to: IssueSeverity,
-		source: "ai" | "manual",
-		timestamp: number,
-	): Option.Option<PG.InsertRowOf<typeof IssueEscalations>> =>
-		Option.map(Option.fromNullOr(escalationReasonFor(from, to)), (reason) => ({
-			id: newIssueEscalationId(),
-			orgId,
-			issueId,
-			severity: to,
-			source,
-			reason,
-			runId: null,
-			investigationId: null,
-			payloadJson: {},
-			deliveryResultsJson: [],
-			status: "queued",
-			attempts: 0,
-			dedupeKey: escalationDedupeKey(orgId, issueId, to),
-			error: null,
-			createdAt: timestamp,
-			processedAt: null,
-		}))
-
 	const setSeverity: ErrorIssueWorkflowServiceApi["setSeverity"] = Effect.fn(
 		"ErrorIssueWorkflowService.setSeverity",
 	)(function* (orgId, actorId, issueId, severity, opts) {
@@ -813,47 +876,34 @@ const make: Effect.Effect<
 		const changed = current.severity !== severity || current.severitySource !== nextSource
 		if (!changed) return yield* hydrateIssue(orgId, current)
 
-		const payload: StoredJsonRecord = opts?.note
+		const eventPayload: StoredJsonRecord = opts?.note
 			? { from: current.severity, to: severity, source, note: opts.note }
 			: { from: current.severity, to: severity, source }
-		const eventInsert =
-			current.severity !== severity
-				? Option.some(
-						buildEventInsert(orgId, issueId, actorId, "severity_change", timestamp, {
-							payload,
-						}),
-					)
-				: Option.none()
-		// Clearing the severity (null) never escalates; a set severity may.
-		const escalationInsert = Option.flatMap(Option.fromNullOr(severity), (next) =>
-			severityEscalationInsert(orgId, issueId, current.severity, next, source, timestamp),
-		)
 		// One transaction: a severity that committed without its escalation row
-		// could never page anyone — a retry sees the severity already stored and
+		// could never page anyone; a retry sees the severity already stored and
 		// returns before reaching the outbox insert.
 		const severityRows = yield* dbExecute((db) =>
 			db.transaction(
-				Effect.gen(function* () {
-					const rows = yield* db.run(
-						PG.update(ErrorIssues)
-							.set({ severity, severitySource: nextSource, updatedAt: timestamp })
-							.where(($) => [$.orgId.eq(orgId), $.id.eq(issueId)])
-							.returning(() => ({ txid: currentTxid })),
-					)
-					if (Option.isSome(eventInsert))
-						yield* db.run(PG.insertInto(ErrorIssueEvents).values(eventInsert.value))
-					if (Option.isSome(escalationInsert)) {
-						yield* db.run(
-							PG.insertInto(IssueEscalations)
-								.values(escalationInsert.value)
-								.onConflictDoNothing(),
-						)
-					}
-					return rows
+				writeIssueSeverity(db, {
+					orgId,
+					issueId,
+					actorId,
+					from: current.severity,
+					severity,
+					source,
+					timestamp,
+					eventId: newEventId(),
+					eventPayload,
+					escalation: {
+						id: newIssueEscalationId(),
+						runId: null,
+						investigationId: null,
+						payload: {},
+					},
 				}),
 			),
 		)
-		if (Option.isSome(eventInsert)) {
+		if (current.severity !== severity && severityRows.length > 0) {
 			yield* recordEventAudit(orgId, issueId, actorId, "severity_change", {})
 		}
 		yield* actorsService.touchActor(orgId, actorId, timestamp)
@@ -929,6 +979,11 @@ const make: Effect.Effect<
 		hydrateIssue,
 		recordEvent,
 		buildEvent: buildEventInsert,
+		fingerprintHashesOf: (orgId, row) =>
+			dbExecute((db) => issueFingerprintHashes(db, orgId, [row])).pipe(
+				Effect.map((owned) => owned.get(row.id) ?? [row.fingerprintHash]),
+			),
+		recordEventAudit,
 		applyTransition,
 		heartbeatIssue,
 		releaseIssue,

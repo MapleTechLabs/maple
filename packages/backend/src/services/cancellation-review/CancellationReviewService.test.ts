@@ -1,5 +1,12 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
+	type ChatBlock,
+	chatConnectorId,
+	ChatOutboundError,
+	type ChatTarget,
+	socketIngress,
+} from "@maple/chat-platform"
+import {
 	CancellationModelRead,
 	type CancellationModelRequest,
 	DailySpendResponse,
@@ -7,7 +14,18 @@ import {
 	OrgId,
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
-import { ConfigProvider, DateTime, Effect, Layer, Schema } from "effect"
+import {
+	ConfigProvider,
+	DateTime,
+	Duration,
+	Effect,
+	Layer,
+	Schema,
+	Array as Arr,
+	String as Str,
+} from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -16,7 +34,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
 import { StripeClient } from "@maple/backend/services/billing/stripe-http"
@@ -29,6 +47,10 @@ import {
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
+import {
+	ChatConnectorRegistry,
+	type RegisteredChatConnector,
+} from "@maple/backend/services/integrations/chat-outbound"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SupportChannelUnavailableError } from "@maple/domain/support-channel"
 import {
@@ -48,8 +70,8 @@ import { CancellationReviewService, type CancellationToReview } from "./Cancella
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_leaving")
-const OWN_ORG = Schema.decodeUnknownSync(OrgId)("org_maple")
+const ORG = Schema.decodeSync(OrgId)("org_leaving")
+const OWN_ORG = Schema.decodeSync(OrgId)("org_maple")
 const CANCELED_AT = Date.parse("2026-10-07T15:30:00Z")
 const DAY_MS = 86_400_000
 
@@ -67,6 +89,14 @@ const job: CancellationToReview = {
 
 interface World {
 	channel: string | null
+	/** The Hazel channel the deployment names; Maple's org (`OWN_ORG`) is set beside it. */
+	hazelChannel: string | null
+	/**
+	 * `refused`: Hazel answered no. `unreachable`: it did not answer. `page_rejected` and
+	 * `page_missing`: it refuses an HTML page (400, 404) and takes markdown.
+	 */
+	hazel: "ok" | "refused" | "unreachable" | "page_rejected" | "page_missing"
+	hazelPosts: Array<{ target: ChatTarget; blocks: ReadonlyArray<ChatBlock> }>
 	/** What the region lookup answers. */
 	home: HomeAnswer
 	/** Autumn's HTTP status, and the subscriptions it reports the org holding now. */
@@ -97,6 +127,9 @@ interface World {
 
 const freshWorld = (): World => ({
 	channel: "C_CANCELLATIONS",
+	hazelChannel: null,
+	hazel: "ok",
+	hazelPosts: [],
 	home: "here",
 	autumnStatus: 200,
 	subscriptions: [{ planId: "startup", status: "active" }],
@@ -119,7 +152,7 @@ const freshWorld = (): World => ({
 
 const day = (daysAgo: number, logsGB: number) =>
 	new DailyVolume({
-		date: new Date(CANCELED_AT - daysAgo * DAY_MS).toISOString().slice(0, 10),
+		date: Str.slice(0, 10)(new Date(CANCELED_AT - daysAgo * DAY_MS).toISOString()),
 		logsGB,
 		tracesGB: 0,
 		metricsGB: 0,
@@ -182,19 +215,24 @@ const stubs = (world: World) =>
 						if (world.warehouseDown) return Effect.die(new Error("warehouse down"))
 						const sql = compiledQueryOf(compiled).sql
 						world.queries.push({ orgId: tenant.orgId, sql })
-						if (sql.includes("session_events")) {
-							const pagesOnly = sql.includes("'navigation'")
-							const events = world.sessionEvents
-								.filter((event) => (event.type === "navigation") === pagesOnly)
-								.map((event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }))
-								.toReversed()
+						if (Str.includes("session_events")(sql)) {
+							const pagesOnly = Str.includes("'navigation'")(sql)
+							const events = Arr.reverse(
+								Arr.map(
+									Arr.filter(
+										world.sessionEvents,
+										(event) => (event.type === "navigation") === pagesOnly,
+									),
+									(event) => ({ netMethod: "GET", netUrl: "", netStatus: 0, ...event }),
+								),
+							)
 							return Effect.succeed(events as ReadonlyArray<never>)
 						}
-						if (sql.includes("session_replays")) {
+						if (Str.includes("session_replays")(sql)) {
 							return Effect.succeed(world.sessionRows as ReadonlyArray<never>)
 						}
 						// The second, unfiltered query is the "is this the right org at all" probe.
-						const rows = sql.includes(ORG)
+						const rows = Str.includes(ORG)(sql)
 							? world.visitRows
 							: world.anyPageViews
 								? [
@@ -231,7 +269,10 @@ const stubs = (world: World) =>
 								id: ORG,
 								stripeId: "cus_acme",
 								// One odd field on a subscription must not cost the report its guards.
-								subscriptions: world.subscriptions.map((sub) => ({ ...sub, pastDue: null })),
+								subscriptions: Arr.map(world.subscriptions, (sub) => ({
+									...sub,
+									pastDue: null,
+								})),
 								balances: {},
 								invoices: [
 									{ status: "paid", total: 39, currency: "usd", createdAt: 2 },
@@ -248,26 +289,27 @@ const stubs = (world: World) =>
 			// Filters the way the query does, before the limit.
 			list: (_orgId, filters) =>
 				Effect.succeed(
-					[
-						// An access record: never one of the changes the model reads.
-						{
-							action: "telemetry.read",
-							actorType: "user",
-							actorLabel: "a@acme.test",
-							outcome: "allowed",
-							occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
-						} as never,
-						{
-							action: "ingest_key.revoke",
-							actorType: "user",
-							actorLabel: "a@acme.test",
-							outcome: "allowed",
-							occurredAt: new Date(CANCELED_AT - DAY_MS),
-						} as never,
-					].filter(
+					Arr.filter<never>(
+						[
+							// An access record: never one of the changes the model reads.
+							{
+								action: "telemetry.read",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS + 60_000),
+							} as never,
+							{
+								action: "ingest_key.revoke",
+								actorType: "user",
+								actorLabel: "a@acme.test",
+								outcome: "allowed",
+								occurredAt: new Date(CANCELED_AT - DAY_MS),
+							} as never,
+						],
 						(entry: { action: string }) =>
-							!(filters.excludeActionSuffixes ?? []).some((suffix) =>
-								entry.action.endsWith(suffix),
+							!Arr.some(filters.excludeActionSuffixes ?? [], (suffix) =>
+								Str.endsWith(suffix)(entry.action),
 							),
 					),
 				),
@@ -360,6 +402,103 @@ const evidenceStubs = (world: World) => [
 	Layer.succeed(CancellationTelemetryEvidenceReader, evidenceReader(world, "telemetry")),
 ]
 
+const HAZEL = chatConnectorId("hazel")
+const HAZEL_TOKEN_CONFIG = "MAPLE_HAZEL_BOT_TOKEN"
+
+const unreachable = () => Effect.die("the report reached another connector method")
+
+/** Hazel's connector with its outbound half faked: what it is asked to post, and how it answers. */
+const fakeHazel = (world: World): RegisteredChatConnector => ({
+	id: HAZEL,
+	manifest: {
+		id: HAZEL,
+		name: "Hazel",
+		description: "Hazel, faked for this test.",
+		icon: { viewBox: "0 0 24 24", paths: [] },
+		accent: "#000000",
+		settingsFields: [],
+	},
+	install: {
+		requiredConfig: [],
+		authorizeUrl: unreachable,
+		complete: unreachable,
+		decodeSettings: unreachable,
+	},
+	outbound: {
+		connectorId: HAZEL,
+		limits: { maxMessageChars: 3600, minEditInterval: Duration.millis(500) },
+		requiredConfig: [{ name: HAZEL_TOKEN_CONFIG, secret: true }],
+		transport: Effect.succeed({
+			post: (target, blocks) =>
+				Effect.suspend(() => {
+					const pageRefused =
+						(world.hazel === "page_rejected" || world.hazel === "page_missing") &&
+						Arr.some(blocks, (block) => block.kind === "page")
+					if (pageRefused) {
+						return Effect.fail(
+							new ChatOutboundError({
+								message: "Hazel refused the HTML render",
+								connectorId: HAZEL,
+								operation: "post",
+								reason: world.hazel === "page_missing" ? "not_found" : "rejected",
+							}),
+						)
+					}
+					if (
+						world.hazel === "ok" ||
+						world.hazel === "page_rejected" ||
+						world.hazel === "page_missing"
+					) {
+						world.hazelPosts.push({ target, blocks })
+						return Effect.succeed({ target, messageId: `message-${world.hazelPosts.length}` })
+					}
+					return Effect.fail(
+						new ChatOutboundError({
+							message:
+								world.hazel === "refused"
+									? "Hazel refused: channel not found"
+									: "Hazel is down",
+							connectorId: HAZEL,
+							operation: "post",
+							...(world.hazel === "refused"
+								? { reason: "not_found" as const }
+								: { status: 503 }),
+						}),
+					)
+				}),
+			edit: unreachable,
+			whisper: unreachable,
+			typing: unreachable,
+			openThread: unreachable,
+			directMessage: unreachable,
+			conversation: unreachable,
+			history: unreachable,
+			destinations: unreachable,
+		}),
+	},
+	ingress: socketIngress({
+		requiredConfig: [],
+		stateSchema: Schema.String,
+		initialState: "",
+		connectUrl: () => "wss://hazel.test/gateway",
+		onOpen: (state) => ({ state }),
+		onFrame: (state) => ({ state }),
+		onClose: (state) => ({ state }),
+		heartbeat: (state) => ({ state }),
+	}),
+})
+
+/** Maple's own org links its Hazel workspace, as a completed install leaves it. */
+const linkHazel = (testDb: TestDb, orgId: string = OWN_ORG) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			`INSERT INTO chat_workspaces (id, org_id, connector, external_workspace_id, name, settings, created_at)
+			 VALUES ('33333333-3333-4333-8333-333333333333', $1, $2, 'hazel-maple', 'Maple', '{}'::jsonb, now())`,
+			[orgId, HAZEL],
+		),
+	)
+
 const makeLayer = (world: World, testDb: TestDb) =>
 	Layer.effect(CancellationReviewService, CancellationReviewService.make).pipe(
 		Layer.provide(
@@ -368,6 +507,9 @@ const makeLayer = (world: World, testDb: TestDb) =>
 				OnboardingService.layer.pipe(Layer.provide(testDb.layer)),
 				IntegrationInventoryService.layer.pipe(Layer.provide(testDb.layer)),
 				testDb.layer,
+				SecureRandom.layerWebCrypto,
+				FetchHttpClient.layer,
+				Layer.succeed(ChatConnectorRegistry, [fakeHazel(world)]),
 			),
 		),
 		Layer.provide(Env.layer),
@@ -386,10 +528,28 @@ const BASE_CONFIG = {
 	MAPLE_INGEST_KEY: "maple_sk_test",
 }
 
-const config = (world: World) =>
-	world.channel === null
-		? BASE_CONFIG
-		: { ...BASE_CONFIG, MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }
+const config = (world: World) => ({
+	...BASE_CONFIG,
+	...(world.channel === null ? undefined : { MAPLE_CANCELLATION_SLACK_CHANNEL_ID: world.channel }),
+	...(world.hazelChannel === null
+		? undefined
+		: {
+				MAPLE_CANCELLATION_HAZEL_CHANNEL_ID: world.hazelChannel,
+				MAPLE_INTERNAL_ORG_ID: OWN_ORG,
+				[HAZEL_TOKEN_CONFIG]: "hazel-bot-token",
+			}),
+})
+
+/** Everything the report's Hazel messages say, one message after another. */
+const hazelText = (world: World) =>
+	Arr.join(
+		Arr.flatMap(world.hazelPosts, (post) =>
+			Arr.map(post.blocks, (block) =>
+				block.kind === "prose" ? block.markdown : block.kind === "page" ? block.fallback : "",
+			),
+		),
+		"\n",
+	)
 
 const review = (
 	world: World,
@@ -402,7 +562,6 @@ const review = (
 		return yield* CancellationReviewService.use((service) => service.review(input))
 	}).pipe(Effect.provide(makeLayer(world, testDb)))
 
-/** The step a review failed at. */
 const failedStep = (world: World, testDb: TestDb, input: CancellationToReview = job) =>
 	review(world, testDb, input).pipe(
 		Effect.flip,
@@ -459,7 +618,7 @@ describe("CancellationReviewService", () => {
 			assert.strictEqual(post?.channel, "C_CANCELLATIONS")
 			assert.strictEqual(post?.text, "Acme Inc. cancelled the startup plan (Stopped sending telemetry)")
 			const blocks = String(post?.blocks)
-			assert.include(blocks, "down from 42 GB · last data 24 days ago")
+			assert.include(blocks, "42 GB · last data 24 days ago")
 			assert.include(blocks, "last visit 20 days ago")
 			assert.include(blocks, "founder@acme.test")
 			assert.include(blocks, "Access until Oct 19 (9d left)")
@@ -492,7 +651,7 @@ describe("CancellationReviewService", () => {
 			const stored = yield* storedReview(testDb)
 			assert.strictEqual(stored?.rule_reason, "stopped_sending")
 			assert.isNotNull(stored?.posted_at)
-			assert.deepNestedInclude(stored?.snapshot_json as object, {
+			assert.deepNestedInclude(stored?.snapshot_json, {
 				"plan.tenureDays": 240,
 				"plan.daysUntilEnd": 9,
 				"org.members": 2,
@@ -568,16 +727,32 @@ describe("CancellationReviewService", () => {
 				comment: "No SSO",
 			})
 			assert.deepStrictEqual(
-				request?.sessions?.map((session) => session.pages),
+				request?.sessions == null
+					? request?.sessions
+					: Arr.map(request.sessions, (session) => session.pages),
 				[["/settings/members", "/billing"]],
 			)
 			assert.deepStrictEqual(request?.sessions?.[0]?.problems, ["SSO is not available on your plan"])
 			assert.deepStrictEqual(request?.auditLog?.[0], {
-				at: new Date(CANCELED_AT - DAY_MS).toISOString(),
+				at: DateTime.formatIso(DateTime.makeUnsafe(CANCELED_AT - DAY_MS)),
 				daysBeforeCancel: 1,
 				action: "ingest_key.revoke",
 				actor: "user",
 				outcome: "allowed",
+			})
+			// The members' other org, as the report lists it, without the member.
+			assert.deepStrictEqual(request?.otherOrgs, {
+				total: 1,
+				orgs: [
+					{
+						name: "Acme New",
+						nameIsPersonal: false,
+						createdDaysBeforeCancel: 1,
+						members: 1,
+						sharedMembers: 1,
+						billing: { plan: "pro" },
+					},
+				],
 			})
 			// No person's email reaches the model.
 			assert.notInclude(JSON.stringify(request), "@acme.test")
@@ -594,9 +769,10 @@ describe("CancellationReviewService", () => {
 			}
 			// The sessions are read under Maple's own org, never the customer's.
 			assert.isTrue(
-				world.queries
-					.filter((query) => query.sql.includes("session_"))
-					.every((query) => query.orgId === OWN_ORG),
+				Arr.every(
+					Arr.filter(world.queries, (query) => Str.includes("session_")(query.sql)),
+					(query) => query.orgId === OWN_ORG,
+				),
 			)
 
 			const post = world.posts[0]
@@ -852,6 +1028,185 @@ describe("CancellationReviewService", () => {
 			const testDb = createTestDb(trackedDbs)
 			assert.strictEqual(yield* review(world, testDb), "not_configured")
 			assert.isUndefined(yield* storedReview(testDb))
+		}),
+	)
+
+	it.effect("posts the same report to Maple's Hazel workspace beside Slack", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			yield* seed(testDb)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(
+				world.posts[0]?.text,
+				"Acme Inc. cancelled the startup plan (Stopped sending telemetry)",
+			)
+			assert.deepStrictEqual(
+				Arr.map(world.hazelPosts, (post) => post.target),
+				[{ workspaceId: "hazel-maple", channelId: "hazel-cancellations" }],
+			)
+			const text = hazelText(world)
+			assert.include(text, "**Acme Inc. cancelled the startup plan**")
+			assert.include(text, "**Likely reason:** Stopped sending telemetry")
+			assert.include(text, "42 GB · last data 24 days ago")
+			assert.include(text, "founder@acme.test")
+			assert.include(text, "[Stripe](https://dashboard.stripe.com/customers/cus_acme)")
+			assert.include(text, "**Acme New**  `org_acme_new`")
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+		}),
+	)
+
+	it.effect("posts the report to Hazel as one HTML page", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			const blocks = Arr.flatMap(world.hazelPosts, (post) => post.blocks)
+			assert.deepStrictEqual(
+				Arr.map(blocks, (block) => block.kind),
+				["page"],
+			)
+			const [page] = blocks
+			assert.strictEqual(page?.kind === "page" && page.title, "Acme Inc. cancelled the startup plan")
+			assert.include(page?.kind === "page" ? page.html : "", "Stopped sending telemetry")
+		}),
+	)
+
+	it.effect("posts the markdown report to Hazel when Hazel refuses the page or has no HTML renders", () =>
+		Effect.forEach(
+			["page_rejected", "page_missing"] as const,
+			(refusal) =>
+				Effect.gen(function* () {
+					const world = freshWorld()
+					world.channel = null
+					world.hazelChannel = "hazel-cancellations"
+					world.hazel = refusal
+					const testDb = createTestDb(trackedDbs)
+					yield* linkHazel(testDb)
+
+					assert.strictEqual(yield* review(world, testDb), "posted")
+					assert.isFalse(
+						Arr.some(world.hazelPosts, (post) =>
+							Arr.some(post.blocks, (block) => block.kind === "page"),
+						),
+					)
+					assert.include(hazelText(world), "**Likely reason:** Stopped sending telemetry")
+					assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+				}),
+			{ discard: true },
+		),
+	)
+
+	it.effect("reports to Hazel alone on a deployment with no Slack channel", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.posts.length, 0)
+			assert.strictEqual(world.hazelPosts.length, 1)
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+			assert.strictEqual(yield* review(world, testDb), "duplicate")
+			assert.strictEqual(world.hazelPosts.length, 1)
+		}),
+	)
+
+	it.effect(
+		"records the review when Hazel fails after Slack took it, so a retry never posts Slack twice",
+		() =>
+			Effect.gen(function* () {
+				const world = freshWorld()
+				world.hazelChannel = "hazel-cancellations"
+				world.hazel = "unreachable"
+				const testDb = createTestDb(trackedDbs)
+				yield* linkHazel(testDb)
+
+				assert.strictEqual(yield* review(world, testDb), "posted")
+				assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+				world.hazel = "ok"
+				assert.strictEqual(yield* review(world, testDb), "duplicate")
+				assert.strictEqual(world.posts.length, 1)
+				assert.strictEqual(world.hazelPosts.length, 0)
+			}),
+	)
+
+	it.effect(
+		"posts to Hazel only once Slack has taken the report, so a Slack retry never posts Hazel twice",
+		() =>
+			Effect.gen(function* () {
+				const world = freshWorld()
+				world.hazelChannel = "hazel-cancellations"
+				world.slack = "unreachable"
+				const testDb = createTestDb(trackedDbs)
+				yield* linkHazel(testDb)
+
+				assert.strictEqual(yield* failedStep(world, testDb), "post")
+				assert.strictEqual(world.hazelPosts.length, 0)
+				world.slack = "ok"
+				assert.strictEqual(yield* review(world, testDb), "posted")
+				assert.strictEqual(world.posts.length, 1)
+				assert.strictEqual(world.hazelPosts.length, 1)
+			}),
+	)
+
+	it.effect("counts the review as posted when Slack refuses it and Hazel takes it", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.hazelChannel = "hazel-cancellations"
+			world.slack = "refused"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* review(world, testDb), "posted")
+			assert.strictEqual(world.hazelPosts.length, 1)
+			assert.isNotNull((yield* storedReview(testDb))?.posted_at)
+		}),
+	)
+
+	it.effect("retries a Hazel-only report Hazel did not answer for, and settles one it refused", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			world.hazel = "unreachable"
+			const testDb = createTestDb(trackedDbs)
+			yield* linkHazel(testDb)
+
+			assert.strictEqual(yield* failedStep(world, testDb), "post")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+			world.hazel = "refused"
+			assert.strictEqual(yield* review(world, testDb), "refused")
+			assert.isNull((yield* storedReview(testDb))?.posted_at)
+			world.hazel = "ok"
+			world.subscriptions = [{ planId: "startup", status: "expired" }]
+			const expiry = { ...job, phase: "ended" as const }
+			assert.strictEqual(yield* review(world, testDb, expiry, CANCELED_AT + 12 * DAY_MS), "posted")
+			assert.strictEqual(world.hazelPosts.length, 1)
+		}),
+	)
+
+	it.effect("does nothing with a Hazel channel but no Hazel workspace linked to Maple's org", () =>
+		Effect.gen(function* () {
+			const world = freshWorld()
+			world.channel = null
+			world.hazelChannel = "hazel-cancellations"
+			const testDb = createTestDb(trackedDbs)
+			// Somebody else's Hazel workspace is not Maple's.
+			yield* linkHazel(testDb, "org_someone_else")
+
+			assert.strictEqual(yield* review(world, testDb), "not_configured")
+			assert.isUndefined(yield* storedReview(testDb))
+			assert.strictEqual(world.hazelPosts.length, 0)
 		}),
 	)
 })

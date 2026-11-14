@@ -1,6 +1,6 @@
 import { WEB_ANALYTICS_UNSET } from "@maple/domain/query-engine"
 import { cn } from "@maple/ui/lib/utils"
-import { Schema } from "effect"
+import { Array as Arr, Record as Rec, Schema } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
@@ -27,16 +27,15 @@ import {
 	FILTER_SECTION_LABEL,
 	hasActiveFilters,
 	trafficIncludes,
-} from "../../components/analytics/filters"
-import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../../components/analytics/labels"
+} from "../analytics/filters"
+import { countryLabel, languageLabel, referrerLabel, utmLabel } from "../analytics/labels"
 import { browserIconFor, deviceIconFor } from "../replays/kit/sessions-parts"
 
-// `AnalyticsFilterSidebar`: the session-dimension filter rail of /analytics and /product-analytics,
+// The session-dimension filter rail of /analytics and /product-analytics,
 // its options from `getWebAnalyticsBreakdowns`. Every filter is one value in the page's URL.
 
 const FacetRow = Schema.Struct({ name: Schema.String, count: Schema.Number })
 
-/** `WebAnalyticsBreakdowns`. */
 export const Breakdowns = Schema.Struct({
 	referrerHosts: Schema.Array(FacetRow),
 	countries: Schema.Array(FacetRow),
@@ -57,10 +56,10 @@ const ICON_BOX = "size-4 shrink-0"
 
 const faviconUrl = (host: string): string => `https://favicon.maple.dev/?url=${encodeURIComponent(host)}`
 
-/** `isHostLike`: a dotted name a favicon could exist for. */
+/** A dotted name a favicon could exist for. */
 export const isHostLike = (value: string): boolean => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(value)
 
-/** `Favicon`: the site's icon, or its reserved box once the image failed. */
+/** The site's icon, or its reserved box once the image failed. */
 export const favicon = <M>(
 	h: HtmlBuilder<M>,
 	options: Readonly<{ failed: ReadonlyArray<string>; onFailed: (host: string) => M }>,
@@ -107,7 +106,7 @@ const loadedRail = <M>(
 ): Html => {
 	const { filters } = options
 	const canClear = hasActiveFilters(filters)
-	const isEmpty = Object.values(breakdowns).every((rows) => rows.length === 0)
+	const isEmpty = Arr.every(Rec.values(breakdowns), (rows) => rows.length === 0)
 	if (!canClear && isEmpty) return filterSidebarEmpty(h)
 	const icons = { failed: options.failedFavicons, onFailed: options.onFaviconFailed }
 	const hostIcon = (name: string) => favicon(h, icons, name, "size-3.5")
@@ -208,7 +207,7 @@ const loadedRail = <M>(
 	])
 }
 
-/** `AnalyticsFilterSidebar`: loading rows, the read's failure, or a section per session dimension. */
+/** Loading rows, the read's failure, or a section per session dimension. */
 export const analyticsFilterRail = <M>(h: HtmlBuilder<M>, options: AnalyticsFilterRailOptions<M>): Html =>
 	AsyncData.matchData(options.breakdowns, {
 		onEmpty: () => filterSidebarLoading(h, 6),

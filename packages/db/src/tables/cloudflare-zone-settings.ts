@@ -1,5 +1,5 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import { OrgId, UserId } from "@maple/primitives"
 import { Schema } from "effect"
 
 // Which zones of a Cloudflare account the customer collects: `zoneOverrides[zoneId] ?? watchNewZones`,
@@ -20,5 +20,3 @@ export const CloudflareZoneSettings = PG.table("cloudflare_zone_settings", {
 	primaryKey: ["orgId", "accountId"],
 	tenantColumn: "orgId",
 })
-
-export type CloudflareZoneSettingsRow = PG.SelectRowOf<typeof CloudflareZoneSettings>

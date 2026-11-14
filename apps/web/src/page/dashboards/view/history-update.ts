@@ -1,13 +1,12 @@
 import { AsyncData, Command } from "foldkit"
-import { Result } from "effect"
+import { Result, Option, Array as Arr } from "effect"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { FetchSnapshot, FetchVersions, RestoreVersion } from "./command-history"
 import type { HistoryState } from "./history"
 import { Message } from "./message"
+import { isWriteBlocked } from "./mode"
 import type { Model } from "./model"
-
-// The history panel's steps: open and close, preview a version, restore it.
 
 type Return = PageReturn<Model, Message>
 
@@ -31,7 +30,7 @@ const readVersions = (model: Model, history: Partial<HistoryState>): Return => {
 	}
 }
 
-/** `openHistory`: the panel mounts and reads the version list. */
+/** The panel mounts and reads the version list. */
 export const openHistory = (model: Model): Return =>
 	model.history.isOpen ? { model } : readVersions(model, { isOpen: true, versions: AsyncData.Loading() })
 
@@ -52,10 +51,17 @@ type HistoryMessage = Extract<
 >
 
 const preview = (model: Model, versionId: string): Return => {
-	const version = AsyncData.getOrElse(model.history.versions, () => []).find((row) => row.id === versionId)
-	if (version === undefined || model.history.previewed?.id === versionId) return { model }
+	const version = Arr.findFirst(
+		AsyncData.getOrElse(model.history.versions, () => []),
+		(row) => row.id === versionId,
+	)
+	if (Option.isNone(version) || model.history.previewed?.id === versionId) return { model }
 	return {
-		model: withHistory(model, { previewed: version, snapshot: AsyncData.Loading(), sectionView: {} }),
+		model: withHistory(model, {
+			previewed: version.value,
+			snapshot: AsyncData.Loading(),
+			sectionView: {},
+		}),
 		commands: [FetchSnapshot({ dashboardId: model.dashboardId, versionId })],
 	}
 }
@@ -95,7 +101,12 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "CompletedFetchVersions":
 			return message.generation !== history.versionsGeneration
 				? { model }
-				: { model: withHistory(model, { versions: toAsync(message.result) }) }
+				: {
+						model: withHistory(model, {
+							versions: toAsync(message.result),
+							listedAtMs: message.nowMs,
+						}),
+					}
 		case "ClickedVersion":
 			return preview(model, message.versionId)
 		case "CompletedFetchSnapshot":
@@ -105,11 +116,12 @@ export const historyStep = (model: Model, message: HistoryMessage): Return => {
 		case "ClickedCancelPreview":
 			return { model: closePreview(model) }
 		case "ClickedRestoreVersion":
-			return dialogStep(model, Dialog.open(history.restoreDialog))
+			return isWriteBlocked(model) ? { model } : dialogStep(model, Dialog.open(history.restoreDialog))
 		case "GotRestoreDialogMessage":
 			return dialogStep(model, Dialog.update(history.restoreDialog, message.message))
 		case "ConfirmedRestore":
-			return history.previewed === null || history.isRestoring
+			// A restore is a write: off while the board is a snapshot or a write failed.
+			return history.previewed === null || history.isRestoring || isWriteBlocked(model)
 				? { model }
 				: {
 						model: withHistory(model, { isRestoring: true }),

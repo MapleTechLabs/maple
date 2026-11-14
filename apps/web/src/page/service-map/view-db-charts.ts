@@ -10,10 +10,10 @@ import { resolveColor } from "@maple/views/charts/theme-colors"
 import { Message } from "./message"
 import type { DbSummary, Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
-// `DbQueryActivityChart`'s two plots: query volume (`QueryBuilderBarChart`) over latency
-// (`LatencyLineChart`), joined by the linked cursor.
-// TODO(linked-cursor): the shared pointer tracking (`useLinkedCursor`) is not ported; the cursor stays hidden.
+// The database panel's two plots: query volume over latency.
+// TODO(linked-cursor): the plots are not on the shared linked cursor (`@maple/views/charts/linked-cursor`) yet; the cursor stays hidden.
 
 type H = HtmlBuilder<Message>
 
@@ -45,7 +45,7 @@ export const queryActivityCharts = (
 	// One series named for what the bars are, so the tooltip reads "Queries".
 	const volumeRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,
-		Queries: Math.round(point.estimatedQueryCount || point.queryCount),
+		Queries: Math.round(nonZeroOr(point.estimatedQueryCount, point.queryCount)),
 	}))
 	const latencyRows = Arr.map(response.timeseries, (point) => ({
 		bucket: point.bucket,

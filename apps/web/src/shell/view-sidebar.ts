@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { MAPLE_REGION_LABELS } from "@maple/domain/organization-regions"
 import { initialsFrom } from "@maple/ui/lib/initials"
-import { hasMultipleRegions } from "../lib/region"
+import { hasMultipleRegions } from "../platform/region"
 import { Option, Record, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
@@ -19,11 +19,16 @@ import {
 } from "@maple/views/ui/sidebar"
 import { isSameMenu, triggerIdOf } from "./menus"
 import { Menu, Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellAudience } from "./model"
 import * as ClerkOrgSwitcherView from "./clerk-org-switcher-view"
 import { orgAvatar } from "./clerk-org-switcher-view"
 import { typography } from "@maple/views/ui/typography"
 import { identityLabel } from "@maple/views/ui/identity-label"
+import { hstack } from "@maple/views/ui/stack"
+import { statusDot } from "@maple/views/ui/status-dot"
+import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
+import { oncallTabHref } from "../page/alerts/shared/oncall-schedules"
+import { isPillShown, onCallDetail, onCallLabel, type OnCallStatus, onCallStatusOf } from "./oncall"
 
 export const GROUP_LABEL = "h-6 text-muted-foreground"
 
@@ -51,7 +56,7 @@ export const triggerFor = (h: HtmlBuilder<Message>, model: Model, menu: Menu) =>
 export const pinnedNamespaceOf = (model: Model): Option.Option<string> =>
 	Option.flatMap(model.maybeOrgId, (orgId) => Record.get(model.pinnedNamespaces, orgId))
 
-/** `SelfHostedOrgSwitcher`'s trigger: the server tile, "Self Hosted" and the pinned namespace. */
+/** The self-hosted org switcher's trigger: the server tile, "Self-hosted" and the pinned namespace. */
 const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 	sidebarMenu(h, undefined, [
 		sidebarMenuItem(h, undefined, [
@@ -64,20 +69,25 @@ const orgSwitcher = (h: HtmlBuilder<Message>, model: Model): Html =>
 					attributes: triggerFor(h, model, Menu.Org()),
 				},
 				[
-					h.div(
-						[
-							h.Class(
-								"flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground",
-							),
-						],
+					hstack(
+						h,
+						{
+							align: "center",
+							justify: "center",
+							className: "size-8 shrink-0 rounded-md bg-muted text-muted-foreground",
+						},
 						[icon(h, "ServerIcon", { size: 16 })],
 					),
 					identityLabel(h, [
-						typography(h, { weight: "medium", truncate: true }, ["Self Hosted"]),
+						typography(h, { weight: "medium", truncate: true }, ["Self-hosted"]),
 						...Option.match(pinnedNamespaceOf(model), {
 							onNone: () => [],
 							onSome: (namespace) => [
-								h.span([h.Class("truncate text-xs font-medium text-primary")], [namespace]),
+								typography(
+									h,
+									{ size: "xs", tone: "primary", weight: "medium", truncate: true },
+									[namespace],
+								),
 							],
 						}),
 					]),
@@ -180,14 +190,10 @@ const clerkOrgSwitcher = (h: HtmlBuilder<Message>, model: Model, clerk: ShellCle
 												),
 											onSome: (namespace) =>
 												typography(h, { size: "xs", truncate: true }, [
-													h.span(
-														[h.Class("font-medium text-primary")],
-														[namespace],
-													),
-													h.span(
-														[h.Class("text-muted-foreground")],
-														[regionSuffix],
-													),
+													typography(h, { tone: "primary", weight: "medium" }, [
+														namespace,
+													]),
+													typography(h, { tone: "muted" }, [regionSuffix]),
 												]),
 										}),
 									]),
@@ -212,7 +218,6 @@ export const shellSidebarHeader = (
 		clerk === null ? orgSwitcher(h, model) : clerkOrgSwitcher(h, model, clerk),
 		searchRow(h, tip),
 	])
-// FOOTER
 
 const footerNavRow = (
 	h: HtmlBuilder<Message>,
@@ -242,6 +247,67 @@ const footerNavRow = (
 		),
 	])
 
+/** The pill's state; nothing while the schedules read, after a failed read, or with none. */
+export const shellOnCallStatus = (model: Model): OnCallStatus =>
+	Option.match(AsyncData.getData(model.onCall), {
+		onNone: (): OnCallStatus => ({ _tag: "NoSchedules" }),
+		onSome: (snapshot) => onCallStatusOf(snapshot, model.onCallNowMs),
+	})
+
+/**
+ * One 32px footer row: a status dot and "On call until Mon 09:00" (or a muted "Not on call"),
+ * linking to the schedules. The zone, the date and the schedule names are its tooltip and
+ * accessible name. On the collapsed rail it is a calendar glyph, badged with the dot.
+ */
+const onCallPill = (
+	h: HtmlBuilder<Message>,
+	status: OnCallStatus,
+	tip: RailTip,
+	isRail: boolean,
+): ReadonlyArray<Html> => {
+	if (!isPillShown(status)) return []
+	const label = onCallLabel(status)
+	const detail = onCallDetail(status)
+	const isOnCall = status._tag === "OnCall"
+	const dot = (className?: string) =>
+		statusDot(h, { tone: isOnCall ? "ok" : "neutral", size: "lg", className })
+	const glyphBox = (className: string, children: ReadonlyArray<Html>) =>
+		hstack(h, { align: "center", justify: "center", className }, children)
+	return [
+		sidebarMenuItem(h, undefined, [
+			sidebarMenuButton(
+				h,
+				{
+					className: isOnCall ? undefined : "text-muted-foreground",
+					// A shortcut, not a nav row: a plain anchor, so it never claims `aria-current="page"`.
+					href: oncallTabHref(),
+					hasTooltip: true,
+					attributes: [
+						// The rail's tooltip names the glyph; the open sidebar's adds what the row leaves out.
+						...(isRail
+							? tip(detail)
+							: detail === label
+								? []
+								: tooltipTrigger(h, detail, { side: "right" })),
+						...(isRail || detail !== label ? [h.AriaLabel(detail)] : []),
+					],
+				},
+				isRail
+					? [
+							glyphBox("relative size-4 shrink-0", [
+								icon(h, "CalendarIcon", { className: "size-4" }),
+								// On call only: a grey badge on a grey glyph says nothing.
+								...(isOnCall
+									? [dot("absolute -top-0.5 -right-0.5 ring-2 ring-sidebar")]
+									: []),
+							]),
+						]
+					: [glyphBox("size-4 shrink-0", [dot()]), h.span([], [label])],
+			),
+		]),
+	]
+}
+
 /** The user avatar: the Clerk image over the initials on a warm tile keyed by the name. */
 export const userAvatar = (
 	h: HtmlBuilder<Message>,
@@ -260,8 +326,8 @@ export const userAvatar = (
 		initials,
 	)
 
-/** `GuestMenu`'s trigger and `SupportMenu`'s, side by side in the account cluster. */
-/** `UserMenu`'s name: Clerk's full name, else the email, else "User"; self-hosted is "Root". */
+/** The guest menu's and the support menu's triggers, side by side in the account cluster. */
+/** The user menu's name: Clerk's full name, else the email, else "User"; self-hosted is "Root". */
 export const userNameOf = (clerk: ShellClerk | null): string =>
 	clerk === null
 		? "Root"
@@ -331,20 +397,37 @@ export const shellSidebarFooter = (
 			[
 				h.AriaHidden(true),
 				h.Class(
-					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-[background-color,box-shadow] [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
+					"pointer-events-none -mx-2 -mt-2 -mb-2 h-px transition-shadow [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:bg-sidebar-border [[data-overflow-y-end]+[data-slot=sidebar-footer]>&]:shadow-overflow-up",
 				),
 			],
 			[],
 		),
 		sidebarMenu(h, undefined, [
-			footerNavRow(h, currentPath, { href: "/sources", title: "Sources", icon: "ConnectionIcon" }, tip),
-			// `/integrations` renders inside the settings rail, so Settings owns it.
-			footerNavRow(
-				h,
-				currentPath,
-				{ href: "/settings", title: "Settings", icon: "GearIcon", alsoActive: "/integrations" },
-				tip,
-			),
+			// A row of the footer's list, so it keeps the list's 4px rhythm.
+			...onCallPill(h, shellOnCallStatus(model), tip, !model.isSidebarOpen && !model.isMobile),
+			// An analyst sets nothing up: their account is in the user menu below.
+			...(shellAudience(clerk) === "analyst"
+				? []
+				: [
+						footerNavRow(
+							h,
+							currentPath,
+							{ href: "/sources", title: "Sources", icon: "ConnectionIcon" },
+							tip,
+						),
+						// `/integrations` renders inside the settings rail, so Settings owns it.
+						footerNavRow(
+							h,
+							currentPath,
+							{
+								href: "/settings",
+								title: "Settings",
+								icon: "GearIcon",
+								alsoActive: "/integrations",
+							},
+							tip,
+						),
+					]),
 		]),
 		h.div(
 			[h.Class("-mx-2 border-sidebar-border border-t px-2 pt-2")],

@@ -5,6 +5,7 @@ import {
 	StatusPageAutoIncidents,
 	StatusPageComponentId,
 	StatusPageComponentStatus,
+	StatusPageCustomDomainStatus,
 	StatusPageId,
 	StatusPageIncidentId,
 	StatusPageIncidentImpact,
@@ -12,10 +13,16 @@ import {
 	StatusPageIncidentStatus,
 	StatusPageIncidentUpdateId,
 	StatusPageUpdateSource,
+	StatusPageVisibility,
 	UptimeMonitorId,
 	UserId,
-} from "@maple/domain/primitives"
-import { DEFAULT_STATUS_PAGE_THEME, StatusPageTheme } from "@maple/domain/status-page"
+} from "@maple/primitives"
+import {
+	DEFAULT_STATUS_PAGE_THEME,
+	StatusPageCustomDomainDnsRecord,
+	StatusPageTheme,
+} from "@maple/domain/status-page"
+import { Schema } from "effect"
 import { UptimeMonitors } from "./uptime"
 
 /**
@@ -33,6 +40,10 @@ export const StatusPages = PG.table("status_pages", {
 		description: PG.nullable(PG.text),
 		websiteUrl: PG.column(PG.nullable(PG.text), { name: "website_url" }),
 		logoUrl: PG.column(PG.nullable(PG.text), { name: "logo_url" }),
+		/** Branding; https only. The dark logo replaces the logo in dark mode, the support link sits in the header. */
+		logoDarkUrl: PG.column(PG.nullable(PG.text), { name: "logo_dark_url" }),
+		faviconUrl: PG.column(PG.nullable(PG.text), { name: "favicon_url" }),
+		supportUrl: PG.column(PG.nullable(PG.text), { name: "support_url" }),
 		/** Footer links to the customer's own policies; https only. */
 		privacyUrl: PG.column(PG.nullable(PG.text), { name: "privacy_url" }),
 		termsUrl: PG.column(PG.nullable(PG.text), { name: "terms_url" }),
@@ -46,6 +57,13 @@ export const StatusPages = PG.table("status_pages", {
 		/** SHA-256 (base64url) of the break-glass token, published so the edge can check it. */
 		breakGlassTokenSha256: PG.column(PG.nullable(PG.text), { name: "break_glass_token_sha256" }),
 		breakGlassTokenSuffix: PG.column(PG.nullable(PG.text), { name: "break_glass_token_suffix" }),
+		/** `public`, `password` (needs `password_hash`) or `internal` (never at the edge). */
+		visibility: PG.column(PG.brand(PG.text, StatusPageVisibility), { default: "public" }),
+		/**
+		 * PBKDF2 hash of the page password (`@maple/domain/status-page-access`), published so the
+		 * edge can check it. One-way, so not sealed; never returned by the API.
+		 */
+		passwordHash: PG.column(PG.nullable(PG.text), { name: "password_hash" }),
 		/** A draft is never published: the publisher skips it until it is made public. */
 		draft: PG.column(PG.bool, { default: false }),
 		revision: PG.column(PG.int8, { default: 1 }),
@@ -146,6 +164,10 @@ export const StatusPageIncidents = PG.table("status_page_incidents", {
 	indexes: [
 		PG.index("status_page_incidents_page_idx", ["pageId", "startedAt"]),
 		PG.index("status_page_incidents_alert_idx", ["alertIncidentId"]),
+		// The minutely sweep that starts and completes maintenance reads only the open windows.
+		PG.index("status_page_incidents_open_maintenance_idx", ["scheduledStart"], {
+			where: `"kind" = 'maintenance' and "resolved_at" is null`,
+		}),
 	],
 	foreignKeys: [
 		PG.foreignKey({
@@ -217,18 +239,70 @@ export const StatusPageIncidentComponents = PG.table("status_page_incident_compo
 })
 
 /**
- * Edge data to remove: a deleted page's snapshot and routes, or a renamed page's old slug.
- * Written in the same transaction as the delete or rename (rows outlive the page and the org),
- * drained by the publisher sweep.
+ * A page's custom domain (`status.acme.com`), one per page. Its own table, not columns on the
+ * page: the Cloudflare lifecycle (hostname and route ids, DNS records, checks, errors) changes on
+ * the poll's schedule, not the editor's, and must never bump the page's content revision itself.
+ */
+export const StatusPageCustomDomains = PG.table("status_page_custom_domains", {
+	columns: {
+		pageId: PG.column(PG.brand(PG.text, StatusPageId), { name: "page_id" }),
+		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
+		/** Lower-cased, no trailing dot; unique across every org. */
+		hostname: PG.text,
+		status: PG.brand(PG.text, StatusPageCustomDomainStatus),
+		/** The Cloudflare for SaaS custom hostname; null until it is created. */
+		cloudflareHostnameId: PG.column(PG.nullable(PG.text), { name: "cloudflare_hostname_id" }),
+		/** The Worker route sending the hostname's traffic to the status Worker; null until created. */
+		cloudflareRouteId: PG.column(PG.nullable(PG.text), { name: "cloudflare_route_id" }),
+		/** What the customer adds at their DNS provider, as of the last check. */
+		dnsRecords: PG.column(PG.jsonb(Schema.Array(StatusPageCustomDomainDnsRecord)), {
+			name: "dns_records",
+			default: [],
+		}),
+		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
+		lastCheckedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_checked_at" }),
+		activatedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "activated_at" }),
+		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
+		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
+	},
+	primaryKey: ["pageId"],
+	indexes: [
+		PG.uniqueIndex("status_page_custom_domains_hostname_unq", ["hostname"]),
+		PG.index("status_page_custom_domains_org_idx", ["orgId"]),
+		PG.index("status_page_custom_domains_checked_idx", ["lastCheckedAt"]),
+	],
+	foreignKeys: [
+		PG.foreignKey({
+			columns: ["pageId"],
+			references: StatusPages,
+			foreignColumns: ["id"],
+			onDelete: "cascade",
+		}),
+	],
+	tenantColumn: "orgId",
+})
+
+export type StatusPageCustomDomainRow = PG.SelectRowOf<typeof StatusPageCustomDomains>
+
+/**
+ * Edge data to remove: a deleted page's snapshot and routes, a renamed page's old slug, or a
+ * removed custom domain (its `host:` route, Cloudflare hostname and Worker route). Written in the
+ * same transaction as the delete, rename or removal (rows outlive the page and the org), drained
+ * by the publisher sweep.
  */
 export const StatusPageCleanups = PG.table("status_page_cleanups", {
 	columns: {
 		id: PG.column(PG.text),
 		orgId: PG.column(PG.brand(PG.text, OrgId), { name: "org_id" }),
 		pageId: PG.column(PG.brand(PG.text, StatusPageId), { name: "page_id" }),
-		slug: PG.column(PG.text),
+		/** The slug route to drop; null for a custom domain removal alone. */
+		slug: PG.column(PG.nullable(PG.text)),
 		/** True when the page is gone: drop its snapshot and break-glass entries too. */
 		deleteSnapshot: PG.column(PG.bool, { name: "delete_snapshot" }),
+		/** A custom domain to take down: its `host:` route and, when created, its Cloudflare pieces. */
+		hostname: PG.column(PG.nullable(PG.text)),
+		cloudflareHostnameId: PG.column(PG.nullable(PG.text), { name: "cloudflare_hostname_id" }),
+		cloudflareRouteId: PG.column(PG.nullable(PG.text), { name: "cloudflare_route_id" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	},
 	primaryKey: ["id"],

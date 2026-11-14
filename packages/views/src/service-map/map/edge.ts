@@ -1,11 +1,11 @@
-import { getDbNodeColor } from "@maple/ui/components/service-map/service-map-db-style"
+import { getDbNodeColor } from "../graph/service-map-db-style"
 import {
 	isDbNodeId,
 	isNsAggregateId,
 	NS_AGGREGATE_PREFIX,
 	parseDbNodeId,
 	type ServiceEdgeData,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
@@ -13,8 +13,9 @@ import { getSmoothStepPath, Position } from "@xyflow/system"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { XY } from "../xyflow/geometry"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "../../ui/stack"
 
-// `ServiceMapEdge` (packages/ui `service-map/service-map-edge.tsx`): filter-free SVG tubes.
+// The service map's edges: filter-free SVG tubes.
 
 const endpointColor = (nodeId: string): string => {
 	if (isDbNodeId(nodeId)) {
@@ -118,22 +119,26 @@ const edgeLabel = <M>(h: HtmlBuilder<M>, data: ServiceEdgeData | undefined, x: n
 			h.Class("overflow-visible pointer-events-none"),
 		],
 		[
-			h.div(
-				[
-					h.Class("flex items-center justify-center"),
-					...(hasSampling
-						? [
-								h.Title(
-									"Based on traced requests. Actual rate may be higher with sampling enabled",
-								),
-							]
-						: []),
-				],
+			hstack(
+				h,
+				{
+					align: "center",
+					justify: "center",
+					attributes: [
+						...(hasSampling
+							? [
+									h.Title(
+										"Based on traced requests. Actual rate may be higher with sampling enabled",
+									),
+								]
+							: []),
+					],
+				},
 				[
 					h.span(
 						[
 							h.Class(
-								"rounded-sm bg-card/90 px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border-subtle whitespace-nowrap tabular-nums",
+								"rounded-sm bg-surface-float backdrop-blur-sm px-1.5 py-0.5 text-3xs font-mono font-medium text-muted-foreground border border-border-subtle whitespace-nowrap tabular-nums",
 							),
 						],
 						[

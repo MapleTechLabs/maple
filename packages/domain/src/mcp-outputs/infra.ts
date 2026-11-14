@@ -1,4 +1,3 @@
-/** Output schemas for the infrastructure MCP tools (hosts, Kubernetes, containers, connected providers). */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
 
@@ -12,6 +11,7 @@ export const InfraKind = Schema.Literals([
 	"cloudflare_workers",
 	"railway_services",
 	"planetscale_databases",
+	"vercel_projects",
 ])
 export type InfraKind = typeof InfraKind.Type
 
@@ -25,6 +25,7 @@ export const InfraEntityKind = Schema.Literals([
 	"cloudflare_worker",
 	"railway_service",
 	"planetscale_database",
+	"vercel_project",
 ])
 export type InfraEntityKind = typeof InfraEntityKind.Type
 
@@ -87,6 +88,8 @@ export const InfraEntityRow = Schema.Struct({
 	originP95Ms: Schema.optionalKey(Schema.Number),
 	cpuTimeP50Ms: Schema.optionalKey(Schema.Number),
 	cpuTimeP99Ms: Schema.optionalKey(Schema.Number),
+	/** Vercel projects: error and fatal log records in the window. */
+	errorLogs: Schema.optionalKey(Schema.Number),
 	// PlanetScale databases.
 	connections: Schema.optionalKey(Schema.Number),
 	connectionsPeak: Schema.optionalKey(Schema.Number),
@@ -112,8 +115,6 @@ export const InfraKindSection = Schema.Struct({
 })
 export type InfraKindSection = typeof InfraKindSection.Type
 
-// list_infra
-
 export const ListInfraOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	/** Kinds reporting telemetry in the window, whatever was asked for. */
@@ -124,8 +125,6 @@ export const ListInfraOutput = Schema.Struct({
 	sort: Schema.optionalKey(Schema.String),
 	status: Schema.optionalKey(Schema.String),
 })
-
-// inspect_infra
 
 export const InfraSeriesStats = Schema.Struct({
 	/** What the series measures, e.g. "cpu (fraction of limit)". */

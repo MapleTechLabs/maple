@@ -1,5 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "./list-row.styles"
+import { ROW_FOCUSED_CLASS, rowFocusAttributes } from "./row-focus"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 // `SelectableRow`: a bespoke row's frame (a `div`, or a link with `href`) with `listRow`'s selection
@@ -7,8 +8,12 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 export type SelectableRowOptions<M> = Readonly<{
 	isSelected: boolean
+	/** The list page's keyboard-focused row. */
+	isFocused?: boolean
 	/** The row is a link to this URL. */
 	href?: string
+	/** A click anywhere on the row, for a row whose stretched `pressable` sits under columns with their own controls. */
+	onClick?: M
 	className?: string
 	attributes?: ReadonlyArray<Attribute<M>>
 }>
@@ -19,8 +24,10 @@ export const selectableRow = <M>(
 	children: ReadonlyArray<Html | string>,
 ): Html => {
 	const attributes = [
-		h.Class(cn(rowSelectedClass(options.isSelected), options.className)),
+		h.Class(cn(rowSelectedClass(options.isSelected), ROW_FOCUSED_CLASS, options.className)),
 		h.DataAttribute("slot", "selectable-row"),
+		...rowFocusAttributes(h, options.isFocused),
+		...(options.onClick === undefined ? [] : [h.OnClick(options.onClick)]),
 		...(options.attributes ?? []),
 	]
 	return options.href === undefined

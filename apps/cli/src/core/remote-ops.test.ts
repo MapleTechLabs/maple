@@ -1,7 +1,9 @@
+import { ok } from "node:assert"
 import { beforeEach, describe, expect, it } from "bun:test"
 import {
 	Arbitrary,
 	Cause,
+	DateTime,
 	Effect,
 	Exit,
 	Option,
@@ -100,7 +102,8 @@ describe("remote-ops request shapes", () => {
 		await Effect.runPromise(Effect.flatMap(v2Client, (v2) => Remote.listServices(v2, { range: RANGE })))
 
 		expect(requests).toHaveLength(1)
-		const request = requests[0]!
+		const request = requests[0]
+		ok(request !== undefined)
 		expect(request.method).toBe("GET")
 		expect(request.authorization).toBe("Bearer maple_ak_testtoken")
 		const url = new URL(request.url)
@@ -120,7 +123,8 @@ describe("remote-ops request shapes", () => {
 		)
 
 		expect(requests).toHaveLength(1)
-		const request = requests[0]!
+		const request = requests[0]
+		ok(request !== undefined)
 		expect(request.method).toBe("POST")
 		expect(new URL(request.url).pathname).toBe("/v2/traces/search")
 		expect(request.body).toMatchObject({
@@ -179,10 +183,10 @@ describe("remote-ops request shapes", () => {
 		await Effect.runPromise(Effect.flatMap(v2Client, (v2) => Remote.inspectTrace(v2, { traceId })))
 
 		expect(requests).toHaveLength(2)
-		expect(new URL(requests[0]!.url).pathname).toBe(`/v2/traces/${traceId}`)
+		expect(new URL(Arr.getUnsafe(requests, 0).url).pathname).toBe(`/v2/traces/${traceId}`)
 		// `maple trace <id>` takes no time flags, so the window has to come from
 		// the trace itself — a wrong window here silently drops its logs.
-		expect(requests[1]!.body).toMatchObject({
+		expect(Arr.getUnsafe(requests, 1).body).toMatchObject({
 			start_time: "2026-08-15T12:30:00.000Z",
 			// 1 ms past the trace's end: its bounds are truncated to the millisecond.
 			end_time: "2026-08-15T12:30:02.001Z",
@@ -210,7 +214,7 @@ describe("remote-ops request shapes", () => {
 		await Effect.runPromise(Effect.flatMap(v2Client, (v2) => Remote.inspectTrace(v2, { traceId })))
 
 		// The logs search rejects `end_time == start_time` with invalid_time_range.
-		expect(requests[1]!.body).toMatchObject({
+		expect(Arr.getUnsafe(requests, 1).body).toMatchObject({
 			start_time: "2026-10-24T22:04:19.898Z",
 			end_time: "2026-10-24T22:04:19.899Z",
 		})
@@ -308,7 +312,7 @@ describe("remote-ops request shapes", () => {
 		)
 
 		expect(rows).toHaveLength(1)
-		expect(Rec.keys(rows[0]!).sort()).toEqual(
+		expect(Rec.keys(Arr.getUnsafe(rows, 0)).sort()).toEqual(
 			[
 				"avgDuration",
 				"bucket",
@@ -407,7 +411,7 @@ describe("serviceHasTelemetry", () => {
 			sampling_weight: 1,
 		})
 		expect(present).toBe(true)
-		const url = new URL(urls[0]!)
+		const url = new URL(Arr.getUnsafe(urls, 0))
 		expect(url.pathname).toBe("/v2/services/checkout")
 		expect(url.searchParams.get("start_time")).toBe("2026-08-15T12:00:00.000Z")
 	})
@@ -468,7 +472,7 @@ describe("remote-ops window properties", () => {
 				traces,
 				({ startMs, durationMs }) =>
 					Effect.gen(function* () {
-						const start = new Date(startMs).toISOString()
+						const start = DateTime.formatIso(DateTime.makeUnsafe(startMs))
 						const sent = stubV2((url) =>
 							Str.includes("/logs/search")(url)
 								? listEnvelope([])
@@ -476,7 +480,9 @@ describe("remote-ops window properties", () => {
 										id: "671403778c461093dbe435b41b677d18",
 										object: "trace",
 										start_time: start,
-										end_time: new Date(startMs + durationMs).toISOString(),
+										end_time: DateTime.formatIso(
+											DateTime.makeUnsafe(startMs + durationMs),
+										),
 										duration_ms: durationMs,
 										span_count: 0,
 										service_count: 0,
@@ -507,9 +513,12 @@ describe("remote-ops window properties", () => {
 									timeWindowViolation(w.startMs, w.endMs, MAX_LIST_RANGE_SECONDS) ===
 									undefined,
 							) &&
-							windows[0]!.startMs === startMs &&
-							Arr.every(windows, (w, i) => i === 0 || w.startMs === windows[i - 1]!.endMs) &&
-							windows[windows.length - 1]!.endMs > startMs + durationMs
+							Arr.getUnsafe(windows, 0).startMs === startMs &&
+							Arr.every(
+								windows,
+								(w, i) => i === 0 || w.startMs === Arr.getUnsafe(windows, i - 1).endMs,
+							) &&
+							Arr.getUnsafe(windows, windows.length - 1).endMs > startMs + durationMs
 						)
 					}),
 				{ runs: 200 },

@@ -9,7 +9,7 @@ automatically), you get the following with **no extra configuration**:
   in the waterfall like any other span. Its detail panel renders a database
   summary block (system, namespace, table, operation, rows returned, batch size,
   server, error outcome) derived from the `db.*` attributes
-  (`packages/ui/src/lib/cloud-platforms/database.ts`).
+  (`packages/views/src/traces/span-panel/platform.ts`).
 - **Query shapes per database.** Selecting a database node on the service map
   opens a detail panel with "Query Activity" and "Top Query Shapes". Every
   distinct query _shape_ (the query with literals normalized to `?`) is

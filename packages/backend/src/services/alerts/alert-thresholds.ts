@@ -1,6 +1,7 @@
 import { compareAlertThreshold, maxSeverity, tierFor } from "@maple/alerting-core"
 import {
 	ALERT_SEVERITY_RANK,
+	alertSeverityOrder,
 	isRangeComparator,
 	MAX_ALERT_BREACH_WINDOW,
 	sortAlertThresholds,
@@ -9,8 +10,9 @@ import {
 	type AlertSeverity,
 	type AlertThreshold,
 	type AlertThresholds,
+	type EscalationChainId,
 } from "@maple/domain/http"
-import { Array as Arr, Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -20,9 +22,47 @@ const destinationsUpTo = (
 	severity: AlertSeverity,
 ): ReadonlyArray<AlertDestinationId> =>
 	Arr.dedupe(
-		thresholds
-			.filter((tier) => ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity])
-			.flatMap((tier) => tier.destinationIds),
+		Arr.flatMap(
+			Arr.filter(
+				thresholds,
+				(tier) => ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity],
+			),
+			(tier: AlertThreshold) => tier.destinationIds,
+		),
+	)
+
+/**
+ * The chain an incident at `severity` starts: its tier's, else the closest lower tier's, as a
+ * critical incident also reaches the warning tier's destinations. Null when none names one.
+ */
+export const escalationChainFor = (
+	thresholds: ReadonlyArray<AlertThreshold>,
+	severity: AlertSeverity,
+): EscalationChainId | null => {
+	const candidates = Arr.filter(
+		thresholds,
+		(tier) =>
+			ALERT_SEVERITY_RANK[tier.severity] <= ALERT_SEVERITY_RANK[severity] &&
+			tier.escalationChainId !== undefined &&
+			tier.escalationChainId !== null,
+	)
+	return Option.match(Arr.last(Arr.sort(candidates, alertSeverityOrder)), {
+		onNone: () => null,
+		onSome: (tier) => tier.escalationChainId ?? null,
+	})
+}
+
+/** Whether an incident at `severity` reaches anyone: a destination or an escalation chain. */
+export const tierRoutedUpTo = (thresholds: ReadonlyArray<AlertThreshold>, severity: AlertSeverity): boolean =>
+	destinationsUpTo(thresholds, severity).length > 0 || escalationChainFor(thresholds, severity) !== null
+
+/** Whether any tier names a destination or an escalation chain. */
+export const anyTierRouted = (thresholds: ReadonlyArray<AlertThreshold>): boolean =>
+	Arr.some(
+		thresholds,
+		(tier) =>
+			tier.destinationIds.length > 0 ||
+			(tier.escalationChainId !== undefined && tier.escalationChainId !== null),
 	)
 
 interface TieredRuleFields {
@@ -71,7 +111,7 @@ export const tierConditionChanged = (
 	const key = (rule: typeof a) =>
 		encodeJson([
 			rule.comparator,
-			rule.thresholds.map((t) => [t.severity, t.value, t.upper, t.recoveryValue]),
+			Arr.map(rule.thresholds, (t) => [t.severity, t.value, t.upper, t.recoveryValue]),
 		])
 	return key(a) !== key(b)
 }
@@ -92,13 +132,13 @@ export const validateThresholds = (
 	const { label } = options
 	const range = isRangeComparator(comparator)
 	const singleTierOnly = range || comparator === "eq" || comparator === "neq"
-	if (new Set(thresholds.map((tier) => tier.severity)).size !== thresholds.length) {
+	if (new Set(Arr.map(thresholds, (tier) => tier.severity)).size !== thresholds.length) {
 		details.push("thresholds must have at most one tier per severity")
 	}
 	if (thresholds.length > 1 && singleTierOnly) {
 		details.push(`only one threshold tier is supported with the ${comparator} comparator`)
 	}
-	thresholds.forEach((tier, index) => {
+	Arr.forEach(thresholds, (tier, index) => {
 		if (!Number.isFinite(tier.value)) details.push(`${label(index, "value")} must be a finite number`)
 		if (range) {
 			if (tier.upper == null || !Number.isFinite(tier.upper)) {
@@ -124,11 +164,16 @@ export const validateThresholds = (
 				)
 			}
 		}
-		if (options.requireDestinations && tier.destinationIds.length === 0) {
+		// An escalation chain routes the tier on its own.
+		if (
+			options.requireDestinations &&
+			tier.destinationIds.length === 0 &&
+			tier.escalationChainId == null
+		) {
 			details.push(
 				thresholds.length === 1
-					? "at least one destination must be selected"
-					: `the ${tier.severity} threshold needs at least one destination`,
+					? "at least one destination or an escalation chain must be selected"
+					: `the ${tier.severity} threshold needs at least one destination or an escalation chain`,
 			)
 		}
 	})

@@ -21,15 +21,13 @@ import { card } from "@maple/views/ui/card"
 import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
-import { alertsHref } from "../shared/links"
+import { alertsHref } from "../../kit/alert-links"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { strip } from "@maple/views/ui/rule"
 import { Array as Arr } from "effect"
-
-// `RuleDiagnosisPanel`: the rule's diagnosis.
 
 type H = HtmlBuilder<Message>
 
@@ -60,7 +58,8 @@ export type DiagnosisInputs = Readonly<{
 
 export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Html => {
 	const keys = [...new Set(Arr.map(inputs.states, (s) => s.group_key))].sort()
-	const groupKeys = keys.length > 1 ? keys : []
+	// An anomaly rule's keys are a heartbeat and incident ids, not groups anyone picks.
+	const groupKeys = keys.length > 1 && inputs.rule.signalType !== "anomaly" ? keys : []
 	const activeGroup = model.selectedGroup ?? worstState(inputs.states)?.group_key ?? null
 	const stages = buildDiagnosis({
 		rule: inputs.rule,
@@ -122,33 +121,30 @@ export const diagnosisPanel = (h: H, model: Model, inputs: DiagnosisInputs): Htm
 						strip(h, { kind: "foot" }, [
 							...(groupKeys.length > 0
 								? [
-										h.div(
-											[h.Class("mb-3 flex items-center gap-2")],
-											[
-												typography(
-													h,
-													{ size: "xs", tone: "muted", className: "shrink-0" },
-													["Group"],
-												),
-												h.div(
-													[h.Class("-my-1 min-w-0 flex-1 overflow-x-auto py-1")],
-													[
-														segmentedSelect(h, {
-															className: "w-max",
-															value: activeGroup ?? groupKeys[0] ?? "",
-															onChange: (value) =>
-																Message.ClickedDiagnosisGroup({
-																	groupKey: value,
-																}),
-															options: Arr.map(
-																groupKeys.slice(0, 8),
-																(key) => ({ value: key, label: key }),
-															),
-														}),
-													],
-												),
-											],
-										),
+										hstack(h, { gap: "2", align: "center", className: "mb-3" }, [
+											typography(
+												h,
+												{ size: "xs", tone: "muted", className: "shrink-0" },
+												["Group"],
+											),
+											h.div(
+												[h.Class("-my-1 min-w-0 flex-1 overflow-x-auto py-1")],
+												[
+													segmentedSelect(h, {
+														className: "w-max",
+														value: activeGroup ?? groupKeys[0] ?? "",
+														onChange: (value) =>
+															Message.ClickedDiagnosisGroup({
+																groupKey: value,
+															}),
+														options: Arr.map(groupKeys.slice(0, 8), (key) => ({
+															value: key,
+															label: key,
+														})),
+													}),
+												],
+											),
+										]),
 									]
 								: []),
 							h.ol(
@@ -239,7 +235,7 @@ const stageRow = (h: H, model: Model, stage: DiagnosisStage): Html => {
 			...(showEvidence
 				? [
 						h.ul(
-							[h.Class("mt-1 space-y-0.5 pl-[26px]")],
+							[h.Class("mt-1 space-y-0.5 pl-6.5")],
 							[
 								...Arr.map(evidence, (line) =>
 									h.li(
@@ -292,7 +288,7 @@ const stageAction = (h: H, action: NonNullable<DiagnosisStage["action"]>): Reado
 		]
 	if (action.kind === "destinations")
 		return [
-			linkButton(h, { variant: "outline", size: "xs", href: alertsHref({ tab: "routing" }) }, [
+			linkButton(h, { variant: "outline", size: "xs", href: alertsHref({}, "routing") }, [
 				action.label,
 			]),
 		]

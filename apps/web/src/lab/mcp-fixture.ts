@@ -1,5 +1,5 @@
 import type { McpCallRow, McpServerOverview, McpServerRow, McpToolDetail } from "../page/mcp/data"
-import type { ToolSeriesPoint } from "../page/agent-sessions/tools-kit/model"
+import type { ToolSeriesPoint } from "../page/kit/tools/model"
 import { Array as Arr, Record as Rec } from "effect"
 
 // `/lab/mcp`: `maple-ai`'s MCP spans from Nov 1, 2026 09:33 to 12:35 UTC, as the warehouse holds them

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest"
 import { IncidentTriagePriorDiagnosis, IncidentTriageRequest } from "@maple/domain/http"
-import { InvestigationId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/primitives"
 import { Effect, Redacted, Schema, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { layerDecisionModel } from "../platform/Llm"
@@ -24,8 +24,10 @@ const request = new IncidentTriageRequest({
 })
 
 /** Answers shaped like Clef's output, so the decode is the real one. */
-const answering = (body: unknown): typeof globalThis.fetch =>
-	(async () => new Response(JSON.stringify(body), { status: 200 })) as typeof globalThis.fetch
+const answering =
+	(body: unknown): typeof globalThis.fetch =>
+	async () =>
+		new Response(JSON.stringify(body), { status: 200 })
 
 const run = (fetch: typeof globalThis.fetch, input: IncidentTriageRequest = request) =>
 	classifyIncident({ request: input, model: "@cf/cloudflare/clef" }).pipe(

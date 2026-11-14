@@ -1,7 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertDestinations, type AlertDestinationRow } from "@maple/db/tables"
 import {
-	AlertDeliveryError,
 	type AlertComparator,
 	type AlertDestinationId,
 	type AlertEventType,
@@ -9,24 +8,25 @@ import {
 	type AlertSignalType,
 	type OrgId,
 } from "@maple/domain/http"
-import { DateTime, Clock, Context, Effect, Layer, Option, Redacted, Schema, Array as Arr } from "effect"
+import { DateTime, Clock, Context, Effect, Layer, Option, Schema, Array as Arr } from "effect"
 import { HttpClient } from "effect/http"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchContext } from "./delivery/context"
 import { hydrateDestinationRow } from "./AlertDestinationHydration"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
+import { emailDeliverySender } from "./AlertDestinationDelivery"
+import { AlertRuntime } from "./AlertRuntime"
 
 /*
  * Shared notification dispatch for alert-adjacent features (error issues /
  * incidents). Best-effort side channel: failures are logged and swallowed.
  */
 
-const DELIVERY_TIMEOUT_MS = 15_000
 const NOTIFICATION_DELIVERY_CONCURRENCY = 5
 
 class NotificationDispatchError extends Schema.TaggedError<NotificationDispatchError>()(
@@ -113,23 +113,11 @@ const make: Effect.Effect<
 	const email = yield* EmailService
 	const chatAlertPoster = yield* ChatAlertPoster
 	const linear = yield* LinearIssueTracker
+	const runtime = yield* AlertRuntime
 
-	const encryptionKey = yield* parseBase64Aes256GcmKey(
-		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-		(message) =>
-			new NotificationDispatchError({
-				message: `MAPLE_INGEST_KEY_ENCRYPTION_KEY: ${message}`,
-			}),
-	)
+	const keyring = yield* secretKeyringFromEnv(env, (message) => new NotificationDispatchError({ message }))
 
-	const sendEmail = (to: string, subject: string, html: string) =>
-		email
-			.send(to, subject, html)
-			.pipe(
-				Effect.mapError(
-					(error) => new AlertDeliveryError({ message: error.message, destinationType: "email" }),
-				),
-			)
+	const sendEmail = emailDeliverySender(email)
 
 	const dispatchOne = Effect.fn("NotificationDispatcher.dispatchOne")(function* (
 		row: AlertDestinationRow,
@@ -139,7 +127,7 @@ const make: Effect.Effect<
 			"maple.destination.id": row.id,
 			"maple.destination.type": row.type,
 		})
-		const hydrated = yield* hydrateDestinationRow(row, encryptionKey, {
+		const hydrated = yield* hydrateDestinationRow(row, keyring, {
 			onPublicConfigInvalid: () =>
 				new NotificationDispatchError({ message: "Stored destination config is invalid" }),
 			onDecryptFailure: () =>
@@ -207,7 +195,7 @@ const make: Effect.Effect<
 		const result = yield* dispatchDeliveryImpl(
 			context,
 			payloadJson,
-			DELIVERY_TIMEOUT_MS,
+			runtime.deliveryTimeoutMs(),
 			request.linkUrl,
 			chatUrl,
 			{ sendEmail, postChatAlert: chatAlertPoster.post, linear },
@@ -305,19 +293,9 @@ const make: Effect.Effect<
 								}),
 							),
 						),
-						Effect.catchTags({
-							"@maple/backend/services/NotificationDispatchError": (error) =>
-								failedResult(row, error),
-							// Every delivery failure class reports the same way here. The
-							// distinction between them exists to drive the delivery
-							// queue's retry decision, which this path does not run.
-							"@maple/http/errors/AlertDeliveryError": (error) => failedResult(row, error),
-							"@maple/http/errors/AlertDeliveryAuthError": (error) => failedResult(row, error),
-							"@maple/http/errors/AlertDeliveryTargetMissingError": (error) =>
-								failedResult(row, error),
-							"@maple/http/errors/AlertDeliveryRejectedError": (error) =>
-								failedResult(row, error),
-						}),
+						// Every failure reports the same way here: the delivery error classes exist
+						// to drive the queue's retry decision, which this path does not run.
+						Effect.catch((error) => failedResult(row, error)),
 					)
 				},
 				{ concurrency: NOTIFICATION_DELIVERY_CONCURRENCY },

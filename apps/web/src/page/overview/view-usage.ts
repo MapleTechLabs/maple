@@ -9,8 +9,6 @@ import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// The service usage cards.
-
 /** Overview tiles share the chart cards' 16px inner inset. */
 const OVERVIEW_TILE_CLASS = "px-4"
 
@@ -42,7 +40,6 @@ export const usageCards = <M>(
 							? h.span([h.Class("sr-only")], ["Couldn't load"])
 							: h.span([h.Class("font-prose")], ["Couldn't load"]),
 						compact: true,
-						isCardTitle: true,
 						className: OVERVIEW_TILE_CLASS,
 					}),
 				),
@@ -56,7 +53,6 @@ export const usageCards = <M>(
 						eyebrow: card.title,
 						value: card.format(totals[card.key]),
 						compact: true,
-						isCardTitle: true,
 						className: OVERVIEW_TILE_CLASS,
 						delta:
 							previous === null

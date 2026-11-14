@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import { Command, Submodel, Subscription, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
@@ -6,6 +6,7 @@ import type { Resources } from "../platform/resources"
 import * as Shell from "../shell"
 import * as Toast from "@maple/views/ui/toast"
 import * as ToastView from "@maple/views/ui/toast-view"
+import * as TooltipHost from "@maple/views/ui/tooltip-host"
 import {
 	foldLabShell,
 	initLabShell,
@@ -19,7 +20,7 @@ import { foldLabToasts, initLabToasts } from "./toasts"
 
 // A lab page inside the real shell: the page is a Submodel with its
 // own Flags, the shell is booted for the session's org around it, and the app's
-// Notifications regions follow it.
+// Notifications regions and the app tooltip follow it.
 
 export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFlags> = Readonly<{
 	Model: Schema.Codec<PageModel, unknown>
@@ -30,25 +31,36 @@ export type ShellLabPage<PageModel, PageMessage extends { _tag: string }, PageFl
 	update: (model: PageModel, message: PageMessage) => Update.Return<PageModel, PageMessage, Resources>
 	view: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
 	subscriptions?: Subscription.Subscriptions<PageModel, PageMessage, Resources>
-	currentPath: string
+	/** Fixed, or read from the page (a lab standing on the route it renders). */
+	currentPath: string | ((model: PageModel) => string)
 	/** Fixed, or read from the page (a lab switching between pages). */
 	breadcrumbs:
 		| ReadonlyArray<Shell.BreadcrumbEntry>
 		| ((model: PageModel) => ReadonlyArray<Shell.BreadcrumbEntry>)
 	/** Rendered in `#app` before the shell: lab toolbars that sit beside the shell. */
 	before?: (model: PageModel, h: HtmlBuilder<PageMessage>) => Html
+	/** Shell state the root's reads would bring (the Alerts › Inbox count), as a fixture. */
+	seedShell?: (shell: Shell.Model) => Shell.Model
+	/** Who the shell is drawn for (`ANALYST_CLERK`); an operator when absent. */
+	clerk?: Shell.ShellClerk
 }>
 
 export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, PageFlags>(
 	title: string,
 	page: ShellLabPage<PageModel, PageMessage, PageFlags>,
 ): LabEntry => {
-	const Model = Schema.Struct({ page: page.Model, shell: Shell.Model, toasts: Toast.Model })
+	const Model = Schema.Struct({
+		page: page.Model,
+		shell: Shell.Model,
+		toasts: Toast.Model,
+		tooltip: TooltipHost.Model,
+	})
 	type Model = typeof Model.Type
 	const Message = defineMessageUnion({
 		GotPageMessage: { message: page.Message },
 		GotShellMessage: { message: Shell.Message },
 		GotToastMessage: { message: Toast.Message },
+		GotTooltipMessage: { message: TooltipHost.Message },
 	})
 	type Message = typeof Message.Type
 	type Return = Update.Return<Model, Message, Resources>
@@ -57,9 +69,32 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 	const foldShell = foldLabShell<Model, Message>(toShell)
 	const toToast = (message: Toast.Message): Message => Message.GotToastMessage({ message })
 	const foldToasts = foldLabToasts<Model, Message>(toToast)
+	const toTooltip = (message: TooltipHost.Message): Message => Message.GotTooltipMessage({ message })
+	const tooltipSubscriptions = Subscription.make<Model, Message, Resources>()((entry) => ({
+		tooltipTriggers: entry(
+			{},
+			{
+				modelToDependencies: () => ({}),
+				dependenciesToStream: () => Stream.map(TooltipHost.triggerEvents, toTooltip),
+			},
+		),
+		tooltipWhileEngaged: entry(
+			{ isEngaged: Schema.Boolean },
+			{
+				modelToDependencies: (model) => ({ isEngaged: TooltipHost.isEngaged(model.tooltip) }),
+				dependenciesToStream: ({ isEngaged }) =>
+					Stream.when(
+						Stream.map(TooltipHost.whileEngaged, toTooltip),
+						Effect.sync(() => isEngaged),
+					),
+			},
+		),
+	}))
 	const pageView = Submodel.defineView<PageModel, PageMessage>(page.view)
 	const before = page.before
 	const beforeView = before === undefined ? null : Submodel.defineView<PageModel, PageMessage>(before)
+	const currentPathOf = (model: PageModel) =>
+		typeof page.currentPath === "function" ? page.currentPath(model) : page.currentPath
 	const breadcrumbsOf = (model: PageModel) =>
 		typeof page.breadcrumbs === "function" ? page.breadcrumbs(model) : page.breadcrumbs
 	const own = Subscription.lift(page.subscriptions ?? {})<Model, Message>({
@@ -74,7 +109,12 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			const shell = initLabShell(flags.shell)
 			const inner = page.init(flags.page)
 			return {
-				model: { page: inner.model, shell: shell.model, toasts: initLabToasts() },
+				model: {
+					page: inner.model,
+					shell: page.seedShell === undefined ? shell.model : page.seedShell(shell.model),
+					toasts: initLabToasts(),
+					tooltip: TooltipHost.init("tooltip"),
+				},
 				commands: [
 					...Command.mapMessages(shell.commands ?? [], toShell),
 					...Command.mapMessages(inner.commands ?? [], toPage),
@@ -92,6 +132,13 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 				},
 				GotShellMessage: ({ message: inner }) => foldShell(model, inner),
 				GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
+				GotTooltipMessage: ({ message: inner }) => {
+					const next = TooltipHost.update(model.tooltip, inner)
+					return {
+						model: { ...model, tooltip: next.model },
+						commands: Command.mapMessages(next.commands ?? [], toTooltip),
+					}
+				},
 			}),
 		view: (model: Model, h: HtmlBuilder<Message>) =>
 			h.div(
@@ -102,6 +149,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 					...(beforeView === null ? [] : [h.Class("[&_[data-slot=page-scroll-area]]:mb-20")]),
 				],
 				[
+					TooltipHost.view(h, model.tooltip, toTooltip),
 					...(beforeView === null
 						? []
 						: [
@@ -113,8 +161,9 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 								}),
 							]),
 					...labShellView(h, model.shell, toShell, {
-						currentPath: page.currentPath,
+						currentPath: currentPathOf(model.page),
 						breadcrumbs: breadcrumbsOf(model.page),
+						clerk: page.clerk ?? null,
 						page: () =>
 							h.submodel({
 								slotId: "lab-page",
@@ -128,6 +177,7 @@ export const defineShellLab = <PageModel, PageMessage extends { _tag: string }, 
 			),
 		subscriptions: Subscription.aggregate<Model, Message, Resources>()(
 			labShellSubscriptions<Model, Message>(toShell),
+			tooltipSubscriptions,
 			own,
 		),
 	})

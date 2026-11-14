@@ -1,4 +1,4 @@
-import { docsUrl } from "../../../lib/docs"
+import { docsUrl } from "../../kit/docs"
 import { AsyncData, Submodel } from "foldkit"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -20,7 +20,7 @@ import {
 } from "./install-snippets"
 import { typography } from "@maple/views/ui/typography"
 
-// `InstallHostModal`'s dialog. Rendered only while open or closing.
+// The install modal's dialog, rendered only while open or closing.
 
 type H = HtmlBuilder<Message>
 
@@ -41,7 +41,7 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 				textarea(h, {
 					id: `${model.id}-${panel.snippet}`,
 					isUnstyled: true,
-					controlClassName: "font-mono text-xs tracking-wide select-all leading-relaxed",
+					controlClassName: "font-mono text-xs select-all leading-relaxed",
 					defaultValue: panel.display,
 					attributes: [h.Readonly(true), h.Attribute("wrap", "off"), h.Rows(panel.rows)],
 				}),
@@ -70,7 +70,6 @@ const snippetPanel = (h: H, model: Model, panel: SnippetPanel): Html =>
 							Message.GotCopyMessage({ snippet: panel.snippet, message }),
 						value: panel.value,
 						label: panel.copyLabel ?? "Install command",
-						// `render={<InputGroupButton />}`: CopyButton's own size and slot win the merge.
 						idleLabel: "Copy",
 						className: "ml-auto",
 					}),
@@ -211,7 +210,7 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
 )
 
 /**
- * The modal as `InfraSetupEmpty` mounts it: a hidden holder whose Mount fetches the key when the
+ * The modal as the setup empty state mounts it: a hidden holder whose Mount fetches the key when the
  * empty state appears (the portal moves itself to `<body>`, so the holder adds no layout).
  */
 export const mountedView = Submodel.defineView<Model, Message>((model, h) =>

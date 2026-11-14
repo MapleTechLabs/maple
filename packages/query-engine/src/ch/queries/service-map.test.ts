@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Exit, Array as Arr, Record as Rec, String as Str } from "effect"
+import { DateTime, Effect, Exit, Array as Arr, Record as Rec, String as Str, Option } from "effect"
 import { compileUnsafe, param, toDateTime } from "@maple-dev/effect-orm/clickhouse"
 import {
 	serviceDbEdgesSQL,
@@ -15,7 +15,7 @@ import {
 	servicePlatformsSQL,
 } from "./service-map"
 import { serviceMapEdgesRollupSQL, serviceMapResolutionsRollupSQL } from "./service-map-rollup"
-import { ServiceMapEdgesHourly } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
 import { DB_NAMESPACE_ATTR_SQL, DB_QUERY_KEY_LAZY_SQL } from "@maple/domain/tinybird/db-query-shape-sql"
 import { OrgId } from "@maple/domain"
 
@@ -43,8 +43,6 @@ const baseParams = {
 	endTime: "2024-01-02 00:00:00",
 }
 
-// serviceExternalEdgesSQL
-
 describe("serviceExternalEdgesSQL", () => {
 	it("derives tenant scope from its union branches, not from the anti-join", () => {
 		const compiled = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
@@ -57,7 +55,9 @@ describe("serviceExternalEdgesSQL", () => {
 	it("filters the computed targetName in HAVING, after the GROUP BY", () => {
 		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
 		expect(sql).toContain("HAVING targetName != ''")
-		expect(sql.indexOf("HAVING")).toBeGreaterThan(sql.indexOf("GROUP BY"))
+		expect(Option.getOrThrow(Str.indexOf("HAVING")(sql))).toBeGreaterThan(
+			Option.getOrThrow(Str.indexOf("GROUP BY")(sql)),
+		)
 	})
 
 	it("excludes DB spans from the raw-traces branch with the same coalesce the DB edges select on", () => {
@@ -72,12 +72,12 @@ describe("serviceExternalEdgesSQL", () => {
 	it("applies messaging > rpc > http precedence in the multiIf", () => {
 		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
 		// First branch of multiIf must be the messaging predicate.
-		const multiIfIdx = sql.indexOf("multiIf(")
+		const multiIfIdx = Option.getOrThrow(Str.indexOf("multiIf(")(sql))
 		expect(multiIfIdx).toBeGreaterThan(-1)
 		const after = Str.slice(multiIfIdx, multiIfIdx + 400)(sql)
-		const msgIdx = after.indexOf("'messaging'")
-		const rpcIdx = after.indexOf("'rpc'")
-		const httpIdx = after.indexOf("'http'")
+		const msgIdx = Option.getOrThrow(Str.indexOf("'messaging'")(after))
+		const rpcIdx = Option.getOrThrow(Str.indexOf("'rpc'")(after))
+		const httpIdx = Option.getOrThrow(Str.indexOf("'http'")(after))
 		expect(msgIdx).toBeGreaterThan(-1)
 		expect(rpcIdx).toBeGreaterThan(-1)
 		expect(httpIdx).toBeGreaterThan(-1)
@@ -157,8 +157,6 @@ describe("serviceExternalEdgesSQL", () => {
 	)
 })
 
-// serviceMapResolutionsRollupSQL — companion of the edges rollup
-
 describe("serviceMapResolutionsRollupSQL", () => {
 	const hourParams = {
 		orgId: OrgId.make("org_1"),
@@ -171,8 +169,8 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(sql).toContain("Timestamp < '2024-01-01 01:00:00'")
 		// Both branches must enforce the hour bound — count occurrences.
-		const matches = sql.match(/Timestamp >= '2024-01-01 00:00:00'/g)
-		expect(matches?.length).toBe(2)
+		const matches = Arr.fromIterable(Str.matchAll(/Timestamp >= '2024-01-01 00:00:00'/g)(sql))
+		expect(matches.length).toBe(2)
 	})
 
 	it("groups by the resolution key tuple", () => {
@@ -182,8 +180,6 @@ describe("serviceMapResolutionsRollupSQL", () => {
 		)
 	})
 })
-
-// serviceDependenciesForServiceQuery — service-scoped service↔service edges
 
 // The splice fragments `./rollup-splice` emits for the 10:15 → 12:30 window the
 // boundary tests use. Spelled out rather than imported: a test that derived them
@@ -298,15 +294,15 @@ describe("serviceMapEdgeJoinQuery", () => {
 	// would notice — the ingest just writes defaults.
 	it("projects exactly the service_map_edges_hourly column set", () => {
 		const { sql } = compiledRollup()
-		const selectClause = Str.slice(0, sql.indexOf("FROM ("))(sql)
-		const aliases = Arr.map([...selectClause.matchAll(/ AS (\w+)/g)], (m) => m[1])
+		const selectClause = Str.slice(0, Option.getOrThrow(Str.indexOf("FROM (")(sql)))(sql)
+		const aliases = Arr.map(Arr.fromIterable(Str.matchAll(/ AS (\w+)/g)(selectClause)), (m) => m[1])
 
-		expect(new Set(aliases)).toEqual(new Set(Rec.keys(ServiceMapEdgesHourly.columns)))
+		expect(new Set(aliases)).toEqual(new Set(Rec.keys(Datasources.serviceMapEdgesHourly.columns)))
 	})
 
 	it("filters OrgId on both join sides, so the scope is derived", () => {
 		const compiled = compiledRollup()
-		expect(compiled.sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(compiled.sql))).toHaveLength(2)
 		expect(compiled.tenantScope).toBe("single-tenant")
 	})
 
@@ -321,7 +317,9 @@ describe("serviceMapEdgeJoinQuery", () => {
 		)
 		// Inside the parent subquery — before the JOIN — so ClickHouse can skip
 		// the full Client/Producer scan rather than filtering after the join.
-		expect(sql.indexOf("ServiceName = 'web'")).toBeLessThan(sql.indexOf("INNER JOIN"))
+		expect(Option.getOrThrow(Str.indexOf("ServiceName = 'web'")(sql))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("INNER JOIN")(sql)),
+		)
 	})
 })
 
@@ -346,9 +344,9 @@ describe("serviceDependenciesForServiceQuery", () => {
 			}),
 			baseParams,
 		)
-		const matches = sql.match(/DeploymentEnv = 'production'/g)
+		const matches = Arr.fromIterable(Str.matchAll(/DeploymentEnv = 'production'/g)(sql))
 		// hourly branch + parent subquery + child subquery in the live join.
-		expect(matches && matches.length >= 3).toBe(true)
+		expect(matches.length >= 3).toBe(true)
 	})
 
 	it("orders by callCount desc, limits to 200", () => {
@@ -369,8 +367,6 @@ describe("serviceDependenciesForServiceQuery", () => {
 		expect(sql).toContain("SourceService = 'weird\\'service'")
 	})
 })
-
-// serviceDbEdgesForServiceQuery — service-scoped service↔database edges
 
 describe("serviceDbEdgesForServiceQuery", () => {
 	it.effect("decodes org-wide database edge rows with numeric strings from ClickHouse JSON", () =>
@@ -414,8 +410,16 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		// …the raw branch derives the SAME identity via the shared write-side fragment
 		expect(sql).toContain(RAW_NAMESPACE)
 		// …and every GROUP BY carries it so distinct databases stay distinct rows
-		const matches = sql.match(/GROUP BY sourceService, dbSystem, dbNamespace/g)
-		expect(matches?.length).toBe(4)
+		const matches = Arr.fromIterable(Str.matchAll(/GROUP BY sourceService, dbSystem, dbNamespace/g)(sql))
+		expect(matches.length).toBe(4)
+	})
+
+	it("bounds the minute-tier coverage lookup to the day before the window, not the org's 30 days", () => {
+		const { sql } = Effect.runSync(serviceDbEdgesSQL({}, baseParams))
+		const afterLookup = Str.split("FirstInsertedAt AS insertedAt")(sql)[1] ?? ""
+		const lookup = Str.split("GROUP BY")(afterLookup)[0]
+		expect(lookup).toContain("Minute >= toStartOfMinute(")
+		expect(lookup).toContain("- INTERVAL 1 DAY")
 	})
 
 	it("without the minute tier (no migration 0049), reads the partial hours from raw traces only", () => {
@@ -456,8 +460,6 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 	})
 })
-
-// serviceDbQuerySummarySQL / serviceDbQueryTimeseriesSQL / serviceDbTopQueriesSQL
 
 describe("service-map database query summaries", () => {
 	const params = {
@@ -540,7 +542,9 @@ describe("service-map database query summaries", () => {
 		expect(sql).toContain("replaceRegexpAll")
 		expect(sql).toContain("in (?)")
 		// OTEL label precedence: db.query.summary is consulted before SpanName
-		expect(sql.indexOf("db.query.summary")).toBeLessThan(sql.indexOf("SpanName"))
+		expect(Option.getOrThrow(Str.indexOf("db.query.summary")(sql))).toBeLessThan(
+			Option.getOrThrow(Str.indexOf("SpanName")(sql)),
+		)
 	})
 
 	it("labels top queries from the literal-stripped sample statement, falling back to the derived label", () => {
@@ -772,8 +776,6 @@ describe("servicePlatformsSQL", () => {
 	)
 })
 
-// serviceDbQuerySpansQuery
-
 describe("serviceDbQuerySpansQuery", () => {
 	const spans = () =>
 		serviceDbQuerySpansQuery({
@@ -822,6 +824,6 @@ describe("serviceDbQuerySpansQuery", () => {
 			serviceName: "orders-api",
 			durationMs: 812.5,
 		})
-		expect(DateTime.formatIso(rows[0]!.timestamp)).toBe("2024-01-01T10:00:00.123Z")
+		expect(DateTime.formatIso(Arr.getUnsafe(rows, 0).timestamp)).toBe("2024-01-01T10:00:00.123Z")
 	})
 })

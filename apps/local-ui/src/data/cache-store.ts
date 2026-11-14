@@ -18,7 +18,7 @@ export type CacheEntry = Readonly<{ key: QueryKey; data: CacheValue; updatedAtMs
 /** By `hashKey(key)`. */
 export type CacheEntries = ReadonlyMap<string, CacheEntry>
 
-/** One per server port, as legacy keys it. */
+/** One per server port, keyed as earlier builds wrote it. */
 export const storageKeyFor = (port: string): string => `maple-local:query-cache:${port}`
 
 /** Saved results older than this are dropped on load. */
@@ -29,7 +29,7 @@ const MAX_ENTRIES = 150
 
 const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> => {
 	if (value === null || typeof value !== "object") return false
-	const proto = Object.getPrototypeOf(value)
+	const proto: unknown = Object.getPrototypeOf(value)
 	return proto === Object.prototype || proto === null
 }
 
@@ -87,7 +87,7 @@ const SavedCache = Schema.Struct({
 })
 const decodeSaved = Schema.decodeUnknownOption(Schema.fromJsonString(SavedCache))
 
-/** `restoreQueryCache`: the saved results younger than a day; an entry the codec cannot rebuild is skipped. */
+/** The saved results younger than a day; an entry the codec cannot rebuild is skipped. */
 export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 	new Map(
 		Option.match(decodeSaved(text), {
@@ -113,7 +113,7 @@ export const parseSaved = (text: string, nowMs: number): CacheEntries =>
 export const asCacheValue = <A>(data: A): Option.Option<CacheValue> =>
 	Option.map(encodeCacheValue(data), decodeCacheValue)
 
-/** `serializeQueryCache`: the newest results that fit the budget, in legacy's saved form. */
+/** The newest results that fit the budget, in the saved form earlier builds wrote. */
 export const serialize = (entries: CacheEntries): string => {
 	const encoded = Array.getSomes(
 		Array.map(Array.sort(Array.fromIterable(entries.values()), byNewest), (entry) =>
@@ -122,12 +122,13 @@ export const serialize = (entries: CacheEntries): string => {
 			),
 		),
 	)
-	const kept = encoded.reduce<{ readonly items: ReadonlyArray<string>; readonly size: number }>(
+	const kept = Array.reduce<string, { readonly items: ReadonlyArray<string>; readonly size: number }>(
+		encoded,
+		{ items: [], size: 0 },
 		(acc, item) =>
 			acc.items.length >= MAX_ENTRIES || acc.size + item.length > STORAGE_BUDGET
 				? acc
 				: { items: [...acc.items, item], size: acc.size + item.length },
-		{ items: [], size: 0 },
 	)
 	return `{"version":1,"entries":[${Array.join(kept.items, ",")}]}`
 }

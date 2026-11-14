@@ -1,12 +1,10 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import type { McpToolRequirements } from "./runtime-requirements"
+import type { McpToolName, McpToolOutputs } from "@maple/domain/mcp-outputs"
+import type { McpToolRequirements } from "./runtime-services"
 import type { ToolDoc } from "../lib/tool-doc"
-
-class McpTenantError extends Schema.TaggedError<McpTenantError>()("@maple/mcp/errors/McpTenantError", {
-	message: Schema.String,
-}) {}
+import * as Policy from "@maple/domain/policy"
 
 export class McpAuthMissingError extends Schema.TaggedError<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -77,12 +75,12 @@ export class McpQueryBudgetError extends Schema.TaggedError<McpQueryBudgetError>
 	{ message: Schema.String, pipeName: Schema.String, setting: Schema.String },
 ) {}
 
+/**
+ * What a tool handler may fail with. Credential and tenant failures (`McpAuthMissingError`,
+ * `McpAuthUnavailableError`, `McpInvalidTenantError`) happen at the transport, before any tool runs.
+ */
 export type McpToolError =
-	| McpTenantError
-	| McpAuthMissingError
 	| McpAuthInvalidError
-	| McpAuthUnavailableError
-	| McpInvalidTenantError
 	| McpQueryError
 	| McpInvalidInputError
 	| McpNotReadyError
@@ -111,6 +109,45 @@ export interface McpToolHints {
 	readonly idempotent?: boolean
 	/** Reaches a system outside Maple's own data, such as GitHub or a repository checkout. */
 	readonly openWorld?: boolean
+}
+
+/**
+ * Maple's own feedback channel. It writes, yet stays open to read-only keys as on v2, and a
+ * failure of it never asks the caller to report that failure through it.
+ */
+export const FEEDBACK_TOOL = "send_maple_feedback"
+
+/**
+ * Whether a read-only credential is refused this tool, and so never shown it: every tool that
+ * changes data, except {@link FEEDBACK_TOOL}.
+ */
+export const refusesReadOnlyCredential = (name: string, readOnly: boolean): boolean =>
+	!readOnly && name !== FEEDBACK_TOOL
+
+/** The tools that build dashboards: the only changes an analyst's role reaches. */
+export const DASHBOARD_AUTHORING_TOOLS: ReadonlySet<string> = new Set([
+	"create_dashboard",
+	"update_dashboard",
+	"add_dashboard_widget",
+	"update_dashboard_widget",
+	"remove_dashboard_widget",
+	"reorder_dashboard_widgets",
+	"replace_dashboard_widgets",
+])
+
+/** Whether an analyst is refused this tool: one that changes data and does not build a dashboard. */
+export const refusesAnalyst = (name: string, readOnly: boolean): boolean =>
+	refusesReadOnlyCredential(name, readOnly) && !DASHBOARD_AUTHORING_TOOLS.has(name)
+
+/** Why this caller is refused the tool, and so never shown it: their key, their role, or nothing. */
+export const refusalFor = (
+	tenant: { readonly readOnly?: true; readonly roles: ReadonlyArray<string> },
+	name: string,
+	readOnly: boolean,
+): "analyst" | "read_only_key" | undefined => {
+	if (Policy.isAnalyst(tenant.roles) && refusesAnalyst(name, readOnly)) return "analyst"
+	if (tenant.readOnly === true && refusesReadOnlyCredential(name, readOnly)) return "read_only_key"
+	return undefined
 }
 
 /**
@@ -168,38 +205,50 @@ export const audienceAdmits = (audience: McpToolAudience, surface: McpToolSurfac
  */
 export interface McpToolSpec<
 	P extends Schema.Codec<unknown, unknown, never, unknown>,
-	O extends Schema.Codec<unknown, unknown, never, never>,
+	N extends McpToolName,
 	R extends McpToolRequirements,
 > {
-	readonly name: string
+	/** Also the key of the tool's output schema in `McpToolOutputs`, published as `outputSchema`. */
+	readonly name: N
 	/** Human-readable name, shown by clients in place of `name`. Title Case, no trailing period. */
 	readonly title: string
 	readonly description: string
 	readonly parameters: P
-	/** The result's schema: published as `outputSchema`, used to encode `structuredContent`. */
-	readonly output: O
 	readonly hints: McpToolHints
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
+	/**
+	 * The v2 scope families a scoped API key must also hold (read for read-only tools, else write), as
+	 * the matching `/v2/<family>` routes require. For data outside the toolset's baseline families.
+	 */
+	readonly scopeFamily?: string | ReadonlyArray<string>
 	readonly phrases: McpToolPhrases
 	/** Retired parameter names mapped to their current name. Accepted, never published. */
 	readonly aliases?: Readonly<Record<string, string>>
+	/**
+	 * Per enum parameter, other spellings of a published value (`feature` for `feature_request`).
+	 * Accepted, never published. Case, spaces and hyphens are already forgiven for every enum.
+	 */
+	readonly valueAliases?: Readonly<Record<string, Readonly<Record<string, string>>>>
 	/**
 	 * Refuse keys a nested object parameter does not declare, instead of dropping them. For
 	 * documents that replace state, where a dropped typo would reset a field to its default.
 	 */
 	readonly rejectUnknownKeys?: true
-	readonly handler: (params: P["Type"]) => Effect.Effect<O["Type"], McpToolError, R>
+	readonly handler: (params: P["Type"]) => Effect.Effect<McpToolOutput<N>["Type"], McpToolError, R>
 	/** The model-facing text, derived from the output alone so the two cannot disagree. */
-	readonly render: (output: O["Type"]) => ToolDoc
+	readonly render: (output: McpToolOutput<N>["Type"]) => ToolDoc
 }
+
+/** A tool's output schema: the domain catalog's entry for its name. */
+export type McpToolOutput<N extends McpToolName> = (typeof McpToolOutputs)[N]
 
 export interface McpToolRegistrar {
 	define<
 		P extends Schema.Codec<unknown, unknown, never, unknown>,
-		O extends Schema.Codec<unknown, unknown, never, never>,
+		N extends McpToolName,
 		R extends McpToolRequirements,
 	>(
-		spec: McpToolSpec<P, O, R>,
+		spec: McpToolSpec<P, N, R>,
 	): void
 }

@@ -1,19 +1,22 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import { encodeJson } from "@maple/views/data/request-key"
 import { TimeRangeSchema } from "@maple/domain/http"
 import { resolveTimeRangeWindow } from "@maple/query-engine"
 import {
 	REFRESH_INTERVAL_OPTIONS,
 	resolveRefreshIntervalSeconds,
 	variableValuesFromSearch,
-} from "../../lib/dashboard-controls/search-params"
+} from "../../route/dashboard-controls"
 import { Option, Schema, Array as Arr, Record as Rec } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { AppRoute, hrefOf } from "../../route"
+import { validTimeZone } from "../../platform/time-zone"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageReturn, PageOutMessage } from "../contract"
-import { presetLabel } from "../kit/time-controls"
-import { withActiveTab, withSectionCollapsed } from "../../lib/dashboards/section-view-state"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { withActiveTab, withSectionCollapsed } from "../dashboards/kit/section-view-state"
 import {
 	DATA_UNAVAILABLE_MESSAGE,
 	FetchBatch,
@@ -27,8 +30,6 @@ import {
 import { Message } from "./message"
 import type { Model, QueuedBatch, SharedDashboard, ShareWindow, WidgetState } from "./model"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
 type Return = PageReturn<Model, Message>
 type Route = { readonly token: string; readonly search: Model["search"] }
 
@@ -36,10 +37,22 @@ const BATCH_MAX = 4
 const DEFAULT_SHARE_TIME_RANGE = { type: "relative", value: "1h" } as const
 const decodeTimeRange = Schema.decodeUnknownOption(TimeRangeSchema)
 
-/** `resolveShareWindow`: `?from`/`?to`, then `?range`, then the board's own range. */
-export const resolveShareWindow = (model: Model, share: SharedDashboard): ShareWindow | null => {
+/** The zone the share page resolves and draws in: the link's valid `?tz=`, else the page's own. */
+export const shareTimeZoneOf = (search: Model["search"], pageTimeZone: string): string =>
+	search.tz === undefined ? pageTimeZone : Option.getOrElse(validTimeZone(search.tz), () => pageTimeZone)
+
+/** `?from`/`?to`, then `?range`, then the board's own range. */
+export const resolveShareWindow = (
+	model: Model,
+	share: SharedDashboard,
+	pageTimeZone: string,
+): ShareWindow | null => {
 	const { search } = model
-	const options = { snap: model.refreshTick === 0, nowMs: model.nowMs }
+	const options = {
+		snap: model.refreshTick === 0,
+		nowMs: model.nowMs,
+		timeZone: shareTimeZoneOf(search, pageTimeZone),
+	}
 	if (search.from !== undefined && search.to !== undefined)
 		// TODO(range-label): format an absolute window with `formatTimeRangeDisplay`.
 		return { startTime: search.from, endTime: search.to, label: `${search.from} - ${search.to}` }
@@ -76,7 +89,6 @@ const variableValuesOf = (model: Model): Record<string, string> => ({
 	...variableValuesFromSearch(model.search),
 })
 
-/** Queued batches cut down to the widgets still requested under the same key; empty ones drop. */
 const liveBatches = (
 	batches: ReadonlyArray<QueuedBatch>,
 	requested: Model["requested"],
@@ -86,7 +98,7 @@ const liveBatches = (
 		return requests.length === 0 ? [] : [{ ...batch, requests }]
 	})
 
-/** `useShareWidgetData`'s effect: every reported widget whose request key moved, in batches of four. */
+/** Every reported widget whose request key moved, in batches of four. */
 const flush = (model: Model): Return => {
 	const share = shareOf(model)
 	const window = model.window
@@ -136,20 +148,18 @@ const flush = (model: Model): Return => {
 	}
 }
 
-const withWindow = (model: Model): Model => {
+const withWindow = (model: Model, pageTimeZone: string): Model => {
 	const share = shareOf(model)
 	return share === null || model.nowMs === 0
 		? model
-		: { ...model, window: resolveShareWindow(model, share) }
+		: { ...model, window: resolveShareWindow(model, share, pageTimeZone) }
 }
 
-const reload = (model: Model): Return => {
+const reload = (model: Model, pageTimeZone: string): Return => {
 	const refreshTick = model.refreshTick + 1
-	const next = withWindow({ ...model, refreshTick, requested: {} })
+	const next = withWindow({ ...model, refreshTick, requested: {} }, pageTimeZone)
 	return flush(next)
 }
-
-// ENTRY POINTS
 
 export const init = (route: Route): Return => ({
 	model: {
@@ -175,21 +185,12 @@ export const init = (route: Route): Return => ({
 		variables: {},
 		sectionView: {},
 	},
-	commands: [
-		ReadFrame(),
-		ResolveClock(),
-		ResolveShare({ token: route.token }),
-		Command.mapMessage(LoadChartRuntime(), (message) =>
-			message._tag === "CompletedLoadChartRuntime"
-				? Message.CompletedLoadChartRuntime()
-				: Message.FailedLoadChartRuntime({ reason: message.reason }),
-		),
-	],
+	commands: [ReadFrame(), ResolveClock(), ResolveShare({ token: route.token }), LoadChartRuntime()],
 })
 
 /** A new search (`?refresh=`, `?range=`): the window re-resolves and changed keys refetch. */
-export const routeChanged = (model: Model, route: Route): Return =>
-	flush(withWindow({ ...model, search: route.search }))
+export const routeChanged = (model: Model, route: Route, pageTimeZone: string): Return =>
+	flush(withWindow({ ...model, search: route.search }, pageTimeZone))
 
 const decodeInterval = (value: string): Option.Option<number> => {
 	const seconds = Number(value)
@@ -198,11 +199,11 @@ const decodeInterval = (value: string): Option.Option<number> => {
 		: Option.none()
 }
 
-export const update = (model: Model, message: Message): Return =>
+export const update = (model: Model, message: Message, pageTimeZone: string): Return =>
 	Message.match<Return>(message, {
-		CompletedResolveClock: ({ nowMs }) => ({ model: withWindow({ ...model, nowMs }) }),
+		CompletedResolveClock: ({ nowMs }) => ({ model: withWindow({ ...model, nowMs }, pageTimeZone) }),
 		CompletedResolveShare: ({ token, resolve }) =>
-			token !== model.token ? { model } : { model: withWindow({ ...model, resolve }) },
+			token !== model.token ? { model } : { model: withWindow({ ...model, resolve }, pageTimeZone) },
 		MeasuredWidget: ({ widgetId, maxDataPoints }) => {
 			if (model.options[widgetId] === maxDataPoints) return { model }
 			const next = { ...model, options: { ...model.options, [widgetId]: maxDataPoints } }
@@ -251,12 +252,8 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ClickedReload: () => ({ model, commands: [ResolveReloadClock()] }),
 		TickedAutoRefresh: () => ({ model, commands: [ResolveReloadClock()] }),
-		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
+		CompletedResolveReloadClock: ({ nowMs }) => reload({ ...model, nowMs }, pageTimeZone),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ widgetId, message: inner }) => {
 			const next = Chart.update(model.charts[widgetId] ?? Chart.init(), inner)
 			return {

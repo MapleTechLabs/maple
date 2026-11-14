@@ -11,13 +11,14 @@ import { settingRow } from "@maple/views/ui/setting-row"
 import { accountSectionSkeleton, noOrganization } from "../kit/account-skeleton"
 import { imageDropzone, typeToConfirmField } from "../kit/image-dropzone"
 import { adminOnlyNotice } from "../kit/members"
-import { dangerRow, dangerZone } from "../kit/danger-zone"
-import { saveBar } from "../kit/save-bar"
-import { settingsSection, settingsSections } from "../kit/section"
-import { Message, type Model, type OrgInfo } from "./model"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
+import { canManage, Message, type Model, type OrgInfo } from "./model"
 import { isNameDirty, LOGO_INPUT_ID, leaveEligibilityOf, nameDraftOf } from "./update"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr, String as Str } from "effect"
+import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -42,26 +43,23 @@ const deletionFacts = (h: H): Html =>
 	h.dl(
 		[h.Class("flex flex-col gap-1 text-xs")],
 		Arr.map(DELETION_FACTS, (fact) =>
-			h.div(
-				[h.Key(fact.key), h.Class("flex gap-2")],
-				[
-					h.dt(
-						[
-							h.Class(
-								fact.isDestructive
-									? "w-16 shrink-0 text-destructive"
-									: "w-16 shrink-0 text-muted-foreground",
-							),
-						],
-						[fact.key],
-					),
-					h.dd([h.Class("font-prose text-foreground")], [fact.value]),
-				],
-			),
+			hstack(h, { gap: "2", align: "stretch", attributes: [h.Key(fact.key)] }, [
+				h.dt(
+					[
+						h.Class(
+							fact.isDestructive
+								? "w-16 shrink-0 text-destructive"
+								: "w-16 shrink-0 text-muted-foreground",
+						),
+					],
+					[fact.key],
+				),
+				h.dd([h.Class("font-prose text-foreground")], [fact.value]),
+			]),
 		),
 	)
 
-/** `OrgAvatar fit="contain"`: the logo preview (the initials until images are rendered). */
+/** The logo preview: the initials until images are rendered. */
 const orgAvatar = (h: H, name: string): Html =>
 	avatarFallback(
 		h,
@@ -99,7 +97,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 						h,
 						LOGO_INPUT_ID,
 						"Logo",
-						model.isAdmin
+						canManage(model)
 							? "Saved as soon as you upload. PNG, JPG, WEBP or GIF, up to 10 MB."
 							: "Shown beside the name in the organization switcher.",
 						[
@@ -109,7 +107,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 								preview: orgAvatar(h, org.name),
 								isUploading: model.isSavingLogo,
 								isDragging: model.isDragging,
-								isReadOnly: !model.isAdmin,
+								isReadOnly: !canManage(model),
 								targetLabel: "Change organization logo",
 								changeLabel: "Change logo",
 								onPick: Message.ClickedPickLogo(),
@@ -121,7 +119,7 @@ const organizationSection = (h: H, model: Model, org: OrgInfo): Html =>
 						],
 					),
 					row(h, "org-name", "Name", "Shown in the organization switcher.", [
-						model.isAdmin
+						canManage(model)
 							? input(h, {
 									id: "org-name",
 									className: "w-72",
@@ -162,8 +160,9 @@ const dataRegionSection = (h: H, org: OrgInfo): Html => {
 		[
 			row(h, "org-region", "Region", "Set when the organization was created. It cannot be changed.", [
 				// The full name alone: a short code chip before it repeated the name at low contrast.
-				h.span(
-					[h.Id("org-region"), h.Class("text-sm"), h.Title(`Data region: ${region.name}`)],
+				typography(
+					h,
+					{ size: "sm", attributes: [h.Id("org-region"), h.Title(`Data region: ${region.name}`)] },
 					[region.name],
 				),
 			]),
@@ -196,7 +195,7 @@ const dangerZoneSection = (h: H, model: Model, org: OrgInfo): Html => {
 				),
 			]),
 		}),
-		...(model.isAdmin
+		...(canManage(model)
 			? [
 					dangerRow(h, {
 						title: "Delete organization",
@@ -263,7 +262,7 @@ const dialogs = (h: H, model: Model, org: OrgInfo): ReadonlyArray<Html> => [
 const loaded = (h: H, model: Model, org: OrgInfo, isKnownMember: boolean): Html =>
 	settingsSections(h, [
 		...adminOnlyNotice(h, {
-			isKnownMember: isKnownMember && !model.isAdmin,
+			isKnownMember: isKnownMember && !canManage(model),
 			subject: "organization settings",
 			adminName: AsyncData.getOrElse(
 				AsyncData.map(model.admins, (admins) => admins.firstAdminName),

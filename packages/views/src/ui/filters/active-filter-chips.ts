@@ -1,11 +1,11 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
-import { icon } from "../icon"
+import { icon, type IconName } from "../icon"
 import { iconButton } from "../icon-button"
 import { Array as Arr } from "effect"
 
-// Port of `ActiveFilterChips` (packages/ui/src/components/filters/active-filter-chips.tsx).
+// The filters in effect as removable chips.
 
 const MAX_CHIP_VALUES = 3
 
@@ -15,8 +15,12 @@ export type ActiveFilterChip<M> = Readonly<{
 	values: ReadonlyArray<string>
 	isNegated?: boolean
 	onRemove: M
-	/** Stored value to display text (`getValueLabel`): a trace id shows its short form. */
+	/** Stored value to display text: a trace id shows its short form. */
 	valueLabel?: (value: string) => string
+	/** The connector in place of is / is not (`contains`, `>`, `is set`); empty shows none. */
+	operator?: string
+	/** A mark before the label: the value's provider, vendor or kind. */
+	mark?: Readonly<{ icon: IconName; className?: string | undefined }> | undefined
 }>
 
 const summarize = <M>(chip: ActiveFilterChip<M>): string => {
@@ -37,7 +41,11 @@ export const activeFilterChips = <M>(
 		[
 			...Arr.map(options.chips, (chip) => {
 				const isNegated = chip.isNegated ?? false
-				const description = `${chip.label} ${isNegated ? "is not" : "is"} ${Arr.join(chip.values, ", ")}`
+				const connector = chip.operator ?? (isNegated ? "is not" : "is")
+				const description = Arr.join(
+					Arr.filter([chip.label, connector, Arr.join(chip.values, ", ")], (part) => part !== ""),
+					" ",
+				)
 				return h.span(
 					[
 						h.Key(chip.id),
@@ -52,15 +60,35 @@ export const activeFilterChips = <M>(
 						),
 					],
 					[
+						...(chip.mark === undefined
+							? []
+							: [
+									icon(h, chip.mark.icon, {
+										size: 12,
+										className: cn("shrink-0", chip.mark.className),
+									}),
+								]),
 						h.span(
 							[h.Class("truncate")],
 							[
 								h.span([h.Class("text-muted-foreground")], [chip.label]),
-								" ",
-								h.span(
-									[h.Class(cn(isNegated ? "font-medium" : "text-muted-foreground"))],
-									[isNegated ? "is not" : "is"],
-								),
+								...(connector === ""
+									? []
+									: [
+											" ",
+											h.span(
+												[
+													h.Class(
+														cn(
+															isNegated
+																? "font-medium"
+																: "text-muted-foreground",
+														),
+													),
+												],
+												[connector],
+											),
+										]),
 								" ",
 								h.span([h.Class("font-medium")], [summarize(chip)]),
 							],

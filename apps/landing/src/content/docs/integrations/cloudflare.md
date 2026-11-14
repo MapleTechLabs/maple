@@ -9,7 +9,7 @@ The Cloudflare integration connects one or more Cloudflare accounts to Maple thr
 
 ## Prerequisites
 
-- You are an admin of the Maple organization.
+- You are an admin or engineer in the Maple organization.
 - You can authorize OAuth applications on the Cloudflare account.
 
 ## Connect
@@ -69,6 +69,8 @@ When a Worker also sends traces, Maple matches the script to the traced service 
 ### The Cloudflare source
 
 The source page shows each connected account, a **Zones** board with a status per zone (**Live**, **Issues**, **No data**, **Paused**, or **Disabled**) and 24-hour request counts, and a **Workers** card.
+
+**Manage zones** on the board picks which zones Maple collects, per account. Unchecked zones are paused, and data already collected for them stays. **Collect new zones automatically** adds zones created in Cloudflare later. Changing zones needs the org admin or engineer role.
 
 ## Verify
 

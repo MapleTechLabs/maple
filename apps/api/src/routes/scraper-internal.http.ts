@@ -8,11 +8,11 @@ import {
 	ScrapeTargetType,
 	UserId,
 } from "@maple/domain/http"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { publicSourceId } from "@maple/backend/services/org/integration-sources"
+import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import {
 	PlanetScaleDiscoveryService,
 	type PlanetScaleSubTarget,
@@ -30,7 +30,7 @@ const decodeTargetTypeSync = Schema.decodeUnknownSync(ScrapeTargetType)
 const SCRAPER_SYSTEM_USER = Schema.decodeSync(UserId)("system-prometheus-scraper")
 const decodeScrapeResultsEffect = Schema.decodeUnknownEffect(ScrapeResultReportList)
 const decodeLabelsEffect = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
-const EMPTY_LABELS = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))({})
+const EMPTY_LABELS = Schema.decodeSync(Schema.Record(Schema.String, Schema.String))({})
 /** PlanetScale's data plane authenticates with the signed URL, never a header. */
 const NO_AUTH_HEADERS: Record<string, string> = {}
 const NO_SUB_TARGETS: ReadonlyArray<PlanetScaleSubTarget> = []

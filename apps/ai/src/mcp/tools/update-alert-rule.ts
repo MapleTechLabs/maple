@@ -1,8 +1,7 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { Array as Arr, Effect, Schema } from "effect"
-import { UpdateAlertRuleOutput } from "@maple/domain/mcp-outputs"
+import { Array as Arr, Effect, Option, Schema, String as Str } from "effect"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { recoveryValueFits } from "@maple/backend/services/alerts/alert-thresholds"
@@ -15,6 +14,7 @@ import {
 	type AlertComparator,
 	type AlertRuleDocument,
 	type AlertThreshold,
+	type EscalationChainId,
 } from "@maple/domain/http"
 import { MAX_RAW_SQL_ALERT_GROUPS } from "@maple/domain/raw-sql"
 import {
@@ -22,6 +22,8 @@ import {
 	ALERT_REDUCERS,
 	ALERT_SEVERITIES,
 	ALERT_SIGNAL_TYPES,
+	ANOMALY_SIGNAL_TYPES,
+	ANOMALY_SIGNALS_DESCRIPTION,
 	renderBulkRuleWrite,
 	renderRuleWrite,
 	ruleConfigWarnings,
@@ -68,7 +70,11 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
-		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql, anomaly pages on the anomaly detector's incidents.",
+	),
+	anomaly_signals: P.optionalOneOfList(
+		ANOMALY_SIGNAL_TYPES,
+		`${ANOMALY_SIGNALS_DESCRIPTION} Replaces the current list; an empty list means every signal.`,
 	),
 	comparator: P.optionalOneOf(ALERT_COMPARATORS, "How the observed value is compared with threshold"),
 	group_by: P.optionalList(
@@ -102,6 +108,14 @@ export const UpdateAlertRuleParameters = Schema.Struct({
 	notification_body: P.optionalText(
 		"Notification body template (Markdown) with {{ variable }} and {{#if key}}...{{/if}}",
 	),
+	escalation_chain_id: P.optionalResourceId(
+		"escalationChain",
+		'Escalation chain an incident starts on top of the destinations (from list_escalation_chains), or "none" to detach. Applies to escalation_chain_tier; without it, an id sets the critical (or only) tier and "none" detaches every tier',
+	),
+	escalation_chain_tier: P.optionalOneOf(
+		["warning", "critical"],
+		"The tier escalation_chain_id sets or detaches, leaving the other tier's chain as it is",
+	),
 })
 
 /**
@@ -114,7 +128,6 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	current: AlertRuleDocument,
 	params: typeof UpdateAlertRuleParameters.Type,
 ) {
-	// Merge notification template fields onto the existing template (null-safe).
 	const touchesTemplate = params.notification_title !== undefined || params.notification_body !== undefined
 	const title = params.notification_title ?? current.notificationTemplate?.title ?? undefined
 	const body = params.notification_body ?? current.notificationTemplate?.body ?? undefined
@@ -129,7 +142,17 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 	const signalType = params.signal_type ?? current.signalType
 	const comparator = params.comparator ?? current.comparator
 	const keepsRawQuery = signalType === "raw_query"
-	const thresholds = yield* mergeThresholds(current, params, comparator)
+	const chain =
+		params.escalation_chain_id === undefined
+			? undefined
+			: Str.toLowerCase(params.escalation_chain_id) === "none"
+				? null
+				: yield* P.decodeResourceId(
+						"escalationChain",
+						"escalation_chain_id",
+					)(params.escalation_chain_id)
+	const merged = yield* mergeThresholds(current, params, comparator)
+	const thresholds = yield* withEscalationChain(current.name, merged, chain, params.escalation_chain_tier)
 
 	return {
 		name: params.name ?? current.name,
@@ -139,6 +162,12 @@ export const buildUpdatedRequest = Effect.fnUntraced(function* (
 		serviceNames: [...(params.services ?? current.serviceNames)],
 		excludeServiceNames: [...current.excludeServiceNames],
 		environments: [...(params.environments ?? current.environments)],
+		// Only an anomaly rule has a signal scope; the server rejects one on any other rule.
+		...(signalType === "anomaly"
+			? { anomalySignals: [...(params.anomaly_signals ?? current.anomalySignals ?? [])] }
+			: params.anomaly_signals === undefined
+				? undefined
+				: { anomalySignals: [...params.anomaly_signals] }),
 		tags: [...current.tags],
 		groupBy:
 			params.group_by !== undefined
@@ -225,6 +254,48 @@ const mergeThresholds = (
 	)
 }
 
+/**
+ * Sets or detaches a tier's chain. A named tier changes only that tier; without one, an id sets the
+ * critical (or only) tier and "none" detaches every tier.
+ */
+const withEscalationChain = <T extends { readonly severity: AlertThreshold["severity"] }>(
+	ruleName: string,
+	tiers: Arr.NonEmptyReadonlyArray<T>,
+	chain: EscalationChainId | null | undefined,
+	tier: AlertThreshold["severity"] | undefined,
+): Effect.Effect<Arr.NonEmptyReadonlyArray<T>, McpInvalidInputError> => {
+	if (chain === undefined) {
+		return tier === undefined
+			? Effect.succeed(tiers)
+			: Effect.fail(
+					new McpInvalidInputError({
+						message:
+							'escalation_chain_tier needs escalation_chain_id (an id, or "none" to detach)',
+						parameter: "escalation_chain_tier",
+					}),
+				)
+	}
+	if (tier !== undefined) {
+		if (!Arr.some(tiers, (t) => t.severity === tier)) {
+			return Effect.fail(
+				new McpInvalidInputError({
+					message: `"${ruleName}" has no ${tier} tier`,
+					parameter: "escalation_chain_tier",
+				}),
+			)
+		}
+		return Effect.succeed(
+			Arr.map(tiers, (t) => (t.severity === tier ? { ...t, escalationChainId: chain } : t)),
+		)
+	}
+	if (chain === null) return Effect.succeed(Arr.map(tiers, (t) => ({ ...t, escalationChainId: null })))
+	const critical = Arr.findLastIndex(tiers, (t) => t.severity === "critical")
+	const target = tiers.length === 1 ? 0 : Option.getOrElse(critical, () => tiers.length - 1)
+	return Effect.succeed(
+		Arr.map(tiers, (t, index) => (index === target ? { ...t, escalationChainId: chain } : t)),
+	)
+}
+
 /** `destination_ids` replaces; add/remove edit the current (or replaced) list in place. */
 const mergeDestinations = (
 	current: ReadonlyArray<string>,
@@ -270,7 +341,6 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			"Ids from list_alert_rules and list_alert_destinations.",
 		parameters: UpdateAlertRuleParameters,
 		aliases: { service_names: "services" },
-		output: UpdateAlertRuleOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
 		phrases: ["Updating an alert rule"],
 		handler: Effect.fn("McpTool.updateAlertRule")(function* (params) {

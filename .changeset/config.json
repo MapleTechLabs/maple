@@ -7,6 +7,6 @@
 	"access": "public",
 	"baseBranch": "main",
 	"updateInternalDependencies": "patch",
-	"ignore": ["@maple/landing", "@maple/clickhouse-cli"],
+	"ignore": ["@maple/landing", "@maple/clickhouse-cli", "@maple-examples/effect-todo"],
 	"privatePackages": { "version": true, "tag": false }
 }

@@ -7,6 +7,9 @@ import {
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { input } from "@maple/views/ui/input"
 import { toSeriesFieldOptions } from "./drafts"
+import { ROW_LIMIT_MAX, statValueFieldOf } from "./lowering"
+import { SQL_VALUE_FIELD, sqlValueFieldOf } from "./raw-sql"
+import { isSqlSource, widgetOf } from "./update"
 import type { EditorState } from "./editor-state"
 import { Message } from "./message"
 import { ProductEdit } from "./product-edit"
@@ -26,19 +29,45 @@ import { hstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, String as Str } from "effect"
 
-// Each non-timeseries panel type's `ConfigPanel` over the `WidgetSettings` fields.
-
 type H = HtmlBuilder<Message>
 
-const titleCase = (value: string): string => `${Str.toUpperCase(value.charAt(0))}${Str.slice(1)(value)}`
+const titleCase = (value: string): string =>
+	`${Str.toUpperCase(Str.slice(0, 1)(value))}${Str.slice(1)(value)}`
 
-/** `ScalarReduction`: the aggregate, and the series it reduces (the first while unset or gone). */
+/** The SQL column a stat or gauge reduces, typed since the editor cannot list a query's columns. */
+const sqlValueField = (h: H, state: EditorState): Html =>
+	railSetting(h, "stat-value-field", "Value column", sqlValueFieldOf(state) !== "", [
+		input(h, {
+			id: "widget-editor-stat-value-field",
+			attributes: [
+				h.Value(sqlValueFieldOf(state)),
+				h.Placeholder(SQL_VALUE_FIELD),
+				h.OnInput((value) => Message.ChangedStatValueField({ value })),
+			],
+		}),
+	])
+
+/** The aggregate, and the series it reduces (the first while unset or gone). */
 const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const fields = toSeriesFieldOptions(state)
-	const valueField =
-		fields.length > 0 && (state.statValueField === "" || !fields.includes(state.statValueField))
-			? (fields[0] ?? "")
-			: state.statValueField
+	// A fixed endpoint reduces its own field, which the stand-in queries cannot name.
+	const valueField = isSqlSource(model)
+		? [sqlValueField(h, state)]
+		: state.keepsStoredSource
+			? []
+			: [
+					pageSelect(
+						h,
+						model,
+						"stat-value-field",
+						statValueFieldOf(state),
+						Arr.map(fields, (field) => ({ value: field, label: field })),
+						{
+							className: "w-full",
+							toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
+						},
+					),
+				]
 	return [
 		pageSelect(
 			h,
@@ -51,17 +80,7 @@ const scalarReduction = (h: H, model: Model, state: EditorState): ReadonlyArray<
 				toView: (parts) => railSetting(h, "stat-aggregate", "Aggregate", true, parts),
 			},
 		),
-		pageSelect(
-			h,
-			model,
-			"stat-value-field",
-			valueField,
-			Arr.map(fields, (field) => ({ value: field, label: field })),
-			{
-				className: "w-full",
-				toView: (parts) => railSetting(h, "stat-value-field", "Value field", true, parts),
-			},
-		),
+		...valueField,
 	]
 }
 
@@ -79,7 +98,7 @@ const numberInput = (
 		attributes: [h.Value(value), h.Placeholder(placeholder), h.OnInput(onInput), ...extra],
 	})
 
-/** `GaugeRange`: the arc's sweep. */
+/** The arc's sweep. */
 const gaugeRange = (h: H, state: EditorState): Html =>
 	grid(h, { cols: 2, gap: "2" }, [
 		railSetting(h, "gauge-min", "Min", state.gaugeMin !== "", [
@@ -94,9 +113,10 @@ const gaugeRange = (h: H, state: EditorState): Html =>
 		]),
 	])
 
-/** `Sparkline`: only in builder mode, since it re-runs the builder's queries. */
+/** Builder mode only; a fixed endpoint offers it only when it stored a trend source of its own. */
 const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> =>
-	model.sourceMode === "builder"
+	model.sourceMode === "builder" &&
+	(!state.keepsStoredSource || widgetOf(model)?.display.sparkline?.dataSource !== undefined)
 		? [
 				checkboxRow(
 					h,
@@ -108,19 +128,19 @@ const sparkline = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> 
 			]
 		: []
 
-/** `RowLimit`. */
 const rowLimit = (h: H, state: EditorState): Html =>
 	railSetting(h, "row-limit", "Row limit", state.tableLimit !== "", [
 		numberInput(h, "row-limit", state.tableLimit, "50", (value) => Message.ChangedTableLimit({ value }), [
 			h.Min("1"),
-			h.Max("1000"),
+			h.Max(String(ROW_LIMIT_MAX)),
 		]),
 	])
 
-/** `RampSwatch`: the palette's five stops. */
+/** The palette's five stops. */
 const rampSwatch = (h: H, scale: string): Html =>
-	h.span(
-		[h.Class("flex shrink-0 gap-px")],
+	hstack(
+		h,
+		{ align: "stretch", as: "span", className: "shrink-0 gap-px" },
 		Arr.map([0, 1, 2, 3, 4], (stop) =>
 			h.span([
 				h.Class("size-2 rounded-xs"),
@@ -133,7 +153,7 @@ const swatchLabel = (h: H, scale: string): ReadonlyArray<Html | string> => [
 	hstack(h, { gap: "2", as: "span" }, [rampSwatch(h, scale), titleCase(scale)]),
 ]
 
-/** `HeatmapColors`: an unset palette shows the ramp the chart already renders. */
+/** An unset palette shows the ramp the chart already renders. */
 const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => [
 	pageSelect(
 		h,
@@ -163,7 +183,7 @@ const heatmapColors = (h: H, model: Model, state: EditorState): ReadonlyArray<Ht
 
 const product = (edit: ProductEdit): Message => Message.ChangedProduct({ edit })
 
-/** `FunnelVariant`: bars, or the step-by-step drop-off view. */
+/** Bars, or the step-by-step drop-off view. */
 const funnelVariant = (h: H, state: EditorState): Html =>
 	railSetting(h, "funnel-variant", "View", false, [
 		segments(
@@ -177,7 +197,7 @@ const funnelVariant = (h: H, state: EditorState): Html =>
 		),
 	])
 
-/** `FunnelStepPercent`: the chart's tri-state label mode. */
+/** The chart's tri-state label mode. */
 const funnelStepPercent = (h: H, state: EditorState): Html => {
 	const value = state.funnel.showStepPercent
 	return railSetting(h, "funnel-step-percent", "Step labels", false, [
@@ -194,7 +214,7 @@ const funnelStepPercent = (h: H, state: EditorState): Html => {
 	])
 }
 
-/** The `ConfigPanel` of a panel type other than line, bar and area. */
+/** The settings of a panel type other than line, bar and area. */
 export const typeSettings = (
 	h: H,
 	model: Model,

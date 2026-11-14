@@ -115,6 +115,7 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			railwayServiceId: "",
 			railwayEnvironmentId: "",
 			railwayEnvironmentName: "",
+			vercelProjectId: "",
 		},
 		{
 			serviceName: Schema.decodeSync(ServiceName)("fleet-worker"),
@@ -125,6 +126,7 @@ export const MAP_RUNTIMES_BUNDLE: MapBundle["value"] = {
 			railwayServiceId: "",
 			railwayEnvironmentId: "",
 			railwayEnvironmentName: "",
+			vercelProjectId: "",
 		},
 	],
 }

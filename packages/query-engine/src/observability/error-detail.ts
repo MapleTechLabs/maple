@@ -1,5 +1,5 @@
-import { Array as Arr, DateTime, Effect, pipe, String as Str } from "effect"
-import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
+import { Array as Arr, DateTime, Effect, pipe, String as Str, Option } from "effect"
+import type { ErrorDetailTracesRow, ErrorsTimeseriesRow, ListLogsRow } from "../ch/pipe-rows"
 import { parseWarehouseDateTime, formatWarehouseDateTime, warehouseDateTimeToIso } from "../datetime"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
@@ -44,7 +44,7 @@ export interface ErrorDetailTrace {
 	readonly logs: ReadonlyArray<{ timestamp: string; severityText: string; body: string }>
 }
 
-const errorSpanOf = (t: ErrorDetailTracesOutput): ErrorDetailSpan | undefined => {
+const errorSpanOf = (t: ErrorDetailTracesRow): ErrorDetailSpan | undefined => {
 	if (!t.errorSpanId) return undefined
 	const attributes: Record<string, string> = {}
 	const attr = (key: string, value: string | undefined) => {
@@ -123,7 +123,7 @@ interface SummaryIdentity {
 
 /** Newest sampled occurrence first, then the error_events summary for whatever it lacks. */
 const identityOf = (
-	head: ErrorDetailTracesOutput | undefined,
+	head: ErrorDetailTracesRow | undefined,
 	summary: SummaryIdentity | undefined,
 ): ErrorDetailIdentity | undefined => {
 	if (head === undefined && summary === undefined) return undefined
@@ -162,11 +162,11 @@ const severityRank = (severity: string): number => SEVERITY_RANK.get(Str.toUpper
 export const errorFirstLogs = <L extends { readonly severityText: string; readonly timestamp: string }>(
 	logs: ReadonlyArray<L>,
 ): ReadonlyArray<L> =>
-	[...logs].sort(
-		(a, b) =>
-			severityRank(a.severityText) - severityRank(b.severityText) ||
-			(a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0),
-	)
+	[...logs].sort((a, b) => {
+		const bySeverity = severityRank(a.severityText) - severityRank(b.severityText)
+		if (bySeverity !== 0) return bySeverity
+		return a.timestamp < b.timestamp ? 1 : a.timestamp > b.timestamp ? -1 : 0
+	})
 
 const ANCHOR_SLACK_MS = 60 * 1000
 const RELATED_SLACK_MS = 5 * 60 * 1000
@@ -214,18 +214,21 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		),
 		{ profile: "list", context: "errorFingerprintSummary" },
 	)
-	const summaryRow = summaryRows.find((row) => row.occurrences > 0)
+	const summaryRow = Arr.findFirst(summaryRows, (row) => row.occurrences > 0)
 	const anchoredRange =
-		input.anchorWithin !== undefined && summaryRow !== undefined
-			? rangeEndingAt(input.timeRange, summaryRow.lastSeen)
+		input.anchorWithin !== undefined && Option.isSome(summaryRow)
+			? rangeEndingAt(input.timeRange, summaryRow.value.lastSeen)
 			: undefined
 	const sampleRange = anchoredRange ?? input.timeRange
 	yield* Effect.annotateCurrentSpan({
-		"maple.error_detail.occurrences": summaryRow?.occurrences ?? 0,
+		"maple.error_detail.occurrences": Option.match(summaryRow, {
+			onNone: () => 0,
+			onSome: (row) => row.occurrences,
+		}),
 		"maple.error_detail.anchored": anchoredRange !== undefined,
 	})
 
-	const tracesResult = yield* executor.query<ErrorDetailTracesOutput>(
+	const tracesResult = yield* executor.query<ErrorDetailTracesRow>(
 		"error_detail_traces",
 		{
 			fingerprint_hash: input.fingerprintHash,
@@ -245,7 +248,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		Arr.take(3),
 		Effect.forEach(
 			(t) =>
-				executor.query<ListLogsOutput>(
+				executor.query<ListLogsRow>(
 					"list_logs",
 					{
 						trace_id: t.traceId,
@@ -266,7 +269,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 
 	const timeseries = input.includeTimeseries
 		? yield* executor
-				.query<ErrorsTimeseriesOutput>(
+				.query<ErrorsTimeseriesRow>(
 					"errors_timeseries",
 					{
 						fingerprint_hash: input.fingerprintHash,
@@ -289,18 +292,18 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 				)
 		: undefined
 
-	const summary: ErrorDetailSummary | undefined =
-		summaryRow === undefined
-			? undefined
-			: {
-					timeRange: summaryRange,
-					occurrences: summaryRow.occurrences,
-					firstSeen: DateTime.formatIso(summaryRow.firstSeen),
-					lastSeen: DateTime.formatIso(summaryRow.lastSeen),
-					services: summaryRow.services,
-					serviceCount: summaryRow.serviceCount,
-					noExceptionCount: summaryRow.noExceptionCount,
-				}
+	const summary: ErrorDetailSummary | undefined = Option.match(summaryRow, {
+		onNone: () => undefined,
+		onSome: (row) => ({
+			timeRange: summaryRange,
+			occurrences: row.occurrences,
+			firstSeen: DateTime.formatIso(row.firstSeen),
+			lastSeen: DateTime.formatIso(row.lastSeen),
+			services: row.services,
+			serviceCount: row.serviceCount,
+			noExceptionCount: row.noExceptionCount,
+		}),
+	})
 
 	return {
 		fingerprintHash: input.fingerprintHash,
@@ -308,7 +311,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 		summary,
 		anchored: anchoredRange !== undefined,
 		related,
-		error: identityOf(traces[0], summaryRow),
+		error: identityOf(traces[0], Option.getOrUndefined(summaryRow)),
 		traces: pipe(
 			traces,
 			Arr.map((t, i): ErrorDetailTrace => ({
@@ -341,7 +344,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 /** Fingerprints that fired inside the sampled traces too, read over just those traces' span. */
 const relatedFingerprints = Effect.fn("Observability.relatedFingerprints")(function* (
 	fingerprintHash: string,
-	traces: ReadonlyArray<ErrorDetailTracesOutput>,
+	traces: ReadonlyArray<ErrorDetailTracesRow>,
 ) {
 	if (traces.length === 0) return []
 	const starts = Arr.filter(

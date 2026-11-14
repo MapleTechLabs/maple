@@ -4,8 +4,7 @@ import { createLazy, type Html, type HtmlBuilder } from "foldkit/html"
 import { bareInput } from "@maple/views/ui/bare-input"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
-import { card } from "@maple/views/ui/card"
-import { field, fieldDescription, fieldLabel, input } from "@maple/views/ui/field"
+import { field, fieldDescription, fieldError, fieldLabel, input } from "@maple/views/ui/field"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { textarea } from "@maple/views/ui/textarea"
@@ -16,17 +15,15 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { fieldStateOf, idsOf } from "./view-fields"
 import { hstack } from "@maple/views/ui/stack"
-
-// `DetailsSection` and `TagInput`: the rule's name, description and tags.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 
 const TAG_LIST_ID = "rule-tags-suggestions"
 
-/** What the section reads off the Model. */
 type DetailsView = Pick<Model, "mountedForm" | "tagDraft" | "isNotesOpen" | "tagSuggestions">
 
-/** `TagInput`: chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
+/** Chips, a free-text input committing on Enter or comma, and the org's tags as a datalist. */
 const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 	const available = Arr.filter(model.tagSuggestions, (tag) => !form.tags.includes(tag))
 	return h.div(
@@ -85,14 +82,14 @@ const tagInput = (h: H, model: DetailsView, form: RuleForm): Html => {
 	)
 }
 
-const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
+const nameField = (h: H, model: DetailsView, form: RuleForm, isNameInvalid: boolean): Html => {
 	const suggestion = suggestedName(form)
 	const isSuggesting = Str.trim(form.name).length === 0 && suggestion !== null && suggestion.length > 0
-	const state = fieldStateOf(form.name, model.mountedForm?.name)
+	const state = { ...fieldStateOf(form.name, model.mountedForm?.name), isInvalid: isNameInvalid }
 	const ids = idsOf("rule-name", false)
 	return field(h, { className: "items-stretch gap-1.5", state }, [
-		hstack(h, { gap: "2", justify: "between" }, [
-			fieldLabel(h, { ids, state }, "Rule name"),
+		hstack(h, { gap: "2", justify: "between", className: "min-w-0" }, [
+			fieldLabel(h, { ids, state, className: "shrink-0" }, "Rule name"),
 			...(isSuggesting
 				? [
 						button(
@@ -100,10 +97,14 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 							{
 								variant: "ghost",
 								size: "xs",
-								className: "px-1.5 text-2xs",
-								attributes: [h.OnClick(Message.ClickedSuggestName())],
+								// A long suggestion truncates instead of widening the card past a phone's width.
+								className: "min-w-0 shrink px-1.5 text-2xs",
+								attributes: [
+									h.OnClick(Message.ClickedSuggestName()),
+									h.Title(suggestion ?? ""),
+								],
 							},
-							["Suggest: ", suggestion ?? ""],
+							[typography(h, { truncate: true }, ["Suggest: ", suggestion ?? ""])],
 						),
 					]
 				: []),
@@ -112,11 +113,16 @@ const nameField = (h: H, model: DetailsView, form: RuleForm): Html => {
 			ids,
 			state,
 			attributes: [
-				h.Placeholder("Error rate on payments"),
+				h.Placeholder(
+					form.signalType === "anomaly" ? "Checkout anomalies" : "Error rate on payments",
+				),
 				h.Value(form.name),
 				h.OnInput((value) => Message.ChangedField({ field: "name", value })),
+				h.OnBlur(Message.BlurredField({ id: ids.control })),
 			],
 		}),
+		// The invalid input names this id in `aria-describedby`: the two render together.
+		...(isNameInvalid ? [fieldError(h, { ids, state }, "Give the rule a name.")] : []),
 	])
 }
 
@@ -143,38 +149,34 @@ const notes = (h: H, model: DetailsView, form: RuleForm): Html => {
 				h.AriaLabelledBy(ids.label),
 				h.Placeholder("Runbook links, ownership, or why this rule exists…"),
 				h.Rows(2),
-				// `autoFocus={!hasExistingNotes}`: opened from the button, the field takes focus.
-				...(model.mountedForm?.notes.trim().length === 0 ? [h.Autofocus(true)] : []),
+				// Opened from the button, an empty notes field takes focus.
+				...(model.mountedForm !== null && Str.trim(model.mountedForm.notes).length === 0
+					? [h.Autofocus(true)]
+					: []),
 				h.OnInput((value) => Message.ChangedField({ field: "notes", value })),
 			],
 		}),
 	])
 }
 
-const details = (h: H, model: DetailsView, form: RuleForm): Html => {
+const details = (h: H, model: DetailsView, form: RuleForm, isNameInvalid: boolean): Html => {
 	const tagIds = idsOf("rule-tags", true)
 	const tagState = fieldStateOf("", undefined)
-	return card(
-		h,
+	return h.div(
+		[h.Class("space-y-3")],
 		[
-			h.div(
-				[h.Class("space-y-3")],
-				[
-					nameField(h, model, form),
-					field(h, { className: "items-stretch gap-1.5", state: tagState }, [
-						fieldLabel(h, { ids: tagIds, state: tagState }, "Tags"),
-						tagInput(h, model, form),
-						fieldDescription(
-							h,
-							{ ids: tagIds, state: tagState },
-							"Group and filter rules in the alerts list. Press Enter to add.",
-						),
-					]),
-					notes(h, model, form),
-				],
-			),
+			nameField(h, model, form, isNameInvalid),
+			field(h, { className: "items-stretch gap-1.5", state: tagState }, [
+				fieldLabel(h, { ids: tagIds, state: tagState }, "Tags"),
+				tagInput(h, model, form),
+				fieldDescription(
+					h,
+					{ ids: tagIds, state: tagState },
+					"Group and filter rules in the alerts list. Press Enter to add.",
+				),
+			]),
+			notes(h, model, form),
 		],
-		"p-4",
 	)
 }
 
@@ -183,6 +185,12 @@ const viewOf = stableSlice((model: Model) =>
 	Struct.pick(model, ["mountedForm", "tagDraft", "isNotesOpen", "tagSuggestions"]),
 )
 
-/** `DetailsSection`: the name with a one-click suggestion, tags, and notes behind a button. */
+/** The name with a one-click suggestion, tags, and notes behind a button. */
 export const detailsSection = (h: H, model: Model, form: RuleForm): Html =>
-	slot(details, [h, viewOf(model), form])
+	slot(details, [
+		h,
+		viewOf(model),
+		form,
+		Str.trim(form.name).length === 0 &&
+			(model.hasAttemptedSave || model.touchedFields.includes("rule-name")),
+	])

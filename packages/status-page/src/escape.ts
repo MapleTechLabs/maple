@@ -1,15 +1,5 @@
+import { escapeHtml } from "@maple/strings"
 import { String as Str } from "effect"
-/** Escapes text for HTML element content and quoted attributes alike. */
-export const escapeHtml = (value: string): string =>
-	Str.replaceAll(
-		"'",
-		"&#39;",
-	)(
-		Str.replaceAll(
-			'"',
-			"&quot;",
-		)(Str.replaceAll(">", "&gt;")(Str.replaceAll("<", "&lt;")(Str.replaceAll("&", "&amp;")(value)))),
-	)
 
 /** XML 1.0 forbids most control characters even when escaped, so they are dropped. */
 export const escapeXml = (value: string): string =>

@@ -4,7 +4,7 @@ import {
 	SecurityAuditRunInProgressError,
 	SecurityAuditSpendLimitReachedError,
 } from "@maple/domain/http"
-import { IsoDateTimeString } from "@maple/domain/primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
@@ -31,6 +31,21 @@ describe("toStartFailure", () => {
 		expect([failure.code, failure.message]).toEqual([
 			"security_audit_credits_used_up",
 			"This organization has used all of its AI credits for this billing period. They reset on November 7, 2026, or add credits under Settings, Billing.",
+		])
+	})
+
+	it("says when a reached AI spending cap resets, without suggesting more credits", () => {
+		const failure = toStartFailure(
+			new SecurityAuditCreditsUsedUpError({
+				message:
+					"This organization has reached its AI spending cap for this billing period. An admin can raise it under Settings > Billing.",
+				resetsAt: Schema.decodeSync(IsoDateTimeString)("2026-11-07T09:00:00.000Z"),
+				capReached: true,
+			}),
+		)
+		expect([failure.code, failure.message]).toEqual([
+			"security_audit_credits_used_up",
+			"This organization has reached its AI spending cap for this billing period. An admin can raise it under Settings > Billing. It resets on November 7, 2026.",
 		])
 	})
 

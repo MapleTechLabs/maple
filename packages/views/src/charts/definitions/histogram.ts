@@ -1,24 +1,18 @@
 import { formatNumber } from "@maple/ui/lib/format"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import {
-	integerTickValues,
-	logYScale,
-	minBarLength,
-	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+import { Y_GRID } from "../plot/plot-grid"
+import { integerTickValues, logYScale, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { barY, defineChart, rect, type ChartPoint } from "@tanstack/charts"
 import { binX } from "@tanstack/charts/transform/bin"
 import { scaleBand } from "@tanstack/charts-scales/band"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { scaleLog } from "d3-scale"
-import { Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { ChartTooltip, type CategoricalBin, type ChartSpec, type NumericBin } from "../chart-spec"
 import { binLowerBoundLabel, formatBound } from "../histogram-format"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip, UNBOUNDED_FOCUS_DISTANCE } from "./plot-constants"
 
-// Port of packages/ui/src/components/charts/histogram/query-builder-histogram-chart.tsx (definition
-// half), plus the lab's binned histogram.
+// The histogram chart definitions: numeric and categorical, plus the lab's binned histogram.
 
 type NumericSpec = Extract<ChartSpec, { readonly _tag: "NumericHistogram" }>
 type CategoricalSpec = Extract<ChartSpec, { readonly _tag: "CategoricalHistogram" }>
@@ -27,14 +21,14 @@ type BinnedSpec = Extract<ChartSpec, { readonly _tag: "BinnedHistogram" }>
 const DIMMED_BIN_OPACITY = 0.5
 const SPIKE_BIN_COUNT = 30
 
-/** `useCountAxis`: the count axis shared by both production histogram shapes. */
+/** The count axis shared by both production histogram shapes. */
 const countAxis = (maxCount: number, useLogY: boolean) => {
 	if (useLogY) {
 		return {
 			baseline: 1,
 			liftCount: (value: number) => value,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: logYScale(maxCount),
 				axis: { line: false, ticks: { size: 0, padding: 6, format: formatNumber } },
 			},
@@ -47,7 +41,7 @@ const countAxis = (maxCount: number, useLogY: boolean) => {
 		baseline: 0,
 		liftCount: (value: number) => lift(value) ?? value,
 		y: {
-			grid: DASHED_Y_GRID,
+			grid: Y_GRID,
 			scale: scaleLinear().domain(domain),
 			axis: { line: false, ticks: { size: 0, padding: 6, values: ticks, format: formatNumber } },
 		},
@@ -61,10 +55,9 @@ const binTooltip = <TDatum extends NumericBin, X extends number | string>(
 		ChartTooltip.NumericBin({ x1: bin.x1, x2: bin.x2, value: bin.value }),
 	)
 
-/** `NumericHistogram`'s `definition` memo. */
 export const buildNumericHistogram = (spec: NumericSpec): BuiltChart<NumericBin, number, number> => {
 	const { bins, color, unit } = spec
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 	const { baseline, liftCount, y } = countAxis(maxCount, spec.useLogY)
 	return {
 		definition: defineChart({
@@ -107,12 +100,11 @@ export const buildNumericHistogram = (spec: NumericSpec): BuiltChart<NumericBin,
 	}
 }
 
-/** `CategoricalHistogram`'s `definition` memo. */
 export const buildCategoricalHistogram = (
 	spec: CategoricalSpec,
 ): BuiltChart<CategoricalBin, string, number> => {
 	const { bins, color } = spec
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 	const { baseline, liftCount, y } = countAxis(maxCount, spec.useLogY)
 	return {
 		definition: defineChart({
@@ -130,7 +122,7 @@ export const buildCategoricalHistogram = (
 			scales: {
 				x: {
 					scale: scaleBand<string>(
-						bins.map((bin) => bin.name),
+						Arr.map(bins, (bin) => bin.name),
 						[0, 1],
 					).paddingInner(0.05),
 					grid: false,
@@ -155,15 +147,16 @@ export const buildCategoricalHistogram = (
 	}
 }
 
-/** `HistogramSpike`'s `bins` and `definition` memos: binX over raw observations. */
+/** The lab histogram's bins and definition: binX over raw observations. */
 export const buildBinnedHistogram = (spec: BinnedSpec) => {
 	const { logScaleY, color } = spec
-	const bins = binX(
-		spec.values.map((value) => ({ value })),
-		{ value: (row: { value: number }) => row.value, thresholds: SPIKE_BIN_COUNT },
-	)
+	const observations = Arr.map(spec.values, (value) => ({ value }))
+	const bins = binX(observations, {
+		value: (row: { value: number }) => row.value,
+		thresholds: SPIKE_BIN_COUNT,
+	})
 	const baseline = logScaleY ? 1 : 0
-	const maxCount = bins.reduce((max, bin) => Math.max(max, bin.value), 0)
+	const maxCount = Arr.reduce(bins, 0, (max, bin) => Math.max(max, bin.value))
 
 	const definition = defineChart({
 		marks: [

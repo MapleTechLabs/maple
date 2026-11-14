@@ -1,5 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { Option, Result, Schema, Array as Arr } from "effect"
+import { AsyncData } from "foldkit"
 import {
 	click,
 	expect as expectView,
@@ -143,7 +144,7 @@ describe("agent sessions list", () => {
 				result: Result.succeed({ data: [session("old")], ranked: 1 }),
 			}),
 		)
-		expect(stale.model.firstPage.key).toBe("newer")
+		expect(AsyncData.hasData(stale.model.firstPage.data)).toBe(false)
 	})
 
 	test("the painted rows ask for their details once, and the answer merges in", () => {

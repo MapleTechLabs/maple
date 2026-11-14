@@ -6,6 +6,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Env } from "@maple/backend/platform/Env"
+import { GOOGLE_CALLBACK_PATH } from "@maple/backend/services/auth/GoogleOAuthService"
 import { PLANETSCALE_CALLBACK_PATH } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { SUPABASE_CALLBACK_PATH } from "@maple/backend/services/auth/SupabaseOAuthService"
 
@@ -20,6 +21,7 @@ const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
 const SUPABASE_MESSAGE_TYPE = "maple:integration:supabase"
+const GOOGLE_SEARCH_CONSOLE_MESSAGE_TYPE = "maple:integration:google-search-console"
 
 const escapeHtml = (value: string) =>
 	Str.replace(
@@ -252,6 +254,15 @@ const requireInstallation = (params: URLSearchParams): string | null =>
 			: null
 
 const ROUTES: ReadonlyArray<CallbackRoute> = [
+	{
+		path: GOOGLE_CALLBACK_PATH,
+		flow: "google",
+		provider: "google-search-console",
+		label: "Google Search Console",
+		page: "/integrations",
+		messageType: GOOGLE_SEARCH_CONSOLE_MESSAGE_TYPE,
+		precheck: requireCodeAndState,
+	},
 	{
 		path: LINEAR_CALLBACK_PATH,
 		flow: "linear",

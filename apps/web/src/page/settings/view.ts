@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../route"
@@ -17,8 +18,8 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import type { BreadcrumbEntry } from "../../shell"
-import { navShell } from "./kit/nav-shell"
-import { INLINE_LINK_CLASS } from "./kit/section"
+import { navShell } from "../kit/nav-shell"
+import { INLINE_LINK_CLASS } from "../kit/settings-section"
 import * as IngestionView from "./ingestion/view"
 import * as KeysView from "./keys/view"
 import * as McpView from "./mcp/view"
@@ -27,6 +28,7 @@ import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
 import * as GeneralView from "./general/view"
 import * as DataPlatformView from "./data-platform/view"
+import * as DataSourcesView from "./data-sources/view"
 import * as AuditLogView from "./audit-log/view"
 import * as AutomationView from "./automation/view"
 import * as SetupHealthView from "./setup-health/view"
@@ -59,7 +61,7 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					view: McpView.view,
 					toParentMessage: (message) => Message.GotMcpMessage({ message }),
 					viewInputs: {
-						isAdmin: visibilityOf(model).isAdmin,
+						grants: visibilityOf(model).grants,
 						nowMs: model.nowMs,
 						timeZone: inputs.context.timeZone,
 					},
@@ -144,6 +146,20 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					viewInputs: { nowMs: model.nowMs, timeZone: inputs.context.timeZone },
 				}),
 			]
+		case "DataSources":
+			return [
+				h.submodel({
+					slotId: "settings-data-sources",
+					model: tab.model,
+					view: DataSourcesView.view,
+					toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
+					viewInputs: {
+						canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage"),
+						nowMs: model.nowMs,
+						timeZone: inputs.context.timeZone,
+					},
+				}),
+			]
 		case "General":
 			return [
 				h.submodel({
@@ -184,9 +200,6 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					},
 				}),
 			]
-		case "Unported":
-			// TODO(settings): every remaining tab is ported tab by tab; until then it renders empty.
-			return []
 	}
 }
 
@@ -212,7 +225,7 @@ const gatedTabReason = (model: Model, tab: SettingsTab): string => {
 	const label = settingsTabLabels[tab]
 	const visibility = visibilityOf(model)
 	if (!visibility.isClerk) return `${label} isn't available on this deployment.`
-	if (tab === "data-platform" && visibility.isAdmin)
+	if (tab === "data-platform" && Policy.has(visibility.grants, "warehouse:manage"))
 		return `${label} needs the Bring your own cloud add-on.`
 	return `You need admin access to view ${label}.`
 }
@@ -249,7 +262,9 @@ const pageNote = (h: H, model: Model): ReadonlyArray<Html> => {
 			: gatedTabReason(model, model.deniedTab)
 	// The add-on gate is the one a viewer can lift themselves, so it links to the plans.
 	const linksToPlans =
-		!isRoleUnknown(model) && model.deniedTab === "data-platform" && visibilityOf(model).isAdmin
+		!isRoleUnknown(model) &&
+		model.deniedTab === "data-platform" &&
+		Policy.has(visibilityOf(model).grants, "warehouse:manage")
 	return reason === null
 		? []
 		: [
@@ -320,6 +335,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				view: MembersView.headerActions,
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
 				viewInputs: {},
+			})
+		case "DataSources":
+			return h.submodel({
+				slotId: "settings-data-sources-actions",
+				model: tab.model,
+				view: DataSourcesView.headerActions,
+				toParentMessage: (message) => Message.GotDataSourcesMessage({ message }),
+				viewInputs: { canManage: Policy.has(visibilityOf(model).grants, "data_sources:manage") },
 			})
 		default:
 			return undefined

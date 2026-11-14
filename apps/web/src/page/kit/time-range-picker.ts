@@ -3,8 +3,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { resolveRelativeRangeToWarehouse } from "@maple/query-engine"
 import { parseWarehouseDateTime, relativeRangeSeconds } from "@maple/query-engine/datetime"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
-import { badgeVariants } from "@maple/ui/styles/ui/badge"
-import { kbdStyles } from "@maple/ui/styles/ui/kbd"
+import { badgeVariants } from "@maple/views/ui/badge.styles"
+import { kbdStyles } from "@maple/views/ui/kbd.styles"
 import { isDialogOpen, isEditableTarget, pressedKey } from "@maple/ui/lib/keyboard"
 import { Clock, Effect, Option, Schema, type Stream, Array as Arr, String as Str } from "effect"
 import { Command, Dom, Mount, Submodel, type Update } from "foldkit"
@@ -27,16 +27,12 @@ import { formatUtcOffset, readZoneRows, ZoneRow } from "./timezone-zones"
 import { isMounted } from "@maple/views/ui/overlay/transition"
 import * as CustomRange from "./custom-range"
 import * as CustomRangeView from "./custom-range-view"
-import {
-	LONG_RANGE_PRESET_VALUES,
-	PRESET_VALUES,
-	presetLabel,
-	timeRangeTriggerContent,
-} from "./time-controls"
+import { LONG_RANGE_PRESET_VALUES, PRESET_VALUES, timeRangeTriggerContent } from "./time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
+import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 
-// `TimeRangePicker`: the header
-// popover with the preset rail and quick select. Picking a range is an OutMessage; the page writes
-// it to its URL search (`applyTimeRangeSearch`).
+// The header's time range popover: the preset rail and quick select. Picking a range is an
+// OutMessage; the page writes it to its URL search.
 // TODO(picker): recently used ranges are not shown yet.
 
 export const Tab = Schema.Literals(["relative", "custom"])
@@ -44,15 +40,15 @@ export type Tab = typeof Tab.Type
 
 export const Model = Schema.Struct({
 	popover: Popover.Model,
-	/** `TimeRangeTab`; the custom tab holds its calendar state while it is shown. */
+	/** The open tab; the custom tab holds its calendar state while it is shown. */
 	tab: Tab,
 	custom: Schema.NullOr(CustomRange.Model),
-	/** `ShorthandInput`: the typed duration and whether Enter rejected it. */
+	/** The shorthand input: the typed duration and whether Enter rejected it. */
 	shorthand: Schema.String,
 	isShorthandInvalid: Schema.Boolean,
 	/**
-	 * The footer's `useTimezonePreference()`: the effective zone, its `formatUtcOffset` and whether
-	 * it is the system zone, read when the footer mounts (each open) and after a pick.
+	 * The footer's timezone preference: the effective zone, its UTC offset and whether it is the
+	 * system zone, read when the footer mounts (each open) and after a pick.
 	 */
 	utcOffset: Schema.NullOr(
 		Schema.Struct({
@@ -61,7 +57,7 @@ export const Model = Schema.Struct({
 			isSystem: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
-	/** `TimezoneSelect`'s combobox and its rows, frozen at its open. */
+	/** The timezone select's combobox and its rows, frozen at its open. */
 	zones: Combobox.Model,
 	zoneRows: Schema.Array(ZoneRow),
 })
@@ -113,21 +109,21 @@ export type Message = typeof Message.Type
 
 export const OutMessage = defineMessageUnion({
 	SelectedPreset: { presetValue: Schema.String },
-	/** `handleCustomApply`: an absolute window, no preset. */
+	/** An absolute window, no preset. */
 	SelectedCustomRange: { startTime: Schema.String, endTime: Schema.String },
-	/** `rangeAllowed` refused it: the page shows the error toast. */
+	/** Wider than the page allows: the page shows the error toast. */
 	RejectedRange: { maxRangeSeconds: Schema.Number },
 })
 export type OutMessage = typeof OutMessage.Type
 
-/** The URL time fields a picked range writes (`applyTimeRangeSearch`). */
+/** The URL time fields a picked range writes. */
 export type TimeSearchPatch = Readonly<{
 	startTime: string | undefined
 	endTime: string | undefined
 	timePreset: string | undefined
 }>
 
-/** `applyTimeRangeSearch`: a preset clears the bounds; a custom range clears the preset. */
+/** A preset clears the bounds; a custom range clears the preset. */
 export const searchPatchOf = (
 	out: Extract<OutMessage, { readonly _tag: "SelectedPreset" | "SelectedCustomRange" }>,
 ): TimeSearchPatch =>
@@ -137,7 +133,7 @@ export const searchPatchOf = (
 
 const decodeIso = Schema.decodeUnknownOption(IsoDateTimeString)
 
-/** The dashboard toolbar's `setTimeRange`: a preset is relative, a custom range absolute; else none. */
+/** The dashboard toolbar's time range: a preset is relative, a custom range absolute; else none. */
 export const dashboardTimeRangeOf = (out: OutMessage | undefined): TimeRange | undefined => {
 	if (out === undefined || out._tag === "RejectedRange") return undefined
 	if (out._tag === "SelectedPreset") return { type: "relative", value: out.presetValue }
@@ -148,7 +144,7 @@ export const dashboardTimeRangeOf = (out: OutMessage | undefined): TimeRange | u
 	})
 }
 
-/** `rangeAllowed`'s toast: "This page supports a maximum range of N days". */
+/** The refused range's toast: "This page supports a maximum range of N days". */
 export const rejectedToast = (maxRangeSeconds: number): PageOutMessage =>
 	PageOutMessage.RequestedToast({
 		type: "error",
@@ -170,10 +166,10 @@ const liftPopover = (model: Model, result: Update.Return<Popover.Model, Popover.
 	commands: Command.mapMessages(result.commands, (message) => Message.GotPopoverMessage({ message })),
 })
 
-/** `relativeToAbsolute` resolves it: a duration (`2h`, `4d`, `2mo`) or `today`. */
+/** A duration (`2h`, `4d`, `2mo`) or `today`. */
 const isValidShorthand = (value: string): boolean => resolveRelativeRangeToWarehouse(value, 0, "UTC") !== null
 
-/** `isTimeRangeWithin`; a relative value is sized by `relativeRangeSeconds` (a month is 30 days). */
+/** Whether the range fits; a relative value is sized by `relativeRangeSeconds` (a month is 30 days). */
 const isWithin = (seconds: number | null, maxRangeSeconds: number | undefined): boolean =>
 	maxRangeSeconds === undefined ||
 	(seconds !== null && Number.isFinite(seconds) && seconds >= 0 && seconds <= maxRangeSeconds)
@@ -234,7 +230,7 @@ const customStep = (
 	})
 }
 
-/** `TimezoneSelect`'s combobox; `onValueChange` stores the pick (the picker itself stays open). */
+/** The timezone select's combobox; a pick is stored (the picker itself stays open). */
 const zonesStep = (model: Model, inner: Combobox.Message): Return => {
 	const next = Combobox.update(model.zones, inner)
 	const commands = Command.mapMessages(next.commands ?? [], (message) =>
@@ -290,14 +286,15 @@ export const update = (model: Model, message: Message): Return =>
 			model.custom === null ? { model } : customStep(model, model.custom, inner, maxRangeSeconds),
 	})
 
-/** The list presets (`LONG_RANGE_PRESET_OPTIONS` for long-range pages, else `PRESET_OPTIONS`). */
+/** The list presets: the long-range ones for long-range pages. */
 export { LONG_RANGE_PRESET_VALUES, PRESET_VALUES }
 
 /** The window a shorthand resolves to: minutes and hours roll, days and weeks count calendar days,
- * months count calendar months (`resolveRelativeRange`). Null for "today" and non-shorthand. */
+ * months count calendar months. Null for "today" and non-shorthand. */
 const windowIdentity = (shorthand: string): string | null => {
-	const match = Str.toLowerCase(Str.trim(shorthand)).match(/^(\d+)(mo|m|h|d|w)$/)
-	if (match === null) return null
+	const matched = Str.match(/^(\d+)(mo|m|h|d|w)$/)(Str.toLowerCase(Str.trim(shorthand)))
+	if (Option.isNone(matched)) return null
+	const match = matched.value
 	const amount = Number.parseInt(match[1] ?? "0", 10)
 	const unit = match[2]
 	if (unit === "m" || unit === "h") return `rolling:${unit === "h" ? amount * 60 : amount}`
@@ -316,14 +313,13 @@ const LONG_LABELS = new Map([
 	["3mo", "Last 3 months"],
 	["6mo", "Last 6 months"],
 ])
-// `QUICK_SELECT_OPTIONS`: shortest to longest; "today" is calendar-anchored, so it sits last.
+// Shortest to longest; "today" is calendar-anchored, so it sits last.
 const QUICK_SELECT = ["3h", "12h", "4d", "10d", "2w", "6w", "2mo", "today"]
-
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60
 
 /** The page's maximum; every page on the long-range presets also caps at a year. */
 const maxRangeOf = (inputs: ViewInputs): number | undefined =>
-	inputs.maxRangeSeconds ?? (inputs.presets === LONG_RANGE_PRESET_VALUES ? ONE_YEAR_SECONDS : undefined)
+	inputs.maxRangeSeconds ??
+	(inputs.presets === LONG_RANGE_PRESET_VALUES ? LONG_RANGE_MAX_SECONDS : undefined)
 
 /** The page's maximum on a Message, when it has one. */
 const withMax = (inputs: ViewInputs) => {
@@ -331,7 +327,7 @@ const withMax = (inputs: ViewInputs) => {
 	return maxRangeSeconds === undefined ? {} : { maxRangeSeconds }
 }
 
-/** `CustomRangePicker`'s `startTime`/`endTime`: the shown window, when the page passes it. */
+/** The custom tab's start and end: the shown window, when the page passes it. */
 const customSeed = (inputs: ViewInputs) => ({
 	startTime: inputs.startTime ?? null,
 	endTime: inputs.endTime ?? null,
@@ -354,7 +350,7 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
 								cn(
-									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs transition-colors",
+									"relative flex h-7 items-center pl-3 pr-2 text-left text-xs",
 									"before:absolute before:inset-y-1 before:left-0 before:w-[2px] before:rounded-r-sm before:bg-transparent before:transition-colors",
 									"hover:bg-surface-sunken active:bg-surface-sunken",
 									isActive && "text-foreground before:bg-primary",
@@ -388,6 +384,16 @@ const presetList = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 		],
 	)
 
+/** The quick-select ranges a page offers: none shorter than its minimum. "today" is a whole day. */
+export const quickSelectOf = (inputs: Pick<ViewInputs, "minRangeSeconds">): ReadonlyArray<string> => {
+	const minimum = inputs.minRangeSeconds
+	if (minimum === undefined) return QUICK_SELECT
+	return Arr.filter(QUICK_SELECT, (value) => {
+		const seconds = relativeRangeSeconds(value)
+		return seconds === null || seconds >= minimum
+	})
+}
+
 const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("space-y-2")],
@@ -395,14 +401,14 @@ const quickSelect = (h: HtmlBuilder<Message>, inputs: ViewInputs): Html =>
 			eyebrow(h, { as: "div" }, ["Quick select"]),
 			h.div(
 				[h.Class("grid grid-cols-4 gap-1.5")],
-				Arr.map(QUICK_SELECT, (value) =>
+				Arr.map(quickSelectOf(inputs), (value) =>
 					h.button(
 						[
 							h.Key(value),
 							h.Type("button"),
 							h.OnClick(Message.ClickedPreset({ value, ...withMax(inputs) })),
 							h.Class(
-								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-background/30 font-mono text-2xs tracking-wide text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								"flex h-7 items-center justify-center rounded-md border border-border-subtle bg-surface-well font-mono text-2xs text-foreground-soft hover:border-border active:border-border hover:bg-surface-strong active:bg-surface-strong hover:text-foreground active:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 							),
 						],
 						[value],
@@ -416,18 +422,20 @@ export type ViewInputs = Readonly<{
 	label: string
 	selectedPreset: string | undefined
 	presets: ReadonlyArray<string>
-	/** `useTimezonePreference().effectiveTimezone` for the footer (default UTC). */
+	/** The effective timezone for the footer (default UTC). */
 	timeZone?: string
-	/** `hotkey`: only the page-level picker answers "D" and titles itself with it (default false). */
+	/** Only the page-level picker answers "D" and titles itself with it (default false). */
 	hasHotkey?: boolean
 	/** The window the custom tab opens on (`startTime`/`endTime` props). */
 	startTime?: string
 	endTime?: string
-	/** `maxRangeSeconds`: a wider pick is refused with a toast. */
-	maxRangeSeconds?: number
+	/** A wider pick is refused with a toast. */
+	maxRangeSeconds?: number | undefined
+	/** Quick-select ranges shorter than this are not offered: a page that reads whole days. */
+	minRangeSeconds?: number | undefined
 }>
 
-/** `ShorthandInput`: type a duration, Enter applies it. */
+/** Type a duration, Enter applies it. */
 const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInputs): Html =>
 	h.div(
 		[h.Class("space-y-1.5")],
@@ -436,8 +444,8 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"group flex h-9 items-center gap-2 rounded-md border bg-background/40 pl-3 pr-1.5 transition-colors",
-							"focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
+							"group flex h-9 items-center gap-2 rounded-md border bg-surface-well pl-3 pr-1.5",
+							"focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/24",
 							model.isShorthandInvalid
 								? "border-destructive/70"
 								: "border-border-subtle hover:border-border active:border-border",
@@ -474,7 +482,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 				[
 					h.Class(
 						cn(
-							"px-1 font-prose text-xs transition-colors",
+							"px-1 font-prose text-xs",
 							model.isShorthandInvalid ? TONE_TEXT.crit : "text-muted-foreground",
 						),
 					),
@@ -486,7 +494,7 @@ const shorthandInput = (h: HtmlBuilder<Message>, model: Model, inputs: ViewInput
 
 export { formatUtcOffset }
 
-/** `useTimezonePreference()` now: the effective zone, its offset, and whether it is the system's. */
+/** The timezone preference now: the effective zone, its offset, and whether it is the system's. */
 const readPreference = Effect.map(
 	Effect.all([readEffectiveTimeZone, readSelectedTimeZone, Clock.currentTimeMillis]),
 	([timeZone, selected, nowMs]) =>
@@ -507,13 +515,13 @@ export const MountUtcOffset = Mount.define("MountTimeRangeUtcOffset", {
 	execute: () => readPreference,
 })
 
-/** `onOpenChange(true)`: the zone list with its clocks frozen at this open. */
+/** The zone list opened, with its clocks frozen at this open. */
 export const ReadZoneRows = Command.define("ReadTimeZoneRows", {
 	messages: [Message.ResolvedZoneRows],
 	execute: Effect.map(readZoneRows, (rows) => Message.ResolvedZoneRows({ rows })),
 })
 
-/** `setSelectedTimezone(next === SYSTEM_VALUE ? null : next)`: stored, then read back for the footer. */
+/** A picked zone (System clears the preference): stored, then read back for the footer. */
 export const SelectTimeZone = Command.define("SelectTimeZone", {
 	args: { value: Schema.String },
 	messages: [Message.ResolvedUtcOffset],
@@ -543,8 +551,8 @@ export const isOpenKey = (event: KeyPress): boolean =>
 	!event.shiftKey
 
 /**
- * `useAppHotkey("time.open", () => setOpen(true))`: "D" outside fields and dialogs, unmodified,
- * presses the page-level trigger while its popover is closed. Emits nothing itself.
+ * "D" outside fields and dialogs, unmodified, presses the page-level trigger while its popover is
+ * closed. Emits nothing itself.
  */
 export const openOnHotkey = <A>(): Stream.Stream<A> =>
 	Dom.streamFromEventFilterMap({
@@ -561,8 +569,8 @@ export const openOnHotkey = <A>(): Stream.Stream<A> =>
 	})
 
 /**
- * `TimezoneSelect`: the `zone · UTC±n` trigger and its searchable zone list. `timeZone` is what the
- * page passed, shown until the footer's Mount read the stored preference.
+ * The `zone · UTC±n` trigger and its searchable zone list. `timeZone` is what the page passed, shown
+ * until the footer's Mount read the stored preference.
  */
 const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: string): Html => {
 	const timeZone = model.utcOffset?.timeZone ?? fallbackZone
@@ -590,8 +598,8 @@ const timezoneFooter = (h: HtmlBuilder<Message>, model: Model, fallbackZone: str
 					h.Class(
 						cn(
 							"-mr-1.5 inline-flex h-6 min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5",
-							"text-2xs tracking-tight outline-none transition-colors",
-							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-[3px] focus-visible:ring-ring/24 data-popup-open:bg-surface-strong",
+							"text-2xs tracking-tight outline-none",
+							"hover:bg-surface-strong active:bg-surface-strong focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-surface-strong",
 						),
 					),
 					h.DataAttribute("slot", "combobox-trigger"),

@@ -23,12 +23,11 @@ import {
 	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PullRequestHead,
-	type VcsRepo,
 	parseReplyCommand,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReplySessionId } from "@maple/domain/chat-session"
-import { UserId } from "@maple/domain/primitives"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PrReviewEdits,
@@ -55,7 +54,8 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
-import { isTrustedAuthorAssociation, PrReviewService, PUSH_PERMISSIONS } from "./PrReviewService"
+import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
+import { makeRepoUpstream } from "./repo-upstream"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
@@ -69,6 +69,9 @@ const MAX_EDIT_CHARS = 100_000
 const DAY_MS = 86_400_000
 
 const newReplyId = (): PrReviewReplyId => Schema.decodeSync(PrReviewReplyId)(randomUUID())
+
+const lowerOrUndefined = (value: string | null | undefined): string | undefined =>
+	value === null || value === undefined ? undefined : Str.toLowerCase(value)
 
 export interface PrReplyOutcome {
 	readonly replyId: PrReviewReplyId | null
@@ -84,6 +87,14 @@ export interface PrReviewConversationServiceApi {
 	 * pull request's head is still the run's, its review starts as a trusted author's would. Never fails.
 	 */
 	readonly onCiApproved: (orgId: OrgId, job: PullRequestCiApprovedJob) => Effect.Effect<void>
+	/** The pull request a reply answers on, which its session's tools are held to. */
+	readonly replyTarget: (
+		orgId: OrgId,
+		replyId: PrReviewReplyId,
+	) => Effect.Effect<
+		Option.Option<{ readonly repository: string; readonly number: number }>,
+		PrReviewPersistenceError
+	>
 	/** Post the agent's answer, committing a `fix`'s staged edits first. */
 	readonly submitReply: (
 		orgId: OrgId,
@@ -101,6 +112,8 @@ export interface PrReviewConversationServiceApi {
 		orgId: OrgId,
 		replyId: PrReviewReplyId,
 		error: string,
+		/** What the pull request is told; defaults to asking for a retry. */
+		notice?: string,
 	) => Effect.Effect<void, PrReviewPersistenceError>
 }
 
@@ -167,9 +180,10 @@ export const applyEdits = (
 			continue
 		}
 		if (edit.oldText === "") return { error: "the file already exists; quote the text to replace" }
-		const first = content.indexOf(edit.oldText)
-		if (first === -1) return { error: "the text to replace is not in the file at the head" }
-		if (content.indexOf(edit.oldText, first + 1) !== -1)
+		const found = Str.indexOf(edit.oldText)(content)
+		if (Option.isNone(found)) return { error: "the text to replace is not in the file at the head" }
+		const first = found.value
+		if (Str.includes(edit.oldText, first + 1)(content))
 			return { error: "the text to replace occurs more than once; quote more of it" }
 		content = `${Str.slice(0, first)(content)}${edit.newText}${Str.slice(first + edit.oldText.length)(content)}`
 	}
@@ -260,37 +274,7 @@ export class PrReviewConversationService extends Context.Service<
 			skipReason: reason,
 		})
 
-		const upstreamFor = Effect.fn("PrReviewConversationService.upstreamFor")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-		) {
-			const installation = yield* repositories
-				.getInstallationById(orgId, repo.installationId)
-				.pipe(Effect.mapError(toPersistence))
-			if (Option.isNone(installation)) return Option.none()
-			const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
-			if (Option.isNone(provider)) return Option.none()
-			return Option.some({
-				provider: provider.value,
-				installation: installation.value,
-				ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-			})
-		})
-
-		/** Whether a person can push to the repository; an unreadable permission is no. */
-		const canPush = Effect.fn("PrReviewConversationService.canPush")(function* (
-			orgId: OrgId,
-			repo: VcsRepo,
-			login: string,
-		) {
-			const upstream = yield* upstreamFor(orgId, repo)
-			if (Option.isNone(upstream)) return false
-			const { provider, installation, ref } = upstream.value
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, login)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			return PUSH_PERMISSIONS.has(permission)
-		})
+		const { upstreamFor, pushAccess, canPush } = yield* makeRepoUpstream
 
 		const updateReply = (
 			orgId: OrgId,
@@ -326,6 +310,22 @@ export class PrReviewConversationService extends Context.Service<
 						: Effect.succeed(rows[0]),
 				),
 			)
+
+		const replyTarget: PrReviewConversationServiceApi["replyTarget"] = Effect.fn(
+			"PrReviewConversationService.replyTarget",
+		)(function* (orgId, replyId) {
+			const row = yield* getReply(orgId, replyId).pipe(
+				Effect.asSome,
+				Effect.catchTag("@maple/http/pr-review/PrReviewReplyNotFoundError", () =>
+					Effect.succeed(Option.none<PrReviewReplyRow>()),
+				),
+			)
+			if (Option.isNone(row)) return Option.none()
+			const repo = yield* repositories
+				.getRepositoryById(orgId, row.value.repositoryId)
+				.pipe(Effect.mapError(toPersistence))
+			return Option.map(repo, ({ fullName }) => ({ repository: fullName, number: row.value.number }))
+		})
 
 		/** Post on the pull request where the row says; a failure is logged, never thrown into the turn. */
 		const post = Effect.fn("PrReviewConversationService.post")(function* (
@@ -477,7 +477,7 @@ export class PrReviewConversationService extends Context.Service<
 				if (outcome.outcome !== "started")
 					return yield* fail(
 						`review ${outcome.skipReason ?? outcome.outcome}`,
-						`I could not start a review of \`${pr.headSha.slice(0, 7)}\` (${outcome.skipReason ?? outcome.outcome}).`,
+						`I could not start a review of \`${Str.slice(0, 7)(pr.headSha)}\` (${outcome.skipReason ?? outcome.outcome}).`,
 					)
 				yield* updateReply(orgId, replyId, ACTIVE, {
 					status: "completed",
@@ -488,15 +488,12 @@ export class PrReviewConversationService extends Context.Service<
 			}
 
 			if (command === "fix") {
-				const permission = yield* provider
-					.fetchCommenterPermission(installation, ref, job.authorLogin)
-					.pipe(Effect.orElseSucceed(() => "none"))
-				if (!PUSH_PERMISSIONS.has(permission))
+				if (!(yield* pushAccess(upstream.value, job.authorLogin)).canPush)
 					return yield* fail(
 						"fix_not_permitted",
 						`@${job.authorLogin} I only push fixes for people with write access to this repository.`,
 					)
-				if (head.value.headRepoFullName?.toLowerCase() !== repo.fullName.toLowerCase())
+				if (lowerOrUndefined(head.value.headRepoFullName) !== Str.toLowerCase(repo.fullName))
 					return yield* fail(
 						"fix_on_fork",
 						"I can't push to a fork's branch. I can explain the change instead: mention me without `fix`.",
@@ -570,7 +567,7 @@ export class PrReviewConversationService extends Context.Service<
 				...(lastReview[0]?.report?.summary
 					? { reviewSummary: lastReview[0].report.summary }
 					: undefined),
-				openFindings: open.map((f) => ({
+				openFindings: Arr.map(open, (f) => ({
 					handle: f.handle,
 					path: f.path,
 					line: f.line,
@@ -627,19 +624,19 @@ export class PrReviewConversationService extends Context.Service<
 			if (Option.isNone(upstream)) return yield* annotate("disconnected")
 			const { provider, installation, ref } = upstream.value
 			// Anyone can re-run CI on their own pull request; only write access vouches for someone else's.
-			const permission = yield* provider
-				.fetchCommenterPermission(installation, ref, job.approverLogin)
-				.pipe(Effect.orElseSucceed(() => "none"))
-			if (!PUSH_PERMISSIONS.has(permission))
-				return yield* annotate("not_permitted", { "vcs.repository.permission": permission })
+			const access = yield* pushAccess(upstream.value, job.approverLogin)
+			if (!access.canPush)
+				return yield* annotate("not_permitted", { "vcs.repository.permission": access.permission })
 			// Fork runs carry no pull request number: the open one from the run's branch is it.
 			const numbers =
 				job.pullRequestNumbers.length > 0
 					? job.pullRequestNumbers
-					: (yield* provider.fetchPullRequests(installation, ref, {
-							limit: 5,
-							head: `${job.headRepoFullName.split("/")[0]}:${job.headBranch}`,
-						})).map((pr) => pr.number)
+					: yield* provider
+							.fetchPullRequests(installation, ref, {
+								limit: 5,
+								head: `${Str.split(job.headRepoFullName, "/")[0]}:${job.headBranch}`,
+							})
+							.pipe(Effect.map((prs) => Arr.map(prs, (pr) => pr.number)))
 			if (numbers.length === 0) return yield* annotate("no_pull_request")
 			yield* Effect.forEach(
 				numbers,
@@ -652,8 +649,8 @@ export class PrReviewConversationService extends Context.Service<
 						// And the pull request it ran for: the author gate is waived on this identity.
 						if (
 							pr.headRef !== job.headBranch ||
-							pr.headRepoFullName?.toLowerCase() !== job.headRepoFullName.toLowerCase() ||
-							pr.authorLogin?.toLowerCase() !== job.authorLogin.toLowerCase()
+							lowerOrUndefined(pr.headRepoFullName) !== Str.toLowerCase(job.headRepoFullName) ||
+							lowerOrUndefined(pr.authorLogin) !== Str.toLowerCase(job.authorLogin)
 						)
 							return yield* annotate("other_pull_request", {
 								"vcs.pull_request.number": number,
@@ -707,7 +704,7 @@ export class PrReviewConversationService extends Context.Service<
 						orgId,
 						replyId,
 						seq,
-						path: edit.path.trim().replace(/^\.\//, ""),
+						path: Str.replace(/^\.\//, "")(Str.trim(edit.path)),
 						oldText: edit.oldText,
 						newText: edit.newText,
 						createdAt: nowMs,
@@ -799,10 +796,10 @@ export class PrReviewConversationService extends Context.Service<
 				.pipe(Effect.result)
 			if (Result.isFailure(commit))
 				return {
-					note: `I could not push the fix: ${commit.failure.message.slice(0, 200)}. The App needs \`contents: write\` on this repository.`,
+					note: `I could not push the fix: ${Str.slice(0, 200)(commit.failure.message)}. The App needs \`contents: write\` on this repository.`,
 					commitSha: null,
 				}
-			const sha7 = commit.success.sha.slice(0, 7)
+			const sha7 = Str.slice(0, 7)(commit.success.sha)
 			return {
 				note: `Pushed ${commit.success.htmlUrl === null ? `\`${sha7}\`` : `[\`${sha7}\`](${commit.success.htmlUrl})`} to \`${head.value.headRef}\`.`,
 				commitSha: commit.success.sha,
@@ -815,7 +812,10 @@ export class PrReviewConversationService extends Context.Service<
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
-			const text = [body.trim(), fix.note].filter((part) => part !== "").join("\n\n")
+			const text = Arr.join(
+				Arr.filter([Str.trim(body), fix.note], (part) => part !== ""),
+				"\n\n",
+			)
 			const url = yield* post(orgId, row, text === "" ? "I have nothing to add." : text)
 			const nowMs = yield* Clock.currentTimeMillis
 			yield* updateReply(orgId, replyId, ACTIVE, {
@@ -835,7 +835,7 @@ export class PrReviewConversationService extends Context.Service<
 
 		const failReply: PrReviewConversationServiceApi["failReply"] = Effect.fn(
 			"PrReviewConversationService.failReply",
-		)(function* (orgId, replyId, error) {
+		)(function* (orgId, replyId, error, notice) {
 			const nowMs = yield* Clock.currentTimeMillis
 			const rows = yield* dbExecute((db) =>
 				db.run(
@@ -856,7 +856,7 @@ export class PrReviewConversationService extends Context.Service<
 			const url = yield* post(
 				orgId,
 				row,
-				"I couldn't finish answering this. Mention me again to retry.",
+				notice ?? "I couldn't finish answering this. Mention me again to retry.",
 			)
 			if (Option.isSome(url)) yield* updateReply(orgId, replyId, undefined, { replyUrl: url.value })
 		})
@@ -864,6 +864,7 @@ export class PrReviewConversationService extends Context.Service<
 		return {
 			onPullRequestComment,
 			onCiApproved,
+			replyTarget,
 			submitReply,
 			stageEdit,
 			failReply,

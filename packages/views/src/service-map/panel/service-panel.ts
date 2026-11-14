@@ -1,16 +1,16 @@
-import { resolveDbNodeStyle } from "@maple/ui/components/service-map/service-map-db-style"
+import { resolveDbNodeStyle } from "../graph/service-map-db-style"
 import {
 	aggregateServiceOverviews,
 	CLOUDFLARE_COLOR,
 	dbNodeId,
 	getServiceMapNodeColor,
-} from "@maple/ui/components/service-map/service-map-utils"
+} from "../graph/service-map-utils"
 import type {
 	ServiceMapDbEdgeRow,
 	ServiceMapEdgeRow,
 	ServiceMapOverviewRow,
 	ServicePlatform,
-} from "@maple/ui/components/service-map/service-map-types"
+} from "../graph/service-map-types"
 import { EMPTY_VALUE, formatNumber, formatRate } from "@maple/ui/lib/format"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { separator } from "../../ui/display"
@@ -28,7 +28,8 @@ import { sidePanelFrame } from "../../ui/side-panel"
 import { grid } from "../../ui/grid"
 import * as ServiceMap from "../map/service-map"
 import { detailPanelHeader, edgeRow, healthTone, metricTile, metricValue, sampled } from "./kit"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import { typography } from "../../ui/typography"
 
 // A selected service node's side panel. The app hands in the map's rows, its service and traces hrefs
 // and, where it can back one, the Infrastructure tab.
@@ -60,7 +61,12 @@ export type ServicePanelInputs<M> = Readonly<{
 }>
 
 const cloudflareOf = <M>(inputs: ServicePanelInputs<M>) =>
-	inputs.map.source.rawNodes.find((node) => node.id === inputs.serviceId)?.data.cloudflare
+	Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(inputs.map.source.rawNodes, (node) => node.id === inputs.serviceId),
+			(node) => node.data.cloudflare,
+		),
+	)
 
 const header = <M>(
 	h: HtmlBuilder<M>,
@@ -75,9 +81,11 @@ const header = <M>(
 		[
 			statusDot(h, { tone: healthTone(errorRate) }),
 			vstack(h, { shrink: true }, [
-				h.span([h.Class("text-sm font-semibold text-foreground truncate")], [inputs.serviceId]),
+				typography(h, { size: "sm", tone: "foreground", weight: "semibold", truncate: true }, [
+					inputs.serviceId,
+				]),
 				...(namespace
-					? [h.span([h.Class("text-3xs text-muted-foreground truncate")], [namespace])]
+					? [typography(h, { size: "3xs", tone: "muted", truncate: true }, [namespace])]
 					: []),
 			]),
 		],

@@ -1,4 +1,4 @@
-import { ENDPOINTS_LIMIT, isTruncated } from "../../../components/services/service-endpoints"
+import { ENDPOINTS_LIMIT, isTruncated } from "./service-endpoints"
 import {
 	formatBytes,
 	formatBytesPerSecond,
@@ -23,7 +23,7 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { table, tableBody, tableHeader, tableRow } from "@maple/views/ui/table"
+import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
 import { docsLink } from "../../kit/signal-empty-state"
 import { statRail, statRailLoading } from "../../kit/stat-rail"
 import { windowSeconds } from "./derive"
@@ -45,20 +45,21 @@ import {
 	type WindowMs,
 	hasUnknownBuckets,
 } from "./derive-api"
-import { commitMarkers, markerLayout } from "./derive-markers"
 import { TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
 import { Message } from "./message"
 import type { Model } from "./model"
 import type { ApiBucket, ApiOverview, Endpoint, StatusRow } from "./model-tabs"
 import { COLUMN, COLUMN_COUNT, groupRows, groupsOf, type RowContext } from "./view-api"
 import { type ChartContext, SPARK_TOKENS, sparkline, STATUS_COLORS, statusChart } from "./view-api-charts"
-import { markersOverlay } from "./view-markers"
 import { headLabel, rangeNote, sortColumnHead, tableSkeletonHead, tableTitle } from "./view-table-cells"
-import { typography } from "@maple/views/ui/typography"
+import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
+import { commitMarkers, markerLayout } from "../../kit/service-metrics/markers"
+import { markersOverlay } from "../../kit/service-metrics/markers-view"
+import { markerCardOf } from "./view-charts"
 
-// `ServiceApiTab`: the KPI strip, the responses chart beside the non-2xx breakdown, and the
+// The API tab: the KPI strip, the responses chart beside the non-2xx breakdown, and the
 // endpoint table with its filters. The endpoint drawer is the page's (`endpoint-peek`).
 
 type H = HtmlBuilder<Message>
@@ -71,8 +72,6 @@ export type ApiTabInputs = Readonly<{ bucketSeconds: number; timeZone: string; w
 // Deploy labels sit in a gutter above the plot (18px label, 10px gap), off the plotted lines.
 const MARKER_LABEL_GAP = 10
 const MARKER_GUTTER = 32
-
-// KPI STRIP
 
 type Tile = Readonly<{
 	label: string
@@ -88,8 +87,13 @@ type Tile = Readonly<{
 
 // Same anatomy as the shared `statRailItem`: sentence-case label, figure with its unit, caption.
 const kpiTile = (h: H, tile: Tile, theme: ThemeColors | null): Html =>
-	h.div(
-		[h.Key(tile.label), h.Class("flex min-w-0 flex-col px-5 py-4 last:col-span-2 md:last:col-span-1")],
+	vstack(
+		h,
+		{
+			shrink: true,
+			className: "px-5 py-4 last:col-span-2 md:last:col-span-1",
+			attributes: [h.Key(tile.label)],
+		},
 		[
 			hstack(h, { gap: "1.5" }, [
 				...(tile.dot === undefined ? [] : [statusDot(h, { tone: tile.dot })]),
@@ -136,10 +140,10 @@ const leadingCode = (summaries: ReadonlyArray<StatusCodeSummary> | null, isServe
 
 /** "3.0 MB/s" as value and unit, so the unit sits small beside the figure like "req/s". */
 const splitUnit = (text: string): Readonly<{ value: string; unit?: string }> => {
-	const space = text.indexOf(" ")
-	return space < 0
-		? { value: text }
-		: { value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }
+	return Option.match(Str.indexOf(" ")(text), {
+		onNone: () => ({ value: text }),
+		onSome: (space) => ({ value: Str.slice(0, space)(text), unit: Str.slice(space + 1)(text) }),
+	})
 }
 
 /** "+12%" / "−8%"; under half a percent either way reads as unchanged. */
@@ -218,8 +222,6 @@ const kpiStrip = (
 
 const kpiSkeleton = (h: H): Html => statRailLoading(h, 5, 5, "w-full overflow-hidden")
 
-// RESPONSES CHART
-
 const legendItem = (h: H, swatch: Html, label: string): Html =>
 	hstack(h, { gap: "1.5", attributes: [h.Key(label)] }, [swatch, h.span([], [label])])
 
@@ -248,7 +250,11 @@ const responsesChart = (
 			? undefined
 			: Option.match(chartModel.plot, {
 					onNone: () => undefined,
-					onSome: (plot) => markersOverlay(h, markerLayout(markers, plot), plot, MARKER_LABEL_GAP),
+					onSome: (plot) =>
+						markersOverlay(h, markerLayout(markers, plot), plot, MARKER_LABEL_GAP, "all", {
+							...markerCardOf(model, inputs.timeZone),
+							scope: "markers-api-responses",
+						}),
 				})
 	const context: ChartContext | null =
 		theme === null ? null : { theme, timeZone: inputs.timeZone, nowMs: model.nowMs ?? 0 }
@@ -257,73 +263,73 @@ const responsesChart = (
 			title: "Responses by status",
 			scope: typography(h, { size: "2xs", tone: "subtle" }, ["req/s, all endpoints"]),
 			divided: false,
-			action: h.div(
-				[h.Class("flex items-center gap-4 text-2xs text-muted-foreground")],
-				[
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["2xx"]),
-						`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
-					),
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["4xx"]),
-						`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
-					),
-					legendItem(
-						h,
-						swatch(h, STATUS_COLORS["5xx"]),
-						`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
-					),
-					...(hasUnknownBuckets(overview.buckets)
-						? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
-						: []),
-					...(markers.length === 0
-						? []
-						: [
-								legendItem(
-									h,
-									h.span([
-										h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground"),
-									]),
-									"deploy",
-								),
-							]),
-				],
-			),
+			action: hstack(h, { gap: "4", align: "center", className: "text-2xs text-muted-foreground" }, [
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["2xx"]),
+					`2xx ${mix === null ? "—" : formatErrorRate(mix.ok)}`,
+				),
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["4xx"]),
+					`4xx ${mix === null ? "—" : formatErrorRate(mix.client)}`,
+				),
+				legendItem(
+					h,
+					swatch(h, STATUS_COLORS["5xx"]),
+					`5xx ${mix === null ? "—" : formatErrorRate(mix.server)}`,
+				),
+				...(hasUnknownBuckets(overview.buckets)
+					? [legendItem(h, swatch(h, STATUS_COLORS.unknown), "no status code")]
+					: []),
+				...(markers.length === 0
+					? []
+					: [
+							legendItem(
+								h,
+								h.span([h.Class("h-2.5 w-0 border-l border-dashed border-muted-foreground")]),
+								"deploy",
+							),
+						]),
+			]),
 		}),
 		panelBody(
 			h,
 			[
 				context === null
 					? skeleton(h, "h-[200px] w-full")
-					: statusChart(h, {
-							chartId: "api-responses",
-							chart: chartModel,
-							buckets: overview.buckets,
-							bucketSeconds: inputs.bucketSeconds,
-							window: inputs.window,
-							context,
-							className: "h-[200px] w-full",
-							marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
-							overlay,
-							reportPlot: markers.length > 0,
-							toMessage: toChart("api-responses"),
-						}),
+					: // The markers sit beside the chart (their card's handlers bind to this page).
+						h.div(
+							[h.Class("relative h-[200px] w-full")],
+							[
+								statusChart(h, {
+									chartId: "api-responses",
+									chart: chartModel,
+									buckets: overview.buckets,
+									bucketSeconds: inputs.bucketSeconds,
+									window: inputs.window,
+									context,
+									className: "h-full w-full",
+									marginTop: markers.length === 0 ? undefined : MARKER_GUTTER,
+									reportPlot: markers.length > 0,
+									toMessage: toChart("api-responses"),
+								}),
+								overlay ?? null,
+							],
+						),
 			],
 			"px-4 pb-4 pt-2",
 		),
 	])
 }
 
-// NON-2XX BREAKDOWN
-
 const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 	const isServer = isServerError(summary.code)
 	const [errorType] = summary.errorTypes
 	return vstack(h, { gap: "1", attributes: [h.Key(summary.code)] }, [
-		h.div(
-			[h.Class("flex items-baseline gap-2 text-2xs tabular-nums")],
+		hstack(
+			h,
+			{ gap: "2", align: "baseline", className: typographyClass({ size: "2xs", numeric: true }) },
 			[
 				h.span(
 					[
@@ -352,7 +358,7 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 			[
 				...(errorType === undefined
 					? []
-					: [h.span([h.Class("text-foreground-soft")], [errorType.name]), " · "]),
+					: [typography(h, { tone: "soft" }, [errorType.name]), " · "]),
 				routeList(summary.routes),
 			],
 		),
@@ -360,20 +366,25 @@ const codeRow = (h: H, summary: StatusCodeSummary): Html => {
 }
 
 const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null): Html => {
-	const total = summaries?.reduce((sum, summary) => sum + summary.count, 0) ?? 0
+	const total = summaries === null ? 0 : Arr.reduce(summaries, 0, (sum, summary) => sum + summary.count)
 	return panel(h, { className: "w-full shrink-0 lg:w-[400px]" }, [
 		panelHeader(h, {
 			title: "Non-2xx responses",
 			action:
 				summaries === null
 					? undefined
-					: h.span(
-							[
-								h.Class("text-2xs text-muted-foreground tabular-nums"),
-								h.Title(
-									"Counted over complete hours, so the total can reach past the window's edges",
-								),
-							],
+					: typography(
+							h,
+							{
+								size: "2xs",
+								tone: "muted",
+								numeric: true,
+								attributes: [
+									h.Title(
+										"Counted over complete hours, so the total can reach past the window's edges",
+									),
+								],
+							},
 							[`${formatNumber(Math.round(total))} in complete hours`],
 						),
 		}),
@@ -401,20 +412,13 @@ const breakdownPanel = (h: H, summaries: ReadonlyArray<StatusCodeSummary> | null
 	])
 }
 
-// TABLE
-
 const toolbar = (h: H, model: Model, count: number): Html =>
 	tableTitle(h, {
 		title: "Endpoints",
 		count,
 		action: hstack(h, { gap: "3", wrap: true }, [
 			...(AsyncData.isFailure(model.endpointSeries.data)
-				? [
-						h.span(
-							[h.Class("text-2xs text-severity-error")],
-							["Trends failed to load; Reload to retry."],
-						),
-					]
+				? [typography(h, { size: "2xs", tone: "error" }, ["Trends failed to load; Reload to retry."])]
 				: []),
 			segmentedSelect(h, {
 				options: Arr.map(ENDPOINT_FILTERS, (filter) => ({
@@ -531,12 +535,11 @@ const endpointsTable = (
 							tableRow(
 								h,
 								[
-									h.td(
-										[
-											h.Attribute("colspan", String(COLUMN_COUNT)),
-											h.Class("py-8 text-center text-xs text-muted-foreground"),
-										],
-										["No endpoint matches this filter"],
+									tableCell(
+										h,
+										["No endpoints match these filters"],
+										"py-8 text-center text-xs text-muted-foreground",
+										[h.Attribute("colspan", String(COLUMN_COUNT))],
 									),
 								],
 								"hover:bg-transparent active:bg-transparent",
@@ -550,8 +553,6 @@ const endpointsTable = (
 	])
 }
 
-// STATES
-
 const loadingState = (h: H): Html =>
 	vstack(h, { gap: "3" }, [
 		kpiSkeleton(h),
@@ -564,8 +565,9 @@ const loadingState = (h: H): Html =>
 		),
 		panel(h, {}, [
 			...tableSkeletonHead(h, "Endpoints"),
-			h.div(
-				[h.AriaBusy(true), h.Class("flex flex-col")],
+			vstack(
+				h,
+				{ attributes: [h.AriaBusy(true)] },
 				Array.from({ length: 8 }, (_, index) =>
 					hstack(
 						h,
@@ -588,19 +590,19 @@ const loadingState = (h: H): Html =>
 		]),
 	])
 
-/** `ApiEmptyState`: names the two conditions an endpoint needs. */
+/** Names the two conditions an endpoint needs. */
 const emptyState = (h: H, serviceName: string): Html => {
-	const mono = (text: string) => h.span([h.Class("text-foreground-soft")], [text])
+	const mono = (text: string) => typography(h, { tone: "soft" }, [text])
 	return panel(h, { className: "items-center gap-3.5 px-4 py-11 text-center" }, [
 		h.span(
 			[h.Class("text-title font-medium text-foreground-soft")],
 			["No HTTP endpoints in this window"],
 		),
 		h.span(
-			[h.Class("max-w-[620px] text-ui leading-[21px] text-muted-foreground")],
+			[h.Class("max-w-[620px] text-ui leading-5.25 text-muted-foreground")],
 			[
 				mono(serviceName),
-				" reported spans in this range, but none are HTTP server spans with a route. An endpoint needs a server span carrying",
+				" reported spans in this window, but none are HTTP server spans with a route. An endpoint needs a server span carrying",
 				" ",
 				mono("http.route"),
 				" or",

@@ -5,10 +5,9 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { detailRailGroup, detailRailMetaRow } from "@maple/views/ui/detail-rail"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { typography } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
-// `ResourceAttributesCard` / `ResourceAttributesCardSkeleton` and `DetailRail.MetaRow` with its copy buttons.
-
-/** Copy status per row label: each row's `CopyButton` keeps its own `useCopy` state. */
+/** Copy status per row label: each row's copy button keeps its own state. */
 export const Copies = Schema.Record(Schema.String, CopyButton.Model)
 export type Copies = typeof Copies.Type
 
@@ -25,7 +24,7 @@ export const updateCopy = <M>(
 	}
 }
 
-/** `ResourceAttributesCard`: the infra detail rail's attribute group, flat like every other rail group. */
+/** The infra detail rail's attribute group, flat like every other rail group. */
 export const resourceAttributesCard = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	detailRailGroup(h, "Resource attributes", children)
 
@@ -46,16 +45,15 @@ export const resourceAttributesCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				h,
 				"Resource attributes",
 				Arr.map(SKELETON_ROWS, ([label, value]) =>
-					h.div(
-						[h.Class("flex items-center justify-between gap-3 py-1")],
-						[skeleton(h, `h-2.5 ${label}`), skeleton(h, `h-2.5 ${value}`)],
-					),
+					hstack(h, { gap: "3", align: "center", justify: "between", className: "py-1" }, [
+						skeleton(h, `h-2.5 ${label}`),
+						skeleton(h, `h-2.5 ${value}`),
+					]),
 				),
 			),
 		],
 	)
 
-/** `HostMetadataPanel`'s `Section`. */
 export const attributeSection = <M>(h: HtmlBuilder<M>, title: string, rows: ReadonlyArray<Html>): Html =>
 	h.div(
 		[h.Class("space-y-0.5 py-2 first:pt-0 last:pb-0")],
@@ -71,12 +69,14 @@ export type MetaRowOptions<M> = Readonly<{
 	copyable?: boolean
 	copyValue?: string
 	tooltip?: string
+	/** `detailRailMetaRow`'s `display`: an element in place of the value's text. */
+	display?: Html
 	valueClassName?: string
 	copies?: Copies
 	onCopy?: (label: string, message: CopyButton.Message) => M
 }>
 
-/** `DetailRail.MetaRow` with the copy button's state kept in the page's `copies`. */
+/** A detail rail meta row with the copy button's state kept in the page's `copies`. */
 export const metaRow = <M>(h: HtmlBuilder<M>, options: MetaRowOptions<M>): Html => {
 	const value = options.value
 	const onCopy = options.onCopy
@@ -86,6 +86,7 @@ export const metaRow = <M>(h: HtmlBuilder<M>, options: MetaRowOptions<M>): Html 
 		value,
 		valueClassName: options.valueClassName,
 		tooltip: options.tooltip,
+		display: options.display,
 		copy:
 			isCopyable && value
 				? {

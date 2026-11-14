@@ -5,7 +5,7 @@ import * as Popover from "@maple/views/ui/popover"
 import * as Tooltip from "@maple/views/ui/tooltip"
 import { Message } from "./model"
 
-// `KitPopover` and `KitHoverCard`.
+// The kit's popover and hover card.
 type H = HtmlBuilder<Message>
 
 const itemRow = (h: H, children: ReadonlyArray<Html>) =>
@@ -36,7 +36,7 @@ export const kitHoverCard = (h: H, model: HoverCard.Model): Html =>
 		toParentMessage: (message) => Message.GotHoverCardMessage({ message }),
 	})
 
-// `KitTooltip`: `<Tooltip defaultOpen>` on an outline button.
+// A tooltip, open on mount, on an outline button.
 export const kitTooltip = (h: H, model: Tooltip.Model): Html =>
 	h.submodel({
 		slotId: "tooltip",

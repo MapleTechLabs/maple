@@ -102,15 +102,14 @@ export const makeWidgetDisplayConfigSchema = <DataSource extends Schema.Top>(dat
 
 		listDataSource: Schema.optional(Schema.String),
 		// LOAD-BEARING NAME: dashboard variable interpolation matches any key ending
-		// in "whereclause" (case-insensitive, any depth) — see
-		// `packages/query-engine/src/dashboard-variables/interpolate.ts:37`. Renaming
+		// in "whereclause" (case-insensitive, any depth): see `WHERE_CLAUSE_KEY` in
+		// `packages/query-engine/src/dashboard-variables/interpolate.ts`. Renaming
 		// this field silently stops `$var` substitution, sending the literal `$service`
-		// to the warehouse. Guarded by `params/interpolation-keys.test.ts`.
+		// to the warehouse. Guarded by `dashboard-variables/interpolation-keys.test.ts`.
 		listWhereClause: Schema.optional(Schema.String),
 		listLimit: Schema.optional(Schema.Number),
 		listRootOnly: Schema.optional(Schema.Boolean),
 
-		// Pie-specific
 		pie: Schema.optional(
 			Schema.Struct({
 				donut: Schema.optional(Schema.Boolean),
@@ -161,7 +160,6 @@ export const makeWidgetDisplayConfigSchema = <DataSource extends Schema.Top>(dat
 			}),
 		),
 
-		// Histogram-specific
 		histogram: Schema.optional(
 			Schema.Struct({
 				bucketCount: Schema.optional(Schema.Number),
@@ -185,7 +183,6 @@ export const makeWidgetDisplayConfigSchema = <DataSource extends Schema.Top>(dat
 			}),
 		),
 
-		// Markdown-specific
 		markdown: Schema.optional(
 			Schema.Struct({
 				content: Schema.String,

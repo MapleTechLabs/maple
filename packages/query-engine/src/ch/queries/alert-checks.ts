@@ -7,13 +7,18 @@ import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from } from "@maple-dev/effect-orm/clickhouse"
-import { AlertChecks, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 
 export interface ListRuleChecksOpts {
 	readonly groupKey?: string
 	readonly status?: string
-	readonly since?: DateTime.Utc
+	/**
+	 * Required: the sort key puts GroupKey before Timestamp, so without a lower
+	 * bound a page of 50 reads the rule's whole year of checks.
+	 */
+	readonly since: DateTime.Utc
 	readonly until?: DateTime.Utc
 	readonly beforeTimestamp?: DateTime.Utc
 	readonly beforeGroupKey?: string
@@ -45,7 +50,7 @@ export interface ListRuleChecksOutput {
 
 export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 	return (
-		from(AlertChecks)
+		from(Datasources.alertChecks)
 			.select(($) => ({
 				timestamp: $.Timestamp,
 				groupKey: $.GroupKey,
@@ -75,7 +80,7 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 					$.GroupKey.eq(param.string("groupKey")),
 				),
 				CH.whenTrue(opts.status != null, () => $.Status.eq(param.string("status"))),
-				CH.whenTrue(opts.since != null, () => $.Timestamp.gte(param.dateTime("since"))),
+				$.Timestamp.gte(param.dateTime("since")),
 				CH.whenTrue(opts.until != null, () => $.Timestamp.lte(param.dateTime("until"))),
 				CH.whenTrue(opts.beforeTimestamp != null, () =>
 					$.Timestamp.lt(param.dateTime("beforeTimestamp")).or(
@@ -107,7 +112,7 @@ export interface AlertCheckGroupTotalsOutput {
 }
 
 export function alertCheckGroupTotalsQuery(opts: AlertCheckGroupTotalsOpts) {
-	return from(AlertChecks)
+	return from(Datasources.alertChecks)
 		.select(($) => ({
 			groupKey: $.GroupKey,
 			totalCount: CH.count(),
@@ -143,7 +148,7 @@ export interface AlertChecksSummaryOutput {
 }
 
 export function alertChecksSummaryQuery(opts: AlertChecksSummaryOpts) {
-	return from(AlertChecks)
+	return from(Datasources.alertChecks)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			groupKey:

@@ -14,7 +14,7 @@ import {
 	String as Str,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
+import { GitCommitSha, type PullRequestReviewPublication, VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
@@ -50,7 +50,24 @@ const jsonResponse = (body: unknown, status = 200) =>
 
 const tokenResponse = () => jsonResponse({ token: "installation-token", expires_at: "2099-01-01T00:00:00Z" })
 
-const INSTALLATION = { externalInstallationId: "42" } as VcsInstallation
+const INSTALLATION = Schema.decodeSync(VcsInstallation)({
+	id: "00000000-0000-4000-8000-000000000042",
+	orgId: "org_test",
+	provider: "github",
+	externalInstallationId: "42",
+	accountLogin: "octo",
+	accountType: "organization",
+	externalAccountId: "1",
+	accountAvatarUrl: null,
+	repositorySelection: "all",
+	status: "active",
+	suspendedAt: null,
+	ciTracesEnabled: true,
+	repositoryDiscovery: null,
+	installedByUserId: "user_1",
+	createdAt: 0,
+	updatedAt: 0,
+})
 const REPO = { externalRepoId: "1", owner: "octo", name: "shop" }
 
 const apiPullRequest = (overrides: Record<string, unknown> = {}) => ({
@@ -79,7 +96,7 @@ const providerLayer = (
 		requests.push(url)
 		bodies.push(body ?? "")
 		authorizations.push(headers["authorization"])
-		return responses[next++]!
+		return responses[next++]
 	})
 	return Layer.effect(GithubProvider, GithubProvider.make).pipe(
 		Layer.provide(
@@ -130,7 +147,7 @@ describe("GithubProvider pull requests", () => {
 			assert.strictEqual(prs[2]?.isDraft, true)
 			assert.strictEqual(prs[0]?.headRef, "fix/null-customer")
 
-			const listUrl = requests[1]!
+			const listUrl = requests[1]
 			assert.match(listUrl, /\/repos\/octo\/shop\/pulls\?/)
 			assert.match(listUrl, /state=all/)
 			assert.match(listUrl, /sort=updated/)
@@ -148,7 +165,7 @@ describe("GithubProvider pull requests", () => {
 			yield* Effect.gen(function* () {
 				const provider = yield* GithubProvider
 				yield* provider.fetchPullRequests(INSTALLATION, REPO, { limit: 5_000 })
-				assert.match(requests[1]!, /per_page=100/)
+				assert.match(requests[1], /per_page=100/)
 			}).pipe(Effect.provide(layer))
 		}),
 	)
@@ -164,7 +181,7 @@ describe("GithubProvider pull requests", () => {
 			const pr = yield* provider.fetchPullRequest(INSTALLATION, REPO, 612)
 			assert.isTrue(Option.isSome(pr))
 			assert.strictEqual(Option.getOrThrow(pr).state, "closed")
-			assert.match(requests[1]!, /\/repos\/octo\/shop\/pulls\/612$/)
+			assert.match(requests[1], /\/repos\/octo\/shop\/pulls\/612$/)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -183,7 +200,7 @@ describe("GithubProvider pull requests", () => {
 })
 
 describe("GithubProvider commits", () => {
-	const sha = Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(40)("b"))
+	const sha = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("b"))
 
 	it.effect("answers none for a SHA GitHub has never seen", () =>
 		// GitHub's 422 for a well-formed SHA that names nothing: a deploy reported
@@ -215,7 +232,7 @@ describe("GithubProvider commits", () => {
 })
 
 describe("GithubProvider publishing a review", () => {
-	const HEAD = Schema.decodeUnknownSync(GitCommitSha)(Str.repeat(40)("c"))
+	const HEAD = Schema.decodeSync(GitCommitSha)(Str.repeat(40)("c"))
 	const MARKER = "<!-- maple-pr-review -->"
 	const publication = (
 		comments: PullRequestReviewPublication["comments"] = [],
@@ -258,7 +275,9 @@ describe("GithubProvider publishing a review", () => {
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
 			assert.isNull(published.reviewUrl)
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/612/comments")),
+			)
 			// No review at all: the comment carries the result.
 			assert.isFalse(Arr.some(requests, (url) => Str.includes("/reviews")(url)))
 		}).pipe(Effect.provide(layer))
@@ -291,17 +310,17 @@ describe("GithubProvider publishing a review", () => {
 				summary: "Maple is reviewing `abc123`.",
 			})
 			assert.equal(started.url, "https://github.com/octo/shop/runs/7")
-			assert.include(requests[1]!, "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
-			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs")(requests[2]!))
-			assert.include(bodies[2]!, `"status":"in_progress"`)
-			assert.notInclude(bodies[2]!, "conclusion")
+			assert.include(requests[1], "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
+			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs")(requests[2]))
+			assert.include(bodies[2], `"status":"in_progress"`)
+			assert.notInclude(bodies[2], "conclusion")
 
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.checkRunUrl, "https://github.com/octo/shop/runs/7")
 			// The running one is moved on, not duplicated.
-			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs/7")(requests[4]!))
-			assert.include(bodies[4]!, `"conclusion":"success"`)
-			assert.notInclude(bodies[4]!, "head_sha")
+			assert.isTrue(Str.endsWith("/repos/octo/shop/check-runs/7")(requests[4]))
+			assert.include(bodies[4], `"conclusion":"success"`)
+			assert.notInclude(bodies[4], "head_sha")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -371,7 +390,9 @@ describe("GithubProvider publishing a review", () => {
 			const provider = yield* GithubProvider
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-77")
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/comments/77"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/comments/77")),
+			)
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -397,7 +418,9 @@ describe("GithubProvider publishing a review", () => {
 		return Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isTrue(
+				Option.exists(Arr.last(requests), Str.endsWith("/repos/octo/shop/issues/612/comments")),
+			)
 			assert.isFalse(Arr.some(requests, (url) => Str.includes("/issues/comments/9")(url)))
 		}).pipe(Effect.provide(layer))
 	})
@@ -456,7 +479,12 @@ describe("GithubProvider publishing a review", () => {
 				publication([{ path: "a.ts", line: 3, body: "add a span", key: "finding-1" }]),
 			)
 			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
-			assert.isTrue(requests.at(-2)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			assert.isTrue(
+				Option.exists(
+					Arr.get(requests, requests.length - 2),
+					Str.endsWith("/repos/octo/shop/pulls/612/reviews"),
+				),
+			)
 			// The posted comment's id comes back under the key it was submitted with.
 			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
 		}).pipe(Effect.provide(layer))
@@ -540,7 +568,7 @@ describe("GithubProvider changes since an earlier review", () => {
 				base: BASE,
 			})
 			assert.deepStrictEqual(delta, { rewritten: false, paths: ["src/a.ts"] })
-			assert.include(requests[1]!, `/compare/${OLD}...${NEW}`)
+			assert.include(requests[1], `/compare/${OLD}...${NEW}`)
 			assert.lengthOf(requests, 2)
 		}).pipe(Effect.provide(layer))
 	})
@@ -630,7 +658,7 @@ describe("GithubProvider reading why a CI job failed", () => {
 			const provider = yield* GithubProvider
 			const annotations = yield* provider.fetchWorkflowJobAnnotations(INSTALLATION, REPO, "555")
 			assert.isTrue(
-				Str.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1")(requests[1]!),
+				Str.endsWith("/repos/octo/shop/check-runs/555/annotations?per_page=100&page=1")(requests[1]),
 			)
 			assert.deepStrictEqual(annotations, [
 				{
@@ -691,7 +719,7 @@ describe("GithubProvider reading a CI job's log", () => {
 			const lines = yield* provider
 				.streamWorkflowJobLog(INSTALLATION, REPO, "555")
 				.pipe(Stream.runCollect)
-			assert.isTrue(Str.endsWith("/repos/octo/shop/actions/jobs/555/logs")(requests[1]!))
+			assert.isTrue(Str.endsWith("/repos/octo/shop/actions/jobs/555/logs")(requests[1]))
 			assert.strictEqual(authorizations[1], "token installation-token")
 			assert.strictEqual(requests[2], SIGNED_URL)
 			assert.isUndefined(authorizations[2])
@@ -718,7 +746,7 @@ describe("GithubProvider reading a CI job's log", () => {
 				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
 				assert.isFalse(yield* provider.canReadWorkflowLogs(INSTALLATION))
 				assert.lengthOf(requests, 1)
-				assert.isTrue(Str.endsWith("/app/installations/42/access_tokens")(requests[0]!))
+				assert.isTrue(Str.endsWith("/app/installations/42/access_tokens")(requests[0]))
 			}).pipe(Effect.provide(layer))
 		},
 	)
@@ -830,9 +858,9 @@ describe("GithubProvider hiding earlier review comments", () => {
 					keep: "<!-- maple-pr-review r3 0 -->",
 				})
 				assert.equal(hidden, 1)
-				assert.deepEqual(JSON.parse(bodies[2]!).variables, { ids: ["IC_1", "IC_2"] })
-				assert.include(bodies[3]!, "classifier: OUTDATED")
-				assert.deepEqual(JSON.parse(bodies[3]!).variables, { id: "IC_2" })
+				assert.deepEqual(JSON.parse(bodies[2]).variables, { ids: ["IC_1", "IC_2"] })
+				assert.include(bodies[3], "classifier: OUTDATED")
+				assert.deepEqual(JSON.parse(bodies[3]).variables, { id: "IC_2" })
 				assert.lengthOf(requests, 4)
 			}).pipe(Effect.provide(layer))
 		},

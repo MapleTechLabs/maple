@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { WarehouseQueryError, WarehouseResultDecodeError, WarehouseSchemaDriftError } from "@maple/domain"
-import { toMcpQueryError } from "./map-warehouse-error"
+import {
+	WarehouseConfigError,
+	WarehouseQueryError,
+	WarehouseResultDecodeError,
+	WarehouseSchemaDriftError,
+} from "@maple/domain"
+import { toMcpQueryError, toMcpReadError } from "./map-warehouse-error"
 
 describe("toMcpQueryError", () => {
 	it("forwards plain query errors verbatim with the pipe label", () => {
@@ -36,5 +41,25 @@ describe("toMcpQueryError", () => {
 		const mcp = toMcpQueryError("service_overview")(err)
 		expect(mcp.message).toBe("row did not decode")
 		expect(mcp.message).not.toContain("schema apply")
+	})
+})
+
+describe("toMcpReadError", () => {
+	it("reads one of Maple's tables missing for the org as not ready", () => {
+		const err = new WarehouseConfigError({
+			message: "Resource 'user_activity_hourly' not found",
+			pipeName: "list_users",
+		})
+		const mcp = toMcpReadError("list_users")(err)
+		expect(mcp._tag).toBe("@maple/mcp/errors/McpNotReadyError")
+		expect(mcp.message).toContain("user_activity_hourly")
+	})
+
+	it("leaves a table Maple does not define as a query failure", () => {
+		const err = new WarehouseConfigError({
+			message: "Resource 'spans' not found",
+			pipeName: "list_users",
+		})
+		expect(toMcpReadError("list_users")(err)._tag).toBe("@maple/mcp/errors/McpQueryError")
 	})
 })

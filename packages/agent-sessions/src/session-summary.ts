@@ -3,15 +3,13 @@
 // Three rules shape this module. Time is measured as *occupancy* of the wall
 // clock, never as a sum of span durations — a session running four tools in
 // parallel would otherwise report 180% of itself. Tokens are counted at the
-// deepest span that reports them, because frameworks that also roll usage up to
-// the agent span would otherwise double the bill. And token buckets are
-// disjoint: the ingest gateway stamps them so on the model call alone, and a
-// span ingested before it did has its provider's nested figures carved back out
-// where it is read (see `genAiUsageConvention`), so `input` always means the
-// uncached prompt, `output` the visible completion, and a total is always the
-// plain sum of the buckets.
+// deepest span that reports them, because a call observed at several levels
+// would otherwise double the bill. And token buckets are
+// disjoint: the ingest gateway stamps them so on the model call alone, so
+// `input` always means the uncached prompt, `output` the visible completion,
+// and a total is always the plain sum of the buckets.
 
-import { genAiUsageConvention } from "@maple/domain/gen-ai"
+import { Array as Arr, Option, String as Str } from "effect"
 import type { AiSessionSpan } from "@maple/domain/http"
 
 import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
@@ -73,16 +71,14 @@ export interface SessionAgentTime {
 }
 
 export interface SessionTokenTotals {
-	/** Uncached prompt tokens: providers whose prompt figure contains the cache
-	 *  buckets have them carved back out. See `spanTokenBuckets`. */
+	/** Uncached prompt tokens. See `spanTokenBuckets`. */
 	readonly input: number
 	readonly cacheRead: number
 	readonly cacheWrite: number
-	/** Visible completion tokens: providers whose completion figure contains
-	 *  the reasoning have it carved back out, the same way. */
+	/** Visible completion tokens, the reasoning apart. */
 	readonly output: number
 	readonly reasoning: number
-	/** The buckets are disjoint after normalisation, so this is their sum. */
+	/** The buckets are disjoint, so this is their sum. */
 	readonly total: number
 }
 
@@ -91,7 +87,7 @@ export interface SessionTokenTotals {
  * is missing rather than printing a zero it cannot stand behind.
  *
  * - `per-call` — each model call reported its own usage.
- * - `roll-up` — a wrapper span reported the sum of calls that also reported.
+ * - `roll-up` — a model call restated calls beneath it that also reported.
  * - `session-level` — every figure comes from a span covering more than one
  *   turn, so the session has a total and the individual turns do not.
  * - `none` — nothing reported usage.
@@ -258,20 +254,24 @@ export function buildSessionSummary({
 	// Sorted here so the first-seen orders below (agent names, vendors) are the
 	// session's own order rather than the order the warehouse returned rows in.
 	const ordered = [...spans].sort((a, b) => spanStartMs(a) - spanStartMs(b))
-	const byId = new Map(ordered.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(ordered, (span) => [span.spanId, span]))
 
 	// Reduced, not spread: a partly loaded session can hold tens of thousands
 	// of spans, past what a spread argument list survives.
-	const startMs = ordered.reduce((min, span) => Math.min(min, spanStartMs(span)), Number.POSITIVE_INFINITY)
-	const endMs = ordered.reduce((max, span) => Math.max(max, spanEndMs(span)), Number.NEGATIVE_INFINITY)
+	const startMs = Arr.reduce(ordered, Number.POSITIVE_INFINITY, (min, span) =>
+		Math.min(min, spanStartMs(span)),
+	)
+	const endMs = Arr.reduce(ordered, Number.NEGATIVE_INFINITY, (max, span) => Math.max(max, spanEndMs(span)))
 	const wallClockMs = endMs - startMs
 
 	const idleGaps = findIdleGaps(ordered)
-	const idleMs = idleGaps.reduce((total, gap) => total + gap.durationMs, 0)
+	const idleMs = Arr.reduce(idleGaps, 0, (total, gap) => total + gap.durationMs)
 
 	const usage = countableUsageSpans(ordered, byId)
 	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
-	const toolCalls = countedToolCalls(ordered)
+	// The gateway's verdict alone: the copy a call paused for a human's
+	// approval leaves is stamped no call, and nothing is merged.
+	const toolCalls = Arr.filter(ordered, isCountedToolCall)
 	// The counts and the breakdown are two readings of this one list.
 	const events = failureEvents(ordered)
 
@@ -285,9 +285,9 @@ export function buildSessionSummary({
 		agentTime: computeAgentTime(ordered),
 		failed: turns[finalTurnIndex(turns)]?.failed === true,
 		title: turns[0]?.label,
-		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
-		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
-		serviceNames: byFrequency(ordered.map((span) => span.serviceName)),
+		agentNames: distinctInOrder(Arr.map(ordered, (span) => span.genAi.agentName)),
+		vendorIds: distinctInOrder(Arr.map(ordered, (span) => span.vendorId)),
+		serviceNames: byFrequency(Arr.map(ordered, (span) => span.serviceName)),
 		models: modelUsage(calls, usage.bySpan, usage.costs),
 		tokens: sumTokens([...usage.bySpan.values()]),
 		tokenReporting: classifyTokenReporting(usage, byId, turns),
@@ -301,13 +301,9 @@ export function buildSessionSummary({
 		failureGroups: groupFailures(events),
 		tools: toolUsage(toolCalls, turns),
 		spanCount: ordered.length,
-		traceCount: new Set(ordered.map((span) => span.traceId)).size,
+		traceCount: new Set(Arr.map(ordered, (span) => span.traceId)).size,
 	}
 }
-
-/* -------------------------------------------------------------------------- */
-/* Time                                                                       */
-/* -------------------------------------------------------------------------- */
 
 interface Interval {
 	readonly startMs: number
@@ -316,9 +312,9 @@ interface Interval {
 
 /** Merge overlapping intervals into a disjoint, ordered cover. */
 function union(intervals: readonly Interval[]): Interval[] {
-	const sorted = [...intervals]
-		.filter((interval) => interval.endMs > interval.startMs)
-		.sort((a, b) => a.startMs - b.startMs)
+	const sorted = Arr.filter(intervals, (interval) => interval.endMs > interval.startMs).sort(
+		(a, b) => a.startMs - b.startMs,
+	)
 	const merged: Interval[] = []
 	for (const interval of sorted) {
 		const last = merged[merged.length - 1]
@@ -338,11 +334,11 @@ function union(intervals: readonly Interval[]): Interval[] {
  * would scatter the waterfall with meaningless gap rows.
  */
 export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[] {
-	const busy = union(spans.map((span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
+	const busy = union(Arr.map(spans, (span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
 	const gaps: IdleGap[] = []
-	for (let i = 1; i < busy.length; i++) {
-		const startMs = busy[i - 1].endMs
-		const endMs = busy[i].startMs
+	for (const [previous, current] of Arr.zip(busy, busy.slice(1))) {
+		const startMs = previous.endMs
+		const endMs = current.startMs
 		const durationMs = endMs - startMs
 		if (durationMs > IDLE_GAP_MIN_MS) gaps.push({ id: `gap:${startMs}`, startMs, endMs, durationMs })
 	}
@@ -365,16 +361,16 @@ export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[
  * covers its children, and adding it would count the same work twice. For the
  * same reason an inference span inside another, with no agent or tool between
  * them, is charged nothing: its time is already inside the outer span's
- * (OpenRouter's `LLM Generation` over its `generation`, ADK's `call_llm` over
- * `generate_content`). The outermost carries the time, and borrows a TTFT from
- * a nested span when it reported none.
+ * (OpenRouter's `LLM Generation` over its `generation`). The outermost
+ * carries the time, and borrows a TTFT from a nested span when it reported
+ * none.
  */
-export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
+function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
 	const totals = new Map<AgentTimeKind, number>()
 	const add = (kind: AgentTimeKind, ms: number) => {
 		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
 	}
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const outermostCall = (span: AiSessionSpan): AiSessionSpan => {
 		let call = span
 		const seen = new Set<string>([span.spanId])
@@ -413,18 +409,15 @@ export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentT
 		add("inference", call.durationMs - ttft)
 	}
 
-	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
+	const segments = Arr.filter(
+		Arr.map(AGENT_TIME_KIND_ORDER, (kind) => ({ kind, ms: totals.get(kind) ?? 0 })),
 		(segment) => segment.ms > 0,
 	)
 	return {
-		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
+		totalMs: Arr.reduce(segments, 0, (total, segment) => total + segment.ms),
 		segments,
 	}
 }
-
-/* -------------------------------------------------------------------------- */
-/* Tokens, models, cost                                                       */
-/* -------------------------------------------------------------------------- */
 
 const EMPTY_TOKENS: SessionTokenTotals = {
 	input: 0,
@@ -438,15 +431,13 @@ const EMPTY_TOKENS: SessionTokenTotals = {
 /**
  * A span's usage as five disjoint buckets, or nothing when it reports none:
  * `input` the uncached prompt, `output` the visible completion, the total
- * their sum. On a span the ingest gateway stamped, the buckets it wrote
- * (`MAPLE_AI_STAMP_ATTRS`), which only a model call carries — the figures
- * `ai_trace_index` sums, which is what keeps the list's usage equal to the
- * detail page's. Exported so the waterfall and the flow split a span's usage
- * the same way the header does rather than re-deriving the prompt/completion
- * halves.
+ * their sum. The buckets the ingest gateway wrote (`MAPLE_AI_STAMP_ATTRS`),
+ * which only a model call carries — the figures `ai_trace_index` sums, which
+ * is what keeps the list's usage equal to the detail page's. Exported so the
+ * waterfall and the flow split a span's usage the same way the header does
+ * rather than re-deriving the prompt/completion halves.
  */
 export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
-	if (span.genAi.mapleLlmCall === undefined) return reportedTokenBuckets(span)
 	const { mapleInputTokens, mapleCacheReadTokens, mapleCacheWriteTokens } = span.genAi
 	const { mapleOutputTokens, mapleReasoningTokens } = span.genAi
 	if (
@@ -467,52 +458,6 @@ export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | unde
 	})
 }
 
-/** What a span reported it cost, read the way {@link spanTokenBuckets} reads
- *  its tokens: the gateway's figure on a span it stamped, else the emitter's. */
-export function spanCost(span: AiSessionSpan): number | undefined {
-	return span.genAi.mapleLlmCall === undefined ? span.genAi.usageCost : span.genAi.mapleCost
-}
-
-/**
- * The five `gen_ai.usage.*` buckets of a span ingested before the gateway
- * stamped usage, as its emitter reported them: a reporter whose prompt figure
- * already contains its cache buckets, or whose completion figure contains its
- * reasoning, has them carved back out (`genAiUsageConvention` says which).
- * Remove once those spans have aged out of the 30-day TTL.
- */
-function reportedTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
-	const { usageInputTokens, usageCacheReadInputTokens, usageCacheCreationInputTokens } = span.genAi
-	const { usageOutputTokens, usageReasoningOutputTokens } = span.genAi
-	if (
-		usageInputTokens === undefined &&
-		usageCacheReadInputTokens === undefined &&
-		usageCacheCreationInputTokens === undefined &&
-		usageOutputTokens === undefined &&
-		usageReasoningOutputTokens === undefined
-	) {
-		return undefined
-	}
-	const convention = genAiUsageConvention(span.vendorId, span.genAi.providerName)
-	const cacheRead = usageCacheReadInputTokens ?? 0
-	const cacheWrite = usageCacheCreationInputTokens ?? 0
-	const reasoning = usageReasoningOutputTokens ?? 0
-	const reportedInput = usageInputTokens ?? 0
-	const reportedOutput = usageOutputTokens ?? 0
-	return tokenTotals({
-		// Clamped: a reporter whose nested figures exceed the figure that is
-		// supposed to contain them is mis-stamped, and a negative bucket would be
-		// a worse lie than a zero.
-		input: convention.inputIncludesCache
-			? Math.max(0, reportedInput - cacheRead - cacheWrite)
-			: reportedInput,
-		cacheRead,
-		cacheWrite,
-		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
-		reasoning,
-	})
-}
-
-/** The five disjoint buckets plus their sum. */
 function tokenTotals(buckets: Omit<SessionTokenTotals, "total">): SessionTokenTotals {
 	return {
 		...buckets,
@@ -533,26 +478,17 @@ interface CountableUsage {
 /**
  * Usage per span, with what a deeper span already reported taken off it.
  *
- * Several frameworks stamp `gen_ai.usage.*` on the model span AND sum it onto
- * the agent span that wraps it. Counting the deepest reporter keeps the session
- * total equal to what was actually billed.
- *
- * A model-call wrapper (an SDK's `generateText` over its `doGenerate`, a
- * gateway's generation over its attempts) keeps whatever it reported ABOVE the
- * sum of the reporters beneath it — zero for a clean roll-up, and the missing
- * call's usage when one of its children reported none. Any other wrapper (an
- * agent, a workflow) keeps nothing once a reporter sits beneath it: agents
- * that live across turns report the conversation so far (smolagents
- * `run(reset=False)`, a reused Strands agent), so their excess is earlier
- * turns' calls counted again. See {@link keptClaim}.
+ * The gateway stamps usage on model calls alone, but a call can be observed at
+ * several levels that each count as one (a gateway's generation over its
+ * provider attempts, OpenRouter Broadcast's `LLM Generation` over its
+ * `generation`). The outer one keeps whatever it reported ABOVE the sum of the
+ * reporters beneath it — zero for a clean roll-up, and the missing call's
+ * usage when one of its children reported none.
  */
 function countableUsageSpans(
 	spans: readonly AiSessionSpan[],
 	byId: ReadonlyMap<string, AiSessionSpan>,
 ): CountableUsage {
-	// A span whose usage reads zero throughout is not a reporter: a Vercel AI SDK
-	// `step` stamps only `reasoningTokens="0"`, and as a reporter it would absorb
-	// its chat's usage and leave the agent span above both keeping its roll-up.
 	const reported = new Map<string, SessionTokenTotals>()
 	for (const span of spans) {
 		const tokens = spanTokenBuckets(span)
@@ -563,7 +499,7 @@ function countableUsageSpans(
 	let rolledUp = false
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
 		if (beneath.length > 0) rolledUp = true
-		const tokens = keptClaim(byId, spanId, beneath) ? excessTokens(own, sumTokens(beneath)) : EMPTY_TOKENS
+		const tokens = excessTokens(own, sumTokens(beneath))
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
 	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
@@ -596,9 +532,15 @@ function collapseObservations(
 	const keptTokens = new Map(tokens)
 	const keptCosts = new Map(costs)
 	for (const group of groups.values()) {
+		if (!Arr.isArrayNonEmpty(group)) continue
 		const total = (spanId: string) => tokens.get(spanId)?.total ?? 0
-		const representative = group.reduce((best, spanId) => (total(spanId) > total(best) ? spanId : best))
-		const reported = group.flatMap((spanId) => costs.get(spanId) ?? [])
+		const representative = Arr.reduce(Arr.tailNonEmpty(group), Arr.headNonEmpty(group), (best, spanId) =>
+			total(spanId) > total(best) ? spanId : best,
+		)
+		const reported = Arr.flatMap(group, (spanId) => {
+			const cost = costs.get(spanId)
+			return cost === undefined ? [] : [cost]
+		})
 		for (const spanId of group) {
 			if (spanId === representative) continue
 			keptTokens.delete(spanId)
@@ -615,10 +557,9 @@ function collapseObservations(
  * do not already cover, or it reported none, nor did any span above it, and
  * its parent is not a model call — so a failed call still counts once, while
  * a gateway's provider attempt under its generation (OpenRouter's `provider
- * attempt N`, whether or not the generation reported) and an SDK's
- * `generateText` over its `doGenerate` do not. Calls sharing a response id
- * are one call, represented by the observation whose usage claim was kept so
- * the per-model table finds its tokens.
+ * attempt N`, whether or not the generation reported) does not. Calls sharing
+ * a response id are one call, represented by the observation whose usage
+ * claim was kept so the per-model table finds its tokens.
  */
 function countedLlmCalls(
 	spans: readonly AiSessionSpan[],
@@ -627,10 +568,10 @@ function countedLlmCalls(
 	costsBySpan: ReadonlyMap<string, number>,
 ): readonly AiSessionSpan[] {
 	const reportsUsage = (span: AiSessionSpan) =>
-		(spanTokenBuckets(span)?.total ?? 0) > 0 || (spanCost(span) ?? 0) > 0
+		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.mapleCost ?? 0) > 0
 	const claimed = (span: AiSessionSpan) =>
 		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
-	const deepest = spans.filter((span) => {
+	const deepest = Arr.filter(spans, (span) => {
 		if (!isLlmCall(span)) return false
 		if (reportsUsage(span)) return claimed(span)
 		const seen = new Set<string>([span.spanId])
@@ -660,7 +601,7 @@ function countedLlmCalls(
 /** The spans `work.llmCalls` counts, in start order: for a reading that needs
  *  one span per model call rather than every observation of it. */
 export function sessionLlmCalls(spans: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const usage = countableUsageSpans(spans, byId)
 	return countedLlmCalls(spans, byId, usage.bySpan, usage.costs)
 }
@@ -675,7 +616,7 @@ function chargeToNearestReporter<T>(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	reported: ReadonlyMap<string, T>,
 ): Map<string, { readonly own: T; readonly beneath: T[] }> {
-	const claimed = new Map([...reported].map(([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
+	const claimed = new Map(Arr.map([...reported], ([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
 	for (const [spanId, span] of byId) {
 		const value = reported.get(spanId)
 		if (value === undefined) continue
@@ -711,28 +652,15 @@ function costBySpan(
 	const bySpan = new Map<string, number>()
 	const reported = new Map<string, number>()
 	for (const span of spans) {
-		const cost = spanCost(span)
+		const cost = span.genAi.mapleCost
 		if (cost === 0) bySpan.set(span.spanId, 0)
 		if (cost !== undefined && cost > 0) reported.set(span.spanId, cost)
 	}
 
 	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
-		const excess = Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0))
-		bySpan.set(spanId, keptClaim(byId, spanId, beneath) ? excess : 0)
+		bySpan.set(spanId, Math.max(0, own - Arr.reduce(beneath, 0, (sum, c) => sum + c)))
 	}
 	return bySpan
-}
-
-/** Whether a reporter keeps its claim above the reporters charged to it: a
- *  leaf does, a model-call wrapper does, any other wrapper does not — see
- *  `countableUsageSpans`. */
-function keptClaim(
-	byId: ReadonlyMap<string, AiSessionSpan>,
-	spanId: string,
-	beneath: readonly unknown[],
-): boolean {
-	const span = byId.get(spanId)
-	return beneath.length === 0 || (span !== undefined && isLlmCall(span))
 }
 
 function sumCosts(costs: Iterable<number>): number {
@@ -766,8 +694,10 @@ function excessTokens(reported: SessionTokenTotals, counted: SessionTokenTotals)
  * next one; a reporter that outlives that boundary covers more than one turn.
  */
 function isSessionLevelReporter(span: AiSessionSpan, turns: readonly SessionTurn[]): boolean {
-	const next = turns.find((turn) => turn.startMs > spanStartMs(span))
-	return next !== undefined && spanEndMs(span) > next.startMs
+	return Option.match(
+		Arr.findFirst(turns, (turn) => turn.startMs > spanStartMs(span)),
+		{ onNone: () => false, onSome: (next) => spanEndMs(span) > next.startMs },
+	)
 }
 
 /**
@@ -794,20 +724,23 @@ export interface SessionTurnUsage {
  * on every call beneath it, so the two have to be counted together.
  */
 export function countTurnUsage(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTurnUsage {
-	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(turn.spans, (span) => [span.spanId, span]))
 	const { bySpan, costs } = countableUsageSpans(turn.spans, byId)
 	// Walked over the deduplicated map rather than `turn.spans`: the session-level
 	// test needs the span, and a page-overlapping read can repeat a row.
-	const counted = [...byId.values()].filter((span) => !isSessionLevelReporter(span, turns))
-	const reported = counted.flatMap((span) => costs.get(span.spanId) ?? [])
+	const counted = Arr.filter([...byId.values()], (span) => !isSessionLevelReporter(span, turns))
+	const reported = Arr.flatMap(counted, (span) => {
+		const cost = costs.get(span.spanId)
+		return cost === undefined ? [] : [cost]
+	})
 	return {
 		tokens: sumTokens(
-			counted.flatMap((span) => {
+			Arr.flatMap(counted, (span) => {
 				const tokens = bySpan.get(span.spanId)
 				return tokens === undefined ? [] : [tokens]
 			}),
 		),
-		cost: reported.length > 0 ? reported.reduce((sum, value) => sum + value, 0) : undefined,
+		cost: reported.length > 0 ? Arr.reduce(reported, 0, (sum, value) => sum + value) : undefined,
 	}
 }
 
@@ -817,26 +750,23 @@ function classifyTokenReporting(
 	byId: ReadonlyMap<string, AiSessionSpan>,
 	turns: readonly SessionTurn[],
 ): SessionTokenReporting {
-	const reporters = [...byId.values()].filter((span) => usage.bySpan.has(span.spanId))
+	const reporters = Arr.filter([...byId.values()], (span) => usage.bySpan.has(span.spanId))
 	if (reporters.length === 0) return "none"
-	if (reporters.every((span) => isSessionLevelReporter(span, turns))) {
+	if (Arr.every(reporters, (span) => isSessionLevelReporter(span, turns))) {
 		return "session-level"
 	}
 	return usage.rolledUp ? "roll-up" : "per-call"
 }
 
 function sumTokens(totals: readonly SessionTokenTotals[]): SessionTokenTotals {
-	return totals.reduce(
-		(sum, tokens) => ({
-			input: sum.input + tokens.input,
-			cacheRead: sum.cacheRead + tokens.cacheRead,
-			cacheWrite: sum.cacheWrite + tokens.cacheWrite,
-			output: sum.output + tokens.output,
-			reasoning: sum.reasoning + tokens.reasoning,
-			total: sum.total + tokens.total,
-		}),
-		EMPTY_TOKENS,
-	)
+	return Arr.reduce(totals, EMPTY_TOKENS, (sum, tokens) => ({
+		input: sum.input + tokens.input,
+		cacheRead: sum.cacheRead + tokens.cacheRead,
+		cacheWrite: sum.cacheWrite + tokens.cacheWrite,
+		output: sum.output + tokens.output,
+		reasoning: sum.reasoning + tokens.reasoning,
+		total: sum.total + tokens.total,
+	}))
 }
 
 /**
@@ -867,46 +797,16 @@ function modelUsage(
 		if (cost !== undefined) entry.costs.push(cost)
 	}
 
-	return [...byModel]
-		.map(([model, entry]) => ({
-			model,
-			llmCalls: entry.llmCalls,
-			tokens: sumTokens(entry.tokens),
-			// A model whose calls reported no cost reads as unpriced rather than
-			// free — the session total may still be non-zero from another model.
-			cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
-		}))
-		.sort((a, b) => b.llmCalls - a.llmCalls || b.tokens.total - a.tokens.total)
-}
-
-/**
- * The tool calls the session made, in start order. On a span the ingest
- * gateway stamped, its verdict alone (`maple_ai.tool_call`, what the list
- * sums): the copy a call paused for a human's approval leaves is stamped no
- * call by its framework's explicit mark, and nothing is merged.
- *
- * The spans ingested before the gateway stamped them keep the old merge until
- * they age out of the 30-day TTL: a call paused for a human leaves a tool span
- * that recorded no result and did not fail, and the resumed turn opens
- * another under the same `gen_ai.tool.call.id` that carries the result on its
- * attributes (Strands), so the paused copy is dropped when a later copy with a
- * result exists. Two calls that merely share an id (parallel lanes, a provider
- * numbering its calls per turn) both carry results, and a session captured
- * without payloads keeps every span.
- */
-function countedToolCalls(ordered: readonly AiSessionSpan[]): readonly AiSessionSpan[] {
-	const tools = ordered.filter(isCountedToolCall)
-	const recorded = (span: AiSessionSpan) => (span.genAi.toolCallResult ?? undefined) !== undefined
-	const resumedAt = new Map<string, number>()
-	for (const span of tools) {
-		const callId = span.genAi.toolCallId
-		if (callId !== undefined && callId !== "" && recorded(span)) resumedAt.set(callId, spanStartMs(span))
-	}
-	return tools.filter((span) => {
-		if (span.genAi.mapleLlmCall !== undefined) return true
-		const resumed = resumedAt.get(span.genAi.toolCallId ?? "")
-		return resumed === undefined || resumed <= spanStartMs(span) || recorded(span) || spanFailed(span)
-	})
+	return Arr.map([...byModel], ([model, entry]) => ({
+		model,
+		llmCalls: entry.llmCalls,
+		tokens: sumTokens(entry.tokens),
+		// A model whose calls reported no cost reads as unpriced rather than
+		// free — the session total may still be non-zero from another model.
+		cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
+	})).sort((a, b) =>
+		b.llmCalls !== a.llmCalls ? b.llmCalls - a.llmCalls : b.tokens.total - a.tokens.total,
+	)
 }
 
 /**
@@ -945,30 +845,35 @@ function toolUsage(
 	}
 
 	return (
-		[...byName]
-			.map(([name, entry]) => ({
-				name,
-				calls: entry.events.length,
-				failed: entry.events.filter((event) => event.failed).length,
-				description: entry.description,
-				totalMs: entry.events.reduce((total, event) => total + event.durationMs, 0),
-				slowestMs: Math.max(...entry.events.map((event) => event.durationMs)),
-				events: entry.events,
-			}))
+		Arr.map([...byName], ([name, entry]) => ({
+			name,
+			calls: entry.events.length,
+			failed: Arr.filter(entry.events, (event) => event.failed).length,
+			description: entry.description,
+			totalMs: Arr.reduce(entry.events, 0, (total, event) => total + event.durationMs),
+			slowestMs: Math.max(...Arr.map(entry.events, (event) => event.durationMs)),
+			events: entry.events,
+		}))
 			// Reach leads, time breaks the tie: what the agent kept going back to is
 			// the first thing a reader scans the ledger for.
-			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
+			.sort((a, b) =>
+				b.calls !== a.calls
+					? b.calls - a.calls
+					: b.totalMs !== a.totalMs
+						? b.totalMs - a.totalMs
+						: Str.localeCompare(b.name)(a.name),
+			)
 	)
 }
 
-/* -------------------------------------------------------------------------- */
-/* Work and failures                                                          */
-/* -------------------------------------------------------------------------- */
-
 function errorSignal(span: AiSessionSpan): string {
-	return [span.genAi.errorType, span.genAi.responseStatus, span.statusMessage]
-		.filter((value): value is string => value !== undefined && value !== "")
-		.join(" ")
+	return Arr.join(
+		Arr.filter(
+			[span.genAi.errorType, span.genAi.responseStatus, span.statusMessage],
+			(value): value is string => value !== undefined && value !== "",
+		),
+		" ",
+	)
 }
 
 /** The error a span reports, or nothing — for a span that did not fail, or one
@@ -990,10 +895,11 @@ function refusalSignal(span: AiSessionSpan): string | undefined {
  * written that way too.
  */
 export function finishReasonsIn(span: AiSessionSpan, keys: ReadonlySet<string>): string | undefined {
-	const reasons = (span.genAi.responseFinishReasons ?? [])
-		.map((reason) => reason.toLowerCase())
-		.filter((reason) => keys.has(reason.replace(/[^a-z0-9]/g, "")))
-	return reasons.length === 0 ? undefined : reasons.join(",")
+	const reasons = Arr.filter(
+		Arr.map(span.genAi.responseFinishReasons ?? [], (reason) => Str.toLowerCase(reason)),
+		(reason) => keys.has(Str.replace(/[^a-z0-9]/g, "")(reason)),
+	)
+	return reasons.length === 0 ? undefined : Arr.join(reasons, ",")
 }
 
 /**
@@ -1010,7 +916,7 @@ export function shadowedAncestorIds(
 	spans: readonly AiSessionSpan[],
 	signalOf: (span: AiSessionSpan) => string | undefined,
 ): ReadonlySet<string> {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
 	const shadowed = new Set<string>()
 	for (const span of spans) {
 		const signal = signalOf(span)
@@ -1048,7 +954,7 @@ export function isProviderAttempt(span: AiSessionSpan): boolean {
 const RPC_SPAN_KINDS = new Set(["CLIENT", "SERVER", "PRODUCER", "CONSUMER"])
 
 function isRpcSpan(span: AiSessionSpan): boolean {
-	return RPC_SPAN_KINDS.has(span.spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase())
+	return RPC_SPAN_KINDS.has(Str.toUpperCase(Str.replace(/^SPAN_KIND_/i, "")(span.spanKind)))
 }
 
 /**
@@ -1059,8 +965,11 @@ function isRpcSpan(span: AiSessionSpan): boolean {
  * went wrong there.
  */
 function appSpanShadowedIds(spans: readonly AiSessionSpan[]): ReadonlySet<string> {
-	const byId = new Map(spans.map((span) => [span.spanId, span]))
-	const failedAi = spans.filter((span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span))
+	const byId = new Map(Arr.map(spans, (span) => [span.spanId, span]))
+	const failedAi = Arr.filter(
+		spans,
+		(span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span),
+	)
 	// Every ancestor of a failed AI span is shadowed from below.
 	const shadowed = new Set<string>()
 	for (const span of failedAi) {
@@ -1216,14 +1125,14 @@ const AGENT_LIMIT_PATTERN =
 	/\b(?:exceeded|reached) its ((?:[\w$.]+ ){0,6}?(?:duration (?:limit|budget)|limit|budget|allowance|bound|cap|duration))\b/i
 
 /** `duration limit`, `consecutive tool call failure limit`: the budget without its figure. */
-export function agentLimitName(text: string): string | undefined {
+function agentLimitName(text: string): string | undefined {
 	const match = AGENT_LIMIT_PATTERN.exec(text)?.[1]
 	if (match === undefined) return undefined
-	const words = match
-		.toLowerCase()
-		.split(" ")
-		.filter((word) => !/^[\d$.]/.test(word) && word !== "microdollar")
-	return words.length === 0 ? undefined : words.join(" ")
+	const words = Arr.filter(
+		Str.split(" ")(Str.toLowerCase(match)),
+		(word) => !/^[\d$.]/.test(word) && word !== "microdollar",
+	)
+	return words.length === 0 ? undefined : Arr.join(words, " ")
 }
 
 function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
@@ -1233,7 +1142,7 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		return { kind: "contextExceeded", label: "context_length_exceeded" }
 	}
 
-	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const raw = Str.slice(0, CLASSIFIED_TEXT_CHARS)(rawFailureText(span) ?? "")
 	const text = stripFailurePrefixes(raw)
 	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
 	// Only an agent run is stopped on a budget; a tool's own `limit` is its business.
@@ -1295,7 +1204,7 @@ function countFailures(events: readonly SessionFailureEvent[]): SessionFailureCo
 }
 
 /** Events sharing a label, counted, busiest first. */
-export function groupFailures(events: readonly SessionFailureEvent[]): readonly SessionFailureGroup[] {
+function groupFailures(events: readonly SessionFailureEvent[]): readonly SessionFailureGroup[] {
 	const groups = new Map<string, SessionFailureGroup>()
 	for (const event of events) {
 		const existing = groups.get(event.label)
@@ -1305,12 +1214,10 @@ export function groupFailures(events: readonly SessionFailureEvent[]): readonly 
 			count: (existing?.count ?? 0) + 1,
 		})
 	}
-	return [...groups.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+	return [...groups.values()].sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.label)(a.label),
+	)
 }
-
-/* -------------------------------------------------------------------------- */
-/* How one call reads                                                         */
-/* -------------------------------------------------------------------------- */
 
 /** A $0.0004 session printed "$0.00" reads as "measured, and it was free".
  *  Shared by the overview's rails, the span expansion's meta strip and the
@@ -1348,22 +1255,18 @@ export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): r
 
 	const buckets = options?.usage === false ? undefined : spanTokenBuckets(span)
 	if (buckets !== undefined && buckets.total > 0) parts.push(tokenFlowLabel(buckets))
-	const cost = options?.usage === false ? undefined : spanCost(span)
+	const cost = options?.usage === false ? undefined : span.genAi.mapleCost
 	if (cost !== undefined) parts.push(formatCost(cost))
 	const ttftMs = spanTtftMs(span)
 	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)
 	const finish = span.genAi.responseFinishReasons
-	if (finish !== undefined && finish.length > 0) parts.push(`stop ${finish.join(", ")}`)
+	if (finish !== undefined && finish.length > 0) parts.push(`stop ${Arr.join(finish, ", ")}`)
 	return parts
 }
 
 export function callMetaLine(span: AiSessionSpan, options?: CallMetaOptions): string {
-	return callMetaParts(span, options).join(" · ")
+	return Arr.join(callMetaParts(span, options), " · ")
 }
-
-/* -------------------------------------------------------------------------- */
-/* Small collection helpers                                                   */
-/* -------------------------------------------------------------------------- */
 
 function distinctInOrder(values: readonly (string | undefined)[]): readonly string[] {
 	const seen: string[] = []
@@ -1377,5 +1280,8 @@ function distinctInOrder(values: readonly (string | undefined)[]): readonly stri
 function byFrequency(values: readonly string[]): readonly string[] {
 	const counts = new Map<string, number>()
 	for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
-	return [...counts].sort((a, b) => b[1] - a[1]).map(([value]) => value)
+	return Arr.map(
+		[...counts].sort((a, b) => b[1] - a[1]),
+		([value]) => value,
+	)
 }

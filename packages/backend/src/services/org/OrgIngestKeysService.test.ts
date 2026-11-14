@@ -1,4 +1,4 @@
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	Cause,
@@ -12,7 +12,7 @@ import {
 	String as Str,
 } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { hashIngestKey } from "@maple/db"
+import { hashIngestKey } from "../../platform/credential-tokens"
 import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import type { OrgIngestKeyRow } from "@maple/db/tables"
@@ -25,7 +25,7 @@ import {
 	makeStatementRecorder,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
@@ -307,6 +307,10 @@ describe("OrgIngestKeysService", () => {
 			)
 
 			assert.isTrue(Exit.isFailure(exit))
+			assert.include(
+				Cause.pretty(Exit.isFailure(exit) ? exit.cause : Cause.empty),
+				"MAPLE_INGEST_KEY_ENCRYPTION_KEY",
+			)
 		}),
 	)
 
@@ -354,7 +358,7 @@ describe("OrgIngestKeysService", () => {
 	it.effect("getOrCreateMany resolves every org with one SELECT and creates only missing rows", () => {
 		const testDb = createTestDb(trackedDbs)
 		const user = asUserId("user_a")
-		const seededOrgs = ["org_a", "org_b", "org_c"].map(asOrgId)
+		const seededOrgs = Arr.map(["org_a", "org_b", "org_c"], asOrgId)
 		const newOrg = asOrgId("org_d")
 		const orgs = [...seededOrgs, newOrg]
 		const coldBatch = makeStatementRecorder()
@@ -384,7 +388,7 @@ describe("OrgIngestKeysService", () => {
 				Arr.map(seededOrgs, (orgId) => keys.get(orgId)?.publicKey),
 				Arr.map(seeded, (response) => response.publicKey),
 			)
-			assert.isTrue(keys.get(newOrg)?.publicKey.startsWith("maple_pk_"))
+			assert.isTrue(Str.startsWith("maple_pk_")(keys.get(newOrg)?.publicKey ?? ""))
 		})
 	})
 })

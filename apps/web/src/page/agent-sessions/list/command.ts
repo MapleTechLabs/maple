@@ -1,3 +1,5 @@
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import { AI_SESSION_DETAILS_MAX_SESSIONS } from "@maple/domain/http"
 import {
 	getAiSessionDetails,
@@ -6,16 +8,16 @@ import {
 	listAiSessions,
 } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolTotals } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Option, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Option, Order, Queue, Schema, Stream, Array as Arr } from "effect"
 import { Command, Mount } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { AgentSessionsSearch } from "../../../route/search"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import { detectModels } from "../kit/detected-models"
 import { virtualize } from "../kit/virtualize"
 import { countedFilters, filterInputs, PAGE_SIZE, presentInputs, rankedOf } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { RangeKey } from "./model"
 
 /** The list's window: no picker, the last week (`AGENT_SESSIONS_WINDOW`). */
@@ -40,11 +42,8 @@ const fetchPage = (search: typeof AgentSessionsSearch.Type, window: TimeWindow, 
 	listAiSessions({
 		data: { ...presentInputs(filterInputs(search, window)), limit: PAGE_SIZE, offset },
 	}).pipe(
-		Effect.mapBoth({
-			onSuccess: (response) => ({ data: response.data, ranked: rankedOf(response) }),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response) => ({ data: response.data, ranked: rankedOf(response) })),
+		settled,
 	)
 
 const pageArgs = { key: Schema.String, search: AgentSessionsSearch, window: TimeWindow }
@@ -82,15 +81,18 @@ export const FetchDetails = Command.define("FetchAgentSessionDetails", {
 	execute: ({ detailsKey, search, window, rows }) =>
 		getAiSessionDetails({
 			data: {
-				startTime: Arr.map(rows, (row) => row.startTime).reduce((a, b) => (a < b ? a : b)),
-				endTime: Arr.map(rows, (row) => row.endTime).reduce((a, b) => (a < b ? b : a)),
+				startTime: Arr.reduce(rows, rows[0]?.startTime ?? "", (min, row) =>
+					Order.min(Order.String)(min, row.startTime),
+				),
+				endTime: Arr.reduce(rows, rows[0]?.endTime ?? "", (max, row) =>
+					Order.max(Order.String)(max, row.endTime),
+				),
 				sessionIds: Arr.map(rows, (row) => row.sessionId),
 				...countedFilters(filterInputs(search, window)),
 			},
 		}).pipe(
-			Effect.mapBoth({ onSuccess: (response) => response.data, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) =>
+			Effect.map((response) => response.data),
+			settleTo((result) =>
 				Message.CompletedFetchDetails({
 					detailsKey,
 					sessionIds: Arr.map(rows, (row) => row.sessionId),
@@ -107,9 +109,7 @@ export const FetchFacets = Command.define("FetchAgentSessionsFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -118,21 +118,18 @@ export const FetchDistributions = Command.define("FetchAgentSessionsDistribution
 	messages: [Message.CompletedFetchDistributions],
 	execute: ({ key, window }) =>
 		getAiSessionsDistributions({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchDistributions({ key, result })),
+			settleTo((result) => Message.CompletedFetchDistributions({ key, result })),
 		),
 })
 
-/** `useAgentSessionsTabCounts`: the window's sessions and the tools called in it. */
+/** The tab counts: the window's sessions and the tools called in it. */
 export const FetchTabSessions = Command.define("FetchAgentSessionsTabSessions", {
 	args: { key: Schema.String, window: TimeWindow },
 	messages: [Message.CompletedFetchTabSessions],
 	execute: ({ key, window }) =>
 		getAiToolTotals({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (totals) => totals.allSessions, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTabSessions({ key, result })),
+			Effect.map((totals) => totals.allSessions),
+			settleTo((result) => Message.CompletedFetchTabSessions({ key, result })),
 		),
 })
 
@@ -141,9 +138,8 @@ export const FetchTabTools = Command.define("FetchAgentSessionsTabTools", {
 	messages: [Message.CompletedFetchTabTools],
 	execute: ({ key, window }) =>
 		getAiToolBreakdowns({ data: window }).pipe(
-			Effect.mapBoth({ onSuccess: (breakdowns) => breakdowns.tools.length, onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTabTools({ key, result })),
+			Effect.map((breakdowns) => breakdowns.tools.length),
+			settleTo((result) => Message.CompletedFetchTabTools({ key, result })),
 		),
 })
 
@@ -158,7 +154,7 @@ export const DebounceSearch = Command.define("DebounceAgentSessionsSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
 export const DebounceRange = Command.define("DebounceAgentSessionsRange", {
@@ -168,12 +164,7 @@ export const DebounceRange = Command.define("DebounceAgentSessionsRange", {
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.ElapsedRangeDebounce({ range, version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAgentSessionsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAgentSessionsReloadSpin", Message.CompletedReloadSpin)
 
 const afterPaint = <A>(message: A) =>
 	Effect.callback<A>((resume) => {
@@ -183,13 +174,13 @@ const afterPaint = <A>(message: A) =>
 		return Effect.sync(() => cancelAnimationFrame(handle))
 	})
 
-/** The filter rail is in the DOM; its `useDetectedModels` reads as it renders. */
+/** The filter rail is in the DOM, so its models can be detected. */
 export const MountFilterRail = Mount.define("MountAgentSessionsFilterRail", {
 	messages: [Message.MountedFilterRail],
 	execute: () => Effect.succeed(Message.MountedFilterRail()),
 })
 
-/** The loaded table is on screen: its details read follows (`useInfiniteAiSessions`' effect). */
+/** The loaded table is on screen: its details read follows. */
 export const MountTable = Mount.define("MountAgentSessionsTable", {
 	messages: [Message.PaintedTable],
 	execute: () => afterPaint(Message.PaintedTable()),
@@ -205,7 +196,7 @@ export type RowClick = Readonly<{
 	rowUrl: string | null
 }>
 
-/** The row's `onClick`: a plain primary click outside a link opens the row's session. */
+/** A plain primary click on a row, outside a link, opens the row's session. */
 export const openedRowUrl = (click: RowClick): Option.Option<string> =>
 	click.button === 0 &&
 	!click.metaKey &&
@@ -248,7 +239,7 @@ export const MountRowClicks = Mount.defineStream("MountAgentSessionsRowClicks", 
 		),
 })
 
-/** `useVirtualizer` over the page scroller, on the table body: measured rows, index keys. */
+/** The virtualizer over the page scroller, on the table body: measured rows, index keys. */
 export const VirtualizeSessions = Mount.defineStream("VirtualizeAgentSessions", {
 	messages: [Message.ChangedListWindow],
 	execute: ({ element, viewStateChanges }) =>
@@ -272,7 +263,7 @@ export const LoadSignalPresence = Command.define("LoadAgentSessionsSignalPresenc
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `ReachEndSentinel`: the 1px marker nearing view (400px margin) asks for the next page. */
+/** The 1px marker nearing view (400px margin) asks for the next page. */
 export const MountReachEnd = Mount.defineStream("MountAgentSessionsReachEnd", {
 	messages: [Message.ReachedListEnd],
 	execute: ({ element }) =>

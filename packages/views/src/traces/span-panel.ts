@@ -1,4 +1,4 @@
-// The span detail panel: `SpanDetailPanel` as a Submodel the page re-creates per selection. Its
+// The span detail panel as a Submodel the page re-creates per selection. Its
 // reads go through `TraceSource`; the infrastructure tab is the app's to provide.
 export { Message, OutMessage } from "./span-panel/message"
 export { Model } from "./span-panel/model"

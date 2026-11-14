@@ -23,6 +23,15 @@ const WAREHOUSE_CURSOR_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})
 
 const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
 
+/** A cursor's parts as a tuple of exactly `N` strings. */
+export type CursorParts<
+	N extends number,
+	Acc extends ReadonlyArray<string> = readonly [],
+> = Acc["length"] extends N ? Acc : CursorParts<N, readonly [...Acc, string]>
+
+const hasLength = <N extends number>(parts: ReadonlyArray<string>, length: N): parts is CursorParts<N> =>
+	parts.length === length
+
 /**
  * Decode a keyset cursor into its parts.
  *
@@ -35,17 +44,21 @@ const decodeCursorParts = Schema.decodeUnknownResult(CursorPartsJson)
  * forged cursor was therefore a 500 rather than the 400 this function already
  * knows how to return.
  */
-export const decodeKeysetCursor = (value: string | undefined, prefix: string, length: number) => {
+export const decodeKeysetCursor = <N extends number>(
+	value: string | undefined,
+	prefix: string,
+	length: N,
+) => {
 	const invalid = Effect.fail(V2CursorInvalid.make(undefined, { param: "cursor" }))
-	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
+	if (value === undefined) return Effect.succeed<CursorParts<N> | undefined>(undefined)
 	if (!Str.startsWith(`${prefix}_`)(value)) return invalid
 	const decoded = Base64Url.decodeString(Str.slice(prefix.length + 1)(value))
 	if (Result.isFailure(decoded)) return invalid
 	const parsed = decodeCursorParts(decoded.success)
 	if (Result.isFailure(parsed)) return invalid
 	const parts = parsed.success
-	if (parts.length !== length) return invalid
 	const at = parts[0]
+	if (!hasLength(parts, length)) return invalid
 	if (at === undefined || !WAREHOUSE_CURSOR_TIME.test(at) || Option.isNone(parseUtc(at))) return invalid
-	return Effect.succeed<ReadonlyArray<string> | undefined>(parts)
+	return Effect.succeed<CursorParts<N> | undefined>(parts)
 }

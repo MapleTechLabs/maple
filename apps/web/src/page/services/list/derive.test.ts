@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { healthSummary, serviceHealthRowKey } from "./derive"
-import type { IncidentCause, ServiceRow } from "./model"
+import type { ServiceRow } from "./model"
+import type { HealthIncident } from "../../kit/service-health"
 
 const service = (serviceName: string): ServiceRow => ({
 	serviceName,
@@ -18,7 +19,7 @@ const service = (serviceName: string): ServiceRow => ({
 	spanCount: 10,
 })
 
-const incident = (groupKey: string, signalType: IncidentCause["signalType"]): IncidentCause => ({
+const incident = (groupKey: string, signalType: HealthIncident["signalType"]): HealthIncident => ({
 	status: "open",
 	groupKey,
 	severity: "critical",

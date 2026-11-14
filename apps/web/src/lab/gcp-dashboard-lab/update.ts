@@ -1,6 +1,6 @@
 import { OrgId } from "@maple/domain"
 import { DashboardDocument, DashboardVariableSchema } from "@maple/domain/http"
-import { Option, Result, Schema } from "effect"
+import { Array as Arr, Option, Result, Schema } from "effect"
 import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext, PageOutMessage, PageReturn } from "../../page/contract"
 import { Message } from "../../page/dashboards/view/message"
@@ -31,48 +31,45 @@ const then = (acc: Step, next: Step): Step => ({
 })
 
 const answer = (model: Model, commands: Commands): Step =>
-	commands.reduce<Step>(
-		(acc, command) => {
-			if (command.name === "FetchDashboardVariableOptions")
-				return Option.match(decodeOptionsArgs(command.args), {
+	Arr.reduce(commands, { model, commands: [] } satisfies Step, (acc: Step, command): Step => {
+		if (command.name === "FetchDashboardVariableOptions")
+			return Option.match(decodeOptionsArgs(command.args), {
+				onNone: () => acc,
+				onSome: ({ name, key }) =>
+					then(
+						acc,
+						step(
+							acc.model,
+							Message.CompletedFetchVariableOptions({
+								name,
+								key,
+								result: Result.succeed(OPTIONS.get(name) ?? []),
+							}),
+						),
+					),
+			})
+		if (command.name === "SaveDashboardVariables")
+			return Option.match(
+				Option.all([decodeSaveArgs(command.args), Option.fromNullishOr(acc.model.document)]),
+				{
 					onNone: () => acc,
-					onSome: ({ name, key }) =>
+					onSome: ([{ variables }, document]) =>
 						then(
 							acc,
 							step(
 								acc.model,
-								Message.CompletedFetchVariableOptions({
-									name,
-									key,
-									result: Result.succeed(OPTIONS.get(name) ?? []),
+								Message.UpdatedDashboard({
+									orgId: CONTEXT.orgId,
+									maybeDocument: Option.some(
+										new DashboardDocument({ ...document, variables }),
+									),
 								}),
 							),
 						),
-				})
-			if (command.name === "SaveDashboardVariables")
-				return Option.match(
-					Option.all([decodeSaveArgs(command.args), Option.fromNullishOr(acc.model.document)]),
-					{
-						onNone: () => acc,
-						onSome: ([{ variables }, document]) =>
-							then(
-								acc,
-								step(
-									acc.model,
-									Message.UpdatedDashboard({
-										orgId: CONTEXT.orgId,
-										maybeDocument: Option.some(
-											new DashboardDocument({ ...document, variables }),
-										),
-									}),
-								),
-							),
-					},
-				)
-			return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
-		},
-		{ model, commands: [] },
-	)
+				},
+			)
+		return DROPPED.has(command.name) ? acc : { ...acc, commands: [...acc.commands, command] }
+	})
 
 /** A navigation the page asks for re-enters its own route. */
 const navigated = (model: Model, outMessage: PageOutMessage | undefined): PageReturn<Model, Message> => {

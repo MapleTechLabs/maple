@@ -74,7 +74,7 @@ export const hasActiveFilters = (search: Search): boolean =>
 	!!search.search ||
 	!!search.traceId
 
-/** `LogSearchInput`: one box for text and trace ids (`parseLogSearch`), `/` focuses it. */
+/** One box for text and trace ids (`parseLogSearch`), `/` focuses it. */
 const logSearchInput = (h: HtmlBuilder<Message>, value: string, help: Popover.Model): Html =>
 	h.div(
 		[h.Class("pb-3")],
@@ -145,7 +145,7 @@ const loadedRail = (
 					}),
 			facetSection(h, model, "Service", "services", facets.services, {
 				isSearchable: true,
-				// `serviceColorMap` covers the facet's services only: a selected unknown one has no swatch.
+				// Only the facet's services have a colour: a selected unknown one has no swatch.
 				colorOf: (name) =>
 					Arr.some(facets.services, (option) => option.name === name)
 						? getServiceColor(name)
@@ -155,7 +155,7 @@ const loadedRail = (
 	])
 }
 
-/** `LogsFilterSidebar`; its Mount asks for the facets once the rail is actually rendered. */
+/** Its Mount asks for the facets once the rail is actually rendered. */
 export const filtersRail = (h: HtmlBuilder<Message>, model: Model, pinnedNamespace: string | null): Html =>
 	h.div(
 		[h.Class("contents"), h.OnMount(MountFilterRail())],

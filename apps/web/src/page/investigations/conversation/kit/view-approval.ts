@@ -11,8 +11,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
 
-// The dashboard tools' approval summaries.
-// Icons and labels follow the widget-type registry (`widgetTypeFor`): `chart` and unknown kinds read as a line.
+// The dashboard tools' approval summaries. Icons and labels follow the widget-type registry:
+// `chart` and unknown kinds read as a line.
 
 const ICONS = new Map<string, IconName>([
 	["line", "ChartLineIcon"],
@@ -71,12 +71,13 @@ const parsedArray = (value: unknown): ReadonlyArray<unknown> | undefined => {
 }
 
 const widgetRow = <M>(h: HtmlBuilder<M>, widget: Widget): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex items-center gap-2 rounded-md border border-border-subtle bg-background/60 px-2 py-1.5",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "2",
+			align: "center",
+			className: "rounded-md border border-border-subtle bg-surface-well px-2 py-1.5",
+		},
 		[
 			icon(h, vizIcon(widget.visualization), {
 				className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }),
@@ -121,8 +122,8 @@ const section = <M>(h: HtmlBuilder<M>, title: string, children: ReadonlyArray<Ht
 
 const fieldChip = <M>(h: HtmlBuilder<M>, label: string, value: string): Html =>
 	badge(h, { variant: "outline", className: "gap-1 font-normal" }, [
-		h.span([h.Class("text-muted-foreground")], [label]),
-		h.span([h.Class("font-mono")], [value]),
+		typography(h, { tone: "muted" }, [label]),
+		typography(h, { mono: true }, [value]),
 	])
 
 const heading = <M>(
@@ -133,7 +134,7 @@ const heading = <M>(
 ): Html =>
 	hstack(h, { gap: "2" }, [
 		icon(h, glyph, { className: typographyClass({ tone: "muted", className: "size-3.5 shrink-0" }) }),
-		h.span([h.Class("text-sm font-semibold")], title),
+		typography(h, { size: "sm", weight: "medium" }, title),
 		...(dashboardId === null
 			? []
 			: [
@@ -143,7 +144,7 @@ const heading = <M>(
 				]),
 	])
 
-/** `deriveWidgetsFromCreate`: the widgets of a `dashboard_json`, else of a `widgets` list. */
+/** The widgets of a `dashboard_json`, else of a `widgets` list. */
 const widgetsOf = (input: Readonly<Record<string, unknown>>): ReadonlyArray<Widget> => {
 	const dashboard = safeParseJson(input.dashboard_json)
 	if (dashboard.ok) return Arr.flatMap(asArray(asRecord(dashboard.value)?.widgets) ?? [], normalizeWidget)
@@ -171,7 +172,7 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 				h.div(
 					[h.Class("min-w-0 flex-1")],
 					[
-						typography(h, { size: "sm", weight: "semibold", truncate: true, as: "div" }, [name]),
+						typography(h, { size: "sm", weight: "medium", truncate: true, as: "div" }, [name]),
 						...(innerName !== undefined && innerName !== name
 							? [
 									typography(h, { size: "2xs", tone: "muted", truncate: true, as: "div" }, [
@@ -210,13 +211,10 @@ const createDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 }
 
 const changeLine = <M>(h: HtmlBuilder<M>, label: string, value: string, valueClass?: string): Html =>
-	h.div(
-		[h.Class("text-xs")],
-		[
-			h.span([h.Class("text-muted-foreground")], [label]),
-			h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value]),
-		],
-	)
+	typography(h, { size: "xs", as: "div" }, [
+		typography(h, { tone: "muted" }, [label]),
+		h.span(valueClass === undefined ? [] : [h.Class(valueClass)], [value]),
+	])
 
 const updateDashboard = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 	const name = asString(obj.name)
@@ -288,7 +286,7 @@ const addWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 		[h.Class("space-y-3")],
 		[
 			heading(h, "PlusIcon", ["Add widget"], asString(obj.dashboard_id) ?? EMPTY_VALUE),
-			panel(h, { tone: "background", className: "border-border-subtle bg-background/60 p-2" }, [
+			panel(h, { tone: "background", className: "border-border-subtle bg-surface-well p-2" }, [
 				hstack(h, { gap: "2" }, [
 					icon(h, vizIcon(visualization), {
 						className: "size-4 shrink-0 text-muted-foreground",
@@ -357,15 +355,12 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 					: h.ul(
 							[h.Class("space-y-1 text-xs")],
 							Arr.map(changes, ({ label, detail }) =>
-								h.li(
-									[h.Class("flex gap-2")],
-									[
-										h.span([h.Class("font-medium")], [label]),
-										...(detail === undefined
-											? []
-											: [typography(h, { tone: "muted", truncate: true }, [detail])]),
-									],
-								),
+								hstack(h, { gap: "2", align: "stretch", as: "li" }, [
+									typography(h, { weight: "medium" }, [label]),
+									...(detail === undefined
+										? []
+										: [typography(h, { tone: "muted", truncate: true }, [detail])]),
+								]),
 							),
 						),
 			]),
@@ -376,17 +371,14 @@ const updateWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
 const removeWidget = <M>(h: HtmlBuilder<M>, obj: Input): Html =>
 	hstack(h, { gap: "2", align: "start" }, [
 		icon(h, "TrashIcon", { className: "mt-0.5 size-3.5 shrink-0 text-destructive" }),
-		h.div(
-			[h.Class("text-xs leading-relaxed")],
-			[
-				"Remove widget ",
-				inlineCode(h, {}, [asString(obj.widget_id) ?? EMPTY_VALUE]),
-				" from dashboard",
-				" ",
-				inlineCode(h, {}, [asString(obj.dashboard_id) ?? EMPTY_VALUE]),
-				".",
-			],
-		),
+		typography(h, { size: "xs", as: "div", className: "leading-relaxed" }, [
+			"Remove widget ",
+			inlineCode(h, {}, [asString(obj.widget_id) ?? EMPTY_VALUE]),
+			" from dashboard",
+			" ",
+			inlineCode(h, {}, [asString(obj.dashboard_id) ?? EMPTY_VALUE]),
+			".",
+		]),
 	])
 
 const reorderWidgets = <M>(h: HtmlBuilder<M>, obj: Input): Html => {
@@ -438,7 +430,7 @@ const SUMMARIES = new Map<string, <M>(h: HtmlBuilder<M>, obj: Input) => Html>([
 	["reorder_dashboard_widgets", reorderWidgets],
 ])
 
-/** `ApprovalSummary`'s registered renderers; `null` for a tool that falls back to the key-value list. */
+/** The registered approval summaries; `null` for a tool that falls back to the key-value list. */
 export const dashboardSummary = <M>(h: HtmlBuilder<M>, toolName: string, input: unknown): Html | null => {
 	const summary = SUMMARIES.get(toolName)
 	return summary === undefined ? null : summary(h, asRecord(input) ?? {})

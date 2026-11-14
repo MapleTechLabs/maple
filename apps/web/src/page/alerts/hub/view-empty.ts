@@ -7,13 +7,11 @@ import { icon } from "@maple/views/ui/icon"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { alertsHref, createHref } from "../shared/links"
+import { alertsHref, createHref } from "../../kit/alert-links"
 import { ALERT_TEMPLATES, type AlertTemplate, type AlertTemplateId } from "../shared/templates"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Record as Rec } from "effect"
-
-// `AlertsEmptyState`: zero rules.
 
 const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string }>([
 	[
@@ -54,16 +52,16 @@ const TILE_TONE = new Map<AlertTemplateId, { glyph: string; hoverBorder: string 
 ])
 
 export type EmptyStateOptions<M> = Readonly<{
-	isAdmin: boolean
+	canEdit: boolean
 	hasDestinations: boolean
 	serviceName: string | undefined
-	/** `useOpenDestinationDialog()`: set on `/alerts` for admins; otherwise the button links to Routing. */
+	/** Set on `/alerts` for admins; otherwise the button links to Routing. */
 	onAddDestination: M | undefined
 }>
 
 export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOptions<M>): Html => {
 	const needsDestination = !options.hasDestinations
-	const description = !options.isAdmin
+	const description = !options.canEdit
 		? "Ask an admin to create the first alert rule."
 		: needsDestination
 			? "A rule opens an incident when a signal crosses a threshold, and sends it somewhere. Pick the somewhere first."
@@ -78,39 +76,37 @@ export const alertsEmptyState = <M>(h: HtmlBuilder<M>, options: EmptyStateOption
 				]),
 				emptyDescription(h, [description]),
 			]),
-			...(options.isAdmin ? [adminSteps(h, options, needsDestination)] : [docsLink(h, "alertRules")]),
+			...(options.canEdit ? [adminSteps(h, options, needsDestination)] : [docsLink(h, "alertRules")]),
 		],
 		"py-12",
 	)
 }
 
 const adminSteps = <M>(h: HtmlBuilder<M>, options: EmptyStateOptions<M>, needsDestination: boolean): Html =>
-	h.div(
-		[h.Class("flex w-full max-w-3xl flex-col items-center gap-4")],
-		[
-			...(needsDestination ? [destinationStep(h, options.onAddDestination), ruleStepHeader(h)] : []),
-			h.div(
-				[h.Class("grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3")],
-				Arr.map(ALERT_TEMPLATES, (template) => templateTile(h, template, options.serviceName)),
+	vstack(h, { gap: "4", align: "center", className: "w-full max-w-3xl" }, [
+		...(needsDestination ? [destinationStep(h, options.onAddDestination), ruleStepHeader(h)] : []),
+		h.div(
+			[h.Class("grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3")],
+			Arr.map(ALERT_TEMPLATES, (template) => templateTile(h, template, options.serviceName)),
+		),
+		emptyActions(h, [
+			linkButton(
+				h,
+				{ variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) },
+				[icon(h, "PlusIcon"), "Start from scratch"],
 			),
-			emptyActions(h, [
-				linkButton(
-					h,
-					{ variant: "ghost", size: "sm", href: createHref({ serviceName: options.serviceName }) },
-					[icon(h, "PlusIcon"), "Start from scratch"],
-				),
-				docsLink(h, "alertRules"),
-			]),
-		],
-	)
+			docsLink(h, "alertRules"),
+		]),
+	])
 
 const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined): Html =>
-	h.div(
-		[
-			h.Class(
-				"flex w-full items-center gap-3 rounded-md border border-primary-a4 bg-primary/[0.06] p-3 text-left",
-			),
-		],
+	hstack(
+		h,
+		{
+			gap: "3",
+			align: "center",
+			className: "w-full rounded-md border border-primary-a4 bg-primary-a1 p-3 text-left",
+		},
 		[
 			stepBadge(h, 1),
 			h.div(
@@ -124,7 +120,7 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 				],
 			),
 			onAddDestination === undefined
-				? linkButton(h, { size: "sm", href: alertsHref({ tab: "routing" }) }, [
+				? linkButton(h, { size: "sm", href: alertsHref({}, "routing") }, [
 						icon(h, "PaperPlaneIcon"),
 						"Add destination",
 					])
@@ -136,22 +132,22 @@ const destinationStep = <M>(h: HtmlBuilder<M>, onAddDestination: M | undefined):
 	)
 
 const ruleStepHeader = <M>(h: HtmlBuilder<M>): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-3 px-1 text-left")],
-		[
-			stepBadge(h, 2),
-			typography(h, { size: "sm", weight: "medium", as: "p" }, ["Create a rule"]),
-			typography(h, { size: "xs", tone: "muted" }, ["Start from a common one:"]),
-		],
-	)
+	hstack(h, { gap: "3", align: "center", className: "w-full px-1 text-left" }, [
+		stepBadge(h, 2),
+		typography(h, { size: "sm", weight: "medium", as: "p" }, ["Create a rule"]),
+		typography(h, { size: "xs", tone: "muted" }, ["Start from a common one:"]),
+	])
 
 const stepBadge = <M>(h: HtmlBuilder<M>, n: number): Html =>
-	h.span(
-		[
-			h.Class(
-				"flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-a2 font-mono text-xs font-semibold text-primary",
-			),
-		],
+	hstack(
+		h,
+		{
+			align: "center",
+			justify: "center",
+			as: "span",
+			className:
+				"size-6 shrink-0 rounded-full bg-primary-a2 font-mono text-xs font-semibold text-primary",
+		},
 		[String(n)],
 	)
 
@@ -175,7 +171,7 @@ const templateTile = <M>(
 				),
 				typography(h, { size: "sm", weight: "medium" }, [template.title]),
 			]),
-			inlineCode(h, { className: "self-start text-2xs text-muted-foreground" }, [template.summary]),
+			inlineCode(h, { size: "2xs", tone: "muted", className: "self-start" }, [template.summary]),
 		],
 	)
 }
@@ -183,7 +179,7 @@ const templateTile = <M>(
 const svgAttrs = <M>(h: HtmlBuilder<M>, entries: Readonly<Record<string, string>>) =>
 	Arr.map(Rec.toEntries(entries), ([name, value]) => h.Attribute(name, value))
 
-/** `QuietMonitor`: a steady signal below the dashed threshold a rule would place. */
+/** A steady signal below the dashed threshold a rule would place. */
 const quietMonitor = <M>(h: HtmlBuilder<M>): Html =>
 	h.div(
 		[h.Class("relative w-full max-w-[300px] overflow-hidden rounded-md border bg-card/50 p-4")],

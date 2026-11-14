@@ -1,18 +1,18 @@
 import type { ErrorIssueDetailResponse, ErrorIssueDocument } from "@maple/domain/http"
 import { warehouseDateTimeToIso } from "@maple/query-engine"
-import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
-import { AlertIncidentId } from "@maple/domain/primitives"
+import { errorIssueDetailFromV2 } from "../../../data/error-issues"
+import { AlertIncidentId } from "@maple/primitives"
 import type { V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { DateTime, Option, Schema, String as Str } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../data/time-range"
-import type { ErrorIssueSearch } from "../../../route/search"
+import type { ErrorIssueSearch, ISSUE_TABS } from "../../../route/search"
 import type { DetailQuery } from "./command"
 import type { Model } from "./model"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 export type Search = typeof ErrorIssueSearch.Type
 
-/** The detail page's default window (`DEFAULT_PRESET`). */
 export const DEFAULT_PRESET = "12h"
 /** How many buckets the detail chart gets, and the endpoint's bounds on `bucket_seconds`. */
 const CHART_BUCKETS = 48
@@ -20,11 +20,13 @@ const MIN_BUCKET_SECONDS = 60
 const MAX_BUCKET_SECONDS = 86_400
 const SAMPLE_LIMIT = 50
 
-export type Tab = "overview" | "occurrences" | "activity"
+export type Tab = (typeof ISSUE_TABS)[number]
 export const tabOf = (search: Search): Tab => search.tab ?? "overview"
 
-const warehouseMs = (value: string): number | null =>
-	Option.getOrNull(Option.map(DateTime.make(Str.replace(" ", "T")(value) + "Z"), DateTime.toEpochMillis))
+const warehouseMs = (value: string): number | null => {
+	const ms = toEpochMs(value)
+	return Number.isNaN(ms) ? null : ms
+}
 
 export type ChartWindow = Readonly<{
 	startMs: number
@@ -33,7 +35,7 @@ export type ChartWindow = Readonly<{
 	bucketSeconds: number
 }>
 
-/** `chartWindow`: the window and its bucket width, 48 buckets clamped to what the endpoint takes. */
+/** The window and its bucket width: 48 buckets clamped to what the endpoint takes. */
 export const chartWindowOf = (window: TimeWindow): ChartWindow => {
 	const startMs = warehouseMs(window.startTime)
 	const endMs = warehouseMs(window.endTime)
@@ -46,7 +48,7 @@ export const chartWindowOf = (window: TimeWindow): ChartWindow => {
 	return { startMs: startMs ?? 0, endMs: endMs ?? 0, bucketMs: bucketSeconds * 1000, bucketSeconds }
 }
 
-/** `detailQuery`: the v2 contract takes ISO, the window is warehouse format. */
+/** The v2 contract takes ISO; the window is warehouse format. */
 export const detailQueryOf = (window: TimeWindow): DetailQuery => ({
 	start_time: warehouseDateTimeToIso(window.startTime),
 	end_time: warehouseDateTimeToIso(window.endTime),
@@ -56,12 +58,11 @@ export const detailQueryOf = (window: TimeWindow): DetailQuery => ({
 
 /** Names the window the fact strip's "Events" lane is counting over. */
 export const windowLabel = (search: Search): string =>
-	search.startTime && !search.timePreset ? "selected range" : (search.timePreset ?? DEFAULT_PRESET)
+	search.startTime && !search.timePreset ? "this window" : (search.timePreset ?? DEFAULT_PRESET)
 
 export const detailOf = (model: Model): Option.Option<ErrorIssueDetailResponse> =>
 	Option.map(AsyncData.getData(model.detail.data), errorIssueDetailFromV2)
 
-/** The header's title: type, else label. */
 export const headlineOf = (issue: ErrorIssueDocument): string =>
 	issue.exceptionType || issue.errorLabel || "Unlabelled error"
 
@@ -75,7 +76,7 @@ export const pullRequestsOf = (model: Model) => dataOr(model.pullRequests.data, 
 export const latestVerificationOf = (model: Model) =>
 	dataOr(model.verifications.data, null)?.verifications[0] ?? null
 
-/** `issueHeadline`: what the issue is called, for a human and for an agent. */
+/** What the issue is called, for a human and for an agent. */
 const issueHeadline = (issue: ErrorIssueDocument): string =>
 	issue.exceptionType && issue.exceptionMessage
 		? `${issue.exceptionType}: ${issue.exceptionMessage}`
@@ -83,7 +84,7 @@ const issueHeadline = (issue: ErrorIssueDocument): string =>
 
 const decodeAlertIncidentId = Schema.decodeUnknownOption(AlertIncidentId)
 
-/** `latestIncidentId` and `startInvestigation`'s subject: the open incident if there is one, else freeform. */
+/** The investigation's subject: the open incident if there is one, else freeform. */
 const subjectOf = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParams["subject"] => {
 	const { issue, incidents } = detail
 	const title = issueHeadline(issue)
@@ -105,13 +106,15 @@ const subjectOf = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParam
 			}),
 		})
 	}
-	const incident = incidents.find((candidate) => candidate.status === "open") ?? incidents[0]
+	const incident = Option.getOrElse(
+		Arr.findFirst(incidents, (candidate) => candidate.status === "open"),
+		() => incidents[0],
+	)
 	return incident === undefined
 		? freeform
 		: { type: "incident", incident_kind: "error", incident_id: incident.id, issue_id: issue.id }
 }
 
-/** The `investigations.create` payload `startInvestigation` sends. */
 export const investigationPayload = (detail: ErrorIssueDetailResponse): V2InvestigationCreateParams => {
 	const { issue } = detail
 	const title = issueHeadline(issue)

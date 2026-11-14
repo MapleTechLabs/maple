@@ -13,8 +13,10 @@ import {
 	String as Str,
 } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { DashboardNotFoundError, DashboardPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { AlertRuleId } from "@maple/primitives"
+import { alertChartId } from "@maple/backend/platform/signed-ids"
 import { DashboardPublicId, DashboardTemplatePublicId, MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -23,7 +25,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -32,17 +34,19 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
+	WarehouseServiceStubLayer,
 } from "./v2-test-support"
+import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { HttpV2DashboardsLive } from "./dashboards.http"
+import { HttpV2SharePublicLive } from "./share.http"
+import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 
 const createdDbs: TestDb[] = []
 const encodeDashboardPublicId = Schema.encodeUnknownSync(DashboardPublicId)
-const USER_OTHER = Schema.decodeUnknownSync(UserId)("user_other_org")
+const USER_OTHER = Schema.decodeSync(UserId)("user_other_org")
 afterEach(() => cleanupTestDbs(createdDbs))
 
 const testConfig = () =>
@@ -66,6 +70,37 @@ type Harness = ReturnType<typeof makeHarness>
 
 /** How the next `DashboardPersistenceService.get` should fail, if at all. */
 type DashboardGetFailure = "missing" | "unavailable"
+
+/**
+ * The share group over a widget-data fake that echoes the variables it was handed, so a test can
+ * see which ones a share let through, and an empty organization directory: the self-hosted shape,
+ * whose preview card carries no byline.
+ */
+const SharePublicLive = HttpV2SharePublicLive.pipe(
+	Layer.provide(
+		Layer.succeed(DashboardWidgetDataService, {
+			variableOptions: () => Effect.succeed({}),
+			resolve: () => Effect.die("share widget data is not exercised by this harness"),
+			resolveBatch: (_orgId, document) =>
+				Effect.succeed({
+					results: [],
+					variables: Rec.fromEntries(
+						Arr.map(document.variables ?? [], (variable) => [variable.name, ""]),
+					),
+				}),
+		}),
+	),
+	Layer.provide(
+		Layer.succeed(OrganizationService, {
+			retrieve: (orgId) =>
+				Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
+			create: () => Effect.die("organization creation is not exercised by this harness"),
+			chooseRegion: () => Effect.die("organization regions are not exercised by this harness"),
+			delete: () => Effect.die("organization deletion is not exercised by this harness"),
+		}),
+	),
+	Layer.provide(Layer.succeed(ShareRateLimiter, { check: () => Effect.succeed("allowed" as const) })),
+)
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
@@ -110,13 +145,20 @@ const makeHarness = () => {
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.dashboards, MapleApiV2.groups.sharePublic),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				// Real widget evaluation over the inert warehouse and query engine below.
+				HttpV2DashboardsLive.pipe(
+					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+				),
+				SharePublicLive,
+			),
+		),
+		Layer.provide(Layer.merge(WarehouseServiceStubLayer, TelemetryServiceStubsLayer)),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -126,14 +168,21 @@ const makeHarness = () => {
 		disableLogger: true,
 	})
 	const runtime = ManagedRuntime.make(servicesLive)
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_dashboard_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_dashboard_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_dashboard_e2e")
+	const USER = Schema.decodeSync(UserId)("user_dashboard_e2e")
 
-	const bootstrapKey = (scopes?: ReadonlyArray<string>) =>
+	// `roles` makes it a key minted for a person, which acts with that person's org roles.
+	const bootstrapKey = (scopes?: ReadonlyArray<string>, roles?: ReadonlyArray<string>) =>
 		runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(ORG, USER, { name: "dashboard-test", scopes })
+				return yield* service.create(ORG, USER, {
+					name: "dashboard-test",
+					scopes,
+					...(roles === undefined
+						? undefined
+						: { metadataJson: { source: "maple_cli", roles, deviceName: "laptop" } }),
+				})
 			}),
 		)
 
@@ -238,6 +287,8 @@ describe("v2 dashboards over HTTP", () => {
 		expect(detail.status).toBe(200)
 		expect(detail.body.snapshot.object).toBe("dashboard")
 		expect(detail.body.snapshot.name).toBe("Operations")
+		// The CAS counter belongs to the live row, never to a history snapshot.
+		expect("version" in detail.body.snapshot).toBe(false)
 
 		const restored = await harness.request(
 			"POST",
@@ -259,6 +310,104 @@ describe("v2 dashboards over HTTP", () => {
 			type: "not_found_error",
 			code: "dashboard_not_found",
 		})
+		await harness.dispose()
+	})
+
+	it("refuses a PATCH based on a stale expected_version, and keeps last-write-wins without one", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		const path = `/v2/dashboards/${created.body.id}`
+
+		// Two editors both loaded version 1: the first save lands, the second is a 409.
+		const first = await harness.request("PATCH", path, key.secret, { name: "first", expected_version: 1 })
+		expect(first.status).toBe(200)
+		const stale = await harness.request("PATCH", path, key.secret, {
+			name: "second",
+			expected_version: 1,
+		})
+		expect(stale.status).toBe(409)
+		expect(stale.body.error.code).toBe("dashboard_concurrent_update")
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("first")
+
+		const blind = await harness.request("PATCH", path, key.secret, { name: "third" })
+		expect(blind.status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).body.name).toBe("third")
+		await harness.dispose()
+	})
+
+	it("hands out the version an API client sends back as expected_version", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "v1",
+			widgets: [],
+		})
+		expect(created.body.version).toBe(1)
+		const path = `/v2/dashboards/${created.body.id}`
+
+		const retrieved = await harness.request("GET", path, key.secret)
+		const listed = await harness.request("GET", "/v2/dashboards", key.secret)
+		expect(listed.body.data[0].version).toBe(retrieved.body.version)
+
+		const saved = await harness.request("PATCH", path, key.secret, {
+			name: "edited",
+			expected_version: retrieved.body.version,
+		})
+		expect(saved.status).toBe(200)
+		expect(saved.body.version).toBe(retrieved.body.version + 1)
+		expect((await harness.request("GET", path, key.secret)).body.version).toBe(saved.body.version)
+
+		const resent = await harness.request("PATCH", path, key.secret, {
+			name: "stale",
+			expected_version: retrieved.body.version,
+		})
+		expect(resent.status).toBe(409)
+		await harness.dispose()
+	})
+
+	it("pages the list newest first through an opaque cursor", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["dashboards:write"])
+		const names = ["a", "b", "c"]
+		for (const name of names) {
+			expect(
+				(await harness.request("POST", "/v2/dashboards", key.secret, { name, widgets: [] })).status,
+			).toBe(200)
+		}
+
+		const first = await harness.request("GET", "/v2/dashboards?limit=2", key.secret)
+		expect(first.body).toMatchObject({ object: "list", has_more: true })
+		const second = await harness.request(
+			"GET",
+			`/v2/dashboards?limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+			key.secret,
+		)
+		expect(second.body).toMatchObject({ has_more: false, next_cursor: null })
+		const seen = Arr.map(
+			[...first.body.data, ...second.body.data],
+			(dashboard: { name: string }) => dashboard.name,
+		)
+		expect([...seen].sort()).toEqual(names)
+
+		// A foreign scheme, an id that is not base64url, and a timestamp past the safe range.
+		const tampered = [
+			"off_2",
+			"dsh_1_A",
+			`dsh_${Str.repeat(16)("z")}_${Str.split("_")(first.body.next_cursor)[2]}`,
+		]
+		for (const cursor of tampered) {
+			const invalid = await harness.request(
+				"GET",
+				`/v2/dashboards?cursor=${encodeURIComponent(cursor)}`,
+				key.secret,
+			)
+			expect(invalid.status).toBe(400)
+			expect(invalid.body.error.param).toBe("cursor")
+		}
 		await harness.dispose()
 	})
 
@@ -354,6 +503,30 @@ describe("v2 dashboards over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_scope",
 		})
+		await harness.dispose()
+	})
+
+	it("lets an analyst build, publish and delete a dashboard", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(undefined, ["org:analyst"])
+
+		const created = await harness.request("POST", "/v2/dashboards", key.secret, {
+			name: "Signup funnel",
+			widgets: [],
+		})
+		expect(created.status).toBe(200)
+		const path = `/v2/dashboards/${created.body.id}`
+
+		const renamed = await harness.request("PATCH", path, key.secret, { name: "Signup funnel, weekly" })
+		expect(renamed.status).toBe(200)
+		expect(renamed.body.name).toBe("Signup funnel, weekly")
+
+		const shared = await harness.request("PUT", `${path}/share`, key.secret, { mode: "public" })
+		expect(shared.status).toBe(200)
+		expect(typeof shared.body.token).toBe("string")
+
+		expect((await harness.request("DELETE", path, key.secret)).status).toBe(200)
+		expect((await harness.request("GET", path, key.secret)).status).toBe(404)
 		await harness.dispose()
 	})
 
@@ -569,6 +742,44 @@ describe("v2 dashboard widget data", () => {
 		// The harness query engine refuses to run, so this tile fails, retryably, on its own.
 		expect(emptyQuery).toMatchObject({ widget_id: "empty-query", ok: false, reason: "failed" })
 		expect(unknown).toMatchObject({ widget_id: "nope", ok: false, reason: "not_found" })
+		await harness.dispose()
+	})
+
+	it("serves a widget only to keys that can read the telemetry it queries", async () => {
+		const harness = makeHarness()
+		const writer = await harness.bootstrapKey(["dashboards:write"])
+		const created = await harness.request("POST", "/v2/dashboards", writer.secret, {
+			name: "Logs",
+			widgets: [
+				{
+					id: "log-volume",
+					visualization: "chart",
+					data_source: {
+						kind: "query",
+						result_shape: "timeseries",
+						queries: [{ id: "a", name: "A", aggregation: "count", data_source: "logs" }],
+					},
+					display: {},
+					layout: { x: 0, y: 0, w: 6, h: 4 },
+				},
+			],
+		})
+		expect(created.status).toBe(200)
+		const read = (token: string) =>
+			harness.request("POST", `/v2/dashboards/${created.body.id}/widget_data`, token, {
+				requests: [{ widget_id: "log-volume" }],
+				time_range: { type: "relative", value: "1h" },
+			})
+
+		const reader = await harness.bootstrapKey(["dashboards:read"])
+		const refused = await read(reader.secret)
+		expect(refused.status).toBe(200)
+		expect(refused.body.results[0]).toMatchObject({ ok: false, reason: "unsupported" })
+		expect(refused.body.results[0].message).toContain("logs:read")
+
+		// An admitted key reaches the harness query engine, which refuses to run: retryable.
+		const logsReader = await harness.bootstrapKey(["dashboards:read", "logs:read"])
+		expect((await read(logsReader.secret)).body.results[0]).toMatchObject({ ok: false, reason: "failed" })
 		await harness.dispose()
 	})
 
@@ -865,6 +1076,49 @@ describe("v2 dashboard shares", () => {
 		await harness.dispose()
 	})
 
+	it("hides a share's token from a key that cannot read the telemetry it serves", async () => {
+		const harness = makeHarness()
+		const readOnly = await harness.bootstrapKey(["dashboards:read"])
+		const reader = await harness.bootstrapKey([
+			"dashboards:read",
+			"traces:read",
+			"logs:read",
+			"metrics:read",
+		])
+		const writer = await harness.bootstrapKey(SHARE_SCOPES)
+		const id = await createDashboard(harness, writer.secret)
+		const widgetId = "w-1"
+		const board = await harness.request("PUT", `/v2/dashboards/${id}/share`, writer.secret, {
+			mode: "public",
+		})
+		await harness.request("PUT", `/v2/dashboards/${id}/widgets/${widgetId}/share`, writer.secret, {
+			mode: "public",
+		})
+
+		const reads = (key: string) =>
+			Promise.all([
+				harness.request("GET", `/v2/dashboards/${id}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/widgets/${widgetId}/share`, key),
+				harness.request("GET", `/v2/dashboards/${id}/shares`, key),
+			])
+
+		const [hiddenBoard, hiddenWidget, hiddenList] = await reads(readOnly.secret)
+		for (const share of [hiddenBoard.body, hiddenWidget.body, ...hiddenList.body]) {
+			expect(share.token).toBeUndefined()
+			expect(typeof share.token_suffix).toBe("string")
+		}
+
+		const [shownBoard, shownWidget, shownList] = await reads(reader.secret)
+		expect(shownBoard.body.token).toBe(board.body.token)
+		expect(typeof shownWidget.body.token).toBe("string")
+		expect(Arr.map(shownList.body, (share: { token?: string }) => typeof share.token)).toEqual([
+			"string",
+			"string",
+		])
+
+		await harness.dispose()
+	})
+
 	it("enforces dashboard scopes on share management", async () => {
 		const harness = makeHarness()
 		const readOnly = await harness.bootstrapKey(["dashboards:read"])
@@ -897,7 +1151,7 @@ describe("v2 dashboard shares", () => {
 		const foreign = await harness.runtime.runPromise(
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
-				return yield* service.create(Schema.decodeUnknownSync(OrgId)("org_other"), USER_OTHER, {
+				return yield* service.create(Schema.decodeSync(OrgId)("org_other"), USER_OTHER, {
 					name: "other-org",
 					scopes: ["dashboards:write"],
 				})
@@ -1277,9 +1531,35 @@ describe("v2 share previews", () => {
 	})
 })
 
+describe("v2 alert chart images", () => {
+	it("answers a warehouse that cannot serve the series with a retryable 503, not a missing chart", async () => {
+		const harness = makeHarness()
+		const chartId = alertChartId(
+			{
+				orgId: harness.ORG,
+				ruleId: Schema.decodeSync(AlertRuleId)("00000000-0000-4000-8000-000000000001"),
+				groupKey: null,
+				fromMs: Date.UTC(2026, 7, 18, 13, 0),
+				toMs: Date.UTC(2026, 7, 18, 14, 0),
+				title: "Error rate",
+				unit: "percent",
+				threshold: 5,
+				breachSide: "above",
+			},
+			"maple-test-share-secret",
+		)
+
+		// The harness warehouse refuses every query, as an outage or timeout would.
+		const response = await harness.request("POST", "/v2/share/alert-chart", undefined, { chartId })
+		expect(response.status).toBe(503)
+		expect(response.body.error._tag).toBe("@maple/http/errors/SharePersistenceError")
+		await harness.dispose()
+	})
+})
+
 describe("v2 raw SQL widgets", () => {
 	const TELEMETRY = ["traces:read", "logs:read", "metrics:read"]
-	const SQL = "SELECT count() FROM logs WHERE $__orgFilter"
+	const SQL = "SELECT count() FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"
 	const rawSqlWidget = (sql: string) => ({
 		id: "sql",
 		visualization: "table",
@@ -1337,7 +1617,7 @@ describe("v2 raw SQL widgets", () => {
 			harness.request("PATCH", `/v2/dashboards/${id}`, token, body)
 		expect((await patch(writer.secret, { name: "Renamed" })).status).toBe(200)
 		const changed = await patch(writer.secret, {
-			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter")],
+			widgets: [rawSqlWidget("SELECT * FROM traces WHERE $__orgFilter AND $__timeFilter(Timestamp)")],
 		})
 		expect(changed.status).toBe(403)
 

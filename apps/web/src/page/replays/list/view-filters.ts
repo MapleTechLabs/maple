@@ -4,7 +4,7 @@ import {
 	SESSION_TAG_DOTS,
 	SESSION_TAG_LABELS,
 	SESSION_TAG_ORDER,
-} from "../../../components/replays/session-tags"
+} from "../kit/session-tags"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -34,7 +34,7 @@ type FacetItem = ReplaysFacets["services"][number]
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** `withSelected`: a selected value missing from its own list stays checkable (count 0). */
+/** A selected value missing from its own list stays checkable (count 0). */
 const withSelected = (
 	options: ReadonlyArray<FacetItem>,
 	selected: string | undefined,
@@ -57,16 +57,15 @@ const tagOptions = (facets: ReplaysFacets, selected: ReadonlyArray<string>): Rea
 	const counted = Arr.filter(
 		Arr.map(SESSION_TAG_ORDER, (tag) => ({
 			name: tag,
-			count: facets.tags.find((item) => item.name === tag)?.count ?? 0,
+			count: Option.match(
+				Arr.findFirst(facets.tags, (item) => item.name === tag),
+				{ onNone: () => 0, onSome: (item) => item.count },
+			),
 		})),
 		(option) => option.count > 0,
 	)
-	return selected.reduce<ReadonlyArray<FilterOption>>(
-		(options, tag) =>
-			Arr.some(options, (option) => option.name === tag)
-				? options
-				: [{ name: tag, count: 0 }, ...options],
-		counted,
+	return Arr.reduce<string, ReadonlyArray<FilterOption>>(selected, counted, (options, tag) =>
+		Arr.some(options, (option) => option.name === tag) ? options : [{ name: tag, count: 0 }, ...options],
 	)
 }
 
@@ -102,7 +101,7 @@ const rangeSection = (
 	range: Range,
 	config: Readonly<{
 		title: string
-		hint?: string
+		description?: string
 		presets: ReadonlyArray<RangePreset>
 		facets?: ReplaysFacets
 	}>,
@@ -111,7 +110,7 @@ const rangeSection = (
 	const prefix = isDuration ? "replays-duration" : "replays-active"
 	return rangeFilterSection(h, {
 		title: config.title,
-		hint: config.hint,
+		description: config.description,
 		unit: "s",
 		minValue: isDuration ? model.search.durationMin : model.search.activeMin,
 		maxValue: isDuration ? model.search.durationMax : model.search.activeMax,
@@ -138,7 +137,7 @@ const rangeSection = (
 	})
 }
 
-/** `TextFilter`: identity is typed, committed on Enter; the × clears the applied filter. */
+/** Identity is typed, committed on Enter; the × clears the applied filter. */
 const textFilter = (
 	h: HtmlBuilder<Message>,
 	config: Readonly<{
@@ -220,7 +219,7 @@ const loadedRail = (h: HtmlBuilder<Message>, model: Model, facets: ReplaysFacets
 					}),
 					rangeSection(h, model, "active", {
 						title: "Active time",
-						hint: "Excludes idle gaps",
+						description: "Excludes idle gaps.",
 						presets: ACTIVE_TIME_PRESETS,
 					}),
 					singleSection(h, model, "Page visited", "page", lists.pages),

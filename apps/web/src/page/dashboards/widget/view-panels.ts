@@ -28,9 +28,6 @@ import { lookupField } from "../../kit/autocomplete-lookups"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `FunnelQueryPanel` and `PathsQueryPanel`, each
-// with the Run preview row the editor page puts under it.
-
 type H = HtmlBuilder<Message>
 
 /** A lookup's rows; the event names fall back to the provider's when it asked first (no counts). */

@@ -36,7 +36,6 @@ export function parseAttributes(value: string | null | undefined): Record<string
 	return Option.getOrElse(parsed, (): Record<string, string> => ({}))
 }
 
-/** Map a raw hierarchy row into a branded `Span`. */
 export function transformSpan(raw: SpanHierarchyRow): Span {
 	return {
 		traceId: toTraceId(raw.traceId),
@@ -103,15 +102,17 @@ export function buildSpanTree(spans: Span[]): SpanNode[] {
 	}
 
 	for (const [missingParentId, children] of missingParentGroups) {
+		const [firstChild] = children
+		if (firstChild === undefined) continue
 		const placeholder: SpanNode = {
-			traceId: children[0].traceId,
+			traceId: firstChild.traceId,
 			spanId: toSpanId(missingParentId),
 			parentSpanId: "",
 			spanName: "Missing Span",
 			serviceName: "unknown",
 			spanKind: "SPAN_KIND_INTERNAL",
 			durationMs: 0,
-			startTime: children[0].startTime,
+			startTime: firstChild.startTime,
 			statusCode: "Unset",
 			statusMessage: "",
 			spanAttributes: {},
@@ -286,9 +287,8 @@ export function traceWallClockMs(spans: ReadonlyArray<Pick<Span, "startTime" | "
 }
 
 /**
- * Convenience: turn raw span-hierarchy rows into everything `TraceViewTabs`
- * needs — the flat span list, the root tree, total duration, the unique
- * service list, and the earliest start time.
+ * Raw span-hierarchy rows into everything the trace views need: the flat span list,
+ * the root tree, total duration, the unique service list, and the earliest start time.
  */
 export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDetail {
 	const spans = dedupeBySpanId(Arr.map(rows, transformSpan))
@@ -302,7 +302,7 @@ export function buildTraceDetail(rows: ReadonlyArray<SpanHierarchyRow>): TraceDe
 			),
 		),
 	)
-	let traceStartTime = spans.length > 0 ? spans[0].startTime : new Date().toISOString()
+	let traceStartTime = spans[0]?.startTime ?? new Date().toISOString()
 	let earliestEpoch = new Date(traceStartTime).getTime()
 	for (const span of spans) {
 		const epoch = new Date(span.startTime).getTime()

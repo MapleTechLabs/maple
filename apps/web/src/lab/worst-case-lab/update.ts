@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { replaceUrl } from "foldkit/navigation"
@@ -27,14 +28,14 @@ export const worstCaseFlags: Effect.Effect<Flags> = Effect.all({
 	),
 })
 
-/** `RulesTab` runs against a hub Model; its org is a fixture's, its admin rights on. */
+/** The rules tab runs against a hub Model; its org is a fixture's, its admin rights on. */
 const LAB_CONTEXT: PageContext = {
 	orgId: Schema.decodeSync(OrgId)("org_lab_worst_case"),
 	pinnedNamespace: null,
 	timeZone: "UTC",
 }
 
-/** `onModeChange`: `navigate({ search: { data: mode }, replace: true })`. */
+/** Replace the URL's `data` search with the mode. */
 export const ReplaceModeUrl = Command.define("ReplaceModeUrl", {
 	args: { mode: Schema.Literals(["demo", "worst"]) },
 	messages: [Message.CompletedReplaceUrl],
@@ -80,7 +81,7 @@ export const init = (flags: Flags): Return => {
 			...traceBoxes,
 			hostSort: { key: "cpuPct", dir: "desc" },
 			hiddenSeries: [],
-			hub: { ...hub, isAdmin: true, nowMs: flags.nowMs },
+			hub: { ...hub, grants: Policy.allPermissions, nowMs: flags.nowMs },
 			logs: LogsStream.init("wc-logs", logRows(flags.mode, flags.timeZone)),
 			attributes: AttributesPanel.init("wc-attributes"),
 			openTools: [],
@@ -91,7 +92,7 @@ export const init = (flags: Flags): Return => {
 	}
 }
 
-/** Only `RulesTab`'s own state moves: the search, show-all, row menus and broken logos. */
+/** Only the rules tab's own state moves: the search, show-all, row menus and broken logos. */
 const isRulesLocal = (message: Message & { _tag: "GotRulesMessage" }): boolean => {
 	const inner = message.message
 	return (
@@ -174,7 +175,7 @@ export const update = (model: Model, message: Message): Return =>
 				),
 			}
 		},
-		// `onLogClick` is a no-op and the attribute card has no filters, so out-messages are dropped.
+		// A log click does nothing and the attribute card has no filters, so out-messages are dropped.
 		GotLogsMessage: ({ message: inner }) => {
 			const next = LogsStream.update(model.logs, inner)
 			return {

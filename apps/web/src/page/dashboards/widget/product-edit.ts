@@ -5,9 +5,8 @@ import { StepEdit, StepScope } from "../../kit/funnel-steps"
 import { ListDataSource } from "./editor-state"
 
 /**
- * The edits of the list, funnel and paths panels (`ListConfigPanel`, `FunnelQueryPanel`,
- * `PathsQueryPanel` and the `FunnelStepBuilder` they mount), as data for one Message.
- * `scope` names the step list: the funnel's steps, or the paths widget's single anchor.
+ * The edits of the list, funnel and paths panels, as data for one Message. `scope` names the step
+ * list: the funnel's steps, or the paths widget's single anchor.
  */
 
 export const ListColumnText = Schema.Literals(["field", "header"])

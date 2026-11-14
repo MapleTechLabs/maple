@@ -1,8 +1,8 @@
 import { type OrgId, type Source, SourcePersistenceError } from "@maple/domain/http"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 import { AwsConnections, GcpConnectors, ScrapeTargets, Sources, VcsInstallations } from "@maple/db/tables"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { Context, Effect, Layer } from "effect"
+import { Array as Arr, Context, Effect, Layer, Option } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
@@ -111,7 +111,9 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 								),
 							),
 						)
-						return scripts.find((script) => script !== null) ?? null
+						return (
+							Option.getOrUndefined(Arr.findFirst(scripts, (script) => script !== null)) ?? null
+						)
 					}
 					case "aws": {
 						const connections = yield* awsConnectionsOf(orgId, source.id)
@@ -123,7 +125,9 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 								),
 							),
 						)
-						return scripts.find((script) => script !== null) ?? null
+						return (
+							Option.getOrUndefined(Arr.findFirst(scripts, (script) => script !== null)) ?? null
+						)
 					}
 					case "github": {
 						const installations = yield* installationsOf(orgId, source.id)
@@ -134,6 +138,8 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 						)
 						return null
 					}
+					default:
+						break
 				}
 				// The rest have one connection per org, disconnected only while it still sends as this source.
 				if (source.integrationId === null) return null
@@ -149,6 +155,9 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 						break
 					case "supabase":
 						yield* supabase.disconnect(orgId)
+						break
+					default:
+						// Push-only platforms have no connection to remove.
 						break
 				}
 				return null

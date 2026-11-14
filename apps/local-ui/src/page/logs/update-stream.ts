@@ -19,7 +19,7 @@ import type { UpdateReturn } from "./update"
 
 // The shared logs stream inside the page: rows in from the fetched pages, its intents out.
 
-/** Every loaded row, newest first (`logs.data?.pages.flat()`). */
+/** Every loaded row, newest first. */
 export const rowsOf = (model: Model): ReadonlyArray<LocalLog> =>
 	Option.match(AsyncData.getData(model.logs.data), {
 		onNone: () => [],
@@ -60,8 +60,8 @@ const columnOptionsOf = (logs: ReadonlyArray<LocalLog>): ReadonlyArray<ColumnOpt
 			counts.set(key, (counts.get(key) ?? 0) + 1),
 		),
 	)
-	return Arr.map([...counts], ([name, count]) => ({ name, count })).sort(
-		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	return Arr.map([...counts], ([name, count]) => ({ name, count })).sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name),
 	)
 }
 
@@ -113,7 +113,7 @@ export const loadMoreIfAtEnd = (model: Model, context: PageContext): UpdateRetur
 	}
 }
 
-/** `fetchNextPage` landed: the page joins the list if it is still the same query. */
+/** A next page landed: it joins the list if it is still the same query. */
 export const appendPage = (model: Model, key: string, page: ReadonlyArray<LocalLog>): Model => {
 	if (model.logs.key !== key) return { ...model, isFetchingNextPage: false }
 	return Option.match(AsyncData.getData(model.logs.data), {

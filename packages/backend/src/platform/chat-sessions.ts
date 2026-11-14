@@ -6,10 +6,9 @@
  * `ChatSessions` port, never off `env`.
  */
 import { chatSessionClient, type ChatSessionRpc } from "@maple/domain/chat-session-stub"
-import { parseMapleDeploymentEffect, resolveWorkerName } from "@maple/infra/cloudflare"
+import { resolveWorkerName, stageDeployment } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Stage } from "alchemy/Stage"
 import { Config, Context, Effect, Layer, Option } from "effect"
 import { ChatSessions } from "./bindings"
 
@@ -27,14 +26,15 @@ import { ChatSessions } from "./bindings"
  * stays rather than being cleaned up later and breaking whichever stage lagged behind. A
  * cross-script binding (`from`) ignores it.
  */
-export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionRpc>()(
+export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObject, ChatSessionRpc<unknown>>()(
 	"ChatSession",
 	{ transferredFrom: "api" },
 ) {}
 
 /** The namespace client alchemy hands out, as far as the port reads it. */
 export interface ChatSessionNamespace {
-	readonly getByName: (name: string) => ChatSessionRpc
+	/** alchemy decodes a remote failure as `unknown`; `chatSessionClient` maps it to `ChatSessionCallError`. */
+	readonly getByName: (name: string) => ChatSessionRpc<unknown>
 	readonly jurisdiction: (jurisdiction: "eu") => ChatSessionNamespace
 }
 
@@ -46,11 +46,9 @@ export interface ChatSessionNamespace {
  */
 const aiScriptName = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return ""
-	const rawStage = yield* Stage
-	const { stage, region } = yield* parseMapleDeploymentEffect(rawStage)
+	const { stage, region } = yield* stageDeployment
 	return resolveWorkerName("ai", stage, region)
-	// The root stack parses the same stage first and fails typed there.
-}).pipe(Effect.orDie)
+})
 
 /** Bind maple-ai's `ChatSession` from a Worker's init. */
 export const bindChatSessions = Effect.flatMap(aiScriptName, (scriptName) =>

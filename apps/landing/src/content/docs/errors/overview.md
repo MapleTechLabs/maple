@@ -37,7 +37,35 @@ The fingerprint combines five things:
 
 The environment is not part of the fingerprint, so the same bug in staging and production is one issue.
 
-A fingerprint becomes an issue after 3 occurrences. Until then it notifies nobody. A fingerprint that stays below 3 occurrences for 24 hours is dropped.
+### Set the grouping yourself
+
+When the automatic grouping splits one bug into several issues, or merges two, set a `maple.fingerprint` attribute on the error span or on its exception event. Every error in a service that carries the same value becomes one issue, whatever its stack or message. The type, message and stack still show on the issue as usual.
+
+```ts
+import { trace } from "@opentelemetry/api"
+
+const span = trace.getActiveSpan()
+span?.setAttribute("maple.fingerprint", "checkout-payment-declined")
+span?.recordException(error)
+```
+
+With Effect, annotate the span the error fails:
+
+```ts
+import { Effect } from "effect"
+
+const charge = Effect.gen(function* () {
+	yield* Effect.annotateCurrentSpan("maple.fingerprint", "checkout-payment-declined")
+	// ...
+})
+```
+
+- The value is scoped to the organization and the service: the same value in two services is two issues.
+- A value on the exception event wins over one on the span. Surrounding whitespace is ignored, and only the first 200 characters count. An empty or whitespace-only value counts as unset, so the span's value applies; with neither set, Maple groups the error automatically.
+- Use a fixed name for the failure, never an ID or other per-request value, or every occurrence becomes its own issue.
+- Adding the attribute starts a new issue for those errors; the issue they had before stops receiving occurrences.
+
+A new fingerprint becomes an issue on its first occurrence, usually within a minute of the error. This holds while your organization has opened fewer than 10 error issues in the last 24 hours. When several new fingerprints arrive in the same minute, they share the slots that are left, oldest first. Past that, as during a bad deploy or a missing migration that throws many different errors at once, a new fingerprint becomes an issue only after 3 occurrences, so a storm of one-off errors cannot bury the issues that matter. Until a fingerprint gets there it notifies nobody. A waiting fingerprint is only looked at again when it recurs, so it can wait even after slots free up. One that waits for 7 days without a new occurrence is dropped.
 
 Issues come from three sources. The **Source** filter names them:
 
@@ -69,7 +97,7 @@ A **Done** issue becomes **Regressed** when a new occurrence arrives more than 1
 
 ### Won't fix and snooze
 
-**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when it expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows **Snoozed until**.
+**Won't fix** suppresses an issue. With a snooze time, the issue returns to **Triage** when it expires. Set a snooze time with the `transition_error_issue` MCP tool (`snooze_until`). The issue page shows when the snooze ends.
 
 ### Fix verification
 
@@ -99,7 +127,7 @@ A lease lasts 30 minutes by default. Any action by the holder renews it. When it
 
 Severity is **Critical**, **High**, **Medium**, **Low**, or not set. Set it from the **Severity** select in the issue sidebar, or for several issues at once from the bulk bar. A severity you set by hand overrides one set by an agent or an alert rule.
 
-To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only organization admins can change this policy.
+To route issues to destinations by severity, open **Settings → Automation** and turn on **Severity escalation**. Pick destinations per severity and click **Save policy**. **Min. AI confidence** on each severity sets how confident an AI diagnosis must be to notify; a severity you set by hand bypasses it. Under **Policy simulator**, pick a severity, decision source and AI confidence, then click **Evaluate policy** to see what the saved policy would do. Escalation fires once per issue and severity level, and only upward. When a manual severity change would notify destinations, Maple asks you to confirm with **Change severity and notify**. Only engineers and admins can change this policy.
 
 ## Notifications
 
@@ -111,9 +139,9 @@ The error notification policy decides when Maple sends an issue to your [notific
 | Regression                | On      |
 | Incident resolved         | Off     |
 
-The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens: a new error becomes an issue after 3 occurrences whatever the policy says, so a first-seen notification needs at least 3 occurrences, or the minimum count when that is higher. The count is checked once, when the incident opens: an incident that opens with fewer occurrences sends no first-seen notification, even if more arrive later. For a regression the minimum count applies as set. No destinations are selected by default, so nothing is sent until you add one.
+The minimum occurrence count (`min_occurrence_count`, default 1) is compared with the number of occurrences an incident opens with. It does not change when an issue opens. With the default of 1, a new error notifies on its first occurrence. Once your organization has opened 10 error issues in the last 24 hours, new errors need 3 occurrences to become an issue whatever the policy says, so a first-seen notification then needs at least 3, or the minimum count when that is higher. The count is checked once, when the incident opens: an incident that opens with fewer occurrences sends no first-seen notification, even if more arrive later. For a regression the minimum count applies as set. No destinations are selected by default, so nothing is sent until you add one.
 
-The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Organization admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
+The Errors page has no screen for this policy. The `get_error_notification_policy` MCP tool reads it, including each destination's name and ID. Engineers and admins change it with `update_error_notification_policy`, which sets the destinations, the first-seen, regression, and resolve toggles, and the minimum count. Fields you leave out keep their value. `destination_ids` replaces the list: pass `[]` to clear it. An empty string is rejected rather than read as "no destinations".
 
 An incident opens when an issue fires with no open incident. It resolves after 30 minutes without new occurrences, or when the issue is marked **Done**.
 
@@ -138,7 +166,7 @@ Columns: **Error**, **Trend · 24h**, **Events**, **Service**, **Status**, and *
 
 - Sort by **Most recent** (default), **Most errors**, or **Severity**.
 - Filter by severity, and in the sidebar by **Regressed only**, **Service**, **Environment**, and **Source**.
-- Select rows to change **Severity** or **Move to** a new state in bulk.
+- Select rows to **Claim** them, change **Severity** or **Move to** a new state in bulk. **Merge** folds duplicate issues into the one you keep, which takes their occurrences; the others are archived.
 - Right-click a row for **Change status**, **Open in new tab**, **Copy link**, **Copy ID**, and **Copy agent prompt**.
 
 The list loads 50 issues at a time. Click **Load more** for the next page.
@@ -147,7 +175,7 @@ The list loads 50 issues at a time. Click **Load more** for the next page.
 
 The header shows the service, the error title, severity, state, and an **Open incident** marker while one is open. It has three tabs:
 
-- **Overview**: the **Culprit** (top stack frame) and **Fingerprint**; facts such as **Events · all time**, **First seen**, **Last seen**, and **Regressions**; an occurrence chart; and an **Incidents** table with each incident's status, reason (**First seen**, **Regression**, or **Manual**), and event count.
+- **Overview**: **What broke**, with the exception and where it was **Raised at** (the top stack frame); the **All time** event count, **First seen** and **Last seen**; an occurrence chart; and an **Incidents** table with each incident's status, reason (**First seen**, **Regression**, or **Manual**), and event count.
 - **Occurrences**: **Latest occurrences**, with time, service, message, and a link to each trace. Shown for issues from spans.
 - **Activity**: a timeline of state changes, claims, and comments. Add a comment with **Comment**. Markdown is supported.
 
@@ -156,9 +184,9 @@ The header shows the service, the error title, severity, state, and an **Open in
   <figcaption>An issue page. The right panel holds state, severity, lease and linked pull requests.</figcaption>
 </figure>
 
-The sidebar holds **Details** (status, severity, assignee), **Scope** (service, environment, issue ID), **Lease**, **Pull requests**, and **Fix verification**.
+The sidebar holds **Details** (status, severity, priority, assignee), **Scope** (service, environment, issue ID), **Lease**, **Pull requests**, and **Fix verification**.
 
-**Copy agent prompt** copies a prompt with the issue context for a coding agent.
+The header's menu has **Copy agent prompt**, which copies a prompt with the issue context for a coding agent, plus **Copy fingerprint** and **Copy link to issue**.
 
 ## Work with issues from an assistant
 
@@ -173,16 +201,18 @@ The [MCP server](/docs/reference/mcp) covers the whole workflow:
 | `list_error_incidents`                     | Incidents under an issue.                                              |
 | `claim_error_issue`, `release_error_issue` | Take or give up the lease.                                             |
 | `transition_error_issue`                   | Change state, with an optional `snooze_until` for Won't fix.           |
+| `transition_error_issues`                  | Change the state of up to 200 issues at once.                          |
+| `merge_error_issues`                       | Fold up to 50 duplicate issues into one.                               |
 | `set_issue_severity`                       | Set severity. Never overrides a severity set by hand.                  |
 | `comment_on_error_issue`                   | Add a comment.                                                         |
 | `propose_fix`                              | Claim the issue, move it to In review, and optionally attach a PR URL. |
 | `link_pull_request`                        | Attach a GitHub pull request. Its merge starts fix verification.       |
 | `get_error_notification_policy`            | Read the notification policy and its destinations.                     |
-| `update_error_notification_policy`         | Change the notification policy (admins only).                          |
+| `update_error_notification_policy`         | Change the notification policy (engineers and admins only).            |
 
 ## Troubleshooting
 
-- **Errors show in traces but no issue appears.** A fingerprint needs 3 occurrences to become an issue. Also check that the span status is `Error`, and that a 4xx span carries an exception.
+- **Errors show in traces but no issue appears.** The errors check runs every minute, so allow a minute or two. If your organization opened 10 or more error issues in the last 24 hours, a new fingerprint needs 3 occurrences to become an issue. Also check that the span status is `Error`, and that a 4xx span carries an exception.
 - **Many issues titled "Unknown Error".** Your spans set status `Error` without an exception. Record the exception on the span.
 - **One bug is split across many issues.** The message differs in a way the normalizer does not catch, or the stack differs in its top 3 frames. Put variable data in attributes instead of the exception message.
 - **A fixed issue keeps regressing.** Old instances are still running. Set `service.version` on your services so occurrences from pre-fix builds do not count as regressions.

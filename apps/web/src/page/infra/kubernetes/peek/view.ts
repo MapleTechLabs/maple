@@ -1,5 +1,5 @@
-import { severityLevel } from "../../../../components/infra/format"
-import { podKey } from "../../../../components/infra/pod-restarts"
+import { severityLevel } from "../../kit/format"
+import { podKey } from "../pod-restarts"
 import { formatPercent } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { AsyncData, Submodel } from "foldkit"
@@ -14,10 +14,10 @@ import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
-import type { TimeSearch } from "../../kit/view-tabs"
+import type { TimeSearch } from "../../../kit/view-tabs"
 import { POD_METRIC_LABELS, type PodRow } from "../pod-data"
 import { MountPeekKeys } from "./keys"
 import { Message } from "./message"
@@ -26,8 +26,6 @@ import type { Peek } from "./update"
 import { peekHeader } from "./view-header"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-
-// `PodPeekSheet`.
 
 type H = HtmlBuilder<Message>
 
@@ -51,7 +49,7 @@ const compactItem = (h: H, eyebrow: string, value: number, isToned: boolean): Ht
 		valueClassName: "text-xl",
 	})
 
-/** `PeekSummary`: the four limit ratios the pod page leads with, over the list's window. */
+/** The four limit ratios the pod page leads with, over the list's window. */
 const peekSummary = (h: H, model: Model, pod: PodRow): Html => {
 	const data = model.summaries[podKey(pod)]?.data ?? AsyncData.Idle()
 	return AsyncData.matchData(data, {
@@ -173,7 +171,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 				model: model.dialog,
 				view: DialogView.view,
 				viewInputs: {
-					className: "p-0 sm:max-w-xl",
+					className: "p-0",
+					size: "detail",
 					side: "right",
 					hasTrigger: false,
 					toView: ({ portal }) => portal,

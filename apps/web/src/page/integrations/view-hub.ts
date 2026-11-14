@@ -13,67 +13,80 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { AppRoute, hrefOf } from "../../route"
-import { type CatalogEntry, HUB_CATALOG, INTEGRATION_CATEGORIES, type IntegrationId } from "./catalog"
+import { CAPABILITY_LABEL, type CatalogEntry, type HubFilter, type IntegrationId } from "./catalog"
+import { DATA_SOURCE_KIND_ENTRY, type DataSourceKindEntry } from "../kit/providers"
 import {
-	type AvailableOverview,
-	type ConnectedOverview,
-	HEALTH_TONE,
-	overviewOf,
-	summaryOf,
-	type UnavailableOverview,
-} from "./derive"
+	activeFilter,
+	type ConnectedRow,
+	filterCounts,
+	hubRowsOf,
+	matchesFilter,
+	offeredFilters,
+} from "./hub-rows"
+import { integrationIconPlate } from "../kit/integration-empty"
+import { filterChip } from "@maple/views/ui/filter-chip"
+import { type AvailableOverview, HEALTH_TONE, lastSyncText } from "./derive"
 import { Message } from "./message"
-import type { Model } from "./model"
-import { STATUS_NAMES } from "./update-status"
+import type { Model, Statuses } from "./model"
+import { statusNamesOf } from "./update-status"
 import { entryPlate } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// `IntegrationsSummary` and `IntegrationCatalog`.
-
 type H = HtmlBuilder<Message>
 type Select = (id: IntegrationId) => Message
 
 export const integrationsSummary = (h: H, model: Model): Html | undefined => {
-	const summary = summaryOf(model.statuses, model.nowMs)
-	if (summary === null) return undefined
-	return hstack(h, { gap: "2" }, [
-		badge(h, { variant: "meta", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
-			statusDot(h, { tone: "ok" }),
-			`${summary.connected} connected`,
-		]),
-		...(summary.attention > 0
-			? [
-					badge(h, { variant: "warn", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
-						statusDot(h, { tone: "warn" }),
-						`${summary.attention} ${summary.attention === 1 ? "needs" : "need"} attention`,
-					]),
-				]
-			: []),
+	const rows = hubRowsOf(model)
+	const connected = Arr.filter(rows.connected, (row) => row.overview.kind === "connected").length
+	if (rows.loading > 0 || connected === 0) return undefined
+	return badge(h, { variant: "meta", pill: true, className: "gap-1.5 px-2.5 font-normal" }, [
+		statusDot(h, { tone: "ok" }),
+		`${connected} connected`,
 	])
 }
 
-const connectedRow = (
+/** A data source kind's logo on the integration plate. */
+const kindPlate = (
 	h: H,
-	entry: CatalogEntry,
-	overview: ConnectedOverview | UnavailableOverview,
-	onSelect: Select,
-): Html => {
+	entry: DataSourceKindEntry,
+	options: Readonly<{ size: number; plateClassName: string }>,
+) => integrationIconPlate(h, { icon: entry.icon, accent: entry.accent }, options)
+
+const connectedRow = (h: H, row: ConnectedRow, onSelect: Select, nowMs: number): Html => {
+	const overview = row.overview
+	const plateOptions = { plateClassName: "size-8 rounded-lg", size: 18 }
+	const plate =
+		row._tag === "Integration"
+			? entryPlate(h, row.entry, plateOptions)
+			: kindPlate(h, DATA_SOURCE_KIND_ENTRY[row.source.kind], plateOptions)
+	const name = row._tag === "Integration" ? row.entry.name : row.source.name
+	const onClick =
+		row._tag === "Integration"
+			? onSelect(row.entry.id)
+			: Message.ClickedDataSource({ source: row.source.id, connect: null })
 	const connected = overview.kind === "connected" ? overview : null
 	return pressable(
 		h,
 		{
-			onClick: onSelect(entry.id),
+			onClick,
 			className:
-				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+				"group flex w-full items-center gap-4 px-4 py-3 text-left outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
 		},
 		[
-			entryPlate(h, entry, { plateClassName: "size-8 rounded-lg", size: 18 }),
-			h.span(
-				[h.Class("flex min-w-0 flex-1 flex-col gap-0.5 sm:w-44 sm:flex-none 2xl:w-52")],
+			plate,
+			vstack(
+				h,
+				{
+					gap: "0.5",
+					shrink: true,
+					grow: true,
+					as: "span",
+					className: "sm:w-44 sm:flex-none 2xl:w-52",
+				},
 				[
-					typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
+					typography(h, { size: "sm", weight: "medium", truncate: true }, [name]),
 					...(connected?.context
 						? [typography(h, { size: "xs", tone: "muted", truncate: true }, [connected.context])]
 						: []),
@@ -89,22 +102,20 @@ const connectedRow = (
 						),
 					),
 				],
-				[
-					// A failed read says so once above the list; the row keeps a muted "Unknown".
-					...(connected === null && overview.kind === "unavailable" && overview.reason === "failed"
-						? [
-								statusDot(h, { tone: "neutral" }),
-								typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
-							]
-						: [
-								statusDot(h, {
-									tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
-								}),
-								typography(h, { size: "xs", truncate: true }, [
-									connected?.stateLabel ?? "Not configured",
-								]),
+				// A failed read says so once above the list; the row keeps a muted "Unknown".
+				connected === null && overview.kind === "unavailable" && overview.reason === "failed"
+					? [
+							statusDot(h, { tone: "neutral" }),
+							typography(h, { size: "xs", tone: "muted" }, ["Unknown"]),
+						]
+					: [
+							statusDot(h, {
+								tone: connected !== null ? HEALTH_TONE[connected.health] : "neutral",
+							}),
+							typography(h, { size: "xs", truncate: true }, [
+								connected?.stateLabel ?? "Not configured",
 							]),
-				],
+						],
 			),
 			...(connected?.stat
 				? [
@@ -114,88 +125,111 @@ const connectedRow = (
 						),
 					]
 				: []),
-			h.span(
-				[h.Class("ml-auto flex shrink-0 items-center gap-3")],
-				[
-					...(connected?.lastSyncLabel
-						? [
-								h.span(
-									[
-										h.Class(
-											"hidden w-28 text-right text-xs text-muted-foreground 2xl:block",
-										),
-									],
-									[connected.lastSyncLabel],
-								),
-							]
-						: []),
-					...(connected?.issue
-						? [
-								badge(
-									h,
-									{
-										variant: connected.health === "pending" ? "outline" : "warn",
-										size: "sm",
-										className: "hidden sm:inline-flex",
-									},
-									[connected.issue],
-								),
-							]
-						: []),
-					icon(h, "ChevronRightIcon", {
-						size: 14,
-						className: "text-foreground-subtle transition-colors group-hover:text-foreground",
-					}),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", as: "span", className: "ml-auto shrink-0" }, [
+				...(connected !== null && connected.lastSync !== null
+					? [
+							h.span(
+								[h.Class("hidden w-28 text-right text-xs text-muted-foreground 2xl:block")],
+								[lastSyncText(connected.lastSync, nowMs)],
+							),
+						]
+					: []),
+				...(connected?.issue
+					? [
+							badge(
+								h,
+								{
+									variant: connected.health === "pending" ? "outline" : "warn",
+									size: "sm",
+									className: "hidden sm:inline-flex",
+								},
+								[connected.issue],
+							),
+						]
+					: []),
+				badge(h, { variant: "meta", size: "sm", className: "hidden sm:inline-flex" }, [
+					CAPABILITY_LABEL[row.capability].chip,
+				]),
+				icon(h, "ChevronRightIcon", {
+					size: 14,
+					className: "text-foreground-subtle group-hover:text-foreground",
+				}),
+			]),
 		],
 	)
 }
 
 export const newBadge = (h: H): Html => badge(h, { variant: "info", size: "sm" }, ["New"])
 
-const availableCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
-	cardButton(h, { onClick: onSelect(entry.id), className: "flex items-center gap-4 p-4" }, [
-		entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
+const availableCard = (
+	h: H,
+	options: Readonly<{
+		plate: Html
+		name: string
+		description: string
+		isNew: boolean
+		cta: AvailableOverview["cta"]
+		onClick: Message
+	}>,
+): Html =>
+	cardButton(h, { onClick: options.onClick, className: "flex items-center gap-4 p-4" }, [
+		options.plate,
 		vstack(h, { gap: "0.5", shrink: true, grow: true, as: "span" }, [
 			hstack(h, { gap: "2", shrink: true, as: "span" }, [
-				typography(h, { size: "sm", weight: "semibold", truncate: true }, [entry.name]),
-				...(entry.isNew === true ? [newBadge(h)] : []),
+				typography(h, { size: "sm", weight: "medium", truncate: true }, [options.name]),
+				...(options.isNew ? [newBadge(h)] : []),
 			]),
-			h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [entry.description]),
+			h.span([h.Class("line-clamp-2 font-prose text-xs text-muted-foreground")], [options.description]),
 		]),
 		h.span(
 			[
 				h.Class(
 					cn(
-						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium transition-colors group-hover:border-ring/60",
-						cta === "Connect" ? "text-primary" : "text-foreground",
+						"shrink-0 rounded-md border border-input px-3 py-1.5 text-xs font-medium group-hover:border-border-strong",
+						options.cta === "Connect" ? "text-primary" : "text-foreground",
 					),
 				),
 			],
-			[cta, " →"],
+			[options.cta, " →"],
 		),
 	])
 
+const entryCard = (h: H, entry: CatalogEntry, cta: AvailableOverview["cta"], onSelect: Select): Html =>
+	availableCard(h, {
+		plate: entryPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
+		name: entry.name,
+		description: entry.description,
+		isNew: entry.isNew === true,
+		cta,
+		onClick: onSelect(entry.id),
+	})
+
+const kindCard = (h: H, entry: DataSourceKindEntry): Html =>
+	availableCard(h, {
+		plate: kindPlate(h, entry, { plateClassName: "size-9 rounded-lg", size: 20 }),
+		name: entry.name,
+		description: entry.description,
+		isNew: true,
+		cta: "Connect",
+		onClick: Message.ClickedDataSource({ source: null, connect: entry.kind }),
+	})
+
 const skeletonRow = (h: H): Html =>
-	h.div(
-		[h.Class("flex w-full items-center gap-4 px-4 py-3")],
-		[
-			skeleton(h, "size-8 shrink-0 rounded-lg"),
-			h.span(
-				[h.Class("flex w-52 shrink-0 flex-col gap-1.5")],
-				[skeleton(h, "h-3.5 w-24"), skeleton(h, "h-3 w-32")],
-			),
-			skeleton(h, "h-3 w-20"),
-		],
-	)
+	hstack(h, { gap: "4", align: "center", className: "w-full px-4 py-3" }, [
+		skeleton(h, "size-8 shrink-0 rounded-lg"),
+		vstack(h, { gap: "1.5", as: "span", className: "w-52 shrink-0" }, [
+			skeleton(h, "h-3.5 w-24"),
+			skeleton(h, "h-3 w-32"),
+		]),
+		skeleton(h, "h-3 w-20"),
+	])
 
 /** The first failed status read, for the one error line above the connected list. */
 const firstStatusFailure = (model: Model): LoadFailure | null =>
-	STATUS_NAMES.reduce<LoadFailure | null>((found, name) => {
+	Arr.reduce<keyof Statuses, LoadFailure | null>(statusNamesOf(model), null, (found, name) => {
 		const { data } = model.statuses[name]
 		return found ?? (data._tag === "Failure" || data._tag === "Stale" ? data.error : null)
-	}, null)
+	})
 
 /** The hub's title and its one-line description, tight under the `<h1>` like every page header. */
 export const hubTitle = (h: H): Html =>
@@ -204,7 +238,7 @@ export const hubTitle = (h: H): Html =>
 		pageDescription(
 			h,
 			[
-				"Where Maple sends alerts and chat. Data sources like Cloudflare, Prometheus and GitHub are under ",
+				"Systems Maple collects telemetry from, queries in place, and sends alerts to. Volume and caps per source are under ",
 				h.a(
 					[
 						h.Href(hrefOf(AppRoute.Sources())),
@@ -223,48 +257,66 @@ export const hubTitle = (h: H): Html =>
 		),
 	])
 
+const FILTER_LABEL = {
+	all: "All",
+	telemetry: CAPABILITY_LABEL.telemetry.filter,
+	query: CAPABILITY_LABEL.query.filter,
+	alerts: CAPABILITY_LABEL.alerts.filter,
+	analytics: CAPABILITY_LABEL.analytics.filter,
+	attention: "Needs attention",
+} as const satisfies Record<HubFilter, string>
+
+/** All, one chip per capability, and "Needs attention" while something does. */
+const filterBar = (h: H, model: Model, rows: ReadonlyArray<ConnectedRow>): Html => {
+	const counts = filterCounts(rows)
+	const active = activeFilter(model, rows)
+	const filters = offeredFilters(model, rows)
+	return hstack(
+		h,
+		{ gap: "1.5", wrap: true, attributes: [h.Role("group"), h.AriaLabel("Filter integrations")] },
+		Arr.map(filters, (filter) =>
+			filterChip(
+				h,
+				{
+					isPressed: active === filter,
+					onClick: Message.SelectedFilter({ filter: active === filter ? "all" : filter }),
+					size: "xs",
+					count: String(counts[filter]),
+					tone: filter === "attention" ? "warn" : "neutral",
+					hasDot: filter === "attention",
+				},
+				[FILTER_LABEL[filter]],
+			),
+		),
+	)
+}
+
 export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html => {
-	const rows = Arr.map(HUB_CATALOG, (entry) => ({
-		entry,
-		overview: overviewOf(model.statuses, model.nowMs, entry.id),
-	}))
-	const connected = Arr.flatMap(rows, ({ entry, overview }) =>
-		overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
-			? [{ entry, overview }]
-			: [],
-	)
-	const available = Arr.flatMap(rows, ({ entry, overview }) =>
-		overview !== null && overview.kind === "available" ? [{ entry, overview }] : [],
-	)
-	const loading = Arr.filter(rows, ({ overview }) => overview === null)
+	const { connected, loading, shelves, isDataSourcesFailed } = hubRowsOf(model)
+	const filter = activeFilter(model, connected)
+	const shown = Arr.filter(connected, (row) => matchesFilter(filter, row))
+	const shownShelves = Arr.filter(shelves, (shelf) => filter === "all" || filter === shelf.capability)
 	const hasFailedRow = Arr.some(
 		connected,
-		({ overview }) => overview.kind === "unavailable" && overview.reason === "failed",
+		(row) => row.overview.kind === "unavailable" && row.overview.reason === "failed",
 	)
-	const statusFailure = hasFailedRow ? firstStatusFailure(model) : null
-	const shelves = Arr.filter(
-		Arr.map(INTEGRATION_CATEGORIES, (category) => ({
-			...category,
-			entries: Arr.filter(available, ({ entry }) => entry.category === category.id).toSorted(
-				(a, b) => Number(b.entry.isNew ?? false) - Number(a.entry.isNew ?? false),
-			),
-		})),
-		(shelf) => shelf.entries.length > 0,
-	)
-	return h.div(
+	const statusFailure = hasFailedRow || isDataSourcesFailed ? firstStatusFailure(model) : null
+	return vstack(
+		h,
+		{
+			gap: "6",
+			className:
+				"animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
+		},
 		[
-			h.Class(
-				"flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none",
-			),
-		],
-		[
-			...(connected.length > 0 || loading.length > 0
+			...(connected.length > 0 || loading > 0 || statusFailure !== null
 				? [
-						vstack(h, { gap: "2", as: "section" }, [
+						vstack(h, { gap: "3", as: "section" }, [
+							...(connected.length > 0 ? [filterBar(h, model, connected)] : []),
 							// Unknown status must not read as healthy, so the header goes neutral.
 							hstack(h, { gap: "3", justify: "between" }, [
 								eyebrow(h, { variant: "label" }, [
-									statusFailure === null ? "Connected" : "Destinations",
+									statusFailure === null ? "Connected" : "Integrations",
 								]),
 								...(statusFailure === null
 									? []
@@ -291,23 +343,34 @@ export const integrationCatalog = (h: H, model: Model, onSelect: Select): Html =
 											]),
 										]),
 							]),
-							panel(h, { className: "divide-y divide-border-subtle border-border-subtle" }, [
-								...Arr.map(connected, ({ entry, overview }) =>
-									connectedRow(h, entry, overview, onSelect),
-								),
-								...Arr.map(loading, () => skeletonRow(h)),
-							]),
+							shown.length === 0 && loading === 0
+								? typography(h, { size: "sm", tone: "muted" }, [
+										filter === "attention"
+											? "Nothing needs attention."
+											: "Nothing connected here yet.",
+									])
+								: panel(
+										h,
+										{ className: "divide-y divide-border-subtle border-border-subtle" },
+										[
+											...Arr.map(shown, (row) =>
+												connectedRow(h, row, onSelect, model.nowMs),
+											),
+											// `makeBy` makes at least one, so no reads in flight must draw none.
+											...(loading > 0 ? Arr.makeBy(loading, () => skeletonRow(h)) : []),
+										],
+									),
 						]),
 					]
 				: []),
-			...Arr.map(shelves, (shelf) =>
+			...Arr.map(shownShelves, (shelf) =>
 				vstack(h, { gap: "2", as: "section" }, [
 					eyebrow(h, { variant: "label" }, [shelf.label]),
 					h.div(
 						[h.Class("grid grid-cols-1 gap-3 lg:grid-cols-2")],
-						Arr.map(shelf.entries, ({ entry, overview }) =>
-							availableCard(h, entry, overview.cta, onSelect),
-						),
+						shelf._tag === "DataSources"
+							? Arr.map(shelf.kinds, (kind) => kindCard(h, kind))
+							: Arr.map(shelf.entries, ({ entry, cta }) => entryCard(h, entry, cta, onSelect)),
 					),
 				]),
 			),

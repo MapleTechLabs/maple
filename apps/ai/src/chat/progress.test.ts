@@ -74,7 +74,7 @@ describe("makeProgressFeed", () => {
 			yield* settle
 			assert.lengthOf(writes, 1)
 			assert.deepEqual(
-				Arr.map(writes[0]!.steps, (step) => step.label),
+				Arr.map(Arr.getUnsafe(writes, 0).steps, (step) => step.label),
 				["Search logs"],
 			)
 		}),
@@ -91,7 +91,7 @@ describe("makeProgressFeed", () => {
 			assert.lengthOf(writes, 1)
 			yield* TestClock.adjust(INVESTIGATION_PROGRESS_HEARTBEAT)
 			assert.lengthOf(writes, 2)
-			assert.equal(writes[1]!.stepCount, 3)
+			assert.equal(Arr.getUnsafe(writes, 1).stepCount, 3)
 		}),
 	)
 
@@ -133,6 +133,31 @@ describe("makeProgressFeed", () => {
 			yield* feed.resume
 			yield* TestClock.adjust(INVESTIGATION_PROGRESS_HEARTBEAT)
 			assert.equal(writes.at(-1)!.stepCount, 1)
+		}),
+	)
+
+	/** A report refused after the turn closed the feed must not reopen a feed with no writer. */
+	it.effect("ignores a resume once the feed is closed", () =>
+		Effect.gen(function* () {
+			const { feed, writes } = yield* feedWith()
+			yield* feed.close
+			yield* feed.resume
+			feed.step("search_logs", {})
+			yield* feed.flush
+			yield* TestClock.adjust(Duration.times(INVESTIGATION_PROGRESS_HEARTBEAT, 2))
+			assert.lengthOf(writes, 0)
+		}),
+	)
+
+	it.effect("stays closed when a pause follows the close", () =>
+		Effect.gen(function* () {
+			const { feed, writes } = yield* feedWith()
+			yield* feed.close
+			yield* feed.pause
+			yield* feed.resume
+			feed.step("search_logs", {})
+			yield* feed.flush
+			assert.lengthOf(writes, 0)
 		}),
 	)
 

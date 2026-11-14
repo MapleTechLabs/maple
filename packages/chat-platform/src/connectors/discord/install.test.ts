@@ -179,12 +179,11 @@ describe("discord callback", () => {
 })
 
 describe("discord settings", () => {
-	it.effect("has none to configure", () =>
+	it.effect("accepts an install with no settings", () =>
 		Effect.gen(function* () {
 			// Who may approve a change is not a per-server setting any more: it is whether the person
 			// clicking linked their Discord account to a Maple user.
 			assert.deepStrictEqual(yield* discord.install.decodeSettings({}), {})
-			assert.deepStrictEqual(discord.manifest.settingsFields, [])
 		}),
 	)
 

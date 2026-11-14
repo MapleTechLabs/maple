@@ -7,6 +7,8 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge } from "../../ui/display"
 import { typography, typographyClass } from "../../ui/typography"
 import { hstack } from "../../ui/stack"
+import { textLink } from "../../ui/text-link"
+import { stripClass } from "../../ui/rule"
 
 // The small pieces both detail panels share.
 
@@ -18,14 +20,13 @@ export const healthTone = (errorRate: number): Tone => {
 	return level === "neutral" ? "ok" : level
 }
 
-/** `SampledValue` without a tooltip: `~` before an extrapolated value. */
+/** A sampled value without a tooltip: `~` before an extrapolated value. */
 export const sampled = (estimated: boolean, value: string): Children => (estimated ? ["~", value] : [value])
 
-/** `MetricValue`. */
 export const metricValue = <M>(h: HtmlBuilder<M>, className: string | undefined, children: Children): Html =>
 	h.p([h.Class(cn("font-mono text-xl font-semibold tabular-nums text-foreground", className))], children)
 
-/** `MetricTile`: label over a big value, with an optional caption under it. */
+/** A label over a big value, with an optional caption under it. */
 export const metricTile = <M>(h: HtmlBuilder<M>, label: string, value: Html, caption?: Children): Html =>
 	h.div(
 		[h.Class("space-y-0.5")],
@@ -36,28 +37,25 @@ export const metricTile = <M>(h: HtmlBuilder<M>, label: string, value: Html, cap
 		],
 	)
 
-/** `DetailPanelHeader`: accent bar and title on the left, actions on the right. */
+/** Accent bar and title on the left, actions on the right. */
 export const detailPanelHeader = <M>(
 	h: HtmlBuilder<M>,
 	accentColor: string,
 	title: Children,
 	actions: Children,
 ): Html =>
-	h.div(
-		[h.Class("flex items-center justify-between px-4 py-3 border-b shrink-0")],
-		[
-			hstack(h, { gap: "2", shrink: true }, [
-				h.div([
-					h.Class("w-[3px] h-[18px] rounded-sm shrink-0"),
-					h.Style({ "background-color": accentColor }),
-				]),
-				...title,
+	hstack(h, { align: "center", justify: "between", className: stripClass("header", "shrink-0") }, [
+		hstack(h, { gap: "2", shrink: true }, [
+			h.div([
+				h.Class("w-[3px] h-[18px] rounded-sm shrink-0"),
+				h.Style({ "background-color": accentColor }),
 			]),
-			hstack(h, { gap: "2", className: "shrink-0" }, actions),
-		],
-	)
+			...title,
+		]),
+		hstack(h, { gap: "2", className: "shrink-0" }, actions),
+	])
 
-/** `TagBadge`: a branch's "prod", an origin scheme. */
+/** A tag such as a branch's "prod" or an origin scheme. */
 export const tagBadge = <M>(h: HtmlBuilder<M>, children: Children): Html =>
 	badge(h, { variant: "tag", className: "shrink-0 font-semibold" }, children)
 
@@ -115,28 +113,27 @@ export const edgeRow = <M>(
 			...(title === undefined ? [] : [h.Title(title)]),
 		],
 		[
-			options.href === undefined ? name : h.a([h.Href(options.href), h.Class("min-w-0 hover:underline active:underline")], [name]),
-			h.div(
-				[h.Class("flex items-center gap-2 shrink-0 text-3xs")],
-				[
-					typography(h, { tone: "muted", mono: true, numeric: true }, [
-						...sampled(edge.hasSampling, formatRate(reqPerSec)),
-						" ",
-						options.unit,
-					]),
-					h.span(
-						[
-							h.Class(
-								cn(
-									typographyClass({ mono: true, numeric: true }),
-									errorRateClass(edge.errorRate),
-								),
+			options.href === undefined
+				? name
+				: textLink(h, { href: options.href, tone: "inherit", className: "min-w-0" }, [name]),
+			hstack(h, { gap: "2", align: "center", className: "shrink-0 text-3xs" }, [
+				typography(h, { tone: "muted", mono: true, numeric: true }, [
+					...sampled(edge.hasSampling, formatRate(reqPerSec)),
+					" ",
+					options.unit,
+				]),
+				h.span(
+					[
+						h.Class(
+							cn(
+								typographyClass({ mono: true, numeric: true }),
+								errorRateClass(edge.errorRate),
 							),
-						],
-						[formatErrorRate(edge.errorRate)],
-					),
-				],
-			),
+						),
+					],
+					[formatErrorRate(edge.errorRate)],
+				),
+			]),
 		],
 	)
 }

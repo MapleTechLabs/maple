@@ -2,6 +2,8 @@
  * Facts about Maple Cloud's EU region, shared by `/eu`, its `/eu.md` twin and
  * the docs. The hostnames match the deployed instance (`*.eu.maple.dev`).
  */
+import { PRIVACY_EMAIL } from "./agent-resources"
+
 export const US_APP_URL = "https://app.maple.dev"
 export const US_INGEST_URL = "https://ingest.maple.dev"
 export const EU_APP_URL = "https://app.eu.maple.dev"
@@ -40,7 +42,7 @@ export function euFaqs(): FaqItem[] {
 		},
 		{
 			question: "Is Maple SOC 2 or ISO 27001 certified?",
-			answer: "Not yet. SOC 2 and ISO 27001 certification are in progress.",
+			answer: `Not yet. SOC 2 Type II and ISO 27001 certification are in progress. A data processing agreement (DPA) is available now: request it from ${PRIVACY_EMAIL}.`,
 		},
 		{
 			question: "Can I keep the data inside my own network instead?",

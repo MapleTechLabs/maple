@@ -10,7 +10,9 @@ import {
 	AlertDestinationType as AlertDestinationTypeSchema,
 	AlertEventType as AlertEventTypeSchema,
 	AlertIncidentDocument,
+	AlertIncidentEscalationDocument,
 	AlertIncidentsListResponse,
+	AlertIncidentAckSource,
 	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
@@ -32,15 +34,16 @@ import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	AlertDeliveryEvents,
 	AlertDestinations,
+	AlertEscalationRuns,
 	AlertIncidents,
 	AlertRules,
 	type AlertIncidentRow,
 } from "@maple/db/tables"
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Context, DateTime, Duration, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { makePersistenceError } from "./alert-persistence"
-import { systemTenant } from "./system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { parseUtc } from "@maple/query-engine"
 
@@ -74,6 +77,8 @@ export interface AlertChecksSummary {
 export interface ListAlertIncidentsOptions {
 	readonly status?: AlertIncidentStatus
 	readonly ruleId?: AlertRuleId
+	/** Open incidents only, split by whether someone has acknowledged them. */
+	readonly acknowledged?: boolean
 	readonly limit?: number
 	readonly offset?: number
 }
@@ -83,6 +88,8 @@ export interface ListAlertDeliveryEventsOptions {
 	readonly offset?: number
 	readonly incidentId?: AlertIncidentId
 	readonly ruleId?: AlertRuleId
+	/** Leave out the internal PagerDuty `acknowledge` syncs, which the public API does not report. */
+	readonly notificationsOnly?: boolean
 }
 
 export interface AlertReadModelsServiceApi {
@@ -94,6 +101,11 @@ export interface AlertReadModelsServiceApi {
 		orgId: OrgId,
 		incidentId: AlertIncidentId,
 	) => Effect.Effect<AlertIncidentDocument, AlertPersistenceError | AlertIncidentNotFoundError>
+	/** Each incident's latest escalation run, in one query for the whole set; incidents without one are absent. */
+	readonly listIncidentEscalations: (
+		orgId: OrgId,
+		incidentIds: ReadonlyArray<AlertIncidentId>,
+	) => Effect.Effect<ReadonlyArray<AlertIncidentEscalationDocument>, AlertPersistenceError>
 	readonly listRuleChecks: (
 		orgId: OrgId,
 		ruleId: AlertRuleId,
@@ -105,6 +117,8 @@ export interface AlertReadModelsServiceApi {
 			readonly limit?: number
 			readonly beforeTimestamp?: string
 			readonly beforeGroupKey?: string
+			/** The public API: an audit detection's rule is not there, and neither are its checks. */
+			readonly publicApi?: boolean
 		},
 	) => Effect.Effect<
 		AlertChecksListResponse,
@@ -116,6 +130,7 @@ export interface AlertReadModelsServiceApi {
 		options: {
 			readonly since: string
 			readonly until: string
+			readonly publicApi?: boolean
 		},
 	) => Effect.Effect<
 		AlertChecksSummary,
@@ -126,6 +141,15 @@ export interface AlertReadModelsServiceApi {
 		options?: ListAlertDeliveryEventsOptions,
 	) => Effect.Effect<AlertDeliveryEventsListResponse, AlertPersistenceError>
 }
+
+/**
+ * An audit detection's rule is absent from the public rule API, so its checks are too: they are
+ * a minute-by-minute count of audit activity. Uptime and SLO checks have always been served.
+ */
+const hiddenFromPublicApi = (
+	rule: { readonly signalType: string },
+	options: { readonly publicApi?: boolean },
+): boolean => options.publicApi === true && rule.signalType === "audit"
 
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
@@ -145,6 +169,8 @@ const decodeAlertIncidentHoldReasonSync = Schema.decodeUnknownSync(AlertIncident
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
+// An unknown source (a newer writer) reads as none rather than failing the page.
+const decodeAlertIncidentAckSource = Schema.decodeUnknownOption(AlertIncidentAckSource)
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
@@ -153,7 +179,7 @@ const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
 
 const makeValidationError = (message: string) => new AlertValidationError({ message, details: [] })
 
-const rowToIncidentDocument = (row: AlertIncidentRow) =>
+export const rowToIncidentDocument = (row: AlertIncidentRow) =>
 	new AlertIncidentDocument({
 		id: decodeAlertIncidentIdSync(row.id),
 		ruleId: decodeAlertRuleIdSync(row.ruleId),
@@ -177,8 +203,43 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		lastNotifiedAt: toIso(row.lastNotifiedAt),
 		holdReason: row.holdReason != null ? decodeAlertIncidentHoldReasonSync(row.holdReason) : null,
 		heldSince: toIso(row.heldSince),
+		acknowledgedAt: toIso(row.acknowledgedAt),
+		acknowledgedByUserId: row.acknowledgedByUserId,
+		acknowledgedByName: row.acknowledgedByName,
+		acknowledgedVia:
+			row.acknowledgedVia === null
+				? null
+				: Option.getOrNull(decodeAlertIncidentAckSource(row.acknowledgedVia)),
 		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
+		...(row.signalType === "anomaly" ? { anomalyIncidentId: row.anomalyIncidentId } : undefined),
+		...(row.groupLabel === null ? undefined : { groupLabel: row.groupLabel }),
+		...(row.labelsJson === null ? undefined : { labels: row.labelsJson }),
+		silenceId: row.silenceId,
+		silencedAt: toIso(row.silencedAt),
 	})
+
+/**
+ * How far back an unbounded page of a rule's check history reads, widened in turn
+ * until the page fills or reaches the rule's creation. `alert_checks` sorts GroupKey
+ * before Timestamp, so an unbounded read would scan the rule's whole year.
+ */
+const CHECK_HISTORY_WINDOWS = [{ days: 7 }, { days: 30 }, { days: 365 }] as const
+
+/** The first read, in order, that fills `limit` rows; else the widest one. */
+const firstFullPage = <A, E, R>(
+	sinces: ReadonlyArray<DateTime.Utc>,
+	limit: number,
+	read: (since: DateTime.Utc) => Effect.Effect<ReadonlyArray<A>, E, R>,
+): Effect.Effect<ReadonlyArray<A>, E, R> => {
+	const [since, ...wider] = sinces
+	if (since === undefined) return Effect.succeed([])
+	return read(since).pipe(
+		Effect.filterOrElse(
+			(rows) => rows.length >= limit || wider.length === 0,
+			() => firstFullPage(wider, limit, read),
+		),
+	)
+}
 
 /** An optional request bound, or `null` when it does not parse (the filter is then skipped). */
 const optionalInstant = (input: string | undefined): DateTime.Utc | null =>
@@ -205,8 +266,9 @@ export class AlertReadModelsService extends Context.Service<
 				orgId,
 				...(options.status !== undefined ? { status: options.status } : undefined),
 				...(options.ruleId !== undefined ? { ruleId: options.ruleId } : undefined),
+				...(options.acknowledged !== undefined ? { acknowledged: options.acknowledged } : undefined),
 			})
-			const { status, ruleId } = options
+			const { status, ruleId, acknowledged } = options
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertIncidents)
@@ -215,6 +277,12 @@ export class AlertReadModelsService extends Context.Service<
 							$.orgId.eq(orgId),
 							status ? $.status.eq(status) : undefined,
 							ruleId ? $.ruleId.eq(ruleId) : undefined,
+							acknowledged === undefined ? undefined : $.status.eq("open"),
+							acknowledged === undefined
+								? undefined
+								: acknowledged
+									? $.acknowledgedAt.isNotNull()
+									: $.acknowledgedAt.isNull(),
 						])
 						.orderBy(["lastTriggeredAt", "desc"], ["id", "desc"])
 						.limit(options.limit ?? 100)
@@ -223,7 +291,7 @@ export class AlertReadModelsService extends Context.Service<
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
 			return new AlertIncidentsListResponse({
-				incidents: rows.map(rowToIncidentDocument),
+				incidents: Arr.map(rows, rowToIncidentDocument),
 			})
 		})
 
@@ -250,6 +318,55 @@ export class AlertReadModelsService extends Context.Service<
 			return rowToIncidentDocument(incident)
 		})
 
+		const listIncidentEscalations = Effect.fn("AlertReadModelsService.listIncidentEscalations")(
+			function* (orgId: OrgId, incidentIds: ReadonlyArray<AlertIncidentId>) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.incident_count": incidentIds.length })
+				if (incidentIds.length === 0) return []
+				const rows = yield* dbExecute((db) =>
+					db.run(
+						PG.from(AlertEscalationRuns)
+							.select(($) => ({
+								incidentId: $.incidentId,
+								chainId: $.chainId,
+								chainName: $.chainName,
+								status: $.status,
+								stepIndex: $.stepIndex,
+								passIndex: $.passIndex,
+								// Counted in SQL, so the list never loads the steps themselves.
+								stepCount: PG.sql(PG.int4)`jsonb_array_length(${$.stepsJson})::int`,
+								repeatCount: $.repeatCount,
+								stepsSent: $.stepsSent,
+								nextStepAt: $.nextStepAt,
+							}))
+							// One row per incident: its latest run (severity changes leave older ones behind).
+							.distinctOn("incidentId")
+							.where(($) => [$.orgId.eq(orgId), $.incidentId.in_(...incidentIds)])
+							.orderBy(($) => [
+								[$.incidentId, "asc"],
+								[$.createdAt, "desc"],
+								[$.id, "desc"],
+							]),
+					),
+				)
+				return Arr.map(
+					rows,
+					(row) =>
+						new AlertIncidentEscalationDocument({
+							incidentId: row.incidentId,
+							chainId: row.chainId,
+							chainName: row.chainName,
+							status: row.status,
+							stepIndex: row.stepIndex,
+							passIndex: row.passIndex,
+							stepCount: row.stepCount,
+							repeatCount: row.repeatCount,
+							stepsSent: row.stepsSent,
+							nextStepAt: row.status === "active" ? toIso(row.nextStepAt) : null,
+						}),
+				)
+			},
+		)
+
 		const listRuleChecks = Effect.fn("AlertReadModelsService.listRuleChecks")(function* (
 			orgId: OrgId,
 			ruleId: AlertRuleId,
@@ -261,6 +378,7 @@ export class AlertReadModelsService extends Context.Service<
 				readonly limit?: number
 				readonly beforeTimestamp?: string
 				readonly beforeGroupKey?: string
+				readonly publicApi?: boolean
 			},
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
@@ -268,12 +386,13 @@ export class AlertReadModelsService extends Context.Service<
 			const ruleRow = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertRules)
-						.select("id")
+						.select("id", "createdAt", "signalType")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 						.limit(1),
 				),
 			)
-			if (ruleRow.length === 0) {
+			const [rule] = ruleRow
+			if (rule === undefined || hiddenFromPublicApi(rule, options)) {
 				return yield* new AlertRuleNotFoundError({
 					message: "Alert rule not found",
 					ruleId,
@@ -286,47 +405,66 @@ export class AlertReadModelsService extends Context.Service<
 			}
 			const limit = clamp(options.limit, 1, 2000, 500)
 
-			const since = optionalInstant(options.since)
 			const until = optionalInstant(options.until)
 			const beforeTimestamp = optionalInstant(options.beforeTimestamp)
 			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
+			const readSince = (since: DateTime.Utc) =>
+				warehouse.compiledQuery(
+					systemTenant(orgId, ALERTING_SYSTEM_USER_ID),
+					CH.compile(
+						CH.listRuleChecksQuery({
+							limit,
+							groupKey: hasGroupKey ? options.groupKey : undefined,
+							status: options.status,
+							since,
+							until: until ?? undefined,
+							beforeTimestamp: beforeTimestamp ?? undefined,
+							beforeGroupKey:
+								beforeTimestamp != null ? (options.beforeGroupKey ?? "") : undefined,
+						}),
+						{
+							orgId,
+							ruleId,
+							...(hasGroupKey ? { groupKey: options.groupKey } : undefined),
+							...(options.status != null ? { status: options.status } : undefined),
+							since,
+							...(until != null ? { until } : undefined),
+							...(beforeTimestamp != null
+								? {
+										beforeTimestamp,
+										beforeGroupKey: options.beforeGroupKey ?? "",
+									}
+								: undefined),
+						},
+					),
+					// listRuleChecksQuery declares .route("ingest"): alert_checks only
+					// exists in the managed Tinybird pipeline.
+					{ profile: "list", context: "listAlertChecks" },
+				)
 
-			const compiled = CH.compile(
-				CH.listRuleChecksQuery({
-					limit,
-					groupKey: hasGroupKey ? options.groupKey : undefined,
-					status: options.status,
-					since: since ?? undefined,
-					until: until ?? undefined,
-					beforeTimestamp: beforeTimestamp ?? undefined,
-					beforeGroupKey: beforeTimestamp != null ? (options.beforeGroupKey ?? "") : undefined,
-				}),
-				{
-					orgId,
-					ruleId,
-					...(hasGroupKey ? { groupKey: options.groupKey } : undefined),
-					...(options.status != null ? { status: options.status } : undefined),
-					...(since != null ? { since } : undefined),
-					...(until != null ? { until } : undefined),
-					...(beforeTimestamp != null
-						? {
-								beforeTimestamp,
-								beforeGroupKey: options.beforeGroupKey ?? "",
-							}
-						: undefined),
-				},
+			// No `since`: read back from the cursor in widening windows, never before the rule existed.
+			const explicitSince = optionalInstant(options.since)
+			const anchor = beforeTimestamp ?? until ?? (yield* DateTime.now)
+			const createdAt = DateTime.makeUnsafe(rule.createdAt)
+			const windows = Arr.map(CHECK_HISTORY_WINDOWS, (window) =>
+				DateTime.max(DateTime.subtract(anchor, window), createdAt),
 			)
-
-			// listRuleChecksQuery declares .route("ingest") — alert_checks only
-			// exists in the managed Tinybird pipeline.
-			const rows = yield* warehouse.compiledQuery(systemTenant(orgId), compiled, {
-				profile: "list",
-				context: "listAlertChecks",
-			})
+			const reachesCreation = Arr.findFirstIndex(
+				windows,
+				(since) => !DateTime.isGreaterThan(since, createdAt),
+			)
+			const sinces =
+				explicitSince !== null
+					? [explicitSince]
+					: Option.match(reachesCreation, {
+							onNone: () => windows,
+							onSome: (index) => Arr.take(windows, index + 1),
+						})
+			const rows = yield* firstFullPage(sinces, limit, readSince)
 
 			const checks = yield* Effect.try({
 				try: () =>
-					rows.map((r) => {
+					Arr.map(rows, (r) => {
 						const rawTransition =
 							r.incidentTransition == null || r.incidentTransition === ""
 								? "none"
@@ -375,18 +513,19 @@ export class AlertReadModelsService extends Context.Service<
 		const summarizeRuleChecks = Effect.fn("AlertReadModelsService.summarizeRuleChecks")(function* (
 			orgId: OrgId,
 			ruleId: AlertRuleId,
-			options: { readonly since: string; readonly until: string },
+			options: { readonly since: string; readonly until: string; readonly publicApi?: boolean },
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": ruleId })
 			const ruleRow = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertRules)
-						.select("id")
+						.select("id", "signalType")
 						.where(($) => [$.orgId.eq(orgId), $.id.eq(ruleId)])
 						.limit(1),
 				),
 			)
-			if (ruleRow.length === 0) {
+			const [summarized] = ruleRow
+			if (summarized === undefined || hiddenFromPublicApi(summarized, options)) {
 				return yield* new AlertRuleNotFoundError({
 					message: "Alert rule not found",
 					ruleId,
@@ -409,7 +548,7 @@ export class AlertReadModelsService extends Context.Service<
 			// At most 720 time buckets; minute alignment keeps the boundaries
 			// stable across refreshes and matches alert evaluation granularity.
 			const bucketSeconds = Math.max(1, Math.ceil(rangeMs / 1000 / 720 / 60)) * 60
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const groupRows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.compile(CH.alertCheckGroupTotalsQuery({ since, until, limit: 20 }), {
@@ -420,7 +559,7 @@ export class AlertReadModelsService extends Context.Service<
 				}),
 				{ profile: "aggregation", context: "alertCheckSummaryGroups" },
 			)
-			const topGroupKeys = groupRows.map((row) => row.groupKey)
+			const topGroupKeys = Arr.map(groupRows, (row) => row.groupKey)
 			const rows = yield* warehouse.compiledQuery(
 				tenant,
 				CH.compile(CH.alertChecksSummaryQuery({ topGroupKeys }), {
@@ -433,7 +572,7 @@ export class AlertReadModelsService extends Context.Service<
 				{ profile: "aggregation", context: "alertCheckSummary" },
 			)
 
-			const points: AlertChecksSummaryPoint[] = rows.map((row) => ({
+			const points: AlertChecksSummaryPoint[] = Arr.map(rows, (row) => ({
 				bucket: row.bucket,
 				groupKey: row.groupKey,
 				totalCount: row.totalCount,
@@ -445,7 +584,9 @@ export class AlertReadModelsService extends Context.Service<
 				observedValue: row.observedValue == null ? null : row.observedValue,
 				threshold: row.threshold ?? 0,
 			}))
-			const totals = points.reduce(
+			const totals = Arr.reduce(
+				points,
+				{ total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 				(acc, point) => ({
 					total: acc.total + point.totalCount,
 					breached: acc.breached + point.breachedCount,
@@ -454,7 +595,6 @@ export class AlertReadModelsService extends Context.Service<
 					error: acc.error + point.errorCount,
 					transitions: acc.transitions + point.transitionCount,
 				}),
-				{ total: 0, breached: 0, healthy: 0, skipped: 0, error: 0, transitions: 0 },
 			)
 			return { bucketSeconds, topGroupKeys, points, totals } satisfies AlertChecksSummary
 		})
@@ -464,7 +604,7 @@ export class AlertReadModelsService extends Context.Service<
 			options: ListAlertDeliveryEventsOptions = {},
 		) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const { incidentId, ruleId } = options
+			const { incidentId, ruleId, notificationsOnly } = options
 			const rows = yield* dbExecute((db) =>
 				db.run(
 					PG.from(AlertDeliveryEvents)
@@ -473,6 +613,7 @@ export class AlertReadModelsService extends Context.Service<
 							$.orgId.eq(orgId),
 							incidentId === undefined ? undefined : $.incidentId.eq(incidentId),
 							ruleId === undefined ? undefined : $.ruleId.eq(ruleId),
+							notificationsOnly === true ? $.eventType.neq("acknowledge") : undefined,
 						])
 						.orderBy(["createdAt", "desc"], ["id", "desc"])
 						.limit(options.limit ?? 100)
@@ -487,9 +628,9 @@ export class AlertReadModelsService extends Context.Service<
 						.where(($) => [$.orgId.eq(orgId)]),
 				),
 			)
-			const destinationMap = new Map(destinationRows.map((row) => [row.id, row]))
+			const destinationMap = new Map(Arr.map(destinationRows, (row) => [row.id, row]))
 
-			const events = rows.map((row) => {
+			const events = Arr.map(rows, (row) => {
 				const destination = destinationMap.get(row.destinationId)
 				return new AlertDeliveryEventDocument({
 					id: decodeAlertDeliveryEventIdSync(row.id),
@@ -520,6 +661,7 @@ export class AlertReadModelsService extends Context.Service<
 		return {
 			listIncidents,
 			getIncident,
+			listIncidentEscalations,
 			listRuleChecks,
 			summarizeRuleChecks,
 			listDeliveryEvents,

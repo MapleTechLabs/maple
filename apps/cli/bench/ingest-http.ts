@@ -140,6 +140,7 @@ const main = async () => {
 		return { bootMs, firstExportMs, cells, stalls }
 	}
 
+	// oxlint-disable-next-line typescript/no-misused-promises -- Promise.finally awaits the returned promise.
 	const result = await run().finally(stop)
 	const out = writeReport(`local-ingest-http-${Str.slice(0, 10)(env.date)}.json`, {
 		bench: "local-ingest-http",

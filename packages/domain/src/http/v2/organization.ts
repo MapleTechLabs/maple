@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { OrgId } from "../../primitives"
+import { OrgId } from "@maple/primitives"
 import { OrganizationProviderError } from "../organizations"
 import { AuthorizationV2 } from "./auth"
 import { wireExample, Timestamp } from "./envelopes"

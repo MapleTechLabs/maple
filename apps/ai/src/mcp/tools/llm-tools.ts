@@ -4,7 +4,7 @@
  * The chat agent and the investigation agents share this wrapper so tool dispatch, runtime
  * provisioning, and safe failure summaries cannot drift.
  *
- * Dynamic (`Tool.dynamic` over raw JSON Schema) is the right fit for every tool here: `toInputSchema`
+ * Dynamic (`Tool.dynamic` over raw JSON Schema) is the right fit for every tool here: `inputSchemaOf`
  * already produces the exact JSON Schema the MCP surface publishes, and `callMcpTool` does its own
  * Effect Schema decode with the tool's own error messages. Decoding twice would only give the model
  * a second, worse phrasing of the same validation failure.
@@ -26,62 +26,42 @@ import { Tool, Toolkit } from "effect/ai"
 import { AgentSpawner } from "@yielded/agent/agent-runtime"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { mapleToolCatalogFor, toInputSchema } from "./registry"
+import { inputSchemaOf, mapleToolCatalogFor } from "./registry"
 import { truncateToolOutput } from "./tool-output"
+import { MAX_FAILURE_MESSAGE_CHARS } from "../expected-failures"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-
-const UI_MARKER = "__maple_ui"
+import type { TenantContext } from "@maple/domain/http"
+import { TOOL_UI_MARKER } from "@maple/domain/mcp-outputs"
 
 /** A tool's typed output in the shape the chat UI's renderers take. */
 export interface ToolUiPayload {
-	readonly [UI_MARKER]: true
+	readonly [TOOL_UI_MARKER]: true
 	readonly tool: string
 	readonly data: Schema.Json
 }
-
-const LegacyUiBlock = Schema.fromJsonString(
-	Schema.Struct({ [UI_MARKER]: Schema.Literal(true), tool: Schema.String, data: Schema.Json }),
-)
-const decodeLegacyUiBlock = Schema.decodeUnknownOption(LegacyUiBlock)
-
-const isLegacyUiBlock = (text: string): boolean => Str.startsWith(`{"${UI_MARKER}":true`)(text)
 
 /**
  * The model's text and the UI's payload, split. The payload is never shown to a model: it doubled
  * every result it rode along on, and half of all tool results carried one.
  */
-export const splitToolResult = (
+const splitToolResult = (
 	name: string,
 	result: {
 		readonly content: ReadonlyArray<{ readonly text: string }>
 		readonly structuredContent?: Schema.Json
 	},
-): { readonly text: string; readonly ui: ToolUiPayload | undefined } => {
-	const legacy = result.content.find((block) => isLegacyUiBlock(block.text))
-	const ui: ToolUiPayload | undefined =
-		result.structuredContent !== undefined
-			? { [UI_MARKER]: true, tool: name, data: result.structuredContent }
-			: legacy === undefined
-				? undefined
-				: Option.getOrUndefined(decodeLegacyUiBlock(legacy.text))
-	const text = Arr.join(
-		Arr.map(
-			Arr.filter(result.content, (block) => !isLegacyUiBlock(block.text)),
-			(block) => block.text,
-		),
+): { readonly text: string; readonly ui: ToolUiPayload | undefined } => ({
+	text: Arr.join(
+		Arr.map(result.content, (block) => block.text),
 		"\n\n",
-	)
-	return { text, ui }
-}
+	),
+	ui:
+		result.structuredContent === undefined
+			? undefined
+			: { [TOOL_UI_MARKER]: true, tool: name, data: result.structuredContent },
+})
 
-/**
- * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax
- * error arrives with the whole offending query inlined, and on a retry loop that lands in the
- * transcript once per attempt.
- */
-const MAX_FAILURE_MESSAGE_CHARS = 500
-
+/** Capped: "one line" is a convention the error's author never agreed to. */
 const cap = (message: string): string =>
 	message.length <= MAX_FAILURE_MESSAGE_CHARS
 		? message
@@ -132,7 +112,15 @@ export interface BuildMapleToolsOptions {
 	readonly onAnswer?: (tool: string, answer: string) => void
 	/** Receives each successful call's UI payload, keyed by the call it belongs to. */
 	readonly onUi?: (toolCallId: string, ui: ToolUiPayload, call: UiSource) => void
+	/**
+	 * Arguments the run already knows, laid over whatever the model sent for that tool: a review's
+	 * own repository and pull request number, so a misspelled or missing one is not a failed call.
+	 */
+	readonly pinned?: (tool: string) => Readonly<Record<string, unknown>> | undefined
 }
+
+const isPlainObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null && !Arr.isArray(value)
 
 /** The call a UI payload came from: what a reader needs to draw a call no event announced. */
 export interface UiSource {
@@ -240,7 +228,7 @@ export const buildMapleToolkit = (
 		const gated = options.gate?.(definition.name) ?? false
 		return Tool.dynamic(definition.name, {
 			description: describe(definition, gated),
-			parameters: toInputSchema(definition.schema),
+			parameters: inputSchemaOf(definition),
 			success: Schema.String,
 			failure: ToolFailure,
 			// A proposal must end the run; any other failure goes back to the model as the call's result.
@@ -274,10 +262,12 @@ export const buildMapleToolkit = (
 					}),
 					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),
 				)
+			const pin = options.pinned?.(definition.name)
 			const handle = (
-				params: unknown,
+				sent: unknown,
 				toolCallId: string | undefined,
 			): Effect.Effect<string, typeof ToolFailure.Type> => {
+				const params = pin === undefined ? sent : isPlainObject(sent) ? { ...sent, ...pin } : pin
 				if (gated) {
 					return Effect.fail(
 						new ApprovalRequired({

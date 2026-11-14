@@ -17,42 +17,21 @@ import {
 	orgIdFromChatSessionId,
 	type ChatProposalApproval,
 } from "@maple/domain/chat-session"
-import { OrgId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
-import { type ChatSessionNamespace, chatSessionsLayerIfBound } from "@maple/backend/platform/chat-sessions"
-import { envPorts } from "@maple/backend/platform/env-ports"
-import { runtimeTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
+import { chatPlatformLayer, type ChatRuntimeInput, chatTelemetry, releaseChatRuntime } from "./do-runtime"
 import { linkedUserTenant, toTenantContext, withConnectorActor } from "./turn-actor"
 
-/** Disposing the proposal's runtime or flushing its spans rejected; both are best effort. */
-class ProposalCleanupError extends Schema.TaggedError<ProposalCleanupError>()(
-	"@maple/ai/chat/ProposalCleanupError",
-	{
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
-
-/** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
-const telemetry = runtimeTelemetry({
-	serviceName: "maple-chat",
-	anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-})
-
-export type ApplyChatProposalInput = ChatProposalApproval & {
-	readonly env: Record<string, unknown>
-	/** This Worker's `ChatSession` namespace, from the activation; the graph's `ChatSessions` port. */
-	readonly chatSessions?: ChatSessionNamespace
-	/** `"<orgId>:<tabId>"` — the org the change is made in. */
-	readonly sessionId: string
-	/** The tool and arguments the session read out of its own log, never off the wire. */
-	readonly tool: string
-	readonly input: unknown
-}
+export type ApplyChatProposalInput = ChatProposalApproval &
+	ChatRuntimeInput & {
+		/** `"<orgId>:<tabId>"` — the org the change is made in. */
+		readonly sessionId: string
+		/** The tool and arguments the session read out of its own log, never off the wire. */
+		readonly tool: string
+		readonly input: unknown
+	}
 
 export interface AppliedProposal {
 	/** What the conversation records as this call's `tool-result`, and what the channel shows. */
@@ -122,29 +101,26 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	// an entry in a session's own log and an org-admin execution — which is why it answers here,
 	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
 	// inside one.
+	// Loaded here, not with this module: the set is derived from the tool registry, which the agent
+	// records (read for the surface below) depend on too.
+	const [{ MUTATING_TOOL_NAMES }, { agentForSession }, { profileForTurn }] = await Promise.all([
+		import("./permissions"),
+		import("./agents"),
+		import("./profiles"),
+	])
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
 
 	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
 	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
-	const [{ ChatApplyServicesLive }, { DatabasePgLive }, { layerMapleDbConnection }, { McpToolExecutor }] =
-		await Promise.all([
-			import("../runtime/mcp-service-graph"),
-			import("@maple/backend/platform/DatabasePgLive"),
-			import("@maple/backend/platform/pg-connection-source"),
-			import("../mcp/dispatcher"),
-		])
+	const [{ ChatApplyServicesLive }, platform, { McpToolExecutor }] = await Promise.all([
+		import("../runtime/mcp-service-graph"),
+		chatPlatformLayer(input, chatTelemetry.layer),
+		import("../mcp/dispatcher"),
+	])
 
-	const runtime = ManagedRuntime.make(
-		ChatApplyServicesLive.pipe(
-			Layer.provideMerge(DatabasePgLive),
-			Layer.provideMerge(layerMapleDbConnection(input.env)),
-			Layer.provideMerge(envPorts(input.env)),
-			Layer.provideMerge(chatSessionsLayerIfBound(input.chatSessions, input.env)),
-			Layer.provideMerge(telemetry.layer),
-		),
-	)
+	const runtime = ManagedRuntime.make(ChatApplyServicesLive.pipe(Layer.provideMerge(platform)))
 
 	const { approver } = input
 	const by = decidedBy(approver)
@@ -153,8 +129,13 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	const program = Effect.gen(function* () {
 		const executor = yield* McpToolExecutor
 		const tenant = yield* resolveTenant(orgId, input)
-		const surface = approver.kind === "app" ? "chat" : "bot"
-		const result = yield* executor.execute(tenant, input.tool, input.input, surface)
+		const result = yield* executor.execute(
+			tenant,
+			input.tool,
+			input.input,
+			// The surface the turn that proposed it ran on.
+			profileForTurn(agentForSession(input.sessionId), approver).surface,
+		)
 		const content = Arr.join(
 			Arr.map(result.content, (entry) => entry.text),
 			"\n",
@@ -212,23 +193,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	// after the runtime is disposed and the spans flushed, both best effort.
 	return Effect.runPromise(
 		Effect.promise(() => runtime.runPromiseExit(program)).pipe(
-			Effect.ensuring(
-				Effect.tryPromise({
-					try: () => runtime.dispose(),
-					catch: (cause) =>
-						new ProposalCleanupError({
-							message: "Failed to dispose the proposal runtime",
-							cause,
-						}),
-				}).pipe(Effect.ignore),
-			),
-			Effect.ensuring(
-				Effect.tryPromise({
-					try: () => telemetry.flush(input.env),
-					catch: (cause) =>
-						new ProposalCleanupError({ message: "Failed to flush the proposal spans", cause }),
-				}).pipe(Effect.ignore),
-			),
+			Effect.ensuring(releaseChatRuntime(runtime, input.env)),
 			Effect.flatten,
 		),
 	)

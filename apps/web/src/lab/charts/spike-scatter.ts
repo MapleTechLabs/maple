@@ -1,4 +1,4 @@
-import { createSequentialColorScale } from "@maple/ui/components/plot/color-scale"
+import { createSequentialColorScale } from "@maple/views/charts/plot/color-scale"
 import { formatDuration, formatNumber } from "@maple/ui/lib/format"
 import { type ChartPoint, type ChartValue, defineChart } from "@tanstack/charts"
 import { colorGradientLegend } from "@tanstack/charts/legend"
@@ -12,8 +12,7 @@ import type { BuiltChart } from "@maple/views/charts/definitions/built-chart"
 import type { SpikeSpec } from "./spike-spec"
 import { RAMP_TOKENS } from "./spike-timeseries-tokens"
 
-// `TraceScatterSpike`, definition half: 5,000
-// seeded spans hex-binned by screen-space density. Code copied, constants unchanged.
+// The trace scatter spike's definition: 5,000 seeded spans hex-binned by screen-space density.
 
 interface ScatterRow {
 	readonly startMs: number
@@ -41,10 +40,9 @@ const nextState = (state: number): number => (Math.imul(state, 1_664_525) + 1_01
 const makeSpans = (): ReadonlyArray<ScatterRow> => {
 	const burstStart = WINDOW_START_MS + WINDOW_MS * 0.62
 	const burstEnd = burstStart + 3 * 60 * 1000
-	return Array.from({ length: SPAN_COUNT }, (_, index) => index).reduce<{
-		state: number
-		rows: Array<ScatterRow>
-	}>(
+	return Arr.reduce<number, { state: number; rows: Array<ScatterRow> }>(
+		Array.from({ length: SPAN_COUNT }, (_, index) => index),
+		{ state: 0x5eed_1234 >>> 0, rows: [] },
 		(acc, index) => {
 			const s1 = nextState(acc.state)
 			const s2 = nextState(s1)
@@ -72,7 +70,6 @@ const makeSpans = (): ReadonlyArray<ScatterRow> => {
 			acc.rows.push({ startMs, durationMs: Math.min(9_500, Math.max(0.4, durationMs)) })
 			return { state: s4, rows: acc.rows }
 		},
-		{ state: 0x5eed_1234 >>> 0, rows: [] },
 	).rows
 }
 
@@ -149,7 +146,7 @@ export const buildTraceScatterSpike = (spec: SpikeSpec) => {
 		definition,
 		focusKeyOf: (point) => `${point.datum.x}:${point.datum.y}`,
 		// Packed for the lab's body: the clock, then the count with its swatch and the reading.
-		tooltipOf: (points: ReadonlyArray<ChartPoint<Bin, ChartValue, ChartValue>>) =>
+		tooltipOf: (points: ReadonlyArray<ChartPoint<Bin>>) =>
 			Option.map(Option.fromNullishOr(points[0]?.datum), (bin) =>
 				ChartTooltip.Bucket({
 					heading: clockOf(bin.x, true),

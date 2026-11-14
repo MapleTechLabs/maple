@@ -16,13 +16,10 @@
  *   - `TYPE MATERIALIZED` + `DATASOURCE` (folded into CREATE MATERIALIZED VIEW … TO …)
  *
  * and we append the ClickHouse-only columns from `clickhouse-only-columns.ts`.
- *
- * Materialized views must be created after both their source and target tables
- * exist — `orderForCreation()` returns datasources first, then MVs.
  */
 
 import { clickHouseOnlyColumns } from "./clickhouse-only-columns"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 export type EngineFlavor = "MergeTree" | "ReplicatedMergeTree" | "SharedMergeTree"
 
@@ -318,9 +315,6 @@ export interface ResourceContent {
 	readonly content: string
 }
 
-/**
- * Emit a CREATE TABLE statement for a single Tinybird datasource resource.
- */
 export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
 	const parsed = parseDatasource(datasource.content)
@@ -361,11 +355,8 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 }
 
 /**
- * Emit a CREATE MATERIALIZED VIEW statement for a single Tinybird pipe resource.
- *
- * Materialized views in ClickHouse are decoupled from their target table —
- * `… TO <target>` references a pre-existing table. The Tinybird `.pipe`
- * format encodes the target via `DATASOURCE <name>`.
+ * A ClickHouse MV writes `TO <target>`, a pre-existing table; the Tinybird `.pipe`
+ * format names that target with `DATASOURCE <name>`.
  */
 export const emitCreateMaterializedView = (pipe: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
@@ -423,14 +414,9 @@ export const emitJsonPathSpec = (
 	})
 }
 
-// `parseEmittedCreateTable` and `parseEmittedCreateMaterializedView` consume
-// the *output* of the emitters (i.e. the SQL strings we ship in
-// `latestSnapshotStatements`) and reconstruct a structured shape suitable for
-// drift diffs against a customer's live ClickHouse `system.columns` snapshot.
-//
-// We do NOT parse arbitrary ClickHouse DDL — only the format produced by
-// `emitCreateTable` / `emitCreateMaterializedView`. The grammar is therefore
-// tightly bounded and the parser stays small.
+// `parseEmittedStatement` reads back only what the emitters produce (the SQL shipped in
+// `latestSnapshotStatements`), not arbitrary ClickHouse DDL, to diff it against a
+// customer's live `system.columns`.
 
 export interface EmittedTableColumn {
 	readonly name: string
@@ -509,9 +495,7 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (tableMatch) {
 		const name = tableMatch[1] ?? ""
-		const openIndex = sql.indexOf("(")
-		// Match the closing paren of the column list (track depth so nested
-		// parens inside types like Map(...) don't terminate us early).
+		const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 		let depth = 0
 		let closeIndex = -1
 		for (let i = openIndex; i < sql.length; i++) {
@@ -528,7 +512,6 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 		if (closeIndex < 0) return null
 		const body = Str.slice(openIndex + 1, closeIndex)(sql)
 		const columns: EmittedTableColumn[] = []
-		// Split on commas at the top level only.
 		let lineDepth = 0
 		let lineStart = 0
 		const segments: string[] = []
@@ -562,24 +545,15 @@ export const parseEmittedStatement = (sql: string): EmittedStatement | null => {
 }
 
 /**
- * Extract a single column's *original* definition line — including any
- * `DEFAULT` / `MATERIALIZED` / `CODEC` / `COMMENT` / `TTL` clauses — from a
- * CREATE TABLE statement.
- *
- * Used by `OrgClickHouseSettingsService.applySchema` to emit
- * `ALTER TABLE ... ADD COLUMN IF NOT EXISTS <line>` against drifted tables
- * without losing column defaults. (`parseEmittedStatement` strips the clauses
- * because string-equality on the bare type is what drift detection wants;
- * here we need the opposite.)
- *
- * Returns `null` if `sql` is not a CREATE TABLE, the column doesn't appear in
- * the column list, or the matched line is an `INDEX` clause.
+ * A column's full definition line, DEFAULT/MATERIALIZED/CODEC/COMMENT/TTL clauses kept, so
+ * `ClickHouseSchemaApplyWorkflow` can `ADD COLUMN` a drifted column without losing its default
+ * (`parseEmittedStatement` strips them for drift comparison).
  */
 export const extractColumnDefinition = (sql: string, columnName: string): string | null => {
 	const tableMatch = CREATE_TABLE_HEADER.exec(sql)
 	if (!tableMatch) return null
 
-	const openIndex = sql.indexOf("(")
+	const openIndex = Option.getOrElse(Str.indexOf("(")(sql), () => -1)
 	let depth = 0
 	let closeIndex = -1
 	for (let i = openIndex; i < sql.length; i++) {
@@ -621,19 +595,7 @@ export const extractColumnDefinition = (sql: string, columnName: string): string
 	return null
 }
 
-/**
- * Build the full ordered list of DDL statements for a Tinybird project
- * manifest. Order is:
- *
- *   1. Target datasources (those without JSONPath; populated by MVs)
- *   2. Source datasources (direct ingest targets)
- *   3. Materialized views
- *
- * In ClickHouse, an MV must be created after both its source and its target
- * exist. We don't strictly need to separate target vs source datasources —
- * datasources have no inter-dependencies — but emitting them in two groups
- * makes the output easier to read.
- */
+/** Datasources first, then MVs: ClickHouse creates an MV only after its source and target exist. */
 export const emitProjectDdl = (
 	manifest: {
 		readonly datasources: ReadonlyArray<ResourceContent>

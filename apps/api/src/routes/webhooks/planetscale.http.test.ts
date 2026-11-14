@@ -3,10 +3,11 @@ import { createHmac } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PlanetscaleConnections, PlanetscaleDatabases } from "@maple/db/tables"
-import { SourceId } from "@maple/domain/primitives"
-import { ConfigProvider, Context, Effect, Layer, Schema, String as Str } from "effect"
+import { SourceId } from "@maple/primitives"
+import { ConfigProvider, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { planetScaleDatabaseWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -14,7 +15,7 @@ import {
 	createTestDb,
 	insertTestSource,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES,
 	PlanetScaleWebhookQueue,
@@ -69,10 +70,17 @@ const asSourceId = Schema.decodeUnknownSync(SourceId)
 const seedConnection = (testDb: TestDb) =>
 	Effect.gen(function* () {
 		const database = yield* Database
-		const encrypted = yield* encryptAes256Gcm(
+		const sealError = (message: string) => new IntegrationsValidationError({ message })
+		const keyring = yield* parseSecretKeyring(
+			{ primary: ENCRYPTION_KEY.toString("base64"), decryptOnly: Option.none() },
+			sealError,
+		).pipe(Effect.orDie)
+		const encrypted = yield* sealSecret(
+			keyring,
+			planetScaleDatabaseWebhookSecretSlot,
+			{ orgId: "org_1", id: "psdb-row-1" },
 			SECRET,
-			ENCRYPTION_KEY,
-			(message) => new IntegrationsValidationError({ message }),
+			sealError,
 		).pipe(Effect.orDie)
 		const now = Date.parse("2026-07-11T00:00:00.000Z")
 		const sourceId = yield* Effect.promise(() =>
@@ -144,6 +152,26 @@ describe("PlanetScaleWebhookRouter", () => {
 					),
 				)
 				assert.strictEqual(rejected.status, 401)
+
+				// An unsigned delivery is refused whatever it carries, and an oversized one is never parsed.
+				const unsigned = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, { method: "POST", body: BODY }),
+						handlerContext,
+					),
+				)
+				assert.strictEqual(unsigned.status, 401)
+				const oversized = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: { "x-planetscale-signature": "invalid" },
+							body: Str.repeat(1024 * 1024 + 1)("x"),
+						}),
+						handlerContext,
+					),
+				)
+				assert.strictEqual(oversized.status, 413)
 
 				// A database Maple registered no webhook on has no secret a signature could match.
 				const otherDatabase = JSON.stringify({

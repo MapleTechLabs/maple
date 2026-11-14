@@ -1,4 +1,4 @@
-// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
+// BOUNDARY-FILE: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { Worker } from "node:worker_threads"
@@ -19,6 +19,9 @@ import { FileSystem } from "effect/FileSystem"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "./version"
 import { serverUrl } from "./local-address"
+import { errnoCode, syscallError } from "./store-errors"
+import { isProcessAlive } from "./process-liveness"
+import { MAINTENANCE_TOKEN_HEADER, readMaintenanceToken } from "./maintenance-auth"
 import { Chdb, MERGE_TREE_CONFIG_XML, RAW_TELEMETRY_TTL_COLUMNS, writeIngestConfig } from "./chdb"
 import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
@@ -258,19 +261,6 @@ export class CheckpointCreateError extends Schema.TaggedError<CheckpointCreateEr
 	{ ...checkpointErrorFields, checkpointId: CheckpointId },
 ) {}
 
-/**
- * A checkpoint the CLI *correctly refuses to take*: the running server's chDB
- * config carries no `<backups>` stanza, so `BACKUP DATABASE` cannot work.
- *
- * Its own tag, and never a `CheckpointCreateError`, because nothing failed —
- * this is the CLI reporting an unmet precondition with an actionable fix, the
- * same category as "maple is already running". It used to bill two error events
- * per occurrence (an `Error` span on `CheckpointService.create`, plus the
- * `ServerError` the command re-wrapped it into). `bin.ts` now recovers it via
- * `recoverExpected`, which annotates `maple.cli.outcome`, prints the message and
- * exits 1 with the root span `Ok`. The `expected` marker states that intent on
- * the error itself rather than only in the recovery list.
- */
 /** Kept verbatim — it is the whole remedy the user gets. */
 const MISSING_BACKUPS_CONFIG_MESSAGE =
 	"the running server's chDB config has no `<backups>` stanza, so it " +
@@ -279,6 +269,11 @@ const MISSING_BACKUPS_CONFIG_MESSAGE =
 	"`<backups><allowed_disk>default</allowed_disk>" +
 	"<allowed_path>backups</allowed_path></backups>` to your config."
 
+/**
+ * A checkpoint the CLI correctly refuses to take: the running server's chDB
+ * config carries no `<backups>` stanza. An unmet precondition, not a failure, so
+ * `expected` lets `bin.ts` exit 1 with the root span `Ok` (`recoverExpected`).
+ */
 export class CheckpointPreconditionError extends Schema.TaggedError<CheckpointPreconditionError>()(
 	"@maple/cli/CheckpointPreconditionError",
 	{ dataDir: Schema.String, message: Schema.String },
@@ -580,12 +575,12 @@ export const postCheckpointBackup = (
 	const url = `${serverUrl(host, port)}/local/checkpoint/backup`
 	return Effect.gen(function* () {
 		const token = yield* Effect.try({
-			try: () => Str.trim(readFileSync(`${resolve(dataDir)}.maintenance-token`, "utf8")),
+			try: () => readMaintenanceToken(dataDir),
 			catch: (error) => localQueryError(0, `failed to read maintenance token: ${errorMessage(error)}`),
 		})
 		const client = yield* HttpClient.HttpClient
 		const request = HttpClientRequest.post(url).pipe(
-			HttpClientRequest.setHeader("x-maple-maintenance-token", token),
+			HttpClientRequest.setHeader(MAINTENANCE_TOKEN_HEADER, token),
 			HttpClientRequest.bodyText(encodeJson({ checkpointId }), "application/json"),
 		)
 		const response = yield* client
@@ -649,7 +644,7 @@ const readJsonRows = (text: string): ReadonlyArray<Record<string, unknown>> =>
 
 const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 	const row = rows[0]
-	if (!row) throw new Error("count query returned no rows")
+	if (row === undefined) throw new Error("count query returned no rows")
 	const value = row["count()"] ?? row.count
 	const count = typeof value === "number" ? value : Number(value ?? 0)
 	if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid count result: ${String(value)}`)
@@ -1315,15 +1310,6 @@ const preserveCompletedOperation = async (
 	await faults.afterCompletedOperationPreserved?.(preserved)
 }
 
-const processIsAlive = (pid: number): boolean => {
-	try {
-		process.kill(pid, 0)
-		return true
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === "EPERM"
-	}
-}
-
 const PROCESS_INSTANCE_ID = randomUUID()
 const ORPHANED_LOCK_GRACE_MS = 60_000
 
@@ -1334,6 +1320,20 @@ const LockHolderSchema = Schema.Struct({
 	instanceId: Schema.optionalKey(Schema.String),
 })
 type LockHolder = Schema.Schema.Type<typeof LockHolderSchema>
+const decodeLockHolder = Schema.decodeUnknownOption(Schema.fromJsonString(LockHolderSchema))
+
+/** Is a checkpoint/restore/archive operation holding this store's maintenance lock? Read
+ *  from disk, since the server itself may be too busy in `BACKUP` to answer. */
+export const maintenanceInProgress = (dataDir: string): boolean =>
+	Effect.runSync(
+		Effect.try({
+			try: () => readFileSync(join(maintenanceLockPath(dataDir), "owner.json"), "utf8"),
+			catch: syscallError,
+		}).pipe(
+			Effect.map((raw) => Option.exists(decodeLockHolder(raw), (owner) => isProcessAlive(owner.pid))),
+			Effect.orElseSucceed(() => false),
+		),
+	)
 
 // Only an absent record can prove a crash leftover; unreadable or undecodable
 // records may belong to a live holder, so they stay "uncertain".
@@ -1343,8 +1343,8 @@ const readMaintenanceOwner = (lockPath: string): Promise<LockHolder | "absent" |
 		.then(async () =>
 			Schema.decodeUnknownSync(LockHolderSchema)(decodeJsonSync(await readFile(ownerPath, "utf8"))),
 		)
-		.catch((error: NodeJS.ErrnoException): "absent" | "uncertain" =>
-			error?.code === "ENOENT" ? "absent" : "uncertain",
+		.catch((error: unknown): "absent" | "uncertain" =>
+			errnoCode(error) === "ENOENT" ? "absent" : "uncertain",
 		)
 }
 
@@ -1360,7 +1360,7 @@ const maintenanceOwnerIsLive = async (owner: LockHolder, lockPath: string): Prom
 	// Records without an instance id come from builds that never heartbeat, so
 	// only PID liveness can judge them (our PID is alive, so they are refused).
 	owner.pid !== process.pid || owner.instanceId === undefined
-		? processIsAlive(owner.pid)
+		? owner.pid === process.pid || isProcessAlive(owner.pid)
 		: owner.instanceId === PROCESS_INSTANCE_ID ||
 			!(await lockIsOlderThan(lockPath, ORPHANED_LOCK_GRACE_MS))
 
@@ -1478,7 +1478,8 @@ export const reconcileCheckpointOperations = async (
 			)}`,
 		)
 	}
-	const entry = entries[0]!
+	const entry = entries[0]
+	if (entry === undefined) return
 	if (!entry.isDirectory() || !Str.startsWith("checkpoint-")(entry.name)) {
 		throw new Error(`unrecognized checkpoint operation debris: ${join(operationsRoot, entry.name)}`)
 	}
@@ -2249,7 +2250,7 @@ export const formatCheckpointRefreshBackoff = (
 		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
 			(backoff.lastError === null
 				? ""
-				: ` (last: ${Str.split("\n")(backoff.lastError)[0]?.slice(0, 200)})`) +
+				: ` (last: ${Str.slice(0, 200)(Str.split("\n")(backoff.lastError)[0])})`) +
 			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
 
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
@@ -2305,6 +2306,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					]) {
 						await ensurePrivateDirectory(path)
 					}
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					const startedAt = new Date().toISOString()
 					let operation: CheckpointOperation = {
 						formatVersion: 1,
@@ -2423,6 +2425,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						revision: operationId,
 						current: checkpointId,
 						previous: oldState?.current ?? null,
+						// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 						committedAt: new Date().toISOString(),
 					}
 					await durableJson(checkpointStatePath(options.dataDir), state, options.faults)
@@ -2460,6 +2463,8 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 	)
 })
 
+const isCheckpointPreconditionError = Schema.is(CheckpointPreconditionError)
+
 /**
  * Create a checkpoint, or refuse with an expected outcome.
  *
@@ -2469,8 +2474,9 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
  */
 export const createCheckpoint = (options: CheckpointOptions) =>
 	createCheckpointTraced(options).pipe(
+		// @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off -- filterOrFail's orFailWith sees the unnarrowed value, widening the error
 		Effect.flatMap((outcome) =>
-			outcome instanceof CheckpointPreconditionError ? Effect.fail(outcome) : Effect.succeed(outcome),
+			isCheckpointPreconditionError(outcome) ? Effect.fail(outcome) : Effect.succeed(outcome),
 		),
 	)
 
@@ -2937,6 +2943,7 @@ export const restoreCheckpoint = Effect.fn("CheckpointService.restore")(function
 					checkpointId: resolvedCheckpoint.checkpointId,
 					quarantineId,
 					phase: "intent",
+					// @effect-diagnostics-next-line globalDateInEffect:off -- stamped inside an async durable write, not an Effect
 					createdAt: new Date().toISOString(),
 					validation: null,
 				}

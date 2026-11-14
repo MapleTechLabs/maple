@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
 import {
 	GitCommitSha,
 	OrgId,
@@ -13,23 +13,23 @@ import {
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { PrReviewFindings, PrReviews, VcsRepositories } from "@maple/db/tables"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { PrReviewAnalyticsService } from "./PrReviewAnalyticsService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_review_analytics")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_other")
-const REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
-const OTHER_REPO = Schema.decodeUnknownSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
+const ORG = Schema.decodeSync(OrgId)("org_review_analytics")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_other")
+const REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000001")
+const OTHER_REPO = Schema.decodeSync(VcsRepositoryId)("00000000-0000-4000-8000-000000000002")
 const reviewId = (n: number) =>
-	Schema.decodeUnknownSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
+	Schema.decodeSync(PrReviewId)(`00000000-0000-4000-9000-${Str.padStart(12, "0")(String(n))}`)
 
 const DAY = 86_400_000
 const START = Date.UTC(2026, 8, 1)
 const at = (days: number, hours = 0) => START + days * DAY + hours * 3_600_000
-const INSTALLATION = Schema.decodeUnknownSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
+const INSTALLATION = Schema.decodeSync(VcsInstallationId)("00000000-0000-4000-8000-0000000000aa")
 const SHA = Str.repeat(40)("a")
 
 const report = (verdict: "clean" | "issues", confidence: number, severities: ReadonlyArray<string>) =>
@@ -89,7 +89,7 @@ const seed = Effect.gen(function* () {
 		orgId: input.orgId ?? ORG,
 		repositoryId: input.repositoryId ?? REPO,
 		number: input.number,
-		headSha: Schema.decodeUnknownSync(GitCommitSha)(Str.slice(0, 39)(SHA) + String(input.n % 10)),
+		headSha: Schema.decodeSync(GitCommitSha)(Str.slice(0, 39)(SHA) + String(input.n % 10)),
 		url: `https://github.com/acme/web/pull/${input.number}`,
 		title: `PR ${input.number}`,
 		authorLogin: input.author,
@@ -341,7 +341,7 @@ describe("PrReviewAnalyticsService", () => {
 							orgId: ORG,
 							repositoryId: REPO,
 							number: 12,
-							headSha: Schema.decodeUnknownSync(GitCommitSha)(SHA),
+							headSha: Schema.decodeSync(GitCommitSha)(SHA),
 							url: "https://github.com/acme/web/pull/12",
 							title: "PR 12",
 							authorLogin: "aaron",
@@ -429,10 +429,10 @@ describe("PrReviewAnalyticsService", () => {
 						Arr.map(response.findings, (finding) => finding.handle),
 					)
 				assert.deepStrictEqual(yield* handles("finding 2"), ["F2"])
-				assert.deepStrictEqual((yield* handles("index.ts")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("10")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("pr 10")).toSorted(), ["F1", "F2"])
-				assert.deepStrictEqual((yield* handles("acme/web")).toSorted(), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("index.ts"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("10"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("pr 10"), Order.String), ["F1", "F2"])
+				assert.deepStrictEqual(Arr.sort(yield* handles("acme/web"), Order.String), ["F1", "F2"])
 				assert.deepStrictEqual(yield* handles("other/api"), [])
 			}),
 		),
@@ -467,4 +467,91 @@ describe("mergePrReviewConfig", () => {
 		const repository = new PrReviewRepositoryConfig({ dailyLimit: 3 })
 		assert.strictEqual(mergePrReviewConfig(undefined, repository), repository)
 	})
+
+	it.effect(
+		"sums code review credits by repository and pull request, with each later push as a re-review",
+		() =>
+			provide(
+				Effect.gen(function* () {
+					yield* seed
+					const database = yield* Database
+					const price = (n: number, costMicrousd: number) =>
+						database.execute((db) =>
+							db.run(
+								PG.update(PrReviews)
+									.set({ costMicrousd })
+									.where(($) => [$.id.eq(reviewId(n))]),
+							),
+						)
+					// Two pushes of #10 priced, #11 failed after it started with no cost, another tenant's review.
+					yield* price(1, 1_000_000)
+					yield* price(2, 500_000)
+					yield* price(5, 9_000_000)
+					yield* database.execute((db) =>
+						db.run(
+							PG.update(PrReviews)
+								.set({ startedAt: at(5) })
+								.where(($) => [$.id.eq(reviewId(3))]),
+						),
+					)
+					// A push of #10 superseded mid-run (billed, so it counts), one skipped before it began,
+					// and a failed review of #12 that never started: neither of those ran anything.
+					const ended = (
+						n: number,
+						status: "skipped" | "failed",
+						startedAt: number | null,
+						costMicrousd: number | null,
+					) => ({
+						id: reviewId(n),
+						orgId: ORG,
+						repositoryId: REPO,
+						number: status === "skipped" ? 10 : 12,
+						headSha: Schema.decodeSync(GitCommitSha)(Str.repeat(40)(String(n % 10))),
+						url: "https://github.com/acme/web/pull/10",
+						title: "PR 10",
+						authorLogin: "ada",
+						status,
+						startedAt,
+						costMicrousd,
+						createdAt: at(4),
+						updatedAt: at(4),
+					})
+					yield* database.execute((db) =>
+						db.run(
+							PG.insertInto(PrReviews).values([
+								ended(6, "skipped", at(4), 250_000),
+								ended(7, "skipped", null, null),
+								ended(8, "failed", null, null),
+							]),
+						),
+					)
+					const spend = yield* (yield* PrReviewAnalyticsService).spend([ORG], {
+						start: START,
+						end: START + 10 * DAY,
+					})
+					assert.strictEqual(spend.reviews, 4)
+					assert.strictEqual(spend.pullRequests, 2)
+					assert.closeTo(spend.credits, 2.1, 1e-9)
+					// #11 ran (failed after it started) without a cost: it ran before costs were kept.
+					assert.strictEqual(spend.unpricedReviews, 1)
+					assert.strictEqual(spend.reReviews, 2)
+					assert.closeTo(spend.reReviewCredits, 0.9, 1e-9)
+					assert.deepStrictEqual(
+						Arr.map(spend.repositories, (repo) => [
+							repo.fullName,
+							repo.pullRequests,
+							repo.reviews,
+						]),
+						[["acme/web", 2, 4]],
+					)
+					assert.deepStrictEqual(
+						Arr.map(spend.topPullRequests, (pr) => [pr.number, pr.reviews, pr.title]),
+						[
+							[10, 3, "PR 10"],
+							[11, 1, "PR 11"],
+						],
+					)
+				}),
+			),
+	)
 })

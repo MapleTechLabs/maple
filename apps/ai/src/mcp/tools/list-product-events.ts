@@ -1,9 +1,10 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ListProductEventsOutput, ProductEventKind } from "@maple/domain/mcp-outputs"
+import { ProductEventKind } from "@maple/domain/mcp-outputs"
 import { productEventNames } from "@maple/query-engine/observability"
 import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
+import { withTenantExecutor } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { MCP_DISCOVERY_MAX_HOURS } from "../lib/time"
 import { formatNumber, truncate } from "../lib/format"
 import { stringifyJson } from "../lib/json"
@@ -41,7 +42,6 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			utm_campaign: P.optionalText("Only events from sessions carrying this utm_campaign."),
 			limit: P.limit({ default: 50, max: QUERY_MAX, noun: "event names" }),
 		}),
-		output: ListProductEventsOutput,
 		hints: { readOnly: true },
 		phrases: ["Listing product events"],
 		handler: Effect.fn("McpTool.listProductEvents")(function* (params) {
@@ -84,9 +84,9 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				(row) => ({
 					eventName: row.eventName,
 					kind: row.kind,
-					count: row.count || 0,
-					sessions: row.sessions || 0,
-					persons: row.persons || 0,
+					count: row.count,
+					sessions: row.sessions,
+					persons: row.persons,
 				}),
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", events.length)

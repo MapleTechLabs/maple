@@ -28,9 +28,10 @@ interface ReportFields {
 
 /** Report bodies expose their fields as getters that only `toJSON` serializes. */
 function parseReportBody(body: unknown): ReportFields {
-	// oxlint-disable-next-line effecttsgo/global-json -- customer-facing SDK, keeps Schema out of the bundle
 	const raw: unknown = body === null || body === undefined ? undefined : JSON.parse(JSON.stringify(body))
-	const fields = new Map(typeof raw === "object" && raw !== null ? Object.entries(raw) : [])
+	const fields = new Map<string, unknown>(
+		typeof raw === "object" && raw !== null ? Object.entries(raw) : [],
+	)
 	const str = (key: string): string | undefined => {
 		const value = fields.get(key)
 		return typeof value === "string" && value !== "" ? value : undefined
@@ -54,8 +55,8 @@ function parseReportBody(body: unknown): ReportFields {
 function sourceAttributes(fields: ReportFields): Record<string, LogAttributeValue> {
 	return {
 		...(fields.sourceFile ? { "code.file.path": scrubUrl(fields.sourceFile) } : undefined),
-		...(fields.lineNumber ? { "code.line.number": fields.lineNumber } : undefined),
-		...(fields.columnNumber ? { "code.column.number": fields.columnNumber } : undefined),
+		...((fields.lineNumber ?? 0) > 0 ? { "code.line.number": fields.lineNumber } : undefined),
+		...((fields.columnNumber ?? 0) > 0 ? { "code.column.number": fields.columnNumber } : undefined),
 	}
 }
 

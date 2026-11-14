@@ -1,10 +1,5 @@
 import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
-import {
-	type EndpointGroup,
-	type EndpointSort,
-	groupEndpoints,
-	leafLabel,
-} from "../../../components/services/endpoint-grouping"
+import { type EndpointGroup, type EndpointSort, groupEndpoints, leafLabel } from "./endpoint-grouping"
 import {
 	countLabel,
 	formatBytes,
@@ -19,6 +14,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ThemeColors } from "@maple/views/charts/theme-colors"
 import { button } from "@maple/views/ui/button"
 import { pressable } from "@maple/views/ui/pressable"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { tableCell, tableRow } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
@@ -30,7 +26,7 @@ import type { Endpoint } from "./model-tabs"
 import { SPARK_TOKENS, sparkline } from "./view-api-charts"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 // The API tab: endpoint rows and group rows.
 
@@ -62,7 +58,6 @@ export type RowContext = Readonly<{
 	isOneMethod: boolean
 }>
 
-/** `methodTone`: only the mutating verbs are tinted. */
 const methodTone = (method: string): string =>
 	method === "POST" || method === "PUT" || method === "PATCH"
 		? "text-severity-warn"
@@ -211,15 +206,13 @@ const endpointRow = (
 						]),
 						...(isSlowest
 							? [
-									h.span(
-										[
-											h.Class(
-												cn(
-													"hidden shrink-0 rounded-sm bg-muted px-1.5 text-3xs md:inline",
-													TONE_TEXT.warn,
-												),
-											),
-										],
+									badge(
+										h,
+										{
+											variant: "muted",
+											size: "xs",
+											className: cn("hidden px-1.5 md:inline-flex", TONE_TEXT.warn),
+										},
 										["slowest"],
 									),
 								]
@@ -231,62 +224,56 @@ const endpointRow = (
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-3")],
-						[
-							// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
-							h.div(
-								[h.Class("hidden h-5 w-24 md:block")],
-								context.theme === null
-									? []
-									: [
-											sparkline(h, {
-												chartId: `endpoint-${endpoint.spanName}`,
-												values: context.sparks.get(endpoint.spanName) ?? [],
-												token: SPARK_TOKENS.requests,
-												theme: context.theme,
-												className: cn("h-5 w-24", isQuiet && "opacity-60"),
-												toMessage: (message) =>
-													Message.GotChartMessage({
-														chartId: "sparkline",
-														message,
-													}),
-											}),
-										],
-							),
-							h.span(
-								[
-									h.Class(
-										cn(
-											"w-12 text-right",
-											isQuiet ? "text-muted-foreground" : "text-foreground",
-										),
+					hstack(h, { gap: "3", align: "center", justify: "end" }, [
+						// The wrapper hides it on narrow screens; the chart keeps its own flex layout.
+						h.div(
+							[h.Class("hidden h-5 w-24 md:block")],
+							context.theme === null
+								? []
+								: [
+										sparkline(h, {
+											chartId: `endpoint-${endpoint.spanName}`,
+											values: context.sparks.get(endpoint.spanName) ?? [],
+											token: SPARK_TOKENS.requests,
+											theme: context.theme,
+											className: cn("h-5 w-24", isQuiet && "opacity-60"),
+											toMessage: (message) =>
+												Message.GotChartMessage({
+													chartId: "sparkline",
+													message,
+												}),
+										}),
+									],
+						),
+						h.span(
+							[
+								h.Class(
+									cn(
+										"w-12 text-right",
+										isQuiet ? "text-muted-foreground" : "text-foreground",
 									),
-									// A sampled endpoint's rate is scaled up from its traced spans.
-									...(endpoint.estimatedSpanCount > endpoint.spanCount
-										? [h.Title("Estimated from sampled traces")]
-										: []),
-								],
-								[rateText(endpoint, context.seconds)],
-							),
-						],
-					),
+								),
+								// A sampled endpoint's rate is scaled up from its traced spans.
+								...(endpoint.estimatedSpanCount > endpoint.spanCount
+									? [h.Title("Estimated from sampled traces")]
+									: []),
+							],
+							[rateText(endpoint, context.seconds)],
+						),
+					]),
 				],
 				cn(numeric, "py-0 pr-0", COLUMN.rate),
 			),
 			tableCell(
 				h,
 				[
-					h.div(
-						[h.Class("flex items-center justify-end gap-3")],
-						[
-							statusMixBar(h, mix, "hidden w-24 md:flex"),
-							h.span(
-								[h.Class("w-12 text-right")],
-								[shareText(h, mix?.client ?? null, TONE_TEXT.warn)],
-							),
-						],
-					),
+					hstack(h, { gap: "3", align: "center", justify: "end" }, [
+						statusMixBar(h, mix, "hidden w-24 md:flex"),
+						h.span(
+							[h.Class("w-12 text-right")],
+							[shareText(h, mix?.client ?? null, TONE_TEXT.warn)],
+						),
+					]),
 				],
 				cn(numeric, "py-0 pr-0", COLUMN.mix),
 			),
@@ -324,15 +311,13 @@ const endpointRow = (
 		],
 		cn(
 			"group/row h-11 cursor-pointer border-b text-ui last:border-b-0 has-[button:focus-visible]:ring-1 has-[button:focus-visible]:ring-ring has-[button:focus-visible]:ring-inset",
-			isSelected
-				? "bg-accent hover:bg-accent active:bg-accent"
-				: "hover:bg-surface-sunken active:bg-surface-sunken",
+			isSelected ? "bg-surface-strong" : "hover:bg-surface-sunken active:bg-surface-sunken",
 		),
 		[h.Key(endpoint.spanName), h.OnClick(Message.ClickedEndpoint({ spanName: endpoint.spanName }))],
 	)
 }
 
-/** `GroupHeaderRow`: the group's totals; p95/p99 are the worst in the group. */
+/** The group's totals; p95/p99 are the worst in the group. */
 const groupHeaderRow = (
 	h: H,
 	options: Readonly<{
@@ -415,7 +400,7 @@ const formatLatencyText = (ms: number) => (ms > 0 ? formatLatency(ms) : EMPTY_VA
 const sharesRoute = (endpoints: ReadonlyArray<Endpoint>, endpoint: Endpoint) =>
 	Arr.some(endpoints, (other) => other !== endpoint && other.route === endpoint.route)
 
-/** `GroupRows`: a collapsed bucket with its explainer, or a stem header and its rows. */
+/** A collapsed bucket with its explainer, or a stem header and its rows. */
 export const groupRows = (
 	h: H,
 	group: EndpointGroup<Endpoint>,
@@ -443,13 +428,10 @@ export const groupRows = (
 							hstack(h, { gap: "4" }, [
 								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
 									typography(h, { size: "xs", tone: "muted" }, [copy.explainer]),
-									h.span(
-										[h.Class("truncate text-2xs text-foreground-faint")],
-										[
-											Arr.join(sample, "  ·  "),
-											remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
-										],
-									),
+									typography(h, { size: "2xs", tone: "faint", truncate: true }, [
+										Arr.join(sample, "  ·  "),
+										remaining > 0 ? `  ·  ${formatNumber(remaining)} more` : "",
+									]),
 								]),
 								button(
 									h,
@@ -516,4 +498,7 @@ export const visibleEndpoints = (
 
 const ENDPOINT_SORTS: ReadonlyArray<EndpointSort> = ["traffic", "path", "errorRate", "p50", "p95", "p99"]
 const endpointSortOf = (key: string | null): EndpointSort =>
-	ENDPOINT_SORTS.find((sort) => sort === key) ?? "traffic"
+	Option.getOrElse(
+		Arr.findFirst(ENDPOINT_SORTS, (sort) => sort === key),
+		(): EndpointSort => "traffic",
+	)

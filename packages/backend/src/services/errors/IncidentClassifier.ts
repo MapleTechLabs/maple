@@ -8,18 +8,14 @@
  * without the binding gets a classifier that answers nothing, which the gate
  * reads as "investigate", never as "skip".
  */
-import {
-	IncidentTriageRequest,
-	IncidentTriageVerdict,
-	MapleAiApi,
-	internalServiceBearer,
-} from "@maple/domain/http"
-import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
+import { IncidentTriageRequest, IncidentTriageVerdict, MapleAiApi } from "@maple/domain/http"
+import { Context, Duration, Effect, Layer, Result } from "effect"
 import { HttpApiClient } from "effect/http-api"
-import { AiWorkerFetcher } from "@maple/backend/platform/bindings"
-import { Env } from "@maple/backend/platform/Env"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import {
+	aiWorkerConnection,
+	bestEffortAiCall,
+	MAPLE_AI_BASE_URL,
+} from "@maple/backend/platform/ai-worker-client"
 
 /**
  * Bounded so a slow model can never stretch an alerting tick past its cron
@@ -43,49 +39,30 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 	"@maple/backend/errors/IncidentClassifier",
 	{
 		make: Effect.gen(function* () {
-			const fetcher = yield* Effect.serviceOption(AiWorkerFetcher)
-			const binding = Option.flatten(fetcher)
-			const config = yield* Env
-			const token = Option.map(config.INTERNAL_SERVICE_TOKEN, Redacted.value)
-
-			if (Option.isNone(binding) || Option.isNone(token)) {
+			const connection = yield* aiWorkerConnection
+			if (Result.isFailure(connection)) {
 				yield* Effect.logWarning("incident classifier is not available").pipe(
-					Effect.annotateLogs({
-						"maple.triage.reason": Option.isSome(binding)
-							? "INTERNAL_SERVICE_TOKEN is not configured"
-							: "no AI_WORKER service binding on this deployment",
-					}),
+					Effect.annotateLogs({ "maple.triage.reason": connection.failure }),
 				)
 				return unavailable
 			}
 
-			const authorization = internalServiceBearer(token.value)
-			// The binding routes by name rather than by host; the origin below is the
-			// formality `Request` insists on, and the transport is the binding's own.
-			const httpClient = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding.value))
+			const { authorization, httpClient } = connection.success
 			const client = yield* HttpApiClient.group(MapleAiApi, {
 				group: "triage",
 				httpClient,
-				baseUrl: "https://maple-ai.internal",
+				baseUrl: MAPLE_AI_BASE_URL,
 			})
 
 			const classify: IncidentClassifierApi["classify"] = Effect.fn("IncidentClassifier.classify")(
 				function* (request) {
-					return yield* client.classify({ headers: { authorization }, payload: request }).pipe(
-						Effect.map((verdict): IncidentTriageVerdict | null => verdict),
-						Effect.catchCause((cause) =>
-							Cause.hasInterruptsOnly(cause)
-								? Effect.interrupt
-								: Effect.logWarning("incident classifier call failed").pipe(
-										Effect.annotateLogs({ error: summarizeCause(cause) }),
-										Effect.as(null),
-									),
-						),
-						Effect.timeoutOrElse({
-							duration: CLASSIFY_TIMEOUT,
-							orElse: () =>
-								Effect.logWarning("incident classifier timed out").pipe(Effect.as(null)),
-						}),
+					return yield* bestEffortAiCall(
+						client.classify({ headers: { authorization }, payload: request }),
+						{
+							timeout: CLASSIFY_TIMEOUT,
+							failed: "incident classifier call failed",
+							timedOut: "incident classifier timed out",
+						},
 					)
 				},
 			)

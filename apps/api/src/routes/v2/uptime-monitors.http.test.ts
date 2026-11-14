@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -17,23 +17,16 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { limitReached, UptimeMonitorAllowance } from "@maple/backend/services/uptime/UptimeMonitorAllowance"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithUptime,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { HttpV2UptimeMonitorsLive } from "./uptime-monitors.http"
 
 /** `/v2/uptime_monitors` over an embedded PGlite with the real service. */
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_uptime_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_uptime_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_uptime_e2e")
+const USER = Schema.decodeSync(UserId)("user_uptime_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -69,14 +62,11 @@ const makeHarness = (allowance: Layer.Layer<UptimeMonitorAllowance> = UptimeMoni
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
 	)
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithUptime(uptimeLive)),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.uptimeMonitors),
+	).pipe(
+		Layer.provide(HttpV2UptimeMonitorsLive.pipe(Layer.provide(uptimeLive))),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -363,15 +353,24 @@ describe("v2 uptime monitors", () => {
 			const created = await harness.request("POST", "/v2/uptime_monitors", full, {
 				name: "API health",
 				kind: "http",
-				config: { type: "http", url: "https://api.example.com/health" },
+				config: {
+					type: "http",
+					url: "https://api.example.com/health",
+					headers: { Authorization: "Bearer s3cret" },
+				},
 			})
 			expect(created.status).toBe(200)
 			const path = `/v2/uptime_monitors/${created.body.id}`
 			const httpConfig = { type: "http", url: "https://api.example.com/health" }
 
+			// A key resolves with the default key role, so the read scope is what makes it a reader.
 			const { secret: reader } = await harness.bootstrapKey(undefined, ["uptime_monitors:read"])
-			expect((await harness.request("GET", "/v2/uptime_monitors", reader)).status).toBe(200)
-			expect((await harness.request("GET", path, reader)).status).toBe(200)
+			const listed = await harness.request("GET", "/v2/uptime_monitors", reader)
+			expect(listed.status).toBe(200)
+			expect(listed.body.data[0].config.headers).toEqual({ Authorization: "[redacted]" })
+			const read = await harness.request("GET", path, reader)
+			expect(read.status).toBe(200)
+			expect(read.body.config.headers).toEqual({ Authorization: "[redacted]" })
 			const denied = [
 				await harness.request("POST", "/v2/uptime_monitors", reader, {
 					name: "Denied",

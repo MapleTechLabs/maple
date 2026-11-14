@@ -1,13 +1,15 @@
+import { reloadSpin } from "@maple/views/data/timing"
+import { RequestMode } from "@maple/views/data/keyed"
 import {
 	getTracesFacets,
 	listTraces,
 	type ListTracesInput,
 	type Trace,
 } from "@maple/web-data/warehouse/traces"
-import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr } from "effect"
+import { Clock, Duration, Effect, Queue, Schema, Stream, Array as Arr, Predicate } from "effect"
 import { Command, Mount } from "foldkit"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { resolveWindow, TimeWindow } from "../../../data/time-range"
 import { TracesSearch } from "../../../route/search"
@@ -15,13 +17,13 @@ import { portalToBody } from "@maple/views/ui/overlay/portal"
 import { autocompleteLookup, AutocompleteLookup } from "../../kit/autocomplete-lookups"
 import { loadSignalPresences } from "../../kit/signal-presence"
 import type { Search } from "./derive"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 import { type TraceRow, TracesFacets, type TracesPage } from "./model"
 
-/** `useInfiniteTraces`' page size; the first page is the atom, the rest direct fetches. */
+/** The list's page size. */
 export const PAGE_SIZE = 100
 
-/** `useEffectiveTimeRange` / `useTableRefreshTimeRange`: snapped on entry, unsnapped on Reload. */
+/** The window: snapped on entry, unsnapped on Reload. */
 export const ResolveWindow = Command.define("ResolveTracesWindow", {
 	args: {
 		mode: RequestMode,
@@ -52,14 +54,10 @@ export const FetchFacets = Command.define("FetchTracesFacets", {
 				getTracesFacets({ data: { startTime: window.startTime, endTime: window.endTime } }),
 				(response) => response.data,
 			),
-		).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
-		),
+		).pipe(settleTo((result) => Message.CompletedFetchFacets({ key, result }))),
 })
 
-/** `buildQueryParams`: the URL filters and window, the org pin overriding URL namespaces. */
+/** The URL filters and window, the org pin overriding URL namespaces. */
 export const listInput = (
 	search: Search,
 	window: TimeWindow,
@@ -119,15 +117,12 @@ const toRow = (trace: Trace): TraceRow => ({
 
 const fetchPage = (search: Search, window: TimeWindow, pinnedNamespace: string | null, offset: number) =>
 	listTraces({ data: listInput(search, window, pinnedNamespace, offset) }).pipe(
-		Effect.mapBoth({
-			onSuccess: (response): TracesPage => ({
-				rows: Arr.map(response.data, toRow),
-				scannedCount: response.meta.scannedCount,
-				hiddenCount: response.meta.hiddenCount,
-			}),
-			onFailure: toLoadFailure,
-		}),
-		Effect.result,
+		Effect.map((response): TracesPage => ({
+			rows: Arr.map(response.data, toRow),
+			scannedCount: response.meta.scannedCount,
+			hiddenCount: response.meta.hiddenCount,
+		})),
+		settled,
 	)
 
 const PageArgs = {
@@ -146,7 +141,7 @@ export const FetchFirstPage = Command.define("FetchTracesFirstPage", {
 		),
 })
 
-/** `fetchNextPage`: offset counts warehouse rows consumed, a page per page. */
+/** The offset counts warehouse rows consumed, a page per page. */
 export const FetchNextPage = Command.define("FetchTracesNextPage", {
 	args: { ...PageArgs, offset: Schema.Number, generation: Schema.Number },
 	messages: [Message.CompletedFetchNextPage],
@@ -163,7 +158,7 @@ export const LoadSignalPresence = Command.define("LoadTracesSignalPresence", {
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-/** `RangeFilterSection`'s 400 ms pause before typed values commit. */
+/** The duration filter's 400 ms pause before typed values commit. */
 export const WaitDurationDebounce = Command.define("WaitTracesDurationDebounce", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedDurationDebounce],
@@ -171,18 +166,13 @@ export const WaitDurationDebounce = Command.define("WaitTracesDurationDebounce",
 		Effect.as(Effect.sleep(Duration.millis(400)), Message.ElapsedDurationDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteTracesReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteTracesReloadSpin", Message.CompletedReloadSpin)
 
-/** `useIsMobile`'s query (the shell's `MOBILE_QUERY`, which reads `window` as it loads). */
+/** Below `md`, as the shell's `MOBILE_QUERY` reads it. */
 export const MOBILE_QUERY = "(max-width: 767px)"
 
 /**
- * `onPeek`: a plain click on a row's stretched link peeks; a modified, middle or right click still
+ * A plain click on a row's stretched link peeks; a modified, middle or right click still
  * follows it. Foldkit links route through a document listener that skips a prevented click.
  */
 export const MountPeekRows = Mount.defineStream("MountTracesPeekRows", {
@@ -218,21 +208,19 @@ export const MountPeekRows = Mount.defineStream("MountTracesPeekRows", {
 		),
 })
 
-/** One of `AutocompleteValuesProvider`'s lookups, over the list's window. */
+/** One autocomplete lookup, over the list's window. */
 export const FetchAdvancedLookup = Command.define("FetchTracesAdvancedLookup", {
 	args: { key: Schema.String, lookup: AutocompleteLookup, window: TimeWindow },
 	messages: [Message.CompletedAdvancedLookup],
 	execute: ({ key, lookup, window }) =>
 		autocompleteLookup(lookup, window).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedAdvancedLookup({ key, lookup, result })),
+			settleTo((result) => Message.CompletedAdvancedLookup({ key, lookup, result })),
 		),
 })
 
 export const ADVANCED_TEXTAREA_ID = "traces-advanced-where"
 
-/** A picked suggestion puts the caret after it (`handleApplySuggestion`'s rAF focus). */
+/** A picked suggestion puts the caret after it, on the next frame. */
 export const PlaceAdvancedCursor = Command.define("PlaceTracesAdvancedCursor", {
 	args: { cursor: Schema.Number },
 	messages: [Message.CompletedPlaceAdvancedCursor],
@@ -258,7 +246,7 @@ const EditorMessage = Schema.Union([
 type EditorMessage = typeof EditorMessage.Type
 
 /**
- * The `WhereClauseEditor` textarea's events with what Foldkit's handlers do not carry: the caret,
+ * The where editor textarea's events with what Foldkit's handlers do not carry: the caret,
  * and the keys the suggestions take (only while their listbox is open, read off `aria-expanded`).
  * Enter never inserts a newline; ⌘/Ctrl+Enter applies the filter.
  */
@@ -333,9 +321,11 @@ export const MountWhereEditor = Mount.defineStream("MountTracesWhereEditor", {
 				}),
 				(state) =>
 					Effect.sync(() =>
-						state?.listeners.forEach(([type, listener]) =>
-							state.textarea.removeEventListener(type, listener),
-						),
+						Predicate.isNotNullish(state)
+							? Arr.forEach(state.listeners, ([type, listener]) =>
+									state.textarea.removeEventListener(type, listener),
+								)
+							: undefined,
 					),
 			).pipe(Effect.flatMap(() => Effect.never)),
 		),
@@ -348,7 +338,7 @@ const LISTBOX_MIN_SPACE_BELOW = 160
 type ListboxRect = Readonly<{ left: number; width: number; top: number; bottom: number }>
 
 /**
- * `computeListboxPosition`: under the textarea, or above it when there is no room below. Both
+ * Under the textarea, or above it when there is no room below. Both
  * `top` and `bottom` are always written, so a flip clears the side the last placement used.
  */
 export const listboxPlacement = (rect: ListboxRect, viewportHeight: number) => {

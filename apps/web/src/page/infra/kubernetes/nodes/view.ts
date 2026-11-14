@@ -1,5 +1,5 @@
-import { deriveHostStatus, type HostStatus } from "../../../../components/infra/format"
-import { statusLabel } from "../../../../components/infra/severity-tokens"
+import { deriveHostStatus, type HostStatus } from "../../kit/format"
+import { statusLabel } from "../../../kit/severity-tokens"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL, type Tone } from "@maple/ui/lib/tone"
@@ -22,19 +22,17 @@ import { icon } from "@maple/views/ui/icon"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { fleetBand } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { Message } from "./message"
 import { type Model, NODE_LIST_LIMIT, type NodeFacets, type NodeRow } from "./model"
 import { DEFAULT_PRESET, filtersOf } from "./update"
 import { nodeTable, nodeTableLoading } from "./view-table"
-
-// `NodesPage` and `NodesFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 
@@ -123,7 +121,7 @@ const nodeList = (h: H, model: Model, nodes: ReadonlyArray<NodeRow>, inputs: Pag
 		statusScope === undefined ? named : Arr.filter(named, (node) => statusOf(node) === statusScope)
 	const countOf = (status: HostStatus) => Arr.filter(nodes, (node) => statusOf(node) === status).length
 	return h.div(
-		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			fleetBand(h, {
 				total: nodes.length,

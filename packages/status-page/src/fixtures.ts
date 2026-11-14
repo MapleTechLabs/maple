@@ -79,7 +79,7 @@ export const makeIncident = (id: string, fields: Partial<EncodedIncident> = {}):
 })
 
 export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot =>
-	Schema.decodeUnknownSync(StatusPageSnapshot)({
+	Schema.decodeSync(StatusPageSnapshot)({
 		schemaVersion: 1,
 		pageId: FIXTURE_PAGE_ID,
 		revision: 1,
@@ -94,6 +94,7 @@ export const makeSnapshot = (fields: Partial<Encoded> = {}): StatusPageSnapshot 
 			showPoweredBy: true,
 			privacyUrl: null,
 			termsUrl: null,
+			customDomain: null,
 		},
 		breakGlassTokenSha256: null,
 		components: [

@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	GithubIntegrationStatus,
 	SecurityAuditFindingsResponse,
@@ -13,7 +14,7 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { SeverityBucket } from "../kit/findings"
-import { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
+import { SecurityFindingStatusTab, SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import * as AddTarget from "../kit/add-target"
 import * as SpendSettings from "../kit/spend-settings"
@@ -29,8 +30,8 @@ export const Model = Schema.Struct({
 	findingsSearch: SecurityFindingsSearch,
 	runsSearch: SecurityRunsSearch,
 	nowMs: Schema.Finite,
-	/** `useIsOrgAdmin`: hides writes a member would be refused. The server still decides. */
-	isAdmin: Schema.Boolean,
+	/** Hides writes a member would be refused. The server still decides. */
+	grants: Schema.Array(Policy.PermissionName),
 	targets: KeyedSchema(SecurityAuditTargetsResponse, LoadFailure),
 	runs: KeyedSchema(SecurityAuditRunsResponse, LoadFailure),
 	/** Each target's own runs: its latest run and this month's spend, past the global list's cap. */
@@ -48,13 +49,16 @@ export const Model = Schema.Struct({
 	searchDraft: Schema.String,
 	/** Bumped per keystroke; only the last one's debounce commits the search to the URL. */
 	searchGeneration: Schema.Finite,
-	statusSelect: Select.Model,
 	targetSelect: Select.Model,
 	runsTargetSelect: Select.Model,
 	/** Severity sections folded to their header. */
 	collapsed: Schema.Array(SeverityBucket),
 })
 export type Model = typeof Model.Type
+
+/** The viewer may add targets, change settings and start or stop runs (`security_audit:run`). */
+export const canRunAudits = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "security_audit:run")
 
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
@@ -63,7 +67,7 @@ const result = <S extends Schema.Top>(schema: S) => ({
 
 export const Message = defineMessageUnion({
 	ReadClock: { nowMs: Schema.Finite },
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	CompletedFetchTargets: result(SecurityAuditTargetsResponse),
 	CompletedFetchRuns: result(SecurityAuditRunsResponse),
 	CompletedFetchTargetRuns: { targetId: SecurityAuditTargetId, ...result(SecurityAuditRunsResponse) },
@@ -84,7 +88,7 @@ export const Message = defineMessageUnion({
 	},
 	ChangedSearchDraft: { value: Schema.String },
 	ElapsedSearchDebounce: { generation: Schema.Finite },
-	GotStatusSelectMessage: { message: Select.Message },
+	PickedStatus: { status: SecurityFindingStatusTab },
 	GotTargetSelectMessage: { message: Select.Message },
 	GotRunsTargetSelectMessage: { message: Select.Message },
 	ToggledShowRejected: {},

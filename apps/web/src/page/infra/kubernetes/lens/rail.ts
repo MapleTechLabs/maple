@@ -5,15 +5,15 @@ import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Keyed from "@maple/views/data/keyed"
 import { KeyedSchema } from "@maple/views/data/keyed"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo, settled } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { PageContext } from "../../../contract"
 import type { Resources } from "../../../../platform/resources"
-import { applySteps, keyed } from "../../kit/requests"
+import { applySteps, keyed } from "../../../kit/keyed-step"
 
-// `useServiceLensRail` (components/infra/service-lens/use-service-lens-rail.ts): the services with
-// a Kubernetes workload, in two hops (the service overview's names, then `serviceWorkloads`).
+// The services with a Kubernetes workload, in two hops (the service overview's names, then
+// `serviceWorkloads`).
 
 export const ServiceWorkload = Schema.Struct({
 	serviceName: Schema.String,
@@ -53,7 +53,7 @@ export const NamesInput = Schema.Struct({
 })
 export type NamesInput = typeof NamesInput.Type
 
-/** `getServiceOverviewResultAtom` is `globalNamespace: "top"`: the pin goes into the payload and key. */
+/** The service overview read is `globalNamespace: "top"`: the pin goes into the payload and key. */
 export const namesInput = (window: TimeWindow, pinnedNamespace: string | null): NamesInput =>
 	pinnedNamespace === null
 		? { startTime: window.startTime, endTime: window.endTime }
@@ -73,13 +73,8 @@ export const FetchNames = Command.define("FetchLensServiceNames", {
 							namespaces: [...input.namespaces],
 						},
 		}).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) =>
-					[...new Set(Arr.map(response.data, (row) => row.serviceName))].sort(),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchNames({ key, result })),
+			Effect.map((response) => [...new Set(Arr.map(response.data, (row) => row.serviceName))].sort()),
+			settleTo((result) => Message.CompletedFetchNames({ key, result })),
 		),
 })
 
@@ -90,11 +85,11 @@ export const WorkloadsInput = Schema.Struct({
 })
 export type WorkloadsInput = typeof WorkloadsInput.Type
 
-/** `getServiceWorkloadsResultAtom`: an empty list answers locally, sending nothing. */
+/** An empty list answers locally, sending nothing. */
 export const fetchServiceWorkloads = (input: WorkloadsInput) =>
 	getServiceWorkloads({ data: { ...input, services: [...input.services] } }).pipe(
-		Effect.mapBoth({ onSuccess: (response) => response.workloads, onFailure: toLoadFailure }),
-		Effect.result,
+		Effect.map((response) => response.workloads),
+		settled,
 	)
 
 export const FetchWorkloads = Command.define("FetchLensServiceWorkloads", {

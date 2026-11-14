@@ -26,8 +26,9 @@
  */
 import * as CH from "@maple/query-engine/ch"
 import { CHNumber } from "@maple/query-engine/ch"
-import type { AlertComparator, AlertRuleId, OrgId } from "@maple/domain/http"
-import { alertChartId } from "@maple/db"
+import type { AlertComparator, AlertRuleId, OrgId, TenantContext } from "@maple/domain/http"
+import { alertChartId } from "../../platform/signed-ids"
+import { breachSideFor } from "@maple/alerting-core/tiers"
 import {
 	downsample,
 	sparkline,
@@ -35,20 +36,9 @@ import {
 	type ChartPoint,
 	type ChartUnit,
 } from "@maple/widgets/chart/static-chart"
-import {
-	Array as Arr,
-	DateTime,
-	Duration,
-	Effect,
-	Option,
-	Order,
-	Result,
-	Schema,
-	String as Str,
-} from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
+import { Array as Arr, DateTime, Duration, Effect, Order, Result, Schema, String as Str } from "effect"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { describeCause } from "@maple/backend/platform/describe-cause"
 
 /**
  * Points to draw. More than this and a 720px-wide card is drawing sub-pixel
@@ -81,26 +71,6 @@ export interface AlertChartSeries {
 	readonly sparkline: string
 	readonly threshold: number | null
 	readonly breachSide: BreachSide
-}
-
-/**
- * Which side of the threshold is the bad side.
- *
- * `between`/`not_between`/`eq`/`neq` have no single bad half-plane, so they
- * shade nothing — the rule still draws, and inventing a side would point the
- * reader's eye at the wrong half of the chart.
- */
-export const breachSideFor = (comparator: AlertComparator): BreachSide => {
-	switch (comparator) {
-		case "gt":
-		case "gte":
-			return "above"
-		case "lt":
-		case "lte":
-			return "below"
-		default:
-			return "none"
-	}
 }
 
 /**
@@ -179,19 +149,45 @@ export interface LoadChartSeriesOptions {
 }
 
 /**
- * The rule's observed values over a window, or `null` when there is nothing
- * worth drawing.
- *
- * `null` — never a failure — for a warehouse error, a timeout, or a series so
- * short that a chart of it would be a single dot. Callers treat it as "no
- * chart" and carry on.
+ * The series could not be read: the warehouse failed, or did not answer within
+ * `SERIES_TIMEOUT`. Distinct from `null`, which means there is nothing to draw.
  */
-export const loadChartSeries = (
-	warehouse: ChartSeriesWarehouse,
-	tenant: TenantContext,
-	options: LoadChartSeriesOptions,
-): Effect.Effect<AlertChartSeries | null> =>
-	Effect.gen(function* () {
+export class AlertChartSeriesUnavailableError extends Schema.TaggedError<AlertChartSeriesUnavailableError>()(
+	"@maple/backend/alerts/AlertChartSeriesUnavailableError",
+	{
+		message: Schema.String,
+		reason: Schema.Literals(["timeout", "failed"]),
+		cause: Schema.optionalKey(Schema.String),
+	},
+) {}
+
+const timedOut = () =>
+	Effect.fail(
+		new AlertChartSeriesUnavailableError({
+			message: "Alert chart series read timed out",
+			reason: "timeout",
+		}),
+	)
+
+const readFailed = (cause: unknown) => {
+	const described = describeCause(cause)
+	return Effect.fail(
+		new AlertChartSeriesUnavailableError({
+			message: "Alert chart series read failed",
+			reason: "failed",
+			...(described === undefined ? undefined : { cause: described }),
+		}),
+	)
+}
+
+/**
+ * The rule's observed values over a window, `null` for a series so short that a
+ * chart of it would be a single dot, or `AlertChartSeriesUnavailableError` when
+ * it could not be read. The failure is recorded on this span.
+ */
+export const readChartSeries = Effect.fn("AlertChartSeries.read")(
+	function* (warehouse: ChartSeriesWarehouse, tenant: TenantContext, options: LoadChartSeriesOptions) {
+		yield* Effect.annotateCurrentSpan({ orgId: options.orgId, "maple.alert.rule_id": options.ruleId })
 		const compiled = CH.compile(
 			CH.listRuleChecksQuery({
 				limit: MAX_CHECK_ROWS,
@@ -232,18 +228,32 @@ export const loadChartSeries = (
 			sparkline: sparkline(Arr.map(drawn, (p) => p[1])),
 			threshold: options.threshold,
 			breachSide,
-		}
-	}).pipe(
-		Effect.timeoutOption(SERIES_TIMEOUT),
-		Effect.map(Option.getOrNull),
-		// An enrichment must never take a page down with it: a bad rowSchema, a
-		// warehouse outage and a decode failure all land here as "no chart".
-		Effect.catchCause((cause) =>
+		} satisfies AlertChartSeries
+	},
+	// A bad rowSchema, a warehouse outage and a decode failure all read as "failed".
+	Effect.catch(readFailed),
+	Effect.catchDefect(readFailed),
+	Effect.timeoutOrElse({ duration: SERIES_TIMEOUT, orElse: timedOut }),
+)
+
+/**
+ * `readChartSeries` for a notification, where `null` stands for every problem:
+ * a chart is an enrichment, and a page late because a warehouse read was slow is
+ * worse than a page with no picture on it.
+ */
+export const loadChartSeries = (
+	warehouse: ChartSeriesWarehouse,
+	tenant: TenantContext,
+	options: LoadChartSeriesOptions,
+): Effect.Effect<AlertChartSeries | null> =>
+	readChartSeries(warehouse, tenant, options).pipe(
+		Effect.catchTag("@maple/backend/alerts/AlertChartSeriesUnavailableError", (error) =>
 			Effect.logWarning("Alert chart series unavailable; notifying without one").pipe(
 				Effect.annotateLogs({
 					orgId: options.orgId,
 					"maple.alert.rule_id": options.ruleId,
-					cause: summarizeCause(cause),
+					reason: error.reason,
+					cause: error.cause ?? "(none)",
 				}),
 				Effect.as(null),
 			),

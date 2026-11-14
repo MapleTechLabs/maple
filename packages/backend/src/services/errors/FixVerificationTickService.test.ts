@@ -1,8 +1,29 @@
-import { assert, describe, it } from "@effect/vitest"
-import { verificationVerdictAutoCloses } from "@maple/domain/http"
-
-import { splitVersionRows, verdictFromInvestigationStatus } from "./FixVerificationTickService"
-import { Array as Arr } from "effect"
+import { randomUUID } from "node:crypto"
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { OrgId, verificationVerdictAutoCloses, WarehouseQueryError } from "@maple/domain/http"
+import { ErrorIssueId } from "@maple/primitives"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
+import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import {
+	WarehouseQueryService,
+	type WarehouseQueryServiceApi,
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { ErrorActorsService } from "./ErrorActorsService"
+import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
+import {
+	FixVerificationTickService,
+	splitVersionRows,
+	verdictFromInvestigationStatus,
+} from "./FixVerificationTickService"
+import { InvestigationStarter } from "./InvestigationStarter"
+import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { PullRequestLookup } from "./PullRequestLookup"
 
 /**
  * The verdict mapping is deliberately inverted relative to an incident
@@ -90,4 +111,181 @@ describe("splitVersionRows", () => {
 		const split = splitVersionRows(rows, ["v0", "v1", "v2"], 3)
 		assert.isAbove(split.unattributed, 0)
 	})
+})
+
+const ORG = Schema.decodeSync(OrgId)("org_verification_tick")
+const DAY = 24 * 60 * 60_000
+const NOW = 1_750_000_000_000
+const PR_URL = "https://github.com/MapleTechLabs/maple/pull/612"
+
+const createdDbs: TestDb[] = []
+afterEach(async () => {
+	await cleanupTestDbs(createdDbs)
+})
+
+const testConfig = () =>
+	ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3478",
+			MCP_PORT: "3479",
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+			INTERNAL_SERVICE_TOKEN: "test-internal-token",
+		}),
+	)
+
+const unexpected = () => Effect.die(new Error("unexpected warehouse call"))
+
+/** A warehouse whose every occurrence read fails, as a quarantined or broken org's does. */
+const failingWarehouse: WarehouseQueryServiceApi = {
+	query: unexpected,
+	rawSqlQuery: unexpected,
+	crossOrgQuery: unexpected,
+	compiledQuery: () => Effect.fail(new WarehouseQueryError({ message: "warehouse unavailable" })),
+	compiledQueryFirst: unexpected,
+	ingest: () => Effect.void,
+	asExecutor: () => {
+		throw new Error("asExecutor is not supported by this test stub")
+	},
+}
+
+const makeTickLayer = () => {
+	const databaseLive = createTestDb(createdDbs).layer
+	const actorsLive = ErrorActorsService.layer.pipe(Layer.provide(databaseLive))
+	const workflowLive = Layer.effect(ErrorIssueWorkflowService, ErrorIssueWorkflowService.make).pipe(
+		Layer.provide(AuditLogService.layerMemory),
+		Layer.provide(databaseLive),
+		Layer.provide(actorsLive),
+	)
+	const verificationLive = Layer.effect(IssueFixVerificationService, IssueFixVerificationService.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				databaseLive,
+				Env.layer.pipe(Layer.provide(testConfig())),
+				actorsLive,
+				workflowLive,
+				PullRequestLookup.none,
+			),
+		),
+	)
+	const tickLive = Layer.effect(FixVerificationTickService, FixVerificationTickService.make).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				databaseLive,
+				verificationLive,
+				Layer.succeed(WarehouseQueryService, failingWarehouse),
+				// No row here reaches an investigation; without `ChatSessions` a start would record `no_binding`.
+				InvestigationStarter.layer.pipe(Layer.provide(databaseLive)),
+			),
+		),
+	)
+	return Layer.mergeAll(tickLive, verificationLive, databaseLive)
+}
+
+/** An issue in review whose linked PR merged 30 days ago, so its window has long closed. */
+const seedOverdueVerification = Effect.gen(function* () {
+	const database = yield* Database
+	const verification = yield* IssueFixVerificationService
+	const issueId = Schema.decodeSync(ErrorIssueId)(randomUUID())
+	yield* database.execute((db) =>
+		db.run(
+			PG.insertInto(ErrorIssues).values({
+				id: issueId,
+				orgId: ORG,
+				kind: "error",
+				fingerprintHash: `fp-${issueId}`,
+				serviceName: "checkout",
+				exceptionType: "TypeError",
+				exceptionMessage: "undefined is not a function",
+				errorLabel: "",
+				topFrame: "src/checkout.ts:42",
+				workflowState: "in_review",
+				severity: "low",
+				firstSeenAt: NOW - 40 * DAY,
+				lastSeenAt: NOW - 31 * DAY,
+				occurrenceCount: 200,
+				seenVersionsJson: ["v1"],
+				createdAt: NOW - 40 * DAY,
+				updatedAt: NOW - 31 * DAY,
+			}),
+		),
+	)
+	yield* verification.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
+	yield* verification.onPullRequestEvent({
+		orgId: ORG,
+		provider: "github",
+		externalRepoId: "999",
+		repoFullName: "MapleTechLabs/maple",
+		number: 612,
+		action: "closed",
+		url: PR_URL,
+		title: "Fix the checkout crash",
+		body: null,
+		authorLogin: "octocat",
+		merged: true,
+		mergeCommitSha: "abc123",
+		mergedAtMs: NOW - 30 * DAY,
+	})
+	return issueId
+})
+
+const verificationOf = (issueId: ErrorIssueId) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const rows = yield* database.execute((db) =>
+			db.run(
+				PG.from(ErrorIssueVerifications)
+					.select("status", "verifyAfter", "updatedAt")
+					.where(($) => [$.issueId.eq(issueId)]),
+			),
+		)
+		return rows[0]
+	})
+
+describe("FixVerificationTickService.runTick", () => {
+	// Twenty rows like this used to fill every tick's page and block every other org.
+	it.effect("settles a due row whose issue is gone, and does not examine it again", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const tick = yield* FixVerificationTickService
+			const database = yield* Database
+			const issueId = yield* seedOverdueVerification
+			yield* database.execute((db) =>
+				db.run(PG.deleteFrom(ErrorIssues).where(($) => [$.id.eq(issueId)])),
+			)
+
+			const first = yield* tick.runTick
+			assert.strictEqual(first.examined, 1)
+			assert.strictEqual(first.abandoned, 1)
+			assert.strictEqual((yield* verificationOf(issueId))?.status, "abandoned")
+
+			assert.strictEqual((yield* tick.runTick).examined, 0)
+		}).pipe(Effect.provide(makeTickLayer())),
+	)
+
+	it.effect("sends a row whose occurrences cannot be read to the back, with its window intact", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const tick = yield* FixVerificationTickService
+			const issueId = yield* seedOverdueVerification
+			const before = yield* verificationOf(issueId)
+
+			yield* TestClock.setTime(NOW + 60_000)
+			const first = yield* tick.runTick
+			assert.strictEqual(first.skipped, 1)
+			// Not a verdict: still waiting, and the window an inconclusive verdict measures from is unchanged.
+			const row = yield* verificationOf(issueId)
+			assert.strictEqual(row?.status, "waiting")
+			assert.strictEqual(row?.verifyAfter, before?.verifyAfter)
+			// Touched, which is what puts it behind rows the tick has not reached yet.
+			assert.strictEqual(row?.updatedAt, NOW + 60_000)
+
+			assert.strictEqual((yield* tick.runTick).examined, 1)
+		}).pipe(Effect.provide(makeTickLayer())),
+	)
 })

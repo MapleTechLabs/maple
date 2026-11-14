@@ -1,5 +1,5 @@
 import { OrgId as OrgIdSchema, type OrgId } from "@maple/domain"
-import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
+import { isClerkAuthEnabled } from "./platform/auth-mode"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { Option, Schema, Struct, Array as Arr } from "effect"
 import { AsyncData, Command, Update } from "foldkit"
@@ -29,7 +29,7 @@ import {
 } from "./command"
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
-import { isRedirectOnlyRoute, rendersShell } from "./page/chrome"
+import { rendersShell } from "./page/chrome"
 import * as Onboarding from "./page/onboarding"
 import {
 	accessOf,
@@ -60,7 +60,9 @@ import {
 import * as SignIn from "./page/sign-in"
 import type { Resources } from "./platform/resources"
 import { ClerkSnapshot } from "./platform/clerk"
-import { identityOf, isSameIdentity } from "./platform/session-identity"
+import * as Policy from "@maple/domain/policy"
+import { identityOf, isSameIdentity, type SessionIdentity } from "./platform/session-identity"
+import { getActivePlan } from "./page/kit/billing/plan-gating"
 import {
 	AppRoute,
 	flaggedRouteRedirect,
@@ -68,6 +70,7 @@ import {
 	isPublicRoute,
 	type Redirect,
 	routeRedirect,
+	securityRouteRedirect,
 	urlToAppRoute,
 } from "./route"
 import { completeRangeOf, isWithin, withSessionRange } from "./route/session-time-range"
@@ -82,8 +85,6 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
 type UpdateReturn = Update.Return<Model, Message, Resources>
 type Step = Update.Step<Model, Message, Resources>
-
-// CHILDREN
 
 const foldSignInOutMessage = SignIn.OutMessage.match<Step>({
 	SucceededSignIn:
@@ -125,12 +126,14 @@ const shellFoldConfig = {
 		RequestedOrganizationSwitch:
 			({ orgId }) =>
 			(model) => {
-				const picked = model.clerkSnapshot?.memberships.find(
-					(organization) => organization.id === orgId,
-				)
-				return picked === undefined
-					? { model }
-					: {
+				return Option.match(
+					Arr.findFirst(
+						model.clerkSnapshot?.memberships ?? [],
+						(organization) => organization.id === orgId,
+					),
+					{
+						onNone: () => ({ model }),
+						onSome: (picked) => ({
 							model,
 							commands: [
 								Command.mapMessage((message: OrgSwitcher.Message) =>
@@ -144,7 +147,9 @@ const shellFoldConfig = {
 									}),
 								),
 							],
-						}
+						}),
+					},
+				)
 			},
 		RequestedSignOut: () => (model) => ({ model, commands: [SignOutOfClerk()] }),
 		RequestedNavigation:
@@ -196,10 +201,8 @@ const foldTooltip = Update.foldChild({
 	toParentMessage: (message: TooltipHost.Message) => Message.GotTooltipMessage({ message }),
 })
 
-// PAGES
-
 /** The org a bare public page (a share link) is keyed under when nobody is signed in. */
-const PUBLIC_ORG = Schema.decodeUnknownOption(OrgIdSchema)("public")
+const PUBLIC_ORG = Schema.decodeOption(OrgIdSchema)("public")
 
 /** A public page's context: the viewer's org when signed in, else `PUBLIC_ORG`; no shell state. */
 const publicContextOf = (model: Model, maybeOrgId: Option.Option<OrgId>): Option.Option<PageContext> =>
@@ -236,7 +239,7 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 		SignedIn: ({ maybeOrgId }) =>
 			isBarePageRoute(model.route)
 				? publicContextOf(model, maybeOrgId)
-				: // `WrongRegionScreen` replaces the page, so it reads nothing this region would refuse.
+				: // The wrong-region screen replaces the page, so it reads nothing this region would refuse.
 					Option.filter(maybeOrgId, () => rendersShell(model.route) && !isWrongRegion(model)).pipe(
 						Option.map((orgId) => ({
 							orgId,
@@ -248,6 +251,7 @@ export const pageContextOf: (model: Model) => Option.Option<PageContext> = lastB
 								integrations: model.shell.integrations,
 								remembered: model.shell.rememberedSurfaces[orgId],
 							},
+							audience: Shell.shellAudience(shellClerkOf(model)),
 						})),
 					),
 	}),
@@ -348,7 +352,7 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 					? Option.some(
 							PageOutMessage.RequestedToast({
 								...out.toast,
-								timeoutMs: null,
+								timeoutMs: out.toast.timeoutMs ?? null,
 								action: null,
 							}),
 						)
@@ -359,7 +363,11 @@ const actOnPageOut = (model: Model, outMessage: Option.Option<PageOutMessage>) =
 	const followUp = Option.flatMap(outMessage, (out) =>
 		out._tag === "RequestedNavigation" && out.followUpToast !== undefined
 			? Option.some(
-					PageOutMessage.RequestedToast({ ...out.followUpToast, timeoutMs: null, action: null }),
+					PageOutMessage.RequestedToast({
+						...out.followUpToast,
+						timeoutMs: out.followUpToast.timeoutMs ?? null,
+						action: null,
+					}),
 				)
 			: Option.none(),
 	)
@@ -437,10 +445,13 @@ const isPlanGated = (model: Model) => Option.exists(planGateOf(model), isRouteHe
 
 const loadPage: Step = (model) =>
 	Option.match(
-		// A flag-gated route is on its way home: no page, so nothing it would fetch.
+		// A flag- or role-gated route is on its way home: no page, so nothing it would fetch.
 		Option.filter(
 			pageContextOf(model),
-			() => !isPlanGated(model) && Option.isNone(flagRedirectOf(model)),
+			() =>
+				!isPlanGated(model) &&
+				Option.isNone(flagRedirectOf(model)) &&
+				Option.isNone(roleRedirectOf(model)),
 		),
 		{
 			// Leaving every page (signed out) releases what the last one held, like any page change.
@@ -460,8 +471,6 @@ const loadPage: Step = (model) =>
 				)(model),
 		},
 	)
-
-// ONBOARDING
 
 /** The session as the onboarding screens read it. */
 export const onboardingInputsOf = (model: Model): Option.Option<Onboarding.Inputs> => {
@@ -496,6 +505,10 @@ export const shellClerkOf = (model: Model): Shell.ShellClerk | null =>
 					maybeOrganization: inputs.maybeOrganization,
 					memberships: inputs.memberships,
 					customer: customerOf(model.customer),
+					maybeRole: Option.flatMap(
+						Option.fromNullishOr(model.clerkSnapshot),
+						(snapshot) => snapshot.maybeRole,
+					),
 				}),
 			})
 		: null
@@ -613,8 +626,6 @@ const updateOnboarding = (model: Model, message: Onboarding.Message): UpdateRetu
 	})
 }
 
-// ROUTING
-
 /** Where sign-in lands: a same-origin `redirect_url`, else `/`. */
 const targetAfterSignIn = (route: AppRoute): string =>
 	AppRoute.matchOrElse(
@@ -650,7 +661,7 @@ const clerkReverseRedirect = (route: AppRoute, maybeOrgId: Option.Option<unknown
 
 const toHome: Redirect = { url: "/", isReplace: true }
 
-/** Self-hosted has no Clerk: its sign-up and org pages `<Navigate to="/" replace />`. */
+/** Self-hosted has no Clerk: its sign-up and org pages redirect to `/`. */
 const selfHostedRedirect = (route: AppRoute): Option.Option<Redirect> =>
 	route._tag === "SignUp" || route._tag === "OrgRequired" ? Option.some(toHome) : Option.none()
 
@@ -744,6 +755,18 @@ const flagRedirectOf = (model: Model): Option.Option<Redirect> =>
 			)
 		: Option.none()
 
+/**
+ * A Security route opened by someone whose role lacks `security:manage` (a member). Waits for
+ * Clerk's membership read, so an admin is never bounced while it loads; the API refuses either way.
+ */
+const roleRedirectOf = (model: Model): Option.Option<Redirect> =>
+	isClerkAuthEnabled
+		? Option.flatMap(
+				Option.flatMap(Option.fromNullishOr(model.clerkSnapshot), (snapshot) => snapshot.maybeRole),
+				(role) => securityRouteRedirect(model.route, Policy.can([role], "security:manage")),
+			)
+		: Option.none()
+
 const followRedirects: Step = (model) => {
 	const maybeRedirect = Session.match(model.session, {
 		Resolving: () => Option.none<Redirect>(),
@@ -752,6 +775,7 @@ const followRedirects: Step = (model) => {
 			Option.orElse(routeRedirect(model.route), () => sessionRedirect(model)).pipe(
 				Option.orElse(() => Option.flatMap(planGateOf(model), (gate) => gate.redirect)),
 				Option.orElse(() => flagRedirectOf(model)),
+				Option.orElse(() => roleRedirectOf(model)),
 			),
 	})
 	return Option.match(maybeRedirect, {
@@ -769,7 +793,7 @@ const loadRoute: Step = (model) =>
 		Resolving: () => ({ model }),
 		SignedOut: () => ({ model }),
 		SignedIn: ({ maybeOrgId }) =>
-			// `WrongRegionScreen` replaces the whole frame: no shell, nothing it reads.
+			// The wrong-region screen replaces the whole frame: no shell, nothing it reads.
 			Option.isNone(maybeOrgId) ||
 			isPublicRoute(model.route) ||
 			isWrongRegion(model) ||
@@ -779,7 +803,7 @@ const loadRoute: Step = (model) =>
 	})
 
 /**
- * `useMapleCustomer` in `ClerkReverseRedirects`: once Clerk has an org that this region serves,
+ * Once Clerk has an org that this region serves,
  * its customer is read once (the atom is shared app-wide).
  */
 const loadCustomer: Step = (model) => {
@@ -827,18 +851,21 @@ const settledCustomer = (model: Model, orgId: string, data: CustomerSlot["data"]
 	const next = modifyFields(model, { customer: () => ({ orgId, data }) })
 	const access = accessOf(next.customer)
 	const settled = withSettledPlan(settle(next))
-	return access === "app" || access === "onboarding"
-		? {
-				model: settled.model,
-				commands: [
-					...(settled.commands ?? []),
-					SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" }),
-				],
-			}
-		: settled
+	const known = sessionIdentityOf(model)
+	const identity = sessionIdentityOf(next)
+	return {
+		model: settled.model,
+		commands: [
+			...(known === undefined || identity === undefined || isSameIdentity(known, identity)
+				? []
+				: [IdentifySession({ identity })]),
+			...(settled.commands ?? []),
+			...(access === "app" || access === "onboarding"
+				? [SaveSelectedPlanKnown({ orgId, mayRenderApp: access === "app" })]
+				: []),
+		],
+	}
 }
-
-// SESSION TIME RANGE
 
 /** The signed-in org, on a shell route. */
 const shellOrgOf = (model: Model): Option.Option<string> =>
@@ -848,7 +875,7 @@ const shellOrgOf = (model: Model): Option.Option<string> =>
 		SignedIn: ({ maybeOrgId }) => maybeOrgId,
 	})
 
-/** `persistSessionTimeRange` after a navigation settles; the org's memory is read once first. */
+/** Saves the session time range after a navigation settles; the org's memory is read once first. */
 const syncSessionTimeRange: Step = (model) =>
 	Option.match(shellOrgOf(model), {
 		onNone: () => ({ model }),
@@ -892,8 +919,8 @@ const sessionRangeUrl = (model: Model, url: Url): Option.Option<string> => {
 }
 
 /**
- * `navigate()`/`<Link>`: TanStack runs the search middleware in `buildLocation`, so the remembered
- * window joins the URL a navigation builds; Back/Forward (`ChangedUrl` alone) are left as they are.
+ * An in-app navigation: the remembered window joins the URL it builds; Back/Forward (`ChangedUrl`
+ * alone) are left as they are.
  */
 const navigateTo = (model: Model, url: string, isReplace: boolean) => {
 	const target = Option.getOrElse(
@@ -915,8 +942,6 @@ export const settle: Step = Update.combine([
 	syncSessionTimeRange,
 ])
 
-// SESSION
-
 const signedIn =
 	(maybeOrgId: Option.Option<OrgId>): Step =>
 	(model) =>
@@ -932,13 +957,25 @@ const changedClerkSession = (model: Model, snapshot: ClerkSnapshot): UpdateRetur
 		? { model }
 		: appliedClerkSnapshot(snapshot, false)(model)
 
+/** The active org's Autumn plan id, once its own customer read (not another org's) found one. */
+const activePlanIdOf = (model: Model, snapshot: ClerkSnapshot): string | null =>
+	Option.getOrNull(snapshot.maybeOrgId) === model.customer.orgId
+		? (getActivePlan(customerOf(model.customer))?.planId ?? null)
+		: null
+
+/** The identity the model names; `undefined` before Clerk's first answer. */
+const sessionIdentityOf = (model: Model): SessionIdentity | null | undefined =>
+	model.clerkSnapshot === null
+		? undefined
+		: identityOf(model.clerkSnapshot, activePlanIdOf(model, model.clerkSnapshot))
+
 /** `useClerkAuthSettled`: a signed-out first answer waits for a refreshing session, except on public pages. */
 const appliedClerkSnapshot =
 	(snapshot: ClerkSnapshot, isFirstAnswer: boolean): Step =>
 	(previous) => {
 		const model = modifyFields(previous, { clerkSnapshot: () => snapshot })
-		const identity = identityOf(snapshot)
-		const known = previous.clerkSnapshot === null ? undefined : identityOf(previous.clerkSnapshot)
+		const identity = identityOf(snapshot, activePlanIdOf(model, snapshot))
+		const known = sessionIdentityOf(previous)
 		const identify =
 			known !== undefined && isSameIdentity(known, identity) ? [] : [IdentifySession({ identity })]
 		if (Option.isSome(snapshot.maybeUserId)) {
@@ -960,8 +997,6 @@ const appliedClerkSnapshot =
 		}
 		return isPublicRoute(model.route) ? signedOut(model) : { model, commands: [WaitForAuthSettle()] }
 	}
-
-// PRELOAD
 
 const withPreload = (model: Model, preload: Preload.Model) => modifyFields(model, { preload: () => preload })
 
@@ -1007,9 +1042,8 @@ const changedUrlStep = (model: Model, changedUrl: Url): UpdateReturn => {
 		route: () => nextRoute,
 		signIn: (signIn) => (isEnteringSignIn ? SignIn.init() : signIn),
 	})
-	const hasTopBar = rendersShell(nextRoute) && !isRedirectOnlyRoute(model.route)
 	return Update.combine([
-		foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, hasTopBar)),
+		foldShellStep(Shell.routeChanged(model.route._tag === nextRoute._tag, rendersShell(nextRoute))),
 		settle,
 	])(routed)
 }
@@ -1020,15 +1054,13 @@ const rootToastCommand = (action: RootToastAction | undefined) =>
 		? RestoreDashboardWidgets(action)
 		: ReconnectOrgCollections()
 
-/** `useBlocker`: the open page holds a navigation that would leave it, and asks instead. */
+/** The open page holds a navigation that would leave it, and asks instead. */
 const heldNavigation = (model: Model, url: Url): Option.Option<UpdateReturn> =>
 	Option.flatMap(pageContextOf(model), (context) =>
 		Option.map(blockNavigation(model.page, urlToAppRoute(url), urlToString(url), context), (transition) =>
 			applyPage(transition)(model),
 		),
 	)
-
-// UPDATE
 
 const foldMessage = (model: Model, message: Message) =>
 	Message.match<UpdateReturn>(message, {
@@ -1084,7 +1116,17 @@ const foldMessage = (model: Model, message: Message) =>
 						? foldToasts(withoutToastActions(model, message.toastId), message)
 						: foldToasts(model, message),
 		CompletedReconnectOrgCollections: () => ({ model }),
-		CompletedRestoreDashboardWidgets: () => ({ model }),
+		CompletedRestoreDashboardWidgets: ({ error }) =>
+			error === null
+				? { model }
+				: showPageToast(
+						model,
+						PageOutMessage.RequestedToast({
+							type: "error",
+							title: "Couldn't restore the widget",
+							description: error,
+						}),
+					),
 		GotPageMessage: ({ message }) => toPage(model, message),
 		GotOnboardingMessage: ({ message }) => updateOnboarding(model, message),
 		IntendedLink: ({ href, isImmediate }) =>
@@ -1125,7 +1167,7 @@ const foldMessage = (model: Model, message: Message) =>
 						}),
 					)
 				: { model },
-		// Every reader of `effectiveTimezone` re-renders: the open page re-resolves under the new zone.
+		// Every reader of the effective zone re-renders: the open page re-resolves under the new zone.
 		ChangedTimeZonePreference: ({ timeZone }) => {
 			if (timeZone === model.timeZone) return { model }
 			const zoned = modifyFields(model, { timeZone: () => timeZone })

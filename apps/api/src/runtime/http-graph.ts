@@ -4,12 +4,22 @@ import { Effect, Layer, String as Str } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/http-api"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { rawRoutes } from "@maple/backend/http/raw-routes"
 import { Env } from "@maple/backend/platform/Env"
 import { HttpAiModelsInternalLive } from "@/routes/internal/ai-models.http"
 import { HttpAiSessionsInternalLive } from "@/routes/internal/ai-sessions.http"
 import { HttpMcpInternalLive } from "@/routes/internal/mcp.http"
+import { HttpUsersInternalLive } from "@/routes/internal/users.http"
 import { HttpAiTriageLive } from "@/routes/internal/ai-triage.http"
+import { HttpAnthropicCostLive } from "@/routes/internal/anthropic-cost.http"
+import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
+import { HttpOpenAiCostLive } from "@/routes/internal/openai-cost.http"
+import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
+import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
+import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
+import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
+import { HttpVercelCostLive } from "@/routes/internal/vercel-cost.http"
 import { HttpAuthLive, HttpAuthPublicLive, HttpAuthSessionLive } from "@/routes/auth.http"
 import { HttpBillingLive } from "@/routes/internal/billing.http"
 import { HttpBillingPublicLive } from "@/routes/billing-public.http"
@@ -21,6 +31,7 @@ import { AwsOidcRouter } from "@/routes/aws-oidc.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
+import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
 import { HttpErrorsLive } from "@/routes/internal/errors.http"
 import { HttpIntegrationsLive } from "@/routes/internal/integrations.http"
@@ -44,10 +55,15 @@ import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
 import { HttpV2AlertDeliveriesLive } from "@/routes/v2/alert-deliveries.http"
 import { HttpV2AlertDestinationsLive } from "@/routes/v2/alert-destinations.http"
 import { HttpV2AlertIncidentsLive } from "@/routes/v2/alert-incidents.http"
+import { HttpV2EscalationChainsLive } from "@/routes/v2/escalation-chains.http"
+import { HttpV2OnCallSchedulesLive } from "@/routes/v2/oncall-schedules.http"
+import { HttpV2AlertSilencesLive } from "@/routes/v2/alert-silences.http"
+import { HttpV2AlertMaintenanceWindowsLive } from "@/routes/v2/alert-maintenance-windows.http"
 import { HttpV2AlertRulesLive } from "@/routes/v2/alert-rules.http"
 import { HttpV2AnomaliesLive } from "@/routes/v2/anomalies.http"
 import { HttpV2ApiKeysLive } from "@/routes/v2/api-keys.http"
 import { HttpV2AttributeMappingsLive } from "@/routes/v2/attribute-mappings.http"
+import { HttpV2DataSourcesLive } from "@/routes/v2/data-sources.http"
 import { HttpV2IngestRulesLive } from "@/routes/v2/ingest-rules.http"
 import { HttpV2DashboardsLive } from "@/routes/v2/dashboards.http"
 import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
@@ -68,12 +84,14 @@ import { HttpV2AuditLogLive } from "@/routes/v2/audit-log.http"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2UptimeMonitorsLive } from "@/routes/v2/uptime-monitors.http"
+import { HttpV2SlosLive } from "@/routes/v2/slos.http"
 import { HttpV2StatusPageIncidentsLive, HttpV2StatusPagesLive } from "@/routes/v2/status-pages.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
 import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
+import { HttpV2UsersLive } from "@/routes/v2/users.http"
 import {
 	HttpV2EnvironmentsLive,
 	HttpV2LogsLive,
@@ -95,6 +113,7 @@ import {
 import { UserSessionAuthorizationLive } from "@maple/backend/services/auth/UserSessionAuthorizationLive"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { ShareRateLimiter } from "@maple/backend/services/auth/ShareRateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
@@ -108,12 +127,15 @@ const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", Htt
 // script out of the deployed bundle (guards the 3 MB worker size limit, error
 // 10027). The reference pages depend on jsDelivr being reachable from the browser.
 // `/docs` and `/v2/docs` serve the same public v2 reference.
+// Pinned: an unpinned tag would run whatever the package publishes next on this origin.
+const SCALAR_VERSION = "1.76.4"
 const apiReferenceRoute = (path: `/${string}`) =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const env = yield* Env
 			return HttpApiScalar.layerCdn(instanceApiV2(Str.replace(/\/+$/, "")(env.MAPLE_API_BASE_URL)), {
 				path,
+				version: SCALAR_VERSION,
 			})
 		}),
 	)
@@ -143,6 +165,7 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiSessionsInternalLive,
 			HttpAiModelsInternalLive,
 			HttpMcpInternalLive,
+			HttpUsersInternalLive,
 		),
 	),
 	Layer.provide(
@@ -150,9 +173,18 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAiTriageLive,
 			HttpBillingLive,
 			HttpDemoLive,
+			HttpAuditTrailLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
+			HttpCloudflareCostLive,
+			HttpAnthropicCostLive,
+			HttpOpenAiCostLive,
+			HttpGithubCostLive,
+			HttpPlanetScaleCostLive,
+			HttpOpenRouterCostLive,
 			HttpOpenRouterKeyLive,
+			HttpServiceMapWorldLive,
+			HttpVercelCostLive,
 		),
 	),
 	Layer.provide(
@@ -178,6 +210,10 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AlertRulesLive,
 			HttpV2AlertDestinationsLive,
 			HttpV2AlertIncidentsLive,
+			HttpV2EscalationChainsLive,
+			HttpV2OnCallSchedulesLive,
+			HttpV2AlertSilencesLive,
+			HttpV2AlertMaintenanceWindowsLive,
 			HttpV2IngestKeysLive,
 			HttpV2SourcesLive,
 			HttpV2ChatIntegrationsLive,
@@ -186,10 +222,12 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AwsIntegrationsLive,
 			HttpV2ErrorIssuesLive,
 			HttpV2AttributeMappingsLive,
+			HttpV2DataSourcesLive,
 			HttpV2IngestRulesLive,
 			HttpV2AuditLogLive,
 			HttpV2ScrapeTargetsLive,
 			HttpV2UptimeMonitorsLive,
+			HttpV2SlosLive,
 			HttpV2StatusPagesLive,
 			HttpV2StatusPageIncidentsLive,
 			HttpV2InstrumentationRecommendationsLive,
@@ -205,6 +243,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2McpConnectionsLive,
 			HttpV2AgentFeedbackLive,
 			HttpV2SessionReplaysLive,
+			HttpV2UsersLive,
 			HttpV2TracesLive,
 			HttpV2LogsLive,
 			HttpV2MetricsLive,
@@ -220,33 +259,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 	Layer.provide(V2TransportErrorBoundaryLive),
 )
 
-/**
- * Services a raw router's handlers still expect from the request context, beyond the Worker's
- * ports, which every request carries. Each is a runtime "Service not found".
- */
-type LeakedRequestServices<Routes extends Layer.Any> =
-	Layer.Services<Routes> extends infer Marker
-		? Marker extends HttpRouter.Request<"Requires", infer Service>
-			? Exclude<Service, Layer.Success<ApiPortsLayer>>
-			: never
-		: never
-
-/**
- * A raw `HttpRouter` handler runs in the request's own context — unlike an `HttpApiBuilder`
- * group, nothing carries the router's build context into it — so a service it reads per request
- * has to arrive through `HttpRouter.provideRequest` (see `ChatSessionsRouter`). Read inside the
- * handler instead, it compiles, because the isolate builder erases the marker, and fails every
- * request with "Service not found", which is what took the chat routes down on 2026-09-08. This
- * turns that into a build failure naming the leaked service.
- */
-const rawRoutes = <Routes extends Layer.Any>(
-	routes: Routes &
-		([LeakedRequestServices<Routes>] extends [never]
-			? unknown
-			: { readonly leakedRequestServices: LeakedRequestServices<Routes> }),
-) => routes
-
-const RawRoutes = rawRoutes(
+const RawRoutes = rawRoutes<Layer.Success<ApiPortsLayer>>()(
 	Layer.mergeAll(
 		IntegrationsCallbackRouter,
 		ChatCallbackRouter,
@@ -281,6 +294,7 @@ export const ApiAuthLive = Layer.mergeAll(
 	UserSessionAuthorizationLive,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
+	Layer.provideMerge(ShareRateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
 	// `Authorization: DPoP` device tokens; also serves the device credential routes.

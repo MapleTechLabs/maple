@@ -3,8 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "../button"
 import { Array as Arr } from "effect"
 
-// Port of `ExcludedEmptyHint` (packages/ui/src/components/filters/excluded-empty-hint.tsx): why an
-// empty list under an exclusion is empty, and the way out.
+// `ExcludedEmptyHint`: why an empty list under an exclusion is empty, and the way out.
 
 const MAX_NAMED_VALUES = 4
 

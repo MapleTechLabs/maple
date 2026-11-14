@@ -124,6 +124,13 @@ export interface ChatAlertLink {
 	readonly primary: boolean
 }
 
+/** The incident an alert card can acknowledge, and whether somebody already has. */
+export interface ChatAlertAcknowledge {
+	readonly incidentId: string
+	/** Who acknowledged it, as a name to show; null while it is unacknowledged. */
+	readonly acknowledgedBy: string | null
+}
+
 /**
  * A notification Maple posts on its own — an alert firing or resolving — rather than a turn.
  *
@@ -147,6 +154,21 @@ export interface ChatAlertBlock {
 	readonly footer: ReadonlyArray<string>
 	/** When it was sent, epoch ms, for a connector that can show it in each reader's own timezone. */
 	readonly sentAtMs: number | null
+	/** An open incident's ack control; absent on cards with nothing to acknowledge (resolve, test). */
+	readonly acknowledge?: ChatAlertAcknowledge
+}
+
+/**
+ * A self-contained HTML page, for a platform that renders one inside a message. Every other
+ * platform posts `fallback`: standard markdown that says the same.
+ */
+export interface ChatPageBlock {
+	readonly kind: "page"
+	readonly title: string
+	readonly html: string
+	/** The frame's height in CSS pixels until the page reports its own. */
+	readonly height: number
+	readonly fallback: string
 }
 
 export type ChatBlock =
@@ -157,6 +179,7 @@ export type ChatBlock =
 	| ChatApprovalBlock
 	| ChatNoticeBlock
 	| ChatAlertBlock
+	| ChatPageBlock
 
 /** Which chart, for the port that mints an image of it. */
 export interface ChatChartRef {

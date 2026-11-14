@@ -1,4 +1,5 @@
 import { V2Investigation } from "@maple/domain/http/v2"
+import { AGENT_TARGETS } from "@maple/web-data/investigations/agent-handoff"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
@@ -9,9 +10,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import { Model as ConversationModel } from "../conversation/model"
 import * as Canvas from "@maple/views/service-map/xyflow/canvas"
 
-// `/investigations/$id`.
-
-/** `useInvestigation`: the scoped shape's state, rebuilt into the `V2Investigation` the page renders. */
+/** The scoped shape's state, rebuilt into the `V2Investigation` the page renders. */
 export const Sync = Schema.Union([
 	Schema.TaggedStruct("Loading", {}),
 	Schema.TaggedStruct("Missing", {}),
@@ -20,7 +19,7 @@ export const Sync = Schema.Union([
 ])
 export type Sync = typeof Sync.Type
 
-/** `SignalsCard`'s two reads: log volume by severity, and the service's overview row. */
+/** The signals card's two reads: log volume by severity, and the service's overview row. */
 export const LogBucket = Schema.Struct({
 	bucket: Schema.String,
 	series: Schema.Record(Schema.String, Schema.Number),
@@ -40,6 +39,20 @@ export const Escalation = Schema.Struct({
 	destinations: Schema.Array(Schema.Struct({ name: Schema.String, status: Schema.String })),
 })
 
+export const AgentTargetSchema = Schema.Literals(AGENT_TARGETS)
+
+/** "Fix in Claude Code": where the handoff opens, and what its links need to be absolute and repo-scoped. */
+export const Handoff = Schema.Struct({
+	target: AgentTargetSchema,
+	/** `window.location.origin`, for the prompt's link back here; `""` until read. */
+	origin: Schema.String,
+	/** The org's one connected repository (`owner/name`); `null` with none, several, or before the read. */
+	repo: Schema.NullOr(Schema.String),
+	/** The repository is read once, when a report first arrives: nothing shows the button before. */
+	isRepoRequested: Schema.Boolean,
+})
+export type Handoff = typeof Handoff.Type
+
 export const Busy = Schema.NullOr(Schema.Literals(["resolve", "restart"]))
 
 export const Model = Schema.Struct({
@@ -54,6 +67,8 @@ export const Model = Schema.Struct({
 	escalation: KeyedSchema(Schema.NullOr(Escalation), LoadFailure),
 	busy: Busy,
 	actionsMenu: Menu.Model,
+	handoff: Handoff,
+	handoffMenu: Menu.Model,
 	actionSheet: Dialog.Model,
 	canvas: Canvas.Model,
 	/** The trace chips' full-id tooltip, one Model for every chip. */
@@ -63,7 +78,7 @@ export const Model = Schema.Struct({
 	/** The thread's report card: the action its rows opened, from local state, in its own sheet. */
 	reportActionIndex: Schema.NullOr(Schema.Number),
 	reportSheet: Dialog.Model,
-	/** `KnownServicesProvider`: table cells that name a service link to it; `null` until asked for. */
+	/** Table cells that name a service link to it; `null` until asked for. */
 	knownServices: Schema.NullOr(Schema.Array(Schema.String)),
 })
 export type Model = typeof Model.Type

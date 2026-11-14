@@ -1,7 +1,7 @@
 // OTel metric units are UCUM codes (`By`, `s`, `1`, `{request}`). These map
 // them to words a reader recognizes.
 
-import { Schema, String as Str } from "effect"
+import { Option, Schema, String as Str } from "effect"
 import { isRatioMetricName } from "@maple/views/lib/otel-units"
 import { lookup } from "./lookup"
 
@@ -39,9 +39,10 @@ export function humanizeUnit(unit: string, metricName = ""): string {
 	if (trimmed === "" || trimmed === "1") return trimmed === "1" && isRatioMetricName(metricName) ? "%" : ""
 	const known = lookup(UNIT_WORDS, trimmed)
 	if (known) return known
-	const annotation = trimmed.match(/^\{(.+)\}$/)
-	if (annotation) return Str.endsWith("s")(annotation[1]) ? annotation[1] : `${annotation[1]}s`
-	return Str.replace(/[{}]/g, "")(trimmed)
+	return Option.match(Str.match(/^\{(.+)\}$/)(trimmed), {
+		onNone: () => Str.replace(/[{}]/g, "")(trimmed),
+		onSome: ([, word = ""]) => (Str.endsWith("s")(word) ? word : `${word}s`),
+	})
 }
 
 /** Monotonic sums are counters: a reader wants their rate, never their running total. */

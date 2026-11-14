@@ -7,8 +7,7 @@ import type { FlowIconName } from "../../ui/flow-icons"
 import { type CloudPlatformInfo, getCloudPlatform } from "./cloud-platforms"
 import { String as Str } from "effect"
 
-// copied: packages/ui/src/lib/span-category.ts with `Icon` as an icon name (the original
-// imports React icon components). Phase 1 should split it like `service-map-db-style.ts`.
+// Span categories for the trace flow, with `Icon` as an icon name.
 
 export type SpanCategoryId =
 	| "server"
@@ -99,7 +98,7 @@ const categoryOf = (
 		const isProducer = spanKind === "PRODUCER"
 		return {
 			id: "messaging",
-			label: SPAN_KIND_LABELS[`SPAN_KIND_${spanKind}`],
+			label: SPAN_KIND_LABELS[`SPAN_KIND_${spanKind}`] ?? spanKind,
 			icon: isProducer ? "PaperPlaneIcon" : "BoxArchiveIcon",
 			accent: ACCENTS.messaging,
 		}

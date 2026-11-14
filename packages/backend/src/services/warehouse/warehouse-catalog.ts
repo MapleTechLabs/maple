@@ -5,7 +5,7 @@ import {
 	isDatasourceDefinition,
 } from "@maple-dev/effect-orm/tinybird"
 import * as Datasources from "@maple/domain/tinybird"
-import { Array as Arr, Order, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
 
 // Live introspection of the `defineDatasource` exports in
 // packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
@@ -38,10 +38,10 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	ai_trace_index: [
 		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
 		"`SessionId` is '' on most rows: vendors stamp the session key only on turn-owning spans. Resolve a trace's session as `max(SessionId) GROUP BY TraceId`, and treat a trace whose max is '' as a sessionless single-trace session.",
-		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `traces` attributes.",
-		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and usage as the ingest gateway stamped them (`maple_ai.llm_call`, `maple_ai.tool_call`, `maple_ai.error`, `maple_ai.usage.*`); a tool call paused for a human's approval is no call until it runs, so its paused copy has `IsToolCall` 0; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the sum of the five disjoint buckets the gateway normalised into `maple_ai.usage.*` — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw `gen_ai.usage.*` attributes. Only the model-call span carries usage, so sum per session here for calls, failures, tokens and cost. Rows materialized before migration 0035 keep the view's older figures, where a wrapper span could repeat its children's usage: net a child reporter's tokens off its parent (`ParentSpanId = SpanId`) on those rows only.",
-		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens`, read from the gateway's normalised `maple_ai.usage.*` — '' / 0 on rows materialized before migration 0031.",
-		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `traces` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
+		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity; `Model`, `AgentName` and `ToolName` are stamped by the ingest gateway (`maple_ai.model`, `maple_ai.agent.name`, `maple_ai.tool.name`), which reads every dialect (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool. Filter and facet on these here rather than on `traces` attributes.",
+		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and usage as the ingest gateway stamped them (`maple_ai.llm_call`, `maple_ai.tool_call`, `maple_ai.error`, `maple_ai.usage.*`); a tool call paused for a human's approval is no call until it runs, so its paused copy has `IsToolCall` 0; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the sum of the five disjoint buckets the gateway normalised into `maple_ai.usage.*` — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw `gen_ai.usage.*` attributes. Only the model-call span carries usage, so sum per session here for calls, failures, tokens and cost.",
+		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens`, read from the gateway's normalised `maple_ai.usage.*`.",
+		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert. Group failures by `ErrorType` here rather than reading `traces` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
 		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read their spans from `traces` through `trace_index` (see the `traces` notes) AND a `Timestamp` window.",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
 	],
@@ -81,9 +81,15 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Aggregate state columns: merge `DurationQuantiles` with `quantilesTDigestMerge(0.5, 0.95, 0.99)` (NANOSECONDS), `BodySizeQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95, 0.99)` (bytes), `UserAgents` with `approx_top_kMerge(10)`, and `SlowestTraceId`/`SlowestTimestamp`/`SlowestBodySize` with `argMaxMerge` (`SlowestBodySize` -1 = no body size). Sum `SpanCount`/`EstimatedSpanCount`/`BodyCount`.",
 		"Keeps 90 days at hour grain. Sorting key: `(OrgId, ServiceName, Hour, DeploymentEnv, SpanName, HttpStatusCode, ErrorType)`.",
 	],
+	user_activity_hourly: [
+		"One row per (`ServiceNamespace`, `UserId`, `Hour`, `ServiceName`) of spans and logs carrying `user.id` (else `enduser.id`). ALWAYS prefer this over `traces` + `SpanAttributes['user.id']` for per-user request, error and log counts.",
+		"Sum `SpanCount`, `ErrorSpanCount`, `RequestCount` (entry-point spans), `FailedRequestCount`, `LogCount`, `WarnLogCount`, `ErrorLogCount`; `min(FirstSeen)` / `max(LastSeen)`. Merge `TraceIds` / `SessionIds` with `uniqIfMerge`, `RequestDurationQuantiles` with `quantilesTDigestIfMerge(0.5, 0.95)` (NANOSECONDS), `TopRoutes` with `approx_top_kMerge(10)` (drop the '' entry).",
+		"Keeps 90 days at hour grain: snap range bounds with `toStartOfHour`. Sorting key: `(OrgId, ServiceNamespace, UserId, Hour, ServiceName)`.",
+	],
 	service_operations_hourly: [
 		"One row per (service, env, hour, `SpanName`). Sum `SpanCount` / `ErrorCount`; p50 / p95 in NANOSECONDS are `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)[1]` / `[2]`.",
 		"No `CommitSha`, `ServiceNamespace`, `SpanKind` or attributes here: per-commit numbers are in `service_overview_hourly`.",
+		"The count column is `SpanCount` (no `Count`) and the time column is `Hour` (no `Timestamp`). `DurationQuantiles` is an aggregate state: never `SELECT *`.",
 	],
 	service_operations_minutely: [
 		"`service_operations_hourly` at minute grain (`Minute`), 90-day TTL. Same columns and the same `quantilesTDigestMerge(0.5, 0.95)(DurationQuantiles)` merge; no `CommitSha`.",
@@ -102,8 +108,14 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
 		"`SpanKind` ('Server', 'Consumer', or another kind for a root span) and `IsRoot` (UInt8) say why a row is an entry point; filter on them to split request traffic from consumers or background roots. Both are ''/0 on rows materialized before migration 0037 (the table keeps 30 days).",
 	],
+	trace_list_mv: [
+		"One row per trace: its ROOT span only, so there is no `ParentSpanId` (every row would be '') and no child spans.",
+		"No attribute maps: the HTTP attributes are extracted to `HttpRoute`, `HttpMethod` and `HttpStatusCode`. Read `HttpRoute`, never `SpanAttributes['http.route']`.",
+		"`HttpStatusCode` is a String ('' when the root span had none): compare `HttpStatusCode >= '500'` or `toUInt16OrZero(HttpStatusCode) >= 500`, not `HttpStatusCode >= 500`.",
+	],
 	error_events: [
-		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
+		"No `SpanName`, `SpanAttributes` or `ResourceAttributes`: the stack is `ExceptionStacktrace`, the environment `DeploymentEnv`, the version `ServiceVersion`. Join `traces` on `TraceId`/`SpanId` for anything else.",
+		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `ExceptionStacktrace`, and a stable `FingerprintHash` for grouping.",
 		"Use `FingerprintHash` to group occurrences into issues; `(OrgId, FingerprintHash, Timestamp)` is the sort key.",
 	],
 	metrics_sum: [
@@ -147,6 +159,23 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"`SpanCount`, `LogCount` and `MetricCount` (data points across every metric type) with `*SizeBytes` STORAGE ESTIMATES computed like `service_usage`'s; never present them as billed usage.",
 		"Filled forward by its views from migration 0046, never backfilled, 90-day TTL.",
 	],
+	cost_daily: [
+		"Time column: `Date`, midnight UTC of the usage day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. The newest days are restated by the provider for days to weeks and carry `Estimated = 1` until final.",
+		"Versions: each pull writes a source's whole day with one `IngestedAt`, and a restated day can drop keys an older pull still holds. Keep only each day's newest pull: `AND (SourceId, Date, IngestedAt) IN (SELECT SourceId, Date, max(IngestedAt) FROM cost_daily WHERE <the OrgId, SourceId and Date filters only> GROUP BY SourceId, Date)`, never argMax per key. Keep every other filter (region, service, ...) out of that subquery, or an older pull that still has the value comes back.",
+		"Money: `BilledCost` is what the provider invoices; `EffectiveCost` spreads upfront commitments over their term; both in `Currency`, never converted. A sum is only meaningful within one `Currency`: group by it or filter on it, never add across. `Basis` is 'billed' (provider-reported money) or 'estimated' (usage times list price). Float64: round sums to cents for display.",
+		"`CloudService` is the provider's own service name; `ServiceName` is the telemetry service the resource resolves to and is '' when none does. `Region` is '' or 'global' for charges with no region. `ResourceId` is '' unless the source supplies resource-level cost.",
+		"`ChargeCategory` is 'none' on the zero row that only versions an empty day (exclude it from counts), 'tax' for tax, and 'unknown' where the provider does not split charge types: AWS rows net credits, refunds and commitment fees into their service. `AccountId` is the connected account: for an AWS management account, the charges of its member accounts are included and not split out.",
+		"A disconnected source keeps its rows: the cost tools read only an org's active sources, so filter `SourceId` when a total must match them.",
+		"Pulled into Maple's managed warehouse only: an org on its own ClickHouse reads it empty here.",
+	],
+	search_console_daily: [
+		"Time column: `Date`, midnight UTC holding Google's Pacific day. Filter whole days: `Date >= toStartOfDay($__startTime) AND Date <= $__endTime`. Imports run through today, so the newest days are partial (Google reports with a 2 to 3 day lag): end windows at yesterday (Pacific) or earlier for complete days.",
+		"`Grain` is 'site' (totals per Country/Device, Page and Query ''), 'page' (per Page; Country, Device and Query '') or 'query' (per Query, Page, Country and Device). Per-page Country/Device splits are not available: Google drops anonymized traffic when page is split by them. Each grain counts the same clicks again, so always filter one `Grain` and never sum across grains. The 'query' grain omits Google's anonymized queries, so it sums below 'site'.",
+		"Versions: each import of a day writes the whole day of a grain with one `IngestedAt`, only once Google returned all of it, and a re-import can drop keys an older one still holds. Keep only each day's newest import: `AND (Date, IngestedAt) IN (SELECT Date, max(IngestedAt) FROM search_console_daily WHERE <same filters> GROUP BY Date)`, never argMax per key.",
+		"Average position is impression-weighted: `sum(PositionSum) / sum(Impressions)`, never `avg()`. CTR is `sum(Clicks) / sum(Impressions)`. Lower position is better.",
+		"`SiteUrl` is the Search Console property (`sc-domain:example.com` or `https://example.com/`); `Page` is a full URL; `Country` is lowercase ISO 3166 alpha-3; `SearchType` is 'web'.",
+		"Imported into Maple's managed warehouse only: an org on its own ClickHouse reads it empty here. search_console_queries and search_console_pages read it on any setup.",
+	],
 } satisfies Record<string, ReadonlyArray<string>>
 
 interface ColumnInfo {
@@ -166,7 +195,7 @@ export interface TableSummary {
 const TIME_COLUMN_PREFERENCE = ["Timestamp", "Hour", "Minute", "TimeUnix", "StartTime"] as const
 
 const timeColumnOf = (columnNames: ReadonlyArray<string>): string | undefined =>
-	TIME_COLUMN_PREFERENCE.find((name) => columnNames.includes(name))
+	Option.getOrUndefined(Arr.findFirst(TIME_COLUMN_PREFERENCE, (name) => columnNames.includes(name)))
 
 /** How to read each rollup engine; a plain read of one double counts or under-counts. */
 const ENGINE_NOTES: ReadonlyMap<string, string> = new Map([
@@ -204,11 +233,12 @@ const TABLE_NAME_ALIASES: ReadonlyMap<string, ReadonlyArray<string>> = new Map([
 /** Real tables an unknown table name most likely meant, best first; empty when nothing fits. */
 export function suggestWarehouseTables(name: string): ReadonlyArray<string> {
 	const known = new Set(Arr.map(listWarehouseTables(), (t) => t.name))
-	const bare = Str.split(".")(Str.replace(/[`"]/g, "")(name)).at(-1)?.toLowerCase() ?? ""
+	const bare = Str.toLowerCase(Arr.lastNonEmpty(Str.split(".")(Str.replace(/[`"]/g, "")(name))))
 	for (const candidate of [bare, Str.replace(/^otel_/, "")(bare)]) {
 		if (known.has(candidate)) return [candidate]
-		const aliased = TABLE_NAME_ALIASES.get(candidate)?.filter((t) => known.has(t))
-		if (aliased !== undefined && aliased.length > 0) return aliased
+		const aliases = TABLE_NAME_ALIASES.get(candidate)
+		const aliased = aliases === undefined ? [] : Arr.filter(aliases, (t) => known.has(t))
+		if (aliased.length > 0) return aliased
 	}
 	return []
 }
@@ -225,9 +255,10 @@ export interface TableInfo extends TableSummary {
  * The audit log records every member's activity and origin IP and is served
  * only through the admin-gated `GET /v2/audit_log`; letting `run_sql` or a
  * dashboard widget read it would bypass that gate (and let the log observe
- * itself being read).
+ * itself being read). The unified audit trail carries the same kind of data
+ * for every connected platform and sits behind the same permission.
  */
-const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log"])
+const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log", "audit_trail_events"])
 
 function collectDatasources() {
 	// `Datasources` exports a mix of datasource definitions, type aliases, helper
@@ -271,8 +302,9 @@ export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
 }
 
 export function describeWarehouseTable(name: string): TableInfo | null {
-	const ds = collectDatasources().find((d) => d._name === name)
-	if (!ds) return null
+	const found = Arr.findFirst(collectDatasources(), (d) => d._name === name)
+	if (Option.isNone(found)) return null
+	const ds = found.value
 
 	const columns: ColumnInfo[] = Arr.map(Rec.toEntries(ds._schema), ([colName, colDef]) => {
 		const validator = getColumnType(colDef)

@@ -18,6 +18,8 @@ describe("CLI telemetry scrubber", () => {
 			str("maple.session.id", "sess_123"),
 			str("exception.message", "Cannot parse input: 'alice@example.com'"),
 			str("effect.cause", "Error: row {'email':'x'}"),
+			str("http.request.header.x-maple-maintenance-token", "a1f1"),
+			str("http.response.header.set-cookie", "sid=1"),
 			str("db.system.name", "clickhouse"),
 			str("error.type", "HTTP 400"),
 			{ key: "db.query.length", value: { intValue: 41 } },
@@ -84,15 +86,18 @@ describe("CLI telemetry scrubber", () => {
 				},
 			],
 		})
-		const scrubbed = data.resourceSpans[0]!.scopeSpans[0]!.spans[0]!
+		const scrubbed = Arr.getUnsafe(
+			Arr.getUnsafe(Arr.getUnsafe(data.resourceSpans, 0).scopeSpans, 0).spans,
+			0,
+		)
 		expect(JSON.stringify(scrubbed)).not.toContain("secret")
 		expect(scrubbed.status).toEqual({ code: 2 })
 		expect(scrubbed.attributes).toEqual([str("cli.argv", "query")])
-		expect(Arr.map(scrubbed.events[0]!.attributes, (attribute) => attribute.key)).toEqual([
+		expect(Arr.map(Arr.getUnsafe(scrubbed.events, 0).attributes, (attribute) => attribute.key)).toEqual([
 			"exception.type",
 			"exception.stacktrace",
 		])
-		expect(scrubbed.events[1]).toMatchObject({
+		expect(Arr.getUnsafe(scrubbed.events, 1)).toMatchObject({
 			name: "log",
 			attributes: [str("effect.logLevel", "ERROR")],
 		})

@@ -20,7 +20,7 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 const steps = (model: Model, messages: ReadonlyArray<Message>) =>
 	Arr.reduce(messages, model, (current, message) => pageUpdate(current, message).model)
 
-const target = Schema.decodeUnknownSync(V2ScrapeTarget)({
+const target = Schema.decodeSync(V2ScrapeTarget)({
 	id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
 	object: "scrape_target",
 	name: "redis exporter",

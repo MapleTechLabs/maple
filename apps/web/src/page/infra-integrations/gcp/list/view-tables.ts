@@ -1,9 +1,5 @@
 import { GCP_INFRA_SERVICES, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import {
-	gcpQueryInsightsConsoleUrl,
-	gcpSqlEngine,
-	gcpSqlSize,
-} from "../../../../components/infra/gcp/cloud-sql-signals"
+import { gcpQueryInsightsConsoleUrl, gcpSqlEngine, gcpSqlSize } from "../cloud-sql-signals"
 import {
 	GCP_DATABASE_RULES,
 	GCP_FILLING_FRACTION,
@@ -24,9 +20,9 @@ import {
 	type GcpSubscriptionRow,
 	type GcpWorkloadRow,
 	type GcpWorkloadScope,
-} from "../../../../components/infra/gcp/list-model"
-import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../../../../components/infra/gcp/tabs"
-import { BAR_VALUE_TONE } from "../../../../components/infra/severity-tokens"
+} from "../list-model"
+import { formatGcpValue, GCP_INFRA_COLUMNS, type GcpColumn } from "../tabs"
+import { BAR_VALUE_TONE } from "../../../kit/severity-tokens"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
@@ -48,7 +44,8 @@ import {
 	dataTableEmpty,
 	skeletonRows,
 	ROW_LINK_CLASS,
-} from "../../../infra/kit/data-table"
+	NUMERIC_CELL,
+} from "../../../kit/data-table"
 import { type MetaItem, metaLine } from "../../../infra/kit/meta-line"
 import { gcpServiceIcon } from "../service-icon"
 import {
@@ -61,7 +58,6 @@ import {
 import {
 	type H,
 	NAME,
-	NUMBER,
 	type RowsContext,
 	rowSlot,
 	spark,
@@ -72,11 +68,9 @@ import {
 	workloadRow,
 } from "./view-rows"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstackClass } from "@maple/views/ui/stack"
+import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
-import { Array as Arr } from "effect"
-
-// `GcpServicesTable`, `GcpSubscriptionsTable`, `GcpDatabasesTable` and `GcpServiceTable`.
+import { Array as Arr, String as Str } from "effect"
 
 const seconds = (value: number) => formatLatency(value * 1000)
 const head = (h: H, label: string, width: string, align?: "right", hidden?: string) =>
@@ -90,8 +84,6 @@ const placeItems = (
 
 const rowsOrEmpty = (h: H, rows: ReadonlyArray<Html>, emptyMessage: string) =>
 	rows.length === 0 ? [dataTableEmpty(h, [emptyMessage])] : rows
-
-// Services ---------------------------------------------------------------------------------------
 
 const SERVICE_KIND = { cloudRun: "Cloud Run", cloudFunctions: "Function 1st gen" } as const
 
@@ -149,8 +141,10 @@ const statusMix = (h: H, row: GcpServiceRow): Html => {
 	)
 }
 
-/** Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line there. */
-/** The idle note rides inside the last item, separator included, so hiding it at `md` leaves no stray dot. */
+/**
+ * Below `md` the Status cell is hidden, so the idle billing note rides on the sub-line, inside the
+ * last item with its separator, so hiding it at `md` leaves no stray dot.
+ */
 const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyArray<MetaItem> => {
 	// Only items metaLine will draw: the note joins the last shown one, never an empty slot.
 	const items = Arr.filter(
@@ -161,14 +155,16 @@ const serviceMeta = (h: H, row: GcpServiceRow, showProject: boolean): ReadonlyAr
 	// Flex drops a leading space, so the note carries its own separator and gap, like metaLine's.
 	const note = h.span(
 		[h.Class("flex items-center gap-x-2 md:hidden")],
-		[h.span([h.Class("text-foreground-faint")], ["·"]), "idle, still billed"],
+		[typography(h, { tone: "faint" }, ["·"]), "idle, still billed"],
 	)
-	const last = items[items.length - 1]
+	const last = items.at(-1)
+	if (last === undefined) return [note]
 	// A string keeps metaLine's 28ch cap, which it applies only to plain strings.
 	const capped = typeof last === "string" ? h.span([h.Class("max-w-[28ch] truncate")], [last]) : last
-	return last === undefined
-		? [note]
-		: [...items.slice(0, -1), h.span([h.Class("flex min-w-0 items-center gap-x-2")], [capped, note])]
+	return [
+		...items.slice(0, -1),
+		hstack(h, { align: "center", shrink: true, as: "span", className: "gap-x-2" }, [capped, note]),
+	]
 }
 
 export const servicesTable = (
@@ -218,7 +214,7 @@ export const servicesTable = (
 								h.Class(
 									cn(
 										"w-16",
-										NUMBER,
+										NUMERIC_CELL,
 										rate === undefined ? "text-muted-foreground" : errorRateClass(rate),
 									),
 								),
@@ -230,7 +226,7 @@ export const servicesTable = (
 								h.Class(
 									cn(
 										"w-24",
-										NUMBER,
+										NUMERIC_CELL,
 										(row.latencyP95 ?? 0) >= GCP_SLOW_P95_SECONDS
 											? TONE_TEXT.warn
 											: "text-foreground-soft",
@@ -240,7 +236,7 @@ export const servicesTable = (
 							[row.latencyP95 === undefined ? EMPTY_VALUE : seconds(row.latencyP95)],
 						),
 						h.div(
-							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMBER))],
+							[h.Class(cn("hidden w-20 text-foreground-soft lg:block", NUMERIC_CELL))],
 							[
 								row.instances === undefined
 									? EMPTY_VALUE
@@ -248,7 +244,7 @@ export const servicesTable = (
 							],
 						),
 						h.div(
-							[h.Class(cn("hidden w-16 md:block", NUMBER, BAR_VALUE_TONE[cpuLevel]))],
+							[h.Class(cn("hidden w-16 md:block", NUMERIC_CELL, BAR_VALUE_TONE[cpuLevel]))],
 							[row.cpuP95 === undefined ? EMPTY_VALUE : formatPercentColumn(row.cpuP95)],
 						),
 					],
@@ -257,8 +253,6 @@ export const servicesTable = (
 			emptyMessage,
 		),
 	)
-
-// Pub/Sub subscriptions --------------------------------------------------------------------------
 
 const growthLabel = (growth: number) =>
 	growth > 0 ? `+${formatNumber(growth)}` : growth < 0 ? `−${formatNumber(-growth)}` : "steady"
@@ -307,51 +301,41 @@ export const subscriptionsTable = (
 							row.delivered,
 							row.deliveredSpark,
 						),
-						h.div(
-							[h.Class("flex w-52 items-center gap-3")],
-							[
-								h.div(
-									[h.Class("flex w-16 shrink-0 flex-col")],
+						hstack(h, { gap: "3", align: "center", className: "w-52" }, [
+							vstack(h, { className: "w-16 shrink-0" }, [
+								h.span(
 									[
-										h.span(
-											[
-												h.Class(
-													cn(
-														typographyClass({
-															size: "xs",
-															mono: true,
-															numeric: true,
-														}),
-														growing ? TONE_TEXT.crit : "text-foreground-soft",
-													),
-												),
-											],
-											[
-												row.backlog === undefined
-													? EMPTY_VALUE
-													: formatNumber(row.backlog),
-											],
+										h.Class(
+											cn(
+												typographyClass({
+													size: "xs",
+													mono: true,
+													numeric: true,
+												}),
+												growing ? TONE_TEXT.crit : "text-foreground-soft",
+											),
 										),
-										...(growth === undefined
-											? []
-											: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
 									],
+									[row.backlog === undefined ? EMPTY_VALUE : formatNumber(row.backlog)],
 								),
-								spark(
-									h,
-									ctx,
-									rowSlot("gcp-sub-backlog", row.keys),
-									row.backlogSpark,
-									growing ? "--severity-error" : "--muted-foreground",
-								),
-							],
-						),
+								...(growth === undefined
+									? []
+									: [h.span([h.Class(SUB)], [growthLabel(growth)])]),
+							]),
+							spark(
+								h,
+								ctx,
+								rowSlot("gcp-sub-backlog", row.keys),
+								row.backlogSpark,
+								growing ? "--severity-error" : "--muted-foreground",
+							),
+						]),
 						h.div(
 							[
 								h.Class(
 									cn(
 										"w-28",
-										NUMBER,
+										NUMERIC_CELL,
 										(row.oldestUnackedSeconds ?? 0) >= GCP_STALE_SECONDS
 											? TONE_TEXT.warn
 											: "text-foreground-soft",
@@ -369,7 +353,7 @@ export const subscriptionsTable = (
 								h.Class(
 									cn(
 										"hidden w-20 md:block",
-										NUMBER,
+										NUMERIC_CELL,
 										pushRate === undefined
 											? "text-muted-foreground"
 											: errorRateClass(pushRate),
@@ -389,7 +373,7 @@ export const subscriptionsTable = (
 								h.Class(
 									cn(
 										"hidden w-24 md:block",
-										NUMBER,
+										NUMERIC_CELL,
 										row.deadLettered > 0 ? TONE_TEXT.crit : "text-foreground-soft",
 									),
 								),
@@ -402,8 +386,6 @@ export const subscriptionsTable = (
 			emptyMessage,
 		),
 	)
-
-// Cloud SQL instances ----------------------------------------------------------------------------
 
 const quotaTone = (value: number) =>
 	value >= GCP_LIMIT_FRACTION ? "crit" : value >= GCP_FILLING_FRACTION ? "warn" : "neutral"
@@ -452,7 +434,10 @@ const databaseMeta = (h: H, row: GcpDatabaseRow, showProject: boolean): Readonly
 	...placeItems(row, showProject),
 ]
 
-const isMysql = (row: GcpDatabaseRow) => row.instance?.databaseVersion?.startsWith("MYSQL") === true
+const isMysql = (row: GcpDatabaseRow) => {
+	const version = row.instance?.databaseVersion
+	return version !== null && version !== undefined && Str.startsWith("MYSQL")(version)
+}
 
 const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 	row.queries !== undefined
@@ -473,23 +458,20 @@ const queriesCell = (h: H, row: GcpDatabaseRow, ctx: RowsContext): Html =>
 
 const queryP95Cell = (h: H, row: GcpDatabaseRow): Html => {
 	const slow = (row.queryP95 ?? 0) >= GCP_SLOW_P95_SECONDS
-	return h.div(
-		[h.Class("flex w-20 flex-col items-end")],
-		[
-			h.span(
-				[h.Class(cn(NUMBER, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
-				[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
-			),
-			...(isMysql(row) || row.slowQueries > 0
-				? [
-						h.span(
-							[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
-							[formatNumber(row.slowQueries), " slow"],
-						),
-					]
-				: []),
-		],
-	)
+	return vstack(h, { align: "end", className: "w-20" }, [
+		h.span(
+			[h.Class(cn(NUMERIC_CELL, slow ? TONE_TEXT.warn : "text-foreground-soft"))],
+			[row.queryP95 === undefined ? EMPTY_VALUE : seconds(row.queryP95)],
+		),
+		...(isMysql(row) || row.slowQueries > 0
+			? [
+					h.span(
+						[h.Class(cn(SUB, row.slowQueries > 0 && TONE_TEXT.warn))],
+						[formatNumber(row.slowQueries), " slow"],
+					),
+				]
+			: []),
+	])
 }
 
 const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
@@ -497,26 +479,23 @@ const connectionsCell = (h: H, row: GcpDatabaseRow, locale: string): Html => {
 	const share = gcpConnectionShare(row)
 	const idle = Math.round(row.idleInTransaction ?? 0)
 	const count = (value: number) => value.toLocaleString(locale, { maximumFractionDigits: 0 })
-	return h.div(
-		[h.Class("flex w-36 flex-col items-end")],
-		[
-			h.span(
-				[h.Class(cn(NUMBER, quotaText(share)))],
-				[
-					row.connections === undefined
-						? EMPTY_VALUE
-						: max === null
-							? count(row.connections)
-							: `${count(row.connections)} / ${count(max)}`,
-				],
-			),
-			...(idle > 0
-				? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
-				: row.instance !== undefined && max === null
-					? [h.span([h.Class(SUB)], ["no max reported"])]
-					: []),
-		],
-	)
+	return vstack(h, { align: "end", className: "w-36" }, [
+		h.span(
+			[h.Class(cn(NUMERIC_CELL, quotaText(share)))],
+			[
+				row.connections === undefined
+					? EMPTY_VALUE
+					: max === null
+						? count(row.connections)
+						: `${count(row.connections)} / ${count(max)}`,
+			],
+		),
+		...(idle > 0
+			? [h.span([h.Class(cn(SUB, TONE_TEXT.warn))], [formatNumber(idle), " idle in transaction"])]
+			: row.instance !== undefined && max === null
+				? [h.span([h.Class(SUB)], ["no max reported"])]
+				: []),
+	])
 }
 
 const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArray<Html> => {
@@ -524,12 +503,14 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 	const off = Arr.filter(rows, gcpQueryInsightsOff)
 	if (replicas.length === 0 && off.length === 0) return []
 	return [
-		h.div(
-			[
-				h.Class(
-					"flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
-				),
-			],
+		hstack(
+			h,
+			{
+				align: "center",
+				justify: "between",
+				wrap: true,
+				className: "gap-x-6 gap-y-1 px-4 py-2.5 font-mono text-2xs text-muted-foreground",
+			},
 			[
 				h.span(
 					[],
@@ -549,8 +530,9 @@ const databasesFooter = (h: H, rows: ReadonlyArray<GcpDatabaseRow>): ReadonlyArr
 								),
 							],
 				),
-				h.span(
-					[h.Class("flex flex-wrap gap-x-4")],
+				hstack(
+					h,
+					{ align: "stretch", wrap: true, as: "span", className: "gap-x-4" },
 					Arr.map(off, (row) =>
 						h.a(
 							[
@@ -616,8 +598,6 @@ export const databasesTable = (
 		],
 	)
 
-// The other services (GKE, Compute Engine, Load Balancing) ---------------------------------------
-
 const GENERIC_NAME = columnClass({ min: "60" })
 const VALUE_WIDTH = "w-28"
 
@@ -627,7 +607,6 @@ const genericHead = (h: H, service: GcpInfraServiceId): ReadonlyArray<Html> => [
 	...Arr.map(GCP_INFRA_COLUMNS[service], (column) => head(h, column.label, VALUE_WIDTH, "right")),
 ]
 
-/** `GcpServiceTableLoading`. */
 export const serviceTableLoading = (h: H, service: GcpInfraServiceId): Html =>
 	dataTable(
 		h,
@@ -654,7 +633,7 @@ export const valueClass = (spec: GcpColumn, value: number | undefined): string =
 	return "text-foreground-soft"
 }
 
-/** `GcpServiceTable`: a service without a list of its own, its curated columns. */
+/** A service without a list of its own, its curated columns. */
 export const serviceTable = (
 	h: H,
 	service: GcpInfraServiceId,
@@ -701,7 +680,7 @@ export const serviceTable = (
 												mono: true,
 												truncate: true,
 												as: "div",
-												className: "transition-colors group-hover:text-primary",
+												className: "group-hover:text-primary",
 											},
 											[row.name],
 										),

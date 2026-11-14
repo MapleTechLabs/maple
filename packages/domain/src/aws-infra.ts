@@ -125,9 +125,6 @@ export const awsDimensionAttribute = (dimension: string) => `aws.dimension.${dim
 /** A row's keys: its identity values in order, then region and account. */
 export const AWS_INFRA_RESOURCE_KEYS = ["cloud.region", "cloud.account.id"] as const
 
-export const awsInfraMetric = (kind: AwsInfraKindId, key: string) =>
-	AWS_INFRA_KINDS[kind].metrics.find((metric) => metric.key === key)
-
 /** The most resources of one kind a table reads. Its queries size their row limits from it. */
 export const AWS_INFRA_RESOURCE_LIMIT = 2_500
 

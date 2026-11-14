@@ -1,9 +1,8 @@
 import type { ScrapeAuthType } from "@maple/domain/http"
 import type { V2ScrapeTarget } from "@maple/domain/http/v2"
-import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { docsUrl } from "../../lib/docs"
+import { docsUrl } from "../kit/docs"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,7 +27,7 @@ import {
 	integrationEmptyFooter,
 	integrationEmptyHint,
 	integrationEmptyMedia,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -38,10 +37,11 @@ import { prometheusTargets } from "./update-prometheus"
 import { targetDetails } from "./view-prometheus-details"
 import { targetDialogs } from "./view-prometheus-form"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-
-// `ScrapeTargetsSection` and `ScrapeTargetRow`, with the Prometheus and WarpStream intro alerts.
+import { textLink } from "@maple/views/ui/text-link"
+import { pressable } from "@maple/views/ui/pressable"
+import { providerBrand } from "../kit/providers"
 
 type H = HtmlBuilder<Message>
 
@@ -57,26 +57,27 @@ export const AUTH_TYPE_LABELS = {
 export interface ScheduledStatus {
 	readonly label: string
 	readonly detail: string
+	/** The instant `detail` leads into: `Scheduled 3m ago`. */
+	readonly detailAt?: string
 	readonly tone: Tone
 }
 
-/** `scheduledStatusFromRollup`, with the page's clock. */
-export const statusFromRollup = (target: V2ScrapeTarget, nowMs: number): ScheduledStatus => {
+export const statusFromRollup = (target: V2ScrapeTarget): ScheduledStatus => {
 	if (!target.enabled) return { label: "Disabled", detail: "Collector skips this target", tone: "neutral" }
 	if (target.last_scrape_error !== null)
 		return {
 			label: "Down",
-			detail:
-				target.last_scrape_at === null
-					? "No successful scheduled scrape"
-					: `Last success ${formatRelativeTime(target.last_scrape_at, nowMs)}`,
+			...(target.last_scrape_at === null
+				? { detail: "No successful scheduled scrape" }
+				: { detail: "Last success", detailAt: target.last_scrape_at }),
 			tone: "crit",
 		}
 	if (target.last_scrape_at === null)
 		return { label: "No checks", detail: "No scheduled scrape observed", tone: "warn" }
 	return {
 		label: "Up",
-		detail: `Scheduled ${formatRelativeTime(target.last_scrape_at, nowMs)}`,
+		detail: "Scheduled",
+		detailAt: target.last_scrape_at,
 		tone: "ok",
 	}
 }
@@ -147,111 +148,131 @@ const addButton = (h: H, integration: ScrapeIntegration, className?: string): Ht
 
 const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string): Html => {
 	const card = model.prometheusCard
-	const status = statusFromRollup(target, model.nowMs)
+	const status = statusFromRollup(target)
 	const isSelected = target.id === card.selectedId
 	const menuId = `scrape-target-menu-${target.id}`
 	const isManaged = target.managed_by !== null
 	return h.div(
 		[
-			h.Role("button"),
-			h.Tabindex(0),
-			h.AriaPressed(String(isSelected)),
-			h.OnClick(Message.ClickedTarget({ id: target.id })),
-			h.OnKeyDownPreventDefault((key) =>
-				key === "Enter" || key === " "
-					? Option.some(Message.ClickedTarget({ id: target.id }))
-					: Option.none(),
-			),
 			h.Class(
 				cn(
-					"flex cursor-pointer items-center gap-3 px-3 py-3 outline-none hover:bg-surface-sunken active:bg-surface-sunken focus-visible:bg-surface-sunken",
+					"flex items-center gap-3 pr-3 hover:bg-surface-sunken active:bg-surface-sunken",
 					isSelected && "bg-surface-strong",
 				),
 			),
 		],
 		[
-			statusDot(h, { tone: status.tone, size: "lg" }),
-			h.div(
-				[h.Class("min-w-0 flex-1")],
+			// The target's name and status select it; the controls beside it stay their own buttons.
+			pressable(
+				h,
+				{
+					onClick: Message.ClickedTarget({ id: target.id }),
+					isSelected,
+					className: "flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left",
+				},
 				[
-					hstack(h, { gap: "2", shrink: true }, [
-						h.span(
-							[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
-							[target.name],
-						),
-						badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [status.label]),
-						...(target.service_name !== null && target.service_name !== ""
-							? [
-									badge(
-										h,
-										{
-											variant: "outline",
-											className: "min-w-0 max-w-40",
-											attributes: [h.Title(target.service_name)],
-										},
-										[h.span([h.Class("truncate")], [target.service_name])],
+					statusDot(h, { tone: status.tone, size: "lg" }),
+					// Phrasing content only: this sits inside a button.
+					h.span(
+						[h.Class("block min-w-0 flex-1")],
+						[
+							hstack(h, { gap: "2", shrink: true, as: "span" }, [
+								h.span(
+									[h.Class("min-w-16 truncate text-sm font-medium"), h.Title(target.name)],
+									[target.name],
+								),
+								badge(h, { variant: toneBadge(status.tone), className: "shrink-0" }, [
+									status.label,
+								]),
+								...(target.service_name !== null && target.service_name !== ""
+									? [
+											badge(
+												h,
+												{
+													variant: "outline",
+													className: "min-w-0 max-w-40",
+													attributes: [h.Title(target.service_name)],
+												},
+												[typography(h, { truncate: true }, [target.service_name])],
+											),
+										]
+									: []),
+								...(target.auth_type !== "none"
+									? [
+											badge(h, { variant: "outline", className: "shrink-0" }, [
+												AUTH_TYPE_LABELS[target.auth_type],
+											]),
+										]
+									: []),
+							]),
+							hstack(
+								h,
+								{
+									align: "center",
+									wrap: true,
+									as: "span",
+									className: "text-muted-foreground mt-1 gap-x-3 gap-y-1 text-xs",
+								},
+								[
+									h.span(
+										[h.Class("max-w-[280px] truncate font-mono"), h.Title(target.url)],
+										[hostnameOf(target.url)],
 									),
-								]
-							: []),
-						...(target.auth_type !== "none"
-							? [
-									badge(h, { variant: "outline", className: "shrink-0" }, [
-										AUTH_TYPE_LABELS[target.auth_type],
-									]),
-								]
-							: []),
-					]),
-					h.div(
-						[
-							h.Class(
-								"text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs",
+									h.span([], [String(target.scrape_interval_seconds), "s interval"]),
+									status.detailAt === undefined
+										? h.span([], [status.detail])
+										: relativeTime(h, {
+												value: status.detailAt,
+												nowMs: model.nowMs,
+												timeZone,
+												prefix: status.detail,
+											}),
+									...(target.last_scrape_at !== null
+										? [
+												relativeTime(h, {
+													value: target.last_scrape_at,
+													nowMs: model.nowMs,
+													timeZone,
+													prefix: "Last scrape",
+												}),
+											]
+										: []),
+								],
 							),
-						],
-						[
-							h.span(
-								[h.Class("max-w-[280px] truncate font-mono"), h.Title(target.url)],
-								[hostnameOf(target.url)],
-							),
-							h.span([], [String(target.scrape_interval_seconds), "s interval"]),
-							h.span([], [status.detail]),
-							...(target.last_scrape_at !== null
+							...(target.last_scrape_error !== null && target.last_scrape_error !== ""
 								? [
-										relativeTime(h, {
-											value: target.last_scrape_at,
-											nowMs: model.nowMs,
-											timeZone,
-											prefix: "Last scrape",
-											tooltip: "title",
-										}),
+										hstack(
+											h,
+											{
+												gap: "1.5",
+												align: "center",
+												as: "span",
+												className: "mt-1.5 text-xs text-muted-foreground",
+												attributes: [
+													h.DataAttribute("base-ui-tooltip-trigger", ""),
+													h.DataAttribute("slot", "tooltip-trigger"),
+													...tooltipTrigger(h, target.last_scrape_error),
+												],
+											},
+											[
+												icon(h, "CircleInfoIcon", {
+													size: 12,
+													className: "shrink-0",
+												}),
+												typography(h, { truncate: true }, [
+													"Last scrape: ",
+													target.last_scrape_error,
+												]),
+											],
+										),
 									]
 								: []),
 						],
 					),
-					...(target.last_scrape_error !== null && target.last_scrape_error !== ""
-						? [
-								h.div(
-									[
-										h.DataAttribute("base-ui-tooltip-trigger", ""),
-										h.Class(
-											"mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground",
-										),
-										h.DataAttribute("slot", "tooltip-trigger"),
-										...tooltipTrigger(h, target.last_scrape_error),
-									],
-									[
-										icon(h, "CircleInfoIcon", { size: 12, className: "shrink-0" }),
-										h.span(
-											[h.Class("truncate")],
-											["Last scrape: ", target.last_scrape_error],
-										),
-									],
-								),
-							]
-						: []),
 				],
 			),
 			h.div(
-				[h.OnClick(Message.ClickedTargetControls(), { propagation: "Stop" })],
+				[],
 				switchControl(h, {
 					id: `scrape-target-switch-${target.id}`,
 					inputId: `scrape-target-switch-input-${target.id}`,
@@ -271,7 +292,7 @@ const targetRow = (h: H, model: Model, target: V2ScrapeTarget, timeZone: string)
 				[icon(h, "ArrowRotateClockwiseIcon"), "Sync now"],
 			),
 			h.div(
-				[h.OnClick(Message.ClickedTargetControls(), { propagation: "Stop" })],
+				[],
 				[
 					rowActionsMenu(h, {
 						slotId: menuId,
@@ -313,7 +334,7 @@ const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 	integrationEmpty(h, [
 		integrationEmptyFeatures(h, COPY.features),
 		integrationEmptyCard(h, [
-			integrationEmptyMedia(h, { icon: "PrometheusIcon", accent: "#E6522C" }),
+			integrationEmptyMedia(h, providerBrand("prometheus")),
 			integrationEmptyHint(h, [COPY.emptyHint]),
 			addButton(h, integration),
 			docsLink(h, "prometheus"),
@@ -323,12 +344,14 @@ const emptyState = (h: H, integration: ScrapeIntegration): Html =>
 
 const placeholder = (h: H): Html =>
 	panel(h, { padded: true, className: "hidden lg:flex" }, [
-		h.div(
-			[
-				h.Class(
-					"text-muted-foreground flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-xs",
-				),
-			],
+		vstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				justify: "center",
+				className: "text-muted-foreground h-full min-h-[260px] text-center text-xs",
+			},
 			[
 				icon(h, "CircleInfoIcon", { size: 18 }),
 				h.span([], ["Click a target to inspect scheduled checks."]),
@@ -336,7 +359,6 @@ const placeholder = (h: H): Html =>
 		),
 	])
 
-/** `ScrapeTargetsSection`: the list, the selected target's details, and its dialogs. */
 /** `focusId`: a source's own target (`/sources/$id`), shown alone instead of the whole list. */
 export const scrapeTargetsSection = (
 	h: H,
@@ -350,7 +372,7 @@ export const scrapeTargetsSection = (
 	const targets = focusId === null ? all : Arr.filter(all, (target) => target.id === focusId)
 	const isLoaded = AsyncData.isSuccess(data) || AsyncData.isRefreshing(data)
 	const isEmpty = isLoaded && targets.length === 0
-	const selected = targets.find((target) => target.id === model.prometheusCard.selectedId)
+	const selected = Arr.findFirst(targets, (target) => target.id === model.prometheusCard.selectedId)
 	const body = AsyncData.match(data, {
 		onIdle: () => skeletonList(h, { rows: 3, rowClassName: "h-[60px]", gap: "2" }),
 		onLoading: () => skeletonList(h, { rows: 3, rowClassName: "h-[60px]", gap: "2" }),
@@ -384,7 +406,10 @@ export const scrapeTargetsSection = (
 							{ className: "divide-y" },
 							Arr.map(targets, (target) => targetRow(h, model, target, timeZone)),
 						),
-						selected === undefined ? placeholder(h) : targetDetails(h, model, selected, timeZone),
+						Option.match(selected, {
+							onNone: () => placeholder(h),
+							onSome: (target) => targetDetails(h, model, target, timeZone),
+						}),
 					],
 				)
 	}
@@ -408,12 +433,13 @@ export const scrapeTargetsSection = (
 }
 
 const setupGuide = (h: H, page: "prometheus" | "warpstream"): Html =>
-	h.a(
-		[
-			h.Href(docsUrl(page)),
-			h.Target("_blank"),
-			h.Rel("noreferrer"),
-			h.Class("text-foreground underline underline-offset-2 hover:no-underline active:no-underline"),
-		],
+	textLink(
+		h,
+		{
+			href: docsUrl(page),
+			tone: "inherit",
+			className: "inline text-foreground underline hover:no-underline active:no-underline",
+			attributes: [h.Target("_blank"), h.Rel("noreferrer")],
+		},
 		["Setup guide"],
 	)

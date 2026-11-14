@@ -17,15 +17,14 @@ import type {
 	CancellationTelemetryEvidence as TelemetryEvidence,
 } from "@maple/domain/http"
 import { CH, formatWarehouseDateTime } from "@maple/query-engine"
-import { Cause, Context, DateTime, Effect, Layer, Array as Arr, String as Str } from "effect"
+import { Cause, Context, DateTime, Effect, Layer, Option, Order, Array as Arr, String as Str } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { type CancellationEvidenceInput, daysBeforeCancel } from "./evidence-input"
 import { DAY_MS, WINDOW_DAYS } from "./snapshot"
 
 export const SERVICES_SHOWN = 15
-/** Values shown per resource attribute. */
 export const RESOURCE_VALUES_SHOWN = 5
 /** Rows read for resource attributes: every value of the five keys, in practice. */
 const RESOURCE_ROWS_READ = 500
@@ -43,6 +42,8 @@ const BYTES_PER_GB = 1_000_000_000
 const PART_TIMEOUT = "8 seconds"
 
 const cut = (name: string): string => Str.slice(0, NAME_CHARS)(name)
+
+const byLocale: Order.Order<string> = (self, that) => Str.localeCompare(that)(self)
 
 /** Three significant figures: a 2 MB service stays visible, a 40 GB one loses nothing that matters. */
 const gb = (bytes: number): number => Number((bytes / BYTES_PER_GB).toPrecision(3))
@@ -119,7 +120,13 @@ export const resourceAttributesOf = (
 		for (const row of Arr.filter(rows, (row) => sources.includes(row.attributeKey))) {
 			byValue.set(row.attributeValue, Math.max(byValue.get(row.attributeValue) ?? 0, row.spans))
 		}
-		const values = [...byValue].toSorted(([a, x], [b, y]) => y - x || Str.localeCompare(b)(a))
+		const values = Arr.sort(
+			[...byValue],
+			Order.combine(
+				Order.mapInput(Order.flip(Order.Number), ([, count]: readonly [string, number]) => count),
+				Order.mapInput(byLocale, ([value]: readonly [string, number]) => value),
+			),
+		)
 		const set = Arr.reduce(values, 0, (sum, [, count]) => sum + count)
 		// The rollup counts the keys apart; never let one exceed the whole.
 		const whole = Math.max(spans, set)
@@ -152,7 +159,7 @@ export const alertChecksOf = (rows: ReadonlyArray<AlertCheckRow>): CancellationA
 		errors.set(category, (errors.get(category) ?? 0) + row.checks)
 	}
 	const rulesOf = (match: (row: AlertCheckRow) => boolean) =>
-		new Set(Arr.filter(rows, match).flatMap((row) => row.ruleIds)).size
+		new Set(Arr.flatMap(Arr.filter(rows, match), (row: AlertCheckRow) => row.ruleIds)).size
 	return {
 		checks: sum(() => true),
 		healthy: sum((row) => row.status === "healthy"),
@@ -163,9 +170,11 @@ export const alertChecksOf = (rows: ReadonlyArray<AlertCheckRow>): CancellationA
 			noValue: skipped("no_value"),
 			unspecified: skipped(""),
 		},
-		errors: Arr.map([...errors], ([category, checks]) => ({ category, checks }))
-			.toSorted((a, b) => b.checks - a.checks)
-			.slice(0, ALERT_ERROR_CLASSES_SHOWN),
+		errors: Arr.sortWith(
+			Arr.map([...errors], ([category, checks]) => ({ category, checks })),
+			(error: { readonly checks: number }) => error.checks,
+			Order.flip(Order.Number),
+		).slice(0, ALERT_ERROR_CLASSES_SHOWN),
 		rules: rulesOf(() => true),
 		rulesBreached: rulesOf((row) => row.status === "breached"),
 	}
@@ -221,11 +230,17 @@ export const productEventsOf = (
 		})
 	}
 	return Arr.map(
-		[...byName]
-			.toSorted(
-				([a, x], [b, y]) => y.recent + y.prior - (x.recent + x.prior) || Str.localeCompare(b)(a),
-			)
-			.slice(0, PRODUCT_EVENTS_SHOWN),
+		Arr.sort(
+			[...byName],
+			Order.combine(
+				Order.mapInput(
+					Order.flip(Order.Number),
+					([, event]: readonly [string, { readonly recent: number; readonly prior: number }]) =>
+						event.recent + event.prior,
+				),
+				Order.mapInput(byLocale, ([name]: readonly [string, unknown]) => name),
+			),
+		).slice(0, PRODUCT_EVENTS_SHOWN),
 		([name, event]) => ({
 			name: cut(name),
 			recent: event.recent,
@@ -240,7 +255,7 @@ export const auditActorsOf = (
 	rows: ReadonlyArray<{ readonly actorType: string; readonly recent: number; readonly prior: number }>,
 ): CancellationAuditActors => {
 	const of = (actorType: string) => {
-		const row = rows.find((row) => row.actorType === actorType)
+		const row = Option.getOrUndefined(Arr.findFirst(rows, (row) => row.actorType === actorType))
 		return { recent: row?.recent ?? 0, prior: row?.prior ?? 0 }
 	}
 	return { users: of("user"), apiKeys: of("api_key"), agents: of("agent"), maple: of("system") }
@@ -273,7 +288,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 			input: CancellationEvidenceInput,
 		) {
 			const { orgId, ownOrgId, atMs } = input
-			const tenant = systemTenant(orgId)
+			const tenant = systemTenant(orgId, ALERTING_SYSTEM_USER_ID)
 			const window = {
 				orgId,
 				startTime: formatWarehouseDateTime(atMs - WINDOW_DAYS * 2 * DAY_MS),
@@ -376,7 +391,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 									"CancellationTelemetryEvidenceReader.readProductEvents",
 									warehouse
 										.compiledQuery(
-											systemTenant(ownOrgId),
+											systemTenant(ownOrgId, ALERTING_SYSTEM_USER_ID),
 											CH.compile(
 												CH.cancellationProductEventsQuery({
 													limit: PRODUCT_EVENT_ROWS_READ,
@@ -410,7 +425,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 							)
 							.pipe(
 								Effect.map((rows) =>
-									rows.map(({ action, recent, prior, denied }) => ({
+									Arr.map(rows, ({ action, recent, prior, denied }) => ({
 										action,
 										recent,
 										prior,
@@ -432,7 +447,7 @@ export class CancellationTelemetryEvidenceReader extends Context.Service<
 							)
 							.pipe(
 								Effect.map((rows) =>
-									rows.map(({ tool, surface, recent, prior, errors }) => ({
+									Arr.map(rows, ({ tool, surface, recent, prior, errors }) => ({
 										tool: cut(tool),
 										surface,
 										recent,

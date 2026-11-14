@@ -2,18 +2,9 @@ import type { AuthEnv } from "@maple/auth"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 
-/**
- * Standalone config for the Electric shape-sync worker. Deliberately a small,
- * self-contained subset — NOT the full `@maple/api` `Env` — so this worker never
- * has to supply `TINYBIRD_*` / `MAPLE_INGEST_KEY_*` etc. it doesn't use. It reads
- * exactly two concerns:
- *
- *  - the Electric upstream (`ELECTRIC_*`), and
- *  - the auth fields (`AuthEnv`) consumed by `makeResolveTenant`.
- *
- * `SyncConfigValues extends AuthEnv`, so the value can be handed straight to
- * `makeResolveTenant` (see routes/shape.http.ts).
- */
+// Only the Electric upstream (`ELECTRIC_*`) and the `AuthEnv` fields `makeResolveTenant` reads,
+// never the full `@maple/api` `Env`, so this worker needs none of the API's other variables.
+
 /**
  * A boot-time configuration value the process cannot run without. Fails the
  * layer build; the tag plus `variable` is what makes the log say which one.
@@ -26,7 +17,7 @@ class SyncConfigInvalidError extends Schema.TaggedError<SyncConfigInvalidError>(
 export interface SyncConfigValues extends AuthEnv {
 	readonly ELECTRIC_URL: Option.Option<string>
 	readonly ELECTRIC_SOURCE_ID: Option.Option<string>
-	readonly ELECTRIC_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly ELECTRIC_SECRET: Option.Option<Redacted.Redacted>
 }
 
 const syncConfig = Config.all({
@@ -40,6 +31,10 @@ const syncConfig = Config.all({
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
 	MAPLE_ORG_ID_OVERRIDE: optionalString("MAPLE_ORG_ID_OVERRIDE"),
+	MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS: stringWithDefault(
+		"MAPLE_ORG_ID_OVERRIDE_ADMITS_NONMEMBERS",
+		"false",
+	).pipe(Config.map((value) => value === "1" || value === "true")),
 	// Same default as @maple/api's Env; deploys derive it from the stage.
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),

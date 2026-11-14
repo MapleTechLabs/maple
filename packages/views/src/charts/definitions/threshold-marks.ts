@@ -3,8 +3,8 @@ import { decorative } from "@tanstack/charts/mark/decorative"
 import type { TimeseriesAxisSpec } from "../chart-spec"
 import { Array as Arr } from "effect"
 
-// `thresholdRules` (packages/ui/src/components/plot/threshold-rules.ts): one dashed `ruleY` for every
-// threshold and, anchored at `labelX`, their labels. Colours arrive resolved (`axisSpecOf`).
+// One dashed `ruleY` for every threshold and, anchored at `labelX`, their labels. Colours arrive
+// resolved (`axisSpecOf`).
 
 type Threshold = TimeseriesAxisSpec["thresholds"][number]
 

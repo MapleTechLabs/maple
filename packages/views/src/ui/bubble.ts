@@ -1,9 +1,9 @@
 import { cn } from "@maple/ui/lib/utils"
-import { bubbleContentStyles, bubbleGroupStyles, bubbleVariants } from "@maple/ui/styles/ui/bubble"
+import { bubbleContentStyles, bubbleGroupStyles, bubbleVariants } from "./bubble.styles"
 import type { VariantProps } from "class-variance-authority"
 import type { Html, HtmlBuilder } from "foldkit/html"
 
-// Port of packages/ui/src/components/ui/bubble.tsx (reactions not ported: no caller yet).
+// A chat bubble and its group.
 
 export type BubbleVariant = NonNullable<VariantProps<typeof bubbleVariants>["variant"]>
 type Children = ReadonlyArray<Html | string>

@@ -1,14 +1,21 @@
 import { InfraSurfacesResponse, type InfraSurfaceLiteral } from "@maple/domain/http"
 import { Effect } from "effect"
 
-export interface InfraSurfaceLookups<R> {
-	readonly surfaces: Effect.Effect<ReadonlyArray<InfraSurfaceLiteral>, unknown, R>
-	readonly cloudflare: Effect.Effect<boolean, unknown, R>
-	readonly railway: Effect.Effect<boolean, unknown, R>
-	readonly planetscale: Effect.Effect<boolean, unknown, R>
-	readonly gcp: Effect.Effect<boolean, unknown, R>
-	readonly supabase: Effect.Effect<boolean, unknown, R>
-	readonly aws: Effect.Effect<boolean, unknown, R>
+/** What each lookup answers when it succeeds. */
+interface InfraSurfaceValues {
+	readonly surfaces: ReadonlyArray<InfraSurfaceLiteral>
+	readonly cloudflare: boolean
+	readonly railway: boolean
+	readonly vercel: boolean
+	readonly planetscale: boolean
+	readonly gcp: boolean
+	readonly supabase: boolean
+	readonly aws: boolean
+}
+
+/** One provided lookup per surface, each with its own error type (`Errors[K]`), logged and dropped. */
+export type InfraSurfaceLookups<Errors extends Record<keyof InfraSurfaceValues, unknown>> = {
+	readonly [K in keyof Errors]: Effect.Effect<InfraSurfaceValues[K & keyof InfraSurfaceValues], Errors[K]>
 }
 
 /** A failed lookup answers `null` instead of failing the response. */
@@ -19,12 +26,15 @@ const settle = <A, E, R>(name: string, lookup: Effect.Effect<A, E, R>) =>
 	)
 
 /** Every lookup runs at once; each answers on its own. */
-export const settleInfraSurfaces = <R>(lookups: InfraSurfaceLookups<R>) =>
+export const settleInfraSurfaces = <Errors extends Record<keyof InfraSurfaceValues, unknown>>(
+	lookups: InfraSurfaceLookups<Errors>,
+) =>
 	Effect.all(
 		{
 			surfaces: settle("presence", lookups.surfaces),
 			cloudflare: settle("cloudflare", lookups.cloudflare),
 			railway: settle("railway", lookups.railway),
+			vercel: settle("vercel", lookups.vercel),
 			planetscale: settle("planetscale", lookups.planetscale),
 			gcp: settle("gcp", lookups.gcp),
 			supabase: settle("supabase", lookups.supabase),

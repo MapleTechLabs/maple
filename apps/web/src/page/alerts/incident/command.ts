@@ -1,18 +1,22 @@
-import { AlertIncidentId, AlertRuleId, IsoDateTimeString } from "@maple/domain/http"
+import { readClock } from "@maple/views/data/timing"
+import { AlertIncidentId, AlertRuleId, AnomalyIncidentId, IsoDateTimeString } from "@maple/domain/http"
 import { V2AlertRulePreviewParams, V2InvestigationCreateParams } from "@maple/domain/http/v2"
-import { Clock, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { settleTo, settled } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
-import { listDeliveries } from "../shared/commands"
+import { listDeliveries, listIncidentActivity, setIncidentAcknowledged } from "../shared/commands"
+import { listSlos } from "../shared/slo-commands"
+import { listMonitors } from "../../kit/uptime/commands"
+import { retrieveIncidentEscalation } from "../shared/escalation-chains"
+import { listActiveSilences } from "../shared/silences"
+import { readGrants } from "../../../data/session-tenant"
+import { trackProduct } from "../../../data/analytics"
 import { fetchCheckSummary } from "../shared/check-summary"
 import { fetchPreview } from "../shared/preview"
 import { Message } from "./message"
 
-export const ReadIncidentClock = Command.define("ReadAlertIncidentClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadIncidentClock = readClock("ReadAlertIncidentClock", Message.ReadClock)
 
 export const FetchIncidentPreview = Command.define("FetchAlertIncidentPreview", {
 	args: { key: Schema.String, payload: V2AlertRulePreviewParams },
@@ -29,9 +33,7 @@ export const FetchIncidentChecks = Command.define("FetchAlertIncidentChecks", {
 	messages: [Message.CompletedFetchChecks],
 	execute: ({ key, ruleId, since, until }) =>
 		fetchCheckSummary(ruleId, since, until).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchChecks({ key, result })),
+			settleTo((result) => Message.CompletedFetchChecks({ key, result })),
 		),
 })
 
@@ -45,6 +47,34 @@ export const FetchIncidentDeliveries = Command.define("FetchAlertIncidentDeliver
 		),
 })
 
+export const FetchIncidentActivity = Command.define("FetchAlertIncidentActivity", {
+	args: { key: Schema.String, incidentId: AlertIncidentId },
+	messages: [Message.CompletedFetchActivity],
+	execute: ({ key, incidentId }) =>
+		listIncidentActivity(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchActivity({ key, result })),
+		),
+})
+
+export const SetIncidentAcknowledged = Command.define("SetAlertIncidentAcknowledged", {
+	args: { incidentId: AlertIncidentId, acknowledged: Schema.Boolean },
+	messages: [Message.CompletedSetAcknowledged],
+	execute: ({ incidentId, acknowledged }) =>
+		setIncidentAcknowledged(incidentId, acknowledged).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSetAcknowledged({ acknowledged, result })),
+		),
+})
+
+/** An acknowledgement that landed is the `alert_incident_acknowledged` product event. */
+export const TrackAcknowledged = Command.define("TrackIncidentAcknowledged", {
+	messages: [Message.CompletedTrackAcknowledged],
+	execute: trackProduct("alert_incident_acknowledged").pipe(
+		Effect.as(Message.CompletedTrackAcknowledged()),
+	),
+})
+
 /** `investigations.list({ incident_kind: "alert", incident_id, limit: 1 })`: the incident's one. */
 export const FetchIncidentInvestigation = Command.define("FetchAlertIncidentInvestigation", {
 	args: { key: Schema.String, incidentId: AlertIncidentId },
@@ -56,11 +86,7 @@ export const FetchIncidentInvestigation = Command.define("FetchAlertIncidentInve
 				query: { incident_kind: "alert", incident_id: incidentId, limit: 1 },
 			})
 			return page.data[0] ?? null
-		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchInvestigation({ key, result })),
-		),
+		}).pipe(settleTo((result) => Message.CompletedFetchInvestigation({ key, result }))),
 })
 
 export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
@@ -71,9 +97,78 @@ export const CreateInvestigation = Command.define("CreateAlertInvestigation", {
 			const client = yield* MapleApiV2Client
 			const investigation = yield* client.investigations.create({ payload })
 			return String(investigation.id)
-		}).pipe(
-			Effect.mapError(toLoadFailure),
+		}).pipe(settleTo((result) => Message.CompletedCreateInvestigation({ result }))),
+})
+
+export const FetchIncidentEscalation = Command.define("FetchAlertIncidentEscalation", {
+	args: { key: Schema.String, incidentId: AlertIncidentId },
+	messages: [Message.CompletedFetchEscalation],
+	execute: ({ key, incidentId }) =>
+		retrieveIncidentEscalation(incidentId).pipe(
 			Effect.result,
-			Effect.map((result) => Message.CompletedCreateInvestigation({ result })),
+			Effect.map((result) => Message.CompletedFetchEscalation({ key, result })),
 		),
+})
+
+/** An SLO incident's SLOs, to find the one whose burn-rate rule opened it. */
+export const FetchIncidentSlos = Command.define("FetchAlertIncidentSlos", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSlos],
+	execute: ({ key }) =>
+		listSlos.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSlos({ key, result })),
+		),
+})
+
+/** An uptime incident's monitors, to find the one whose rule opened it. */
+export const FetchIncidentMonitors = Command.define("FetchAlertIncidentMonitors", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchMonitors],
+	execute: ({ key }) =>
+		listMonitors.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchMonitors({ key, result })),
+		),
+})
+
+/** An anomaly rule's incident: the anomaly the detector opened, its evidence. */
+export const FetchIncidentAnomaly = Command.define("FetchAlertIncidentAnomaly", {
+	args: { key: Schema.String, id: AnomalyIncidentId },
+	messages: [Message.CompletedFetchAnomaly],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const result = yield* client.anomalies.getIncident({ params: { id } }).pipe(settled)
+			return Message.CompletedFetchAnomaly({ key, result })
+		}),
+})
+
+/** The anomaly's signal around it, with its baseline and threshold. */
+export const FetchIncidentAnomalyTimeseries = Command.define("FetchAlertIncidentAnomalyTimeseries", {
+	args: { key: Schema.String, id: AnomalyIncidentId },
+	messages: [Message.CompletedFetchAnomalyTimeseries],
+	execute: ({ key, id }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiV2Client
+			const result = yield* client.anomalies
+				.getIncidentTimeseries({ params: { id }, query: {} })
+				.pipe(settled)
+			return Message.CompletedFetchAnomalyTimeseries({ key, result })
+		}),
+})
+
+export const FetchIncidentSilences = Command.define("FetchAlertIncidentSilences", {
+	args: { key: Schema.String },
+	messages: [Message.CompletedFetchSilences],
+	execute: ({ key }) =>
+		listActiveSilences.pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchSilences({ key, result })),
+		),
+})
+
+export const FetchIncidentSession = Command.define("FetchAlertIncidentSession", {
+	messages: [Message.CompletedFetchSession],
+	execute: Effect.map(readGrants, (grants) => Message.CompletedFetchSession({ grants })),
 })

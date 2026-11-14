@@ -10,11 +10,11 @@
  *     construction rather than by reconnect heuristics.
  *   - `ChatMessage` — the materialized transcript a cold client reads before it starts streaming.
  *
- * The event names are deliberately Maple's, not `@opencode-ai/ai`'s: `LLMEvent` is a provider-neutral
- * *model* stream, while this is a *session* stream that also carries user turns, approval gates and
- * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
+ * The event names are deliberately Maple's, not the agent engine's: its run events are a *model*
+ * stream, while this is a *session* stream that also carries user turns, approval gates and turn
+ * lifecycle. `apps/ai/src/chat/events.ts` is the only place the two are mapped.
  */
-import { Option, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 import {
 	ActorId,
 	AuthMode,
@@ -24,9 +24,7 @@ import {
 	OrgId,
 	RoleName,
 	UserId,
-} from "./primitives"
-
-// Session addressing
+} from "@maple/primitives"
 
 /**
  * `"<orgId>:<tabId>"`. Mirrors the addressing Flue used (and the chat-agent Durable Object naming
@@ -45,39 +43,26 @@ export const makeChatSessionId = (orgId: string, tabId: string): ChatSessionId =
  * resolvable org, so callers must reject it rather than treat the whole string as the org.
  */
 export const orgIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const index = sessionId.indexOf(":")
-	return index <= 0 ? undefined : Str.slice(0, index)(sessionId)
+	return Str.indexOf(":")(sessionId).pipe(
+		Option.filter((index) => index > 0),
+		Option.map((index) => Str.slice(0, index)(sessionId)),
+		Option.getOrUndefined,
+	)
 }
 
 /** Everything after the first `:`. The tab-id prefix encodes the conversation mode. */
 export const tabIdFromChatSessionId = (sessionId: string): string => {
-	const index = sessionId.indexOf(":")
-	return index === -1 ? "" : Str.slice(index + 1)(sessionId)
-}
-
-/** Recover the investigation id from an `inv-<id>` tab. `undefined` for other modes. */
-export const investigationIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("inv-")(tab) ? Str.slice("inv-".length)(tab) : undefined
+	return Option.match(Str.indexOf(":")(sessionId), {
+		onNone: () => "",
+		onSome: (index) => Str.slice(index + 1)(sessionId),
+	})
 }
 
 /** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
 export const prReviewSessionId = (orgId: string, reviewId: string): string => `${orgId}:pr-${reviewId}`
 
-/** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
-export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("pr-")(tab) ? Str.slice("pr-".length)(tab) : undefined
-}
-
 /** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
 export const prReplySessionId = (orgId: string, replyId: string): string => `${orgId}:prr-${replyId}`
-
-/** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
-export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
-	const tab = tabIdFromChatSessionId(sessionId)
-	return Str.startsWith("prr-")(tab) ? Str.slice("prr-".length)(tab) : undefined
-}
 
 /**
  * What a conversation *is* — its persona and its budget.
@@ -90,19 +75,38 @@ export const prReplyIdFromChatSessionId = (sessionId: string): string | undefine
 export const ChatMode = Schema.Literals(["default", "investigate", "pr-review", "pr-reply"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
+/**
+ * A session's mode, read off its tab prefix, and for a row-backed mode the raw id after it.
+ * `rawId` is undecoded: the server decides whether it names a real investigation, review or reply.
+ */
+export type ChatSessionKind =
+	| { readonly mode: "default" }
+	| { readonly mode: Exclude<ChatMode, "default">; readonly rawId: string }
+
+/** `prr-` does not start with `pr-`, so the order is only for reading. */
+const MODE_PREFIXES = [
+	["inv-", "investigate"],
+	["prr-", "pr-reply"],
+	["pr-", "pr-review"],
+] as const
+
 /** Mode is derived from the tab-id prefix, never sent by the client. */
-export const chatModeFromSessionId = (sessionId: string): ChatMode => {
+export const chatSessionKind = (sessionId: string): ChatSessionKind => {
 	const tab = tabIdFromChatSessionId(sessionId)
-	if (Str.startsWith("inv-")(tab)) return "investigate"
-	if (Str.startsWith("prr-")(tab)) return "pr-reply"
-	if (Str.startsWith("pr-")(tab)) return "pr-review"
-	return "default"
+	return Option.getOrElse(
+		Arr.findFirst(MODE_PREFIXES, ([prefix, mode]) =>
+			Str.startsWith(prefix)(tab)
+				? Option.some({ mode, rawId: Str.slice(prefix.length)(tab) })
+				: Option.none(),
+		),
+		(): ChatSessionKind => ({ mode: "default" }),
+	)
 }
 
 const CONNECTOR_TAB_PREFIX = "bot-"
 
 // Owned by `./primitives` so the engine and the connector packages cannot drift apart.
-export { ChatConnectorId, ChatConversationKey } from "./primitives"
+export { ChatConnectorId, ChatConversationKey } from "@maple/primitives"
 
 /**
  * The session a connector conversation lives in.
@@ -116,8 +120,6 @@ export const connectorSessionId = (
 	connectorId: ChatConnectorId,
 	conversationKey: ChatConversationKey,
 ): ChatSessionId => makeChatSessionId(orgId, `${CONNECTOR_TAB_PREFIX}${connectorId}-${conversationKey}`)
-
-// Durable transcript
 
 export const ChatRole = Schema.Literals(["user", "assistant"])
 export type ChatRole = Schema.Schema.Type<typeof ChatRole>
@@ -215,13 +217,11 @@ export class ChatHistoryResponse extends Schema.Class<ChatHistoryResponse>("@map
 	running: Schema.Boolean,
 }) {}
 
-// Event stream
-
 /**
  * Marks an event as belonging to a sub-agent turn nested inside a parent turn.
  *
  * A sub-agent runs *in process*, inside the parent's turn, rather than in a Durable Object of its
- * own — see the design note in `apps/api/src/chat/loop/delegate.ts`. So its events land in the parent's
+ * own. So its events land in the parent's
  * log and need a way to say "I am not part of the top-level conversation". `id` is the parent's
  * `task` tool call id, which is what binds a child transcript to the call that started it.
  *
@@ -240,20 +240,11 @@ export const ChatTaskRef = Schema.Struct({
 export type ChatTaskRef = Schema.Schema.Type<typeof ChatTaskRef>
 
 /**
- * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`.
- *
- * Here rather than in `apps/api/src/chat/agents.ts`, where it started, because the *client* has to
- * recognise a delegation from the tool name alone. A streamed `tool-call` carries the tool's name
- * and nothing else that says "this opens a sub-agent" — the `task` ref only ever rides on the
- * child's own events — so the web client matched the name against a literal `"task"` and never
- * recognised a single delegation live: every sub-agent rendered as an ordinary tool row until the
- * conversation was reloaded and the server's `ChatToolCall.task` took over. Two spellings of one
- * convention in two apps is exactly the drift this file exists to prevent.
+ * The prefix every delegation tool carries: one tool per sub-agent, named `task_<agent>`. Shared
+ * here because the client must recognise a delegation from a streamed `tool-call`'s name alone:
+ * the `task` ref only rides on the child's own events.
  */
 export const DELEGATION_TOOL_PREFIX = "task_"
-
-/** The tool that delegates to `agent`. */
-export const delegationToolName = (agent: string): string => `${DELEGATION_TOOL_PREFIX}${agent}`
 
 /** The sub-agent a tool name delegates to, or `undefined` for an ordinary tool. */
 export const delegatedAgentOf = (toolName: string): string | undefined =>
@@ -318,7 +309,7 @@ const eventFields = {
 		attempt: Schema.Number,
 		/** Characters of this message's text that never happened; readers truncate by this much. */
 		retractChars: Schema.Number,
-		/** `LlmCallError.reason`, for display and for triage. */
+		/** The provider error's reason tag, for display and for triage. */
 		reason: Schema.String,
 		/** Milliseconds until the attempt starts, so a client can show a countdown. */
 		delayMs: Schema.Number,
@@ -426,14 +417,16 @@ const ChatEventPayload = Schema.Union([
 ]).pipe(Schema.toTaggedUnion("type"))
 
 const encodePayload = Schema.encodeUnknownSync(Schema.fromJsonString(ChatEventPayload))
-const decodePayload = Schema.decodeUnknownSync(Schema.fromJsonString(ChatEventPayload))
+const parsePayload = Schema.decodeUnknownSync(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+const decodeStoredEvent = Schema.decodeUnknownSync(ChatEvent)
 
 export const encodeChatEventPayload = (event: ChatEventInput): string => encodePayload(event)
 
+// The stored JSON is a `ChatEvent`'s encoded form minus `seq`, so it decodes to the event class.
 export const decodeChatEventPayload = (payload: string, seq: number): ChatEvent =>
-	({ ...decodePayload(payload), seq }) as ChatEvent
-
-// Turn identity
+	decodeStoredEvent({ ...parsePayload(payload), seq })
 
 /**
  * The caller identity a turn runs as, in the shape that survives a Durable Object hop.
@@ -614,16 +607,13 @@ export type ChatProposalOutcome = "unknown" | "settled" | "decided"
 /**
  * The origin of a turn raised through Maple's own HTTP surface.
  *
- * That route authenticates a signed-in person and Maple's own service token alike, and the only
- * thing that distinguishes them is the user id the auth layer stamped on the caller — so the read
- * lives here rather than in the route, and an unattended pass cannot become attended by being
- * restarted from a different place.
+ * That route admits signed-in sessions only, so its turns are `app`. The read stays keyed on the
+ * user id so a tenant stamped `internal-service` (the investigation pass) is never made attended,
+ * wherever it is restarted from.
  */
 export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
 	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
 })
-
-// Requests
 
 export class ChatSendRequest extends Schema.Class<ChatSendRequest>("@maple/ChatSendRequest")({
 	/** The full message text, with any client-side context preamble already folded in. */

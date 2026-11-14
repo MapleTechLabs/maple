@@ -1,20 +1,25 @@
-import { MAX_VERIFICATION_ATTEMPTS, type VerificationVerdict, type OrgId } from "@maple/domain/http"
-import { RoleName, UserId } from "@maple/domain/primitives"
+import {
+	type ErrorPersistenceError,
+	MAX_VERIFICATION_ATTEMPTS,
+	type VerificationVerdict,
+} from "@maple/domain/http"
+import { UserId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { ErrorIssuePullRequests, ErrorIssues, type ErrorIssueVerificationRow } from "@maple/db/tables"
 import { CH } from "@maple/query-engine"
 import { Cause, Clock, Context, DateTime, Effect, Layer, Option, Schema, Array as Arr } from "effect"
-import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { ChatSessions } from "@maple/backend/platform/bindings"
+import { InvestigationStarter } from "@maple/backend/services/errors/InvestigationStarter"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { enqueueFixVerification } from "@maple/backend/services/errors/fix-verification-enqueue"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
+import { issueFingerprintHashes } from "./issue-fingerprints"
 import { makeErrorDatabaseExecute } from "./error-persistence"
+import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)
-const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
+const SYSTEM_USER_ID = decodeUserIdSync("system-errors")
 
 /**
  * Verifications examined per tick. The tick runs every minute and each row costs
@@ -103,6 +108,8 @@ export interface FixVerificationTickResult {
 	readonly investigationsStarted: number
 	readonly verdictsApplied: number
 	readonly skipped: number
+	/** Rows settled as `abandoned` because their issue or pull request link is gone. */
+	readonly abandoned: number
 	/** Rows whose verdict could not be written this tick; they are due again next minute. */
 	readonly failedRows: number
 }
@@ -114,30 +121,20 @@ export interface FixVerificationTickServiceApi {
 	 * right answer for a transient database problem and avoids a failed cron
 	 * invocation for something that self-heals.
 	 */
-	readonly runTick: () => Effect.Effect<FixVerificationTickResult>
+	readonly runTick: Effect.Effect<FixVerificationTickResult>
 }
 
 const make: Effect.Effect<
 	FixVerificationTickServiceApi,
 	never,
-	Database | WarehouseQueryService | IssueFixVerificationService
+	Database | WarehouseQueryService | IssueFixVerificationService | InvestigationStarter
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const warehouse = yield* WarehouseQueryService
 	const verification = yield* IssueFixVerificationService
 	const dbExecute = makeErrorDatabaseExecute(database, "FixVerificationTickService")
 
-	// Present only inside a Worker isolate; absent in tests and local runs, where
-	// the enqueue records `no_binding` rather than silently degrading.
-	const chatSessionsOption = yield* Effect.serviceOption(ChatSessions)
-	const chatSessions = Option.getOrUndefined(chatSessionsOption)
-
-	const systemTenant = (orgId: OrgId): TenantContext => ({
-		orgId,
-		userId: decodeUserIdSync("system-errors"),
-		roles: [decodeRoleNameSync("root")],
-		authMode: "self_hosted",
-	})
+	const starter = yield* InvestigationStarter
 
 	/**
 	 * Split occurrences since the merge into "from a build that postdates the fix"
@@ -152,13 +149,19 @@ const make: Effect.Effect<
 		fingerprintHash: string,
 		nowMs: number,
 	) {
-		const compiled = CH.compile(CH.errorIssueVersionsSinceQuery({ limit: VERSION_SCAN_LIMIT }), {
-			orgId: row.orgId,
-			fingerprintHash,
-			startTime: DateTime.makeUnsafe(row.mergedAt),
-			endTime: DateTime.makeUnsafe(nowMs),
-		})
-		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId), compiled, {
+		const owned = yield* dbExecute((db) =>
+			issueFingerprintHashes(db, row.orgId, [{ id: row.issueId, fingerprintHash }]),
+		)
+		const fingerprintHashes = owned.get(row.issueId) ?? [fingerprintHash]
+		const compiled = CH.compile(
+			CH.errorIssueVersionsSinceQuery({ fingerprintHashes, limit: VERSION_SCAN_LIMIT }),
+			{
+				orgId: row.orgId,
+				startTime: DateTime.makeUnsafe(row.mergedAt),
+				endTime: DateTime.makeUnsafe(nowMs),
+			},
+		)
+		const rows = yield* warehouse.compiledQuery(systemTenant(row.orgId, SYSTEM_USER_ID), compiled, {
 			profile: "aggregation",
 			context: "errorIssueVersionsSince",
 		})
@@ -169,7 +172,7 @@ const make: Effect.Effect<
 
 	// Not annotated with the public signature: this one can fail on persistence.
 	// `runTickSafely` below is what satisfies the never-failing contract.
-	const runTick = Effect.fn("FixVerificationTick.runTick")(function* () {
+	const runTick = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 
 		/**
@@ -195,6 +198,29 @@ const make: Effect.Effect<
 									orgId: row.orgId,
 									verificationId: row.id,
 									verdict,
+									error: summarizeCause(cause),
+								}),
+								Effect.as(false),
+							),
+				),
+			)
+
+		// The two writes that are not verdicts, guarded per row for the same reason.
+		const guardedWrite = (
+			row: ErrorIssueVerificationRow,
+			action: "abandon" | "defer",
+			write: Effect.Effect<void, ErrorPersistenceError>,
+		) =>
+			write.pipe(
+				Effect.as(true),
+				Effect.catchCause((cause) =>
+					Cause.hasInterruptsOnly(cause)
+						? Effect.interrupt
+						: Effect.logError("[FixVerification] could not update a verification").pipe(
+								Effect.annotateLogs({
+									orgId: row.orgId,
+									verificationId: row.id,
+									action,
 									error: summarizeCause(cause),
 								}),
 								Effect.as(false),
@@ -232,7 +258,16 @@ const make: Effect.Effect<
 					),
 				)
 				const subject = context[0]
-				if (subject === undefined) return "skipped"
+				if (subject === undefined) {
+					// The issue or its link is gone, so no later tick can judge this row.
+					// Left `waiting` it would hold a slot in every tick's page forever.
+					const abandoned = yield* guardedWrite(
+						row,
+						"abandon",
+						verification.abandonVerification(row, nowMs),
+					)
+					return abandoned ? "abandoned" : "failed"
+				}
 
 				const split = yield* occurrenceSplit(row, subject.fingerprintHash, nowMs).pipe(
 					Effect.asSome,
@@ -248,6 +283,15 @@ const make: Effect.Effect<
 										error: summarizeCause(cause),
 									}),
 									// Leave the row waiting; the warehouse being down is not a verdict.
+									// It goes to the back of the due queue, so an org whose warehouse
+									// keeps failing does not sit ahead of every other org.
+									Effect.andThen(
+										guardedWrite(
+											row,
+											"defer",
+											verification.deferVerification(row, nowMs),
+										),
+									),
 									Effect.as(
 										Option.none<{
 											postMerge: number
@@ -307,9 +351,9 @@ const make: Effect.Effect<
 					pullRequestUrl: subject.url,
 					postMergeOccurrences: split.value.postMerge,
 					staleClientOccurrences: split.value.staleClients,
-					chatSessions,
 				}).pipe(
 					Effect.provideService(Database, database),
+					Effect.provideService(InvestigationStarter, starter),
 					// An interrupt here must never become `{ enqueued: false }`: the fallback
 					// below reads that as "no agent available" and can write a terminal
 					// `verified` verdict, auto-closing the issue on an isolate teardown.
@@ -361,6 +405,7 @@ const make: Effect.Effect<
 		const refuted = countOutcome("refuted")
 		const investigationsStarted = countOutcome("started")
 		const skipped = countOutcome("skipped")
+		const abandoned = countOutcome("abandoned")
 		const verdictsApplied = Arr.filter(settledApplied, Boolean).length + countOutcome("verdict")
 		const failedRows = Arr.filter(settledApplied, (applied) => !applied).length + countOutcome("failed")
 
@@ -370,34 +415,43 @@ const make: Effect.Effect<
 			"maple.verification.investigations_started": investigationsStarted,
 			"maple.verification.verdicts_applied": verdictsApplied,
 			"maple.verification.skipped": skipped,
+			"maple.verification.abandoned": abandoned,
 			"maple.verification.failed_rows": failedRows,
 		})
 
-		return { examined: due.length, refuted, investigationsStarted, verdictsApplied, skipped, failedRows }
-	})
+		return {
+			examined: due.length,
+			refuted,
+			investigationsStarted,
+			verdictsApplied,
+			skipped,
+			abandoned,
+			failedRows,
+		}
+	}).pipe(Effect.withSpan("FixVerificationTick.runTick"))
 
-	const runTickSafely: FixVerificationTickServiceApi["runTick"] = () =>
-		runTick().pipe(
-			// Interrupts are re-raised rather than reported as an empty tick: the
-			// worker's `catchTickFailure` re-raises them for every other tick so the
-			// isolate tears down gracefully, and swallowing them here would make that
-			// guard dead code for this one.
-			Effect.catchCause((cause) =>
-				Cause.hasInterruptsOnly(cause)
-					? Effect.interrupt
-					: Effect.logError("[FixVerification] verification tick failed").pipe(
-							Effect.annotateLogs({ error: summarizeCause(cause) }),
-							Effect.as({
-								examined: 0,
-								refuted: 0,
-								investigationsStarted: 0,
-								verdictsApplied: 0,
-								skipped: 0,
-								failedRows: 0,
-							} satisfies FixVerificationTickResult),
-						),
-			),
-		)
+	const runTickSafely: FixVerificationTickServiceApi["runTick"] = runTick.pipe(
+		// Interrupts are re-raised rather than reported as an empty tick: the
+		// worker's `catchTickFailure` re-raises them for every other tick so the
+		// isolate tears down gracefully, and swallowing them here would make that
+		// guard dead code for this one.
+		Effect.catchCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.interrupt
+				: Effect.logError("[FixVerification] verification tick failed").pipe(
+						Effect.annotateLogs({ error: summarizeCause(cause) }),
+						Effect.as({
+							examined: 0,
+							refuted: 0,
+							investigationsStarted: 0,
+							verdictsApplied: 0,
+							skipped: 0,
+							abandoned: 0,
+							failedRows: 0,
+						} satisfies FixVerificationTickResult),
+					),
+		),
+	)
 
 	return { runTick: runTickSafely } satisfies FixVerificationTickServiceApi
 })
@@ -407,6 +461,12 @@ export class FixVerificationTickService extends Context.Service<
 	FixVerificationTickServiceApi
 >()("@maple/backend/services/errors/FixVerificationTickService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryService.layer, IssueFixVerificationService.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				WarehouseQueryService.layer,
+				IssueFixVerificationService.layer,
+				InvestigationStarter.layer,
+			),
+		),
 	)
 }

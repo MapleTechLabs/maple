@@ -25,7 +25,7 @@ export type UpdateReturn = Update.ReturnWithOutMessage<Model, Message, PageOutMe
 
 const toSections = (message: FilterSections.Message) => Message.GotFilterSectionsMessage({ message })
 
-/** The draft formatted from the committed range, as `RangeFilterSection` seeds and re-syncs it. */
+/** The draft formatted from the committed range, seeded and re-synced from the URL. */
 const durationDraftOf = (query: URLSearchParams, version: number): Model["duration"] => {
 	const { minDurationMs, maxDurationMs } = filtersOf(query)
 	return {
@@ -95,7 +95,7 @@ const setRange = (model: Model, context: PageContext, range: string): UpdateRetu
 	outMessage: PageOutMessage.RememberedRange({ range, hash: withParams(context.location, { range }) }),
 })
 
-/** `emit` + `onRangeChange`: a reversed pair is a typo, so it is swapped; values are rounded. */
+/** A reversed pair is a typo, so it is swapped; values are rounded. */
 const commitDuration = (
 	model: Model,
 	context: PageContext,
@@ -118,7 +118,7 @@ const settleRefresh = (model: Model): Model => {
 		: model
 }
 
-/** `fetchNextPage`: the cursor after the last loaded page. */
+/** The next page, from the cursor after the last loaded page. */
 const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 	const maybeNext = Option.flatMap(AsyncData.getData(model.traces.data), (data) =>
 		Option.fromNullishOr(
@@ -154,7 +154,7 @@ const loadMore = (model: Model, context: PageContext): UpdateReturn => {
 	}
 }
 
-/** `fetchNextPage` landed: the page joins the list if it is still the same query. */
+/** A next page landed: it joins the list if it is still the same query. */
 const appendPage = (model: Model, key: string, page: ReadonlyArray<TraceRow>): Model => {
 	if (model.traces.key !== key) return model
 	const data = Option.map(AsyncData.getData(model.traces.data), (current) => ({

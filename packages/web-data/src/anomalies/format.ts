@@ -1,13 +1,7 @@
-import type {
-	AnomalyIncidentDocument,
-	AnomalyResolveReason,
-	AnomalySignalType,
-	AnomalyTriageStatus,
-} from "@maple/domain/http"
+import type { AnomalyIncidentDocument, AnomalyResolveReason, AnomalySignalType } from "@maple/domain/http"
 import { countLabel, formatErrorRate } from "@maple/ui/lib/format"
-import { TONE_FILL, TONE_SOFT, TONE_TEXT, type Tone } from "@maple/ui/lib/tone"
 
-/** Anomaly formatting shared by apps/web (`components/anomalies/anomaly-format.ts`) and the Foldkit app. */
+// Anomaly labels and figures: signal names, staleness, the signal value and its deviation.
 
 export const SIGNAL_LABEL: Record<AnomalySignalType, string> = {
 	error_rate: "Error rate",
@@ -49,15 +43,6 @@ export function anomalyAffectsServiceHealth(
 		!isStaleOpenIncident(incident, nowMs)
 	)
 }
-
-/** The glyph each signal draws, by icon export name (apps/web's `SIGNAL_ICON` maps the same names). */
-export const SIGNAL_ICON_NAME = {
-	error_rate: "CircleWarningIcon",
-	latency_p95: "ChartLineIcon",
-	throughput: "PulseIcon",
-	error_spike: "BoltIcon",
-	log_volume: "FileIcon",
-} as const satisfies Record<AnomalySignalType, string>
 
 export function formatSignalValue(signalType: AnomalySignalType, value: number): string {
 	switch (signalType) {
@@ -127,49 +112,8 @@ export function deviation(
 	return { kind: "new", sigma: null, ratio: null, label: "new signal" }
 }
 
-export interface SeverityTone {
-	/** Badge/chip classes, e.g. TONE_SOFT.crit. */
-	readonly badge: string
-	/** Solid accent (left bar, dots). */
-	readonly accent: string
-	/** Plain text tone. */
-	readonly text: string
-	/** The shared status tone, for `StatusDot`. */
-	readonly tone: Tone
-}
-
-const severityToneOf = (tone: Tone): SeverityTone => ({
-	badge: TONE_SOFT[tone],
-	accent: TONE_FILL[tone],
-	text: TONE_TEXT[tone],
-	tone,
-})
-
-export const SEVERITY_TONE: Record<"critical" | "warning" | "resolved", SeverityTone> = {
-	critical: severityToneOf("crit"),
-	warning: severityToneOf("warn"),
-	resolved: severityToneOf("done"),
-} satisfies Record<"critical" | "warning" | "resolved", SeverityTone>
-
-export function severityToneFor(
-	incident: Pick<AnomalyIncidentDocument, "status" | "severity">,
-): SeverityTone {
-	if (incident.status !== "open") return SEVERITY_TONE.resolved
-	return SEVERITY_TONE[incident.severity]
-}
-
 export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 	returned_to_baseline: "Returned to baseline",
 	no_data: "No data",
 	manual: "Resolved manually",
 } satisfies Record<AnomalyResolveReason, string>
-
-export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
-	none: null,
-	pending: { label: "triaging…", tone: TONE_SOFT.warn },
-	completed: { label: "triaged", tone: TONE_SOFT.ok },
-	skipped: { label: "triage skipped", tone: TONE_SOFT.neutral },
-} satisfies Record<AnomalyTriageStatus, { label: string; tone: string } | null>
-
-/** Keeps the 20px / 11px meta-pill size on anomaly rows and cards (Badge `size="sm"` shrinks on sm+). */
-export const META_CHIP_CLASS = "h-5 gap-1.5 font-normal text-2xs sm:h-5 sm:text-2xs"

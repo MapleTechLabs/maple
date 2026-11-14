@@ -1,5 +1,6 @@
 import { Clock, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
 import { browserZone, readSupportedTimeZones, SYSTEM_VALUE } from "../../platform/time-zone"
+import { EMPTY_VALUE } from "@maple/ui/lib/empty-value"
 
 // The zone list logic of the timezone select.
 
@@ -26,12 +27,49 @@ const clockFormatter = Option.liftThrowable(
 		new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hour12: false }),
 )
 
+const abbreviationFormatter = (locale: string) =>
+	Option.liftThrowable(
+		(timeZone: string) => new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "short" }),
+	)
+const ABBREVIATION_FORMATTERS = [abbreviationFormatter("en-GB"), abbreviationFormatter("en-US")]
+
+/**
+ * A zone's short name at `atMs`: its abbreviation where ICU has one (`CET`, `CEST`, `EST`), else
+ * its offset (`UTC+5:30`). An unknown zone reads `UTC`.
+ */
+export const shortZoneName = (timeZone: string, atMs: number): string =>
+	Option.getOrElse(
+		Arr.findFirst(
+			Arr.flatMap(ABBREVIATION_FORMATTERS, (formatterFor) =>
+				Option.toArray(
+					Option.flatMap(formatterFor(timeZone), (formatter) =>
+						Option.map(
+							Arr.findFirst(
+								formatter.formatToParts(atMs),
+								(entry) => entry.type === "timeZoneName",
+							),
+							(entry) => entry.value,
+						),
+					),
+				),
+			),
+			(name) => /^[A-Z]{2,5}$/.test(name),
+		),
+		() => formatUtcOffset(timeZone, atMs),
+	)
+
 /** `formatUtcOffset`: `UTC+2`, `UTC-5:30`, `UTC`, the offset a zone is on at `atMs`. */
 export const formatUtcOffset = (timeZone: string, atMs: number): string => {
 	const part = Option.match(offsetFormatter(timeZone), {
 		onNone: () => "GMT",
 		onSome: (formatter) =>
-			formatter.formatToParts(atMs).find((entry) => entry.type === "timeZoneName")?.value ?? "GMT",
+			Option.getOrElse(
+				Option.map(
+					Arr.findFirst(formatter.formatToParts(atMs), (entry) => entry.type === "timeZoneName"),
+					(entry) => entry.value,
+				),
+				() => "GMT",
+			),
 	})
 	const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(part)
 	if (match === null) return "UTC"
@@ -47,24 +85,26 @@ const offsetMinutes = (offset: string): number => {
 	return (sign === "-" ? -1 : 1) * (Number(hours) * 60 + Number(minutes ?? 0))
 }
 
-/** `formatClock`: `16:52`, what the clock reads in the zone at `atMs`. */
-const formatClock = (timeZone: string, atMs: number): string =>
-	Option.match(clockFormatter(timeZone), {
-		onNone: () => "--:--",
-		onSome: (formatter) => formatter.format(atMs),
-	})
+const clockFormatters = new Map<string, Option.Option<Intl.DateTimeFormat>>()
+
+/** `16:52`, what the clock reads in the zone at `atMs`; `invalid` for an unknown zone. */
+export const formatClock = (atMs: number, timeZone: string, invalid: string = EMPTY_VALUE): string => {
+	const formatter = clockFormatters.get(timeZone) ?? clockFormatter(timeZone)
+	clockFormatters.set(timeZone, formatter)
+	return Option.match(formatter, { onNone: () => invalid, onSome: (found) => found.format(atMs) })
+}
 
 /** `Europe/Berlin` → `Europe` + `Berlin`; `America/Argentina/San_Juan` → `America` + `Argentina / San Juan`. */
 const splitZone = (zone: string): { readonly region: string; readonly city: string } => {
-	const slash = zone.indexOf("/")
-	if (slash === -1) return { region: "Other", city: zone }
-	return {
-		region: Str.slice(0, slash)(zone),
-		city: Str.replaceAll("/", " / ")(Str.replaceAll("_", " ")(Str.slice(slash + 1)(zone))),
-	}
+	return Option.match(Str.indexOf("/")(zone), {
+		onNone: () => ({ region: "Other", city: zone }),
+		onSome: (slash) => ({
+			region: Str.slice(0, slash)(zone),
+			city: Str.replaceAll("/", " / ")(Str.replaceAll("_", " ")(Str.slice(slash + 1)(zone))),
+		}),
+	})
 }
 
-/** `itemLabel`: the option's text label. */
 export const zoneLabel = (row: ZoneRow): string =>
 	row.value === SYSTEM_VALUE ? `System (${row.zone})` : row.value
 
@@ -87,13 +127,13 @@ const rowOf = (
 	value,
 	zone,
 	...splitZone(zone),
-	clock: formatClock(zone, atMs),
+	clock: formatClock(atMs, zone, "--:--"),
 	offset: formatUtcOffset(zone, atMs),
 	isPinned,
 	startsGroup,
 })
 
-/** `groupZones`: System and UTC pinned, then every other zone west to east, A-Z within an offset. */
+/** System and UTC pinned, then every other zone west to east, A-Z within an offset. */
 export const zoneRows = (
 	zones: ReadonlyArray<string>,
 	browser: string,
@@ -103,8 +143,10 @@ export const zoneRows = (
 		Arr.map(
 			Arr.filter(zones, (zone) => zone !== "UTC"),
 			(zone) => rowOf(zone, zone, atMs, false, false),
-		).sort(
-			(a, b) => offsetMinutes(a.offset) - offsetMinutes(b.offset) || Str.localeCompare(b.zone)(a.zone),
+		).sort((a, b) =>
+			offsetMinutes(a.offset) !== offsetMinutes(b.offset)
+				? offsetMinutes(a.offset) - offsetMinutes(b.offset)
+				: Str.localeCompare(b.zone)(a.zone),
 		),
 		(row, index) => (index === 0 ? { ...row, startsGroup: true } : row),
 	)

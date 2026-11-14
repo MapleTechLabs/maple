@@ -2,9 +2,9 @@ import { formatCurrency } from "@maple/domain/format"
 import type { BillingInvoice, CatalogPlan } from "@maple/domain/http"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { formatAddressLines } from "../../../lib/billing/billing-profile"
-import { planDisplayName } from "../../../lib/billing/plans"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatAddressLines } from "./billing-profile"
+import { planDisplayName } from "../../kit/billing/plans"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
@@ -17,16 +17,16 @@ import { panel } from "@maple/views/ui/panel"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { errorState } from "@maple/views/ui/error-state"
-import { INLINE_LINK_CLASS, settingsSection } from "../kit/section"
+import { INLINE_LINK_CLASS, settingsSection } from "../../kit/settings-section"
 import { taxIdValue, view as detailsDialogView } from "./details/view"
-import { Message, type Model } from "./model"
+import { canManage, Message, type Model } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
+import { Array as Arr, String as Str, Order } from "effect"
+import { textLink } from "@maple/views/ui/text-link"
 
 type H = HtmlBuilder<Message>
-
-// `InvoicesSection` and `BillingDetailsSection` (apps/web/src/components/settings/).
 
 /** The compact list's length for admins; the rest live behind "View all" (the portal). */
 const RECENT_INVOICES = 4
@@ -61,8 +61,6 @@ const hostedUrl = (invoice: BillingInvoice): string | null =>
 		? null
 		: invoice.hostedInvoiceUrl
 
-const externalLink = (h: H, href: string) => [h.Href(href), h.Rel("noopener noreferrer"), h.Target("_blank")]
-
 const planLabel = (invoice: BillingInvoice, catalog: ReadonlyArray<CatalogPlan>): string => {
 	const ids = invoice.planIds ?? []
 	return ids.length === 0
@@ -85,6 +83,7 @@ const invoiceRow = (
 	h: H,
 	invoice: BillingInvoice,
 	timeZone: string,
+	nowMs: number,
 	catalog: ReadonlyArray<CatalogPlan>,
 	index: number,
 ): Html => {
@@ -95,7 +94,11 @@ const invoiceRow = (
 	return tableRow(
 		h,
 		[
-			tableCell(h, [date], "w-32 whitespace-nowrap tabular-nums"),
+			tableCell(
+				h,
+				[timestamp(h, { value: invoice.createdAt, timeZone, nowMs, label: date })],
+				"w-32 whitespace-nowrap tabular-nums",
+			),
 			tableCell(h, [planLabel(invoice, catalog)], "max-w-0 truncate text-muted-foreground"),
 			tableCell(h, [badge(h, { size: "sm", variant: status.variant }, [status.label])], "w-24"),
 			tableCell(
@@ -108,14 +111,18 @@ const invoiceRow = (
 				url === null
 					? []
 					: [
-							h.a(
-								[
-									h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
-									h.Class(
-										"text-primary text-xs font-medium hover:underline active:underline",
-									),
-									...externalLink(h, url),
-								],
+							textLink(
+								h,
+								{
+									href: url,
+									tone: "primary",
+									className: "text-xs",
+									attributes: [
+										h.AriaLabel(`${unpaid ? "Pay" : "View"} invoice from ${date}`),
+										h.Rel("noopener noreferrer"),
+										h.Target("_blank"),
+									],
+								},
 								[unpaid ? "Pay" : "View"],
 							),
 						],
@@ -132,25 +139,22 @@ const invoicesSkeleton = (h: H): Html =>
 		rows: 3,
 		className: "gap-0 divide-y divide-border-subtle",
 		renderRow: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 py-2.5")],
-				[
-					skeleton(h, "h-3.5 w-24"),
-					skeleton(h, "h-3.5 w-20 flex-1"),
-					skeleton(h, "h-4 w-10"),
-					skeleton(h, "h-3.5 w-14"),
-				],
-			),
+			hstack(h, { gap: "4", align: "center", className: "py-2.5" }, [
+				skeleton(h, "h-3.5 w-24"),
+				skeleton(h, "h-3.5 w-20 flex-1"),
+				skeleton(h, "h-4 w-10"),
+				skeleton(h, "h-3.5 w-14"),
+			]),
 	})
 
 /** Admins see the most recent few and "View all" opens the portal; members see every invoice. */
-export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
+export const invoicesSection = (h: H, model: Model, timeZone: string, nowMs: number): Html => {
 	const catalog = AsyncData.getOrElse(model.plans, () => [])
 	const invoices = [...AsyncData.getOrElse(model.invoices, () => [])].sort(
 		(a, b) => b.createdAt - a.createdAt,
 	)
 	// Unpaid invoices always stay in the compact list, however old.
-	const visible = model.isAdmin
+	const visible = canManage(model)
 		? Arr.filter(invoices, (invoice, index) => index < RECENT_INVOICES || isUnpaid(invoice))
 		: invoices
 	const body = AsyncData.matchDataSplitEmpty(model.invoices, {
@@ -169,7 +173,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 					typography(
 						h,
 						{ size: "xs", tone: "muted", as: "p", className: "font-prose" },
-						model.isAdmin
+						canManage(model)
 							? [
 									"You can still view them in the ",
 									button(
@@ -194,7 +198,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 		onData: () =>
 			invoices.length === 0
 				? emptyMessage(h, { dashed: true }, [
-						"Your first invoice appears after your first billing cycle closes.",
+						"Your first invoice appears after your first billing cycle closes",
 					])
 				: panel(h, {}, [
 						table(h, {}, [
@@ -221,7 +225,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 							tableBody(
 								h,
 								Arr.map(visible, (invoice, index) =>
-									invoiceRow(h, invoice, timeZone, catalog, index),
+									invoiceRow(h, invoice, timeZone, nowMs, catalog, index),
 								),
 							),
 						]),
@@ -233,7 +237,7 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 			id: "settings-billing-invoices",
 			title: "Invoices",
 			framed: false,
-			...(model.isAdmin &&
+			...(canManage(model) &&
 				invoices.length > 0 && {
 					actions: button(
 						h,
@@ -259,15 +263,21 @@ export const invoicesSection = (h: H, model: Model, timeZone: string): Html => {
 
 const ROW = "py-2.5 px-4 text-sm"
 
-const muted = (h: H, text: string): Html => h.span([h.Class("text-foreground-subtle")], [text])
+const muted = (h: H, text: string): Html => typography(h, { tone: "subtle" }, [text])
 
 const detailsSkeleton = (h: H): Html =>
 	panel(
 		h,
 		{},
 		Arr.map([0, 1, 2], (index) =>
-			h.div(
-				[h.Key(String(index)), h.Class("flex gap-8 border-b px-4 py-3 last:border-b-0")],
+			hstack(
+				h,
+				{
+					gap: "8",
+					align: "stretch",
+					className: "border-b px-4 py-3 last:border-b-0",
+					attributes: [h.Key(String(index))],
+				},
 				[skeleton(h, "h-3.5 w-16"), skeleton(h, "h-3.5 w-56")],
 			),
 		),
@@ -334,7 +344,7 @@ export const detailsSection = (h: H, model: Model): Html => {
 			title: "Billing details",
 			description: ["Printed on every invoice."],
 			framed: false,
-			...(model.isAdmin &&
+			...(canManage(model) &&
 				profile !== null && {
 					actions: button(
 						h,
@@ -366,10 +376,13 @@ export const detailsSection = (h: H, model: Model): Html => {
 
 /** Above everything else on the tab: what is owed and a direct way to pay it on Stripe's invoice page. */
 export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const unpaid = Arr.filter(
-		AsyncData.getOrElse(model.invoices, () => []),
-		isUnpaid,
-	).toSorted((a, b) => a.createdAt - b.createdAt)
+	const unpaid = Arr.sort(
+		Arr.filter(
+			AsyncData.getOrElse(model.invoices, () => []),
+			isUnpaid,
+		),
+		Order.mapInput(Order.Number, (invoice: { readonly createdAt: number }) => invoice.createdAt),
+	)
 	const oldest = unpaid[0]
 	if (oldest === undefined) return []
 	const overdue = Arr.some(unpaid, (invoice) => Str.toLowerCase(invoice.status) !== "open")
@@ -385,18 +398,25 @@ export const unpaidInvoicesNotice = (h: H, model: Model, timeZone: string): Read
 		unpaid.length === 1
 			? `You have an unpaid invoice${amount === null ? "" : ` for ${amount}`}`
 			: `You have ${unpaid.length} unpaid invoices${amount === null ? "" : ` totalling ${amount}`}`
-	const since = formatDateInTimezone(oldest.createdAt, { timeZone })
+	const since = timestamp(h, {
+		value: oldest.createdAt,
+		timeZone,
+		label: formatDateInTimezone(oldest.createdAt, { timeZone }),
+	})
+	const issued = unpaid.length === 1 ? "Issued " : "The oldest was issued "
 	const url = hostedUrl(oldest)
 	return [
 		alert(h, { variant: overdue ? "crit" : "warn" }, [
 			icon(h, "CircleWarningIcon"),
 			alertTitle(h, [title]),
 			alertDescription(h, [
-				model.isAdmin
-					? `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment.`
-					: `${unpaid.length === 1 ? "Issued" : "The oldest was issued"} ${since}. An org admin can pay it from this page.`,
+				issued,
+				since,
+				canManage(model)
+					? ". Pay it with a card or bank transfer on the invoice page; it updates here once Stripe confirms the payment."
+					: ". An org admin can pay it from this page.",
 			]),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
 						alertAction(h, [
 							url === null

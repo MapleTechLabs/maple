@@ -1,9 +1,10 @@
+import { retrieveIngestKeys } from "../data/ingest-keys"
+import { isOwnService } from "../page/kit/own-services"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { Effect, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { currentWindow, TimeWindow } from "../data/time-range"
-import { MapleApiV2Client } from "../platform/api-clients"
 import type { Resources } from "../platform/resources"
 import { readEffectiveTimeZone } from "../platform/time-zone"
 import * as CopyButton from "@maple/views/ui/copy-button"
@@ -39,7 +40,7 @@ export const Model = Schema.Struct({
 	/** The org the keys and overview were read for; another org's late answer is dropped. */
 	orgId: Schema.NullOr(Schema.String),
 	keys: Keys,
-	/** `useIngestConnection`'s last-hour overview; empty until it lands, kept when a poll fails. */
+	/** The last-hour overview; empty until it lands, kept when a poll fails. */
 	services: Schema.Array(ServiceRow),
 	/** `useEffectiveTimeRange(.., "1h")`: resolved on open and again on each 15 s poll. */
 	window: Schema.NullOr(TimeWindow),
@@ -109,7 +110,7 @@ export const FetchKeys = Command.define("FetchConnectIngestKeys", {
 	args: { orgId: Schema.String },
 	messages: [Message.SucceededLoadKeys, Message.FailedLoadKeys],
 	execute: ({ orgId }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.ingestKeys.retrieve()).pipe(
+		retrieveIngestKeys.pipe(
 			Effect.map((keys) =>
 				Message.SucceededLoadKeys({
 					orgId,
@@ -157,8 +158,6 @@ export const FetchOverview = Command.define("FetchConnectOverview", {
 			Effect.orElseSucceed(() => Message.FailedLoadOverview({ orgId, request })),
 		),
 })
-
-// UPDATE
 
 /** The signed-in org and its namespace pin, which the overview read applies. */
 export type Context = Readonly<{ orgId: string | null; pinnedNamespace: string | null }>
@@ -282,8 +281,6 @@ export const close = (model: Model): UpdateReturn =>
 /** The 15 s poll runs while the panel is open on a resolved window. */
 export const isPolling = (model: Model): boolean => model.popover.isOpen && model.window !== null
 
-// DERIVED (`useIngestConnection`)
-
-/** The org's own services: the seeded `demo-` ones do not count as a connection. */
+/** The org's own services: seeded `demo-` ones and onboarding's test trace do not count as a connection. */
 export const realServices = (model: Model): ReadonlyArray<typeof ServiceRow.Type> =>
-	Arr.filter(model.services, (row) => !Str.startsWith("demo-")(row.serviceName))
+	Arr.filter(model.services, (row) => isOwnService(row.serviceName))

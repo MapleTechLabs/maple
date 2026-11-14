@@ -1,31 +1,16 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { getAiSessionsFacets } from "@maple/web-data/warehouse/ai-sessions"
 import { getAiToolBreakdowns, getAiToolSeries } from "@maple/web-data/warehouse/ai-session-tools"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow, TimeWindow } from "../../../data/time-range"
+import { settleTo } from "@maple/views/data/load-failure"
+import { TimeWindow } from "../../../data/time-range"
 import { loadSignalPresences } from "../../kit/signal-presence"
-import { fetchTotals, Selection, toInput } from "../tools-kit/reads"
-import { Message, RequestMode } from "./message"
+import { fetchTotals, Selection, toInput } from "../../kit/tools/reads"
+import { Message } from "./message"
 
-export const ResolveWindow = Command.define("ResolveAgentToolsWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveAgentToolsWindow", Message.CompletedResolveWindow)
 
 export const FetchSeries = Command.define("FetchAgentToolsSeries", {
 	args: { key: Schema.String, selection: Selection, bucketSeconds: Schema.Number, isScope: Schema.Boolean },
@@ -34,9 +19,7 @@ export const FetchSeries = Command.define("FetchAgentToolsSeries", {
 		getAiToolSeries({
 			data: { ...toInput(selection), bucketSeconds, split: isScope ? "none" : undefined },
 		}).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				isScope
 					? Message.CompletedFetchScopeSeries({ key, result })
 					: Message.CompletedFetchSeries({ key, result }),
@@ -60,9 +43,7 @@ export const FetchBreakdowns = Command.define("FetchAgentToolsBreakdowns", {
 	messages: [Message.CompletedFetchBreakdowns, Message.CompletedFetchTabBreakdowns],
 	execute: ({ key, selection, isTab }) =>
 		getAiToolBreakdowns({ data: toInput(selection) }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) =>
+			settleTo((result) =>
 				isTab
 					? Message.CompletedFetchTabBreakdowns({ key, result })
 					: Message.CompletedFetchBreakdowns({ key, result }),
@@ -75,9 +56,7 @@ export const FetchFacets = Command.define("FetchAgentToolsFacets", {
 	messages: [Message.CompletedFetchFacets],
 	execute: ({ key, window }) =>
 		getAiSessionsFacets({ data: window }).pipe(
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchFacets({ key, result })),
+			settleTo((result) => Message.CompletedFetchFacets({ key, result })),
 		),
 })
 
@@ -85,7 +64,7 @@ export const DebounceSearch = Command.define("DebounceAgentToolsSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
 export const LoadSignalPresence = Command.define("LoadAgentToolsSignalPresence", {
@@ -95,9 +74,4 @@ export const LoadSignalPresence = Command.define("LoadAgentToolsSignalPresence",
 		Effect.map(loadSignalPresences(orgId), (result) => Message.CompletedLoadSignalPresence({ result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteAgentToolsReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteAgentToolsReloadSpin", Message.CompletedReloadSpin)

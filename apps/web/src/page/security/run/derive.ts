@@ -18,9 +18,11 @@ export const runOf = (model: Model): SecurityAuditRunDetail | null =>
 	Option.getOrNull(AsyncData.getData(model.run.data))
 
 export const targetOf = (model: Model, run: SecurityAuditRunDetail): SecurityAuditTarget | null =>
-	Option.getOrNull(AsyncData.getData(model.targets.data))?.targets.find(
-		(target) => target.id === run.targetId,
-	) ?? null
+	Option.getOrNull(
+		Option.flatMap(AsyncData.getData(model.targets.data), (data) =>
+			Arr.findFirst(data.targets, (target) => target.id === run.targetId),
+		),
+	)
 
 export const eventsOf = (model: Model): ReadonlyArray<SecurityAuditEvent> => model.eventLog
 
@@ -33,7 +35,7 @@ export const filteredEvents = (
 
 /** Newest first; the id breaks a tie in the same millisecond, as the API pages them. */
 const byNewest = (a: SecurityAuditEvent, b: SecurityAuditEvent): number =>
-	b.at - a.at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+	b.at !== a.at ? b.at - a.at : a.id < b.id ? 1 : a.id > b.id ? -1 : 0
 
 /** `page` merged into `log`: each event once, newest first. */
 export const mergeEvents = (
@@ -43,8 +45,6 @@ export const mergeEvents = (
 	const ids = new Set(Arr.map(log, (event) => event.id))
 	return [...log, ...Arr.filter(page, (event) => !ids.has(event.id))].sort(byNewest)
 }
-
-// UNITS
 
 export const UNIT_LABEL = {
 	covered: "Covered",
@@ -102,8 +102,6 @@ export const gapUnits = (units: ReadonlyArray<SecurityAuditUnit>): ReadonlyArray
 export const areasOf = (units: ReadonlyArray<SecurityAuditUnit>): number =>
 	new Set(Arr.flatMap(units, (unit) => (unit.subsystem === null ? [] : [unit.subsystem]))).size
 
-// PHASES
-
 export type PhaseState = "done" | "active" | "warn" | "stopped" | "pending" | "skipped"
 
 export type Phase = Readonly<{ name: string; state: PhaseState; detail: string }>
@@ -136,7 +134,10 @@ const reachedOf = (events: ReadonlyArray<SecurityAuditEvent>): Readonly<{ reache
 	)
 
 const phaseDetail = (events: ReadonlyArray<SecurityAuditEvent>, phase: string): string | null =>
-	events.find((event) => event.kind === "Phase" && event.phase === phase)?.detail ?? null
+	Option.match(
+		Arr.findFirst(events, (event) => event.kind === "Phase" && event.phase === phase),
+		{ onNone: () => null, onSome: (event) => event.detail ?? null },
+	)
 
 export const phasesOf = (
 	run: SecurityAuditRunDetail,
@@ -194,8 +195,6 @@ export const phasesOf = (
 	]
 }
 
-// RESULTS
-
 /** What this run reported, from its own snapshot. */
 export const resultsOf = (model: Model): ReadonlyArray<SecurityAuditFinding> =>
 	Option.match(AsyncData.getData(model.findings.data), {
@@ -204,7 +203,9 @@ export const resultsOf = (model: Model): ReadonlyArray<SecurityAuditFinding> =>
 	})
 
 export const openFindingOf = (model: Model): SecurityAuditFinding | null =>
-	resultsOf(model).find((finding) => finding.fingerprint === model.openFingerprint) ?? null
+	Option.getOrNull(
+		Arr.findFirst(resultsOf(model), (finding) => finding.fingerprint === model.openFingerprint),
+	)
 
 /** How the run ran stays open while it is live; a finished run leads with what it found. */
 export const isDetailsOpenByDefault = (model: Model): boolean => {

@@ -1,37 +1,12 @@
-import { Effect, Array as Arr, String as Str } from "effect"
+import { Effect, Option, Array as Arr, String as Str } from "effect"
+import { Headers as HttpHeaders, HttpTraceContext } from "effect/http"
 import { apiProxyPath } from "./api-proxy"
 import { forwardToApi } from "./api-proxy-forward"
 import { OG_IMAGE_PREFIX, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
 import { CHART_KINDS, chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
 import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
-
-/**
- * Frame and referrer policy, applied to document responses.
- *
- * The app is a single-page bundle, so every route is the same index.html and
- * there is no per-route server render to hang a header on — the path is all
- * this layer knows. That is enough for the split that matters:
- *
- *   - Everything except `/share/` refuses framing outright. The authed app has
- *     no reason to be in anyone's iframe, and until now nothing said so.
- *   - `/share/` allows framing at the document level, because embedding a
- *     public chart is a feature. *Which* links may be framed is decided by the
- *     API (`embeddable` on the resolve response) and enforced by the page, which
- *     is the only layer that knows which token it is holding.
- *
- * `Referrer-Policy: no-referrer` is share-specific and load-bearing rather than
- * hygienic: the token is in the share URL, so without it every cross-origin
- * request the page makes hands the token to a third party in `Referer`. The API
- * deliberately keeps tokens out of its own URLs; this is the other half.
- */
-const SHARE_PATH_PREFIX = "/share/"
-
-const isShareDocument = (pathname: string): boolean =>
-	pathname === "/share" || Str.startsWith(SHARE_PATH_PREFIX)(pathname)
-
-/** Every document: no plugins, no `<base>` retargeting relative URLs. Keep in step with nginx.conf. */
-const BASE_CSP = "object-src 'none'; base-uri 'self'"
+import { APP_DOCUMENT_HEADERS, documentHeaders } from "./document-headers"
 
 /** HTML only. A script or stylesheet is not framed, and `frame-ancestors` on one means nothing. */
 const isHtmlResponse = (response: Response): boolean =>
@@ -46,15 +21,10 @@ const applyDocumentSecurityHeaders = (response: Response, pathname: string): Res
 	// would silently become a 200 with no headers at all.
 	const headers = new Headers(response.headers)
 
-	headers.set("X-Content-Type-Options", "nosniff")
-	if (isShareDocument(pathname)) {
-		headers.set("Referrer-Policy", "no-referrer")
-		headers.set("Content-Security-Policy", BASE_CSP)
-	} else {
-		headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
-		headers.set("Content-Security-Policy", `${BASE_CSP}; frame-ancestors 'none'`)
-		headers.set("X-Frame-Options", "DENY")
-	}
+	// The asset this document came from may carry the app set (the shell fetched at "/"), so a
+	// header the path does not get is removed, not left: a share page must stay frameable.
+	Arr.forEach(APP_DOCUMENT_HEADERS, ([name]) => headers.delete(name))
+	Arr.forEach(documentHeaders(pathname), ([name, value]) => headers.set(name, value))
 
 	return new Response(response.body, {
 		status: response.status,
@@ -127,6 +97,40 @@ export const handleRequest = async (
 	// An image path whose id did not parse (a lone `%`, a nested segment) is still an image path.
 	if (isImagePath(url.pathname)) return new Response(null, { status: 404 })
 
+	// A share page is the one document the Worker serves itself, so it is the one with a trace.
+	return shareTokenFromPath(url.pathname) === undefined
+		? serveDocument(request, url, env, api)
+		: runTraced(traceShareDocument(request, () => serveDocument(request, url, env, api)))
+}
+
+const SHARE_ROUTE = "/share/:token"
+
+/** A server span for a share page load. Named for the route, never the path: the token is a credential. */
+const traceShareDocument = (request: Request, serve: () => Promise<Response>): Effect.Effect<Response> =>
+	Effect.useSpan(
+		`${request.method} ${SHARE_ROUTE}`,
+		{
+			kind: "server",
+			parent: Option.getOrUndefined(
+				HttpTraceContext.fromHeaders(HttpHeaders.fromInput(request.headers)),
+			),
+			attributes: { "http.request.method": request.method, "http.route": SHARE_ROUTE },
+		},
+		(server) =>
+			Effect.promise(serve).pipe(
+				Effect.tap((response) =>
+					Effect.sync(() => server.attribute("http.response.status_code", response.status)),
+				),
+			),
+	)
+
+/** The app shell for a path, with the path's security headers and, on a share link, its preview tags. */
+const serveDocument = async (
+	request: Request,
+	url: URL,
+	env: WebWorkerEnv,
+	api: ApiTarget | undefined,
+): Promise<Response> => {
 	const assetResponse = await env.ASSETS.fetch(request)
 	if (assetResponse.status !== 404) {
 		// `/version.json` is the one asset whose whole job is to be stale-free:

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { RecommendationIssueId } from "../../primitives"
+import { RecommendationIssueId } from "@maple/primitives"
 import {
 	RecommendationIssueKind,
 	RecommendationIssueNotFoundError,

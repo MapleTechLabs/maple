@@ -166,7 +166,7 @@ To keep a call's prompts and replies out of Maple, set `recordInputs: false` and
 
 ## Verify
 
-Run `wrangler dev`, send two messages in one chat that trigger a tool call, then open **Agent Sessions** in Maple. You should see one session named after the agent instance with framework **Vercel AI SDK**, one turn per message, and a transcript with the prompts, replies and tool calls. A second chat should show up as a second session.
+Run `wrangler dev`, send two messages in one chat that trigger a tool call, then open **Agent sessions** in Maple. You should see one session named after the agent instance with framework **Vercel AI SDK**, one turn per message, and a transcript with the prompts, replies and tool calls. A second chat should show up as a second session.
 
 ## Troubleshooting
 

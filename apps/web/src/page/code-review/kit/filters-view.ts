@@ -8,13 +8,10 @@ import { ALL, type Frame, FrameMessage, type WindowSearch } from "./frame"
 import { repositoriesOf } from "./frame-update"
 import { Array as Arr } from "effect"
 
-// `CodeReviewFilters` and `CodeReviewCiFilters`: repository, author or
-// workflow, and the window.
-
 export type FiltersOptions<M> = Readonly<{
 	frame: Frame
 	search: WindowSearch
-	/** `RepositorySelect`'s `reviewedOnly`: Analytics, Pull requests and Issues; not CI. */
+	/** Lists only repositories with reviews on: Analytics, Pull requests and Issues; not CI. */
 	reviewedOnly: boolean
 	/** Authors or workflows; a value from the URL that is not listed leads the list. */
 	kind: "author" | "workflow"
@@ -27,7 +24,7 @@ export type FiltersOptions<M> = Readonly<{
 	isFailed?: boolean
 }>
 
-/** `CODE_REVIEW_MAX_RANGE_SECONDS`: a year, which the CI tab's `ci_runs` keeps too. */
+/** A year, which the CI tab's `ci_runs` keeps too. */
 const MAX_RANGE_SECONDS = 365 * 24 * 60 * 60
 
 const item = (value: string, label: string): SelectEntry => ({ _tag: "Item", item: { value, label } })

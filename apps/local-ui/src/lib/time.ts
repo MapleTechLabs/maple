@@ -4,7 +4,7 @@
 // strings (`'YYYY-MM-DD HH:MM:SS'`, UTC); chDB returns tz-less UTC strings too.
 // Everything the user reads is rendered in the browser's local zone.
 
-import { DateTime, Array as Arr, String as Str } from "effect"
+import { DateTime, Option, Array as Arr } from "effect"
 import { computeBucketSeconds, formatWarehouseDateTime } from "@maple/query-engine"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
@@ -26,7 +26,7 @@ export interface TimeRange {
 	readonly minutes: number
 }
 
-export const TIME_RANGES: ReadonlyArray<TimeRange> = [
+export const TIME_RANGES: Arr.NonEmptyReadonlyArray<TimeRange> = [
 	{ key: "5m", label: "5M", minutes: 5 },
 	{ key: "15m", label: "15M", minutes: 15 },
 	{ key: "30m", label: "30M", minutes: 30 },
@@ -53,10 +53,9 @@ export function isRangeKey(value: string | null | undefined): value is string {
 }
 
 export function resolveRange(key: string | undefined): TimeRange {
-	return (
-		TIME_RANGES.find((r) => r.key === key) ??
-		TIME_RANGES.find((r) => r.key === DEFAULT_RANGE) ??
-		TIME_RANGES[0]
+	return Arr.findFirst(TIME_RANGES, (r) => r.key === key).pipe(
+		Option.orElse(() => Arr.findFirst(TIME_RANGES, (r) => r.key === DEFAULT_RANGE)),
+		Option.getOrElse(() => Arr.headNonEmpty(TIME_RANGES)),
 	)
 }
 
@@ -83,38 +82,14 @@ export function boundsForRange(key: string | undefined, anchorMs = Date.now()): 
 export type WarehouseTime = DateTime.Utc | string | null | undefined
 
 export function parseClickHouseDateTime(chDateTime: WarehouseTime): number | null {
-	if (!chDateTime) return null
+	if (chDateTime == null || chDateTime === "") return null
 	const ms = DateTime.isDateTime(chDateTime) ? DateTime.toEpochMillis(chDateTime) : toEpochMs(chDateTime)
 	return Number.isFinite(ms) && ms > 0 ? ms : null
 }
 
-const pad = (value: number, width = 2) => Str.padStart(width, "0")(String(value))
-
-function isSameLocalDay(a: Date, b: Date): boolean {
-	return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
-
-/**
- * Local wall-clock time for a warehouse timestamp: `14:05:01.940` today,
- * `Sep 25 14:05:01.940` on other days. `precision: "s"` drops the millis.
- */
-export function formatLocalTimestamp(
-	chDateTime: string | null | undefined,
-	options: { precision?: "ms" | "s"; nowMs?: number } = {},
-): string {
-	const ms = parseClickHouseDateTime(chDateTime)
-	if (ms === null) return "-"
-	const date = new Date(ms)
-	const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-	const time = options.precision === "s" ? clock : `${clock}.${pad(date.getMilliseconds(), 3)}`
-	if (isSameLocalDay(date, new Date(options.nowMs ?? Date.now()))) return time
-	const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-	return `${day} ${time}`
-}
-
 /** The stored value, verbatim and zone-marked, for `title` tooltips and copy. */
 export function formatUtcTitle(chDateTime: WarehouseTime): string {
-	if (!chDateTime) return ""
+	if (chDateTime == null || chDateTime === "") return ""
 	return DateTime.isDateTime(chDateTime) ? DateTime.formatIso(chDateTime) : `${chDateTime} UTC`
 }
 

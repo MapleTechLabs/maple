@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { OAuthDiscoveryRouter } from "./oauth-discovery.http"
 
@@ -69,7 +69,7 @@ describe("MCP OAuth HTTP routes", () => {
 				new Request("https://api.example.com/.well-known/oauth-authorization-server", {
 					headers: { host: "api.example.com", "x-forwarded-proto": "https" },
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(authorization.status).toBe(200)
 			expect(await authorization.json()).toMatchObject({
@@ -84,7 +84,7 @@ describe("MCP OAuth HTTP routes", () => {
 				new Request("https://api.example.com/.well-known/oauth-protected-resource/mcp", {
 					headers: { host: "api.example.com", "x-forwarded-proto": "https" },
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(await resource.json()).toMatchObject({
 				resource: "https://api.example.com/mcp",
@@ -111,7 +111,7 @@ describe("MCP OAuth HTTP routes", () => {
 				new Request("https://api.example.com/.well-known/oauth-authorization-server/mcp", {
 					headers: forged,
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const metadata = await authorization.json()
 			expect(JSON.stringify(metadata)).not.toContain("attacker.example")
@@ -127,7 +127,7 @@ describe("MCP OAuth HTTP routes", () => {
 				new Request("https://api.example.com/.well-known/oauth-protected-resource", {
 					headers: forged,
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const resourceMetadata = await resource.json()
 			expect(JSON.stringify(resourceMetadata)).not.toContain("attacker.example")
@@ -151,7 +151,7 @@ describe("MCP OAuth HTTP routes", () => {
 					client_name: "Forged Host Client",
 					redirect_uris: ["http://127.0.0.1:49876/callback"],
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			const client = (await registered.json()) as { client_id: string }
 			const verifier = "http-route-pkce-verifier-with-more-than-forty-three-characters"
@@ -173,7 +173,7 @@ describe("MCP OAuth HTTP routes", () => {
 						"x-forwarded-proto": "https",
 					},
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(authorize.status).toBe(302)
 			const location = new URL(authorize.headers.get("location")!)
@@ -181,6 +181,33 @@ describe("MCP OAuth HTTP routes", () => {
 		} finally {
 			await harness.dispose()
 			await harness.runtime.dispose()
+		}
+	})
+
+	it("refuses a registration or token body past the size these requests ever need", async () => {
+		const harness = makeHarness()
+		try {
+			const padding = Str.repeat(70 * 1024)("x")
+			const registered = await harness.handler(
+				postJson("https://api.example.com/register", {
+					client_name: padding,
+					redirect_uris: ["http://127.0.0.1:49876/callback"],
+				}),
+				Context.empty(),
+			)
+			expect(registered.status).toBe(400)
+			expect(await registered.json()).toEqual({
+				error: "invalid_request",
+				error_description: "Request body is too large",
+			})
+			const token = await harness.handler(
+				postForm("https://api.example.com/oauth/token", { grant_type: padding }),
+				Context.empty(),
+			)
+			expect(token.status).toBe(400)
+			expect((await token.json()).error_description).toBe("Request body is too large")
+		} finally {
+			await harness.dispose()
 		}
 	})
 
@@ -197,7 +224,7 @@ describe("MCP OAuth HTTP routes", () => {
 					grant_types: ["authorization_code", "refresh_token"],
 					response_types: ["code"],
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(registered.status).toBe(201)
 			const client = (await registered.json()) as { client_id: string }
@@ -219,7 +246,7 @@ describe("MCP OAuth HTTP routes", () => {
 				new Request(authorizeUrl, {
 					headers: { host: "api.example.com", "x-forwarded-proto": "https" },
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(authorize.status).toBe(302)
 			const consent = new URL(authorize.headers.get("location")!)
@@ -230,9 +257,9 @@ describe("MCP OAuth HTTP routes", () => {
 				Effect.gen(function* () {
 					const oauth = yield* McpOAuthService
 					return yield* oauth.approve(requestId, {
-						orgId: Schema.decodeUnknownSync(OrgId)("org_http"),
-						userId: Schema.decodeUnknownSync(UserId)("user_http"),
-						roles: [Schema.decodeUnknownSync(RoleName)("org:member")],
+						orgId: Schema.decodeSync(OrgId)("org_http"),
+						userId: Schema.decodeSync(UserId)("user_http"),
+						roles: [Schema.decodeSync(RoleName)("org:member")],
 						userEmail: null,
 					})
 				}),
@@ -247,7 +274,7 @@ describe("MCP OAuth HTTP routes", () => {
 					code_verifier: verifier,
 					resource: "https://api.example.com/mcp",
 				}),
-				Context.empty() as never,
+				Context.empty(),
 			)
 			expect(token.status).toBe(200)
 			expect(await token.json()).toMatchObject({

@@ -1,7 +1,8 @@
 import type { DateTime } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { defineCondFn, from, param, paramPlaceholder } from "@maple-dev/effect-orm/clickhouse"
-import { AuditLog, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { Array as Arr } from "effect"
 
 /**
@@ -27,11 +28,18 @@ export interface AuditLogEntriesOpts {
 	 * limit. Fixed by the caller's code, never request input: they are inlined.
 	 */
 	readonly excludeActionSuffixes?: ReadonlyArray<string>
+	/** Keep a denied entry even when its action is excluded: a refused read is still worth seeing. */
+	readonly keepDeniedExcluded?: boolean
+	/** Only actions ending in one of these. Inlined, like `excludeActionSuffixes`. */
+	readonly onlyActionSuffixes?: ReadonlyArray<string>
 	readonly limit: number
 	readonly offset: number
 }
 
 const endsWith = defineCondFn<[CH.Expr<string>, string]>("endsWith")
+
+const endsWithAny = (action: CH.Expr<string>, suffixes: ReadonlyArray<string>) =>
+	CH.or(...Arr.map(suffixes, (suffix) => endsWith(action, suffix)))
 
 /**
  * One org's audit log, newest first, offset-paginated. Pinned to the managed
@@ -40,7 +48,7 @@ const endsWith = defineCondFn<[CH.Expr<string>, string]>("endsWith")
  * appear twice here; the service collapses it by id.
  */
 export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
-	return from(AuditLog)
+	return from(Datasources.auditLog)
 		.select(($) => ({
 			id: $.Id,
 			occurredAt: $.OccurredAt,
@@ -83,10 +91,13 @@ export function auditLogEntriesQuery(opts: AuditLogEntriesOpts) {
 			CH.whenTrue(!!opts.requestId, () => $.RequestId.eq(param.string("requestId"))),
 			CH.whenTrue(!!opts.since, () => $.OccurredAt.gte(param.dateTime("since"))),
 			CH.whenTrue(!!opts.until, () => $.OccurredAt.lte(param.dateTime("until"))),
-			opts.excludeActionSuffixes?.length
-				? CH.not(
-						CH.or(...Arr.map(opts.excludeActionSuffixes, (suffix) => endsWith($.Action, suffix))),
-					)
+			opts.excludeActionSuffixes !== undefined && opts.excludeActionSuffixes.length > 0
+				? opts.keepDeniedExcluded === true
+					? CH.or(CH.not(endsWithAny($.Action, opts.excludeActionSuffixes)), $.Outcome.eq("denied"))
+					: CH.not(endsWithAny($.Action, opts.excludeActionSuffixes))
+				: undefined,
+			opts.onlyActionSuffixes !== undefined && opts.onlyActionSuffixes.length > 0
+				? endsWithAny($.Action, opts.onlyActionSuffixes)
 				: undefined,
 		])
 		.orderBy(["occurredAt", "desc"], ["id", "desc"])

@@ -1,14 +1,8 @@
 // The OTel adapter for the shared per-session sampling decision.
 import { readSessionSink } from "@maple/browser-session"
 import { sampleSession } from "@maple/sdk-core"
-import {
-	type Context,
-	createContextKey,
-	createTraceState,
-	isSpanContextValid,
-	trace,
-	TraceFlags,
-} from "@opentelemetry/api"
+import { type Context, createContextKey, isSpanContextValid, trace, TraceFlags } from "@opentelemetry/api"
+import { TraceState } from "@opentelemetry/core"
 import { type Sampler, SamplingDecision, type SamplingResult } from "@opentelemetry/sdk-trace"
 
 const KEEP = createContextKey("maple.sampling.keep")
@@ -39,10 +33,10 @@ export class SessionSampler implements Sampler {
 		}
 		const decision = sampleSession(readSessionSink()?.sessionId, this.rate)
 		if (!decision.sampled) return { decision: SamplingDecision.NOT_RECORD }
-		// `createTraceState` parses the `ot=…` list member itself.
+		// `TraceState` parses the `ot=…` list member itself.
 		return {
 			decision: SamplingDecision.RECORD_AND_SAMPLED,
-			...(decision.traceState ? { traceState: createTraceState(decision.traceState) } : undefined),
+			...(decision.traceState ? { traceState: new TraceState(decision.traceState) } : undefined),
 		}
 	}
 

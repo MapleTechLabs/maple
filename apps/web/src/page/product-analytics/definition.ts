@@ -17,7 +17,7 @@ import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
 	DEFAULT_FUNNEL_WINDOW_SECONDS,
-} from "../../components/funnels/definition"
+} from "../dashboards/kit/funnel-definition"
 import type { StepDraft } from "../kit/funnel-steps"
 import type { ProductAnalyticsSearch } from "../../route/search"
 

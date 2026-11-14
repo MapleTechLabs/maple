@@ -8,16 +8,15 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Schema } from "effect"
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import { ErrorPersistenceError } from "@maple/domain/http"
-import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ErrorPersistenceError, type TenantContext } from "@maple/domain/http"
+import { ActorId, OrgId, UserId } from "@maple/primitives"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { withConnectorActor } from "./turn-actor"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_turn_actor_test")
-const PLACEHOLDER_USER = Schema.decodeUnknownSync(UserId)("chat-connector")
-const PINNED_ACTOR = Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000beef")
+const ORG = Schema.decodeSync(OrgId)("org_turn_actor_test")
+const PLACEHOLDER_USER = Schema.decodeSync(UserId)("chat-connector")
+const PINNED_ACTOR = Schema.decodeSync(ActorId)("00000000-0000-4000-8000-00000000beef")
 const createdDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(createdDbs))
@@ -65,7 +64,7 @@ describe("withConnectorActor", () => {
 			assert.strictEqual(first.actorId, second.actorId)
 
 			const actors = yield* ErrorActorsService
-			const doc = yield* actors.lookupActor(ORG, first.actorId!)
+			const doc = yield* actors.lookupActor(ORG, first.actorId)
 			assert.strictEqual(doc.type, "agent")
 			assert.strictEqual(doc.agentName, "chat-connector-testchat")
 			// No Maple user is behind a connector turn, so none is recorded as one.

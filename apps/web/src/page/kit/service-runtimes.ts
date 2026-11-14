@@ -1,6 +1,6 @@
 import { ServiceRuntimeRow } from "@maple/domain/http"
 import { SERVICE_RUNTIME_KINDS } from "@maple/domain/service-runtimes"
-import { gcpWorkloadSearch } from "../../components/infra/gcp/tabs"
+import { gcpWorkloadSearch } from "../infra-integrations/gcp/tabs"
 import { AppRoute, hrefOf } from "../../route"
 import type { IconName } from "@maple/views/ui/icon"
 import { resourceSearch } from "../infra-integrations/aws/derive"
@@ -25,6 +25,17 @@ export interface RuntimeLink {
 	readonly location: ReadonlyArray<string>
 	readonly href: string
 }
+
+/** A product mark where the kind has one; null shows its provider's. */
+const RUNTIME_ICON = {
+	cloudRun: "CloudRunIcon",
+	cloudFunctions: "CloudFunctionsIcon",
+	ecs: null,
+	lambda: null,
+	railway: null,
+	cloudflareWorker: null,
+	vercelProject: null,
+} satisfies Record<ServiceRuntime["kind"], IconName | null>
 
 const present = (values: ReadonlyArray<string>) => Arr.filter(values, (value) => value !== "")
 
@@ -69,6 +80,8 @@ const runtimeHref = (runtime: ServiceRuntime, time: TimeSearch): string => {
 					search: { ...time, account: runtime.account === "" ? undefined : runtime.account },
 				}),
 			)
+		case "vercelProject":
+			return hrefOf(AppRoute.InfraVercelProject({ projectId: runtime.vercelProjectId, search: time }))
 	}
 }
 
@@ -78,8 +91,9 @@ const runtimeLocation = (runtime: ServiceRuntime): ReadonlyArray<string> => {
 			return present([runtime.railwayEnvironmentName])
 		case "ecs":
 			return present([runtime.cluster, runtime.region])
-		// A Cloudflare account id is a hash nobody reads.
+		// A Cloudflare account id is a hash nobody reads, a Vercel project id too.
 		case "cloudflareWorker":
+		case "vercelProject":
 			return []
 		default:
 			return present([runtime.account, runtime.region])
@@ -97,10 +111,11 @@ export const runtimeLink = (runtime: ServiceRuntime, time: TimeSearch): RuntimeL
 				runtime.region,
 				runtime.cluster,
 				runtime.railwayEnvironmentId,
+				runtime.vercelProjectId,
 			],
 			"|",
 		),
-		icon: SOURCE_ICON[kind.provider],
+		icon: RUNTIME_ICON[runtime.kind] ?? SOURCE_ICON[kind.provider],
 		label: kind.label,
 		name: runtime.serviceName,
 		location: runtimeLocation(runtime),

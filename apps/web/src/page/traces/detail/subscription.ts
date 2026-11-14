@@ -5,7 +5,6 @@ import type { PageSubscriptionInput } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// `useAppHotkey("list.clear", handleCloseSpanDetails, { enabled: selectedSpan !== null })`:
 // Escape anywhere but a field closes the span panel; an open dialog or sheet keeps its own Escape.
 
 const escapes: Stream.Stream<Message> = Dom.streamFromEventFilterMap({

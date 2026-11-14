@@ -14,17 +14,15 @@ import {
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../agent-sessions/tools-kit/table"
-import type { ToolPercentile } from "../agent-sessions/tools-kit/model"
+} from "../kit/tools/table"
+import type { ToolPercentile } from "../kit/tools/model"
 import type { McpCallRow, McpErrorGroup, McpToolDetail } from "./data"
 import {
 	attr,
 	clientIcon,
 	clientPlot,
 	durationMeterCell,
-	durationSeries,
 	errorTypeChip,
-	formatClock,
 	headingNote,
 	lastSeenCell,
 	type McpChartEnv,
@@ -38,8 +36,10 @@ import {
 	RESULT_LANE,
 } from "./view-kit"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
+import { durationSeries } from "../kit/tools/series-chart"
+import { formatClock } from "../kit/timezone-zones"
 
 // `/mcp/:service/tools/:tool`: the agent tool detail page for one MCP tool. Four charts, the
 // failures grouped by `error.type` (and message, once the server records one), then the calls.
@@ -121,8 +121,16 @@ const errorRow = <M>(
 ): Html => {
 	const share = group.count / Math.max(total, 1)
 	return toolTableRow(h, { onClick: options.onOpenGroup(group.errorType) }, [
-		h.span(
-			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				shrink: true,
+				grow: true,
+				as: "span",
+				className: "w-0 font-mono text-xs",
+			},
 			[
 				errorTypeChip(h, group.errorType),
 				group.message === null
@@ -217,12 +225,13 @@ const failures = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOp
 			]),
 			...(isUnnamed
 				? [
-						h.div(
-							[
-								h.Class(
-									"mt-3 flex items-start gap-2.5 rounded-md border border-border bg-card px-3 py-2.5",
-								),
-							],
+						hstack(
+							h,
+							{
+								gap: "2.5",
+								align: "start",
+								className: "mt-3 rounded-md border border-border bg-card px-3 py-2.5",
+							},
 							[
 								icon(h, "CircleInfoIcon", {
 									size: 14,
@@ -255,9 +264,17 @@ const callRow = <M>(h: HtmlBuilder<M>, call: McpCallRow, max: number, options: T
 			[h.Class("w-20 shrink-0 font-mono text-xs tabular-nums text-muted-foreground")],
 			[formatClock(call.timeMs, options.env.timeZone)],
 		),
-		h.span(
-			[h.Class("flex w-0 min-w-0 flex-1 items-center gap-2 font-mono text-xs")],
-			[clientIcon(h, call.client, 12), h.span([h.Class("truncate")], [call.client])],
+		hstack(
+			h,
+			{
+				gap: "2",
+				align: "center",
+				shrink: true,
+				grow: true,
+				as: "span",
+				className: "w-0 font-mono text-xs",
+			},
+			[clientIcon(h, call.client, 12), typography(h, { truncate: true }, [call.client])],
 		),
 		numberCell(h, `#${call.requestId}`, "hidden w-16 text-foreground-subtle @min-[640px]/panel:block"),
 		durationMeterCell(h, { durationNs: call.durationNs, max, isFailed: call.errorType !== null }),
@@ -325,20 +342,17 @@ const calls = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptio
 	)
 }
 
-/** `McpToolBody`: everything under the tool page's header. */
+/** Everything under the tool page's header. */
 export const toolBody = <M>(h: HtmlBuilder<M>, data: McpToolDetail, options: ToolBodyOptions<M>): Html =>
-	h.div(
-		[h.Class("flex flex-col")],
-		[
-			options.toolbar,
-			mcpScopeRow(
-				h,
-				options.scope,
-				formatNumber(data.calls),
-				`calls · ${formatNumber(data.errors)} failed`,
-			),
-			charts(h, data, options),
-			failures(h, data, options),
-			calls(h, data, options),
-		],
-	)
+	vstack(h, {}, [
+		options.toolbar,
+		mcpScopeRow(
+			h,
+			options.scope,
+			formatNumber(data.calls),
+			`calls · ${formatNumber(data.errors)} failed`,
+		),
+		charts(h, data, options),
+		failures(h, data, options),
+		calls(h, data, options),
+	])

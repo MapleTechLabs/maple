@@ -1,5 +1,5 @@
-import type { DbIconKey } from "@maple/ui/components/service-map/service-map-db-style"
-import type { ServicePlatform } from "@maple/ui/components/service-map/service-map-types"
+import type { DbIconKey } from "../graph/service-map-db-style"
+import type { ServicePlatform } from "../graph/service-map-types"
 import { ERROR_RATE_TEXT, type ErrorRateLevel, errorRateLevel } from "@maple/ui/lib/error-rate"
 import { formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -10,8 +10,9 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { IconName } from "../../ui/icon"
 import { eyebrow } from "../../ui/eyebrow"
 import { pressable } from "../../ui/pressable"
+import { vstack } from "../../ui/stack"
 
-// Shared pieces of `ServiceMapNode` (packages/ui `service-map/service-map-node.tsx`).
+// Shared pieces of the service map's node cards.
 
 export const HANDLE_CLASSES = "!opacity-0 !w-0 !h-0 !min-w-0 !min-h-0"
 
@@ -25,6 +26,7 @@ export const PLATFORM_ICON = {
 	kubernetes: { icon: "KubernetesIcon", label: "Kubernetes", branded: true },
 	cloudflare: { icon: "CloudflareBrandIcon", label: "Cloudflare Workers", branded: true },
 	gcp: { icon: "GoogleCloudIcon", label: "Google Cloud", branded: true },
+	vercel: { icon: "VercelIcon", label: "Vercel", branded: false },
 	lambda: { icon: "AwsLambdaIcon", label: "AWS Lambda", branded: true },
 	web: { icon: "GlobeIcon", label: "Web (browser)", branded: false },
 	unknown: { icon: "ServerIcon", label: "Unknown runtime", branded: false },
@@ -37,6 +39,10 @@ export const DB_ICON = {
 	clickhouse: "ClickhouseIcon",
 	mongodb: "MongodbIcon",
 	redis: "RedisIcon",
+	sqlserver: "SqlServerIcon",
+	kafka: "KafkaIcon",
+	nats: "NatsIcon",
+	rabbitmq: "RabbitmqIcon",
 	database: "DatabaseIcon",
 	fire: "FireIcon",
 	"paper-plane": "PaperPlaneIcon",
@@ -70,7 +76,7 @@ export const errorRateClass = (errorRate: number): string => {
 	return level === "neutral" ? "text-secondary-foreground" : ERROR_RATE_TEXT[level]
 }
 
-/** Base UI `<TooltipTrigger>`: a bare button around the trigger content (the popup is not ported). */
+/** A bare tooltip trigger button around the trigger content, without a popup. */
 export const tooltipTrigger = <M>(h: HtmlBuilder<M>, children: ReadonlyArray<Html>): Html =>
 	pressable(
 		h,
@@ -92,23 +98,20 @@ export const metricCell = <M>(
 	value: string,
 	valueClassName?: string,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-col gap-px")],
-		[
-			eyebrow(h, { className: "text-4xs text-foreground-subtle" }, [label]),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
-							valueClassName,
-						),
+	vstack(h, { className: "gap-px" }, [
+		eyebrow(h, { variant: "mono", className: "text-4xs" }, [label]),
+		h.span(
+			[
+				h.Class(
+					cn(
+						"text-2xs font-medium font-mono tabular-nums text-secondary-foreground",
+						valueClassName,
 					),
-				],
-				[value],
-			),
-		],
-	)
+				),
+			],
+			[value],
+		),
+	])
 
 export const avgCell = <M>(h: HtmlBuilder<M>, avgLatencyMs: number): Html =>
 	metricCell(h, "avg", formatLatency(avgLatencyMs), latencyToneClass(avgLatencyMs, "avg"))

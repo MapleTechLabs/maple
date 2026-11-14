@@ -1,10 +1,5 @@
-import { formatCores, formatWholePercent } from "../../../components/infra/format"
-import {
-	formatRestarts,
-	podKey,
-	type PodRestartSummary,
-	restartTone,
-} from "../../../components/infra/pod-restarts"
+import { formatCores, formatWholePercent } from "../kit/format"
+import { formatRestarts, podKey, type PodRestartSummary, restartTone } from "./pod-restarts"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr } from "effect"
@@ -21,19 +16,17 @@ import {
 	headSort,
 	ROW_LINK_CLASS,
 	skeletonRows,
-} from "../kit/data-table"
+} from "../../kit/data-table"
 import type { SortDir } from "../../kit/table-sort"
 import { meterRows } from "../kit/meter-rows"
 import { metaLine } from "../kit/meta-line"
 import { listRelativeTime } from "../../kit/relative-time"
 import { hostStatusBadge } from "../kit/status"
-import type { TimeSearch } from "../kit/view-tabs"
+import type { TimeSearch } from "../../kit/view-tabs"
 import type { PodRow } from "./pod-data"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { column, columnClass } from "@maple/views/ui/column"
-
-// `PodTable` / `PodTableLoading`.
 
 export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimitPct" | "podName" | "lastSeen"
 type Sort = Readonly<{ key: string | null; dir: SortDir }> | null
@@ -47,15 +40,19 @@ const workloadOf = (pod: PodRow): Readonly<{ kind: string; name: string }> | nul
 }
 
 const metaTitle = (pod: PodRow, workload: Readonly<{ kind: string; name: string }> | null): string =>
-	[
-		pod.namespace && `ns ${pod.namespace}`,
-		workload && `${workload.kind} ${workload.name}`,
-		pod.nodeName && `node ${pod.nodeName}`,
-		pod.qosClass && `qos ${pod.qosClass}`,
-		pod.computeType === "fargate" && "fargate",
-	]
-		.filter(Boolean)
-		.join(" · ")
+	Arr.join(
+		Arr.filter(
+			[
+				pod.namespace && `ns ${pod.namespace}`,
+				workload && `${workload.kind} ${workload.name}`,
+				pod.nodeName && `node ${pod.nodeName}`,
+				pod.qosClass && `qos ${pod.qosClass}`,
+				pod.computeType === "fargate" && "fargate",
+			],
+			(part): part is string => Boolean(part),
+		),
+		" · ",
+	)
 
 const columns = <M>(
 	h: HtmlBuilder<M>,
@@ -109,7 +106,7 @@ export const podTableLoading = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	)
 
-/** `RestartMarker`: beside the name, only when the pod restarted in the window. */
+/** Beside the name, only when the pod restarted in the window. */
 const restartMarker = <M>(h: HtmlBuilder<M>, summary: PodRestartSummary | undefined): Html => {
 	if (summary === undefined || summary.restarts <= 0) return null
 	const label = Arr.join(
@@ -179,7 +176,7 @@ const podRow = <M>(h: HtmlBuilder<M>, pod: PodRow, inputs: PodTableInputs<M>): H
 							size: "xs",
 							tone: "foreground",
 							weight: "medium",
-							className: "transition-colors group-hover:text-primary",
+							className: "group-hover:text-primary",
 						}),
 					}),
 					hostStatusBadge(h, {

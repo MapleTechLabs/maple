@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -13,7 +13,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { SourceUsageService } from "@maple/backend/services/org/SourceUsageService"
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { SourceRemovalService } from "@maple/backend/services/integrations/SourceRemovalService"
-import type { SourceId } from "@maple/domain/primitives"
+import type { SourceId } from "@maple/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -22,23 +22,20 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	Phase1ResourceStubsLayer,
 	makeWarehouseServiceStub,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
+	OrgMembersServiceStubLayer,
 } from "./v2-test-support"
+import { HttpV2SourcesLive } from "./sources.http"
+import { HttpV2AuditLogLive } from "./audit-log.http"
 
 /** `/v2/sources` over an embedded PGlite with the real service. */
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_sources_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_sources_e2e")
+const ORG = Schema.decodeSync(OrgId)("org_sources_e2e")
+const USER = Schema.decodeSync(UserId)("user_sources_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -76,7 +73,6 @@ const makeHarness = () => {
 		MobileDevicesService.layer,
 		LiveActivitiesService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
-	// Provided first so it shadows the inert stub in ConfigResourceServiceStubsLayer.
 	const realSources = SourcesService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, testDb.layer)))
 	const sourcesLive = Layer.mergeAll(
 		realSources,
@@ -110,15 +106,17 @@ const makeHarness = () => {
 		),
 	)
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.sources, MapleApiV2.groups.auditLog),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2SourcesLive,
+				HttpV2AuditLogLive.pipe(Layer.provide(OrgMembersServiceStubLayer)),
+			),
+		),
 		Layer.provide(sourcesLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -299,7 +297,7 @@ describe("v2 sources", () => {
 		}
 	})
 
-	it("refuses non-admin members", async () => {
+	it("lets members read sources but not change them", async () => {
 		const harness = makeHarness()
 		try {
 			const { secret: token } = await harness.bootstrapKey({
@@ -319,6 +317,19 @@ describe("v2 sources", () => {
 				{},
 			)
 			expect(pause.status).toBe(403)
+			const list = await harness.request("GET", "/v2/sources", token)
+			expect(list.status).toBe(200)
+			expect(list.body.data[0]).toMatchObject({ is_default: true })
+			const defaultId: string = list.body.data[0].id
+			const retrieved = await harness.request("GET", `/v2/sources/${defaultId}`, token)
+			expect(retrieved.status).toBe(200)
+			expect(retrieved.body).toMatchObject({ id: defaultId, is_default: true })
+			const usage = await harness.request("GET", `/v2/sources/${defaultId}/usage`, token)
+			expect(usage.status).toBe(200)
+			expect(usage.body.object).toBe("source_usage")
+			const summary = await harness.request("GET", "/v2/sources/usage", token)
+			expect(summary.status).toBe(200)
+			expect(summary.body.object).toBe("source_usage_summary")
 		} finally {
 			await harness.dispose()
 		}

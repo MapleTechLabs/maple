@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { clientInfoUnit, coverageRows, failureKinds, sessionsScreen } from "./data-map"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
 const coverage = {
 	toolCalls: 100,
@@ -16,7 +16,8 @@ const coverage = {
 }
 
 describe("coverageRows", () => {
-	const row = (label: string) => coverageRows(coverage).find((entry) => entry.label === label)
+	const row = (label: string) =>
+		Option.getOrUndefined(Arr.findFirst(coverageRows(coverage), (entry) => entry.label === label))
 
 	it("marks an attribute present only when every call carries it", () => {
 		expect(row("Method and tool")?.isPresent).toBe(true)
@@ -41,9 +42,9 @@ describe("coverageRows", () => {
 
 	it("points a server with neither a session id nor a user at user.id, which stateless MCP keeps", () => {
 		const rows = coverageRows({ ...coverage, withUser: 0 })
-		expect(rows.find((entry) => entry.label === "Sessions")?.detail).toBe(
-			"Only older, stateful servers have one: send user.id above for sessions.",
-		)
+		expect(
+			Option.getOrUndefined(Arr.findFirst(rows, (entry) => entry.label === "Sessions"))?.detail,
+		).toBe("Only older, stateful servers have one: send user.id above for sessions.")
 		const labels = Arr.map(rows, (entry) => entry.label)
 		expect(labels.indexOf("Users")).toBeLessThan(labels.indexOf("Sessions"))
 	})

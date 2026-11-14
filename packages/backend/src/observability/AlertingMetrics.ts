@@ -59,6 +59,16 @@ export const incidentsResolvedAfterHoldTotal = Metric.counter(
 	},
 )
 
+export const notificationsSilencedTotal = Metric.counter("alerting.notifications_silenced_total", {
+	description: "Incident notifications an alert silence held back",
+	incremental: true,
+})
+
+export const silenceCatchUpsTotal = Metric.counter("alerting.silence_catch_ups_total", {
+	description: "Notifications sent after a silence ended on a still-open incident",
+	incremental: true,
+})
+
 export const deliveriesAttemptedTotal = Metric.counter("alerting.deliveries_attempted_total", {
 	description: "Total number of delivery attempts",
 	incremental: true,

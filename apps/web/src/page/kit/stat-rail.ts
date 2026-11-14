@@ -1,13 +1,14 @@
-import { SPARK_COLOR, VALUE_TONE } from "../../components/infra/severity-tokens"
+import { SPARK_COLOR, VALUE_TONE } from "./severity-tokens"
 import type { Tone } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+import { rowSelectedClass } from "@maple/views/ui/list-row.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { miniBars } from "@maple/views/ui/mini-bars"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statFigure } from "@maple/views/ui/stat-figure"
+import { infoHint } from "@maple/views/ui/info-hint"
 
-// `StatRail`, `StatRailItem`, `StatRailItemSkeleton` and `StatRailLoading`.
+// A rail of stat tiles (label, value, delta, spark) and its loading skeletons.
 
 export type StatRailColumns = 2 | 3 | 4 | 5
 
@@ -44,19 +45,49 @@ export const statRail = <M>(
 		children,
 	)
 
+/**
+ * `statRail`'s grid for a page with a filter rail: two or four columns by the page's width, not
+ * the viewport's. `divide-*` would double the outer border at row ends, so each tile rules its
+ * own inner right and top edges per column count. Its tiles take `METRIC_TILE`.
+ */
+export const metricGrid = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ isBusy?: boolean }>,
+	children: ReadonlyArray<Html>,
+): Html =>
+	h.div(
+		[
+			...(options.isBusy === true ? [h.AriaBusy(true)] : []),
+			h.Class(
+				cn(
+					"grid grid-cols-2 overflow-hidden rounded-md border bg-card @min-[880px]/page:grid-cols-4",
+					"[&>*]:border-border [&>*:nth-child(odd)]:border-r @min-[880px]/page:[&>*:not(:nth-child(4n))]:border-r",
+					"@max-[879px]/page:[&>*:nth-child(n+3)]:border-t @min-[880px]/page:[&>*:nth-child(n+5)]:border-t",
+				),
+			),
+		],
+		children,
+	)
+
+/** A `metricGrid` tile's narrow-page padding and value size, spread into `statRailItem`. */
+export const METRIC_TILE = {
+	className: "@max-[560px]/page:px-4 @max-[560px]/page:py-3",
+	valueClassName: "@max-[560px]/page:text-xl",
+} as const
+
 export type StatRailItemOptions<M> = Readonly<{
 	eyebrow: string
+	/** What the eyebrow means: a question mark beside it that explains it on hover (`infoHint`). */
+	eyebrowTooltip?: string
 	value: Html | string
 	tone?: Tone
 	delta?: Html | string
 	action?: Html
 	subline?: Html | string
 	compact?: boolean
-	/** The trailing `MiniBars` (last 28 values), toned like the value unless `sparkColor` says. */
+	/** The trailing mini bars (last 28 values), toned like the value unless `sparkColor` says. */
 	spark?: ReadonlyArray<number>
 	sparkColor?: string
-	/** Entry animation delay in ms (the rail staggers its tiles). */
-	delay?: number
 	/** Makes the tile a button, which then honours `isSelected` and `isDisabled`. */
 	onSelect?: M
 	isSelected?: boolean
@@ -66,8 +97,6 @@ export type StatRailItemOptions<M> = Readonly<{
 	ariaLabel?: string
 	size?: "md" | "sm"
 	hint?: Html | string
-	/** Title the tile like a chart card (the uppercase label eyebrow), for rails above chart grids. */
-	isCardTitle?: boolean
 }>
 
 export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<M>): Html => {
@@ -89,14 +118,14 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 					[
 						h.Class(
 							cn(
-								"truncate text-2xs font-medium transition-colors",
-								options.isCardTitle === true && "uppercase tracking-[0.08em]",
+								"truncate text-2xs font-medium",
 								isSelected ? "text-primary" : "text-muted-foreground",
 							),
 						),
 					],
 					[options.eyebrow],
 				),
+				...(options.eyebrowTooltip === undefined ? [] : [infoHint(h, options.eyebrowTooltip)]),
 				...(corner === undefined ? [] : [h.span([h.Class("shrink-0 whitespace-nowrap")], [corner])]),
 			],
 		),
@@ -133,15 +162,9 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			? []
 			: [h.div([h.Class("mt-2 truncate text-2xs text-muted-foreground")], [options.subline])]),
 	]
-	const shell = cn(
-		"relative animate-in fade-in slide-in-from-bottom-1 duration-500",
-		isSmall ? "px-4 py-3" : "px-5 py-4",
-		options.className,
-	)
-	const delay = options.delay ?? 0
-	const delayStyle =
-		delay > 0 ? [h.Style({ "animation-delay": `${delay}ms`, "animation-fill-mode": "backwards" })] : []
-	if (options.onSelect === undefined) return h.div([h.Class(shell), ...delayStyle], body)
+	// No entry animation: tiles remount on every refetch and tab switch, so it would replay each time.
+	const shell = cn("relative", isSmall ? "px-4 py-3" : "px-5 py-4", options.className)
+	if (options.onSelect === undefined) return h.div([h.Class(shell)], body)
 	const isDisabled = options.isDisabled === true
 	return h.button(
 		[
@@ -150,7 +173,6 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			...(options.isSelected === undefined ? [] : [h.AriaPressed(String(isSelected))]),
 			...(options.ariaLabel === undefined ? [] : [h.AriaLabel(options.ariaLabel)]),
 			h.OnClick(options.onSelect),
-			...delayStyle,
 			h.Class(
 				cn(
 					shell,

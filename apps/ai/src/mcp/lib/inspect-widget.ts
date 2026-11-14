@@ -16,7 +16,7 @@ import {
 } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { productEventsFunnel } from "@maple/query-engine/observability"
 import { PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
-import { QuerySpec, type QueryEngineResult } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, QuerySpec, type QueryEngineResult } from "@maple/domain/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 import {
 	buildFormulaResults,
@@ -27,6 +27,7 @@ import {
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
 	WarehouseQueryRequest,
+	type TenantContext,
 } from "@maple/domain/http"
 import { describeQuerySpecDecodeError } from "@maple/domain/query-engine"
 import {
@@ -38,9 +39,9 @@ import {
 	type ChartFlag,
 	type QueryStats,
 } from "./chart-statistics"
-import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "./resolve-dashboard-time-range"
+import { resolveDashboardTimeRange } from "./resolve-dashboard-time-range"
 import { resolveTimeRange } from "./time"
-import { autoBucketSeconds, runRawSql } from "./run-raw-sql"
+import { runRawSql } from "./run-raw-sql"
 import type { DashboardDocument, DashboardWidgetSchema } from "@maple/domain/http"
 import type {
 	InspectChartDataData,
@@ -59,13 +60,12 @@ import {
 	QUERY_RESULT_ENDPOINTS,
 	RAW_SQL_ENDPOINT,
 } from "@maple/widgets/dashboard"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { doc, type DocBlock, type NextCall } from "./tool-doc"
 import type { WidgetInspectionSummary as WidgetInspectionSummaryOutput } from "@maple/domain/mcp-outputs"
 
-// `RAW_SQL_ENDPOINT` and `QUERY_SHAPE_ENDPOINTS` are used here as LABELS, not as
-// dispatch keys — dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,
+// `RAW_SQL_ENDPOINT` and `QUERY_RESULT_ENDPOINTS` are used here as LABELS, not as
+// dispatch keys: dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,
 // which read v2 and v3 alike. `inspect_chart_data` reports `endpoint` as part of
 // its response contract and a v3 `kind: "query"` data source has no endpoint, so
 // the shape is mapped back onto the legacy name to keep the MCP payload stable
@@ -185,8 +185,7 @@ function applyReduceToValue(
 
 	// The configured field may not match a column name (the renderer auto-picks
 	// the first numeric column for stat tiles). Fall back to that same field so
-	// the inspector's reducedValue matches what renders — previously this
-	// returned a false `null` for every such stat widget.
+	// the inspector's reducedValue matches what renders.
 	if (values.length === 0) {
 		const fallback = firstNumericField(result)
 		if (fallback && fallback !== field) {
@@ -208,7 +207,7 @@ function applyReduceToValue(
 		case "max":
 			return { value: Math.max(...values) }
 		case "first":
-			return { value: values[0] }
+			return { value: values[0] ?? null }
 		case "count":
 			return { value: values.length }
 		default:
@@ -239,9 +238,6 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 	}
 }
 
-// A real grouping was requested when the draft enables groupBy and lists at
-// least one token that isn't the ungrouped sentinel (`none`/`all`). Used to
-// distinguish an intentional ungrouped chart from a grouping that collapsed.
 /**
  * Whether a draft actually asks for a grouping.
  *
@@ -389,7 +385,8 @@ const checkFunnelWidget = (
 	}).pipe(
 		provideWarehouseExecutorFromTenant(tenant),
 		Effect.map((rows): FunnelCheck => {
-			const count = (step: number) => Number(rows.find((r) => r.step === step)?.count) || 0
+			const count = (step: number) =>
+				Option.getOrUndefined(Arr.findFirst(rows, (r) => r.step === step))?.count ?? 0
 			return { ok: true, steps, first: count(1), last: count(steps) }
 		}),
 		Effect.catch((error) => Effect.succeed<FunnelCheck>({ ok: false, error: error.message })),
@@ -425,16 +422,13 @@ const inspectRawSqlWidget = Effect.fn("McpInspectWidget.inspectRawSqlWidget")(fu
 		} satisfies InspectionOutcome
 	}
 
-	const granularitySeconds =
-		rawSql.granularitySeconds ?? autoBucketSeconds(timeRange.startTime, timeRange.endTime)
-
 	const startedAt = yield* Clock.currentTimeMillis
 	const result = yield* runRawSql({
 		tenant,
 		sql,
 		startTime: timeRange.startTime,
 		endTime: timeRange.endTime,
-		granularitySeconds,
+		granularitySeconds: rawSql.granularitySeconds,
 	}).pipe(
 		Effect.map((value) => ({ ok: true as const, value })),
 		Effect.catchTag("@maple/http/errors/RawSqlValidationError", (error) =>
@@ -542,6 +536,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 		const transformObj = dataSourceTransform(widget.dataSource)
 		const reduceToValue = transformObj?.reduceToValue
 		const hasUnsupportedTransform =
+			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.keys would need a cast
 			transformObj !== undefined && Arr.some(Object.keys(transformObj), (k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
@@ -562,9 +557,7 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 						: buildBreakdownQuerySpec(draft)
 
 					const builderWarnings =
-						buildResult.warnings && buildResult.warnings.length > 0
-							? [...buildResult.warnings]
-							: undefined
+						buildResult.warnings.length > 0 ? [...buildResult.warnings] : undefined
 					const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
 
 					if (!buildResult.query) {
@@ -598,11 +591,14 @@ export const inspectWidget = Effect.fn("McpInspectWidget.inspectWidget")(
 					const decodedSpec = decodedSpecResult.success
 
 					const exit = yield* queryEngine
-						.execute(tenant, {
-							startTime: timeRange.startTime,
-							endTime: timeRange.endTime,
-							query: decodedSpec,
-						})
+						.execute(
+							tenant,
+							new QueryEngineExecuteRequest({
+								startTime: timeRange.startTime,
+								endTime: timeRange.endTime,
+								query: decodedSpec,
+							}),
+						)
 						.pipe(Effect.exit)
 
 					if (Exit.isFailure(exit)) {
@@ -855,7 +851,9 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 		// The percent-scale note is the one note that tells the caller what to
 		// change, so it rides along on the mutation-tool summary rather than only
 		// appearing in a full `inspect_chart_data` response.
-		const actionableNote = outcome.data.notes.find((note) => Str.startsWith('unit "percent')(note))
+		const actionableNote = Arr.findFirst(outcome.data.notes, (note) =>
+			Str.startsWith('unit "percent')(note),
+		)
 		// A breakdown's groups are its rows. The largest query, not the sum, so hidden
 		// operands and the formula built from them are not counted twice.
 		const isBreakdown = dataSourceQuerySet(widget.dataSource)?.resultShape === "breakdown"
@@ -870,7 +868,7 @@ export function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOut
 			visualization: widget.visualization,
 			verdict: outcome.data.verdict satisfies WidgetInspectionVerdict,
 			flags: [...outcome.data.flags],
-			...(actionableNote !== undefined ? { note: actionableNote } : undefined),
+			...Option.match(actionableNote, { onNone: () => undefined, onSome: (note) => ({ note }) }),
 			seriesCount,
 		}
 	}
@@ -1000,7 +998,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		const capped = targets.length > maxWidgets
 		const toInspect = capped ? targets.slice(0, maxWidgets) : targets
 
-		const resolved = resolveDashboardTimeRange(dashboard.timeRange as DashboardTimeRangeInput)
+		const resolved = resolveDashboardTimeRange(dashboard.timeRange)
 		const timeRange: InspectWidgetTimeRange = resolved
 			? { startTime: resolved.startTime, endTime: resolved.endTime, source: "dashboard" }
 			: (() => {
@@ -1013,7 +1011,7 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 		// on data the tile will never show.
 		const timeRangeFor = (widget: DashboardWidget): InspectWidgetTimeRange => {
 			if (!widget.timeRange) return timeRange
-			const widgetResolved = resolveDashboardTimeRange(widget.timeRange as DashboardTimeRangeInput)
+			const widgetResolved = resolveDashboardTimeRange(widget.timeRange)
 			return widgetResolved
 				? { startTime: widgetResolved.startTime, endTime: widgetResolved.endTime, source: "widget" }
 				: timeRange
@@ -1031,8 +1029,9 @@ export const inspectWidgetsAfterMutation = Effect.fn("McpInspectWidget.inspectWi
 			{ concurrency: maxConcurrent },
 		)
 
-		const inspected: WidgetInspectionEntry[] = Arr.map(toInspect, (widget, i) =>
-			summarizeOutcome(widget, outcomes[i]),
+		const inspected: WidgetInspectionEntry[] = Arr.map(
+			Arr.zip(toInspect, outcomes),
+			([widget, outcome]) => summarizeOutcome(widget, outcome),
 		)
 
 		const countVerdict = (verdict: WidgetInspectionEntry["verdict"]) =>

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
+import { AfterResponse } from "@maple/backend/platform/after-response"
 import { AuditEventsQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import { CurrentTenant } from "@maple/domain/http"
 import { encodePublicId, PublicIdPrefixes } from "@maple/domain/http/v2"
-import { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import type { AuditLogRow } from "@maple/domain/tinybird"
 import { Effect, Layer, Schema, Array as Arr } from "effect"
 import type { CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
@@ -10,6 +11,7 @@ import { TestClock } from "effect/testing"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import {
 	AUDIT_ACCESS_ACTION_SUFFIXES,
 	AUDIT_LOG_DATASOURCE,
@@ -23,7 +25,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const ORG = asOrgId("org_audit_log_test")
 const USER = asUserId("user_audit_log_test")
 const DASHBOARD_ID = "3f1b7c02-9a44-4d1e-8b2f-0c5d6e7a8b91"
-const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
+const API_KEY = Schema.decodeSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b3c4d5e6f")
 
 /**
  * A warehouse that records what `ingest` receives and answers `compiledQuery`
@@ -31,15 +33,31 @@ const API_KEY = Schema.decodeUnknownSync(ApiKeyId)("7b2e4c10-55aa-4d3e-9f21-1a2b
  * filters the listing bound.
  */
 const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) => {
-	const ingested: Array<{ datasource: string; rows: ReadonlyArray<AuditLogRow> }> = []
+	const ingested: Array<{
+		datasource: string
+		rows: ReadonlyArray<AuditLogRow>
+		bestEffort: boolean
+		retryTransient: boolean
+	}> = []
+	/** Rows written to the unified audit trail, the only other table the service writes. */
+	const trail: Array<unknown> = []
 	const sql: Array<string> = []
-	const layer = Layer.succeed(
+	const stub = Layer.succeed(
 		WarehouseQueryService,
 		makeWarehouseServiceStub({
-			ingest: (_tenant, datasource, batch) =>
+			ingest: (_tenant, datasource, batch, options) =>
 				Effect.sync(() => {
-					// SAFETY: this stub only ever receives the audit datasource's rows.
-					ingested.push({ datasource, rows: batch as ReadonlyArray<AuditLogRow> })
+					if (datasource !== AUDIT_LOG_DATASOURCE) {
+						trail.push(...batch)
+						return
+					}
+					ingested.push({
+						datasource,
+						// SAFETY: only `audit_log` writes reach this branch.
+						rows: batch as ReadonlyArray<AuditLogRow>,
+						bestEffort: options?.bestEffort === true,
+						retryTransient: options?.retryTransient === true,
+					})
 				}),
 			compiledQuery: ((_tenant: unknown, compiled: unknown) =>
 				Effect.gen(function* () {
@@ -52,7 +70,9 @@ const recordingWarehouse = (rows: ReadonlyArray<Record<string, unknown>> = []) =
 				})) as never,
 		}),
 	)
-	return { ingested, sql, layer }
+	// The audit log writes its copy through the real trail service, over the same stub.
+	const layer = Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provideMerge(stub))
+	return { ingested, trail, sql, layer }
 }
 
 const storedRow = (overrides: Partial<Record<string, unknown>> = {}) => ({
@@ -102,8 +122,11 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(warehouse.ingested).toHaveLength(1)
-			expect(warehouse.ingested[0]!.datasource).toBe(AUDIT_LOG_DATASOURCE)
-			const row = warehouse.ingested[0]!.rows[0]!
+			expect(warehouse.ingested[0].datasource).toBe(AUDIT_LOG_DATASOURCE)
+			// A lost audit row is a Warn, never an Error span that opens an issue.
+			expect(warehouse.ingested[0].bestEffort).toBe(true)
+			expect(warehouse.ingested[0].retryTransient).toBe(true)
+			const row = warehouse.ingested[0].rows[0]
 			expect(row.OrgId).toBe(ORG)
 			expect(row.ActorType).toBe("user")
 			expect(row.UserId).toBe(USER)
@@ -114,6 +137,48 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(row.Changes).toBe("")
 			expect(JSON.parse(row.Metadata)).toEqual({ name: "First" })
 			expect(row.OccurredAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/)
+		}),
+	)
+
+	it.effect("copies a change to the audit trail under the same time, and keeps reads out of it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+					resourceId: DASHBOARD_ID,
+				})
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "telemetry.read",
+				})
+			}).pipe(
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+
+			expect(warehouse.ingested).toHaveLength(2)
+			expect(warehouse.trail).toEqual([
+				expect.objectContaining({
+					OrgId: ORG,
+					Provider: "maple",
+					Action: "dashboard.created",
+					Category: "resource",
+					Outcome: "success",
+					ActorType: "user",
+					ActorId: USER,
+					TargetType: "dashboard",
+					TargetId: encodePublicId(PublicIdPrefixes.dashboard, DASHBOARD_ID),
+					OccurredAt: warehouse.ingested[0].rows[0].OccurredAt,
+				}),
+			])
 		}),
 	)
 
@@ -148,6 +213,67 @@ describe("AuditLogService (warehouse-backed)", () => {
 			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
 			// The consumer performs the write; nothing reaches the warehouse directly.
 			expect(warehouse.ingested).toEqual([])
+		}),
+	)
+
+	it.effect("sends the entry after the response when the request can defer it", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const sent: unknown[] = []
+			const deferred: Array<Effect.Effect<void>> = []
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "dashboard",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provideService(AfterResponse, (work) => Effect.sync(() => deferred.push(work))),
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(
+						Layer.provide(warehouse.layer),
+						Layer.provide(
+							Layer.succeed(AuditEventsQueueProducer, {
+								sendBatch: (messages) =>
+									Effect.sync(() => Arr.forEach(messages, (m) => sent.push(m.body))),
+							}),
+						),
+					),
+				),
+			)
+			// The response is not held for the send.
+			expect(sent).toEqual([])
+			yield* Effect.forEach(deferred, (work) => work, { discard: true })
+			expect(sent).toHaveLength(1)
+			expect(sent[0]).toMatchObject({ orgId: ORG, action: "dashboard.created" })
+		}),
+	)
+
+	it.effect("writes directly before returning when there is no queue, even if the request can defer", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			const deferred: Array<Effect.Effect<void>> = []
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.record({
+					orgId: ORG,
+					actor: { type: "user", userId: USER },
+					source: "mcp",
+					action: "dashboard.created",
+				})
+			}).pipe(
+				Effect.provideService(AfterResponse, (work) => Effect.sync(() => deferred.push(work))),
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+			// A retried warehouse insert can outlive `waitUntil`, so it is never deferred.
+			expect({ deferred: deferred.length, ingested: warehouse.ingested.length }).toEqual({
+				deferred: 0,
+				ingested: 1,
+			})
 		}),
 	)
 
@@ -198,7 +324,7 @@ describe("AuditLogService (warehouse-backed)", () => {
 			)
 
 			expect(rows).toHaveLength(1)
-			const entry = rows[0]!
+			const entry = rows[0]
 			expect(entry.orgId).toBe(ORG)
 			expect(entry.userId).toBe(USER)
 			expect(entry.apiKeyId).toBeNull()
@@ -225,9 +351,9 @@ describe("AuditLogService (warehouse-backed)", () => {
 					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
 				),
 			)
-			expect(rows[0]!.changes).toBeNull()
-			expect(rows[0]!.changedFields).toBeNull()
-			expect(rows[0]!.metadata).toBeNull()
+			expect(rows[0].changes).toBeNull()
+			expect(rows[0].changedFields).toBeNull()
+			expect(rows[0].metadata).toBeNull()
 		}),
 	)
 
@@ -310,7 +436,7 @@ describe("AuditLogService.layerMemory", () => {
 				"dashboard.created",
 			])
 
-			const oldest = rows[2]!
+			const oldest = rows[2]
 			expect(oldest.actorType).toBe("user")
 			expect(oldest.userId).toBe(USER)
 			expect(oldest.source).toBe("dashboard")
@@ -318,7 +444,7 @@ describe("AuditLogService.layerMemory", () => {
 			expect(oldest.resourceId).toBe(encodePublicId(PublicIdPrefixes.dashboard, DASHBOARD_ID))
 			expect(oldest.metadata).toEqual({ name: "First" })
 
-			const newest = rows[0]!
+			const newest = rows[0]
 			expect(newest.actorType).toBe("agent")
 			expect(newest.actorLabel).toBe("triage-bot")
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
@@ -343,7 +469,7 @@ describe("AuditLogService.layerMemory", () => {
 
 			const denied = yield* audit.list(ORG, { outcome: "denied", limit: 10, offset: 0 })
 			expect(Arr.map(denied, (row) => row.action)).toEqual(["alert_rule.deleted"])
-			expect(denied[0]!.denialReason).toBe("missing role: admin")
+			expect(denied[0].denialReason).toBe("missing role: admin")
 
 			const secondPage = yield* audit.list(ORG, { limit: 2, offset: 2 })
 			expect(Arr.map(secondPage, (row) => row.action)).toEqual([
@@ -367,8 +493,8 @@ describe("AuditLogService.layerMemory", () => {
 
 			const rows = yield* audit.list(ORG, { changedField: "name", limit: 10, offset: 0 })
 			expect(Arr.map(rows, (row) => row.action)).toEqual(["dashboard.updated"])
-			expect(rows[0]!.changedFields).toEqual(["name"])
-			expect(rows[0]!.changes).toEqual({
+			expect(rows[0].changedFields).toEqual(["name"])
+			expect(rows[0].changes).toEqual({
 				fields: ["name"],
 				before: { name: "a" },
 				after: { name: "b" },
@@ -377,9 +503,6 @@ describe("AuditLogService.layerMemory", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
-	// The credential and the surface are the two facts a mutation handler cannot
-	// re-derive, and getting them wrong is what made API-key and MCP actions read
-	// back as dashboard sessions.
 	it.effect("leaves out access entries before the limit, so changes behind many reads still list", () =>
 		Effect.gen(function* () {
 			const audit = yield* AuditLogService
@@ -406,6 +529,68 @@ describe("AuditLogService.layerMemory", () => {
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
+	it.effect("the changes kind keeps denied access; the access kind lists only access", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "user", userId: USER },
+				source: "dashboard",
+				action: "dashboard.created",
+				resourceId: DASHBOARD_ID,
+			})
+			yield* TestClock.adjust("1 second")
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "agent" },
+				source: "mcp",
+				action: "telemetry.read",
+			})
+			yield* TestClock.adjust("1 second")
+			yield* audit.record({
+				orgId: ORG,
+				actor: { type: "agent" },
+				source: "mcp",
+				action: "telemetry.sql_executed",
+				outcome: "denied",
+				denialReason: "write statement",
+			})
+			const actions = (rows: ReadonlyArray<{ readonly action: string }>) =>
+				Arr.map(rows, (row) => row.action)
+			expect(actions(yield* audit.list(ORG, { actionKind: "changes", limit: 10, offset: 0 }))).toEqual([
+				"telemetry.sql_executed",
+				"dashboard.created",
+			])
+			expect(actions(yield* audit.list(ORG, { actionKind: "access", limit: 10, offset: 0 }))).toEqual([
+				"telemetry.sql_executed",
+				"telemetry.read",
+			])
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
+	)
+
+	it.effect("compiles the changes kind to an exclusion that keeps denied entries", () =>
+		Effect.gen(function* () {
+			const warehouse = recordingWarehouse()
+			yield* Effect.gen(function* () {
+				const audit = yield* AuditLogService
+				yield* audit.list(ORG, { actionKind: "changes", limit: 5, offset: 0 })
+				yield* audit.list(ORG, { actionKind: "access", limit: 5, offset: 0 })
+			}).pipe(
+				Effect.provide(
+					Layer.effect(AuditLogService, AuditLogService.make).pipe(Layer.provide(warehouse.layer)),
+				),
+			)
+			const [changes, access] = warehouse.sql
+			expect(changes).toContain("NOT ((endsWith(audit_log.Action, '.read')")
+			expect(changes).toContain("OR audit_log.Outcome = 'denied')")
+			expect(access).toContain("endsWith(audit_log.Action, '.sql_executed')")
+			expect(access).not.toContain("NOT (endsWith(")
+		}),
+	)
+
+	// The credential and the surface are the two facts a mutation handler cannot
+	// re-derive, and getting them wrong is what made API-key and MCP actions read
+	// back as dashboard sessions.
 	describe("recordHttpAudit attribution", () => {
 		const tenant = new CurrentTenant.TenantSchema({
 			orgId: ORG,
@@ -419,7 +604,7 @@ describe("AuditLogService.layerMemory", () => {
 				const audit = yield* AuditLogService
 				yield* recordHttpAudit("dashboard.created", { resourceId: DASHBOARD_ID })
 				const rows = yield* audit.list(ORG, { limit: 1, offset: 0 })
-				return rows[0]!
+				return rows[0]
 			}).pipe(
 				Effect.provideService(CurrentTenant.Context, tenant),
 				Effect.provideService(CurrentAuditActor, info),

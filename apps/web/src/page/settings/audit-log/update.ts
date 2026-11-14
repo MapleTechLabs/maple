@@ -1,24 +1,29 @@
 import { AuditActorType, AuditOutcome } from "@maple/domain/http"
 import type { V2AuditLogEntry } from "@maple/domain/http/v2"
-/** Entries per audit log page. */
 const AUDIT_LOG_PAGE_LIMIT = 50
 import {
 	AUDIT_RANGE_PRESETS,
 	type AuditDateRange,
 	type AuditLogFilters,
+	auditLogKindOf,
 	auditLogSearchFrom,
+	linkedAuditEntryId,
 	parseAuditLogSearch,
-} from "../../../components/settings/audit-log-filters"
-import { Clock, Effect, Option, Result, Schema, Array as Arr } from "effect"
-import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+	parseAuditLookup,
+} from "../kit/audit-log-filters"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine/datetime"
+import * as CustomRange from "../../kit/custom-range"
+import { Clock, DateTime, Effect, Option, Result, Schema, Array as Arr, String as Str } from "effect"
+import { Command, Dom } from "foldkit"
+import { settleTo } from "@maple/views/data/load-failure"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { clerkTry, currentClerkOrganization } from "../../../platform/clerk"
 import { memberDisplayName } from "../kit/members"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SettingsSearch as SettingsSearchSchema } from "../../../route/search"
 import * as CopyButton from "@maple/views/ui/copy-button"
+import { popupId } from "@maple/views/ui/overlay/popup-state"
 import * as Popover from "@maple/views/ui/popover"
 import * as Select from "@maple/views/ui/select"
 import { PageOutMessage, type PageReturn } from "../../contract"
@@ -28,14 +33,23 @@ type Return = PageReturn<Model, Message>
 type SettingsSearch = typeof SettingsSearchSchema.Type
 
 export const ANYONE = "anyone"
+/** The "no filter" value of the resource type, action and affected user selects. */
+export const ANY = "any"
 
 const asActorType = Schema.decodeUnknownOption(AuditActorType)
 const asOutcome = Schema.decodeUnknownOption(AuditOutcome)
 
-/** The filter input `AuditLogSection` derives from the URL; a rolling preset resolves in the Command. */
+/** The filter input derived from the URL; a rolling preset resolves in the Command. */
 export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 	const range = filters.range
+	const kind = auditLogKindOf(filters)
 	return {
+		...(kind !== "all" && { kind }),
+		...(filters.resourceType !== undefined && { resourceType: filters.resourceType }),
+		...(filters.action !== undefined && { action: filters.action }),
+		...(filters.resourceId !== undefined && { resourceId: filters.resourceId }),
+		...(filters.affectedUserId !== undefined && { affectedUserId: filters.affectedUserId }),
+		...(filters.requestId !== undefined && { requestId: filters.requestId }),
 		...(filters.actorType !== undefined && { actorType: filters.actorType }),
 		...(filters.actorId !== undefined && { actorId: filters.actorId }),
 		...(filters.outcome !== undefined && { outcome: filters.outcome }),
@@ -47,19 +61,31 @@ export const baseRequestOf = (filters: AuditLogFilters): PageRequest => {
 
 const presetMsOf = (range: AuditDateRange): number | null =>
 	range.kind === "preset"
-		? (AUDIT_RANGE_PRESETS.find((preset) => preset.value === range.preset)?.ms ?? null)
+		? Option.match(
+				Arr.findFirst(AUDIT_RANGE_PRESETS, (preset) => preset.value === range.preset),
+				{ onNone: () => null, onSome: (preset) => preset.ms ?? null },
+			)
 		: null
 
-const sameRequest = (a: PageRequest, b: PageRequest) =>
-	a.cursor === b.cursor &&
-	a.actorType === b.actorType &&
-	a.actorId === b.actorId &&
-	a.outcome === b.outcome &&
-	a.since === b.since &&
-	a.until === b.until &&
-	a.preset === b.preset
+const REQUEST_KEYS = [
+	"cursor",
+	"kind",
+	"actorType",
+	"actorId",
+	"outcome",
+	"resourceType",
+	"action",
+	"resourceId",
+	"affectedUserId",
+	"requestId",
+	"since",
+	"until",
+	"preset",
+] as const satisfies ReadonlyArray<keyof PageRequest>
 
-/** `auditLogPageAtom`: one page, newest first; a preset window resolves against the clock now. */
+const sameRequest = (a: PageRequest, b: PageRequest) => Arr.every(REQUEST_KEYS, (key) => a[key] === b[key])
+
+/** One page, newest first; a preset window resolves against the clock now. */
 const FetchAuditPage = Command.define("FetchAuditLogPage", {
 	args: {
 		request: PageRequest,
@@ -84,6 +110,12 @@ const fetchPage = (request: PageRequest, presetSince: string | null) =>
 			query: {
 				limit: AUDIT_LOG_PAGE_LIMIT,
 				...(request.cursor !== undefined && { cursor: request.cursor }),
+				kind: request.kind ?? "all",
+				...(request.resourceType !== undefined && { resource_type: request.resourceType }),
+				...(request.action !== undefined && { action: request.action }),
+				...(request.resourceId !== undefined && { resource_id: request.resourceId }),
+				...(request.affectedUserId !== undefined && { affected_user: request.affectedUserId }),
+				...(request.requestId !== undefined && { request_id: request.requestId }),
 				...(request.actorType !== undefined && { actor_type: request.actorType }),
 				...(request.actorId !== undefined && { actor_id: request.actorId }),
 				...(request.outcome !== undefined && { outcome: request.outcome }),
@@ -92,13 +124,9 @@ const fetchPage = (request: PageRequest, presetSince: string | null) =>
 			},
 		})
 		return { data: response.data, has_more: response.has_more, next_cursor: response.next_cursor }
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })),
-	)
+	}).pipe(settleTo((result) => Message.CompletedFetchPage({ request, resolvedSince: presetSince, result })))
 
-/** `useOrganization({ memberships: { pageSize: 100 } })`: members by user id; none on a failed read. */
+/** Members by user id; none on a failed read. */
 const FetchAuditMembers = Command.define("FetchAuditLogMembers", {
 	messages: [Message.CompletedFetchMembers],
 	execute: currentClerkOrganization.pipe(
@@ -152,7 +180,13 @@ export const init = (search: SettingsSearch): Return => {
 			expanded: [],
 			copies: {},
 			personSelect: Select.init("audit-person", { value: ANYONE, selectedIndex: 0 }),
+			resourceTypeSelect: Select.init("audit-resource-type", { value: ANY, selectedIndex: 0 }),
+			actionSelect: Select.init("audit-action", { value: ANY, selectedIndex: 0 }),
+			affectedSelect: Select.init("audit-affected", { value: ANY, selectedIndex: 0 }),
 			dateRange: Popover.init("audit-date-range", { align: "start" }),
+			customRange: null,
+			lookup: "",
+			isLookupUnknown: false,
 		},
 		baseRequestOf(parseAuditLogSearch(search)),
 		search,
@@ -175,11 +209,14 @@ const dedupeById = (existing: ReadonlyArray<V2AuditLogEntry>, next: ReadonlyArra
 	return [...existing, ...Arr.filter(next, (entry) => !seen.has(entry.id))]
 }
 
-/** `setFilters`: the new filters replace the URL's audit params (`navigate({ replace: true })`). */
+/** The new filters replace the URL's audit params. */
 const navigateFilters = (model: Model, search: SettingsSearch, filters: AuditLogFilters): Return => ({
 	model,
 	outMessage: PageOutMessage.RequestedNavigation({
-		url: hrefOf(AppRoute.Settings({ search: { ...search, ...auditLogSearchFrom(filters) } })),
+		// A filter change leaves a shared entry link behind: it named one entry, not a view.
+		url: hrefOf(
+			AppRoute.Settings({ search: { ...search, ...auditLogSearchFrom(filters), entry: undefined } }),
+		),
 		isReplace: true,
 	}),
 })
@@ -207,30 +244,148 @@ export const revisit = (model: Model, search: SettingsSearch): Return => {
 	}
 }
 
+/** "Custom range…" opens on the list's own window once the clock gave today. */
+const ResolveAuditCustomToday = Command.define("ResolveAuditCustomToday", {
+	args: { timeZone: Schema.String },
+	messages: [Message.ResolvedCustomToday],
+	execute: ({ timeZone }) =>
+		Effect.map(CustomRange.readToday(timeZone), (days) =>
+			Message.ResolvedCustomToday({ timeZone, ...days }),
+		),
+})
+
+const isoToWarehouse = (iso: string | undefined): string | null =>
+	iso === undefined ? null : formatWarehouseDateTime(DateTime.toEpochMillis(DateTime.makeUnsafe(iso)))
+const warehouseToIso = (value: string): string => new Date(parseWarehouseDateTime(value)).toISOString()
+
+type SelectField = "personSelect" | "resourceTypeSelect" | "actionSelect" | "affectedSelect"
+
+/** One select's step; `onChange` turns a picked value into the filters to navigate to. */
+const selectStep = (
+	model: Model,
+	search: SettingsSearch,
+	field: SelectField,
+	child: Select.Message,
+	wrap: (message: Select.Message) => Message,
+	onChange: (value: string) => AuditLogFilters,
+): Return => {
+	const step = Select.update(model[field], child)
+	const lifted: Return = {
+		model: { ...model, [field]: step.model },
+		commands: Command.mapMessages(step.commands ?? [], wrap),
+	}
+	if (step.outMessage === undefined) return lifted
+	return {
+		...lifted,
+		outMessage: navigateFilters(lifted.model, search, onChange(step.outMessage.value)).outMessage,
+	}
+}
+
+const orAny = (value: string) => (value === ANY ? undefined : value)
+
+/** The filters without one of them: what a chip's x navigates to. */
+const withoutFilter = (filters: AuditLogFilters, key: string): AuditLogFilters => {
+	switch (key) {
+		case "range":
+			return { ...filters, range: { kind: "all" } }
+		case "resourceType":
+			// An action belongs to its resource type; it goes with it.
+			return { ...filters, resourceType: undefined, action: undefined }
+		case "actorId":
+		case "actorType":
+		case "outcome":
+		case "action":
+		case "resourceId":
+		case "affectedUserId":
+		case "requestId":
+			return { ...filters, [key]: undefined }
+		default:
+			return filters
+	}
+}
+
+const liftCustom = (model: Model, customRange: CustomRange.Model | null): Model => ({ ...model, customRange })
+
+/** The detail row's DOM id: what a shared link scrolls to. */
+export const entryRowId = (id: string) => `audit-entry-row-${id}`
+
+/** A shared entry link opens with its row in view. */
+const ScrollToAuditEntry = Command.define("ScrollToAuditEntry", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedScrollToEntry],
+	execute: ({ id }) =>
+		Effect.sync(() => {
+			document.getElementById(entryRowId(id))?.scrollIntoView({ block: "center" })
+			return Message.CompletedScrollToEntry()
+		}),
+})
+
+/** Focus back inside the popover once the calendar replaces the pressed preset, so Escape still closes it. */
+const FocusAuditDateRange = Command.define("FocusAuditDateRange", {
+	args: { id: Schema.String },
+	messages: [Message.CompletedFocusDateRange],
+	execute: ({ id }) =>
+		Dom.focus(`#${CSS.escape(popupId(id))}`).pipe(
+			Effect.ignore,
+			Effect.as(Message.CompletedFocusDateRange()),
+		),
+})
+
+/** The filters a detail pivot navigates to: the value replaces that filter, the rest stay. */
+const pivoted = (filters: AuditLogFilters, key: string, value: string): AuditLogFilters => {
+	switch (key) {
+		case "action": {
+			// The action select lives under its resource type, so pick that too.
+			const resourceType = Arr.headNonEmpty(Str.split(".")(value))
+			return { ...filters, action: value, resourceType }
+		}
+		case "actorId":
+			// A person's entries are any actor type; a stale type filter would hide them.
+			return { ...filters, actorId: value, actorType: undefined }
+		case "resourceId":
+		case "affectedUserId":
+		case "requestId":
+			return { ...filters, [key]: value }
+		default:
+			return filters
+	}
+}
+
 export const update = (model: Model, message: Message, search: SettingsSearch): Return => {
 	const filters = parseAuditLogSearch(search)
 	return Message.match<Return>(message, {
 		CompletedFetchMembers: ({ members }) => ({ model: { ...model, members } }),
 		CompletedFetchPage: ({ request, resolvedSince, result }) => {
 			if (!sameRequest(request, model.request)) return { model }
+			const linked = linkedAuditEntryId(search)
 			return Result.match(result, {
-				onSuccess: (page) => ({
-					model: {
-						...model,
-						resolvedSince,
-						isWaiting: false,
-						isQuiet: false,
-						failure: null,
-						view: {
-							entries:
-								request.cursor === undefined
-									? page.data
-									: dedupeById(model.view?.entries ?? [], page.data),
-							hasMore: page.has_more,
-							nextCursor: page.next_cursor,
+				onSuccess: (page) => {
+					// A shared link opens on its entry, once, on whichever page holds it.
+					const reveal =
+						linked !== null &&
+						!model.expanded.includes(linked) &&
+						Arr.some(page.data, (entry) => entry.id === linked)
+					return {
+						commands: reveal && linked !== null ? [ScrollToAuditEntry({ id: linked })] : [],
+						model: {
+							...model,
+							resolvedSince,
+							isWaiting: false,
+							isQuiet: false,
+							failure: null,
+							view: {
+								entries:
+									request.cursor === undefined
+										? page.data
+										: dedupeById(model.view?.entries ?? [], page.data),
+								hasMore: page.has_more,
+								nextCursor: page.next_cursor,
+							},
+							expanded:
+								reveal && linked !== null ? [...model.expanded, linked] : model.expanded,
 						},
-					},
-				}),
+					}
+				},
 				onFailure: (failure) => ({
 					model: { ...model, resolvedSince, isWaiting: false, isQuiet: false, failure },
 				}),
@@ -270,35 +425,135 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 			}),
 		ClickedOutcome: ({ value }) =>
 			navigateFilters(model, search, { ...filters, outcome: Option.getOrUndefined(asOutcome(value)) }),
-		GotPersonSelectMessage: ({ message: child }) => {
-			const step = Select.update(model.personSelect, child)
-			const lifted: Return = {
-				model: { ...model, personSelect: step.model },
-				commands: Command.mapMessages(step.commands ?? [], (inner) =>
-					Message.GotPersonSelectMessage({ message: inner }),
-				),
-			}
-			if (step.outMessage === undefined) return lifted
-			const actorId = step.outMessage.value === ANYONE ? undefined : step.outMessage.value
+		GotPersonSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"personSelect",
+				child,
+				(inner) => Message.GotPersonSelectMessage({ message: inner }),
+				(value) => ({ ...filters, actorId: value === ANYONE ? undefined : value }),
+			),
+		GotResourceTypeSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"resourceTypeSelect",
+				child,
+				(inner) => Message.GotResourceTypeSelectMessage({ message: inner }),
+				(value) => ({ ...filters, resourceType: orAny(value), action: undefined }),
+			),
+		GotActionSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"actionSelect",
+				child,
+				(inner) => Message.GotActionSelectMessage({ message: inner }),
+				(value) => ({ ...filters, action: orAny(value) }),
+			),
+		GotAffectedSelectMessage: ({ message: child }) =>
+			selectStep(
+				model,
+				search,
+				"affectedSelect",
+				child,
+				(inner) => Message.GotAffectedSelectMessage({ message: inner }),
+				(value) => ({ ...filters, affectedUserId: orAny(value) }),
+			),
+		ClickedKind: ({ value }) =>
+			navigateFilters(model, search, {
+				...filters,
+				kind: value === "access" || value === "all" ? value : undefined,
+			}),
+		ChangedLookup: ({ value }) => ({ model: { ...model, lookup: value, isLookupUnknown: false } }),
+		ClearedLookup: () => ({ model: { ...model, lookup: "", isLookupUnknown: false } }),
+		SubmittedLookup: () =>
+			Option.match(parseAuditLookup(model.lookup), {
+				onNone: () => ({
+					model: { ...model, isLookupUnknown: Str.isNonEmpty(Str.trim(model.lookup)) },
+				}),
+				onSome: (lookup) =>
+					navigateFilters({ ...model, lookup: "", isLookupUnknown: false }, search, {
+						...filters,
+						[lookup.key]: lookup.value,
+						// A looked-up action names its resource type; a stale one would hide it.
+						...(lookup.key === "action" && { resourceType: undefined }),
+					}),
+			}),
+		RemovedFilter: ({ key }) => navigateFilters(model, search, withoutFilter(filters, key)),
+		ClickedPivot: ({ key, value }) => {
+			const next = pivoted(filters, key, value)
+			// An entry link's window is that entry's minute: "every entry with this" must not stay inside it.
+			return navigateFilters(
+				model,
+				search,
+				search.entry === undefined ? next : { ...next, range: { kind: "all" } },
+			)
+		},
+		CompletedScrollToEntry: () => ({ model }),
+		CompletedFocusDateRange: () => ({ model }),
+		ClickedCustomRange: ({ timeZone }) => ({ model, commands: [ResolveAuditCustomToday({ timeZone })] }),
+		ResolvedCustomToday: ({ timeZone, today, lastDay }) => {
+			const range = filters.range
 			return {
-				...lifted,
-				outMessage: navigateFilters(lifted.model, search, { ...filters, actorId }).outMessage,
+				model: liftCustom(
+					model,
+					CustomRange.init({
+						startTime: range.kind === "custom" ? isoToWarehouse(range.since) : null,
+						endTime: range.kind === "custom" ? isoToWarehouse(range.until) : null,
+						timeZone,
+						today,
+						lastDay,
+					}),
+				),
+				commands: [FocusAuditDateRange({ id: model.dateRange.id })],
 			}
+		},
+		GotCustomRangeMessage: ({ message: child }) => {
+			if (model.customRange === null) return { model }
+			const step = CustomRange.update(model.customRange, child)
+			const out = step.outMessage
+			if (out === undefined) return { model: liftCustom(model, step.model) }
+			return CustomRange.OutMessage.match<Return>(out, {
+				CancelledRange: () => ({ model: liftCustom(model, null) }),
+				AppliedRange: ({ startTime, endTime }) => {
+					const closed = Popover.close(model.dateRange)
+					return {
+						...navigateFilters({ ...liftCustom(model, null), dateRange: closed.model }, search, {
+							...filters,
+							range: {
+								kind: "custom",
+								since: warehouseToIso(startTime),
+								until: warehouseToIso(endTime),
+							},
+						}),
+						commands: Command.mapMessages(closed.commands ?? [], (inner) =>
+							Message.GotDateRangeMessage({ message: inner }),
+						),
+					}
+				},
+			})
 		},
 		GotDateRangeMessage: ({ message: child }) => {
 			const step = Popover.update(model.dateRange, child)
 			return {
-				model: { ...model, dateRange: step.model },
+				// Closing the popover drops a half-picked custom range.
+				model: { ...model, dateRange: step.model, ...(!step.model.isOpen && { customRange: null }) },
 				commands: Command.mapMessages(step.commands ?? [], (inner) =>
 					Message.GotDateRangeMessage({ message: inner }),
 				),
 			}
 		},
 		ClickedRangePreset: ({ value }) => {
-			const preset = AUDIT_RANGE_PRESETS.find((option) => option.value === value)
 			const closed = Popover.close(model.dateRange)
-			const range: AuditDateRange =
-				preset === undefined ? { kind: "all" } : { kind: "preset", preset: preset.value }
+			const range: AuditDateRange = Option.match(
+				Arr.findFirst(AUDIT_RANGE_PRESETS, (option) => option.value === value),
+				{
+					onNone: (): AuditDateRange => ({ kind: "all" }),
+					onSome: (preset): AuditDateRange => ({ kind: "preset", preset: preset.value }),
+				},
+			)
 			return {
 				...navigateFilters({ ...model, dateRange: closed.model }, search, { ...filters, range }),
 				commands: Command.mapMessages(closed.commands ?? [], (inner) =>
@@ -306,6 +561,7 @@ export const update = (model: Model, message: Message, search: SettingsSearch): 
 				),
 			}
 		},
-		ClickedClearFilters: () => navigateFilters(model, search, { range: { kind: "all" } }),
+		ClickedClearFilters: () =>
+			navigateFilters(model, search, { range: { kind: "all" }, kind: filters.kind }),
 	})
 }

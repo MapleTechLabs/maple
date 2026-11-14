@@ -1,9 +1,12 @@
-import { computeServiceShares, type ServiceShare } from "@maple/web/page/traces/detail/derive"
+import {
+	computeServiceShares,
+	type ServiceShare,
+	serviceSpectrumBar,
+} from "@maple/views/traces/service-shares"
+import { isErrorSpan } from "@maple/views/traces/trace-errors"
 import type { SpanNodeData, TraceData } from "@maple/views/traces/trace-data"
-import { getServiceColor } from "@maple/ui/lib/colors"
 import { countLabel, formatDuration, formatPercent } from "@maple/ui/lib/format"
-import { getHttpInfo, httpStatusTone } from "@maple/ui/lib/http"
-import { TONE_TEXT } from "@maple/ui/lib/tone"
+import { getHttpInfo, httpStatusTextClass } from "@maple/ui/lib/http"
 import { cn } from "@maple/ui/lib/utils"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
@@ -13,24 +16,18 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
-// The @maple/ui `TraceAnatomyStrip` as local mode renders it: no start time, no commit.
-// copied: the spectrum bar of apps/web/src/page/traces/detail/view-summary.ts.
-
+// The trace anatomy strip as local mode renders it: no start time, no commit.
 /** An Error status, or an HTTP status in the critical band, anywhere in the trace (as on web). */
-export const traceHasError = (trace: TraceData): boolean =>
-	Arr.some(trace.spans, (span) => {
-		if (span.statusCode === "Error") return true
-		const raw =
-			span.spanAttributes["http.response.status_code"] || span.spanAttributes["http.status_code"]
-		const code = raw ? Number.parseInt(raw, 10) : Number.NaN
-		return Number.isFinite(code) && httpStatusTone(code) === "crit"
-	})
+export const traceHasError = (trace: TraceData): boolean => Arr.some(trace.spans, isErrorSpan)
 
 /** The first real root: an orphan's synthetic "missing" parent can sort ahead of it. */
 export const rootSpanOf = (trace: TraceData): SpanNodeData | undefined =>
-	trace.rootSpans.find((span) => span.isMissing !== true) ?? trace.rootSpans[0]
+	Option.getOrElse(
+		Arr.findFirst(trace.rootSpans, (span) => span.isMissing !== true),
+		() => trace.rootSpans[0],
+	)
 
 export const httpInfoOf = (span: SpanNodeData) =>
 	getHttpInfo({
@@ -40,34 +37,6 @@ export const httpInfoOf = (span: SpanNodeData) =>
 	})
 
 export const httpStatusOf = (span: SpanNodeData): number | null | undefined => httpInfoOf(span)?.statusCode
-
-const httpStatusColor = (code: number): string => {
-	const tone = httpStatusTone(code)
-	if (tone !== "neutral") return TONE_TEXT[tone]
-	return code >= 300 ? "text-chart-p50" : TONE_TEXT.info
-}
-
-const spectrumBar = (h: HtmlBuilder<Message>, shares: ReadonlyArray<ServiceShare>): Html | null =>
-	shares.length === 0
-		? null
-		: h.div(
-				[h.Class("flex h-1.5 w-full gap-px overflow-hidden rounded-full")],
-				Arr.map(shares, (share) =>
-					h.span(
-						[
-							h.Class("h-full"),
-							h.DataAttribute("base-ui-tooltip-trigger", ""),
-							h.DataAttribute("slot", "tooltip-trigger"),
-							h.Style({
-								width: `${share.percent}%`,
-								"min-width": "4px",
-								"background-color": getServiceColor(share.serviceName),
-							}),
-						],
-						[],
-					),
-				),
-			)
 
 const shareChip = (h: HtmlBuilder<Message>, share: ServiceShare): Html =>
 	hstack(h, { as: "span", gap: "1.5", className: typographyClass({ size: "xs", mono: true }) }, [
@@ -88,8 +57,9 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 		[h.Class("shrink-0 space-y-2")],
 		Arr.filter(
 			[
-				h.div(
-					[h.Class("flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1")],
+				hstack(
+					h,
+					{ align: "baseline", justify: "between", wrap: true, className: "gap-x-6 gap-y-1" },
 					[
 						statFigure(h, {
 							value: formatDuration(trace.totalDurationMs),
@@ -130,7 +100,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 													h.Class(
 														cn(
 															"font-mono font-medium",
-															httpStatusColor(httpStatusCode),
+															httpStatusTextClass(httpStatusCode),
 														),
 													),
 												],
@@ -158,7 +128,7 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, trace: TraceData): Html =>
 						),
 					],
 				),
-				spectrumBar(h, shares),
+				serviceSpectrumBar(h, shares),
 				hstack(
 					h,
 					{ wrap: true, className: "gap-x-4 gap-y-1" },

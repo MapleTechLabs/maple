@@ -1,6 +1,7 @@
 import { Effect, Ref } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import { sharedLoader } from "./integration-statuses"
+import { STATUS_MAX_AGE_MS, sharedLoader } from "./integration-statuses"
 
 /** A load that fails on the runs listed in `failing` and answers with the run number otherwise. */
 const counting = (failing: ReadonlyArray<number>) =>
@@ -49,5 +50,19 @@ describe("IntegrationStatuses loader", () => {
 				expect(yield* status()).toBe(2)
 				expect(yield* Ref.get(runs)).toBe(2)
 			}),
+		))
+
+	test("an answer past its age is read again, so a page never judges an old status against now", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const { runs, load } = yield* counting([])
+				const status = yield* sharedLoader(load)
+				expect(yield* status()).toBe(1)
+				yield* TestClock.adjust(STATUS_MAX_AGE_MS - 1)
+				expect(yield* status()).toBe(1)
+				yield* TestClock.adjust(1)
+				expect(yield* status()).toBe(2)
+				expect(yield* Ref.get(runs)).toBe(2)
+			}).pipe(Effect.provide(TestClock.layer())),
 		))
 })

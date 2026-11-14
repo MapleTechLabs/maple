@@ -1,16 +1,15 @@
+import { retrieveIngestKeys } from "../../../data/ingest-keys"
 import { Effect, Schema } from "effect"
 import { AsyncData, Command, Mount, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
-import { MapleApiV2Client } from "../../../platform/api-clients"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import type { Resources } from "../../../platform/resources"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
 
-// `InstallHostModal`: Kubernetes, Docker and Host install snippets carrying the org's private ingest
-// key, masked until revealed. Mounted closed on every collector-fed infra page, so the key is fetched
-// on entry (`retainedQueryV2("ingestKeys")`).
+// Kubernetes, Docker and Host install snippets carrying the org's private ingest key, masked until
+// revealed. Mounted closed on every collector-fed infra page, so the key is fetched on entry.
 
 export const InstallTab = Schema.Literals(["kubernetes", "docker", "hosts"])
 export type InstallTab = typeof InstallTab.Type
@@ -68,25 +67,20 @@ export type Message = typeof Message.Type
 export const FetchIngestKey = Command.define("FetchInstallIngestKey", {
 	messages: [Message.CompletedFetchIngestKey],
 	execute: Effect.gen(function* () {
-		const client = yield* MapleApiV2Client
-		const response = yield* client.ingestKeys.retrieve({})
+		const response = yield* retrieveIngestKeys
 		return response.private_key
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchIngestKey({ result })),
-	),
+	}).pipe(settleTo((result) => Message.CompletedFetchIngestKey({ result }))),
 })
 
 export type Return = Update.Return<Model, Message, Resources>
 
-/** `retainedQueryV2("ingestKeys", "retrieve")` mounting: fetched once, when the modal first mounts. */
+/** The ingest key, fetched once, when the modal first mounts. */
 export const load = (model: Model): Return =>
 	AsyncData.isIdle(model.ingestKey)
 		? { model: { ...model, ingestKey: IngestKeyData.Loading() }, commands: [FetchIngestKey()] }
 		: { model }
 
-/** The modal mounted with the element it sits in (`InfraSetupEmpty` mounts its own). */
+/** The modal mounted with the element it sits in (the setup empty state mounts its own). */
 export const MountInstallModal = Mount.define("MountInstallModal", {
 	messages: [Message.MountedInstallModal],
 	execute: () => Effect.succeed(Message.MountedInstallModal()),

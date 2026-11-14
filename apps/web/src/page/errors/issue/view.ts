@@ -1,5 +1,5 @@
 import type { ErrorIssueDetailResponse } from "@maple/domain/http"
-import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueDetailFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -38,15 +38,17 @@ import { AppRoute, hrefOf } from "../../../route"
 import { relatedAnomaliesOf, relatedAnomaliesSection } from "./view-anomalies"
 import { issueSkeleton, issueNotFound } from "./view-skeleton"
 import { vstack } from "@maple/views/ui/stack"
-
-// `IssueDetailContent`: skeleton, not-found and error states, then the loaded page.
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
+import { typography } from "@maple/views/ui/typography"
+import { canRunInvestigations } from "../../kit/session-grants"
+import { canTriageIssues } from "../kit/grants"
 
 type H = HtmlBuilder<Message>
 
 /** States where somebody has taken the issue on, so a missing pull request is worth pointing at. */
 const AWAITING_FIX_STATES = new Set(["in_progress", "in_review"])
 
-/** The latest few samples inline, with the way to all of them. */
 const latestOccurrences = (
 	h: H,
 	model: Model,
@@ -83,7 +85,6 @@ const latestOccurrences = (
 
 const LATEST_OCCURRENCES = 3
 
-/** Incidents as a panel; one quiet line while there are none. */
 const incidentsPanel = (
 	h: H,
 	detail: ErrorIssueDetailResponse,
@@ -95,10 +96,9 @@ const incidentsPanel = (
 			scope:
 				detail.incidents.length === 0
 					? undefined
-					: h.span(
-							[h.Class("text-2xs text-muted-foreground tabular-nums")],
-							[`${detail.incidents.length} opened`],
-						),
+					: typography(h, { size: "2xs", tone: "muted", numeric: true }, [
+							`${detail.incidents.length} opened`,
+						]),
 		}),
 		detail.incidents.length === 0
 			? h.p(
@@ -109,6 +109,48 @@ const incidentsPanel = (
 				)
 			: incidentsTable(h, detail.incidents, clock),
 	])
+
+/** A merged issue says where its occurrences go now, and offers to split it back out. */
+const mergedNotice = (h: H, model: Model, issue: ErrorIssueDetailResponse["issue"]): ReadonlyArray<Html> =>
+	issue.mergedIntoIssueId === null
+		? []
+		: [
+				alert(h, { variant: "info", size: "sm", role: "status" }, [
+					alertTitle(h, ["Merged into another issue"]),
+					alertDescription(h, [
+						"New occurrences of this error land on ",
+						h.a(
+							[
+								h.Href(
+									hrefOf(
+										AppRoute.ErrorIssue({ issueId: issue.mergedIntoIssueId, search: {} }),
+									),
+								),
+								h.Class(textLinkClass("primary", false)),
+							],
+							["the issue it was merged into"],
+						),
+						canTriageIssues(model) ? ". Unmerge it to track it on its own again." : ".",
+					]),
+					// Unmerging is triage: an analyst reads where the occurrences go.
+					...(canTriageIssues(model)
+						? [
+								alertAction(h, [
+									button(
+										h,
+										{
+											size: "sm",
+											variant: "outline",
+											isLoading: model.busy.includes("unmerge"),
+											attributes: [h.OnClick(Message.ClickedUnmerge())],
+										},
+										["Unmerge"],
+									),
+								]),
+							]
+						: []),
+				]),
+			]
 
 type Signal = ReturnType<typeof signalOf>
 
@@ -150,49 +192,55 @@ const overview = (
 		surge: signal?.surge ?? null,
 		...clock,
 	})
-	const fix = getItFixedPanel(h, model, issue, linkedInvestigationOf(model))
-	return vstack(
-		h,
-		{ gap: "4" },
-		issue.kind === "alert"
+	// Getting it fixed is a member's job: an analyst only reads an investigation that already ran.
+	const investigation = linkedInvestigationOf(model)
+	const fix =
+		canRunInvestigations(model) || investigation !== null
+			? [getItFixedPanel(h, model, issue, investigation)]
+			: []
+	return vstack(h, { gap: "4" }, [
+		...mergedNotice(h, model, issue),
+		...(issue.kind === "alert"
 			? [
 					alertSourceCard(h, issue),
 					stats,
-					fix,
+					...fix,
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
 				]
 			: [
 					exceptionPanel(h, model, issue),
 					stats,
-					fix,
+					...fix,
 					chartSlot(h, model, detail, inputs.context.timeZone),
 					...latestOccurrences(h, model, detail, clock),
 					incidentsPanel(h, detail, clock),
 					...relatedAnomaliesSection(h, relatedAnomaliesOf(model), clock),
-				],
-	)
+				]),
+	])
 }
 
 const rightPanel = (h: H, model: Model, detail: ErrorIssueDetailResponse): Html => {
 	const verification = latestVerificationOf(model)
 	const pullRequests = pullRequestsOf(model)
+	const canTriage = canTriageIssues(model)
 	return vstack(h, { gap: "4", attributes: [h.OnMount(MountRightRail())] }, [
 		issueSidebar(h, model, detail.issue, detail.environments),
-		h.div(
-			[h.Class("flex flex-col gap-4 px-4 pb-4")],
-			[
-				...(verification !== null
-					? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
-					: AWAITING_FIX_STATES.has(detail.issue.workflowState) && pullRequests.length === 0
-						? [attachNudge(h)]
-						: []),
-				pullRequestsPanel(h, pullRequests, model.isAttaching || model.isDetaching),
-			],
-		),
+		vstack(h, { gap: "4", className: "px-4 pb-4" }, [
+			...(verification !== null
+				? [verificationCard(h, verification, detail.issue.workflowState, model.nowMs)]
+				: canTriage &&
+					  AWAITING_FIX_STATES.has(detail.issue.workflowState) &&
+					  pullRequests.length === 0
+					? [attachNudge(h)]
+					: []),
+			pullRequestsPanel(h, pullRequests, {
+				isBusy: model.isAttaching || model.isDetaching,
+				canTriage,
+			}),
+		]),
 	])
 }
 
-/** The Occurrences table, or the Activity timeline with its composer. */
 const otherTab = (
 	h: H,
 	model: Model,
@@ -216,7 +264,6 @@ const otherTab = (
 		)
 	const events = Option.getOrNull(AsyncData.getData(model.events.data))?.events ?? []
 	const { issue } = detail
-	// Everyone who has acted on the issue, newest first.
 	const participants = [
 		...(issue.leaseHolder ? [issue.leaseHolder] : []),
 		...(issue.assignedActor ? [issue.assignedActor] : []),
@@ -235,7 +282,12 @@ const otherTab = (
 			onData: (value) =>
 				issueTimeline(h, value.events, escalationsOf(model), clock, model.isShowingEarlier),
 		}),
-		commentComposer(h, { draft: model.commentDraft, isPosting: model.isCommenting, participants }),
+		commentComposer(h, {
+			draft: model.commentDraft,
+			isPosting: model.isCommenting,
+			participants,
+			canComment: canTriageIssues(model),
+		}),
 	])
 }
 
@@ -272,7 +324,6 @@ const loaded = (h: H, model: Model, detail: ErrorIssueDetailResponse, inputs: Pa
 	)
 }
 
-/** "Notify escalation destinations?" before a manual severity raise that routes. */
 const severityConfirmDialog = (h: H, model: Model): Html =>
 	confirmDialog(h, {
 		slotId: "issue-severity-confirm",
@@ -286,7 +337,7 @@ const severityConfirmDialog = (h: H, model: Model): Html =>
 			model.pendingSeverity?.severity ?? "",
 			" will notify",
 			" ",
-			model.pendingSeverity?.destinationNames.join(", ") ?? "",
+			model.pendingSeverity === null ? "" : Arr.join(model.pendingSeverity.destinationNames, ", "),
 			". Manual severity changes represent explicit human intent and bypass AI confidence gates.",
 		],
 		confirmLabel: "Change severity and notify",

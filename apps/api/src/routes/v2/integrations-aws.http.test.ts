@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
-import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { Array as Arr, ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { FetchHttpClient, HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthorizationV2Live"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -13,18 +13,16 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { MAPLE_TEST_OIDC_KEY } from "@maple/backend/services/integrations/aws/fake-aws"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
+import { AwsConnectionService } from "@maple/backend/services/integrations/AwsConnectionService"
+import { AwsIngestService } from "@maple/backend/services/integrations/AwsIngestService"
+import { HttpV2AwsIntegrationsLive } from "./integrations-aws.http"
 
 /**
  * `/v2/integrations/aws` over an embedded PGlite with the real connection service: the wire shape a
@@ -35,9 +33,9 @@ import {
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_aws_e2e")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_aws_e2e_other")
+const ORG = Schema.decodeSync(OrgId)("org_aws_e2e")
+const USER = Schema.decodeSync(UserId)("user_aws_e2e")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_aws_e2e_other")
 const BASE = "/v2/integrations/aws"
 
 const testConfig = (awsAvailable: boolean) =>
@@ -72,7 +70,12 @@ const makeWarehouse = (rows: ReadonlyArray<unknown>) => {
 }
 
 const makeHarness = (
-	options: { readonly awsAvailable: boolean; readonly warehouseRows?: ReadonlyArray<unknown> } = {
+	options: {
+		readonly awsAvailable: boolean
+		readonly warehouseRows?: ReadonlyArray<unknown>
+		/** The org is in the `cloudCost` rollout, so `cost` is offered. */
+		readonly cloudCost?: boolean
+	} = {
 		awsAvailable: true,
 	},
 ) => {
@@ -86,14 +89,30 @@ const makeHarness = (
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.awsIntegration),
+	).pipe(
+		Layer.provide(
+			HttpV2AwsIntegrationsLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						// Outside the `cloudCost` rollout unless a test asks for it: `cost` is then planned.
+						Layer.effect(AwsConnectionService, AwsConnectionService.make).pipe(
+							Layer.provide([
+								FetchHttpClient.layer,
+								OrganizationFeatureFlagsService.fixed({
+									...DISABLED_ORGANIZATION_FEATURE_FLAGS,
+									cloudCost: options.cloudCost === true,
+								}),
+							]),
+						),
+						Layer.effect(AwsIngestService, AwsIngestService.make),
+					),
+				),
+			),
+		),
 		Layer.provide(warehouse.layer),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
@@ -220,6 +239,12 @@ describe("v2 aws integration over HTTP", () => {
 		])
 		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, member.secret)).status).toBe(403)
 		expect((await harness.request("DELETE", `${CONNECTIONS}/${id}`, member.secret)).status).toBe(403)
+		// A setup holds the stream's access key, so a key that only reads integrations cannot render one.
+		const reader = await harness.adminKey(["integrations:read"])
+		const refused = await harness.request("GET", `${CONNECTIONS}/${id}/setup`, reader.secret)
+		expect([refused.status, refused.body.error.code]).toEqual([403, "insufficient_scope"])
+		const writer = await harness.adminKey(["integrations:write"])
+		expect((await harness.request("GET", `${CONNECTIONS}/${id}/setup`, writer.secret)).status).toBe(200)
 
 		const deleted = await harness.request("DELETE", `${CONNECTIONS}/${id}`, admin.secret)
 		expect(deleted.status).toBe(200)
@@ -228,6 +253,38 @@ describe("v2 aws integration over HTTP", () => {
 			`delete-stack --region us-east-1 --stack-name ${setup.body.stack_name}`,
 		)
 		expect((await harness.request("GET", BASE, admin.secret)).body.connections).toEqual([])
+		await harness.dispose()
+	})
+
+	it("offers and accepts the cost module for an org in the cloudCost rollout", async () => {
+		const harness = makeHarness({ awsAvailable: true, cloudCost: true })
+		const admin = await harness.adminKey()
+		const availability = (body: { modules: ReadonlyArray<{ module: string; available: boolean }> }) =>
+			Arr.map(
+				Arr.filter(body.modules, (module) => module.available),
+				(module) => module.module,
+			)
+
+		expect(availability((await harness.request("GET", BASE, admin.secret)).body)).toEqual(["cost"])
+		const created = await harness.request("POST", CONNECTIONS, admin.secret, {
+			account_id: "123456789012",
+			modules: ["cost"],
+		})
+		expect(created.status).toBe(200)
+		expect(created.body.modules).toEqual(["cost"])
+		// The role's policy carries the module's reads.
+		const setup = await harness.request("GET", `${CONNECTIONS}/${created.body.id}/setup`, admin.secret)
+		expect(setup.body.cloudformation_template).toContain("ce:GetCostAndUsage")
+
+		const cleared = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
+			modules: [],
+		})
+		expect(cleared.body.modules).toEqual([])
+		const restored = await harness.request("PATCH", `${CONNECTIONS}/${created.body.id}`, admin.secret, {
+			modules: ["cost"],
+		})
+		expect(restored.status).toBe(200)
+		expect(restored.body.modules).toEqual(["cost"])
 		await harness.dispose()
 	})
 

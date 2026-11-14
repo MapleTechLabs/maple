@@ -46,7 +46,7 @@ export const liftDialog = (
 	),
 })
 
-/** `retainedInternalQuery("codeReview", "getReview")`; a retained answer mounts the runs at once. */
+/** A retained answer mounts the runs at once. */
 export const readDetail = (
 	sheet: ReviewSheet,
 	reviewId: PrReviewId,
@@ -80,7 +80,7 @@ export const syncSheet = (
 		const closed = liftDialog({ ...sheet, reviewId: null }, Dialog.close(sheet.dialog))
 		return { ...closed, out: null }
 	}
-	// A new `ReviewDetailBody` reads its own atom: the previous review is never shown while it loads.
+	// The previous review is never shown while the new one loads.
 	const opened = liftDialog(
 		{
 			...sheet,
@@ -97,10 +97,10 @@ export const syncSheet = (
 
 const LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000
 const MINUTE_MS = 60_000
-/** `SHOWN`: the latest runs the sheet lists. */
+/** The latest runs the sheet lists. */
 export const CI_RUNS_SHOWN = 20
 
-/** `PullRequestCiRuns` mounted: its window ends at the minute after `nowMs`. */
+/** The runs mounted: their window ends at the minute after `nowMs`. */
 const readRuns = (sheet: ReviewSheet, nowMs: number, context: PageContext): SheetReturn =>
 	Option.match(AsyncData.getData(sheet.detail.data), {
 		onNone: () => ({ sheet, commands: [], out: null }),

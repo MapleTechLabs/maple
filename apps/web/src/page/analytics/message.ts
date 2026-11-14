@@ -1,16 +1,17 @@
+import { SearchConsoleSortKey } from "@maple/domain/http"
+import { ChartEnvMessages } from "@maple/views/charts/chart-env"
+import { RequestMode } from "@maple/views/data/keyed"
 import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import * as Chart from "@maple/views/charts/chart"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../data/time-range"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
-
-export const RequestMode = Schema.Literals(["Load", "Refresh"])
-export type RequestMode = typeof RequestMode.Type
+import { SearchSortKey, SearchTable } from "./model"
+import { SortDir } from "../kit/table-sort"
 
 /** Every Keyed slot of the page, by its Model field. */
 export const SlotName = Schema.Literals([
@@ -28,6 +29,11 @@ export const SlotName = Schema.Literals([
 	"previousAiReferrals",
 	"aiCrawlers",
 	"traceSamples",
+	"searchStatus",
+	"searchOverview",
+	"searchTimeseries",
+	"searchQueries",
+	"searchLanding",
 ])
 export type SlotName = typeof SlotName.Type
 
@@ -60,6 +66,8 @@ export const Message = defineMessageUnion({
 	},
 	CompletedLoadSignalPresence: { result: Schema.Result(SignalPresences, LoadFailure) },
 	TickedLivePoll: {},
+	/** The Search tab re-reads the status while a property runs its first import. */
+	TickedSearchImportPoll: {},
 	ClickedReload: {},
 	CompletedReloadSpin: { version: Schema.Number },
 	ClickedResetTimeRange: {},
@@ -69,6 +77,15 @@ export const Message = defineMessageUnion({
 	ClickedRetrySummaryAndBreakdowns: {},
 	ClickedRetryAiReferrals: {},
 	ClickedRetryAiCrawlers: {},
+	/** The Search tab rail's events read. */
+	ClickedRetryEvents: {},
+	/** Any failed Search tab read, the status included. */
+	ClickedRetrySearch: {},
+	PickedSearchSite: { siteUrl: Schema.String },
+	/** An empty Search window's way out: the last month. */
+	ClickedWidenSearchRange: {},
+	ClickedSearchSort: { table: SearchTable, key: SearchSortKey },
+	PickedSearchMetric: { metric: SearchConsoleSortKey },
 	/** A sidebar option or a breakdown row: the value toggles in or out of the URL. */
 	ToggledFilter: { key: FilterKey, value: Schema.String },
 	/** A sidebar section picked a single value (or cleared it). */
@@ -84,7 +101,7 @@ export const Message = defineMessageUnion({
 		key: Schema.Literals(["name", "count", "views"]),
 		current: Schema.Struct({
 			key: Schema.Literals(["name", "count", "views"]),
-			dir: Schema.Literals(["asc", "desc"]),
+			dir: SortDir,
 		}),
 	},
 	ClickedExpandPanel: { panel: Schema.String },
@@ -94,8 +111,6 @@ export const Message = defineMessageUnion({
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { message: Chart.Message },
-	ResolvedThemeColors: { colors: ThemeColors },
-	CompletedLoadChartRuntime: {},
-	FailedLoadChartRuntime: { reason: Schema.String },
+	...ChartEnvMessages,
 })
 export type Message = typeof Message.Type

@@ -18,7 +18,7 @@ import { loadedTrace, selectedSpanOf } from "./select"
 import { anatomy, callout, traceViewTabs } from "./view"
 import { logsLink, replayLink } from "./view-header"
 import { spanPanelSubmodel } from "./view-span-panel"
-import { vstackClass } from "@maple/views/ui/stack"
+import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 
 // The trace page in the list's peek sheet. The sheet, its footer and the keys are the list's.
 
@@ -27,10 +27,12 @@ export type PeekViewInputs = Readonly<{ dialogId: string; timeZone: string }>
 type H = HtmlBuilder<Message>
 
 const loadingRow = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-center gap-2 border-b p-3 last:border-0")],
-		[skeleton(h, "size-4"), skeleton(h, "h-4 w-20"), skeleton(h, "h-4 flex-1"), skeleton(h, "h-2 w-32")],
-	)
+	hstack(h, { gap: "2", align: "center", className: "border-b p-3 last:border-0" }, [
+		skeleton(h, "size-4"),
+		skeleton(h, "h-4 w-20"),
+		skeleton(h, "h-4 flex-1"),
+		skeleton(h, "h-2 w-32"),
+	])
 
 const loading = (h: H, model: Model, inputs: PeekViewInputs): ReadonlyArray<Html> => [
 	sheetDetailHeader(h, {
@@ -76,10 +78,9 @@ const missing = (h: H, model: Model, inputs: PeekViewInputs, spanCount: number):
 		],
 		"pr-14",
 	),
-	h.div(
-		[h.Class("flex flex-1 flex-col items-center justify-center p-8")],
-		[traceIdBadge(h, model.traceId)],
-	),
+	vstack(h, { align: "center", justify: "center", grow: true, className: "p-8" }, [
+		traceIdBadge(h, model.traceId),
+	]),
 ]
 
 export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, inputs, h) =>
@@ -151,40 +152,36 @@ export const view = Submodel.defineView<Model, Message, PeekViewInputs>((model, 
 											),
 										],
 									}),
-									h.div(
-										[h.Class("flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4")],
-										[
-											anatomy(h, trace, inputs.timeZone, model.nowMs),
-											callout(h, trace, selected?.spanId),
-											h.submodel({
-												slotId: "trace-peek-split",
-												model: model.split,
-												view: Resizable.view,
-												viewInputs: {
-													className:
-														"min-h-0 flex-1 overflow-hidden rounded-md border",
-													withHandle: [true],
-													toPanels: () => [
-														[traceViewTabs(h, model)],
-														...(panel === null || selected === undefined
-															? []
-															: [
-																	[
-																		spanPanelSubmodel(
-																			h,
-																			model,
-																			`peek-span-panel:${selected.spanId}`,
-																			inputs.timeZone,
-																		),
-																	],
-																]),
-													],
-												},
-												toParentMessage: (message: Resizable.Message) =>
-													Message.GotSplitMessage({ message }),
-											}),
-										],
-									),
+									vstack(h, { gap: "3", grow: true, className: "min-h-0 px-4 pb-4" }, [
+										anatomy(h, trace, inputs.timeZone, model.nowMs),
+										callout(h, trace, selected?.spanId),
+										h.submodel({
+											slotId: "trace-peek-split",
+											model: model.split,
+											view: Resizable.view,
+											viewInputs: {
+												className: "min-h-0 flex-1 overflow-hidden rounded-md border",
+												withHandle: [true],
+												toPanels: () => [
+													[traceViewTabs(h, model)],
+													...(panel === null || selected === undefined
+														? []
+														: [
+																[
+																	spanPanelSubmodel(
+																		h,
+																		model,
+																		`peek-span-panel:${selected.spanId}`,
+																		inputs.timeZone,
+																	),
+																],
+															]),
+												],
+											},
+											toParentMessage: (message: Resizable.Message) =>
+												Message.GotSplitMessage({ message }),
+										}),
+									]),
 								],
 							),
 						]

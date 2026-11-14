@@ -32,16 +32,16 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
-import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/platform/test-two-orgs"
+} from "@maple/backend/testing/test-pglite"
+import { ORG_A, ORG_B, USER_A, USER_B } from "@maple/backend/testing/test-two-orgs"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "./SharedDashboardService"
 
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_share_service")
-const USER = Schema.decodeUnknownSync(UserId)("user_share_service")
+const ORG = Schema.decodeSync(OrgId)("org_share_service")
+const USER = Schema.decodeSync(UserId)("user_share_service")
 
 const baseConfig = {
 	PORT: "3482",
@@ -104,7 +104,7 @@ const createDashboard = (
 	runtime.runPromise(
 		Effect.gen(function* () {
 			const persistence = yield* DashboardPersistenceService
-			const dashboard = yield* persistence.create(
+			const { document: dashboard } = yield* persistence.create(
 				orgId,
 				userId,
 				new PortableDashboardDocument({

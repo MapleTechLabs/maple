@@ -1,5 +1,5 @@
 import { OrgId } from "@maple/domain"
-import { Result, Schema, Array as Arr, Record as Rec } from "effect"
+import { Result, Schema, Array as Arr, Record as Rec, Option } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import type { HtmlBuilder } from "foldkit/html"
 import { Lazy } from "foldkit/test"
@@ -114,6 +114,8 @@ const loaded = (): Model => {
 				key: start.transcript.key ?? "",
 				result: Result.succeed([
 					event("custom", "add_to_cart"),
+					// Mobile SDKs send no URL on a screen view, only the screen name.
+					event("navigation", "Saved Chats"),
 					event("error", "PaymentError: declined"),
 				]),
 			}),
@@ -211,8 +213,11 @@ describe("replay detail", () => {
 			start,
 			Message.CompletedFetchDetail({ key: start.detail.key ?? "", result: Result.succeed(traced) }),
 		)
-		const summaries = detailed.commands?.find((command) => command.name === FetchTraceSummaries.name)
-		expect(summaries?.args).toMatchObject({
+		const summaries = Arr.findFirst(
+			detailed.commands ?? [],
+			(command) => command.name === FetchTraceSummaries.name,
+		)
+		expect(Option.getOrUndefined(summaries)?.args).toMatchObject({
 			windowStart: "2026-10-01 11:03:00",
 			windowEnd: "2026-10-01 11:37:00",
 		})
@@ -232,7 +237,7 @@ describe("replay detail", () => {
 	test("play, pause and a finished replay instruct the engine with fresh nonces", () => {
 		const ready = pageUpdate(seeded(), Message.ReadiedEngine({ seedVersion: 1, totalMs: 1000 })).model
 		const playing = pageUpdate(ready, Message.ClickedPlay()).model
-		expect(playing.player.isPlaying).toBe(true)
+		expect(playing.player.playback._tag).toBe("Playing")
 		expect(playing.player.control).toBe("1|resume|")
 		const paused = pageUpdate(playing, Message.ClickedPlay()).model
 		expect(paused.player.control).toBe("2|pause|")
@@ -246,6 +251,7 @@ describe("replay detail", () => {
 			given(seeded()),
 			...mounted,
 			expectView(text("add_to_cart")).toExist(),
+			expectView(text("Saved Chats")).toExist(),
 			expectView(role("button", { name: "Errors (1)" })).toExist(),
 		)
 		const filtered = pageUpdate(seeded(), Message.PickedEventFilter({ filter: "error" })).model
@@ -366,7 +372,37 @@ describe("replay detail", () => {
 			{ chunk_seq: 3, events: [click(305)] },
 		])
 		expect(seedShiftMs(rebuilt.loader)).toBe(300_000)
-		expect(rebuilt.loader.seekTargetMs).toBe(302_000)
+		expect(rebuilt.loader.seek?.targetMs).toBe(302_000)
+		expect(rebuilt.player.playback).toEqual({ _tag: "Buffering", resumeAfter: false })
+		expect(
+			pageUpdate(
+				rebuilt,
+				Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }),
+			).model.player.playback._tag,
+		).toBe("Paused")
+
+		// Seeking while playing: nothing plays until the new engine is ready, then playback resumes.
+		const playing = pageUpdate(ready, Message.ClickedPlay()).model
+		const seekingPlaying = pageUpdate(playing, Message.RequestedSeek({ offsetMs: 302_000 })).model
+		expect(seekingPlaying.player.playback).toEqual({ _tag: "Buffering", resumeAfter: true })
+		expect(pageUpdate(seekingPlaying, Message.ClickedPlay()).model.player).toEqual(seekingPlaying.player)
+		// The old engine's ready, arriving late, is not the rebuild's.
+		expect(
+			pageUpdate(
+				seekingPlaying,
+				Message.ReadiedEngine({ seedVersion: ready.loader.seedVersion, totalMs: 1 }),
+			).model.player.playback._tag,
+		).toBe("Buffering")
+		const rebuiltPlaying = answer(seekingPlaying, [
+			{ chunk_seq: 2, events: [page(300), snapshot(300)] },
+			{ chunk_seq: 3, events: [click(305)] },
+		])
+		const resumed = pageUpdate(
+			rebuiltPlaying,
+			Message.ReadiedEngine({ seedVersion: rebuiltPlaying.loader.seedVersion, totalMs: 1 }),
+		).model
+		expect(resumed.player.playback._tag).toBe("Playing")
+		expect(resumed.player.control).toContain("|play|302000")
 		// The clicks before the seek stay marked, and the new window's land at their real offsets.
 		expect(Arr.map(rebuilt.meta.actionMarkers, (marker) => marker.ms)).toEqual([1_000, 305_000])
 	})
@@ -476,7 +512,7 @@ describe("replay detail", () => {
 			rebuilt,
 			Message.ReadiedEngine({ seedVersion: rebuilt.loader.seedVersion, totalMs: 1 }),
 		).model
-		expect(resumed.player.isPlaying).toBe(true)
+		expect(resumed.player.playback._tag).toBe("Playing")
 		expect(resumed.player.control).toContain("|play|9500")
 	})
 

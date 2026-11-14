@@ -2,35 +2,42 @@
    system. Both apps/web and apps/landing import this immediately after
    `@import "tailwindcss"` (required: the @theme block references Tailwind
    palette vars like --color-red-400). Apps must not re-declare any token
-   defined here — `bun run check:tokens` enforces that. App-local tokens
-   (web's syntax highlighting --sh-*, landing's --bg-elevated family) stay in the apps.
+   defined here — `bun run check:tokens` enforces that. Syntax highlighting (--sh-*) lives in
+   syntax-tokens.css; landing's --bg-elevated family stays in landing.
    Landing is dark-only: it pins class="dark" on <html> (Layout.astro). */
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
 	--background: oklch(1 0 0);
-	--foreground: oklch(0.141 0.005 285.823);
+	--foreground: oklch(0.18 0.006 70);
 	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.141 0.005 285.823);
+	--card-foreground: oklch(0.18 0.006 70);
 	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.141 0.005 285.823);
+	--popover-foreground: oklch(0.18 0.006 70);
 	/* Maple's brand is the warm amber (hue ~59) used across the dark theme, not
 	   the stale shadcn blue these light tokens shipped with. Mirror the dark
 	   theme's amber-with-dark-text relationship, tuned a touch deeper so it
 	   reads on a white canvas. */
-	--primary: oklch(0.66 0.16 59);
-	--primary-foreground: oklch(0.21 0.008 67);
-	--secondary: oklch(0.967 0.001 286.375);
-	--secondary-foreground: oklch(0.21 0.006 285.885);
-	--muted: oklch(0.967 0.001 286.375);
-	--muted-foreground: oklch(0.552 0.016 285.938);
-	--accent: oklch(0.955 0.025 75);
-	--accent-foreground: oklch(0.21 0.006 285.885);
+	--primary: oklch(0.7 0.155 60);
+	--primary-foreground: oklch(0.2 0.01 60);
+	/* Ink: a tone as text. The fills above are tuned to be seen, and on a white canvas that
+	   leaves them near 3:1 as type, so `text-primary` and `text-severity-*` read these deeper
+	   steps of the same hue (the `--text-color-*` block below). Each clears 4.5:1 on white and
+	   on its own `-a2` wash. In dark the fills read as type already, so the inks there are the
+	   fills (trace and fatal aside). */
+	--primary-ink: oklch(0.52 0.14 55);
+	--secondary: oklch(0.96 0.002 80);
+	--secondary-foreground: oklch(0.18 0.006 70);
+	--muted: oklch(0.96 0.002 80);
+	/* Deeper than zinc-500, so the subtle step mixed from it still clears 4.5:1 on white. */
+	--muted-foreground: oklch(0.5 0.01 70);
+	--accent: oklch(0.955 0.004 80);
+	--accent-foreground: oklch(0.18 0.006 70);
 	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.92 0.004 286.32);
-	--input: oklch(0.92 0.004 286.32);
-	--ring: oklch(0.705 0.015 286.067);
+	--border: oklch(0.915 0.003 80);
+	--input: oklch(0.9 0.004 80);
+	--ring: oklch(0.705 0.01 75);
 	--chart-1: oklch(0.6 0.16 250);
 	--chart-2: oklch(0.62 0.14 185);
 	--chart-3: oklch(0.65 0.16 85);
@@ -68,14 +75,14 @@
 	--chart-tok-output: oklch(0.6 0.18 30);
 	--chart-tok-reasoning: oklch(0.6 0.19 318);
 	--radius: 8px;
-	--sidebar: oklch(0.985 0 0);
-	--sidebar-foreground: oklch(0.141 0.005 285.823);
-	--sidebar-primary: oklch(0.66 0.16 59);
-	--sidebar-primary-foreground: oklch(0.21 0.008 67);
-	--sidebar-accent: oklch(0.955 0.025 75);
-	--sidebar-accent-foreground: oklch(0.141 0.005 285.823);
-	--sidebar-border: oklch(0.92 0.004 286.32);
-	--sidebar-ring: oklch(0.705 0.015 286.067);
+	--sidebar: oklch(0.975 0.002 80);
+	--sidebar-foreground: oklch(0.18 0.006 70);
+	--sidebar-primary: oklch(0.7 0.155 60);
+	--sidebar-primary-foreground: oklch(0.2 0.01 60);
+	--sidebar-accent: oklch(0.94 0.003 80);
+	--sidebar-accent-foreground: oklch(0.18 0.006 70);
+	--sidebar-border: oklch(0.915 0.003 80);
+	--sidebar-ring: oklch(0.705 0.01 75);
 	/* Service-map edge "tube" hollow-interior core. Matches the canvas
 	   background so tubes read as hollow pipes in either theme (light here,
 	   the dark-canvas value lives in .dark). */
@@ -109,6 +116,11 @@
 	--brand-dynamodb: #4053d6;
 	--brand-redshift: #8c4fff;
 	--brand-snowflake: #29b5e8;
+	--brand-tinybird: oklch(0.82 0.19 155);
+	--brand-microsoft: #0078d4;
+	/* The account pages' art panel: Maple's orange and its ink, fixed in both themes. */
+	--brand-maple: #e9831a;
+	--brand-maple-ink: #241d16;
 	/* macOS window-chrome dots (the replay player's browser frame), both themes. */
 	--window-dot-close: #ff5f57;
 	--window-dot-minimize: #febc2e;
@@ -130,11 +142,17 @@
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
-	/* Deeper than amber-500 so WARN text clears a white canvas; hue 74 keeps it
-	   off the hue-59 primary. */
-	--severity-warn: oklch(0.7 0.17 74);
+	/* A yellow, well off the hue-59 primary: a WARN bar or dot must never read as a button,
+	   a link or the selected row. Its text is `--severity-warn-ink`. */
+	--severity-warn: oklch(0.73 0.165 88);
 	--severity-error: oklch(0.637 0.237 25.331); /* red-500 */
 	--severity-fatal: oklch(0.505 0.213 27.518); /* red-700 */
+	--severity-trace-ink: oklch(0.5 0.016 286);
+	--severity-debug-ink: oklch(0.52 0.2 260);
+	--severity-info-ink: oklch(0.51 0.13 160);
+	--severity-warn-ink: oklch(0.52 0.12 75);
+	--severity-error-ink: oklch(0.53 0.22 27);
+	--severity-fatal-ink: var(--severity-fatal);
 	--service-1: oklch(0.58 0.17 250); /* Blue */
 	--service-2: oklch(0.56 0.12 185); /* Teal */
 	--service-3: oklch(0.58 0.15 155); /* Green */
@@ -213,6 +231,22 @@
 	--warning-foreground: var(--color-amber-700);
 	/* A control's 1px highlight: a shade under it in light, a line of light over it in dark. */
 	--control-highlight: 0 1px oklch(0 0 0 / 4%);
+	/* Text and glyphs on a saturated fill (destructive buttons, severity chips, method badges). */
+	--on-fill: oklch(1 0 0);
+	/* The dim behind a dialog, sheet or command palette. */
+	--scrim: oklch(0 0 0 / 32%);
+	/* The dim beside a side panel: light enough to keep reading the page the panel belongs to. */
+	--scrim-panel: oklch(0 0 0 / 12%);
+	/* Media frames (the replay player): dark in both themes, the stage, fullscreen and its play scrim. */
+	--media: oklch(0.205 0 0);
+	--media-backdrop: oklch(0 0 0);
+	--media-scrim: oklch(0 0 0 / 55%);
+	/* A track recessed into whatever it sits on (toggle groups): darkens the surface behind it. */
+	--surface-recessed: oklch(0 0 0 / 4%);
+	/* The edge of a pill raised out of a recessed track: the subtle hairline, a line of light in dark. */
+	--border-raised: color-mix(in oklab, var(--border) 60%, transparent);
+	/* The shade under a raised control or card: faint on white, deeper on a dark surface. */
+	--raised-shade: oklch(0 0 0 / 5%);
 }
 
 @media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
@@ -222,31 +256,32 @@
 }
 
 .dark {
-	--background: oklch(0.207 0.008 67);
-	--foreground: oklch(0.91 0.016 74);
-	--card: oklch(0.224 0.009 75);
-	--card-foreground: oklch(0.91 0.016 74);
-	--popover: oklch(0.224 0.009 75);
-	--popover-foreground: oklch(0.91 0.016 74);
-	--primary: oklch(0.714 0.154 59);
-	--primary-foreground: oklch(0.207 0.008 67);
-	--secondary: oklch(0.26 0.012 67);
-	--secondary-foreground: oklch(0.91 0.016 74);
-	--muted: oklch(0.26 0.012 67);
-	--muted-foreground: oklch(0.66 0.022 72);
-	--accent: oklch(0.26 0.012 67);
-	--accent-foreground: oklch(0.91 0.016 74);
+	--background: oklch(0.19 0.005 70);
+	--foreground: oklch(0.955 0.005 80);
+	--card: oklch(0.21 0.005 70);
+	--card-foreground: oklch(0.955 0.005 80);
+	--popover: oklch(0.215 0.005 70);
+	--popover-foreground: oklch(0.955 0.005 80);
+	--primary: oklch(0.74 0.15 62);
+	--primary-foreground: oklch(0.18 0.01 62);
+	--primary-ink: var(--primary);
+	--secondary: oklch(0.245 0.005 70);
+	--secondary-foreground: oklch(0.955 0.005 80);
+	--muted: oklch(0.245 0.005 70);
+	--muted-foreground: oklch(0.7 0.009 75);
+	--accent: oklch(0.245 0.005 70);
+	--accent-foreground: oklch(0.955 0.005 80);
 	--destructive: oklch(0.654 0.176 30);
-	--border: oklch(0.268 0.012 67);
-	--input: oklch(0.33 0.015 72);
-	--ring: oklch(0.58 0.02 65);
-	--chart-1: oklch(0.714 0.154 59);
+	--border: oklch(0.26 0.005 70);
+	--input: oklch(0.3 0.006 70);
+	--ring: oklch(0.6 0.01 70);
+	--chart-1: oklch(0.74 0.15 62);
 	--chart-2: oklch(0.693 0.165 254);
 	--chart-3: oklch(0.658 0.134 151);
 	--chart-4: oklch(0.65 0.14 185);
 	--chart-5: oklch(0.7 0.12 310);
 	--chart-p99: oklch(0.654 0.176 30);
-	--chart-p95: oklch(0.714 0.154 59);
+	--chart-p95: oklch(0.74 0.15 62);
 	--chart-p50: oklch(0.693 0.165 254);
 	/* chart-error sits in the same warm zone as chart-p99 by design, but must
 	   stay distinguishable from it: shift toward pure red (hue 22 vs 30) and
@@ -263,20 +298,20 @@
 	--chart-ai-ttft: oklch(0.73 0.15 65);
 	--chart-ai-tool: oklch(0.7 0.14 155);
 	--chart-ai-inference: oklch(0.69 0.15 250);
-	--chart-ai-agent: oklch(0.714 0.154 59);
+	--chart-ai-agent: oklch(0.74 0.15 62);
 	--chart-tok-input: oklch(0.69 0.15 246);
 	--chart-tok-cache-read: oklch(0.72 0.12 174);
 	--chart-tok-cache-write: oklch(0.73 0.15 102);
 	--chart-tok-output: oklch(0.7 0.16 30);
 	--chart-tok-reasoning: oklch(0.7 0.17 318);
-	--sidebar: oklch(0.185 0.007 56);
-	--sidebar-foreground: oklch(0.91 0.016 74);
-	--sidebar-primary: oklch(0.714 0.154 59);
-	--sidebar-primary-foreground: oklch(0.207 0.008 67);
-	--sidebar-accent: oklch(0.26 0.012 67);
-	--sidebar-accent-foreground: oklch(0.91 0.016 74);
-	--sidebar-border: oklch(0.268 0.012 67);
-	--sidebar-ring: oklch(0.58 0.02 65);
+	--sidebar: oklch(0.155 0.004 70);
+	--sidebar-foreground: oklch(0.955 0.005 80);
+	--sidebar-primary: oklch(0.74 0.15 62);
+	--sidebar-primary-foreground: oklch(0.18 0.01 62);
+	--sidebar-accent: oklch(0.225 0.005 70);
+	--sidebar-accent-foreground: oklch(0.955 0.005 80);
+	--sidebar-border: oklch(0.26 0.005 70);
+	--sidebar-ring: oklch(0.6 0.01 70);
 	/* Preserves the original dark-canvas core (slightly darker than --background
 	   for a recessed "depth" groove). */
 	--service-map-edge-core: oklch(0.141 0.005 285.823);
@@ -290,6 +325,13 @@
 	--severity-warn: oklch(0.8 0.15 84);
 	--severity-error: oklch(0.654 0.176 30); /* red-orange #E85D4A */
 	--severity-fatal: oklch(0.555 0.174 30); /* dark red #C43D2E */
+	--severity-trace-ink: var(--muted-foreground);
+	--severity-debug-ink: var(--severity-debug);
+	--severity-info-ink: var(--severity-info);
+	--severity-warn-ink: var(--severity-warn);
+	--severity-error-ink: var(--severity-error);
+	/* The fatal fill is the one dark tone too deep to read as type (3.4:1). */
+	--severity-fatal-ink: oklch(0.66 0.2 26);
 	--service-1: oklch(0.68 0.17 250); /* Blue */
 	--service-2: oklch(0.65 0.12 185); /* Teal */
 	--service-3: oklch(0.65 0.15 155); /* Green */
@@ -307,7 +349,7 @@
 	--service-15: oklch(0.65 0.13 210); /* Cyan */
 	--service-16: oklch(0.6 0.1 230); /* Slate */
 
-	/* Heatmap ramps, dark. Card is oklch(0.224 0.009 75) and the grout sits below
+	/* Heatmap ramps, dark. Card is oklch(0.21 0.005 70) and the grout sits below
 	   it at 0.175, so every stop 0 clears its own backing by ΔL 0.145 — the gap
 	   between cells reads as a drawn line rather than a rounding error.
 	   See the :root block for the rules. */
@@ -351,11 +393,16 @@
 	--success-foreground: var(--color-emerald-400);
 	--warning: var(--severity-warn);
 	--warning-foreground: var(--color-amber-400);
-	--control-highlight: 0 -1px oklch(1 0 0 / 6%);
+	--control-highlight: 0 -1px oklch(1 0 0 / 7%);
+	--surface-recessed: oklch(0 0 0 / 25%);
+	/* A dark page needs more black to read as set back; still far lighter than the dialog's. */
+	--scrim-panel: oklch(0 0 0 / 24%);
+	--border-raised: oklch(1 0 0 / 10%);
+	--raised-shade: oklch(0 0 0 / 35%);
 }
 
 @theme inline {
-	--font-sans: "Geist Mono Variable", ui-monospace, monospace;
+	--font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-mono: "Geist Mono Variable", ui-monospace, monospace;
 	--font-display: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 	/* Sentences (descriptions, empty and error copy) read in the proportional face; data stays mono. */
@@ -411,6 +458,18 @@
 	--color-severity-warn: var(--severity-warn);
 	--color-severity-error: var(--severity-error);
 	--color-severity-fatal: var(--severity-fatal);
+	/* A tone as text is its ink; fills, borders and strokes keep the tone itself. */
+	--text-color-primary: var(--primary-ink);
+	--text-color-sidebar-primary: var(--primary-ink);
+	--text-color-severity-trace: var(--severity-trace-ink);
+	--text-color-severity-debug: var(--severity-debug-ink);
+	--text-color-severity-info: var(--severity-info-ink);
+	--text-color-severity-warn: var(--severity-warn-ink);
+	--text-color-severity-error: var(--severity-error-ink);
+	--text-color-severity-fatal: var(--severity-fatal-ink);
+	--text-color-info: var(--severity-debug-ink);
+	--text-color-success: var(--severity-info-ink);
+	--text-color-warning: var(--severity-warn-ink);
 	--color-background: var(--background);
 	--color-service-1: var(--service-1);
 	--color-service-2: var(--service-2);
@@ -451,7 +510,7 @@
 	   control or card off its surface, `popup` floats menus, popovers, dialogs and toasts,
 	   `control` is a control's 1px highlight (swaps per theme), `accent-start` marks the current
 	   row's leading edge. Tailwind's sizes and raw `shadow-[…]` are lint errors. */
-	--shadow-raised: 0 1px 2px 0 oklch(0 0 0 / 5%);
+	--shadow-raised: 0 1px 2px 0 var(--raised-shade);
 	--shadow-popup: 0 10px 15px -3px oklch(0 0 0 / 5%), 0 4px 6px -4px oklch(0 0 0 / 5%);
 	--shadow-control: var(--control-highlight);
 	--shadow-accent-start: inset 2px 0 0 var(--color-primary);
@@ -473,6 +532,11 @@
 	--text-figure: 1.625rem;
 	/* Inline code inside prose: a touch under the surrounding text, whatever its size. */
 	--text-code: 0.9em;
+	/* Tracking: `overline` and `caption` space the uppercase tags that remain (badges, log
+	   levels, the mono eyebrow); `figure` pulls a large stat figure in a touch. */
+	--tracking-overline: 0.12em;
+	--tracking-caption: 0.08em;
+	--tracking-figure: -0.01em;
 	/* Motion curves. Tailwind's stock `ease-out` is too weak for UI; `ease-move` is for on-screen
 	   movement (sidebar collapse), `ease-drawer` for sheets sliding in from an edge. */
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -498,15 +562,22 @@
 	--color-destructive-foreground: var(--destructive-foreground);
 	/* The ladders, named. Text steps are solid (mixed into the page, never translucent), so a
 	   label reads the same grey on a tinted row: soft (body copy a step under foreground), subtle
-	   (secondary meta), faint (separators, placeholders, empty cells). Surfaces are translucent
-	   washes that read the same on any surface: faint, sunken (wells, row hover), strong (selected,
-	   pressed). Use these instead of `/NN` modifiers on the base colours. */
+	   (secondary meta, the last step that carries information: 4.5:1 on the page, a card and
+	   the washes below),
+	   faint (separators and empty cells; near 2:1, so never a value or a label).
+	   Surfaces are translucent washes that read the same on any surface: faint, sunken (wells,
+	   row hover), strong (selected, pressed). Use these instead of `/NN` modifiers on the base
+	   colours. */
 	--color-foreground-soft: color-mix(in oklab, var(--foreground) 80%, var(--background));
-	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 70%, var(--background));
+	--color-foreground-subtle: color-mix(in oklab, var(--muted-foreground) 94%, var(--background));
 	--color-foreground-faint: color-mix(in oklab, var(--muted-foreground) 45%, var(--background));
 	--color-surface-faint: color-mix(in oklab, var(--muted) 20%, transparent);
 	--color-surface-sunken: color-mix(in oklab, var(--muted) 50%, transparent);
-	--color-surface-strong: color-mix(in oklab, var(--muted) 60%, transparent);
+	--color-surface-strong: color-mix(in oklab, var(--muted) 90%, transparent);
+	/* An inset well on a card (a code block, an input tray, an expanded row's body). */
+	--color-surface-well: color-mix(in oklab, var(--background) 60%, transparent);
+	/* A label or chip floating over a chart, map or media, under `backdrop-blur-sm`. */
+	--color-surface-float: color-mix(in oklab, var(--card) 90%, transparent);
 	--color-border-subtle: color-mix(in oklab, var(--border) 60%, transparent);
 	/* Hover and selected outline on pickable cards. */
 	--color-border-strong: color-mix(in oklab, var(--foreground) 30%, transparent);
@@ -535,6 +606,33 @@
 	--color-brand-dynamodb: var(--brand-dynamodb);
 	--color-brand-redshift: var(--brand-redshift);
 	--color-brand-snowflake: var(--brand-snowflake);
+	--color-brand-tinybird: var(--brand-tinybird);
+	--color-brand-microsoft: var(--brand-microsoft);
+	--color-brand-maple: var(--brand-maple);
+	--color-brand-maple-ink: var(--brand-maple-ink);
+	--color-media: var(--media);
+	--color-media-backdrop: var(--media-backdrop);
+	--color-media-scrim: var(--media-scrim);
+	--color-on-fill: var(--on-fill);
+	--color-scrim: var(--scrim);
+	--color-scrim-panel: var(--scrim-panel);
+	--color-surface-recessed: var(--surface-recessed);
+	--color-border-raised: var(--border-raised);
+	/* Service-map namespace boxes: one hue per namespace, set on the box as `--namespace-hue`.
+	   Inlined into the utility, so the hue resolves on the element that sets it. */
+	--color-namespace-edge: oklch(0.66 0.12 var(--namespace-hue, 0) / 0.7);
+	--color-namespace-wash: oklch(0.62 0.11 var(--namespace-hue, 0) / 0.05);
+	--color-namespace-label: color-mix(
+		in oklab,
+		oklch(0.62 0.14 var(--namespace-hue, 0)) 70%,
+		var(--foreground)
+	);
+	--color-namespace-label-fill: color-mix(
+		in oklab,
+		oklch(0.62 0.11 var(--namespace-hue, 0)) 14%,
+		var(--background)
+	);
+	--color-namespace-label-edge: oklch(0.66 0.12 var(--namespace-hue, 0) / 0.4);
 	--color-window-dot-close: var(--window-dot-close);
 	--color-window-dot-minimize: var(--window-dot-minimize);
 	--color-window-dot-zoom: var(--window-dot-zoom);
@@ -714,6 +812,26 @@
 	* {
 		@apply border-border outline-ring/50;
 	}
+	/* Selected text takes the primary instead of the system blue. Both halves are opaque, so the
+	   pair reads the same over a muted run, a tone, or a filled badge. */
+	::selection {
+		background-color: var(--color-primary);
+		color: var(--color-primary-foreground);
+	}
+	/* A chip keeps its own look when selected: a band inside a fill or a tint only fights it. A
+	   thin underline in its own ink marks the selected letters instead. */
+	[data-slot="badge"]::selection,
+	[data-slot="badge"] ::selection,
+	.text-on-fill::selection,
+	.text-on-fill ::selection,
+	.text-primary-foreground::selection,
+	.text-primary-foreground ::selection {
+		background-color: transparent;
+		color: currentColor;
+		text-decoration: underline;
+		text-decoration-thickness: 1px;
+		text-underline-offset: 2px;
+	}
 	body {
 		@apply font-sans bg-background text-foreground;
 	}
@@ -770,4 +888,13 @@
 
 @utility loading-delay {
 	animation: loading-delay 0s 300ms both;
+}
+
+/* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */
+@utility hatch-error {
+	background-image: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklab, var(--severity-error) 32%, transparent) 0 1px,
+		transparent 1px 6px
+	);
 }

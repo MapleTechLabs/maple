@@ -44,10 +44,7 @@ import {
 } from "./span-detail"
 import { rawFailureText } from "./failure-text"
 import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
-
-/* -------------------------------------------------------------------------- */
-/* Rows                                                                       */
-/* -------------------------------------------------------------------------- */
+import { codeUnitAt } from "@maple/strings"
 
 /** Why a lane exists, which is also how its header reads. */
 export type LaneKind = "lane" | "subagent"
@@ -402,10 +399,6 @@ export function assembleTranscript(
 	return rows
 }
 
-/* -------------------------------------------------------------------------- */
-/* One turn                                                                   */
-/* -------------------------------------------------------------------------- */
-
 interface TurnRows {
 	readonly turn: SessionTurn
 	readonly header: Extract<TranscriptRow, { kind: "turn" }>
@@ -574,32 +567,25 @@ function coverageOf(hasInput: boolean, hasOutput: boolean): CaptureCoverage {
 	return "none"
 }
 
-/* -------------------------------------------------------------------------- */
-/* Forest                                                                     */
-/* -------------------------------------------------------------------------- */
-
 interface SpanForest {
 	readonly roots: readonly AiSessionSpan[]
 	readonly children: ReadonlyMap<string, readonly AiSessionSpan[]>
 }
 
 /**
- * The turn's spans as a forest.
+ * The AI spans as a forest. A span whose parent is the app's own (a runtime's
+ * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
+ * ancestor through it: promoted to a root instead, every model call of an agent
+ * would print after that agent's whole tool subtree.
  *
  * `parentSpanId` is intra-trace only, so a turn spanning several traces has one
  * root per trace; roots and siblings are ordered by start time, which is the
  * only ordering the data supports. A span whose parent lives in another turn is
  * promoted to a root rather than dropped.
  *
- * TODO: `session-waterfall.tsx`'s `orderByTree` builds the same forest and could
- * read this one, but it deliberately preserves input order where this sorts —
- * unifying them is a behavioural change to the waterfall, not a lift.
- */
-/**
- * The AI spans as a forest. A span whose parent is the app's own (a runtime's
- * `AgentRuntime.model` wrapper around each model call) hangs off its nearest AI
- * ancestor through it: promoted to a root instead, every model call of an agent
- * would print after that agent's whole tool subtree.
+ * TODO: the web waterfall's `orderByTree` (apps/web/src/page/agent-sessions/session/waterfall-rows.ts)
+ * builds the same forest and could read this one, but it deliberately preserves input order where
+ * this sorts: unifying them is a behavioural change to the waterfall, not a lift.
  */
 function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpan[] = spans): SpanForest {
 	const present = new Set(Arr.map(spans, (span) => span.spanId))
@@ -631,10 +617,6 @@ function buildForest(spans: readonly AiSessionSpan[], all: readonly AiSessionSpa
 	for (const siblings of children.values()) siblings.sort(byStart)
 	return { roots, children }
 }
-
-/* -------------------------------------------------------------------------- */
-/* Lane walking                                                               */
-/* -------------------------------------------------------------------------- */
 
 interface LaneScope {
 	readonly context: TurnContext
@@ -832,7 +814,8 @@ function delegationTarget(
 	if (forks(span)) return span
 	if (scope.context.categoryOf(span) !== "tool") return undefined
 	const own = children.get(span.spanId) ?? []
-	return own.length === 1 && forks(own[0]) ? own[0] : undefined
+	const [only] = own
+	return own.length === 1 && only !== undefined && forks(only) ? only : undefined
 }
 
 /**
@@ -856,7 +839,7 @@ function markParallelLanes(
 	for (const cluster of clusters) {
 		// `at` is where the lane's rows were pushed and its opening row is the
 		// first of them — the marker opens the cluster right above it.
-		const first = cluster.members[0]
+		const first = Arr.headNonEmpty(cluster.members)
 		markers.push({
 			at: first.at,
 			row: {
@@ -877,10 +860,6 @@ function markParallelLanes(
 	return out
 }
 
-/* -------------------------------------------------------------------------- */
-/* Overlap clustering                                                         */
-/* -------------------------------------------------------------------------- */
-
 /** Anything the transcript can announce as concurrent: a lane, or a turn. */
 interface Interval {
 	readonly startMs: number
@@ -889,7 +868,7 @@ interface Interval {
 
 interface OverlapCluster<T> {
 	/** Two or more, in start order. */
-	readonly members: readonly T[]
+	readonly members: Arr.NonEmptyReadonlyArray<T>
 	/** The run's extent: first member starting to last member ending. */
 	readonly startMs: number
 	readonly endMs: number
@@ -932,14 +911,14 @@ function clusterByOverlap<T extends Interval>(items: readonly T[]): readonly Ove
 	}
 
 	return Arr.map(
-		Arr.filter(groups, (group) => group.length > 1),
+		Arr.filter(groups, (group): group is Arr.NonEmptyArray<T> => group.length > 1),
 		(members) => {
 			const sharedStart = Math.max(...Arr.map(members, (item) => item.startMs))
 			const sharedEnd = Math.min(...Arr.map(members, (item) => item.endMs))
 			const shared = sharedStart < sharedEnd
 			return {
 				members,
-				startMs: members[0].startMs,
+				startMs: Arr.headNonEmpty(members).startMs,
 				endMs: Math.max(...Arr.map(members, (item) => item.endMs)),
 				overlapStartMs: shared ? sharedStart : undefined,
 				overlapEndMs: shared ? sharedEnd : undefined,
@@ -981,7 +960,12 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 	const marked = new Map<string, TranscriptRow | undefined>()
 	for (const cluster of clusterByOverlap(items)) {
 		for (const item of cluster.members) marked.set(item.entry.turn.id, undefined)
-		const first = cluster.members.reduce((a, b) => (a.order <= b.order ? a : b))
+		if (!Arr.isReadonlyArrayNonEmpty(cluster.members)) continue
+		const first = Arr.reduce(
+			Arr.tailNonEmpty(cluster.members),
+			Arr.headNonEmpty(cluster.members),
+			(a, b) => (a.order <= b.order ? a : b),
+		)
 		marked.set(first.entry.turn.id, {
 			kind: "parallel-turns",
 			key: `${first.ref.key}:parallel-turns`,
@@ -995,10 +979,6 @@ function markParallelTurns(entries: readonly TurnRows[]): ReadonlyMap<string, Tr
 	}
 	return marked
 }
-
-/* -------------------------------------------------------------------------- */
-/* One span's rows                                                            */
-/* -------------------------------------------------------------------------- */
 
 function spanRows(span: AiSessionSpan, scope: LaneScope): readonly TranscriptRow[] {
 	const rows: TranscriptRow[] = []
@@ -1052,8 +1032,6 @@ function rowKey(scope: LaneScope, span: AiSessionSpan, suffix?: string): string 
 		: `${scope.keyPrefix}:${span.spanId}:${suffix}`
 }
 
-/* System ------------------------------------------------------------------ */
-
 /** Emitters re-send the system prompt on every call, so it is shown once per
  *  turn per distinct text, with the repeat count instead of the repeats. */
 function systemRows(
@@ -1097,8 +1075,6 @@ function countSystemInstructions(
 	return counts
 }
 
-/* User -------------------------------------------------------------------- */
-
 /**
  * The turn's new user input.
  *
@@ -1131,8 +1107,9 @@ function userRows(
 	let index = -1
 	let text = ""
 	for (let i = history.length - 1; i >= 0; i--) {
-		if (Str.toLowerCase(history[i].role) !== "user") continue
-		text = Str.trim(withoutInjectedBlocks(textOf(history[i].parts)))
+		const message = history[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
 		if (text !== "") {
 			index = i
 			break
@@ -1154,8 +1131,6 @@ function userRows(
 		},
 	]
 }
-
-/* Output ------------------------------------------------------------------ */
 
 /**
  * What the call produced: its reply, its reasoning, and any tool call no span
@@ -1288,7 +1263,6 @@ function outputRows(
 	]
 }
 
-/** Does a tool span already account for this `tool_call` part? */
 function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, context: TurnContext): boolean {
 	// A tool span for the same call carries the duration, the service and the
 	// error; the message-only row exists only where there is no such span.
@@ -1306,14 +1280,13 @@ function coveredBySpan(part: Extract<SpanMessagePart, { kind: "tool_call" }>, co
 function capturedPromptText(messages: readonly SpanMessage[]): string | undefined {
 	const input = Arr.filter(messages, (message) => message.origin === "input")
 	for (let i = input.length - 1; i >= 0; i--) {
-		if (Str.toLowerCase(input[i].role) !== "user") continue
-		const text = Str.trim(withoutInjectedBlocks(textOf(input[i].parts)))
+		const message = input[i]
+		if (message === undefined || Str.toLowerCase(message.role) !== "user") continue
+		const text = Str.trim(withoutInjectedBlocks(textOf(message.parts)))
 		if (text !== "") return text
 	}
 	return undefined
 }
-
-/* Capture boundary --------------------------------------------------------- */
 
 /**
  * Where a turn's capture changes hands.
@@ -1339,8 +1312,6 @@ function captureBoundaryRow(span: AiSessionSpan, scope: LaneScope): readonly Tra
 		},
 	]
 }
-
-/* Tools -------------------------------------------------------------------- */
 
 function toolRow(span: AiSessionSpan, scope: LaneScope): TranscriptRow {
 	return {
@@ -1382,10 +1353,6 @@ function toolResultText(span: AiSessionSpan, context: TurnContext): string | und
 	const echoed = id === undefined ? undefined : toolResultFor(context.input.toolResults, span.traceId, id)
 	return echoed ?? (spanFailed(span) ? rawFailureText(span) : undefined)
 }
-
-/* -------------------------------------------------------------------------- */
-/* Payloads                                                                   */
-/* -------------------------------------------------------------------------- */
 
 /** Trailing marker instrumentations append when they cut a payload short. */
 const TRUNCATION_MARKER = /…\s*\[truncated\]\s*$/
@@ -1446,7 +1413,7 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	let bytes = 0
 	let lines = text === "" ? 0 : 1
 	for (let i = 0; i < text.length; i++) {
-		const code = text.charCodeAt(i)
+		const code = codeUnitAt(text, i)
 		if (code === 10) lines++
 		if (code < 0x80) bytes += 1
 		else if (code < 0x800) bytes += 2
@@ -1459,10 +1426,6 @@ function measure(text: string): { byteLength: number; lineCount: number } {
 	}
 	return { byteLength: bytes, lineCount: lines }
 }
-
-/* -------------------------------------------------------------------------- */
-/* Filtering                                                                  */
-/* -------------------------------------------------------------------------- */
 
 /**
  * The toolbar's filter, applied to blocks rather than to spans: in a transcript
@@ -1494,17 +1457,18 @@ function rowText(row: TranscriptRow): string | undefined {
 		case "thinking":
 			return row.text
 		case "tool":
-			return [row.toolName, row.args?.text, row.result?.text].filter(Boolean).join("\n")
+			return Arr.join(
+				Arr.filter([row.toolName, row.args?.text, row.result?.text], (part): part is string =>
+					Boolean(part),
+				),
+				"\n",
+			)
 		case "structure":
 			return row.label
 		default:
 			return undefined
 	}
 }
-
-/* -------------------------------------------------------------------------- */
-/* Shared bits                                                                */
-/* -------------------------------------------------------------------------- */
 
 /**
  * Has this call captured any of the CONVERSATION?

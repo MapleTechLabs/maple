@@ -9,8 +9,6 @@ import { HighlightedCode } from "./kit/code-highlight"
 import { MinimapState } from "./kit/turn-minimap"
 import { ChatStatus, UIMessage } from "./kit/ui-message"
 
-// An investigation's conversation: its transcript, composer and live tail.
-
 /** Why the thread cannot be replied to; `null` is a normal, writable conversation. */
 export const ReadOnly = Schema.NullOr(Schema.Literals(["resolved", "transcript"]))
 export type ReadOnly = typeof ReadOnly.Type

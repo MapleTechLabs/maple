@@ -6,7 +6,7 @@ import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
-import { columnHead, dataTable, dataTableEmpty } from "../infra/kit/data-table"
+import { columnHead, dataTable, dataTableEmpty } from "../kit/data-table"
 import {
 	type CheckRow,
 	flowColumns,
@@ -30,8 +30,6 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { stripClass } from "@maple/views/ui/rule"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// GitHub in the connect flow: install the Maple GitHub App, then watch the repositories sync.
 
 type H = HtmlBuilder<Message>
 
@@ -110,13 +108,20 @@ const installButton = (
 const installation = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
 	const repos = activeRepos(status)
 	return vstack(h, { gap: "3" }, [
-		h.div(
-			[h.Class("flex flex-wrap items-center gap-3 rounded-md border border-border p-3")],
+		hstack(
+			h,
+			{ gap: "3", align: "center", wrap: true, className: "rounded-md border border-border p-3" },
 			[
 				icon(h, "GithubIcon", { size: 18, className: "shrink-0" }),
 				vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-					h.span(
-						[h.Class("flex items-center gap-2 text-sm font-medium")],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							as: "span",
+							className: typographyClass({ size: "sm", weight: "medium" }),
+						},
 						[
 							status.accountLogin ?? "GitHub App",
 							...(status.accountType === null

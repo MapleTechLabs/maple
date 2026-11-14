@@ -38,7 +38,7 @@ with `packageManager`.
   `apps/api` forwards `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding;
   OAuth stays in `apps/api`.
 - An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
-  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
+  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `Subagent` from `@yielded/agent/subagent`.
 - LLM code (Effect AI + `@yielded/agent`) is only in `apps/ai`; Maple-specific wiring lives in
   `apps/ai/src/platform/Llm.ts`.
 - Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
@@ -72,7 +72,7 @@ const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limi
 - Request fields that reach `param.*` or column comparisons are validated at the HTTP boundary
   (`TinybirdDateTime`, `BucketSeconds`, `WarehouseDateTime`) so bad input is a 400, not a 500.
 - The query-engine root barrel stays driver-free (web/cli import it).
-- `packages/domain/src/tinybird/endpoints.ts` is type-only.
+- Pipe rows are typed by the query that fills them (`PipeRow`, `ch/pipe-rows.ts`); no hand-written row interfaces in domain.
 - Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
   `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 
@@ -119,7 +119,7 @@ truthiness.
     "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
   ```
 - `@/` resolves to each app's source.
-- **Tests:** assert behavior, not source. `test-slop/*` rules (`scripts/oxlint-plugins/test-slop.mjs`)
+- **Tests:** assert behavior, not source. `test-slop/*` rules (`lib/oxlint-config/plugins/test-slop.mjs`)
   ban constant-vs-literal pins, existence-only/does-not-throw tests, Tailwind class pins and tests that
   read source files. Import and architecture boundaries are `no-restricted-imports` overrides in
   `.oxlintrc.json`, not tests.

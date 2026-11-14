@@ -6,9 +6,9 @@ import { configDefaults, defineConfig } from "vitest/config"
  * `vitest.config.ts` (`include: ["src/**\/*.test.ts"]`) and never runs under
  * `bun run test`.
  *
- * These cover what the unit suite structurally cannot: the unit tests inject an
- * `openSocket` seam, so "one socket per request" is only ever asserted against a
- * counter the test controls. Here it is asserted against `pg_stat_activity`.
+ * These cover what the unit suite structurally cannot: the unit tests count sockets
+ * on a server the test controls, so "one socket per request" is never asserted
+ * against a real Postgres. Here it is asserted against `pg_stat_activity`.
  *
  * Run with:
  *   bun db:up

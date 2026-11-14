@@ -1,5 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { Effect, String as Str } from "effect"
+import { Effect, Option, Result } from "effect"
+
+const IV_BYTES = 12
+const TAG_BYTES = 16
 
 export interface EncryptedValue {
 	readonly ciphertext: string
@@ -7,40 +10,32 @@ export interface EncryptedValue {
 	readonly tag: string
 }
 
-export const parseBase64Aes256GcmKey = <E>(raw: string, onError: (message: string) => E) =>
-	Effect.suspend((): Effect.Effect<Buffer, E> => {
-		const trimmed = Str.trim(raw)
-		if (trimmed.length === 0) {
-			return Effect.fail(onError("Expected a non-empty base64 encryption key"))
-		}
-
-		const decoded = Buffer.from(trimmed, "base64")
-		if (decoded.length !== 32) {
-			return Effect.fail(onError("Expected base64 for exactly 32 bytes"))
-		}
-
-		return Effect.succeed(decoded)
+/** `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`, trimmed and checked once with `Env`. */
+export const ingestKeyLookupHmacKey = <E>(
+	env: { readonly ingestKeyLookupHmacKey: Result.Result<string, string> },
+	onError: (message: string) => E,
+): Effect.Effect<string, E> =>
+	Result.match(env.ingestKeyLookupHmacKey, {
+		onSuccess: Effect.succeed,
+		onFailure: (message) => Effect.fail(onError(message)),
 	})
 
 /**
- * Optional additional authenticated data. AAD is authenticated but not stored,
- * so it binds a ciphertext to the row it was written for: decryption only
- * succeeds when the caller reconstructs the exact same bytes. Omitting it keeps
- * the original (AAD-free) format — existing ciphertexts written without one must
- * keep decrypting, so callers may only start passing an `aad` for columns with
- * no live rows.
+ * AES-256-GCM, the primitive under `SecretBox`. Stored secrets go through `SecretBox`, which
+ * picks the key and the AAD. `aad` is authenticated but not stored, so it binds a ciphertext to
+ * the row it was written for: decryption only succeeds with the exact same bytes.
  */
 export const encryptAes256Gcm = <E>(
 	plaintext: string,
 	encryptionKey: Buffer,
 	onError: (message: string) => E,
-	aad?: Buffer,
+	aad: Buffer,
 ) =>
 	Effect.try({
 		try: () => {
-			const iv = randomBytes(12)
+			const iv = randomBytes(IV_BYTES)
 			const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv)
-			if (aad !== undefined) cipher.setAAD(aad)
+			cipher.setAAD(aad)
 			const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()])
 
 			return {
@@ -52,29 +47,36 @@ export const encryptAes256Gcm = <E>(
 		catch: (error) => onError(error instanceof Error ? error.message : "Encryption failed"),
 	})
 
-/** Counterpart to {@link encryptAes256Gcm} — `aad` must match the value used to encrypt. */
+/** Counterpart to {@link encryptAes256Gcm}: `aad` must match the value used to encrypt. */
 export const decryptAes256Gcm = <E>(
 	encrypted: EncryptedValue,
 	encryptionKey: Buffer,
 	onError: (message: string) => E,
-	aad?: Buffer,
+	aad: Buffer,
 ) =>
 	Effect.try({
 		try: () => {
-			const decipher = createDecipheriv(
-				"aes-256-gcm",
-				encryptionKey,
-				Buffer.from(encrypted.iv, "base64"),
-			)
-			if (aad !== undefined) decipher.setAAD(aad)
-			decipher.setAuthTag(Buffer.from(encrypted.tag, "base64"))
+			const iv = Buffer.from(encrypted.iv, "base64")
+			const tag = Buffer.from(encrypted.tag, "base64")
+			// A shorter tag is still a valid GCM tag to the runtime, and far easier to forge.
+			if (iv.length !== IV_BYTES || tag.length !== TAG_BYTES) return Option.none()
+			const decipher = createDecipheriv("aes-256-gcm", encryptionKey, iv)
+			decipher.setAAD(aad)
+			decipher.setAuthTag(tag)
 
 			const plaintext = Buffer.concat([
 				decipher.update(Buffer.from(encrypted.ciphertext, "base64")),
 				decipher.final(),
 			])
 
-			return plaintext.toString("utf8")
+			return Option.some(plaintext.toString("utf8"))
 		},
 		catch: () => onError("Decryption failed"),
-	})
+	}).pipe(
+		Effect.flatMap(
+			Option.match({
+				onNone: () => Effect.fail(onError("Decryption failed")),
+				onSome: (plaintext) => Effect.succeed(plaintext),
+			}),
+		),
+	)

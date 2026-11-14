@@ -7,8 +7,6 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { TimeWindow } from "../../data/time-range"
 import { WarehouseFailure } from "../../data/warehouse-error"
 
-// MODEL
-
 export const Session = Schema.Literals(["Checking", "SignedIn", "SignedOut", "Unreachable"])
 export type Session = typeof Session.Type
 
@@ -37,8 +35,6 @@ export const Model = Schema.Struct({
 	toasts: Toast.Model,
 })
 export type Model = typeof Model.Type
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	SucceededCheckProbeSession: { orgId: OrgId },

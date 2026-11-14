@@ -3,7 +3,9 @@ import { Effect, Option, Schema, Array as Arr, Record as Rec, String as Str } fr
 import { readQuotaApproachingDismissed } from "./billing-banners"
 import { readDashboardFavorites } from "./favorites"
 import {
+	COLLAPSED_NAV_GROUPS_KEY,
 	INFRA_SURFACES_STORAGE_PREFIX,
+	NO_SCHEDULES_STORAGE_PREFIX,
 	NAMESPACE_STORAGE_PREFIX,
 	ShellStorageError,
 	THEME_STORAGE_KEY,
@@ -35,14 +37,16 @@ const readPrefixed = <A>(
 	Effect.try({
 		try: () =>
 			Rec.fromEntries(
-				Arr.filter(
-					Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
-					(key): key is string => key !== null && Str.startsWith(prefix)(key),
-				).flatMap((key) =>
-					Option.match(Option.flatMap(readLocalStorage(key), decode), {
-						onNone: () => [],
-						onSome: (value) => [[key.slice(prefix.length), value] as const],
-					}),
+				Arr.flatMap(
+					Arr.filter(
+						Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)),
+						(key): key is string => key !== null && Str.startsWith(prefix)(key),
+					),
+					(key: string) =>
+						Option.match(Option.flatMap(readLocalStorage(key), decode), {
+							onNone: () => [],
+							onSome: (value) => [[Str.slice(prefix.length)(key), value] as const],
+						}),
 				),
 			),
 		catch: (cause) => new ShellStorageError({ message: `Could not read ${prefix} entries`, cause }),
@@ -59,16 +63,35 @@ const readRememberedSurfaces = readPrefixed(
 	Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(NavSurface))),
 )
 
+const decodeGroups = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+
+/** The folded nav groups; unreadable or blocked storage folds none. */
+export const readCollapsedNavGroups = (): ReadonlyArray<string> =>
+	Option.getOrElse(Option.flatMap(readLocalStorage(COLLAPSED_NAV_GROUPS_KEY), decodeGroups), () => [])
+
+/** Every org's last "no schedules" answer, epoch ms; an entry that is not a number is skipped. */
+const readNoScheduleOrgs = readPrefixed(
+	NO_SCHEDULES_STORAGE_PREFIX,
+	Schema.decodeUnknownOption(Schema.NumberFromString),
+)
+
+/** `SaveSidebarState`'s cookie: open unless the last toggle collapsed it (as Maple Local reads it). */
+export const isSidebarOpenIn = (cookie: string): boolean =>
+	!Arr.contains(Str.split("; ")(cookie), "sidebar_state=false")
+
 /** Persisted shell UI state, read once before the first render. */
 export const readShellFlags: Effect.Effect<ShellFlags> = Effect.gen(function* () {
 	const pinnedNamespaces = yield* readPinnedNamespaces
 	return {
+		isSidebarOpen: isSidebarOpenIn(document.cookie),
 		isMobile: window.matchMedia(MOBILE_QUERY).matches,
 		isFilterCollapsed: window.matchMedia(FILTER_COLLAPSED_QUERY).matches,
 		isBelowSm: window.matchMedia(SMALL_QUERY).matches,
 		theme: readTheme(),
 		pinnedNamespaces,
 		dashboardFavorites: readDashboardFavorites(),
+		collapsedNavGroups: readCollapsedNavGroups(),
+		noScheduleOrgs: yield* readNoScheduleOrgs,
 		rememberedSurfaces: yield* readRememberedSurfaces,
 		isQuotaApproachingDismissed: yield* readQuotaApproachingDismissed,
 		platform: detectPlatform(),

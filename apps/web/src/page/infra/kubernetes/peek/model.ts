@@ -1,13 +1,12 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { Schema } from "effect"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
-import { ChartModels, SeriesSlots } from "../../kit/series"
+import { ChartModels, SeriesSlots } from "../../../kit/series"
 import { PodMetric, PodSummary } from "../pod-data"
 
-// `PodPeekSheet`: a pod's page in a sheet over the list.
+// A pod's page in a sheet over the list.
 
 /** Limits first (what the list is sorted by), then the raw cores and the requests. */
 export const PEEK_METRICS: ReadonlyArray<PodMetric> = [
@@ -32,8 +31,7 @@ export const Model = Schema.Struct({
 	series: SeriesSlots,
 	/** By metric: the charts are not keyed by pod, so a step redraws in place. */
 	charts: ChartModels,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 })
 export type Model = typeof Model.Type
 

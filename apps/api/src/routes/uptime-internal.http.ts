@@ -1,7 +1,7 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Effect, Option, Redacted, Schema, Array as Arr } from "effect"
 import { UserId } from "@maple/domain/http"
-import { UptimeIntervalSeconds } from "@maple/domain/primitives"
+import { UptimeIntervalSeconds } from "@maple/primitives"
 import { UptimeCheckReportList, UptimeProbeTarget } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
@@ -49,7 +49,7 @@ export const UptimeInternalRouter = HttpRouter.use((router) =>
 				const denied = unauthorized(req)
 				if (denied) return denied
 
-				const rows = yield* service.listProbeTargets()
+				const rows = yield* service.listProbeTargets
 				// Check spans go into each org's own traces, sent with its public ingest key.
 				const keysByOrg = yield* ingestKeys.getOrCreateMany(
 					Arr.map(rows, (row) => row.orgId),

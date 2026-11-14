@@ -1,7 +1,7 @@
 // Shared OAuth-connection machinery for provider integrations (Cloudflare,
 // Linear, ...). Providers persist into the same `oauth_connections` /
 // `oauth_auth_states` tables, so the state-row lifecycle, encrypted token
-// persistence, token-endpoint HTTP calls, and refresh semantics live here —
+// persistence, token-endpoint HTTP calls, and refresh semantics live here:
 // parameterized by provider id and display label. Provider-specific flow
 // (PKCE, OIDC discovery, account resolution) stays in each service.
 
@@ -14,38 +14,32 @@ import {
 	IntegrationsValidationError,
 	type OrgId,
 } from "@maple/domain/http"
-import type { PullSourcePlatform, SourceId } from "@maple/domain/primitives"
+import type { PullSourcePlatform, SourceId } from "@maple/primitives"
 import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import {
-	OAuthAuthStates,
-	OAuthConnections,
-	type OAuthConnectionInsert,
-	type OAuthConnectionRow,
-} from "@maple/db/tables"
+import { OAuthConnections, type OAuthConnectionInsert, type OAuthConnectionRow } from "@maple/db/tables"
 import { Clock, Effect, Option, Redacted, Schedule, Schema, Semaphore } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
-import {
-	decryptAes256Gcm,
-	encryptAes256Gcm,
-	parseBase64Aes256GcmKey,
-	type EncryptedValue,
-} from "@maple/backend/platform/Crypto"
+import type { EncryptedValue } from "@maple/backend/platform/Crypto"
+import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
+import { oauthAccessTokenSlot, oauthRefreshTokenSlot } from "@maple/backend/platform/secret-slots"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
-import { deleteSourcesOf, createIntegrationSource } from "@maple/backend/services/org/integration-sources"
+import {
+	deleteSourcesOf,
+	createIntegrationSource,
+} from "@maple/backend/services/integrations/integration-sources"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import type { EnvConfig } from "@maple/backend/platform/Env"
-import { makeOAuthStateConsumer, type OAuthFlowInitiator } from "./oauth-state"
+import type { EnvApi } from "@maple/backend/platform/Env"
+import { makeOAuthStateStore, type OAuthFlowInitiator } from "./oauth-state"
 
-export const OAUTH_STATE_TTL_MS = 10 * 60_000 // 10 minutes
-export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token is within 1 minute of expiry
+export const OAUTH_REFRESH_LEEWAY_MS = 60_000
 
 /**
  * How long `getValidConnectionToken` may serve a connection row from the
  * in-isolate memo instead of re-reading Postgres.
  *
  * Why this exists: an uncached read on a hot path is a network call exposed to
- * the dial itself — measured at p50 11ms but with ~4% of dials stalling out.
+ * the dial itself: measured at p50 11ms but with ~4% of dials stalling out.
  * Poller and scrape paths call this once per tick per org, which made it one of
  * the largest sources of dial volume on the api worker. Requests now share one
  * connection per invocation (`pg-connection-scope.ts`), which amortizes the
@@ -53,7 +47,7 @@ export const OAUTH_REFRESH_LEEWAY_MS = 60_000 // refresh when the access token i
  *
  * 60s is deliberately far tighter than the token's own lifetime: the memo is
  * about collapsing a burst of same-tick reads, not about holding credentials.
- * It is also bounded twice over — an entry is only served while `rowIsValid`
+ * It is also bounded twice over: an entry is only served while `rowIsValid`
  * still holds for it, so a token nearing expiry re-reads regardless of TTL.
  */
 const CONNECTION_MEMO_TTL_MS = 60_000
@@ -73,9 +67,9 @@ const decodeTokenResponse = Schema.decodeUnknownEffect(OAuthTokenResponseSchema)
 const decodeJsonUnknown = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 
 /**
- * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons —
+ * RFC 6749 §5.2 error body. Token endpoints answer 400/401 for many reasons:
  * `invalid_client` (rotated/misconfigured client secret), `invalid_request`,
- * `invalid_scope` — and only `invalid_grant` means the grant itself is dead.
+ * `invalid_scope`. Only `invalid_grant` means the grant itself is dead.
  * Classifying any other 400/401 as revoked would let one bad Maple client
  * secret stamp every tenant connection revoked at once.
  */
@@ -106,7 +100,7 @@ export interface OAuthTokenEndpointConfig {
 	readonly tokenUrl: string
 	readonly clientId: string
 	/** null for a public (PKCE-only) client. Stays Redacted until the token POST body. */
-	readonly clientSecret: Redacted.Redacted<string> | null
+	readonly clientSecret: Redacted.Redacted | null
 	/** How a confidential client authenticates (RFC 6749 s2.3.1); defaults to the POST body. */
 	readonly clientAuthentication?: "client_secret_post" | "client_secret_basic"
 	/** A non-RFC status the provider answers for an unknown or rotated-away refresh token (Supabase: 404). */
@@ -134,7 +128,7 @@ export interface MakeOAuthConnectionHelpersOptions {
 	/** Display name used in error messages ("Cloudflare", "Linear"). */
 	readonly providerLabel: string
 	readonly database: DatabaseApi
-	readonly env: EnvConfig
+	readonly env: EnvApi
 	/** Set when the connection sends data: it owns a source, created and deleted with it. */
 	readonly source?: {
 		readonly platform: PullSourcePlatform
@@ -146,11 +140,15 @@ export interface MakeOAuthConnectionHelpersOptions {
 			sourceId: SourceId,
 		) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 	}
-	/** Provider state a new grant must reset, written in the same transaction as the grant. */
+	/**
+	 * Provider state a new grant must reset, written in the same transaction as the grant.
+	 * `previousExternalUserId` is the account the org was connected as before, null on a first connect.
+	 */
 	readonly onUpsert?: (
 		db: MapleDb,
 		orgId: OrgId,
 		currentTime: number,
+		change: { readonly previousExternalUserId: string | null; readonly externalUserId: string | null },
 	) => Effect.Effect<unknown, Effect.Error<ReturnType<MapleDb["run"]>>>
 }
 
@@ -163,17 +161,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		const { provider, providerLabel, database, env, source, onUpsert } = options
 		const httpClient = yield* HttpClient.HttpClient
 
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
-			(message) =>
-				new IntegrationsValidationError({
-					message:
-						message === "Expected a non-empty base64 encryption key"
-							? "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required"
-							: message === "Expected base64 for exactly 32 bytes"
-								? "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes"
-								: message,
-				}),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
+			(message) => new IntegrationsValidationError({ message }),
 		)
 
 		const toPersistenceError = makePersistenceErrorMapper(
@@ -183,36 +173,45 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		const dbExecute = makeDbExecute(database, `${providerLabel} integration`, toPersistenceError)
 
-		const encryptValue = (plaintext: string) =>
-			encryptAes256Gcm(
-				plaintext,
-				encryptionKey,
-				(message) =>
-					new IntegrationsPersistenceError({
-						message: `Failed to encrypt ${providerLabel} token: ${message}`,
-					}),
-			)
+		const sealError = (message: string) =>
+			new IntegrationsPersistenceError({
+				message: `Failed to encrypt ${providerLabel} token: ${message}`,
+			})
 
-		const decryptValue = (encrypted: EncryptedValue) =>
-			decryptAes256Gcm(
-				encrypted,
-				encryptionKey,
-				() =>
-					new IntegrationsPersistenceError({
-						message: `Failed to decrypt stored ${providerLabel} token`,
-					}),
-			)
+		const openError = () =>
+			new IntegrationsPersistenceError({
+				message: `Failed to decrypt stored ${providerLabel} token`,
+			})
 
-		const purgeExpiredStates = (currentTime: number) =>
-			dbExecute((db) =>
-				db.run(PG.deleteFrom(OAuthAuthStates).where(($) => [$.expiresAt.lt(currentTime)])),
-			)
+		// Tokens bind to the upsert target (org, provider): a reconnect keeps the old row id.
+		const sealAccessToken = (orgId: OrgId, plaintext: string) =>
+			sealSecret(keyring, oauthAccessTokenSlot, { orgId, provider }, plaintext, sealError)
 
-		const consumeState = makeOAuthStateConsumer(database, toPersistenceError)
+		const sealRefreshToken = (orgId: OrgId, plaintext: string) =>
+			sealSecret(keyring, oauthRefreshTokenSlot, { orgId, provider }, plaintext, sealError)
+
+		const openAccessToken = (orgId: OrgId, stored: EncryptedValue) =>
+			openSecret(keyring, oauthAccessTokenSlot, { orgId, provider }, stored, openError)
+
+		const openRefreshToken = (orgId: OrgId, stored: EncryptedValue) =>
+			openSecret(keyring, oauthRefreshTokenSlot, { orgId, provider }, stored, openError)
+
+		const states = makeOAuthStateStore(database, toPersistenceError)
+
+		/** Save this provider's state for the Maple user and org starting the flow. */
+		const saveState = (
+			state: string,
+			initiator: OAuthFlowInitiator,
+			options: {
+				readonly redirectUri: string
+				readonly returnTo: string | null
+				readonly codeVerifier?: string
+			},
+		) => states.save({ state, provider, initiator, ...options })
 
 		/** Claim this provider's state row, only for the Maple user and org that started the flow. */
 		const consumeStateRow = (state: string, initiator: OAuthFlowInitiator) =>
-			consumeState({ state, provider, initiator })
+			states.consume({ state, provider, initiator })
 
 		/**
 		 * Per-isolate connection-row memo backing `getValidConnectionToken` only.
@@ -228,7 +227,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		/**
 		 * Drop the memoized row for an org. Must be called from every path that
-		 * writes or removes the connection — a stale entry here serves a token for
+		 * writes or removes the connection: a stale entry here serves a token for
 		 * a grant that was just revoked or reconnected.
 		 */
 		const invalidateConnectionMemo = (orgId: OrgId) =>
@@ -250,7 +249,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			orgId: OrgId,
 		) {
 			const row = yield* loadConnection(orgId)
-			if (!row) {
+			if (row == null) {
 				return yield* new IntegrationsNotConnectedError({
 					message: `${providerLabel} is not connected for this organization`,
 				})
@@ -273,6 +272,15 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
+						const [previous] =
+							onUpsert === undefined
+								? []
+								: yield* db.run(
+										PG.from(OAuthConnections)
+											.select("externalUserId")
+											.where(($) => [$.orgId.eq(orgId), $.provider.eq(provider)])
+											.limit(1),
+									)
 						const [connection] = yield* db.run(
 							PG.insertInto(OAuthConnections)
 								.values({
@@ -289,9 +297,13 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 									// pollers resume automatically.
 									set: { ...values, revokedAt: null, updatedAt: currentTime },
 								})
-								.returning("id", "sourceId", "externalAccountName"),
+								.returning("id", "sourceId", "externalAccountName", "externalUserId"),
 						)
-						if (onUpsert !== undefined) yield* onUpsert(db, orgId, currentTime)
+						if (onUpsert !== undefined)
+							yield* onUpsert(db, orgId, currentTime, {
+								previousExternalUserId: previous?.externalUserId ?? null,
+								externalUserId: connection?.externalUserId ?? null,
+							})
 						if (source === undefined || connection === undefined || connection.sourceId !== null)
 							return
 						const sourceId = yield* createIntegrationSource(
@@ -311,7 +323,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			).pipe(Effect.ensuring(invalidateConnectionMemo(orgId)))
 
 		/**
-		 * Stamp the connection as revoked (idempotent — only the first stamp writes).
+		 * Stamp the connection as revoked (idempotent: only the first stamp writes).
 		 * Pollers filter on `revokedAt IS NULL`, so a revoked grant stops being
 		 * retried every tick; `upsertConnection` (reconnect) clears the stamp.
 		 * With `unchangedSince`, the stamp is a no-op once the row was rewritten after that read.
@@ -435,8 +447,8 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		/**
 		 * Refresh-grant call with the shared classification rule: only a 400/401
 		 * whose RFC 6749 error body says `invalid_grant` means the grant itself is
-		 * gone (revoked / rotated away). Every other failure — `invalid_client`
-		 * from a rotated Maple secret, a bodyless 400, 429s, 5xx — is a
+		 * gone (revoked / rotated away). Every other failure (`invalid_client`
+		 * from a rotated Maple secret, a bodyless 400, 429s, 5xx) is a
 		 * non-mutating upstream failure and must not stamp the connection revoked.
 		 */
 		const refreshAccessToken = Effect.fn("OAuthConnectionHelpers.refreshAccessToken")(function* (
@@ -481,9 +493,9 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			row: OAuthConnectionRow,
 			tokenResponse: OAuthTokenResponse,
 		) {
-			const accessEnc = yield* encryptValue(tokenResponse.access_token)
+			const accessEnc = yield* sealAccessToken(row.orgId, tokenResponse.access_token)
 			const refreshEnc = tokenResponse.refresh_token
-				? yield* encryptValue(tokenResponse.refresh_token)
+				? yield* sealRefreshToken(row.orgId, tokenResponse.refresh_token)
 				: null
 			const currentTime = yield* Clock.currentTimeMillis
 			const expiresAt =
@@ -495,9 +507,14 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							accessTokenCiphertext: accessEnc.ciphertext,
 							accessTokenIv: accessEnc.iv,
 							accessTokenTag: accessEnc.tag,
-							refreshTokenCiphertext: refreshEnc?.ciphertext ?? row.refreshTokenCiphertext,
-							refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
-							refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
+							// Left alone when the provider kept the refresh token: `row` may predate a reseal.
+							...(refreshEnc === null
+								? undefined
+								: {
+										refreshTokenCiphertext: refreshEnc.ciphertext,
+										refreshTokenIv: refreshEnc.iv,
+										refreshTokenTag: refreshEnc.tag,
+									}),
 							expiresAt,
 							// A successful refresh proves the grant alive, even if a racing isolate stamped it.
 							revokedAt: null,
@@ -507,7 +524,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				),
 			).pipe(
 				// The provider already rotated the refresh token, so this write holds the
-				// only usable copy — losing it to a transient Postgres blip turns into a
+				// only usable copy; losing it to a transient Postgres blip turns into a
 				// permanent disconnect on the next refresh. Retry hard before giving up.
 				Effect.retry({ times: 3, schedule: Schedule.exponential("100 millis") }),
 			)
@@ -518,14 +535,14 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 			row.expiresAt === null || row.expiresAt - currentTime > OAUTH_REFRESH_LEEWAY_MS
 
 		const accessTokenFromRow = (row: OAuthConnectionRow) =>
-			decryptValue({
+			openAccessToken(row.orgId, {
 				ciphertext: row.accessTokenCiphertext,
 				iv: row.accessTokenIv,
 				tag: row.accessTokenTag,
 			}).pipe(Effect.map((accessToken) => ({ accessToken, row })))
 
 		// Providers rotate refresh tokens on use, so two concurrent refreshes with the same
-		// stored token make the loser 400 — which would falsely surface as "revoked". Serialize
+		// stored token make the loser 400, which would falsely surface as "revoked". Serialize
 		// refreshes within this isolate (refreshes are rare, one permit is fine) and re-check the
 		// row after acquiring: a fiber that waited usually finds the winner's fresh tokens.
 		const refreshSemaphore = Semaphore.makeUnsafe(1)
@@ -539,7 +556,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					})
 				}
 
-				const refreshToken = yield* decryptValue({
+				const refreshToken = yield* openRefreshToken(row.orgId, {
 					ciphertext: row.refreshTokenCiphertext,
 					iv: row.refreshTokenIv,
 					tag: row.refreshTokenTag,
@@ -552,7 +569,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 					Effect.map((accessToken) => ({ accessToken, row })),
 					// Cross-isolate race: a concurrent worker isolate may have consumed the rotated
 					// refresh token and persisted new tokens between our read and our refresh. Before
-					// declaring the connection revoked, re-read the row — if a newer, valid token
+					// declaring the connection revoked, re-read the row: if a newer, valid token
 					// landed, use it.
 					Effect.catchTag("@maple/http/errors/IntegrationsRevokedError", (error) =>
 						Effect.gen(function* () {
@@ -672,7 +689,7 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 				}
 				// Deliberately not memoized. `refreshWithSingleFlight` resolves to the
 				// row as it was read *before* the refresh, so its ciphertext is the
-				// superseded token — caching it would serve a stale credential for the
+				// superseded token; caching it would serve a stale credential for the
 				// whole TTL. Refreshes are rare; the next call re-reads and memoizes
 				// the persisted row.
 				return yield* refreshWithSingleFlight(config, orgId)
@@ -681,13 +698,16 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 
 		/**
 		 * Run `use` with the org's access token (a stamped grant fails first). A rejected token forces
-		 * one refresh and a retry; a rejected fresh token stamps the grant revoked.
+		 * one refresh and a retry; a rejected fresh token stamps the grant revoked. `stampRevoked:
+		 * false` fails the same way without the stamp, for a caller whose endpoint may refuse a
+		 * healthy grant: the grant is shared, and its other readers must not stop on that evidence.
 		 */
 		const withRejectedTokenRetry = <A, E, Rejected extends E & { readonly message: string }>(
 			config: OAuthTokenEndpointConfig,
 			orgId: OrgId,
 			isRejected: (error: E) => error is Rejected,
 			use: (accessToken: string) => Effect.Effect<A, E>,
+			options: { readonly stampRevoked?: boolean } = {},
 		) =>
 			Effect.gen(function* () {
 				const { accessToken } = yield* getValidConnectionToken(config, orgId, { failIfRevoked: true })
@@ -697,7 +717,10 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 							const refreshed = yield* refreshRejectedToken(config, orgId, accessToken)
 							return yield* use(refreshed.accessToken).pipe(
 								Effect.catchIf(isRejected, (rejected) =>
-									markRejectedTokenRevoked(orgId, refreshed.accessToken).pipe(
+									(options.stampRevoked === false
+										? Effect.succeed(false)
+										: markRejectedTokenRevoked(orgId, refreshed.accessToken)
+									).pipe(
 										Effect.tap((stamped) =>
 											Effect.annotateCurrentSpan(
 												`maple.${provider}.grant_revoked`,
@@ -722,9 +745,11 @@ export const makeOAuthConnectionHelpers = (options: MakeOAuthConnectionHelpersOp
 		return {
 			toPersistenceError,
 			dbExecute,
-			encryptValue,
-			decryptValue,
-			purgeExpiredStates,
+			sealAccessToken,
+			sealRefreshToken,
+			openAccessToken,
+			openRefreshToken,
+			saveState,
 			consumeStateRow,
 			loadConnection,
 			requireConnection,

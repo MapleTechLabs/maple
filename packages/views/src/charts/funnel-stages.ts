@@ -4,12 +4,12 @@ import {
 	cellText,
 	pickValueField,
 	toBreakdownRows,
-} from "@maple/ui/components/charts/_shared/breakdown-rows"
+} from "./series/breakdown-rows"
 import { resolveSeriesColors } from "@maple/ui/lib/semantic-series-colors"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
-// The stage derivation of `FunnelBarsChart` (packages/ui/src/components/charts/funnel/
-// query-builder-funnel-chart.tsx): rows folded into stages, grouped rows into one bar per group.
+// The funnel chart's stage derivation: rows folded into stages, grouped rows into one bar
+// per group.
 
 export interface StageGroup {
 	readonly name: string
@@ -31,8 +31,11 @@ const BAR_MIN_PCT = 0.04
 
 /** `dropTrailingZeroRows`: keep one zero stage right after the last non-zero one. */
 export const dropTrailingZeroRows = <T extends BreakdownRow>(rows: ReadonlyArray<T>): ReadonlyArray<T> => {
-	const lastNonZero = rows.findLastIndex((row) => row.value > 0)
-	return rows.slice(0, Math.min(rows.length, lastNonZero + 2))
+	const end = Option.match(
+		Arr.findLastIndex(rows, (row) => row.value > 0),
+		{ onNone: () => 1, onSome: (lastNonZero) => lastNonZero + 2 },
+	)
+	return rows.slice(0, Math.min(rows.length, end))
 }
 
 type Row = Readonly<Record<string, unknown>>
@@ -108,7 +111,6 @@ const groupedFunnel = (source: ReadonlyArray<Row>, valueField: string): FunnelSt
 	}
 }
 
-/** The `stages` / `legend` memo. */
 export const funnelStages = (source: ReadonlyArray<Row>): FunnelStages => {
 	const valueField = pickValueField(source)
 	const grouped = Arr.filter(source, isGroupedRow)

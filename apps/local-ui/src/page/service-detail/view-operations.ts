@@ -23,8 +23,9 @@ import type { Model, OperationRow } from "./model"
 import { tracesHref } from "./view-parts"
 import { hstack } from "@maple/views/ui/stack"
 import { typographyClass } from "@maple/views/ui/typography"
+import { nonZeroOr } from "@maple/ui/lib/number"
 
-// The "Top operations" section of `ServiceDetailView`.
+// The service detail page's "Top operations" section.
 
 const HEADERS = ["Spans", "Errors", "Error rate", "Avg", "p50", "p95"]
 
@@ -44,10 +45,10 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 			],
 			"max-w-96 truncate font-mono text-xs",
 		),
-		numericTableCell(h, [formatNumber(op.estimatedSpanCount || op.spanCount)]),
+		numericTableCell(h, [formatNumber(nonZeroOr(op.estimatedSpanCount, op.spanCount))]),
 		numericTableCell(
 			h,
-			[formatNumber(op.estimatedErrorCount || op.errorCount)],
+			[formatNumber(nonZeroOr(op.estimatedErrorCount, op.errorCount))],
 			cn(op.errorCount > 0 && "text-severity-error"),
 		),
 		numericTableCell(h, [errorRateValue(h, { rate: op.errorRate })]),
@@ -58,12 +59,14 @@ const operationRow = (h: HtmlBuilder<Message>, serviceName: string, range: strin
 
 const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): Html => {
 	if (isAwaitingFirstData(model.operations))
-		return h.div([h.Class("flex h-24 items-center justify-center rounded-md border")], [spinner(h)])
+		return hstack(h, { align: "center", justify: "center", className: "h-24 rounded-md border" }, [
+			spinner(h),
+		])
 	const failure = failureWithoutData(model.operations)
 	if (Option.isSome(failure))
 		return errorState(h, {
 			failure: failure.value,
-			title: "Couldn’t load operations",
+			title: "Couldn't load operations",
 			onRetry: Message.ClickedRetryOperations(),
 		})
 	const operations = Option.getOrElse(AsyncData.getData(model.operations.data), () => [])
@@ -74,7 +77,7 @@ const operationsBody = (h: HtmlBuilder<Message>, model: Model, range: string): H
 				justify: "center",
 				className: cn("h-24 rounded-md border", typographyClass({ size: "sm", tone: "muted" })),
 			},
-			["No operations recorded in this range."],
+			["No operations recorded in this window"],
 		)
 	return h.div(
 		[h.Class("rounded-md border")],

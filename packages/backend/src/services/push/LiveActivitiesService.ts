@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { LiveActivities, type LiveActivityRow } from "@maple/db/tables"
 import { MobileDevicePersistenceError } from "@maple/domain/http"
-import type { OrgId } from "@maple/domain/primitives"
-import { Clock, Context, Effect, Layer } from "effect"
+import type { OrgId } from "@maple/primitives"
+import { Array as Arr, Clock, Context, Effect, Layer } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 
@@ -123,7 +123,12 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 							.returning(),
 					),
 				)
-				return toLiveActivity(rows[0]!)
+				const [row] = rows
+				if (row === undefined)
+					return yield* new MobileDevicePersistenceError({
+						message: "Live activity insert returned no row",
+					})
+				return toLiveActivity(row)
 			})
 
 			const listActive = Effect.fn("LiveActivitiesService.listActive")(function* (
@@ -141,7 +146,7 @@ export class LiveActivitiesService extends Context.Service<LiveActivitiesService
 							]),
 					),
 				)
-				return rows.map(toLiveActivity)
+				return Arr.map(rows, toLiveActivity)
 			})
 
 			const end = Effect.fn("LiveActivitiesService.end")(function* (id: string, reason: string) {

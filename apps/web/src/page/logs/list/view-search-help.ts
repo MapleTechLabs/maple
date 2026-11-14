@@ -9,12 +9,8 @@ import { Message } from "./message"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// What the log search box
-// accepts, from the info affordance beside the SEARCH label (a hover popover, 200 ms).
-
 type Mode = "text" | "trace" | "header"
 
-// The search mode badge's label and colours.
 const MODE = new Map<Mode, Readonly<{ label: string; className: string }>>([
 	["text", { label: "Text", className: "bg-primary-a2 text-primary" }],
 	["trace", { label: "Trace", className: "bg-severity-debug-a2 text-severity-debug" }],
@@ -64,7 +60,7 @@ const lookupRow = (h: HtmlBuilder<Message>, lookup: (typeof LOOKUPS)[number]): H
 			h.dd([h.Class("min-w-0 truncate font-mono text-2xs text-foreground")], [lookup.example]),
 			h.dd(
 				[h.Class("col-start-2 text-2xs text-muted-foreground leading-relaxed")],
-				[lookup.does, " ", h.span([h.Class("text-foreground-subtle")], ["(", lookup.note, ")"])],
+				[lookup.does, " ", typography(h, { tone: "subtle" }, ["(", lookup.note, ")"])],
 			),
 		],
 	)

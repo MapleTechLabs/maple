@@ -208,6 +208,32 @@ describe("getSessionId", () => {
 		expect(storage.getItem(STORAGE_KEY)).not.toBe(before)
 	})
 
+	it("parses the stored record once for a burst of spans", () => {
+		const id = getSessionId()
+		const parses = vi.spyOn(JSON, "parse")
+		for (let span = 0; span < 50; span++) expect(getSessionId()).toBe(id)
+
+		expect(parses.mock.calls.length).toBeLessThanOrEqual(1)
+		parses.mockRestore()
+	})
+
+	it("sees a record another SDK copy rewrote on the very next read", () => {
+		getSessionId()
+		getSessionId()
+		const rewritten = { ...JSON.parse(storage.getItem(STORAGE_KEY)!), chunkSeq: 7 }
+		storage.setItem(STORAGE_KEY, JSON.stringify(rewritten))
+
+		expect(markActivity()?.chunkSeq).toBe(7)
+	})
+
+	it("hands each caller its own copy of the stored record", () => {
+		getSession()
+		const first = peekSession()
+		if (first) first.chunkSeq = 99
+
+		expect(peekSession()?.chunkSeq).toBe(0)
+	})
+
 	it("keeps a session alive through span activity that getSession would have rotated", () => {
 		const id = getSessionId()
 		for (let i = 0; i < 5; i++) {

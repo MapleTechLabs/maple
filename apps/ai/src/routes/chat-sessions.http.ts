@@ -1,5 +1,5 @@
 /**
- * Maple's own durable chat transport, replacing Flue's `/agents/maple-chat/:id` surface.
+ * Maple's own durable chat transport.
  *
  *   GET  /api/chat/sessions/:sessionId/history          materialized transcript + resume cursor
  *   POST /api/chat/sessions/:sessionId/messages         submit a prompt, start the turn
@@ -15,8 +15,7 @@
  *
  * **Tenancy.** The org is recovered from the session id (`"<orgId>:<tabId>"`) and matched against
  * the caller's resolved tenant. It is never taken from a body or header, so a client cannot address
- * another org's conversation by asking nicely — the same deny-by-default rule Flue's
- * `instanceIdFromAgentPath` guard enforced, kept at the one place that now matters.
+ * another org's conversation by asking nicely.
  *
  * **Lifetime.** No handler here runs a turn. `beginTurn` starts it inside the Durable Object, which
  * owns its own lifetime; a turn forked off this request would be cancelled the moment the 202 was
@@ -27,19 +26,21 @@ import {
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
-	investigationIdFromChatSessionId,
+	chatSessionKind,
 	orgIdFromChatSessionId,
 	originForTenant,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import type { ChatSessionCallError, ChatSessionClient } from "@maple/domain/chat-session-stub"
 import { ChatSessions } from "@maple/backend/platform/bindings"
-import { Context, Effect, Layer, Option, Schema, Stream, String as Str } from "effect"
+import { Context, Effect, Layer, Option, Result, Schema, Stream, String as Str } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
-import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Env } from "@maple/backend/platform/Env"
 import { resolveChatSessionTenantContext } from "../mcp/lib/resolve-tenant"
+import type { TenantContext } from "@maple/domain/http"
+import * as Policy from "@maple/domain/policy"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
@@ -119,31 +120,43 @@ const resolveSession = Effect.fn("ChatSessionsRouter.resolveSession")(function* 
 	if (!sessionOrgId) return { ok: false, failure: problem("Malformed chat session id", 400) } as const
 
 	// Unauthenticated and bad-credential requests are 401, not the 500 an uncaught `McpAuth*Error`
-	// would produce out of a raw router. `Effect.option` rather than `catchTags` because the
-	// resolver's whole error channel *is* the auth failures. Session-only: API keys and MCP OAuth
-	// tokens are refused here, since a turn from this route runs as an attended `app` turn.
-	const tenant: Option.Option<TenantContext> = yield* HttpServerRequest.toWeb(request).pipe(
+	// would produce out of a raw router. Session-only: API keys and MCP OAuth tokens are refused
+	// here, since a turn from this route runs as an attended `app` turn.
+	const resolved = yield* HttpServerRequest.toWeb(request).pipe(
 		Effect.flatMap(resolveChatSessionTenantContext),
-		Effect.option,
+		Effect.result,
 	)
-	if (Option.isNone(tenant)) {
-		return { ok: false, failure: problem("Authentication required", 401) } as const
+	if (Result.isFailure(resolved)) {
+		// The auth provider being away is retryable: a 401 would send the reader to sign in again.
+		return resolved.failure._tag === "@maple/mcp/errors/McpAuthUnavailableError"
+			? ({
+					ok: false,
+					failure: problem("Authentication is temporarily unavailable", 503),
+				} as const)
+			: ({ ok: false, failure: problem("Authentication required", 401) } as const)
 	}
+	const tenant: TenantContext = resolved.success
 
-	if (tenant.value.orgId !== sessionOrgId) {
+	if (tenant.orgId !== sessionOrgId) {
 		// Deliberately 404, not 403: confirming that another org's conversation exists is itself
 		// a leak.
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
 	}
 
 	// The dashboard's only conversation is an investigation's; bot threads and reviews have their own drivers.
-	if (investigationIdFromChatSessionId(sessionId) === undefined) {
+	if (chatSessionKind(sessionId).mode !== "investigate") {
 		return { ok: false, failure: problem("Chat session not found", 404) } as const
+	}
+
+	// Driving an investigation is a member's job (`investigations:run`): a follow-up can file a new
+	// diagnosis, and a stop ends a running pass. An analyst reads the thread.
+	if (request.method !== "GET" && Policy.isAnalyst(tenant.roles)) {
+		return { ok: false, failure: problem(Policy.analystMessage, 403) } as const
 	}
 
 	const stub = (yield* ChatSessions).session(sessionId)
 
-	const session: ResolvedSession = { sessionId, tenant: tenant.value, stub, url }
+	const session: ResolvedSession = { sessionId, tenant, stub, url }
 	return { ok: true, session } as const
 })
 
@@ -154,6 +167,7 @@ const cursorParam = (url: URL): number => {
 
 export const ChatSessionsRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
+		const random = yield* SecureRandom.SecureRandom
 		yield* router.add("GET", "/api/chat/sessions/:sessionId/history", (request) =>
 			Effect.gen(function* () {
 				const resolved = yield* resolveSession(request)
@@ -186,10 +200,9 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 					return problem("A non-empty `text` is required", 400)
 				}
 
-				const messageId = crypto.randomUUID()
-				// Not `{ kind: "app" }` outright: this route also authenticates Maple's own service
-				// token, and the only thing distinguishing that caller is the user id the auth layer
-				// stamps on it. `originForTenant` owns that read, so it stays in one place.
+				const messageId = yield* random.uuidV4()
+				// Every caller here is a signed-in session, so this is `app`; `originForTenant` still
+				// owns the read so an `internal-service` tenant could never be stamped attended.
 				const turnTenant = toChatTurnTenant(tenant)
 				// `beginTurn` claims the slot, records the user message AND starts the turn, all
 				// inside the Durable Object. This request answers in milliseconds and deliberately
@@ -289,4 +302,5 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 			),
 		),
 	),
+	Layer.provide(SecureRandom.layerWebCrypto),
 )

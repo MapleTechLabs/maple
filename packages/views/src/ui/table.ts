@@ -16,15 +16,15 @@ import {
 	tableSortIdleIconStyles,
 	tableStyles,
 	truncatedCellStyles,
-} from "@maple/ui/styles/ui/table"
-import { rowSelectedClass } from "@maple/ui/styles/ui/list-row"
+} from "./table.styles"
+import { rowSelectedClass } from "./list-row.styles"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 import { withHint } from "./eyebrow"
 import { icon } from "./icon"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/table.tsx. Rows and cells repeat, so they set one class
-// attribute (S4) instead of `h.Class`.
+// The Table and its parts. Rows and cells repeat, so they set one class attribute (S4) instead of
+// `h.Class`.
 
 type Children = ReadonlyArray<Html | string>
 export type TableVariant = "default" | "card" | "bare"
@@ -99,6 +99,35 @@ export const tableRow = <M>(
 			...attributes,
 		],
 		children,
+	)
+
+/** A row that heads the rows under it (a day in a list grouped by day): one header cell across every column. */
+export const tableGroupRow = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{ colSpan: number; key: string; className?: string }>,
+	children: Children,
+): Html =>
+	tableRow(
+		h,
+		[
+			h.th(
+				[
+					h.Attribute(
+						"class",
+						cn(
+							tableCellStyles,
+							"bg-surface-sunken py-1 text-left font-normal",
+							options.className,
+						),
+					),
+					h.DataAttribute("slot", "table-group"),
+					h.Attribute("colspan", String(options.colSpan)),
+				],
+				children,
+			),
+		],
+		"hover:bg-transparent active:bg-transparent",
+		[h.Key(options.key)],
 	)
 
 /** A `tableRow` whose whole row opens something: the pointer and the sunken hover, strong while selected. */

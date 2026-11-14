@@ -145,6 +145,7 @@ Open-source skills teach a coding agent how to set up OpenTelemetry for Maple:
 
 - [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) instruments every app and service in a repository: traces, logs and metrics, using the native OpenTelemetry SDK for each language.
 - [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) reviews an existing setup, reports gaps per service (missing service map edges, missing `service.version`, errors without exceptions) and fixes them.
+- [maple-frontend-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-frontend-tracing) traces a web frontend end to end: route navigations, data loading, caught errors, and the link to your backend and server render. It has a reference for each major framework. See [Frontend tracing](/docs/frontend).
 - [maple-agent-tracing](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-agent-tracing) traces an AI agent so each conversation shows up as one [Agent Session](/docs/agent-sessions/overview). It detects the framework and installs a skill for that framework only. See [Trace your AI agent](/docs/agent-tracing).
 
 Install them together with the per-language guides they read:
@@ -180,7 +181,6 @@ The [`maple` CLI](/docs/reference/cli) outputs JSON by default, so an agent with
 
 - **`401 Unauthorized`.** The key was revoked, or the endpoint is in the wrong region. EU organizations use `api.eu.maple.dev`.
 - **Empty results.** Check the time window and the service name. Ask the agent to run `list_services` first to see what Maple has.
-- **Source code tools return nothing.** They need the [GitHub App](/docs/integrations/github) installed with access to that repository.
 - **The agent guesses instead of querying.** Tell it to use Maple: _"Use the maple MCP tools to check."_
 
 ## Next steps

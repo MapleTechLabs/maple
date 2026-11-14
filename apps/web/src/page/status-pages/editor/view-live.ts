@@ -1,18 +1,20 @@
 import type { V2StatusPage } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { apiPublicUrl } from "../../../lib/services/common/api-base-url"
+import { apiPublicUrl } from "../../../platform/api-base-url"
 import { button, linkButton } from "@maple/views/ui/button"
 import { copyableField } from "@maple/views/ui/copyable-field"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { heading } from "@maple/views/ui/heading"
-import { publicUrl, statusPageHref } from "../shared/commands"
+import { statusPageHref, statusPageViewHref } from "../shared/commands"
+import { pageUrlOf } from "./update-domain"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { canBreakGlass, type Model } from "./model"
 import { revealedToken } from "./view-settings"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { textLink } from "@maple/views/ui/text-link"
 
 // Right after Publish: the page is live, where it lives, and the two things worth doing next.
 
@@ -23,19 +25,25 @@ export const NO_DOMAIN_NOTE = "Public address appears once a status domain is co
 
 /** The header's address: a link to the public page, or the note while there is no status domain. */
 export const addressLine = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(model.publicBaseUrl, page.slug)
+	if (page.visibility === "internal")
+		return typography(h, { size: "xs" }, [
+			textLink(h, { href: statusPageViewHref(page.id), tone: "muted" }, [
+				"Internal: only members can read it, in Maple",
+			]),
+		])
+	const url = pageUrlOf(model, page)
 	if (url === null) return typography(h, { size: "xs", tone: "muted" }, [NO_DOMAIN_NOTE])
 	// A draft is never published, so its address does not resolve yet: text, not a link.
 	if (page.draft) return typography(h, { size: "xs", tone: "muted", mono: true }, [url])
-	return h.a(
-		[
-			h.Href(url),
-			h.Target("_blank"),
-			h.Rel("noopener"),
-			h.Class(
-				"font-mono text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline active:text-foreground active:underline",
-			),
-		],
+	return textLink(
+		h,
+		{
+			href: url,
+			tone: "muted",
+			isMono: true,
+			className: "text-xs",
+			attributes: [h.Target("_blank"), h.Rel("noopener")],
+		},
 		[url],
 	)
 }
@@ -60,135 +68,144 @@ const nextStep = (
 		]),
 	])
 
-export const liveView = (h: H, model: Model, page: V2StatusPage): Html => {
-	const url = publicUrl(model.publicBaseUrl, page.slug)
-	const hasToken = page.break_glass_token_suffix !== null
-	return h.div(
-		[h.Class("mx-auto flex w-full max-w-2xl flex-col gap-8 py-6")],
-		[
-			vstack(h, { gap: "2" }, [
-				// A draft reached by link, or one whose publish has not been read back yet, is not live.
-				page.draft
-					? eyebrow(h, {}, ["Draft"])
-					: h.span(
-							[h.Class("flex items-center gap-2 text-severity-ok")],
-							[icon(h, "CircleCheckIcon", { size: 18 }), eyebrow(h, {}, ["Published"])],
-						),
-				heading(h, { level: 2, variant: "title" }, [
-					page.draft ? `${page.name} is not public yet` : `${page.name} is live`,
-				]),
-				typography(h, { size: "sm", tone: "muted", as: "p" }, [
-					page.draft
-						? "Visitors can't see it until it is published."
-						: "Visitors can read it now. Changes you make go out within a minute.",
-				]),
-			]),
-			url === null
-				? vstack(h, { gap: "1.5" }, [
-						typography(h, { size: "xs", tone: "muted" }, ["Public address"]),
-						h.p(
-							[
-								h.Class(
-									"rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground",
-								),
-							],
-							[NO_DOMAIN_NOTE],
-						),
-					])
-				: h.div(
-						[h.Class("flex flex-col gap-2 sm:flex-row sm:items-end")],
+const breakGlassStep = (h: H, model: Model, page: V2StatusPage): Html =>
+	nextStep(h, {
+		title: "Get a break-glass token",
+		description:
+			"If Maple itself is down, post updates straight to the page with it. Shown once; keep it in your password manager.",
+		actions: canBreakGlass(model)
+			? [
+					button(
+						h,
+						{
+							size: "sm",
+							variant: "outline",
+							isLoading: model.isChangingBreakGlass && model.breakGlassAction === "rotate",
+							attributes: [h.OnClick(Message.ClickedRotateToken())],
+						},
 						[
-							h.div(
-								[h.Class("min-w-0 flex-1")],
-								[
-									copyableField(h, {
-										id: "status-page-public-url",
-										label: "Public address",
-										value: url,
-										copyLabel: "public address",
-										copy: model.urlCopy,
-										toCopyMessage: (message) => Message.GotUrlCopyMessage({ message }),
-									}),
-								],
-							),
-							...(page.draft
-								? []
-								: [
-										linkButton(
-											h,
-											{
-												size: "sm",
-												variant: "outline",
-												href: url,
-												attributes: [h.Target("_blank"), h.Rel("noopener")],
-											},
-											[icon(h, "ExternalLinkIcon"), "Open"],
-										),
-									]),
+							icon(h, "KeyIcon"),
+							page.break_glass_token_suffix === null
+								? "Get break-glass token"
+								: "Replace token",
 						],
 					),
-			vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabelledBy("status-page-next-steps")] }, [
-				eyebrow(h, { as: "h2", attributes: [h.Id("status-page-next-steps")] }, ["Next steps"]),
-				nextStep(h, {
-					title: "Get a break-glass token",
-					description:
-						"If Maple itself is down, post updates straight to the page with it. Shown once; keep it in your password manager.",
-					actions: model.isAdmin
-						? [
-								button(
-									h,
-									{
-										size: "sm",
-										variant: "outline",
-										isLoading:
-											model.isChangingBreakGlass && model.breakGlassAction === "rotate",
-										attributes: [h.OnClick(Message.ClickedRotateToken())],
-									},
-									[
-										icon(h, "KeyIcon"),
-										hasToken ? "Replace token" : "Get break-glass token",
-									],
-								),
-							]
-						: [
-								typography(h, { size: "xs", tone: "muted", as: "p" }, [
-									"Ask an org admin to issue one.",
-								]),
-							],
-					extra: revealedToken(h, model),
-				}),
-				nextStep(h, {
-					title: "Connect an agent",
-					description:
-						"Agents read and change the page as one JSON document through the API or Maple's MCP server, and post incidents the same way.",
-					actions: [
-						linkButton(
-							h,
-							{ size: "sm", variant: "outline", href: statusPageHref(page.id, "json") },
-							[icon(h, "BracketsCurlyIcon"), "Page JSON"],
-						),
+				]
+			: [typography(h, { size: "xs", tone: "muted", as: "p" }, ["Ask an org admin to issue one."])],
+		extra: revealedToken(h, model),
+	})
+
+/** Where the page is read: its public address, or for an internal page the in-app viewer. */
+const addressBlock = (h: H, model: Model, page: V2StatusPage): Html => {
+	if (page.visibility === "internal")
+		return hstack(h, { gap: "3", justify: "between", align: "center", wrap: true }, [
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [
+				"It has no public address: members read it in Maple.",
+			]),
+			linkButton(h, { size: "sm", variant: "outline", href: statusPageViewHref(page.id) }, [
+				icon(h, "EyeIcon"),
+				"Open page",
+			]),
+		])
+	const url = pageUrlOf(model, page)
+	if (url === null)
+		return vstack(h, { gap: "1.5" }, [
+			typography(h, { size: "xs", tone: "muted" }, ["Public address"]),
+			h.p(
+				[h.Class("rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground")],
+				[NO_DOMAIN_NOTE],
+			),
+		])
+	return h.div(
+		[h.Class("flex flex-col gap-2 sm:flex-row sm:items-end")],
+		[
+			h.div(
+				[h.Class("min-w-0 flex-1")],
+				[
+					copyableField(h, {
+						id: "status-page-public-url",
+						label: "Public address",
+						value: url,
+						copyLabel: "public address",
+						copy: model.urlCopy,
+						toCopyMessage: (message) => Message.GotUrlCopyMessage({ message }),
+					}),
+				],
+			),
+			...(page.draft
+				? []
+				: [
 						linkButton(
 							h,
 							{
 								size: "sm",
-								variant: "ghost",
-								href: `${apiPublicUrl}/v2/docs`,
+								variant: "outline",
+								href: url,
 								attributes: [h.Target("_blank"), h.Rel("noopener")],
 							},
-							[icon(h, "ExternalLinkIcon"), "API docs"],
+							[icon(h, "ExternalLinkIcon"), "Open"],
 						),
-					],
-				}),
-			]),
-			h.div(
-				[h.Class("flex justify-end border-t pt-4")],
-				[
-					linkButton(h, { size: "sm", href: statusPageHref(page.id) }, [
-						"Open the editor",
-						icon(h, "ArrowRightIcon"),
 					]),
-				],
-			),
 		],
 	)
 }
+
+/** What the page is now, for whoever can read it: visitors, or only members for an internal page. */
+const liveCopy = (page: V2StatusPage): string => {
+	if (page.visibility === "internal") return "Only members of this organization can read it, in Maple."
+	return page.draft
+		? "Visitors can't see it until it is published."
+		: "Visitors can read it now. Changes you make go out within a minute."
+}
+
+export const liveView = (h: H, model: Model, page: V2StatusPage): Html =>
+	vstack(h, { gap: "8", className: "mx-auto w-full max-w-2xl py-6" }, [
+		vstack(h, { gap: "2" }, [
+			// A draft reached by link, or one whose publish has not been read back yet, is not live.
+			page.draft
+				? eyebrow(h, {}, ["Draft"])
+				: hstack(h, { gap: "2", align: "center", as: "span", className: "text-success" }, [
+						icon(h, "CircleCheckIcon", { size: 18 }),
+						eyebrow(h, {}, ["Published"]),
+					]),
+			heading(h, { level: 2, variant: "title" }, [
+				page.draft
+					? `${page.name} is not ${page.visibility === "internal" ? "published" : "public"} yet`
+					: `${page.name} is live`,
+			]),
+			typography(h, { size: "sm", tone: "muted", as: "p" }, [liveCopy(page)]),
+		]),
+		addressBlock(h, model, page),
+		vstack(h, { gap: "3", as: "section", attributes: [h.AriaLabelledBy("status-page-next-steps")] }, [
+			eyebrow(h, { as: "h2", attributes: [h.Id("status-page-next-steps")] }, ["Next steps"]),
+			// Break-glass posts to the public address, which an internal page does not answer on.
+			...(page.visibility === "internal" ? [] : [breakGlassStep(h, model, page)]),
+			nextStep(h, {
+				title: "Connect an agent",
+				description:
+					"Agents read and change the page as one JSON document through the API or Maple's MCP server, and post incidents the same way.",
+				actions: [
+					linkButton(h, { size: "sm", variant: "outline", href: statusPageHref(page.id, "json") }, [
+						icon(h, "BracketsCurlyIcon"),
+						"Page JSON",
+					]),
+					linkButton(
+						h,
+						{
+							size: "sm",
+							variant: "ghost",
+							href: `${apiPublicUrl}/v2/docs`,
+							attributes: [h.Target("_blank"), h.Rel("noopener")],
+						},
+						[icon(h, "ExternalLinkIcon"), "API docs"],
+					),
+				],
+			}),
+		]),
+		hstack(h, { align: "stretch", justify: "end", className: "border-t pt-4" }, [
+			linkButton(h, { size: "sm", href: statusPageHref(page.id) }, [
+				"Open the editor",
+				icon(h, "ArrowRightIcon"),
+			]),
+		]),
+	])

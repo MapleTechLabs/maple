@@ -1,5 +1,5 @@
 import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
-import { getListPerformanceHints } from "../../../lib/query-builder/performance-hints"
+import { getListPerformanceHints } from "./performance-hints"
 import { AsyncData } from "foldkit"
 import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -24,8 +24,6 @@ import { product } from "./view-product"
 import { listColumnRow } from "./view-list-column"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-
-// `ListConfigPanel` and its Run preview row.
 
 type H = HtmlBuilder<Message>
 
@@ -99,7 +97,6 @@ export const suggestedFieldsOf = (model: Model, source: ListDataSource): Readonl
 	return [...KNOWN_FIELDS[source], ...dynamic]
 }
 
-/** `listWhereClauseWarnings`. */
 const filterWarnings = (source: ListDataSource, whereClause: string): ReadonlyArray<string> =>
 	source === "logs"
 		? buildListLogsParams(whereClause, 1).warnings
@@ -182,7 +179,6 @@ const listLimit = (h: H, state: EditorState): Html =>
 const labelled = (h: H, label: string, className: string, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Class(className)], [eyebrow(h, { variant: "label", as: "p" }, [label]), ...children])
 
-/** `ListConfigPanel`, then its Run preview button. */
 export const listPanel = (h: H, model: Model, state: EditorState): ReadonlyArray<Html> => {
 	const source = state.listDataSource
 	const fields = suggestedFieldsOf(model, source)

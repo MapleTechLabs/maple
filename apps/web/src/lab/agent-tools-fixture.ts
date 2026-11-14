@@ -313,7 +313,7 @@ export function buildToolAnalyticsFixture(
 		[...rollup(scoped, (cell) => `${cell.bucket}\u0000${seriesKeyOf(cell)}`).entries()],
 		([key, value]) => {
 			const [bucket, seriesKey] = Str.split("\u0000")(key)
-			return { bucket: Number(bucket), seriesKey: seriesKey!, ...value }
+			return { bucket: Number(bucket), seriesKey: seriesKey ?? "", ...value }
 		},
 	)
 

@@ -1,7 +1,7 @@
 import { DateTime, Effect, Option, Schema } from "effect"
 import { DependencyFindingId } from "@maple/domain/dependency-scan"
 import { InspectSecurityFindingOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import * as P from "../lib/params"
 import { truncate } from "../lib/format"
 import { doc } from "../lib/tool-doc"
@@ -20,6 +20,7 @@ import {
 	readExposure,
 	postureText,
 	readRuntimes,
+	requireSecurityReader,
 	repositoryServicesOf,
 	runtimeLabelOf,
 } from "../lib/security"
@@ -56,12 +57,12 @@ export function registerInspectSecurityFindingTool(server: McpToolRegistrar) {
 			),
 			...WINDOW.fields,
 		}),
-		output: InspectSecurityFindingOutput,
 		hints: { readOnly: true },
 		phrases: ["Inspecting a security finding"],
 		handler: Effect.fn("McpTool.inspectSecurityFinding")(function* (params) {
 			const { id, repository } = params
 			const tenant = yield* CurrentMcpTenant
+			yield* requireSecurityReader(tenant)
 			const query = id.trim()
 			const needle = query.toLowerCase()
 			const dependencyId = decodeDependencyId(query)

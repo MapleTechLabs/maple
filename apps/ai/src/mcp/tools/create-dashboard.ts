@@ -2,7 +2,7 @@ import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./ty
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { CreateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { quoteWhereValue } from "@maple/domain/where-clause"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import {
 	DashboardTemplateParameterKey,
@@ -37,8 +37,6 @@ const TOOL = "create_dashboard"
 
 const decodePortableDashboard = Schema.decodeUnknownEffect(PortableDashboardDocument)
 const decodeParamKey = Schema.decodeUnknownSync(DashboardTemplateParameterKey)
-
-// Simplified widget specs path — MCP-only.
 
 /** The kinds `simpleSpecToWidget` actually knows how to build. */
 const SIMPLE_SPEC_VISUALIZATIONS = ["chart", "stat", "table", "list"] as const
@@ -300,8 +298,8 @@ export function buildSimpleWidgets(specs: ReadonlyArray<SimpleWidgetSpec>): Widg
 	const widgets: WidgetDef[] = []
 	const errors: string[] = []
 
-	for (let i = 0; i < specs.length; i++) {
-		const result = simpleSpecToWidget(specs[i]!, `w${i}`, layouts[i]!)
+	for (const [i, [spec, layout]] of Arr.zip(specs, layouts).entries()) {
+		const result = simpleSpecToWidget(spec, `w${i}`, layout)
 		if (typeof result === "string") {
 			errors.push(result)
 		} else {
@@ -324,8 +322,6 @@ const invalid = (message: string, parameter?: string, example?: string) =>
 
 const SIMPLE_WIDGETS_EXAMPLE =
 	'widgets=\'[{"title":"HTTP Duration","visualization":"chart","source":"metrics","metric":"avg","metric_name":"http.server.duration","metric_type":"histogram"}]\''
-
-// Tool registration
 
 export function registerCreateDashboardTool(server: McpToolRegistrar) {
 	const groupByDoc = (source: keyof typeof VALID_GROUP_BY) =>
@@ -384,7 +380,6 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			validate: P.optionalFlag("Pass false to skip the post-create inspection"),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: CreateDashboardOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },
 		phrases: ["Creating a dashboard"],
 		handler: Effect.fn("McpTool.createDashboard")(function* (params) {
@@ -530,7 +525,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			const tenant = yield* CurrentMcpTenant
 			const persistence = yield* DashboardPersistenceService
 
-			const dashboard = yield* persistence
+			const { document: dashboard } = yield* persistence
 				.create(tenant.orgId, tenant.userId, portable)
 				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 

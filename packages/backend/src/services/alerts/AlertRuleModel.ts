@@ -1,13 +1,11 @@
+import { alertQueryLimits, alertRuleIntervalMinutes, alertWindowBucketSeconds } from "@maple/query-engine"
 import {
-	alertQueryLimits,
-	alertRuleIntervalMinutes,
-	alertWindowBucketSeconds,
 	CompiledAlertQueryPlan,
 	QueryEngineAlertReducer,
 	QueryEngineNoDataBehavior,
 	type QueryEngineSampleCountStrategy,
 	QuerySpec,
-} from "@maple/query-engine"
+} from "@maple/domain/query-engine"
 import { buildTimeseriesQuerySpec, resolveGroupBy } from "@maple/query-engine/query-builder"
 import { prepareRawSql, type AlertBucketSource } from "@maple/query-engine/runtime"
 import {
@@ -37,15 +35,19 @@ import {
 	type AlertSeverity,
 	type AlertSignalType,
 	type AlertThresholds,
+	type AnomalySignalType,
 	type QueryBuilderQueryDraftPayload,
 	type OrgId,
+	isManagedSignalType,
+	type ManagedSignalType,
 } from "@maple/domain/http"
+import { AuditDetectionFilters } from "@maple/domain/audit-trail"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
 import type { AlertRuntimeApi } from "./AlertRuntime"
-import type { QueryBuilderDataSource } from "@maple/query-model"
-import { validateBreachWindow, validateThresholds } from "./alert-thresholds"
+import { anyTierRouted, validateBreachWindow, validateThresholds } from "./alert-thresholds"
+import { ANOMALY_RULE_DEFAULTS, anomalySeverityCode, isDefaultAnomalyScope } from "./anomaly/anomaly-rule"
 
 const StringArraySchema = Schema.Array(Schema.String)
 
@@ -56,6 +58,7 @@ type StoredJsonColumn =
 	| "tagsJson"
 	| "destinationIdsJson"
 	| "thresholdsJson"
+	| "auditFiltersJson"
 
 /**
  * An `alert_rules` row with its schema-typed jsonb columns read as `unknown`. The model
@@ -75,6 +78,8 @@ export const selectStoredAlertRules = () =>
 		tagsJson: PG.undecoded($.tagsJson),
 		destinationIdsJson: PG.undecoded($.destinationIdsJson),
 		thresholdsJson: PG.undecoded($.thresholdsJson),
+		// Undecoded so one detection with filters this build cannot read fails alone.
+		auditFiltersJson: PG.undecoded($.auditFiltersJson),
 	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
@@ -102,6 +107,12 @@ export interface NormalizedRule {
 	readonly serviceNames: ReadonlyArray<string>
 	readonly excludeServiceNames: ReadonlyArray<string>
 	readonly environments: ReadonlyArray<string>
+	/** Anomaly rules only: detector signals in scope; empty is every signal. */
+	readonly anomalySignals: ReadonlyArray<AnomalySignalType>
+	/** Audit detections only: which events the rule counts; empty is every event. */
+	readonly auditFilters: AuditDetectionFilters
+	/** Audit detections only: events that arrived before this do not count; null counts the whole window. */
+	readonly auditCountFrom: number | null
 	readonly tags: ReadonlyArray<string>
 	readonly groupBy: AlertGroupBy | null
 	readonly signalType: AlertSignalType
@@ -157,6 +168,7 @@ export const normalizedRuleToDocument = (
 		serviceNames: [...rule.serviceNames],
 		excludeServiceNames: [...rule.excludeServiceNames],
 		environments: [...rule.environments],
+		...(rule.signalType === "anomaly" ? { anomalySignals: [...rule.anomalySignals] } : undefined),
 		tags: [...rule.tags],
 		groupBy: rule.groupBy,
 		signalType: rule.signalType,
@@ -191,7 +203,7 @@ export const normalizedRuleToDocument = (
 }
 
 export const normalizeOptionalString = (value: string | null | undefined) => {
-	const trimmed = value?.trim()
+	const trimmed = value == null ? undefined : Str.trim(value)
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
@@ -229,12 +241,30 @@ const planGroupingTokens = (
 	return groupBy
 }
 
-/** Why the generic rule APIs refuse an `uptime` rule. */
-export const UPTIME_RULE_MANAGED_MESSAGE =
-	"uptime rules belong to an uptime monitor; create, edit or delete the monitor instead"
+/** Why the generic rule APIs refuse a rule another resource owns. */
+export const managedRuleMessage = (signalType: ManagedSignalType): string =>
+	Match.value(signalType).pipe(
+		Match.when(
+			"uptime",
+			() => "uptime rules belong to an uptime monitor; create, edit or delete the monitor instead",
+		),
+		Match.when(
+			"slo_burn_rate",
+			() => "slo_burn_rate rules belong to an SLO; create, edit or delete the SLO instead",
+		),
+		Match.when(
+			"audit",
+			() =>
+				"audit rules belong to an audit log detection; create, edit or delete the detection in the Security hub instead",
+		),
+		Match.exhaustive,
+	)
 
-/** The stored plan of every `uptime` rule: no query, the evaluator reads the monitor's state. */
-export const UPTIME_RULE_PLAN = new CompiledAlertQueryPlan({
+/**
+ * The stored plan of every queryless rule (`uptime`, `slo_burn_rate`, `audit`, `anomaly`): the
+ * evaluator reads the owning resource or the anomaly detector's incidents instead.
+ */
+export const MANAGED_RULE_PLAN = new CompiledAlertQueryPlan({
 	kind: "spec",
 	query: null,
 	rawSql: null,
@@ -271,6 +301,7 @@ export const uptimeRuleFields = (monitor: {
 		serviceNamesJson: monitor.serviceName === null ? null : [monitor.serviceName],
 		excludeServiceNamesJson: null,
 		environmentsJson: null,
+		anomalySignalsJson: null,
 		tagsJson: null,
 		groupBy: null,
 		signalType: "uptime",
@@ -292,9 +323,9 @@ export const uptimeRuleFields = (monitor: {
 		rawQuerySql: null,
 		destinationIdsJson: [...monitor.destinationIds],
 		querySpecJson: null,
-		reducer: UPTIME_RULE_PLAN.reducer,
+		reducer: MANAGED_RULE_PLAN.reducer,
 		sampleCountStrategy: null,
-		noDataBehavior: UPTIME_RULE_PLAN.noDataBehavior,
+		noDataBehavior: MANAGED_RULE_PLAN.noDataBehavior,
 	} as const
 }
 
@@ -384,7 +415,7 @@ export const perServiceRules = (
 		),
 	)
 
-export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (rule: {
+export const compileRulePlan = Effect.fn("AlertRuleModel.compileRulePlan")(function* (rule: {
 	readonly signalType: AlertSignalType
 	readonly serviceName: string | null
 	readonly environments: ReadonlyArray<string>
@@ -419,73 +450,34 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 		apdex: "apdex",
 	} satisfies Record<string, string>
 
-	const resolveRuleGroupBy = (
-		source: QueryBuilderDataSource,
-	): Effect.Effect<
+	// Only trace rules resolve `rule.groupBy`; builder rules carry their group-by in the draft.
+	const resolveRuleGroupBy = (): Effect.Effect<
 		{
 			readonly tokens: ReadonlyArray<string>
 			readonly attributeKeys: ReadonlyArray<string>
-			readonly resourceAttributeKeys: ReadonlyArray<string>
 		} | null,
 		AlertValidationError
 	> => {
 		if (rule.groupBy == null || rule.groupBy.length === 0) return Effect.succeed(null)
-		const resolved = resolveGroupBy(source, rule.groupBy)
+		const resolved = resolveGroupBy("traces", rule.groupBy)
 		if (resolved.warnings.length > 0) {
 			return Effect.fail(
-				makeAlertValidationError(`Invalid groupBy for ${source} alert`, [...resolved.warnings]),
+				makeAlertValidationError("Invalid groupBy for traces alert", [...resolved.warnings]),
 			)
 		}
 		if (resolved.tokens.length === 0) {
 			return Effect.fail(
-				makeAlertValidationError(`groupBy did not resolve to any usable dimension for ${source}`),
+				makeAlertValidationError("groupBy did not resolve to any usable dimension for traces"),
 			)
 		}
-		if (source === "metrics" && resolved.attributeKeys.length > 1) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts support at most one attr.* groupBy dimension",
-					Arr.map(
-						resolved.attributeKeys,
-						(key) => `Unsupported additional metrics groupBy attribute: ${key}`,
-					),
-				),
-			)
-		}
-		if (source === "metrics" && resolved.resourceAttributeKeys.length > 1) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts support at most one resource.* groupBy dimension",
-					Arr.map(
-						resolved.resourceAttributeKeys,
-						(key) => `Unsupported additional metrics groupBy resource attribute: ${key}`,
-					),
-				),
-			)
-		}
-		if (
-			source === "metrics" &&
-			resolved.attributeKeys.length > 0 &&
-			resolved.resourceAttributeKeys.length > 0
-		) {
-			return Effect.fail(
-				makeAlertValidationError(
-					"Metrics alerts cannot combine attr.* and resource.* groupBy dimensions",
-				),
-			)
-		}
-		return Effect.succeed({
-			tokens: resolved.tokens,
-			attributeKeys: resolved.attributeKeys,
-			resourceAttributeKeys: resolved.resourceAttributeKeys,
-		})
+		return Effect.succeed({ tokens: resolved.tokens, attributeKeys: resolved.attributeKeys })
 	}
 
 	let query: QuerySpec
 	let sampleCountStrategy: QueryEngineSampleCountStrategy
 	const traceMetric = traceSignalMetrics[rule.signalType]
 	if (traceMetric) {
-		const groupResolved = yield* resolveRuleGroupBy("traces")
+		const groupResolved = yield* resolveRuleGroupBy()
 		const filters: Record<string, unknown> = {
 			...baseTraceFilters,
 			rootSpansOnly: true,
@@ -522,7 +514,7 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			Match.exhaustive,
 		)
 	} else if (rule.signalType === "raw_query") {
-		const sql = rule.rawQuerySql?.trim() ?? ""
+		const sql = Str.trim(rule.rawQuerySql ?? "")
 		if (sql.length === 0) {
 			return yield* makeAlertValidationError("raw_query alerts require rawQuerySql")
 		}
@@ -539,8 +531,10 @@ export const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(functi
 			sampleCountStrategy: null,
 			noDataBehavior,
 		})
-	} else if (rule.signalType === "uptime") {
-		return yield* makeAlertValidationError(UPTIME_RULE_MANAGED_MESSAGE)
+	} else if (rule.signalType === "anomaly") {
+		return MANAGED_RULE_PLAN
+	} else if (isManagedSignalType(rule.signalType)) {
+		return yield* makeAlertValidationError(managedRuleMessage(rule.signalType))
 	} else {
 		return yield* makeAlertValidationError(`Unsupported signal type: ${rule.signalType}`)
 	}
@@ -574,8 +568,10 @@ const parseCompiledPlan = (
 			component: "compiled_plan",
 			cause,
 		})
-	// An uptime rule reads its monitor's state, not the warehouse: no query to decode.
-	if (row.signalType === "uptime") return Effect.succeed(UPTIME_RULE_PLAN)
+	// A managed rule reads its owner (a monitor's state, an SLO's burn), never a stored query.
+	if (isManagedSignalType(row.signalType) || row.signalType === "anomaly") {
+		return Effect.succeed(MANAGED_RULE_PLAN)
+	}
 	if (row.signalType === "raw_query") {
 		if (row.rawQuerySql == null) {
 			return Effect.fail(invalid("Stored raw alert is missing its SQL query", "rawQuerySql is null"))
@@ -671,6 +667,12 @@ export const decodeStoredAlertRuleMetadata = (row: StoredAlertRuleRow) =>
 		),
 	})
 
+/** An audit detection's filters. A detection stored without any counts every event. */
+const decodeStoredAuditFilters = (row: StoredAlertRuleRow) =>
+	row.signalType !== "audit" || row.auditFiltersJson == null
+		? Effect.succeed<AuditDetectionFilters>({})
+		: decodeStoredRuleComponent(row.id, "audit_filters", AuditDetectionFilters, row.auditFiltersJson)
+
 export const decodeStoredAlertRuleDestinationIds = (
 	ruleId: AlertRuleId,
 	value: unknown,
@@ -739,6 +741,9 @@ export const rowToRuleDocument = (
 					serviceNames: [...stored.serviceNames],
 					excludeServiceNames: [...stored.excludeServiceNames],
 					environments: [...stored.environments],
+					...(row.signalType === "anomaly"
+						? { anomalySignals: [...(row.anomalySignalsJson ?? [])] }
+						: undefined),
 					tags: [...stored.tags],
 					groupBy: stored.groupBy,
 					signalType: decodeAlertSignalTypeSync(row.signalType),
@@ -789,7 +794,7 @@ export const rowToRuleDocument = (
 	})
 
 export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
-	const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
+	const normalizeRuleRow = Effect.fn("AlertRuleModel.normalizeRuleRow")(function* (
 		row: StoredAlertRuleRow,
 	): Effect.fn.Return<NormalizedRule, AlertRuleStoredConfigInvalidError> {
 		const metadata = yield* decodeStoredAlertRuleMetadata(row)
@@ -826,6 +831,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const destinationIds = yield* decodeStoredAlertRuleDestinationIds(row.id, row.destinationIdsJson)
 		const thresholds = yield* decodeStoredAlertRuleThresholds(row, destinationIds)
 		const legacy = alertThresholdLegacyFields(thresholds)
+		const auditFilters = yield* decodeStoredAuditFilters(row)
 		return {
 			id: decoded.id,
 			name: row.name,
@@ -837,6 +843,9 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			serviceNames: stored.serviceNames,
 			excludeServiceNames: stored.excludeServiceNames,
 			environments: stored.environments,
+			anomalySignals: row.anomalySignalsJson ?? [],
+			auditFilters,
+			auditCountFrom: row.auditCountFrom,
 			tags: stored.tags,
 			groupBy: decoded.groupBy,
 			signalType: decoded.signalType,
@@ -863,15 +872,17 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		}
 	})
 
-	const normalizeRule = Effect.fn("AlertsService.normalizeRule")(function* (
+	const normalizeRule = Effect.fn("AlertRuleModel.normalizeRule")(function* (
 		orgId: OrgId,
 		request: AlertRuleUpsertRequest,
 		options?: { readonly forPreview?: boolean },
 	): Effect.fn.Return<NormalizedRule, AlertValidationError> {
-		if (request.signalType === "uptime") {
-			return yield* invalidRuleError([UPTIME_RULE_MANAGED_MESSAGE])
+		if (isManagedSignalType(request.signalType)) {
+			return yield* invalidRuleError([managedRuleMessage(request.signalType)])
 		}
 		const name = Str.trim(request.name)
+		// An anomaly rule pages on the detector's open incidents, so most fields are pinned.
+		const anomaly = request.signalType === "anomaly"
 		// A builder query's draft carries its own scope and never reads the
 		// service fields, so keeping them would only fan out identical queries.
 		const draftOwnsScope = request.signalType === "builder_query"
@@ -884,7 +895,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 				: []
 		const serviceName = serviceNames.length === 1 ? (serviceNames[0] ?? null) : null
 		const excludeServiceNames =
-			request.excludeServiceNames && !draftOwnsScope
+			request.excludeServiceNames && !draftOwnsScope && !anomaly
 				? Arr.filter(
 						Arr.map(request.excludeServiceNames, (service) => Str.trim(service)),
 						(service) => service.length > 0,
@@ -900,31 +911,58 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 						}),
 					)
 				: []
+		const anomalySignals = anomaly ? Arr.dedupe(request.anomalySignals ?? []) : []
 		const tags = normalizeTags(request.tags)
-		const groupBy = request.groupBy ?? null
+		const groupBy = anomaly ? null : (request.groupBy ?? null)
+		const comparator = anomaly ? ANOMALY_RULE_DEFAULTS.comparator : request.comparator
 		const details: string[] = []
 		if (name.length === 0 && !options?.forPreview) details.push("name is required")
+		if (
+			anomaly &&
+			Arr.some(request.excludeServiceNames ?? [], (service) => Str.trim(service).length > 0)
+		) {
+			details.push(
+				"excludeServiceNames is not supported for anomaly alerts; scope by serviceNames instead",
+			)
+		}
+		if (!anomaly && request.anomalySignals !== undefined && request.anomalySignals.length > 0) {
+			details.push("anomalySignals is only supported for anomaly alerts")
+		}
 		// `thresholds` wins; the single-threshold shape is still one tier.
 		const tiered = request.thresholds !== undefined
-		const requestedThresholds: AlertThresholds | null =
+		const singleTier = (threshold: number) =>
+			Arr.of(
+				legacyAlertThreshold({
+					severity: request.severity ?? "warning",
+					threshold,
+					thresholdUpper: request.thresholdUpper ?? null,
+					destinationIds: request.destinationIds ?? [],
+				}),
+			)
+		const authoredThresholds: AlertThresholds | null =
 			request.thresholds !== undefined
 				? request.thresholds
-				: request.threshold === undefined
-					? null
-					: Arr.of(
-							legacyAlertThreshold({
-								severity: request.severity ?? "warning",
-								threshold: request.threshold,
-								thresholdUpper: request.thresholdUpper ?? null,
-								destinationIds: request.destinationIds ?? [],
-							}),
-						)
+				: request.threshold !== undefined
+					? singleTier(request.threshold)
+					: anomaly
+						? singleTier(0)
+						: null
+		// An anomaly tier's value is its severity code, the value the rule observes.
+		const requestedThresholds: AlertThresholds | null =
+			anomaly && authoredThresholds !== null
+				? Arr.map(authoredThresholds, (tier) => ({
+						...tier,
+						value: anomalySeverityCode(tier.severity),
+						upper: null,
+						recoveryValue: null,
+					}))
+				: authoredThresholds
 		if (requestedThresholds === null) {
 			details.push("threshold must be a finite number")
 		} else {
-			if (!tiered && request.severity === undefined) details.push("severity is required")
+			if (!tiered && request.severity === undefined && !anomaly) details.push("severity is required")
 			details.push(
-				...validateThresholds(request.comparator, requestedThresholds, {
+				...validateThresholds(comparator, requestedThresholds, {
 					label: (index, field) =>
 						tiered
 							? `thresholds[${index}].${field}`
@@ -933,25 +971,46 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 								: field === "upper"
 									? "thresholdUpper"
 									: "recoveryValue",
-					requireDestinations: !options?.forPreview,
+					// An unrouted anomaly rule still shows its incidents in the app.
+					requireDestinations: !options?.forPreview && !anomaly,
 				}),
 			)
+			// Only the unscoped default may stay unrouted; a scoped rule exists to page someone,
+			// through a destination or an escalation chain.
+			const scoped = !isDefaultAnomalyScope({ serviceNames, environments, anomalySignals })
+			if (
+				anomaly &&
+				scoped &&
+				(request.enabled ?? true) &&
+				!options?.forPreview &&
+				!anyTierRouted(requestedThresholds)
+			) {
+				details.push(
+					"A scoped anomaly rule needs a destination or escalation chain on at least one tier",
+				)
+			}
 		}
-		const consecutiveBreachesRequired = request.consecutiveBreachesRequired ?? 2
-		const breachesOutOf = request.breachesOutOf ?? null
+		const consecutiveBreachesRequired = anomaly
+			? ANOMALY_RULE_DEFAULTS.consecutiveBreachesRequired
+			: (request.consecutiveBreachesRequired ?? 2)
+		const breachesOutOf = anomaly ? ANOMALY_RULE_DEFAULTS.breachesOutOf : (request.breachesOutOf ?? null)
 		details.push(...validateBreachWindow(consecutiveBreachesRequired, breachesOutOf))
-		const evaluationIntervalMinutes = request.evaluationIntervalMinutes ?? null
+		// An anomaly rule reads open incidents, not a window, so both are pinned.
+		const windowMinutes = anomaly ? ANOMALY_RULE_DEFAULTS.windowMinutes : request.windowMinutes
+		const evaluationIntervalMinutes = anomaly
+			? ANOMALY_RULE_DEFAULTS.evaluationIntervalMinutes
+			: (request.evaluationIntervalMinutes ?? null)
 		// A check reads only its window, so a longer gap between checks would leave data unread.
-		if (evaluationIntervalMinutes !== null && evaluationIntervalMinutes > request.windowMinutes) {
+		if (evaluationIntervalMinutes !== null && evaluationIntervalMinutes > windowMinutes) {
 			details.push(
-				`windowMinutes (${request.windowMinutes}) must be at least evaluationIntervalMinutes (${evaluationIntervalMinutes}), or data between checks is never evaluated`,
+				`windowMinutes (${windowMinutes}) must be at least evaluationIntervalMinutes (${evaluationIntervalMinutes}), or data between checks is never evaluated`,
 			)
 		}
 		if (request.signalType === "builder_query" && !request.queryBuilderDraft) {
 			details.push("queryBuilderDraft is required for builder_query alerts")
 		}
 		if (request.signalType === "raw_query") {
-			const sql = request.rawQuerySql?.trim() ?? ""
+			const sql = Str.trim(request.rawQuerySql ?? "")
 			if (sql.length === 0) details.push("rawQuerySql is required for raw_query alerts")
 			if (serviceNames.length > 0) details.push("serviceNames is not supported for raw_query alerts")
 			if (groupBy != null) {
@@ -1010,27 +1069,36 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			serviceNames,
 			excludeServiceNames,
 			environments,
+			anomalySignals,
+			auditFilters: {},
+			auditCountFrom: null,
 			tags,
 			groupBy,
 			signalType: request.signalType,
-			comparator: request.comparator,
+			comparator,
 			threshold: legacy.threshold,
 			thresholdUpper: legacy.thresholdUpper,
-			windowMinutes: request.windowMinutes,
+			windowMinutes,
 			evaluationIntervalMinutes,
 			// An edit gives a slowed rule a fresh start at the interval it asks for.
 			slowedIntervalMinutes: null,
-			minimumSampleCount: request.minimumSampleCount ?? 0,
+			minimumSampleCount: anomaly
+				? ANOMALY_RULE_DEFAULTS.minimumSampleCount
+				: (request.minimumSampleCount ?? 0),
 			consecutiveBreachesRequired,
 			breachesOutOf,
-			consecutiveHealthyRequired: request.consecutiveHealthyRequired ?? 2,
+			consecutiveHealthyRequired: anomaly
+				? ANOMALY_RULE_DEFAULTS.consecutiveHealthyRequired
+				: (request.consecutiveHealthyRequired ?? 2),
 			renotifyIntervalMinutes: request.renotifyIntervalMinutes ?? 30,
-			apdexThresholdMs: request.apdexThresholdMs ?? (request.signalType === "apdex" ? 500 : null),
-			queryBuilderDraft: request.queryBuilderDraft ?? null,
+			apdexThresholdMs: anomaly
+				? null
+				: (request.apdexThresholdMs ?? (request.signalType === "apdex" ? 500 : null)),
+			queryBuilderDraft: anomaly ? null : (request.queryBuilderDraft ?? null),
 			rawQuerySql:
 				request.signalType === "raw_query" ? normalizeOptionalString(request.rawQuerySql) : null,
 			rawQueryReducer: request.signalType === "raw_query" ? (request.rawQueryReducer ?? null) : null,
-			alertOnNoData: request.alertOnNoData ?? false,
+			alertOnNoData: anomaly ? false : (request.alertOnNoData ?? false),
 			destinationIds: legacy.destinationIds,
 			createdAt: nowMs,
 			updatedAt: nowMs,

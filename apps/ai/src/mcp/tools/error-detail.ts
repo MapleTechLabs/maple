@@ -1,5 +1,5 @@
 import { McpInvalidInputError, type McpToolRegistrar } from "./types"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 import { formatDurationFromMs, formatNumber, truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
@@ -40,7 +40,19 @@ const notAWarehouseError = (value: string, kind: string, parameter: string): Mcp
 				parameter,
 			})
 
+/** A cut-down UUID (`0198a2b3`, `0198a2b3-4c5d`): the prefix the web UI or a chat message shows. */
+const isShortIssueId = (value: string): boolean =>
+	value.length < 36 && /^[0-9a-f]{8}(-[0-9a-f-]*)?$/i.test(value) && !/^\d+$/.test(value)
+
+const shortIssueId = (value: string, parameter: string): McpInvalidInputError =>
+	new McpInvalidInputError({
+		message: `'${value}' looks like the start of an issue id. Issue tools need the full 36-character UUID (or its REST id, iss_…): list_error_issues lists them; find_errors gives a decimal fingerprint you can pass as fingerprint instead.`,
+		parameter,
+		example: "list_error_issues",
+	})
+
 const rejectNonFingerprint = (rawFingerprint: string): McpInvalidInputError => {
+	if (isShortIssueId(rawFingerprint)) return shortIssueId(rawFingerprint, "fingerprint")
 	if (Str.startsWith("alert:")(rawFingerprint))
 		return notAWarehouseError(rawFingerprint, "alert", "fingerprint")
 	if (/^[a-z][a-z0-9_-]*:/i.test(rawFingerprint))
@@ -65,6 +77,7 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 	const rawIssue = params.issue_id?.trim() || (isUuid(rawFingerprint) ? rawFingerprint : "")
 	if (rawIssue !== "") {
 		const parameter = params.issue_id?.trim() ? "issue_id" : "fingerprint"
+		if (isShortIssueId(rawIssue)) return yield* shortIssueId(rawIssue, parameter)
 		const issueId = yield* decodeIssueId(
 			Option.getOrElse(P.internalIdOf("errorIssue", rawIssue), () => rawIssue),
 		).pipe(
@@ -96,7 +109,19 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 				issue.kind === "error" ? "integration" : issue.kind,
 				parameter,
 			)
-		return { fingerprint: issue.fingerprintHash, issueId: rawIssue }
+		const owned = yield* workflow.fingerprintHashesOf(tenant.orgId, issue).pipe(
+			Effect.catchTags({
+				"@maple/http/errors/ErrorPersistenceError": persistenceFailed("error_detail"),
+			}),
+		)
+		return {
+			fingerprint: issue.fingerprintHash,
+			issueId: rawIssue,
+			otherFingerprints: Arr.filter(
+				owned,
+				(hash) => hash !== issue.fingerprintHash && isFingerprintHash(hash),
+			),
+		}
 	}
 	if (rawFingerprint === "")
 		return yield* new McpInvalidInputError({
@@ -106,7 +131,7 @@ const resolveTarget = Effect.fn("McpErrorDetail.resolveTarget")(function* (param
 			example: 'error_detail fingerprint="11640295108927840024"',
 		})
 	if (!isFingerprintHash(rawFingerprint)) return yield* rejectNonFingerprint(rawFingerprint)
-	return { fingerprint: rawFingerprint, issueId: undefined }
+	return { fingerprint: rawFingerprint, issueId: undefined, otherFingerprints: [] }
 })
 
 type Output = typeof ErrorDetailOutput.Type
@@ -132,7 +157,7 @@ const topRoutes = (traces: ReadonlyArray<Trace>): string => {
 		const key = Arr.join(
 			Arr.filter(
 				[attrs["http.request.method"], route, attrs["http.response.status_code"]],
-				(part) => part !== undefined && part !== "",
+				(part): part is string => part !== undefined && part !== "",
 			),
 			" ",
 		)
@@ -276,8 +301,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			),
 			limit: P.limit({ default: 5, max: 20, noun: "sample traces" }),
 		}),
-		aliases: P.SERVICE_ALIASES,
-		output: ErrorDetailOutput,
+		aliases: { ...P.SERVICE_ALIASES, fingerprint_hash: "fingerprint" },
 		hints: { readOnly: true },
 		phrases: ["Reading error details", "Looking into an error"],
 		handler: Effect.fn("McpTool.errorDetail")(function* (params) {
@@ -312,6 +336,9 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				timeRange: { start: result.timeRange.startTime, end: result.timeRange.endTime },
 				fingerprintHash: target.fingerprint,
 				...(target.issueId === undefined ? undefined : { issueId: target.issueId }),
+				...(target.otherFingerprints.length === 0
+					? undefined
+					: { otherFingerprints: target.otherFingerprints }),
 				...(result.error === undefined ? undefined : { error: result.error }),
 				...(summary === undefined
 					? undefined
@@ -360,6 +387,19 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				["Service", output.service],
 			]
 			const title = `Error Detail: fingerprint ${output.fingerprintHash}`
+			// The issue's other fingerprints are not in this read; say so, and how to read them.
+			const others = output.otherFingerprints ?? []
+			const otherNote =
+				others.length === 0
+					? []
+					: [
+							doc.text(
+								`This issue also owns ${others.length} other fingerprint${others.length === 1 ? "" : "s"} (merged in, or re-keyed by a fingerprint version bump: ${Arr.join(others, ", ")}) that this read does not cover; read each with error_detail fingerprint=<hash>.`,
+							),
+						]
+			const otherNext = Arr.map(others.slice(0, 3), (fingerprint) =>
+				doc.next("error_detail", { fingerprint }, "another fingerprint this issue owns"),
+			)
 			const summary = summaryBlock(output)
 			// The service the error belongs to, so the log search is not an org-wide `service=""`.
 			const logService =
@@ -388,6 +428,11 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							hints: [
 								"A fingerprint changes when the error's type, top frames or message shape change. Run find_errors (or list_error_issues) for current fingerprints.",
 								"Widen start_time/end_time, or drop the service filter.",
+								...(others.length === 0
+									? []
+									: [
+											`This issue also owns other fingerprints: ${Arr.join(others, ", ")}. Read them with error_detail fingerprint=<hash>.`,
+										]),
 							],
 						},
 					}
@@ -397,11 +442,12 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 					scope,
 					blocks: [
 						summary,
+						...otherNote,
 						doc.text(
 							`No sample traces in ${window}: the spans behind these occurrences are no longer in trace storage, or fell outside this window. Pass start_time/end_time around the last-seen time to sample a specific period.`,
 						),
 					],
-					next: [logSearch],
+					next: [...otherNext, logSearch],
 				}
 			}
 			const trend = output.timeseries ?? []
@@ -414,6 +460,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				scope,
 				blocks: [
 					...(summary === undefined ? [] : [summary]),
+					...otherNote,
 					doc.text(`Sample traces: ${output.traces.length}`),
 					...Arr.flatMap(output.traces, traceBlocks(output.error?.message ?? "")),
 					...relatedBlocks(output),
@@ -455,6 +502,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 							`the other error in these traces ("${truncate(r.label, 40)}")`,
 						),
 					),
+					...otherNext,
 					logSearch,
 				],
 			}

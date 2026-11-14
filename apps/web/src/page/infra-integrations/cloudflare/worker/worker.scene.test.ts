@@ -7,7 +7,7 @@ import { pageOf } from "./derive"
 import { Message, type Model } from "./model"
 import { init, routeChanged, update } from "./update"
 import { ingestPhaseOf } from "../ingest"
-import { dataOf } from "../list/derive"
+import { successOf } from "../../kit/success-of"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -73,7 +73,7 @@ describe("cloudflare worker", () => {
 			{ scriptName: "edge-router", search: { account: "acct_b", timePreset: "1h" } },
 			context,
 		)
-		expect(moved.commands?.map(({ name, args }) => [name, args?.["mode"]])).toEqual([
+		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveCloudflareWorkerWindow", "Refresh"],
 		])
 	})
@@ -119,7 +119,7 @@ describe("cloudflare worker", () => {
 	})
 
 	test("the ingest poll advances the clock, so a silent connection turns stalled", () => {
-		const status = Schema.decodeUnknownSync(Status)({
+		const status = Schema.decodeSync(Status)({
 			connected: true,
 			accountId: "acc_a",
 			accountName: "Acme",
@@ -136,7 +136,8 @@ describe("cloudflare worker", () => {
 			model,
 			Message.CompletedLoadStatus({ key: model.status.key ?? "", result: Result.succeed(status) }),
 		).model
-		const phase = (m: Model) => ingestPhaseOf(dataOf(m.status.data), dataOf(m.usage.data), m.nowMs)?.kind
+		const phase = (m: Model) =>
+			ingestPhaseOf(successOf(m.status.data), successOf(m.usage.data), m.nowMs)?.kind
 		expect(phase(connected)).toBe("discovering")
 		const ticked = pageUpdate(connected, Message.TickedIngestPoll({ nowMs: 31 * 60_000 })).model
 		expect(phase(ticked)).toBe("stalled")

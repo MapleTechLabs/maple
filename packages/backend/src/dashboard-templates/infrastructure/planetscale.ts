@@ -27,7 +27,7 @@ function gaugeChart(opts: {
 	unit: string
 	where: string
 	aggregation?: string
-	display?: typeof CHART_DISPLAY_AREA | typeof CHART_DISPLAY_LINE
+	display?: WidgetDef["display"]
 	layout: WidgetDef["layout"]
 }): WidgetDef {
 	return {
@@ -81,8 +81,8 @@ function widgets(database?: string): WidgetDef[] {
 			layout: { x: 6, y: 0, w: 6, h: 6 },
 		},
 		// PlanetScale reports these two as 0–100 percentages (see `PlanetScaleDatabaseStatsOutput`
-		// in @maple/query-engine), so they take `percent_100`. The plain `percent` unit is a 0–1
-		// ratio that multiplies by 100 at display — under it, 85% CPU rendered as "8500.0%".
+		// in @maple/query-engine-integrations), so they take `percent_100`. The plain `percent` unit
+		// is a 0–1 ratio that multiplies by 100 at display: under it, 85% CPU rendered as "8500.0%".
 		gaugeChart({
 			id: "cpu",
 			name: "CPU",

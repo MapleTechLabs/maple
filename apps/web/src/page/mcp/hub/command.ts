@@ -1,3 +1,5 @@
+import { resolveWindowCommand } from "../../kit/time-frame"
+import { reloadSpin, SEARCH_DEBOUNCE } from "@maple/views/data/timing"
 import { MCP_CLIENT_KINDS } from "@maple/domain/mcp-clients"
 import {
 	getMcpOverview,
@@ -6,12 +8,11 @@ import {
 	getMcpSessions,
 	getMcpTool,
 } from "@maple/web-data/warehouse/mcp"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
-import { resolveWindow } from "../../../data/time-range"
+import { settleTo } from "@maple/views/data/load-failure"
 import { SEMCONV_MCP_URL } from "../view-kit"
-import { Message, RequestMode } from "./message"
+import { Message } from "./message"
 
 const Window = { startTime: Schema.String, endTime: Schema.String, bucketSeconds: Schema.Number }
 const Selection = {
@@ -19,36 +20,15 @@ const Selection = {
 	kind: Schema.UndefinedOr(Schema.Literals(MCP_CLIENT_KINDS)),
 }
 
-export const ResolveWindow = Command.define("ResolveMcpWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.UndefinedOr(Schema.String),
-		endTime: Schema.UndefinedOr(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand("ResolveMcpWindow", Message.CompletedResolveWindow)
 
 export const FetchServers = Command.define("FetchMcpServers", {
 	args: { key: Schema.String, ...Window },
 	messages: [Message.CompletedFetchServers],
 	execute: ({ key, ...data }) =>
 		getMcpServers({ data }).pipe(
-			Effect.mapBoth({
-				onSuccess: (response) => ({ servers: response.servers }),
-				onFailure: toLoadFailure,
-			}),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchServers({ key, result })),
+			Effect.map((response) => ({ servers: response.servers })),
+			settleTo((result) => Message.CompletedFetchServers({ key, result })),
 		),
 })
 
@@ -64,9 +44,8 @@ export const FetchOverview = Command.define("FetchMcpOverview", {
 	messages: [Message.CompletedFetchOverview],
 	execute: ({ key, ...data }) =>
 		getMcpOverview({ data }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchOverview({ key, result })),
+			Effect.map((response) => ({ ...response })),
+			settleTo((result) => Message.CompletedFetchOverview({ key, result })),
 		),
 })
 
@@ -82,9 +61,8 @@ export const FetchTool = Command.define("FetchMcpTool", {
 	messages: [Message.CompletedFetchTool],
 	execute: ({ key, ...data }) =>
 		getMcpTool({ data }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchTool({ key, result })),
+			Effect.map((response) => ({ ...response })),
+			settleTo((result) => Message.CompletedFetchTool({ key, result })),
 		),
 })
 
@@ -100,9 +78,8 @@ export const FetchSessions = Command.define("FetchMcpSessions", {
 	messages: [Message.CompletedFetchSessions],
 	execute: ({ key, ...data }) =>
 		getMcpSessions({ data }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSessions({ key, result })),
+			Effect.map((response) => ({ ...response })),
+			settleTo((result) => Message.CompletedFetchSessions({ key, result })),
 		),
 })
 
@@ -111,9 +88,8 @@ export const FetchSession = Command.define("FetchMcpSession", {
 	messages: [Message.CompletedFetchSession],
 	execute: ({ key, ...data }) =>
 		getMcpSession({ data }).pipe(
-			Effect.mapBoth({ onSuccess: (response) => ({ ...response }), onFailure: toLoadFailure }),
-			Effect.result,
-			Effect.map((result) => Message.CompletedFetchSession({ key, result })),
+			Effect.map((response) => ({ ...response })),
+			settleTo((result) => Message.CompletedFetchSession({ key, result })),
 		),
 })
 
@@ -121,15 +97,10 @@ export const DebounceSearch = Command.define("DebounceMcpSearch", {
 	args: { version: Schema.Number },
 	messages: [Message.ElapsedSearchDebounce],
 	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(300)), Message.ElapsedSearchDebounce({ version })),
+		Effect.as(Effect.sleep(SEARCH_DEBOUNCE), Message.ElapsedSearchDebounce({ version })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteMcpReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin("CompleteMcpReloadSpin", Message.CompletedReloadSpin)
 
 /** The empty state's "Instrument an MCP server": the MCP conventions, in a new tab. */
 export const OpenMcpConventions = Command.define("OpenMcpConventions", {

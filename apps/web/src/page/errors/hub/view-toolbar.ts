@@ -1,14 +1,14 @@
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
-import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "../../../lib/errors/hub-params"
+import { HUB_SORTS, SEVERITY_FILTERS, type SeverityFilter } from "./hub-params"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as SelectView from "@maple/views/ui/select-view"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
 import * as TabsView from "@maple/views/ui/tabs-view"
-import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../kit/severity"
+import { SEVERITY_FILL, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { searchInput } from "@maple/views/ui/search-input"
@@ -17,30 +17,25 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The errors stat strip, list toolbar, search and the sort and severity selects.
-
 type H = HtmlBuilder<Message>
 
 const stat = (h: H, value: number | string, label: string): Html =>
-	h.span(
-		[h.Class("flex items-center gap-1.5 whitespace-nowrap text-sm")],
-		[
-			h.span(
-				[h.Class(cn("font-medium tabular-nums"))],
-				[typeof value === "number" ? formatNumber(value) : value],
-			),
-			h.span([h.Class("text-muted-foreground")], [label]),
-		],
-	)
+	hstack(h, { gap: "1.5", align: "center", as: "span", className: "whitespace-nowrap text-sm" }, [
+		h.span(
+			[h.Class(cn("font-medium tabular-nums"))],
+			[typeof value === "number" ? formatNumber(value) : value],
+		),
+		typography(h, { tone: "muted" }, [label]),
+	])
 
 /** Window totals; a failed summary draws nothing rather than take the list down. */
 export const statStrip = (h: H, model: Model): Html | null =>
 	AsyncData.matchData(model.summary.data, {
 		onEmpty: () =>
-			h.div(
-				[h.Class("flex items-center gap-4 px-3 py-2")],
-				[skeleton(h, "h-4 w-28"), skeleton(h, "h-4 w-28")],
-			),
+			hstack(h, { gap: "4", align: "center", className: "px-3 py-2" }, [
+				skeleton(h, "h-4 w-28"),
+				skeleton(h, "h-4 w-28"),
+			]),
 		onFailure: () => null,
 		onData: (summary) =>
 			summary === null
@@ -56,13 +51,10 @@ export const statStrip = (h: H, model: Model): Html | null =>
 							...(AsyncData.isRefreshing(model.summary.data) ? [h.AriaBusy(true)] : []),
 						],
 						[
-							h.div(
-								[h.Class("flex items-center gap-4 flex-wrap gap-y-1")],
-								[
-									stat(h, summary.totalErrors, "error events"),
-									stat(h, formatErrorRate(summary.errorRate), "of all spans"),
-								],
-							),
+							hstack(h, { gap: "4", align: "center", wrap: true, className: "gap-y-1" }, [
+								stat(h, summary.totalErrors, "error events"),
+								stat(h, formatErrorRate(summary.errorRate), "of all spans"),
+							]),
 							typography(h, { size: "xs", tone: "subtle" }, ["in the last 24 hours"]),
 						],
 					),
@@ -87,11 +79,17 @@ const SEVERITY_TRIGGER_LABEL = { ...SEVERITY_FILTER_LABEL, all: "Severity" } sat
 const isSeverityFilter = (value: string): value is SeverityFilter =>
 	Arr.some(SEVERITY_FILTERS, (filter) => filter === value)
 
-/** `SeverityFilterDot`: the four real levels stacked for "all", the hollow ring for unset. */
+/** The four real levels stacked for "all", the hollow ring for unset. */
 const severityFilterDot = (h: H, value: SeverityFilter): Html =>
 	value === "all"
-		? h.span(
-				[h.AriaHidden(true), h.Class("flex shrink-0 -space-x-1")],
+		? hstack(
+				h,
+				{
+					align: "stretch",
+					as: "span",
+					className: "shrink-0 -space-x-1",
+					attributes: [h.AriaHidden(true)],
+				},
 				Arr.map(SEVERITY_ORDER, (severity) =>
 					statusDot(h, {
 						tone: "custom",
@@ -121,7 +119,7 @@ const SEVERITY_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(SEVERITY
 	item: { value, label: SEVERITY_FILTER_LABEL[value] },
 }))
 
-/** `ToolbarSearch` (`SearchInput` size sm): typing is debounced into the URL's `q`. */
+/** Typing is debounced into the URL's `q`. */
 const toolbarSearch = (h: H, draft: string): Html =>
 	searchInput(h, {
 		id: "errors-search",
@@ -133,7 +131,6 @@ const toolbarSearch = (h: H, draft: string): Html =>
 		onClear: Message.ChangedSearchDraft({ value: "" }),
 	})
 
-/** `ListToolbar`: view tabs, then search, sort, severity and the count readout. */
 export const toolbar = (h: H, model: Model, count: ReadonlyArray<string> | null, className?: string): Html =>
 	listToolbar(h, {
 		className,

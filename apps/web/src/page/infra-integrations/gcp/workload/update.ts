@@ -1,7 +1,9 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
 import { GCP_INFRA_SERVICE_IDS, type GcpInfraServiceId } from "@maple/domain/gcp-infra"
-import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../../../../components/infra/gcp/inventory"
-import { gcpMatchStatements, gcpStatements } from "../../../../components/infra/gcp/cloud-sql-signals"
-import { gcpWorkloadKeys } from "../../../../components/infra/gcp/tabs"
+import { GCP_CLOUD_SQL_INVENTORY_QUERY, gcpResourceQuery } from "../inventory"
+import { gcpMatchStatements, gcpStatements } from "../cloud-sql-signals"
+import { gcpWorkloadKeys } from "../tabs"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -15,10 +17,9 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import type { OverviewInput, ResourcesQuery, TimeseriesInput } from "../data"
-import { successOf } from "../list/derive"
 import {
 	CompleteReloadSpin,
 	FetchFleet,
@@ -32,8 +33,10 @@ import {
 	FetchTraceSide,
 	ResolveWindow,
 } from "./command"
-import { Message, type Model, type RequestMode } from "./model"
+import { Message, type Model } from "./model"
 import { type QueryPeek, resolveQueryPeek, statementSpansInput } from "./peek"
+import { Option, Array as Arr } from "effect"
+import { successOf } from "../../kit/success-of"
 
 type Return = PageReturn<Model, Message>
 type Search = Model["search"]
@@ -98,7 +101,6 @@ const syncPeek = (result: Return, context: PageContext, mode: Keyed.RequestMode 
 	}
 }
 
-/** Every read of the page for the resolved window, keyed like the atoms. */
 const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.window
 	if (window === null) return { model }
@@ -217,7 +219,7 @@ const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode)
 }
 
 const serviceOf = (service: string): GcpInfraServiceId | undefined =>
-	GCP_INFRA_SERVICE_IDS.find((candidate) => candidate === service)
+	Option.getOrUndefined(Arr.findFirst(GCP_INFRA_SERVICE_IDS, (candidate) => candidate === service))
 
 export const init = (route: Route, context: PageContext): Return => {
 	const service = serviceOf(route.service)
@@ -234,14 +236,7 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(model, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -325,11 +320,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchFleet: ({ key, result }) => ({
 			model: { ...model, fleet: Keyed.accept(model.fleet, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		AttachedLinkedCursor: () => ({ model }),
 		ClickedRetryTimeseries: () => requestAll(model, context, "Refresh"),
 		ClickedShowAllQueries: () => ({ model: { ...model, showAllQueries: !model.showAllQueries } }),

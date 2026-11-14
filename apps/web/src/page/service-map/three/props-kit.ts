@@ -1,4 +1,4 @@
-import type { MachineFinish as LegacyMachineFinish } from "../../../components/service-map/three/palette"
+import type { MachineFinish as LegacyMachineFinish } from "./palette"
 import * as THREE from "three"
 import {
 	type Child,
@@ -12,6 +12,7 @@ import {
 	type Vec3,
 } from "./kit"
 import { Array as Arr } from "effect"
+import { codeUnitAt } from "@maple/strings"
 
 /** The shared finish, its `running` read live so a pause needs no rebuild. */
 export type MachineFinish = Omit<LegacyMachineFinish, "running"> & { readonly running: Running }
@@ -33,13 +34,30 @@ export type MapleFinish = MachineFinish & {
 	soil: string
 	water: string
 	moss: string
+	/** Dark paper: lit lamps throw a pool of light on the ground. */
+	night: boolean
+	/** Seconds of wind so far: one clock for the whole map, standing still while it is paused. */
+	wind: () => number
+}
+
+/** Sways something on the map's wind. A rebuilt machine picks its swing up where it was, and
+ * one that is not running holds its pose. */
+export function breeze(
+	scope: Scope,
+	{ running, wind }: Pick<MapleFinish, "running" | "wind">,
+	apply: (seconds: number) => void,
+) {
+	apply(wind())
+	scope.frames.push(() => {
+		if (running()) apply(wind())
+	})
 }
 
 /** FNV-1a over a node id: the same service always draws the same homestead. */
 export function seedOf(id: string) {
 	return (
 		Arr.reduce(Array.from(id), 2166136261, (hash, char) =>
-			Math.imul(hash ^ char.charCodeAt(0), 16777619),
+			Math.imul(hash ^ codeUnitAt(char, 0), 16777619),
 		) >>> 0
 	)
 }

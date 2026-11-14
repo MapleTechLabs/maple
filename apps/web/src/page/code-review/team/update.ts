@@ -15,6 +15,7 @@ import {
 	initFrame,
 	noCarry,
 	updateFrame,
+	frameStep,
 } from "../kit/frame-update"
 import { cachedStep, remember } from "../kit/page-steps"
 import type { Retained } from "../kit/retained"
@@ -70,12 +71,13 @@ const applyOut = (model: Model, out: FrameOut, context: PageContext): Return => 
 	}
 }
 
-const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return => {
-	const next: Model = { ...model, frame: result.frame }
-	const commands = Command.mapMessages(result.commands, (message) => Message.GotFrameMessage({ message }))
-	const out = result.out === null ? { model: next } : applyOut(next, result.out, context)
-	return { ...out, commands: [...commands, ...(out.commands ?? [])] }
-}
+const liftFrame = (model: Model, result: FrameReturn, context: PageContext): Return =>
+	frameStep(
+		model,
+		result,
+		(message) => Message.GotFrameMessage({ message }),
+		(next, out) => applyOut(next, out, context),
+	)
 
 export const init = (
 	route: { readonly search: Search },
@@ -88,7 +90,12 @@ export const init = (
 		frame: frame.frame,
 		team: Keyed.idle(),
 		teamCache: carried.retained.team,
-		activityCard: HoverCard.init(ACTIVITY_CARD_ID, { openDelayMs: 80, side: "top", sideOffset: 6 }),
+		activityCard: HoverCard.init(ACTIVITY_CARD_ID, {
+			openDelayMs: 80,
+			side: "top",
+			sideOffset: 6,
+			interactive: false,
+		}),
 	}
 	return liftFrame(model, frame, context)
 }

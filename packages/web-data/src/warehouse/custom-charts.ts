@@ -1,13 +1,12 @@
+import { formatWarehouseDateTime, resolveThroughput } from "@maple/query-engine"
 import {
 	QueryEngineExecuteRequest,
 	type MetricsMetric,
 	type QueryEngineExecuteResponse,
 	type QuerySpec,
 	type TracesMetric,
-	formatWarehouseDateTime,
-	resolveThroughput,
-} from "@maple/query-engine"
-import { Clock, Effect, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+} from "@maple/domain/query-engine"
+import { Clock, Effect, Option, Order, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
 import {
 	buildBucketTimeline,
@@ -26,7 +25,7 @@ import {
 	ServiceNamespace,
 	SpanName,
 } from "@maple/domain/http"
-import { TraceId } from "@maple/domain"
+import { AttributeFilter, TraceId } from "@maple/domain"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -54,7 +53,9 @@ const asDeploymentEnv = Schema.decodeUnknownSync(DeploymentEnvironment)
 export const toEnvFilter = (
 	environments: ReadonlyArray<DeploymentEnvironment> | undefined,
 ): ReadonlyArray<DeploymentEnvironment> | undefined =>
-	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
+	environments === undefined
+		? undefined
+		: Arr.map(environments, (e) => (e === "unknown" ? asDeploymentEnv("") : e))
 
 // SpanMetrics connector metric names — namespaced first, then default. Both are
 // matched in a single `MetricName IN (...)` query (see `querySpanMetricsCalls`),
@@ -109,7 +110,6 @@ function querySpanMetricsCalls(params: {
 			return { data: [] as never[] }
 		}
 
-		// Transform grouped timeseries back to flat rows for compatibility
 		const data: Array<Record<string, unknown>> = []
 		for (const point of response.result.data) {
 			for (const [serviceName, value] of Rec.toEntries(point.series)) {
@@ -125,7 +125,7 @@ function querySpanMetricsCalls(params: {
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
-	return rows.toSorted((left, right) => Str.localeCompare(right.bucket)(left.bucket))
+	return Arr.sort(rows, (left: T, right: T) => Str.localeCompare(right.bucket)(left.bucket))
 }
 
 /**
@@ -227,46 +227,26 @@ const SharedFiltersSchema = Schema.Struct({
 	severity: Schema.optional(Schema.String),
 	// Logs-source multi-select and its exclusions. The scalars above stay for the widget builder,
 	// which binds one value per field.
-	serviceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
-	severities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-	excludedServiceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
-	excludedSeverities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	// Logs-source only: the /logs volume chart scoped to one trace.
+	serviceNames: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceNames: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	// Logs-source only: the /logs volume chart scoped to one trace, and its substring env/namespace.
 	traceId: Schema.optional(TraceId),
+	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
+	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	metricName: Schema.optional(MetricName),
 	metricType: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	groupByAttributeKeys: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	groupByAttributeKeys: Schema.optional(Schema.Array(Schema.String)),
 	groupByAttributeKey: Schema.optional(Schema.String),
-	attributeFilters: Schema.optional(
-		Schema.mutable(
-			Schema.Array(
-				Schema.Struct({
-					key: Schema.String,
-					value: Schema.optional(Schema.String),
-					mode: Schema.Literals(["equals", "exists"]),
-					negated: Schema.optional(Schema.Boolean),
-				}),
-			),
-		),
-	),
-	resourceAttributeFilters: Schema.optional(
-		Schema.mutable(
-			Schema.Array(
-				Schema.Struct({
-					key: Schema.String,
-					value: Schema.optional(Schema.String),
-					mode: Schema.Literals(["equals", "exists"]),
-					negated: Schema.optional(Schema.Boolean),
-				}),
-			),
-		),
-	),
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
 
 const CustomChartTimeSeriesInputSchema = Schema.Struct({
@@ -293,15 +273,6 @@ const CustomChartTimeSeriesInputSchema = Schema.Struct({
 export type CustomChartTimeSeriesInput = (typeof CustomChartTimeSeriesInputSchema)["Encoded"]
 type CustomChartTimeSeriesDecoded = (typeof CustomChartTimeSeriesInputSchema)["Type"]
 
-interface CustomChartTimeSeriesPoint {
-	bucket: string
-	series: Record<string, number>
-}
-
-export interface CustomChartTimeSeriesResponse {
-	data: CustomChartTimeSeriesPoint[]
-}
-
 const tracesMetrics = new Set<TracesMetric>([
 	"count",
 	"avg_duration",
@@ -311,8 +282,29 @@ const tracesMetrics = new Set<TracesMetric>([
 	"error_rate",
 	"apdex",
 ])
-const metricsMetrics = new Set<MetricsMetric>(["avg", "sum", "min", "max", "count", "rate", "increase"])
+const metricsMetrics = new Set<MetricsMetric>([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+])
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
+
+const TRACES_TIMESERIES_GROUP_BY = [
+	"service",
+	"span_name",
+	"status_code",
+	"http_method",
+	"attribute",
+	"none",
+] as const
+const LOGS_TIMESERIES_GROUP_BY = ["service", "severity", "none"] as const
+const isOneOf = <const L extends ReadonlyArray<string>>(literals: L, value: string): value is L[number] =>
+	Arr.some(literals, (literal) => literal === value)
 
 function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec | string {
 	// The legacy chart route predates the query set; product events only lower through it.
@@ -323,13 +315,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 		if (!tracesMetrics.has(data.metric as TracesMetric)) {
 			return `Unknown trace metric: ${data.metric}`
 		}
-		if (
-			data.groupBy &&
-			!["service", "span_name", "status_code", "http_method", "attribute", "none"].includes(
-				data.groupBy,
-			)
-		) {
-			return `Unsupported traces groupBy: ${data.groupBy}`
+		const groupBy = data.groupBy
+		if (groupBy !== undefined && !isOneOf(TRACES_TIMESERIES_GROUP_BY, groupBy)) {
+			return `Unsupported traces groupBy: ${groupBy}`
 		}
 
 		return {
@@ -337,7 +325,7 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 			source: "traces",
 			metric: data.metric as TracesMetric,
 			apdexThresholdMs: data.apdexThresholdMs,
-			groupBy: data.groupBy ? ([data.groupBy] as any) : undefined,
+			groupBy: groupBy === undefined ? undefined : [groupBy],
 			filters: {
 				serviceName: data.filters?.serviceName,
 				spanName: data.filters?.spanName,
@@ -357,15 +345,16 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 		if (data.metric !== "count") {
 			return `Unknown logs metric: ${data.metric}`
 		}
-		if (data.groupBy && !["service", "severity", "none"].includes(data.groupBy)) {
-			return `Unsupported logs groupBy: ${data.groupBy}`
+		const groupBy = data.groupBy
+		if (groupBy !== undefined && !isOneOf(LOGS_TIMESERIES_GROUP_BY, groupBy)) {
+			return `Unsupported logs groupBy: ${groupBy}`
 		}
 
 		return {
 			kind: "timeseries",
 			source: "logs",
 			metric: "count",
-			groupBy: data.groupBy ? ([data.groupBy] as any) : undefined,
+			groupBy: groupBy === undefined ? undefined : [groupBy],
 			filters: {
 				serviceName: data.filters?.serviceName,
 				severity: data.filters?.severity,
@@ -376,7 +365,9 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 				excludedEnvironments: data.filters?.excludedEnvironments,
 				excludedNamespaces: data.filters?.excludedNamespaces,
 				environments: data.filters?.environments,
+				deploymentEnvMatchMode: data.filters?.deploymentEnvMatchMode,
 				namespaces: data.filters?.namespaces,
+				namespaceMatchMode: data.filters?.namespaceMatchMode,
 				traceId: data.filters?.traceId,
 				attributeFilters: data.filters?.attributeFilters,
 				resourceAttributeFilters: data.filters?.resourceAttributeFilters,
@@ -390,6 +381,12 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 	}
 	if (!data.filters?.metricName || !data.filters.metricType) {
 		return "metricName and metricType are required for metrics source"
+	}
+	if (
+		data.metric === "latest" &&
+		(data.filters.metricType === "histogram" || data.filters.metricType === "exponential_histogram")
+	) {
+		return "Histogram metrics do not support latest; use avg, sum, min, max or count"
 	}
 	if (data.groupBy && !["service", "attribute", "none"].includes(data.groupBy)) {
 		return `Unsupported metrics groupBy: ${data.groupBy}`
@@ -610,7 +607,7 @@ const GetCustomChartServiceDetailInputSchema = Schema.Struct({
 	// Scopes the detail charts to a single deployment environment. Carries the
 	// service list's display value (incl. the synthetic `"unknown"`); the
 	// `"unknown" -> ""` remap to the raw warehouse value happens in `toEnvFilter`.
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 })
 
 type GetCustomChartServiceDetailInput = (typeof GetCustomChartServiceDetailInputSchema)["Encoded"]
@@ -631,7 +628,7 @@ export function makeAllMetricsTimeseriesRequest(opts: {
 	excludedEnvironments?: ReadonlyArray<DeploymentEnvironment>
 	excludedNamespaces?: ReadonlyArray<ServiceNamespace>
 	excludedCommitShas?: ReadonlyArray<CommitSha>
-	groupBy?: string[]
+	groupBy?: Extract<QuerySpec, { kind: "timeseries"; source: "traces" }>["groupBy"]
 }) {
 	return new QueryEngineExecuteRequest({
 		startTime: opts.startTime ?? "2020-01-01 00:00:00",
@@ -641,7 +638,7 @@ export function makeAllMetricsTimeseriesRequest(opts: {
 			source: "traces" as const,
 			metric: "count" as const,
 			allMetrics: true,
-			groupBy: opts.groupBy as any,
+			groupBy: opts.groupBy,
 			filters: {
 				serviceName: opts.serviceName,
 				rootSpansOnly: opts.rootSpansOnly ?? true,
@@ -675,12 +672,7 @@ function extractAllMetricsSeries(response: QueryEngineExecuteResponse): Map<stri
 	const map = new Map<string, AllMetricsPoint>()
 	if (response.result.kind !== "timeseries") return map
 	for (const point of response.result.data) {
-		// Normalize to ISO so this map's keys line up with `metricsMap` (which already
-		// `toIsoBucket`s its keys). Without this, the same time bucket lands under two
-		// different string keys in the merged `allBuckets` Set, producing duplicate
-		// points — one with traces data only, one with metrics throughput only — and
-		// the metrics-only duplicate (sorted after the raw key) overwrites the traces
-		// entry in `byBucket`, dropping latency/error-rate and stranding throughput.
+		// Normalize to ISO so one instant has one key, whichever spelling the warehouse sent.
 		map.set(toIsoBucket(point.bucket), {
 			count: point.series.count ?? 0,
 			errorRate: point.series.error_rate ?? 0,
@@ -751,8 +743,11 @@ function extractGroupedAllMetricsSeries(
 	for (const bucketPoint of response.result.data) {
 		const bucket = toIsoBucket(bucketPoint.bucket)
 		for (const [seriesKey, rawValue] of Rec.toEntries(bucketPoint.series)) {
-			const metric = GROUPED_ALL_METRICS_KEYS.find((key) => Str.startsWith(`${key}::`)(seriesKey))
-			if (!metric) continue
+			const found = Arr.findFirst(GROUPED_ALL_METRICS_KEYS, (key) =>
+				Str.startsWith(`${key}::`)(seriesKey),
+			)
+			if (Option.isNone(found)) continue
+			const metric = found.value
 
 			const service = Str.slice(metric.length + 2)(seriesKey)
 			let buckets = services.get(service)
@@ -787,7 +782,7 @@ export function buildServiceDetailPoints(
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	const points = Arr.map(
-		Array.from(allMetrics.keys()).toSorted(),
+		Arr.sort(allMetrics.keys(), Order.String),
 		(bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0
@@ -922,8 +917,8 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 const GetOverviewTimeSeriesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 
 type GetOverviewTimeSeriesInput = (typeof GetOverviewTimeSeriesInputSchema)["Encoded"]
@@ -960,7 +955,7 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	const points = Arr.map(
-		Array.from(allMetrics.keys()).toSorted(),
+		Arr.sort(allMetrics.keys(), Order.String),
 		(bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0
@@ -994,12 +989,12 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 const GetCustomChartServiceSparklinesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
-	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
-	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
-	excludedCommitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	commitShas: Schema.optional(Schema.Array(CommitSha)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 
 type GetCustomChartServiceSparklinesInput = (typeof GetCustomChartServiceSparklinesInputSchema)["Encoded"]
@@ -1038,7 +1033,7 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 			excludedEnvironments: input.excludedEnvironments,
 			excludedNamespaces: input.excludedNamespaces,
 			excludedCommitShas: input.excludedCommitShas,
-			groupBy: ["service"] as string[],
+			groupBy: ["service" as const],
 		}
 
 		// The services-list sparkline shape uses the sampling-aware
@@ -1136,10 +1131,10 @@ function aggregateSpanMetricsByBucket(
 const ThroughputRefinementShared = {
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	// The SpanMetrics calls MV can't be namespace-filtered, so a namespace scope
 	// skips the exact refinement the same way an environment scope does.
-	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	// The caller's sampling verdict, derived from the already-loaded primary
 	// chart. When false (or absent) the exact query is skipped — the estimate is
 	// already correct. Including it in the input makes it part of the atom key, so

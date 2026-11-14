@@ -5,15 +5,17 @@ import {
 	Effect,
 	Layer,
 	ManagedRuntime,
+	Option,
 	Schema,
+	Array as Arr,
 	Record as Rec,
 	String as Str,
 } from "effect"
-import { FetchHttpClient, HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpRouter } from "effect/http"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -24,34 +26,19 @@ import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
-import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
-import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
-import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
-import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { IntegrationInventoryService } from "@maple/backend/services/integrations/IntegrationInventoryService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	AllV2GroupLayersLive,
-	ApiV2RateLimiterAllowAllLayer,
-	makeWarehouseServiceStub,
-	Phase1ResourceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-	SourcesServiceStubsLayer,
-} from "./v2-test-support"
+import { ApiV2RateLimiterAllowAllLayer, makeWarehouseServiceStub } from "./v2-test-support"
+import { HttpV2InstrumentationAuditLive } from "./setup-audit.http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
  * End-to-end HTTP tests for `GET /v2/instrumentation/audit` over an embedded PGlite. The pure check
- * predicates are covered in packages/domain/src/setup-audit.test.ts — these assert the wire contract,
+ * predicates are covered in packages/backend/src/services/org/setup-audit.test.ts — these assert the wire contract,
  * the public-ID encoding of affected entities, and the two degradation paths (no telemetry ever
  * received, warehouse unreachable).
  */
@@ -59,10 +46,8 @@ import { compiledQueryOf } from "@maple/query-engine/execution"
 const createdDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(createdDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_audit_e2e")
-const USER = Schema.decodeUnknownSync(UserId)("user_audit_e2e")
-
-const die = () => Effect.die(new Error("not available in this test harness"))
+const ORG = Schema.decodeSync(OrgId)("org_audit_e2e")
+const USER = Schema.decodeSync(UserId)("user_audit_e2e")
 
 const testConfig = () =>
 	ConfigProvider.layer(
@@ -92,11 +77,11 @@ const warehouseStub = (
 		query: () => Effect.die(new Error("unexpected warehouse pipe query")),
 		rawSqlQuery: () => Effect.succeed([]),
 		compiledQuery: (_tenant, compiled) => {
-			const table = Rec.keys(rowsByTable).find((name) =>
+			const table = Arr.findFirst(Rec.keys(rowsByTable), (name) =>
 				Str.includes(`FROM ${name}`)(compiledQueryOf(compiled).sql),
 			)
 			return compiledQueryOf(compiled)
-				.decodeRows(table === undefined ? [] : rowsByTable[table]!)
+				.decodeRows(Option.isNone(table) ? [] : rowsByTable[table.value])
 				.pipe(Effect.orDie)
 		},
 		compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),
@@ -111,56 +96,15 @@ const unavailableWarehouse: WarehouseQueryServiceApi = {
 	compiledQuery: () => Effect.die(new Error("warehouse unreachable")),
 }
 
-/** PlanetScale integrations are only reached by `planetscale` scrape targets, never by the audit. */
-const planetScaleStubs = Layer.mergeAll(
-	Layer.succeed(PlanetScaleDiscoveryService, {
-		discover: die,
-		lastError: () => Effect.succeed(null),
-		invalidate: () => Effect.void,
-	}),
-	Layer.succeed(PlanetScaleOAuthService, {
-		startConnect: die,
-		completeConnect: die,
-		getValidAccessToken: die,
-		withAccessToken: die,
-		listOrganizations: die,
-		hasConnection: die,
-		connectedByUserId: die,
-		disconnect: die,
-	}),
-	Layer.succeed(SupabaseOAuthService, {
-		isConfigured: false,
-		apiBaseUrl: "https://api.supabase.com",
-		startConnect: die,
-		completeConnect: die,
-		getValidAccessToken: die,
-		withAccessToken: die,
-		isGrantUsable: die,
-		disconnect: die,
-	}),
-)
-
 const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouse)
-	// The real config-resource services back the other groups in `AllV2GroupLayersLive`; stubbing
-	// them via `ConfigResourceServiceStubsLayer` would shadow the real SetupAuditService under test.
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
 		DashboardPersistenceService.layer,
 		SharedDashboardService.layer,
-		IngestAttributeMappingService.layer,
-		OrgIngestKeysService.layer,
-		SourcesServiceStubsLayer,
-		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
-			Layer.provide(warehouseLive),
-		),
-		Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
-			Layer.provide(FetchHttpClient.layer),
-			Layer.provide(planetScaleStubs),
-		),
 		Layer.effect(SetupAuditService, SetupAuditService.make).pipe(
 			Layer.provide(
 				Layer.mergeAll(
@@ -177,18 +121,13 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 				),
 			),
 		),
-		// Sibling group in `AllV2GroupLayersLive`; the stub bundle is deliberately
-		// unused here, so it needs its own (warehouse-only) layer.
-		Layer.effect(SignalPresenceService, SignalPresenceService.make).pipe(Layer.provide(warehouseLive)),
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(AllV2GroupLayersLive),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.instrumentationAudit),
+	).pipe(
+		Layer.provide(HttpV2InstrumentationAuditLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(AuditLogService.layerMemory),
@@ -397,6 +336,8 @@ describe("GET /v2/instrumentation/audit", () => {
 						spanNameCount: "12",
 						badStatusCodes: ["ERROR"],
 						badSpanKinds: [],
+						rootSpanNames: [],
+						rootSpanKinds: [],
 					},
 				],
 			}),

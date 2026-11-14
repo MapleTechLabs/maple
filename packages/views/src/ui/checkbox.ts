@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { checkboxIconStyles, checkboxIndicatorStyles, checkboxStyles } from "@maple/ui/styles/ui/checkbox"
+import { checkboxIconStyles, checkboxIndicatorStyles, checkboxStyles } from "./checkbox.styles"
 import { Option, Schema } from "effect"
 import type { Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -11,26 +11,18 @@ import { hiddenInput, labelIdOf, toggleKey } from "./choice"
  * is a controlled prop in @maple/ui (it overrides how the box reads, not what a click does).
  */
 
-// MODEL
-
 export const Model = Schema.Struct({ isChecked: Schema.Boolean })
 export type Model = typeof Model.Type
 
 export const init = (isChecked = false): Model => ({ isChecked })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({ ToggledCheckbox: {} })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
 		ToggledCheckbox: () => ({ model: { isChecked: !model.isChecked } }),
 	})
-
-// VIEW
 
 export type CheckboxViewConfig<ParentMessage> = Readonly<{
 	model: Model

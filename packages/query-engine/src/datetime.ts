@@ -95,8 +95,6 @@ export function formatWarehouseDateTimeMs(epochMs: number): string {
 	return Str.replace(/Z$/, "")(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 }
 
-// Warehouse time as a schema
-//
 // Everything above is string plumbing any caller may skip. What follows makes
 // a *validated* warehouse timestamp its own type, so the plumbing can't be
 // skipped by accident: a `WarehouseDateTime` exists only because something
@@ -136,7 +134,7 @@ const hasRealCalendarFields = (value: string): boolean => {
 	const month = Number(mo)
 	if (month < 1 || month > 12) return false
 
-	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : DAYS_IN_MONTH[month - 1]
+	const maxDay = month === 2 && isLeapYear(Number(y)) ? 29 : (DAYS_IN_MONTH[month - 1] ?? 0)
 	const day = Number(d)
 	if (day < 1 || day > maxDay) return false
 
@@ -247,8 +245,6 @@ export function warehouseDateTime(epochMs: number): WarehouseDateTime {
 	return WarehouseDateTime.make(formatWarehouseDateTime(epochMs))
 }
 
-// Warehouse time as a value
-//
 // Columns declared `T.dateTime` / `T.dateTime64` decode to `DateTime.Utc` in
 // effect-orm. These codecs put that value back on Maple's HTTP wire in exactly
 // the string ClickHouse would have sent, so clients see no change.
@@ -308,8 +304,6 @@ export const DateTimeUtcFromWarehouse64 = Schema.String.pipe(
 	description: "UTC timestamp, `YYYY-MM-DD HH:mm:ss.SSS` (e.g. `2026-08-25 08:47:52.041`).",
 })
 
-// Relative range shorthand — single source of truth
-//
 // The time picker persists relative ranges as shorthand ("15m", "7d", "3mo",
 // "today"). This grammar used to exist three times over — in the web app (on
 // date-fns), in the MCP dashboard resolver (on Effect DateTime, approximating a
@@ -324,8 +318,6 @@ export const DateTimeUtcFromWarehouse64 = Schema.String.pipe(
 // runtime's local calendar is used: on a Worker, local is UTC, which is the only
 // sensible reading server-side. One implementation serves both.
 
-// Calendar arithmetic in an IANA zone
-//
 // `Date` only knows two calendars — UTC and the runtime's local zone — so every
 // "midnight in Europe/Berlin" question goes through `Intl`. The trick is the
 // standard one: read the wall-clock components in the zone, do the calendar
@@ -362,12 +354,13 @@ function zonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
 	return formatter
 }
 
-/** The wall clock in `timeZone` at `epochMs`. */
 export function zonedDateParts(epochMs: number, timeZone: string): ZonedDateParts {
 	const parts = zonedPartsFormatter(timeZone).formatToParts(new Date(epochMs))
 	const read = (type: Intl.DateTimeFormatPartTypes): number => {
-		const part = parts.find((candidate) => candidate.type === type)
-		return part ? Number.parseInt(part.value, 10) : 0
+		return Option.match(
+			Arr.findFirst(parts, (candidate) => candidate.type === type),
+			{ onNone: () => 0, onSome: (part) => Number.parseInt(part.value, 10) },
+		)
 	}
 	return {
 		year: read("year"),
@@ -417,7 +410,7 @@ export function zonedPartsToEpochMs(parts: ZonedDateParts, timeZone: string): nu
 			wall.second === target.getUTCSeconds()
 		)
 	}
-	return candidates.find(readsBack) ?? candidates.at(-1) ?? asUtc
+	return Option.getOrElse(Arr.findFirst(candidates, readsBack), () => candidates.at(-1) ?? asUtc)
 }
 
 /** `timeZone`'s offset from UTC at `epochMs`, in ms; positive east of Greenwich. */
@@ -522,13 +515,12 @@ export function relativeRangeSeconds(shorthand: string): number | null {
 	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	if (trimmed === "today") return 86_400
 
-	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
-	if (!match) return null
+	const [, amountText, unit] = RELATIVE_RANGE_PATTERN.exec(trimmed) ?? []
+	if (amountText === undefined || unit === undefined) return null
 
-	const amount = Number.parseInt(match[1], 10)
+	const amount = Number.parseInt(amountText, 10)
 	if (!Number.isFinite(amount) || amount <= 0) return null
 
-	const unit = match[2]
 	const unitMs = unit === "mo" ? 30 * 86_400_000 : MS[unit]
 	if (unitMs === undefined) return null
 
@@ -551,13 +543,12 @@ export function resolveRelativeRange(
 		return { startMs: startOfDay(nowMs, timeZone), endMs: nowMs }
 	}
 
-	const match = RELATIVE_RANGE_PATTERN.exec(trimmed)
-	if (!match) return null
+	const [, amountText, unit] = RELATIVE_RANGE_PATTERN.exec(trimmed) ?? []
+	if (amountText === undefined || unit === undefined) return null
 
-	const amount = Number.parseInt(match[1], 10)
+	const amount = Number.parseInt(amountText, 10)
 	if (!Number.isFinite(amount) || amount <= 0) return null
 
-	const unit = match[2]
 	if (unit === "mo") {
 		return { startMs: addCalendarMonths(nowMs, -amount, timeZone), endMs: nowMs }
 	}
@@ -595,8 +586,6 @@ export function resolveRelativeRangeToWarehouse(
 	}
 }
 
-// Cache-key snap grid — single source of truth
-//
 // A relative preset ("12h") has no absolute endpoint in the URL, so every fresh
 // mount re-resolves it against `Date.now()` and produces a slightly different
 // range. Cache keys are built from that range, so the key rolls over as fast as
@@ -620,7 +609,7 @@ export function resolveRelativeRangeToWarehouse(
 // preset into an absolute range the user will see (the time-range picker
 // writing to the URL) should record the true instant and skip this.
 
-const CACHE_SNAP_LADDER: ReadonlyArray<readonly [maxRangeMs: number, snapSeconds: number]> = [
+const CACHE_SNAP_LADDER: Arr.NonEmptyReadonlyArray<readonly [maxRangeMs: number, snapSeconds: number]> = [
 	[60 * 60 * 1000, 15], // <= 1h  → 15s
 	[6 * 60 * 60 * 1000, 60], // <= 6h  → 1m
 	[24 * 60 * 60 * 1000, 300], // <= 24h → 5m
@@ -635,7 +624,7 @@ const CACHE_SNAP_FALLBACK_SECONDS = 1800 // > 7d → 30m
  * the range. Non-finite or non-positive widths fall back to the finest rung.
  */
 export function cacheSnapSecondsForRange(rangeMs: number): number {
-	if (!Number.isFinite(rangeMs) || rangeMs <= 0) return CACHE_SNAP_LADDER[0][1]
+	if (!Number.isFinite(rangeMs) || rangeMs <= 0) return Arr.headNonEmpty(CACHE_SNAP_LADDER)[1]
 	for (const [maxRangeMs, snapSeconds] of CACHE_SNAP_LADDER) {
 		if (rangeMs <= maxRangeMs) return snapSeconds
 	}
@@ -691,6 +680,15 @@ export function snapRangeForCache(
 export function isCalendarAlignedShorthand(shorthand: string): boolean {
 	const trimmed = Str.toLowerCase(Str.trim(shorthand))
 	return trimmed === "today" || /^\d+[dw]$/.test(trimmed)
+}
+
+/**
+ * Whether a shorthand's window depends on the time zone it resolves in: day,
+ * week and month presets count on the zone's wall clock. Only `m`/`h` are pure durations.
+ */
+export function isZoneDependentShorthand(shorthand: string): boolean {
+	const trimmed = Str.toLowerCase(Str.trim(shorthand))
+	return trimmed === "today" || /^\d+(?:d|w|mo)$/.test(trimmed)
 }
 
 /**
@@ -758,8 +756,6 @@ export function resolveTimeRangeWindow(
 		: snapRangeForCache(resolved, { anchoredStart: isCalendarAlignedShorthand(timeRange.value) })
 }
 
-// Time-series bucketing — single source of truth
-//
 // Both the web app and the query engine pick an auto bucket size and build
 // bucket timelines. Keeping one pure implementation here (no driver / no
 // `Date.now()`) prevents the two from drifting and producing different
@@ -818,11 +814,12 @@ export function computeBucketSeconds(
 	const raw = Math.max(Math.ceil(rangeSeconds / targetPoints), 1)
 
 	const ladder = Arr.filter(AUTO_BUCKET_LADDER, (candidate) => candidate >= minBucketSeconds)
-	const rungs = ladder.length > 0 ? ladder : [AUTO_BUCKET_LADDER[AUTO_BUCKET_LADDER.length - 1]]
+	const rungs: Arr.NonEmptyReadonlyArray<number> = Arr.isReadonlyArrayNonEmpty(ladder)
+		? ladder
+		: [Arr.lastNonEmpty(AUTO_BUCKET_LADDER)]
 
-	let bucket: number = rungs.reduce<number>(
-		(best, candidate) => (Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best),
-		rungs[0],
+	let bucket: number = Arr.reduce(rungs, Arr.headNonEmpty(rungs), (best, candidate) =>
+		Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best,
 	)
 
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
@@ -831,7 +828,7 @@ export function computeBucketSeconds(
 		const finer = Arr.filter(rungs, (candidate) => candidate <= maxBucketForMin)
 		// `rungs[0]` rather than the raw ladder's floor: `minBuckets` must not be
 		// allowed to step below the caller's `minBucketSeconds`.
-		bucket = finer.length > 0 ? finer[finer.length - 1] : rungs[0]
+		bucket = Arr.isReadonlyArrayNonEmpty(finer) ? Arr.lastNonEmpty(finer) : Arr.headNonEmpty(rungs)
 	}
 
 	return bucket
@@ -903,7 +900,9 @@ export function computeBucketSecondsForRange(
  * warehouse rollup tiers are minute- and hour-grain, and a 30s bucket would
  * push every widget onto raw-span scans.
  */
-const WIDTH_INTERVAL_LADDER: ReadonlyArray<readonly [upperBoundSeconds: number, bucketSeconds: number]> = [
+const WIDTH_INTERVAL_LADDER: Arr.NonEmptyReadonlyArray<
+	readonly [upperBoundSeconds: number, bucketSeconds: number]
+> = [
 	[90, 60],
 	[210, 120],
 	[450, 300],
@@ -979,16 +978,18 @@ export function computeBucketSecondsForWidth(
 	// The rounding can land below the raw width (e.g. 1400px over 7d → 432s → 5m
 	// = 2016 points); walk up the ladder until the window fits the budget.
 	while (Math.ceil(rangeSeconds / bucket) > MAX_AUTO_DATA_POINTS) {
-		const next = WIDTH_INTERVAL_LADDER.find(([, seconds]) => seconds > bucket)?.[1]
-		if (next === undefined) break
-		bucket = next
+		const next = Arr.findFirst(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds > bucket)
+		if (Option.isNone(next)) break
+		bucket = next.value[1]
 	}
 
 	// Never coarser than what keeps at least `minBuckets` buckets over the range.
 	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
 	if (bucket > maxBucketForMin) {
 		const finer = Arr.filter(WIDTH_INTERVAL_LADDER, ([, seconds]) => seconds <= maxBucketForMin)
-		bucket = finer.length > 0 ? finer[finer.length - 1][1] : WIDTH_INTERVAL_LADDER[0][1]
+		bucket = Arr.isReadonlyArrayNonEmpty(finer)
+			? Arr.lastNonEmpty(finer)[1]
+			: Arr.headNonEmpty(WIDTH_INTERVAL_LADDER)[1]
 	}
 
 	return bucket
@@ -1130,8 +1131,8 @@ export const nextSlowerAlertInterval = (
 	exceeded: "time" | "memory",
 ): number | null => {
 	const current = alertQueryLimits(intervalMinutes)
-	return (
-		ALERT_PICKABLE_INTERVALS.find((candidate) => {
+	return Option.getOrNull(
+		Arr.findFirst(ALERT_PICKABLE_INTERVALS, (candidate) => {
 			const limits = alertQueryLimits(candidate)
 			return (
 				candidate > intervalMinutes &&
@@ -1140,7 +1141,7 @@ export const nextSlowerAlertInterval = (
 					? limits.timeSeconds > current.timeSeconds
 					: limits.memoryBytes > current.memoryBytes)
 			)
-		}) ?? null
+		}),
 	)
 }
 
@@ -1148,7 +1149,7 @@ export const nextSlowerAlertInterval = (
 const alertRulePhase = (ruleId: string, intervalMinutes: number): number => {
 	let hash = 0x811c9dc5
 	for (let i = 0; i < ruleId.length; i++) {
-		hash = Math.imul(hash ^ ruleId.charCodeAt(i), 0x01000193)
+		hash = Math.imul(hash ^ Option.getOrElse(Str.charCodeAt(ruleId, i), () => 0), 0x01000193)
 	}
 	return (hash >>> 0) % intervalMinutes
 }

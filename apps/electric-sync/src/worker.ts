@@ -3,16 +3,17 @@
  * authenticates the session bearer, pins each shape's org scope and forwards.
  */
 import {
-	cachedRecoverable,
 	type MapleDomains,
 	type MapleRegion,
 	MapleStack,
 	type MapleStage,
 	mapleWorkerProps,
 } from "@maple/infra/cloudflare"
+import { cachedRecoverable } from "@maple/infra/cached-recoverable"
 import {
 	authEnv,
 	derived,
+	devOrgOverrideEnv,
 	merge,
 	optionalPlain,
 	optionalSecret,
@@ -27,8 +28,7 @@ import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
 const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		authEnv,
-		// Dev only, like the API: on a deploy a pin would point every session at one tenant.
-		stage.kind === "dev" ? optionalPlain("MAPLE_ORG_ID_OVERRIDE") : merge(),
+		devOrgOverrideEnv(stage),
 		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
 		// a `preview:web` stage has none, so sync stays off.
 		stage.kind === "pr"
@@ -95,7 +95,7 @@ export default class ElectricSync extends Cloudflare.Worker<ElectricSync>()(
 
 		return { fetch: app }
 	}).pipe(
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide -- worker entry: telemetry wraps the whole worker program
 		Effect.provide(WorkerTelemetry({ serviceName: "electric-sync" })),
 	),
 ) {}

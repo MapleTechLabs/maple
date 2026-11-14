@@ -3,7 +3,11 @@ import { AsyncData } from "foldkit"
 import type { Keyed } from "@maple/views/data/keyed"
 import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { GCP_SETUP_FIXTURES } from "../gcp-setup-fixtures"
-import type { ApplyOpened, LogFilterDraft, SetupMethod } from "../../page/integrations/gcp-configure-schema"
+import type {
+	ApplyOpened,
+	LogFilterDraft,
+	SetupMethod,
+} from "../../page/infra-integrations/gcp/integration/gcp-configure-schema"
 import { agoOf, connectorOf } from "../gcp-host"
 
 // The connect lab's fixtures: minutes old against the lab's clock.
@@ -104,7 +108,7 @@ gcloud logging sinks create maple-7f3k "pubsub.googleapis.com/projects/$PROJECT/
 gcloud iam service-accounts create maple-7f3k --display-name="Maple (read-only)" --project="$PROJECT"
 `
 
-/** `GcpApplyView`'s props as the run step's state: `logFilter` is the draft that reads as it. */
+/** The apply view's props as the run step's state: `logFilter` is the draft that reads as it. */
 export type ApplyFixture = Readonly<{
 	connector: V2GcpConnector
 	created: boolean
@@ -120,7 +124,7 @@ export type Fixtures = Readonly<{
 	methodApply: Readonly<Record<MethodApplyState, MethodApplyFixture>>
 }>
 
-/** `GcpMethodApplyView`'s props as state: the run step's, with the method. */
+/** The method apply view's props as state: the run step's, with the method. */
 export type MethodApplyFixture = ApplyFixture & Readonly<{ method: SetupMethod }>
 
 const PLATFORM_LOGS: LogFilterDraft = { keep: null, runtimes: null }
@@ -148,7 +152,7 @@ const FAILED_SCRIPT: Keyed<V2GcpSetupScripts, LoadFailure> = {
 
 type Over = Readonly<Record<string, unknown>>
 
-/** `METHOD_APPLY`: "Platform logs" over an existing sink is a replaced filter. */
+/** "Platform logs" over an existing sink is a replaced filter. */
 const methodApplyFixtures = (
 	connector: (over?: Over) => V2GcpConnector,
 	organization: Over,

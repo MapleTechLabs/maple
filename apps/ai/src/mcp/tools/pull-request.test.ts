@@ -82,6 +82,35 @@ describe("classifyChangedFile", () => {
 		assert.equal(classifyChangedFile("README.md"), "docs")
 	})
 
+	it("reads any resolver's lock output as a lockfile, not only the well-known names", () => {
+		assert.equal(classifyChangedFile("packages/artifact-sdk/vendor.lock.json"), "lockfile")
+		assert.equal(classifyChangedFile("skills-lock.json"), "lockfile")
+		assert.equal(classifyChangedFile("charts/api/Chart.lock"), "lockfile")
+		assert.equal(classifyChangedFile("infra/.terraform.lock.hcl"), "lockfile")
+		assert.equal(classifyChangedFile("apps/api/pnpm-lock.yaml"), "lockfile")
+		assert.equal(classifyChangedFile("go.sum"), "lockfile")
+		// A lock in the name is not a lock file.
+		assert.equal(classifyChangedFile("src/lock.ts"), "source")
+		assert.equal(classifyChangedFile("src/file-lock.ts"), "source")
+	})
+
+	it("reads a tool's fixed-name output as generated", () => {
+		assert.equal(classifyChangedFile("apps/api/worker-configuration.d.ts"), "generated")
+		assert.equal(classifyChangedFile("apps/api/drizzle/meta/0002_snapshot.json"), "generated")
+		assert.equal(classifyChangedFile("apps/api/drizzle/meta/_journal.json"), "generated")
+		assert.equal(classifyChangedFile("packages/db/drizzle/20261111_cost/snapshot.json"), "generated")
+		assert.equal(classifyChangedFile("apps/web/.open-next/worker.js"), "generated")
+		assert.equal(
+			classifyChangedFile("public/embed/outer-60c368c1e1eddba7bd149e4b4f5408df.js"),
+			"generated",
+		)
+		// Hand-written neighbours of those outputs are still reviewed.
+		assert.equal(classifyChangedFile("packages/db/drizzle/20261111_cost/migration.sql"), "source")
+		assert.equal(classifyChangedFile("apps/api/src/env.d.ts"), "source")
+		assert.equal(classifyChangedFile("public/embed/outer.js"), "source")
+		assert.equal(classifyChangedFile("ios/Localizable.xcstrings"), "source")
+	})
+
 	it("keeps developer tooling out of the review", () => {
 		assert.equal(classifyChangedFile("apps/ai/scripts/pr-review-local.ts"), "tooling")
 		assert.equal(classifyChangedFile("scripts/oxlint-plugins/maple.mjs"), "tooling")
@@ -196,16 +225,17 @@ describe("reading the answers back", () => {
 	})
 
 	it("finds the reviewed files that have a patch in a pr_changed_files answer", () => {
-		const answer = renderChangedFiles("octo/shop", 7, [
-			file("src/orders.ts"),
-			file("src/orders.test.ts"),
-			file("src/moved.ts", { previousPath: "src/old.ts" }),
-			file("infra/alchemy.run.ts"),
-			file("package.json"),
-			file("docs/orders.md"),
-			file("bun.lock"),
-			file("assets/logo.ts", { patch: null }),
-		]).content[0]!.text
+		const answer =
+			renderChangedFiles("octo/shop", 7, [
+				file("src/orders.ts"),
+				file("src/orders.test.ts"),
+				file("src/moved.ts", { previousPath: "src/old.ts" }),
+				file("infra/alchemy.run.ts"),
+				file("package.json"),
+				file("docs/orders.md"),
+				file("bun.lock"),
+				file("assets/logo.ts", { patch: null }),
+			]).content[0]?.text ?? ""
 		assert.deepEqual(reviewablePathsInListing(answer), [
 			"src/orders.ts",
 			"src/orders.test.ts",
@@ -220,12 +250,13 @@ describe("reading the answers back", () => {
 			...file("src/big.ts"),
 			patch: `@@ -1,0 +1,1400 @@\n${Str.repeat(1400)(`+${Str.repeat(60)("x")}\n`)}`,
 		}
-		const answer = renderFileDiffs(
-			"octo/shop",
-			7,
-			[file("src/a.ts"), big, file("src/c.ts")],
-			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
-		).content[0]!.text
+		const answer =
+			renderFileDiffs(
+				"octo/shop",
+				7,
+				[file("src/a.ts"), big, file("src/c.ts")],
+				["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
+			).content[0]?.text ?? ""
 		assert.include(answer, "Not included")
 		const shown = pathsInDiffAnswer(answer)
 		// The unknown path shows nothing, and the deferred one is named without its diff.
@@ -249,7 +280,7 @@ describe("the typed outputs", () => {
 
 	it("encode through their schemas", () => {
 		const listing = changedFilesOutput("octo/shop", 7, [file("src/a.ts"), file("bun.lock")])
-		const decoded = Schema.decodeUnknownSync(PrChangedFilesOutput)(
+		const decoded = Schema.decodeSync(PrChangedFilesOutput)(
 			Schema.encodeUnknownSync(PrChangedFilesOutput)(listing),
 		)
 		assert.deepEqual(
@@ -257,7 +288,7 @@ describe("the typed outputs", () => {
 			["source", "lockfile"],
 		)
 		const diffs = fileDiffsOutput("octo/shop", 7, [file("src/a.ts")], ["src/a.ts", "nope.ts"])
-		const decodedDiffs = Schema.decodeUnknownSync(PrFileDiffOutput)(
+		const decodedDiffs = Schema.decodeSync(PrFileDiffOutput)(
 			Schema.encodeUnknownSync(PrFileDiffOutput)(diffs),
 		)
 		assert.deepEqual(decodedDiffs.notChanged, ["nope.ts"])

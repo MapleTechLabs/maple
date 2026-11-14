@@ -6,13 +6,11 @@
  * verify a signature, parse a body or know a payload: a connector that cannot
  * authenticate its own caller is a connector that has not been written yet.
  *
- * Nothing registered today delivers this way — the first connector is a socket
- * one — so this exists as the contract's other half, tested against a fake
- * connector. It is also why the Worker takes no public hostname yet; see
- * `../worker.ts`.
+ * A connector of `kind: "webhook"` is delivered this way, which is why the Worker
+ * takes a public hostname where the stage has one; see `../worker.ts`.
  */
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
-import { ConfigProvider, Effect, Schema, Array as Arr } from "effect"
+import { ConfigProvider, Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
@@ -65,8 +63,12 @@ export const connectorWebhookRouter = (registry: ReadonlyArray<IngressConnector>
 					// attributable to the id that was asked for rather than anonymous.
 					yield* Effect.annotateCurrentSpan("maple.chat.connector", connectorId)
 
-					const connector = registry.find((candidate) => candidate.id === connectorId)
-					if (connector === undefined || connector.ingress.kind !== "webhook") {
+					const found = Arr.findFirst(registry, (candidate) => candidate.id === connectorId)
+					if (Option.isNone(found)) {
+						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
+					}
+					const connector = found.value
+					if (connector.ingress.kind !== "webhook") {
 						return yield* rejectCaller(404, "ConnectorNotFound", "No such connector")
 					}
 

@@ -128,6 +128,7 @@ interface CloudflareFilterInput {
 /** Drop empty/absent filters so they never reach the payload (the request schema is optionalKey). */
 const cloudflareFilterPayload = (input: CloudflareFilterInput) => {
 	const out: Record<string, ReadonlyArray<string> | string> = {}
+	// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
 	for (const [key, value] of Object.entries(input) as ReadonlyArray<
 		[string, ReadonlyArray<string> | string | undefined]
 	>) {
@@ -450,8 +451,6 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 	}
 })
 
-// Zone detail: security, DNS, and live top traffic
-
 export interface CloudflareZoneFirewallBucket {
 	bucket: string
 	/** Cloudflare action: block / challenge / managed_challenge / skip / log / …. */
@@ -619,8 +618,6 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 		}
 	},
 )
-
-// Generic zone breakdown + filter facets
 
 export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = [
 	"path",

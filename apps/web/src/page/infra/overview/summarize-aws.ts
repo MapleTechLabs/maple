@@ -1,13 +1,12 @@
-import { Schema, Array as Arr } from "effect"
+import { encodeJson } from "@maple/views/data/request-key"
+import { Array as Arr } from "effect"
 import { AWS_INFRA_KINDS } from "@maple/domain/aws-infra"
 import { countLabel } from "@maple/ui/lib/format"
 import type { FleetRead } from "../../infra-integrations/aws/data"
 import { type ResourceView, resourceViews, summaryOf } from "../../infra-integrations/aws/derive"
 import type { Finding, SourceSummary } from "./model"
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
-
-// `summarizeAws`: the /infra/aws page's health, as the overview's row and findings.
+// The /infra/aws page's health, as the overview's row and findings.
 
 const MAX_FINDINGS = 3
 

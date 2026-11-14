@@ -6,7 +6,7 @@ import {
 	assetWorkerObservability,
 	MapleStack,
 	mapleWorkerProps,
-	resolveStorageJurisdiction,
+	REGION_INFRA,
 	resolveWorkerName,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
@@ -31,7 +31,7 @@ const SANDBOX_IMAGE_CONTEXT = `${import.meta.dirname}/image`
 const mirrorBackups = Effect.gen(function* () {
 	const { stage, region } = yield* MapleStack
 	const bucketName = resolveWorkerName("sandbox-mirrors", stage, region)
-	const jurisdiction = resolveStorageJurisdiction(region)
+	const jurisdiction = REGION_INFRA[region].storageJurisdiction
 	const bucket = yield* Cloudflare.R2.Bucket("sandbox-mirrors", {
 		name: bucketName,
 		jurisdiction,
@@ -53,7 +53,7 @@ const mirrorBackups = Effect.gen(function* () {
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: `${import.meta.dirname}/src/worker.ts` }
 	const stack = yield* MapleStack
-	const production = stack.stage.kind === "prd"
+	const { instanceType, maxInstances, executorMaxInstances } = stack.profile.sandbox
 	// No OTel SDK in this Worker, so platform logs are its only telemetry. Keep them on.
 	const destinations = yield* WorkersObservabilityDestinations
 	return {
@@ -69,11 +69,8 @@ const props = Effect.gen(function* () {
 			// switching policy needs a new application and Durable Object namespace.
 			Sandbox: Cloudflare.Container<Sandbox>("Sandbox", {
 				context: SANDBOX_IMAGE_CONTEXT,
-				// Full clones exhaust the smaller tiers' disk. Named tiers are the only dial:
-				// Cloudflare rejects explicit vcpu/memory/disk alongside one.
-				instanceType: production ? ("standard-2" as const) : ("standard-1" as const),
-				// One container per repository per org: the cap on concurrent repositories.
-				maxInstances: production ? 40 : 5,
+				instanceType,
+				maxInstances,
 				observability: { logs: { enabled: true } },
 			}),
 			// The execution sandbox: started with internet off, one per security audit run (and the
@@ -81,8 +78,7 @@ const props = Effect.gen(function* () {
 			Executor: Cloudflare.Container<Executor>("Executor", {
 				context: SANDBOX_IMAGE_CONTEXT,
 				instanceType: "standard-2" as const,
-				// The cap on concurrent audit runs that execute code.
-				maxInstances: production ? 10 : 2,
+				maxInstances: executorMaxInstances,
 				observability: { logs: { enabled: true } },
 			}),
 			// Never the shared `INTERNAL_SERVICE_TOKEN` (acts as any org; this runs model-chosen

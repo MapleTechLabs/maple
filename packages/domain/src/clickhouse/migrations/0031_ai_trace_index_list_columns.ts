@@ -11,8 +11,7 @@
  * the index already holds, so they become columns: `VendorVersion` from
  * `maple_ai.vendor.version`, and `InputTokens`/`CacheReadTokens`/
  * `CacheWriteTokens`/`OutputTokens`/`ReasoningTokens` from
- * `genAiUsageBucketsExpr` — the same disjoint split the fan-out computed and
- * the detail page's `spanTokenBuckets` shows, so the five sum to `Tokens`.
+ * the same disjoint usage split the fan-out computed and the detail page's `spanTokenBuckets` shows, so the five sum to `Tokens`.
  *
  * NOTHING IS BACKFILLED, as in 0026 and 0029: rows materialized before this
  * migration read `''` and 0 for the new columns, so the list falls back to the

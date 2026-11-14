@@ -1,4 +1,4 @@
-import type { BranchCandidate } from "../../../components/infra/planetscale/branch-selection"
+import type { BranchCandidate } from "./branch-selection"
 import { Array as Arr, String as Str } from "effect"
 
 // PlanetScale list filters. The search fields themselves are in `route/search.ts`.
@@ -40,7 +40,7 @@ type FilterSearch = Readonly<{
 const nonEmpty = (values: ReadonlyArray<string> | undefined) =>
 	values !== undefined && values.length > 0 ? values : undefined
 
-/** `filtersFromSearch`: the legacy `?branch=` reads as a one-branch selection when `branches` is absent. */
+/** The legacy `?branch=` reads as a one-branch selection when `branches` is absent. */
 export const filtersFromSearch = (search: FilterSearch): PlanetScaleFilters => {
 	const legacy = search.branch !== undefined && search.branch !== "" ? [search.branch] : undefined
 	return {
@@ -113,7 +113,7 @@ export const applyBranchFilters = (
 	candidates: ReadonlyArray<BranchCandidate>,
 	filters: PlanetScaleFilters,
 ): ReadonlyArray<BranchCandidate> => {
-	const contains = filters.branchContains?.toLowerCase() ?? ""
+	const contains = filters.branchContains === undefined ? "" : Str.toLowerCase(filters.branchContains)
 	return Arr.filter(
 		candidates,
 		(candidate) =>

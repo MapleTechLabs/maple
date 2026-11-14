@@ -1,12 +1,8 @@
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
+import { CurrentMcpTenant } from "../tenant"
 import {
-	SandboxExecOutput,
-	SandboxGrepOutput,
-	SandboxListFilesOutput,
-	SandboxReadFileOutput,
-} from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
-import {
+	missedFile,
+	type MissedFile,
 	RepoSandboxService,
 	SANDBOX_DEFAULT_TIMEOUT_SECONDS,
 	SANDBOX_MAX_OUTPUT_BYTES,
@@ -96,6 +92,60 @@ const checkRef = (ref: string | undefined) =>
 const REGEX_FAILURE =
 	/Unmatched|Invalid (regular expression|preceding regular expression|range end|back reference|character class|content of)|Trailing backslash|not balanced/i
 
+/** Index of the `]` closing the bracket expression that opens at `start`; undefined when none does. */
+const bracketEnd = (pattern: string, start: number): number | undefined => {
+	let index = start + 1
+	if (pattern.charAt(index) === "^") index += 1
+	// A `]` in first position is a member, not the end.
+	if (pattern.charAt(index) === "]") index += 1
+	while (index < pattern.length) {
+		const char = pattern.charAt(index)
+		if (char === "]") return index
+		const kind = pattern.charAt(index + 1)
+		if (char === "[" && (kind === ":" || kind === "." || kind === "=")) {
+			const close = pattern.indexOf(`${kind}]`, index + 2)
+			if (close === -1) return undefined
+			index = close + 2
+		} else {
+			index += 1
+		}
+	}
+	return undefined
+}
+
+/**
+ * The pattern with every parenthesis that has no partner escaped, read as git's extended regex
+ * reads it: `\(` and a parenthesis inside `[...]` are already literal. A pattern whose groups
+ * balance, or whose bracket never closes (git's own error to report), comes back untouched.
+ */
+const literalUnbalancedParens = (pattern: string): string => {
+	const open: Array<number> = []
+	const lone = new Set<number>()
+	let index = 0
+	while (index < pattern.length) {
+		const char = pattern.charAt(index)
+		if (char === "\\") {
+			index += 2
+			continue
+		}
+		if (char === "[") {
+			const end = bracketEnd(pattern, index)
+			if (end === undefined) return pattern
+			index = end + 1
+			continue
+		}
+		if (char === "(") open.push(index)
+		else if (char === ")" && open.pop() === undefined) lone.add(index)
+		index += 1
+	}
+	const unbalanced = new Set([...open, ...lone])
+	if (unbalanced.size === 0) return pattern
+	return Arr.join(
+		Arr.map(Str.split("")(pattern), (char, at) => (unbalanced.has(at) ? `\\${char}` : char)),
+		"",
+	)
+}
+
 const scopeOf = (output: {
 	readonly repository: string
 	readonly ref?: string
@@ -107,6 +157,35 @@ const scopeOf = (output: {
 	["Exit", String(output.exitCode)],
 	["Time", `${output.wallTimeMs} ms`],
 ]
+
+/** Why a read missed, with enough to pick the right path or ref on the next call. */
+const missedFileMessage = (path: string, ref: string | undefined, missed: MissedFile): string => {
+	if (missed.isDirectory) {
+		return `'${path}' is a directory, not a file. List it with sandbox_list_files.`
+	}
+	const name = Arr.lastNonEmpty(Str.split("/")(path))
+	const where = ref === undefined ? "the repository's tracked branch" : `ref '${ref}'`
+	const more = missed.sameNameTotal - missed.sameName.length
+	const sameName =
+		missed.sameName.length === 0
+			? `No tracked file is named '${name}' anywhere at that commit, so do not try the name in other directories.`
+			: `Tracked files named '${name}': ${Arr.join(missed.sameName, ", ")}${more > 0 ? ` and ${more} more (sandbox_list_files with glob \`**/${name}\` lists them)` : ""}.`
+	const directory =
+		missed.nearestDirectory === undefined
+			? undefined
+			: `Its directory does not exist either; the deepest one that does is ${missed.nearestDirectory === "." ? "the repository root" : `'${missed.nearestDirectory}'`}.`
+	const commit =
+		ref === undefined
+			? "No `ref` was passed: a file that a pull request or a later commit adds is only at that commit, so pass its SHA as `ref`."
+			: "A file added, moved or deleted by another commit is only at that commit's `ref`."
+	return Arr.join(
+		Arr.filter(
+			[`No file '${path}' at ${where}.`, sameName, directory, commit],
+			(part) => part !== undefined,
+		),
+		" ",
+	)
+}
 
 /** Split into non-empty lines; the cap is applied by the caller, which reports the total. */
 const nonEmptyLines = (output: string): ReadonlyArray<string> =>
@@ -130,7 +209,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			case_sensitive: P.optionalFlag("false for a case-insensitive search"),
 			context_lines: P.optionalNumber("Lines of context shown around each match"),
 		}),
-		output: SandboxGrepOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Searching the repository", "Grepping the code"],
@@ -153,13 +231,16 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			yield* checkRef(ref)
 			const caseSensitive = case_sensitive ?? true
 			const contextLines = Math.min(5, Math.max(0, Math.floor(context_lines ?? 0)))
+			// Models send `fetch(` meaning the text. Done before the call, so it costs no second
+			// round trip, and only where the pattern could not have compiled as sent.
+			const searched = literalUnbalancedParens(pattern)
 			const tenant = yield* CurrentMcpTenant
 			const sandbox = yield* RepoSandboxService
 			const result = yield* sandbox
 				.grep(
 					tenant.orgId,
 					{ repository: Str.trim(repository), ref },
-					{ pattern, path, glob, caseSensitive, contextLines },
+					{ pattern: searched, path, glob, caseSensitive, contextLines },
 				)
 				.pipe(Effect.mapError(fromSandboxError("sandbox_grep")))
 			// git grep: 0 matches, 1 no matches, anything above an error it printed to stderr.
@@ -180,6 +261,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				exitCode: result.exitCode,
 				wallTimeMs: result.wallTimeMs,
 				pattern,
+				...(searched === pattern ? undefined : { searchedPattern: searched }),
 				...(path === undefined ? undefined : { path }),
 				...(glob === undefined ? undefined : { glob }),
 				caseSensitive,
@@ -191,6 +273,13 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		render: (output) => ({
 			title: `Sandbox grep: \`${output.pattern}\``,
 			scope: [...scopeOf(output), ["Path", output.path], ["Glob", output.glob]],
+			...(output.searchedPattern === undefined
+				? undefined
+				: {
+						notices: [
+							`The pattern's parentheses do not balance, so the unpaired ones were searched as literal text: \`${output.searchedPattern}\`. Write \`\\(\` for a literal parenthesis; a group needs both.`,
+						],
+					}),
 			...(output.lines.length === 0
 				? {
 						empty: {
@@ -226,7 +315,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			glob: P.optionalText("Only paths matching this pathspec glob, e.g. `**/*.sql`"),
 			ref: P.optionalText(REF_DESCRIPTION),
 		}),
-		output: SandboxListFilesOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Listing files"],
@@ -288,7 +376,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			start_line: P.optionalNumber("First line to return, 1-based"),
 			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
-		output: SandboxReadFileOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Reading a file"],
@@ -328,8 +415,12 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				)
 				.pipe(Effect.mapError(fromSandboxError("sandbox_read_file")))
 			if (result.exitCode !== 0) {
+				const missed = result.exitCode === 1 ? missedFile(result.stdout) : undefined
 				return yield* new McpInvalidInputError({
-					message: `No readable file '${filePath}' at that ref: ${Str.slice(0, 300)(Str.trim(result.stderr))}. Find the path with sandbox_list_files or sandbox_grep.`,
+					message:
+						missed === undefined
+							? `No readable file '${filePath}' at that ref: ${Str.slice(0, 300)(Str.trim(result.stderr))}. Find the path with sandbox_list_files or sandbox_grep.`
+							: missedFileMessage(filePath, ref, missed),
 					parameter: "path",
 				})
 			}
@@ -341,10 +432,11 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			}
 			const body = Str.split("\n")(result.stdout)
 			const markerIndex = body.findIndex((line) => Str.startsWith(TOTAL_MARKER)(line))
+			const markerLine = body[markerIndex]
 			const total =
-				markerIndex === -1
+				markerLine === undefined
 					? undefined
-					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(body[markerIndex]!)))
+					: Number(Str.trim(Str.slice(TOTAL_MARKER.length)(markerLine)))
 			// No blank-line filter: the header reports the line range, so dropping
 			// empty lines would leave the rendered source not matching those numbers.
 			// awk's trailing newline is the one empty element worth removing.
@@ -413,7 +505,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				`Wall-clock limit in seconds (default ${SANDBOX_DEFAULT_TIMEOUT_SECONDS}, max ${SANDBOX_MAX_TIMEOUT_SECONDS})`,
 			),
 		}),
-		output: SandboxExecOutput,
 		hints: HINTS,
 		audience: AGENT,
 		phrases: ["Running a command"],

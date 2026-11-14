@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	AttachRequest,
 	type BillingAccount,
@@ -9,19 +10,10 @@ import {
 	LinkBillingOrgRequest,
 } from "@maple/domain/http"
 import { OrgId } from "@maple/domain"
-import {
-	buildCheckoutSuccessUrl,
-	CHECKOUT_CONFIRM_POLL_MS,
-	CHECKOUT_CONFIRM_TIMEOUT_MS,
-} from "../../../lib/billing/checkout-return"
-import { hasSelectedPlan } from "../../../lib/billing/plan-gating"
-import {
-	parseCapInput,
-	spendLimitFor,
-	uncappedFeatures,
-	updateFeatureControls,
-} from "../../../lib/billing/controls"
-import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "../../../lib/billing/spend"
+import { buildCheckoutSuccessUrl } from "../../kit/billing/checkout-return"
+import { hasSelectedPlan } from "../../kit/billing/plan-gating"
+import { parseCapInput, spendLimitFor, uncappedFeatures, updateFeatureControls } from "./controls"
+import { buildSpendModel, SPEND_FEATURES, type SpendModel } from "./spend"
 import { NetworkErrorBody } from "@maple/web-data/lib/error-messages"
 import {
 	Cause,
@@ -44,13 +36,14 @@ import { currentClerkUser } from "../../../platform/clerk"
 import * as Dialog from "@maple/views/ui/dialog"
 import { PageOutMessage, type PageReturn } from "../../contract"
 import { revisitData } from "../kit/revisit"
+import * as CheckoutReturn from "../../kit/checkout-return"
 import * as Details from "./details/update"
-import { CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
+import { canManage, CAP_INPUT_ID, Message, type Model, type OrgChoice, SpendFeatureId } from "./model"
 
 type Return = PageReturn<Model, Message>
 
 /**
- * A step plus whether the settings page's customer must be read again (`BILLING_CUSTOMER_KEY`),
+ * A step plus whether the settings page's customer must be read again,
  * and where a checkout return stands: a poll re-reads only the page's copy, a confirmed plan
  * refreshes the app's customer once, and a settled return drops `checkout=complete` (replace).
  */
@@ -60,15 +53,13 @@ export type Step = Readonly<{
 	checkout?: "Polled" | "Confirmed" | "TimedOut"
 }>
 
-// READS
-
 // A defect settles the slot as a failure too; otherwise the message never arrives and it shimmers forever.
 const loaded =
 	<A, B>(toMessage: (result: Result.Result<A, ReturnType<typeof toLoadFailure>>) => B) =>
 	<E, R>(effect: Effect.Effect<A, E, R>) =>
 		effect.pipe(
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLoadFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLoadFailure(defect))),
 			Effect.result,
 			Effect.map(toMessage),
 		)
@@ -88,7 +79,7 @@ const FetchPlans = Command.define("FetchBillingPlans", {
 	),
 })
 
-/** The five metered features over the current cycle (the API resolves the window). */
+/** The metered features over the current cycle (the API resolves the window). */
 const FetchUsage = Command.define("FetchBillingUsage", {
 	messages: [Message.CompletedFetchUsage],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
@@ -99,9 +90,18 @@ const FetchUsage = Command.define("FetchBillingUsage", {
 	),
 })
 
+/** This cycle's AI credit spend by surface and by day; the usage row and the chart's AI band read it. */
+const FetchAiUsage = Command.define("FetchBillingAiCreditUsage", {
+	messages: [Message.CompletedFetchAiUsage],
+	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getAiCreditUsage()).pipe(
+		withinDeadline,
+		loaded((result) => Message.CompletedFetchAiUsage({ result })),
+	),
+})
+
 /**
- * `SpendChartError` renders `dailySpendResult.cause` as the unexpected body (a retry button), so
- * the slot keeps that body too.
+ * Every failure settles as a defect: the spend chart shows a failed read as the unexpected body
+ * (a retry button).
  */
 const FetchDaily = Command.define("FetchBillingDailySpend", {
 	messages: [Message.CompletedFetchDaily],
@@ -122,16 +122,18 @@ const FetchInvoices = Command.define("FetchBillingInvoices", {
 
 const isNotConfigured = Schema.is(BillingNotConfiguredError)
 
+const toProfileFailure = (error: unknown) => ({
+	isNotConfigured: isNotConfigured(error),
+	failure: toLoadFailure(error),
+})
+
 /** A self-hosted API without Stripe answers every profile read with `BillingNotConfiguredError`. */
 const FetchProfile = Command.define("FetchBillingProfile", {
 	messages: [Message.CompletedFetchProfile],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) => client.billing.getBillingProfile()).pipe(
 		// Like `loaded`: a defect must still settle the read, or the details shimmer forever.
-		Effect.catchDefect((defect) => Effect.fail(defect)),
-		Effect.mapError((error) => ({
-			isNotConfigured: isNotConfigured(error),
-			failure: toLoadFailure(error),
-		})),
+		Effect.mapError(toProfileFailure),
+		Effect.catchDefect((defect) => Effect.fail(toProfileFailure(defect))),
 		Effect.result,
 		Effect.map((result) => Message.CompletedFetchProfile({ result })),
 	),
@@ -179,18 +181,21 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 	execute: currentClerkUser.pipe(
 		Effect.map((user): ReadonlyArray<OrgChoice> => {
 			const activeId = window.Clerk?.organization?.id
-			return Arr.map(
-				Arr.filter(
-					user.organizationMemberships ?? [],
-					(membership) =>
-						membership.role === "org:admin" && membership.organization.id !== activeId,
+			return Arr.sort(
+				Arr.map(
+					Arr.filter(
+						user.organizationMemberships ?? [],
+						(membership) =>
+							membership.role === "org:admin" && membership.organization.id !== activeId,
+					),
+					({ organization }) => ({
+						orgId: OrgId.make(organization.id),
+						name: organization.name,
+						imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
+					}),
 				),
-				({ organization }) => ({
-					orgId: OrgId.make(organization.id),
-					name: organization.name,
-					imageUrl: organization.hasImage ? (organization.imageUrl ?? "") : "",
-				}),
-			).toSorted((a, b) => Str.localeCompare(b.name)(a.name))
+				(a: OrgChoice, b: OrgChoice) => Str.localeCompare(b.name)(a.name),
+			)
 		}),
 		loaded((result) => Message.CompletedFetchOrgChoices({ result })),
 	),
@@ -198,13 +203,13 @@ const FetchOrgChoices = Command.define("FetchBillingOrgChoices", {
 
 const isLinkRejected = Schema.is(BillingLinkRejectedError)
 
-/** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
 /** Above the server's 10s budget for cancelling the org's own plans, plus a wait on the link lock. */
 const LINK_TIMEOUT = Duration.seconds(30)
 
 const withinLinkDeadline = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 	Effect.timeoutOrElse(effect, { duration: LINK_TIMEOUT, orElse: () => Effect.fail(NetworkErrorBody) })
 
+/** A refusal keeps the server's sentence for the person who asked; anything else is a plain failure. */
 const toLinkFailure = (error: unknown) => ({
 	rejection: isLinkRejected(error) ? error.message : null,
 	failure: toLoadFailure(error),
@@ -218,8 +223,8 @@ const Link = Command.define("LinkBillingOrg", {
 			client.billing.linkBillingOrg({ payload: new LinkBillingOrgRequest({ billingOrgId }) }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedLink({ orgName, result })),
 		),
@@ -233,16 +238,13 @@ const Unlink = Command.define("UnlinkBillingOrg", {
 			client.billing.unlinkBillingOrg({ params: { orgId } }),
 		).pipe(
 			withinLinkDeadline,
-			Effect.catchDefect((defect) => Effect.fail(defect)),
 			Effect.mapError(toLinkFailure),
+			Effect.catchDefect((defect) => Effect.fail(toLinkFailure(defect))),
 			Effect.result,
 			Effect.map((result) => Message.CompletedUnlink({ isSelf, result })),
 		),
 })
 
-// WRITES
-
-/** `openCustomerPortal({ returnUrl: window.location.href })`. */
 const OpenPortal = Command.define("OpenBillingPortal", {
 	messages: [Message.CompletedOpenPortal],
 	execute: Effect.flatMap(MapleInternalApiClient, (client) =>
@@ -288,26 +290,9 @@ const Attach = Command.define("AttachBillingPlan", {
 		).pipe(loaded((result) => Message.CompletedAttach({ planId, result }))),
 })
 
-/** `CHECKOUT_CONFIRM_POLL_MS`: the customer is re-read this often while confirming. */
-const WaitCheckoutPoll = Command.define("WaitBillingCheckoutPoll", {
-	messages: [Message.ElapsedCheckoutPoll],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_POLL_MS)).pipe(
-		Effect.as(Message.ElapsedCheckoutPoll()),
-	),
-})
-
-/** `CHECKOUT_CONFIRM_TIMEOUT_MS`: then the wait gives up with the timed-out notice. */
-const WaitCheckoutTimeout = Command.define("WaitBillingCheckoutTimeout", {
-	messages: [Message.ElapsedCheckoutTimeout],
-	execute: Effect.sleep(Duration.millis(CHECKOUT_CONFIRM_TIMEOUT_MS)).pipe(
-		Effect.as(Message.ElapsedCheckoutTimeout()),
-	),
-})
-
-/** `plan_checkout_started` and `plan_checkout_returned` (apps/web/src/lib/analytics.ts). */
 const TrackCheckout = Command.define("TrackBillingCheckout", {
 	args: {
-		event: Schema.Literals(["plan_checkout_started", "plan_checkout_returned"]),
+		event: Schema.Literal("plan_checkout_started"),
 		props: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Boolean])),
 	},
 	messages: [Message.CompletedTrackProduct],
@@ -315,7 +300,6 @@ const TrackCheckout = Command.define("TrackBillingCheckout", {
 		trackProduct(event, props).pipe(Effect.as(Message.CompletedTrackProduct())),
 })
 
-/** `usageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })`. */
 const ScrollToUsage = Command.define("ScrollToBillingUsage", {
 	messages: [Message.CompletedScrollToUsage],
 	execute: Effect.sync(() => {
@@ -329,13 +313,10 @@ const ScrollToUsage = Command.define("ScrollToBillingUsage", {
 
 export const USAGE_HEADING_ID = "settings-billing-usage"
 
-/** The cap editor's input takes focus as it opens (`autoFocus`). */
 const FocusCap = Command.define("FocusBillingCapInput", {
 	messages: [Message.CompletedFocusCap],
 	execute: Dom.focus(`#${CAP_INPUT_ID}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusCap())),
 })
-
-// DERIVED
 
 /** One spend model feeds every figure, so no two numbers on the tab can disagree. */
 export const spendModelOf = (
@@ -355,20 +336,23 @@ export const spendModelOf = (
 
 export const profileOf = (model: Model): Option.Option<BillingProfile> => AsyncData.getData(model.profile)
 
-// UPDATE
-
 /**
  * `isReturning`: the tab opened with `?checkout=complete`, so it waits on the Stripe to Autumn sync.
  * Invoices and details wait for the account: a member org's billing lives on its billing org.
  */
-export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): Return => ({
+export const init = (
+	grants: ReadonlyArray<Policy.Permission>,
+	isReturning: boolean,
+	isClerk: boolean,
+): Return => ({
 	model: {
-		isAdmin,
+		grants,
 		isClerk,
-		checkoutReturn: isReturning ? "Confirming" : "Idle",
+		checkoutReturn: CheckoutReturn.init(isReturning).model,
 		plans: AsyncData.Loading(),
 		usage: AsyncData.Loading(),
 		daily: AsyncData.Loading(),
+		aiUsage: AsyncData.Loading(),
 		invoices: AsyncData.Idle(),
 		profile: AsyncData.Idle(),
 		ruleStats: AsyncData.Idle(),
@@ -397,8 +381,9 @@ export const init = (isAdmin: boolean, isReturning: boolean, isClerk: boolean): 
 		FetchPlans(),
 		FetchUsage(),
 		FetchDaily(),
+		FetchAiUsage(),
 		FetchAccount(),
-		...(isReturning ? [WaitCheckoutPoll(), WaitCheckoutTimeout()] : []),
+		...checkoutReturnCommands(CheckoutReturn.init(isReturning)),
 	],
 })
 
@@ -406,6 +391,16 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 	PageOutMessage.RequestedToast({ type, title, description })
 
 const same = (step: Return): Step => ({ step, isCustomerStale: false })
+
+const checkoutReturnCommands = (wait: CheckoutReturn.Step) =>
+	Command.mapMessages(wait.commands, (message) => Message.GotCheckoutReturnMessage({ message }))
+
+/** A poll re-reads the page's customer; the outcome tells the settings page what else to do. */
+const checkoutReturnStep = (model: Model, wait: CheckoutReturn.Step): Step => ({
+	step: { model: { ...model, checkoutReturn: wait.model }, commands: checkoutReturnCommands(wait) },
+	isCustomerStale: wait.outcome === "Polled",
+	checkout: wait.outcome ?? undefined,
+})
 const staleCustomer = (step: Return): Step => ({ step, isCustomerStale: true })
 
 const revalidate = <A, E>(data: AsyncData.AsyncData<A, E>) =>
@@ -418,7 +413,7 @@ const liftCompare = (model: Model, step: ReturnType<typeof Dialog.update>): Retu
 	),
 })
 
-/** `CapEditor`'s draft starts from the cap on file. */
+/** The cap editor's draft starts from the cap on file. */
 const openCap = (model: Model, featureId: SpendFeatureId, customer: BillingCustomer | null): Model => {
 	const existing = spendLimitFor(customer ?? undefined, featureId)?.overageLimit
 	return { ...model, editingCap: featureId, capDraft: existing === undefined ? "" : String(existing) }
@@ -429,15 +424,19 @@ const saveCap = (model: Model, customer: BillingCustomer | null, nowMs: number):
 	const parsed = parseCapInput(model.capDraft)
 	if (featureId === null || !parsed.valid || model.isSavingCap) return { model }
 	const label =
-		spendModelOf(model, customer, nowMs)?.features.find((feature) => feature.featureId === featureId)
-			?.label ?? ""
+		Option.getOrUndefined(
+			Arr.findFirst(
+				spendModelOf(model, customer, nowMs)?.features ?? [],
+				(feature) => feature.featureId === featureId,
+			),
+		)?.label ?? ""
 	return {
 		model: { ...model, isSavingCap: true },
 		commands: [SaveCap({ featureId, label, overageLimit: parsed.cap })],
 	}
 }
 
-/** `revisitData` for a read the account gates: one never asked for stays unasked. */
+/** A revisit for a read the account gates: one never asked for stays unasked. */
 const revisitIfRead = <A, E, C>(data: AsyncData.AsyncData<A, E>, read: () => C) =>
 	AsyncData.isIdle(data) ? { data, commands: [] } : revisitData(data, read)
 
@@ -446,6 +445,7 @@ export const revisit = (model: Model): Return => {
 	const plans = revisitData(model.plans, FetchPlans)
 	const usage = revisitData(model.usage, FetchUsage)
 	const daily = revisitData(model.daily, FetchDaily)
+	const aiUsage = revisitData(model.aiUsage, FetchAiUsage)
 	const account = revisitData(model.account, FetchAccount)
 	const invoices = revisitIfRead(model.invoices, FetchInvoices)
 	const profile = revisitIfRead(model.profile, FetchProfile)
@@ -456,6 +456,7 @@ export const revisit = (model: Model): Return => {
 			plans: plans.data,
 			usage: usage.data,
 			daily: daily.data,
+			aiUsage: aiUsage.data,
 			account: account.data,
 			invoices: invoices.data,
 			profile: profile.data,
@@ -467,6 +468,7 @@ export const revisit = (model: Model): Return => {
 			...plans.commands,
 			...usage.commands,
 			...daily.commands,
+			...aiUsage.commands,
 			...account.commands,
 			...invoices.commands,
 			...profile.commands,
@@ -501,7 +503,7 @@ const applyAccount = (model: Model, account: BillingAccount, isFresh: boolean): 
 	)
 	const orgChoices = gated(
 		model.orgChoices,
-		account.role === "standalone" && model.isAdmin && model.isClerk,
+		account.role === "standalone" && canManage(model) && model.isClerk,
 		false,
 		FetchOrgChoices,
 	)
@@ -543,7 +545,10 @@ const liftUnlinkDialog = (model: Model, step: ReturnType<typeof Dialog.update>):
 /** The org picked to pay for this one: the draft, else the first choice the select shows. */
 export const linkTargetOf = (model: Model): OrgChoice | null => {
 	const choices = AsyncData.getOrElse(model.orgChoices, () => [])
-	return choices.find((choice) => choice.orgId === model.linkOrgId) ?? choices[0] ?? null
+	return Option.getOrElse(
+		Arr.findFirst(choices, (choice) => choice.orgId === model.linkOrgId),
+		() => choices[0] ?? null,
+	)
 }
 
 /** The account changed hands: the customer, its usage and spend are now another org's. */
@@ -554,12 +559,16 @@ const afterLinkChange = (model: Model, account: BillingAccount): Return => {
 			plans: revalidate(model.plans),
 			usage: revalidate(model.usage),
 			daily: revalidate(model.daily),
+			aiUsage: revalidate(model.aiUsage),
 			ruleStats: AsyncData.Idle(),
 		},
 		account,
 		true,
 	)
-	return { ...applied, commands: [FetchPlans(), FetchUsage(), FetchDaily(), ...(applied.commands ?? [])] }
+	return {
+		...applied,
+		commands: [FetchPlans(), FetchUsage(), FetchDaily(), FetchAiUsage(), ...(applied.commands ?? [])],
+	}
 }
 
 export const update = (
@@ -575,6 +584,8 @@ export const update = (
 			same({ model: { ...model, usage: AsyncData.settle(model.usage, result) } }),
 		CompletedFetchDaily: ({ result }) =>
 			same({ model: { ...model, daily: AsyncData.settle(model.daily, result) } }),
+		CompletedFetchAiUsage: ({ result }) =>
+			same({ model: { ...model, aiUsage: AsyncData.settle(model.aiUsage, result) } }),
 		CompletedFetchInvoices: ({ result }) =>
 			same({ model: { ...model, invoices: AsyncData.settle(model.invoices, result) } }),
 		CompletedFetchProfile: ({ result }) =>
@@ -615,8 +626,15 @@ export const update = (
 							plans: revalidate(model.plans),
 							invoices: revalidate(model.invoices),
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
-						commands: [FetchPlans(), FetchInvoices(), FetchDaily(), Redirect({ url })],
+						commands: [
+							FetchPlans(),
+							FetchInvoices(),
+							FetchDaily(),
+							FetchAiUsage(),
+							Redirect({ url }),
+						],
 					}),
 				onFailure: (error) =>
 					same({
@@ -632,7 +650,7 @@ export const update = (
 			const opened =
 				first === undefined
 					? { ...model, editingCap: null }
-					: openCap(model, Schema.decodeUnknownSync(SpendFeatureId)(first.featureId), customer)
+					: openCap(model, Schema.decodeSync(SpendFeatureId)(first.featureId), customer)
 			return same({
 				model: opened,
 				commands: [ScrollToUsage(), ...(opened.editingCap === null ? [] : [FocusCap()])],
@@ -661,6 +679,7 @@ export const update = (
 							isSavingCap: false,
 							editingCap: model.editingCap === featureId ? null : model.editingCap,
 							daily: revalidate(model.daily),
+							aiUsage: revalidate(model.aiUsage),
 						},
 						commands: [FetchDaily()],
 						outMessage: toast("success", `${label} cap saved`),
@@ -701,8 +720,9 @@ export const update = (
 									plans: revalidate(model.plans),
 									invoices: revalidate(model.invoices),
 									daily: revalidate(model.daily),
+									aiUsage: revalidate(model.aiUsage),
 								},
-								commands: [FetchPlans(), FetchInvoices(), FetchDaily()],
+								commands: [FetchPlans(), FetchInvoices(), FetchDaily(), FetchAiUsage()],
 								outMessage: toast("success", "Plan updated"),
 							}),
 				onFailure: (error) =>
@@ -711,30 +731,8 @@ export const update = (
 						outMessage: toast("error", "Couldn't update your plan", error.message),
 					}),
 			}),
-		ElapsedCheckoutPoll: () =>
-			model.checkoutReturn === "Confirming"
-				? {
-						step: { model, commands: [WaitCheckoutPoll()] },
-						isCustomerStale: true,
-						checkout: "Polled",
-					}
-				: same({ model }),
-		ElapsedCheckoutTimeout: () =>
-			model.checkoutReturn === "Confirming"
-				? {
-						step: {
-							model: { ...model, checkoutReturn: "TimedOut" },
-							commands: [
-								TrackCheckout({
-									event: "plan_checkout_returned",
-									props: { confirmed: false },
-								}),
-							],
-						},
-						isCustomerStale: false,
-						checkout: "TimedOut",
-					}
-				: same({ model }),
+		GotCheckoutReturnMessage: ({ message: child }) =>
+			checkoutReturnStep(model, CheckoutReturn.update(model.checkoutReturn, child)),
 		CompletedTrackProduct: () => same({ model }),
 		ClickedEditDetails: () => same(openDetails(model)),
 		GotDetailsMessage: ({ message: child }) => {
@@ -779,8 +777,17 @@ export const update = (
 		ClickedRetryAccountUsage: () =>
 			same({ model: { ...model, accountUsage: AsyncData.Loading() }, commands: [FetchAccountUsage()] }),
 		ChangedLinkOrg: ({ value }) => {
-			const choice = AsyncData.getOrElse(model.orgChoices, () => []).find((org) => org.orgId === value)
-			return same({ model: { ...model, linkOrgId: choice?.orgId ?? null, linkRejection: null } })
+			const choice = Arr.findFirst(
+				AsyncData.getOrElse(model.orgChoices, () => []),
+				(org) => org.orgId === value,
+			)
+			return same({
+				model: {
+					...model,
+					linkOrgId: Option.getOrNull(Option.map(choice, (org) => org.orgId)),
+					linkRejection: null,
+				},
+			})
 		},
 		ClickedLink: () =>
 			linkTargetOf(model) === null || model.isLinking
@@ -912,19 +919,10 @@ export const requestRuleStats = (
 }
 
 /** The customer settled: once it carries a plan, the wait is over (`confirmed`). */
-export const customerChanged = (model: Model, customer: BillingCustomer): Step | null =>
-	model.checkoutReturn === "Confirming" && hasSelectedPlan(customer)
-		? {
-				step: {
-					model: { ...model, checkoutReturn: "Idle" },
-					commands: [
-						TrackCheckout({ event: "plan_checkout_returned", props: { confirmed: true } }),
-					],
-				},
-				isCustomerStale: false,
-				checkout: "Confirmed",
-			}
-		: null
+export const customerChanged = (model: Model, customer: BillingCustomer): Step | null => {
+	const wait = hasSelectedPlan(customer) ? CheckoutReturn.confirmed(model.checkoutReturn) : null
+	return wait === null ? null : checkoutReturnStep(model, wait)
+}
 
 /** "Edit" on the billing details: the dialog opens on the profile on file. */
 export const openDetails = (model: Model): Return =>

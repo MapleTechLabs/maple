@@ -7,6 +7,7 @@
 // own paragraph.
 
 import { finiteOrZero } from "./format"
+import { utcHourFloor } from "./query-helpers"
 import {
 	DB_QUERY_KEY_LAZY_SQL,
 	DB_QUERY_KEY_SQL,
@@ -19,7 +20,7 @@ import {
 import { deploymentEnvExpr, messagingDestinationExpr } from "@maple/domain/tinybird/semconv-renames"
 import { type DateTime, Schema, Effect } from "effect"
 import { utcAsWireString } from "./utc-bridge"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { compile, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { defineCondFn, defineFn } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
 // From the root, not `/expr`: this overload takes a `CHQuery`, so the subquery
@@ -27,21 +28,8 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { inSubquery, subqueryExpr } from "@maple-dev/effect-orm/clickhouse"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, fromUnion } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ServiceAddressResolutionsHourly,
-	ServiceExternalEdgesHourly,
-	ServiceMapChildren,
-	ServiceMapDbEdgesHourly,
-	ServiceMapDbEdgesMinutely,
-	ServiceMapDbQuerySignaturesHourly,
-	ServiceMapEdgesHourly,
-	ServiceMapSpans,
-	ServicePlatformsHourly,
-	type StringMap,
-	Traces,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { type StringMap, orgIdParam, utcSecondsParam } from "../tables"
 import { unionAll } from "@maple-dev/effect-orm/clickhouse"
 import { edgeCondition, hourGrain, minuteGrain, utcInteriorConditions } from "./rollup-splice"
 import { CHNumber, CHNumberOrZero } from "../schema"
@@ -63,18 +51,22 @@ const _matchRegex = defineCondFn<[CH.Expr<string>, string]>("match")
  */
 const SERVICE_MAP_EXCLUDED_SERVICES: ReadonlyArray<string> = [UPTIME_SERVICE_NAME]
 
-// Service dependencies
+/**
+ * Platform proxies whose Server span is the direct parent of the next service's Server span, with
+ * no Client span between. Vercel's edge request span parents the project's `Invoke Function`.
+ */
+const PROXY_SERVICES: ReadonlyArray<string> = ["vercel.edge-network"]
 
 export interface ServiceDependenciesOpts {
 	deploymentEnv?: string
 }
 
-export interface ServiceDependenciesOutput {
-	readonly sourceService: string
-	readonly targetService: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
+const ServiceDependenciesOutputSchema = Schema.Struct({
+	sourceService: Schema.String,
+	targetService: Schema.String,
+	callCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
 	/**
 	 * The window's slowest call, NOT a percentile — and unlike the database and
 	 * external edges, this one has no `p95DurationMs` beside it.
@@ -90,19 +82,11 @@ export interface ServiceDependenciesOutput {
 	 * `serviceOverview`, which is a real merged tDigest. This value reaches only
 	 * the MCP table and the chat renderer, both of which label it "Max Duration".
 	 */
-	readonly maxDurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceDependenciesOutputSchema: CompiledQueryRowSchema<ServiceDependenciesOutput> = Schema.Struct({
-	sourceService: Schema.String,
-	targetService: Schema.String,
-	callCount: CHNumber,
-	errorCount: CHNumber,
-	avgDurationMs: CHNumberOrZero,
 	maxDurationMs: CHNumber,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceDependenciesOutput = typeof ServiceDependenciesOutputSchema.Type
 
 /** The `th:` TraceState marker for a consistent-probability sampling decision. */
 const SAMPLED_TRACE_STATE_RE = "th:[0-9a-f]+"
@@ -163,7 +147,7 @@ function serviceMapEdgeJoinSource(opts: {
 		opts.deploymentEnv ? deploymentEnv.eq(opts.deploymentEnv) : undefined
 	const edgeOnly = opts.edgeHoursOnly ? edgeCondition("Timestamp") : undefined
 
-	const parentSpans = from(ServiceMapSpans)
+	const parentSpans = from(Datasources.serviceMapSpans)
 		.select(($) => ({
 			OrgId: $.OrgId,
 			Timestamp: $.Timestamp,
@@ -173,7 +157,9 @@ function serviceMapEdgeJoinSource(opts: {
 			DeploymentEnv: $.DeploymentEnv,
 		}))
 		.where(($) => [
-			$.SpanKind.in_("Client", "Producer"),
+			$.SpanKind.in_("Client", "Producer").or(
+				$.SpanKind.eq("Server").and(CH.inList($.ServiceName, PROXY_SERVICES)),
+			),
 			$.Timestamp.gte(opts.rangeStart),
 			$.Timestamp.lt(opts.rangeEnd),
 			$.OrgId.eq(orgIdParam),
@@ -184,7 +170,7 @@ function serviceMapEdgeJoinSource(opts: {
 			CH.notInList($.ServiceName, SERVICE_MAP_EXCLUDED_SERVICES),
 		])
 
-	const childSpans = from(ServiceMapChildren)
+	const childSpans = from(Datasources.serviceMapChildren)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			ParentSpanId: $.ParentSpanId,
@@ -279,8 +265,6 @@ export function serviceDependenciesSQL(
 	)
 }
 
-// Service ↔ service dependencies — scoped to one source service
-//
 // The service-detail page's Dependencies tab only needs outbound edges for the
 // currently-displayed service. The org-wide variant above is kept for the
 // global Services map (which renders every edge). This variant pushes the
@@ -341,7 +325,7 @@ export function serviceDependenciesQueryBase(opts: {
 	const endDateTime = CH.toDateTime(utcSecondsParam("endTime"))
 
 	// Hourly branch — only sealed, complete buckets inside the requested window.
-	const hourlyBranch = from(ServiceMapEdgesHourly)
+	const hourlyBranch = from(Datasources.serviceMapEdgesHourly)
 		.select(($) => ({
 			sourceService: $.SourceService,
 			targetService: $.TargetService,
@@ -437,8 +421,6 @@ export function serviceDependenciesInvolvingServiceQuery(opts: ServiceDependenci
 	})
 }
 
-// Service ↔ database edges
-//
 // Surfaces DB calls (Client/Producer spans with `db.system.name` or `db.system`) as a separate
 // dependency relation so the service map can reify databases as nodes.
 // One row per (sourceService, dbSystem).
@@ -459,20 +441,20 @@ export interface ServiceDbEdgesOpts {
 	minuteTier?: boolean
 }
 
-export interface ServiceDbEdgesOutput {
-	readonly sourceService: string
-	readonly dbSystem: string
-	readonly dbNamespace: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
+const ServiceDbEdgesOutputSchema = Schema.Struct({
+	sourceService: Schema.String,
+	dbSystem: Schema.String,
+	dbNamespace: Schema.String,
+	callCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumberOrZero,
 	/**
 	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
 	 * it is the only latency figure available for buckets sealed before migration
 	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
 	 * it AS a max wherever it is shown.
 	 */
-	readonly maxDurationMs: number
+	maxDurationMs: CHNumber,
 	/**
 	 * Sample-weighted p95 in ms, merged from the edge rollup's t-digest.
 	 *
@@ -481,21 +463,11 @@ export interface ServiceDbEdgesOutput {
 	 * `maxDurationMs` and must present it AS a max; substituting one for the other
 	 * under a "p95" label is the bug this pair replaced.
 	 */
-	readonly p95DurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceDbEdgesOutputSchema: CompiledQueryRowSchema<ServiceDbEdgesOutput> = Schema.Struct({
-	sourceService: Schema.String,
-	dbSystem: Schema.String,
-	dbNamespace: Schema.String,
-	callCount: CHNumber,
-	errorCount: CHNumber,
-	avgDurationMs: CHNumberOrZero,
-	maxDurationMs: CHNumber,
 	p95DurationMs: CHNumberOrZero,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceDbEdgesOutput = typeof ServiceDbEdgesOutputSchema.Type
 
 export function serviceDbEdgesSQL(
 	opts: ServiceDbEdgesOpts,
@@ -580,7 +552,7 @@ function serviceDbEdgesQueryBase(opts: {
 	const minuteTier = opts.minuteTier ?? true
 
 	// Hourly branch — sealed buckets from service_map_db_edges_hourly_mv.
-	const hourlyBranch = from(ServiceMapDbEdgesHourly)
+	const hourlyBranch = from(Datasources.serviceMapDbEdgesHourly)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: $.DbSystem,
@@ -616,16 +588,23 @@ function serviceDbEdgesQueryBase(opts: {
 	// time, so a late span with an old timestamp cannot pull it back over minutes the
 	// table only partly holds). No rows yet means no coverage. Coverage is a whole
 	// minute, so `Timestamp < coverage` and `Minute >= coverage` split exactly.
+	// Only a day before the window is consulted, not the org's whole 30 days: an org
+	// with rows that day gets the same coverage, one without starts coverage later,
+	// which shifts minutes to raw but never double-counts.
 	const coverageStart = subqueryExpr(
-		from(ServiceMapDbEdgesMinutely)
+		from(Datasources.serviceMapDbEdgesMinutely)
 			.select(($) => ({ insertedAt: $.FirstInsertedAt }))
-			.where(($) => [$.OrgId.eq(orgIdParam)]),
+			.where(($) => [
+				$.OrgId.eq(orgIdParam),
+				$.Minute.gte(CH.rawExpr(`${minuteGrain.startFloor} - INTERVAL 1 DAY`, T.dateTime)),
+				$.Minute.lte(CH.rawExpr(minuteGrain.endDt, T.dateTime)),
+			]),
 		T.dateTime,
 		(sql) =>
 			`(SELECT if(count() = 0, ${hourGrain.endDt}, toStartOfMinute(min(insertedAt)) + INTERVAL 1 MINUTE) FROM (${sql}))`,
 	)
 
-	const minutelyBranch = from(ServiceMapDbEdgesMinutely)
+	const minutelyBranch = from(Datasources.serviceMapDbEdgesMinutely)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: $.DbSystem,
@@ -651,7 +630,7 @@ function serviceDbEdgesQueryBase(opts: {
 	// Reads per-row `SampleRate` directly so no inline weight math is needed, and
 	// carries `bucketDurationSumMs` separately so the outer can do a
 	// properly-weighted average.
-	const recentBranch = from(Traces)
+	const recentBranch = from(Datasources.traces)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			dbSystem: dbSystemExpr($),
@@ -705,8 +684,6 @@ function serviceDbEdgesQueryBase(opts: {
 		.format("JSON")
 }
 
-// Service ↔ database edges — scoped to one source service
-//
 // Same shape as `serviceDbEdgesSQL` but pre-filters both branches by
 // `ServiceName = ?`. Mirrors the `serviceExternalEdgesSQL` pattern (which is
 // already service-scoped).
@@ -728,8 +705,6 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 	return serviceDbEdgesQueryBase(opts)
 }
 
-// Service-map database query summaries
-//
 // Selected database drill-down ("Query Activity" + "Top Query Shapes"). Reads
 // the `service_map_db_query_shapes_hourly` rollup for sealed hours and UNIONs
 // raw `traces` for the in-progress hour — same dual-source pattern as
@@ -756,19 +731,7 @@ export interface ServiceDbQuerySummaryParams {
 	readonly topN?: number
 }
 
-export interface ServiceDbQuerySummaryOutput {
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly estimatedErrorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-	readonly activeServiceCount: number
-}
-
-const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySummaryOutput> = Schema.Struct({
+const ServiceDbQuerySummaryOutputSchema = Schema.Struct({
 	queryCount: CHNumber,
 	estimatedQueryCount: CHNumber,
 	errorCount: CHNumber,
@@ -780,46 +743,22 @@ const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySu
 	activeServiceCount: CHNumber,
 })
 
-export interface ServiceDbQueryTimeseriesOutput {
-	readonly bucket: DateTime.Utc
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-}
+export type ServiceDbQuerySummaryOutput = typeof ServiceDbQuerySummaryOutputSchema.Type
 
-const ServiceDbQueryTimeseriesOutputSchema: CompiledQueryRowSchema<ServiceDbQueryTimeseriesOutput> =
-	Schema.Struct({
-		bucket: DateTimeUtcFromWarehouse,
-		queryCount: CHNumber,
-		estimatedQueryCount: CHNumber,
-		errorCount: CHNumber,
-		errorRate: CHNumber,
-		avgDurationMs: CHNumberOrZero,
-		p50DurationMs: CHNumber,
-		p95DurationMs: CHNumber,
-	})
+const ServiceDbQueryTimeseriesOutputSchema = Schema.Struct({
+	bucket: DateTimeUtcFromWarehouse,
+	queryCount: CHNumber,
+	estimatedQueryCount: CHNumber,
+	errorCount: CHNumber,
+	errorRate: CHNumber,
+	avgDurationMs: CHNumberOrZero,
+	p50DurationMs: CHNumber,
+	p95DurationMs: CHNumber,
+})
 
-export interface ServiceDbTopQueryOutput {
-	readonly queryKey: string
-	readonly queryLabel: string
-	readonly sampleStatement: string
-	readonly sampleService: string
-	readonly serviceCount: number
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly errorRate: number
-	readonly avgDurationMs: number
-	readonly p50DurationMs: number
-	readonly p95DurationMs: number
-	readonly lastSeen: DateTime.Utc
-}
+export type ServiceDbQueryTimeseriesOutput = typeof ServiceDbQueryTimeseriesOutputSchema.Type
 
-const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOutput> = Schema.Struct({
+const ServiceDbTopQueryOutputSchema = Schema.Struct({
 	queryKey: Schema.String,
 	queryLabel: Schema.String,
 	sampleStatement: Schema.String,
@@ -834,6 +773,8 @@ const ServiceDbTopQueryOutputSchema: CompiledQueryRowSchema<ServiceDbTopQueryOut
 	p95DurationMs: CHNumber,
 	lastSeen: DateTimeUtcFromWarehouse,
 })
+
+export type ServiceDbTopQueryOutput = typeof ServiceDbTopQueryOutputSchema.Type
 
 // Finalized sample-weighted quantiles over raw rows — used by the sub-hour
 // timeseries path (which can't be served by the hourly rollup).
@@ -908,7 +849,7 @@ const serviceDbRawFilters = (
 	$.SpanKind.in_("Client", "Producer"),
 	$.ServiceName.neq(""),
 	dbSystemExpr($).eq(params.dbSystem),
-	// Same undefined-vs-'' semantics as `shapesHourlyFilters`.
+	// Same undefined-vs-'' semantics as `signaturesHourlyFilters`.
 	params.dbNamespace !== undefined ? dbNamespaceExpr($).eq(params.dbNamespace) : undefined,
 	params.sourceService ? $.ServiceName.eq(params.sourceService) : undefined,
 	params.deploymentEnv ? deploymentEnvExpr($.ResourceAttributes).eq(params.deploymentEnv) : undefined,
@@ -936,7 +877,7 @@ export function serviceDbQuerySummarySQL(
 ): Effect.Effect<CompiledQuery<ServiceDbQuerySummaryOutput>, QueryBuilderError> {
 	// Sealed hours from the rollup; ServiceName/DurationQuantiles re-aggregated at
 	// read time (the table is queried without FINAL).
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bCount: CH.sum($.CallCount),
 			bEst: CH.sum($.EstimatedCount),
@@ -947,7 +888,7 @@ export function serviceDbQuerySummarySQL(
 			bQ: CH.rawExpr(TDIGEST_MERGE_STATE_EXPR, DB_DURATION_STATE),
 		}))
 		.where(($) => signaturesHourlyFilters($, params))
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bCount: CH.count(),
 			bEst: CH.sum($.SampleRate),
@@ -985,7 +926,7 @@ export function serviceDbQueryTimeseriesSQL(
 	// for ≤24h) can't be served by the hourly rollup, but those scans are cheap;
 	// read raw `traces` directly for the full window.
 	if (bucketSeconds < 3600) {
-		const query = from(Traces)
+		const query = from(Datasources.traces)
 			.select(($) => ({
 				bucket: CH.toStartOfInterval(CH.toDateTime($.Timestamp), bucketSeconds),
 				queryCount: CH.count(),
@@ -1020,7 +961,7 @@ export function serviceDbQueryTimeseriesSQL(
 
 	// Hour-aligned buckets (≥1h — pickDbSummaryBucketSeconds gives 1h/6h for >24h):
 	// sealed rollup hours UNION the in-progress hour from raw traces.
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Hour, bucketSeconds),
 			bCount: CH.sum($.CallCount),
@@ -1032,7 +973,7 @@ export function serviceDbQueryTimeseriesSQL(
 		}))
 		.where(($) => signaturesHourlyFilters($, params))
 		.groupBy("bucket")
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval(CH.toDateTime($.Timestamp), bucketSeconds),
 			bCount: CH.count(),
@@ -1071,7 +1012,7 @@ export function serviceDbTopQueriesSQL(
 
 	// Sealed rollup shapes — pre-computed QueryKey/QueryLabel, so no per-row
 	// fingerprinting on this branch.
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			queryKey: $.QueryKey,
 			bLabel: CH.any_($.QueryLabel),
@@ -1091,7 +1032,7 @@ export function serviceDbTopQueriesSQL(
 	// In-progress hour — derives QueryKey/QueryLabel from the SAME shared SQL the
 	// rollup MV uses (raw exprs, no DSL equivalent), so a shape's key matches
 	// across the sealed/live boundary.
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			queryKey: CH.rawExpr(DB_QUERY_KEY_SQL, T.string),
 			bLabel: CH.rawExpr(`any(substring(${DB_QUERY_LABEL_SQL}, 1, 220))`, T.string),
@@ -1172,7 +1113,7 @@ export function serviceDbQuerySpansQuery(params: {
 	queryKeys: ReadonlyArray<string>
 	limit: number
 }) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -1190,8 +1131,6 @@ export function serviceDbQuerySpansQuery(params: {
 		.format("JSON")
 }
 
-// Service ↔ external target edges (http / messaging / rpc)
-//
 // Surfaces non-DB Client/Producer outbound calls — HTTP endpoints, message
 // queues, RPC targets — as a unified inventory for the service-detail page's
 // "Dependencies" tab. Mirrors the DB-edges pattern: hourly MV (sealed buckets)
@@ -1205,27 +1144,7 @@ export interface ServiceExternalEdgesOpts {
 	serviceName: string
 }
 
-export interface ServiceExternalEdgesOutput {
-	readonly sourceService: string
-	readonly targetType: "http" | "messaging" | "rpc"
-	readonly targetSystem: string
-	readonly targetName: string
-	readonly callCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
-	/**
-	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
-	 * it is the only latency figure available for buckets sealed before migration
-	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
-	 * it AS a max wherever it is shown.
-	 */
-	readonly maxDurationMs: number
-	/** See `ServiceDbEdgesOutput.p95DurationMs` — same state, same 0-means-absent. */
-	readonly p95DurationMs: number
-	readonly estimatedSpanCount: number
-}
-
-const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEdgesOutput> = Schema.Struct({
+const ServiceExternalEdgesOutputSchema = Schema.Struct({
 	sourceService: Schema.String,
 	targetType: Schema.Literals(["http", "messaging", "rpc"]),
 	targetSystem: Schema.String,
@@ -1233,22 +1152,31 @@ const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEd
 	callCount: CHNumber,
 	errorCount: CHNumber,
 	avgDurationMs: CHNumberOrZero,
+	/**
+	 * The window's slowest call. Kept beside `p95DurationMs` rather than replaced:
+	 * it is the only latency figure available for buckets sealed before migration
+	 * 0022, and it is a genuinely useful outlier signal in its own right. Present
+	 * it AS a max wherever it is shown.
+	 */
 	maxDurationMs: CHNumber,
+	/** See `ServiceDbEdgesOutput.p95DurationMs` — same state, same 0-means-absent. */
 	p95DurationMs: CHNumberOrZero,
 	estimatedSpanCount: CHNumber,
 })
+
+export type ServiceExternalEdgesOutput = typeof ServiceExternalEdgesOutputSchema.Type
 
 export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceExternalEdgesOutput>, QueryBuilderError> {
-	const startHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))
-	const endHour = CH.toStartOfHour(CH.toDateTime(utcSecondsParam("endTime")))
+	const startHour = utcHourFloor("startTime")
+	const endHour = utcHourFloor("endTime")
 
 	// Hourly branch: sealed buckets from the MV-fed table. Carries `bucket*`
 	// aliases so the outer aggregate can't collide with inner ones (same
 	// nested-aggregate optimizer gotcha as `serviceDbEdgesSQL`).
-	const hourlyEdges = from(ServiceExternalEdgesHourly)
+	const hourlyEdges = from(Datasources.serviceExternalEdgesHourly)
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			targetType: $.TargetType,
@@ -1276,7 +1204,7 @@ export function serviceExternalEdgesSQL(
 	// window — the exact complement of the hourly interior above. Mirrors the
 	// `multiIf` precedence the MV uses (messaging > rpc > http) so both branches
 	// produce identical row shapes for the same span.
-	const recentEdges = from(Traces)
+	const recentEdges = from(Datasources.traces)
 		.select(($) => {
 			const attr = (key: string) => $.SpanAttributes.get(key)
 			const destination = messagingDestinationExpr($.SpanAttributes)
@@ -1344,11 +1272,11 @@ export function serviceExternalEdgesSQL(
 		// Deliberately HAVING, not WHERE: `targetName` is a computed output alias,
 		// and although it happens to be a pure function of grouped columns today,
 		// a future editor shouldn't have to re-derive that to know this is safe.
-		.having(() => [CH.dynamicColumn<string>("targetName").neq("")])
+		.having(() => [CH.dynamicColumn("targetName").neq("")])
 
 	// Addresses this service was observed calling that resolve to a known
 	// internal service in the same window. `GROUP BY` is the DSL's SELECT DISTINCT.
-	const internalResolutions = from(ServiceAddressResolutionsHourly)
+	const internalResolutions = from(Datasources.serviceAddressResolutionsHourly)
 		.select(($) => ({ ParentServerAddress: $.ParentServerAddress }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -1393,11 +1321,9 @@ export function serviceExternalEdgesSQL(
 	return compile(query, params, { rowSchema: ServiceExternalEdgesOutputSchema })
 }
 
-// Service hosting platform
-//
 // Per-service rollup of the OTel resource attributes that identify where a
 // service runs. The caller derives a single `Platform` label from these raw
-// values (see apps/web/src/api/tinybird/service-map.ts).
+// values (see `toServicePlatformRow` in apps/api/src/routes/internal/query-engine.http.ts).
 //
 // Reads from `service_platforms_hourly` (populated by
 // `service_platforms_hourly_mv`). The MV uses SimpleAggregateFunction("max")
@@ -1427,7 +1353,7 @@ export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServicePlatformsOutput>, QueryBuilderError> {
-	const query = from(ServicePlatformsHourly)
+	const query = from(Datasources.servicePlatformsHourly)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			// `max()` on a SimpleAggregateFunction(max, String) column merges
@@ -1445,7 +1371,7 @@ export function servicePlatformsSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.ServiceName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
@@ -1461,8 +1387,6 @@ export function servicePlatformsSQL(
 	})
 }
 
-// DB query volume
-//
 // Query shapes across every service and database, not one db system's detail
 // panel: the same sealed-rollup + raw-edge splice as `serviceDbTopQueriesSQL`,
 // keyed per (service, db system, namespace, shape). The raw edge mirrors the
@@ -1473,19 +1397,6 @@ export interface DbQueryVolumeOpts {
 	readonly serviceName?: string
 	readonly deploymentEnv?: string
 	readonly limit?: number
-}
-
-export interface DbQueryVolumeOutput {
-	readonly serviceName: string
-	readonly dbSystem: string
-	readonly dbNamespace: string
-	readonly queryLabel: string
-	readonly queryCount: number
-	readonly estimatedQueryCount: number
-	readonly errorCount: number
-	readonly avgDurationMs: number
-	readonly p95DurationMs: number
-	readonly lastSeen: DateTime.Utc
 }
 
 export const dbQueryVolumeRowSchema = Schema.Struct({
@@ -1499,10 +1410,12 @@ export const dbQueryVolumeRowSchema = Schema.Struct({
 	avgDurationMs: CHNumberOrZero,
 	p95DurationMs: CHNumber,
 	lastSeen: DateTimeUtcFromWarehouse,
-}) satisfies CompiledQueryRowSchema<DbQueryVolumeOutput>
+})
+
+export type DbQueryVolumeOutput = typeof dbQueryVolumeRowSchema.Type
 
 export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
-	const sealed = from(ServiceMapDbQuerySignaturesHourly)
+	const sealed = from(Datasources.serviceMapDbQuerySignaturesHourly)
 		.select(($) => ({
 			bService: $.ServiceName,
 			bSystem: $.DbSystem,
@@ -1526,7 +1439,7 @@ export function dbQueryVolumeQuery(opts: DbQueryVolumeOpts) {
 		])
 		.groupBy("bService", "bSystem", "bNamespace", "queryKey")
 
-	const recent = from(Traces)
+	const recent = from(Datasources.traces)
 		.select(($) => ({
 			bService: $.ServiceName,
 			bSystem: dbSystemExpr($),

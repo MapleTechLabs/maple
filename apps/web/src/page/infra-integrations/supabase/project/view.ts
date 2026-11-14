@@ -13,7 +13,7 @@ import { relativeTime } from "../../../kit/relative-time"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { pageHeroParts, headerActions } from "../../../infra/kit/page-parts"
 import { integrationNotConnected } from "../../kit/empty-states"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { type SparkWindow } from "../../kit/window-sparkline"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { healthPill, isReadPending, projectHealth } from "../health"
@@ -31,8 +31,6 @@ import { HEALTH_STRIP_GRID, healthStripView } from "./view-strip"
 import { trafficPanel } from "./view-traffic"
 import { typography } from "@maple/views/ui/typography"
 
-// `/infra/supabase/$projectRef`: the project's Overview.
-
 type H = HtmlBuilder<Message>
 type DiscoveredProject = SupabaseStatus["projects"][number]
 
@@ -42,7 +40,7 @@ const THEME_TOKENS = [...INFRA_CHART_TOKENS, ...BAR_CHART_TOKENS]
 const discoveredOf = (model: Model): DiscoveredProject | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.status.data), (status) =>
-			Option.fromNullishOr(status.projects.find((project) => project.ref === model.projectRef)),
+			Arr.findFirst(status.projects, (project) => project.ref === model.projectRef),
 		),
 	)
 
@@ -50,7 +48,7 @@ const discoveredOf = (model: Model): DiscoveredProject | null =>
 const summaryOf = (model: Model): SupabaseProjectRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.projects.data), (rows) =>
-			Option.fromNullishOr(rows.find((row) => row.projectRef === model.projectRef)),
+			Arr.findFirst(rows, (row) => row.projectRef === model.projectRef),
 		),
 	)
 
@@ -129,7 +127,7 @@ const heroMeta = (
 		...(project === null || project.region === "" ? [] : [project.region]),
 		...(summary === null || summary.lastSeen === ""
 			? []
-			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped", tooltip: "title" })]),
+			: [relativeTime(h, { value: summary.lastSeen, ...clock, prefix: "Scraped" })]),
 	]
 	return parts.length === 0
 		? []

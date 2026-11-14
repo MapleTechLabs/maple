@@ -1,6 +1,6 @@
 import { Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
-import { IsoDateTimeString } from "../primitives"
+import { IsoDateTimeString } from "@maple/primitives"
 import { publicHttpErrorBody } from "./error-policy"
 import {
 	SecurityAuditCreateTargetRequest,

@@ -1,12 +1,13 @@
 import type { V2Source } from "@maple/domain/http/v2"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
+import { ingestionHref } from "../../settings/ingest-rule/hrefs"
 import { button } from "@maple/views/ui/button"
 import { type FieldIds, type FieldState, field, fieldLabel, input } from "@maple/views/ui/field"
 import { textarea } from "@maple/views/ui/textarea"
-import { dangerRow, dangerZone } from "../../settings/kit/danger-zone"
-import { saveBar } from "../../settings/kit/save-bar"
-import { settingsSection, settingsSections } from "../../settings/kit/section"
+import { dangerRow, dangerZone } from "../../kit/danger-zone"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { rulesOutcome } from "../kit/rules"
 import * as RulesView from "../kit/rules-view"
 import * as Setup from "../kit/setup"
@@ -21,12 +22,10 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { String as Str } from "effect"
 
-// `SourceSetupTab` and `SourceSettings`.
-
 type H = HtmlBuilder<Message>
 
 const LINK_CLASS = typographyClass({ tone: "foreground", className: "underline underline-offset-2" })
-const INGESTION_HREF = hrefOf(AppRoute.Settings({ search: { tab: "ingestion" } }))
+const INGESTION_HREF = ingestionHref()
 
 const note = (h: H, children: ReadonlyArray<Html | string>) =>
 	typography(h, { size: "sm", tone: "muted", as: "p" }, children)
@@ -131,7 +130,7 @@ const defaultRulesSection = (h: H): Html =>
 	)
 
 /** An integration source: no token, rate limit or signal filter to set, so pausing is its control. */
-const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
+const ingestionSection = (h: H, model: Model, source: V2Source, timeZone: string): Html => {
 	const isPaused = source.status === "paused"
 	return settingsSection(
 		h,
@@ -147,7 +146,9 @@ const ingestionSection = (h: H, model: Model, source: V2Source): Html => {
 				vstack(h, { gap: "1", shrink: true }, [
 					sourceStatusBadge(h, source, { nowMs: model.nowMs ?? 0, showTime: false }),
 					typography(h, { size: "xs", tone: "muted" }, [
-						isPaused ? pausedLabel(source) : "Collected and stored as it arrives",
+						...(isPaused
+							? pausedLabel(h, source, timeZone)
+							: ["Collected and stored as it arrives"]),
 					]),
 				]),
 				isPaused
@@ -199,7 +200,7 @@ const deleteSection = (h: H, source: V2Source): Html =>
 	])
 
 /** General for every source; rules for token sources, pausing and deleting for integrations. */
-export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
+export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: string): Html => {
 	const form = model.settings
 	if (form === null) return h.empty
 	const isToken = hasToken(source)
@@ -227,7 +228,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 							model: form.rules,
 							toParentMessage: (message) => Message.GotRulesMessage({ message }),
 							idPrefix: "source-settings-rules",
-							nowMs: model.nowMs ?? 0,
+							clock: model.nowMs === null ? null : { nowMs: model.nowMs, timeZone },
 						}),
 					],
 				),
@@ -237,7 +238,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source): Html => {
 				generalSection(h, form, source),
 				...(source.is_default
 					? [defaultRulesSection(h)]
-					: [ingestionSection(h, model, source), deleteSection(h, source)]),
+					: [ingestionSection(h, model, source, timeZone), deleteSection(h, source)]),
 				...save,
 			]
 	return h.form(

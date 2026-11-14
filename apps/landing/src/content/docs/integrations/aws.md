@@ -11,7 +11,7 @@ Maple checks each connection every hour, and whenever you click **Sync now** on 
 
 ## Prerequisites
 
-You need to be an admin of the Maple organization, and in AWS, permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers it, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
+You need to be an admin or engineer in the Maple organization, and in AWS, permission to create IAM roles and policies and CloudFormation stacks in the account you connect. The AWS managed `AdministratorAccess` policy covers it, and so do `IAMFullAccess` together with `AWSCloudFormationFullAccess`.
 
 Find the 12-digit account ID in the account menu at the top right of the AWS console. Maple accepts it with or without the dashes the console shows.
 
@@ -42,6 +42,8 @@ Choose **Terraform** in the setup and copy the file into your repository. It nee
 | Inline policy `maple-self-read`                 | Lets the role read its own tags and attached policies, and nothing else. This is how Maple checks it.               |
 | Managed policy `MapleIntegration-<id>-<module>` | One per module you turn on. None until modules are available.                                                       |
 
+Every permission Maple asks for reads: none of them lets Maple create, change or delete anything in the account, and the base role reads only itself. The managed policies some modules attach are AWS's own read-only ones (`ViewOnlyAccess` for the inventory, `SecurityAudit` for the security scan). They cover how your resources are configured, not the data in them: Maple cannot read the objects in your S3 buckets, your log events or your database rows.
+
 The role is tagged with the setup version. When a later version of the setup changes the role, the connection shows **Update the stack**. Click **Deploy the stack again** and run the script to apply the change.
 
 ## CloudWatch metrics
@@ -57,9 +59,17 @@ A connection can stream CloudWatch metrics to Maple. Under **Choose data**, pick
 
 Maple reads nothing back from your account for this: AWS pushes the metrics. The first ones arrive a few minutes after the stack finishes.
 
+Once metrics arrive, **AWS** shows under **Infrastructure** in the sidebar. It has a tab for each kind of resource that reported (**ECS**, **EC2**, **Load balancers**, **RDS**, **Lambda** and **SQS**), with problems such as **Hot**, **Idle, still billed** or **Serving 5xx** called out above a table of resources. Each resource opens a page with its charts, a link to the AWS console, and the traced service it runs as, when Maple can match one.
+
 AWS bills the metric stream at $0.003 per 1,000 metric updates, and each metric updates once a minute, so 100 metrics cost about $13 a month. Firehose adds a few cents per gigabyte. Stream only the namespaces you need.
 
 To stop streaming, turn the metric stream off in Maple and run the setup script again: it removes the stack from every region. The cleanup script removes it too.
+
+## Audit what Maple does
+
+Every time Maple assumes the role, CloudTrail records an `AssumeRoleWithWebIdentity` event in your account, with the role `MapleIntegration-<id>` and the session name `maple-<id>`. The calls Maple then makes carry the same session name, so a CloudTrail Lake or Athena query on it lists everything Maple read. Maple assumes the role for the hourly check, for each cost sync when that module is on, and when you check or sync the connection. An assume outside that rhythm, or another session name on the role, is worth a look.
+
+To cut Maple off at once, delete the role, or remove its trust in Maple's identity provider: Maple holds no other way into the account.
 
 ## Troubleshooting
 

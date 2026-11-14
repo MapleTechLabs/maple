@@ -1,23 +1,22 @@
 /**
- * `ChatSession` — the durable transcript, one Durable Object per `"<orgId>:<tabId>"`.
+ * `ChatSession`: the durable transcript, one Durable Object per `"<orgId>:<tabId>"`.
  *
- * Replaces Flue's `FlueMapleChatAgent` + `FlueRegistry` SQLite Durable Objects. The DO owns four
- * things:
+ * The DO owns four things:
  *
  *   1. **Ordering.** It assigns every event a monotonic `seq`. That is what makes the client
  *      transport resumable by construction: reconnect is `?cursor=<last seq you saw>`, not a
  *      heuristic about whether you missed something.
  *   2. **The event log**, in SQLite, replayed on reconnect and folded into a transcript on cold
  *      load. Both roles replay, so a conversation opened on another device is complete.
- *   3. **Turn lifecycle** — at most one turn in flight, abortable, and self-healing.
+ *   3. **Turn lifecycle**: at most one turn in flight, abortable, and self-healing.
  *   4. **Running the turn.** The turn executes *here*, under `ctx.waitUntil` on the DO's own
  *      request context, not in whichever request asked for it.
  *
  * That last point is the load-bearing one. A turn is a multi-second model stream plus N tool
  * calls; the `POST /messages` request that starts it answers in milliseconds. Forking the turn off
  * that request and returning meant Cloudflare was free to cancel it the moment the response was
- * written — and the autonomous path was worse, since cron ticks run under `runScheduledEffect`,
- * which disposes the Effect runtime as soon as the tick's program settles. A Durable Object owns
+ * written, and the autonomous path was worse, since a cron tick's Effect runtime is disposed as
+ * soon as the tick's program settles. A Durable Object owns
  * its own lifetime, so hosting the turn here is what actually makes it survive. It also removes
  * every cross-process hop: appending an event is a method call, not a stub RPC.
  *
@@ -28,13 +27,14 @@
  *
  * Startup-CPU note (Cloudflare error 10021): this class is reachable from `worker.ts`, whose
  * module scope Cloudflare evaluates during upload validation. It must therefore import nothing
- * from the app service graph at module scope — hence `@maple/domain` (the wire contract and its
- * transcript fold) being the only import, and `./turn-runner` (which pulls in the whole graph)
- * arriving through a dynamic import inside the method that needs it, exactly as `worker.ts` does
- * for the route graph.
+ * from the app service graph at module scope: only the wire contract, its transcript fold and
+ * the Worker's binding ports are imported, and `./turn-runner` and `./apply-proposal` (which pull
+ * in the whole graph) arrive through a dynamic import inside the method that needs them, exactly
+ * as `worker.ts` does for the route graph.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import { Effect, FileSystem, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import { Effect, FileSystem, Layer, Option, Path, Schema, Array as Arr, Record as Rec } from "effect"
 import {
 	ChatTurnOrigin as ChatTurnOriginSchema,
 	ChatTurnTenant,
@@ -48,13 +48,14 @@ import {
 	type ChatProposalSettlement,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
-	prReviewIdFromChatSessionId,
+	chatSessionKind,
 } from "@maple/domain/chat-session"
 import { type ChatAbortReason, type ChatSessionRpc, isChatAbortReason } from "@maple/domain/chat-session-stub"
 import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 import { WorkersAiGateway } from "../platform/WorkersAiHttpClient"
+import { aiSessionPorts, BoundAiClients } from "../worker/bindings"
 import type { RunChatSessionTurnInput } from "./turn-runner"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
@@ -175,6 +176,34 @@ export const MAX_TURN_RESUMES = 2
 /** What the dead attempt's assistant message is closed with when the turn is started again. */
 const TURN_RESTARTED = "Maple was restarted mid-review and is starting this review again."
 
+/** How a conversation turn ended: its one `turn-end`, without the message it lands on. */
+export type TurnEnding = Omit<
+	Extract<ChatEventInput, { readonly type: "turn-end" }>,
+	"type" | "messageId" | "task"
+>
+
+const TURN_FAILED: TurnEnding = { reason: "error", error: CHAT_TURN_FAILED }
+const TURN_ABANDONED: TurnEnding = {
+	reason: "error",
+	error: "The turn stopped responding and was abandoned.",
+}
+
+/** The turn slot. `Stale` is a claim past {@link TURN_STALE_MS}, or a legacy one with no start time or id. */
+type TurnSlot =
+	| { readonly _tag: "Idle" }
+	| { readonly _tag: "Held"; readonly messageId: string }
+	| { readonly _tag: "Stale"; readonly messageId: string | undefined }
+
+const IDLE: TurnSlot = { _tag: "Idle" }
+
+/** The changes {@link ChatSession.transition} makes to the slot, each compared against it first. */
+type SlotChange =
+	| { readonly _tag: "Begin"; readonly messageId: string; readonly input: TurnInput }
+	| { readonly _tag: "End"; readonly messageId: string; readonly ending: TurnEnding }
+	| { readonly _tag: "Abort"; readonly reason: ChatAbortReason }
+	| { readonly _tag: "Expire" }
+	| { readonly _tag: "Resume"; readonly from: string; readonly to: string; readonly resumes: number }
+
 /**
  * What an evicted turn needs to run again: everything `beginTurn` was given. Plain JSON in the
  * session row, decoded back through the same schemas that describe it on the wire.
@@ -196,7 +225,15 @@ const encodeTurnInput = Schema.encodeSync(Schema.fromJsonString(TurnInput))
  * has its own abandoned-run sweep.
  */
 const resumable = (input: TurnInput): boolean =>
-	input.origin.kind === "autonomous" && prReviewIdFromChatSessionId(input.sessionId) !== undefined
+	input.origin.kind === "autonomous" && chatSessionKind(input.sessionId).mode === "pr-review"
+
+/**
+ * Turns whose rows nothing else settles once the fiber is gone: a review past its resumes, and a
+ * pull request reply, which is not started again because a second run could answer twice.
+ */
+const settlesWhenAbandoned = (input: TurnInput): boolean =>
+	resumable(input) ||
+	(input.origin.kind === "autonomous" && chatSessionKind(input.sessionId).mode === "pr-reply")
 
 /** How the session runs a turn: a port for the same reason as {@link ProposalApplier}. */
 export type TurnRunner = (input: RunChatSessionTurnInput) => Promise<void>
@@ -306,50 +343,85 @@ export class ChatSession {
 	}
 
 	/**
-	 * The message id of the turn that holds the slot *right now*, or `undefined` if none does.
-	 *
-	 * Expiring a stale claim here rather than in a separate sweep means every caller — `beginTurn`,
-	 * the turn's own between-step check — agrees on the answer without needing an alarm to have
-	 * fired first.
-	 *
-	 * One read serves both questions callers ask ("is anything running?" and "is *this* running?").
-	 * They used to be separate methods issuing the same SELECT, and `holdsTurn` — called once per
-	 * streamed event — paid for both.
+	 * The turn slot, read and nothing else. Called once per streamed event, so it never writes:
+	 * expiring a stale claim is a {@link transition}, taken by `beginTurn` and the alarm.
 	 */
-	private runningTurn(): string | undefined | null {
+	private slot(): TurnSlot {
 		const row = this.sessionRow()
-		if (row.running !== 1) return undefined
-		if (row.running_since !== null && Date.now() - row.running_since > TURN_STALE_MS) {
-			const messageId = row.running_message_id
-			this.clearRunning()
-			if (messageId !== null) {
+		if (row.running !== 1) return IDLE
+		// A row with no start time or no id (pre-watchdog) can never be judged fresh, so it is stale.
+		if (
+			row.running_since === null ||
+			row.running_message_id === null ||
+			Date.now() - row.running_since > TURN_STALE_MS
+		) {
+			return { _tag: "Stale", messageId: row.running_message_id ?? undefined }
+		}
+		return { _tag: "Held", messageId: row.running_message_id }
+	}
+
+	/**
+	 * Every change to the turn slot, each a compare-and-set, and the only writer of a turn's
+	 * `turn-end`: leaving the slot and appending it are one synchronous step, so a turn gets one.
+	 */
+	private transition(change: SlotChange): boolean {
+		const slot = this.slot()
+		switch (change._tag) {
+			case "Begin": {
+				if (slot._tag !== "Idle") return false
+				this.sql.exec(
+					"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
+					Date.now(),
+					change.messageId,
+					encodeTurnInput(change.input),
+				)
+				return true
+			}
+			case "End": {
+				if (slot._tag === "Idle" || slot.messageId !== change.messageId) return false
+				this.release(slot.messageId, change.ending)
+				return true
+			}
+			case "Abort": {
+				if (slot._tag === "Idle") return false
+				this.release(slot.messageId, { reason: "aborted" }, change.reason)
+				return true
+			}
+			case "Expire": {
+				if (slot._tag !== "Stale") return false
+				this.release(slot.messageId, TURN_ABANDONED, "stale")
+				return true
+			}
+			case "Resume": {
+				if (slot._tag !== "Held" || slot.messageId !== change.from) return false
 				this.append({
 					type: "turn-end",
-					messageId,
+					messageId: change.from,
 					reason: "error",
-					error: "The turn stopped responding and was abandoned.",
+					error: TURN_RESTARTED,
 				})
-				this.interruptTurn(messageId, "stale")
+				this.sql.exec(
+					"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
+					Date.now(),
+					change.to,
+					change.resumes,
+				)
+				return true
 			}
-			return undefined
 		}
-		// `null` means running but with no recorded id — pre-watchdog rows only.
-		return row.running_message_id
 	}
 
-	private isRunning(): boolean {
-		return this.runningTurn() !== undefined
-	}
-
-	private clearRunning(): void {
+	/**
+	 * Clear the slot and close the turn that held it. A legacy claim with no id names no message a
+	 * client is rendering, so there is no `turn-end` to write for it.
+	 */
+	private release(messageId: string | undefined, ending: TurnEnding, interrupt?: ChatAbortReason): void {
 		this.sql.exec(
 			"UPDATE session SET running = 0, running_since = NULL, running_message_id = NULL, running_input = NULL, running_resumes = NULL WHERE id = 1",
 		)
-	}
-
-	/** The message id of the turn currently holding the slot, if any. */
-	private runningMessageId(): string | undefined {
-		return this.runningTurn() ?? undefined
+		if (messageId === undefined) return
+		this.append({ type: "turn-end", messageId, ...ending })
+		if (interrupt !== undefined) this.interruptTurn(messageId, interrupt)
 	}
 
 	/**
@@ -434,10 +506,7 @@ export class ChatSession {
 		const since = (position: number) => this.since(position)
 		const appends = () => this.appends
 		const waitForAppend = (seen: number, timeoutMs: number) => this.waitForAppend(seen, timeoutMs)
-		type PumpError =
-			| Effect.Error<ReturnType<typeof write>>
-			| Effect.Error<ReturnType<typeof waitForAppend>>
-		const pumpFrom = (position: number): Effect.Effect<void, PumpError> =>
+		const pumpFrom = (position: number): Effect.Effect<void, Effect.Error<ReturnType<typeof write>>> =>
 			Effect.gen(function* () {
 				const seen = appends()
 				const events = since(position)
@@ -485,13 +554,13 @@ export class ChatSession {
 		/** Who is driving the turn, stated by whoever raised it. */
 		readonly origin: ChatTurnOrigin
 	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
-		if (this.isRunning()) return undefined
+		this.transition({ _tag: "Expire" })
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
 		// the user message when opening the assistant one, so every text delta was appended to the
 		// user's own bubble — "Say PONG" came back as "Say PONGPING" — and the client folded it the
 		// same way, since it keys the optimistic user message on exactly this id.
-		const turnId = crypto.randomUUID()
+		const turnId = SecureRandom.uuidV4Unsafe()
 		const turn: TurnInput = {
 			sessionId: input.sessionId,
 			userMessageId: input.messageId,
@@ -499,12 +568,7 @@ export class ChatSession {
 			tenant: input.tenant,
 			origin: input.origin,
 		}
-		this.sql.exec(
-			"UPDATE session SET running = 1, running_since = ?, running_message_id = ?, running_input = ?, running_resumes = 0 WHERE id = 1",
-			Date.now(),
-			turnId,
-			encodeTurnInput(turn),
-		)
+		if (!this.transition({ _tag: "Begin", messageId: turnId, input: turn })) return undefined
 		this.append({ type: "user-message", id: input.messageId, text: input.text })
 		this.startTurn(turnId, turn)
 		return { cursor, messageId: input.messageId, turnMessageId: turnId }
@@ -608,18 +672,19 @@ export class ChatSession {
 	 * effect promptly, and so a turn that has already been superseded stops writing.
 	 */
 	holdsTurn(messageId: string): boolean {
-		return this.runningTurn() === messageId
+		const slot = this.slot()
+		return slot._tag === "Held" && slot.messageId === messageId
 	}
 
 	/**
-	 * Release the slot, but only if `messageId` still owns it.
+	 * End `messageId`'s turn with `ending`, but only if it still owns the slot. Returns whether this
+	 * call wrote the turn's `turn-end`; a later call for the same turn writes nothing.
 	 *
 	 * The compare-and-clear matters: an aborted turn keeps draining its in-flight model call for a
 	 * while, and a plain `running = 0` from that straggler would release a *newer* turn's claim.
 	 */
-	endTurn(messageId: string): void {
-		if (this.runningMessageId() !== messageId) return
-		this.clearRunning()
+	endTurn(messageId: string, ending: TurnEnding): boolean {
+		return this.transition({ _tag: "End", messageId, ending })
 	}
 
 	/**
@@ -628,18 +693,11 @@ export class ChatSession {
 	 * Clears the claim, records the terminal event against the message that actually holds it, and
 	 * interrupts that turn's fiber, sub-agents included, rather than letting it run to its next event.
 	 * Taking the message id from the session rather than the caller is what makes the emitted
-	 * `turn-end` land on the assistant message the client is rendering; a caller-supplied id named a
-	 * message that never existed, so no client ever cleared its streaming state.
+	 * `turn-end` land on the assistant message the client is rendering.
 	 */
 	abort(reason?: ChatAbortReason): void {
-		const messageId = this.runningTurn()
-		if (messageId === undefined) return
-		this.clearRunning()
-		if (messageId !== null) {
-			this.append({ type: "turn-end", messageId, reason: "aborted" })
-			// Over RPC from another Worker, so not trusted to be one of ours.
-			this.interruptTurn(messageId, isChatAbortReason(reason) ? reason : "user")
-		}
+		// Over RPC from another Worker, so not trusted to be one of ours.
+		this.transition({ _tag: "Abort", reason: isChatAbortReason(reason) ? reason : "user" })
 	}
 
 	/** Interrupt `messageId`'s fiber if this activation runs it; a straggler's id matches nothing. */
@@ -647,25 +705,30 @@ export class ChatSession {
 		if (this.liveTurn?.messageId === messageId) this.liveTurn.controller.abort(reason)
 	}
 
+	/** Whether a live claim holds the slot. A stale one does not: the next `beginTurn` expires it. */
 	running(): boolean {
-		return this.isRunning()
+		return this.slot()._tag === "Held"
 	}
 
 	/**
 	 * The heartbeat. Re-arms while this activation runs the turn that holds the slot.
 	 *
-	 * A slot held by a turn this activation is not running means the object was evicted mid-turn (a
-	 * deploy, or eviction before the heartbeat existed): the fiber is gone, so the slot is released
-	 * with a terminal event now rather than when the 15-minute watchdog expires it.
+	 * A stale claim is expired. A slot held by a turn this activation is not running means the
+	 * object was evicted mid-turn (a deploy, or eviction before the heartbeat existed): the fiber is
+	 * gone, so the slot is released with a terminal event now rather than when it goes stale.
 	 */
 	alarm(): void {
-		const messageId = this.runningTurn()
-		if (messageId === undefined) return
-		if (messageId !== null && this.liveTurn?.messageId !== messageId) {
-			this.recoverEvictedTurn(messageId)
-			return
+		const slot = this.slot()
+		switch (slot._tag) {
+			case "Idle":
+				return
+			case "Stale":
+				this.transition({ _tag: "Expire" })
+				return
+			case "Held":
+				if (this.liveTurn?.messageId === slot.messageId) return this.armHeartbeat()
+				return this.recoverEvictedTurn(slot.messageId)
 		}
-		this.armHeartbeat()
 	}
 
 	/**
@@ -673,28 +736,22 @@ export class ChatSession {
 	 *
 	 * An autonomous review is started again under a new turn id, from the kickoff `beginTurn`
 	 * stored, up to {@link MAX_TURN_RESUMES} times. Past that, or for any other turn, the slot is
-	 * released; a review is also told it failed, since nothing else would move its row off
-	 * `running` and its check run off in-progress.
+	 * released; a review or a pull request reply is also told it failed, since nothing else would
+	 * move its row off `running`, its check run off in-progress, or tell the pull request.
 	 */
 	private recoverEvictedTurn(messageId: string): void {
 		const row = this.sessionRow()
 		const turn = row.running_input === null ? Option.none() : decodeTurnInput(row.running_input)
 		const resumes = row.running_resumes ?? 0
 		if (Option.isSome(turn) && resumable(turn.value) && resumes < MAX_TURN_RESUMES) {
-			this.append({ type: "turn-end", messageId, reason: "error", error: TURN_RESTARTED })
-			const turnId = crypto.randomUUID()
-			this.sql.exec(
-				"UPDATE session SET running_since = ?, running_message_id = ?, running_resumes = ? WHERE id = 1",
-				Date.now(),
-				turnId,
-				resumes + 1,
-			)
-			this.startTurn(turnId, turn.value, { resume: resumes + 1 })
+			const turnId = SecureRandom.uuidV4Unsafe()
+			if (this.transition({ _tag: "Resume", from: messageId, to: turnId, resumes: resumes + 1 })) {
+				this.startTurn(turnId, turn.value, { resume: resumes + 1 })
+			}
 			return
 		}
-		this.clearRunning()
-		this.append({ type: "turn-end", messageId, reason: "error", error: CHAT_TURN_FAILED })
-		if (Option.isSome(turn) && resumable(turn.value)) {
+		if (!this.endTurn(messageId, TURN_FAILED)) return
+		if (Option.isSome(turn) && settlesWhenAbandoned(turn.value)) {
 			const input = { ...this.turnRunInput(messageId, turn.value), abandoned: true as const }
 			this.ctx.waitUntil(
 				Effect.runPromise(
@@ -760,33 +817,21 @@ export class ChatSession {
 	 * Drive one turn to completion, appending events as they are produced.
 	 *
 	 * Everything heavy — the Effect runtime, the service graph, the agent engine — is behind this
-	 * dynamic import so none of it is evaluated at module scope. Failures are recorded as a
-	 * terminal event rather than thrown: the log is what the client reads, so a turn that dies
-	 * silently is indistinguishable from one that hung.
+	 * dynamic import so none of it is evaluated at module scope. A runner that returns or fails
+	 * without ending its turn is ended here as failed: the log is what the client reads, so a turn
+	 * that dies silently is indistinguishable from one that hung.
 	 */
 	private runTurn(input: RunChatSessionTurnInput): Promise<void> {
 		const messageId = input.messageId
 		return Effect.runPromise(
-			attempt("Failed to start turn runner", () => this.runner(input)).pipe(
+			attempt("Failed to run the turn", () => this.runner(input)).pipe(
 				Effect.catchTag("@maple/ai/chat/ChatSessionError", (error) =>
-					Effect.logError("[chat.turn] Failed to start turn runner", error.cause).pipe(
-						Effect.andThen(
-							Effect.sync(() => {
-								if (!this.holdsTurn(messageId)) return
-								this.append({
-									type: "turn-end",
-									messageId,
-									reason: "error",
-									error: CHAT_TURN_FAILED,
-								})
-							}),
-						),
-					),
+					Effect.logError("[chat.turn] Failed to run the turn", error.cause),
 				),
 				Effect.ensuring(
 					Effect.sync(() => {
 						if (this.liveTurn?.messageId === messageId) this.liveTurn = undefined
-						this.endTurn(messageId)
+						this.endTurn(messageId, TURN_FAILED)
 					}),
 				),
 			),
@@ -830,7 +875,8 @@ export const chatSessionRpc = (session: ChatSession) =>
 		beginTurn: (input) => Effect.sync(() => session.beginTurn(input)),
 		settleProposal: (input) => Effect.promise(() => session.settleProposal(input)),
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
-		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
+		// A caller releasing a turn without saying how it ended is ending one that failed.
+		endTurn: (messageId) => Effect.sync(() => void session.endTurn(messageId, TURN_FAILED)),
 		abort: (reason) => Effect.sync(() => session.abort(reason)),
 		alarm: () => Effect.sync(() => session.alarm()),
 	}) satisfies ChatSessionRpc
@@ -846,6 +892,7 @@ const isChatSessionNamespace = (
 
 /** The part of alchemy's `SqlMigrations` the activation uses; a test applies the files itself. */
 export interface ChatSessionSchema<E, R> {
+	// @effect-diagnostics-next-line lazyEffect:off -- mirrors alchemy's SqlMigrations method
 	readonly apply: () => Effect.Effect<void, E, R>
 }
 
@@ -858,16 +905,23 @@ export interface ChatSessionSchema<E, R> {
  */
 export const makeChatSessionActivation = <SE, SR, R>(
 	migrations: Effect.Effect<ChatSessionSchema<SE, SR>, never, R>,
+	ports: { readonly apply: ProposalApplier; readonly run: TurnRunner } = {
+		apply: applyThroughWorker,
+		run: runThroughWorker,
+	},
 ) =>
 	Effect.map(
 		Effect.all([
 			Cloudflare.DurableObjectState,
 			Cloudflare.WorkerEnvironment,
 			WorkersAiGateway,
+			BoundAiClients,
 			Effect.serviceOption(Cloudflare.DurableObjectScope),
 			migrations,
 		]),
-		([state, env, workersAi, scope, schema]) => {
+		([state, env, workersAi, clients, scope, schema]) => {
+			// The limiters and the audit queue the Worker bound: a turn's runtime has no init to read them from.
+			const bindingPorts = aiSessionPorts(clients)
 			// Always there in the isolate; absent only where a test builds the activation by hand.
 			const chatSessions: ChatSessionNamespace | undefined = Option.getOrUndefined(
 				Option.filter(scope, isChatSessionNamespace),
@@ -880,8 +934,8 @@ export const makeChatSessionActivation = <SE, SR, R>(
 					new ChatSession(
 						state.raw,
 						env,
-						(input) => applyThroughWorker({ ...input, chatSessions }),
-						(input) => runThroughWorker({ ...input, workersAi, chatSessions }),
+						(input) => ports.apply({ ...input, chatSessions, bindingPorts }),
+						(input) => ports.run({ ...input, workersAi, chatSessions, bindingPorts }),
 					),
 				)
 			})
@@ -901,6 +955,8 @@ export const ChatSessionLive = ChatSessionObject.make<
 	| Cloudflare.WorkerEnvironment
 	| Cloudflare.Worker
 	| WorkersAiGateway
+	| BoundAiClients
 	| FileSystem.FileSystem
 	| Path.Path
->(activateChatSession)
+	// The same layer value the init's bindings hold, so the clients are bound once.
+>(activateChatSession).pipe(Layer.provide(BoundAiClients.layer))

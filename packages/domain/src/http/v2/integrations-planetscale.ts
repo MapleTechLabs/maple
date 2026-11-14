@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { UserId } from "../../primitives"
+import { UserId } from "@maple/primitives"
 import {
 	IntegrationReturnPath,
 	IntegrationsConfigurationError,
@@ -9,9 +9,12 @@ import {
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
+	PlanetScaleEventCategory,
+	PlanetScaleWebhookState,
 } from "../integrations"
 import {
 	ScrapeTargetEncryptionError,
+	ScrapeTargetLimitReachedError,
 	ScrapeTargetNotFoundError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetStoredConfigInvalidError,
@@ -130,7 +133,7 @@ export const V2PlanetScaleScrapeTarget = Schema.Struct({
 export type V2PlanetScaleScrapeTarget = Schema.Schema.Type<typeof V2PlanetScaleScrapeTarget>
 
 export const V2PlanetScaleWebhooks = Schema.Struct({
-	state: Schema.Literals(["active", "pending", "failing", "needs_reauthorization"]).annotate({
+	state: PlanetScaleWebhookState.annotate({
 		description:
 			"`active`: every database has Maple's webhook. `pending`: some do not yet; Maple registers them within minutes. `failing`: registering one failed, see `last_error`. `needs_reauthorization`: the OAuth grant lacks the `write_databases` access webhooks need; reconnect to grant it.",
 		examples: ["active"],
@@ -671,13 +674,7 @@ export const V2PlanetScaleQueryInsightList = Schema.Struct({
 })
 export type V2PlanetScaleQueryInsightList = Schema.Schema.Type<typeof V2PlanetScaleQueryInsightList>
 
-export const V2PlanetScaleEventCategory = Schema.Literals([
-	"deploy_request",
-	"branch",
-	"database",
-	"cluster",
-	"keyspace",
-]).annotate({
+export const V2PlanetScaleEventCategory = PlanetScaleEventCategory.annotate({
 	identifier: "PlanetScaleEventCategory",
 	title: "PlanetScale event category",
 	description: "The kind of PlanetScale lifecycle object an event concerns.",
@@ -855,12 +852,14 @@ const [
 	scrapeTargetPersistence,
 	scrapeTargetEncryption,
 	scrapeTargetStoredConfigInvalid,
+	scrapeTargetLimitReached,
 ] = publicErrors(
 	ScrapeTargetNotFoundError,
 	ScrapeTargetValidationError,
 	ScrapeTargetPersistenceError,
 	ScrapeTargetEncryptionError,
 	ScrapeTargetStoredConfigInvalidError,
+	ScrapeTargetLimitReachedError,
 )
 const scrapeTargetMutationErrors = [
 	scrapeTargetNotFound,
@@ -868,6 +867,7 @@ const scrapeTargetMutationErrors = [
 	scrapeTargetPersistence,
 	scrapeTargetEncryption,
 	scrapeTargetStoredConfigInvalid,
+	scrapeTargetLimitReached,
 ] as const
 
 export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planetscaleIntegration")

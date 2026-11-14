@@ -21,7 +21,7 @@ In Maple, open **Sources**, click **Connect source** and pick **Prometheus**. Th
 | Service name              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                           |
 | Endpoint URL              | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
 | Scrape interval (seconds) | 5 to 300. Default 15.                                                                                                                |
-| Authentication            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                   |
+| Authentication            | **None**, **Bearer token** (sent as `Authorization: Bearer …`), or **Basic auth** (**Username** and **Password**).                   |
 
 Credentials are encrypted at rest. The scraper receives the decrypted auth header from Maple's API for each run and sends it directly to your endpoint. Requests carry the user agent `maple-prometheus-scraper`.
 
@@ -47,7 +47,7 @@ You can also manage targets through the [REST API](/docs/reference/api) under `/
 
 - **Status is Down.** Open the target. The error message and a **How to fix** hint explain the failure. A failed scrape never advances the last successful scrape time, so the data gap stays visible next to the error.
 - **The URL is rejected.** The endpoint resolves to a loopback, private, or metadata address. Expose it through an authenticated public endpoint, or use the collector option below.
-- **401 or 403.** Check the authentication type and credentials. Basic Auth sends the username and password exactly as entered.
+- **401 or 403.** Check the authentication type and credentials. Basic auth sends the username and password exactly as entered.
 - **The endpoint is only reachable inside your network.** Run an OpenTelemetry Collector inside the network with a `prometheus` receiver and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
 
 ## Next steps

@@ -73,7 +73,7 @@ Two optional attributes narrow or replace that default:
 `product_events` rows from this path carry the trace and span id.
 
 - The **trace detail page** lists the product events a trace produced, under **Product events**.
-- On **Web Analytics**, setting the **Event** filter to an event that annotated spans produce shows a **Traces behind** panel with sample traces for that event. A drop-off in a funnel step is one click from the requests behind it.
+- On **Web analytics**, setting the **Event** filter to an event that annotated spans produce shows a **Traces behind** panel with sample traces for that event. A drop-off in a funnel step is one click from the requests behind it.
 
 ## When events start
 

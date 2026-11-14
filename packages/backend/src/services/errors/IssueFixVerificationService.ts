@@ -24,7 +24,7 @@ import {
 	verificationWindowMs,
 	MAX_VERIFICATION_ATTEMPTS,
 } from "@maple/domain/http"
-import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/domain/primitives"
+import { ErrorIssueId as ErrorIssueIdSchema, type InvestigationId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	ErrorIssueEvents,
@@ -54,6 +54,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorActorsService } from "./ErrorActorsService"
 import { ErrorIssueWorkflowService } from "./ErrorIssueWorkflowService"
 import { PullRequestLookup } from "./PullRequestLookup"
+import { PullRequestLookupLive } from "./pull-request-lookup-live"
 import { makeErrorDatabaseExecute } from "./error-persistence"
 
 const decodePullRequestIdSync = Schema.decodeUnknownSync(ErrorIssuePullRequestIdSchema)
@@ -196,6 +197,22 @@ export interface IssueFixVerificationServiceApi {
 	readonly markRunning: (
 		row: ErrorIssueVerificationRow,
 		investigationId: InvestigationId | null,
+		nowMs: number,
+	) => Effect.Effect<void, ErrorPersistenceError>
+	/**
+	 * Settle a live row whose issue or pull request link no longer exists. There is
+	 * nothing left to judge, and left `waiting` it would be re-examined every tick.
+	 */
+	readonly abandonVerification: (
+		row: ErrorIssueVerificationRow,
+		nowMs: number,
+	) => Effect.Effect<void, ErrorPersistenceError>
+	/**
+	 * Send a row that cannot be read yet to the back of the due queue. Its window is
+	 * left alone: an inconclusive verdict measures its retry from `verifyAfter`.
+	 */
+	readonly deferVerification: (
+		row: ErrorIssueVerificationRow,
 		nowMs: number,
 	) => Effect.Effect<void, ErrorPersistenceError>
 	readonly applyVerdict: (
@@ -462,9 +479,8 @@ const make: Effect.Effect<
 			)
 		}
 
-		// Read back rather than trusting a driver write-result shape (see the
-		// Postgres conventions in CLAUDE.md) — and because on a conflict the insert
-		// wrote nothing and the existing row is what callers need.
+		// Read back rather than trusting a driver write-result shape, and because on
+		// a conflict the insert wrote nothing and the existing row is what callers need.
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIssuePullRequests)
@@ -529,7 +545,7 @@ const make: Effect.Effect<
 			nowMs,
 		})
 		if (row === null) {
-			// Not an invalid URL — it parsed at `:388`. The insert-and-read-back found
+			// Not an invalid URL: it parsed above. The insert-and-read-back found
 			// no row, which is a persistence anomaly: reporting it as a 400 would tell
 			// the caller their well-formed URL was unrecognizable, and because the
 			// invalid-URL tag is an anticipated error its span exception is suppressed,
@@ -752,22 +768,23 @@ const make: Effect.Effect<
 			const openForLink = Effect.fn("IssueFixVerificationService.openForLink")(function* (
 				link: (typeof links)[number],
 			) {
-				// One live verification per issue. A `synchronize` after a merge, a
-				// redelivered webhook, or a second PR attached to the same issue must
-				// not open a second window.
-				const open = yield* dbExecute((db) =>
+				// One live verification per issue, and one verification per link, ever.
+				// GitHub sends `merged: true` on every later action, so an edit to a
+				// merged PR or a redelivery must not reopen a window that already settled.
+				// Keyed on the link id: an unlink and re-link is a new link and verifies again.
+				const existing = yield* dbExecute((db) =>
 					db.run(
 						PG.from(ErrorIssueVerifications)
-							.select()
+							.select("id")
 							.where(($) => [
 								$.orgId.eq(orgId),
 								$.issueId.eq(link.issueId),
-								$.status.in_("waiting", "running"),
+								PG.or($.status.in_("waiting", "running"), $.pullRequestId.eq(link.id)),
 							])
 							.limit(1),
 					),
 				)
-				if (Arr.isReadonlyArrayNonEmpty(open)) return false
+				if (Arr.isReadonlyArrayNonEmpty(existing)) return false
 
 				const issueRows = yield* dbExecute((db) =>
 					db.run(
@@ -1011,6 +1028,9 @@ const make: Effect.Effect<
 				PG.from(ErrorIssueVerifications)
 					.select()
 					.where(($) => [$.status.eq("waiting"), $.verifyAfter.lte(nowMs)])
+					// Least recently touched first, so a row the tick deferred goes to the
+					// back. Unordered, the same rows could fill every page while the rest never came up.
+					.orderBy(["updatedAt", "asc"])
 					.limit(limit),
 			),
 		)
@@ -1032,6 +1052,30 @@ const make: Effect.Effect<
 						investigationId,
 						updatedAt: nowMs,
 					})
+					.where(($) => [$.id.eq(row.id), $.status.eq(row.status), $.attempt.eq(row.attempt)]),
+			),
+		)
+	})
+
+	const abandonVerification: IssueFixVerificationServiceApi["abandonVerification"] = Effect.fn(
+		"IssueFixVerificationService.abandonVerification",
+	)(function* (row, nowMs) {
+		yield* dbExecute((db) =>
+			db.run(
+				PG.update(ErrorIssueVerifications)
+					.set({ status: "abandoned", updatedAt: nowMs })
+					.where(($) => [$.id.eq(row.id), $.status.eq(row.status), $.attempt.eq(row.attempt)]),
+			),
+		)
+	})
+
+	const deferVerification: IssueFixVerificationServiceApi["deferVerification"] = Effect.fn(
+		"IssueFixVerificationService.deferVerification",
+	)(function* (row, nowMs) {
+		yield* dbExecute((db) =>
+			db.run(
+				PG.update(ErrorIssueVerifications)
+					.set({ updatedAt: nowMs })
 					.where(($) => [$.id.eq(row.id), $.status.eq(row.status), $.attempt.eq(row.attempt)]),
 			),
 		)
@@ -1217,6 +1261,8 @@ const make: Effect.Effect<
 		refuteOnPostMergeOccurrence,
 		dueVerifications,
 		markRunning,
+		abandonVerification,
+		deferVerification,
 		applyVerdict,
 	} satisfies IssueFixVerificationServiceApi
 })
@@ -1226,6 +1272,8 @@ export class IssueFixVerificationService extends Context.Service<
 	IssueFixVerificationServiceApi
 >()("@maple/backend/services/errors/IssueFixVerificationService", { make }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer)),
+		Layer.provide(
+			Layer.mergeAll(ErrorActorsService.layer, ErrorIssueWorkflowService.layer, PullRequestLookupLive),
+		),
 	)
 }

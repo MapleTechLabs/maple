@@ -1,8 +1,8 @@
 import { formatCurrency } from "@maple/domain/format"
-import { makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { focusCrosshair } from "@maple/ui/components/plot/plot-focus"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { makeBucketAxis } from "../plot/bucket-axis"
+import { focusCrosshair } from "../plot/plot-focus"
+import { Y_GRID } from "../plot/plot-grid"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { areaY, d3Curve, defineChart, dot, lineY, ruleX, stack } from "@tanstack/charts"
 import { decorative } from "@tanstack/charts/mark/decorative"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
@@ -39,8 +39,12 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 	const points = spec.points
 	const at = (point: Point) => new Date(point.dayMs)
 	const keys = Arr.map(spec.bands, (band) => band.key)
-	const colorOf = (key: string) => spec.bands.find((band) => band.key === key)?.color ?? spec.chrome.border
-	const todayPoint = points.findLast((point) => !point.future)
+	// Reversed so the first band with a key wins, as a scan would; built once, read per cell.
+	const bandColors = new Map(
+		Arr.map(Arr.reverse(spec.bands), (band): [string, string] => [band.key, band.color]),
+	)
+	const colorOf = (key: string) => bandColors.get(key) ?? spec.chrome.border
+	const todayPoint = Option.getOrUndefined(Arr.findLast(points, (point) => !point.future))
 	const lastPoint = points[points.length - 1]
 	const hasFuture = lastPoint !== undefined && lastPoint.future
 	const axis = makeBucketAxis(
@@ -115,7 +119,7 @@ export const buildSpendCumulative = (spec: SpendSpec): BuiltChart<SpendDatum, Da
 		scales: {
 			x: axis.x,
 			y: {
-				grid: DASHED_Y_GRID,
+				grid: Y_GRID,
 				scale: scaleLinear().domain([0, spec.yMax]),
 				axis: {
 					line: false,

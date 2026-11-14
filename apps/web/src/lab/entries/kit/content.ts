@@ -13,8 +13,6 @@ import { kitPage } from "../../kit/kit-layout"
 // `/lab/kit/content`: text, identity, conversation
 // and layout primitives. The calendar and the trace id copy button are live Submodels.
 
-// MODEL
-
 const Model = Schema.Struct({ calendar: Calendar.Model, traceIdCopy: CopyButton.Model })
 type Model = typeof Model.Type
 
@@ -30,15 +28,11 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotCalendarMessage: { message: Calendar.Message },
 	GotCopyMessage: { message: CopyButton.Message },
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -61,8 +55,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 			}
 		},
 	})
-
-// VIEW
 
 const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	kitPage(

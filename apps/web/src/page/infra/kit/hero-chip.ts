@@ -3,8 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { badge, badgeClass } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { Array as Arr } from "effect"
-
-// `HeroChip`.
+import { typography } from "@maple/views/ui/typography"
 
 /** A plain-text chip titles itself with its text, so a long value stays readable. */
 export const heroChip = <M>(
@@ -25,7 +24,7 @@ export const heroChip = <M>(
 			className: "min-w-0",
 			attributes: resolvedTitle === undefined ? [] : [h.Title(resolvedTitle)],
 		},
-		[h.span([h.Class("min-w-0 truncate")], children)],
+		[typography(h, { truncate: true, className: "min-w-0" }, children)],
 	)
 }
 
@@ -55,7 +54,7 @@ export const heroFieldChipParts = <M>(
 	h: HtmlBuilder<M>,
 	options: HeroFieldChipOptions,
 ): ReadonlyArray<Html> => {
-	const value = h.span([h.Class("min-w-0 truncate text-foreground")], [options.value])
+	const value = typography(h, { tone: "foreground", truncate: true, className: "min-w-0" }, [options.value])
 	// An empty label leaves the value alone, with no stray gap before it.
 	const label = options.label === "" ? [] : [h.span([h.Class("shrink-0")], [options.label])]
 	return [

@@ -1,8 +1,9 @@
 import { ServiceName } from "@maple/domain/http"
 import { Schema } from "effect"
 import type { ServiceRuntime } from "../page/kit/service-runtimes"
-import type { Commit, DetailPoint, Issue, Release, Usage, Workload } from "../page/services/detail/model"
+import type { Issue, Usage, Workload } from "../page/services/detail/model"
 import type { DependencyBundle, Operation } from "../page/services/detail/model-tabs"
+import { type Commit, type DetailPoint, type Release } from "../page/kit/service-metrics/points"
 
 // `/lab/service-runtimes`: one hour of `fleet-api`, a Go API on Google Cloud Run behind
 // `fleet-web`, called by `fleet-worker`, reading Postgres. Hand-written, deterministic.
@@ -135,15 +136,16 @@ export const RUNTIMES_WORKLOADS: ReadonlyArray<Workload> = []
 /** `fleet-api` runs as a Cloud Run service in one region. */
 export const RUNTIMES_RUNTIMES: ReadonlyArray<ServiceRuntime> = [
 	{
-	serviceName: Schema.decodeSync(ServiceName)("fleet-api"),
-	kind: "cloudRun",
-	account: "fleet-prod",
-	region: "europe-west1",
-	cluster: "",
-	railwayServiceId: "",
-	railwayEnvironmentId: "",
-	railwayEnvironmentName: "",
-},
+		serviceName: Schema.decodeSync(ServiceName)("fleet-api"),
+		kind: "cloudRun",
+		account: "fleet-prod",
+		region: "europe-west1",
+		cluster: "",
+		railwayServiceId: "",
+		railwayEnvironmentId: "",
+		railwayEnvironmentName: "",
+		vercelProjectId: "",
+	},
 ]
 
 const edgeStats = (callCount: number, errorCount: number, avgDurationMs: number, maxDurationMs: number) => ({

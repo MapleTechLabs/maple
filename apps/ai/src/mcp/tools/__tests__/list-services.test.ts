@@ -1,6 +1,6 @@
 /** list_services rendering: a real per-minute rate, and next calls aimed at the unhealthy services. */
 import { Schema, Array as Arr } from "effect"
-import { ListServicesOutput } from "@maple/domain/mcp-outputs"
+import { McpToolOutputs, ListServicesOutput } from "@maple/domain/mcp-outputs"
 import { assert, describe, it } from "vitest"
 import { renderToolDoc, type ToolDoc } from "../../lib/tool-doc"
 import { registerListServicesTool } from "../list-services"
@@ -9,7 +9,7 @@ import type { McpToolRegistrar } from "../types"
 let render: ((output: typeof ListServicesOutput.Encoded) => ToolDoc) | undefined
 const registrar: McpToolRegistrar = {
 	define: (spec) => {
-		render = (output) => spec.render(Schema.decodeUnknownSync(spec.output)(output))
+		render = (output) => spec.render(Schema.decodeSync(McpToolOutputs[spec.name])(output))
 	},
 }
 registerListServicesTool(registrar)

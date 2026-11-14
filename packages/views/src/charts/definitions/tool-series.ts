@@ -1,8 +1,8 @@
-import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
-import { focusCrosshair, focusDot } from "@maple/ui/components/plot/plot-focus"
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import { seriesRuns, silenceBridges } from "@maple/ui/components/plot/series-gaps"
-import { linearYDomain, niceLinearDomain } from "@maple/ui/components/plot/plot-scales"
+import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
+import { focusCrosshair, focusDot } from "../plot/plot-focus"
+import { Y_GRID } from "../plot/plot-grid"
+import { seriesRuns, silenceBridges } from "../plot/series-gaps"
+import { linearYDomain, niceLinearDomain } from "../plot/plot-scales"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { formatDurationNs, formatToolMetric } from "@maple/web-data/lib/tool-analytics"
 import { type ChartValue, d3Curve, defineChart, dot, lineY } from "@tanstack/charts"
@@ -103,7 +103,7 @@ export const buildToolSeries = (spec: ToolSeriesSpec): BuiltChart<Cell, ChartVal
 					axis: { ...axis.x.axis, ticks: { ...axis.x.axis.ticks, spacing: X_TICK_SPACING } },
 				},
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

@@ -1,4 +1,4 @@
-import { pieSampleData } from "@maple/ui/components/charts/_shared/sample-data"
+import { pieSampleData } from "./series/sample-data"
 import { Option } from "effect"
 import {
 	attr,

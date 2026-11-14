@@ -1,8 +1,9 @@
 import { OrgClickHouseSettingsEncryptionError } from "@maple/domain/http"
-// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
+// BOUNDARY-FILE: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, describe, expect, it, layer } from "@effect/vitest"
 import {
 	OrgClickHouseSettingsPersistenceError,
+	OrgClickHouseSettingsUpsertRequest,
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
 	OrgClickHouseSettingsStoredConfigInvalidError,
@@ -32,7 +33,8 @@ import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import { Env } from "@maple/backend/platform/Env"
-import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
+import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
+import { clickHousePasswordSlot } from "@maple/backend/platform/secret-slots"
 import { SchemaApplyWorkflow, WorkflowStartError } from "@maple/backend/platform/bindings"
 import {
 	cleanupTestDbs,
@@ -40,7 +42,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import {
 	type ClickHouseExecConfig,
 	decodeSkippedEntries,
@@ -67,7 +69,6 @@ const CONFIG: ClickHouseExecConfig = {
 
 const mockResponse = (body: string, status: number): Response => new Response(body, { status })
 
-/** Build a stub `fetch` that runs `impl` and counts calls. */
 const makeFetch = (impl: () => Promise<Response>) => {
 	const state = { calls: 0 }
 	const fetchImpl = (() => {
@@ -77,7 +78,6 @@ const makeFetch = (impl: () => Promise<Response>) => {
 	return { state, fetchImpl }
 }
 
-/** Run execClickHouse with the stub fetch injected. */
 const run = (sql: string, fetchImpl: typeof globalThis.fetch) =>
 	execClickHouse(CONFIG, sql).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
 
@@ -186,7 +186,6 @@ describe("decodeSkippedEntries", () => {
 
 describe("isRetryableUpstream", () => {
 	it("retries transient gateway/proxy codes and network failures, nothing else", () => {
-		// Transient → retry.
 		expect(isRetryableUpstream(unavailable(null))).toBe(true) // connection reset/refused
 		expect(isRetryableUpstream(unavailable(502))).toBe(true)
 		expect(isRetryableUpstream(unavailable(503))).toBe(true)
@@ -195,7 +194,6 @@ describe("isRetryableUpstream", () => {
 		expect(isRetryableUpstream(unavailable(524))).toBe(true) // Cloudflare edge timeout
 		expect(isRetryableUpstream(unavailable(529))).toBe(true)
 
-		// Not transient → do not retry.
 		expect(isRetryableUpstream(unavailable(408))).toBe(false) // our own timeout
 		expect(isRetryableUpstream(unavailable(500))).toBe(false) // ClickHouse SQL error
 		expect(isRetryableUpstream(unavailable(501))).toBe(false)
@@ -207,7 +205,7 @@ describe("isRetryableUpstream", () => {
 layer(FetchHttpClient.layer, { excludeTestServices: true })("execClickHouse", (it) => {
 	it.effect("uses manual redirects and rejects every 3xx without following it", () =>
 		Effect.gen(function* () {
-			let redirectMode: RequestRedirect | undefined
+			let redirectMode: RequestInit["redirect"]
 			let calls = 0
 			const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 				calls += 1
@@ -411,12 +409,17 @@ describe("resolveRuntimeConfig caching", () => {
 			[orgId, chUrl],
 		)
 
+	/** A row with a stored password, sealed for its org under the key `configLive` carries. */
 	const seedPasswordRow = async (db: TestDb, orgId: string, chUrl: string) => {
+		const onError = (message: string) => new OrgClickHouseSettingsEncryptionError({ message })
 		const encrypted = await Effect.runPromise(
-			encryptAes256Gcm(
-				"legacy-password",
-				Buffer.alloc(32, 5),
-				(message) => new OrgClickHouseSettingsEncryptionError({ message }),
+			parseSecretKeyring(
+				{ primary: Buffer.alloc(32, 5).toString("base64"), decryptOnly: Option.none() },
+				onError,
+			).pipe(
+				Effect.flatMap((keyring) =>
+					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "stored-password", onError),
+				),
 			),
 		)
 		await executeSql(
@@ -596,11 +599,9 @@ describe("resolveRuntimeConfig caching", () => {
 			const service = yield* OrgClickHouseSettingsService
 			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
 
-			// Populate the cache.
 			const before = yield* service.resolveRuntimeConfig(asOrgId(orgId))
 			expect(Option.isSome(before)).toBe(true)
 
-			// Delete through the service — this invalidates the cached entry.
 			yield* service.delete(asOrgId(orgId), [asRole("org:admin")])
 
 			const after = yield* service.resolveRuntimeConfig(asOrgId(orgId))
@@ -609,10 +610,8 @@ describe("resolveRuntimeConfig caching", () => {
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 
-	// --- shared edge-cache tier ---------------------------------------------
-	//
-	// The tier between the memo and Postgres. What makes these tests meaningful
-	// is `invalidateOrgRuntimeConfigMemo`, which drops ONLY the memo — so it
+	// The shared edge-cache tier sits between the memo and Postgres. What makes these
+	// tests meaningful is `invalidateOrgRuntimeConfigMemo`, which drops ONLY the memo, so it
 	// simulates the case the tier exists for: a second, cold isolate resolving
 	// the same org while the shared entry is already warm.
 	//
@@ -758,12 +757,108 @@ describe("resolveRuntimeConfig caching", () => {
 			// encrypted material survived the round trip and still decrypts.
 			const byo = yield* service.resolveRuntimeConfig(asOrgId(byoOrg))
 			expect(expectSome(byo).url).toBe("https://wire.example")
-			expect(expectSome(byo).password).toBe("legacy-password")
+			expect(expectSome(byo).password).toBe("stored-password")
 
 			// Both reads were served by the cache; nothing was recomputed.
 			expect(stats.puts).toBe(2)
 			expect(stats.hits).toBe(2)
 		}).pipe(Effect.provide(layer))
+	})
+
+	/** One org's row and deployments that each hold a single key, all sharing one edge cache. */
+	const rotationWorld = (testDb: TestDb, orgId: string) => {
+		const { backend } = makeJsonRoundTripBackend()
+		const keyOf = (byte: number) => Buffer.alloc(32, byte).toString("base64")
+		const sealedBy = (byte: number) =>
+			parseSecretKeyring({ primary: keyOf(byte), decryptOnly: Option.none() }, String).pipe(
+				Effect.flatMap((keyring) =>
+					sealSecret(keyring, clickHousePasswordSlot, { orgId }, "ch-pass", String),
+				),
+			)
+		const deployment = (byte: number) =>
+			OrgClickHouseSettingsService.layer.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						Env.layer.pipe(
+							Layer.provide(
+								ConfigProvider.layer(
+									ConfigProvider.fromUnknown({
+										PORT: "3472",
+										TINYBIRD_HOST: "https://maple-managed.tinybird.co",
+										TINYBIRD_TOKEN: "managed-token",
+										MAPLE_AUTH_MODE: "self_hosted",
+										MAPLE_ROOT_PASSWORD: "test-root-password",
+										MAPLE_DEFAULT_ORG_ID: "default",
+										MAPLE_INGEST_KEY_ENCRYPTION_KEY: keyOf(byte),
+										MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
+									}),
+								),
+							),
+						),
+						testDb.layer,
+						Layer.succeed(EdgeCacheService)(makeEdgeCacheService(backend)),
+					),
+				),
+			)
+		/** Stores the password as a deployment whose key is `byte` sealed it. */
+		const store = (byte: number) =>
+			Effect.flatMap(sealedBy(byte), (sealed) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`INSERT INTO org_clickhouse_settings
+							(org_id, ch_url, ch_user, ch_database, ch_password_ciphertext, ch_password_iv,
+							 ch_password_tag, sync_status, created_at, updated_at, created_by, updated_by)
+						 VALUES ($1, 'https://rotated.example', 'default', 'maple', $2, $3, $4, 'connected',
+							NOW(), NOW(), 'u', 'u')
+						 ON CONFLICT (org_id) DO UPDATE SET ch_password_ciphertext = $2,
+							ch_password_iv = $3, ch_password_tag = $4`,
+						[orgId, sealed.ciphertext, sealed.iv, sealed.tag],
+					),
+				),
+			)
+		return { deployment, store }
+	}
+
+	it.effect("re-reads the row when the cached password was sealed by a key that is gone", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_rotated"
+		const { deployment, store } = rotationWorld(testDb, orgId)
+		const resolve = (byte: number) =>
+			OrgClickHouseSettingsService.use((service) => service.resolveRuntimeConfig(asOrgId(orgId))).pipe(
+				Effect.provide(deployment(byte)),
+			)
+		return Effect.gen(function* () {
+			yield* store(1)
+			expect(expectSome(yield* resolve(1)).password).toBe("ch-pass")
+
+			// The reseal pass moves the row to the new key, then the old key is retired. The
+			// shared cache still holds the triple the old key sealed.
+			yield* store(2)
+			invalidateOrgRuntimeConfigMemo(orgId)
+
+			expect(expectSome(yield* resolve(2)).password).toBe("ch-pass")
+		})
+	})
+
+	it.effect("tries a row again a minute after it failed, in case it was repaired meanwhile", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_repaired"
+		const { deployment, store } = rotationWorld(testDb, orgId)
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			const resolve = service.resolveRuntimeConfig(asOrgId(orgId))
+			// This deployment only holds key 2, so a row sealed by key 1 does not open.
+			yield* store(1)
+			expect(getError(yield* Effect.exit(resolve))).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+
+			// The reseal pass, running where key 1 is still held, moves the row to key 2.
+			yield* store(2)
+			expect(getError(yield* Effect.exit(resolve))).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+
+			yield* TestClock.adjust("61 seconds")
+			expect(expectSome(yield* resolve).password).toBe("ch-pass")
+		}).pipe(Effect.provide(deployment(2)))
 	})
 
 	// The memo's soft TTL (5min) and hard ceiling (6h), mirrored from the
@@ -1020,6 +1115,23 @@ describe("resolveRuntimeConfig caching", () => {
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 
+	it.effect("escapes every quote and backslash in the collector config's quoted values", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_collector_escaping"
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			yield* Effect.promise(() => seedRow(testDb, orgId, "https://clickhouse.example.test"))
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_user = $2 WHERE org_id = $1", [
+					orgId,
+					'we"ird\\user"\\',
+				]),
+			)
+			const config = yield* service.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
+			expect(config.yaml).toContain('    username: "we\\"ird\\\\user\\"\\\\"')
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
 	it.effect("reports corrupt stored collector credentials as an encryption failure", () => {
 		const testDb = createTestDb(cacheTrackedDbs)
 		const orgId = "org_ch_corrupt_collector_password"
@@ -1037,6 +1149,36 @@ describe("resolveRuntimeConfig caching", () => {
 				.collectorConfig(asOrgId(orgId), [asRole("org:admin")])
 				.pipe(Effect.exit)
 			expect(getError(exit)).toBeInstanceOf(OrgClickHouseSettingsEncryptionError)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("a saved password is what queries run with, and a blank re-save keeps it", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = asOrgId("org_ch_password_round_trip")
+		const userId = Schema.decodeSync(UserId)("user_ch")
+		const { fetchImpl } = makeFetch(() => Promise.resolve(mockResponse("1\n", 200)))
+		const endpoint = { url: "https://clickhouse.example.test", user: "default", database: "maple" }
+		return Effect.gen(function* () {
+			const service = yield* OrgClickHouseSettingsService
+			const save = (password?: string) =>
+				service
+					.upsert(
+						orgId,
+						userId,
+						[asRole("org:admin")],
+						new OrgClickHouseSettingsUpsertRequest(
+							password === undefined ? endpoint : { ...endpoint, password },
+						),
+					)
+					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchImpl))
+
+			yield* save("s3cret-password")
+			const saved = yield* service.resolveRuntimeConfig(orgId)
+			expect(expectSome(saved).password).toBe("s3cret-password")
+
+			yield* save()
+			const resaved = yield* service.resolveRuntimeConfig(orgId)
+			expect(expectSome(resaved).password).toBe("s3cret-password")
 		}).pipe(Effect.provide(buildLayer(testDb)))
 	})
 })

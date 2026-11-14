@@ -3,7 +3,7 @@ import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData } from "foldkit"
 import type { Catalog, Model, ServiceCatalogEntry } from "./model"
 
-// The derived parts of `useLocalServiceCatalog` and `ServicesListView`.
+// The derived parts of the services list.
 
 export interface ServicesFilters {
 	readonly env: string | undefined
@@ -28,7 +28,7 @@ export const visibleEntries = (
 	filters: ServicesFilters,
 ): ReadonlyArray<ServiceCatalogEntry> => {
 	const all = dataOf(model.catalog)
-	const needle = filters.search?.toLowerCase()
+	const needle = filters.search === undefined ? undefined : Str.toLowerCase(filters.search)
 	return needle ? Arr.filter(all, (entry) => Str.includes(needle)(Str.toLowerCase(entry.serviceName))) : all
 }
 
@@ -44,8 +44,8 @@ const countBy = (
 	Arr.forEach(entries, (entry) =>
 		Arr.forEach(pick(entry), (name) => counts.set(name, (counts.get(name) ?? 0) + 1)),
 	)
-	return Arr.map([...counts.entries()], ([name, count]) => ({ name, count })).sort(
-		(a, b) => b.count - a.count || Str.localeCompare(b.name)(a.name),
+	return Arr.map([...counts.entries()], ([name, count]) => ({ name, count })).sort((a, b) =>
+		b.count !== a.count ? b.count - a.count : Str.localeCompare(b.name)(a.name),
 	)
 }
 

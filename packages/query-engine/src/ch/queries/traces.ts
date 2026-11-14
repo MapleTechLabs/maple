@@ -14,20 +14,8 @@ import {
 	type ColumnAccessor,
 } from "@maple-dev/effect-orm/clickhouse"
 import type { Table } from "@maple-dev/effect-orm/clickhouse"
-import {
-	ServiceMapSpans,
-	ServiceOverviewSpans,
-	ServiceOverviewHourly,
-	ServiceOverviewMinutely,
-	TraceListMv,
-	Traces,
-	inServiceMapSpans,
-	inTraces,
-	paramTraceWindow,
-	TracesAggregatesHourly,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { inServiceMapSpans, inTraces, paramTraceWindow, orgIdParam, utcSecondsParam } from "../tables"
 import {
 	deploymentEnvExpr,
 	httpRequestMethodExpr,
@@ -55,7 +43,7 @@ import {
 	timeseriesBucket,
 	wholeRangeEnd,
 } from "./query-helpers"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Record as Rec } from "effect"
 
 /**
  * The two t-digest state types the timeseries branches must agree on.
@@ -73,8 +61,6 @@ const WEIGHTED_DURATION_STATE = T.aggregateState(
 	"UInt32",
 )
 
-// Metric SELECT expressions
-//
 // COUNT SEMANTICS — read this before touching `count`.
 //
 // `count` is the **sample-weighted estimate of how many spans actually
@@ -167,10 +153,8 @@ function metricSelectExprs(
 	}
 }
 
-// GROUP BY expression builder
-
 function buildGroupNameExpr(
-	$: ColumnAccessor<typeof Traces.columns>,
+	$: ColumnAccessor<typeof Datasources.traces.columns>,
 	groupBy: readonly string[] | undefined,
 	groupByAttributeKeys: readonly string[] | undefined,
 	groupByResourceAttributeKey?: string,
@@ -197,13 +181,13 @@ function buildGroupNameExpr(
 			case "attribute":
 				if (groupByResourceAttributeKey) {
 					parts.push(CH.toString_($.ResourceAttributes.get(groupByResourceAttributeKey)))
-				} else if (groupByAttributeKeys?.length) {
+				} else if (groupByAttributeKeys !== undefined && groupByAttributeKeys.length > 0) {
 					const keys: CH.Expr<string>[] = Arr.map(groupByAttributeKeys, (k) =>
 						CH.toString_($.SpanAttributes.get(k)),
 					)
-					// When multiple attribute keys, join them into a single part
-					if (keys.length === 1) {
-						parts.push(keys[0])
+					const soleKey = soleValue(keys)
+					if (soleKey !== undefined) {
+						parts.push(soleKey)
 					} else {
 						parts.push(CH.arrayStringConcat(keys, " \u00b7 "))
 					}
@@ -218,8 +202,9 @@ function buildGroupNameExpr(
 		return CH.lit("all")
 	}
 
-	if (parts.length === 1) {
-		return CH.coalesce(CH.nullIf(parts[0], ""), CH.lit("all"))
+	const solePart = soleValue(parts)
+	if (solePart !== undefined) {
+		return CH.coalesce(CH.nullIf(solePart, ""), CH.lit("all"))
 	}
 
 	// Multi-part: filter empty strings before joining with separator
@@ -234,7 +219,7 @@ function buildGroupNameExpr(
  * `canUseServiceOverviewMv`.
  */
 function buildMvGroupNameExpr(
-	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOverviewSpans.columns>,
 	groupBy: readonly string[] | undefined,
 ): CH.Expr<string> {
 	if (!groupBy || groupBy.length === 0) return CH.lit("all")
@@ -261,7 +246,7 @@ function buildMvGroupNameExpr(
 }
 
 function buildAggregatesGroupNameExpr(
-	$: ColumnAccessor<typeof TracesAggregatesHourly.columns>,
+	$: ColumnAccessor<typeof Datasources.tracesAggregatesHourly.columns>,
 	groupBy: readonly string[] | undefined,
 ): CH.Expr<string> {
 	if (!groupBy || groupBy.length === 0) return CH.lit("all")
@@ -291,7 +276,7 @@ function buildAggregatesGroupNameExpr(
 }
 
 function buildBreakdownGroupExpr(
-	$: ColumnAccessor<typeof Traces.columns>,
+	$: ColumnAccessor<typeof Datasources.traces.columns>,
 	groupBy: string,
 	groupByAttributeKey: string | undefined,
 	groupByResourceAttributeKey?: string,
@@ -328,7 +313,7 @@ function buildBreakdownGroupExpr(
 }
 
 function buildMvBreakdownGroupExpr(
-	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	$: ColumnAccessor<typeof Datasources.serviceOverviewSpans.columns>,
 	groupBy: string,
 ): CH.Expr<string> {
 	switch (groupBy) {
@@ -347,20 +332,14 @@ function buildMvBreakdownGroupExpr(
 	}
 }
 
-// WHERE clause builders
-
 function buildWhereConditions(
-	$: ColumnAccessor<typeof Traces.columns>,
+	$: ColumnAccessor<typeof Datasources.traces.columns>,
 	opts: TracesQueryOpts,
 ): Array<CH.Condition | undefined> {
 	return tracesBaseWhereConditions($, opts)
 }
 
-// Shared options interface
-
 interface TracesQueryOpts extends TracesBaseWhereOpts {}
-
-// Timeseries query
 
 export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	metric: TracesMetric
@@ -496,10 +475,10 @@ export function canUseAnnualServiceOverview(opts: TracesTimeseriesOpts): boolean
 		!opts.errorsOnly &&
 		opts.minDurationMs == null &&
 		opts.maxDurationMs == null &&
-		!opts.excludedSpanNames?.length &&
-		!opts.attributeFilters?.length &&
-		!opts.resourceAttributeFilters?.length &&
-		!Object.values(opts.matchModes ?? {}).includes("contains")
+		(opts.excludedSpanNames === undefined || opts.excludedSpanNames.length === 0) &&
+		(opts.attributeFilters === undefined || opts.attributeFilters.length === 0) &&
+		(opts.resourceAttributeFilters === undefined || opts.resourceAttributeFilters.length === 0) &&
+		!Rec.values<string, unknown>({ ...opts.matchModes }).includes("contains")
 	)
 }
 
@@ -524,7 +503,7 @@ function buildOverviewRollupGroupNameExpr(
 
 export function tracesTimeseriesQuery(
 	opts: TracesTimeseriesOpts,
-): CHQuery<ColumnDefs, TracesTimeseriesOutput, {}> {
+): CHQuery<ColumnDefs, TracesTimeseriesOutput> {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 
 	if (canUseAnnualServiceOverview(opts)) {
@@ -562,21 +541,27 @@ export function tracesTimeseriesQuery(
 		) => [
 			$.OrgId.eq(orgIdParam),
 			opts.serviceName ? $.ServiceName.eq(opts.serviceName) : undefined,
-			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
-			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
-			opts.commitShas?.length ? CH.inList($.CommitSha, opts.commitShas) : undefined,
-			opts.excludedServiceNames?.length
+			opts.environments !== undefined && opts.environments.length > 0
+				? CH.inList($.DeploymentEnv, opts.environments)
+				: undefined,
+			opts.namespaces !== undefined && opts.namespaces.length > 0
+				? CH.inList($.ServiceNamespace, opts.namespaces)
+				: undefined,
+			opts.commitShas !== undefined && opts.commitShas.length > 0
+				? CH.inList($.CommitSha, opts.commitShas)
+				: undefined,
+			opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0
 				? CH.notInList($.ServiceName, opts.excludedServiceNames)
 				: undefined,
-			opts.excludedEnvironments?.length
+			opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0
 				? CH.notInList($.DeploymentEnv, opts.excludedEnvironments)
 				: undefined,
-			opts.excludedNamespaces?.length
+			opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0
 				? CH.notInList($.ServiceNamespace, opts.excludedNamespaces)
 				: undefined,
 		]
 
-		const rawEdges = from(ServiceOverviewSpans)
+		const rawEdges = from(Datasources.serviceOverviewSpans)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
@@ -605,7 +590,7 @@ export function tracesTimeseriesQuery(
 			])
 			.groupBy("bucket", "groupName")
 
-		const minutelyInterior = from(ServiceOverviewMinutely)
+		const minutelyInterior = from(Datasources.serviceOverviewMinutely)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Minute, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
@@ -628,7 +613,7 @@ export function tracesTimeseriesQuery(
 			])
 			.groupBy("bucket", "groupName")
 
-		const hourlyInterior = from(ServiceOverviewHourly)
+		const hourlyInterior = from(Datasources.serviceOverviewHourly)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildOverviewRollupGroupNameExpr($, opts.groupBy),
@@ -712,8 +697,7 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(annual, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
@@ -748,7 +732,7 @@ export function tracesTimeseriesQuery(
 			: "''"
 
 		const spanNames = inclusionValues(opts.spanName, opts.spanNames)
-		const rawEdges = from(Traces)
+		const rawEdges = from(Datasources.traces)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildGroupNameExpr($, opts.groupBy, undefined),
@@ -777,7 +761,7 @@ export function tracesTimeseriesQuery(
 			])
 			.groupBy("bucket", "groupName")
 
-		const hourlyInterior = from(TracesAggregatesHourly)
+		const hourlyInterior = from(Datasources.tracesAggregatesHourly)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Hour, opts.wholeRange),
 				groupName: buildAggregatesGroupNameExpr($, opts.groupBy),
@@ -830,11 +814,7 @@ export function tracesTimeseriesQuery(
 			}))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
-			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
-		>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts)
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -844,7 +824,7 @@ export function tracesTimeseriesQuery(
 	// (Server/Consumer OR root), and has Duration/StatusCode/TraceState ready,
 	// so the query reads orders of magnitude fewer rows and bytes.
 	if (canUseServiceOverviewMv(opts, opts.groupBy)) {
-		const mv = from(ServiceOverviewSpans)
+		const mv = from(Datasources.serviceOverviewSpans)
 			.select(($) => ({
 				bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 				groupName: buildMvGroupNameExpr($, opts.groupBy),
@@ -858,12 +838,11 @@ export function tracesTimeseriesQuery(
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
 		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 			ColumnDefs,
-			TracesTimeseriesOutput,
-			{}
+			TracesTimeseriesOutput
 		>
 	}
 
-	const raw = from(Traces)
+	const raw = from(Datasources.traces)
 		.select(($) => ({
 			bucket: timeseriesBucket($.Timestamp, opts.wholeRange),
 			groupName: buildGroupNameExpr(
@@ -879,12 +858,9 @@ export function tracesTimeseriesQuery(
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
 	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as CHQuery<
 		ColumnDefs,
-		TracesTimeseriesOutput,
-		{}
+		TracesTimeseriesOutput
 	>
 }
-
-// Breakdown query
 
 export interface TracesBreakdownOpts extends TracesQueryOpts {
 	metric: TracesMetric
@@ -922,7 +898,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const limit = opts.limit ?? 10
 
 	if (!tracesBreakdownReadsRaw(opts)) {
-		const mv = from(ServiceOverviewSpans)
+		const mv = from(Datasources.serviceOverviewSpans)
 			.select(($) => {
 				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
 					$,
@@ -941,10 +917,10 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 			.orderBy(["count", "desc"])
 			.limit(limit)
 			.format("JSON")
-		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+		return mv as CHQuery<ColumnDefs, TracesBreakdownOutput>
 	}
 
-	const raw = from(Traces)
+	const raw = from(Datasources.traces)
 		.select(($) => {
 			const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
 				$,
@@ -968,10 +944,8 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
-	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	return raw as CHQuery<ColumnDefs, TracesBreakdownOutput>
 }
-
-// List query
 
 export interface TracesListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1060,7 +1034,9 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
+	const baseWhere = (
+		$: ColumnAccessor<typeof Datasources.traces.columns>,
+	): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, opts),
 		CH.when(cursor, (v: DateTime.Utc) => $.Timestamp.lt(v)),
 	]
@@ -1072,9 +1048,9 @@ export function tracesListQuery(opts: TracesListOpts) {
 	// placeholders intact ({} params) so the outer `CH.compile()` substitutes them
 	// once. Limit is `limit + offset` so the cutoff covers every row the outer
 	// query might examine, not just the slice it returns.
-	const cutoffGate = ($: ColumnAccessor<typeof Traces.columns>): CH.Condition => {
+	const cutoffGate = ($: ColumnAccessor<typeof Datasources.traces.columns>): CH.Condition => {
 		if (sortBy === "durationMs") {
-			const cutoffInner = from(Traces)
+			const cutoffInner = from(Datasources.traces)
 				.select((c) => ({ d: c.Duration, ts: c.Timestamp }))
 				.where(baseWhere)
 				.orderBy(["d", sortDir], ["ts", sortDir])
@@ -1087,7 +1063,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 			return sortDir === "desc" ? sortKey.gte(cutoff) : sortKey.lte(cutoff)
 		}
 
-		const cutoffInner = from(Traces)
+		const cutoffInner = from(Datasources.traces)
 			.select((c) => ({ ts: c.Timestamp }))
 			.where(baseWhere)
 			.orderBy(["ts", sortDir])
@@ -1098,7 +1074,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 	}
 
 	// Stage 2: heavy columns read only for rows at/after the cutoff.
-	const stage2 = from(Traces)
+	const stage2 = from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			timestamp: $.Timestamp,
@@ -1130,8 +1106,6 @@ export function tracesListQuery(opts: TracesListOpts) {
 	return q
 }
 
-// Slow traces query
-//
 // DSL port of the previously string-interpolated query in
 // `observability/find-slow-traces.ts`. Returns the slowest root spans
 // (`ParentSpanId = ''`) ordered by Duration DESC at the database, so the
@@ -1154,7 +1128,7 @@ export interface SlowTracesOutput {
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
-	return from(TraceListMv)
+	return from(Datasources.traceListMv)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanName: $.SpanName,
@@ -1175,8 +1149,6 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 		.format("JSON")
 }
 
-// Span-level search query
-//
 // DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
@@ -1205,7 +1177,7 @@ export interface SpanSearchOutput {
 }
 
 type SpanSearchColumns = Pick<
-	typeof Traces.columns,
+	typeof Datasources.traces.columns,
 	| "OrgId"
 	| "Timestamp"
 	| "TraceId"
@@ -1261,7 +1233,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// are cheap to read directly.
 	if (opts.traceId) {
 		const traceId = opts.traceId
-		return spanSearchFrom(Traces, opts, limit, offset).where(() => [
+		return spanSearchFrom(Datasources.traces, opts, limit, offset).where(() => [
 			inTraces((id) => id.eq(traceId), paramTraceWindow()),
 		])
 	}
@@ -1272,7 +1244,7 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 	// all but N (9–13 GB reads in production). Two-stage it exactly like
 	// `tracesListQuery`: stage 1 reads only `Timestamp` to find the cutoff,
 	// stage 2 reads the Maps only at/after it.
-	const cutoffInner = from(Traces)
+	const cutoffInner = from(Datasources.traces)
 		.select(($) => ({ ts: $.Timestamp }))
 		.where(($) => [
 			...tracesBaseWhereConditions($, opts),
@@ -1282,10 +1254,8 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 		.limit(limit + offset)
 	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
-	return spanSearchFrom(Traces, opts, limit, offset, cutoff)
+	return spanSearchFrom(Datasources.traces, opts, limit, offset, cutoff)
 }
-
-// Root trace list query (aggregated root-span-level, for trace list UI)
 
 export interface TracesRootListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1407,7 +1377,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 		matchModes: opts.matchModes,
 	}
 	// Match modes only shape the filters, so they never count as one.
-	const hasSpanFilters = Arr.some(Object.entries(spanFilters), ([key, value]) =>
+	const hasSpanFilters = Arr.some(Rec.toEntries<string, unknown>({ ...spanFilters }), ([key, value]) =>
 		key === "matchModes" ? false : Arr.isArray(value) ? value.length > 0 : value !== undefined,
 	)
 	// Keyset over (second, TraceId): the MV stores whole seconds, and the cursor is a page's last `startTime`.
@@ -1429,7 +1399,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 	const page =
 		opts.spanScope === "root" || !hasSpanFilters
 			? pagesOverMv
-				? from(TraceListMv)
+				? from(Datasources.traceListMv)
 						.select(($) => ({ ts: $.Timestamp, traceId: $.TraceId }))
 						.where(($) => [
 							...traceListMvWhereConditions($, spanFilters),
@@ -1437,7 +1407,7 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 						])
 						.orderBy(["ts", "desc"], ["traceId", "desc"])
 						.limit(limit + offset)
-				: from(Traces)
+				: from(Datasources.traces)
 						.select(($) => ({ ts: CH.toDateTime($.Timestamp), traceId: $.TraceId }))
 						.where(($) => [
 							...tracesBaseWhereConditions($, spanFilters),
@@ -1449,13 +1419,13 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 			: undefined
 	const matchingTraceIds =
 		page === undefined
-			? from(Traces)
+			? from(Datasources.traces)
 					.select(($) => ({ traceId: $.TraceId }))
 					.where(($) => tracesBaseWhereConditions($, spanFilters))
 					.groupBy("traceId")
 			: undefined
 
-	return from(TraceListMv)
+	return from(Datasources.traceListMv)
 		.select(($) => ({
 			traceId: $.TraceId,
 			startTime: CH.min_($.Timestamp),
@@ -1507,14 +1477,16 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
+	const baseWhere = (
+		$: ColumnAccessor<typeof Datasources.traces.columns>,
+	): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
 		CH.when(cursor, (v: DateTime.Utc | CH.Expr<DateTime.Utc>) => $.Timestamp.lt(v)),
 	]
 
 	// Stage 1: cheap scan — only `Timestamp` is read, sharing the same WHERE
 	// (rootOnly included) as the outer heavy query.
-	const cutoffInner = from(Traces)
+	const cutoffInner = from(Datasources.traces)
 		.select(($) => ({ ts: $.Timestamp }))
 		.where(baseWhere)
 		.orderBy(["ts", "desc"])
@@ -1522,7 +1494,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 	const cutoff = subqueryExpr(cutoffInner, T.dateTime64, (sql) => `(SELECT min(ts) FROM (${sql}))`)
 
 	// Stage 2: heavy SpanAttributes lookups read only for rows at/after the cutoff.
-	let q = from(Traces)
+	let q = from(Datasources.traces)
 		.select(($) => ({
 			traceId: $.TraceId,
 			startTime: $.Timestamp,
@@ -1554,8 +1526,6 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	return q
 }
-
-// Trace list query (one row per TraceId, for trace list UIs)
 
 export interface TraceListOpts extends TracesQueryOpts {
 	limit?: number
@@ -1648,13 +1618,14 @@ const TRACE_LIST_MV_ATTR_COLUMNS = new Map<string, "HttpMethod" | "HttpStatusCod
  * pre-extracted columns are expressible; anything else falls back to raw.
  */
 export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
-	if (opts.resourceAttributeFilters?.length) return false
-	if (opts.commitShas?.length) return false
+	if (opts.resourceAttributeFilters !== undefined && opts.resourceAttributeFilters.length > 0) return false
+	if (opts.commitShas !== undefined && opts.commitShas.length > 0) return false
 	for (const af of opts.attributeFilters ?? []) {
-		if (af.or?.length) return false
+		if (af.or !== undefined && af.or.length > 0) return false
 		if (!TRACE_LIST_MV_ATTR_COLUMNS.has(af.key)) return false
 		const expressible =
-			(af.mode === "equals" && af.value !== undefined) || (af.mode === "in" && !!af.values?.length)
+			(af.mode === "equals" && af.value !== undefined) ||
+			(af.mode === "in" && af.values !== undefined && af.values.length > 0)
 		if (!expressible) return false
 	}
 	return true
@@ -1667,7 +1638,7 @@ export function canUseTraceListMvStage1(opts: TraceListOpts): boolean {
  * facet click matches without the raw-or-display OR the base builder needs.
  */
 function traceListMvWhereConditions(
-	$: ColumnAccessor<typeof TraceListMv.columns>,
+	$: ColumnAccessor<typeof Datasources.traceListMv.columns>,
 	opts: TraceListOpts,
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes
@@ -1691,7 +1662,7 @@ function traceListMvWhereConditions(
 	if (opts.maxDurationMs != null) {
 		conditions.push($.Duration.lte(opts.maxDurationMs * 1000000))
 	}
-	if (opts.environments?.length) {
+	if (opts.environments !== undefined && opts.environments.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.DeploymentEnv,
@@ -1700,7 +1671,7 @@ function traceListMvWhereConditions(
 			),
 		)
 	}
-	if (opts.namespaces?.length) {
+	if (opts.namespaces !== undefined && opts.namespaces.length > 0) {
 		conditions.push(
 			matchOrIn(
 				$.ServiceNamespace,
@@ -1715,21 +1686,21 @@ function traceListMvWhereConditions(
 		const col = $[column]
 		if (af.mode === "equals" && af.value !== undefined) {
 			conditions.push(af.negated ? col.neq(af.value) : col.eq(af.value))
-		} else if (af.mode === "in" && af.values?.length) {
+		} else if (af.mode === "in" && af.values !== undefined && af.values.length > 0) {
 			const inCond = CH.inList(col, af.values)
 			conditions.push(af.negated ? CH.not(inCond) : inCond)
 		}
 	}
-	if (opts.excludedServiceNames?.length) {
+	if (opts.excludedServiceNames !== undefined && opts.excludedServiceNames.length > 0) {
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
-	if (opts.excludedSpanNames?.length) {
+	if (opts.excludedSpanNames !== undefined && opts.excludedSpanNames.length > 0) {
 		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
 	}
-	if (opts.excludedEnvironments?.length) {
+	if (opts.excludedEnvironments !== undefined && opts.excludedEnvironments.length > 0) {
 		conditions.push(CH.notInList($.DeploymentEnv, opts.excludedEnvironments))
 	}
-	if (opts.excludedNamespaces?.length) {
+	if (opts.excludedNamespaces !== undefined && opts.excludedNamespaces.length > 0) {
 		conditions.push(CH.notInList($.ServiceNamespace, opts.excludedNamespaces))
 	}
 
@@ -1777,7 +1748,7 @@ export function traceListQuery(opts: TraceListOpts) {
 				// stage-2 `startTime` cursor to the second, and the `(ts, traceId)` tuple
 				// ordering is what keeps pages disjoint despite the truncation ties.
 				const secCursor = cursor
-				const mvBase = from(TraceListMv)
+				const mvBase = from(Datasources.traceListMv)
 					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
 					.where(($) => [
 						...traceListMvWhereConditions($, opts),
@@ -1798,7 +1769,7 @@ export function traceListQuery(opts: TraceListOpts) {
 				return page
 			})()
 		: (() => {
-				const pageBase = from(Traces)
+				const pageBase = from(Datasources.traces)
 					.select(($) => ({ traceId: $.TraceId, ts: $.Timestamp, d: $.Duration }))
 					.where(($) => [
 						...buildWhereConditions($, opts),
@@ -1824,7 +1795,7 @@ export function traceListQuery(opts: TraceListOpts) {
 	// tiebreaker for the (malformed) traces that ship no root at all.
 	const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 
-	const aggregated = from(Traces)
+	const aggregated = from(Datasources.traces)
 		.select(($) => {
 			const rootServiceName = argMin($.ServiceName, rootOrder)
 			const startNanos = CH.toUnixTimestamp64Nano($.Timestamp)
@@ -1890,8 +1861,6 @@ export function traceListQuery(opts: TraceListOpts) {
 		.format("JSON")
 }
 
-// Trace-list service enrichment
-
 export interface TraceServicesByTraceIdsOpts {
 	readonly traceIds: readonly string[]
 }
@@ -1914,7 +1883,7 @@ export interface TraceServicesByTraceIdsOutput {
  * Internal/unset single-service roots and MV propagation lag.
  */
 export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) {
-	return from(ServiceMapSpans)
+	return from(Datasources.serviceMapSpans)
 		.select(($) => {
 			const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 			const rootServiceName = argMin($.ServiceName, rootOrder)
@@ -1936,8 +1905,6 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 		.format("JSON")
 }
 
-// Trace-list span stats
-
 export interface TraceSpanStatsByTraceIdsOpts {
 	readonly traceIds: readonly string[]
 }
@@ -1957,7 +1924,7 @@ export interface TraceSpanStatsByTraceIdsOutput {
  * in `traceListQuery`.
  */
 export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts) {
-	return from(Traces)
+	return from(Datasources.traces)
 		.select(($) => {
 			const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
 			const rootServiceName = argMin($.ServiceName, rootOrder)

@@ -1,5 +1,5 @@
 import { pickDefaultDestination } from "@maple/web-data/alerts/form-utils"
-import { buildRuleStatesByRuleId, rowToAlertRuleDocument } from "@maple/web-data/collections/alerts"
+import { buildRuleStatesByRuleId, rowsToAlertRuleDocuments } from "@maple/web-data/collections/alerts"
 import { Option, Array as Arr } from "effect"
 import type { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
@@ -7,15 +7,19 @@ import { requestKey } from "@maple/views/data/request-key"
 import type { Resources } from "../../../platform/resources"
 import type { PageContext } from "../../contract"
 import { AUTOCOMPLETE_LOOKUPS } from "../../kit/autocomplete-lookups"
+import { metricValueOf, unaskedMetrics } from "../../kit/query-builder/metric-options"
 import { previewPayload } from "../shared/preview"
 import { destinationsOf } from "./derive-rows"
-import { FetchEditorAutocomplete, FetchEditorPreview, FetchTraceFacets } from "./command"
+import {
+	FetchEditorAutocomplete,
+	FetchEditorMetricKeys,
+	FetchEditorMetricOptions,
+	FetchEditorPreview,
+	FetchTraceFacets,
+} from "./command"
 import { previewIdentityKey } from "./derive"
 import type { Message } from "./message"
 import type { Model } from "./model"
-
-// The editor's reads, planned from the Model: the autocomplete provider's lookups over 24h, the
-// draft's preview and the saved rule's replay over the preview window.
 
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
 export type Planned = Readonly<{ model: Model; commands: Commands }>
@@ -26,7 +30,7 @@ const then = (step: Planned, next: (model: Model) => Planned): Planned => {
 	return { model: after.model, commands: [...step.commands, ...after.commands] }
 }
 
-/** `AutocompleteValuesProvider` (not lazy here): every lookup once the 24h window is known. */
+/** Every autocomplete lookup, not lazily, once the 24h window is known. */
 export const planAutocomplete = (model: Model, context: PageContext): Planned => {
 	const window = model.autocompleteWindow
 	if (window === null) return none(model)
@@ -38,10 +42,12 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 			commands: [FetchTraceFacets({ key: facetsKey, window })],
 		}),
 	})
-	return Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets").reduce<Planned>(
+	return Arr.reduce(
+		Arr.filter(AUTOCOMPLETE_LOOKUPS, (lookup) => lookup !== "tracesFacets"),
+		facets,
 		(step, lookup) => {
 			const key = requestKey(context.orgId, `autocomplete.${lookup}`, window)
-			return Option.match(Keyed.request(step.model.autocomplete[lookup] ?? Keyed.idle(), key, "Load"), {
+			return Option.match(Keyed.request(Keyed.at(step.model.autocomplete, lookup), key, "Load"), {
 				onNone: () => step,
 				onSome: (slot) => ({
 					model: { ...step.model, autocomplete: { ...step.model.autocomplete, [lookup]: slot } },
@@ -49,17 +55,35 @@ export const planAutocomplete = (model: Model, context: PageContext): Planned =>
 				}),
 			})
 		},
-		facets,
 	)
 }
 
-/** Whether the saved rule evaluates differently from the draft (`evaluationChanged`). */
+/** While the draft reads metrics: the picker's page once per search, and the picked metric's keys once. */
+export const planMetrics = (model: Model): Planned => {
+	const draft = model.form?.queryBuilderDraft
+	if (draft === undefined || draft.dataSource !== "metrics") return none(model)
+	const list =
+		model.metricRequested === model.metricSearch
+			? []
+			: [FetchEditorMetricOptions({ search: model.metricSearch })]
+	const missing = unaskedMetrics([draft], model.metricKeysRequested)
+	return {
+		model: {
+			...model,
+			metricRequested: model.metricSearch,
+			metricKeysRequested: [...model.metricKeysRequested, ...Arr.map(missing, metricValueOf)],
+		},
+		commands: [...list, ...Arr.map(missing, (metric) => FetchEditorMetricKeys(metric))],
+	}
+}
+
+/** Whether the saved rule evaluates differently from the draft. */
 export const isEvaluationChanged = (model: Pick<Model, "savedForm" | "form">): boolean =>
 	model.savedForm !== null &&
 	model.form !== null &&
 	previewIdentityKey(model.savedForm) !== previewIdentityKey(model.form)
 
-/** `useAlertRulePreview` for the draft and, once it evaluates differently, the saved rule. */
+/** The draft's preview and, once it evaluates differently, the saved rule's. */
 export const planPreviews = (model: Model, context: PageContext): Planned => {
 	const window = model.previewWindow
 	if (window === null || model.form === null) return none(model)
@@ -102,22 +126,21 @@ export const applyDefaultDestination = (model: Model): Model => {
 	if (
 		model.isDefaultDestinationApplied ||
 		model.form === null ||
+		// Anomaly paging is opt-in: a new anomaly rule pages nobody until someone is picked.
+		model.form.signalType === "anomaly" ||
 		destinations.length === 0 ||
 		model.rules === null
 	)
 		return model
 	const states = buildRuleStatesByRuleId(model.states ?? [])
-	const fallback = pickDefaultDestination(
-		destinations,
-		Arr.map(model.rules, (row) => rowToAlertRuleDocument(row, states)),
-	)
+	const fallback = pickDefaultDestination(destinations, rowsToAlertRuleDocuments(model.rules, states))
 	const form = model.form
+	// A tier with a chain is routed already; it gets no default destination on top.
+	const isApplied = fallback !== null && form.destinationIds.length === 0 && form.escalationChainId === null
 	return {
 		...model,
 		isDefaultDestinationApplied: true,
-		form:
-			fallback !== null && form.destinationIds.length === 0
-				? { ...form, destinationIds: [fallback] }
-				: form,
+		autoDestinationId: isApplied ? fallback : null,
+		form: isApplied ? { ...form, destinationIds: [fallback] } : form,
 	}
 }

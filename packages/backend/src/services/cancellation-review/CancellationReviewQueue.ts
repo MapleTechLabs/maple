@@ -4,7 +4,7 @@
  * request (`apps/api/src/cancellation-review-runtime.ts`).
  */
 import { OrgId } from "@maple/domain/http"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema, Array as Arr } from "effect"
 import { CancellationReviewQueueProducer } from "@maple/backend/platform/bindings"
 import type { CancellationToReview } from "./CancellationReviewService"
 
@@ -61,7 +61,7 @@ export class CancellationReviewQueue extends Context.Service<
 						(error) => new CancellationReviewQueueError({ message: error.message, cause: error }),
 					),
 				)
-				yield* queue.sendBatch(bodies.map((body) => ({ body }))).pipe(
+				yield* queue.sendBatch(Arr.map(bodies, (body) => ({ body }))).pipe(
 					Effect.mapError(
 						(error) =>
 							new CancellationReviewQueueError({

@@ -1,3 +1,4 @@
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import { Option, Result } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -13,6 +14,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import {
 	CreateInvestigation,
+	FetchAnomalySession,
 	FetchIncident,
 	FetchLinkedIssue,
 	FetchLinkIssues,
@@ -24,6 +26,9 @@ import {
 import { incidentOf, investigationPayload } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
+import * as Policy from "@maple/domain/policy"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -58,10 +63,16 @@ const chain = (first: Return, next: (model: Model) => Return): Return => {
 	}
 }
 
-const loadIncident = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
-{
+const loadIncident = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return => {
 	const key = requestKey(context.orgId, "anomalies.getIncident", { params: { id: model.incidentId } })
-	return slotStep(model, model.incident, (incident) => ({ incident }), key, mode, (key) => FetchIncident({ key, id: model.incidentId }))
+	return slotStep(
+		model,
+		model.incident,
+		(incident) => ({ incident }),
+		key,
+		mode,
+		(key) => FetchIncident({ key, id: model.incidentId }),
+	)
 }
 
 /** What mounts once the incident renders: its signal series and the linked issue's card. */
@@ -73,11 +84,27 @@ const followIncident = (model: Model, context: PageContext, mode: Keyed.RequestM
 				params: { id: model.incidentId },
 				query: {},
 			})
-			const series = slotStep(model, model.timeseries, (timeseries) => ({ timeseries }), seriesKey, mode, (key) => FetchTimeseries({ key, id: model.incidentId }))
+			const series = slotStep(
+				model,
+				model.timeseries,
+				(timeseries) => ({ timeseries }),
+				seriesKey,
+				mode,
+				(key) => FetchTimeseries({ key, id: model.incidentId }),
+			)
 			const issueId = incident.errorIssueId
 			if (issueId === null) return series
 			const issueKey = requestKey(context.orgId, "errorIssues.retrieve", { params: { id: issueId } })
-			return chain(series, (next) => slotStep(next, next.linkedIssue, (linkedIssue) => ({ linkedIssue }), issueKey, "Load", (key) => FetchLinkedIssue({ key, id: issueId })))
+			return chain(series, (next) =>
+				slotStep(
+					next,
+					next.linkedIssue,
+					(linkedIssue) => ({ linkedIssue }),
+					issueKey,
+					"Load",
+					(key) => FetchLinkedIssue({ key, id: issueId }),
+				),
+			)
 		},
 	})
 
@@ -87,7 +114,14 @@ const loadLinkIssues = (model: Model, context: PageContext): Return =>
 		onSome: (incident) => {
 			const serviceName = model.linkAllServices ? null : incident.serviceName
 			const key = requestKey(context.orgId, "errorIssues.list", { serviceName })
-			return slotStep(model, model.linkIssues, (linkIssues) => ({ linkIssues }), key, "Load", (key) => FetchLinkIssues({ key, serviceName }))
+			return slotStep(
+				model,
+				model.linkIssues,
+				(linkIssues) => ({ linkIssues }),
+				key,
+				"Load",
+				(key) => FetchLinkIssues({ key, serviceName }),
+			)
 		},
 	})
 
@@ -95,6 +129,8 @@ export const init = (route: AnomalyRoute, context: PageContext): Return => {
 	const model: Model = {
 		incidentId: route.incidentId,
 		nowMs: 0,
+		// None until the session answers; self-hosted mode has no session and holds every permission.
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		incident: Keyed.idle(),
 		timeseries: Keyed.idle(),
 		linkedIssue: Keyed.idle(),
@@ -113,12 +149,9 @@ export const init = (route: AnomalyRoute, context: PageContext): Return => {
 		model: loaded.model,
 		commands: [
 			ReadAnomalyClock(),
+			...(isClerkAuthEnabled ? [FetchAnomalySession({ orgId: context.orgId })] : []),
 			...(loaded.commands ?? []),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
+			LoadChartRuntime(),
 		],
 	}
 }
@@ -137,8 +170,8 @@ const wrapResolve = (message: Dialog.Message) => Message.GotResolveDialogMessage
 const wrapLink = (message: Dialog.Message) => Message.GotLinkDialogMessage({ message })
 
 /**
- * A successful write re-reads the incident (its `reactivityKeys`); the answer re-follows the issue.
- * It supersedes a live-refresh read in flight, so a pre-write answer cannot land last.
+ * A successful write re-reads the incident; the answer re-follows the issue. It supersedes a
+ * live-refresh read in flight, so a pre-write answer cannot land last.
  */
 const afterWrite = (model: Model, context: PageContext): Return =>
 	loadIncident({ ...model, busy: null }, context, "Supersede")
@@ -146,8 +179,13 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
+		CompletedFetchSession: (answer) => ({ model: acceptGrants(model, context.orgId, answer) }),
 		CompletedFetchIncident: ({ key, result }) =>
-			followIncident({ ...model, incident: Keyed.accept(model.incident, key, result) }, context, "Load"),
+			followIncident(
+				{ ...model, incident: Keyed.accept(model.incident, key, result) },
+				context,
+				"Load",
+			),
 		CompletedFetchTimeseries: ({ key, result }) => ({
 			model: { ...model, timeseries: Keyed.accept(model.timeseries, key, result) },
 		}),
@@ -158,7 +196,9 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, linkIssues: Keyed.accept(model.linkIssues, key, result) },
 		}),
 		TickedLiveRefresh: ({ nowMs }) =>
-			chain(loadIncident({ ...model, nowMs }, context, "Refresh"), (next) => followIncident(next, context, "Refresh")),
+			chain(loadIncident({ ...model, nowMs }, context, "Refresh"), (next) =>
+				followIncident(next, context, "Refresh"),
+			),
 		ClickedRetry: () => loadIncident(model, context, "Refresh"),
 		ClickedInvestigate: () =>
 			model.busy !== null
@@ -184,43 +224,72 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					outMessage: failureToast("Couldn't open investigation", failure),
 				}),
 			}),
-		ClickedResolve: () => dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),
+		ClickedResolve: () =>
+			dialogStep(model, "resolveDialog", Dialog.open(model.resolveDialog), wrapResolve),
 		ClickedConfirmResolve: () =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "resolve" }, commands: [ResolveIncident({ id: model.incidentId })] },
+				: {
+						model: { ...model, busy: "resolve" },
+						commands: [ResolveIncident({ id: model.incidentId })],
+					},
 		CompletedResolve: ({ result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const refreshed = afterWrite(model, context)
-					const closed = dialogStep(refreshed.model, "resolveDialog", Dialog.close(refreshed.model.resolveDialog), wrapResolve)
+					const closed = dialogStep(
+						refreshed.model,
+						"resolveDialog",
+						Dialog.close(refreshed.model.resolveDialog),
+						wrapResolve,
+					)
 					return {
 						model: closed.model,
 						commands: [...(refreshed.commands ?? []), ...(closed.commands ?? [])],
 						outMessage: toast("success", "Anomaly resolved"),
 					}
 				},
-				onFailure: (failure) => ({ model: { ...model, busy: null }, outMessage: failureToast("Resolve failed", failure) }),
+				onFailure: (failure) => ({
+					model: { ...model, busy: null },
+					outMessage: failureToast("Resolve failed", failure),
+				}),
 			}),
 		ClickedLinkIssue: () =>
 			chain(dialogStep(model, "linkDialog", Dialog.open(model.linkDialog), wrapLink), (next) =>
-				loadLinkIssues({ ...next, linkCombobox: Combobox.init(LINK_COMBOBOX_ID, "autocomplete", { isOpen: true }) }, context),
+				loadLinkIssues(
+					{
+						...next,
+						linkCombobox: Combobox.init(LINK_COMBOBOX_ID, "autocomplete", { isOpen: true }),
+					},
+					context,
+				),
 			),
 		ClickedUnlink: () =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "unlink" }, commands: [SetIncidentIssue({ id: model.incidentId, issueId: null })] },
+				: {
+						model: { ...model, busy: "unlink" },
+						commands: [SetIncidentIssue({ id: model.incidentId, issueId: null })],
+					},
 		SelectedLinkIssue: ({ issueId }) =>
 			model.busy !== null
 				? { model }
-				: { model: { ...model, busy: "link" }, commands: [SetIncidentIssue({ id: model.incidentId, issueId })] },
+				: {
+						model: { ...model, busy: "link" },
+						commands: [SetIncidentIssue({ id: model.incidentId, issueId })],
+					},
 		CompletedSetIssue: ({ issueId, result }) =>
 			Result.match(result, {
 				onSuccess: () => {
 					const refreshed = afterWrite(model, context)
 					const message = toast("success", issueId === null ? "Issue unlinked" : "Linked to issue")
 					if (issueId === null) return { ...refreshed, outMessage: message }
-					const closed = dialogStep(refreshed.model, "linkDialog", Dialog.close(refreshed.model.linkDialog), wrapLink)
+					const closed = dialogStep(
+						refreshed.model,
+						"linkDialog",
+						Dialog.close(refreshed.model.linkDialog),
+						wrapLink,
+					)
 					return {
 						model: closed.model,
 						commands: [...(refreshed.commands ?? []), ...(closed.commands ?? [])],
@@ -233,32 +302,46 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				}),
 			}),
 		GotLinkComboboxMessage: ({ message: inner }) => {
-			// `onClick={() => onSelect(issue.id)}`: a picked item links; the rest is the input's own state.
-			if (inner._tag === "ClickedItem") return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(inner.value) }), context)
+			// A picked item links; the rest is the input's own state.
+			if (inner._tag === "ClickedItem")
+				return update(
+					model,
+					Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(inner.value) }),
+					context,
+				)
 			const next = Combobox.update(model.linkCombobox, inner)
 			// Enter on the active item picks like a click; the input keeps the query, not the id.
 			if (next.outMessage?._tag === "ChangedValue")
-				return update(model, Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(next.outMessage.value) }), context)
+				return update(
+					model,
+					Message.SelectedLinkIssue({ issueId: ErrorIssueId.make(next.outMessage.value) }),
+					context,
+				)
 			return {
 				model: { ...model, linkCombobox: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotLinkComboboxMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotLinkComboboxMessage({ message }),
+				),
 			}
 		},
-		ToggledLinkScope: () => loadLinkIssues({ ...model, linkAllServices: !model.linkAllServices }, context),
+		ToggledLinkScope: () =>
+			loadLinkIssues({ ...model, linkAllServices: !model.linkAllServices }, context),
 		GotResolveDialogMessage: ({ message: inner }) =>
-			model.busy !== null && inner._tag !== "GotAnimationMessage" && inner._tag !== "CompletedMountDialog"
+			model.busy !== null &&
+			inner._tag !== "GotAnimationMessage" &&
+			inner._tag !== "CompletedMountDialog"
 				? { model }
 				: dialogStep(model, "resolveDialog", Dialog.update(model.resolveDialog, inner), wrapResolve),
 		GotLinkDialogMessage: ({ message: inner }) =>
 			dialogStep(model, "linkDialog", Dialog.update(model.linkDialog, inner), wrapLink),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({ model: { ...model, chartRuntime: { _tag: "Failed", reason } } }),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		GotChartMessage: ({ message: inner }) => {
 			const next = Chart.update(model.chart, inner)
 			return {
 				model: { ...model, chart: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (message) => Message.GotChartMessage({ message })),
+				commands: Command.mapMessages(next.commands ?? [], (message) =>
+					Message.GotChartMessage({ message }),
+				),
 			}
 		},
 	})

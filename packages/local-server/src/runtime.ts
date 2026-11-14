@@ -1,9 +1,15 @@
 /// <reference path="./assets.d.ts" />
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Config, DateTime, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
+import { DateTime, Duration, Effect, Exit, Option, Schedule, Schema, Scope } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { resolve } from "node:path"
-import { DEFAULT_REMOTE_UI_URL, hostedDashboardUrl, hostedUiOrigin, serverUrl } from "./local-address"
+import {
+	configuredLocalUiUrl,
+	DEFAULT_LOCAL_PORT,
+	hostedDashboardUrl,
+	hostedUiOrigin,
+	serverUrl,
+} from "./local-address"
 import { ChdbError, configureLibchdb, loadedLibchdbRelease } from "./chdb"
 import {
 	checkpointAvailability,
@@ -14,6 +20,7 @@ import {
 import { isMigrationIncomplete, readMigrationJournalStructure } from "./local-store-migration-journal"
 import { NO_REMOTE_AUTH } from "./remote-auth"
 import { CURRENT_LOCAL_SCHEMA } from "./schema-identity"
+import { storeBlocker, type StoreBlocker } from "./store-gate"
 import { ensurePortFree, startServer } from "./serve"
 import { readDiscovery, removeDiscoveryFor, type ServerDiscovery, writeDiscovery } from "./server-discovery"
 import { acquireStoreClaim, locatePidFile, pidOwner } from "./store-claim"
@@ -26,15 +33,8 @@ import {
 	LocalStoreMigrationError,
 	LocalStoreSchemaStaleError,
 	ServerStateError,
-	stateFileError,
 } from "./store-errors"
-import {
-	checkStoreCompatible,
-	isSchemaIdentityStale,
-	isStoreDirty,
-	newerStoreSchemaVersion,
-	serverDiscoveryPath,
-} from "./store-version"
+import { serverDiscoveryPath } from "./store-version"
 import { resolveUiAssets } from "./ui-assets"
 import { CHDB_VERSION } from "./version"
 
@@ -66,7 +66,6 @@ export interface LocalServer {
 }
 
 const HOSTNAME = "127.0.0.1"
-const DEFAULT_PORT = 4318
 
 /** Another live process owns the store. */
 export class LocalStoreBusyError extends Schema.TaggedError<LocalStoreBusyError>()(
@@ -117,62 +116,53 @@ const refuseUnsafeStore = (dataDir: string, onDirtyStore: LocalDirtyStorePolicy)
 				phase: "resume",
 				message: `the local store at ${dataDir} has an unfinished schema migration; resume or abandon it with maple before starting Maple Local`,
 			})
-		const newerSchema = yield* Effect.try({
-			try: () => newerStoreSchemaVersion(dataDir, CURRENT_LOCAL_SCHEMA.version),
-			catch: stateFileError(dataDir, "read store schema for"),
-		})
-		if (newerSchema !== undefined)
-			return yield* new LocalStoreFromNewerMapleError({
-				dataDir,
-				storeSchemaVersion: newerSchema,
-				currentSchemaVersion: CURRENT_LOCAL_SCHEMA.version,
-				message: `the local store at ${dataDir} was written by a newer maple (schema v${newerSchema}; this build supports up to v${CURRENT_LOCAL_SCHEMA.version}). Nothing was changed.`,
+		const refuse = (blocker: StoreBlocker) =>
+			Effect.gen(function* () {
+				switch (blocker.kind) {
+					case "newer-schema":
+						return yield* new LocalStoreFromNewerMapleError({
+							dataDir,
+							storeSchemaVersion: blocker.storeSchemaVersion,
+							currentSchemaVersion: CURRENT_LOCAL_SCHEMA.version,
+							message: `the local store at ${dataDir} was written by a newer maple (schema v${blocker.storeSchemaVersion}; this build supports up to v${CURRENT_LOCAL_SCHEMA.version}). Nothing was changed.`,
+						})
+					case "incompatible":
+						return yield* new LocalStoreIncompatibleError({
+							dataDir,
+							storeBuild: blocker.found,
+							currentBuild: blocker.current,
+							message: `the local store at ${dataDir} is incompatible with this build's chDB (store: ${blocker.found}; build: ${blocker.current}). Reset it with maple.`,
+						})
+					case "dirty": {
+						const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
+						return yield* new LocalStoreDirtyError({
+							dataDir,
+							policy: "fail",
+							checkpointAvailable: availability.available,
+							message:
+								`the local store at ${dataDir} was not cleanly closed: the process that owned it was killed before closing chDB, and reopening it can crash chDB. ` +
+								`Start with onDirtyStore: "wipe" to discard its live data and start fresh` +
+								(availability.available
+									? `, or run \`maple restore --data-dir ${dataDir}\` to recover its last checkpoint.`
+									: "."),
+						})
+					}
+					case "schema-stale":
+						return yield* new LocalStoreSchemaStaleError({
+							dataDir,
+							message: `the local store at ${dataDir} has a different schema identity; migrate or reset it with maple`,
+						})
+				}
 			})
-		const compatibility = yield* Effect.try({
-			try: () => checkStoreCompatible(dataDir),
-			catch: stateFileError(dataDir, "read store identity for"),
-		})
-		if (!compatibility.compatible)
-			return yield* new LocalStoreIncompatibleError({
-				dataDir,
-				storeBuild: compatibility.found,
-				currentBuild: compatibility.current,
-				message: `the local store at ${dataDir} is incompatible with this build's chDB (store: ${compatibility.found}; build: ${compatibility.current}). Reset it with maple.`,
-			})
-		const dirty = yield* Effect.try({
-			try: () => isStoreDirty(dataDir),
-			catch: stateFileError(dataDir, "read open marker for"),
-		})
-		if (dirty) {
-			if (onDirtyStore === "wipe") {
-				yield* Effect.logWarning(
-					`the local store at ${dataDir} was not cleanly closed; onDirtyStore is "wipe", so its live data is discarded`,
-				)
-				yield* resetLiveStorePreservingCheckpoints(dataDir)
-			} else {
-				const availability = yield* Effect.promise(() => checkpointAvailability(dataDir))
-				return yield* new LocalStoreDirtyError({
-					dataDir,
-					policy: "fail",
-					checkpointAvailable: availability.available,
-					message:
-						`the local store at ${dataDir} was not cleanly closed: the process that owned it was killed before closing chDB, and reopening it can crash chDB. ` +
-						`Start with onDirtyStore: "wipe" to discard its live data and start fresh` +
-						(availability.available
-							? `, or run \`maple restore --data-dir ${dataDir}\` to recover its last checkpoint.`
-							: "."),
-				})
-			}
-		}
-		const stale = yield* Effect.try({
-			try: () => isSchemaIdentityStale(dataDir, CURRENT_LOCAL_SCHEMA),
-			catch: stateFileError(dataDir, "read schema identity for"),
-		})
-		if (stale)
-			return yield* new LocalStoreSchemaStaleError({
-				dataDir,
-				message: `the local store at ${dataDir} has a different schema identity; migrate or reset it with maple`,
-			})
+		const blocker = yield* storeBlocker(dataDir)
+		if (blocker?.kind === "dirty" && onDirtyStore === "wipe") {
+			yield* Effect.logWarning(
+				`the local store at ${dataDir} was not cleanly closed; onDirtyStore is "wipe", so its live data is discarded`,
+			)
+			yield* resetLiveStorePreservingCheckpoints(dataDir)
+			const afterWipe = yield* storeBlocker(dataDir)
+			if (afterWipe !== undefined) return yield* refuse(afterWipe)
+		} else if (blocker !== undefined) return yield* refuse(blocker)
 	})
 
 /**
@@ -198,11 +188,7 @@ export class LocalUiUrlError extends Schema.TaggedError<LocalUiUrlError>()(
 
 /** The dashboard the server trusts (CORS) and advertises; `maple start` reads the same override. */
 const remoteUiUrl = Effect.gen(function* () {
-	const configured = yield* Config.option(Config.String("MAPLE_LOCAL_UI_URL")).pipe(
-		Effect.map(Option.getOrUndefined),
-		Effect.orElseSucceed(() => undefined),
-	)
-	const url = configured?.trim() || DEFAULT_REMOTE_UI_URL
+	const url = yield* configuredLocalUiUrl
 	return yield* Effect.try({
 		try: () => ({ url, origin: hostedUiOrigin(url) }),
 		catch: (error) =>
@@ -256,7 +242,7 @@ const acquireLocal = (options: LocalOptions, portChoice: PortChoice) =>
 			dataDir,
 			configFile: yield* resolveChdbConfigFile(dataDir, undefined),
 			auth: NO_REMOTE_AUTH,
-			assets: yield* resolveUiAssets(),
+			assets: yield* resolveUiAssets,
 		})
 		const endpoint = serverUrl(HOSTNAME, boundPort)
 		// How a second `alchemy dev` of the same stack finds this server (and `maple status` too).
@@ -405,7 +391,7 @@ export const startLocal = (options: LocalOptions) =>
 	Effect.gen(function* () {
 		const portChoice: PortChoice =
 			options.port === undefined
-				? { port: DEFAULT_PORT, strict: false }
+				? { port: DEFAULT_LOCAL_PORT, strict: false }
 				: { port: options.port, strict: true }
 		const scope = yield* Scope.Scope
 		return yield* ownOrShare(options, portChoice, scope)

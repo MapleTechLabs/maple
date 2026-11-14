@@ -1,6 +1,7 @@
-import { Clock, Duration, Effect, Schema } from "effect"
+import { resolveWindowCommand } from "../../../kit/time-frame"
+import { reloadSpin } from "@maple/views/data/timing"
+import { Effect, Schema } from "effect"
 import { Command, Mount } from "foldkit"
-import { resolveWindow } from "../../../../data/time-range"
 import { linkedCursorStream } from "@maple/views/charts/linked-cursor"
 import {
 	loadPlatform,
@@ -13,26 +14,12 @@ import {
 	WindowInput,
 	WorkerDetailInput,
 } from "../data"
-import { Message, RequestMode } from "./model"
+import { Message } from "./model"
 
-export const ResolveWindow = Command.define("ResolveCloudflareWorkerWindow", {
-	args: {
-		mode: RequestMode,
-		startTime: Schema.optional(Schema.String),
-		endTime: Schema.optional(Schema.String),
-		preset: Schema.String,
-		timeZone: Schema.String,
-	},
-	messages: [Message.CompletedResolveWindow],
-	execute: ({ mode, startTime, endTime, preset, timeZone }) =>
-		Effect.map(Clock.currentTimeMillis, (nowMs) =>
-			Message.CompletedResolveWindow({
-				window: resolveWindow({ startTime, endTime, preset, snap: mode === "Load", timeZone }, nowMs),
-				nowMs,
-				mode,
-			}),
-		),
-})
+export const ResolveWindow = resolveWindowCommand(
+	"ResolveCloudflareWorkerWindow",
+	Message.CompletedResolveWindow,
+)
 
 export const LoadStatus = Command.define("LoadCloudflareWorkerStatus", {
 	args: { key: Schema.String, refresh: Schema.Boolean },
@@ -44,7 +31,7 @@ export const LoadStatus = Command.define("LoadCloudflareWorkerStatus", {
 export const LoadUsage = Command.define("LoadCloudflareWorkerUsage", {
 	args: { key: Schema.String },
 	messages: [Message.CompletedLoadUsage],
-	execute: ({ key }) => Effect.map(loadUsage(), (result) => Message.CompletedLoadUsage({ key, result })),
+	execute: ({ key }) => Effect.map(loadUsage, (result) => Message.CompletedLoadUsage({ key, result })),
 })
 
 export const FetchDetail = Command.define("FetchCloudflareWorkerDetail", {
@@ -75,14 +62,12 @@ export const FetchReleases = Command.define("FetchCloudflareWorkerReleases", {
 		Effect.map(loadReleases(input), (result) => Message.CompletedFetchReleases({ key, result })),
 })
 
-export const CompleteReloadSpin = Command.define("CompleteCloudflareWorkerReloadSpin", {
-	args: { version: Schema.Number },
-	messages: [Message.CompletedReloadSpin],
-	execute: ({ version }) =>
-		Effect.as(Effect.sleep(Duration.millis(600)), Message.CompletedReloadSpin({ version })),
-})
+export const CompleteReloadSpin = reloadSpin(
+	"CompleteCloudflareWorkerReloadSpin",
+	Message.CompletedReloadSpin,
+)
 
-/** `useLinkedCursor` on the strips. */
+/** One cursor shared by the strips. */
 export const MountLinkedCursor = Mount.defineStream("MountCloudflareWorkerLinkedCursor", {
 	messages: [Message.AttachedLinkedCursor],
 	execute: ({ element }) => linkedCursorStream(element, Message.AttachedLinkedCursor()),

@@ -9,12 +9,11 @@ import { cn } from "@maple/ui/lib/utils"
 import type { ChildAttribute, Html, HtmlBuilder } from "foldkit/html"
 import { pressable } from "@maple/views/ui/pressable"
 import type { QuickPickItem } from "./quick-pick"
-import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "./severity"
-import { WORKFLOW_LABEL, workflowRingIcon } from "./workflow"
+import { SEVERITY_LABEL, SEVERITY_ORDER, severityIcon } from "../../kit/issue-severity"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { Array as Arr } from "effect"
-
-// The severity and state pickers: their triggers and the
-// rows their `QuickPickMenu` offers.
+import { typography, typographyClass } from "@maple/views/ui/typography"
+import { hstack } from "@maple/views/ui/stack"
 
 export type PickerKind = "severity" | "state"
 
@@ -24,7 +23,7 @@ export const PICKER_HOTKEY = { severity: "P", state: "S" } as const
 const TRIGGER =
 	"rounded-md hover:bg-surface-sunken active:bg-surface-sunken data-popup-open:bg-surface-sunken focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none"
 
-/** `PopoverTrigger`'s closed-state attributes; an open popover supplies its own. */
+/** Base UI's popover trigger attributes while closed; an open popover supplies its own. */
 const closedTrigger = <M>(h: HtmlBuilder<M>) => [
 	h.AriaExpanded(false),
 	h.AriaHasPopup("dialog"),
@@ -33,7 +32,6 @@ const closedTrigger = <M>(h: HtmlBuilder<M>) => [
 	h.Tabindex(0),
 ]
 
-/** `trigger`: the open Popover's attributes, or the closed trigger's own click. */
 export type TriggerAttributes<M> =
 	| Readonly<{ isOpen: boolean; attributes: ReadonlyArray<ChildAttribute> }>
 	| Readonly<{ isOpen: false; onClick: M }>
@@ -89,11 +87,39 @@ export const statePickerTrigger = <M>(
 		},
 		[
 			workflowRingIcon(h, current, 12, "shrink-0"),
-			h.span([h.Class("truncate")], [WORKFLOW_LABEL[current]]),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[current]]),
 		],
 	)
 
-/** `SEVERITY_ITEMS`: "No severity" on 0, the levels on 1 to 4. */
+/** The severity lane's mark for a viewer who cannot change it. */
+export const severityReadout = <M>(h: HtmlBuilder<M>, value: IssueSeverity | null): Html =>
+	hstack(
+		h,
+		{
+			as: "span",
+			justify: "center",
+			attributes: [h.Title(value === null ? "Severity not set" : `Severity: ${SEVERITY_LABEL[value]}`)],
+		},
+		[severityIcon(h, value, 16)],
+	)
+
+/** The status lane's ring and label for a viewer who cannot change it. */
+export const stateReadout = <M>(h: HtmlBuilder<M>, current: WorkflowState): Html =>
+	hstack(
+		h,
+		{
+			as: "span",
+			gap: "1.5",
+			shrink: true,
+			className: typographyClass({ size: "2xs", tone: "muted" }),
+			attributes: [h.Title(`Status: ${WORKFLOW_LABEL[current]}`)],
+		},
+		[
+			workflowRingIcon(h, current, 12, "shrink-0"),
+			typography(h, { truncate: true }, [WORKFLOW_LABEL[current]]),
+		],
+	)
+
 export const severityItems = <M>(h: HtmlBuilder<M>): ReadonlyArray<QuickPickItem> => [
 	{
 		value: "none",

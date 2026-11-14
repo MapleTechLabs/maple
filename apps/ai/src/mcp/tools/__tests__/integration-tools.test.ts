@@ -7,7 +7,7 @@ import {
 	ListSourcesOutput,
 	ScrapeTargetMutationOutput,
 } from "@maple/domain/mcp-outputs"
-import { RoleName } from "@maple/domain/primitives"
+import { RoleName } from "@maple/primitives"
 import type { McpToolResult } from "../types"
 import { installFakeWarehouse, restoreWarehouse } from "../../__evals__/fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
@@ -35,8 +35,8 @@ afterAll(async () => {
 	await member.dispose()
 })
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(schema: S, result: McpToolResult) =>
-	Schema.decodeUnknownSync(schema)(result.structuredContent)
+const decode = <S extends Schema.Codec<unknown, unknown>>(schema: S, result: McpToolResult) =>
+	Schema.decodeSync(schema)(result.structuredContent)
 
 describe("list_integrations", () => {
 	it("names every broken resource in one call, with unhealthy of total per provider", async () => {
@@ -49,7 +49,7 @@ describe("list_integrations", () => {
 		expect(byProvider.get("prometheus")?.resources.map((r) => r.name)).toEqual([
 			INTEGRATION_WORLD.failingScrapeTarget,
 		])
-		expect(Arr.map(output.available, (a) => a.provider)).toEqual(["chat"])
+		expect(Arr.map(output.available, (a) => a.provider)).toEqual(["vercel", "chat", "search_console"])
 		expect(markdown(result)).toContain("no successful update for 4 h")
 	})
 
@@ -184,6 +184,20 @@ describe("compare_commits", () => {
 		])
 	})
 
+	it("names the repository even when the range cannot be listed", async () => {
+		const result = await runToolDirect(
+			member,
+			"compare_commits",
+			{ base: CI_WORLD.head, head: CI_WORLD.base },
+			"chat",
+		)
+		const output = decode(CompareCommitsOutput, result)
+		expect(output.status).toBe("unavailable")
+		expect(output.repository).toBe("acme/shop")
+		expect(output.reason).toContain("swap them")
+		expect(markdown(result)).toContain("Repository: acme/shop")
+	})
+
 	it("refuses a short SHA and says where full ones come from", async () => {
 		const result = await runToolDirect(
 			member,
@@ -199,6 +213,19 @@ describe("compare_commits", () => {
 	})
 })
 
+describe("sync_vercel", () => {
+	it("is refused for a member who is not an org admin or engineer", async () => {
+		const result = await runToolDirect(member, "sync_vercel", {})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("Only org admins and engineers can manage integrations")
+	})
+
+	it("says where to connect Vercel when it is not connected", async () => {
+		const result = await runToolDirect(admin, "sync_vercel", {})
+		expect(markdown(result)).toContain("Vercel is not connected")
+	})
+})
+
 describe("update_scrape_target", () => {
 	it("is refused for a member who is not an org admin", async () => {
 		const result = await runToolDirect(member, "update_scrape_target", {
@@ -206,7 +233,7 @@ describe("update_scrape_target", () => {
 			enabled: false,
 		})
 		expect(result.isError).toBe(true)
-		expect(markdown(result)).toContain("only org admins")
+		expect(markdown(result)).toContain("Only org admins and engineers can manage scrape targets")
 	})
 
 	it("pauses a target for an admin and says it is paused", async () => {

@@ -12,7 +12,7 @@ import { view as dialogView } from "@maple/views/ui/dialog-view"
 import { kbd } from "@maple/views/ui/display"
 import { Message } from "./model"
 
-// `KitCommand`: the command palette, open on mount.
+// The command palette, open on mount.
 type H = HtmlBuilder<Message>
 
 export const COMMANDS: ReadonlyArray<CommandGroup> = [

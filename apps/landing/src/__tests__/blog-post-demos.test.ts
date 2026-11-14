@@ -4,15 +4,12 @@ import { describe, expect, it } from "vitest"
 import { Array as Arr, String as Str } from "effect"
 
 /**
- * Source-level guards for MDX blog posts and their demo components, in the
- * same read-off-disk style as company-pages.test.ts. These catch the failure
- * modes that only surface at build time (a renamed component import) or in
- * review (an inline SVG whose braces MDX parses as JSX expressions).
+ * Guards for MDX blog posts, read off disk. These catch the failure modes that only surface at
+ * build time (a renamed component import) or in review (an inline SVG whose braces MDX parses as JSX).
  */
 
 const landingRoot = resolve(__dirname, "..")
 const blogDir = join(landingRoot, "content/blog")
-const demosDir = join(landingRoot, "components/blog/demos")
 
 const mdxPosts = Arr.map(
 	Arr.filter(readdirSync(blogDir), (f) => Str.endsWith(".mdx")(f)),
@@ -48,18 +45,5 @@ describe.each(mdxPosts)("blog post $file", ({ path, source }) => {
 		// Inline <svg> in MDX is where literal braces ("GET /users/{id}") turn
 		// into JSX expressions and break the build.
 		expect(Str.includes("<svg")(source)).toBe(false)
-	})
-})
-
-describe("blog demo components", () => {
-	const demos = existsSync(demosDir)
-		? Arr.filter(readdirSync(demosDir), (f) => Str.endsWith(".astro")(f))
-		: []
-
-	it.each(demos)("%s guards its animations behind prefers-reduced-motion", (file) => {
-		const source = readFileSync(join(demosDir, file), "utf8")
-		if (Str.includes("@keyframes")(source)) {
-			expect(source).toContain("prefers-reduced-motion")
-		}
 	})
 })

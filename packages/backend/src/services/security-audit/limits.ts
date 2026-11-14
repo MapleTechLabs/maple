@@ -13,8 +13,11 @@ export interface SecurityAuditLimits {
 	readonly maxFiles: number
 	/** Commits reachable from the pinned commit. */
 	readonly maxHistoryCommits: number
-	/** Git LFS files: their content is not in the checkout, so the audit could not read them. */
-	readonly maxLfsFiles: number
+	/**
+	 * Source files in Git LFS: their content is not in the checkout, so the audit could not read
+	 * them. Other LFS files (media, models, archives) are skipped and named on the run instead.
+	 */
+	readonly maxLfsSourceFiles: number
 	/** An org's monthly spend limit in whole US dollars until an admin sets its own. */
 	readonly defaultMonthlySpendLimitUsd: number
 	/**
@@ -30,7 +33,7 @@ export const SECURITY_AUDIT_LIMIT_DEFAULTS: SecurityAuditLimits = {
 	maxCheckoutBytes: 1024 * 1024 * 1024,
 	maxFiles: 100_000,
 	maxHistoryCommits: 1_000_000,
-	maxLfsFiles: 0,
+	maxLfsSourceFiles: 0,
 	defaultMonthlySpendLimitUsd: 100,
 	sandboxFeeUsd: 0.02,
 }
@@ -79,7 +82,10 @@ const limitsConfig = Config.all({
 		"SECURITY_AUDIT_MAX_HISTORY_COMMITS",
 		SECURITY_AUDIT_LIMIT_DEFAULTS.maxHistoryCommits,
 	),
-	maxLfsFiles: limit("SECURITY_AUDIT_MAX_LFS_FILES", SECURITY_AUDIT_LIMIT_DEFAULTS.maxLfsFiles),
+	maxLfsSourceFiles: limit(
+		"SECURITY_AUDIT_MAX_LFS_SOURCE_FILES",
+		SECURITY_AUDIT_LIMIT_DEFAULTS.maxLfsSourceFiles,
+	),
 	defaultMonthlySpendLimitUsd: limit(
 		"SECURITY_AUDIT_DEFAULT_MONTHLY_SPEND_USD",
 		SECURITY_AUDIT_LIMIT_DEFAULTS.defaultMonthlySpendLimitUsd,

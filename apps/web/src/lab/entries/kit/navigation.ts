@@ -12,8 +12,6 @@ import { sidebarFrame } from "../../kit/navigation-sidebar"
 // `/lab/kit/navigation`: navigation menu, an
 // expanded and a collapsed sidebar, and nested resizable panel groups.
 
-// MODEL
-
 const Model = Schema.Struct({
 	navigationMenu: NavigationMenu.Model,
 	railTooltip: Tooltip.Model,
@@ -31,8 +29,6 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotNavigationMenuMessage: { message: NavigationMenu.Message },
 	GotRailTooltipMessage: { message: Tooltip.Message },
@@ -40,8 +36,6 @@ const Message = defineMessageUnion({
 	GotInnerPanelsMessage: { message: Resizable.Message },
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const fold = <Field extends keyof Model, ChildMessage>(
 	field: Field,
@@ -75,8 +69,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		GotOuterPanelsMessage: ({ message: child }) => foldOuterPanels(model, child),
 		GotInnerPanelsMessage: ({ message: child }) => foldInnerPanels(model, child),
 	})
-
-// VIEW
 
 type H = HtmlBuilder<Message>
 

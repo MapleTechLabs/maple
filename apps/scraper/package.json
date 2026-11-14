@@ -14,8 +14,10 @@
 		"@effect/platform-bun": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
 		"@maple/prometheus-otlp": "workspace:*",
 		"@maple/safe-fetch": "workspace:*",
+		"@maple/strings": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

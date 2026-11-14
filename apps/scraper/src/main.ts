@@ -96,8 +96,7 @@ const program = Effect.gen(function* () {
 })
 
 // Telemetry intentionally owns the outer scope so its exporter flushes after MainLive closes.
-/* oxlint-disable effecttsgo/multiple-effect-provide */
 /* oxlint-disable effecttsgo/strict-effect-provide */
+// @effect-diagnostics-next-line multipleEffectProvide:off
 program.pipe(Effect.provide(MainLive), Effect.provide(TelemetryLive), BunRuntime.runMain)
 /* oxlint-enable effecttsgo/strict-effect-provide */
-/* oxlint-enable effecttsgo/multiple-effect-provide */

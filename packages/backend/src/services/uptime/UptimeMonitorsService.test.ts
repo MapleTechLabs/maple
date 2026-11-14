@@ -4,6 +4,7 @@ import {
 	Effect,
 	Exit,
 	Layer,
+	Logger,
 	Option,
 	Ref,
 	Result,
@@ -14,7 +15,7 @@ import {
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { TestClock } from "effect/testing"
 import { BillingCustomer, OrgId, UserId } from "@maple/domain/http"
-import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/domain/primitives"
+import { AlertDestinationId, UptimeIntervalSeconds, UptimeMonitorId } from "@maple/primitives"
 import { UPTIME_USER_AGENT, UptimeCheckReport, type UptimeMonitorConfig } from "@maple/domain/uptime"
 import { Env } from "@maple/backend/platform/Env"
 import {
@@ -23,7 +24,7 @@ import {
 	executeSql,
 	queryFirstRow,
 	type TestDb,
-} from "@maple/backend/platform/test-pglite"
+} from "@maple/backend/testing/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	UptimeMonitorAllowance,
@@ -36,9 +37,11 @@ import { UptimeMonitorsService } from "./UptimeMonitorsService"
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_uptime")
-const OTHER_ORG = Schema.decodeUnknownSync(OrgId)("org_uptime_other")
-const USER = Schema.decodeUnknownSync(UserId)("user_uptime")
+const ORG = Schema.decodeSync(OrgId)("org_uptime")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_uptime_other")
+const USER = Schema.decodeSync(UserId)("user_uptime")
+const tokenOf = (url: string) =>
+	Str.slice(Option.match(Str.lastIndexOf("/")(url), { onNone: () => 0, onSome: (index) => index + 1 }))(url)
 const UNKNOWN_ID = UptimeMonitorId.make("00000000-0000-4000-8000-000000000000")
 
 const config = () =>
@@ -196,7 +199,7 @@ describe("UptimeMonitorsService", () => {
 			assert.isFalse(paused.enabled)
 			assert.strictEqual(paused.state.status, "paused")
 			// The scraper stops probing a paused monitor; other orgs' monitors are unaffected.
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[other.id],
@@ -409,7 +412,7 @@ describe("UptimeMonitorsService", () => {
 				assert.strictEqual(applied, 1)
 				assert.strictEqual((yield* service.get(ORG, kept.id)).state.status, "down")
 				assert.deepStrictEqual(
-					(yield* service.list(ORG)).map((monitor) => monitor.id),
+					Arr.map(yield* service.list(ORG), (monitor) => monitor.id),
 					[kept.id],
 				)
 			})
@@ -482,7 +485,7 @@ describe("UptimeMonitorsService", () => {
 					[corrupt.id],
 				),
 			)
-			const targets = yield* service.listProbeTargets()
+			const targets = yield* service.listProbeTargets
 			assert.deepStrictEqual(
 				Arr.map(targets, (target) => target.id),
 				[healthy.id],
@@ -564,7 +567,7 @@ describe("UptimeMonitorsService", () => {
 						createdBy: USER,
 					})
 					const url = monitor.heartbeatUrl ?? ""
-					const token = Str.slice(url.lastIndexOf("/") + 1)(url)
+					const token = tokenOf(url)
 					yield* service.recordPing(token, true)
 					const ruleId = monitor.alertRuleId
 					if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
@@ -641,7 +644,7 @@ describe("UptimeMonitorsService", () => {
 					createdBy: USER,
 				})
 				const url = monitor.heartbeatUrl ?? ""
-				yield* service.recordPing(Str.slice(url.lastIndexOf("/") + 1)(url), true)
+				yield* service.recordPing(tokenOf(url), true)
 				yield* Ref.set(target, monitor.id)
 				// Pinged at 0 every 300 s with 60 s grace: overdue at 1000 s. The read runs at 2, the write at 1.
 				yield* Ref.set(countdown, 2)
@@ -677,7 +680,7 @@ describe("UptimeMonitorsService", () => {
 					createdBy: USER,
 				})
 				const url = monitor.heartbeatUrl ?? ""
-				const token = Str.slice(url.lastIndexOf("/") + 1)(url)
+				const token = tokenOf(url)
 				// Another ping lands between this ping's read (call 1) and write (call 2).
 				yield* racing.arm(2, Effect.orDie(service.recordPing(token, true)))
 				yield* service.recordPing(token, true)
@@ -786,8 +789,8 @@ describe("UptimeMonitorsService", () => {
 			})
 			const url = monitor.heartbeatUrl ?? ""
 			assert.match(url, /^https:\/\/api\.maple\.test\/hb\/[A-Za-z0-9_-]{22,}$/u)
-			const token = Str.slice(url.lastIndexOf("/") + 1)(url)
-			assert.deepStrictEqual(yield* service.listProbeTargets(), [])
+			const token = tokenOf(url)
+			assert.deepStrictEqual(yield* service.listProbeTargets, [])
 
 			yield* service.recordPing(token, true)
 			const up = yield* service.get(ORG, monitor.id)
@@ -864,9 +867,9 @@ describe("UptimeMonitorsService", () => {
 				{ concurrency: 2 },
 			)
 			assert.strictEqual(Arr.filter(results, Result.isSuccess).length, 1)
-			const refused = results.find(Result.isFailure)
+			const refused = Arr.findFirst(results, Result.isFailure)
 			assert.strictEqual(
-				refused === undefined ? null : refused.failure._tag,
+				Option.match(refused, { onNone: () => null, onSome: (failed) => failed.failure._tag }),
 				"@maple/http/errors/UptimeMonitorLimitReachedError",
 			)
 			assert.strictEqual((yield* service.list(ORG)).length, 1)
@@ -1178,5 +1181,152 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorValidationError")
 			assert.include(error.message, "never runs")
 		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	describe("request headers at rest", () => {
+		interface StoredHeaders {
+			readonly config_headers: string
+			readonly headers_ciphertext: string | null
+		}
+		const storedHeaders = (testDb: TestDb, id: UptimeMonitorId) =>
+			Effect.promise(() =>
+				queryFirstRow<StoredHeaders>(
+					testDb,
+					`select (config_json -> 'headers')::text as config_headers, headers_ciphertext
+					 from uptime_monitors where id = $1`,
+					[id],
+				),
+			)
+		const headersOf = (config: UptimeMonitorConfig) => (config._tag === "http" ? config.headers : null)
+		const SECRET = { Authorization: "Bearer s3cr3t-value", "X-Api-Key": "key-123" }
+
+		it.effect("stores header values sealed, and hands them back to the editor and the probe", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(undefined, { headers: SECRET }),
+					createdBy: USER,
+				})
+
+				const stored = yield* storedHeaders(testDb, monitor.id)
+				assert.strictEqual(stored?.config_headers, "{}")
+				assert.isTrue(Str.startsWith("v2.")(stored?.headers_ciphertext ?? ""))
+				const dump = yield* Effect.promise(() =>
+					queryFirstRow<{ readonly row: string }>(
+						testDb,
+						"select row_to_json(m)::text as row from uptime_monitors m where id = $1",
+						[monitor.id],
+					),
+				)
+				assert.notInclude(dump?.row ?? "", "s3cr3t-value")
+				assert.notInclude(dump?.row ?? "", "key-123")
+
+				assert.deepStrictEqual(headersOf(monitor.config), SECRET)
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), SECRET)
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), SECRET)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("replaces and clears the sealed headers on update", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(undefined, { headers: SECRET }),
+					createdBy: USER,
+				})
+				const before = yield* storedHeaders(testDb, monitor.id)
+
+				const changed = yield* service.update(ORG, monitor.id, {
+					updatedBy: USER,
+					config: httpConfig(undefined, { headers: { Authorization: "Bearer rotated" } }),
+				})
+				assert.deepStrictEqual(headersOf(changed.config), { Authorization: "Bearer rotated" })
+				const after = yield* storedHeaders(testDb, monitor.id)
+				assert.notStrictEqual(after?.headers_ciphertext, before?.headers_ciphertext)
+
+				const cleared = yield* service.update(ORG, monitor.id, {
+					updatedBy: USER,
+					config: httpConfig(),
+				})
+				assert.deepStrictEqual(headersOf(cleared.config), {})
+				assert.deepStrictEqual(yield* storedHeaders(testDb, monitor.id), {
+					config_headers: "{}",
+					headers_ciphertext: null,
+				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("does not open headers copied onto another org's monitor", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const victim = yield* service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(undefined, { headers: SECRET }),
+					createdBy: USER,
+				})
+				const thief = yield* service.create(OTHER_ORG, {
+					name: "Mine",
+					kind: "http",
+					config: httpConfig("https://thief.example.net/collect"),
+					createdBy: USER,
+				})
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors t
+						 set headers_ciphertext = v.headers_ciphertext, headers_iv = v.headers_iv,
+							headers_tag = v.headers_tag
+						 from uptime_monitors v where v.id = $1 and t.id = $2`,
+						[victim.id, thief.id],
+					),
+				)
+
+				const error = yield* Effect.flip(service.get(OTHER_ORG, thief.id))
+				assert.strictEqual(error._tag, "@maple/http/errors/UptimeMonitorPersistenceError")
+				const targets = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					Arr.map(targets, (target) => target.id),
+					[victim.id],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("sends only sealed headers, and warns about ones written into the config", () => {
+			const testDb = createTestDb(trackedDbs)
+			const warnings: Array<string> = []
+			const captureWarnings = Logger.layer([
+				Logger.make(({ message, logLevel }) => {
+					if (logLevel === "Warn") warnings.push(String(message))
+				}),
+			])
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("Old")
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						`update uptime_monitors
+						 set config_json = jsonb_set(config_json, '{headers}', $1::jsonb) where id = $2`,
+						[JSON.stringify(SECRET), monitor.id],
+					),
+				)
+
+				assert.deepStrictEqual(headersOf((yield* service.get(ORG, monitor.id)).config), {})
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(target === undefined ? null : headersOf(target.config), {})
+				assert.deepStrictEqual(Arr.dedupe(warnings), [
+					"Uptime monitor has request headers outside the sealed columns",
+				])
+			}).pipe(Effect.provide(Layer.merge(makeLayer(testDb), captureWarnings)))
+		})
 	})
 })

@@ -1,13 +1,11 @@
-import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { icon } from "@maple/views/ui/icon"
-import type { FlowStage } from "../../integrations/flow"
+import { answerTrail } from "@maple/views/ui/answer-trail"
+import type { FlowStage } from "../../integrations/embed"
 import { platformMeta } from "../kit/platforms"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { flowSpecOf, isReceiving } from "./update"
 import { integrationMeta } from "./view-picker"
-import { hstackClass } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
 // The connect flow's progress: one line under the title. A finished step shows its answer, not its name.
@@ -64,42 +62,5 @@ export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
 	return [current("Source"), next("Connect"), next("Go live")]
 }
 
-const ITEM_CLASS = {
-	done: "text-muted-foreground",
-	current: "text-foreground border-primary border-b pb-0.5 font-medium",
-	next: "text-muted-foreground",
-	blocked: "text-severity-warn border-severity-warn border-b pb-0.5 font-medium",
-} satisfies Record<TrailItem["state"], string>
-
-const item = (h: H, entry: TrailItem): Html =>
-	h.li(
-		[
-			h.Class(cn(hstackClass({ gap: "1.5", inline: true }), ITEM_CLASS[entry.state])),
-			...(entry.state === "current" || entry.state === "blocked" ? [h.AriaCurrent("step")] : []),
-		],
-		[
-			...(entry.state === "done"
-				? [icon(h, "CheckIcon", { size: 12, className: "text-severity-info" })]
-				: entry.state === "blocked"
-					? [icon(h, "AlertWarningIcon", { size: 12, className: "text-severity-warn" })]
-					: []),
-			entry.label,
-		],
-	)
-
 export const trail = (h: H, model: Model): Html =>
-	h.ol(
-		[h.AriaLabel("Setup progress"), h.Class("flex flex-wrap items-center gap-2 font-mono text-xs")],
-		Arr.flatMap(trailOf(model), (entry, index) =>
-			index === 0
-				? [item(h, entry)]
-				: [
-						// An arrow, not a slash: the steps are a flow, not a path back up.
-						h.li(
-							[h.AriaHidden(true), h.Class("inline-flex text-foreground-subtle")],
-							[icon(h, "ArrowRightIcon", { size: 12 })],
-						),
-						item(h, entry),
-					],
-		),
-	)
+	answerTrail(h, { label: "Setup progress", steps: trailOf(model) })

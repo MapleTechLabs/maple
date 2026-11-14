@@ -11,9 +11,9 @@ import {
 } from "@maple/views/data/load-failure"
 import { errorState } from "@maple/views/ui/error-state"
 import * as Select from "@maple/views/ui/select"
-import * as SelectView from "@maple/views/ui/select-view"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
+import { environmentSwitcher } from "../kit/environment-switcher"
 import { signalEmptyState } from "../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { timeControls } from "../kit/time-controls"
@@ -33,6 +33,8 @@ import { usageCards } from "./view-usage"
 
 import { Message as SetupMessage } from "./setup-checklist"
 import * as SetupChecklistView from "./setup-checklist-view"
+import { EMPTY as ANALYST_EMPTY } from "./analyst/update"
+import * as AnalystView from "./analyst/view"
 import { hstack } from "@maple/views/ui/stack"
 
 const EMPTY_COLORS = {}
@@ -42,7 +44,7 @@ type H = HtmlBuilder<Message>
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 const toSelect = (message: Select.Message) => Message.GotEnvironmentSelectMessage({ message })
 
-/** The header: the environment `Select`, then `TimeRangeHeaderControls`, in one row. */
+/** The header: the environment select, then the time range controls, in one row. */
 const headerActions = (h: H, model: Model): Html => {
 	const preset = defaultPreset(model)
 	const controls = timeControls(h, {
@@ -67,31 +69,24 @@ const headerActions = (h: H, model: Model): Html => {
 				},
 			}),
 	})
-	return h.submodel({
-		slotId: "environment-select",
-		// The value follows the URL and facets (`selectedEnvironment`), not the trigger's last pick.
-		model: { ...model.environmentSelect, value: selectedEnvironment(model) },
-		view: SelectView.view,
-		toParentMessage: toSelect,
-		viewInputs: {
-			entries: Arr.map(environmentItems(model), (item): SelectView.SelectEntry => ({
-				_tag: "Item",
-				item,
-			})),
-			size: "sm",
-			toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
-		},
+	return environmentSwitcher(h, {
+		select: model.environmentSelect,
+		value: selectedEnvironment(model),
+		entries: environmentItems(model),
+		toMessage: toSelect,
+		toView: (parts) => hstack(h, { gap: "2" }, [...parts, controls]),
 	})
 }
 
-/** `ServiceHealthList`'s empty state; skeleton until the page-init presence read settles. */
-const servicesEmptyState = (h: H, model: Model): Html =>
+/** The health list's empty state; skeleton until the page-init presence read settles. */
+const servicesEmptyState = (h: H, model: Model, timeZone: string): Html =>
 	signalEmptyState(h, {
 		signal: "traces",
 		noun: "services",
 		guideDocs: "services",
 		presence: presenceOf(model.presence, "traces"),
 		nowMs: model.nowMs ?? 0,
+		timeZone,
 		className: "py-8",
 	})
 
@@ -122,6 +117,15 @@ const pageFailures = (model: Model): ReadonlyArray<PageFailure> => {
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
+	// The role can arrive after `init`: until the page's Mount starts its reads, it draws its skeletons.
+	if (inputs.context.audience === "analyst")
+		return h.submodel({
+			slotId: "analyst-home",
+			model: model.analyst ?? ANALYST_EMPTY,
+			view: AnalystView.view,
+			viewInputs: inputs,
+			toParentMessage: (message) => Message.GotAnalystMessage({ message }),
+		})
 	const slice: SliceSearch = {
 		startTime: model.window?.startTime,
 		endTime: model.window?.endTime,
@@ -168,7 +172,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					model,
 					slice,
 					nowMs,
-					emptyState: servicesEmptyState(h, model),
+					emptyState: servicesEmptyState(h, model, inputs.context.timeZone),
 					isNeverReceived: presenceOf(model.presence, "traces").status === "absent",
 				}),
 			]),

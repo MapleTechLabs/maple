@@ -51,6 +51,18 @@ import { migration_0049_service_map_db_edges_minutely } from "./0049_service_map
 import { migration_0050_security_telemetry } from "./0050_security_telemetry"
 import { migration_0051_error_fingerprint_fuzz_fixes } from "./0051_error_fingerprint_fuzz_fixes"
 import { migration_0052_error_fingerprint_json_frames } from "./0052_error_fingerprint_json_frames"
+import { migration_0053_error_fingerprint_interleaved_values } from "./0053_error_fingerprint_interleaved_values"
+import { migration_0054_error_custom_fingerprint } from "./0054_error_custom_fingerprint"
+import { migration_0055_error_fingerprint_v4 } from "./0055_error_fingerprint_v4"
+import { migration_0056_user_activity_hourly } from "./0056_user_activity_hourly"
+import { migration_0057_error_events_user_id } from "./0057_error_events_user_id"
+import { migration_0058_user_activity_channels } from "./0058_user_activity_channels"
+import { migration_0059_service_overview_slo_latency_ladder } from "./0059_service_overview_slo_latency_ladder"
+import { migration_0060_search_console_daily } from "./0060_search_console_daily"
+import { migration_0061_error_events_blank_event_fingerprint } from "./0061_error_events_blank_event_fingerprint"
+import { migration_0062_scanner_autonomous_agents } from "./0062_scanner_autonomous_agents"
+import { migration_0063_cost_daily } from "./0063_cost_daily"
+import { migration_0064_audit_trail_events } from "./0064_audit_trail_events"
 import { Array as Arr } from "effect"
 
 /**
@@ -135,6 +147,18 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0050_security_telemetry,
 	migration_0051_error_fingerprint_fuzz_fixes,
 	migration_0052_error_fingerprint_json_frames,
+	migration_0053_error_fingerprint_interleaved_values,
+	migration_0054_error_custom_fingerprint,
+	migration_0055_error_fingerprint_v4,
+	migration_0056_user_activity_hourly,
+	migration_0057_error_events_user_id,
+	migration_0058_user_activity_channels,
+	migration_0059_service_overview_slo_latency_ladder,
+	migration_0060_search_console_daily,
+	migration_0061_error_events_blank_event_fingerprint,
+	migration_0062_scanner_autonomous_agents,
+	migration_0063_cost_daily,
+	migration_0064_audit_trail_events,
 ] as const
 
 /** Highest migration `version` bundled — i.e. the schema level a fully-applied

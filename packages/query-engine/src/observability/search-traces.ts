@@ -4,7 +4,7 @@ import type { SpanSearchOutput } from "../ch"
 
 /** A `span_search` row as the pipe returns it: pipes re-encode timestamps to the wire string. */
 type SpanSearchWireRow = Omit<SpanSearchOutput, "timestamp"> & { readonly timestamp: string }
-import type { ListTracesOutput } from "@maple/domain/tinybird"
+import type { ListTracesRow } from "../ch/pipe-rows"
 import { WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
 import {
 	WarehouseExecutor,
@@ -159,7 +159,8 @@ const spanLevelSearch = (
 		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
 		...(input.httpMethod && { http_method: input.httpMethod }),
 		...(input.traceId && { trace_id: input.traceId }),
-		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
+		...(input.attributeFilters !== undefined &&
+			input.attributeFilters.length > 0 && { attribute_filters: input.attributeFilters }),
 		...(input.resourceAttributeFilter && {
 			resource_attribute_filters: [{ ...input.resourceAttributeFilter, mode: "equals" }],
 		}),
@@ -222,7 +223,7 @@ const rootLevelSearch = (
 	}
 
 	return Effect.map(
-		executor.query<ListTracesOutput>("list_traces", params, { profile: "list" }),
+		executor.query<ListTracesRow>("list_traces", params, { profile: "list" }),
 		(result): ReadonlyArray<SpanResult> => pipe(result.data, Arr.map(toSpanResult)),
 	)
 }

@@ -1,17 +1,13 @@
 import type { ErrorIssueDocument, VcsCommitRangeResponse } from "@maple/domain/http"
 import { formatPercent } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
-import {
-	NEW_ISSUE_SLACK_MS,
-	shortReleaseLabel,
-	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
-import { errorIssueFromV2 } from "../../../lib/services/error-issues"
+import { NEW_ISSUE_SLACK_MS, shortReleaseLabel, type ReleaseServiceImpact } from "../release-model"
+import { errorIssueFromV2 } from "../../../data/error-issues"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
-import { MountLinkedCursor } from "@maple/views/charts/linked-cursor"
+import { MountLinkedZoom } from "@maple/views/charts/linked-cursor"
 import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
 import { linkButton } from "@maple/views/ui/button"
@@ -23,13 +19,14 @@ import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLinkClass } from "@maple/views/ui/text-link"
 import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { CHART_TOKENS, metricsGridOf } from "../../services/detail/view-charts"
-import { commitRangesKey, isResolvableSha, releaseHealthFigure, withQueryOrder } from "../kit"
+import { commitRangesKey, releaseHealthFigure, withQueryOrder } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
+import * as ReleaseOverlays from "../overlays"
 import { Message } from "./message"
 import type { Model } from "./model"
 import {
 	baselineOf,
+	commitsOf,
 	derivedOf,
 	FINGERPRINT_LIMIT,
 	markersOf,
@@ -41,6 +38,8 @@ import { type ChangesetState, type Clock, issueList, releaseChangeset, sectionCa
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
+import { isResolvableSha } from "../../kit/commit-card"
+import { CHART_TOKENS, metricsGridOf } from "../../kit/service-metrics/grid"
 
 // The release body for one service (`?service=`) and its issues panel.
 
@@ -52,7 +51,7 @@ const timeSearchOf = (model: Model) => ({
 	timePreset: model.search.timePreset,
 })
 
-/** `ReleaseChangeset`'s state for `base..head`, off the changeset slot. */
+/** The changeset's state for `base..head`, off the changeset slot. */
 export const changesetState = (model: Model, base: string | undefined): ChangesetState => {
 	if (base === undefined) return { _tag: "NoBase" }
 	if (commitRangesKey([{ base, head: model.commitSha }]) === "") return { _tag: "NotShas" }
@@ -106,7 +105,7 @@ export const overlaysOf = (model: Model, clock: Clock): Overlays<Message> => ({
 	clock,
 })
 
-/** `ReleaseMeta`: author, repo and the provider link once the sha resolves. */
+/** Author, repo and the provider link once the sha resolves. */
 const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 	if (!isResolvableSha(model.commitSha)) return [h.span([], ["deployment reference"])]
 	return Option.match(AsyncData.getData(model.commit.data), {
@@ -116,7 +115,7 @@ const releaseMeta = (h: H, model: Model, clock: Clock): ReadonlyArray<Html> => {
 			]),
 		],
 		onSome: (commit) => [
-			h.span([h.Class("truncate")], [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
+			typography(h, { truncate: true }, [commit.authorLogin ?? commit.authorName ?? "Unknown author"]),
 			typography(h, { tone: "subtle", truncate: true }, [commit.repoFullName]),
 			h.a(
 				[
@@ -138,8 +137,9 @@ const metaLine = (
 	serviceName: string,
 	clock: Clock,
 ): Html =>
-	h.div(
-		[h.Class("flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground")],
+	hstack(
+		h,
+		{ align: "center", wrap: true, className: "gap-x-3 gap-y-1 px-0.5 text-xs text-muted-foreground" },
 		[
 			...releaseMeta(h, model, clock),
 			h.span(
@@ -183,7 +183,7 @@ type Split = Readonly<{
 	ongoing: Array<ErrorIssueDocument>
 }>
 
-/** `splitReleaseIssues`: new with this version, fixed and back, or already open. */
+/** New with this version, fixed and back, or already open. */
 const splitIssues = (issues: ReadonlyArray<ErrorIssueDocument>, releaseFirstSeen: string): Split => {
 	const cutoff = toEpochMs(releaseFirstSeen) - NEW_ISSUE_SLACK_MS
 	const isFresh = (issue: ErrorIssueDocument) => toEpochMs(issue.firstSeenAt) >= cutoff
@@ -239,7 +239,7 @@ const issueLists = (
 
 const NO_SPLIT: Split = { fresh: [], regressed: [], ongoing: [] }
 
-/** `ReleaseIssuesPanel`: every fingerprint this version carried, split against its first-seen. */
+/** Every fingerprint this version carried, split against its first-seen. */
 const issuesPanel = (
 	h: H,
 	model: Model,
@@ -299,7 +299,7 @@ const seriesBar = (h: H, model: Model, serviceName: string): Html => {
 		model.series === "version"
 			? `Only spans that carried ${shortReleaseLabel(model.commitSha)}`
 			: baseline === undefined
-				? `Every other version of ${serviceName} in the window`
+				? `Every other version of ${serviceName} in this window`
 				: `Only spans that carried ${shortReleaseLabel(baseline)}, the version it replaced`
 	return hstack(h, { gap: "3", justify: "between" }, [
 		segmentedSelect(h, {
@@ -335,7 +335,7 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 		return vstack(h, { gap: "3" }, [
 			panel(h, {}, [
 				emptyMessage(h, { className: "text-sm" }, [
-					h.span([h.Class("font-mono")], [shortReleaseLabel(model.commitSha)]),
+					typography(h, { mono: true }, [shortReleaseLabel(model.commitSha)]),
 					` served no traffic on ${serviceName} in this window. Widen the time range to include its deploy.`,
 				]),
 			]),
@@ -354,8 +354,17 @@ const loadedBody = (h: H, model: Model, derived: ServiceDerived, serviceName: st
 				charts: model.charts,
 				rows: Arr.map(seriesPoints(model, derived), (point) => ({ ...point })),
 				markers: markersOf(model, derived),
+				markerCard: {
+					model: model.overlays.markerCard,
+					toParent: (message) =>
+						Message.GotOverlaysMessage({
+							message: ReleaseOverlays.Message.GotMarkerCardMessage({ message }),
+						}),
+					commits: commitsOf(model),
+					clock,
+				},
 				toChartMessage: (chartId, message) => Message.GotChartMessage({ chartId, message }),
-				linkedCursorMount: MountLinkedCursor(),
+				linkedCursorMount: MountLinkedZoom({ timeZone: clock.timeZone }),
 			},
 			{
 				isLoading: !isChartReady,
@@ -393,7 +402,7 @@ const detailState = (h: H, model: Model, serviceName: string, clock: Clock): Htm
 	})
 }
 
-/** `ReleaseBody`: a skeleton until the list answers the baseline, then the detail bundle. */
+/** A skeleton until the list answers the baseline, then the detail bundle. */
 export const serviceBody = (h: H, model: Model, serviceName: string, clock: Clock): Html =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: CHART_TOKENS }))],

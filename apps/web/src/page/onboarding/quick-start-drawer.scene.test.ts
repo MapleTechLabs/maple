@@ -5,7 +5,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, Mount, role, scene, text } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import type { StackPlatform } from "../../lib/onboarding-stack"
+import type { StackPlatform } from "./onboarding-stack"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Tabs from "@maple/views/ui/tabs"
 import type { PageContext } from "../contract"
@@ -61,7 +61,7 @@ const tabsMeasured = () =>
 const toFlow = (message: FlowMessage, instance: number | null = 1) =>
 	Message.GotDrawerMessage({ message: DrawerMessage.GotFlowMessage({ instance, message }) })
 
-const created = Schema.decodeUnknownSync(V2SourceWithSecret)({
+const created = Schema.decodeSync(V2SourceWithSecret)({
 	id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000011"),
 	object: "source",
 	name: "Kubernetes",

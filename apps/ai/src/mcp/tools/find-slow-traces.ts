@@ -6,7 +6,6 @@ import { formatDurationFromMs, toSecondTimestamp, truncate } from "../lib/format
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import { Effect, Schema, Array as Arr } from "effect"
-import { FindSlowTracesOutput } from "@maple/domain/mcp-outputs"
 import { findSlowTraces } from "@maple/query-engine/observability"
 
 const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
@@ -24,7 +23,6 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 			limit: P.limit({ default: 10, max: 100, noun: "traces" }),
 		}),
 		aliases: P.SERVICE_ALIASES,
-		output: FindSlowTracesOutput,
 		hints: { readOnly: true },
 		phrases: ["Finding slow traces", "Looking for slow requests"],
 		handler: Effect.fn("McpTool.findSlowTraces")(function* (params) {

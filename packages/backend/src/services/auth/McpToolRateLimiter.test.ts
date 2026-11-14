@@ -2,7 +2,6 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import { McpToolsRateLimit, type RateLimiter } from "@maple/backend/platform/bindings"
 import { testEnv } from "@maple/backend/services/integrations/vcs/__tests__/harness"
-import { makeApiV2RateLimitKey } from "./ApiV2RateLimiter"
 import { McpToolRateLimiter } from "./McpToolRateLimiter"
 
 describe("McpToolRateLimiter", () => {
@@ -19,7 +18,7 @@ describe("McpToolRateLimiter", () => {
 		return Effect.gen(function* () {
 			const limiter = yield* McpToolRateLimiter
 			expect(yield* limiter.check("key:abc")).toBe("limited")
-			expect(keys).toEqual([makeApiV2RateLimitKey("stg", "key:abc")])
+			expect(keys).toEqual(["stg:key:abc"])
 		}).pipe(
 			Effect.provide(
 				McpToolRateLimiter.layer.pipe(

@@ -18,9 +18,7 @@ import { serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
 import { typographyClass } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
-
-// The issue occurrences table.
+import { Array as Arr, String as Str } from "effect"
 
 export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string }>
 
@@ -45,7 +43,6 @@ const occurrenceRow = <M>(
 						value: trace.timestamp,
 						nowMs: inputs.nowMs,
 						timeZone: inputs.timeZone,
-						tooltip: "title",
 					}),
 				],
 				typographyClass({ tone: "muted", numeric: true }),
@@ -58,7 +55,7 @@ const occurrenceRow = <M>(
 			]),
 			truncatedTableCell(h, [
 				truncatedText(h, { text: trace.exceptionMessage }, [
-					trace.exceptionMessage.split("\n", 1)[0] ?? "",
+					Arr.headNonEmpty(Str.split("\n")(trace.exceptionMessage)),
 				]),
 			]),
 			tableCell(h, [

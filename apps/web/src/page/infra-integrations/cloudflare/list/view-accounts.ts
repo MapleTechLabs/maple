@@ -1,4 +1,4 @@
-import type { AccountTone, CloudflareAccount } from "../../../../components/infra/cloudflare/accounts"
+import type { AccountTone, CloudflareAccount } from "../accounts"
 import { formatPercentColumn } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -10,7 +10,8 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import { Message } from "./model"
 import { ALL_ACCOUNTS, MANAGE_ACCOUNTS } from "./update"
 import { hstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
+import { typography } from "@maple/views/ui/typography"
 
 // Multi-account Cloudflare: these only render with two or more accounts; a single-account org keeps
 // a plain chip.
@@ -24,8 +25,8 @@ const TONE_TEXT = {
 } as const satisfies Record<AccountTone, string>
 
 /**
- * `CloudflareAccountMenu`. TODO(menu): each account wants a health dot and a second line
- * (zones, health); the menu's radio entries are text, so both ride in the label.
+ * TODO(menu): each account wants a health dot and a second line (zones, health); the menu's radio
+ * entries are text, so both ride in the label.
  */
 export const accountMenu = (
 	h: H,
@@ -33,7 +34,7 @@ export const accountMenu = (
 	accounts: ReadonlyArray<CloudflareAccount>,
 	value: string | undefined,
 ): Html => {
-	const selected = accounts.find((account) => account.accountId === value)
+	const selected = Arr.findFirst(accounts, (account) => account.accountId === value)
 	return h.submodel({
 		slotId: "cloudflare-account-menu",
 		model: menu,
@@ -70,8 +71,11 @@ export const accountMenu = (
 								attributes: [h.DataAttribute("slot", "badge"), ...trigger],
 							},
 							heroFieldChipParts(h, {
-								label: selected === undefined ? "accounts" : "account",
-								value: selected === undefined ? `All ${accounts.length}` : selected.name,
+								label: Option.isNone(selected) ? "accounts" : "account",
+								value: Option.match(selected, {
+									onNone: () => `All ${accounts.length}`,
+									onSome: (account) => account.name,
+								}),
 								isPicker: true,
 							}),
 						),
@@ -81,7 +85,7 @@ export const accountMenu = (
 	})
 }
 
-/** `CloudflareAccountsStrip`: one cell per account, a scope like the band's cells. */
+/** One cell per account, a scope like the band's cells. */
 export const accountsStrip = (
 	h: H,
 	accounts: ReadonlyArray<CloudflareAccount>,
@@ -104,7 +108,9 @@ export const accountsStrip = (
 				[
 					hstack(h, { gap: "2", as: "span" }, [
 						statusDot(h, { tone: account.health.tone }),
-						h.span([h.Class("truncate text-xs font-medium text-foreground")], [account.name]),
+						typography(h, { size: "xs", tone: "foreground", weight: "medium", truncate: true }, [
+							account.name,
+						]),
 						h.span(
 							[h.Class("ml-auto font-mono text-2xs tabular-nums text-foreground")],
 							[formatPercentColumn(fraction)],
@@ -132,7 +138,7 @@ export const accountsStrip = (
 		}),
 	)
 
-/** `CloudflareAccountHealthLine`: scoped to one account, and only when something is wrong. */
+/** Scoped to one account, and only when something is wrong. */
 export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null =>
 	account.health.tone === "ok"
 		? null
@@ -147,11 +153,8 @@ export const accountHealthLine = (h: H, account: CloudflareAccount): Html | null
 				],
 				[
 					statusDot(h, { tone: account.health.tone }),
-					h.span(
-						[h.Class("text-foreground")],
-						[
-							`${account.name}: ${account.health.message}. Its numbers stop at the last sync; the gap is missing data.`,
-						],
-					),
+					typography(h, { tone: "foreground" }, [
+						`${account.name}: ${account.health.message}. Its numbers stop at the last sync; the gap is missing data.`,
+					]),
 				],
 			)

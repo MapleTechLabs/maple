@@ -1,13 +1,15 @@
+import type { RequestMode } from "@maple/views/data/keyed"
 import { Option, Result, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
+import { integrationStatusKey } from "../../../kit/integration-status-keys"
 import type { TimeWindow } from "../../../../data/time-range"
 import { AppRoute, hrefOf } from "../../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../../contract"
 import { routeWindowStep, snapModeOf } from "../../../kit/route-window"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
-import { stepTimePicker, withPreset } from "../../kit/page-time"
+import { stepTimePicker, withPreset } from "../../../kit/page-time"
 import { requestSlot } from "../../kit/slot"
 import { FLEET_INSIGHTS_LIMIT } from "../data"
 import type { SupabaseStatus } from "../model"
@@ -19,7 +21,7 @@ import {
 	LoadStatus,
 	ResolveWindow,
 } from "./command"
-import { Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
@@ -36,7 +38,7 @@ const resolveCommand = (model: Model, context: PageContext, mode: RequestMode) =
 		timeZone: context.timeZone,
 	})
 
-const statusKey = (context: PageContext) => requestKey(context.orgId, "integrations.supabaseStatus", {})
+const statusKey = (context: PageContext) => integrationStatusKey(context.orgId, "supabase")
 
 const connectedStatus = (model: Model): SupabaseStatus | null =>
 	Option.match(AsyncData.getData(model.status.data), {

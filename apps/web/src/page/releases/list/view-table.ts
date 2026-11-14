@@ -9,23 +9,33 @@ import {
 	type ReleaseGroup,
 	type ReleaseIssueCounts,
 	type ReleaseServiceImpact,
-} from "../../../components/releases/release-model"
+} from "../release-model"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { panel } from "@maple/views/ui/panel"
-import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
+import {
+	table,
+	tableBody,
+	tableCell,
+	tableGroupRow,
+	tableHead,
+	tableHeader,
+	tableRow,
+} from "@maple/views/ui/table"
 import { emptyValue, errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
 import { relativeTime } from "../../kit/relative-time"
-import { commitAvatar, isResolvableSha, firstLine, releaseHealthFigure, releaseHref } from "../kit"
+import { releaseHealthFigure, releaseHref } from "../kit"
 import { commitTrigger, type Overlays, releaseHealthPill } from "../overlays-view"
 import { MountReleasesTable } from "./command"
 import { Message } from "./message"
 import type { TimeSearch } from "./view-overview"
+import { textLink } from "@maple/views/ui/text-link"
 import { typography, typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
+import { commitAvatar, isResolvableSha, firstLine } from "../../kit/commit-card"
 
 // The releases table and its commit count.
 
@@ -33,8 +43,15 @@ type H = HtmlBuilder<Message>
 
 /** "0.30% → 1.24%": the version it replaced, then this one. */
 const baselineShift = (h: H, baseline: string | undefined, current: Html): Html =>
-	h.span(
-		[h.Class("inline-flex items-baseline gap-1 font-mono text-xs tabular-nums")],
+	hstack(
+		h,
+		{
+			gap: "1",
+			align: "baseline",
+			inline: true,
+			as: "span",
+			className: typographyClass({ mono: true, size: "xs", numeric: true }),
+		},
 		[
 			...(baseline === undefined
 				? []
@@ -75,14 +92,19 @@ const issueCounts = (h: H, counts: ReleaseIssueCounts | undefined | null): Html 
 	if (counts === null) return null
 	if (counts === undefined || (counts.fresh === 0 && counts.regressed === 0))
 		return emptyValue(h, typographyClass({ size: "xs", mono: true }))
-	return h.span(
-		[h.Class("inline-flex items-baseline gap-2 whitespace-nowrap font-mono text-xs tabular-nums")],
+	return hstack(
+		h,
+		{
+			gap: "2",
+			align: "baseline",
+			inline: true,
+			as: "span",
+			className: "whitespace-nowrap font-mono text-xs tabular-nums",
+		},
 		[
-			...(counts.fresh > 0
-				? [h.span([h.Class("text-severity-error")], [String(counts.fresh), " new"])]
-				: []),
+			...(counts.fresh > 0 ? [typography(h, { tone: "error" }, [String(counts.fresh), " new"])] : []),
 			...(counts.regressed > 0
-				? [h.span([h.Class("text-severity-warn")], [String(counts.regressed), " regressed"])]
+				? [typography(h, { tone: "warning" }, [String(counts.regressed), " regressed"])]
 				: []),
 		],
 	)
@@ -93,7 +115,7 @@ const NAMED_SERVICES = 3
 const serviceChip = (h: H, serviceName: string, className: string): Html =>
 	h.span(
 		[h.Key(serviceName), h.Class(className), h.Title(serviceName)],
-		[serviceDot(h, { serviceName }), h.span([h.Class("truncate")], [serviceName])],
+		[serviceDot(h, { serviceName }), typography(h, { truncate: true }, [serviceName])],
 	)
 
 const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html => {
@@ -107,10 +129,16 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 				),
 			),
 		]
-		return h.span(
-			[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground")],
+		return hstack(
+			h,
+			{
+				align: "center",
+				wrap: true,
+				as: "span",
+				className: "gap-x-2 gap-y-0.5 text-xs text-muted-foreground",
+			},
 			[
-				h.span([h.Class("tabular-nums")], [String(names.length), " services"]),
+				typography(h, { numeric: true }, [String(names.length), " services"]),
 				...Arr.map(flagged.slice(0, 2), (name) =>
 					serviceChip(h, name, "inline-flex min-w-0 max-w-56 items-center gap-1"),
 				),
@@ -120,8 +148,9 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 			],
 		)
 	}
-	return h.span(
-		[h.Class("flex flex-wrap items-center gap-x-2 gap-y-0.5")],
+	return hstack(
+		h,
+		{ align: "center", wrap: true, as: "span", className: "gap-x-2 gap-y-0.5" },
 		Arr.map(names, (name) =>
 			serviceChip(
 				h,
@@ -132,12 +161,13 @@ const serviceChips = (h: H, services: ReadonlyArray<ReleaseServiceImpact>): Html
 	)
 }
 
-/** `CommitCount`: "12 commits", only when a deploy carried more than its head commit. */
+/** "12 commits", only when a deploy carried more than its head commit. */
 export const commitCount = (h: H, range: VcsCommitRangeResponse | undefined): Html | null =>
 	range === undefined || range.totalCount < 2
 		? null
-		: h.span(
-				[h.Class("tabular-nums"), h.Title(`Commits since ${shortReleaseLabel(range.base)}`)],
+		: typography(
+				h,
+				{ numeric: true, attributes: [h.Title(`Commits since ${shortReleaseLabel(range.base)}`)] },
 				[String(range.totalCount), range.truncated ? "+" : "", " commits"],
 			)
 
@@ -151,61 +181,46 @@ const releaseTitle = (
 ): Html => {
 	const author = commit?.authorLogin ?? commit?.authorName ?? undefined
 	const count = commitCount(h, range)
-	return h.div(
-		[h.Class("flex min-w-0 items-start gap-2.5")],
-		[
-			h.div(
-				[h.Class("mt-0.5 shrink-0")],
-				[
-					commit
-						? commitAvatar(h, commit.authorAvatarUrl, author ?? "Unknown author")
-						: h.span([h.Class("block size-5 rounded-full bg-muted")]),
-				],
-			),
-			h.div(
-				[h.Class("flex min-w-0 flex-col gap-0.5 leading-tight")],
-				[
-					hstack(h, { gap: "2", shrink: true }, [
-						commitTrigger(
-							h,
-							overlays,
-							"releases-list",
-							group.commitSha,
-							cn(
-								"min-w-0 truncate text-sm text-foreground",
-								commit === undefined && typographyClass({ size: "xs", mono: true }),
-							),
-							[(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha)],
-						),
-						...(group.health === "healthy"
-							? []
-							: [
-									releaseHealthPill(
-										h,
-										overlays,
-										pillId(group.commitSha),
-										group.health,
-										figure,
-									),
-								]),
-					]),
-					h.div(
-						[h.Class("flex items-center gap-1.5 text-2xs text-muted-foreground")],
-						[
-							...(commit
-								? [h.span([h.Class("font-mono")], [shortReleaseLabel(group.commitSha)])]
-								: []),
-							...(author ? [h.span([h.Class("truncate")], [author])] : []),
-							...(!commit && !isResolvableSha(group.commitSha)
-								? [h.span([], ["deployment reference"])]
-								: []),
-							...(count === null ? [] : [count]),
-						],
+	return hstack(h, { gap: "2.5", align: "start", shrink: true }, [
+		h.div(
+			[h.Class("mt-0.5 shrink-0")],
+			[
+				commit
+					? commitAvatar(h, commit.authorAvatarUrl, author ?? "Unknown author")
+					: h.span([h.Class("block size-5 rounded-full bg-muted")]),
+			],
+		),
+		vstack(h, { gap: "0.5", shrink: true, className: "leading-tight" }, [
+			hstack(h, { gap: "2", shrink: true }, [
+				commitTrigger(
+					h,
+					overlays,
+					"releases-list",
+					group.commitSha,
+					cn(
+						"min-w-0 truncate text-sm text-foreground",
+						commit === undefined && typographyClass({ size: "xs", mono: true }),
 					),
+					[(commit ? firstLine(commit.message) : "") || shortReleaseLabel(group.commitSha)],
+				),
+				...(group.health === "healthy"
+					? []
+					: [releaseHealthPill(h, overlays, pillId(group.commitSha), group.health, figure)]),
+			]),
+			hstack(
+				h,
+				{ gap: "1.5", align: "center", className: typographyClass({ size: "2xs", tone: "muted" }) },
+				[
+					...(commit ? [typography(h, { mono: true }, [shortReleaseLabel(group.commitSha)])] : []),
+					...(author ? [typography(h, { truncate: true }, [author])] : []),
+					...(!commit && !isResolvableSha(group.commitSha)
+						? [h.span([], ["deployment reference"])]
+						: []),
+					...(count === null ? [] : [count]),
 				],
 			),
-		],
-	)
+		]),
+	])
 }
 
 export type TableInput = Readonly<{
@@ -249,7 +264,6 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 			nowMs: input.nowMs,
 			timeZone: input.timeZone,
 			variant: "orDate",
-			tooltip: "title",
 		})
 	const rows = Arr.flatMap(input.groups, (group, index): ReadonlyArray<Html> => {
 		const day = releaseDayLabel(group.firstSeen, input.nowMs, input.timeZone)
@@ -262,18 +276,7 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 		const counts = input.issueCounts === undefined ? null : input.issueCounts.get(group.commitSha)
 		return [
 			...(showDay
-				? [
-						tableRow(
-							h,
-							[
-								tableCell(h, [eyebrow(h, {}, [day])], "bg-surface-sunken py-1", [
-									h.Attribute("colspan", "6"),
-								]),
-							],
-							"hover:bg-transparent active:bg-transparent",
-							[h.Key(`day:${group.commitSha}`)],
-						),
-					]
+				? [tableGroupRow(h, { colSpan: 6, key: `day:${group.commitSha}` }, [eyebrow(h, {}, [day])])]
 				: []),
 			tableRow(
 				h,
@@ -281,51 +284,46 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 					tableCell(
 						h,
 						[
-							h.div(
-								[h.Class("flex items-start gap-1")],
-								[
-									iconButton(
-										h,
-										{
-											size: "icon-2xs",
-											label: isOpen ? "Hide services" : "Show services",
-											hasTooltip: false,
-											className: cn(
-												"mt-1 text-foreground-subtle transition-transform hover:text-foreground active:text-foreground",
-												isOpen && "rotate-90",
-												group.services.length <= 1 && "invisible",
-											),
-											attributes: [
-												h.AriaExpanded(isOpen),
-												h.OnClick(
-													Message.ToggledExpanded({ commitSha: group.commitSha }),
-												),
-											],
-										},
-										[icon(h, "ChevronRightIcon")],
-									),
-									h.a(
-										[
-											h.Href(
-												href(group.commitSha, worst.serviceName, worst.environment),
-											),
-											h.Class(
-												"min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+							hstack(h, { gap: "1", align: "start" }, [
+								iconButton(
+									h,
+									{
+										size: "icon-2xs",
+										label: isOpen ? "Hide services" : "Show services",
+										hasTooltip: false,
+										className: cn(
+											"mt-1 text-foreground-subtle transition-transform hover:text-foreground active:text-foreground",
+											isOpen && "rotate-90",
+											group.services.length <= 1 && "invisible",
+										),
+										attributes: [
+											h.AriaExpanded(isOpen),
+											h.OnClick(
+												Message.ToggledExpanded({ commitSha: group.commitSha }),
 											),
 										],
-										[
-											releaseTitle(
-												h,
-												group,
-												input.commits.get(group.commitSha),
-												releaseHealthFigure(worst),
-												input.ranges.get(group.commitSha),
-												input.overlays,
-											),
-										],
-									),
-								],
-							),
+									},
+									[icon(h, "ChevronRightIcon")],
+								),
+								h.a(
+									[
+										h.Href(href(group.commitSha, worst.serviceName, worst.environment)),
+										h.Class(
+											"min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+										),
+									],
+									[
+										releaseTitle(
+											h,
+											group,
+											input.commits.get(group.commitSha),
+											releaseHealthFigure(worst),
+											input.ranges.get(group.commitSha),
+											input.overlays,
+										),
+									],
+								),
+							]),
 						],
 						"max-w-0 py-2",
 					),
@@ -341,11 +339,16 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 							hstack(h, { gap: "1.5", inline: true, as: "span" }, [
 								...(multi
 									? [
-											h.span(
-												[
-													h.Class("inline-flex"),
-													h.Title(`Worst service: ${worst.serviceName}`),
-												],
+											hstack(
+												h,
+												{
+													align: "stretch",
+													inline: true,
+													as: "span",
+													attributes: [
+														h.Title(`Worst service: ${worst.serviceName}`),
+													],
+												},
 												[serviceDot(h, { serviceName: worst.serviceName })],
 											),
 										]
@@ -389,36 +392,39 @@ export const releasesTable = (h: H, input: TableInput): Html => {
 								tableCell(
 									h,
 									[
-										h.a(
-											[
-												h.Href(
-													href(
-														group.commitSha,
-														service.serviceName,
-														service.environment,
-													),
+										textLink(
+											h,
+											{
+												href: href(
+													group.commitSha,
+													service.serviceName,
+													service.environment,
 												),
-												h.Class(
-													"inline-flex max-w-full items-center gap-2 text-xs hover:underline active:underline",
-												),
-											],
+												tone: "inherit",
+												className: "max-w-full gap-2 text-xs",
+											},
 											[
 												serviceDot(h, { serviceName: service.serviceName }),
-												h.span(
-													[
-														h.Class("min-w-0 truncate"),
-														h.Title(service.serviceName),
-													],
+												typography(
+													h,
+													{
+														truncate: true,
+														className: "min-w-0",
+														attributes: [h.Title(service.serviceName)],
+													},
 													[service.serviceName],
 												),
-												...(service.environment && !input.environments?.length
+												...(service.environment &&
+												(input.environments === undefined ||
+													input.environments.length === 0)
 													? [
-															h.span(
-																[
-																	h.Class(
-																		"min-w-0 truncate text-foreground-subtle",
-																	),
-																],
+															typography(
+																h,
+																{
+																	tone: "subtle",
+																	truncate: true,
+																	className: "min-w-0",
+																},
 																[service.environment],
 															),
 														]

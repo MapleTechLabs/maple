@@ -21,7 +21,8 @@ export const mentionOf = (userId: string): string => `@[userId:${userId}]`
  * the model as it was written.
  */
 const stripMention = (text: string, botUserId: string): string => {
-	const parts = Str.split(mentionOf(botUserId))(text).map((part, index, all) => {
+	const all = Str.split(mentionOf(botUserId))(text)
+	const parts = Arr.map(all, (part, index) => {
 		const start = index === 0 ? part : Str.replace(/^[ \t]+/u, "")(part)
 		return index === all.length - 1 ? start : Str.replace(/[ \t]+$/u, "")(start)
 	})

@@ -1,17 +1,21 @@
 import { UptimeMonitorId } from "@maple/domain"
 import type { StatusPagePreviewParams, V2StatusPageIncident } from "@maple/domain/http/v2"
 import {
+	isActiveIncident,
 	isListedIncident as isListedSnapshotIncident,
 	StatusPageDayBar,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotIncident,
 	type StatusPageTheme,
 } from "@maple/domain/status-page"
-import { renderPage } from "@maple/status-page"
+import { type PreviewComponent, renderPage } from "@maple/status-page"
 import { cn } from "@maple/ui/lib/utils"
+import { segmentedSelect } from "@maple/views/ui/segmented-select"
+import { hstack } from "@maple/views/ui/stack"
+import { typography } from "@maple/views/ui/typography"
 import { Option, Schema, Stream, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { isoMs } from "../../alerts/shared/time"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 // The live preview: the public renderer's page in a sandboxed frame, with the monitors' real
 // history, and in the editor a click on a component or incident posted back to select it.
@@ -27,7 +31,10 @@ export const PreviewHistory = Schema.Array(
 export type PreviewHistory = typeof PreviewHistory.Type
 
 /** The preview answers one component per one sent, in order: pair them back up by monitor. */
-export const historyFrom = (sent: StatusPagePreviewParams, snapshot: StatusPageSnapshot): PreviewHistory =>
+export const historyFrom = (
+	sent: StatusPagePreviewParams,
+	snapshot: StatusPagePublicSnapshot,
+): PreviewHistory =>
 	Arr.flatMap(sent.components, (component, index) => {
 		const days = snapshot.components[index]?.days ?? []
 		return component.monitor_id === null || component.monitor_id === undefined || days.length === 0
@@ -36,7 +43,14 @@ export const historyFrom = (sent: StatusPagePreviewParams, snapshot: StatusPageS
 	})
 
 export const daysOf = (history: PreviewHistory, monitorId: UptimeMonitorId | null) =>
-	monitorId === null ? undefined : history.find((entry) => entry.monitorId === monitorId)?.days
+	monitorId === null
+		? undefined
+		: Option.getOrUndefined(
+				Option.map(
+					Arr.findFirst(history, (entry) => entry.monitorId === monitorId),
+					(entry) => entry.days,
+				),
+			)
 
 /** Auto pages preview in the picked scheme, with the overrides Auto ignores left out. */
 export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): StatusPageTheme =>
@@ -44,7 +58,87 @@ export const previewTheme = (theme: StatusPageTheme, scheme: PreviewScheme): Sta
 		? { ...theme, appearance: scheme, background: null, text: null, card: null, border: null }
 		: theme
 
-const msOrNull = (value: string | null): number | null => (value === null ? null : isoMs(value))
+/** The width the preview is drawn at: the whole column, or a phone. */
+export const PreviewWidth = Schema.Literals(["desktop", "mobile"])
+export type PreviewWidth = typeof PreviewWidth.Type
+
+/** What the preview shows: the page as it is now, or a state it is not in, to check how it reads. */
+export const PreviewState = Schema.Literals(["live", "operational", "outage", "maintenance"])
+export type PreviewState = typeof PreviewState.Type
+
+const exampleIncident = (
+	state: "outage" | "maintenance",
+	nowMs: number,
+	componentIds: ReadonlyArray<string>,
+): StatusPageSnapshotIncident => {
+	const startedAt = nowMs - 25 * 60_000
+	const isOutage = state === "outage"
+	return {
+		id: "preview-example",
+		kind: isOutage ? "incident" : "maintenance",
+		title: isOutage ? "Example incident" : "Example maintenance",
+		impact: isOutage ? "critical" : "none",
+		status: isOutage ? "investigating" : "in_progress",
+		startedAt,
+		resolvedAt: null,
+		scheduledStart: isOutage ? null : startedAt,
+		scheduledEnd: isOutage ? null : nowMs + 95 * 60_000,
+		componentIds,
+		openedByOverlayEntryId: null,
+		updates: [
+			{
+				id: "preview-example-update",
+				status: isOutage ? "investigating" : "in_progress",
+				body: isOutage
+					? "This is how an incident reads to visitors. Nothing was posted."
+					: "This is how maintenance reads to visitors. Nothing was scheduled.",
+				at: startedAt,
+				source: "dashboard",
+				overlayEntryId: null,
+			},
+		],
+	}
+}
+
+/**
+ * The components and incidents the preview draws for a state. `live` passes them through; the
+ * others clear what is open and, for an outage or maintenance, add an example on the first component.
+ */
+export const simulatePreview = (
+	state: PreviewState,
+	input: Readonly<{
+		components: ReadonlyArray<PreviewComponent>
+		incidents: ReadonlyArray<StatusPageSnapshotIncident>
+		nowMs: number
+	}>,
+): Readonly<{
+	components: ReadonlyArray<PreviewComponent>
+	incidents: ReadonlyArray<StatusPageSnapshotIncident>
+}> => {
+	if (state === "live") return { components: input.components, incidents: input.incidents }
+	const components = Arr.map(input.components, (component) => ({
+		...component,
+		monitorStatus: component.monitorStatus === "down" ? "up" : component.monitorStatus,
+		manualStatus: null,
+	}))
+	const settled = Arr.filter(input.incidents, (incident) => !isActiveIncident(incident))
+	return {
+		components,
+		incidents:
+			state === "operational"
+				? settled
+				: [
+						exampleIncident(
+							state,
+							input.nowMs,
+							Arr.map(Arr.take(input.components, 1), (component) => component.id),
+						),
+						...settled,
+					],
+	}
+}
+
+const msOrNull = (value: string | null): number | null => (value === null ? null : toEpochMs(value))
 
 /** Whether visitors see the incident now, by the publisher's own rule. */
 export const isListedIncident = (incident: V2StatusPageIncident, nowMs: number): boolean =>
@@ -65,7 +159,7 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 	title: incident.title,
 	impact: incident.impact,
 	status: incident.status,
-	startedAt: isoMs(incident.started_at),
+	startedAt: toEpochMs(incident.started_at),
 	resolvedAt: msOrNull(incident.resolved_at),
 	scheduledStart: msOrNull(incident.scheduled_start),
 	scheduledEnd: msOrNull(incident.scheduled_end),
@@ -75,13 +169,11 @@ export const toSnapshotIncident = (incident: V2StatusPageIncident): StatusPageSn
 		id: update.id,
 		status: update.status,
 		body: update.body,
-		at: isoMs(update.created_at),
+		at: toEpochMs(update.created_at),
 		source: update.source,
 		overlayEntryId: null,
 	})).sort((a, b) => b.at - a.at),
 })
-
-// SELECTION
 
 /** What a click in the preview selects. */
 export const PreviewSelection = Schema.Struct({
@@ -124,8 +216,9 @@ const selectionStyles = (selectedIds: ReadonlyArray<string>): string => {
 
 /** Marks the first selected element so the frame scrolls its own view to it after a reload. */
 const markFirst = (html: string, selectedIds: ReadonlyArray<string>): string => {
-	const first = selectedIds.find(isSafeId)
-	if (first === undefined) return html
+	const found = Arr.findFirst(selectedIds, isSafeId)
+	if (Option.isNone(found)) return html
+	const first = found.value
 	const attr = Str.includes(`data-component-id="${first}"`)(html)
 		? `data-component-id="${first}"`
 		: `data-incident-id="${first}"`
@@ -133,27 +226,52 @@ const markFirst = (html: string, selectedIds: ReadonlyArray<string>): string => 
 }
 
 export type PreviewDocumentOptions = Readonly<{
-	snapshot: StatusPageSnapshot
+	snapshot: StatusPagePublicSnapshot
 	nowMs: number
 	/** The editor's preview: components and incidents can be clicked, and the selection drawn. */
 	isSelectable: boolean
 	selectedIds: ReadonlyArray<string>
+	/** Where visitors read the page, for its Slack command; `null` while no status domain is configured. */
+	publicUrl: string | null
+	/**
+	 * The page read for real (the viewer): absolute http(s) links open in a new tab. The editor's
+	 * previews keep every link in place. Its frame needs `previewFrame`'s `opensLinks` too.
+	 */
+	opensLinks?: boolean
 }>
+
+/**
+ * A srcdoc frame resolves links against the dashboard's URL, so following one loads the dashboard
+ * inside the frame. In-page links scroll instead; other links and form posts stay put, except an
+ * absolute http(s) link when `opensLinks`, which opens in a new tab.
+ */
+const stayInFrameScript = (opensLinks: boolean): string =>
+	`(function(){var o=${opensLinks};document.addEventListener("click",function(e){if(e.defaultPrevented)return;var a=e.target&&e.target.closest?e.target.closest("a[href]"):null;if(!a)return;var h=a.getAttribute("href");if(o&&h&&/^https?:/i.test(h)){a.target="_blank";a.rel="noopener noreferrer";return}e.preventDefault();if(h&&h.charAt(0)==="#"){var t=document.getElementById(decodeURIComponent(h.slice(1)));if(t)t.scrollIntoView({block:"start"})}});document.addEventListener("submit",function(e){e.preventDefault()})})();`
 
 /** The public page as the renderer draws it, plus, when selectable, the selection script. */
 export const previewDocument = (options: PreviewDocumentOptions): string => {
-	const html = renderPage(options.snapshot, { _tag: "live", updatedAt: options.nowMs }, options.nowMs, {
-		preview: options.isSelectable,
-	})
-	if (!options.isSelectable) return html
-	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>`
+	const preview = options.isSelectable
+	const html = renderPage(
+		options.snapshot,
+		{ _tag: "live", updatedAt: options.nowMs },
+		options.nowMs,
+		options.publicUrl === null
+			? { preview, inDashboard: true }
+			: { preview, inDashboard: true, publicUrl: options.publicUrl },
+	)
+	const stay = `<script>${stayInFrameScript(options.opensLinks === true)}</script>`
+	if (!options.isSelectable) return Str.replace("</body>", `${stay}</body>`)(html)
+	const extra = `<style>${selectionStyles(options.selectedIds)}</style><script>${SELECT_SCRIPT}</script>${stay}`
 	return Str.replace("</body>", `${extra}</body>`)(markFirst(html, options.selectedIds))
 }
 
 export const PREVIEW_FRAME_ID = "status-page-preview-frame"
 
-/** The selections the editor's preview frame posts; other windows and shapes are dropped. */
-export const previewSelections = (): Stream.Stream<PreviewSelection> =>
+/**
+ * The selections the editor's preview frame posts; other windows and shapes are dropped.
+ * Suspended so importing this module never touches `window` (scene tests run in node).
+ */
+export const previewSelections: Stream.Stream<PreviewSelection> = Stream.suspend(() =>
 	Stream.fromEventListener<MessageEvent>(window, "message").pipe(
 		Stream.filter((event) => {
 			const frame = document.getElementById(PREVIEW_FRAME_ID)
@@ -170,20 +288,106 @@ export const previewSelections = (): Stream.Stream<PreviewSelection> =>
 				onSome: (selection) => Stream.make(selection),
 			}),
 		),
-	)
+	),
+)
+
+const PREVIEW_STATES: ReadonlyArray<{ value: PreviewState; label: string }> = [
+	{ value: "live", label: "Live" },
+	{ value: "operational", label: "All clear" },
+	{ value: "outage", label: "Outage" },
+	{ value: "maintenance", label: "Maintenance" },
+]
+
+/** The preview's own switches: which state, width and (for an Auto page) scheme it draws. None is a page edit. */
+export const previewControls = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		state: PreviewState
+		width: PreviewWidth
+		/** `null` on a page with a fixed mode: there is no scheme to pick. */
+		scheme: PreviewScheme | null
+		onState: (state: PreviewState) => M
+		onWidth: (width: PreviewWidth) => M
+		onScheme: (scheme: PreviewScheme) => M
+	}>,
+): Html =>
+	hstack(h, { gap: "2", wrap: true, justify: "end" }, [
+		segmentedSelect(h, {
+			size: "xs",
+			ariaLabel: "Preview state",
+			value: options.state,
+			onChange: options.onState,
+			options: PREVIEW_STATES,
+		}),
+		segmentedSelect(h, {
+			size: "xs",
+			ariaLabel: "Preview width",
+			value: options.width,
+			onChange: options.onWidth,
+			options: [
+				{ value: "desktop", label: "Desktop" },
+				{ value: "mobile", label: "Mobile" },
+			],
+		}),
+		...(options.scheme === null
+			? []
+			: [
+					segmentedSelect(h, {
+						size: "xs",
+						ariaLabel: "Preview mode",
+						value: options.scheme,
+						onChange: options.onScheme,
+						options: [
+							{ value: "light", label: "Light" },
+							{ value: "dark", label: "Dark" },
+						],
+					}),
+				]),
+	])
+
+/** Said under a preview that is not showing the live state, so an example is never read as real. */
+export const previewExampleNote = <M>(h: HtmlBuilder<M>, state: PreviewState): ReadonlyArray<Html> =>
+	state === "live"
+		? []
+		: [
+				typography(h, { size: "xs", tone: "muted", as: "p" }, [
+					"Showing an example state. Visitors still see the live page.",
+				]),
+			]
 
 /** The sandboxed frame: scripts run so the page pages its bars, but it can reach nothing of ours. */
 export const previewFrame = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ document: string; title: string; className?: string; isSelectable?: boolean }>,
+	options: Readonly<{
+		document: string
+		title: string
+		className?: string
+		isSelectable?: boolean
+		/** Lets the document's `opensLinks` open a new tab, outside the sandbox. */
+		opensLinks?: boolean
+		width?: PreviewWidth
+	}>,
 ): Html =>
 	h.iframe(
 		[
 			...(options.isSelectable === true ? [h.Id(PREVIEW_FRAME_ID)] : []),
 			h.Title(options.title),
-			h.Sandbox("allow-scripts"),
+			h.Sandbox(
+				options.opensLinks === true
+					? "allow-scripts allow-popups allow-popups-to-escape-sandbox"
+					: "allow-scripts",
+			),
+			// The Slack command's Copy button; without it the button selects the command instead.
+			h.Allow("clipboard-write"),
 			h.Srcdoc(options.document),
-			h.Class(cn("block w-full rounded-lg border bg-background", options.className)),
+			h.DataAttribute("width", options.width ?? "desktop"),
+			h.Class(
+				cn(
+					"block w-full rounded-lg border bg-background",
+					options.width === "mobile" && "mx-auto max-w-sm",
+					options.className,
+				),
+			),
 		],
 		[],
 	)

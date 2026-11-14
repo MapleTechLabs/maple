@@ -1,4 +1,11 @@
-import { StatusPageComponentId, StatusPageId, StatusPageIncidentId } from "@maple/domain"
+import { readClock } from "@maple/views/data/timing"
+import {
+	StatusPageComponentId,
+	StatusPageId,
+	StatusPageIncidentId,
+	StatusPageVisibility,
+} from "@maple/domain"
+import { UptimeMonitorKind } from "@maple/primitives"
 import {
 	StatusPageConfig,
 	StatusPageDraftComponent,
@@ -6,45 +13,46 @@ import {
 	V2StatusPageComponentCreateParams,
 	V2StatusPageIncidentCreateParams,
 	V2StatusPageIncidentPostUpdateParams,
+	V2StatusPageIncidentUpdateParams,
 	V2StatusPageUpdateParams,
 } from "@maple/domain/http/v2"
-import { Clock, Duration, Effect, Schema } from "effect"
+import { Duration, Effect, Schema } from "effect"
 import { Command, Dom, Mount } from "foldkit"
-import { readIsAdmin } from "../../alerts/shared/commands"
+import { trackProduct } from "../../../data/analytics"
 import {
 	applyPageConfig,
+	checkCustomDomain,
 	createIncident,
 	deleteComponent,
+	deleteIncident,
 	deletePage,
 	listComponents,
 	listPageIncidents,
 	postIncidentUpdate,
 	previewPage,
 	publishPage,
+	removeCustomDomain,
+	removePagePassword,
 	reorderComponents,
+	retrieveCustomDomain,
 	retrievePage,
 	retrievePageConfig,
 	revokeBreakGlass,
 	rotateBreakGlass,
 	saveComponent,
+	setCustomDomain,
+	setPagePassword,
 	updateIncident,
 	updatePage,
 } from "../shared/commands"
-import { listMonitors, saveMonitor } from "../../alerts/shared/uptime-commands"
+import { listMonitors, saveMonitor } from "../../kit/uptime/commands"
 import { monitorPayloadFor } from "../shared/picker"
 import { Message } from "./message"
+import { fetchSessionGrants } from "../../kit/session-grants"
 
-export const ReadEditorClock = Command.define("ReadStatusPageClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadEditorClock = readClock("ReadStatusPageClock", Message.ReadClock)
 
-export const FetchEditorSession = Command.define("FetchStatusPageSession", {
-	args: { orgId: Schema.String },
-	messages: [Message.CompletedFetchSession],
-	execute: ({ orgId }) =>
-		Effect.map(readIsAdmin, (isAdmin) => Message.CompletedFetchSession({ orgId, isAdmin })),
-})
+export const FetchEditorSession = fetchSessionGrants("FetchStatusPageSession", Message.CompletedFetchSession)
 
 export const FetchPage = Command.define("FetchStatusPage", {
 	args: { key: Schema.String, pageId: StatusPageId },
@@ -131,7 +139,10 @@ export const CreateIncident = Command.define("CreateStatusPageIncident", {
 })
 
 export const PostIncidentUpdate = Command.define("PostStatusPageIncidentUpdate", {
-	args: { incidentId: StatusPageIncidentId, payload: V2StatusPageIncidentPostUpdateParams },
+	args: {
+		incidentId: StatusPageIncidentId,
+		payload: V2StatusPageIncidentPostUpdateParams,
+	},
 	messages: [Message.CompletedPostUpdate],
 	execute: ({ incidentId, payload }) =>
 		postIncidentUpdate(incidentId, payload).pipe(
@@ -147,6 +158,27 @@ export const PublishIncident = Command.define("PublishStatusPageIncident", {
 		updateIncident(incidentId, { published: true }).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedPublishIncident({ incidentId, result })),
+		),
+})
+
+/** Saves an incident's title, impact and components; posts no update. */
+export const SaveIncident = Command.define("SaveStatusPageIncident", {
+	args: { incidentId: StatusPageIncidentId, payload: V2StatusPageIncidentUpdateParams },
+	messages: [Message.CompletedSaveIncident],
+	execute: ({ incidentId, payload }) =>
+		updateIncident(incidentId, payload).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSaveIncident({ result })),
+		),
+})
+
+export const DeleteIncident = Command.define("DeleteStatusPageIncident", {
+	args: { incidentId: StatusPageIncidentId },
+	messages: [Message.CompletedDeleteIncident],
+	execute: ({ incidentId }) =>
+		deleteIncident(incidentId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedDeleteIncident({ result })),
 		),
 })
 
@@ -187,6 +219,38 @@ export const RevokeToken = Command.define("RevokeStatusPageBreakGlassToken", {
 		revokeBreakGlass(pageId).pipe(
 			Effect.result,
 			Effect.map((result) => Message.CompletedRevokeToken({ result })),
+		),
+})
+
+export const SaveVisibility = Command.define("SaveStatusPageVisibility", {
+	args: { pageId: StatusPageId, visibility: StatusPageVisibility },
+	messages: [Message.CompletedAccessChange],
+	execute: ({ pageId, visibility }) =>
+		updatePage(pageId, { visibility }).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedAccessChange({ action: "visibility", result })),
+		),
+})
+
+/**
+ * Built by hand, not with `Command.define`: a defined Command's args become its span's
+ * attributes, and the password must not reach a trace.
+ */
+export const SetPassword = (pageId: StatusPageId, password: string) => ({
+	name: "SetStatusPagePassword",
+	effect: setPagePassword(pageId, password).pipe(
+		Effect.result,
+		Effect.map((result) => Message.CompletedAccessChange({ action: "password", result })),
+	),
+})
+
+export const RemovePassword = Command.define("RemoveStatusPagePassword", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedAccessChange],
+	execute: ({ pageId }) =>
+		removePagePassword(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedAccessChange({ action: "removePassword", result })),
 		),
 })
 
@@ -253,6 +317,16 @@ export const CreateEditorMonitor = Command.define("CreateStatusPageEditorMonitor
 		),
 })
 
+/** A monitor created from the picker is the `uptime_monitor_created` product event. */
+export const TrackMonitorCreated = Command.define("TrackStatusPageEditorMonitorCreated", {
+	args: { kind: UptimeMonitorKind },
+	messages: [Message.CompletedTrackMonitorCreated],
+	execute: ({ kind }) =>
+		trackProduct("uptime_monitor_created", { kind }).pipe(
+			Effect.as(Message.CompletedTrackMonitorCreated()),
+		),
+})
+
 /** Adds the picked components in order, one create each; the first failure stops the rest. */
 export const AddComponents = Command.define("AddStatusPageComponents", {
 	args: {
@@ -275,19 +349,51 @@ export const FocusEditorElement = Command.define("FocusStatusPageEditorElement",
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocus())),
 })
 
-/** The public page in a new tab: it lives on the status Worker's host, outside the app. */
-export const OpenPublicPage = Command.define("OpenStatusPagePublicPage", {
-	args: { url: Schema.String },
-	messages: [Message.OpenedPublicPage],
-	execute: ({ url }) =>
-		Effect.sync(() => window.open(url, "_blank", "noopener")).pipe(Effect.as(Message.OpenedPublicPage())),
-})
-
 /** Focuses the element as it mounts, in the same render, so no keystroke lands elsewhere first. */
 export const FocusNewRow = Mount.define("FocusStatusPageEditorRow", {
 	messages: [Message.CompletedFocus],
 	execute: ({ element }) =>
 		Effect.sync(() => (element instanceof HTMLElement ? element.focus() : undefined)).pipe(
 			Effect.as(Message.CompletedFocus()),
+		),
+})
+
+export const FetchCustomDomain = Command.define("FetchStatusPageCustomDomain", {
+	args: { key: Schema.String, pageId: StatusPageId },
+	messages: [Message.CompletedFetchCustomDomain],
+	execute: ({ key, pageId }) =>
+		retrieveCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedFetchCustomDomain({ key, result })),
+		),
+})
+
+export const SetCustomDomain = Command.define("SetStatusPageCustomDomain", {
+	args: { pageId: StatusPageId, hostname: Schema.String },
+	messages: [Message.CompletedSetCustomDomain],
+	execute: ({ pageId, hostname }) =>
+		setCustomDomain(pageId, hostname).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedSetCustomDomain({ result })),
+		),
+})
+
+export const CheckCustomDomain = Command.define("CheckStatusPageCustomDomain", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedCheckCustomDomain],
+	execute: ({ pageId }) =>
+		checkCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedCheckCustomDomain({ result })),
+		),
+})
+
+export const RemoveCustomDomain = Command.define("RemoveStatusPageCustomDomain", {
+	args: { pageId: StatusPageId },
+	messages: [Message.CompletedRemoveCustomDomain],
+	execute: ({ pageId }) =>
+		removeCustomDomain(pageId).pipe(
+			Effect.result,
+			Effect.map((result) => Message.CompletedRemoveCustomDomain({ result })),
 		),
 })

@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { AiTriageResult } from "@maple/domain/http"
-import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
+import { ErrorIssueId, OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { Actors, ErrorIssueEvents, ErrorIssues, IssueEscalations } from "@maple/db/tables"
-import { Effect, Schema, Array as Arr } from "effect"
+import { Effect, Schema, Array as Arr, Clock } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	applyTriageSeverity,
 	type ApplyTriageSeverityInput,
 	escalationReasonFor,
 	severityRank,
-	TRIAGE_AGENT_NAME,
 } from "./issue-severity"
+import { TRIAGE_AGENT_NAME } from "@maple/domain/system-agents"
 
 const createdDbs: TestDb[] = []
 
@@ -33,7 +33,7 @@ const ORG = asOrgId("org_severity_test")
 const setup = Effect.gen(function* () {
 	const database = yield* Database
 	const issueId = asIssueId(randomUUID())
-	const now = Date.now()
+	const now = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
 		db.run(
 			PG.insertInto(ErrorIssues).values({
@@ -208,7 +208,7 @@ describe("applyTriageSeverity", () => {
 	)
 
 	/**
-	 * The partial: a validator that promoted nothing has no cause whose severity it
+	 * The partial: a run that established no cause has nothing whose severity it
 	 * could assess, so the report omits the field. Before it was optional the agent
 	 * had to fabricate a level here, and an inconclusive run could quietly downgrade
 	 * an issue a detector had already ranked.

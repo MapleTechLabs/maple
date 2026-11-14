@@ -57,12 +57,24 @@ jobs:
             - name: Install PlanetScale CLI
               uses: planetscale/setup-pscale-action@b6a50ee45b4b24944e1d8de6e57b3a5f6476a1af # v1
 
+            # A short-lived service token from the `maintenance` OIDC trust, which grants
+            # only the drill's accesses (docs/backup-and-recovery.md). The org slug comes
+            # masked from Infisical, since the run logs are public.
+            - name: PlanetScale credentials (OIDC)
+              id: planetscale
+              uses: planetscale/auth-action@aa8f73f656f858eb798916ce2fe9769ab1ba0d76 # v1.0.0
+              with:
+                  organization: ${{ env.PLANETSCALE_ORG }}
+                  oidc-trust: ${{ vars.PLANETSCALE_OIDC_TRUST_ID }}
+
             # The report goes to a non-hidden directory: upload-artifact skips
             # dot-directories by default, which silently dropped the first run's
             # report from `packages/db/.restore-test/`.
             - name: Restore the newest backup and verify it
               env:
                   RESTORE_TEST_REPORT_DIR: ${{ runner.temp }}/backup-restore-test
+                  PLANETSCALE_SERVICE_TOKEN_ID: ${{ steps.planetscale.outputs.service-token-id }}
+                  PLANETSCALE_SERVICE_TOKEN: ${{ steps.planetscale.outputs.service-token }}
               run: bun run --cwd packages/db db:restore-test
 
             # Uploaded even when the drill fails: a failed report is the evidence

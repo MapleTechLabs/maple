@@ -23,6 +23,21 @@ const SAVE_DELAY_MS = 2_000
 /** A cached result: exact for the key, or an older window standing in for it. */
 export type CacheHit = Readonly<{ data: CacheValue; updatedAtMs: number; isStandIn: boolean }>
 
+/** The results and when each was last read or written (`gcTime`'s clock), replaced together. */
+export type CacheState = Readonly<{ entries: CacheEntries; lastUsed: ReadonlyMap<string, number> }>
+
+/**
+ * `gcTime` applied: drops what nothing used for an hour, and the use times of what it dropped.
+ * Relative ranges mint a new key per window, so use times kept past their entry grow without bound.
+ */
+export const collectUnused = (state: CacheState, nowMs: number): CacheState => {
+	const entries = dropUnused(state.entries, state.lastUsed, nowMs)
+	return {
+		entries,
+		lastUsed: new Map(Arr.filter(Arr.fromIterable(state.lastUsed), ([hash]) => entries.has(hash))),
+	}
+}
+
 /** The saved results this page was opened with (Flags: `hasCache` before anything loads). */
 export const readSavedEntries: Effect.Effect<CacheEntries> = Effect.gen(function* () {
 	const nowMs = yield* Clock.currentTimeMillis
@@ -38,7 +53,7 @@ export class LocalQueryCache extends Context.Service<
 	{
 		/** The exact result for `key`, else (windowed keys) its view's newest older window. */
 		readonly lookup: (key: QueryKey) => Effect.Effect<Option.Option<CacheHit>>
-		/** A fetch landed: keep it, and save shortly after (`persistQueryCache`). */
+		/** A fetch landed: keep it, and save shortly after. */
 		readonly record: <A>(key: QueryKey, data: A, updatedAtMs: number) => Effect.Effect<void>
 	}
 >()("@maple/local-ui/LocalQueryCache") {
@@ -47,19 +62,19 @@ export class LocalQueryCache extends Context.Service<
 		Effect.gen(function* () {
 			const storageKey = storageKeyFor(localServerPortForLocation(window.location))
 			const restored = yield* readSavedEntries
-			const entries = yield* Ref.make<CacheEntries>(restored)
 			// `gcTime`'s clock per entry: a restored result starts unobserved at load.
 			const startedAtMs = yield* Clock.currentTimeMillis
-			const lastUsed = yield* Ref.make<ReadonlyMap<string, number>>(
-				new Map(Arr.map([...restored.keys()], (hash) => [hash, startedAtMs])),
-			)
+			const state = yield* Ref.make<CacheState>({
+				entries: restored,
+				lastUsed: new Map(Arr.map([...restored.keys()], (hash) => [hash, startedAtMs])),
+			})
 			const isSaveScheduled = yield* Ref.make(false)
 			const scope = yield* Effect.scope
 			/** Drops what nothing used for an hour; returns what is left. */
 			const collect = Effect.gen(function* () {
 				const nowMs = yield* Clock.currentTimeMillis
-				const used = yield* Ref.get(lastUsed)
-				return yield* Ref.updateAndGet(entries, (current) => dropUnused(current, used, nowMs))
+				const current = yield* Ref.updateAndGet(state, (before) => collectUnused(before, nowMs))
+				return current.entries
 			})
 			const save = Effect.flatMap(collect, (current) =>
 				Effect.sync(() => writeLocalStorage(storageKey, serialize(current))),
@@ -92,7 +107,10 @@ export class LocalQueryCache extends Context.Service<
 						),
 			)
 			const touch = (hash: string, nowMs: number) =>
-				Ref.update(lastUsed, (used) => new Map(used).set(hash, nowMs))
+				Ref.update(state, (before) => ({
+					entries: before.entries,
+					lastUsed: new Map(before.lastUsed).set(hash, nowMs),
+				}))
 			return {
 				lookup: (key) =>
 					Effect.gen(function* () {
@@ -120,15 +138,14 @@ export class LocalQueryCache extends Context.Service<
 						onSome: (value) =>
 							Effect.gen(function* () {
 								const now = yield* Clock.currentTimeMillis
-								yield* touch(hashKey(key), now)
-								yield* Ref.update(
-									entries,
-									(current) =>
-										new Map([
-											...current,
-											[hashKey(key), { key, data: value, updatedAtMs }],
-										]),
-								)
+								const hash = hashKey(key)
+								yield* Ref.update(state, (before) => ({
+									entries: new Map([
+										...before.entries,
+										[hash, { key, data: value, updatedAtMs }],
+									]),
+									lastUsed: new Map(before.lastUsed).set(hash, now),
+								}))
 								yield* collect
 								yield* scheduleSave
 							}),

@@ -3,7 +3,7 @@ import {
 	formatBytesOfAllocatable,
 	formatCoresOfAllocatable,
 	severityLevel,
-} from "../../../../components/infra/format"
+} from "../../kit/format"
 import { EMPTY_VALUE, formatPercent, formatUptime } from "@maple/ui/lib/format"
 import { Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -15,9 +15,9 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import { heroChip } from "../../kit/hero-chip"
-import { k8sChart } from "../../kit/k8s-chart"
+import { k8sChart } from "../../../kit/k8s-chart"
 import { INFRA_CHART_TOKENS } from "@maple/views/charts/infra-metric-series"
 import { noMetricsMessage, pageHeroParts } from "../../kit/page-parts"
 import {
@@ -27,13 +27,12 @@ import {
 } from "../../kit/resource-attributes"
 import { sectionHeading } from "../../../kit/section-heading"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
-import { kubernetesViewTabs, pickTimeSearch } from "../../kit/view-tabs"
+import { kubernetesViewTabs, pickTimeSearch } from "../../../kit/view-tabs"
 import { podTable } from "../pod-table"
 import { Message } from "./message"
 import type { Model, NodeMetric, NodeSummary } from "./model"
 import { DEFAULT_PRESET } from "./update"
-
-// `NodeDetailPage` in `KubernetesShell`.
+import { typography } from "@maple/views/ui/typography"
 
 type H = HtmlBuilder<Message>
 type Summary = NonNullable<NodeSummary>
@@ -68,7 +67,6 @@ const rightPanel = (h: H, model: Model): Html | undefined => {
 		: undefined
 }
 
-/** `CapacityStat`. */
 const capacityStat = (h: H, eyebrow: string, fraction: number, subline: string): Html =>
 	statRailItem(h, {
 		eyebrow,
@@ -123,7 +121,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	const summary = AsyncData.getOrElse(model.summary.data, () => null)
 	const metric = model.metric
 	const hero = pageHeroParts(h, {
-		title: h.span([h.Class("font-mono")], [model.nodeName]),
+		title: typography(h, { mono: true }, [model.nodeName]),
 		description: "Usage from the kubelet stats receiver, allocatable capacity from the cluster receiver.",
 		meta:
 			summary === null

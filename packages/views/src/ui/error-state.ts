@@ -34,7 +34,7 @@ import { icon } from "./icon"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
 
-// The error state. The failure is already the
+// The error state: a failure's glyph, sentence and retry. The failure is already the
 // `displayError` body (`data/load-failure.ts`).
 
 export type ErrorStateOptions<M> = Readonly<{
@@ -122,7 +122,7 @@ const INLINE_TINT = {
 	access: "bg-muted text-muted-foreground",
 } satisfies Record<FailureKind, string>
 
-/** `SignalBreakTick`: the outage mark, a signal stub, a break and a dashed trail. */
+/** The outage mark: a signal stub, a break and a dashed trail. */
 const signalBreakTick = <M>(h: HtmlBuilder<M>, size: number): Html =>
 	h.svg(tickAttributes(h, size), [
 		h.polyline(
@@ -180,7 +180,7 @@ const AutoRetryMessage = defineMessageUnion({ ElapsedAutoRetry: {} })
 /** One backoff per page and retry Message, shared by every mount that retries the same thing. */
 const budgets = new Map<string, RetryBudget>()
 
-/** `useNetworkAutoRetry`: jittered backoff probes, plus the `online` and visibility events. */
+/** Network auto-retry: jittered backoff probes, plus the `online` and visibility events. */
 export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry", {
 	args: { retryKey: Schema.String },
 	messages: [AutoRetryMessage.ElapsedAutoRetry],
@@ -208,8 +208,10 @@ export const MountNetworkAutoRetry = Mount.defineStream("MountNetworkAutoRetry",
 										budgets.set(
 											key,
 											isUp
-												? probed(due, at, Math.random())
-												: postponed(due, at, Math.random()),
+												? // @effect-diagnostics-next-line globalRandom:off -- retry jitter in a DOM timer loop
+													probed(due, at, Math.random())
+												: // @effect-diagnostics-next-line globalRandom:off -- retry jitter in a DOM timer loop
+													postponed(due, at, Math.random()),
 										)
 										if (isUp) probe()
 									}

@@ -1,16 +1,17 @@
-import { rowToAlertIncidentDocument } from "@maple/web-data/collections/alerts"
-import { Schema, Stream, Array as Arr } from "effect"
+import { Option, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { type OrgCollectionSet, type OrgCollections, orgLive } from "../../data/collections/org-collections"
 import { liveQueryStream } from "../../data/live-query"
-import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../alerts/shared/collection-load"
+import { collectionLoadFailed, ENRICHMENT_LOAD_TIMEOUT_MS } from "../kit/collection-load"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
+import { incidentsLoadFailedStream, incidentsStream } from "../kit/service-health"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { Message as SetupMessage } from "./setup-checklist"
 import { isPolling as isSetupPolling } from "./setup-checklist-update"
 import { backoffPollTicks } from "../../data/poll"
+import { subscriptions as analystSubscriptions } from "./analyst/subscription"
 
 /** Five minutes of 15 s polls before the setup card slows to one a minute. */
 const SETUP_FAST_POLLS = 20
@@ -20,25 +21,11 @@ const withSet = (
 	stream: (set: OrgCollectionSet) => Stream.Stream<Message>,
 ): Stream.Stream<Message, never, OrgCollections> => orgLive(orgId, stream)
 
-/** `useAlertIncidentsList()`: newest trigger first, reduced to what the banner and health read. */
+/** The alert incidents the banner and health read. */
 const incidents = (orgId: string) =>
-	withSet(orgId, (set) =>
-		liveQueryStream(
-			(q) => q.from({ i: set.alertIncidents }).orderBy(({ i }) => i.last_triggered_at, "desc"),
-			(rows) =>
-				Message.UpdatedIncidents({
-					orgId,
-					incidents: Arr.map(Arr.map(rows, rowToAlertIncidentDocument), (incident) => ({
-						status: incident.status,
-						groupKey: incident.groupKey,
-						severity: incident.severity,
-						signalType: incident.signalType,
-					})),
-				}),
-		),
-	)
+	incidentsStream(orgId, (list) => Message.UpdatedIncidents({ orgId, incidents: list }))
 
-/** `useAlertRulesList()`'s rules query, reduced to `enabled` (the banner counts them). */
+/** The alert rules, reduced to `enabled` (the banner counts them). */
 const rules = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
@@ -47,7 +34,7 @@ const rules = (orgId: string) =>
 		),
 	)
 
-/** `useAlertRulesList()`'s states query: synced alongside the rules, unread by this page. */
+/** The rule states: synced alongside the rules, unread by this page. */
 const ruleStates = (orgId: string) =>
 	withSet(orgId, (set) =>
 		liveQueryStream(
@@ -56,68 +43,74 @@ const ruleStates = (orgId: string) =>
 		),
 	)
 
+/** An org's live rows, read only while the engineers' page is the one drawn. */
+const WhileDrawn = { orgId: Schema.String, isDrawn: Schema.Boolean }
+
 const byOrg = (stream: (orgId: string) => Stream.Stream<Message, never, OrgCollections>) => ({
-	modelToDependencies: ({ context }: PageSubscriptionInput<Model>) => ({ orgId: context.orgId }),
-	dependenciesToStream: ({ orgId }: { readonly orgId: string }) => stream(orgId),
+	modelToDependencies: ({ model, context }: PageSubscriptionInput<Model>) => ({
+		orgId: context.orgId,
+		isDrawn: model.analyst === null,
+	}),
+	dependenciesToStream: ({ orgId, isDrawn }: { readonly orgId: string; readonly isDrawn: boolean }) =>
+		isDrawn ? stream(orgId) : Stream.empty,
 })
 
-export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
-	(entry) => ({
-		incidents: entry({ orgId: Schema.String }, byOrg(incidents)),
-		/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
-		incidentsLoadFailed: entry(
-			{ orgId: Schema.String, isWaiting: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isWaiting: AsyncData.isLoading(model.incidents),
-				}),
-				dependenciesToStream: ({ orgId, isWaiting }) =>
-					isWaiting
-						? collectionLoadFailed(
-								`alert_incidents:${orgId}`,
-								() => Message.FailedLoadIncidents({ orgId }),
-								ENRICHMENT_LOAD_TIMEOUT_MS,
-							)
-						: Stream.empty,
-			},
-		),
-		/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */
-		rulesLoadFailed: entry(
-			{ orgId: Schema.String, isWaiting: Schema.Boolean },
-			{
-				modelToDependencies: ({ model, context }) => ({
-					orgId: context.orgId,
-					isWaiting: AsyncData.isLoading(model.rules),
-				}),
-				dependenciesToStream: ({ orgId, isWaiting }) =>
-					isWaiting
-						? collectionLoadFailed(
-								`alert_rules:${orgId}`,
-								() => Message.FailedLoadRules({ orgId }),
-								ENRICHMENT_LOAD_TIMEOUT_MS,
-							)
-						: Stream.empty,
-			},
-		),
-		rules: entry({ orgId: Schema.String }, byOrg(rules)),
-		ruleStates: entry({ orgId: Schema.String }, byOrg(ruleStates)),
-		/** Waits for the first real service: every 15 s for five minutes, then every minute. */
-		setupPoll: entry(
-			{ isPolling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({
-					isPolling: model.setup !== null && isSetupPolling(model.setup),
-				}),
-				dependenciesToStream: ({ isPolling }) =>
-					isPolling
-						? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
-								Stream.map(() =>
-									Message.GotSetupMessage({ message: SetupMessage.TickedPoll() }),
-								),
-							)
-						: Stream.empty,
-			},
-		),
-	}),
-)
+/** The analyst page's live alert rows, only while there is an analyst page. */
+const analyst = Subscription.lift(analystSubscriptions)<PageSubscriptionInput<Model>, Message>({
+	read: ({ model, context }) =>
+		model.analyst === null ? Option.none() : Option.some({ model: model.analyst, context }),
+	toParentMessage: (message) => Message.GotAnalystMessage({ message }),
+})
+
+const operator = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()((entry) => ({
+	incidents: entry(WhileDrawn, byOrg(incidents)),
+	/** The banner and health counts stop waiting on an alert sync that failed or stalled. */
+	incidentsLoadFailed: entry(
+		{ orgId: Schema.String, isWaiting: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWaiting: model.analyst === null && AsyncData.isLoading(model.incidents),
+			}),
+			dependenciesToStream: ({ orgId, isWaiting }) =>
+				incidentsLoadFailedStream(orgId, isWaiting, () => Message.FailedLoadIncidents({ orgId })),
+		},
+	),
+	/** Same for the rules: without an end state a stalled sync would leave the page loading for good. */
+	rulesLoadFailed: entry(
+		{ orgId: Schema.String, isWaiting: Schema.Boolean },
+		{
+			modelToDependencies: ({ model, context }) => ({
+				orgId: context.orgId,
+				isWaiting: model.analyst === null && AsyncData.isLoading(model.rules),
+			}),
+			dependenciesToStream: ({ orgId, isWaiting }) =>
+				isWaiting
+					? collectionLoadFailed(
+							`alert_rules:${orgId}`,
+							() => Message.FailedLoadRules({ orgId }),
+							ENRICHMENT_LOAD_TIMEOUT_MS,
+						)
+					: Stream.empty,
+		},
+	),
+	rules: entry(WhileDrawn, byOrg(rules)),
+	ruleStates: entry(WhileDrawn, byOrg(ruleStates)),
+	/** Waits for the first real service: every 15 s for five minutes, then every minute. */
+	setupPoll: entry(
+		{ isPolling: Schema.Boolean },
+		{
+			modelToDependencies: ({ model }) => ({
+				isPolling: model.setup !== null && isSetupPolling(model.setup),
+			}),
+			dependenciesToStream: ({ isPolling }) =>
+				isPolling
+					? backoffPollTicks("15 seconds", SETUP_FAST_POLLS, "1 minute").pipe(
+							Stream.map(() => Message.GotSetupMessage({ message: SetupMessage.TickedPoll() })),
+						)
+					: Stream.empty,
+		},
+	),
+}))
+
+export const subscriptions = Subscription.aggregate(operator, analyst)

@@ -1,16 +1,16 @@
-import type { StatusPageComponentStatus, StatusPageIncidentImpact } from "@maple/domain/primitives"
+import type { StatusPageComponentStatus, StatusPageIncidentImpact } from "@maple/primitives"
 import {
 	incidentComponentStatus,
 	STATUS_PAGE_HISTORY_DAYS,
 	STATUS_PAGE_WINDOW_DAYS,
 	type StatusPageDayBar,
 	type StatusPageIncidentHistoryEntry,
-	type StatusPageSnapshot,
+	type StatusPagePublicSnapshot,
 	type StatusPageSnapshotComponent,
 	utcDay,
 } from "@maple/domain/status-page"
 import { INCIDENT_STATUS_LABEL, MONTHS } from "./format"
-import { Array as Arr, String as Str } from "effect"
+import { Option, Array as Arr, String as Str } from "effect"
 
 // Paging and calendar rules for the page. The inline script mirrors `windowBounds`,
 // `monthCells` and the labels; `script.test.ts` holds the two to the same answers.
@@ -22,7 +22,6 @@ const dayMs = (day: string): number => {
 	return Date.UTC(year, month - 1, date)
 }
 
-/** `day` moved by `offset` days. */
 export const shiftDay = (day: string, offset: number): string => utcDay(dayMs(day) + offset * DAY_MS)
 
 /** `Oct 2026` for a `YYYY-MM-DD` day. */
@@ -77,10 +76,17 @@ export const barComponents = (
 /** Windows worth paging through: back to the oldest day any component was checked, at least one. */
 export const windowCount = (components: ReadonlyArray<StatusPageSnapshotComponent>): number =>
 	Arr.reduce(barComponents(components), 1, (count, component) => {
-		const oldest = component.days.findIndex((bar) => bar.checks > 0)
-		return oldest === -1
-			? count
-			: Math.max(count, Math.floor((component.days.length - 1 - oldest) / STATUS_PAGE_WINDOW_DAYS) + 1)
+		return Option.match(
+			Arr.findFirstIndex(component.days, (bar) => bar.checks > 0),
+			{
+				onNone: () => count,
+				onSome: (oldest) =>
+					Math.max(
+						count,
+						Math.floor((component.days.length - 1 - oldest) / STATUS_PAGE_WINDOW_DAYS) + 1,
+					),
+			},
+		)
 	})
 
 /** Monday-first weeks of a month: day numbers, 0 for the padding cells. `month` is 1 to 12. */
@@ -146,7 +152,7 @@ const toneOf = (entry: Pick<StatusPageIncidentHistoryEntry, "kind" | "impact">):
  * The year's incidents for the calendar: the index, with what the page lists (including
  * break-glass ones not yet imported) taking precedence. Upcoming maintenance has no days yet.
  */
-export const calendarEntries = (snapshot: StatusPageSnapshot): ReadonlyArray<CalendarEntry> => {
+export const calendarEntries = (snapshot: StatusPagePublicSnapshot): ReadonlyArray<CalendarEntry> => {
 	const listed = Arr.filter(
 		snapshot.incidents,
 		(incident) => !(incident.kind === "maintenance" && incident.status === "scheduled"),

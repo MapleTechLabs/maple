@@ -21,7 +21,7 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { typography } from "@maple/views/ui/typography"
-import { FUNNEL_KEY_BY_OPTIONS, FUNNEL_WINDOW_OPTIONS } from "../../components/funnels/definition"
+import { FUNNEL_KEY_BY_OPTIONS, FUNNEL_WINDOW_OPTIONS } from "../dashboards/kit/funnel-definition"
 import { stepBuilder } from "../kit/funnel-steps"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { funnelOf, funnelParamsOf } from "./definition"

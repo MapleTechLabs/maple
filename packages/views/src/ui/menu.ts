@@ -15,8 +15,6 @@ import * as Tooltip from "./tooltip"
  * `menu-view.ts` renders it from the `dropdown-menu.ts` parts.
  */
 
-// ENTRIES
-
 /** What the update needs to know about a highlightable entry: what it does, and its value. */
 export const ItemKind = Schema.Literals(["Item", "Submenu", "Checkbox", "Radio"])
 export type ItemKind = typeof ItemKind.Type
@@ -28,8 +26,6 @@ export const ItemRef = Schema.Struct({
 	isDisabled: Schema.optionalKey(Schema.Boolean),
 })
 export type ItemRef = typeof ItemRef.Type
-
-// MODEL
 
 export const Submenu = Schema.Struct({
 	/** The root index of its trigger. */
@@ -69,8 +65,6 @@ export const init = (id: string, options: Readonly<{ isOpen?: boolean }> = {}): 
 	itemTooltip: Tooltip.init(itemTooltipId(id), { side: "left" }),
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ClickedTrigger: {},
 	PressedTriggerKey: { key: Schema.String, count: Schema.Number },
@@ -102,8 +96,6 @@ export const OutMessage = defineMessageUnion({
 	SelectedSubmenuItem: { submenu: Schema.String, value: Schema.String },
 })
 export type OutMessage = typeof OutMessage.Type
-
-// UPDATE
 
 /** A highlight moves focus to the item, as Base UI's menu does. */
 export const FocusMenuItem = Command.define("FocusMenuItem", {
@@ -281,8 +273,6 @@ export const update = (model: Model, message: Message): UpdateReturn =>
 			}
 		},
 	})
-
-// MOUNT
 
 /** The modal backdrop leaves the trigger uncovered, so the trigger keeps its hover state. */
 const cutOutTrigger = (positioner: HTMLElement, anchorId: string): void => {

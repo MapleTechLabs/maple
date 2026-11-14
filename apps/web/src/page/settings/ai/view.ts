@@ -1,12 +1,8 @@
 import type { AiTriageSettingsDocument, OpenRouterKeyDocument } from "@maple/domain/http"
 import { formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	PASSES_PER_DAY_LIMITS,
-	parseDailyLimit,
-	RUNS_PER_DAY_LIMITS,
-} from "../../../components/settings/ai-triage-limits"
-import { limitsUpdate } from "../../../components/settings/ai-triage-limits"
+import { PASSES_PER_DAY_LIMITS, parseDailyLimit, RUNS_PER_DAY_LIMITS } from "../kit/ai-triage-limits"
+import { limitsUpdate } from "../kit/ai-triage-limits"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button, linkButton } from "@maple/views/ui/button"
@@ -33,8 +29,8 @@ import * as RadioGroup from "@maple/views/ui/radio-group"
 import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { switchControl } from "@maple/views/ui/switch"
-import { saveBar } from "../kit/save-bar"
-import { settingsSection, settingsSections } from "../kit/section"
+import { saveBar } from "../../kit/save-bar"
+import { settingsSection, settingsSections } from "../../kit/settings-section"
 import { Message, type Model, type Provider } from "./model"
 import { isLimitsDirty, limitsDraftOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -61,8 +57,6 @@ const fieldIds = (name: string): FieldIds => ({
 	error: `${name}-error`,
 	description: `${name}-description`,
 })
-
-// MODEL PROVIDER
 
 const RADIO_ITEMS = [
 	{ value: "managed", id: "ai-provider-managed", inputId: "ai-provider-managed-input" },
@@ -97,7 +91,7 @@ const providerCard = (
 		[
 			h.Class(
 				cn(
-					"flex flex-col gap-3 rounded-md border bg-card p-4 transition-colors",
+					"flex flex-col gap-3 rounded-md border bg-card p-4",
 					isSelected && "border-primary-a4 bg-primary-a1",
 				),
 			),
@@ -144,7 +138,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 						h.Type("password"),
 						h.Attribute("autocomplete", "off"),
 						h.Placeholder("sk-or-v1-..."),
-						...(model.isSavingKey ? [h.Disabled(true)] : []),
+						...(model.keyWrite === "Saving" ? [h.Disabled(true)] : []),
 						...Field.controlAttributes(h, model.keyDraft, (message) =>
 							Message.GotKeyDraftMessage({ message }),
 						),
@@ -162,7 +156,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 					{
 						type: "submit",
 						size: "sm",
-						isLoading: model.isSavingKey,
+						isLoading: model.keyWrite === "Saving",
 						isDisabled: Str.trim(model.keyDraft.value) === "",
 					},
 					["Save key"],
@@ -174,7 +168,7 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 								{
 									variant: "ghost",
 									size: "sm",
-									isDisabled: model.isSavingKey,
+									isDisabled: model.keyWrite === "Saving",
 									attributes: [h.OnClick(Message.ClickedCancelReplace())],
 								},
 								["Cancel"],
@@ -186,17 +180,19 @@ const keyForm = (h: H, model: Model, isReplacing: boolean): Html => {
 	)
 }
 
-/** `AddOnUpsell`: a lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
+/** A lapsed key's notice, the add-on's price and "Add to plan" behind a confirm. */
 const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =>
 	vstack(h, { gap: "3" }, [
 		...(current.configured
 			? [
-					h.div(
-						[
-							h.Class(
-								"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
-							),
-						],
+					hstack(
+						h,
+						{
+							gap: "2",
+							align: "center",
+							justify: "between",
+							className: "rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+						},
 						[
 							typography(
 								h,
@@ -213,7 +209,7 @@ const addOnUpsell = (h: H, model: Model, current: OpenRouterKeyDocument): Html =
 									variant: "ghost",
 									size: "sm",
 									className: "shrink-0 text-destructive-foreground",
-									isDisabled: model.isRemoving,
+									isDisabled: model.keyWrite !== "Idle",
 									attributes: [h.OnClick(Message.ClickedRemoveKey())],
 								},
 								["Remove"],
@@ -255,12 +251,14 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 	if (!current.entitled) return [addOnUpsell(h, model, current)]
 	if (current.configured && !model.isReplacing)
 		return [
-			h.div(
-				[
-					h.Class(
-						"flex items-center justify-between gap-2 rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
-					),
-				],
+			hstack(
+				h,
+				{
+					gap: "2",
+					align: "center",
+					justify: "between",
+					className: "rounded-md border bg-background py-1.5 pr-1.5 pl-2.5",
+				},
 				[
 					h.code(
 						[h.Class(typographyClass({ size: "sm", mono: true, truncate: true }))],
@@ -272,7 +270,7 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 							{
 								variant: "outline",
 								size: "sm",
-								isDisabled: model.isRemoving,
+								isDisabled: model.keyWrite === "Removing",
 								attributes: [h.OnClick(Message.ClickedReplace())],
 							},
 							["Replace"],
@@ -283,7 +281,7 @@ const keyPanel = (h: H, model: Model, current: OpenRouterKeyDocument): ReadonlyA
 								variant: "ghost",
 								size: "sm",
 								className: "text-destructive-foreground",
-								isDisabled: model.isRemoving,
+								isDisabled: model.keyWrite !== "Idle",
 								attributes: [h.OnClick(Message.ClickedRemoveKey())],
 							},
 							["Remove"],
@@ -323,7 +321,7 @@ const providerChoice = (h: H, model: Model, current: OpenRouterKeyDocument): Rea
 			description: "Maple managed models take over, and AI usage is billed on your plan again.",
 			confirmLabel: "Remove key",
 			onConfirm: Message.ClickedConfirmRemove(),
-			isPending: model.isRemoving,
+			isPending: model.keyWrite === "Removing",
 		}),
 	]
 }
@@ -351,8 +349,6 @@ const providerSection = (h: H, model: Model): Html =>
 		}),
 	)
 
-// AUTO-TRIAGE
-
 const limitRow = (
 	h: H,
 	options: Readonly<{
@@ -374,36 +370,33 @@ const limitRow = (
 			fieldLabel(h, { ids, state }, options.label),
 			fieldDescription(h, { ids, state, className: "max-w-sm leading-relaxed" }, options.help),
 		]),
-		h.div(
-			[h.Class("flex w-48 shrink-0 flex-col gap-2")],
-			[
-				input(h, {
-					ids,
-					state,
-					attributes: [
-						h.Attribute("inputmode", "numeric"),
-						// `aria-invalid={error !== null}` renders "false" too, which the input chrome keys on.
-						...(options.error === null ? [h.AriaInvalid(false)] : []),
-						h.Value(options.value),
-						...(options.isDisabled ? [h.Disabled(true)] : []),
-						h.OnInput(options.onInput),
-					],
-				}),
-				...(options.error === null
-					? [
-							meter(h, {
-								value: options.spent,
-								max: options.limit,
-								label: `${options.label} used today`,
-							}),
-							typography(h, { size: "2xs", tone: "muted", mono: true }, [
-								formatNumber(options.spent),
-								" used today",
-							]),
-						]
-					: [fieldError(h, { ids, state }, options.error)]),
-			],
-		),
+		vstack(h, { gap: "2", className: "w-48 shrink-0" }, [
+			input(h, {
+				ids,
+				state,
+				attributes: [
+					h.Attribute("inputmode", "numeric"),
+					// A valid input carries `aria-invalid="false"` too, which the input chrome keys on.
+					...(options.error === null ? [h.AriaInvalid(false)] : []),
+					h.Value(options.value),
+					...(options.isDisabled ? [h.Disabled(true)] : []),
+					h.OnInput(options.onInput),
+				],
+			}),
+			...(options.error === null
+				? [
+						meter(h, {
+							value: options.spent,
+							max: options.limit,
+							label: `${options.label} used today`,
+						}),
+						typography(h, { size: "2xs", tone: "muted", mono: true }, [
+							formatNumber(options.spent),
+							" used today",
+						]),
+					]
+				: [fieldError(h, { ids, state }, options.error)]),
+		]),
 	])
 }
 
@@ -446,7 +439,7 @@ const triageForm = (h: H, model: Model, current: AiTriageSettingsDocument): Read
 	const draft = limitsDraftOf(model)
 	const runs = parseDailyLimit(draft.maxRunsPerDay, RUNS_PER_DAY_LIMITS)
 	const passes = parseDailyLimit(draft.maxPassesPerDay, PASSES_PER_DAY_LIMITS)
-	// `Collapsible defaultOpen={!passesError.ok}`: an invalid ceiling keeps the section open.
+	// An invalid ceiling keeps the section open.
 	const isAdvancedOpen = model.isAdvancedOpen || !passes.ok
 	return [
 		panel(h, { className: "divide-y" }, [
@@ -595,27 +588,25 @@ const triageSection = (h: H, model: Model): Html =>
 		: triageTeaser(h)
 
 const escalationCard = (h: H): Html =>
-	h.div(
-		[h.Class("flex items-start justify-between gap-4 rounded-md border border-dashed p-4")],
+	hstack(
+		h,
+		{ gap: "4", align: "start", justify: "between", className: "rounded-md border border-dashed p-4" },
 		[
-			h.div(
-				[h.Class("flex min-w-0 gap-3")],
-				[
-					icon(h, "BellIcon", {
-						size: 16,
-						className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
-					}),
-					vstack(h, { gap: "0.5", shrink: true }, [
-						typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
-							"Escalation routing",
-						]),
-						h.span(
-							[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
-							["Route triaged issues by severity and confidence to your alert destinations."],
-						),
+			hstack(h, { gap: "3", align: "stretch", shrink: true }, [
+				icon(h, "BellIcon", {
+					size: 16,
+					className: typographyClass({ tone: "muted", className: "mt-0.5 shrink-0" }),
+				}),
+				vstack(h, { gap: "0.5", shrink: true }, [
+					typography(h, { size: "sm", tone: "foreground", weight: "medium" }, [
+						"Escalation routing",
 					]),
-				],
-			),
+					h.span(
+						[h.Class("font-prose text-xs leading-relaxed text-muted-foreground")],
+						["Route triaged issues by severity and confidence to your alert destinations."],
+					),
+				]),
+			]),
 			linkButton(
 				h,
 				{ variant: "outline", size: "sm", className: "shrink-0", href: "/settings?tab=automation" },

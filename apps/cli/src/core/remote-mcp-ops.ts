@@ -6,13 +6,14 @@
 
 import { Effect, Schema, Array as Arr } from "effect"
 import { TraceId } from "@maple/domain"
-import type { TracesMetric } from "@maple/query-engine"
+import type { TracesMetric } from "@maple/domain/query-engine"
 import type {
 	AttributeKeyResult,
 	AttributeValueResult,
 	ErrorDetailOutput,
 	FindSlowTracesOutput,
 	MineLogPatternsOutput,
+	CompareLogPatternsOutput,
 	SearchLogsOutput,
 	SearchTracesOutput,
 	ServiceHealthOutput,
@@ -124,6 +125,7 @@ export const diagnoseService = (
 				rootSpanName: t.rootSpanName,
 				durationMs: t.durationMs,
 				hasError: t.hasError,
+				...(t.startTime === undefined ? undefined : { startTime: t.startTime }),
 			})),
 			recentLogs: Arr.map(out.recentLogs, (l) => ({
 				timestamp: l.timestamp,
@@ -176,6 +178,8 @@ export const searchTraces = (
 			...window(p.range),
 			service: p.service,
 			span_name: p.spanName,
+			// `--span-name` is documented as a substring match.
+			span_name_match: p.spanName === undefined ? undefined : "contains",
 			has_error: p.hasError,
 			min_duration_ms: p.minDurationMs,
 			max_duration_ms: p.maxDurationMs,
@@ -249,6 +253,50 @@ export const mineLogPatterns = (
 			totalSampled: out.totalSampled,
 			patterns: out.patterns,
 		}),
+	)
+
+export const compareLogPatterns = (
+	mcp: MapleMcpClient,
+	p: {
+		before: Range
+		after: Range
+		service?: string
+		severity?: string
+		search?: string
+		environment?: string
+		limit?: number
+	},
+) =>
+	Effect.map(
+		mcp.call("compare_log_patterns", {
+			previous_start: p.before.startTime,
+			previous_end: p.before.endTime,
+			current_start: p.after.startTime,
+			current_end: p.after.endTime,
+			service: p.service,
+			environment: p.environment,
+			severity: mcpSeverity(p.severity),
+			search: p.search,
+			limit: p.limit,
+		}),
+		(out): CompareLogPatternsOutput => {
+			const side = (w: typeof out.before) => ({
+				timeRange: toTimeRange(w.timeRange),
+				totalLogs: w.totalLogs,
+				sampled: w.sampled,
+				...(w.sampleCoverage === undefined
+					? undefined
+					: { sampleCoverage: toTimeRange(w.sampleCoverage) }),
+			})
+			return {
+				before: side(out.before),
+				after: side(out.after),
+				sampleSize: out.sampleSize,
+				patterns: out.patterns,
+				changed: out.changed,
+				unchanged: out.unchanged,
+			}
+		},
 	)
 
 export const topOperations = (

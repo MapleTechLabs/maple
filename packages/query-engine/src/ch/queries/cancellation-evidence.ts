@@ -10,20 +10,12 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { defineCondFn, defineFn, from, param, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { utcHourFloor } from "./query-helpers"
-import {
-	AlertChecks,
-	AttributeValuesHourly,
-	AuditLog,
-	ErrorEventsByTime,
-	ProductEvents,
-	ServiceUsage,
-	orgIdParam,
-	utcSecondsParam,
-} from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 
 const DAY_SECONDS = 86_400
 
-type UsageColumns = ColumnAccessor<typeof ServiceUsage.columns>
+type UsageColumns = ColumnAccessor<typeof Datasources.serviceUsage.columns>
 
 // `service_usage` is keyed on top-of-hour `Hour`: bounds snap to their hour,
 // the same correction `serviceUsageQuery` makes.
@@ -44,7 +36,7 @@ const metricBytes = ($: UsageColumns) =>
  * window's bytes per signal, the first and last hour seen and the days active.
  */
 export function cancellationServiceUsageQuery(opts: { readonly limit: number }) {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			serviceName: $.ServiceName,
 			recentTraceBytes: CH.sumIf($.TraceSizeBytes, usageRecent($)),
@@ -68,7 +60,7 @@ export function cancellationServiceUsageQuery(opts: { readonly limit: number }) 
 
 /** How many services sent anything in each window. */
 export function cancellationServiceCountsQuery() {
-	return from(ServiceUsage)
+	return from(Datasources.serviceUsage)
 		.select(($) => ({
 			distinctRecent: CH.uniqIf($.ServiceName, usageRecent($)),
 			distinctPrior: CH.uniqIf($.ServiceName, usagePrior($)),
@@ -77,7 +69,7 @@ export function cancellationServiceCountsQuery() {
 		.format("JSON")
 }
 
-type AttributeColumns = ColumnAccessor<typeof AttributeValuesHourly.columns>
+type AttributeColumns = ColumnAccessor<typeof Datasources.attributeValuesHourly.columns>
 
 const resourceWindow = ($: AttributeColumns) => [
 	$.OrgId.eq(orgIdParam),
@@ -101,7 +93,7 @@ export const CANCELLATION_RESOURCE_KEYS = [
  * key's total and {@link cancellationResourceSpansQuery}.
  */
 export function cancellationResourceAttributesQuery(opts: { readonly limit: number }) {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({
 			attributeKey: $.AttributeKey,
 			attributeValue: $.AttributeValue,
@@ -116,7 +108,7 @@ export function cancellationResourceAttributesQuery(opts: { readonly limit: numb
 
 /** The window's spans, counted from the same rollup: every span carries `service.name`. */
 export function cancellationResourceSpansQuery() {
-	return from(AttributeValuesHourly)
+	return from(Datasources.attributeValuesHourly)
 		.select(($) => ({ spans: CH.sum($.UsageCount) }))
 		.where(($) => [...resourceWindow($), $.AttributeKey.eq("service.name")])
 		.format("JSON")
@@ -128,7 +120,7 @@ export function cancellationResourceSpansQuery() {
  * alerting worker writes the table.
  */
 export function cancellationAlertChecksQuery() {
-	return from(AlertChecks)
+	return from(Datasources.alertChecks)
 		.select(($) => ({
 			status: $.Status,
 			skipReason: $.SkipReason,
@@ -149,7 +141,7 @@ export function cancellationAlertChecksQuery() {
 
 /** Error events per UTC day over the window. */
 export function cancellationErrorsByDayQuery() {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.Timestamp, DAY_SECONDS),
 			errors: CH.count(),
@@ -166,7 +158,7 @@ export function cancellationErrorsByDayQuery() {
 
 /** Distinct error fingerprints (kinds of error) in each window. */
 export function cancellationErrorFingerprintsQuery() {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorEventsByTime)
 		.select(($) => ({
 			distinctRecent: CH.uniqIf($.FingerprintHash, $.Timestamp.gte(utcSecondsParam("splitTime"))),
 			distinctPrior: CH.uniqIf($.FingerprintHash, $.Timestamp.lt(utcSecondsParam("splitTime"))),
@@ -185,9 +177,9 @@ export function cancellationErrorFingerprintsQuery() {
  * lands once as `server` and once more as `trace`, so the caller merges them.
  */
 export function cancellationProductEventsQuery(opts: { readonly limit: number }) {
-	const recent = ($: ColumnAccessor<typeof ProductEvents.columns>) =>
+	const recent = ($: ColumnAccessor<typeof Datasources.productEvents.columns>) =>
 		$.Timestamp.gte(param.dateTime("splitTime"))
-	return from(ProductEvents)
+	return from(Datasources.productEvents)
 		.select(($) => ({
 			eventName: $.EventName,
 			source: $.Source,
@@ -209,7 +201,7 @@ export function cancellationProductEventsQuery(opts: { readonly limit: number })
 		.format("JSON")
 }
 
-type AuditColumns = ColumnAccessor<typeof AuditLog.columns>
+type AuditColumns = ColumnAccessor<typeof Datasources.auditLog.columns>
 
 const auditRecent = ($: AuditColumns) => $.OccurredAt.gte(param.dateTime("splitTime"))
 const auditWindow = ($: AuditColumns) => [
@@ -222,7 +214,7 @@ const byCustomer = ($: AuditColumns) => $.ActorType.neq("system")
 
 /** The org's audit-log entries over the window per actor type (`user`, `api_key`, `agent`, `system`). */
 export function cancellationAuditActorsQuery() {
-	return from(AuditLog)
+	return from(Datasources.auditLog)
 		.select(($) => ({
 			actorType: $.ActorType,
 			recent: CH.countIf(auditRecent($)),
@@ -240,7 +232,7 @@ export function cancellationAuditActorsQuery() {
  * tool calls included, most frequent first.
  */
 export function cancellationAuditActionsQuery(opts: { readonly limit: number }) {
-	return from(AuditLog)
+	return from(Datasources.auditLog)
 		.select(($) => ({
 			action: $.Action,
 			recent: CH.countIf(auditRecent($)),
@@ -261,7 +253,7 @@ const jsonTrue = defineCondFn<[CH.Expr<string>, string]>("JSONExtractBool")
 
 /** The org's own Maple AI tool calls over the window per tool and surface, most called first. */
 export function cancellationToolCallsQuery(opts: { readonly limit: number }) {
-	return from(AuditLog)
+	return from(Datasources.auditLog)
 		.select(($) => ({
 			tool: jsonString($.Metadata, "tool"),
 			surface: jsonString($.Metadata, "surface"),

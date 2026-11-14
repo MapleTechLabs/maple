@@ -2,24 +2,25 @@ import type { BillingAccount, BillingAccountOrg, BillingAccountOrgUsage } from "
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { initialsFrom } from "@maple/ui/lib/initials"
 import { cn } from "@maple/ui/lib/utils"
-import { formatCount, formatUsage } from "../../../lib/billing/usage"
-import { formatDateInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatCount, formatUsage } from "../../kit/billing/usage"
+import { formatDateInTimezone } from "@maple/ui/lib/timezone-format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { warmAvatarTone } from "@maple/views/ui/avatar-tone"
 import { button } from "@maple/views/ui/button"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { confirmDialog } from "@maple/views/ui/confirm-dialog"
 import { avatarFallback } from "@maple/views/ui/display"
 import { errorState } from "@maple/views/ui/error-state"
 import { nativeOption, nativeSelect } from "@maple/views/ui/native-select"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { settingsSection } from "../kit/section"
-import { Message, type Model } from "./model"
+import { settingsSection } from "../../kit/settings-section"
+import { canManage, Message, type Model } from "./model"
 import { linkTargetOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, String as Str, Option } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -28,7 +29,7 @@ type H = HtmlBuilder<Message>
 const nameOf = (org: Readonly<{ name: string | null }>): string =>
 	org.name === null || Str.trim(org.name) === "" ? "Unnamed organization" : org.name
 
-/** `OrgAvatar`: the org's logo over its initials on a warm tile keyed by the name. */
+/** The org's logo over its initials on a warm tile keyed by the name. */
 const orgAvatar = (h: H, name: string, imageUrl: string | null, className = "size-8"): Html =>
 	avatarFallback(
 		h,
@@ -48,41 +49,34 @@ const prose = (h: H, children: ReadonlyArray<Html | string>, className?: string)
 		children,
 	)
 
-// MEMBER
-
 /** A member org: who pays for it, and (admins) the way out. Plan, caps and invoices live there. */
 export const memberSection = (h: H, model: Model, account: BillingAccount): Html => {
 	const payer = nameOf(account.billingOrg)
 	return settingsSection(h, { id: "settings-billing-account", title: "Billing account", padded: false }, [
-		h.div(
-			[h.Class("flex flex-wrap items-start gap-4 p-4")],
-			[
-				orgAvatar(h, payer, account.billingOrg.imageUrl, "size-10"),
-				vstack(h, { gap: "1", shrink: true, grow: true }, [
-					typography(h, { size: "sm", weight: "medium", as: "p" }, [`Billed through ${payer}`]),
-					prose(h, [
-						`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
-					]),
+		hstack(h, { gap: "4", align: "start", wrap: true, className: "p-4" }, [
+			orgAvatar(h, payer, account.billingOrg.imageUrl, "size-10"),
+			vstack(h, { gap: "1", shrink: true, grow: true }, [
+				typography(h, { size: "sm", weight: "medium", as: "p" }, [`Billed through ${payer}`]),
+				prose(h, [
+					`This organization's usage counts toward ${payer}'s plan and appears on its invoice. Plan, payment and invoices are managed in ${payer}.`,
 				]),
-				...(model.isAdmin
-					? [
-							button(
-								h,
-								{
-									variant: "outline",
-									size: "sm",
-									attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
-								},
-								[`Stop billing through ${payer}`],
-							),
-						]
-					: []),
-			],
-		),
+			]),
+			...(canManage(model)
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedUnlink({ orgId: account.orgId }))],
+							},
+							[`Stop billing through ${payer}`],
+						),
+					]
+				: []),
+		]),
 	])
 }
-
-// BILLING ORG
 
 /** One org's volume, compact: bytes across signals, then sessions and events when there are any. */
 const volumeLabel = (usage: BillingAccountOrgUsage): string =>
@@ -101,35 +95,50 @@ const volumeCell = (h: H, model: Model, member: BillingAccountOrg): Html =>
 		onLoading: () => skeleton(h, "h-3.5 w-20"),
 		onFailure: () => typography(h, { size: "sm", tone: "muted" }, [EMPTY_VALUE]),
 		onData: (usage) => {
-			const row = usage.orgs.find((org) => org.orgId === member.orgId)
 			return typography(h, { size: "sm", mono: true, numeric: true }, [
-				row === undefined ? EMPTY_VALUE : volumeLabel(row),
+				Option.match(
+					Arr.findFirst(usage.orgs, (org) => org.orgId === member.orgId),
+					{ onNone: () => EMPTY_VALUE, onSome: volumeLabel },
+				),
 			])
 		},
 	})
 
 const memberRow = (h: H, model: Model, member: BillingAccountOrg, timeZone: string): Html => {
 	const name = nameOf(member)
-	return h.div(
-		[
-			h.Key(member.orgId),
-			h.Class("flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3"),
-		],
+	return hstack(
+		h,
+		{
+			align: "center",
+			justify: "between",
+			wrap: true,
+			className: "gap-x-6 gap-y-2 px-4 py-3",
+			attributes: [h.Key(member.orgId)],
+		},
 		[
 			hstack(h, { gap: "3", shrink: true }, [
 				orgAvatar(h, name, member.imageUrl),
 				vstack(h, { gap: "0.5", shrink: true }, [
 					typography(h, { size: "sm", weight: "medium", truncate: true }, [name]),
-					typography(h, { size: "2xs", tone: "muted" }, [
+					typography(
+						h,
+						{ size: "2xs", tone: "muted" },
 						member.linkedAt === undefined
-							? "Billed here"
-							: `Billed here since ${formatDateInTimezone(member.linkedAt, { timeZone })}`,
-					]),
+							? ["Billed here"]
+							: [
+									"Billed here since ",
+									timestamp(h, {
+										value: member.linkedAt,
+										timeZone,
+										label: formatDateInTimezone(member.linkedAt, { timeZone }),
+									}),
+								],
+					),
 				]),
 			]),
 			hstack(h, { gap: "4" }, [
 				volumeCell(h, model, member),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -180,8 +189,6 @@ export const billedOrgsSection = (h: H, model: Model, account: BillingAccount, t
 				: []),
 		],
 	)
-
-// STANDALONE
 
 /** An admin's other orgs to bill this one through; hidden until there is at least one. */
 export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -240,8 +247,6 @@ export const linkSection = (h: H, model: Model): ReadonlyArray<Html> => {
 	]
 }
 
-// DIALOGS
-
 export const accountDialogs = (h: H, model: Model, account: BillingAccount | null): ReadonlyArray<Html> => {
 	const target = linkTargetOf(model)
 	const removing =
@@ -249,7 +254,9 @@ export const accountDialogs = (h: H, model: Model, account: BillingAccount | nul
 			? null
 			: account.role === "member"
 				? null
-				: (account.members.find((member) => member.orgId === model.unlinkOrgId) ?? null)
+				: Option.getOrNull(
+						Arr.findFirst(account.members, (member) => member.orgId === model.unlinkOrgId),
+					)
 	const payer = account === null ? "" : nameOf(account.billingOrg)
 	return [
 		confirmDialog(h, {

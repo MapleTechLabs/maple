@@ -1,9 +1,6 @@
 import { getMetricsAggregations, type QueryBuilderMetricType } from "@maple/query-engine/query-builder"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	tokenizeWhereClause,
-	WHERE_CLAUSE_TOKEN_COLOR,
-} from "../../../lib/query-builder/where-clause-highlight"
+import { tokenizeWhereClause, WHERE_CLAUSE_TOKEN_COLOR } from "../../kit/query-builder/where-clause-highlight"
 import { Option, Array as Arr } from "effect"
 import { AsyncData as FoldkitAsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -28,8 +25,6 @@ import { MountKeepWhereFocus, MountWhereCaret } from "./command"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 
-// `MetricGraduationActions` and `MetricQueryControls` (components/metrics/).
-
 type H = HtmlBuilder<Message>
 
 const label = (h: H, text: string): Html =>
@@ -37,44 +32,41 @@ const label = (h: H, text: string): Html =>
 
 /** The explorer's way out: a dashboard widget, an alert rule, or a shared link. */
 export const graduationActions = (h: H, model: Model): Html =>
-	h.div(
-		[h.Class("flex justify-end")],
-		[
-			hstack(h, { gap: "2" }, [
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedAddToDashboard())],
-					},
-					[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
-				),
-				button(
-					h,
-					{
-						variant: "outline",
-						size: "sm",
-						attributes: [h.OnClick(Message.ClickedCreateAlert())],
-					},
-					[icon(h, "BellIcon"), "Create alert"],
-				),
-				CopyButton.copyButton(h, {
-					status: model.copyLink.status,
-					label: "Link",
-					idleLabel: "Copy link",
-					idleIcon: "LinkIcon",
+	hstack(h, { align: "stretch", justify: "end" }, [
+		hstack(h, { gap: "2" }, [
+			button(
+				h,
+				{
 					variant: "outline",
-					onClick: Message.ClickedCopyLink(),
-				}),
-			]),
-		],
-	)
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedAddToDashboard())],
+				},
+				[icon(h, "GridSquareCirclePlusIcon"), "Add to dashboard"],
+			),
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [h.OnClick(Message.ClickedCreateAlert())],
+				},
+				[icon(h, "BellIcon"), "Create alert"],
+			),
+			CopyButton.copyButton(h, {
+				status: model.copyLink.status,
+				label: "Link",
+				idleLabel: "Copy link",
+				idleIcon: "LinkIcon",
+				variant: "outline",
+				onClick: Message.ClickedCopyLink(),
+			}),
+		]),
+	])
 
 const toAggregation = (message: Select.Message) => Message.GotAggregationSelectMessage({ message })
 const toGroupBy = (message: Combobox.Message) => Message.GotGroupByComboboxMessage({ message })
 
-/** `WhereClauseEditor`: the textarea with its syntax-highlight overlay. */
+/** The where editor: the textarea with its syntax-highlight overlay. */
 const whereKey = (isOpen: boolean) =>
 	whereKeyHandler<Message>(isOpen, {
 		enter: Message.PressedWhereEnterOnList(),
@@ -124,7 +116,7 @@ const whereEditor = (h: H, model: Model): Html => {
 								h.AriaHidden(true),
 								h.Class(
 									cn(
-										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
+										"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-ui",
 										textareaClassName,
 									),
 								),
@@ -152,7 +144,7 @@ const whereEditor = (h: H, model: Model): Html => {
 	)
 }
 
-/** `useMetricScopedAutocomplete`'s group-by keys: the metric's own attribute keys. */
+/** The group-by keys: the metric's own attribute keys. */
 const scopedKeys = (model: Model): ReadonlyArray<string> =>
 	Option.match(FoldkitAsyncData.getData(model.attributeKeys.data), {
 		onNone: () => [],
@@ -182,10 +174,10 @@ export const queryControls = (
 				toView: (parts) => hstack(h, { gap: "2" }, [label(h, "Aggregate"), ...parts]),
 			},
 		}),
-		h.div(
-			[h.Class("flex min-w-64 flex-1 items-center gap-2")],
-			[label(h, "Where"), whereEditor(h, model)],
-		),
+		hstack(h, { gap: "2", align: "center", grow: true, className: "min-w-64" }, [
+			label(h, "Where"),
+			whereEditor(h, model),
+		]),
 		h.submodel({
 			slotId: "metric-group-by",
 			model: model.groupByCombobox,

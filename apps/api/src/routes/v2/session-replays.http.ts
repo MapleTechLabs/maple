@@ -1,5 +1,5 @@
 import { HttpApiBuilder } from "effect/http-api"
-import { CurrentTenant, SessionId, TraceId } from "@maple/domain/http"
+import { CurrentTenant, SessionId } from "@maple/domain/http"
 import {
 	MAX_REPLAY_CHUNKS_PER_REQUEST,
 	MAX_REPLAY_MANIFEST_CHUNKS,
@@ -27,9 +27,9 @@ import { sessionTagsOf } from "@maple/domain/query-engine"
 import { DateTime, Effect, Option, Schema, Array as Arr } from "effect"
 import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
+import { decodeTraceId } from "../warehouse-ids"
 
 const decodeSessionId = Schema.decodeSync(SessionId)
-const decodeTraceId = Schema.decodeSync(TraceId)
 
 /**
  * Refuse a chunk range whose payload would blow the request budget, before a

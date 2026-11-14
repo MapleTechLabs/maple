@@ -4,7 +4,7 @@ import type { PageSubscriptionInput } from "../../contract"
 import { Message, type Model } from "./model"
 import { pollTicks } from "../../../data/poll"
 
-/** `POLL_MS`: how often the list refetches while a review is queued or running. */
+/** How often the list refetches while a review is queued or running. */
 const POLL = Duration.seconds(5)
 
 const isActive = (model: Model) =>
@@ -15,7 +15,6 @@ const isActive = (model: Model) =>
 	})
 
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message>()((entry) => ({
-	/** `useIntervalRefresh(refresh, { intervalMs: POLL_MS, enabled: active })`. */
 	poll: entry(
 		{ isActive: Schema.Boolean },
 		{

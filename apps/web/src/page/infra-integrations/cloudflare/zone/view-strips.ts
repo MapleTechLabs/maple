@@ -1,4 +1,4 @@
-import { CLIENT_ERROR_NOTABLE } from "../../../../components/infra/cloudflare/list-model"
+import { CLIENT_ERROR_NOTABLE } from "../list-model"
 import {
 	cacheHitRows,
 	errorShareRows,
@@ -6,7 +6,7 @@ import {
 	requestRows,
 	type ZoneSignalTotals,
 	zoneSignalTotals,
-} from "../../../../components/infra/cloudflare/zone-signals"
+} from "../zone-signals"
 import { errorRateClass } from "@maple/ui/lib/error-rate"
 import {
 	EMPTY_VALUE,
@@ -26,9 +26,7 @@ import type { ZoneDetail, ZoneRow } from "../data"
 import { MountLinkedCursor } from "./command"
 import { Message, type Model } from "./model"
 import { typographyClass } from "@maple/views/ui/typography"
-import { Array as Arr } from "effect"
-
-// `CloudflareZoneSignals`.
+import { Array as Arr, Order } from "effect"
 
 type H = HtmlBuilder<Message>
 
@@ -159,9 +157,10 @@ export const zoneSignals = (
 	)
 	return correlationStrips(h, {
 		strips,
-		xDomain: [
-			...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket)),
-		].toSorted(),
+		xDomain: Arr.sort(
+			[...new Set(Arr.map([...detail.statusBuckets, ...detail.cacheBuckets], (b) => b.bucket))],
+			Order.String,
+		),
 		isWaiting: options.isWaiting,
 		theme: options.theme,
 		timeZone: options.timeZone,

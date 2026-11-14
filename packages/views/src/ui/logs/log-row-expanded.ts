@@ -1,5 +1,5 @@
 import { getSeverityColor } from "@maple/ui/lib/severity"
-import { stripAnsi } from "@maple/ui/components/logs/strip-ansi"
+import { stripAnsi } from "@maple/ui/lib/strip-ansi"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AttributesPanel from "../attributes/attributes-panel"
@@ -63,7 +63,7 @@ export const logRowExpanded = <Message>(
 					h.div(
 						[
 							h.Class(
-								"relative rounded-md border border-border-subtle bg-background/60 py-2 pl-3 pr-24",
+								"relative rounded-md border border-border-subtle bg-surface-well py-2 pl-3 pr-24",
 							),
 						],
 						[

@@ -1,4 +1,4 @@
-import type { ChatConnectorId } from "@maple/domain/primitives"
+import type { ChatConnectorId } from "@maple/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
@@ -13,9 +13,9 @@ import {
 	integrationEmptyHint,
 	integrationEmptyMedia,
 	integrationIconPlate,
-} from "../infra-integrations/kit/integration-empty"
+} from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
-import { catalogEntry, chatIntegrationId, chatManifestOf } from "./catalog"
+import { chatEntry, chatManifestOf } from "./catalog"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chatConnectorStatus } from "./update-chat"
@@ -24,11 +24,10 @@ import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 
-// `ChatIntegrationCard`.
-// TODO(clerk): `useIsOrgAdmin` (self-hosted is the root admin) and `WorkspaceSettings`, which renders
-// nothing until a manifest declares settings fields (none does).
+// TODO(clerk): admin gating is hardcoded (self-hosted is the root admin), and workspace settings
+// render nothing until a manifest declares settings fields (none does).
 
 type H = HtmlBuilder<Message>
 
@@ -46,7 +45,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 			title: `Couldn't load the ${manifest.name} integration`,
 			onRetry: Message.ClickedRetryStatus({ name: "chat" }),
 		})
-	const entry = catalogEntry(chatIntegrationId(connector))
+	const entry = chatEntry(manifest)
 	const brand = { ...entryBrand(h, entry), backerGlyph: (size: number) => monoGlyph(h, manifest, size) }
 	const workspaces = status?.workspaces ?? []
 	const available = status?.available === true
@@ -75,7 +74,11 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 			]),
 		])
 
-	const confirmWorkspace = workspaces.find((workspace) => workspace.id === model.chatCard.confirmId)
+	const confirmWorkspace = Arr.findFirst(
+		workspaces,
+		(workspace) => workspace.id === model.chatCard.confirmId,
+	)
+	const confirmName = Option.map(confirmWorkspace, (workspace) => workspace.name)
 	return vstack(h, { gap: "4" }, [
 		...Arr.map(workspaces, (workspace) =>
 			mediaCard(h, integrationIconPlate(h, brand), [
@@ -164,8 +167,8 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 			slotId: "integration-disconnect",
 			model: model.disconnect.dialog,
 			toParentMessage: (message) => Message.GotDisconnectDialogMessage({ message }),
-			subject: confirmWorkspace?.name,
-			description: `${confirmWorkspace ? confirmWorkspace.name : "This workspace"} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
+			subject: Option.getOrUndefined(confirmName),
+			description: `${Option.getOrElse(confirmName, () => "This workspace")} is unlinked from your organization immediately. Removing the bot from the workspace itself is done in ${manifest.name}.`,
 			onConfirm: Message.ConfirmedDisconnect(),
 			isPending: busy !== null && busy === model.chatCard.confirmId,
 		}),

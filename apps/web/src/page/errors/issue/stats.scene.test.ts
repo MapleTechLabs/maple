@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { expect as expectView, given, scene, text } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { errorIssueDetailFromV2 } from "../../../lib/services/error-issues"
+import { errorIssueDetailFromV2 } from "../../../data/error-issues"
 import type { Message } from "./message"
 import { issueStats, type StatInputs } from "./view-overview"
 
@@ -18,7 +18,7 @@ const issueWith = (
 	kind: "error" | "alert" = "error",
 ) =>
 	errorIssueDetailFromV2(
-		Schema.decodeUnknownSync(V2ErrorIssueDetail)({
+		Schema.decodeSync(V2ErrorIssueDetail)({
 			id: encodePublicId("iss", issueId),
 			object: "error_issue",
 			kind,

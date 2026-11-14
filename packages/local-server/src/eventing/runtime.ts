@@ -1,4 +1,4 @@
-// BOUNDARY: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
+// BOUNDARY-FILE: activation candidates and decoded OTLP bodies arrive unparsed; this runtime decodes them.
 import {
 	Context,
 	DateTime,
@@ -286,7 +286,8 @@ export class LocalEventingRuntime extends Context.Service<LocalEventingRuntime, 
 				return yield* new ProjectionActivationInvalid({
 					message: `Maple Local only accepts projections for tenant ${TENANT_ID}`,
 				})
-			const active = (yield* listActive).filter((candidate) => candidate.id !== spec.id)
+			const listed = yield* listActive
+			const active = Arr.filter(listed, (candidate) => candidate.id !== spec.id)
 			const next = spec.enabled ? [...active, spec] : active
 			const nextCompiled = yield* Effect.fromResult(
 				CompiledProjectionRegistry.compile(next, sources, projectors),

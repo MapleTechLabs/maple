@@ -1,9 +1,5 @@
-/** Output schemas for the setup, source-code, repository sandbox and pull request MCP tools. */
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
-
-// ---------------------------------------------------------------------------------------------
-// audit_setup (mirrors AuditSetupData)
 
 export const SetupAuditCheckRow = Schema.Struct({
 	/** Stable check id, e.g. `CFG-ALERT-03`. */
@@ -14,7 +10,13 @@ export const SetupAuditCheckRow = Schema.Struct({
 	status: Schema.Literals(["pass", "fail", "skip"]),
 	detail: Schema.NullOr(Schema.String),
 	affected: Schema.Array(
-		Schema.Struct({ kind: Schema.String, name: Schema.String, note: Schema.NullOr(Schema.String) }),
+		Schema.Struct({
+			kind: Schema.String,
+			/** Public id (`alrt_…`, `dest_…`) when the entity is an addressable resource. */
+			id: Schema.optionalKey(Schema.String),
+			name: Schema.String,
+			note: Schema.NullOr(Schema.String),
+		}),
 	),
 	affectedCount: Schema.Number,
 	fixHint: Schema.String,
@@ -37,9 +39,6 @@ export const AuditSetupOutput = Schema.Struct({
 	/** Whether passing and skipped checks were asked for, which decides what the text lists. */
 	includePassing: Schema.optionalKey(Schema.Boolean),
 })
-
-// ---------------------------------------------------------------------------------------------
-// get_instrumentation_recommendations (mirrors GetInstrumentationRecommendationsData)
 
 export const InstrumentationRecommendationRow = Schema.Struct({
 	id: Schema.String,
@@ -77,9 +76,6 @@ export const GetInstrumentationRecommendationsOutput = Schema.Struct({
 	/** The status filter that applied: a recommendation status, or `all`. */
 	statusFilter: Schema.optionalKey(Schema.String),
 })
-
-// ---------------------------------------------------------------------------------------------
-// Source code (GitHub App reads)
 
 export const ListSourceRepositoriesOutput = Schema.Struct({
 	repositories: Schema.Array(
@@ -132,9 +128,6 @@ export const ReadSourceFileOutput = Schema.Struct({
 	lines: Schema.Array(Schema.String),
 })
 
-// ---------------------------------------------------------------------------------------------
-// Repository sandbox
-
 const SandboxRun = {
 	repository: Schema.String,
 	/** The ref asked for; absent means the repository's tracked branch. */
@@ -146,6 +139,8 @@ const SandboxRun = {
 export const SandboxGrepOutput = Schema.Struct({
 	...SandboxRun,
 	pattern: Schema.String,
+	/** The pattern git grep ran, when it is not `pattern`: unpaired parentheses escaped to literals. */
+	searchedPattern: Schema.optionalKey(Schema.String),
 	path: Schema.optionalKey(Schema.String),
 	glob: Schema.optionalKey(Schema.String),
 	caseSensitive: Schema.Boolean,
@@ -187,9 +182,6 @@ export const SandboxExecOutput = Schema.Struct({
 	truncated: Schema.Boolean,
 	maxOutputBytes: Schema.Number,
 })
-
-// ---------------------------------------------------------------------------------------------
-// Pull requests (the review agent's reads)
 
 export const ChangedFileKind = Schema.Literals([
 	"source",

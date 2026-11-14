@@ -10,7 +10,7 @@ SELECT
         FROM (SELECT
           traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
           groupUniqArray(traces.ServiceName) AS serviceNames,
           min(traces.Timestamp) AS traceStart,
           max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
@@ -104,7 +104,7 @@ SELECT
         FROM (SELECT
           traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
           groupUniqArray(traces.ServiceName) AS serviceNames,
           min(traces.Timestamp) AS traceStart,
           max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
@@ -208,7 +208,7 @@ SELECT
         FROM (SELECT
           traces.TraceId AS traceId,
           count() AS spanCount,
-          countIf((traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (traces.SpanAttributes['error.type'] != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))) AS errorSpanCount,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
           groupUniqArray(traces.ServiceName) AS serviceNames,
           min(traces.Timestamp) AS traceStart,
           max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) AS traceEndNanos
@@ -311,7 +311,7 @@ SELECT
         FROM (SELECT
           window_sessions.agentDurationMs AS agentDurationMs,
           window_sessions.toolCalls AS toolCalls,
-          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), greatest(0., r.3 - own.1), greatest(0., r.4 - own.2), greatest(0., r.7 - own.3), greatest(0., r.8 - own.4), greatest(0., r.9 - own.5), greatest(0., r.10 - own.6), greatest(0., r.11 - own.7)), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
           toString(min(index_traces.traceAgentStart)) AS agentStart,
@@ -515,7 +515,7 @@ SELECT
           ranked_sessions.toolErrors AS toolErrors,
           ranked_sessions.turnErrors AS turnErrors,
           ranked_sessions.agentDurationMs AS agentDurationMs,
-          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), greatest(0., r.3 - own.1), greatest(0., r.4 - own.2), greatest(0., r.7 - own.3), greatest(0., r.8 - own.4), greatest(0., r.9 - own.5), greatest(0., r.10 - own.6), greatest(0., r.11 - own.7)), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
           toString(min(index_traces.traceAgentStart)) AS agentStart,
@@ -610,7 +610,7 @@ SELECT
           ranked_sessions.toolErrors AS toolErrors,
           ranked_sessions.turnErrors AS turnErrors,
           ranked_sessions.agentDurationMs AS agentDurationMs,
-          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), greatest(0., r.3 - own.1), greatest(0., r.4 - own.2), greatest(0., r.7 - own.3), greatest(0., r.8 - own.4), greatest(0., r.9 - own.5), greatest(0., r.10 - own.6), greatest(0., r.11 - own.7)), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
           toString(min(index_traces.traceAgentStart)) AS agentStart,
@@ -724,7 +724,7 @@ SELECT
           ranked_sessions.toolErrors AS toolErrors,
           ranked_sessions.turnErrors AS turnErrors,
           ranked_sessions.agentDurationMs AS agentDurationMs,
-          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), greatest(0., r.3 - own.1), greatest(0., r.4 - own.2), greatest(0., r.7 - own.3), greatest(0., r.8 - own.4), greatest(0., r.9 - own.5), greatest(0., r.10 - own.6), greatest(0., r.11 - own.7)), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
           toString(min(index_traces.traceAgentStart)) AS agentStart,
@@ -822,7 +822,7 @@ SELECT
           ranked_sessions.toolErrors AS toolErrors,
           ranked_sessions.turnErrors AS turnErrors,
           ranked_sessions.agentDurationMs AS agentDurationMs,
-          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.3 - own.1)), if(r.6 = 0 AND own.2 > 0, 0., greatest(0., r.4 - own.2)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.7 - own.3)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.8 - own.4)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.9 - own.5)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.10 - own.6)), if(r.6 = 0 AND own.1 > 0, 0., greatest(0., r.11 - own.7))), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
+          arrayMap(charged -> arrayMap((r, own, tokenAncestor, costAncestor, parent) -> tuple(r.5, r.6 = 1 AND if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - own.1) > 0 OR greatest(0., r.4 - own.2) > 0, tokenAncestor.8 = 0 AND costAncestor.8 = 0 AND parent.8 = 0), greatest(0., r.3 - own.1), greatest(0., r.4 - own.2), greatest(0., r.7 - own.3), greatest(0., r.8 - own.4), greatest(0., r.9 - own.5), greatest(0., r.10 - own.6), greatest(0., r.11 - own.7)), reporters, arraySlice(charged, 0 * length(reporters) + 1, length(reporters)), arraySlice(charged, 1 * length(reporters) + 1, length(reporters)), arraySlice(charged, 2 * length(reporters) + 1, length(reporters)), arraySlice(charged, 3 * length(reporters) + 1, length(reporters))), [arrayMap(entries -> arrayMap(sorted -> tupleElement(arraySort(f -> f.3, arrayFilter(f -> f.2 = 1, arrayZip(arrayFill((v, first) -> first = 1, tupleElement(tupleElement(sorted, 1), 3), arrayEnumerateUniq(tupleElement(tupleElement(sorted, 1), 1))), tupleElement(tupleElement(sorted, 1), 2), tupleElement(sorted, 2)))), 1), [arraySort(e -> (e.1.1, e.1.2), arrayZip(entries, arrayEnumerate(entries)))])[1], [arrayConcat(arrayMap(t -> (t.1, 0, t.2), arrayMap(claims -> arrayZip(claims.1, arrayZip(claims.2, claims.3, claims.4, claims.5, claims.6, claims.7, claims.8, claims.9)), [arrayReduce('sumMap', arrayMap(r -> [r.12, r.13, r.1], reporters), arrayMap(r -> [r.3, 0., 0.], reporters), arrayMap(r -> [0., r.4, 0.], reporters), arrayMap(r -> [r.7, 0., 0.], reporters), arrayMap(r -> [r.8, 0., 0.], reporters), arrayMap(r -> [r.9, 0., 0.], reporters), arrayMap(r -> [r.10, 0., 0.], reporters), arrayMap(r -> [r.11, 0., 0.], reporters), arrayMap(r -> [0., 0., 1.], reporters))])[1]), arrayMap(k -> (k, 1, (0., 0., 0., 0., 0., 0., 0., 0.)), arrayConcat(tupleElement(reporters, 1), tupleElement(reporters, 12), tupleElement(reporters, 13), tupleElement(reporters, 2))))])[1]])[1] AS netted
         FROM (SELECT
           if(index_traces.rawSessionId = '', concat('trace:', index_traces.traceId), index_traces.rawSessionId) AS sessionId,
           toString(min(index_traces.traceAgentStart)) AS agentStart,
@@ -934,7 +934,7 @@ SELECT
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
           toString(traces.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -973,7 +973,7 @@ SELECT
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
           toString(traces.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1008,20 +1008,16 @@ SELECT
           intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
           countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+          countIf(traces.SpanAttributes['maple_ai.llm_call'] = '1') AS llmCalls,
+          countIf(traces.SpanAttributes['maple_ai.tool_call'] = '1') AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.input_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'])), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.output_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'])), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'])), 0) AS cacheReadTokens,
+          countIf(traces.SpanAttributes['maple_ai.usage.cost'] != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cost'])), 0) AS cost,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.model'], (traces.SpanAttributes['maple_ai.llm_call'] = '1' AND traces.SpanAttributes['maple_ai.model'] != '')) AS models,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.agent.name'], traces.SpanAttributes['maple_ai.agent.name'] != '') AS agentNames
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1055,20 +1051,16 @@ SELECT
           intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
           countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+          countIf(traces.SpanAttributes['maple_ai.llm_call'] = '1') AS llmCalls,
+          countIf(traces.SpanAttributes['maple_ai.tool_call'] = '1') AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.input_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'])), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.output_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'])), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'])), 0) AS cacheReadTokens,
+          countIf(traces.SpanAttributes['maple_ai.usage.cost'] != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cost'])), 0) AS cost,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.model'], (traces.SpanAttributes['maple_ai.llm_call'] = '1' AND traces.SpanAttributes['maple_ai.model'] != '')) AS models,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.agent.name'], traces.SpanAttributes['maple_ai.agent.name'] != '') AS agentNames
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1114,7 +1106,7 @@ SELECT
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
           toString(traces.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1144,7 +1136,7 @@ SELECT
           traces.StatusCode AS statusCode,
           traces.StatusMessage AS statusMessage,
           toString(traces.Timestamp) AS timestamp,
-          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
+          mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes) AS spanAttributes
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1173,20 +1165,16 @@ SELECT
           intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
           countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+          countIf(traces.SpanAttributes['maple_ai.llm_call'] = '1') AS llmCalls,
+          countIf(traces.SpanAttributes['maple_ai.tool_call'] = '1') AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.input_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'])), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.output_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'])), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'])), 0) AS cacheReadTokens,
+          countIf(traces.SpanAttributes['maple_ai.usage.cost'] != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cost'])), 0) AS cost,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.model'], (traces.SpanAttributes['maple_ai.llm_call'] = '1' AND traces.SpanAttributes['maple_ai.model'] != '')) AS models,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.agent.name'], traces.SpanAttributes['maple_ai.agent.name'] != '') AS agentNames
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1213,20 +1201,16 @@ SELECT
           intDiv(max(toUnixTimestamp64Nano(traces.Timestamp) + toInt64(traces.Duration)) - toUnixTimestamp64Nano(min(traces.Timestamp)), 1000000) AS durationMs,
           count() AS spanCount,
           countIf(traces.SpanAttributes['maple_ai.vendor.id'] != '') AS aiSpanCount,
-          countIf((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))) AS llmCalls,
-          countIf((traces.SpanAttributes['maple_ai.tool_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('execute_tool') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') = '' AND traces.SpanAttributes['maple_ai.vendor.id'] != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') != ''))))) AS toolCalls,
-          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (traces.StatusCode = 'Error' OR (traces.SpanAttributes['maple_ai.vendor.id'] != '' AND (coalesce(nullIf(traces.SpanAttributes['error.type'], ''), '') != '' OR traces.SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))))))) AS errorSpanCount,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), '')))), 0) AS inputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), '')))), 0) AS outputTokens,
-          ifNotFinite(sum(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), '')))), 0) AS cacheReadTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.input_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.prompt_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.promptTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmInputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.output_tokens'], ''), '')) + toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.output_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.completion_tokens'], ''), nullIf(traces.SpanAttributes['ai.usage.outputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.completionTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.completion'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmOutputTokens,
-          ifNotFinite(sumIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'], ''), '')), toFloat64OrZero(coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cache_read.input_tokens'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.input_tokens.cached'], ''), nullIf(traces.SpanAttributes['ai.usage.cachedInputTokens'], ''), nullIf(traces.SpanAttributes['ai.usage.inputTokenDetails.cacheReadTokens'], ''), nullIf(traces.SpanAttributes['llm.token_count.prompt_details.cache_read'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCacheReadTokens,
-          countIf(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')) != '') AS costReporters,
-          ifNotFinite(sum(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), '')))), 0) AS cost,
-          ifNotFinite(sumIf(toFloat64OrZero(if(traces.SpanAttributes['maple_ai.llm_call'] != '', coalesce(nullIf(traces.SpanAttributes['maple_ai.usage.cost'], ''), ''), coalesce(nullIf(traces.SpanAttributes['gen_ai.usage.cost'], ''), nullIf(traces.SpanAttributes['gen_ai.usage.total_cost'], ''), nullIf(traces.SpanAttributes['llm.cost.total'], ''), ''))), (traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = ''))))), 0) AS llmCost,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')), ((traces.SpanAttributes['maple_ai.llm_call'] = '1' OR (NOT (traces.SpanAttributes['maple_ai.llm_call'] != '') AND (coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') IN ('chat', 'generate_content', 'text_completion', 'fetch_response') OR ((coalesce(nullIf(traces.SpanAttributes['gen_ai.operation.name'], ''), '') NOT IN ('embeddings', 'retrieval', 'execute_tool', 'invoke_agent', 'create_agent', 'invoke_workflow', 'plan', 'agent_step', 'search_memory', 'create_memory', 'update_memory', 'upsert_memory', 'delete_memory', 'create_memory_store', 'delete_memory_store') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '') != '') AND coalesce(nullIf(traces.SpanAttributes['gen_ai.tool.name'], ''), nullIf(traces.SpanAttributes['ai.toolCall.name'], ''), nullIf(traces.SpanAttributes['tool.name'], ''), '') = '')))) AND if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.model'], coalesce(nullIf(traces.SpanAttributes['gen_ai.response.model'], ''), nullIf(traces.SpanAttributes['ai.response.model'], ''), nullIf(traces.SpanAttributes['gen_ai.request.model'], ''), nullIf(traces.SpanAttributes['ai.model.id'], ''), nullIf(traces.SpanAttributes['llm.model_name'], ''), '')) != '')) AS models,
-          groupUniqArrayIf(50)(if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')), if(traces.SpanAttributes['maple_ai.llm_call'] != '', traces.SpanAttributes['maple_ai.agent.name'], coalesce(nullIf(traces.SpanAttributes['gen_ai.agent.name'], ''), nullIf(traces.SpanAttributes['ai.telemetry.functionId'], ''), '')) != '') AS agentNames
+          countIf(traces.SpanAttributes['maple_ai.llm_call'] = '1') AS llmCalls,
+          countIf(traces.SpanAttributes['maple_ai.tool_call'] = '1') AS toolCalls,
+          countIf((traces.SpanAttributes['maple_ai.error'] = '1' OR (traces.SpanAttributes['maple_ai.llm_call'] = '' AND traces.StatusCode = 'Error'))) AS errorSpanCount,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.input_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_write_tokens'])), 0) AS inputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.output_tokens']) + toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.reasoning_tokens'])), 0) AS outputTokens,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cache_read_tokens'])), 0) AS cacheReadTokens,
+          countIf(traces.SpanAttributes['maple_ai.usage.cost'] != '') AS costReporters,
+          ifNotFinite(sum(toFloat64OrZero(traces.SpanAttributes['maple_ai.usage.cost'])), 0) AS cost,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.model'], (traces.SpanAttributes['maple_ai.llm_call'] = '1' AND traces.SpanAttributes['maple_ai.model'] != '')) AS models,
+          groupUniqArrayIf(50)(traces.SpanAttributes['maple_ai.agent.name'], traces.SpanAttributes['maple_ai.agent.name'] != '') AS agentNames
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 10:30:00'
@@ -1400,8 +1384,8 @@ SELECT
           traces.TraceId AS traceId,
           traces.SpanId AS spanId,
           traces.StatusCode AS statusCode,
-          mapApply((k, v) -> (k, leftUTF8(v, 16384)), mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes)) AS spanAttributes,
-          mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > 16384, mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.input_tokens', 'gen_ai.usage.prompt_tokens', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.output_tokens', 'gen_ai.usage.completion_tokens', 'gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.output_tokens.reasoning', 'gen_ai.usage.cost', 'gen_ai.usage.total_cost', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.inputTokens', 'ai.usage.promptTokens', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.usage.outputTokens', 'ai.usage.completionTokens', 'ai.usage.reasoningTokens', 'ai.usage.outputTokenDetails.reasoningTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt', 'llm.token_count.prompt_details.cache_read', 'llm.token_count.completion', 'llm.token_count.completion_details.reasoning', 'llm.cost.total', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes))) AS cutAttributeBytes
+          mapApply((k, v) -> (k, leftUTF8(v, 16384)), mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes)) AS spanAttributes,
+          mapApply((k, v) -> (k, length(v)), mapFilter((k, v) -> lengthUTF8(v) > 16384, mapFilter((k, v) -> (((k IN ('maple_ai.session.id', 'maple_ai.vendor.id', 'maple_ai.vendor.version', 'maple_ai.agent.name', 'gen_ai.operation.name', 'gen_ai.provider.name', 'gen_ai.system', 'gen_ai.request.model', 'gen_ai.request.max_tokens', 'gen_ai.request.choice.count', 'gen_ai.request.temperature', 'gen_ai.request.top_p', 'gen_ai.request.top_k', 'gen_ai.request.stop_sequences', 'gen_ai.request.frequency_penalty', 'gen_ai.request.presence_penalty', 'gen_ai.request.encoding_formats', 'gen_ai.request.seed', 'gen_ai.openai.request.seed', 'gen_ai.request.stream', 'gen_ai.request.reasoning.level', 'gen_ai.request.previous_response.id', 'gen_ai.request.stream_cursor', 'gen_ai.response.id', 'gen_ai.response.model', 'gen_ai.response.finish_reasons', 'gen_ai.response.finish_reason', 'gen_ai.response.status', 'gen_ai.response.time_to_first_chunk', 'gen_ai.output.type', 'gen_ai.usage.cache_read.input_tokens', 'gen_ai.usage.input_tokens.cached', 'gen_ai.usage.cache_creation.input_tokens', 'gen_ai.usage.cache_write.input_tokens', 'maple_ai.llm_call', 'maple_ai.tool_call', 'maple_ai.error', 'maple_ai.usage.input_tokens', 'maple_ai.usage.cache_read_tokens', 'maple_ai.usage.cache_write_tokens', 'maple_ai.usage.output_tokens', 'maple_ai.usage.reasoning_tokens', 'maple_ai.usage.cost', 'gen_ai.conversation.id', 'gen_ai.conversation.compacted', 'gen_ai.agent.id', 'gen_ai.agent.name', 'gen_ai.agent.description', 'gen_ai.agent.version', 'gen_ai.tool.name', 'gen_ai.tool.call.id', 'gen_ai.tool.description', 'gen_ai.tool.type', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result', 'gen_ai.tool.definitions', 'gen_ai.system_instructions', 'gen_ai.input.messages', 'gen_ai.prompt', 'gen_ai.output.messages', 'gen_ai.completion', 'gen_ai.data_source.id', 'gen_ai.retrieval.query.text', 'gen_ai.retrieval.top_k', 'gen_ai.retrieval.documents', 'gen_ai.memory.store.id', 'gen_ai.memory.record.id', 'gen_ai.memory.record.count', 'gen_ai.memory.query.text', 'gen_ai.memory.records', 'gen_ai.embeddings.dimension.count', 'gen_ai.evaluation.name', 'gen_ai.evaluation.score.value', 'gen_ai.evaluation.score.label', 'gen_ai.evaluation.explanation', 'gen_ai.prompt.name', 'gen_ai.prompt.version', 'gen_ai.workflow.name', 'span.metadata.attempt_index', 'span.metadata.status_code', 'trace.metadata.openrouter.provider_name', 'error.type', 'server.address', 'server.port', 'ai.model.provider', 'ai.model.id', 'ai.response.id', 'ai.response.model', 'ai.response.finishReason', 'gen_ai.client.operation.time_to_first_chunk', 'ai.usage.cachedInputTokens', 'ai.usage.inputTokenDetails.cacheReadTokens', 'ai.usage.inputTokenDetails.cacheWriteTokens', 'ai.telemetry.functionId', 'ai.toolCall.name', 'ai.toolCall.id', 'ai.toolCall.args', 'ai.toolCall.result', 'ai.prompt.tools', 'ai.prompt.messages', 'ai.prompt', 'llm.provider', 'llm.system', 'llm.model_name', 'llm.finish_reason', 'llm.token_count.prompt_details.cache_read', 'tool.name', 'tool.description', 'llm.tools', 'openinference.span.kind', 'tool.parameters', 'input.value', 'output.value', 'eve.turn.id', 'maple_ai.turn.id', 'mcp.method.name') OR k LIKE 'gen_ai.prompt.variable.%') OR k LIKE 'llm.input_messages.%') OR k LIKE 'llm.output_messages.%'), traces.SpanAttributes))) AS cutAttributeBytes
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-02 11:15:00.000000000'
@@ -4679,7 +4663,7 @@ SELECT
         FROM attribute_keys_hourly
         WHERE attribute_keys_hourly.OrgId = 'org_sql_catalog'
           AND attribute_keys_hourly.AttributeScope IN ('span', 'resource', 'log', 'metric')
-          AND attribute_keys_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_keys_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_keys_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY scope, attributeKey
         ORDER BY usageCount DESC
@@ -4690,16 +4674,39 @@ SELECT
 SELECT
           service_map_db_edges_hourly.ServiceName AS serviceName,
           service_map_db_edges_hourly.DbSystem AS dbSystem,
-          sum(service_map_db_edges_hourly.CallCount) AS callCount,
-          sumIf(service_map_db_edges_hourly.CallCount, service_map_db_edges_hourly.DbNamespace = '') AS unknownNamespaceCallCount
+          service_map_db_edges_hourly.DbNamespace AS dbNamespace,
+          sum(service_map_db_edges_hourly.CallCount) AS callCount
         FROM service_map_db_edges_hourly
         WHERE service_map_db_edges_hourly.OrgId = 'org_sql_catalog'
           AND service_map_db_edges_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND service_map_db_edges_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
           AND service_map_db_edges_hourly.DbSystem != ''
-        GROUP BY serviceName, dbSystem
+        GROUP BY serviceName, dbSystem, dbNamespace
         ORDER BY callCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditInboundRoutesQuery:default
+SELECT
+          f.serviceName AS serviceName,
+          f.route AS route,
+          count() AS traceCount
+        FROM (SELECT
+          traces.TraceId AS TraceId,
+          argMin(traces.ServiceName, traces.Timestamp) AS serviceName,
+          argMin(if(SpanAttributes['http.route'] != '', SpanAttributes['http.route'], replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(replaceRegexpOne(if(SpanAttributes['url.path'] != '', SpanAttributes['url.path'], SpanAttributes['http.target']), '[?#].*$', ''), '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}')), traces.Timestamp) AS route
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName IN ('maple-api')
+          AND traces.Timestamp >= '2026-01-01 08:30:00'
+          AND traces.Timestamp < '2026-01-03 14:15:00'
+          AND traces.SpanKind IN ('Server', 'Consumer')
+          AND traces.ParentSpanId != ''
+          AND traces.TraceId IN ('0af7651916cd43dd8448eb211c80319c')
+        GROUP BY TraceId) AS f
+        GROUP BY serviceName, route
+        ORDER BY traceCount DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:setup-audit:auditLogCorrelationQuery:default
@@ -4708,13 +4715,16 @@ SELECT
           count() AS logCount,
           countIf(logs.TraceId = '') AS uncorrelatedCount,
           countIf(upper(SeverityText) IN ('ERROR', 'FATAL')) AS errorLogCount,
-          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount
+          countIf((logs.TraceId = '' AND upper(SeverityText) IN ('ERROR', 'FATAL'))) AS uncorrelatedErrorCount,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND SeverityNumber BETWEEN 1 AND 24) AS numberedOddSeverities,
+          groupUniqArrayIf(10)(SeverityText, SeverityText != '' AND replaceRegexpOne(upper(trim(SeverityText)), '[0-9]+$', '') NOT IN ('TRACE', 'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'FATAL') AND NOT (SeverityNumber BETWEEN 1 AND 24)) AS unnumberedOddSeverities
         FROM logs
         WHERE logs.OrgId = 'org_sql_catalog'
           AND logs.TimestampTime >= '2026-01-01 10:30:00'
           AND logs.TimestampTime <= '2026-01-03 14:15:00'
           AND logs.Timestamp >= '2026-01-01 10:30:00'
           AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ServiceName NOT IN ('maple-uptime', 'github-actions')
         GROUP BY serviceName
         ORDER BY logCount DESC
         LIMIT 500
@@ -4734,6 +4744,21 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- builder:setup-audit:auditMetricLabelByMetricQuery:default
+SELECT
+          multiIf(metrics_sum.ServiceName LIKE 'cloudflare/%', 'cloudflare/', metrics_sum.ServiceName) AS serviceName,
+          metrics_sum.MetricName AS metricName,
+          [uniqIf(metrics_sum.Attributes['url.path'], mapContains(metrics_sum.Attributes, 'url.path'))] AS valueCardinalities
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND mapContains(metrics_sum.Attributes, 'url.path')
+        GROUP BY serviceName, metricName
+        ORDER BY arrayMax(valueCardinalities) DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:setup-audit:auditMetricLabelCardinalityQuery:default
 SELECT
           attribute_values_hourly.AttributeKey AS attributeKey,
@@ -4742,7 +4767,7 @@ SELECT
         FROM attribute_values_hourly
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
           AND attribute_values_hourly.AttributeScope = 'metric'
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
         GROUP BY attributeKey
         ORDER BY valueCardinality DESC
@@ -4755,7 +4780,8 @@ SELECT
           count() AS childCount,
           countIf(p.SpanId = '') AS orphanCount,
           countIf((p.SpanId = '' AND match(c.TraceState, 'th:[0-9a-f]+'))) AS sampledOrphanCount,
-          groupUniqArrayIf(3)(c.TraceId, p.SpanId = '') AS sampleTraceIds
+          countIf(((p.SpanId = '' AND NOT (match(c.TraceState, 'th:[0-9a-f]+'))) AND r.TraceId = '')) AS externalParentCount,
+          groupUniqArrayIf(3)(c.TraceId, (p.SpanId = '' AND r.TraceId != '')) AS sampleTraceIds
         FROM (SELECT
           service_map_children.TraceId AS TraceId,
           service_map_children.ParentSpanId AS ParentSpanId,
@@ -4773,6 +4799,13 @@ SELECT
         WHERE service_map_spans.OrgId = 'org_sql_catalog'
           AND service_map_spans.Timestamp >= '2026-01-01 08:30:00'
           AND service_map_spans.Timestamp < '2026-01-03 14:15:00') AS p ON (c.TraceId = p.TraceId AND c.ParentSpanId = p.SpanId)
+        LEFT JOIN (SELECT
+          trace_list_mv.TraceId AS TraceId
+        FROM trace_list_mv
+        WHERE trace_list_mv.OrgId = 'org_sql_catalog'
+          AND trace_list_mv.Timestamp >= '2026-01-01 08:30:00'
+          AND trace_list_mv.Timestamp < '2026-01-03 14:15:00'
+        GROUP BY TraceId) AS r ON c.TraceId = r.TraceId
         GROUP BY serviceName
         ORDER BY orphanCount DESC
         LIMIT 200
@@ -4787,12 +4820,43 @@ SELECT
         WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
           AND attribute_values_hourly.AttributeScope = 'span'
           AND attribute_values_hourly.AttributeKey IN ('service.peer.name', 'peer.service', 'db.system', 'db.system.name', 'messaging.system', 'rpc.system.name', 'rpc.system')
-          AND attribute_values_hourly.Hour >= '2026-01-01 10:30:00'
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
           AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
           AND attribute_values_hourly.AttributeValue != ''
         GROUP BY attributeKey, attributeValue
         ORDER BY usageCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditResourceKeyServicesQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          [countIf(mapContains(traces.ResourceAttributes, 'deployment.commit_sha')), countIf(mapContains(traces.ResourceAttributes, 'env'))] AS keyCounts,
+          [countIf((((traces.ResourceAttributes['deployment.commit_sha'] != '' AND traces.ResourceAttributes['service.version'] != '') AND (traces.ResourceAttributes['deployment.commit_sha'] = traces.ResourceAttributes['service.version'] OR ((traces.ResourceAttributes['service.version'] LIKE (replace(replace(replace(traces.ResourceAttributes['deployment.commit_sha'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') AND match(traces.ResourceAttributes['deployment.commit_sha'], '^.{7,}')) OR (traces.ResourceAttributes['deployment.commit_sha'] LIKE (replace(replace(replace(traces.ResourceAttributes['service.version'], '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%') AND match(traces.ResourceAttributes['service.version'], '^.{7,}'))))) AND NOT (match(traces.ResourceAttributes['deployment.commit_sha'], '^[0-9a-fA-F]{7,40}$'))))] AS duplicateCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'deployment.commit_sha') OR mapContains(traces.ResourceAttributes, 'env'))
+        GROUP BY serviceName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:setup-audit:auditResourceValueSamplesQuery:default
+SELECT
+          attribute_values_hourly.AttributeKey AS attributeKey,
+          attribute_values_hourly.AttributeValue AS attributeValue,
+          sum(attribute_values_hourly.UsageCount) AS usageCount
+        FROM attribute_values_hourly
+        WHERE attribute_values_hourly.OrgId = 'org_sql_catalog'
+          AND attribute_values_hourly.AttributeScope = 'resource'
+          AND attribute_values_hourly.AttributeKey IN ('deployment.commit_sha', 'env')
+          AND attribute_values_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND attribute_values_hourly.Hour <= '2026-01-03 14:15:00'
+        GROUP BY attributeKey, attributeValue
+        ORDER BY usageCount DESC
+        LIMIT 50
         FORMAT JSON
 
 -- builder:setup-audit:auditRootlessTracesSQL:default
@@ -4801,14 +4865,18 @@ SELECT
           count() AS traceCount,
           countIf(r.TraceId = '') AS rootlessCount,
           countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AS sampledRootlessCount,
+          countIf(((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1)) AS externalParentCount,
+          groupUniqArrayIf(10)(t.TraceId, ((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1)) AS externalTraceIds,
           sum(count()) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgTraceCount,
           sum(countIf(r.TraceId = '')) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgRootlessCount,
-          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount
+          sum(countIf((r.TraceId = '' AND (t.thresholdSampled = 1 OR t.unkeptSpans = 0)))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgSampledRootlessCount,
+          sum(countIf(((r.TraceId = '' AND NOT ((t.thresholdSampled = 1 OR t.unkeptSpans = 0))) AND t.externalParent = 1))) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS orgExternalParentCount
         FROM (SELECT
           traces.TraceId AS TraceId,
           argMin(traces.ServiceName, traces.Timestamp) AS entryService,
           max(match(traces.TraceState, 'th:[0-9a-f]+')) AS thresholdSampled,
-          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans
+          countIf(NOT ((traces.StatusCode = 'Error' OR traces.Duration >= 2000000000))) AS unkeptSpans,
+          argMin(toUInt8(SpanKind IN ('Server', 'Consumer') AND ParentSpanId != ''), (Timestamp, SpanKind NOT IN ('Server', 'Consumer'))) AS externalParent
         FROM traces
         WHERE traces.OrgId = 'org_sql_catalog'
           AND traces.Timestamp >= '2026-01-01 08:30:00'
@@ -4842,6 +4910,88 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
+-- builder:setup-audit:auditSensitiveKeyEmittersQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          traces.SpanName AS spanName,
+          [countIf(mapContains(traces.SpanAttributes, 'http.request.header.authorization'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.SpanAttributes, 'http.request.header.authorization')
+        GROUP BY serviceName, spanName
+        ORDER BY arraySum(keyCounts) DESC, serviceName ASC, spanName ASC
+        LIMIT 20
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceIdentityQuery:default
+SELECT
+          service_overview_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_overview_hourly.ServiceNamespace, service_overview_hourly.ServiceNamespace != '') AS namespaces,
+          groupUniqArrayIf(10)(service_overview_hourly.DeploymentEnv, service_overview_hourly.DeploymentEnv != '') AS environments
+        FROM service_overview_hourly
+        WHERE service_overview_hourly.OrgId = 'org_sql_catalog'
+          AND service_overview_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_overview_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceResourceKeysQuery:default
+SELECT
+          traces.ServiceName AS serviceName,
+          count() AS spanCount,
+          [countIf(mapContains(traces.ResourceAttributes, 'service.version')), countIf(mapContains(traces.ResourceAttributes, 'vcs.repository.url.full'))] AS keyCounts
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.IsEntryPoint = 1
+        GROUP BY serviceName
+        ORDER BY spanCount DESC
+        LIMIT 500
+        FORMAT JSON
+
+-- builder:setup-audit:auditServiceSdkQuery:default
+SELECT
+          service_runtimes_hourly.ServiceName AS serviceName,
+          groupUniqArrayIf(5)(service_runtimes_hourly.SdkLanguage, service_runtimes_hourly.SdkLanguage != '') AS sdkLanguages
+        FROM service_runtimes_hourly
+        WHERE service_runtimes_hourly.OrgId = 'org_sql_catalog'
+          AND service_runtimes_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND service_runtimes_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditSpanNameTemplatesQuery:default
+SELECT
+          t.serviceName AS serviceName,
+          sum(t.names) AS rawNameCount,
+          count() AS templateCount,
+          max(t.names) AS topTemplateNameCount,
+          argMax(t.examples, t.names) AS exampleNames
+        FROM (SELECT
+          n.serviceName AS serviceName,
+          replaceRegexpAll(arrayStringConcat(arrayMap(tok -> multiIf(match(tok, '^[A-Za-z]+_[A-Za-z0-9]{12,}$') AND match(tok, '[0-9]'), '{id}', match(tok, '^[0-9a-fA-F]{8,}$') AND match(tok, '[0-9]'), '{hex}', tok), extractAll(replaceRegexpAll(spanName, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', '{uuid}'), '[A-Za-z0-9_]+|[^A-Za-z0-9_]+'))), '[0-9]+', '{n}') AS template,
+          count() AS names,
+          groupArray(3)(spanName) AS examples
+        FROM (SELECT
+          traces_aggregates_hourly.ServiceName AS serviceName,
+          traces_aggregates_hourly.SpanName AS spanName
+        FROM traces_aggregates_hourly
+        WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
+          AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND traces_aggregates_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+        GROUP BY serviceName, spanName) AS n
+        GROUP BY serviceName, template) AS t
+        GROUP BY serviceName
+        HAVING sum(t.names) > 100
+        ORDER BY rawNameCount DESC
+        LIMIT 200
+        FORMAT JSON
+
 -- builder:setup-audit:auditSpanProfileByServiceQuery:default
 SELECT
           traces_aggregates_hourly.ServiceName AS serviceName,
@@ -4854,7 +5004,9 @@ SELECT
           sumIf(traces_aggregates_hourly.WeightedCount, traces_aggregates_hourly.DeploymentEnv = '') AS noEnvCount,
           uniq(traces_aggregates_hourly.SpanName) AS spanNameCount,
           groupUniqArrayIf(5)(StatusCode, StatusCode NOT IN ('Ok', 'Error', 'Unset', '')) AS badStatusCodes,
-          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds
+          groupUniqArrayIf(5)(SpanKind, SpanKind NOT IN ('Server', 'Client', 'Producer', 'Consumer', 'Internal', '')) AS badSpanKinds,
+          arrayMap(p -> p.1, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanNames,
+          arrayMap(p -> p.2, topKWeightedIf(1)((SpanName, SpanKind), toUInt64(WeightedCount), IsEntryPoint = 1 AND SpanKind NOT IN ('Server', 'Consumer'))) AS rootSpanKinds
         FROM traces_aggregates_hourly
         WHERE traces_aggregates_hourly.OrgId = 'org_sql_catalog'
           AND traces_aggregates_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
@@ -4862,6 +5014,22 @@ SELECT
         GROUP BY serviceName
         ORDER BY weightedSpanCount DESC
         LIMIT 25
+        FORMAT JSON
+
+-- builder:setup-audit:auditUncorrelatedLogMessagesQuery:default
+SELECT
+          logs.ServiceName AS serviceName,
+          topK(1)(leftUTF8(Body, 120)) AS topMessages
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName IN ('maple-api')
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.TraceId = ''
+        GROUP BY serviceName
+        LIMIT 50
         FORMAT JSON
 
 -- builder:supabase-infra:supabaseProjectCpuSQL:default
@@ -5226,4 +5394,656 @@ SELECT
         GROUP BY serviceName
         ORDER BY calls DESC, serviceName ASC
         LIMIT 100
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayByModelSQL:default
+SELECT
+          if(traces.SpanAttributes['gen_ai.response.model'] != '', traces.SpanAttributes['gen_ai.response.model'], traces.SpanAttributes['gen_ai.request.model']) AS model,
+          any(traces.SpanAttributes['vercel.ai_gateway.provider']) AS provider,
+          count() AS requests,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY model
+        ORDER BY costUsd DESC, requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayByProjectSQL:default
+SELECT
+          traces.SpanAttributes['vercel.project.id'] AS projectId,
+          count() AS requests,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY projectId
+        ORDER BY costUsd DESC, requests DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:default
+SELECT
+          count() AS requests,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewaySummarySQL:project
+SELECT
+          count() AS requests,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+          AND traces.SpanAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        FORMAT JSON
+
+-- builder:vercel-ai-gateway:vercelAiGatewayTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          count() AS requests,
+          sumIf(toFloat64OrZero(traces.SpanAttributes['vercel.ai_gateway.cost.total']), traces.SpanAttributes['vercel.ai_gateway.cost.currency'] IN ('', 'USD')) AS costUsd,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.input_tokens'])) AS inputTokens,
+          sum(toFloat64OrZero(traces.SpanAttributes['gen_ai.usage.output_tokens'])) AS outputTokens,
+          countIf(traces.StatusCode = 'Error') AS errors
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.ServiceName = 'ai-gateway'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND traces.SpanKind = 'Server'
+          AND traces.ResourceAttributes['service.namespace'] = 'vercel'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:device
+SELECT
+          logs.LogAttributes['vercel.device.type'] AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:metric
+SELECT
+          '' AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelSpeedInsightsSQL:route
+SELECT
+          if(logs.LogAttributes['vercel.route'] != '', logs.LogAttributes['vercel.route'], logs.LogAttributes['url.path']) AS key,
+          logs.LogAttributes['vercel.speed_insights.metric'] AS metric,
+          ifNull(ifNotFinite(quantile(0.75)(toFloat64OrZero(logs.LogAttributes['vercel.speed_insights.value'])), 0), 0) AS p75,
+          count() AS samples
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-speed-insights'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.speed_insights.metric'] != ''
+        GROUP BY key, metric
+        ORDER BY samples DESC
+        LIMIT 200
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsSummarySQL:default
+SELECT
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], (logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview' AND logs.LogAttributes['vercel.web_analytics.device_id'] != '')) AS uniqueDevices,
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsSummarySQL:project
+SELECT
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview') AS pageViews,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], (logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview' AND logs.LogAttributes['vercel.web_analytics.device_id'] != '')) AS uniqueDevices,
+          countIf(logs.LogAttributes['vercel.web_analytics.event.type'] = 'event') AS customEvents
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:country
+SELECT
+          logs.LogAttributes['geo.country.iso_code'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['geo.country.iso_code'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:event
+SELECT
+          logs.LogAttributes['vercel.web_analytics.event.name'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'event'
+          AND logs.LogAttributes['vercel.web_analytics.event.name'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:page
+SELECT
+          logs.LogAttributes['url.path'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['url.path'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-event-drains:vercelWebAnalyticsTopSQL:referrer
+SELECT
+          logs.LogAttributes['http.request.header.referer'] AS value,
+          count() AS count,
+          uniqIf(logs.LogAttributes['vercel.web_analytics.device_id'], logs.LogAttributes['vercel.web_analytics.device_id'] != '') AS devices
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.ServiceName = 'vercel-web-analytics'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.LogAttributes['vercel.web_analytics.event.type'] = 'pageview'
+          AND logs.LogAttributes['http.request.header.referer'] != ''
+        GROUP BY value
+        ORDER BY count DESC
+        LIMIT 10
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionRoutesSQL:default
+SELECT
+          t.route AS route,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          quantile(0.5)(t.initMs) AS initP50Ms,
+          quantile(0.95)(t.initMs) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+        GROUP BY route
+        ORDER BY invocations DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionRouteTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(t.startedAt, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(t.invokeMs), 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          ifNull(ifNotFinite(quantile(0.5)(t.initMs), 0), 0) AS initP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(t.initMs), 0), 0) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startedAt,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          countIf((traces.SpanKind = 'Client' AND if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) = '')) AS hostCalls,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionRouteTimeseriesSQL:route and host
+SELECT
+          formatDateTime(toStartOfInterval(t.startedAt, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          sum(t.traceInvocations) AS invocations,
+          sum(t.traceColdStarts) AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(t.invokeMs), 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(t.invokeMs), 0), 0) AS p95DurationMs,
+          ifNull(ifNotFinite(quantile(0.5)(t.initMs), 0), 0) AS initP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(t.initMs), 0), 0) AS initP95Ms
+        FROM (SELECT
+          traces.TraceId AS traceId,
+          min(traces.Timestamp) AS startedAt,
+          anyIf(traces.SpanAttributes['http.route'], traces.ServiceName = 'vercel.edge-network') AS route,
+          countIf(traces.SpanName = 'Invoke Function') AS traceInvocations,
+          countIf(traces.SpanName = 'Start VM') AS traceColdStarts,
+          countIf((traces.SpanKind = 'Client' AND if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) = 'api.stripe.com')) AS hostCalls,
+          maxIf(traces.Duration, traces.SpanName = 'Invoke Function') / 1000000 AS invokeMs,
+          nullIf(sumIf(traces.Duration, traces.SpanName IN ('Start VM', 'Spawn Node.js', 'Init User Code')), 0) / 1000000 AS initMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '') OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Server') AND traces.SpanName IN ('Invoke Function', 'Start VM', 'Spawn Node.js', 'Init User Code')) OR (((mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime') AND traces.SpanKind = 'Client') AND if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) = 'api.stripe.com'))
+        GROUP BY traceId) AS t
+        WHERE t.traceInvocations > 0
+          AND t.route = '/api/checkout'
+          AND t.hostCalls > 0
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP95Ms
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelFunctionTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          ifNull(ifNotFinite(quantile(0.5)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP50Ms,
+          ifNull(ifNotFinite(quantile(0.95)(nullIf(if(traces.SpanName = 'Invoke Function', traces.Duration, 0), 0)) / 1000000, 0), 0) AS invokeP95Ms
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelProjectDependenciesSQL:default
+SELECT
+          if(traces.SpanAttributes['server.address'] != '', traces.SpanAttributes['server.address'], traces.SpanAttributes['http.host']) AS host,
+          count() AS calls,
+          countIf((traces.StatusCode = 'Error' OR toInt32OrZero(traces.SpanAttributes['http.status_code']) >= 500 OR toInt32OrZero(traces.SpanAttributes['http.status_code']) < 0)) AS errors,
+          ifNull(ifNotFinite(quantile(0.5)(traces.Duration) / 1000000, 0), 0) AS p50DurationMs,
+          ifNull(ifNotFinite(quantile(0.95)(traces.Duration) / 1000000, 0), 0) AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Client'
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND (traces.SpanAttributes['server.address'] != '' OR traces.SpanAttributes['http.host'] != '')
+        GROUP BY host
+        ORDER BY calls DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-functions:vercelProjectFunctionsSQL:default
+SELECT
+          traces.ResourceAttributes['vercel.projectId'] AS projectId,
+          anyIf(traces.ServiceName, traces.SpanName = 'Invoke Function') AS serviceName,
+          countIf(traces.SpanName = 'Invoke Function') AS invocations,
+          countIf(traces.SpanName = 'Start VM') AS coldStarts,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND (mapContains(traces.ResourceAttributes, 'maple_vercel.platform_service') AND traces.ResourceAttributes['maple_vercel.platform_service'] = 'vercel.serverless-runtime')
+          AND traces.SpanKind = 'Server'
+          AND traces.SpanName IN ('Invoke Function', 'Start VM')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+        GROUP BY projectId
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelEdgeLatencyTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelEdgeLatencyTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(traces.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] = 'prj_sql_catalog'
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectBreakdownSQL:path
+SELECT
+          logs.LogAttributes['url.path'] AS key,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups,
+          sum(toFloat64OrZero(logs.LogAttributes['http.response.body.size'])) AS bytes
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+        GROUP BY key
+        ORDER BY requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectBreakdownSQL:region-5xx
+SELECT
+          logs.LogAttributes['vercel.proxy.region'] AS key,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups,
+          sum(toFloat64OrZero(logs.LogAttributes['http.response.body.size'])) AS bytes
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+          AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599
+        GROUP BY key
+        ORDER BY requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectErrorLogsSQL:default
+SELECT
+          logs.Timestamp AS timestamp,
+          leftUTF8(logs.Body, 2000) AS body,
+          logs.LogAttributes['vercel.source'] AS source,
+          logs.TraceId AS traceId,
+          logs.SpanId AS spanId
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.SeverityNumber >= 17
+        ORDER BY timestamp DESC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectLatencySQL:default
+SELECT
+          traces.ResourceAttributes['vercel.projectId'] AS projectId,
+          any(traces.ServiceName) AS serviceName,
+          count() AS spans,
+          quantile(0.5)(traces.Duration) / 1000000 AS p50DurationMs,
+          quantile(0.95)(traces.Duration) / 1000000 AS p95DurationMs,
+          max(traces.Timestamp) AS lastSeen
+        FROM traces
+        WHERE traces.OrgId = 'org_sql_catalog'
+          AND traces.Timestamp >= '2026-01-01 10:30:00'
+          AND traces.Timestamp <= '2026-01-03 14:15:00'
+          AND mapContains(traces.ResourceAttributes, 'vercel.projectId')
+          AND traces.ResourceAttributes['vercel.projectId'] != ''
+          AND ((traces.ServiceName = 'vercel.edge-network' AND traces.SpanKind = 'Server') AND traces.SpanAttributes['http.response.status_code'] != '')
+        GROUP BY projectId
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectRequestsSQL:default
+SELECT
+          logs.ResourceAttributes['vercel.project.id'] AS projectId,
+          any(logs.ResourceAttributes['vercel.project.name']) AS projectName,
+          any(logs.ServiceName) AS serviceName,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs,
+          max(logs.Timestamp) AS lastSeen
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] != ''
+        GROUP BY projectId
+        ORDER BY requests DESC
+        LIMIT 1000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelProjectTopPathsSQL:default
+SELECT
+          logs.LogAttributes['url.path'] AS path,
+          count() AS requests,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499) AS requests4xx,
+          countIf(toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599) AS requests5xx,
+          countIf(logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER')) AS cacheHits,
+          countIf(logs.LogAttributes['vercel.cache'] != '') AS cacheLookups
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+          AND logs.LogAttributes['http.request.method'] != ''
+        GROUP BY path
+        ORDER BY requests DESC
+        LIMIT 25
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelRequestTimeseriesSQL:default
+SELECT
+          formatDateTime(toStartOfInterval(logs.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 200 AND 299)) AS requests2xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
+        FORMAT JSON
+
+-- builder:vercel-infra:vercelRequestTimeseriesSQL:project
+SELECT
+          formatDateTime(toStartOfInterval(logs.Timestamp, INTERVAL 300 SECOND), '%Y-%m-%dT%H:%i:%S.%fZ') AS bucket,
+          countIf(logs.LogAttributes['http.request.method'] != '') AS requests,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 200 AND 299)) AS requests2xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 300 AND 399)) AS requests3xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 400 AND 499)) AS requests4xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND toUInt16OrZero(logs.LogAttributes['http.response.status_code']) BETWEEN 500 AND 599)) AS requests5xx,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] IN ('HIT', 'STALE', 'PRERENDER'))) AS cacheHits,
+          countIf((logs.LogAttributes['http.request.method'] != '' AND logs.LogAttributes['vercel.cache'] != '')) AS cacheLookups,
+          countIf(logs.SeverityNumber >= 17) AS errorLogs
+        FROM logs
+        WHERE logs.OrgId = 'org_sql_catalog'
+          AND logs.TimestampTime >= '2026-01-01 10:30:00'
+          AND logs.TimestampTime <= '2026-01-03 14:15:00'
+          AND logs.Timestamp >= '2026-01-01 10:30:00'
+          AND logs.Timestamp <= '2026-01-03 14:15:00'
+          AND logs.ResourceAttributes['cloud.provider'] = 'vercel'
+          AND logs.ResourceAttributes['vercel.project.id'] = 'prj_sql_catalog'
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 2000
         FORMAT JSON

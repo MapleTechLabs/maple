@@ -168,7 +168,7 @@ Servers and `crewai run` need nothing. In serverless handlers and notebooks, imp
 
 ## Verify
 
-Send two or three messages with the same conversation id, one of them using a tool, then open **Agent Sessions**. Within a minute you should see one session labeled **CrewAI**, with one turn per `kickoff()` starting at `support.kickoff`, `ChatCompletion` model calls with tokens, tool calls like `get_weather.run`, and one lane per agent role. Cost shows as unpriced unless your models go through LiteLLM.
+Send two or three messages with the same conversation id, one of them using a tool, then open **Agent sessions**. Within a minute you should see one session labeled **CrewAI**, with one turn per `kickoff()` starting at `support.kickoff`, `ChatCompletion` model calls with tokens, tool calls like `get_weather.run`, and one lane per agent role. Cost shows as unpriced unless your models go through LiteLLM.
 
 ## Troubleshooting
 

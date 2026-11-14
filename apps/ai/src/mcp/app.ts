@@ -10,10 +10,11 @@ import { DebugErrorsPrompt } from "./prompts/debug-errors"
 import { LatencyAnalysisPrompt } from "./prompts/latency-analysis"
 import { IncidentTriagePrompt } from "./prompts/incident-triage"
 import { InstructionsResource } from "./resources/instructions"
+import { DataSourcesResource } from "./resources/data-sources"
 import type { McpToolExecutorLoader } from "./executor-loader"
-import { CurrentMcpRequestTenant, CurrentMcpTenant, resolveHttpMcpTenant } from "./lib/query-warehouse"
+import { CurrentMcpRequestTenant, CurrentMcpTenant } from "./tenant"
+import { resolveHttpMcpTenant } from "./lib/resolve-tenant"
 import { type AuditActorInfo, CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
-import { INTERNAL_SERVICE_PREFIX } from "./lib/resolve-tenant"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
@@ -110,18 +111,13 @@ const mcpUnavailable = () =>
 
 /**
  * Which credential an MCP request presented, as far as the transport can tell.
- * Mirrors the branches in `resolveMcpTenantContext`: an internal service token
- * is Maple acting on its own behalf, any other bearer is an API key or OAuth
- * token, and no bearer at all means a forwarded dashboard session.
+ * Mirrors the branches in `resolveMcpTenantContext`: a bearer is an API key or
+ * OAuth token, and no bearer at all means a forwarded dashboard session.
  */
 const mcpAuditActor = (headers: Record<string, string | undefined>): AuditActorInfo => {
 	const authorization = headers["authorization"] ?? headers["Authorization"]
-	if (authorization?.toLowerCase().startsWith("bearer ") !== true) {
-		return { type: "user", source: "mcp" }
-	}
-	const bearer = Str.trim(authorization.slice("bearer ".length))
-	return Str.startsWith(INTERNAL_SERVICE_PREFIX)(bearer)
-		? { type: "system", source: "system" }
+	return authorization === undefined || !Str.startsWith("bearer ")(Str.toLowerCase(authorization))
+		? { type: "user", source: "mcp" }
 		: { type: "api_key", source: "mcp" }
 }
 
@@ -159,15 +155,13 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 					Effect.provideService(Env, env),
 					Effect.flatMap((tenant) =>
 						Effect.gen(function* () {
-							if (tenant.rateLimitCredentialId !== undefined) {
-								const outcome = yield* rateLimiter.check(tenant.rateLimitCredentialId)
-								yield* Effect.annotateCurrentSpan({
-									"maple.rate_limit.outcome": outcome,
-									"maple.rate_limit.limit": MCP_TOOLS_RATE_LIMIT_REQUESTS,
-									"maple.rate_limit.period_seconds": MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
-								})
-								if (outcome === "limited") return mcpRateLimited()
-							}
+							const outcome = yield* rateLimiter.check(tenant.rateLimitCredentialId)
+							yield* Effect.annotateCurrentSpan({
+								"maple.rate_limit.outcome": outcome,
+								"maple.rate_limit.limit": MCP_TOOLS_RATE_LIMIT_REQUESTS,
+								"maple.rate_limit.period_seconds": MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
+							})
+							if (outcome === "limited") return mcpRateLimited()
 							return yield* Effect.provideService(httpEffect, CurrentMcpTenant, tenant).pipe(
 								Effect.provideService(CurrentMcpRequestTenant, tenant),
 								// Without this an MCP mutation reads the reference's `undefined`
@@ -184,7 +178,7 @@ const McpAuthorizationMiddleware = HttpRouter.middleware<{ provides: CurrentMcpT
 							mcpChallenge(env.MAPLE_API_BASE_URL, false),
 						// A malformed bearer gets its specific fix; other reasons keep the generic text.
 						"@maple/mcp/errors/McpAuthInvalidError": (error) =>
-							error.reason === "malformed_token"
+							error.reason === "malformed_token" || error.reason === "insufficient_scope"
 								? mcpChallenge(env.MAPLE_API_BASE_URL, true, error.message)
 								: mcpChallenge(env.MAPLE_API_BASE_URL, true),
 						"@maple/mcp/errors/McpAuthUnavailableError": mcpUnavailable,
@@ -213,6 +207,7 @@ const McpTransportLive = Layer.unwrap(
 			protocol: NEGOTIATED_PROTOCOL,
 			registerTools: tools.ensureRegistered,
 			loadToolExecutor: tools.ensureExecutor,
+			prewarmToolExecutor: tools.prewarmExecutor,
 		})
 	}),
 ).pipe(Layer.provide(RpcSerialization.layerJsonRpc()), Layer.provide(McpAuthorizationMiddleware.layer))
@@ -241,4 +236,5 @@ export const McpLive: Layer.Layer<
 	LatencyAnalysisPrompt,
 	IncidentTriagePrompt,
 	InstructionsResource,
+	DataSourcesResource,
 ).pipe(Layer.provide(McpToolRegistration.layer), Layer.provide(McpServer.McpServer.layer))

@@ -47,7 +47,6 @@ const stub = (attempts: ReadonlyArray<Attempt>, credentials: string | null = CRE
 
 const target = { workspaceId: "T1", channelId: "C1", threadId: "1700000000.000100" }
 
-/** The JSON body a request carried. */
 const sentBody = (request: HttpClientRequest.HttpClientRequest): Record<string, unknown> => {
 	const body = request.body
 	if (body._tag !== "Uint8Array") throw new Error("the request carried no JSON body")
@@ -79,7 +78,7 @@ describe("slack transport", () => {
 
 			expect(ref).toEqual({ target, messageId: "1700000000.000200" })
 			expect(http.seen[0]?.headers["authorization"]).toBe("Bearer xoxb-a-workspaces-own-token")
-			expect(sentBody(http.seen[0]!)).toMatchObject({
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
 				channel: "C1",
 				thread_ts: "1700000000.000100",
 				text: "hello",
@@ -103,8 +102,8 @@ describe("slack transport", () => {
 			const transport = yield* slackOutbound.transport
 			yield* transport.whisper(click, [{ kind: "prose", markdown: "only you" }])
 
-			expect(http.seen[0].url).toBe("https://slack.com/api/chat.postEphemeral")
-			expect(sentBody(http.seen[0])).toMatchObject({
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe("https://slack.com/api/chat.postEphemeral")
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
 				channel: "C1",
 				user: "U2",
 				thread_ts: "1700000000.000100",
@@ -119,7 +118,7 @@ describe("slack transport", () => {
 			yield* transport.post({ workspaceId: "T1", channelId: "C1" }, [
 				{ kind: "prose", markdown: "hello" },
 			])
-			expect("thread_ts" in sentBody(http.seen[0]!)).toBe(false)
+			expect("thread_ts" in sentBody(Arr.getUnsafe(http.seen, 0))).toBe(false)
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -131,7 +130,10 @@ describe("slack transport", () => {
 				{ kind: "prose", markdown: "revised" },
 			])
 			expect(http.seen[0]?.url).toContain("chat.update")
-			expect(sentBody(http.seen[0]!)).toMatchObject({ channel: "C1", ts: "1700000000.000200" })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({
+				channel: "C1",
+				ts: "1700000000.000200",
+			})
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -315,7 +317,7 @@ describe("slack transport", () => {
 				{ displayName: "U1", isBot: false, text: "first", at: 1_700_000_000_000 },
 			])
 			expect(http.seen[0]?.url).toContain("conversations.replies")
-			expect(sentBody(http.seen[0]!)).toEqual({
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toEqual({
 				channel: "C1",
 				// A full page, not the caller's 10 — see the thread-paging case below.
 				limit: 200,
@@ -339,7 +341,7 @@ describe("slack transport", () => {
 				},
 			)
 			expect(http.seen[0]?.url).toContain("conversations.history")
-			expect("ts" in sentBody(http.seen[0]!)).toBe(false)
+			expect("ts" in sentBody(Arr.getUnsafe(http.seen, 0))).toBe(false)
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -348,7 +350,7 @@ describe("slack transport", () => {
 		return Effect.gen(function* () {
 			const transport = yield* slackOutbound.transport
 			yield* transport.history(target, { limit: 100_000, before: "1700000000.000400" })
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -375,7 +377,7 @@ describe("slack transport", () => {
 
 			// The bound still cuts to two — at the right end.
 			expect(Arr.map(history, (message) => message.text)).toEqual(["newest", "newer"])
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 200 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -390,7 +392,7 @@ describe("slack transport", () => {
 					before: "1700000000.000400",
 				},
 			)
-			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 5 })
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ limit: 5 })
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -567,12 +569,12 @@ describe("slack transport", () => {
 				{ id: "G1", name: "oncall", private: true },
 			])
 			expect(http.seen).toHaveLength(2)
-			const first = new URL(http.seen[0]!.url)
+			const first = new URL(Arr.getUnsafe(http.seen, 0).url)
 			expect(first.pathname).toBe("/api/conversations.list")
 			expect(first.searchParams.get("types")).toBe("public_channel,private_channel")
 			expect(first.searchParams.get("exclude_archived")).toBe("true")
 			expect(http.seen[0]?.method).toBe("GET")
-			expect(new URL(http.seen[1]!.url).searchParams.get("cursor")).toBe("page-2")
+			expect(new URL(Arr.getUnsafe(http.seen, 1).url).searchParams.get("cursor")).toBe("page-2")
 			expect(http.seen[0]?.headers["authorization"]).toBe("Bearer xoxb-a-workspaces-own-token")
 		}).pipe(Effect.provide(http.layer))
 	})
@@ -611,4 +613,32 @@ describe("slack transport", () => {
 			expect((yield* transport.conversation(followUp)).opened).toBe(false)
 		}).pipe(Effect.provide(http.layer))
 	})
+})
+
+describe("slack direct messages", () => {
+	it.effect("addresses a person by their user id, which chat.postMessage opens a DM for", () => {
+		const http = stub([{ status: 200, body: '{"ok":true,"channel":"D1","ts":"1700000000.000400"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const dm = yield* transport.directMessage("T1", "U_BEN")
+			// Opening one costs no call: only the post goes out.
+			expect(http.seen).toHaveLength(0)
+			yield* transport.post(dm, [{ kind: "prose", markdown: "you are paged" }])
+			expect(Arr.getUnsafe(http.seen, 0).url).toBe("https://slack.com/api/chat.postMessage")
+			expect(sentBody(Arr.getUnsafe(http.seen, 0))).toMatchObject({ channel: "U_BEN" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reads a person who turned off the app's messages, or left, as a permanent refusal", () =>
+		Effect.forEach(["messages_tab_disabled", "user_not_found", "channel_not_found"], (code) => {
+			const http = stub([{ status: 200, body: `{"ok":false,"error":"${code}"}` }])
+			return Effect.gen(function* () {
+				const transport = yield* slackOutbound.transport
+				const dm = yield* transport.directMessage("T1", "U_GONE")
+				const error = yield* Effect.flip(transport.post(dm, [{ kind: "prose", markdown: "paged" }]))
+				expect([code, error.reason]).toEqual([code, "not_found"])
+				expect(http.seen).toHaveLength(1)
+			}).pipe(Effect.provide(http.layer))
+		}),
+	)
 })

@@ -4,14 +4,13 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route"
 import { meter } from "@maple/views/ui/meter"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { columnHead, dataTable, ROW_LINK_CLASS, skeletonRows } from "../../../infra/kit/data-table"
+import { columnHead, dataTable, NUMERIC_CELL, ROW_LINK_CLASS, skeletonRows } from "../../../kit/data-table"
 import { collectingLabel, healthPill, SATURATION } from "../health"
 import type { ProjectView } from "./derive"
 import type { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
-
-// The project table and its loading state.
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
@@ -59,7 +58,7 @@ export const supabaseTableLoading = (h: H): Html =>
 	)
 
 const MUTED = typographyClass({ size: "2xs", tone: "muted", mono: true })
-const NUMBER = typographyClass({ size: "xs", tone: "soft", mono: true, numeric: true })
+const NUMBER = cn(NUMERIC_CELL, typographyClass({ tone: "soft" }))
 
 /** A utilisation bar and its percent; a project without metrics shows an empty track. */
 const usageCell = (h: H, label: string, fraction: number | null): Html =>
@@ -135,35 +134,32 @@ const row = (h: H, view: ProjectView): Html => {
 			h.Href(hrefOf(AppRoute.InfraSupabaseProject({ projectRef: view.ref, search: {} }))),
 		],
 		[
-			h.div(
-				[h.Class("flex w-0 min-w-40 flex-1 flex-col gap-0.5")],
-				[
-					typography(
-						h,
-						{
-							size: "xs",
-							tone: "foreground",
-							weight: "medium",
-							mono: true,
-							truncate: true,
-							className: "transition-colors group-hover:text-primary",
-							attributes: [h.Title(view.displayName)],
-						},
-						[view.displayName],
-					),
-					typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
-						view.region === "" ? view.ref : `${view.ref} · ${view.region}`,
-					]),
-				],
-			),
+			vstack(h, { gap: "0.5", grow: true, className: "w-0 min-w-40" }, [
+				typography(
+					h,
+					{
+						size: "xs",
+						tone: "foreground",
+						weight: "medium",
+						mono: true,
+						truncate: true,
+						className: "group-hover:text-primary",
+						attributes: [h.Title(view.displayName)],
+					},
+					[view.displayName],
+				),
+				typography(h, { size: "2xs", tone: "muted", mono: true, truncate: true }, [
+					view.region === "" ? view.ref : `${view.ref} · ${view.region}`,
+				]),
+			]),
 			h.div([h.Class("w-20")], [healthPill(h, view.health)]),
 			usageCell(h, "CPU", metrics?.cpuAvg ?? null),
 			usageCell(h, "Memory", metrics?.memoryAvg ?? null),
 			usageCell(h, "Disk", metrics?.diskUsedMax ?? null),
-			h.div([h.Class("flex w-20 justify-end")], [connectionsCell(h, view)]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-20" }, [connectionsCell(h, view)]),
 			numberCell(h, logs(metrics?.requestsPerMinute ?? 0), "hidden w-16 md:flex"),
 			numberCell(h, logs(metrics?.issueCount ?? 0), "hidden w-14 md:flex"),
-			h.div([h.Class("flex w-28 justify-end")], [collectingCell(h, view)]),
+			hstack(h, { align: "stretch", justify: "end", className: "w-28" }, [collectingCell(h, view)]),
 		],
 	)
 }

@@ -1,39 +1,11 @@
 import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
 import { Effect, Option, Schema, String as Str } from "effect"
 
-/** What a logs view reads from the browser before it renders: the display zone and number locale. */
-export const ViewerFlags = Schema.Struct({ timeZone: Schema.String, locale: Schema.String })
-export type ViewerFlags = typeof ViewerFlags.Type
+/**
+ * A logs view's footer line and its per-browser wrap and density preferences.
+ */
 
-// The stored time zone preference, "system" or an IANA zone.
-const TIMEZONE_STORAGE_KEY = "maple.preferences.timezone"
-const SYSTEM_VALUE = "__system__"
-
-const isValidIanaTimeZone = (zone: string): boolean =>
-	Str.trim(zone).length > 0 && Intl.supportedValuesOf("timeZone").includes(zone)
-
-const browserTimeZone = (): string => {
-	const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-	return zone && (zone === "UTC" || isValidIanaTimeZone(zone)) ? zone : "UTC"
-}
-
-/** `getEffectiveTimezone`: the stored zone (raw or JSON-encoded), else the browser's. */
-const storedTimeZone = (raw: string | null): Option.Option<string> =>
-	Option.fromNullishOr(raw).pipe(
-		Option.map((value) =>
-			Schema.decodeUnknownOption(Schema.fromJsonString(Schema.String))(value).pipe(
-				Option.getOrElse(() => value),
-			),
-		),
-		Option.filter((zone) => zone !== SYSTEM_VALUE && (zone === "UTC" || isValidIanaTimeZone(zone))),
-	)
-
-export const viewerFlags: Effect.Effect<ViewerFlags> = Effect.sync(() => ({
-	timeZone: Option.getOrElse(storedTimeZone(localStorage.getItem(TIMEZONE_STORAGE_KEY)), browserTimeZone),
-	locale: navigator.language,
-}))
-
-/** `ListFooter`'s count line. */
+/** The list footer's count line. */
 export const listFooterText = (
 	locale: string,
 	options: {
@@ -54,7 +26,7 @@ export const listFooterText = (
 export const Density = Schema.Literals(["compact", "comfortable"])
 export type Density = typeof Density.Type
 
-/** `useLogsViewPreferences`: line wrapping and row density, kept per browser. */
+/** Line wrapping and row density, kept per browser. */
 export const LogsViewPreferences = Schema.Struct({ wrap: Schema.Boolean, density: Density })
 export type LogsViewPreferences = typeof LogsViewPreferences.Type
 

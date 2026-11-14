@@ -3,7 +3,7 @@ import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Array, DateTime, Effect, Option, Result, Schema } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -57,20 +57,14 @@ export const FetchIngestRules = Command.define("FetchIngestRules", {
 				query: cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
 			}),
 		)
-	}).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetch({ result })),
-	),
+	}).pipe(settleTo((result) => Message.CompletedFetch({ result }))),
 })
 
 /** The stats endpoint's default window: the last 24 hours. */
 export const FetchIngestRuleStats = Command.define("FetchIngestRuleStats", {
 	messages: [Message.CompletedFetchStats],
 	execute: Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.stats({ query: {} })).pipe(
-		Effect.mapError(toLoadFailure),
-		Effect.result,
-		Effect.map((result) => Message.CompletedFetchStats({ result })),
+		settleTo((result) => Message.CompletedFetchStats({ result })),
 	),
 })
 
@@ -82,9 +76,7 @@ const ToggleIngestRule = Command.define("ToggleIngestRule", {
 			client.ingestRules.update({ params: { id }, payload: { enabled: isEnabled } }),
 		).pipe(
 			Effect.asVoid,
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedToggle({ id, result })),
+			settleTo((result) => Message.CompletedToggle({ id, result })),
 		),
 })
 
@@ -95,9 +87,7 @@ const MoveIngestRules = Command.define("MoveIngestRules", {
 	execute: ({ ids }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.reorder({ payload: { ids } })).pipe(
 			Effect.asVoid,
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedMove({ result })),
+			settleTo((result) => Message.CompletedMove({ result })),
 		),
 })
 
@@ -107,9 +97,7 @@ const DeleteIngestRule = Command.define("DeleteIngestRule", {
 	execute: ({ id }) =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.ingestRules.delete({ params: { id } })).pipe(
 			Effect.asVoid,
-			Effect.mapError(toLoadFailure),
-			Effect.result,
-			Effect.map((result) => Message.CompletedDelete({ result })),
+			settleTo((result) => Message.CompletedDelete({ result })),
 		),
 })
 
@@ -145,9 +133,11 @@ const rulesOf = (model: Model) => AsyncData.getOrElse(model.rules, () => [])
 
 /** Every rule id in the new order, with one rule moved one step; `[]` when it cannot move. */
 export const moved = (rules: ReadonlyArray<V2IngestRule>, id: string, step: -1 | 1) => {
-	const index = rules.findIndex((rule) => rule.id === id)
+	const found = Array.findFirstIndex(rules, (rule) => rule.id === id)
+	if (Option.isNone(found)) return []
+	const index = found.value
 	const target = index + step
-	if (index === -1 || target < 0 || target >= rules.length) return []
+	if (target < 0 || target >= rules.length) return []
 	return Array.flatMap(rules, (rule, position) => {
 		const next = position === index ? rules[target] : position === target ? rules[index] : rule
 		return next === undefined ? [] : [next.id]

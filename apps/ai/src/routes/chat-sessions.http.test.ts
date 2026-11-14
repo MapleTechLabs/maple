@@ -1,27 +1,27 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { OrgId, UserId } from "@maple/domain/http"
-import { fakeChatSessionsLayer } from "@maple/backend/platform/chat-sessions-fake"
+import { AuthorizationUnavailableError, OrgId, RoleName, UserId } from "@maple/domain/http"
+import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpRouter } from "effect/http"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { connectorSessionId } from "@maple/domain/chat-session"
-import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
+import { ChatConnectorId, ChatConversationKey } from "@maple/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_chat")
-const USER = Schema.decodeUnknownSync(UserId)("user_chat")
+const ORG = Schema.decodeSync(OrgId)("org_chat")
+const USER = Schema.decodeSync(UserId)("user_chat")
 const INTERNAL_TOKEN = "chat-internal-service-token"
-const connectorId = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
-const conversationKey = Schema.decodeUnknownSync(ChatConversationKey)("c1")
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:inv-1`)}`
 
 const config = ConfigProvider.layer(
@@ -67,7 +67,11 @@ const makeStub = (turns: Array<BeginTurnInput>): ChatSessionStub => ({
  * every service a handler needs has to have been captured while the router was built. This is
  * the shape that answered every chat request with "Service not found" until it was.
  */
-const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
+const makeRouterLayer = (
+	testDb: TestDb,
+	turns: Array<BeginTurnInput>,
+	auth: Layer.Layer<AuthService, never, Layer.Services<typeof AuthService.layer>> = AuthService.layer,
+) => {
 	const base = Layer.mergeAll(testDb.layer, Env.layer.pipe(Layer.provide(config)))
 	const workerEnv = Layer.merge(
 		envPorts({}),
@@ -77,7 +81,7 @@ const makeRouterLayer = (testDb: TestDb, turns: Array<BeginTurnInput>) => {
 		Layer.provide(
 			Layer.mergeAll(
 				ApiKeysService.layer.pipe(Layer.provide(base)),
-				AuthService.layer.pipe(Layer.provide(base)),
+				auth.pipe(Layer.provide(base)),
 				ErrorActorsService.layer.pipe(Layer.provide(base)),
 				base,
 				workerEnv,
@@ -90,8 +94,9 @@ const withHandler = (
 	testDb: TestDb,
 	turns: Array<BeginTurnInput>,
 	body: (handler: (request: Request) => Promise<Response>) => Effect.Effect<void>,
+	auth?: Parameters<typeof makeRouterLayer>[2],
 ) => {
-	const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb, turns), {
+	const { handler, dispose } = HttpRouter.toWebHandler(makeRouterLayer(testDb, turns, auth), {
 		disableLogger: true,
 	})
 	return body((request) => handler(request)).pipe(Effect.ensuring(Effect.promise(dispose)))
@@ -196,10 +201,8 @@ describe("ChatSessionsRouter", () => {
 		})
 	})
 
-	it.effect("starts a turn for an internal-service caller, as the autonomous pass", () => {
-		// This route authenticates Maple's own service token, and that caller on an investigation
-		// session IS the pass. Stamping `app` on it would hand it the attended ruleset and stop the
-		// runner closing the pass out.
+	it.effect("refuses Maple's internal service token, even naming the session's org", () => {
+		// The token is shared by every Maple Worker; accepting it here would open any org's chat.
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return withHandler(
@@ -210,9 +213,8 @@ describe("ChatSessionsRouter", () => {
 					authorization: `Bearer maple_svc_${INTERNAL_TOKEN}`,
 					"x-org-id": ORG,
 				})
-				assert.strictEqual(response.status, 202)
-				assert.strictEqual(turns.length, 1)
-				assert.deepStrictEqual(turns[0]?.origin, { kind: "autonomous" })
+				assert.strictEqual(response.status, 401)
+				assert.strictEqual(turns.length, 0)
 			}),
 		)
 	})
@@ -284,20 +286,104 @@ describe("ChatSessionsRouter", () => {
 		)
 	})
 
-	it.effect("hides another org's session as 404", () => {
+	it.effect("answers 503, not a sign-in prompt, while the auth provider is away", () => {
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
+		const authProviderAway = Layer.effect(
+			AuthService,
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return {
+					...auth,
+					resolveTenant: () =>
+						Effect.fail(
+							new AuthorizationUnavailableError({ message: "The auth provider is away" }),
+						),
+				}
+			}),
+		).pipe(Layer.provide(AuthService.layer))
 		return withHandler(
 			testDb,
 			turns,
 			Effect.fnUntraced(function* (handler) {
-				const response = yield* send(handler, {
-					authorization: `Bearer maple_svc_${INTERNAL_TOKEN}`,
-					"x-org-id": "org_other",
-				})
-				assert.strictEqual(response.status, 404)
+				const response = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+				assert.strictEqual(response.status, 503)
 				assert.strictEqual(turns.length, 0)
 			}),
+			authProviderAway,
 		)
+	})
+
+	it.effect("lets an analyst read an investigation's thread but not drive or stop it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		const asAnalyst = Layer.effect(
+			AuthService,
+			Effect.gen(function* () {
+				const auth = yield* AuthService
+				return {
+					...auth,
+					resolveTenant: () =>
+						Effect.succeed({
+							orgId: ORG,
+							userId: USER,
+							roles: [Schema.decodeSync(RoleName)("org:analyst")],
+							authMode: "clerk" as const,
+						}),
+				}
+			}),
+		).pipe(Layer.provide(AuthService.layer))
+		const call = (handler: (request: Request) => Promise<Response>, method: string, path: string) =>
+			Effect.promise(() =>
+				handler(
+					new Request(`http://api.localhost${SESSION_PATH}${path}`, {
+						method,
+						headers: { authorization: "Bearer aaa.bbb.ccc" },
+					}),
+				),
+			)
+		return withHandler(
+			testDb,
+			turns,
+			Effect.fnUntraced(function* (handler) {
+				const sent = yield* send(handler, { authorization: "Bearer aaa.bbb.ccc" })
+				assert.strictEqual(sent.status, 403)
+				assert.strictEqual(turns.length, 0)
+				assert.strictEqual((yield* call(handler, "POST", "/abort")).status, 403)
+				assert.strictEqual((yield* call(handler, "GET", "/history")).status, 200)
+			}),
+			asAnalyst,
+		)
+	})
+
+	it.effect("hides another org's session as 404", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		return Effect.gen(function* () {
+			const key = yield* mintSession(testDb)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					const response = yield* Effect.promise(() =>
+						handler(
+							new Request(
+								`http://api.localhost/api/chat/sessions/${encodeURIComponent("org_other:inv-1")}/messages`,
+								{
+									method: "POST",
+									headers: {
+										"content-type": "application/json",
+										authorization: `Bearer ${key}`,
+									},
+									body: JSON.stringify({ text: "hello" }),
+								},
+							),
+						),
+					)
+					assert.strictEqual(response.status, 404)
+					assert.strictEqual(turns.length, 0)
+				}),
+			)
+		})
 	})
 })

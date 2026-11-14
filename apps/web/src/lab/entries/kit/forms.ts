@@ -67,8 +67,6 @@ const WEBHOOK_FIELD: Field.FieldIds = {
 	error: "base-ui-_r_i_",
 }
 
-// MODEL
-
 const Model = Schema.Struct({
 	fields: Schema.Record(Schema.String, Field.Model),
 	checkboxes: Schema.Record(Schema.String, Checkbox.Model),
@@ -98,8 +96,6 @@ const init = (): Update.Return<Model, Message> => ({
 	},
 })
 
-// MESSAGE
-
 const Message = defineMessageUnion({
 	GotFieldMessage: { key: Schema.String, message: Field.Message },
 	GotCheckboxMessage: { key: Schema.String, message: Checkbox.Message },
@@ -113,8 +109,6 @@ const Message = defineMessageUnion({
 	ClickedClearSearch: {},
 })
 type Message = typeof Message.Type
-
-// UPDATE
 
 const foldField = Update.foldChildAt({
 	update: Field.update,
@@ -194,8 +188,6 @@ const update = (model: Model, message: Message): Update.Return<Model, Message> =
 		// The clear button has no handler.
 		ClickedClearSearch: () => ({ model }),
 	})
-
-// VIEW
 
 const inputs = (h: HtmlBuilder<Message>): ReadonlyArray<Html> => [
 	kitRow(

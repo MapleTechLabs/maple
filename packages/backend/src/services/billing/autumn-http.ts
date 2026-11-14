@@ -1,4 +1,4 @@
-// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+// BOUNDARY-FILE: This module intentionally carries opaque values; callers decode them before domain use.
 import {
 	Context,
 	Duration,
@@ -15,7 +15,8 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { BillingCustomerId, BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
-import { AUTUMN_API_VERSION } from "./autumn-api"
+import { autumnPost } from "./autumn-api"
+import { replaceWith } from "@maple/strings"
 
 /**
  * Autumn's REST surface, spoken directly.
@@ -138,7 +139,7 @@ const MODEL_RECORD_FIELDS = new Set(["balances", "flags", "total"])
 const OPAQUE_FIELDS = new Set(["metadata", "properties", "grouped_values", "values", "filter_by"])
 
 const toCamel = (key: string): string =>
-	key.replace(/_([a-z0-9])/g, (_, char: string) => Str.toUpperCase(char))
+	replaceWith(key, /_([a-z0-9])/g, (_, char = "") => Str.toUpperCase(char))
 
 export const camelizeKeys = (value: unknown, renameOwnKeys = true): unknown => {
 	// An array has no own keys to protect, so its items rename normally even when
@@ -162,7 +163,6 @@ const toBillingUpstreamError = (error: unknown) =>
 /** Ceiling on one billing call, so a stalled Autumn or Stripe cannot hang the request. */
 export const BILLING_REQUEST_TIMEOUT = Duration.seconds(25)
 
-/** Bounds `call` and surfaces the timeout as the typed `BillingUpstreamError`. */
 export const withBillingTimeout =
 	(vendor: string, route: string) =>
 	<A, E, R>(call: Effect.Effect<A, E, R>): Effect.Effect<A, E | BillingUpstreamError, R> =>
@@ -182,7 +182,6 @@ const JsonBody = Schema.fromJsonString(Schema.Unknown)
 
 const decodeJson = Schema.decodeEffect(JsonBody)
 
-/** Total, synchronous JSON parse: `None` where `JSON.parse` would have thrown. */
 const parseJsonOption = Schema.decodeUnknownOption(JsonBody)
 
 const trimTrailingSlash = (url: string) => Str.replace(/\/+$/, "")(url)
@@ -224,18 +223,9 @@ const callAutumn = (
 			Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
 		: Effect.gen(function* () {
 				const request = yield* HttpClientRequest.bodyJson(
-					HttpClientRequest.post(`${apiUrl}${ROUTE_PATHS[route]}`, {
-						// The SDK put `x-api-version` on every one of these routes: its
-						// env schema DEFAULTED `AUTUMN_X_API_VERSION` to "2.3.0"
-						// (`z._default(z.string(), "2.3.0")`), so an unset variable still
-						// pinned the version. Production has been sending 2.3.0 all along
-						// — dropping the header would be the untested change, not keeping it.
-						headers: {
-							Authorization: `Bearer ${secretKey}`,
-							"x-api-version": AUTUMN_API_VERSION,
-						},
-						acceptJson: true,
-					}),
+					// The SDK pinned `x-api-version` 2.3.0 on every one of these routes, so
+					// production has always sent it; `autumnPost` keeps it.
+					HttpClientRequest.acceptJson(autumnPost(apiUrl, secretKey, ROUTE_PATHS[route])),
 					body,
 				).pipe(Effect.mapError(toBillingUpstreamError))
 				const response = yield* client.execute(request).pipe(Effect.mapError(toBillingUpstreamError))
@@ -326,6 +316,8 @@ export interface AutumnClientApi {
 			readonly featureId: ReadonlyArray<string> | string
 			/** Epoch ms, `start < end`. */
 			readonly customRange: { readonly start: number; readonly end: number }
+			/** An event property to split each day by, e.g. `properties.source`. */
+			readonly groupBy?: string | undefined
 		},
 	) => AutumnCall
 	readonly attach: (
@@ -364,7 +356,6 @@ export interface AutumnClientApi {
 		customerId: BillingCustomerId,
 		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
-	/** Overwrites the customer's display name. */
 	readonly updateCustomerName: (customerId: BillingCustomerId, name: string) => AutumnCall
 }
 
@@ -378,12 +369,6 @@ const customerDataFields = (data: AutumnCustomerData | undefined): Record<string
 				...(data.metadata !== undefined ? { metadata: data.metadata } : undefined),
 			}
 
-/**
- * Customer billing controls live on the canonical REST surface — `autumnHandler`
- * never exposed an RPC route for them, so this call was always hand-rolled. Its
- * explicit `x-api-version` pin now matches the routes above, which send the same
- * version the SDK defaulted to.
- */
 const callUpdateBillingControls = (
 	client: HttpClient.HttpClient,
 	secretKey: string | undefined,
@@ -392,18 +377,10 @@ const callUpdateBillingControls = (
 	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
-		? // A missing key is OUR deployment fault, not Autumn's. This used to answer
-			// 502, which pointed every investigation upstream at a service that was
-			// never even called.
-			Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
+		? Effect.fail(new BillingNotConfiguredError({ message: "Billing is not configured" }))
 		: Effect.gen(function* () {
 				const request = yield* HttpClientRequest.bodyJson(
-					HttpClientRequest.post(`${apiUrl}/v1/customers.update`, {
-						headers: {
-							Authorization: `Bearer ${secretKey}`,
-							"x-api-version": AUTUMN_API_VERSION,
-						},
-					}),
+					autumnPost(apiUrl, secretKey, ROUTE_PATHS.updateCustomer),
 					{
 						customer_id: customerId,
 						billing_controls: {
@@ -486,13 +463,14 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 						expand: [...expand, "balances.feature"],
 					}),
 
-				aggregateEvents: (customerId, { featureId, customRange }) =>
+				aggregateEvents: (customerId, { featureId, customRange, groupBy }) =>
 					call("aggregateEvents", {
 						customer_id: customerId,
 						feature_id: featureId,
 						custom_range: { start: customRange.start, end: customRange.end },
 						// Zod default on the SDK's outbound params — genuinely on the wire.
 						bin_size: "day",
+						...(groupBy !== undefined ? { group_by: groupBy } : undefined),
 					}),
 
 				// `customer_data` is deliberately absent: `/v1/billing.attach` has no
@@ -539,7 +517,7 @@ export class AutumnClient extends Context.Service<AutumnClient, AutumnClientApi>
 				cancelPlans: (customerId, cancels) =>
 					call("updateSubscriptions", {
 						customer_id: customerId,
-						updates: cancels.map((cancel) => ({
+						updates: Arr.map(cancels, (cancel) => ({
 							plan_id: cancel.planId,
 							cancel_action: cancel.action,
 						})),

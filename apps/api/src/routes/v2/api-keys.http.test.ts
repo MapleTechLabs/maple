@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
-import { HttpApiBuilder } from "effect/http-api"
+import { HttpApi, HttpApiBuilder } from "effect/http-api"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -15,13 +15,9 @@ import { ApiAuthorizationV2Live } from "@maple/backend/services/auth/ApiAuthoriz
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
 import { ApiV2RateLimiter, type RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
-import {
-	AlertsServiceStubLayer,
-	allV2GroupLayersWithAudit,
-	ConfigResourceServiceStubsLayer,
-	PlanetScaleServiceStubsLayer,
-	TelemetryServiceStubsLayer,
-} from "./v2-test-support"
+import { HttpV2ApiKeysLive } from "./api-keys.http"
+import { HttpV2OrganizationLive } from "./organization.http"
+import { Phase1ResourceStubsLayer } from "./v2-test-support"
 
 /**
  * End-to-end HTTP tests for the v2 pilot: a real router (auth middleware, v2
@@ -61,13 +57,17 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
-	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
-		Layer.provide(allV2GroupLayersWithAudit(auditLive)),
+	const routes = HttpApiBuilder.layer(
+		HttpApi.make("MapleApiV2").add(MapleApiV2.groups.apiKeys, MapleApiV2.groups.organization),
+	).pipe(
+		Layer.provide(
+			Layer.mergeAll(
+				HttpV2ApiKeysLive,
+				// Inert, so a 429 proves the limiter answered before the handler ran.
+				HttpV2OrganizationLive.pipe(Layer.provide(Phase1ResourceStubsLayer)),
+			),
+		),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(PlanetScaleServiceStubsLayer),
-		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(ConfigResourceServiceStubsLayer),
-		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Live),
 		Layer.provideMerge(auditLive),
 		Layer.provideMerge(Layer.succeed(ApiV2RateLimiter, { check: checkRateLimit })),
@@ -114,8 +114,8 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 		}
 	}
 
-	const ORG = Schema.decodeUnknownSync(OrgId)("org_e2e")
-	const USER = Schema.decodeUnknownSync(UserId)("user_e2e")
+	const ORG = Schema.decodeSync(OrgId)("org_e2e")
+	const USER = Schema.decodeSync(UserId)("user_e2e")
 
 	const bootstrapKey = (
 		scopes?: ReadonlyArray<string>,
@@ -563,7 +563,7 @@ describe("v2 api_keys over HTTP", () => {
 			type: "permission_error",
 			code: "insufficient_permissions",
 			title: "Permission required",
-			message: "Only org admins can create API keys",
+			message: "Only org admins can manage API keys.",
 			retryable: false,
 			recovery: "request_access",
 		})
@@ -586,7 +586,7 @@ describe("v2 api_keys over HTTP", () => {
 		expect(revoked.status).toBe(200)
 		expect(revoked.body.revoked).toBe(true)
 
-		const other = Schema.decodeUnknownSync(UserId)("user_other")
+		const other = Schema.decodeSync(UserId)("user_other")
 		const foreign = await harness.bootstrapKey(undefined, "mcp", { userId: other })
 		const { encodePublicId } = await import("@maple/domain/http/v2")
 		const denied = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", foreign.id)}`, {
@@ -602,7 +602,7 @@ describe("v2 api_keys over HTTP", () => {
 		const { encodePublicId } = await import("@maple/domain/http/v2")
 		const member = await harness.bootstrapMemberKey()
 		const own = await harness.bootstrapDeviceKey(harness.USER, "installation-own")
-		const other = Schema.decodeUnknownSync(UserId)("user_other")
+		const other = Schema.decodeSync(UserId)("user_other")
 		const foreign = await harness.bootstrapDeviceKey(other, "installation-foreign")
 
 		const revoked = await harness.request("DELETE", `/v2/api_keys/${encodePublicId("key", own.id)}`, {
@@ -710,6 +710,19 @@ describe("v2 api_keys over HTTP", () => {
 		expect(missing.status).toBe(404)
 		expect(missing.body.error.type).toBe("not_found_error")
 		expect(missing.body.error.code).toBe("api_key_not_found")
+		await harness.dispose()
+	})
+
+	it("refuses to create a device credential by name", async () => {
+		const harness = makeHarness()
+		const root = await harness.bootstrapKey()
+
+		const { status, body } = await harness.request("POST", "/v2/api_keys", {
+			token: root.secret,
+			body: { name: "Home Screen widgets", kind: "device" },
+		})
+		expect(status).toBe(400)
+		expect(body.error.type).toBe("invalid_request_error")
 		await harness.dispose()
 	})
 

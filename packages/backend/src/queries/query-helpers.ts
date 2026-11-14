@@ -8,11 +8,11 @@ import {
 	type PodInfraTimeseriesRequest,
 	type WorkloadInfraTimeseriesRequest,
 } from "@maple/domain/http"
-import { Effect, Result } from "effect"
+import { Array as Arr, Effect, Result } from "effect"
 
 /**
  * Helpers shared between the query-engine handlers and the app-side query
- * registry (`./queries`).
+ * registry (`./registry`).
  *
  * They live here rather than in either caller because both need them: the
  * registry's `compile` needs the metric name, while the handler needs the unit
@@ -131,11 +131,12 @@ export const workloadMetricSpec = (metric: WorkloadInfraTimeseriesRequest["metri
 }
 
 /**
- * Metric name, grouping key, unit and query-family flag for a host metric.
+ * Metric name, grouping key, unit and query family for a host metric.
  *
  * Shared like the pod/node/workload specs: the registry needs `metricName` and
- * `isNetwork` to build the query, the handler needs `unit` and
- * `groupByAttributeKey` for its response.
+ * `family` to build the query, the handler needs `unit` and
+ * `groupByAttributeKey` for its response. `filesystem` reads used fractions
+ * per mount (from usage bytes or utilization), `network` a counter rate.
  */
 export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => {
 	switch (metric) {
@@ -143,48 +144,36 @@ export const hostMetricSpec = (metric: HostInfraTimeseriesRequest["metric"]) => 
 			return {
 				metricName: "system.cpu.utilization",
 				groupByAttributeKey: "state",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "memory":
 			return {
 				metricName: "system.memory.utilization",
 				groupByAttributeKey: "state",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "filesystem":
 			return {
-				metricName: "system.filesystem.utilization",
+				metricName: "system.filesystem.usage",
 				groupByAttributeKey: "mountpoint",
-				// The used share per mount, whether or not the collector splits rows by state.
-				attributeIn: { key: "state", values: CH.FILESYSTEM_USED_STATES },
-				// Read-only and virtual mounts always read ~100%; the headline disk % drops them too.
-				attributeNotIn: { key: "type", values: CH.PSEUDO_FS_TYPES },
 				unit: "percent" as const,
-				isNetwork: false,
+				family: "filesystem" as const,
 			}
 		case "load15":
 			return {
 				metricName: "system.cpu.load_average.15m",
 				groupByAttributeKey: undefined,
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "load" as const,
-				isNetwork: false,
+				family: "gauge" as const,
 			}
 		case "network":
 			return {
 				metricName: "system.network.io",
 				groupByAttributeKey: "direction",
-				attributeIn: undefined,
-				attributeNotIn: undefined,
 				unit: "bytes_per_second" as const,
-				isNetwork: true,
+				family: "network" as const,
 			}
 	}
 }
@@ -198,7 +187,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 	switch (metric) {
 		case "cpu":
 			return {
-				metricNames: ["container.cpu.utilization"],
+				metricNames: Arr.make("container.cpu.utilization"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -208,7 +197,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "memory_percent":
 			return {
-				metricNames: ["container.memory.percent"],
+				metricNames: Arr.make("container.memory.percent"),
 				unit: "percent" as const,
 				isSum: false,
 				average: undefined,
@@ -218,7 +207,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "uptime":
 			return {
-				metricNames: ["container.uptime"],
+				metricNames: Arr.make("container.uptime"),
 				unit: "seconds" as const,
 				isSum: false,
 				average: undefined,
@@ -230,7 +219,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			// Sampled bytes, not a cumulative counter — summing a bucket's samples
 			// would inflate the chart by samples-per-bucket.
 			return {
-				metricNames: ["container.memory.usage.total"],
+				metricNames: Arr.make("container.memory.usage.total"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: true,
@@ -240,7 +229,10 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "network":
 			return {
-				metricNames: ["container.network.io.usage.rx_bytes", "container.network.io.usage.tx_bytes"],
+				metricNames: Arr.make(
+					"container.network.io.usage.rx_bytes",
+					"container.network.io.usage.tx_bytes",
+				),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,
@@ -253,7 +245,7 @@ export const containerMetricSpec = (metric: ContainerInfraTimeseriesRequest["met
 			}
 		case "disk_io":
 			return {
-				metricNames: ["container.blockio.io_service_bytes_recursive"],
+				metricNames: Arr.make("container.blockio.io_service_bytes_recursive"),
 				unit: "bytes" as const,
 				isSum: true,
 				average: undefined,

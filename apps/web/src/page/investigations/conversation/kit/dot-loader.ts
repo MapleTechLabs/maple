@@ -1,11 +1,11 @@
-import "../../../../components/dotmatrix-loader.css"
+import "./dotmatrix-loader.css"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Array as Arr } from "effect"
 
-// The dot loader over `Dotm3x3_6`: a 3×3 matrix of 4 px square dots breathing out from its
-// centre. Each dot carries the animation class and the reduced-motion resting opacity inline:
-// the animation wins, and the media query that turns it off leaves the resting frame.
+// A 3×3 matrix of 4 px square dots breathing out from its centre. Each dot carries the animation
+// class and the reduced-motion resting opacity inline: the animation wins, and the media query
+// that turns it off leaves the resting frame.
 
 const DOT_SIZE = 4
 const GAP = 1
@@ -13,7 +13,7 @@ const SPAN = DOT_SIZE * 3 + GAP * 2
 const OPACITY_BASE = 0.2
 const SPEED_SCALE = 1600 / 1230
 
-/** `remapOpacityToTriplet` with only `opacityBase` overridden (mid 0.34, peak 0.94 kept). */
+/** The loader's opacity curve with only the base lifted (mid 0.34 and peak 0.94 kept). */
 const remap = (opacity: number): number => {
 	const lerp = (from: number, to: number, start: number, end: number) =>
 		from + (to - from) * Math.min(1, Math.max(0, (opacity - start) / (end - start)))

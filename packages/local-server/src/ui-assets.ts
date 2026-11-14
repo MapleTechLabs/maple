@@ -32,7 +32,7 @@ const MIME: Record<string, string> = {
 } satisfies Record<string, string>
 
 const mimeFor = (path: string): string =>
-	MIME[Str.split(".")(path).pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+	MIME[Str.toLowerCase(Arr.lastNonEmpty(Str.split(".")(path)))] ?? "application/octet-stream"
 
 /**
  * Build an `AssetResolver`, or `undefined` when no SPA is available.
@@ -43,8 +43,8 @@ const mimeFor = (path: string): string =>
  * dev assets require a server restart to be picked up — fine for a dev-only
  * fallback. The compiled binary uses `embeddedAssets` and never reads disk.)
  */
-export const resolveUiAssets = (): Effect.Effect<AssetResolver | undefined, never, FileSystem> =>
-	Effect.gen(function* () {
+export const resolveUiAssets: Effect.Effect<AssetResolver | undefined, never, FileSystem> = Effect.gen(
+	function* () {
 		if (embeddedAssets) {
 			const assets = embeddedAssets
 			return (path) => {
@@ -77,4 +77,5 @@ export const resolveUiAssets = (): Effect.Effect<AssetResolver | undefined, neve
 		)
 		if (preloaded.size === 0) return undefined
 		return (path) => preloaded.get(path)
-	})
+	},
+)

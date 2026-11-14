@@ -41,9 +41,7 @@ const formatIssue = SchemaIssue.makeFormatterDefault()
  * Migrates a stored payload up to the current schema version, then decodes it.
  * Never fails: every outcome is expressed in the returned value.
  */
-export const parseStoredDashboard = (
-	payload: unknown,
-): Effect.Effect<DashboardParseOutcome, never, never> => {
+export const parseStoredDashboard = (payload: unknown): Effect.Effect<DashboardParseOutcome> => {
 	const fromVersion = detectSchemaVersion(payload)
 
 	return decodeDocument(migrateToLatest(payload)).pipe(

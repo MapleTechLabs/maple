@@ -9,26 +9,30 @@ import { button } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
-import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { pressable } from "@maple/views/ui/pressable"
 import {
 	COMPONENT_STATUS_LABEL,
 	COMPONENT_STATUS_TONE,
 	componentStatus,
 	isOpenIncident,
+	monitorStatusOf,
 } from "../shared/derive"
 import {
 	daysOf,
 	isListedIncident,
+	previewControls,
 	previewDocument,
+	previewExampleNote,
 	previewFrame,
 	previewTheme,
+	simulatePreview,
 	toSnapshotIncident,
 } from "../shared/preview"
 import { Message } from "./message"
-import type { Model } from "./model"
+import { pageUrlOf } from "./update-domain"
+import { canManage, canPostIncidents, type Model } from "./model"
 import { componentsOf, incidentsOf, monitorsOf } from "./reads"
-import { addPanel, componentPanel, composerPanel, incidentPanel, type TimeInputs } from "./view-panel"
+import { addPanel, componentPanel, incidentPanel, type TimeInputs } from "./view-panel"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
 
@@ -47,6 +51,7 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	return {
 		...component,
 		name: Str.trim(form.name) === "" ? component.name : Str.trim(form.name),
+		description: Str.trim(form.description) === "" ? null : Str.trim(form.description),
 		group: Str.trim(form.group) === "" ? null : Str.trim(form.group),
 		monitor_id: Option.getOrNull(decodeMonitorId(form.monitorId)),
 		manual_status: Option.getOrNull(decodeStatus(form.manualStatus)),
@@ -54,7 +59,7 @@ const asEdited = (model: Model, component: V2StatusPageComponent) => {
 	}
 }
 
-/** What the preview outlines: the open component or incident, or the composer's components. */
+/** What the preview outlines: the open component or incident. */
 export const selectedIds = (model: Model): ReadonlyArray<string> => {
 	const panel = model.panel
 	if (panel === null) return []
@@ -63,8 +68,6 @@ export const selectedIds = (model: Model): ReadonlyArray<string> => {
 			return [panel.componentId]
 		case "Incident":
 			return [panel.incidentId]
-		case "Compose":
-			return model.incidentForm.componentIds
 		case "Add":
 			return []
 	}
@@ -74,19 +77,7 @@ export const selectedIds = (model: Model): ReadonlyArray<string> => {
 export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 	const nowMs = model.nowMs ?? 0
 	const monitors = monitorsOf(model)
-	const snapshot = previewSnapshot({
-		pageId: page.id,
-		page: {
-			name: page.name,
-			slug: page.slug,
-			description: page.description,
-			websiteUrl: page.website_url,
-			logoUrl: page.logo_url,
-			privacyUrl: page.privacy_url,
-			termsUrl: page.terms_url,
-			showPoweredBy: page.show_powered_by,
-			theme: previewTheme(page.theme, model.previewScheme),
-		},
+	const shown = simulatePreview(model.previewState, {
 		components: Arr.map(componentsOf(model), (saved) => {
 			const component = asEdited(model, saved)
 			return {
@@ -94,8 +85,7 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 				name: component.name,
 				description: component.description,
 				group: component.group,
-				monitorStatus:
-					monitors.find((monitor) => monitor.id === component.monitor_id)?.state.status ?? null,
+				monitorStatus: monitorStatusOf(monitors, component.monitor_id),
 				manualStatus: component.manual_status,
 				showUptime: component.show_uptime,
 				monitored: component.monitor_id !== null,
@@ -108,10 +98,36 @@ export const canvasDocument = (model: Model, page: V2StatusPage): string => {
 		),
 		nowMs,
 	})
-	return previewDocument({ snapshot, nowMs, isSelectable: true, selectedIds: selectedIds(model) })
+	const snapshot = previewSnapshot({
+		pageId: page.id,
+		page: {
+			name: page.name,
+			slug: page.slug,
+			description: page.description,
+			websiteUrl: page.website_url,
+			logoUrl: page.logo_url,
+			logoDarkUrl: page.logo_dark_url,
+			faviconUrl: page.favicon_url,
+			supportUrl: page.support_url,
+			privacyUrl: page.privacy_url,
+			termsUrl: page.terms_url,
+			customDomain: null,
+			visibility: page.visibility,
+			showPoweredBy: page.show_powered_by,
+			theme: previewTheme(page.theme, model.previewScheme),
+		},
+		components: shown.components,
+		incidents: shown.incidents,
+		nowMs,
+	})
+	return previewDocument({
+		snapshot,
+		nowMs,
+		isSelectable: true,
+		selectedIds: selectedIds(model),
+		publicUrl: pageUrlOf(model, page),
+	})
 }
-
-// ON THIS PAGE
 
 const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 	h.span(
@@ -124,7 +140,7 @@ const statusDot = (h: H, status: StatusPageComponentStatus): Html =>
 
 const itemClass = (isSelected: boolean) =>
 	cn(
-		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+		"flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
 		isSelected
 			? "bg-muted font-medium text-foreground"
 			: "text-muted-foreground hover:bg-surface-sunken hover:text-foreground active:bg-surface-sunken active:text-foreground",
@@ -138,8 +154,9 @@ const componentItem = (
 ): Html => {
 	const status = componentStatus(component, monitorsOf(model), incidentsOf(model))
 	const isSelected = model.panel?._tag === "Component" && model.panel.componentId === component.id
-	return h.li(
-		[h.Key(component.id), h.Class("group flex items-center gap-1")],
+	return hstack(
+		h,
+		{ gap: "1", align: "center", as: "li", className: "group", attributes: [h.Key(component.id)] },
 		[
 			pressable(
 				h,
@@ -151,7 +168,7 @@ const componentItem = (
 				},
 				[
 					statusDot(h, status),
-					h.span([h.Class("truncate")], [component.name]),
+					typography(h, { truncate: true }, [component.name]),
 					h.span([h.Class("sr-only")], [`: ${COMPONENT_STATUS_LABEL[status]}`]),
 					...(component.group === null
 						? []
@@ -163,14 +180,15 @@ const componentItem = (
 							]),
 				],
 			),
-			...(model.isAdmin
+			...(canManage(model)
 				? [
-						h.div(
-							[
-								h.Class(
-									"flex shrink-0 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
-								),
-							],
+						hstack(
+							h,
+							{
+								align: "stretch",
+								className:
+									"shrink-0 opacity-60 group-hover:opacity-100 group-focus-within:opacity-100",
+							},
 							[
 								iconButton(
 									h,
@@ -232,7 +250,7 @@ const incidentItem = (h: H, model: Model, incident: V2StatusPageIncident): Html 
 						size: 14,
 						className: isOpenIncident(incident) ? "text-severity-warn" : "text-muted-foreground",
 					}),
-					h.span([h.Class("truncate")], [incident.title]),
+					typography(h, { truncate: true }, [incident.title]),
 					...(incident.published
 						? []
 						: [h.span([h.Class("ml-auto font-mono text-2xs text-muted-foreground")], ["Draft"])]),
@@ -246,13 +264,15 @@ const onThisPage = (h: H, model: Model): Html => {
 	const components = componentsOf(model)
 	const open = Arr.filter(incidentsOf(model), isOpenIncident)
 	const recent = Arr.filter(incidentsOf(model), (incident) => !isOpenIncident(incident)).slice(0, 5)
-	return h.nav(
-		[
-			h.Id("status-page-on-this-page"),
-			h.Tabindex(-1),
-			h.AriaLabel("On this page"),
-			h.Class("flex min-w-0 flex-col gap-5 outline-none"),
-		],
+	return vstack(
+		h,
+		{
+			gap: "5",
+			shrink: true,
+			as: "nav",
+			className: "outline-none",
+			attributes: [h.Id("status-page-on-this-page"), h.Tabindex(-1), h.AriaLabel("On this page")],
+		},
 		[
 			vstack(h, { gap: "1.5" }, [
 				eyebrow(h, { as: "h2", className: "px-2" }, ["On this page"]),
@@ -260,7 +280,7 @@ const onThisPage = (h: H, model: Model): Html => {
 					? h.p(
 							[h.Class("px-2 text-xs text-muted-foreground")],
 							[
-								model.isAdmin
+								canManage(model)
 									? "Nothing yet. Add a monitor and visitors see its status and uptime."
 									: "No monitors on this page yet.",
 							],
@@ -275,7 +295,7 @@ const onThisPage = (h: H, model: Model): Html => {
 								}),
 							),
 						),
-				...(model.isAdmin
+				...(canManage(model)
 					? [
 							button(
 								h,
@@ -297,7 +317,11 @@ const onThisPage = (h: H, model: Model): Html => {
 				open.length + recent.length === 0
 					? h.p(
 							[h.Class("px-2 text-xs text-muted-foreground")],
-							["Nothing posted. Post incident when something breaks."],
+							[
+								canPostIncidents(model)
+									? "Nothing posted. Post incident when something breaks."
+									: "Nothing posted.",
+							],
 						)
 					: vstack(
 							h,
@@ -314,15 +338,17 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 	if (panel === null) return []
 	switch (panel._tag) {
 		case "Component": {
-			const component = componentsOf(model).find((row) => row.id === panel.componentId)
-			return component === undefined ? [] : [componentPanel(h, model, component)]
+			return Option.match(
+				Arr.findFirst(componentsOf(model), (row) => row.id === panel.componentId),
+				{ onNone: () => [], onSome: (component) => [componentPanel(h, model, component)] },
+			)
 		}
 		case "Incident": {
-			const incident = incidentsOf(model).find((row) => row.id === panel.incidentId)
-			return incident === undefined ? [] : [incidentPanel(h, model, incident, time)]
+			return Option.match(
+				Arr.findFirst(incidentsOf(model), (row) => row.id === panel.incidentId),
+				{ onNone: () => [], onSome: (incident) => [incidentPanel(h, model, incident, time)] },
+			)
 		}
-		case "Compose":
-			return [composerPanel(h, model, time.timeZone)]
 		case "Add":
 			return [addPanel(h, model)]
 	}
@@ -330,29 +356,26 @@ const panelView = (h: H, model: Model, time: TimeInputs): ReadonlyArray<Html> =>
 
 const previewColumn = (h: H, model: Model, page: V2StatusPage): Html =>
 	vstack(h, { gap: "2", shrink: true, as: "section", attributes: [h.AriaLabel("Page preview")] }, [
-		hstack(h, { gap: "3", justify: "between", className: "min-h-7" }, [
+		hstack(h, { gap: "3", justify: "between", wrap: true, className: "min-h-7" }, [
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				"Click a component or incident to edit it.",
 			]),
-			...(page.theme.appearance === "auto"
-				? [
-						segmentedSelect(h, {
-							size: "xs",
-							ariaLabel: "Preview mode",
-							value: model.previewScheme,
-							onChange: (scheme) => Message.PickedPreviewScheme({ scheme }),
-							options: [
-								{ value: "light", label: "Light" },
-								{ value: "dark", label: "Dark" },
-							],
-						}),
-					]
-				: []),
+			previewControls(h, {
+				state: model.previewState,
+				width: model.previewWidth,
+				scheme: page.theme.appearance === "auto" ? model.previewScheme : null,
+				onState: (state) => Message.PickedPreviewState({ state }),
+				onWidth: (width) => Message.PickedPreviewWidth({ width }),
+				onScheme: (scheme) => Message.PickedPreviewScheme({ scheme }),
+			}),
 		]),
+		// Above the frame: the frame fills the viewport, so a note under it is never seen.
+		...previewExampleNote(h, model.previewState),
 		previewFrame(h, {
 			title: `${page.name} as visitors see it`,
 			document: canvasDocument(model, page),
 			isSelectable: true,
+			width: model.previewWidth,
 			className: "h-[640px] lg:h-[calc(100vh-16rem)] lg:min-h-[520px]",
 		}),
 	])

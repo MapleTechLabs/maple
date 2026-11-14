@@ -10,7 +10,7 @@ import { LogRecord } from "@maple/views/ui/logs/log-row-view"
 import { LogSource, LogsRequest } from "../log-source"
 import { Message, type Model } from "./model"
 
-// The reads behind `LogTraceTimeline` and `LogContextPanel`, sent while their panel is on show,
+// The reads behind the trace timeline and the context panel, sent while their panel is on show,
 // through `LogSource`.
 
 const CONTEXT_SIZE = 25
@@ -29,8 +29,12 @@ type Side = typeof Side.Type
 
 /** `instanceAttribute`: the most specific resource attribute that names one running instance. */
 export const instanceAttribute = (log: LogRecord): InstanceAttribute | undefined => {
-	const key = INSTANCE_KEYS.find((candidate) => (log.resourceAttributes[candidate] ?? "") !== "")
-	return key === undefined ? undefined : { key, value: log.resourceAttributes[key] ?? "" }
+	return Option.getOrUndefined(
+		Option.map(
+			Arr.findFirst(INSTANCE_KEYS, (candidate) => (log.resourceAttributes[candidate] ?? "") !== ""),
+			(key) => ({ key, value: log.resourceAttributes[key] ?? "" }),
+		),
+	)
 }
 
 /** `contextKey`: the record hash when the row has one, else timestamp, span and body. */
@@ -50,7 +54,7 @@ export const scopedInstance = (model: Model, log: LogRecord): InstanceAttribute 
 const pinned = (pinnedNamespace: string | null): Pick<LogsRequest, "namespaces"> =>
 	pinnedNamespace === null ? {} : { namespaces: [pinnedNamespace] }
 
-/** `contextInputs`: 25 logs each side within an hour; both sides include this instant. */
+/** 25 logs each side within an hour; both sides include this instant. */
 export const contextInput = (
 	log: LogRecord,
 	instance: InstanceAttribute | undefined,
@@ -102,12 +106,12 @@ export const mergeLogContext = (
 			seen.add(key)
 			return true
 		})
-	const before = unique(beforeDesc).slice(0, CONTEXT_SIZE).toReversed()
+	const before = Arr.reverse(unique(beforeDesc).slice(0, CONTEXT_SIZE))
 	const after = unique(afterAsc).slice(0, CONTEXT_SIZE)
 	return [...before, selected, ...after]
 }
 
-/** `listLogsResultAtom({ data: before | after })`. */
+/** The logs on one side of this one. */
 export const FetchContext = Command.define("FetchLogContext", {
 	args: { key: Schema.String, side: Side, request: LogsRequest },
 	messages: [Message.CompletedFetchContext],
@@ -118,7 +122,7 @@ export const FetchContext = Command.define("FetchLogContext", {
 		),
 })
 
-/** `listLogsResultAtom({ traceId, limit: 200, ...traceWindow(timestamp) })`. */
+/** Up to 200 logs of the trace, within the trace's window around `timestamp`. */
 export const FetchTraceLogs = Command.define("FetchLogTraceLogs", {
 	args: {
 		key: Schema.String,

@@ -1,11 +1,21 @@
-import { McpQueryError, type McpToolRegistrar } from "./types"
-import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { GetIncidentTimelineOutput } from "@maple/domain/mcp-outputs"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { DateTime, Effect, Option, Schema, Array as Arr, String as Str } from "effect"
+import { CurrentMcpTenant } from "../tenant"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
-import { ALERT_INCIDENT_STATUSES, ALERT_SEVERITIES, formatCondition, parseRuleId } from "../lib/alert-rules"
+import { AlertIncidentPagesService } from "@maple/backend/services/alerts/AlertIncidentPagesService"
+import { AlertSilencesService } from "@maple/backend/services/alerts/AlertSilencesService"
+import type { AlertSilenceId, OrgId } from "@maple/primitives"
+import {
+	ackLabel,
+	ALERT_INCIDENT_STATUSES,
+	ALERT_SEVERITIES,
+	formatCondition,
+	parseRuleId,
+} from "../lib/alert-rules"
 import * as P from "../lib/params"
+import { onlySloIncidents, sloIncidentNext } from "../lib/slos"
 import { doc, type DocBlock } from "../lib/tool-doc"
+import { orFallback } from "../lib/fallback"
 
 const MAX_LIMIT = 200
 /** Severity and group key filter in memory, so a filtered call reads this many rows first. */
@@ -16,13 +26,137 @@ function formatTimestamp(iso: string | null): string | undefined {
 	return Str.replace("T", " ")(Str.slice(0, 19)(iso))
 }
 
+const channelLabel = (channel: string): string =>
+	channel === "email" ? "email" : `${Str.capitalize(channel)} DM`
+
+interface PageRow {
+	readonly userId: string
+	readonly name: string | null
+	readonly channel: string
+	readonly status: string
+	readonly errorMessage?: string
+}
+
+// A queued page with an error is waiting on a retry, not stuck.
+const pageStatus = ({ status, errorMessage }: PageRow): string => {
+	if (status === "sent") return ""
+	if (errorMessage === undefined) {
+		return status === "skipped" ? " (not sent: incident acknowledged or resolved)" : ` (${status})`
+	}
+	if (status === "skipped") return ` (${errorMessage})`
+	if (status === "queued" || status === "sending") return ` (retrying: ${errorMessage})`
+	return ` (${status}: ${errorMessage})`
+}
+
+/** e.g. `Ben by email, Ben by Slack DM (failed: …)`; never the address. */
+const formatPages = (pages: ReadonlyArray<PageRow>): string =>
+	Arr.join(
+		Arr.map(
+			pages,
+			(page) => `${page.name ?? page.userId} by ${channelLabel(page.channel)}${pageStatus(page)}`,
+		),
+		", ",
+	)
+
+/** Reasons of the silences these incidents name; one that cannot be read is left out. */
+const silenceReasons = Effect.fn("McpTool.getIncidentTimeline.silenceReasons")(function* (
+	orgId: OrgId,
+	ids: ReadonlyArray<AlertSilenceId>,
+) {
+	if (ids.length === 0) return new Map<string, string>()
+	const silences = yield* AlertSilencesService
+	const found = yield* Effect.forEach(
+		ids,
+		(id) =>
+			silences.get(orgId, id).pipe(
+				Effect.map((silence) => [[silence.id, silence.reason] as const]),
+				// The line falls back to the bare id, but a failed lookup is still recorded.
+				orFallback(`alert silence ${id} reason`, () => []),
+			),
+		{ concurrency: 4 },
+	)
+	return new Map<string, string>(Arr.flatten(found))
+})
+
+/** How a held-back notification reads: still owed while `silencedAt` is set. */
+function silenceLine(inc: {
+	readonly silenceId?: string | null
+	readonly silencedAt?: string | null
+	readonly silenceReason?: string
+}): string | undefined {
+	if (inc.silenceId === undefined || inc.silenceId === null) return undefined
+	const named =
+		inc.silenceReason === undefined ? inc.silenceId : `"${inc.silenceReason}" (${inc.silenceId})`
+	return inc.silencedAt === undefined || inc.silencedAt === null
+		? `a page was held back earlier by silence ${named}; nothing is owed now`
+		: `held back by silence ${named} since ${formatTimestamp(inc.silencedAt)}`
+}
+
+const toQueryError = (error: { readonly message: string }) =>
+	new McpQueryError({ message: error.message, pipeName: "get_incident_timeline", cause: error })
+
+/** One incident by id, as a one-row list; an unknown id is invalid input on `incident_id`. */
+const oneIncident = Effect.fn("McpTool.getIncidentTimeline.oneIncident")(function* (
+	orgId: OrgId,
+	rawId: string,
+) {
+	const incidentId = yield* P.decodeResourceId("alertIncident", "incident_id")(rawId)
+	const readModels = yield* AlertReadModelsService
+	const incident = yield* readModels.getIncident(orgId, incidentId).pipe(
+		Effect.catchTags({
+			"@maple/http/errors/AlertIncidentNotFoundError": (error) =>
+				Effect.fail(
+					new McpInvalidInputError({
+						message: `${error.message}. list_alert_incidents lists incident ids; error-issue incidents are list_error_incidents.`,
+						parameter: "incident_id",
+					}),
+				),
+			"@maple/http/errors/AlertPersistenceError": (error) => Effect.fail(toQueryError(error)),
+		}),
+	)
+	return [incident]
+})
+
+/** Incidents matching the list filters; severity and group key apply in memory to a bounded scan. */
+const listMatching = Effect.fn("McpTool.getIncidentTimeline.listMatching")(function* (
+	orgId: OrgId,
+	params: {
+		readonly rule_id?: string | undefined
+		readonly status?: (typeof ALERT_INCIDENT_STATUSES)[number] | undefined
+		readonly severity?: string | undefined
+		readonly group_key?: string | undefined
+		readonly limit: number
+	},
+) {
+	const readModels = yield* AlertReadModelsService
+	const ruleId = params.rule_id === undefined ? undefined : yield* parseRuleId(params.rule_id)
+	const inMemoryFilter = params.severity !== undefined || params.group_key !== undefined
+	const result = yield* readModels
+		.listIncidents(orgId, {
+			...(ruleId === undefined ? undefined : { ruleId }),
+			...(params.status === undefined ? undefined : { status: params.status }),
+			limit: inMemoryFilter ? FILTERED_SCAN : params.limit + 1,
+		})
+		.pipe(Effect.mapError(toQueryError))
+	return Arr.filter(
+		result.incidents,
+		(i) =>
+			(params.severity === undefined || i.severity === params.severity) &&
+			(params.group_key === undefined || i.groupKey === params.group_key),
+	)
+})
+
 export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_incident_timeline",
 		title: "Incident Timeline",
 		description:
-			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
+			"Alert-rule incidents (not error-issue incidents) for one rule or all, with first and last trigger, last notification and resolution timestamps, and who escalation paged: the per-incident detail behind list_alert_incidents. Pass incident_id for one incident, rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
+			incident_id: P.optionalResourceId(
+				"alertIncident",
+				"Only this incident (ids from list_alert_incidents); the other filters are then ignored",
+			),
 			rule_id: P.optionalResourceId(
 				"alertRule",
 				"Only incidents of this rule (ids from list_alert_rules)",
@@ -32,64 +166,85 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			group_key: P.optionalText("Only incidents with this exact group key"),
 			limit: P.limit({ default: 20, max: MAX_LIMIT, noun: "incidents" }),
 		}),
-		output: GetIncidentTimelineOutput,
 		hints: { readOnly: true },
 		phrases: ["Loading the incident timeline", "Building the incident timeline"],
 		handler: Effect.fn("McpTool.getIncidentTimeline")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const readModels = yield* AlertReadModelsService
-
-			const ruleId = params.rule_id === undefined ? undefined : yield* parseRuleId(params.rule_id)
-			const inMemoryFilter = params.severity !== undefined || params.group_key !== undefined
-			const result = yield* readModels
-				.listIncidents(tenant.orgId, {
-					...(ruleId === undefined ? undefined : { ruleId }),
-					...(params.status === undefined ? undefined : { status: params.status }),
-					limit: inMemoryFilter ? FILTERED_SCAN : params.limit + 1,
-				})
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "get_incident_timeline",
-								cause: error,
-							}),
-					),
-				)
-
-			const matching = Arr.filter(
-				result.incidents,
-				(i) =>
-					(params.severity === undefined || i.severity === params.severity) &&
-					(params.group_key === undefined || i.groupKey === params.group_key),
-			)
+			const matching =
+				params.incident_id !== undefined
+					? yield* oneIncident(tenant.orgId, params.incident_id)
+					: yield* listMatching(tenant.orgId, params)
 			const incidents = matching.slice(0, params.limit)
+			// One read for every listed incident's pages.
+			const pagesService = yield* AlertIncidentPagesService
+			const pages = yield* pagesService
+				.listPages(
+					tenant.orgId,
+					Arr.map(incidents, (i) => i.id),
+				)
+				.pipe(Effect.mapError(toQueryError))
+
+			const reasons = yield* silenceReasons(
+				tenant.orgId,
+				Arr.dedupe(Arr.flatMap(incidents, (i) => (i.silenceId === null ? [] : [i.silenceId]))),
+			)
 
 			return {
-				incidents: Arr.map(incidents, (i) => ({
-					id: i.id,
-					ruleId: i.ruleId,
-					ruleName: i.ruleName,
-					groupKey: i.groupKey,
-					signalType: i.signalType,
-					severity: i.severity,
-					status: i.status,
-					comparator: i.comparator,
-					threshold: i.threshold,
-					lastObservedValue: i.lastObservedValue,
-					firstTriggeredAt: i.firstTriggeredAt,
-					lastTriggeredAt: i.lastTriggeredAt,
-					resolvedAt: i.resolvedAt,
-					lastNotifiedAt: i.lastNotifiedAt,
-				})),
+				incidents: Arr.map(incidents, (i) => {
+					const paged = Arr.filter(pages, (entry) => entry.incidentId === i.id)
+					return {
+						id: i.id,
+						ruleId: i.ruleId,
+						ruleName: i.ruleName,
+						groupKey: i.groupKey,
+						...(i.groupLabel === undefined ? undefined : { groupLabel: i.groupLabel }),
+						...(i.labels === undefined ? undefined : { labels: i.labels }),
+						signalType: i.signalType,
+						severity: i.severity,
+						status: i.status,
+						comparator: i.comparator,
+						threshold: i.threshold,
+						lastObservedValue: i.lastObservedValue,
+						firstTriggeredAt: i.firstTriggeredAt,
+						lastTriggeredAt: i.lastTriggeredAt,
+						resolvedAt: i.resolvedAt,
+						lastNotifiedAt: i.lastNotifiedAt,
+						silenceId: i.silenceId,
+						silencedAt: i.silencedAt,
+						...Option.match(Option.fromUndefinedOr(reasons.get(i.silenceId ?? "")), {
+							onNone: () => undefined,
+							onSome: (silenceReason) => ({ silenceReason }),
+						}),
+						acknowledgedAt: i.acknowledgedAt,
+						acknowledgedBy: ackLabel(i),
+						...(paged.length === 0
+							? undefined
+							: {
+									pages: Arr.map(paged, (entry) => ({
+										userId: entry.page.userId,
+										name: entry.page.name,
+										channel: entry.page.channel,
+										status: entry.page.status,
+										...(entry.page.errorMessage === null
+											? undefined
+											: { errorMessage: entry.page.errorMessage }),
+										at: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)),
+									})),
+								}),
+					}
+				}),
 				total: incidents.length,
 				openCount: Arr.filter(incidents, (i) => i.status === "open").length,
 				resolvedCount: Arr.filter(incidents, (i) => i.status === "resolved").length,
-				...(params.rule_id === undefined ? undefined : { ruleId: params.rule_id }),
-				...(params.status === undefined ? undefined : { status: params.status }),
-				...(params.severity === undefined ? undefined : { severity: params.severity }),
-				...(params.group_key === undefined ? undefined : { groupKey: params.group_key }),
+				// One incident ignores the list filters, so they are not echoed as if applied.
+				...(params.incident_id !== undefined
+					? { incidentId: params.incident_id }
+					: {
+							...(params.rule_id === undefined ? undefined : { ruleId: params.rule_id }),
+							...(params.status === undefined ? undefined : { status: params.status }),
+							...(params.severity === undefined ? undefined : { severity: params.severity }),
+							...(params.group_key === undefined ? undefined : { groupKey: params.group_key }),
+						}),
 				limit: params.limit,
 				hasMore: matching.length > params.limit,
 			}
@@ -110,7 +265,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						["Status", inc.status],
 						["Severity", inc.severity],
 						["Signal type", inc.signalType],
-						["Group", inc.groupKey ?? undefined],
+						["Group", inc.groupLabel ?? inc.groupKey ?? undefined],
 						["Condition", `value ${formatCondition(inc)}`],
 						[
 							"Last observed value",
@@ -120,6 +275,14 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 						["Last triggered", formatTimestamp(inc.lastTriggeredAt)],
 						["Resolved at", formatTimestamp(inc.resolvedAt)],
 						["Last notified", formatTimestamp(inc.lastNotifiedAt)],
+						[
+							"Acknowledged",
+							inc.acknowledgedAt == null
+								? undefined
+								: `${formatTimestamp(inc.acknowledgedAt)} by ${inc.acknowledgedBy ?? "someone"}`,
+						],
+						["Paged", inc.pages === undefined ? undefined : formatPages(inc.pages)],
+						["Notifications", silenceLine(inc)],
 						["Incident ID", inc.id],
 						["Rule ID", inc.ruleId],
 					]),
@@ -138,6 +301,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 			return {
 				title: "Incident Timeline",
 				scope: [
+					["Incident", output.incidentId],
 					["Rule", output.ruleId],
 					["Status", output.status],
 					["Severity", output.severity],
@@ -194,9 +358,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					...(open.length > 0
 						? [doc.next("find_errors", {}, "search for recent errors related to open incidents")]
 						: []),
-					...(open.length === 0
+					...(open.length === 0 && !onlySloIncidents(output.incidents)
 						? [doc.next("list_alert_rules", {}, "review alert configuration")]
 						: []),
+					...sloIncidentNext(output.incidents),
 					...(Arr.some(output.incidents, (i) => i.signalType === "uptime")
 						? [doc.next("list_uptime_monitors", {}, "the uptime monitors behind these incidents")]
 						: []),

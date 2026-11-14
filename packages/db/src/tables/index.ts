@@ -7,8 +7,11 @@ import {
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
+	AlertMaintenanceWindows,
 } from "./alerts"
 import { AnomalyDetectorSettings, AnomalyDetectorStates, AnomalyIncidents } from "./anomalies"
 import { ApiKeys } from "./api-keys"
@@ -29,6 +32,7 @@ import {
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -39,7 +43,10 @@ import {
 	ErrorIssueVerifications,
 } from "./errors"
 import { IssueEscalationPolicies, IssueEscalations } from "./escalations"
+import { AlertEscalationRuns, AlertMemberNotifications, EscalationChains } from "./escalation-chains"
+import { OnCallOverrides, OnCallSchedules } from "./oncall-schedules"
 import { AwsConnections } from "./aws-connections"
+import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
@@ -55,6 +62,7 @@ import { OrgIngestRules, OrgIngestRuleSettings, OrgIngestRuleStats } from "./org
 import { OrgIngestKeys } from "./org-ingest-keys"
 import { OrgIngestSamplingPolicies } from "./org-ingest-sampling-policies"
 import { Sources } from "./sources"
+import { ExternalDataSources, ExternalDataSourceCatalogEntries } from "./external-data-sources"
 import { OrgRecommendationIssues } from "./org-recommendation-issues"
 import { PlanetscaleConnections } from "./planetscale-connections"
 import {
@@ -63,9 +71,13 @@ import {
 	PlanetscaleEvents,
 	PlanetscaleIssueReceipts,
 } from "./planetscale-inventory"
+import { CostConnections } from "./cost-connections"
+import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
+import { SearchConsoleSites } from "./search-console-sites"
+import { ServiceMapWorldEntities } from "./service-map-world"
 import {
 	SecurityAuditEvents,
 	SecurityAuditFindings,
@@ -83,11 +95,13 @@ import {
 	StatusPageComponents,
 	StatusPageIncidentComponents,
 	StatusPageCleanups,
+	StatusPageCustomDomains,
 	StatusPageIncidentUpdates,
 	StatusPageIncidents,
 	StatusPages,
 } from "./status-pages"
 import { UptimeMonitorDaily, UptimeMonitorStates, UptimeMonitors } from "./uptime"
+import { Slos } from "./slos"
 import {
 	VcsInstallations,
 	VcsRepositories,
@@ -101,6 +115,7 @@ import {
 	PrReviewEdits,
 	PrReviewSettings,
 } from "./vcs"
+import { VercelConnections, VercelDeployments, VercelProjects } from "./vercel"
 
 export * from "./agent-feedback"
 export * from "./ai-triage"
@@ -122,8 +137,12 @@ export * from "./dashboards"
 export * from "./device-credentials"
 export * from "./digest"
 export * from "./errors"
+export * from "./external-data-sources"
 export * from "./escalations"
+export * from "./escalation-chains"
+export * from "./oncall-schedules"
 export * from "./aws-connections"
+export * from "./cost-sources"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
 export * from "./investigations"
@@ -141,19 +160,25 @@ export * from "./org-ingest-sampling-policies"
 export * from "./org-recommendation-issues"
 export * from "./planetscale-connections"
 export * from "./planetscale-inventory"
+export * from "./cost-connections"
+export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./railway"
 export * from "./scrape-targets"
+export * from "./search-console-sites"
 export * from "./security-audit"
+export * from "./service-map-world"
 export * from "./sources"
 export * from "./status-pages"
 export * from "./supabase"
 export * from "./support-channels"
 export * from "./uptime"
+export * from "./slos"
 export * from "./vcs"
+export * from "./vercel"
 
 /** Every table the application database has, for schema checks and DDL. */
-export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>> = [
+export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AgentFeedback,
 	AiTriageSettings,
 	AlertDestinations,
@@ -161,8 +186,11 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	AlertRuleClaims,
 	AlertRuleStates,
 	AlertIncidents,
+	AlertIncidentEvents,
 	AlertDeliveryEvents,
 	AlertLinearIssues,
+	AlertSilences,
+	AlertMaintenanceWindows,
 	AnomalyDetectorSettings,
 	AnomalyDetectorStates,
 	AnomalyIncidents,
@@ -184,6 +212,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	Actors,
 	ErrorIssues,
 	ErrorFingerprintCandidates,
+	ErrorIssueFingerprints,
 	ErrorIssueEvents,
 	ErrorIssueStates,
 	ErrorIncidents,
@@ -194,9 +223,15 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	ErrorIssueVerifications,
 	IssueEscalationPolicies,
 	IssueEscalations,
+	EscalationChains,
+	AlertEscalationRuns,
+	AlertMemberNotifications,
+	OnCallSchedules,
+	OnCallOverrides,
 	GcpConnectors,
 	GcpResources,
 	AwsConnections,
+	CostSources,
 	Investigations,
 	LiveActivities,
 	McpOAuthClients,
@@ -214,9 +249,13 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	OrgIngestRuleStats,
 	OrgIngestKeys,
 	OrgIngestSamplingPolicies,
+	OpenRouterCostConnections,
+	CostConnections,
 	OrgOpenRouterKeys,
 	OrgBillingLinks,
 	Sources,
+	ExternalDataSources,
+	ExternalDataSourceCatalogEntries,
 	OrgRecommendationIssues,
 	PlanetscaleConnections,
 	PlanetscalePollState,
@@ -226,7 +265,9 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	RailwayConnections,
 	RailwayEnvironments,
 	ScrapeTargets,
+	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
+	SearchConsoleSites,
 	SecurityAuditTargets,
 	SecurityAuditRuns,
 	SecurityAuditUnits,
@@ -245,12 +286,14 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	UptimeMonitors,
 	UptimeMonitorStates,
 	UptimeMonitorDaily,
+	Slos,
 	StatusPages,
 	StatusPageComponents,
 	StatusPageIncidents,
 	StatusPageIncidentUpdates,
 	StatusPageIncidentComponents,
 	StatusPageCleanups,
+	StatusPageCustomDomains,
 	VcsInstallations,
 	VcsRepositories,
 	VcsCommits,
@@ -262,4 +305,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs, string>>
 	PrReviewReplies,
 	PrReviewEdits,
 	PrReviewSettings,
+	VercelConnections,
+	VercelProjects,
+	VercelDeployments,
 ]

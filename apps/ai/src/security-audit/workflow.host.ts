@@ -9,13 +9,13 @@ import { Env } from "@maple/backend/platform/Env"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
-import { SandboxClient } from "@maple/backend/sandbox/client"
+import { SandboxClient } from "@maple/backend/services/sandbox/client"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
 import { ExecutorService } from "@maple/backend/services/sandbox/ExecutorService"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
-import { SecurityAuditCredits } from "@maple/backend/services/security-audit/SecurityAuditCredits"
+import { AiCredits } from "@maple/backend/services/billing/AiCredits"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import type { SecurityAuditWorkflowPayload } from "@maple/domain/security-audit"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
@@ -40,7 +40,7 @@ const runServices = (env: Record<string, unknown>) => {
 	).pipe(Layer.provide(Layer.mergeAll(VcsSourceService.layer, SandboxClient.layer)))
 	return Layer.mergeAll(
 		SecurityAuditStore.layer,
-		SecurityAuditCredits.layer,
+		AiCredits.layer,
 		OrgOpenRouterKeyService.layer,
 		BillingCustomerResolver.layer,
 		sandbox,

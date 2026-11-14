@@ -111,6 +111,8 @@ CI trace ids from the fixture do not resolve in `inspect_trace`: the world has n
 | `legacy-admin` served `/.env`, `billing` served `/actuator/env`; `marketing-site` answers every path         | exposure, inspect `legacy-admin:/.env` |
 | nuclei from 185.220.101.4 is the busiest scanner                                                             | `area=exposure`                        |
 | checkout on Node.js 18.19.0 (EOL, CVE-2025-23166), api-gateway on 22.4.0 (critical CVE), legacy-admin on 3.8 | runtimes, inspect `CVE-2025-23166`     |
+| `run-api-1` stopped at the $25 monthly limit: webhooks deferred, admin blocked, exports never reached        | list/inspect_security_audit_run        |
+| `run-shop-1` reported 6 claims, the webhook SSRF rejected with the verifier's reason; it has a 3-entry log   | inspect_security_audit_run             |
 
 ### Security scenarios
 
@@ -125,6 +127,12 @@ CI trace ids from the fixture do not resolve in `inspect_trace`: the world has n
 | S7  | Which findings did we dismiss or accept, and why? Is our coverage complete?              | coupon replay dismissed with its reason; acme/api never scanned and its audit incomplete                            | 2              |
 | S9  | CVE-2025-23166 in Node.js is being exploited. Which services, and to what version?       | checkout to 18.20.6, api-gateway to 22.12.0; Python services clean; cart not checkable                              | 1              |
 | S10 | Did we fix the JWT alg none problem? What high or critical issues are open in acme/shop? | fixed by the latest audit run; the open code and dependency findings of acme/shop                                   | 2              |
+| R1  | Show me the audit runs for acme/shop and acme/api. Which is latest, did it finish?       | run-shop-1 complete; run-api-1 incomplete (spend limit); durations                                                  | 1              |
+| R2  | For the last acme/api audit: what did it cover and skip? Why did it stop?                | 2 of 5 units covered; webhooks deferred, admin blocked, exports never reached; spend limit                          | 1              |
+| R3  | How much have we spent on audits this month, and what is our limit?                      | over the $25 limit, resets on the 1st                                                                               | 1              |
+| R4  | Which repositories are set up for the audit and the dependency scan, and when last run?  | both audited; acme/api never dependency-scanned                                                                     | 1              |
+| R5  | Everything the last acme/shop audit reported, rejected claims and its log                | 6 claims, SSRF rejected with its reason; the run's log                                                              | 1              |
+| R6  | Any vulnerable dependencies in acme/api? (never scanned)                                 | not scanned, so unknown; not "clear"                                                                                | 1              |
 
 ### Security results (Haiku unless noted; data calls, wasted in brackets)
 
@@ -144,6 +152,89 @@ Every answer was correct from round 1 on; the rounds cut wasted calls. Open item
 raise: Maple sees a probe's status code, not the response body, so "did they get the file" stays a
 manual check; a transitive dependency's parent package is not recorded; the catalog's size makes
 grepping it the only practical discovery step in the playground (real clients list tools natively).
+
+## The data source world
+
+`src/mcp/__evals__/ds-world/` connects 18 external data sources through the real
+`ExternalDataSourceService` (secrets encrypted, catalogs stored in PGlite). Agents see 17:
+`people-ops` (HR, `hr.payroll`) has agent access off. Clerk sources run the real Clerk driver
+against `makeFakeClerk` (real pagination, filters and totals), rebuilt relative to now on every
+call. ClickHouse sources store catalogs built from the same table definitions that seed Docker,
+and run their SQL through the real driver on two ClickHouse 26.2 servers (`main`, `staging`;
+staging and dev copies reuse the `shop` and `billing` database names). Each source has its own
+ClickHouse user granted SELECT on its database only.
+
+```sh
+cd apps/ai
+scripts/data-source-world-ch.sh up      # start (or reuse) and reseed both servers, ~10 s
+PLAYGROUND_CH=1 scripts/tool-playground.sh call query_data_source '{"data_source":"shop-prod","sql":"SELECT count() FROM shop.payments"}'
+scripts/data-source-world-ch.sh down    # remove the containers
+```
+
+Without `PLAYGROUND_CH=1`, every catalog tool and Clerk works and SQL answers "refused the
+connection". Rows are relative to the seeding time with no rows within 3 hours of the 1, 7 and
+30 day marks, so the facts below hold for 3 hours after `up`; rerun `up` after that.
+`src/mcp/__evals__/ds-world/world.test.ts` checks the world without Docker.
+
+| Fact                                                                                                                                 | Where                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Invoices: `billing.invoices` in `billing` (production); `billing-dev` has a fake copy, `warehouse-legacy` a 2019 archive             | search `invoices` ranks billing first                  |
+| Signups (Clerk `users.created_at`): 74 in the last 7 days, 315 in the last 30; 11 or 12 a weekday, 9 on two days a week              | clerk-prod; clerk-dev has 60 QA accounts               |
+| `last_active_at` holds each user's latest activity only: no per-day active history in Clerk; `analytics.events` is anonymous         | clerk-prod, analytics                                  |
+| Paid revenue last 7 days: $44,398.47 (US $10,598.13, GB $7,826.02, DE $7,428.36, CA $3,952.40, BR, FR, AU, JP about $3.5-3.7k)       | shop-prod: payments.amount in cents, customers.country |
+| Failed payments in the last 24 h: 6 in shop-prod (55 paid, 2 refunded); shop-staging has 1                                           | shop.payments.status                                   |
+| Active subscriptions: 714 of 1,000 in billing (billing-dev: 15 of 30)                                                                | billing.subscriptions.status                           |
+| `iot.readings.ts` is UInt32 epoch seconds; `cold-room-2` warms from 4 to about 10 C over the last 3 days, every other device is flat | iot-metrics                                            |
+| `warehouse-legacy` has 400 tables; 398 are leftovers (`etl_stage_*`, `bak_2019_*`, ...)                                              | describe pages of 100                                  |
+| No agent-visible source holds payroll                                                                                                | people-ops is hidden                                   |
+
+`shop.orders` mirrors payments (`completed` = paid), so completed order totals give the same
+revenue. A calendar-week answer differs from the last 7 days and is correct when it says so.
+
+### Data source scenarios
+
+| #   | Ask                                                          | Must find                                                                                                        | Efficient path |
+| --- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | -------------- |
+| D1  | Which database has our invoices?                             | billing (production), `billing.invoices`; billing-dev is fake, the legacy table is a 2019 archive                | 1-2            |
+| D2  | How many people signed up this week?                         | clerk-prod (not dev), a count with its window stated: 74 for the last 7 days                                     | 2-3            |
+| D3  | Chart daily signups for the last 30 days.                    | clerk-prod per-day counts (~315 total); says it cannot save a chart yet (dashboards on data sources are phase 2) | 2-3            |
+| D4  | Show daily active users for the last month.                  | explains `last_active_at` holds only the latest activity; offers what is answerable; no fabricated series        | 2-3            |
+| D5  | How much revenue did we make by country last week?           | shop-prod (not staging), cents divided by 100, paid only, per country                                            | 3-4            |
+| D6  | How many payments failed in the last day?                    | 6, shop-prod                                                                                                     | 2-3            |
+| D7  | How many active subscriptions do we have?                    | 714, billing, no time window                                                                                     | 2-3            |
+| D8  | What's the temperature trend from our IoT sensors this week? | epoch `ts` handled; cold-room-2 rising to about 10 C while the rest are flat                                     | 3-4            |
+| D9  | What was our total payroll last month?                       | no visible source has payroll; says so, does not guess                                                           | 1-2            |
+| D10 | How many 5xx errors did the API return today? (negative)     | no data source tools; traces/errors tools                                                                        | n/a            |
+
+### Data source results (Haiku, 2026-11-08; logged calls, wasted in brackets)
+
+Every run picked the production source over staging and dev, and every first `query_data_source`
+call used the right form (SQL vs resource) once the epoch fix landed.
+
+| #   | Round 1                                   | Round 2                         | Round 3                       | What changed after the round                                                                          |
+| --- | ----------------------------------------- | ------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------- |
+| D1  | 2, correct                                |                                 |                               | before round 1, the world test caught the legacy archive outranking `billing.invoices`; fixed         |
+| D2  | 4, correct (71 for the calendar week)     |                                 |                               |                                                                                                       |
+| D3  | 4, correct (311), said no chart is saved  |                                 |                               | `query_data_source` states its 24 h default window                                                    |
+| D4  | 5, wrong: never looked at data sources    | 10 (+6), correct                | 6 (+3), correct               | `list_users` and product events point to `search_data_sources`; Clerk users say DAU is not answerable |
+| D5  | 4, correct ($44.4k calendar week, orders) |                                 |                               |                                                                                                       |
+| D6  | 3, correct (6, prod)                      |                                 |                               |                                                                                                       |
+| D7  | 3, correct (714)                          |                                 |                               | a SQL result with no window macro says the window was not applied                                     |
+| D8  | 4 (+2), partial: no per-device split      | 3, form right, averaged devices | 5 (+1), partial (by location) | macro refusal, cheat sheet and the toStartOfInterval error explain epoch-seconds columns              |
+| D9  | 7 (+4), correct, paged all 400 tables     | 3, correct                      |                               | an empty search says it already covers every visible catalog and that sources can be hidden           |
+| D10 | 4, correct, no data source calls          |                                 |                               |                                                                                                       |
+
+Open, not fixed here:
+
+- D8 is analysis, not tool friction: Haiku averages all sensors (or groups by location) and misses
+  the one failing device. A per-device breakdown hint would be scenario coaching, not a tool fix.
+- D4 still tries Maple's own product events and `run_sql` first; the chat system prompt's
+  per-source lines (plan section 3) are not in the playground, which only shows the tool catalog.
+- Saving a widget or alert on a data source does not exist yet (phases 2 and 3), so D3 grades
+  the query and an honest "cannot save it".
+- Agents ask how many sources are hidden from them; by design the tools do not say.
+- `describe_data_source` on a 400-table source pages 100 at a time with no name filter; search
+  covers it, but an `entries` prefix filter would make browsing cheaper.
 
 ## Grading
 

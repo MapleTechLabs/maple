@@ -19,7 +19,6 @@ import {
 	HashMap,
 	Layer,
 	Option,
-	Redacted,
 	Ref,
 	Result,
 	Schema,
@@ -28,7 +27,7 @@ import {
 	String as Str,
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
+import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Env } from "@maple/backend/platform/Env"
 import { buildScrapeAuthHeaders } from "@maple/backend/services/auth/scrape-auth"
 import { parseExternalUrl } from "@maple/safe-fetch"
@@ -111,7 +110,7 @@ const toUpstreamError = (message: string, status?: number) =>
 	new ScrapeTargetUpstreamError({ message, ...(!(status === undefined) ? { status } : undefined) })
 
 /** Convert one http_sd group into sub-targets, dropping SSRF-invalid hosts. */
-export const subTargetsFromGroup = (group: {
+const subTargetsFromGroup = (group: {
 	readonly targets: ReadonlyArray<string>
 	readonly labels?: Record<string, string> | undefined
 }): { readonly ok: Array<PlanetScaleSubTarget>; readonly dropped: Array<string> } => {
@@ -244,8 +243,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 		const env = yield* Env
 		const psOAuth = yield* PlanetScaleOAuthService
 		const httpClient = yield* HttpClient.HttpClient
-		const encryptionKey = yield* parseBase64Aes256GcmKey(
-			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		const keyring = yield* secretKeyringFromEnv(
+			env,
 			(message) => new ScrapeTargetEncryptionError({ message }),
 		)
 
@@ -266,7 +265,7 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			row: ScrapeTargetRow,
 		) {
 			if (row.authType !== "planetscale_oauth") {
-				return yield* buildScrapeAuthHeaders(row, encryptionKey)
+				return yield* buildScrapeAuthHeaders(row, keyring)
 			}
 			const { accessToken } = yield* psOAuth.getValidAccessToken(row.orgId)
 			return { Authorization: planetScaleBearerHeader(accessToken) }
@@ -329,7 +328,8 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			// on every group, and its absence forces the host+path fallback key (losing
 			// per-branch attribution). Log the label keys actually seen so a rename on
 			// their side is diagnosable from prod logs.
-			const missingBranchLabel = groups.filter(
+			const missingBranchLabel = Arr.filter(
+				groups,
 				(group) => (group.labels ?? {}).planetscale_database_branch_id === undefined,
 			)
 			if (missingBranchLabel.length > 0) {
@@ -338,14 +338,14 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 						scrapeTargetId: row.id,
 						groupsMissingLabel: missingBranchLabel.length,
 						groupsTotal: groups.length,
-						observedLabelKeys: Object.keys(missingBranchLabel[0]?.labels ?? {}).join(", "),
+						observedLabelKeys: Arr.join(Rec.keys(missingBranchLabel[0]?.labels ?? {}), ", "),
 					}),
 				)
 			}
 			if (dropped.length > 0) {
 				yield* Effect.logWarning(
 					"Dropped PlanetScale discovered targets failing URL validation",
-				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: dropped.join(", ") }))
+				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: Arr.join(dropped, ", ") }))
 			}
 
 			// Guarantee one entry per subTargetKey so the scraper never forks more
@@ -368,7 +368,9 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 			if (filters.include.length === 0 && filters.exclude.length === 0) {
 				return entries
 			}
-			const kept = entries.filter((entry) => branchPassesFilters(branchNameForFilter(entry), filters))
+			const kept = Arr.filter(entries, (entry) =>
+				branchPassesFilters(branchNameForFilter(entry), filters),
+			)
 			if (kept.length < entries.length) {
 				yield* Effect.logInfo("Filtered PlanetScale branches by include/exclude globs").pipe(
 					Effect.annotateLogs({

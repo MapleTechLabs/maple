@@ -3,9 +3,9 @@ import type { StatusPageDraftComponent, V2UptimeMonitor } from "@maple/domain/ht
 import { STATUS_PAGE_MAX_URL_LENGTH } from "@maple/domain/status-page"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import { defineMessageUnion } from "foldkit/message"
-import { bareUrl } from "../../alerts/shared/uptime-derive"
-import { formIssues, nameFromUrl, wirePayload } from "../../alerts/uptime-form/derive"
-import { emptyForm } from "../../alerts/uptime-form/form"
+import { bareUrl } from "../../kit/uptime/derive"
+import { formIssues, nameFromUrl, wirePayload } from "../../kit/uptime/form-derive"
+import { emptyForm } from "../../kit/uptime/form"
 
 // "What's on it": the org's monitors as a checklist, components without a monitor, and a URL
 // that becomes a new HTTP monitor. The builder and the editor's Add component share it.
@@ -111,7 +111,9 @@ const mapRow = (picker: Picker, key: string, change: (row: PickerRow) => PickerR
 
 /** Swaps the row with the next checked row in `offset`'s direction; unchecked rows stay put. */
 export const moveRow = (picker: Picker, key: string, offset: number): Picker => {
-	const from = picker.rows.findIndex((row) => row.key === key)
+	const found = Arr.findFirstIndex(picker.rows, (row) => row.key === key)
+	if (Option.isNone(found)) return picker
+	const from = found.value
 	const checked = Arr.flatMap(picker.rows, (row, index) => (row.isChecked ? [index] : []))
 	const at = checked.indexOf(from)
 	const to = checked[at + (offset < 0 ? -1 : 1)]

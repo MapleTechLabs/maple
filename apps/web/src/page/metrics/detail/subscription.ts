@@ -6,7 +6,7 @@ import * as AddToDashboard from "./add-to-dashboard"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-/** `useDashboardStore()` in `AddToDashboardDialog`: the org's dashboards, live. */
+/** The org's dashboards, live, for the add-to-dashboard dialog. */
 export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Message, Resources>()(
 	(entry) => ({
 		dashboards: entry(

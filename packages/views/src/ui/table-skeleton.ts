@@ -3,13 +3,13 @@ import {
 	tableSkeletonBarStyles,
 	tableSkeletonDefaultBarStyles,
 	tableSkeletonStyles,
-} from "@maple/ui/styles/ui/table-skeleton"
+} from "./table-skeleton.styles"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { skeleton } from "./skeleton"
+import { skeleton, skeletonSlowNote } from "./skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "./table"
 import { Array as Arr } from "effect"
 
-// Port of packages/ui/src/components/ui/table-skeleton.tsx: the loading placeholder for row tables.
+// The loading placeholder for row tables.
 
 export interface TableSkeletonColumn {
 	readonly header?: Html | string
@@ -80,6 +80,10 @@ export const tableSkeleton = <M>(h: HtmlBuilder<M>, options: TableSkeletonOption
 	return h.div(
 		[h.Class(cn(tableSkeletonStyles, options.className))],
 		[
+			// A table that never loads says so after 8s instead of shimmering forever: collapsed until
+			// then, on top so a tall skeleton on a short screen still shows it, and outside the table's
+			// scroll container so a sideways scroll keeps it in view.
+			skeletonSlowNote(h, "skeleton-slow-note-collapse px-3"),
 			table(h, { className: options.tableClassName }, [
 				...((options.showHeader ?? true) ? [header] : []),
 				tableBody(h, rows),

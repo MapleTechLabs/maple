@@ -1,6 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api"
 import { Schema } from "effect"
-import { AlertDeliveryStatus, AlertDestinationType, AlertEventType, AlertPersistenceError } from "../alerts"
+import {
+	AlertDeliveryStatus,
+	AlertDestinationType,
+	AlertNotificationEventType,
+	AlertPersistenceError,
+} from "../alerts"
 import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
 import { V2ParameterInvalid } from "./errors"
@@ -22,7 +27,7 @@ export const V2AlertDelivery = Schema.Struct({
 	destination_name: Schema.String,
 	destination_type: AlertDestinationType,
 	delivery_key: Schema.String,
-	event_type: AlertEventType,
+	event_type: AlertNotificationEventType,
 	attempt_number: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThan(0))),
 	status: AlertDeliveryStatus,
 	scheduled_at: Timestamp,

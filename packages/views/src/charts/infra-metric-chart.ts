@@ -15,10 +15,11 @@ import { type ChartUnit, hasPlottableValue, type LongRow, seriesColorTokens } fr
 import { linkedCursorOverlay } from "./linked-cursor"
 import { plotFrame } from "./plot-frame"
 import { resolveColor, type ThemeColors } from "./theme-colors"
+import { hstack } from "../ui/stack"
 
 // The infra metric chart: the spec
 // with every colour resolved, the header's series info, the linked-cursor marker and overlay, and the
-// `CursorPlot` box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
+// plot box. Embed `view` (a built spec) or `metricView` (rows) with `h.submodel`.
 
 export const INFRA_METRIC_CHART_HEIGHT = 220
 /** The empty-chart message. */
@@ -129,11 +130,14 @@ export interface InfraMetricChartInputs {
 	readonly isWaiting?: boolean
 	/** The plot's height, and the empty state's (else it fills its plot area). */
 	readonly height?: number
-	/** The surrounding `ChartPlotArea`'s height (`useChartPlotHeight`). */
+	/** The surrounding `chartPlotArea`'s height. */
 	readonly plotAreaHeight?: number
 	readonly className?: string
 	/** The last-value strip above the plot (`header`). */
 	readonly header?: Html
+	/** Drawn over the plot (deploy markers); `reportPlot` makes the chart report its geometry for it. */
+	readonly overlay?: Html
+	readonly reportPlot?: boolean
 }
 
 const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricChartInputs): Html => {
@@ -166,6 +170,8 @@ const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricCha
 								spec: inputs.spec,
 								ariaLabel: inputs.spec.seriesLabel ?? "Utilization",
 								className: "h-full w-full",
+								overlay: inputs.overlay,
+								reportPlot: inputs.reportPlot,
 								tooltipBody: (portal) =>
 									Option.flatMap(model.tooltip, (tooltip) =>
 										tooltip._tag === "Bucket"
@@ -181,7 +187,7 @@ const chartBody = (h: HtmlBuilder<Message>, model: Model, inputs: InfraMetricCha
 	)
 }
 
-/** `InfraMetricChart` over a built spec. */
+/** The infra metric chart over a built spec. */
 export const view = Submodel.defineView<Model, Message, InfraMetricChartInputs>((model, inputs, h) =>
 	chartBody(h, model, inputs),
 )
@@ -210,10 +216,7 @@ type SeriesHeader = (h: HtmlBuilder<Message>, info: InfraSeriesInfo) => Html
 export const titledHeader =
 	(title: string, legend: SeriesHeader): SeriesHeader =>
 	(h, info) =>
-		h.div(
-			[h.Class("mb-3 flex min-w-0 items-center justify-between gap-3")],
-			[
-				eyebrow(h, { variant: "label", as: "h3", className: "shrink-0" }, [title]),
-				h.div([h.Class("flex min-w-0 justify-end")], [legend(h, info)]),
-			],
-		)
+		hstack(h, { gap: "3", align: "center", justify: "between", shrink: true, className: "mb-3" }, [
+			eyebrow(h, { variant: "label", as: "h3", className: "shrink-0" }, [title]),
+			hstack(h, { align: "stretch", justify: "end", shrink: true }, [legend(h, info)]),
+		])

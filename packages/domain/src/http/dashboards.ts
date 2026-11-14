@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { DashboardDocument, PortableDashboardDocument } from "@maple/widgets/dashboard"
+import { DashboardDocument } from "@maple/widgets/dashboard"
 import {
 	DashboardId,
 	DashboardTemplateCategory,
@@ -9,17 +9,12 @@ import {
 	IsoDateTimeString,
 	PostgresTransactionId,
 	UserId,
-} from "../primitives"
+} from "@maple/primitives"
 import { HttpTaggedError } from "./error-policy"
 
-// The dashboard *document* schema lives in `../dashboard`, which is versioned.
-// This module keeps the HTTP request/response envelopes and tagged errors. The
-// v1 endpoint group that used to live here is gone — `/v2/dashboards` replaced
-// it — but the v2 contract and the dashboard services still import these types.
-//
-// Every document-shape name is re-exported below so importing from
-// `@maple/domain/http` keeps working unchanged. New code should prefer
-// `@maple/domain/dashboard`.
+// The versioned dashboard *document* schema lives in `@maple/widgets/dashboard`;
+// this module keeps the HTTP envelopes and tagged errors. Document-shape names are
+// re-exported so `@maple/domain/http` imports keep working.
 export {
 	DASHBOARD_MAX_SECTIONS,
 	DASHBOARD_MAX_TABS_PER_SECTION,
@@ -55,37 +50,10 @@ export {
 	WidgetDisplayConfigSchema,
 	type WidgetUnitMeta,
 	WidgetLayoutSchema,
+	withDocumentFields,
+	withPortableContent,
 	withWidgets,
 } from "@maple/widgets/dashboard"
-
-export class DashboardsListResponse extends Schema.Class<DashboardsListResponse>("DashboardsListResponse")({
-	dashboards: Schema.Array(DashboardDocument),
-}) {}
-
-export class DashboardUpsertRequest extends Schema.Class<DashboardUpsertRequest>("DashboardUpsertRequest")(
-	{ dashboard: DashboardDocument },
-	{ parseOptions: { reportInput: true } },
-) {}
-
-export class DashboardCreateRequest extends Schema.Class<DashboardCreateRequest>("DashboardCreateRequest")(
-	{ dashboard: PortableDashboardDocument },
-	{ parseOptions: { reportInput: true } },
-) {}
-
-export class DashboardPersesImportRequest extends Schema.Class<DashboardPersesImportRequest>(
-	"DashboardPersesImportRequest",
-)({
-	dashboard: Schema.Record(Schema.String, Schema.Unknown),
-}) {}
-
-export class DashboardPersesImportResponse extends Schema.Class<DashboardPersesImportResponse>(
-	"DashboardPersesImportResponse",
-)({
-	dashboard: DashboardDocument,
-	warnings: Schema.Array(Schema.String),
-	// Txid of the import write, for the Electric collection's onInsert handler.
-	txid: Schema.optionalKey(PostgresTransactionId),
-}) {}
 
 export class DashboardDeleteResponse extends Schema.Class<DashboardDeleteResponse>("DashboardDeleteResponse")(
 	{
@@ -94,8 +62,6 @@ export class DashboardDeleteResponse extends Schema.Class<DashboardDeleteRespons
 		txid: Schema.optionalKey(PostgresTransactionId),
 	},
 ) {}
-
-// Versions / history
 
 export const DashboardVersionChangeKind = Schema.Literals([
 	"created",
@@ -262,8 +228,6 @@ export class DashboardConcurrencyError extends HttpTaggedError<DashboardConcurre
 		exposure: "public_message",
 	},
 ) {}
-
-// Templates
 
 export class DashboardTemplateParameter extends Schema.Class<DashboardTemplateParameter>(
 	"DashboardTemplateParameter",

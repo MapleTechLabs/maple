@@ -15,8 +15,8 @@ interface CronSchedule {
 }
 
 /**
- * A fire holds one outbound connection per lane while its hops run, so keep a
- * cron under the Workers limit of six simultaneous connections per invocation.
+ * A fire holds one outbound connection per lane while its hops run, so a cron
+ * keeps within the Workers limit of six per invocation (`scheduled.test.ts` checks).
  */
 export const ALERTING_SCHEDULE = {
 	// `error` also runs fix verification, chained after it (see `./scheduled.ts`).
@@ -39,10 +39,23 @@ export const ALERTING_SCHEDULE = {
 		],
 		deadline: "270 seconds",
 	},
+	// Offset by two minutes: `*/5` is at the six-lane limit, and a fire of its own keeps the
+	// Vercel poller off the Railway and Cloudflare pollers' minute.
+	// `cost_sync` pulls cloud cost: a source's head once a day, its history a few months per tick
+	// until done. Every five minutes so a new source has cost within minutes; a tick with nothing
+	// due costs a few queries.
+	"2-59/5 * * * *": { lanes: ["vercel", "cost_sync"], deadline: "270 seconds" },
 	// `supabase_insights` reads top queries every tick and advisors hourly (it tracks the hour itself).
-	"*/15 * * * *": { lanes: ["digest", "supabase_insights"], deadline: "10 minutes" },
+	// `maintenance_windows` writes the next 48 hours of maintenance occurrences as silences.
+	// `search_console` imports Google Search Console days; a property re-imports its head every 6 hours
+	// and walks its backfill one chunk per tick, so 15 minutes moves history without a minute cron.
+	"*/15 * * * *": {
+		lanes: ["digest", "supabase_insights", "maintenance_windows", "search_console"],
+		deadline: "10 minutes",
+	},
+	// `secret_reseal` moves stored credentials onto the current key (docs/secret-encryption.md).
 	"0 * * * *": {
-		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections"],
+		lanes: ["service_map_rollup", "supabase_discovery", "aws_connections", "secret_reseal"],
 		deadline: "15 minutes",
 	},
 } as const satisfies Record<string, CronSchedule>
@@ -50,7 +63,8 @@ export const ALERTING_SCHEDULE = {
 export type AlertingCron = keyof typeof ALERTING_SCHEDULE
 export type TickLane = (typeof ALERTING_SCHEDULE)[AlertingCron]["lanes"][number]
 
-const isAlertingCron = (cron: string): cron is AlertingCron => Object.hasOwn(ALERTING_SCHEDULE, cron)
+const isAlertingCron = (cron: string): cron is AlertingCron =>
+	Rec.has<string, unknown>(ALERTING_SCHEDULE, cron)
 
 export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 	Rec.keys(ALERTING_SCHEDULE),
@@ -61,6 +75,5 @@ export const ALERTING_CRONS: ReadonlyArray<AlertingCron> = Arr.filter(
 export const scheduleFor = (cron: string): CronSchedule | undefined =>
 	isAlertingCron(cron) ? ALERTING_SCHEDULE[cron] : undefined
 
-/** Whether `lane` is one of `cron`'s lanes. */
 export const isLaneOf = (cron: string, lane: string): lane is TickLane =>
 	scheduleFor(cron)?.lanes.includes(lane) ?? false

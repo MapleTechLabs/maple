@@ -4,7 +4,7 @@ import { Effect, Schema, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { inspectDependencies } from "./dependencies"
 
-const ORG = Schema.decodeUnknownSync(OrgId)("org_a")
+const ORG = Schema.decodeSync(OrgId)("org_a")
 const TARGET = { repository: "acme/api", ref: Str.repeat(40)("a") }
 const NPMRC = "@acme:registry=https://npm.pkg.github.com\n"
 

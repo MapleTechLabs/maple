@@ -1,11 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import {
-	fieldDescriptionStyles,
-	fieldErrorStyles,
-	fieldLabelStyles,
-	fieldStyles,
-} from "@maple/ui/styles/ui/field"
-import { eyebrowVariants } from "@maple/ui/styles/ui/eyebrow"
+import { fieldDescriptionStyles, fieldErrorStyles, fieldLabelStyles, fieldStyles } from "./field.styles"
+import { eyebrowVariants } from "./eyebrow.styles"
 import { Schema, Array as Arr } from "effect"
 import type { Update } from "foldkit"
 import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
@@ -19,8 +14,6 @@ export type { FieldState } from "./input"
  * An uncontrolled Base UI field's state (`defaultValue`): what it holds, whether it has focus
  * and whether it was ever blurred. `stateOf` derives the `data-*` state every part mirrors.
  */
-
-// MODEL
 
 export const Model = Schema.Struct({
 	initialValue: Schema.String,
@@ -45,16 +38,12 @@ export const stateOf = (model: Model, isInvalid: boolean): FieldState => ({
 	isTouched: model.isTouched,
 })
 
-// MESSAGE
-
 export const Message = defineMessageUnion({
 	ChangedValue: { value: Schema.String },
 	FocusedControl: {},
 	BlurredControl: {},
 })
 export type Message = typeof Message.Type
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -76,8 +65,6 @@ export const controlAttributes = <P>(
 	h.OnFocus(toParentMessage(Message.FocusedControl())),
 	h.OnBlur(toParentMessage(Message.BlurredControl())),
 ]
-
-// VIEW
 
 /** Base UI `Field.Root`. */
 export const field = <Message>(
@@ -102,8 +89,8 @@ export const field = <Message>(
 /** Base UI `useId`s of a field's parts; `description` only when a `FieldDescription` renders. */
 export type FieldIds = Readonly<{ control: string; label: string; error: string; description?: string }>
 
-// The small uppercase eyebrow look on a field label (a dense editor rail).
-const EYEBROW_LABEL = cn(eyebrowVariants({ variant: "label" }), "sm:text-2xs sm:leading-normal")
+// The eyebrow look on a field label (a dense editor rail).
+const EYEBROW_LABEL = cn(eyebrowVariants({ variant: "label" }), "sm:text-xs sm:leading-normal")
 
 /** Base UI `Field.Label`, wired to the control by id. */
 export const fieldLabel = <Message>(
@@ -147,15 +134,17 @@ const describedBy = (ids: FieldIds, state: FieldState): ReadonlyArray<string> =>
 	...(state.isInvalid ? [ids.error] : []),
 ]
 
-/** `<Input>` inside a Base UI field: the control wrapper and the labelled native input. */
+/** An input inside a Base UI field: the control wrapper and the labelled native input. */
 export const input = <Message>(
 	h: HtmlBuilder<Message>,
 	options: Readonly<{
 		ids: FieldIds
 		state: FieldState
 		attributes: ReadonlyArray<Attribute<Message>>
-		/** `<Input className>`: on the control wrapper, as @maple/ui puts it. */
+		/** Lands on the control wrapper. */
 		className?: string
+		/** Base UI's `disabled`: shown, not editable (a form whose save is in flight). */
+		isDisabled?: boolean
 	}>,
 ): Html => {
 	const described = describedBy(options.ids, options.state)
@@ -163,6 +152,7 @@ export const input = <Message>(
 		id: options.ids.control,
 		fieldState: options.state,
 		className: options.className,
+		isDisabled: options.isDisabled,
 		attributes: [
 			...options.attributes,
 			h.AriaLabelledBy(options.ids.label),

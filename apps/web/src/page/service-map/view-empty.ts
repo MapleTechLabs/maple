@@ -13,6 +13,7 @@ import { docsLink, signalEmptyState } from "../kit/signal-empty-state"
 import type { Message } from "./message"
 import type { Model } from "./model"
 import { Array as Arr, Record as Rec } from "effect"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 // The service map's empty state: the dotted
 // grid and a faint ghost graph over the presence-aware empty copy.
@@ -123,7 +124,7 @@ const ghostGraph = <M>(h: HtmlBuilder<M>): Html =>
 	)
 
 /** Traces arriving with no edges means context is not propagated; no traces means setup. */
-const message = <M>(h: HtmlBuilder<M>, model: Model): Html => {
+const message = <M>(h: HtmlBuilder<M>, model: Model, timeZone: string): Html => {
 	const presence = presenceOf(model.presence, "traces")
 	if (presence.status === "present")
 		return empty(
@@ -144,6 +145,7 @@ const message = <M>(h: HtmlBuilder<M>, model: Model): Html => {
 		signal: "traces",
 		presence,
 		nowMs: model.nowMs,
+		timeZone,
 		noun: "service calls",
 		purpose: "See which services call each other, drawn from the spans they send.",
 		guideDocs: "serviceMap",
@@ -152,27 +154,25 @@ const message = <M>(h: HtmlBuilder<M>, model: Model): Html => {
 }
 
 /** The empty canvas: a skeleton until the page-init presence read settles. */
-export const serviceMapEmptyState = (h: HtmlBuilder<Message>, model: Model): Html =>
-	h.div(
-		[h.Class("relative flex h-full items-center justify-center overflow-hidden")],
-		[
-			h.div([
-				h.AriaHidden(true),
-				h.Class("pointer-events-none absolute inset-0 opacity-70"),
-				h.Style({
-					"background-image": "radial-gradient(circle, var(--border) 1px, transparent 1px)",
-					"background-size": "16px 16px",
-					"mask-image": MASK_GRID,
-					"-webkit-mask-image": MASK_GRID,
-				}),
-			]),
-			h.div(
-				[
-					h.Class(
-						"relative z-10 flex flex-col items-center motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:[animation-duration:300ms]",
-					),
-				],
-				[ghostGraph(h), message(h, model)],
-			),
-		],
-	)
+export const serviceMapEmptyState = (h: HtmlBuilder<Message>, model: Model, timeZone: string): Html =>
+	hstack(h, { align: "center", justify: "center", className: "relative h-full overflow-hidden" }, [
+		h.div([
+			h.AriaHidden(true),
+			h.Class("pointer-events-none absolute inset-0 opacity-70"),
+			h.Style({
+				"background-image": "radial-gradient(circle, var(--border) 1px, transparent 1px)",
+				"background-size": "16px 16px",
+				"mask-image": MASK_GRID,
+				"-webkit-mask-image": MASK_GRID,
+			}),
+		]),
+		vstack(
+			h,
+			{
+				align: "center",
+				className:
+					"relative z-10 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:[animation-duration:300ms]",
+			},
+			[ghostGraph(h), message(h, model, timeZone)],
+		),
+	])

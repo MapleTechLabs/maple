@@ -8,7 +8,7 @@ import { Schema, Array as Arr, String as Str } from "effect"
 
 import type { DerivedRuleStatus } from "@maple/web-data/alerts/rule-status"
 import type { AlertRuleStateRow } from "@maple/web-data/collections/alerts"
-import type { ErrorSignal } from "../lib/models/error-signal"
+import type { ErrorSignal } from "../page/errors/kit/error-signal"
 import { VERDICT_LAB_CASES } from "./verdict-fixture"
 import { LONG_SERVICE, LONG_URL, type WorstCaseMode } from "./worst-case-fixture"
 
@@ -20,7 +20,7 @@ const NOW = Date.now()
 const decodeInvestigation = Schema.decodeUnknownSync(Schema.toType(V2Investigation))
 
 export function verdict(mode: WorstCaseMode): V2Investigation {
-	const base = VERDICT_LAB_CASES[0]!.investigation
+	const base = Arr.getUnsafe(VERDICT_LAB_CASES, 0).investigation
 	if (mode === "demo") return base
 	return decodeInvestigation({
 		...base,

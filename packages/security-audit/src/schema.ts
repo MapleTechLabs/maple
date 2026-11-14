@@ -5,8 +5,14 @@
  */
 import { Schema } from "effect"
 
-const Score = Schema.Literals(["informational", "low", "medium", "high", "critical"])
-export type Severity = typeof Score.Type
+export const Severity = Schema.Literals(["informational", "low", "medium", "high", "critical"])
+export type Severity = typeof Severity.Type
+
+export const Profile = Schema.Literals(["quick", "standard", "deep"])
+export type Profile = typeof Profile.Type
+
+export const Verdict = Schema.Literals(["confirmed", "needs_validation", "rejected"])
+export type Verdict = typeof Verdict.Type
 
 export const TraceStep = Schema.Struct({
 	kind: Schema.Literals(["entrypoint", "propagation", "sink"]),
@@ -37,10 +43,10 @@ const Condition = Schema.Struct({
 	description: Schema.String,
 })
 
-const Rated = Schema.Struct({ score: Score, reason: Schema.String })
+const Rated = Schema.Struct({ score: Severity, reason: Schema.String })
 
 /** Likelihood, impact and overall severity, the shape a confirmed record's `severity` takes. */
-const SeverityRating = Schema.Struct({ likelihood: Rated, impact: Rated, overall_severity: Score })
+const SeverityRating = Schema.Struct({ likelihood: Rated, impact: Rated, overall_severity: Severity })
 
 /**
  * Maple addition: a needs_validation lead's severity estimated from source reading alone. It
@@ -99,7 +105,6 @@ export const RejectedFinding = Schema.Struct({
 
 export const Finding = Schema.Union([ConfirmedFinding, NeedsValidationFinding, RejectedFinding])
 export type Finding = typeof Finding.Type
-export type Verdict = Finding["verdict"]
 
 export const CanonicalRefs = Schema.Struct({
 	surface: Schema.String,
@@ -203,7 +208,7 @@ export const RunMetadataRecord = Schema.Struct({
 	repo: Schema.String,
 	target: Schema.String,
 	source_ref: Schema.String,
-	profile: Schema.Literals(["quick", "standard", "deep"]),
+	profile: Profile,
 	scope_paths: Schema.Array(Schema.String),
 	budget: Schema.NullOr(Schema.Number),
 	execution_policy: Schema.Literal("sandboxed-source-and-local-only"),

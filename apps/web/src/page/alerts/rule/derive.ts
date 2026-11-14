@@ -11,20 +11,21 @@ import { ruleToFormState } from "@maple/web-data/alerts/form-utils"
 import {
 	buildRuleStatesByRuleId,
 	rowsToAlertDestinationDocuments,
-	rowToAlertIncidentDocument,
+	rowsToAlertIncidentDocuments,
 	rowToAlertRuleDocument,
 } from "@maple/web-data/collections/alerts"
-import { normalizeTimestampInput } from "@maple/web-data/lib/timezone-format"
+import { normalizeTimestampInput } from "@maple/ui/lib/timezone-format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import { type PresetValue, presetLabel } from "../../kit/time-controls"
+import { lastBy } from "../../kit/last-by"
+import { type PresetValue } from "../../kit/time-controls"
+import { presetLabel } from "@maple/ui/lib/time-preset"
 import { summaryChecksOf } from "../shared/check-summary"
 import { previewPayload } from "../shared/preview"
 import type { ChecksResponse, Model } from "./model"
 
 export const DEFAULT_PRESET: PresetValue = "24h"
 
-/** `formatBucketSpan`. */
 export const formatBucketSpan = (seconds: number): string => {
 	if (seconds < 60) return `${Math.round(seconds)}s`
 	const minutes = Math.round(seconds / 60)
@@ -36,25 +37,43 @@ export const formatBucketSpan = (seconds: number): string => {
 export const isoOf = (warehouseTime: string): IsoDateTimeString =>
 	IsoDateTimeString.make(new Date(normalizeTimestampInput(warehouseTime)).toISOString())
 
-export const ruleOf = (model: Model): AlertRuleDocument | null => {
-	const statesByRule = buildRuleStatesByRuleId(model.states ?? [])
-	const row = (model.rules ?? []).find((candidate) => candidate.id === model.ruleId)
-	return row === undefined ? null : rowToAlertRuleDocument(row, statesByRule)
-}
+const ruleFor = lastBy(
+	([rules, states, id]: readonly [
+		Model["rules"],
+		Model["states"],
+		Model["ruleId"],
+	]): AlertRuleDocument | null => {
+		const row = Arr.findFirst(rules ?? [], (candidate) => candidate.id === id)
+		if (Option.isNone(row)) return null
+		const own = Arr.filter(states ?? [], (state) => state.rule_id === id)
+		return Option.getOrNull(rowToAlertRuleDocument(row.value, buildRuleStatesByRuleId(own)))
+	},
+)
 
-/** Every incident of this rule, latest trigger first. */
+/** This rule's document; recomputed only when the synced rules or states change. */
+export const ruleOf = (model: Model): AlertRuleDocument | null =>
+	ruleFor([model.rules, model.states, model.ruleId])
+
+const ruleIncidentsFor = lastBy(
+	([incidents, id]: readonly [Model["incidents"], Model["ruleId"]]): ReadonlyArray<AlertIncidentDocument> =>
+		[...rowsToAlertIncidentDocuments(Arr.filter(incidents ?? [], (row) => row.rule_id === id))].sort(
+			(a, b) => isoTime(b.lastTriggeredAt) - isoTime(a.lastTriggeredAt),
+		),
+)
+
+const isoTime = (iso: string | null): number => (iso ? new Date(iso).getTime() : 0)
+
+/** Every incident of this rule, latest trigger first. Only this rule's rows are decoded. */
 export const ruleIncidentsOf = (model: Model): ReadonlyArray<AlertIncidentDocument> =>
-	Arr.filter(
-		Arr.map(model.incidents ?? [], rowToAlertIncidentDocument),
-		(incident) => incident.ruleId === model.ruleId,
-	).sort((a, b) => {
-		const dateA = a.lastTriggeredAt ? new Date(a.lastTriggeredAt).getTime() : 0
-		const dateB = b.lastTriggeredAt ? new Date(b.lastTriggeredAt).getTime() : 0
-		return dateB - dateA
-	})
+	ruleIncidentsFor([model.incidents, model.ruleId])
+
+const destinationsFor = lastBy(
+	([rows]: readonly [Model["destinations"]]): ReadonlyArray<AlertDestinationDocument> =>
+		rowsToAlertDestinationDocuments(rows ?? []),
+)
 
 export const destinationsOf = (model: Model): ReadonlyArray<AlertDestinationDocument> =>
-	rowsToAlertDestinationDocuments(model.destinations ?? [])
+	destinationsFor([model.destinations])
 
 export const ruleDeliveriesOf = (model: Model): ReadonlyArray<AlertDeliveryEventDocument> =>
 	Arr.filter(

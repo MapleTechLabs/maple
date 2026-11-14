@@ -25,16 +25,19 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 
 import { Schema, Effect, Array as Arr } from "effect"
-import { compile, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/effect-orm/clickhouse"
+import { compile, compileUnion, unionAll, type CompiledQuery } from "@maple-dev/effect-orm/clickhouse"
 import { rawCompiledQuery } from "../raw-sql"
 import * as CH from "@maple-dev/effect-orm/expr"
 import { param } from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery } from "@maple-dev/effect-orm/clickhouse"
-import { MetricsGauge, ServicePlatformsHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { CHNumber } from "../schema"
+import { utcHourFloor } from "./query-helpers"
 import type { QueryBuilderError } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
 import {
+	SERVICE_RUNTIME_KINDS,
 	SERVICE_RUNTIME_MARKERS,
 	runtimeMetricServiceNames,
 	serviceRuntimeKindOfMarker,
@@ -46,18 +49,7 @@ export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceWorkloadsOutput {
-	readonly serviceName: string
-	readonly workloadKind: "deployment" | "statefulset" | "daemonset" | "unknown"
-	readonly workloadName: string
-	readonly namespace: string
-	readonly clusterName: string
-	readonly podCount: number
-	readonly avgCpuLimitUtilization: number | null
-	readonly avgMemoryLimitUtilization: number | null
-}
-
-const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutput> = Schema.Struct({
+const ServiceWorkloadsOutputSchema = Schema.Struct({
 	serviceName: Schema.String,
 	workloadKind: Schema.Literals(["deployment", "statefulset", "daemonset", "unknown"]),
 	workloadName: Schema.String,
@@ -67,6 +59,8 @@ const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutpu
 	avgCpuLimitUtilization: Schema.NullOr(CHNumber),
 	avgMemoryLimitUtilization: Schema.NullOr(CHNumber),
 })
+
+export type ServiceWorkloadsOutput = typeof ServiceWorkloadsOutputSchema.Type
 
 // `IN ()` is invalid SQL, so an empty service list short-circuits to a
 // zero-row result with the right column shape.
@@ -106,7 +100,7 @@ export function serviceWorkloadsSQL(
 	// `k8s.cluster.name` is never tagged (the `k8sattributes` processor doesn't
 	// set it), so `K8sCluster` is always ''. The kubeletstats pod gauges DO carry
 	// it, so the metrics side below owns clusterName for both the JOIN and display.
-	const workloadIdentity = from(ServicePlatformsHourly)
+	const workloadIdentity = from(Datasources.servicePlatformsHourly)
 		.select(($) => {
 			const deployment = CH.max_($.K8sDeploymentName)
 			const statefulSet = CH.max_($.K8sStatefulSetName)
@@ -134,7 +128,7 @@ export function serviceWorkloadsSQL(
 		})
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(utcSecondsParam("startTime")))),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			CH.inList($.ServiceName, opts.services),
 		])
@@ -150,7 +144,7 @@ export function serviceWorkloadsSQL(
 	// gauges, which require CPU/memory limits to be set) drives uniq(pod.uid).
 	// The avgIf aggregates still read their own *_utilization rows from the same
 	// scan, returning 0/null when a cluster doesn't set the matching limit.
-	const workloadMetrics = from(MetricsGauge)
+	const workloadMetrics = from(Datasources.metricsGauge)
 		.select(($) => {
 			const deployment = $.ResourceAttributes.get("k8s.deployment.name")
 			const statefulSet = $.ResourceAttributes.get("k8s.statefulset.name")
@@ -235,41 +229,50 @@ export function serviceWorkloadsSQL(
 // Service ↔ platform runtime: a resource's marker gauge under the service's names, one row per
 // resource with the keys its infra page reads. `metrics_gauge` sorts by (OrgId, ServiceName,
 // MetricName), so this reads only these services' marker series.
+//
+// Vercel sends no metrics, so its branch reads the project id off the services' spans.
 
 export interface ServiceRuntimesOpts {
 	services: ReadonlyArray<string>
 }
 
-export interface ServiceRuntimesOutput {
+const ServiceRuntimesOutputSchema = Schema.Struct({
 	/** The series' `service.name`; `tracedServiceOfRuntime` maps it to the traced service. */
-	readonly metricServiceName: string
-	readonly metricName: string
-	/** GCP project, AWS account or Cloudflare account. */
-	readonly account: string
-	readonly region: string
-	/** ECS cluster. */
-	readonly cluster: string
-	readonly railwayServiceId: string
-	readonly railwayEnvironmentId: string
-	readonly railwayEnvironmentName: string
-}
-
-const ServiceRuntimesOutputSchema: CompiledQueryRowSchema<ServiceRuntimesOutput> = Schema.Struct({
 	metricServiceName: Schema.String,
 	metricName: Schema.String,
+	/** GCP project, AWS account or Cloudflare account. */
 	account: Schema.String,
 	region: Schema.String,
+	/** ECS cluster. */
 	cluster: Schema.String,
 	railwayServiceId: Schema.String,
 	railwayEnvironmentId: Schema.String,
 	railwayEnvironmentName: Schema.String,
+	vercelProjectId: Schema.String,
 })
+
+export type ServiceRuntimesOutput = typeof ServiceRuntimesOutputSchema.Type
+
+/**
+ * Where a span names its Vercel project: Vercel's trace drain writes `vercel.projectId`,
+ * `@vercel/otel` `vercel.project_id`, the log drain's resources `vercel.project.id`.
+ */
+const VERCEL_PROJECT_ID_KEYS = ["vercel.projectId", "vercel.project_id", "vercel.project.id"] as const
+
+const vercelProjectIdOf = (attribute: (key: string) => CH.Expr<string>) =>
+	CH.multiIf(
+		[
+			[attribute("vercel.projectId").neq(""), attribute("vercel.projectId")],
+			[attribute("vercel.project_id").neq(""), attribute("vercel.project_id")],
+		],
+		attribute("vercel.project.id"),
+	)
 
 export function serviceRuntimesSQL(
 	opts: ServiceRuntimesOpts,
 	params: { orgId: OrgId; startTime: string; endTime: string },
 ): Effect.Effect<CompiledQuery<ServiceRuntimesOutput>, QueryBuilderError> {
-	const query = from(MetricsGauge)
+	const metricRuntimes = from(Datasources.metricsGauge)
 		.select(($) => ({
 			metricServiceName: $.ServiceName,
 			metricName: $.MetricName,
@@ -283,6 +286,7 @@ export function serviceRuntimesSQL(
 			railwayServiceId: $.ResourceAttributes.get("railway.service.id"),
 			railwayEnvironmentId: $.ResourceAttributes.get("railway.environment.id"),
 			railwayEnvironmentName: CH.max_($.ResourceAttributes.get("railway.environment.name")),
+			vercelProjectId: CH.lit(""),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -300,13 +304,36 @@ export function serviceRuntimesSQL(
 			"railwayServiceId",
 			"railwayEnvironmentId",
 		)
-		.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
-		// Rows are resources, a few per service; the cap is a backstop, not a page size.
-		.limit(10_000)
-		.format("JSON")
 
-	return compile(
-		query,
+	const vercelRuntimes = from(Datasources.traces)
+		.select(($) => ({
+			metricServiceName: $.ServiceName,
+			metricName: CH.lit(SERVICE_RUNTIME_KINDS.vercelProject.marker),
+			account: CH.lit(""),
+			region: CH.lit(""),
+			cluster: CH.lit(""),
+			railwayServiceId: CH.lit(""),
+			railwayEnvironmentId: CH.lit(""),
+			railwayEnvironmentName: CH.lit(""),
+			vercelProjectId: vercelProjectIdOf((key) => $.ResourceAttributes.get(key)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			CH.inList($.ServiceName, opts.services),
+			// Key tests let the `mapKeys(ResourceAttributes)` bloom index skip other services' granules.
+			CH.or(...Arr.map(VERCEL_PROJECT_ID_KEYS, (key) => CH.mapContains($.ResourceAttributes, key))),
+			vercelProjectIdOf((key) => $.ResourceAttributes.get(key)).neq(""),
+		])
+		.groupBy("metricServiceName", "vercelProjectId")
+
+	return compileUnion(
+		// Rows are resources, a few per service; the cap is a backstop, not a page size.
+		unionAll(metricRuntimes, vercelRuntimes)
+			.orderBy(["metricServiceName", "asc"], ["metricName", "asc"])
+			.limit(10_000)
+			.format("JSON"),
 		{ orgId: params.orgId, startTime: params.startTime, endTime: params.endTime },
 		{ rowSchema: ServiceRuntimesOutputSchema },
 	)
@@ -321,6 +348,7 @@ export interface ServiceRuntimeResource {
 	readonly railwayServiceId: string
 	readonly railwayEnvironmentId: string
 	readonly railwayEnvironmentName: string
+	readonly vercelProjectId: string
 }
 
 /**
@@ -339,7 +367,9 @@ export const serviceRuntimeResources = (
 		const key =
 			kind === "railway"
 				? Arr.join(["railway", serviceName, row.railwayServiceId, row.railwayEnvironmentId], "|")
-				: Arr.join([kind, row.metricServiceName, row.account, row.region, row.cluster], "|")
+				: kind === "vercelProject"
+					? Arr.join(["vercelProject", serviceName, row.vercelProjectId], "|")
+					: Arr.join([kind, row.metricServiceName, row.account, row.region, row.cluster], "|")
 		const resource: ServiceRuntimeResource = {
 			serviceName,
 			kind,
@@ -349,6 +379,7 @@ export const serviceRuntimeResources = (
 			railwayServiceId: row.railwayServiceId,
 			railwayEnvironmentId: row.railwayEnvironmentId,
 			railwayEnvironmentName: row.railwayEnvironmentName,
+			vercelProjectId: row.vercelProjectId,
 		}
 		return [[key, resource] as const]
 	})

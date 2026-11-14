@@ -1,6 +1,6 @@
 import { InfraPresenceRequest, InfraPresenceResponse, type InfraSurfaceLiteral } from "@maple/domain/http"
 import { formatWarehouseDateTime } from "@maple/query-engine"
-import { Effect, Option } from "effect"
+import { Array as Arr, Effect, Option, Record } from "effect"
 import { AsyncData } from "foldkit"
 import { MapleInternalApiClient } from "../platform/api-clients"
 import type { NavSurface } from "../shell/nav"
@@ -15,10 +15,10 @@ import type { TimeWindow } from "./time-range"
 const PRESENCE_WINDOW_MS = 60 * 60 * 1000
 const PRESENCE_BUCKET_MS = 5 * 60 * 1000
 
-/** `infraPresenceResultAtom`'s `staleTime`. */
+/** How long a presence read stays fresh. */
 const PRESENCE_IDLE_TTL_MS = 300_000
 
-/** The window `useInfraSurfaces()` probes when it is given none. */
+/** The window the infra surfaces probe when given none. */
 export const lastHourWindow = (nowMs: number): TimeWindow => {
 	const end = Math.floor(nowMs / PRESENCE_BUCKET_MS) * PRESENCE_BUCKET_MS
 	return {
@@ -51,7 +51,15 @@ export const loadInfraPresence = (
 		}),
 	).pipe(Effect.map((response) => response.surfaces))
 
-export const INTEGRATION_IDS = ["cloudflare", "railway", "planetscale", "gcp", "supabase", "aws"] as const
+export const INTEGRATION_IDS = [
+	"cloudflare",
+	"railway",
+	"vercel",
+	"planetscale",
+	"gcp",
+	"supabase",
+	"aws",
+] as const
 
 /** Connected integrations: `null` until its status answers; a failed status counts as not connected. */
 export type IntegrationFlags = Readonly<{ [K in (typeof INTEGRATION_IDS)[number]]: boolean | null }>
@@ -59,11 +67,15 @@ export type IntegrationFlags = Readonly<{ [K in (typeof INTEGRATION_IDS)[number]
 export const PENDING_INTEGRATIONS: IntegrationFlags = {
 	cloudflare: null,
 	railway: null,
+	vercel: null,
 	planetscale: null,
 	gcp: null,
 	supabase: null,
 	aws: null,
 }
+
+/** Every integration settled as not connected, as when the combined read failed. */
+export const NO_INTEGRATIONS_CONNECTED: IntegrationFlags = Record.map(PENDING_INTEGRATIONS, () => false)
 
 /**
  * Which infra surfaces an org has. `Pending` until the probe and every status answered (and no
@@ -78,13 +90,12 @@ export type InfraSurfaces =
 export type PresenceProbe = ReadonlyArray<InfraSurfaceLiteral> | "failed" | null
 
 /** A probe's slot as `resolveInfraSurfaces` reads it; a re-read keeps the last answer. */
-export const probeOf = <E>(
-	data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>,
-): PresenceProbe => (AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data)))
+export const probeOf = <E>(data: AsyncData.AsyncData<ReadonlyArray<InfraSurfaceLiteral>, E>): PresenceProbe =>
+	AsyncData.isFailure(data) ? "failed" : Option.getOrNull(AsyncData.getData(data))
 
 /** Every integration status answered (a failed one counts as not connected). */
 export const integrationsAnswered = (integrations: IntegrationFlags): boolean =>
-	INTEGRATION_IDS.every((id) => integrations[id] !== null)
+	Arr.every(INTEGRATION_IDS, (id) => integrations[id] !== null)
 
 /** The live answer when it is complete, else the set remembered from the last visit. */
 export const resolveInfraSurfaces = (
@@ -93,12 +104,12 @@ export const resolveInfraSurfaces = (
 	remembered: ReadonlyArray<NavSurface> | undefined,
 ): InfraSurfaces => {
 	const isSettled = integrationsAnswered(integrations)
-	if (Array.isArray(probe) && isSettled)
+	if (Arr.isArray<PresenceProbe>(probe) && isSettled)
 		return {
 			_tag: "Only",
 			surfaces: new Set<NavSurface>([
 				...probe,
-				...INTEGRATION_IDS.filter((id) => integrations[id] === true),
+				...Arr.filter(INTEGRATION_IDS, (id) => integrations[id] === true),
 			]),
 		}
 	if (remembered !== undefined) return { _tag: "Only", surfaces: new Set(remembered) }

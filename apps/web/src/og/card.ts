@@ -27,7 +27,7 @@
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import type { ShareOgCardTile } from "@maple/domain/http"
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from "./share-links"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 /** The card is exactly the size the `og:image:*` tags advertise. */
 export const CARD_WIDTH = OG_IMAGE_WIDTH
@@ -165,11 +165,11 @@ const columns = (rows: ReadonlyArray<Row>): readonly [ReadonlyArray<Row>, Readon
 /**
  * The Maple mark, as the card's only piece of artwork.
  *
- * Same single evenodd path as `packages/ui/src/components/icons/maple-mark.tsx`,
- * inlined rather than fetched: it is 1 KB, and an asset lookup that can fail is
- * a way for the brand to go missing from the one image the brand appears in.
- * The knockouts (the eyes, the notch by the trunk) need `fill-rule="evenodd"` —
- * without it the glyph fills solid and stops being a tree.
+ * Same single evenodd path as `MAPLE_MARK_PATH` (@maple/views/ui/icons.generated), inlined
+ * rather than fetched: it is 1 KB, and an asset lookup that can fail is a way for the
+ * brand to go missing from the one image the brand appears in. The knockouts (the eyes,
+ * the notch by the trunk) need `fill-rule="evenodd"` — without it the glyph fills solid
+ * and stops being a tree.
  *
  * Amber rather than `currentColor`: this is the brand lockup, not an icon
  * inheriting from a UI context.
@@ -277,12 +277,18 @@ const orgAvatar = (org: OgCardOrg): Node =>
 					justifyContent: "center",
 				},
 				children: [
-					text(Array.from(org.name)[0]?.toUpperCase() ?? "?", {
-						color: COLOR.muted,
-						fontSize: 17,
-						fontFamily: DISPLAY_FONT,
-						fontWeight: 600,
-					}),
+					text(
+						Option.getOrElse(
+							Option.map(Arr.head(Array.from(org.name)), (initial) => Str.toUpperCase(initial)),
+							() => "?",
+						),
+						{
+							color: COLOR.muted,
+							fontSize: 17,
+							fontFamily: DISPLAY_FONT,
+							fontWeight: 600,
+						},
+					),
 				],
 			})
 		: image({ src: org.imageUrl, width: AVATAR_SIZE, height: AVATAR_SIZE, style: { borderRadius: 8 } })

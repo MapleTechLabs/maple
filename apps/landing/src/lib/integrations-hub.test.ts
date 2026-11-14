@@ -61,6 +61,8 @@ describe("HUB_CATEGORIES", () => {
 			"/docs/sdks/effect-cloudflare",
 			"/docs/sdks/effect-client",
 			"/docs/sdks/effect-foldkit",
+			// The framework tiles stand for the frontend overview.
+			"/docs/frontend",
 			// An API, not an integration.
 			"/docs/product-events/api",
 		])

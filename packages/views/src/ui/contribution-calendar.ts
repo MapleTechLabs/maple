@@ -76,7 +76,8 @@ export const contributionCalendar = <M>(
 		h.Style({ "grid-column-start": String(column + 2), "grid-row-start": String(row + 2) })
 	return vstack(h, { gap: "3", className: cn("w-full", options.className) }, [
 		h.div(
-			[h.Class("w-full overflow-x-auto")],
+			// Padded by a day's outline reach (offset 1 + width 2), so the scroller does not clip it.
+			[h.Class("-m-1 overflow-x-auto p-1")],
 			[
 				// One grid: weekday labels in the first column, a month strip in the first row.
 				h.div(

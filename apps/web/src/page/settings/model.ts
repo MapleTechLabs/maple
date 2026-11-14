@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import { BillingCustomer } from "@maple/domain/http"
 import { V2ApiKey } from "@maple/domain/http/v2"
 import { Schema } from "effect"
@@ -9,6 +10,7 @@ import * as Billing from "./billing/model"
 import * as Members from "./members/model"
 import * as General from "./general/model"
 import * as DataPlatform from "./data-platform/model"
+import * as DataSources from "./data-sources/model"
 import * as AuditLog from "./audit-log/model"
 import * as Automation from "./automation/model"
 import * as Ingestion from "./ingestion/model"
@@ -18,15 +20,17 @@ import * as SetupHealth from "./setup-health/model"
 
 // `/settings`: the nav rail and the active tab's section.
 
-/** What `useVisibleSettingsSections` reads from the session: whether the member administers the org. */
+/** What the nav's visibility reads from the session: the permissions its roles hold. */
 export const SessionInfo = Schema.Struct({
-	isAdmin: Schema.Boolean,
+	grants: Schema.Array(Policy.PermissionName),
 	userId: Schema.NullOr(Schema.String),
-	/** `useOrganizationFeatureFlags().flags.aiAutoTriage`: Clerk org metadata; on self-hosted. */
+	/** The org's `aiAutoTriage` rollout flag from Clerk metadata; on self-hosted. */
 	hasAiAutoTriage: Schema.Boolean,
+	/** The org's `dataSources` rollout flag; on self-hosted. */
+	hasDataSources: Schema.Boolean,
 })
 export const SessionData = AsyncData.Schema(SessionInfo, LoadFailure)
-/** `billingCustomerAtom`: the nav's data-platform gate and the Billing tab read the one customer. */
+/** The nav's data-platform gate and the Billing tab read the one customer. */
 export const CustomerData = AsyncData.Schema(BillingCustomer, LoadFailure)
 
 /** One tab's state. A tab switch keeps the one left in `kept`, so coming back repaints its data. */
@@ -39,11 +43,10 @@ export const TabModel = Schema.Union([
 	Schema.TaggedStruct("Automation", { model: Automation.Model }),
 	Schema.TaggedStruct("AuditLog", { model: AuditLog.Model }),
 	Schema.TaggedStruct("DataPlatform", { model: DataPlatform.Model }),
+	Schema.TaggedStruct("DataSources", { model: DataSources.Model }),
 	Schema.TaggedStruct("General", { model: General.Model }),
 	Schema.TaggedStruct("Members", { model: Members.Model }),
 	Schema.TaggedStruct("Billing", { model: Billing.Model }),
-	/** A tab whose section is not ported yet. */
-	Schema.TaggedStruct("Unported", { tab: Schema.String }),
 ])
 export type TabModel = typeof TabModel.Type
 
@@ -55,7 +58,7 @@ export const Model = Schema.Struct({
 	customer: CustomerData.schema,
 	/** The `api_keys` shape while a tab reads it, `null` before its first answer. */
 	apiKeys: Schema.NullOr(Schema.Array(V2ApiKey)),
-	/** The `api_keys` shape failed before its first answer (`useCollectionLoadFailed`). */
+	/** The `api_keys` shape failed before its first answer. */
 	isApiKeysLoadFailed: Schema.Boolean,
 	/** A `?tab=` deep link the viewer could not open; its note outlives the URL rewrite. */
 	deniedTab: Schema.NullOr(Schema.Literals(settingsTabValues)),

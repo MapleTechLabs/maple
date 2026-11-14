@@ -1,9 +1,15 @@
-// `resolveSequentialDomain` (packages/ui/src/components/plot/color-scale.ts), copied so the view can
-// label a ramp without importing that module's d3-scale.
+// The domain a sequential colour ramp walks, d3-free: the d3 scale (./plot/color-scale.ts) and the
+// legends that label its ramp both derive from it, so a legend never disagrees with its grid.
 
+/** How a value's position along the ramp is computed. */
 export type SequentialScaleType = "linear" | "log"
 
+/**
+ * A log domain's floor when the data's own minimum cannot serve: a fallback, not a hard floor, since
+ * `Math.max(min, 1)` would invert an all-sub-1 domain and paint every value the hottest stop.
+ */
 const LOG_FALLBACK_FLOOR = 1
+/** With no positive minimum, the floor sits two decades below the maximum. */
 const LOG_FALLBACK_DECADES = 2
 
 /** The `[lo, hi]` a scale of this type walks: a log domain never touches 0 nor inverts. */

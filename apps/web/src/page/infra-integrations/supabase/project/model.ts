@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import {
 	SupabaseApiTopPathsResponse,
 	SupabaseApiTrafficResponse,
@@ -7,16 +8,12 @@ import {
 } from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../../data/time-range"
 import { InfraSupabaseProjectSearch } from "../../../../route/search"
 import * as TimeRangePicker from "../../../kit/time-range-picker"
 import { SupabaseProjectRow, SupabaseProjectTimeseriesRow, SupabaseStatus } from "../model"
-
-// `/infra/supabase/$projectRef`.
 
 const keyed = <A, AI>(schema: Schema.Codec<A, AI>) => KeyedSchema(schema, LoadFailure)
 
@@ -39,8 +36,7 @@ export const Model = Schema.Struct({
 	insights: keyed(SupabaseProjectInsights),
 	isTopPathsOpen: Schema.Boolean,
 	charts: Schema.Record(Schema.String, Chart.Model),
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
 	timePicker: TimeRangePicker.Model,
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,

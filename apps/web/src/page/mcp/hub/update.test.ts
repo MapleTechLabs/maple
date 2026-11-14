@@ -4,7 +4,17 @@ import { describe, expect, it } from "vitest"
 import { AppRoute } from "../../../route"
 import type { PageContext } from "../../contract"
 import { Message } from "./message"
-import { hrefOfView, init, routeChanged, tabSearch, update, viewOfRoute, widerPreset } from "./update"
+import {
+	hrefOfView,
+	init,
+	routeChanged,
+	sessionHref,
+	tabSearch,
+	update,
+	userHref,
+	viewOfRoute,
+	widerPreset,
+} from "./update"
 import { bucketLabel } from "./view"
 
 const context: PageContext = {
@@ -71,7 +81,11 @@ describe("the server page keeps its filters in the URL", () => {
 
 	it("ignores a search debounce that lands after leaving the server page", () => {
 		const typed = update(serverPage({}), Message.ChangedSearchInput({ value: "sql" }), context).model
-		const onTool = { ...typed, view: { _tag: "Tool" as const, service: "maple-ai", tool: "run_sql" } }
+		const onTool = routeChanged(
+			typed,
+			AppRoute.McpServerTool({ serviceName: "maple-ai", toolName: "run_sql", search: {} }),
+			context,
+		).model
 		expect(
 			navigatedTo(
 				update(onTool, Message.ElapsedSearchDebounce({ version: typed.searchVersion }), context),
@@ -90,11 +104,16 @@ describe("the sessions views", () => {
 		expect(href).toBe("/mcp-servers/docs-mcp/sessions/a%2Fb%20c")
 	})
 
-	it("opens a session with only the time range", () => {
-		const model = sessionsPage({ client: "Cursor", q: "7f3c", failing: true, timePreset: "1w" })
-		expect(
-			navigatedTo(update(model, Message.ClickedOpenSession({ sessionId: "7f3c9a2e" }), context)),
-		).toBe("/mcp-servers/docs-mcp/sessions/7f3c9a2e?timePreset=1w")
+	it("links a session with only the time range", () => {
+		const { search } = sessionsPage({ client: "Cursor", q: "7f3c", failing: true, timePreset: "1w" })
+		expect(sessionHref("docs-mcp", "7f3c9a2e", search)).toBe(
+			"/mcp-servers/docs-mcp/sessions/7f3c9a2e?timePreset=1w",
+		)
+	})
+
+	it("links a session's user to their page over the same window", () => {
+		const { search } = sessionsPage({ client: "Cursor", timePreset: "24h" })
+		expect(userHref("user/42 a", search)).toBe("/users/user/42%20a?timePreset=24h")
 	})
 
 	it("debounces the session-id search into the URL", () => {

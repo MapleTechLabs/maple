@@ -3,9 +3,11 @@ import { Option, Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { Message } from "./chart"
 import { swatch } from "../ui/swatch"
+import { hstack } from "../ui/stack"
+import { typography } from "../ui/typography"
 
-// Port of `PlotLegend` and `PlotStatsLegend` (packages/ui/src/components/plot/plot-legend.tsx).
-// Hover and click are Chart Messages; `active` and `highlighted` come from the chart Model.
+// The plot legend and its stats variant. Hover and click are Chart Messages; `active` and
+// `highlighted` come from the chart Model.
 
 export interface PlotLegendSeries {
 	readonly key: string
@@ -24,10 +26,11 @@ export interface PlotLegendState {
 }
 
 const legendValue = (h: HtmlBuilder<Message>, value: string, secondary: string | undefined): Html =>
-	h.span(
-		[h.Class("ml-auto flex shrink-0 items-baseline gap-2 font-mono tabular-nums")],
+	hstack(
+		h,
+		{ gap: "2", align: "baseline", as: "span", className: "ml-auto shrink-0 tabular-nums" },
 		[
-			h.span([h.Class("text-foreground")], [value]),
+			typography(h, { tone: "foreground" }, [value]),
 			...(secondary === undefined
 				? []
 				: [h.span([h.Class("w-11 text-right text-muted-foreground")], [secondary])]),
@@ -37,7 +40,7 @@ const legendValue = (h: HtmlBuilder<Message>, value: string, secondary: string |
 const isKey = (maybeKey: Option.Option<string>, key: string): boolean =>
 	Option.isSome(maybeKey) && maybeKey.value === key
 
-/** `PlotLegendItem` without a hide toggle (no chart in the gallery passes `onToggle`). */
+/** A legend item, without a hide toggle. */
 const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: PlotLegendSeries): Html => {
 	const isHighlighted = isKey(state.highlighted, entry.key)
 	const hovering = Option.isSome(state.active)
@@ -62,7 +65,7 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 		],
 		[
 			swatch(h, { color: entry.color, dashed: entry.dashed }),
-			h.span([h.Class("truncate")], [entry.label]),
+			typography(h, { truncate: true }, [entry.label]),
 			...(entry.value === undefined ? [] : [legendValue(h, entry.value, entry.secondary)]),
 		],
 	)
@@ -71,7 +74,6 @@ const legendItem = (h: HtmlBuilder<Message>, state: PlotLegendState, entry: Plot
 const items = (h: HtmlBuilder<Message>, state: PlotLegendState): ReadonlyArray<Html> =>
 	Arr.map(state.series, (entry) => legendItem(h, state, entry))
 
-/** `PlotLegend.Row` + `Items`. */
 export const legendRow = (h: HtmlBuilder<Message>, state: PlotLegendState, className?: string): Html =>
 	h.div(
 		[
@@ -82,7 +84,6 @@ export const legendRow = (h: HtmlBuilder<Message>, state: PlotLegendState, class
 		items(h, state),
 	)
 
-/** `PlotLegend.Column` + `Items`. */
 export const legendColumn = (h: HtmlBuilder<Message>, state: PlotLegendState, className?: string): Html =>
 	h.div(
 		[
@@ -93,6 +94,6 @@ export const legendColumn = (h: HtmlBuilder<Message>, state: PlotLegendState, cl
 		items(h, state),
 	)
 
-/** `PlotStatsLegend`: the column with value and share figures, or nothing for no series. */
+/** The column with value and share figures, or nothing for no series. */
 export const statsLegend = (h: HtmlBuilder<Message>, state: PlotLegendState): Option.Option<Html> =>
 	state.series.length === 0 ? Option.none() : Option.some(legendColumn(h, state, "pl-0"))

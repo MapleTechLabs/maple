@@ -1,4 +1,4 @@
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 // Where a traced service runs: each platform integration writes its metrics under `service.name` =
 // the resource's name (a Worker's under `cloudflare-worker/<script>`), so the resource and the
 // traced service of that name are one thing. Infra pages and service pages link by this rule.
@@ -12,10 +12,11 @@ export const SERVICE_RUNTIME_KIND_IDS = [
 	"lambda",
 	"railway",
 	"cloudflareWorker",
+	"vercelProject",
 ] as const
 export type ServiceRuntimeKindId = (typeof SERVICE_RUNTIME_KIND_IDS)[number]
 
-export type ServiceRuntimeProvider = "gcp" | "aws" | "railway" | "cloudflare"
+export type ServiceRuntimeProvider = "gcp" | "aws" | "railway" | "cloudflare" | "vercel"
 
 export interface ServiceRuntimeKind {
 	readonly provider: ServiceRuntimeProvider
@@ -49,15 +50,26 @@ export const SERVICE_RUNTIME_KINDS = {
 		short: "Worker",
 		marker: "cloudflare.worker.cpu_time",
 	},
+	// Vercel sends no metrics: the project's spans mark it, and the runtimes query tags those rows
+	// with this marker.
+	vercelProject: {
+		provider: "vercel",
+		label: "Vercel project",
+		short: "Vercel",
+		marker: "vercel.project",
+	},
 } as const satisfies Record<ServiceRuntimeKindId, ServiceRuntimeKind>
 
+/** The marker gauges of the kinds that report metrics. */
 export const SERVICE_RUNTIME_MARKERS: ReadonlyArray<string> = Arr.map(
-	SERVICE_RUNTIME_KIND_IDS,
+	Arr.filter(SERVICE_RUNTIME_KIND_IDS, (kind) => kind !== "vercelProject"),
 	(kind) => SERVICE_RUNTIME_KINDS[kind].marker,
 )
 
 export const serviceRuntimeKindOfMarker = (metricName: string): ServiceRuntimeKindId | null =>
-	SERVICE_RUNTIME_KIND_IDS.find((kind) => SERVICE_RUNTIME_KINDS[kind].marker === metricName) ?? null
+	Option.getOrNull(
+		Arr.findFirst(SERVICE_RUNTIME_KIND_IDS, (kind) => SERVICE_RUNTIME_KINDS[kind].marker === metricName),
+	)
 
 /** The `service.name`s a platform resource of this traced service would report under. */
 export const runtimeMetricServiceNames = (service: string): ReadonlyArray<string> => [

@@ -1,7 +1,4 @@
-import {
-	derivePlanetScaleSetup,
-	metricsCollectionFailing,
-} from "../../../../components/integrations/planetscale-setup-steps"
+import { derivePlanetScaleSetup, metricsCollectionFailing } from "../setup-steps"
 import { EMPTY_VALUE, formatNumber, pluralize } from "@maple/ui/lib/format"
 import type { Tone } from "@maple/ui/lib/tone"
 import { Option, Array as Arr } from "effect"
@@ -19,15 +16,11 @@ import { dashboardPage } from "../../../kit/dashboard-page"
 import { docsLink } from "../../../kit/signal-empty-state"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
 import { pageHeroParts } from "../../../infra/kit/page-parts"
-import { pageTime } from "../../kit/page-time"
+import { pageTime } from "../../../kit/page-time"
 import { listToolbar, toolbarStat } from "../../../kit/list-toolbar"
 import type { DatabaseList, DatabaseStat, PlanetscaleStatus } from "../data"
-import {
-	formatLag,
-	formatStoragePercent,
-	lagTone,
-	utilizationTone,
-} from "../../../../components/infra/planetscale/metrics"
+import { lagTone, utilizationTone } from "../metrics"
+import { formatLag, formatStoragePercent } from "@maple/views/charts/planetscale-metric-series"
 import {
 	inventoryIsStale,
 	inventoryNotice,
@@ -39,8 +32,6 @@ import {
 import { Message, type Model } from "./model"
 import { DEFAULT_PRESET, neverCollected, sortOf } from "./update"
 import { databaseTable, databaseTableLoading } from "./view-table"
-
-// `PlanetScalePage`.
 
 type H = HtmlBuilder<Message>
 type Clock = Readonly<{ nowMs: number; timeZone: string }>
@@ -64,19 +55,16 @@ interface Totals {
 const NO_TOTALS: Totals = { connections: 0, lagMax: 0, lagOwner: null, storageMax: null, storageOwner: null }
 
 const totalsOf = (stats: ReadonlyArray<DatabaseStat>): Totals =>
-	stats.reduce<Totals>(
-		(acc, row) => ({
-			connections: acc.connections + row.connectionsAvg,
-			...(row.replicaLagMaxSeconds > acc.lagMax
-				? { lagMax: row.replicaLagMaxSeconds, lagOwner: row.database }
-				: { lagMax: acc.lagMax, lagOwner: acc.lagOwner }),
-			...(row.storageUsedPercent !== null &&
-			(acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
-				? { storageMax: row.storageUsedPercent, storageOwner: row.database }
-				: { storageMax: acc.storageMax, storageOwner: acc.storageOwner }),
-		}),
-		NO_TOTALS,
-	)
+	Arr.reduce(stats, NO_TOTALS, (acc, row) => ({
+		connections: acc.connections + row.connectionsAvg,
+		...(row.replicaLagMaxSeconds > acc.lagMax
+			? { lagMax: row.replicaLagMaxSeconds, lagOwner: row.database }
+			: { lagMax: acc.lagMax, lagOwner: acc.lagOwner }),
+		...(row.storageUsedPercent !== null &&
+		(acc.storageMax === null || row.storageUsedPercent > acc.storageMax)
+			? { storageMax: row.storageUsedPercent, storageOwner: row.database }
+			: { storageMax: acc.storageMax, storageOwner: acc.storageOwner }),
+	}))
 
 const noDatabases = (h: H): Html =>
 	empty(
@@ -168,7 +156,7 @@ const content = (
 	inventory: DatabaseList,
 	clock: Clock,
 ): Html => {
-	// `Result.builder(...).onSuccess(...).orElse(NO_STATS)`: a failed read shows no numbers.
+	// A failed read shows no numbers.
 	const statsData = model.stats.data
 	const stats =
 		AsyncData.isSuccess(statsData) || AsyncData.isRefreshing(statsData) ? statsData.data : NO_STATS

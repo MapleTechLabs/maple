@@ -25,7 +25,7 @@ Replace `<id>` with your virtual cluster ID (`vci_…`).
 1. In WarpStream, create a **read-only Agent Key** for the cluster (least privilege; an account-level API key also works if you want one key for several clusters).
 2. In Maple, open **Sources**, click **Connect source**, pick **WarpStream** (or **Prometheus**), and configure:
     - **Endpoint URL**: the hosted endpoint above, with your virtual cluster ID
-    - **Authentication**: **Basic Auth**, with **Username** `prometheus` and **Password** set to the API key
+    - **Authentication**: **Basic auth**, with **Username** `prometheus` and **Password** set to the API key
     - **Scrape interval (seconds)**: 30 to 60 is enough for control-plane metrics
 
     To tag every series with a cluster name, set `labels_json` (for example `{"cluster": "prod-kafka"}`) through the [scrape targets API](/docs/integrations/prometheus#add-a-scrape-target).
@@ -40,7 +40,7 @@ Each WarpStream Agent serves the full agent-level metric set (request latency hi
 http://$AGENT_IP:8080/metrics
 ```
 
-Because Agents run inside your VPC under WarpStream's BYOC model, Maple's scraper can only reach them if you expose the endpoint (for example through an internal load balancer with auth, which you can pair with Maple's **Bearer Token** or **Basic Auth** options). If the Agents are fully private, run an OpenTelemetry Collector next to them with a `prometheus` receiver scraping `:8080/metrics` and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest) instead.
+Because Agents run inside your VPC under WarpStream's BYOC model, Maple's scraper can only reach them if you expose the endpoint (for example through an internal load balancer with auth, which you can pair with Maple's **Bearer token** or **Basic auth** options). If the Agents are fully private, run an OpenTelemetry Collector next to them with a `prometheus` receiver scraping `:8080/metrics` and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest) instead.
 
 Add one Maple target per agent (or per load-balanced agent pool), with the agent host in **Endpoint URL**. Every series already carries an `instance` attribute with the target host. To add cluster or agent names, set `labels_json` such as `{"cluster": "...", "agent": "..."}` through the API.
 
@@ -67,7 +67,7 @@ Once samples arrive, build dashboards and alert rules on these like any other Ma
 
 ## Troubleshooting
 
-- **401 from the hosted endpoint.** The Basic Auth username must be exactly `prometheus`. The password is the API or Agent key.
+- **401 from the hosted endpoint.** The Basic auth username must be exactly `prometheus`. The password is the API or Agent key.
 - **Timeouts scraping Agents.** Confirm the Agent's internal port (8080 by default) and that the endpoint is reachable from the internet. `curl $AGENT_IP:8080/v1/status` should return `OK`.
 - **Any other scrape error.** The connect step checks the endpoint when you save and shows the exact upstream error. Later, **Sync now** on the source page runs the same check.
 

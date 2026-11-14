@@ -5,8 +5,6 @@
 import { Schema } from "effect"
 import { OutputTimeRange } from "./shared"
 
-// service_deployments
-
 export const DeploymentVersionRow = Schema.Struct({
 	service: Schema.String,
 	environment: Schema.String,
@@ -33,8 +31,6 @@ export const ServiceDeploymentsOutput = Schema.Struct({
 	versions: Schema.Array(DeploymentVersionRow),
 })
 
-// route_usage
-
 export const RouteUsageRow = Schema.Struct({
 	service: Schema.String,
 	method: Schema.String,
@@ -56,10 +52,10 @@ export const RouteUsageOutput = Schema.Struct({
 	search: Schema.optionalKey(Schema.String),
 	sort: RouteUsageSort,
 	truncated: Schema.Boolean,
+	/** Rows skipped before this page. */
+	offset: Schema.optionalKey(Schema.Number),
 	routes: Schema.Array(RouteUsageRow),
 })
-
-// ingest_freshness
 
 export const IngestSignalStatus = Schema.Literals(["receiving", "delayed", "stalled", "none"])
 
@@ -82,8 +78,6 @@ export const IngestFreshnessOutput = Schema.Struct({
 	probeWindow: OutputTimeRange,
 	signals: Schema.Array(IngestFreshnessRow),
 })
-
-// db_query_volume
 
 export const DbQueryVolumeRow = Schema.Struct({
 	service: Schema.String,
@@ -109,8 +103,6 @@ export const DbQueryVolumeOutput = Schema.Struct({
 	truncated: Schema.Boolean,
 	queries: Schema.Array(DbQueryVolumeRow),
 })
-
-// ingest_usage
 
 export const IngestUsageRow = Schema.Struct({
 	service: Schema.String,

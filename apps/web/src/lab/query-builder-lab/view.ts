@@ -19,7 +19,7 @@ import { resultsContent } from "./view-results"
 
 const encodePrettyJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown, { space: 2 }))
 
-// `QueryBuilderLabPage` inside `DashboardLayout`: the header time controls and the lab card.
+// The lab page: the header time controls and the lab card.
 
 type H = HtmlBuilder<Message>
 

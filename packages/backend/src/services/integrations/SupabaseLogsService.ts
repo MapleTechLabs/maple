@@ -14,19 +14,20 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import type { SupabaseProjectRef } from "@maple/domain/primitives"
+import type { SupabaseProjectRef } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import { leaseClaimable, leaseStillOurs } from "./lease"
 import {
 	SupabaseConnections,
 	SupabaseProjects,
 	type SupabaseConnectionRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
-import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { pollFleet } from "./poll-fleet"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import {
 	type IngestSendError,
@@ -39,7 +40,7 @@ import {
 	type PollOutcome,
 	reportPoll,
 	stampedSourceId,
-} from "@maple/backend/services/org/integration-sources"
+} from "@maple/backend/services/integrations/integration-sources"
 import {
 	acceptedWatermark,
 	advanceWatermark,
@@ -63,7 +64,6 @@ const RATE_LIMIT_HOLD_MS = 60_000
 const REFUSED_HOLD_MS = 60 * 60_000
 /** Records per ingest request; a full page is split so no body gets too large. */
 const INGEST_CHUNK = 250
-const ORG_CONCURRENCY = 3
 const PROJECT_CONCURRENCY = 4
 
 const REVOKED_REASON = "Supabase no longer accepts this authorization. Reconnect Supabase."
@@ -124,7 +124,7 @@ export interface SupabaseLogsServiceApi {
 	readonly pollOrg: (
 		orgId: OrgId,
 	) => Effect.Effect<SupabaseLogsPollOrgSummary, IntegrationsPersistenceError>
-	readonly pollAllOrgs: () => Effect.Effect<SupabaseLogsPollAllSummary, IntegrationsPersistenceError>
+	readonly pollAllOrgs: Effect.Effect<SupabaseLogsPollAllSummary, IntegrationsPersistenceError>
 }
 
 export class SupabaseLogsService extends Context.Service<SupabaseLogsService, SupabaseLogsServiceApi>()(
@@ -188,10 +188,13 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					})
 				}
 				// A log drain already delivers this project's logs; polling too would store them twice.
-				const manual = project.logDrainsJson.find((drain) => drain.toMaple && !drain.managedByMaple)
-				if (enabled && manual !== undefined) {
+				const manual = Arr.findFirst(
+					project.logDrainsJson,
+					(drain) => drain.toMaple && !drain.managedByMaple,
+				)
+				if (enabled && Option.isSome(manual)) {
 					return yield* new IntegrationsValidationError({
-						message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.name}". Polling too would store them twice.`,
+						message: `Supabase project ${ref} already sends its logs to Maple through the drain "${manual.value.name}". Polling too would store them twice.`,
 					})
 				}
 				if (enabled && project.logDrainEnabled) {
@@ -234,13 +237,9 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [
 								$.id.eq(project.id),
 								$.logsEnabled.eq(true),
-								PG.or(
-									$.logsLeaseUntil.isNull(),
-									$.logsLeaseUntil.lt(now),
-									// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
-									// the bound sits above the longest intentional hold so refusal holds survive.
-									$.logsLeaseUntil.gt(now + REFUSED_HOLD_MS + LEASE_MS),
-								),
+								// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
+								// the bound sits above the longest intentional hold so refusal holds survive.
+								leaseClaimable($.logsLeaseUntil, now, REFUSED_HOLD_MS + LEASE_MS),
 							])
 							.returning(),
 					),
@@ -254,9 +253,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.set({ logsLeaseUntil: holdUntil })
 							.where(($) => [
 								$.id.eq(claimed.id),
-								claimed.logsLeaseUntil === null
-									? $.logsLeaseUntil.isNull()
-									: $.logsLeaseUntil.eq(claimed.logsLeaseUntil),
+								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
 							]),
 					),
 				)
@@ -273,9 +270,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [
 								$.id.eq(claimed.id),
 								$.logsEnabled.eq(true),
-								claimed.logsLeaseUntil === null
-									? $.logsLeaseUntil.isNull()
-									: $.logsLeaseUntil.eq(claimed.logsLeaseUntil),
+								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
 							]),
 					),
 				)
@@ -300,7 +295,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				}
 
 				const recordError = (message: string) =>
-					updateClaimed(claimed, { logsError: message.slice(0, 500) }).pipe(Effect.as(message))
+					updateClaimed(claimed, { logsError: Str.slice(0, 500)(message) }).pipe(Effect.as(message))
 
 				/** One query and its batch; recurses while the project is behind and the tick has budget. */
 				const step = (
@@ -352,7 +347,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 						}
 						const rows = decodeLogRows(page.success)
 						const sent = new Set(boundaryIds)
-						const fresh = rows.filter((row) => !sent.has(row.id))
+						const fresh = Arr.filter(rows, (row) => !sent.has(row.id))
 						const chunks = Arr.chunksOf(fresh, INGEST_CHUNK)
 						// Ingest has no dedup: each accepted chunk moves the watermark past it, so a later
 						// failure resumes after the last accepted row instead of resending it.
@@ -461,7 +456,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					return skip("grant revoked")
 				}
 				const projects = yield* loadProjects(connection)
-				const due = projects.filter((project) => project.logsEnabled && isRunning(project))
+				const due = Arr.filter(projects, (project) => project.logsEnabled && isRunning(project))
 				if (due.length === 0) return skip("no projects")
 
 				// A paused source reads nothing; its watermarks follow the clock so a resume starts at now.
@@ -492,27 +487,28 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					(project) => pollProject(connection, project, ingestKey.value, tickStartedAt),
 					{ concurrency: PROJECT_CONCURRENCY },
 				)
-				const errors = results.flatMap((result) => (result.error === null ? [] : [result.error]))
+				const errors = Arr.flatMap(results, (result) => (result.error === null ? [] : [result.error]))
 				const resources = {
 					total: projects.length,
-					unhealthy: projects.filter((project) => UNHEALTHY_STATUSES.has(project.status)).length,
+					unhealthy: Arr.filter(projects, (project) => UNHEALTHY_STATUSES.has(project.status))
+						.length,
 				}
-				const revoked = results.some((result) => result.revoked)
+				const revoked = Arr.some(results, (result) => result.revoked)
 				yield* reportTick(
 					connection,
 					revoked
 						? { _tag: "Disconnected", reason: REVOKED_REASON }
 						: errors[0] === undefined
 							? { _tag: "Ok", resources }
-							: { _tag: "Failed", error: errors[0].slice(0, 500), resources },
+							: { _tag: "Failed", error: Str.slice(0, 500)(errors[0]), resources },
 					now,
 				)
 				const summary = {
 					orgId,
 					skipped: null,
 					projects: due.length,
-					calls: results.reduce((sum, result) => sum + result.calls, 0),
-					rows: results.reduce((sum, result) => sum + result.rows, 0),
+					calls: Arr.reduce(results, 0, (sum, result) => sum + result.calls),
+					rows: Arr.reduce(results, 0, (sum, result) => sum + result.rows),
 					failures: errors.length,
 				} satisfies SupabaseLogsPollOrgSummary
 				yield* Effect.annotateCurrentSpan({
@@ -526,7 +522,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 			const pollOrg = (orgId: OrgId) =>
 				Clock.currentTimeMillis.pipe(Effect.flatMap((started) => pollOrgAt(orgId, started)))
 
-			const pollAllOrgs = Effect.fn("SupabaseLogsService.pollAllOrgs")(function* () {
+			const pollAllOrgs = Effect.gen(function* () {
 				const started = yield* Clock.currentTimeMillis
 				const orgs = yield* dbExecute((db) =>
 					db.run(
@@ -536,35 +532,27 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							.where(($) => [$.logsEnabled.eq(true), $.removedAt.isNull()]),
 					),
 				)
-				const summaries = yield* Effect.forEach(
+				const summaries = yield* pollFleet(
 					orgs,
-					(row) =>
-						pollOrgAt(decodeOrgId(row.orgId), started).pipe(
-							Effect.catchCause((cause) =>
-								Cause.hasInterruptsOnly(cause)
-									? Effect.interrupt
-									: Effect.logWarning("supabase logs org poll failed", {
-											orgId: row.orgId,
-											error: summarizeCause(cause),
-										}).pipe(
-											Effect.as<SupabaseLogsPollOrgSummary>({
-												orgId: decodeOrgId(row.orgId),
-												skipped: "org poll failed",
-												projects: 0,
-												calls: 0,
-												rows: 0,
-												failures: 1,
-											}),
-										),
-							),
-						),
-					{ concurrency: ORG_CONCURRENCY },
+					(row) => pollOrgAt(decodeOrgId(row.orgId), started),
+					{
+						message: "supabase logs org poll failed",
+						annotations: (row) => ({ orgId: row.orgId }),
+						fallback: (row): SupabaseLogsPollOrgSummary => ({
+							orgId: decodeOrgId(row.orgId),
+							skipped: "org poll failed",
+							projects: 0,
+							calls: 0,
+							rows: 0,
+							failures: 1,
+						}),
+					},
 				)
 				const summary = {
 					orgs: orgs.length,
-					rows: summaries.reduce((sum, item) => sum + item.rows, 0),
-					failures: summaries.reduce((sum, item) => sum + item.failures, 0),
-					skipped: summaries.filter((item) => item.skipped !== null).length,
+					rows: Arr.reduce(summaries, 0, (sum, item) => sum + item.rows),
+					failures: Arr.reduce(summaries, 0, (sum, item) => sum + item.failures),
+					skipped: Arr.filter(summaries, (item) => item.skipped !== null).length,
 				} satisfies SupabaseLogsPollAllSummary
 				yield* Effect.annotateCurrentSpan({
 					"maple.supabase.orgs": summary.orgs,
@@ -572,7 +560,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					"maple.supabase.logs.failures": summary.failures,
 				})
 				return summary
-			})
+			}).pipe(Effect.withSpan("SupabaseLogsService.pollAllOrgs"))
 
 			return { setLogsEnabled, pollOrg, pollAllOrgs } satisfies SupabaseLogsServiceApi
 		}),

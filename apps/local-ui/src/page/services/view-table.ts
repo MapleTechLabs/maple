@@ -21,7 +21,7 @@ import { hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { Array as Arr } from "effect"
 
-// The table of `ServicesListView` and its `ServiceRow`.
+// The services list's table and its rows.
 
 const NUMBER_COLUMNS = ["Spans", "Errors", "Error rate", "p50", "p95", "Logs"]
 

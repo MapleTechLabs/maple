@@ -1,4 +1,5 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
 import * as Checkbox from "@maple/views/ui/checkbox"
 import { badge } from "@maple/views/ui/display"
@@ -11,24 +12,21 @@ import { queryPanelView } from "../../kit/query-builder/view"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 import { toPanelType } from "../kit/chart-registry"
 import type { EditorState } from "./editor-state"
-import { isNote, isProductEventsFunnel, validationErrorOf } from "./lowering"
+import { isNote, isProductEventsFunnel, queryCapabilitiesOf, validationErrorOf } from "./lowering"
 import { listPanel } from "./view-list"
 import { funnelPanel, pathsPanel } from "./view-panels"
 import { autoIntervalLabel, isSqlSource, showsSourceToggle } from "./update"
 import { rawSqlEditor } from "./view-sql"
 import { Message } from "./message"
+import { metricKeysOf } from "../../kit/query-builder/where-values"
 import { baseValuesOf } from "./where-inputs"
 import type { Model } from "./model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
 
-// The widget editor's query side: the source toggle, one `QueryPanel` per query,
-// `FormulaPanel`s, and the toolbar.
-
 type H = HtmlBuilder<Message>
 
-/** One `QueryPanel`, from the shared query builder. */
 const queryPanel = (
 	h: H,
 	model: Model,
@@ -50,16 +48,12 @@ const queryPanel = (
 			hasVisibilityToggle: true,
 			metricOptions: model.metricOptions?.options ?? [],
 			metricSearch: model.metricSearch,
-			metricBreakdownKeys:
-				query.dataSource === "metrics"
-					? (model.metricKeys[`${query.metricName}::${query.metricType}`] ?? [])
-					: [],
+			metricBreakdownKeys: metricKeysOf(model.metricKeys, query),
 			autocompleteValues: baseValuesOf(model, query),
 		},
 		toParentMessage: (message) => Message.GotQueryPanelMessage({ message }),
 	})
 
-/** `FormulaPanel`. */
 const formulaPanel = (h: H, formula: FormulaDraft): Html =>
 	h.div(
 		[h.Class("border border-dashed border-l-2 border-l-chart-3 p-3 space-y-2")],
@@ -122,28 +116,25 @@ const sourceToggle = (h: H, model: Model): Html =>
 
 const MARKDOWN_PLACEHOLDER = "## Runbook\n\n- Check the error rate panel first\n- Escalate to #oncall"
 
-/** `MarkdownEditorPanel`: the note's body; the preview follows as you type. */
+/** The note's body; the preview follows as you type. */
 const markdownEditor = (h: H, content: string): Html =>
 	h.div(
 		[h.Class("space-y-2")],
 		[
-			h.div(
-				[h.Class("flex items-baseline justify-between")],
-				[
-					eyebrow(h, { as: "p" }, ["Content"]),
-					typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-						"Markdown: ",
-						h.code([], ["# heading"]),
-						", ",
-						h.code([], ["**bold**"]),
-						", ",
-						h.code([], ["- list"]),
-						",",
-						" ",
-						h.code([], ["[link](url)"]),
-					]),
-				],
-			),
+			hstack(h, { align: "baseline", justify: "between" }, [
+				eyebrow(h, { as: "p" }, ["Content"]),
+				typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+					"Markdown: ",
+					h.code([], ["# heading"]),
+					", ",
+					h.code([], ["**bold**"]),
+					", ",
+					h.code([], ["- list"]),
+					",",
+					" ",
+					h.code([], ["[link](url)"]),
+				]),
+			]),
 			textarea(h, {
 				id: "widget-editor-markdown",
 				className: "min-h-56 font-mono text-xs leading-relaxed",
@@ -182,11 +173,28 @@ export const queryEditor = (h: H, model: Model, timeZone: string): Html => {
 									? pathsPanel(h, model, state)
 									: isProductEventsFunnel(state)
 										? funnelPanel(h, model, state)
-										: queryPanels(h, model, state, timeZone)),
+										: state.queryFixed
+											? [fixedQueryNote(h), runPreviewButton(h, false)]
+											: queryPanels(h, model, state, timeZone)),
 						]),
 		],
 	)
 }
+
+/** Applies the staged query and display edits (row limit, aggregate) to the preview. */
+const runPreviewButton = (h: H, isDisabled: boolean): Html =>
+	button(h, { size: "sm", isDisabled, attributes: [h.OnClick(Message.ClickedRunPreview())] }, [
+		"Run preview",
+	])
+
+/** A preset whose query has no builder equivalent: it stays as stored, only its display edits. */
+const fixedQueryNote = (h: H): Html =>
+	alert(h, { variant: "info", size: "sm", role: "status" }, [
+		alertTitle(h, ["This preset's query can't be edited"]),
+		alertDescription(h, [
+			"Change its display options here, or recreate it from the query builder or Raw SQL.",
+		]),
+	])
 
 /** The query panels, formula panels and the toolbar under them. */
 const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): ReadonlyArray<Html> => {
@@ -213,7 +221,7 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 						Arr.map(state.formulas, (formula) => formulaPanel(h, formula)),
 					),
 				]),
-		hstack(h, { gap: "3" }, [
+		hstack(h, { gap: "3", wrap: true }, [
 			button(
 				h,
 				{
@@ -223,24 +231,21 @@ const queryPanels = (h: H, model: Model, state: EditorState, timeZone: string): 
 				},
 				["+ Query"],
 			),
-			button(
-				h,
-				{
-					variant: "outline",
-					size: "sm",
-					attributes: [h.OnClick(Message.ClickedAddFormula())],
-				},
-				["+ Formula"],
-			),
-			button(
-				h,
-				{
-					size: "sm",
-					isDisabled: error !== null,
-					attributes: [h.OnClick(Message.ClickedRunPreview())],
-				},
-				["Run preview"],
-			),
+			// Breakdown rows, grouped tables and histograms drop formulas, so none is offered there.
+			...(queryCapabilitiesOf(state).formulas
+				? [
+						button(
+							h,
+							{
+								variant: "outline",
+								size: "sm",
+								attributes: [h.OnClick(Message.ClickedAddFormula())],
+							},
+							["+ Formula"],
+						),
+					]
+				: []),
+			runPreviewButton(h, error !== null),
 			// Two text nodes once there are formulas.
 			typography(h, { size: "2xs", tone: "muted", className: "ml-auto" }, [
 				Arr.join(

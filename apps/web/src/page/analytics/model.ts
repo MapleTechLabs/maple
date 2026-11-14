@@ -1,3 +1,11 @@
+import {
+	SearchConsoleIntegrationStatus,
+	SearchConsoleLandingPage,
+	SearchConsoleOverview,
+	SearchConsolePoint,
+	SearchConsoleSortKey,
+	SearchConsoleQueryRow,
+} from "@maple/domain/http"
 import { Schema } from "effect"
 import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -11,12 +19,15 @@ import * as FilterSections from "@maple/views/ui/filters/filter-sections"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { Breakdowns } from "../kit/analytics-filter-rail"
-
-// `/analytics`.
+import { SortDir } from "../kit/table-sort"
 
 export type Search = typeof AnalyticsSearch.Type
 
-export const AnalyticsEvent = Schema.Struct({ name: Schema.String, events: Schema.Number, sessions: Schema.Number })
+export const AnalyticsEvent = Schema.Struct({
+	name: Schema.String,
+	events: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const Summary = Schema.Struct({
 	visitors: Schema.Number,
@@ -32,7 +43,11 @@ export const Summary = Schema.Struct({
 })
 export type Summary = typeof Summary.Type
 
-export const Live = Schema.Struct({ visitors: Schema.Number, sessions: Schema.Number, windowSeconds: Schema.Number })
+export const Live = Schema.Struct({
+	visitors: Schema.Number,
+	sessions: Schema.Number,
+	windowSeconds: Schema.Number,
+})
 
 export const TimeseriesPoint = Schema.Struct({
 	bucket: Schema.String,
@@ -44,7 +59,11 @@ export const TimeseriesPoint = Schema.Struct({
 	avgDurationMs: Schema.Number,
 })
 
-export const PageviewsPoint = Schema.Struct({ bucket: Schema.String, pageViews: Schema.Number, sessions: Schema.Number })
+export const PageviewsPoint = Schema.Struct({
+	bucket: Schema.String,
+	pageViews: Schema.Number,
+	sessions: Schema.Number,
+})
 
 export const AnalyticsPage = Schema.Struct({
 	host: Schema.String,
@@ -53,7 +72,11 @@ export const AnalyticsPage = Schema.Struct({
 	sessions: Schema.Number,
 })
 
-export const AiReferralPoint = Schema.Struct({ bucket: Schema.String, product: Schema.String, sessions: Schema.Number })
+export const AiReferralPoint = Schema.Struct({
+	bucket: Schema.String,
+	product: Schema.String,
+	sessions: Schema.Number,
+})
 
 export const AiCrawlers = Schema.Struct({
 	crawlers: Schema.Array(
@@ -95,15 +118,22 @@ export const TraceSample = Schema.Struct({
 	visitorId: Schema.String,
 })
 
+export const SearchSortKey = Schema.Literals(["name", "clicks", "impressions", "ctr", "position"])
+export type SearchSortKey = typeof SearchSortKey.Type
+export const SearchSort = Schema.Struct({ key: SearchSortKey, dir: SortDir })
+export type SearchSort = typeof SearchSort.Type
+/** The Search tab's two tables. */
+export const SearchTable = Schema.Literals(["queries", "pages"])
+export type SearchTable = typeof SearchTable.Type
+
 /** One breakdown card's own state: the picked tab (else the first populated), filter, sort. */
 export const PanelState = Schema.Struct({
 	pickedTab: Schema.NullOr(Schema.Number),
 	query: Schema.String,
 	sortKey: Schema.NullOr(Schema.Literals(["name", "count", "views"])),
-	sortDir: Schema.Literals(["asc", "desc"]),
+	sortDir: SortDir,
 })
 export type PanelState = typeof PanelState.Type
-
 
 export const Model = Schema.Struct({
 	search: AnalyticsSearch,
@@ -124,16 +154,27 @@ export const Model = Schema.Struct({
 	previousAiReferrals: KeyedSchema(Schema.Array(AiReferralPoint), LoadFailure),
 	aiCrawlers: KeyedSchema(AiCrawlers, LoadFailure),
 	traceSamples: KeyedSchema(Schema.Array(TraceSample), LoadFailure),
+	searchStatus: KeyedSchema(SearchConsoleIntegrationStatus, LoadFailure),
+	searchOverview: KeyedSchema(SearchConsoleOverview, LoadFailure),
+	searchTimeseries: KeyedSchema(Schema.Array(SearchConsolePoint), LoadFailure),
+	searchQueries: KeyedSchema(Schema.Array(SearchConsoleQueryRow), LoadFailure),
+	searchLanding: KeyedSchema(Schema.Array(SearchConsoleLandingPage), LoadFailure),
+	/** The Search tab's table sorts; a metric sort is part of its read's request. */
+	searchSorts: Schema.Record(Schema.String, SearchSort),
+	/** The Search tab's picked tile, which its chart draws; `null` until someone picks (clicks). */
+	searchMetric: Schema.NullOr(SearchConsoleSortKey),
 	presence: SignalPresenceData.schema,
 	/** The tile picked in the strip; `null` until someone picks. */
 	pickedMetric: Schema.NullOr(Schema.String),
 	panels: Schema.Record(Schema.String, PanelState),
 	/** An events answer that came in ahead of the breakdowns (`delivered` in update.ts). */
-	heldEvents: Schema.NullOr(Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) })),
+	heldEvents: Schema.NullOr(
+		Schema.Struct({ key: Schema.String, result: Schema.Result(Schema.Unknown, LoadFailure) }),
+	),
 	/** The breakdown card whose table is open in the dialog. */
 	expandedPanel: Schema.NullOr(Schema.String),
 	expandDialog: Dialog.Model,
-	/** Favicon hosts whose image failed (`Favicon`'s `failed`). */
+	/** Favicon hosts whose image failed. */
 	failedFavicons: Schema.Array(Schema.String),
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,

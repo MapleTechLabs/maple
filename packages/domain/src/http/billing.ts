@@ -1,9 +1,11 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Effect, Schema, Array as Arr } from "effect"
+import { AiCreditSource } from "../billing"
 import { TAX_ID_TYPE_VALUES } from "../billing-tax-ids"
+import { CodeReviewSpend } from "./code-review"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
-import { OrgId } from "../primitives"
+import { OrgId } from "@maple/primitives"
 import {
 	BillingAccount,
 	BillingAccountPersistenceError,
@@ -13,6 +15,7 @@ import {
 	LinkBillingOrgRequest,
 } from "./billing-account"
 import { WarehouseQueryError } from "./warehouse-errors"
+import { AnalystAccess } from "./analyst-access"
 
 // Contract for raw Autumn proxy responses. Schemas model only consumed fields
 // and tolerate additive upstream fields.
@@ -101,6 +104,7 @@ export const BillingFeatureId = Schema.Literals([
 	"metrics",
 	"browser_sessions",
 	"product_events",
+	"ai_credits",
 ])
 export type BillingFeatureId = typeof BillingFeatureId.Type
 
@@ -242,6 +246,42 @@ export class DailySpendResponse extends Schema.Class<DailySpendResponse>("DailyS
 	cycleEnd: Schema.Number,
 }) {}
 
+/** AI credits one surface (chat, triage, review, bot, security_audit) spent this cycle, in dollars. */
+export class AiCreditSourceUsage extends Schema.Class<AiCreditSourceUsage>("AiCreditSourceUsage")({
+	/** The `source` the charge was tracked with; `other` for anything Autumn bucketed or left unset. */
+	source: Schema.Union([AiCreditSource, Schema.Literal("other")]),
+	credits: Schema.Number,
+}) {}
+
+/** AI credits spent on one UTC day, in dollars. */
+export class AiCreditDay extends Schema.Class<AiCreditDay>("AiCreditDay")({
+	/** `YYYY-MM-DD`, UTC, the same keys as `DailyVolume.date`. */
+	date: Schema.String,
+	credits: Schema.Number,
+}) {}
+
+/** AI credits one model's calls spent this cycle. */
+export class AiCreditModelUsage extends Schema.Class<AiCreditModelUsage>("AiCreditModelUsage")({
+	/** As tracked, `<provider>/<model>`: `openrouter/deepseek/deepseek-v4.1-flash`. */
+	model: Schema.String,
+	credits: Schema.Number,
+}) {}
+
+/** This cycle's AI credit spend, split by surface, by day and by model. One credit is one dollar. */
+export class AiCreditUsageResponse extends Schema.Class<AiCreditUsageResponse>("AiCreditUsageResponse")({
+	/** The billing cycle the figures cover, epoch ms. */
+	cycleStartMs: Schema.Number,
+	cycleEndMs: Schema.Number,
+	/** Largest first with `other` last, surfaces that spent nothing left out. */
+	bySource: Schema.Array(AiCreditSourceUsage),
+	/** Ascending by date, days that spent nothing left out. */
+	days: Schema.Array(AiCreditDay),
+	/** Largest first, models that spent nothing left out. */
+	byModel: Schema.Array(AiCreditModelUsage),
+	/** This org's code reviews over the cycle; null when it ran none or they could not be read. */
+	codeReview: Schema.NullOr(CodeReviewSpend),
+}) {}
+
 const NonNegativeFiniteNumber = Schema.Number.pipe(
 	Schema.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
 )
@@ -351,14 +391,12 @@ export class CustomerPortalResult extends Schema.Class<CustomerPortalResult>("Cu
 	url: Schema.String,
 }) {}
 
-// ---------------------------------------------------------------------------
 // Billing details (company name, address, tax IDs).
 //
 // Autumn has no tax-ID or address concept; these live on the Stripe customer
 // Autumn links (`stripe_id`), and the API reads/writes them through Stripe
 // directly. Nothing here is persisted by Maple — Stripe is the source of truth
 // and is what prints them on the invoice PDF.
-// ---------------------------------------------------------------------------
 
 /** Stripe tax-ID `type` values (see `@maple/domain/billing-tax-ids`). */
 export const BillingTaxIdType = Schema.Literals(TAX_ID_TYPE_VALUES)
@@ -426,7 +464,7 @@ export class AddBillingTaxIdRequest extends Schema.Class<AddBillingTaxIdRequest>
  * vocabulary and can add to it at any time, and an exhaustive union here would
  * turn a new upstream code into a decode failure — trading a legible 4xx for an
  * opaque 500. The transport parses it out at `errorResponse`
- * (`apps/api/src/services/billing/autumn-http.ts`), defaulting to
+ * (`packages/backend/src/services/billing/autumn-http.ts`), defaulting to
  * `"autumn_api_error"` when the body carries none.
  *
  * Note this is the UPSTREAM code, distinct from the public `code` each error
@@ -634,7 +672,6 @@ const billingRequestErrors = [
 	...billingTransportErrors,
 ] as const
 
-// Authed billing operations: customer/usage reads, native controls, and checkout/portal.
 export class BillingApiGroup extends HttpApiGroup.make("billing")
 	.add(
 		HttpApiEndpoint.get("getCustomer", "/customer", {
@@ -646,6 +683,12 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 		HttpApiEndpoint.get("getUsage", "/usage", {
 			query: BillingUsageQuery,
 			success: BillingUsage,
+			error: [...billingTransportErrors],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getAiCreditUsage", "/ai-credit-usage", {
+			success: AiCreditUsageResponse,
 			error: [...billingTransportErrors],
 		}),
 	)
@@ -683,7 +726,7 @@ export class BillingApiGroup extends HttpApiGroup.make("billing")
 			payload: PreviewAttachRequest,
 			success: PreviewAttachResult,
 			error: [BillingManagedByBillingOrgError, ...billingRequestErrors],
-		}),
+		}).annotate(AnalystAccess, "read"),
 	)
 	.add(
 		HttpApiEndpoint.post("openCustomerPortal", "/portal", {

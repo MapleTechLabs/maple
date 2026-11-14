@@ -1,4 +1,9 @@
-import type { AlertDeliveryEventDocument, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import {
+	isManagedSignalType,
+	type AlertDeliveryEventDocument,
+	type AlertIncidentDocument,
+	type AlertRuleDocument,
+} from "@maple/domain/http"
 
 import type { AlertRuleStateRow } from "../collections/alerts"
 import { deriveRuleStatus, type DerivedRuleStatus, needsAttention } from "./rule-status"
@@ -36,12 +41,6 @@ export interface AlertsOverviewReady {
 	readonly timelineRange: { readonly min: number; readonly max: number }
 }
 
-/** The derived overview, in the phases the tab renders distinctly. */
-export type AlertsOverviewData =
-	| { readonly phase: "loading" }
-	| { readonly phase: "error"; readonly message: string }
-	| AlertsOverviewReady
-
 export interface OverviewInputs {
 	readonly rules: ReadonlyArray<AlertRuleDocument>
 	readonly incidents: ReadonlyArray<AlertIncidentDocument>
@@ -61,16 +60,15 @@ const groupByRuleId = <T extends { readonly ruleId: string }>(items: ReadonlyArr
 }
 
 /**
- * The whole overview derivation as one pure function over domain documents —
- * unit-testable without React or a registry. Replaces the useMemo chain the
- * overview tab used to run per render.
+ * The whole overview derivation as one pure function over domain documents,
+ * unit-testable without a registry.
  */
 export const deriveOverview = (inputs: OverviewInputs): AlertsOverviewReady => {
 	const { now } = inputs
 	// ISO timestamps order lexicographically; newest first, as the server lists do.
 	const byIsoDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0)
-	// Uptime monitors own their backing rules: the rule list hides them, their incidents stay.
-	const rules = Arr.filter(inputs.rules, (rule) => rule.signalType !== "uptime").sort((a, b) =>
+	// Monitors and SLOs own their backing rules: the rule list hides them, their incidents stay.
+	const rules = Arr.filter(inputs.rules, (rule) => !isManagedSignalType(rule.signalType)).sort((a, b) =>
 		byIsoDesc(a.updatedAt, b.updatedAt),
 	)
 	const incidentCutoff = now - INCIDENT_WINDOW_MS

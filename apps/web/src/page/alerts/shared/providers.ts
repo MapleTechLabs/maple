@@ -4,10 +4,9 @@ import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { manifestGlyph } from "@maple/views/ui/manifest-glyph"
-import { LINEAR_ACCENT } from "../../integrations/catalog"
+import { PROVIDERS as REGISTRY } from "../../kit/providers"
 import { Array as Arr, String as Str } from "effect"
-
-// `PROVIDERS` and `ProviderLogo`: the destination providers and their marks.
+import { hstack } from "@maple/views/ui/stack"
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
 const INK_ON_DARK_ACCENT = "#FFFFFF"
@@ -68,7 +67,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 			type: "linear",
 			label: "Linear",
 			description: "Open one Linear issue per alert rule in a team, and comment on it as it changes.",
-			accent: LINEAR_ACCENT,
+			accent: REGISTRY.linear.accent,
 			accentBg: "rgba(94,106,213,0.18)",
 			accentText: "light-dark(#4651B8, #A9B0F0)",
 			accentOn: INK_ON_DARK_ACCENT,
@@ -121,6 +120,37 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 		},
 	],
 	[
+		"microsoft-teams",
+		{
+			type: "microsoft-teams",
+			label: "Microsoft Teams",
+			description: "Post alert cards to a Teams channel through a Workflows webhook.",
+			accent: "#5B5FC7",
+			accentBg: "rgba(91,95,199,0.18)",
+			accentText: "light-dark(#464EB8, #A6A9F0)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "MicrosoftTeamsIcon",
+			docsUrl:
+				"https://support.microsoft.com/en-us/office/create-incoming-webhooks-with-workflows-for-microsoft-teams-8ae491c7-0394-4861-ba59-055e33f75498",
+			docsLabel: "Teams Workflows webhook docs",
+		},
+	],
+	[
+		"incident-io",
+		{
+			type: "incident-io",
+			label: "incident.io",
+			description: "Raise and resolve alerts on an incident.io HTTP alert source.",
+			accent: "#F25533",
+			accentBg: "rgba(242,85,51,0.16)",
+			accentText: "light-dark(#B23315, #F7805F)",
+			accentOn: INK_ON_DARK_ACCENT,
+			fallbackIcon: "IncidentIoIcon",
+			docsUrl: "https://docs.incident.io/alerts/getting-started",
+			docsLabel: "incident.io alert sources",
+		},
+	],
+	[
 		"email",
 		{
 			type: "email",
@@ -150,7 +180,7 @@ export const PROVIDERS = new Map<AlertDestinationType, DestinationProvider>([
 const WEBHOOK = PROVIDERS.get("webhook")
 const CHAT = PROVIDERS.get("chat")
 
-/** `CHAT_PROVIDERS`: a `chat` destination drawn as its connector (name, accent and mark). */
+/** A `chat` destination drawn as its connector (name, accent and mark). */
 const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 	Arr.flatMap(chatConnectorManifests, (manifest) =>
 		CHAT === undefined
@@ -171,7 +201,7 @@ const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
 	),
 )
 
-/** `destinationProvider`: a `chat` destination's connector, else the type's provider. */
+/** A `chat` destination's connector, else the type's provider. */
 export const destinationProvider = (
 	type: AlertDestinationType,
 	chatConnector?: string,
@@ -190,9 +220,11 @@ export const providerOf = (type: AlertDestinationType): DestinationProvider =>
 		accentOn: "",
 	}
 
-/** `DESTINATION_TYPES` / `destinationTypesFor`: the provider tiles, in the order people reach for them. */
+/** The provider tiles, in the order people reach for them. */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"pagerduty",
+	"incident-io",
+	"microsoft-teams",
 	"email",
 	"webhook",
 	"telegram",
@@ -215,7 +247,7 @@ export type ProviderLogoOptions<M> = Readonly<{
 	onLogoError?: M
 }>
 
-/** `ProviderLogo`: the brand image, else a monogram plate, else the provider's icon. */
+/** The brand image, else a monogram plate, else the provider's icon. */
 export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<M>): Html => {
 	const provider = destinationProvider(options.type, options.chatConnector)
 	const size = options.size ?? 40
@@ -241,38 +273,56 @@ export const providerLogo = <M>(h: HtmlBuilder<M>, options: ProviderLogoOptions<
 				gradient: [provider.accent, provider.accent] as const,
 			}
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md font-semibold"),
-						h.Style({
-							width: `${inner}px`,
-							height: `${inner}px`,
-							"font-size": `${Math.round(inner * 0.55)}px`,
-							background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
-							color: provider.accentOn,
-						}),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md font-semibold",
+						attributes: [
+							h.Style({
+								width: `${inner}px`,
+								height: `${inner}px`,
+								"font-size": `${Math.round(inner * 0.55)}px`,
+								background: `linear-gradient(135deg, ${mono.gradient[0]}, ${mono.gradient[1]})`,
+								color: provider.accentOn,
+							}),
+						],
+					},
 					[mono.letter],
 				),
 			]
 		}
 		if (provider.fallbackGlyph !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[manifestGlyph(h, provider.fallbackGlyph, Math.round(inner * 0.65))],
 				),
 			]
 		if (provider.fallbackIcon !== undefined)
 			return [
-				h.span(
-					[
-						h.Class("flex items-center justify-center rounded-md"),
-						h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
-					],
+				hstack(
+					h,
+					{
+						align: "center",
+						justify: "center",
+						as: "span",
+						className: "rounded-md",
+						attributes: [
+							h.Style({ width: `${inner}px`, height: `${inner}px`, color: provider.accent }),
+						],
+					},
 					[icon(h, provider.fallbackIcon, { size: Math.round(inner * 0.65) })],
 				),
 			]

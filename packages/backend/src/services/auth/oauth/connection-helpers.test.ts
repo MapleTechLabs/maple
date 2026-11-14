@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema, String as Str } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, Redacted, Schema, String as Str, Clock } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
@@ -7,7 +7,7 @@ import { OAuthAuthStates } from "@maple/db/tables"
 import { OrgId, UserId } from "@maple/domain/http"
 import { Database, DatabaseError, type DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/platform/test-pglite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	makeOAuthConnectionHelpers,
 	OAuthTokenResponseSchema,
@@ -89,10 +89,10 @@ const provideBase = (testDb: TestDb, fetch: ReturnType<typeof fetchLayer>) =>
 /** Seed an expired connection with a refresh token, so any token read must refresh. */
 const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHelpers>>) =>
 	Effect.gen(function* () {
-		const accessEnc = yield* helpers.encryptValue("stale-access-token")
-		const refreshEnc = yield* helpers.encryptValue("stored-refresh-token")
+		const accessEnc = yield* helpers.sealAccessToken(ORG, "stale-access-token")
+		const refreshEnc = yield* helpers.sealRefreshToken(ORG, "stored-refresh-token")
 		// Written in the past so any later write moves `updatedAt`.
-		yield* helpers.upsertConnection(ORG, Date.now() - 10_000, {
+		yield* helpers.upsertConnection(ORG, (yield* Clock.currentTimeMillis) - 10_000, {
 			externalUserId: "ext-user-1",
 			connectedByUserId: USER,
 			accessTokenCiphertext: accessEnc.ciphertext,
@@ -101,8 +101,8 @@ const seedExpiredConnection = (helpers: Effect.Success<ReturnType<typeof makeHel
 			refreshTokenCiphertext: refreshEnc.ciphertext,
 			refreshTokenIv: refreshEnc.iv,
 			refreshTokenTag: refreshEnc.tag,
-			// Already expired — getValidConnectionToken must refresh.
-			expiresAt: Date.now() - 60_000,
+			// Already expired, so getValidConnectionToken must refresh.
+			expiresAt: (yield* Clock.currentTimeMillis) - 60_000,
 		})
 	})
 
@@ -131,7 +131,7 @@ describe("refreshAccessToken classification", () => {
 	it.live("a 400 invalid_client is an upstream failure and does NOT revoke the connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		// A rotated/misconfigured Maple client secret answers this for EVERY
-		// tenant at once — stamping revoked here would disconnect them all.
+		// tenant at once; stamping revoked here would disconnect them all.
 		const fetch = fetchLayer(() => jsonResponse({ error: "invalid_client" }, 400))
 		return Effect.gen(function* () {
 			const helpers = yield* makeHelpers()
@@ -267,7 +267,7 @@ describe("cross-isolate refresh race", () => {
 			assert.isNotNull(yield* revokedAtOf(testDb))
 
 			// A's refresh succeeded upstream and lands afterwards: the grant is alive.
-			const refreshed = yield* Schema.decodeUnknownEffect(OAuthTokenResponseSchema)({
+			const refreshed = yield* Schema.decodeEffect(OAuthTokenResponseSchema)({
 				access_token: "fresh-access-token",
 				refresh_token: "fresh-refresh-token",
 				expires_in: 3600,
@@ -290,7 +290,7 @@ describe("cross-isolate refresh race", () => {
 			const isolateA = yield* makeHelpers()
 			yield* seedExpiredConnection(isolateA)
 			const rowReadByA = yield* isolateA.requireConnection(ORG)
-			const refreshed = yield* Schema.decodeUnknownEffect(OAuthTokenResponseSchema)({
+			const refreshed = yield* Schema.decodeEffect(OAuthTokenResponseSchema)({
 				access_token: "fresh-access-token",
 				refresh_token: "fresh-refresh-token",
 				expires_in: 3600,

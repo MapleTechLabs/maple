@@ -1,3 +1,4 @@
+import { ChartEnvFields } from "@maple/views/charts/chart-env"
 import { AlertCheckDocument, AlertDeliveryEventDocument, AlertRuleId } from "@maple/domain/http"
 import {
 	AlertDestinationRowSchema,
@@ -6,23 +7,21 @@ import {
 	AlertRuleStateRowSchema,
 } from "@maple/web-data/collections/alerts"
 import { Schema } from "effect"
+import * as Policy from "@maple/domain/policy"
 import * as Chart from "@maple/views/charts/chart"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
-import { ThemeColors } from "@maple/views/charts/theme-colors"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { AlertRuleSearch } from "../../../route/search"
+import { V2AlertSilence } from "@maple/domain/http/v2"
+import * as SilenceDialog from "../silence-dialog/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { CheckSummary } from "../shared/check-summary"
 import { PreviewSlot } from "../shared/preview"
+import { LiveRows } from "../../kit/load-schemas"
 
-// `/alerts/$ruleId`.
-
-const Rows = <S extends Schema.Top>(row: S) => Schema.NullOr(Schema.Array(row))
-
-/** `AlertRuleChecksResponse` (`useAlertRuleChecks`): the newest checks page plus the summary. */
+/** The newest checks page plus the summary. */
 export const ChecksResponse = Schema.Struct({
 	checks: Schema.Array(AlertCheckDocument),
 	hasMore: Schema.Boolean,
@@ -48,16 +47,15 @@ export const Model = Schema.Struct({
 	ruleId: AlertRuleId,
 	search: AlertRuleSearch,
 	window: Schema.NullOr(TimeWindow),
-	/** `diagnosisNow`: the wall clock the diagnosis labels read, refreshed with its inputs. */
+	/** The wall clock the diagnosis labels read, refreshed with its inputs. */
 	nowMs: Schema.Number,
-	rules: Rows(AlertRuleRowSchema),
-	incidents: Rows(AlertIncidentRowSchema),
-	states: Rows(AlertRuleStateRowSchema),
-	destinations: Rows(AlertDestinationRowSchema),
+	rules: LiveRows(AlertRuleRowSchema),
+	incidents: LiveRows(AlertIncidentRowSchema),
+	states: LiveRows(AlertRuleStateRowSchema),
+	destinations: LiveRows(AlertDestinationRowSchema),
 	deliveries: KeyedSchema(Schema.Array(AlertDeliveryEventDocument), LoadFailure),
 	checks: KeyedSchema(ChecksResponse, LoadFailure),
 	preview: PreviewSlot,
-	// Local UI state.
 	stateFilter: StateFilter,
 	checkStatusFilter: CheckStatusFilter,
 	signalSource: SignalSource,
@@ -67,13 +65,13 @@ export const Model = Schema.Struct({
 	isBucketLoading: Schema.Boolean,
 	bucketRequest: Schema.Number,
 	isShowingAllIncidents: Schema.Boolean,
-	/** `ChecksPanel`'s "Load 100 more" pages and its cursor (`undefined` = the first page's). */
+	/** The checks panel's "Load 100 more" pages and its cursor (`undefined` = the first page's). */
 	extraChecks: Schema.Array(AlertCheckDocument),
 	nextCursorOverride: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	isLoadingMoreChecks: Schema.Boolean,
 	/** Bumped when the panel starts over (window or filter): a load-more for an older one is dropped. */
 	checksGeneration: Schema.Number,
-	/** `RuleDiagnosisPanel`: the header toggle (`null` follows the verdict), steps and evidence. */
+	/** The diagnosis panel: its header toggle (`null` follows the verdict), steps and evidence. */
 	isDiagnosisExpanded: Schema.NullOr(Schema.Boolean),
 	isShowingAllStages: Schema.Boolean,
 	selectedGroup: Schema.NullOr(Schema.String),
@@ -86,7 +84,11 @@ export const Model = Schema.Struct({
 	refreshVersion: Schema.Number,
 	isReloading: Schema.Boolean,
 	chart: Chart.Model,
-	chartRuntime: ChartRuntime,
-	themeColors: Schema.NullOr(ThemeColors),
+	...ChartEnvFields,
+	/** `alertSilences.list`: which silence, if any, holds back this rule's notifications. */
+	silences: KeyedSchema(Schema.Array(V2AlertSilence), LoadFailure),
+	silenceDialog: SilenceDialog.Model,
+	/** What the session may do (`Policy.grantsOf`); none until it answers, so Silence stays hidden. */
+	grants: Schema.Array(Policy.PermissionName),
 })
 export type Model = typeof Model.Type

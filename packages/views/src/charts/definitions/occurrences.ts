@@ -1,16 +1,11 @@
-import { DASHED_Y_GRID } from "@maple/ui/components/plot/plot-grid"
-import {
-	integerTickValues,
-	linearYDomain,
-	minBarLength,
-	niceLinearDomain,
-} from "@maple/ui/components/plot/plot-scales"
+import { Y_GRID } from "../plot/plot-grid"
+import { integerTickValues, linearYDomain, minBarLength, niceLinearDomain } from "../plot/plot-scales"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { barY, defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
-import { Option, Array as Arr } from "effect"
-import { bucketDate, makeBucketAxis } from "@maple/ui/components/plot/bucket-axis"
+import { Option, Order, Array as Arr } from "effect"
+import { bucketDate, makeBucketAxis } from "../plot/bucket-axis"
 import { ChartTooltip, type ChartSpec } from "../chart-spec"
 import type { BuiltChart } from "./built-chart"
 import { cursorTooltip } from "./plot-constants"
@@ -22,8 +17,9 @@ type Point = OccurrencesSpec["points"][number]
 
 /** The points that parse, oldest first: what the chart draws (and empty means the empty message). */
 export const sortedOccurrences = (points: ReadonlyArray<Point>): ReadonlyArray<Point> =>
-	Arr.filter(points, (point) => Number.isFinite(toEpochMs(point.bucket))).toSorted(
-		(a, b) => toEpochMs(a.bucket) - toEpochMs(b.bucket),
+	Arr.sort(
+		Arr.filter(points, (point) => Number.isFinite(toEpochMs(point.bucket))),
+		Order.mapInput(Order.Number, (point: Point) => toEpochMs(point.bucket)),
 	)
 
 export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date, number> => {
@@ -47,7 +43,7 @@ export const buildOccurrences = (spec: OccurrencesSpec): BuiltChart<Point, Date,
 			scales: {
 				x: axis.xBand,
 				y: {
-					grid: DASHED_Y_GRID,
+					grid: Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,

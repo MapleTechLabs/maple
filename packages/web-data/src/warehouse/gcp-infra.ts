@@ -195,45 +195,6 @@ export const getGcpCloudSqlStatementSpans = Effect.fn("QueryEngine.getGcpCloudSq
 	return { spans: result.data }
 })
 
-const DatabaseInstancesInputSchema = Schema.Struct({
-	...WindowInputSchema.fields,
-	/** A `db.namespace` the traces query. */
-	database: Schema.String,
-	/** The identity values of each Cloud SQL instance to look in. */
-	instances: Schema.Array(Schema.Array(Schema.String)),
-})
-
-/**
- * The PostgreSQL instances that hold a database of the traces' name, from the connections the
- * poller stored per database. An instance whose read fails is left out.
- */
-export const getGcpCloudSqlInstancesOfDatabase = Effect.fn("QueryEngine.getGcpCloudSqlInstancesOfDatabase")(
-	function* ({ data }: { data: (typeof DatabaseInstancesInputSchema)["Encoded"] }) {
-		const { database, instances, ...window } = yield* decodeInput(
-			DatabaseInstancesInputSchema,
-			data,
-			"getGcpCloudSqlInstancesOfDatabase",
-		)
-		const owners = yield* Effect.forEach(
-			instances,
-			(keys) =>
-				runWarehouseQuery("gcpCloudSqlDatabases", () =>
-					Effect.gen(function* () {
-						const client = yield* MapleInternalHttp
-						return yield* client.queryEngine.gcpCloudSqlDatabases({
-							payload: new GcpCloudSqlInstanceRequest({ ...window, keys }),
-						})
-					}),
-				).pipe(
-					Effect.map((result) => (result.databases.includes(database) ? [keys] : [])),
-					Effect.orElseSucceed(() => []),
-				),
-			{ concurrency: 4 },
-		)
-		return { instances: owners.flat() }
-	},
-)
-
 /** Cloud SQL's own databases, and PostgreSQL's templates: no application queries them. */
 const SYSTEM_DATABASES = new Set(["cloudsqladmin", "template0", "template1", "postgres"])
 
@@ -258,7 +219,7 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 	)
 	const databases = Arr.filter(result.databases, (database) => !SYSTEM_DATABASES.has(database))
 	// A database whose read fails is left out; the others still show.
-	const summaries = (yield* Effect.forEach(
+	const fetched = yield* Effect.forEach(
 		databases,
 		(database) =>
 			getServiceDbQuerySummary({
@@ -271,7 +232,8 @@ export const getGcpCloudSqlTraceSide = Effect.fn("QueryEngine.getGcpCloudSqlTrac
 				},
 			}).pipe(Effect.orElseSucceed(() => null)),
 		{ concurrency: 4 },
-	)).filter((summary) => summary !== null)
+	)
+	const summaries = Arr.filter(fetched, (summary) => summary !== null)
 	return {
 		databases,
 		tracedQueries: Arr.flatMap(summaries, (summary) => summary.topQueries),

@@ -2,7 +2,7 @@ import type { OAuthReturnFlow } from "@maple/domain/http"
 import { Clock, Effect, Option, Schema } from "effect"
 import { Command } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import { STACK_PLATFORM_IDS, type StackPlatform } from "../../lib/onboarding-stack"
+import { STACK_PLATFORM_IDS, type StackPlatform } from "./onboarding-stack"
 import { browserStorage, peekOAuthReturn } from "../../platform/oauth-return-stash"
 import type { Resources } from "../../platform/resources"
 import * as Dialog from "@maple/views/ui/dialog"
@@ -133,6 +133,7 @@ const PLATFORM_OF_FLOW = {
 	supabase: "supabase",
 	github: null,
 	linear: null,
+	google: null,
 	chat_install: null,
 	chat_identity: null,
 } satisfies { readonly [K in OAuthReturnFlow]: StackPlatform | null }

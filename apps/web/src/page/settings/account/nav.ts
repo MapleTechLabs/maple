@@ -1,7 +1,6 @@
 import { accountTabValues } from "../../../route/search"
-import type { NavShellSection } from "../kit/nav-shell"
-
-// `accountNavSections`.
+import type { NavShellSection } from "../../kit/nav-shell"
+import { Array as Arr, Option } from "effect"
 
 export type AccountTab = (typeof accountTabValues)[number]
 
@@ -46,11 +45,19 @@ export const accountNavSections: ReadonlyArray<NavShellSection<AccountTab>> = [
 		id: "notifications",
 		title: "Notifications",
 		items: [
-			{ kind: "tab", id: "email-preferences", label: accountTabLabels["email-preferences"], icon: "BellIcon" },
+			{
+				kind: "tab",
+				id: "email-preferences",
+				label: accountTabLabels["email-preferences"],
+				icon: "BellIcon",
+			},
 		],
 	},
 ]
 
-/** `resolveActiveAccountTab`: every tab is visible to any signed-in user; profile by default. */
+/** Every tab is visible to any signed-in user; profile by default. */
 export const resolveActiveAccountTab = (requested: string | undefined): AccountTab =>
-	accountTabValues.find((tab) => tab === requested) ?? "profile"
+	Option.getOrElse(
+		Arr.findFirst(accountTabValues, (tab) => tab === requested),
+		(): AccountTab => "profile",
+	)

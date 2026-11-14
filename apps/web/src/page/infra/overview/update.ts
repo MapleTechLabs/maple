@@ -6,10 +6,10 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import * as Frame from "../kit/frame"
-import { liftFrame, resolveFrame, routeFrame } from "../kit/frame-step"
+import * as Frame from "../../kit/time-frame"
+import { liftFrame, resolveFrame, routeFrame } from "../../kit/time-frame-step"
 import * as InstallModal from "../kit/install-modal"
-import { seriesSteps } from "../kit/requests"
+import { seriesSteps } from "../../kit/keyed-step"
 import { FetchPresence, FetchSource } from "./command"
 import { Message } from "./message"
 import type { Model, SourceReading } from "./model"
@@ -31,7 +31,7 @@ const scopeOf = (model: Model, context: PageContext): Frame.Scope => ({
 const requestSources = (
 	model: Model,
 	context: PageContext,
-	mode: Frame.RequestMode,
+	mode: Keyed.RequestMode,
 	onlyNew = false,
 ): Return => {
 	const window = model.frame.window
@@ -55,7 +55,7 @@ const requestSources = (
 }
 
 /** The window's presence probe (a new window keeps the last answer meanwhile), then its sources. */
-const requestAll = (model: Model, context: PageContext, mode: Frame.RequestMode): Return => {
+const requestAll = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const window = model.frame.window
 	if (window === null) return { model }
 	const key = presenceKey(context.orgId, window)
@@ -87,6 +87,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			kubernetes: Keyed.idle(),
 			cloudflare: Keyed.idle(),
 			railway: Keyed.idle(),
+			vercel: Keyed.idle(),
 			supabase: Keyed.idle(),
 			planetscale: Keyed.idle(),
 			gcp: Keyed.idle(),

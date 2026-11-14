@@ -1,4 +1,7 @@
-import { errorTrendBucket } from "../../../lib/agent-sessions/tool-error-display"
+import { pickerStep } from "../../kit/page-time"
+import { chartEnvHandlers } from "@maple/views/charts/chart-env"
+import type { RequestMode } from "@maple/views/data/keyed"
+import { errorTrendBucket } from "../../kit/tools/tool-error-display"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -13,10 +16,10 @@ import type { AgentSessionToolSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import * as TimeRangePicker from "../../kit/time-range-picker"
-import { chartBucketSeconds, DEFAULT_TOOL_PRESET, toolSelection } from "../tools-kit/model"
-import type { Selection } from "../tools-kit/reads"
-import { nextSort } from "../tools-kit/table"
-import { ALL, facetValue, initFacetSelect } from "../tools-kit/toolbar"
+import { DEFAULT_TOOL_PRESET, toolSelection, toolWindowArgs } from "../../kit/tools/model"
+import type { Selection } from "../../kit/tools/reads"
+import { nextSort } from "../../kit/table-sort"
+import { ALL, type FacetKey, facetSelectStep, initFacetSelect } from "../../kit/tools/toolbar"
 import {
 	CompleteReloadSpin,
 	FetchErrors,
@@ -26,10 +29,11 @@ import {
 	FetchTotals,
 	ResolveWindow,
 } from "./command"
-import { type FacetKey, Message, type RequestMode } from "./message"
+import { Message } from "./message"
 import type { Model } from "./model"
 import * as ErrorModal from "./error-modal-model"
 import * as ErrorModalUpdate from "./error-modal-update"
+import { chartBucketSecondsBetween } from "@maple/views/lib/infra-chart-units"
 
 type Return = PageReturn<Model, Message>
 type Commands = ReadonlyArray<Command.Command<Message, never, Resources>>
@@ -64,7 +68,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 	const org = context.orgId
 	const selection = selectionOf(model, window)
 	const range = rangeOf(window)
-	const bucketSeconds = chartBucketSeconds(range.startMs, range.endMs)
+	const bucketSeconds = chartBucketSecondsBetween(range.startMs, range.endMs)
 	const errorBucket = errorTrendBucket(range.startMs, range.endMs).seconds
 	const sessionsInput = {
 		startTime: window.startTime,
@@ -117,13 +121,7 @@ const requestAll = (model: Model, context: PageContext, mode: RequestMode): Retu
 }
 
 const resolveCommand = (search: Search, context: PageContext, mode: RequestMode) =>
-	ResolveWindow({
-		mode,
-		startTime: search.startTime,
-		endTime: search.endTime,
-		preset: search.timePreset ?? DEFAULT_TOOL_PRESET,
-		timeZone: context.timeZone,
-	})
+	ResolveWindow(toolWindowArgs(search, context.timeZone, mode))
 
 const hrefFor = (toolName: string, search: Search) => hrefOf(AppRoute.AgentSessionTool({ toolName, search }))
 
@@ -165,14 +163,7 @@ export const init = (
 	}
 	return {
 		model,
-		commands: [
-			resolveCommand(search, context, "Load"),
-			Command.mapMessage(LoadChartRuntime(), (message) =>
-				message._tag === "CompletedLoadChartRuntime"
-					? Message.CompletedLoadChartRuntime()
-					: Message.FailedLoadChartRuntime({ reason: message.reason }),
-			),
-		],
+		commands: [resolveCommand(search, context, "Load"), LoadChartRuntime()],
 	}
 }
 
@@ -189,7 +180,7 @@ export const routeChanged = (
 		modelSelect: { ...model.modelSelect, value: route.search.model ?? ALL },
 		envSelect: { ...model.envSelect, value: route.search.env ?? ALL },
 	}
-	// `useEffectiveTimeRange` re-resolves only on a time change; every other change reads its new keys.
+	// The window re-resolves only on a time change; every other change reads its new keys.
 	return isSameTime(model.search, route.search)
 		? followModal(context)(requestAll(next, context, "Load"))
 		: {
@@ -208,16 +199,17 @@ export const contextChanged = (model: Model, context: PageContext): Return => ({
 	commands: [resolveCommand(model.search, context, model.refreshVersion === 0 ? "Load" : "Refresh")],
 })
 
-const facetSelectStep = (model: Model, facet: FacetKey, message: Select.Message): Return => {
-	const slot = facet === "service" ? "serviceSelect" : facet === "model" ? "modelSelect" : "envSelect"
-	const next = Select.update(model[slot], message)
-	const updated: Model = { ...model, [slot]: next.model }
-	const commands = Command.mapMessages(next.commands ?? [], (inner) =>
+const facetPicked = (model: Model, facet: FacetKey, message: Select.Message): Return => {
+	const step = facetSelectStep(model, facet, message, (inner) =>
 		Message.GotFacetSelectMessage({ facet, message: inner }),
 	)
-	return next.outMessage === undefined
-		? { model: updated, commands }
-		: { ...navigate(updated, { ...model.search, [facet]: facetValue(next.outMessage.value) }), commands }
+	return Option.match(step.picked, {
+		onNone: () => ({ model: step.model, commands: step.commands }),
+		onSome: (value) => ({
+			...navigate(step.model, { ...model.search, [facet]: value }),
+			commands: step.commands,
+		}),
+	})
 }
 
 /** The groups of the Errors read in its own order: what the modal opens on and steps through. */
@@ -272,7 +264,7 @@ const followModal =
 		}
 	}
 
-// Reload re-reads the open group's facts too (`useRefreshableAtomValue`), even under the same key.
+// Reload re-reads the open group's facts too, even under the same key.
 const detailModeOf = (message: Message): Keyed.RequestMode =>
 	message._tag === "CompletedResolveWindow" ? message.mode : "Load"
 
@@ -303,11 +295,7 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		CompletedFetchFacets: ({ key, result }) => ({
 			model: { ...model, facets: Keyed.accept(model.facets, key, result) },
 		}),
-		CompletedLoadChartRuntime: () => ({ model: { ...model, chartRuntime: { _tag: "Ready" } } }),
-		FailedLoadChartRuntime: ({ reason }) => ({
-			model: { ...model, chartRuntime: { _tag: "Failed", reason } },
-		}),
-		ResolvedThemeColors: ({ colors }) => ({ model: { ...model, themeColors: colors } }),
+		...chartEnvHandlers(model),
 		ClickedReload: () => {
 			const reloaded = { ...model, refreshVersion: model.refreshVersion + 1, isReloading: true }
 			return {
@@ -334,30 +322,24 @@ const step = (model: Model, message: Message, context: PageContext): Return =>
 		ClickedErrorRow: ({ fingerprint }) =>
 			navigate(model, { ...model.search, error: fingerprint, session: undefined, variant: undefined }),
 		ClickedErrorsSort: ({ key }) => ({
-			model: { ...model, errorsSort: nextSort(model.errorsSort, key, []) },
+			model: { ...model, errorsSort: nextSort(model.errorsSort, key) },
 		}),
 		ToggledErrorsExpanded: () => ({ model: { ...model, isErrorsExpanded: !model.isErrorsExpanded } }),
-		GotFacetSelectMessage: ({ facet, message: inner }) => facetSelectStep(model, facet, inner),
+		GotFacetSelectMessage: ({ facet, message: inner }) => facetPicked(model, facet, inner),
 		GotTimePickerMessage: ({ message: inner }) => {
-			const next = TimeRangePicker.update(model.timePicker, inner)
-			const lifted: Return = {
-				model: { ...model, timePicker: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (picker) =>
-					Message.GotTimePickerMessage({ message: picker }),
-				),
-			}
-			return next.outMessage === undefined || next.outMessage._tag === "RejectedRange"
-				? lifted
-				: {
-						...lifted,
-						outMessage: PageOutMessage.RequestedNavigation({
-							url: hrefFor(model.toolName, {
-								...model.search,
-								...TimeRangePicker.searchPatchOf(next.outMessage),
-							}),
-							isReplace: false,
+			return pickerStep(
+				model,
+				inner,
+				(picker) => Message.GotTimePickerMessage({ message: picker }),
+				(patch) =>
+					PageOutMessage.RequestedNavigation({
+						url: hrefFor(model.toolName, {
+							...model.search,
+							...patch,
 						}),
-					}
+						isReplace: false,
+					}),
+			)
 		},
 		GotChartMessage: ({ chartId, message: inner }) => {
 			const current = Option.getOrElse(Record.get(model.charts, chartId), () => Chart.init())

@@ -7,12 +7,14 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import type { DateTime } from "effect"
 import { param, from } from "@maple-dev/effect-orm/clickhouse"
 import type { CHQuery, ColumnDefs, ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
-import { CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
-import { ScannerRequests, ServiceRuntimesHourly, orgIdParam, utcSecondsParam } from "../tables"
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import { AUTONOMOUS_SCANNER_NAMES, CRITICAL_PROBE_SIGNATURES } from "@maple/domain/security-telemetry"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam, utcSecondsParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 import { Array as Arr } from "effect"
 
-type ScannerAccessor = ColumnAccessor<typeof ScannerRequests.columns>
+type ScannerAccessor = ColumnAccessor<typeof Datasources.scannerRequests.columns>
 
 function scannerWhere($: ScannerAccessor) {
 	return [
@@ -39,8 +41,8 @@ export interface ScannerSignaturesOutput {
 export const SCANNER_SIGNATURES_MAX_ROWS = 5000
 
 /** Requests per probe signature and service. Bounded: a few dozen signatures per service. */
-export function scannerSignaturesQuery(): CHQuery<ColumnDefs, ScannerSignaturesOutput, {}> {
-	return from(ScannerRequests)
+export function scannerSignaturesQuery(): CHQuery<ColumnDefs, ScannerSignaturesOutput> {
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			signature: $.Signature,
 			service: $.ServiceName,
@@ -75,8 +77,8 @@ export interface ScannerExposedOutput {
 /** Probes on a critical signature that the service answered with a 2xx: the paths to check now. */
 export function scannerExposedQuery(
 	opts: ScannerExposedOpts = {},
-): CHQuery<ColumnDefs, ScannerExposedOutput, {}> {
-	return from(ScannerRequests)
+): CHQuery<ColumnDefs, ScannerExposedOutput> {
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			service: $.ServiceName,
 			host: $.Host,
@@ -113,13 +115,27 @@ export interface ScannerSourcesOutput {
 	readonly scanner: string
 	readonly userAgent: string
 	readonly lastSeen: DateTime.Utc
+	/** The autonomous agent the source named, `''` for none; `scanner` alone could hide it. */
+	readonly agent: string
+	/** Distinct `Signature`s the source sent, `''` included; bounded by the probe catalog. */
+	readonly probed: ReadonlyArray<string>
+	/** Distinct traces refused with 401, 403 or 429. */
+	readonly denied: number
+	/** Seconds from the first refused request to the last 2xx or 3xx; read only when `denied` > 0. */
+	readonly passedDenialSeconds: number
 }
 
-/** The busiest sources. Spans without a client address are left out. */
+/** A 2xx or 3xx: the request got through, unlike a 404 that only missed. */
+const servedOrRedirected = ($: ScannerAccessor) => $.HttpStatus.gte(200).and($.HttpStatus.lt(400))
+
+const isDenied = ($: ScannerAccessor) =>
+	CH.or($.HttpStatus.eq(401), $.HttpStatus.eq(403), $.HttpStatus.eq(429))
+
+/** Autonomous agents first, so the row cap cannot drop one, then the busiest. No address, no row. */
 export function scannerSourcesQuery(
 	opts: ScannerSourcesOpts = {},
-): CHQuery<ColumnDefs, ScannerSourcesOutput, {}> {
-	return from(ScannerRequests)
+): CHQuery<ColumnDefs, ScannerSourcesOutput> {
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			clientAddress: $.ClientAddress,
 			requests: CH.uniq($.TraceId),
@@ -128,10 +144,25 @@ export function scannerSourcesQuery(
 			// From the row holding that scanner name, so the pair belongs together.
 			userAgent: CH.argMax($.UserAgent, $.Scanner),
 			lastSeen: CH.max_($.Timestamp),
+			agent: CH.compileTypedFnCall(
+				"maxIf",
+				T.string.schema,
+				$.Scanner,
+				CH.inList($.Scanner, AUTONOMOUS_SCANNER_NAMES),
+			),
+			probed: CH.groupUniqArray($.Signature),
+			denied: CH.uniqIf($.TraceId, isDenied($)),
+			passedDenialSeconds: CH.compileTypedFnCall(
+				"dateDiff",
+				T.int64.schema,
+				CH.lit("second"),
+				CH.compileFnCall<DateTime.Utc>("minIf", $.Timestamp, isDenied($)),
+				CH.compileFnCall<DateTime.Utc>("maxIf", $.Timestamp, servedOrRedirected($)),
+			),
 		}))
 		.where(($) => [...scannerWhere($), $.ClientAddress.neq("")])
 		.groupBy("clientAddress")
-		.orderBy(["requests", "desc"], ["clientAddress", "asc"])
+		.orderBy(["agent", "desc"], ["requests", "desc"], ["clientAddress", "asc"])
 		.limit(opts.limit ?? 20)
 		.format("JSON")
 }
@@ -151,9 +182,9 @@ export interface ScannerTimelineOutput {
 
 export function scannerTimelineQuery(
 	opts: ScannerTimelineOpts = {},
-): CHQuery<ColumnDefs, ScannerTimelineOutput, {}> {
+): CHQuery<ColumnDefs, ScannerTimelineOutput> {
 	const bucketSeconds = opts.bucketSeconds ?? 3600
-	return from(ScannerRequests)
+	return from(Datasources.scannerRequests)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, bucketSeconds),
 			requests: CH.uniq($.TraceId),
@@ -181,9 +212,9 @@ export interface RuntimeVersionsOutput {
 }
 
 /** Each service's runtime and SDK versions seen in the window, one row per combination. */
-export function runtimeVersionsQuery(): CHQuery<ColumnDefs, RuntimeVersionsOutput, {}> {
+export function runtimeVersionsQuery(): CHQuery<ColumnDefs, RuntimeVersionsOutput> {
 	return (
-		from(ServiceRuntimesHourly)
+		from(Datasources.serviceRuntimesHourly)
 			.select(($) => ({
 				service: $.ServiceName,
 				environment: $.DeploymentEnv,

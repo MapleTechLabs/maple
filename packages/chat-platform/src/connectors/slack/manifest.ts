@@ -6,10 +6,9 @@ import { SLACK_CONNECTOR_ID } from "./id"
  * this module must stay free of anything that pulls the connector's runtime (the install flow, its
  * HTTP client, its outbound Web API calls).
  *
- * No settings fields. The one setting the other connector carries names an approver role, and
- * Slack's interaction payload reports no roles and no administrator flag for whoever pressed a
- * button — so a field here would ask an admin to configure something nothing can enforce. See this
- * directory's README.
+ * No settings fields. Slack's interaction payload reports no roles and no administrator flag for
+ * whoever pressed a button, so an approver-role field would ask an admin to configure something
+ * nothing can enforce. See this directory's README.
  */
 export const slackManifest: ChatConnectorManifest = {
 	id: SLACK_CONNECTOR_ID,
@@ -37,7 +36,7 @@ export const slackManifest: ChatConnectorManifest = {
 		],
 	},
 	// Slack's aubergine on light; on the dark card the aubergine is darker than the card itself,
-	// so the same hue lifted to stay visible (the dashboard's `SLACK_ACCENT`).
+	// so the same hue lifted to stay visible.
 	accent: "light-dark(#4A154B, #AD51A7)",
 	settingsFields: [],
 }

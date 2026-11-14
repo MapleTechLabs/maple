@@ -4,13 +4,13 @@
  */
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Array as Arr, Option, Schema } from "effect"
 import {
 	ProposeFixOutput,
 	TransitionErrorIssueOutput,
 	TransitionErrorIssuesOutput,
 } from "@maple/domain/mcp-outputs"
-import { executeSql } from "@maple/backend/platform/test-pglite"
+import { executeSql } from "@maple/backend/testing/test-pglite"
 import { makeEvalRuntime, runToolDirect, markdown, type EvalRuntime } from "./eval-runtime"
 import { installFakeWarehouse, restoreWarehouse } from "./fake-warehouse"
 import { FIXTURES } from "./utils"
@@ -78,15 +78,15 @@ describe("transition_error_issues", () => {
 		const output = Schema.decodeUnknownSync(TransitionErrorIssuesOutput)(result.structuredContent)
 		expect(output.succeeded).toBe(2)
 		expect(output.failed).toBe(2)
-		expect(output.results.find((r) => r.id === a)).toMatchObject({
+		const resultFor = (id: string) =>
+			Option.getOrUndefined(Arr.findFirst(output.results, (r) => r.id === id))
+		expect(resultFor(a)).toMatchObject({
 			ok: true,
 			fromState: "triage",
 			workflowState: "in_progress",
 		})
-		expect(output.results.find((r) => r.id === MISSING_ISSUE)?.ok).toBe(false)
-		expect(output.results.find((r) => r.id === "11640295108927840024")?.error).toContain(
-			"list_error_issues",
-		)
+		expect(resultFor(MISSING_ISSUE)?.ok).toBe(false)
+		expect(resultFor("11640295108927840024")?.error).toContain("list_error_issues")
 		expect(markdown(result)).toContain(MISSING_ISSUE)
 	})
 

@@ -4,9 +4,7 @@ import { AsyncData } from "foldkit"
 import type { TimeWindow } from "../../../../data/time-range"
 import type { ServiceWorkload } from "../lens/rail"
 import type { Model } from "./model"
-import { Array as Arr, String as Str } from "effect"
-
-// Pure derivations of `LensBody`.
+import { Array as Arr, String as Str, Option } from "effect"
 
 export type LinkedWorkload = Readonly<{
 	workloadKind: "deployment" | "statefulset" | "daemonset"
@@ -16,11 +14,13 @@ export type LinkedWorkload = Readonly<{
 	podCount: number
 }>
 
-/** `firstLinkedWorkload`: the first row with a kind the downstream queries accept. */
+/** The first row with a kind the downstream queries accept. */
 export const linkedWorkload = (model: Model): LinkedWorkload | null => {
 	const rows: ReadonlyArray<ServiceWorkload> = AsyncData.getOrElse(model.linked.data, () => [])
-	const found = rows.find((row) => row.workloadKind !== "unknown")
-	if (found === undefined || found.workloadKind === "unknown") return null
+	const match = Arr.findFirst(rows, (row) => row.workloadKind !== "unknown")
+	if (Option.isNone(match)) return null
+	const found = match.value
+	if (found.workloadKind === "unknown") return null
 	return {
 		workloadKind: found.workloadKind,
 		workloadName: found.workloadName,

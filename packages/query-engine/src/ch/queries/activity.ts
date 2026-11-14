@@ -17,9 +17,11 @@
 // The discovery window must be a SUPERSET of the per-org scan window so no
 // active org is missed for the tick.
 
+import * as CH from "@maple-dev/effect-orm/expr"
 import { from } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/domain"
-import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly, utcSecondsParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { utcSecondsParam } from "../tables"
 
 /** The `OrgId` brand comes off the tables' branded `OrgId` column — the
  *  derived row schema carries it, so no declared schema is needed. */
@@ -27,11 +29,15 @@ export interface ActiveOrgsOutput {
 	readonly orgId: OrgId
 }
 
-/** Orgs with any error events since `startTime` (gates the error-issue detector). */
+/**
+ * Orgs with any error events since `startTime` (gates the error-issue detector).
+ * Reads the per-minute fingerprint rollup the detector itself scans, not one row
+ * per error event; the floored bound keeps the window a superset.
+ */
 export function activeOrgsByErrorEventsQuery() {
-	return from(ErrorEventsByTime)
+	return from(Datasources.errorFingerprintsMinutely)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Timestamp.gte(utcSecondsParam("startTime"))])
+		.where(($) => [$.Minute.gte(CH.toStartOfMinute(CH.toDateTime(utcSecondsParam("startTime"))))])
 		.groupBy("orgId")
 		.format("JSON")
 		.route("ingest")
@@ -40,7 +46,7 @@ export function activeOrgsByErrorEventsQuery() {
 
 /** Orgs with any span aggregates since `startTime` (gates the anomaly detector). */
 export function activeOrgsByTracesQuery() {
-	return from(TracesAggregatesHourly)
+	return from(Datasources.tracesAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
 		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")
@@ -51,7 +57,7 @@ export function activeOrgsByTracesQuery() {
 
 /** Orgs with any log aggregates since `startTime` (gates the anomaly detector). */
 export function activeOrgsByLogsQuery() {
-	return from(LogsAggregatesHourly)
+	return from(Datasources.logsAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
 		.where(($) => [$.Hour.gte(utcSecondsParam("startTime"))])
 		.groupBy("orgId")

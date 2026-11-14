@@ -1,5 +1,5 @@
-import { formatCores } from "../../../../components/infra/format"
-import { shareOfLimit } from "../../../../components/infra/railway/format"
+import { formatCores } from "../../../infra/kit/format"
+import { shareOfLimit } from "../format"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -20,9 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { AppRoute, hrefOf } from "../../../../route"
-import { pickTimeSearch } from "../../../infra/kit/view-tabs"
-
-// `RailwayServicePage`.
+import { pickTimeSearch } from "../../../kit/view-tabs"
 
 type H = HtmlBuilder<Message>
 
@@ -68,11 +66,10 @@ const CHARTS: ReadonlyArray<MetricChart<RailwayServiceTimeseriesRow>> = [
 export const serviceOf = (model: Model): RailwayServiceRow | null =>
 	Option.getOrNull(
 		Option.flatMap(AsyncData.getData(model.services.data), (rows) =>
-			Option.fromNullishOr(
-				rows.find(
-					(row) =>
-						row.serviceId === model.serviceId && row.environmentId === model.search.environmentId,
-				),
+			Arr.findFirst(
+				rows,
+				(row) =>
+					row.serviceId === model.serviceId && row.environmentId === model.search.environmentId,
 			),
 		),
 	)

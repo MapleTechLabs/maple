@@ -1,30 +1,34 @@
 import { allowedTransitionsForAll, type ErrorIssueDocument, type WorkflowState } from "@maple/domain/http"
-import { agentPromptFromIssue } from "../../../components/errors/agent-debug-prompt"
+import { agentPromptFromIssue } from "../kit/agent-debug-prompt"
 import { Command, type Update } from "foldkit"
 import type { HtmlBuilder } from "foldkit/html"
 import * as ContextMenu from "@maple/views/ui/context-menu"
 import type * as ContextMenuView from "@maple/views/ui/context-menu-view"
 import { icon } from "@maple/views/ui/icon"
 import type { PageReturn } from "../../contract"
-import { WORKFLOW_LABEL, workflowRingIcon } from "../kit/workflow"
+import { WORKFLOW_LABEL, workflowRingIcon } from "../../kit/issue-workflow"
 import { CopyRowText, OpenInNewTab } from "./command"
 import { signalsOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { startHubWrite } from "./selection"
-import { Array as Arr } from "effect"
-
-// The issue context menu: a row's right-click menu.
+import { canTriageIssues } from "../kit/grants"
+import { Array as Arr, Option } from "effect"
 
 type Return = PageReturn<Model, Message>
 
 /** What each top-level entry does, in entry order (the submenu and separator do nothing themselves). */
 type Action = "submenu" | "separator" | "claim" | "release" | "open" | "copy-link" | "copy-id" | "copy-prompt"
 
-const actionsOf = (issue: ErrorIssueDocument): ReadonlyArray<Action> => [
-	"submenu",
-	...(issue.leaseHolder === null ? ["claim" as const] : ["release" as const]),
-	"separator",
+/** Changing status, claiming and releasing are triage: without it the menu opens and copies. */
+const actionsOf = (issue: ErrorIssueDocument, canTriage: boolean): ReadonlyArray<Action> => [
+	...(canTriage
+		? [
+				"submenu" as const,
+				issue.leaseHolder === null ? ("claim" as const) : ("release" as const),
+				"separator" as const,
+			]
+		: []),
 	"open",
 	"copy-link",
 	"copy-id",
@@ -46,10 +50,11 @@ const targetsOf = (issue: ErrorIssueDocument): ReadonlyArray<WorkflowState> =>
 export const rowMenuEntries = <M>(
 	h: HtmlBuilder<M>,
 	issue: ErrorIssueDocument,
+	canTriage: boolean,
 ): ReadonlyArray<ContextMenuView.Entry> => {
 	const targets = targetsOf(issue)
 	const current = issue.workflowState
-	return Arr.map(actionsOf(issue), (action): ContextMenuView.Entry => {
+	return Arr.map(actionsOf(issue, canTriage), (action): ContextMenuView.Entry => {
 		switch (action) {
 			case "separator":
 				return { _tag: "Separator" }
@@ -100,7 +105,10 @@ export const rowMenuEntries = <M>(
 }
 
 const issueOf = (model: Model, id: string) =>
-	signalsOf(model).find((signal) => signal.id === id)?.issue ?? null
+	Arr.findFirst(signalsOf(model), (signal) => signal.id === id).pipe(
+		Option.flatMapNullishOr((found) => found.issue),
+		Option.getOrNull,
+	)
 
 /** A right-press on a row: the menu moves to that row, opened at the pointer. */
 export const pressedRowPointer = (model: Model, id: string, point: ContextMenu.Point): Return => ({
@@ -130,7 +138,9 @@ export const rowMenuStep = (model: Model, message: ContextMenu.Message): Return 
 		...step,
 		commands: [...lifted.commands, ...(step.commands ?? [])],
 	})
+	const canTriage = canTriageIssues(model)
 	if (next.outMessage._tag === "SelectedSubItem") {
+		if (!canTriage) return lifted
 		// The first row is the current state, disabled; moves follow it.
 		const toState = targetsOf(issue)[next.outMessage.index - 1]
 		return toState === undefined
@@ -138,7 +148,7 @@ export const rowMenuStep = (model: Model, message: ContextMenu.Message): Return 
 			: done(startHubWrite(lifted.model, [issue.id], { _tag: "Transition", toState }, false))
 	}
 	const href = `/errors/issues/${issue.id}`
-	switch (actionsOf(issue)[next.outMessage.index]) {
+	switch (actionsOf(issue, canTriage)[next.outMessage.index]) {
 		case "claim":
 			return done(startHubWrite(lifted.model, [issue.id], { _tag: "Claim" }, false))
 		case "release":

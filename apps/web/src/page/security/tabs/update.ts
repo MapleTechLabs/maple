@@ -1,10 +1,12 @@
+import * as Policy from "@maple/domain/policy"
 import type { SecurityAuditRun } from "@maple/domain/http"
 import type { SecurityAuditTargetId } from "@maple/domain/security-audit"
 import { Result, Array as Arr, String as Str } from "effect"
 import { Command } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
-import { isClerkAuthEnabled } from "../../../lib/services/common/auth-mode"
+import { integrationStatusKey } from "../../kit/integration-status-keys"
+import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import { AppRoute, hrefOf } from "../../../route"
 import type { SecurityFindingsSearch, SecurityRunsSearch } from "../../../route/search"
 import * as Select from "@maple/views/ui/select"
@@ -23,7 +25,7 @@ import {
 	FetchTargets,
 	WaitSecuritySearchDebounce,
 	ReadSecurityClock,
-	ReadSecurityIsAdmin,
+	ReadSecurityGrants,
 	StartRun,
 } from "./command"
 import {
@@ -33,7 +35,6 @@ import {
 	runningRuns,
 	runsOf,
 	settingsOf,
-	STATUS_TABS,
 	targetsOf,
 } from "./derive"
 import { Message, type Model, type Tab } from "./model"
@@ -51,17 +52,12 @@ const toast = (type: "success" | "error", title: string, description = "") =>
 const tabOfRoute = (route: SecurityTabsRoute): Tab =>
 	route._tag === "SecurityCode" ? "overview" : route._tag === "SecurityCodeFindings" ? "findings" : "runs"
 
-// SELECTS
-
 /** Keeps the selects' closed value on the URL's, without closing an open one. */
 const withSelectValues = (model: Model): Model => ({
 	...model,
-	statusSelect: { ...model.statusSelect, value: model.findingsSearch.status ?? "open" },
 	targetSelect: { ...model.targetSelect, value: model.findingsSearch.target ?? "all" },
 	runsTargetSelect: { ...model.runsTargetSelect, value: model.runsSearch.target ?? "all" },
 })
-
-// READS
 
 const keyOf = (context: PageContext, operation: string, input: unknown = {}) =>
 	requestKey(context.orgId, `securityAudit.${operation}`, input)
@@ -101,7 +97,7 @@ const readGithubStatus = (model: Model, context: PageContext): Return =>
 		model,
 		model.githubStatus,
 		(githubStatus) => ({ githubStatus }),
-		requestKey(context.orgId, "integrations.githubStatus", {}),
+		integrationStatusKey(context.orgId, "github"),
 		"Load",
 		(key) => FetchGithubStatus({ key }),
 	)
@@ -114,7 +110,7 @@ const readFindings = (
 ): Return =>
 	slotStep(
 		model,
-		model.findings[targetId] ?? Keyed.idle(),
+		Keyed.at(model.findings, targetId),
 		(slot) => ({ findings: { ...model.findings, [targetId]: slot } }),
 		keyOf(context, "listFindings", { targetId }),
 		mode,
@@ -129,7 +125,7 @@ const readTargetRuns = (
 ): Return =>
 	slotStep(
 		model,
-		model.targetRuns[targetId] ?? Keyed.idle(),
+		Keyed.at(model.targetRuns, targetId),
 		(slot) => ({ targetRuns: { ...model.targetRuns, [targetId]: slot } }),
 		keyOf(context, "listRuns", { targetId }),
 		mode,
@@ -144,7 +140,7 @@ const readLatestRun = (
 ): Return =>
 	slotStep(
 		model,
-		model.latestRuns[run.id] ?? Keyed.idle(),
+		Keyed.at(model.latestRuns, run.id),
 		(slot) => ({ latestRuns: { ...model.latestRuns, [run.id]: slot } }),
 		keyOf(context, "getRun", { runId: run.id }),
 		mode,
@@ -198,12 +194,9 @@ const afterWrite = (model: Model, context: PageContext): Return =>
 		),
 	])
 
-/** Each target once, in first-seen order. */
 const uniqueTargets = (runs: ReadonlyArray<SecurityAuditRun>): ReadonlyArray<SecurityAuditTargetId> => [
 	...new Set(Arr.map(runs, (run) => run.targetId)),
 ]
-
-// ENTRY
 
 const searchesOf = (route: SecurityTabsRoute, model?: Model) => ({
 	findingsSearch: route._tag === "SecurityCodeFindings" ? route.search : (model?.findingsSearch ?? {}),
@@ -216,7 +209,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		tab: tabOfRoute(route),
 		...searches,
 		nowMs: 0,
-		isAdmin: !isClerkAuthEnabled,
+		grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 		targets: Keyed.idle(),
 		runs: Keyed.idle(),
 		targetRuns: {},
@@ -229,7 +222,6 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		startingTargetId: null,
 		searchDraft: searches.findingsSearch.q ?? "",
 		searchGeneration: 0,
-		statusSelect: Select.init("security-status", { value: "open", selectedIndex: 0 }),
 		targetSelect: Select.init("security-target", { value: "all", selectedIndex: 0 }),
 		runsTargetSelect: Select.init("security-runs-target", { value: "all", selectedIndex: 0 }),
 		// Disproved findings start folded, unless the URL asked to show them.
@@ -245,7 +237,7 @@ export const init = (route: SecurityTabsRoute, context: PageContext): Return => 
 		...loaded,
 		commands: [
 			ReadSecurityClock(),
-			...(isClerkAuthEnabled ? [ReadSecurityIsAdmin()] : []),
+			...(isClerkAuthEnabled ? [ReadSecurityGrants()] : []),
 			...(loaded.commands ?? []),
 		],
 	}
@@ -275,8 +267,6 @@ export const routeChanged = (model: Model, route: SecurityTabsRoute, _context: P
 		}),
 	}
 }
-
-// NAVIGATION
 
 const draftQuery = (draft: string): string | undefined => Str.trim(draft) || undefined
 
@@ -325,8 +315,6 @@ const runsTargetChanged = (model: Model, value: string): Return => {
 	return navigate(model, hrefOf(AppRoute.SecurityCodeRuns({ search })))
 }
 
-// ADD TARGET
-
 const addTargetStep = (model: Model, message: AddTarget.Message, context: PageContext): Return => {
 	const step = AddTarget.update(model.addTarget, message, activeRepositoriesOf(model))
 	const next: Return = {
@@ -372,8 +360,6 @@ const addTargetStep = (model: Model, message: AddTarget.Message, context: PageCo
 	})
 }
 
-// SPEND & MODELS
-
 const spendSettingsStep = (model: Model, message: SpendSettings.Message, context: PageContext): Return => {
 	const step = SpendSettings.update(model.spendSettings, message)
 	const next: Return = {
@@ -393,12 +379,10 @@ const spendSettingsStep = (model: Model, message: SpendSettings.Message, context
 	}
 }
 
-// UPDATE
-
 export const update = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		ReadClock: ({ nowMs }) => ({ model: { ...model, nowMs } }),
-		CompletedReadIsAdmin: ({ isAdmin }) => ({ model: { ...model, isAdmin } }),
+		CompletedReadGrants: ({ grants }) => ({ model: { ...model, grants } }),
 		CompletedFetchTargets: ({ key, result }) => {
 			const next: Model = { ...model, targets: Keyed.accept(model.targets, key, result) }
 			return chain(followTargets(next, context, "Load"), (updated) =>
@@ -559,23 +543,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const { q: _q, ...rest } = model.findingsSearch
 			return navigate(model, findingsUrl(q === undefined ? rest : { ...rest, q }), true)
 		},
-		GotStatusSelectMessage: ({ message: inner }) =>
-			selectStep(
-				model,
-				model.statusSelect,
-				inner,
-				(statusSelect) => ({ statusSelect }),
-				(next) => Message.GotStatusSelectMessage({ message: next }),
-				(updated, value) => {
-					const { status: _status, ...rest } = searchWithDraft(updated)
-					const status = STATUS_TABS.find((tab) => tab === value)
-					// Open is the default, so the URL only carries another status.
-					return navigate(
-						updated,
-						findingsUrl(status === undefined || status === "open" ? rest : { ...rest, status }),
-					)
-				},
-			),
+		PickedStatus: ({ status }) => {
+			const { status: _status, ...rest } = searchWithDraft(model)
+			// Open is the default, so the URL only carries another status.
+			return navigate(model, findingsUrl(status === "open" ? rest : { ...rest, status }))
+		},
 		GotTargetSelectMessage: ({ message: inner }) =>
 			selectStep(
 				model,

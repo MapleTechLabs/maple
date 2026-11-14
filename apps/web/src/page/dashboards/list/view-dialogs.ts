@@ -4,8 +4,6 @@ import { displayName } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 
-// The list's `ConfirmDialog` (delete); the tag editor is `kit/tag-editor.ts`.
-
 type H = HtmlBuilder<Message>
 
 /** "Delete “name”?", pending until the delete answers. */

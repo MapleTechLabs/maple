@@ -3,7 +3,7 @@ import { label } from "@maple/views/ui/label"
 import * as OtpField from "@maple/views/ui/otp-field"
 import { Array as Arr } from "effect"
 
-// `CodeField`: six digits for an email or TOTP code. Slot one carries the field's name through a real label;
+// Six digits for an email or TOTP code. Slot one carries the field's name through a real label;
 // the others name their position.
 
 const SLOTS = [0, 1, 2, 3, 4, 5]

@@ -1,5 +1,5 @@
 import type { V2ChatConnector } from "@maple/domain/http/v2"
-import { ChatConnectorId, type ChatWorkspaceId } from "@maple/domain/primitives"
+import { ChatConnectorId, type ChatWorkspaceId } from "@maple/primitives"
 import { Option, Schema, Array as Arr } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 
@@ -14,7 +14,7 @@ export const ChatConnectAttempt = Schema.Struct({
 	/** Workspaces that existed when the popup opened; anything else listed later is the new link. */
 	knownIds: Schema.Array(Schema.String),
 	phase: Schema.Literals(["popup", "grace"]),
-	/** The install mutation is in flight (`flow.busy`). */
+	/** The install request is in flight. */
 	isStarting: Schema.Boolean,
 })
 export type ChatConnectAttempt = typeof ChatConnectAttempt.Type
@@ -45,7 +45,7 @@ const settled = (model: Model, isRefetching = false, toast: Option.Option<Toast>
 	toast,
 })
 
-/** `connect(connector)`: a new attempt, remembering the workspaces already linked. */
+/** A new attempt, remembering the workspaces already linked. */
 export const start = (model: Model, connector: V2ChatConnector): Model => {
 	const attempt = model.attempts + 1
 	return {
@@ -62,7 +62,7 @@ export const start = (model: Model, connector: V2ChatConnector): Model => {
 }
 
 /**
- * `waitingFor` (`flow.busy || flow.popupActive`): the connector being installed, its popup out or
+ * The connector being installed, its popup out or
  * in the close grace (Slack's consent page severs the opener, so the popup reads closed early).
  */
 export const waitingFor = (model: Model): ChatConnectorId | null => model.active?.connector ?? null
@@ -80,7 +80,7 @@ export const update = (model: Model, message: Message): Step =>
 		SucceededStart: ({ attempt }) =>
 			Option.match(current(model, attempt), {
 				onNone: () => settled(model),
-				// The install mutation's `reactivityKeys: ["chatIntegration"]` re-read the connectors.
+				// A finished install re-reads the connectors.
 				onSome: (active) => settled(patch(model, active, { isStarting: false }), true),
 			}),
 		FailedStart: ({ attempt, description }) =>
@@ -104,7 +104,7 @@ export const update = (model: Model, message: Message): Step =>
 						}),
 					),
 			}),
-		// `onPoll` and `onClosed` both re-read the list; the answer is checked by `linkedOf`.
+		// A poll and a close both re-read the list; `linkedOf` checks the answer.
 		Polled: ({ attempt }) => settled(model, Option.isSome(current(model, attempt))),
 		ClosedPopup: ({ attempt }) =>
 			Option.match(current(model, attempt), {
@@ -125,14 +125,14 @@ export const linkedOf = (
 ): Option.Option<LinkedWorkspace> =>
 	Option.flatMap(Option.fromNullishOr(model.active), (active) =>
 		Option.map(
-			Option.fromNullishOr(
-				connectors
-					.find((entry) => entry.id === active.connector)
-					?.workspaces.find((workspace) => !active.knownIds.includes(workspace.id)),
+			Option.flatMap(
+				Arr.findFirst(connectors, (entry) => entry.id === active.connector),
+				(entry) =>
+					Arr.findFirst(entry.workspaces, (workspace) => !active.knownIds.includes(workspace.id)),
 			),
 			(workspace) => ({ connector: active.connector, id: workspace.id, name: workspace.name }),
 		),
 	)
 
-/** The attempt ended on purpose (`closePopup`): dropping it releases, and so closes, the popup. */
+/** The attempt ended on purpose: dropping it releases, and so closes, the popup. */
 export const finish = (model: Model): Model => ({ ...model, active: null })

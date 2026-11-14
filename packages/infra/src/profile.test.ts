@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { parseMapleDeployment } from "./cloudflare/stage.ts"
-import { resolveMapleProfile } from "./profile.ts"
+import { parseMapleDeployment, resolveMapleDomains } from "./cloudflare/stage.ts"
+import { deployedDomains, resolveMapleProfile } from "./profile.ts"
 import { Array as Arr, Record as Rec } from "effect"
 
 const profile = (raw: string) => resolveMapleProfile(parseMapleDeployment(raw))
@@ -48,5 +48,34 @@ describe("resolveMapleProfile", () => {
 			"dev-alice": "none",
 			"dev-alice-eu": "none",
 		})
+	})
+
+	it("forces the collector for one deploy only where the gateway runs", () => {
+		const pr = parseMapleDeployment("pr-12")
+		expect(resolveMapleProfile(pr, { forceCollector: true }).deploys.collector).toBe(true)
+		const web = resolveMapleProfile(pr, { webOnlyPreview: true, forceCollector: true })
+		expect(web.deploys.collector).toBe(false)
+	})
+})
+
+describe("deployedDomains", () => {
+	it("hands a `preview:web` PR no hostname for the services it skips", () => {
+		const pr = parseMapleDeployment("pr-12")
+		const web = resolveMapleProfile(pr, { webOnlyPreview: true })
+		const all = resolveMapleDomains(pr)
+		expect(deployedDomains(all, web)).toEqual({
+			web: all.web,
+			api: all.api,
+			sync: all.sync,
+			status: all.status,
+		})
+	})
+
+	it("keeps every hostname of a deployment that runs everything", () => {
+		for (const raw of ["prd", "prd-eu", "pr-12"]) {
+			const deployment = parseMapleDeployment(raw)
+			const domains = resolveMapleDomains(deployment)
+			expect(deployedDomains(domains, resolveMapleProfile(deployment))).toEqual(domains)
+		}
 	})
 })

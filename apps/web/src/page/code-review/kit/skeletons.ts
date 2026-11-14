@@ -9,9 +9,6 @@ import { skeleton, skeletonMeterClass, skeletonSlowNote } from "@maple/views/ui/
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRail, statRailItem, type StatRailColumns } from "../../kit/stat-rail"
-import { manageAccessLink } from "../settings/repositories"
-import { HEADLINE_LABELS, SECONDARY_LABELS } from "../analytics/view-stats"
-import { CI_HEADLINE_LABELS } from "../ci/view-stats"
 import { analyticsPanel } from "./analytics-panel"
 import { section } from "./parts"
 import { SHEET_STAT_LABELS } from "./review-sheet-sections"
@@ -19,6 +16,7 @@ import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { Array as Arr, Record as Rec } from "effect"
+import { dividedList } from "@maple/views/ui/rule"
 
 // Loading states for code review, drawn in the real panels, headers and row geometry: labels and
 // titles that don't depend on the data render for real, so only the values swap in.
@@ -52,7 +50,11 @@ const busy = <M>(h: HtmlBuilder<M>, label: string, body: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [body, slowNote(h)])
 
 /** A busy page: the slow-load note sits under its first block, where a reader is looking. */
-export const busyPage = <M>(h: HtmlBuilder<M>, label: string, [first, ...rest]: ReadonlyArray<Html>): Html =>
+export const busyPage = <M>(
+	h: HtmlBuilder<M>,
+	label: string,
+	[first, ...rest]: Arr.NonEmptyReadonlyArray<Html>,
+): Html =>
 	vstack(h, { gap: "6", attributes: [h.AriaBusy(true), h.AriaLabel(label)] }, [
 		h.div([h.Class("relative")], [first, slowNote(h)]),
 		...rest,
@@ -99,7 +101,7 @@ export const tableSkeleton = <M>(
 									? h.span([h.Class("sr-only")], [column.label])
 									: column.label,
 							],
-							cn(column.head, column.align === "right" && "text-right", "font-normal"),
+							cn(column.head, column.align === "right" && "text-right"),
 						),
 					),
 				),
@@ -268,8 +270,9 @@ export const findingsListSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		h,
 		"Loading issues",
 		panel(h, {}, [
-			h.ul(
-				[h.Class("divide-y")],
+			dividedList(
+				h,
+				{ as: "ul", bordered: false },
 				rows(ROWS, (index) =>
 					listRow(h, {
 						as: "li",
@@ -341,20 +344,15 @@ const chartCard = <M>(
 const repositoryRows = <M>(h: HtmlBuilder<M>, title: string): Html =>
 	vstack(h, { gap: "2" }, [
 		typography(h, { size: "xs", tone: "muted" }, [title]),
-		h.ul(
-			[h.Class("flex flex-col")],
+		vstack(
+			h,
+			{ as: "ul" },
 			rows(5, (index) =>
-				h.li(
-					[h.Class("flex h-8 items-center gap-2.5 py-1.5")],
-					[
-						bar(h, "size-4 shrink-0 rounded-full"),
-						h.span(
-							[h.Class("min-w-0 flex-1")],
-							[bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))],
-						),
-						bar(h, "h-3 w-6"),
-					],
-				),
+				hstack(h, { gap: "2.5", align: "center", as: "li", className: "h-8 py-1.5" }, [
+					bar(h, "size-4 shrink-0 rounded-full"),
+					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index + 1)))]),
+					bar(h, "h-3 w-6"),
+				]),
 			),
 		),
 	])
@@ -367,8 +365,9 @@ const barListCard = <M>(h: HtmlBuilder<M>, title: string): Html =>
 			{ gap: "2.5", as: "ul" },
 			rows(4, (index) =>
 				vstack(h, { gap: "1", as: "li" }, [
-					h.span(
-						[h.Class("flex h-5 items-center justify-between gap-2")],
+					hstack(
+						h,
+						{ gap: "2", align: "center", justify: "between", as: "span", className: "h-5" },
 						[bar(h, cn("h-3", pick(META_WIDTHS, index))), bar(h, "h-3 w-6")],
 					),
 					bar(h, skeletonMeterClass()),
@@ -382,9 +381,9 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		table(h, { size: "sm", variant: "bare" }, [
 			tableHeader(h, [
 				tableRow(h, [
-					tableHead(h, ["Author"], "pl-0 font-normal"),
-					tableHead(h, ["PRs"], "text-right font-normal"),
-					tableHead(h, ["Issues"], "pr-0 text-right font-normal"),
+					tableHead(h, ["Author"], "pl-0"),
+					tableHead(h, ["PRs"], "text-right"),
+					tableHead(h, ["Issues"], "pr-0 text-right"),
 				]),
 			]),
 			tableBody(
@@ -400,10 +399,13 @@ const authorsCardSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 		]),
 	])
 
-/** The analytics tab before its first answer and while the charts load. */
-export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+/** The analytics tab before its first answer and while the charts load, under the tab's own stat labels. */
+export const analyticsSkeleton = <M>(
+	h: HtmlBuilder<M>,
+	labels: Readonly<{ headline: ReadonlyArray<string>; secondary: ReadonlyArray<string> }>,
+): Html =>
 	busyPage(h, "Loading review analytics", [
-		headlineSkeleton(h, Rec.values(HEADLINE_LABELS)),
+		headlineSkeleton(h, labels.headline),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Pull requests reviewed", "bar", {
 				control: true,
@@ -413,8 +415,15 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 				control: true,
 				footer: vstack(h, { gap: "3" }, [
 					repositoryRows(h, "Repositories with the most issues"),
-					h.span(
-						[h.Class("inline-flex items-center gap-1 self-center text-sm text-muted-foreground")],
+					hstack(
+						h,
+						{
+							gap: "1",
+							align: "center",
+							inline: true,
+							as: "span",
+							className: "self-center text-sm text-muted-foreground",
+						},
 						["See all issues caught", icon(h, "ArrowRightIcon", { size: 14 })],
 					),
 				]),
@@ -424,7 +433,7 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 			[h.Class("grid gap-6 lg:grid-cols-3")],
 			[barListCard(h, "Issues by category"), barListCard(h, "Review outcomes"), authorsCardSkeleton(h)],
 		),
-		headlineSkeleton(h, Rec.values(SECONDARY_LABELS), {
+		headlineSkeleton(h, labels.secondary, {
 			columns: 4,
 			className: "xl:grid-cols-7",
 			size: "secondary",
@@ -434,10 +443,10 @@ export const analyticsSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 const tablePanel = <M>(h: HtmlBuilder<M>, title: string, columns: ReadonlyArray<SkeletonColumn>): Html =>
 	panel(h, {}, [panelHeader(h, { title }), tableSkeleton(h, columns, { count: 4 })])
 
-/** The CI tab before its first answer and while the charts load. */
-export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
+/** The CI tab before its first answer and while the charts load, under the tab's own stat labels. */
+export const ciSkeleton = <M>(h: HtmlBuilder<M>, headline: ReadonlyArray<string>): Html =>
 	busyPage(h, "Loading CI analytics", [
-		headlineSkeleton(h, Rec.values(CI_HEADLINE_LABELS), { columns: 3, className: "xl:grid-cols-6" }),
+		headlineSkeleton(h, headline, { columns: 3, className: "xl:grid-cols-6" }),
 		grid(h, { lg: 2, gap: "6" }, [
 			chartCard(h, "Runs by result", "bar"),
 			chartCard(h, "Run time", "line"),
@@ -454,26 +463,28 @@ export const ciSkeleton = <M>(h: HtmlBuilder<M>): Html =>
 	])
 
 /** `repositoryList`: the access line, then one row per repository with Configure and its switch. */
-/** Only the rows are busy: the header's access link works while they load. `isNested` drops the slow-load note. */
-export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html => {
+/** Only the rows are busy: the header's `access` link works while they load. `isNested` drops the slow-load note. */
+export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, access: Html, isNested = false): Html => {
 	const list = panel(h, {}, [
 		panelHeader(h, {
 			className: "px-5 py-3 text-xs text-muted-foreground",
-			action: manageAccessLink(h),
+			action: access,
 			children: [line(h, "h-4", "h-2.5 w-40")],
 		}),
-		h.ul(
-			[h.Class("divide-y"), h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+		dividedList(
+			h,
+			{
+				as: "ul",
+				bordered: false,
+				attributes: [h.AriaBusy(true), h.AriaLabel("Loading repositories")],
+			},
 			rows(5, (index) =>
-				h.li(
-					[h.Class("flex items-center gap-3 px-5 py-2.5")],
-					[
-						bar(h, "size-4 shrink-0 rounded-full"),
-						h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(META_WIDTHS, index)))]),
-						bar(h, "h-7 w-20 shrink-0 rounded-md"),
-						bar(h, "h-5 w-9 shrink-0 rounded-full"),
-					],
-				),
+				hstack(h, { gap: "3", align: "center", as: "li", className: "px-5 py-2.5" }, [
+					bar(h, "size-4 shrink-0 rounded-full"),
+					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(META_WIDTHS, index)))]),
+					bar(h, "h-7 w-20 shrink-0 rounded-md"),
+					bar(h, "h-5 w-9 shrink-0 rounded-full"),
+				]),
 			),
 		),
 	])
@@ -484,23 +495,22 @@ export const repositoryListSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): 
 export const withSlowNote = <M>(h: HtmlBuilder<M>, label: string, block: Html): Html =>
 	h.div([h.Class("relative"), h.AriaBusy(true), h.AriaLabel(label)], [block, slowNote(h)])
 
-/** `PullRequestCiRuns`' rows: result badge, workflow, commit and duration. */
+/** The CI runs list's rows: result badge, workflow, commit and duration. */
 export const ciRunsSkeleton = <M>(h: HtmlBuilder<M>, isNested = false): Html =>
-	h.ul(
-		[
-			h.Class("-mx-2 flex flex-col"),
-			...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")]),
-		],
+	vstack(
+		h,
+		{
+			as: "ul",
+			className: "-mx-2",
+			attributes: [...(isNested ? [] : [h.AriaBusy(true), h.AriaLabel("Loading CI runs")])],
+		},
 		rows(3, (index) =>
-			h.li(
-				[h.Class("flex h-8 items-center gap-3 px-2 py-1")],
-				[
-					h.span([h.Class("w-32 shrink-0")], [bar(h, "h-5 w-16 rounded-md")]),
-					h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index)))]),
-					bar(h, "h-2.5 w-14"),
-					bar(h, "h-2.5 w-10"),
-				],
-			),
+			hstack(h, { gap: "3", align: "center", as: "li", className: "h-8 px-2 py-1" }, [
+				h.span([h.Class("w-32 shrink-0")], [bar(h, "h-5 w-16 rounded-md")]),
+				h.span([h.Class("min-w-0 flex-1")], [bar(h, cn("h-3", pick(TITLE_WIDTHS, index)))]),
+				bar(h, "h-2.5 w-14"),
+				bar(h, "h-2.5 w-10"),
+			]),
 		),
 	)
 
@@ -510,17 +520,17 @@ const findingCardSkeleton = <M>(h: HtmlBuilder<M>, index: number): Html =>
 		[],
 		[
 			panel(h, { padded: "sm", className: "gap-2" }, [
-				h.span(
-					[h.Class("flex h-4 items-center gap-2")],
-					[bar(h, "h-4 w-14 rounded-md"), bar(h, "h-2.5 w-40")],
-				),
+				hstack(h, { gap: "2", align: "center", as: "span", className: "h-4" }, [
+					bar(h, "h-4 w-14 rounded-md"),
+					bar(h, "h-2.5 w-40"),
+				]),
 				bar(h, cn("h-3.5", pick(TITLE_WIDTHS, index))),
 				bar(h, "h-3 w-full"),
 			]),
 		],
 	)
 
-/** `ReviewDetailBody` before the first answer: header, stat tiles and the report's sections in place. */
+/** The review sheet body before the first answer: header, stat tiles and the report's sections in place. */
 export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyArray<Html> => [
 	DialogView.dialogHeader(
 		h,
@@ -535,10 +545,10 @@ export const reviewSheetSkeleton = <M>(h: HtmlBuilder<M>, id: string): ReadonlyA
 				"text-title leading-tight",
 			),
 			bar(h, "mt-1 h-3.5 w-80 max-w-full"),
-			h.div(
-				[h.Class("flex gap-2 pt-1")],
-				[bar(h, "h-6 w-28 rounded-md"), bar(h, "h-6 w-36 rounded-md")],
-			),
+			hstack(h, { gap: "2", align: "stretch", className: "pt-1" }, [
+				bar(h, "h-6 w-28 rounded-md"),
+				bar(h, "h-6 w-36 rounded-md"),
+			]),
 		],
 		"gap-1.5 pr-14",
 	),

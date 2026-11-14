@@ -14,21 +14,19 @@ import { emptyMessage } from "@maple/views/ui/empty"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../tools-kit/model"
-import { volumeSparkCell } from "../tools-kit/spark"
-import { toolDetailLinkSearch } from "../tools-kit/model"
+import type { ToolBreakdownRow, ToolPercentile, ToolSearch } from "../../kit/tools/model"
+import { volumeSparkCell } from "../../kit/tools/spark"
+import { toolDetailLinkSearch } from "../../kit/tools/model"
 import {
 	errorTone,
 	shareCell,
-	type SortState,
-	sortRows,
 	th,
 	toolTableRow,
 	toolTable,
 	toolTableBody,
 	toolTableFooter,
 	toolTableHead,
-} from "../tools-kit/table"
+} from "../../kit/tools/table"
 import { relativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -36,6 +34,7 @@ import { hstack } from "@maple/views/ui/stack"
 import { columnClass } from "@maple/views/ui/column"
 import { swatch } from "@maple/views/ui/swatch"
 import { Array as Arr } from "effect"
+import { type SortState, sortRows } from "../../kit/table-sort"
 
 type H = HtmlBuilder<Message>
 
@@ -174,7 +173,6 @@ const cells = (h: H, row: Prepared, inputs: ToolsTableInputs, maxErrorRate: numb
 		relativeTime(h, {
 			value: row.lastSeen,
 			variant: "orDate",
-			tooltip: "title",
 			nowMs: inputs.nowMs,
 			timeZone: inputs.timeZone,
 			className:
@@ -237,15 +235,12 @@ export const toolsTable = (h: H, inputs: ToolsTableInputs): Html =>
 	h.section(
 		[h.AriaLabel("Tools"), h.Class("@container/panel min-w-0 px-6 pt-5 pb-6")],
 		[
-			h.div(
-				[h.Class("flex items-baseline gap-2.5 pb-3 font-mono")],
-				[
-					typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Tools"]),
-					typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
-						formatNumber(inputs.rows.length),
-					]),
-				],
-			),
+			hstack(h, { gap: "2.5", align: "baseline", className: "pb-3 font-mono" }, [
+				typography(h, { size: "xs", tone: "foreground", weight: "medium" }, ["Tools"]),
+				typography(h, { size: "2xs", tone: "subtle", numeric: true, className: "leading-3.5" }, [
+					formatNumber(inputs.rows.length),
+				]),
+			]),
 			toolTable(h, [
 				head(h, inputs.sort),
 				toolTableBody(h, body(h, inputs), { isWaiting: inputs.isWaiting }),

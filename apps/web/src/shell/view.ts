@@ -18,14 +18,21 @@ import { placementOf, popupIdOf, triggerIdOf } from "./menus"
 import { billingBanners } from "./billing-banners"
 import * as SupportChannelView from "./support-channel-view"
 import { Message } from "./message"
-import type { Model, ShellClerk } from "./model"
+import { type Model, type ShellClerk, shellAudience } from "./model"
 import { MeasureSidebarOverflow, PositionMenu } from "./mounts"
 import { isMenuKey } from "./update"
 import { menuContent } from "./view-menus"
 import { navGroupSections, pinnedGroup, shellNavGroups } from "./view-nav"
-import { NO_TIP, type RailTip, shellSidebarFooter, shellSidebarHeader } from "./view-sidebar"
+import {
+	NO_TIP,
+	type RailTip,
+	shellOnCallStatus,
+	shellSidebarFooter,
+	shellSidebarHeader,
+} from "./view-sidebar"
+import { isPillShown, onCallDetail } from "./oncall"
 import { type BreadcrumbEntry, hidesTopbarConnect, topbar } from "./view-topbar"
-import { splitPageRails } from "./page-rails"
+import { splitPageRails } from "@maple/views/ui/page-rails"
 import { filterSheet, filterSheetTrigger, rightSheet, rightSheetTrigger } from "./view-page-sheets"
 import { FLAGGED_HREFS } from "./palette/entries"
 import { paletteView } from "./palette/view"
@@ -35,7 +42,7 @@ import type { SourceLink } from "./source-link"
 
 export type { BreadcrumbEntry } from "./view-topbar"
 
-/** `AppSidebar`'s three regions, shared by the desktop rail and the mobile sheet. */
+/** The sidebar's three regions, shared by the desktop rail and the mobile sheet. */
 const sidebarRegions = (
 	h: HtmlBuilder<Message>,
 	model: Model,
@@ -54,13 +61,16 @@ const sidebarRegions = (
 
 const RAIL_TIP_PREFIX = "shell-rail-tip-"
 
-/** The rows that carry a rail tooltip: Search, the nav rows this org is shown, the footer links. */
-const railTipTitles = (clerk: ShellClerk | null): ReadonlyArray<string> => [
-	"Search",
-	...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
-	"Sources",
-	"Settings",
-]
+/** The rows that carry a rail tooltip: Search, the nav rows, the on-call pill, the footer links. */
+const railTipTitles = (model: Model, clerk: ShellClerk | null): ReadonlyArray<string> => {
+	const onCall = shellOnCallStatus(model)
+	return [
+		"Search",
+		...Arr.flatMap(shellNavGroups(clerk), (group) => Arr.map(group.items, (item) => item.title)),
+		...(isPillShown(onCall) ? [onCallDetail(onCall)] : []),
+		...(shellAudience(clerk) === "analyst" ? [] : ["Sources", "Settings"]),
+	]
+}
 
 /** The desktop rail; collapsed, its rows share one Tooltip naming the row (`tooltip={title}`). */
 const desktopSidebar = (
@@ -97,7 +107,7 @@ const desktopSidebar = (
 					isInstant,
 				),
 			toContent: (triggerId) => [Str.slice(RAIL_TIP_PREFIX.length)(triggerId)],
-			triggerIds: Arr.map(railTipTitles(clerk), (title) => `${RAIL_TIP_PREFIX}${title}`),
+			triggerIds: Arr.map(railTipTitles(model, clerk), (title) => `${RAIL_TIP_PREFIX}${title}`),
 		},
 		toParentMessage: (message) => Message.GotRailTooltipMessage({ message }),
 	})
@@ -125,7 +135,7 @@ const supportChannelDialog = (h: HtmlBuilder<Message>, model: Model, clerk: Shel
 		toParentMessage: (message) => Message.GotSupportChannelMessage({ message }),
 	})
 
-/** `AppUpdatePill`: not dismissible, a stale bundle may not read what the new build writes. */
+/** Not dismissible, a stale bundle may not read what the new build writes. */
 const appUpdatePill = (h: HtmlBuilder<Message>): Html =>
 	hstack(
 		h,
@@ -185,7 +195,8 @@ export const frameView = Submodel.defineView<Model, Message, FrameInputs>((model
 						inputs.breadcrumbs,
 						inputs.topbarActions(),
 						railTriggers,
-						!hidesTopbarConnect(inputs.currentPath),
+						!hidesTopbarConnect(inputs.currentPath) &&
+							shellAudience(inputs.clerk ?? null) !== "analyst",
 						inputs.sourceLink ?? null,
 					),
 					...(inputs.clerk === undefined || inputs.clerk === null
@@ -222,7 +233,6 @@ const mobileNav = (
 		{ id: "shell-mobile-sidebar", onDismiss: Message.DismissedMobileNav() },
 		sidebarRegions(h, model, currentPath, clerk),
 	)
-// OVERLAYS
 
 const openMenuPopup = (
 	h: HtmlBuilder<Message>,
@@ -279,7 +289,7 @@ export const sheetLayerView = Submodel.defineView<Model, Message, OverlayInputs>
 const layer = (h: HtmlBuilder<Message>, children: ReadonlyArray<Html>): Html =>
 	h.div([h.Style({ display: "contents" })], children)
 
-/** `CommandPalette`'s portal while it is mounted. */
+/** The command palette's portal while it is mounted. */
 export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, inputs, h) =>
 	layer(
 		h,
@@ -291,6 +301,7 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 						model.palette,
 						{
 							context: paletteContextOf(model),
+							audience: shellAudience(inputs.clerk ?? null),
 							visibleFlagged: Arr.flatMap(shellNavGroups(inputs.clerk ?? null), (group) =>
 								Arr.flatMap(group.items, (item) =>
 									FLAGGED_HREFS.has(item.href) ? [item.href] : [],
@@ -303,7 +314,7 @@ export const paletteLayerView = Submodel.defineView<Model, Message, OverlayInput
 	),
 )
 
-/** `KeyboardShortcutsDialog`'s portal while it is mounted. */
+/** The shortcuts dialog's portal while it is mounted. */
 export const shortcutsLayerView = Submodel.defineView<Model, Message, OverlayInputs>((model, _inputs, h) =>
 	layer(
 		h,

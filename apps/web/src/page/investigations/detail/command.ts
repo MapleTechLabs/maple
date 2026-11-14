@@ -1,15 +1,21 @@
+import { readClock } from "@maple/views/data/timing"
 import { ErrorIssueId, InvestigationId } from "@maple/domain/http"
 import { getCustomChartTimeSeries } from "@maple/web-data/warehouse/custom-charts"
 import { getServiceOverview } from "@maple/web-data/warehouse/services"
 import { loadKnownServices } from "../conversation/kit/known-services"
-import { Clock, Effect, type Result, Schema, Array as Arr } from "effect"
+import { Effect, type Result, Schema, Array as Arr, Option } from "effect"
 import { Command, Mount } from "foldkit"
+import { load } from "foldkit/navigation"
+import { readLocalStorage, writeLocalStorage } from "@maple/ui/lib/local-storage"
+import { isAgentTarget } from "@maple/web-data/investigations/agent-handoff"
+import { writeClipboard } from "@maple/ui/lib/clipboard"
 import { clickStream, factsOf, nodeLinkClick } from "../clicks"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleApiV2Client, MapleInternalApiClient } from "../../../platform/api-clients"
 import { Message } from "./message"
+import { AgentTargetSchema } from "./model"
 
-/** `KnownServicesProvider`: the org's service names, read once a thread shows its scroller. */
+/** The org's service names, read once a thread shows its scroller. */
 export const LoadKnownServices = Command.define("LoadInvestigationKnownServices", {
 	messages: [Message.CompletedLoadKnownServices],
 	execute: Effect.map(loadKnownServices, (services) => Message.CompletedLoadKnownServices({ services })),
@@ -31,12 +37,9 @@ export const CheckTipFocus = Command.define("CheckInvestigationTipFocus", {
 const finish = <A, E, R, M>(
 	effect: Effect.Effect<A, E, R>,
 	toMessage: (result: Result.Result<A, LoadFailure>) => M,
-) => effect.pipe(Effect.mapError(toLoadFailure), Effect.result, Effect.map(toMessage))
+) => effect.pipe(settleTo(toMessage))
 
-export const ReadInvestigationClock = Command.define("ReadInvestigationClock", {
-	messages: [Message.ReadClock],
-	execute: Effect.map(Clock.currentTimeMillis, (nowMs) => Message.ReadClock({ nowMs })),
-})
+export const ReadInvestigationClock = readClock("ReadInvestigationClock", Message.ReadClock)
 
 export const SignalWindowSchema = Schema.Struct({
 	startTime: Schema.String,
@@ -112,18 +115,22 @@ export const FetchEscalation = Command.define("FetchInvestigationEscalation", {
 			Effect.gen(function* () {
 				const client = yield* MapleInternalApiClient
 				const response = yield* client.errors.listIssueEscalations({ params: { issueId } })
-				const attempt = response.attempts.find(
-					(candidate) => candidate.investigationId === investigationId,
-				)
-				return attempt === undefined
-					? null
-					: {
+				return Option.match(
+					Arr.findFirst(
+						response.attempts,
+						(candidate) => candidate.investigationId === investigationId,
+					),
+					{
+						onNone: () => null,
+						onSome: (attempt) => ({
 							status: attempt.status,
 							destinations: Arr.map(attempt.deliveries, (delivery) => ({
 								name: delivery.destinationName ?? delivery.destinationId,
 								status: delivery.status,
 							})),
-						}
+						}),
+					},
+				)
 			}),
 			(result) => Message.CompletedFetchEscalation({ key, result }),
 		),
@@ -170,4 +177,67 @@ export const MountNodeLinks = Mount.defineStream("MountInvestigationNodeLinks", 
 			event.preventDefault()
 			emit(Message.ClickedNodeLink({ href: link.href }))
 		}),
+})
+
+const HANDOFF_TARGET_KEY = "maple.investigation.agent-target"
+
+/** The agent the reader picked last time, and the origin the prompt links back to. */
+export const ReadHandoff = Command.define("ReadInvestigationHandoff", {
+	messages: [Message.ReadHandoff],
+	execute: Effect.sync(() =>
+		Message.ReadHandoff({
+			target: Option.getOrNull(Option.filter(readLocalStorage(HANDOFF_TARGET_KEY), isAgentTarget)),
+			origin: window.location.origin,
+		}),
+	),
+})
+
+export const SaveHandoffTarget = Command.define("SaveInvestigationHandoffTarget", {
+	args: { target: AgentTargetSchema },
+	messages: [Message.CompletedSaveHandoffTarget],
+	execute: ({ target }) =>
+		Effect.sync(() => {
+			writeLocalStorage(HANDOFF_TARGET_KEY, target)
+			return Message.CompletedSaveHandoffTarget()
+		}),
+})
+
+/** The repository Claude Code opens in: only when the org connected exactly one, so it is never a guess. */
+export const FetchHandoffRepo = Command.define("FetchInvestigationHandoffRepo", {
+	messages: [Message.CompletedFetchHandoffRepo],
+	execute: Effect.gen(function* () {
+		const api = yield* MapleInternalApiClient
+		const status = yield* api.integrations.githubStatus()
+		const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
+		const only = active.length === 1 ? Arr.head(active) : Option.none()
+		yield* Effect.annotateCurrentSpan("maple.handoff.active_repo_count", active.length)
+		return Message.CompletedFetchHandoffRepo({
+			repo: Option.getOrNull(Option.map(only, (repo) => repo.fullName)),
+		})
+	}).pipe(
+		Effect.withSpan("investigation.handoff.repo"),
+		Effect.orElseSucceed(() => Message.CompletedFetchHandoffRepo({ repo: null })),
+	),
+})
+
+/** A deep link chosen from the menu: the same navigation a click on the button's anchor makes. */
+export const OpenHandoff = Command.define("OpenInvestigationHandoff", {
+	args: { href: Schema.String, target: AgentTargetSchema },
+	messages: [Message.CompletedOpenHandoff],
+	execute: ({ href, target }) =>
+		load(href).pipe(
+			Effect.withSpan("investigation.handoff.open", { attributes: { "maple.handoff.target": target } }),
+			Effect.as(Message.CompletedOpenHandoff()),
+		),
+})
+
+export const CopyHandoffPrompt = Command.define("CopyInvestigationHandoffPrompt", {
+	args: { text: Schema.String },
+	messages: [Message.CompletedCopyHandoffPrompt],
+	execute: ({ text }) =>
+		writeClipboard(text).pipe(
+			Effect.tap((isOk) => Effect.annotateCurrentSpan("maple.handoff.copied", isOk)),
+			Effect.withSpan("investigation.handoff.copy"),
+			Effect.map((isOk) => Message.CompletedCopyHandoffPrompt({ isOk })),
+		),
 })

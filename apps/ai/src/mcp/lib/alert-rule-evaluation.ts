@@ -8,7 +8,7 @@ import {
 } from "@maple/domain/http"
 import type { AlertRuleFirstEvaluation } from "@maple/domain/mcp-outputs"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
-import { CurrentMcpTenant } from "./query-warehouse"
+import { CurrentMcpTenant } from "../tenant"
 
 /** The alerting worker evaluates every enabled rule on a one-minute cron. */
 export const SCHEDULER_TICK_MS = 60_000
@@ -69,6 +69,16 @@ export const firstEvaluation = Effect.fn("McpTool.alertFirstEvaluation")(functio
 				DateTime.makeUnsafe(Math.ceil((now + 1) / SCHEDULER_TICK_MS) * SCHEDULER_TICK_MS),
 			)
 		: null
+	// An anomaly rule reads the detector's open incidents, not a query, so there is nothing to preview.
+	if (rule.signalType === "anomaly") {
+		const evaluation: typeof AlertRuleFirstEvaluation.Type = {
+			nextEvaluationAt,
+			current: [],
+			previewSkipped:
+				"An anomaly rule pages on the anomaly detector's open anomalies, so there is no query window to preview.",
+		}
+		return { evaluation, warnings: noWarnings }
+	}
 	const lookbackMs = Math.max(rule.windowMinutes * 6, 60) * 60_000
 
 	const preview = yield* decodePreviewRequest({

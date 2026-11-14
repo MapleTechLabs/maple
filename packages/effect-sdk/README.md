@@ -74,7 +74,7 @@ export default {
 
 `telemetry.layer` MUST live in the same runtime as your routes — provide it to the layer composition you hand to `HttpRouter.toWebHandler`, not a separate per-request runtime, or your spans won't pick up the Tracer reference.
 
-When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is the public Maple ingest, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. Against any other endpoint (a local `maple start`, your own collector) it exports without an `Authorization` header. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent.
+When no ingest key is set (neither `ingestKey` nor `MAPLE_INGEST_KEY`) and the endpoint is the public Maple ingest, the SDK runs in no-op mode: buffers are drained so they don't grow across the isolate's lifetime, but no requests are made. Against any other endpoint (a local `maple start`, your own collector) it exports without an `Authorization` header. After a flush failure, the failed batch is restored ahead of newer telemetry and that signal sleeps 60s before retrying. Trace and log cooldowns are independent. An outage is logged once per signal (`flush failed`), its retries are silent, and one `flush recovered` line follows when export works again.
 
 ### Cloudflare-specific options
 
@@ -315,6 +315,8 @@ What it records:
 - **Scrubbed args.** Command args become span attributes in Foldkit. By default only args whose key ends in `Id`/`Ids`, booleans and nulls export; every other value is `[redacted]`. `commandArgs: { allow: ["provider"] }` exports more keys by name, `"all"` and `"none"` switch it wholesale.
 - **Crashes.** A runtime crash is reported as an exception with the Message that crashed it and the last 20 Message tags, then flushed.
 - **Slow phases.** `update` over 16ms and `view` or DOM patch over 50ms become `foldkit.update`, `foldkit.view` and `foldkit.patch` spans. Set `slowPhases` to change the budgets (`0` records every run) or `false` to turn it off.
+- **Navigation length.** A navigation never runs past 30 seconds from its start; one that hits the cap or is open when the page goes away carries `maple.navigation.interrupted: true`.
+- **Web vitals.** With `webVitals: true` (a `MapleFlush.make` option), LCP, CLS, INP, FCP and TTFB are reported as `browser.web_vital` log events linked to the `pageload` span.
 
 | Option                 | Default                               |                                                                               |
 | ---------------------- | ------------------------------------- | ----------------------------------------------------------------------------- |

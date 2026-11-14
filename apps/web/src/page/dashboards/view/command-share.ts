@@ -6,8 +6,6 @@ import { MapleApiV2Client } from "../../../platform/api-clients"
 import { Message } from "./message"
 import { ShareMessage, ShareWrite } from "./share"
 
-// The share dialogs' effects: the page origin their links are built on, and the share writes.
-
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 const wrap = (message: ShareMessage) => Message.GotShareMessage({ message })
 
@@ -28,7 +26,11 @@ export const WriteShare = Command.define("WriteDashboardShare", {
 			switch (write._tag) {
 				case "SetBoardMode":
 					if (write.access === "off") yield* client.dashboards.revokeShare({ params: { id } })
-					else yield* client.dashboards.upsertShare({ params: { id }, payload: { mode: write.access } })
+					else
+						yield* client.dashboards.upsertShare({
+							params: { id },
+							payload: { mode: write.access },
+						})
 					return
 				case "RotateBoard":
 					yield* client.dashboards.rotateShare({ params: { id } })
@@ -37,12 +39,16 @@ export const WriteShare = Command.define("WriteDashboardShare", {
 					yield* client.dashboards.rotateWidgetShare(chart(write.widgetId))
 					return
 				case "MintChart":
-					yield* client.dashboards.upsertWidgetShare({ ...chart(write.widgetId), payload: { mode: "public" } })
+					yield* client.dashboards.upsertWidgetShare({
+						...chart(write.widgetId),
+						payload: { mode: "public" },
+					})
 					return
 			}
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => wrap(ShareMessage.CompletedWrite({ error: displayError(error).message })),
+				onFailure: (error) =>
+					wrap(ShareMessage.CompletedWrite({ error: displayError(error).message })),
 				onSuccess: () => wrap(ShareMessage.CompletedWrite({ error: null })),
 			}),
 		),

@@ -1,10 +1,3 @@
-// Shared identity primitives for the local store.
-//
-// The 16-character bundle fingerprint and the 64-character sha256 digest used
-// to be re-checked with an inline regex at every site that read or wrote one:
-// twice in the marker reader, twice more in the marker constructor, and once
-// again inside the v0 -> v1 migration. Four copies of the same rule is four
-// chances to relax one of them.
 import { Schema } from "effect"
 
 /** Legacy 16-character bundled-schema fingerprint. */

@@ -1,7 +1,7 @@
-import { warehouseDateTimeToIso } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 import { formatDuration, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { cn } from "@maple/ui/lib/utils"
 import { Option, String as Str } from "effect"
 import { traceHrefFrom } from "./peek"
@@ -10,23 +10,20 @@ import type { TracesSearch } from "../../../route/search"
 
 type Search = typeof TracesSearch.Type
 import { httpSpanLabel } from "@maple/views/ui/http-span-label"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { servicePills, traceStatusBadge } from "@maple/views/ui/trace-badges"
 import { button } from "@maple/views/ui/button"
 import { laneTableCell, rowLink, tableCell, tableRow } from "@maple/views/ui/table"
 import { latencyValue } from "@maple/views/ui/values"
+import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { listRelativeTime } from "../../kit/relative-time"
 import { Message } from "./message"
 import type { TraceRow } from "./model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
-// One row of the traces table.
-
-const epochOf = (startTime: string): number => new Date(warehouseDateTimeToIso(startTime)).getTime()
-
-/** `traceLink`: the trace page, with the row's own span pre-selected when it is not the root. */
-/** `traceLink`: the trace page, keeping the list's search (`{ ...prev, t, spanId }`). */
+/** The trace page, keeping the list's search, with the row's own span pre-selected when it is not the root. */
 export const traceHref = (search: Search, row: TraceRow): string =>
 	traceHrefFrom(search, row.traceId, row.startTime, row.isRootSpan ? undefined : row.spanId)
 
@@ -48,7 +45,7 @@ const rootSpanCell = (
 	nowMs: number,
 	search: Search,
 ): Html => {
-	const epochMs = epochOf(row.startTime)
+	const epochMs = parseWarehouseDateTime(row.startTime)
 	const stamp = formatTimestampInTimezone(epochMs, { timeZone })
 	const duration = formatDuration(row.durationMs)
 	return tableCell(
@@ -69,13 +66,21 @@ const rootSpanCell = (
 				}),
 				truncatedText(
 					h,
-					{ text: stamp, className: typographyClass({ size: "3xs", tone: "muted" }) },
+					{
+						text: stamp,
+						tooltip: "none",
+						className: typographyClass({ size: "3xs", tone: "muted" }),
+					},
 					[
-						h.span([h.Class("hidden @min-[480px]/page:inline")], [stamp, " "]),
 						h.span(
-							[h.Class("text-foreground-subtle")],
-							["(", listRelativeTime(h, { value: epochMs, nowMs, timeZone }), ")"],
+							[h.Class("hidden @min-[480px]/page:inline")],
+							[timestamp(h, { value: epochMs, timeZone, nowMs }), " "],
 						),
+						typography(h, { tone: "subtle" }, [
+							"(",
+							listRelativeTime(h, { value: epochMs, nowMs, timeZone }),
+							")",
+						]),
 						h.span([h.Class("@min-[480px]/page:hidden")], [" · ", duration]),
 					],
 				),
@@ -139,12 +144,12 @@ export const traceRow = (
 		],
 		cn(
 			state.isActive && "bg-surface-strong",
-			"hover:bg-surface-sunken active:bg-surface-sunken data-[focused]:bg-surface-strong data-[focused]:ring-1 data-[focused]:ring-ring data-[focused]:ring-inset cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+			"hover:bg-surface-sunken active:bg-surface-sunken cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
 		),
 		[
 			// Keyed by index so a scrolled-in row is a new node the virtualizer measures.
 			h.Key(`row-${index}`),
-			...(state.isFocused ? [h.DataAttribute("focused", "true")] : []),
+			...rowFocusAttributes(h, state.isFocused),
 			h.DataAttribute("index", String(index)),
 			h.Tabindex(0),
 			h.OnKeyDownPreventDefault((key) =>

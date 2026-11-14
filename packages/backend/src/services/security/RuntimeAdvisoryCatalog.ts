@@ -1,4 +1,5 @@
 import { EdgeCacheService } from "@maple/cache"
+import { OsvVulnResponse } from "./osv-records"
 import { RuntimeAdvisoryRow } from "@maple/domain/http"
 import {
 	ADVISORY_SOURCES,
@@ -15,7 +16,17 @@ import {
 	severityOf,
 	sortAdvisories,
 } from "@maple/domain/runtime-advisories"
-import { Context, Effect, Layer, Ref, Schema, Array as Arr, String as Str } from "effect"
+import {
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Ref,
+	Schema,
+	Array as Arr,
+	String as Str,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 
 // Known vulnerabilities per runtime version for the Security Center's Runtimes tab. OSV.dev is read
@@ -35,36 +46,8 @@ const MAX_READS = 24
 const MAX_VERSIONS = 96
 const CONCURRENCY = 16
 
-const OsvEvent = Schema.Struct({
-	introduced: Schema.optionalKey(Schema.String),
-	fixed: Schema.optionalKey(Schema.String),
-})
-
-const OsvQueryResponse = Schema.Struct({
-	vulns: Schema.optionalKey(
-		Schema.Array(
-			Schema.Struct({
-				id: Schema.String,
-				aliases: Schema.optionalKey(Schema.Array(Schema.String)),
-				summary: Schema.optionalKey(Schema.String),
-				details: Schema.optionalKey(Schema.String),
-				published: Schema.optionalKey(Schema.String),
-				database_specific: Schema.optionalKey(
-					Schema.Struct({ severity: Schema.optionalKey(Schema.String) }),
-				),
-				affected: Schema.optionalKey(
-					Schema.Array(
-						Schema.Struct({
-							ranges: Schema.optionalKey(
-								Schema.Array(Schema.Struct({ events: Schema.Array(OsvEvent) })),
-							),
-						}),
-					),
-				),
-			}),
-		),
-	),
-})
+// The `POST /v1/query` answer: a list of the same records `GET /v1/vulns/{id}` returns.
+const OsvQueryResponse = Schema.Struct({ vulns: Schema.optionalKey(Schema.Array(OsvVulnResponse)) })
 type OsvVuln = NonNullable<typeof OsvQueryResponse.Type.vulns>[number]
 
 /** `null` records a failed read. */
@@ -193,15 +176,21 @@ const truncate = (raw: string | null | undefined): string | null => {
 
 /** Many advisories carry no summary, only details: their first sentence stands in, capped. */
 const summaryOf = (vuln: OsvVuln): string | null =>
-	truncate(vuln.summary ?? vuln.details?.split(/(?<=\.)\s/)[0])
+	truncate(
+		vuln.summary ?? (vuln.details === undefined ? undefined : Str.split(vuln.details, /(?<=\.)\s/)[0]),
+	)
 
 const toAdvisory = (vuln: OsvVuln, version: string): RuntimeAdvisory => {
-	const fixes = Arr.flatMap(vuln.affected ?? [], (affected) => affected.ranges ?? []).flatMap((range) => {
+	const ranges = Arr.flatMap(vuln.affected ?? [], (affected) => affected.ranges ?? [])
+	const fixes = Arr.flatMap(ranges, (range) => {
 		const fixed = fixedVersionFor(range.events, version)
 		return fixed === null ? [] : [fixed]
 	})
 	return {
-		id: vuln.aliases?.find((alias) => Str.startsWith("CVE-")(alias)) ?? vuln.id,
+		id: Option.getOrElse(
+			Arr.findFirst(vuln.aliases ?? [], (alias) => Str.startsWith("CVE-")(alias)),
+			() => vuln.id,
+		),
 		url: `https://osv.dev/vulnerability/${encodeURIComponent(vuln.id)}`,
 		summary: summaryOf(vuln),
 		severity: severityOf(vuln.database_specific?.severity),
@@ -249,9 +238,10 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				Effect.timeout(REQUEST_TIMEOUT),
 				Effect.mapBoth({
 					onSuccess: (advisories) =>
-						advisories
-							.filter((advisory) => advisory.withdrawn_at === null)
-							.map((advisory) => toGithubAdvisory(advisory, product, repo)),
+						Arr.map(
+							Arr.filter(advisories, (advisory) => advisory.withdrawn_at === null),
+							(advisory) => toGithubAdvisory(advisory, product, repo),
+						),
 					onFailure: (cause) =>
 						new RuntimeAdvisoryCatalogError({
 							message: `GitHub advisory read failed for ${repo}`,
@@ -298,7 +288,7 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				Effect.timeout(REQUEST_TIMEOUT),
 				Effect.mapBoth({
 					onSuccess: (body) =>
-						sortAdvisories((body.vulns ?? []).map((vuln) => toAdvisory(vuln, target.version))),
+						sortAdvisories(Arr.map(body.vulns ?? [], (vuln) => toAdvisory(vuln, target.version))),
 					onFailure: (cause) =>
 						new RuntimeAdvisoryCatalogError({
 							message: `OSV read failed for ${advisoryKey(target)}`,
@@ -385,14 +375,16 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 		const advisories = Effect.fn("RuntimeAdvisoryCatalog.advisories")(function* (
 			targets: ReadonlyArray<AdvisoryTarget>,
 		) {
-			const distinct = [...new Map(targets.map((target) => [advisoryKey(target), target])).values()]
+			const distinct = [
+				...new Map(Arr.map(targets, (target) => [advisoryKey(target), target])).values(),
+			]
 			const consulted = distinct.slice(0, MAX_VERSIONS)
 			const budget = yield* Ref.make(MAX_READS)
 			// One read per repository however many of its runtime's versions are asked for.
 			const githubEntries = yield* Effect.forEach(
 				[
 					...new Map(
-						consulted.flatMap((target) => {
+						Arr.flatMap(consulted, (target) => {
 							const source = ADVISORY_SOURCES[target.product]
 							return source._tag === "github" ? [[source.repo, target.product] as const] : []
 						}),
@@ -410,14 +402,14 @@ export class RuntimeAdvisoryCatalog extends Context.Service<
 				{ concurrency: CONCURRENCY },
 			)
 			return {
-				advisories: Object.fromEntries(
-					reads.flatMap((read) =>
+				advisories: Rec.fromEntries(
+					Arr.flatMap(reads, (read) =>
 						read._tag === "read" && read.value !== null ? [[read.key, read.value] as const] : [],
 					),
 				),
 				skipped: [
-					...reads.flatMap((read) => (read._tag === "skipped" ? [read.key] : [])),
-					...distinct.slice(MAX_VERSIONS).map(advisoryKey),
+					...Arr.flatMap(reads, (read) => (read._tag === "skipped" ? [read.key] : [])),
+					...Arr.map(distinct.slice(MAX_VERSIONS), advisoryKey),
 				],
 			} satisfies RuntimeAdvisoryReadResult
 		})

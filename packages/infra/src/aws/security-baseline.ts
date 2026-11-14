@@ -7,11 +7,11 @@ import * as AWS from "@alchemy.run/aws"
 import * as Output from "alchemy/Output"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
-import type { MapleStage } from "../cloudflare/stage.ts"
 import { requiredPlain } from "../env.ts"
 import type { AwsSecurityBaseline } from "../profile.ts"
 import type { MapleRegion } from "../region.ts"
-import { type AwsRegionName, resolveAwsRegion, resolveAwsResourceName } from "./stage.ts"
+import { type MapleStage, resolveWorkerName } from "../cloudflare/stage.ts"
+import { type AwsRegionName, resolveAwsRegion } from "./stage.ts"
 
 export interface AwsSecurityBaselineOptions {
 	readonly stage: MapleStage
@@ -256,7 +256,7 @@ export const createAwsSecurityBaseline = ({ stage, region, baseline }: AwsSecuri
 		// Every deploy workflow sets it (docs/infra.md); bucket names and the trail ARN need it.
 		const accountId = yield* requiredPlain("AWS_ACCOUNT_ID")
 		const awsRegion = resolveAwsRegion(region)
-		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const name = (base: string) => resolveWorkerName(base, stage, region)
 		const tags = { Service: "maple-security-baseline", Region: region }
 
 		const trail =

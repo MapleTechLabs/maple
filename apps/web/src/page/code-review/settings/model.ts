@@ -1,3 +1,4 @@
+import * as Policy from "@maple/domain/policy"
 import {
 	GithubIntegrationStatus,
 	GithubPrReviewConfigResponse,
@@ -14,17 +15,14 @@ import * as Select from "@maple/views/ui/select"
 import * as RulesForm from "../rules-form/form"
 import { RepoFilter, RepoListState } from "./repositories"
 
-// `/code-review/settings`: the review model, the default rules and the
-// repositories, each repository's own rules in a dialog.
-
 export const SavePurpose = Schema.Literals(["model", "defaults"])
 export type SavePurpose = typeof SavePurpose.Type
 
 export const Model = Schema.Struct({
 	settings: KeyedSchema(GithubPrReviewSettingsResponse, LoadFailure),
 	githubStatus: KeyedSchema(GithubIntegrationStatus, LoadFailure),
-	/** `useIsOrgAdmin`: always true self-hosted; the session's roles under Clerk. */
-	isAdmin: Schema.Boolean,
+	/** Whether the viewer is an org admin: always true self-hosted; the session's roles under Clerk. */
+	grants: Schema.Array(Policy.PermissionName),
 	modelSelect: Select.Model,
 	isSavingModel: Schema.Boolean,
 	/** The settings as this tab has written them (in flight or queued); every save is built from it. */
@@ -39,8 +37,8 @@ export const Model = Schema.Struct({
 	defaultsForm: Schema.NullOr(RulesForm.Model),
 	repoList: RepoListState,
 	/**
-	 * `RepositoryRow`'s optimistic switch and the server value it was flipped from: a fresh server
-	 * value wins, an unchanged one keeps the switch where the user put it (`seenServer`).
+	 * A repository row's optimistic switch and the server value it was flipped from: a fresh server
+	 * value wins, an unchanged one keeps the switch where the user put it.
 	 */
 	optimistic: Schema.Record(
 		Schema.String,
@@ -54,6 +52,10 @@ export const Model = Schema.Struct({
 })
 export type Model = typeof Model.Type
 
+/** The viewer may change what this page edits (`code_review:configure`). */
+export const canManage = (model: Pick<Model, "grants">): boolean =>
+	Policy.has(model.grants, "code_review:configure")
+
 const result = <S extends Schema.Top>(schema: S) => ({
 	key: Schema.String,
 	result: Schema.Result(schema, LoadFailure),
@@ -63,7 +65,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchSettings: result(GithubPrReviewSettingsResponse),
 	CompletedFetchStatus: result(GithubIntegrationStatus),
 	CompletedFetchRepoConfig: result(GithubPrReviewConfigResponse),
-	CompletedReadIsAdmin: { isAdmin: Schema.Boolean },
+	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	ClickedRetrySettings: {},
 	ClickedRetryStatus: {},
 	GotModelSelectMessage: { message: Select.Message },

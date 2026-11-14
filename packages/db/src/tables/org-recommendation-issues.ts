@@ -1,5 +1,6 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { OrgId } from "@maple/domain/primitives"
+import { RecommendationIssueStatus } from "@maple/domain/recommendation-issues"
+import { OrgId } from "@maple/primitives"
 
 // Durable, numbered attribute-recommendation issues (PlanetScale-style). Recommendations are
 // detected from live telemetry on each reconcile and upserted here, so each gets a stable per-org
@@ -21,7 +22,7 @@ export const OrgRecommendationIssues = PG.table("org_recommendation_issues", {
 		kind: PG.text,
 		sourceKey: PG.column(PG.text, { name: "source_key" }),
 		canonicalKey: PG.column(PG.nullable(PG.text), { name: "canonical_key" }),
-		status: PG.column(PG.text, { default: "open" }),
+		status: PG.column(PG.brand(PG.text, RecommendationIssueStatus), { default: "open" }),
 		usageCount: PG.column(PG.int4, { name: "usage_count", default: 0 }),
 		openedAt: PG.column(PG.timestamptzMillis, { name: "opened_at", defaultExpr: "now()" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at", defaultExpr: "now()" }),

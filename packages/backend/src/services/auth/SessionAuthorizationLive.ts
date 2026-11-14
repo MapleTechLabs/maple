@@ -1,28 +1,22 @@
 import { HttpServerRequest } from "effect/http"
-import { API_KEY_PREFIX } from "@maple/db"
+import { API_KEY_PREFIX } from "../../platform/credential-tokens"
 import { CurrentTenant } from "@maple/domain/http"
 import { Effect, Layer, String as Str } from "effect"
-import { makeResolveTenant } from "./AuthService"
+import { makeResolveTenant } from "@maple/auth"
 import { annotateAuthSpan } from "@maple/backend/services/auth/auth-span"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
-
-const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
-	const header = headers["authorization"] ?? headers["Authorization"]
-	if (!header) return undefined
-	const [scheme, token] = Str.split(" ")(header)
-	if (!scheme || !token || Str.toLowerCase(scheme) !== "bearer") return undefined
-	return token
-}
+import { getBearerToken } from "./bearer-token"
+import { checkAnalystAccess } from "./analyst-gate"
 
 /**
  * Authorization for the internal API: Clerk sessions only.
  *
  * The public `ApiAuthorizationLive` tries an API key first and falls back to a
- * session. This one inverts the posture — an API-key-shaped token is refused
+ * session. This one inverts the posture: an API-key-shaped token is refused
  * outright, because these endpoints are dashboard transport whose request and
  * response shapes change with the UI.
  *
@@ -45,7 +39,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					const request = yield* HttpServerRequest.HttpServerRequest
 
 					const token = getBearerToken(request.headers)
-					if (token?.startsWith(API_KEY_PREFIX)) {
+					if (token !== undefined && Str.startsWith(API_KEY_PREFIX)(token)) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})
@@ -54,6 +48,7 @@ export const SessionAuthorizationLive = Layer.effect(
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
 					yield* regions.ensureServedHere(tenant.orgId)
+					yield* checkAnalystAccess(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
@@ -85,13 +80,14 @@ export const RegionlessSessionAuthorizationLive = Layer.effect(
 			bearer: (httpEffect, options) =>
 				Effect.gen(function* () {
 					const request = yield* HttpServerRequest.HttpServerRequest
-					if (getBearerToken(request.headers)?.startsWith(API_KEY_PREFIX)) {
+					if (Str.startsWith(API_KEY_PREFIX)(getBearerToken(request.headers) ?? "")) {
 						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
 							message: "API keys cannot call the internal API; use the /v2 API instead",
 						})
 					}
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					yield* checkAnalystAccess(tenant.roles, options)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),

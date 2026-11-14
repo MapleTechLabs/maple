@@ -3,6 +3,9 @@
  * popup opens over the trigger so the selected item's text sits on the trigger's value. Returns
  * false where Base UI falls back to anchoring below the trigger (too close to an edge, too short).
  */
+
+import { nonZeroOr } from "@maple/ui/lib/number"
+
 const SCROLL_EDGE_TOLERANCE_PX = 1
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 const maxScrollTop = (element: HTMLElement) => Math.max(0, element.scrollHeight - element.clientHeight)
@@ -24,9 +27,9 @@ export const alignItemWithTrigger = (elements: AlignElements): boolean => {
 	const positionerRect = positioner.getBoundingClientRect()
 	const scrollHeight = scroller.scrollHeight
 	const borderBottom = parseFloat(popupStyles.borderBottomWidth)
-	const marginTop = parseFloat(positionerStyles.marginTop) || 10
-	const marginBottom = parseFloat(positionerStyles.marginBottom) || 10
-	const minHeight = parseFloat(positionerStyles.minHeight) || 100
+	const marginTop = nonZeroOr(parseFloat(positionerStyles.marginTop), 10)
+	const marginBottom = nonZeroOr(parseFloat(positionerStyles.marginBottom), 10)
+	const minHeight = nonZeroOr(parseFloat(positionerStyles.minHeight), 100)
 	const viewportHeight = document.documentElement.clientHeight - marginTop - marginBottom
 	const viewportWidth = document.documentElement.clientWidth
 	const availableSpaceBeneathTrigger = viewportHeight - triggerRect.bottom + triggerRect.height

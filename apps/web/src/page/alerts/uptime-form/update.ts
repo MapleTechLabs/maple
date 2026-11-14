@@ -1,12 +1,13 @@
+import { encodeJson, requestKey } from "@maple/views/data/request-key"
 import { AlertDestinationId } from "@maple/domain/http"
 import { Option, Result, Schema, Array as Arr } from "effect"
 import { AsyncData, Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
-import { requestKey } from "@maple/views/data/request-key"
 import type { AppRoute } from "../../../route"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { monitorHref, monitorIdFromUrl } from "../shared/uptime-commands"
+import { pickedDestination } from "../../kit/destination-picker"
+import { monitorHref, monitorIdFromUrl } from "../../kit/uptime/commands"
 import {
 	FetchExistingMonitor,
 	FetchFormServices,
@@ -14,13 +15,26 @@ import {
 	ReadFormTimeZones,
 	SaveDraft,
 	TestDraft,
+	TrackCreated,
 } from "./command"
-import { defaultName, formFromMonitor, formIssues, wireConfig, wirePayload } from "./derive"
-import { ASSERTION_OPS, type AssertionDraft, emptyForm, type Form, MonitorKind, type TextField } from "./form"
+import {
+	defaultName,
+	formFromMonitor,
+	formIssues,
+	wireConfig,
+	wirePayload,
+} from "../../kit/uptime/form-derive"
+import {
+	ASSERTION_OPS,
+	type AssertionDraft,
+	emptyForm,
+	type Form,
+	MonitorKind,
+	type TextField,
+} from "../../kit/uptime/form"
 import { Message } from "./message"
-import type { Model } from "./model"
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
+import { canManage, type Model } from "./model"
+import { acceptGrants } from "../../kit/session-grants"
 
 type Return = PageReturn<Model, Message>
 type FormRoute = Extract<AppRoute, { readonly _tag: "AlertsUptimeNew" }>
@@ -52,7 +66,7 @@ export const init = (route: FormRoute, context: PageContext): Return => {
 		timeZones: [],
 		destinations: null,
 		destinationMenu: Menu.init(DESTINATION_MENU_ID),
-		isAdmin: false,
+		grants: [],
 		isSessionLoaded: false,
 	}
 	const common = [FetchFormServices(), ReadFormTimeZones(), FetchFormSession({ orgId: context.orgId })]
@@ -102,7 +116,7 @@ const test = (model: Model): Return =>
 			}
 
 const save = (model: Model): Return =>
-	model.isSaving || !model.isAdmin || formIssues(model.form).length > 0
+	model.isSaving || !canManage(model) || formIssues(model.form).length > 0
 		? { model }
 		: {
 				model: { ...model, isSaving: true, saveFailure: null },
@@ -120,20 +134,13 @@ const updateDestinationMenu = (model: Model, message: Menu.Message): Return => {
 		Message.GotDestinationMenuMessage({ message: child }),
 	)
 	const next = { ...model, destinationMenu: result.model }
-	const picked = result.outMessage?._tag === "SelectedItem" ? result.outMessage.value : null
-	const isKnown = Arr.some(model.destinations ?? [], (destination) => destination.id === picked)
-	return Option.match(isKnown ? decodeDestinationId(picked) : Option.none(), {
+	const picked = pickedDestination(result.outMessage, model.destinations, model.form.destinationIds)
+	return Option.match(Option.flatMap(picked, decodeDestinationId), {
 		onNone: () => ({ model: next, commands }),
-		onSome: (id) =>
-			model.form.destinationIds.includes(id)
-				? { model: next, commands }
-				: {
-						model: {
-							...next,
-							form: { ...next.form, destinationIds: [...next.form.destinationIds, id] },
-						},
-						commands,
-					},
+		onSome: (id) => ({
+			model: { ...next, form: { ...next.form, destinationIds: [...next.form.destinationIds, id] } },
+			commands,
+		}),
 	})
 }
 
@@ -166,8 +173,9 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		CompletedFetchServices: ({ services }) => ({ model: { ...model, services } }),
 		CompletedReadTimeZones: ({ zones }) => ({ model: { ...model, timeZones: zones } }),
-		CompletedFetchSession: ({ orgId, isAdmin }) =>
-			orgId === context.orgId ? { model: { ...model, isAdmin, isSessionLoaded: true } } : { model },
+		CompletedFetchSession: (answer) => ({
+			model: acceptGrants(model, context.orgId, answer, { isSessionLoaded: true }),
+		}),
 		PickedKind: ({ kind }) =>
 			model.editingId !== null
 				? { model }
@@ -215,6 +223,7 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 			Result.match(result, {
 				onSuccess: (monitor): Return => ({
 					model: { ...model, isSaving: false },
+					commands: model.editingId === null ? [TrackCreated({ kind: monitor.kind })] : [],
 					outMessage: PageOutMessage.RequestedNavigation({
 						url: monitorHref(monitor.id),
 						isReplace: true,
@@ -228,4 +237,5 @@ const updateForm = (model: Model, message: Message, context: PageContext): Retur
 				// Inline beside the action bar, never a toast over its buttons.
 				onFailure: (saveFailure): Return => ({ model: { ...model, isSaving: false, saveFailure } }),
 			}),
+		CompletedTrackCreated: () => ({ model }),
 	})

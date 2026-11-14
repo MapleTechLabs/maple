@@ -1,32 +1,25 @@
 /**
- * The writes that publish a diagnosis onto an investigation.
- *
- * Two callers reach this: `InvestigationService.submitDiagnosis` (the chat
- * agent's tool, on the single-pass path) and the fan-out workflow's `persist`
- * step (the validator's promoted cause). They must produce byte-identical
- * effects — the same status transition, the same severity application, the same
- * deterministically-keyed timeline event — or an investigation would mean
- * different things depending on which path produced it.
- *
- * Autumn metering deliberately stays with each caller: they reach the worker env
- * differently, and the token totals they have to report differ (one pass versus
- * a summed fan-out).
+ * The writes that publish a diagnosis onto an investigation, for
+ * `InvestigationService.submitDiagnosis`. Metering is not here: the chat turn
+ * runner charges the whole turn.
  */
 import * as PG from "@maple-dev/effect-orm/postgres"
-import type { MapleDb } from "@maple/db/client"
+import type { MapleDb, MapleDbError } from "@maple/db/client"
 import { ErrorIssueEvents, Investigations } from "@maple/db/tables"
 import {
 	InvestigationSubjectDiscriminator,
 	type AiTriageResult,
 	type InvestigationConfidence,
+	type InvestigationStatus,
 	type InvestigationSubjectType,
 	type OrgId,
 } from "@maple/domain/http"
-import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/domain/primitives"
+import { ErrorIssueEventId, ErrorIssueId, type InvestigationId } from "@maple/primitives"
 import { createHash } from "node:crypto"
 import { Effect, identity, Option, Schema, Array as Arr, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
+import { transitionRow } from "@maple/backend/platform/transition-row"
 import {
 	applyTriageSeverity,
 	type TriageActorMissingError,
@@ -102,6 +95,40 @@ export interface ApplyDiagnosisInput {
 	readonly subjectType: Option.Option<InvestigationSubjectType>
 }
 
+/** Whether a diagnosis or partial actually reached the row. */
+export type DiagnosisOutcome = "applied" | "dropped"
+
+/**
+ * A diagnosis lands on a run still going, or supersedes an earlier verdict (an attended
+ * follow-up). A run already `failed` (the stale sweep gave up on it) or `resolved` by a person
+ * keeps its state: the late report is dropped, not written.
+ */
+const DIAGNOSABLE_STATUSES = ["investigating", "diagnosed", "inconclusive"] as const
+
+/** A partial only ever closes out the autonomous pass that is still running. */
+const PARTIAL_STATUSES = ["investigating"] as const
+
+const dropLateWrite = (
+	investigationId: InvestigationId,
+	to: InvestigationStatus,
+	from: Arr.NonEmptyReadonlyArray<InvestigationStatus>,
+	write: (
+		from: Arr.NonEmptyReadonlyArray<InvestigationStatus>,
+	) => Effect.Effect<ReadonlyArray<unknown>, MapleDbError>,
+): Effect.Effect<DiagnosisOutcome, MapleDbError> =>
+	transitionRow({ table: "investigations", id: investigationId, from, to }, write).pipe(
+		Effect.as<DiagnosisOutcome>("applied"),
+		Effect.catchTag("@maple/backend/TransitionConflictError", (conflict) =>
+			Effect.gen(function* () {
+				yield* Effect.annotateCurrentSpan({ "maple.investigation.late_write_dropped": to })
+				yield* Effect.logWarning("Dropped a late investigation write").pipe(
+					Effect.annotateLogs({ investigationId, to, message: conflict.message }),
+				)
+				return "dropped" as const
+			}),
+		),
+	)
+
 /**
  * Flip the row to `diagnosed` with the report attached, then — if an issue is
  * linked — apply the severity and record the timeline event atomically. The
@@ -113,29 +140,41 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 		const confidence: InvestigationConfidence = input.report.confidence
 		const now = input.nowMs
 
-		yield* orm.run(
-			PG.update(Investigations)
-				.set({
-					status: "diagnosed",
-					reportJson: input.report,
-					// Explicit null rather than `undefined`: an unassessed report must write
-					// "no severity" onto the row, not silently omit the column from the UPDATE
-					// and leave a stale one standing.
-					severity: input.report.severityAssessment ?? null,
-					confidence,
-					model: input.model,
-					inputTokens: input.inputTokens,
-					outputTokens: input.outputTokens,
-					error: null,
-					diagnosedAt: now,
-					updatedAt: now,
-				})
-				.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.investigationId)]),
+		const landed = yield* dropLateWrite(
+			input.investigationId,
+			"diagnosed",
+			DIAGNOSABLE_STATUSES,
+			(from) =>
+				orm.run(
+					PG.update(Investigations)
+						.set({
+							status: "diagnosed",
+							reportJson: input.report,
+							// Explicit null rather than `undefined`: an unassessed report must write
+							// "no severity" onto the row, not silently omit the column from the UPDATE
+							// and leave a stale one standing.
+							severity: input.report.severityAssessment ?? null,
+							confidence,
+							model: input.model,
+							inputTokens: input.inputTokens,
+							outputTokens: input.outputTokens,
+							error: null,
+							diagnosedAt: now,
+							updatedAt: now,
+						})
+						.where(($) => [
+							$.orgId.eq(input.orgId),
+							$.id.eq(input.investigationId),
+							$.status.in_(...from),
+						])
+						.returning("id"),
+				),
 		)
+		if (landed === "dropped") return landed
 
-		if (!input.issueId) return
+		if (!input.issueId) return landed
 		// See `subjectType` above: a verification's report must not re-rank the issue.
-		if (Option.contains(input.subjectType, "fix_verification")) return
+		if (Option.contains(input.subjectType, "fix_verification")) return landed
 		const decodedIssueId = decodeIssueId(input.issueId)
 		// Keyed by the turn: a follow-up's superseding diagnosis records its own events, a retry
 		// does not. Without a turn, one set per investigation, as before.
@@ -174,6 +213,7 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
 				)
 			}),
 		)
+		return landed
 	})
 
 /**
@@ -182,24 +222,22 @@ const writeDiagnosis = (orm: MapleDb, input: ApplyDiagnosisInput) =>
  * Owns its database call rather than taking a client: the write is one logical
  * operation, so the retry, the span and the persistence-error mapping belong
  * with it instead of being re-supplied by every caller. `Database` reaches the
- * invocation's connection through `PgConnectionScope`, so callers that already
- * hold one (the request path, the fan-out workflow's per-run scope) keep using
- * exactly that connection.
+ * invocation's connection through `PgConnectionScope`, so a caller that already
+ * holds one keeps using exactly that connection.
  *
  * Fails with the raw `DatabaseError` rather than a domain persistence error:
  * this write straddles two domains (it updates `investigations` and, when an
- * issue is linked, the error-issue tables), and its two callers map to
- * different persistence errors. Mapping here would force one of them to
- * re-wrap. The contention retry still applies — that lives in `makeDbExecute`,
- * not in the mapping.
+ * issue is linked, the error-issue tables), so the caller picks the mapping.
+ * The contention retry still applies: it lives in `makeDbExecute`, not in the
+ * mapping.
  */
 export const applyDiagnosisWrites: (
 	input: ApplyDiagnosisInput,
-) => Effect.Effect<void, DatabaseError | TriageActorMissingError, Database> = Effect.fn(
+) => Effect.Effect<DiagnosisOutcome, DatabaseError | TriageActorMissingError, Database> = Effect.fn(
 	"ApplyDiagnosis.applyDiagnosisWrites",
 )(function* (input) {
 	const database = yield* Database
-	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
+	return yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
 })
 
 export interface ApplyInconclusiveInput {
@@ -236,40 +274,47 @@ export interface ApplyInconclusiveInput {
  *   render in a destructive box. The report replaces it.
  */
 const writeInconclusive = (orm: MapleDb, input: ApplyInconclusiveInput) =>
-	orm.run(
-		PG.update(Investigations)
-			.set({
-				status: "inconclusive",
-				reportJson: input.report,
-				severity: null,
-				// Always low, whatever the report says. Nothing was established, and a
-				// partial that claims medium confidence in a lead is a promotion nobody
-				// made, reintroduced one layer down.
-				confidence: "low",
-				model: input.model,
-				inputTokens: input.inputTokens,
-				outputTokens: input.outputTokens,
-				error: null,
-				diagnosedAt: null,
-				updatedAt: input.nowMs,
-			})
-			.where(($) => [$.orgId.eq(input.orgId), $.id.eq(input.investigationId)]),
+	dropLateWrite(input.investigationId, "inconclusive", PARTIAL_STATUSES, (from) =>
+		orm.run(
+			PG.update(Investigations)
+				.set({
+					status: "inconclusive",
+					reportJson: input.report,
+					severity: null,
+					// Always low, whatever the report says. Nothing was established, and a
+					// partial that claims medium confidence in a lead is a promotion nobody
+					// made, reintroduced one layer down.
+					confidence: "low",
+					model: input.model,
+					inputTokens: input.inputTokens,
+					outputTokens: input.outputTokens,
+					error: null,
+					diagnosedAt: null,
+					updatedAt: input.nowMs,
+				})
+				.where(($) => [
+					$.orgId.eq(input.orgId),
+					$.id.eq(input.investigationId),
+					$.status.in_(...from),
+				])
+				.returning("id"),
+		),
 	)
 
 /**
- * Publish a partial result. See {@link applyInconclusiveWrites}' body above for
- * why the issue-side half is absent, and {@link applyDiagnosisWrites} for why
+ * Publish a partial result. See `writeInconclusive` above for why the
+ * issue-side half is absent, and {@link applyDiagnosisWrites} for why
  * this owns its database call.
  */
 export const applyInconclusiveWrites: (
 	input: ApplyInconclusiveInput,
-) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("ApplyDiagnosis.applyInconclusiveWrites")(
-	function* (input) {
-		const database = yield* Database
-		yield* makeDbExecute(
-			database,
-			"applyInconclusiveWrites",
-			identity,
-		)((db) => writeInconclusive(db, input))
-	},
-)
+) => Effect.Effect<DiagnosisOutcome, DatabaseError, Database> = Effect.fn(
+	"ApplyDiagnosis.applyInconclusiveWrites",
+)(function* (input) {
+	const database = yield* Database
+	return yield* makeDbExecute(
+		database,
+		"applyInconclusiveWrites",
+		identity,
+	)((db) => writeInconclusive(db, input))
+})

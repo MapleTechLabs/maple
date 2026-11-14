@@ -1,4 +1,4 @@
-import { DateTime, Array as Arr, String as Str } from "effect"
+import { DateTime, Array as Arr, String as Str, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import {
@@ -110,8 +110,6 @@ describe("traceSpanStatsByTraceIdsQuery", () => {
 	})
 })
 
-// tracesListQuery
-
 describe("tracesListQuery", () => {
 	it("defaults to 25 rows from raw traces", () => {
 		const q = tracesListQuery({})
@@ -201,9 +199,9 @@ describe("tracesListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		// Cutoff subquery reads only Timestamp — no Map columns, no Duration math.
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("Timestamp AS ts")
 		expect(inner).not.toContain("SpanAttributes")
 		expect(inner).not.toContain("ResourceAttributes")
@@ -218,9 +216,9 @@ describe("tracesListQuery", () => {
 	it("extends the cutoff limit by offset so the cutoff covers all skipped rows", () => {
 		const q = tracesListQuery({ limit: 25, offset: 100 })
 		const { sql } = compileUnsafe(q, baseParams)
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
+		const inner = cutoffMatch[1]
 		// Stage 1 must look at limit+offset rows so the cutoff isn't above the
 		// rows the outer OFFSET will skip past.
 		expect(inner).toContain("LIMIT 125")
@@ -230,22 +228,20 @@ describe("tracesListQuery", () => {
 		const q = tracesListQuery({ serviceName: "api", errorsOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Each filter appears twice — once per stage.
-		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/ServiceName = 'api'/g)(sql))).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 		// `StatusCode = 'Error'` shows up in the WHERE of both stages (errorsOnly)
 		// plus once in the outer SELECT's `hasError` expression — 3 total.
-		expect(sql.match(/StatusCode = 'Error'/g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/StatusCode = 'Error'/g)(sql))).toHaveLength(3)
 	})
 
 	it("includes the cursor in the cutoff subquery so pagination narrows the cheap scan too", () => {
 		const q = tracesListQuery({ cursor: DateTime.makeUnsafe("2024-01-01T12:00:00Z") })
 		const { sql } = compileUnsafe(q, baseParams)
 		// Cursor predicate applies in both stages.
-		expect(sql.match(/Timestamp < '2024-01-01 12:00:00'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/Timestamp < '2024-01-01 12:00:00'/g)(sql))).toHaveLength(2)
 	})
 })
-
-// traceServicesByTraceIdsQuery
 
 describe("traceServicesByTraceIdsQuery", () => {
 	it("aggregates one page of trace services, seeked through trace_index", () => {
@@ -260,8 +256,6 @@ describe("traceServicesByTraceIdsQuery", () => {
 		expect(sql).toContain("GROUP BY traceId")
 	})
 })
-
-// tracesRootListQuery
 
 describe("tracesRootListQuery", () => {
 	it("defaults to 25 root rows from raw traces", () => {
@@ -303,9 +297,9 @@ describe("tracesRootListQuery", () => {
 		const { sql } = compileUnsafe(q, baseParams)
 
 		// Cutoff subquery reads only Timestamp.
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("Timestamp AS ts")
 		expect(inner).not.toContain("SpanAttributes")
 		expect(inner).not.toContain("Duration")
@@ -323,24 +317,22 @@ describe("tracesRootListQuery", () => {
 	it("extends the cutoff limit by offset", () => {
 		const q = tracesRootListQuery({ limit: 25, offset: 75 })
 		const { sql } = compileUnsafe(q, baseParams)
-		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		const cutoffMatch = Option.getOrThrow(Str.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)(sql))
 		expect(cutoffMatch).not.toBeNull()
-		const inner = cutoffMatch![1]!
+		const inner = cutoffMatch[1]
 		expect(inner).toContain("LIMIT 100")
 	})
 
 	it("applies the same filters to both stages", () => {
 		const q = tracesRootListQuery({ serviceName: "api", errorsOnly: true })
 		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
-		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/ServiceName = 'api'/g)(sql))).toHaveLength(2)
+		expect(Arr.fromIterable(Str.matchAll(/OrgId = 'org_1'/g)(sql))).toHaveLength(2)
 		// `StatusCode = 'Error'` shows up in the WHERE of both stages (errorsOnly)
 		// plus once in the outer SELECT's `hasError` expression — 3 total.
-		expect(sql.match(/StatusCode = 'Error'/g)).toHaveLength(3)
+		expect(Arr.fromIterable(Str.matchAll(/StatusCode = 'Error'/g)(sql))).toHaveLength(3)
 	})
 })
-
-// traceListQuery
 
 /**
  * Body of the `TraceId IN (SELECT traceId FROM (…))` page subquery. Scans for
@@ -349,7 +341,7 @@ describe("tracesRootListQuery", () => {
  */
 function pageSubquery(sql: string): string {
 	const marker = "TraceId IN (SELECT traceId FROM ("
-	const start = sql.indexOf(marker)
+	const start = Option.getOrThrow(Str.indexOf(marker)(sql))
 	expect(start).toBeGreaterThan(-1)
 
 	let depth = 1
@@ -400,13 +392,13 @@ describe("traceListQuery", () => {
 		type Cursor = { timestamp: DateTime.Utc; traceId: string }
 		const second = (ts: DateTime.Utc) => Math.floor(DateTime.toEpochMillis(ts) / 1000) * 1000
 		const desc = (key: (r: Root) => number) => (a: Root, b: Root) =>
-			key(b) - key(a) || Str.localeCompare(a.traceId)(b.traceId)
+			key(b) !== key(a) ? key(b) - key(a) : Str.localeCompare(a.traceId)(b.traceId)
 
 		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
 		const page = (cursor: Cursor | undefined): Root[] => {
 			const { sql } = compileUnsafe(traceListQuery({ limit: 2, cursor }), baseParams)
 			expect(pageSubquery(sql)).toContain("FROM trace_list_mv")
-			const outerOrder = Str.slice(sql.lastIndexOf("ORDER BY "))(sql)
+			const outerOrder = Str.slice(Option.getOrThrow(Str.lastIndexOf("ORDER BY ")(sql)))(sql)
 			const cut = cursor && { ts: second(cursor.timestamp), traceId: cursor.traceId }
 			const stage1 = Arr.filter(
 				roots,
@@ -556,7 +548,9 @@ describe("traceListQuery", () => {
 		expect(inner).toContain("OFFSET 20")
 		// The outer aggregate re-caps at `limit` but must never re-apply the
 		// offset — that would skip the first 20 traces of the page.
-		expect(Str.slice(sql.indexOf("GROUP BY traceId"))(sql)).not.toContain("OFFSET")
+		expect(Str.slice(Option.getOrThrow(Str.indexOf("GROUP BY traceId")(sql)))(sql)).not.toContain(
+			"OFFSET",
+		)
 	})
 
 	it("filters traces in the paging stage, and never re-filters the aggregate", () => {
@@ -577,15 +571,16 @@ describe("traceListQuery", () => {
 		// count, and an exact time bound would clip children that outlive the
 		// window — but a completely unbounded aggregate defeats partition pruning
 		// and times out on prod retention, hence the ±1h pad.
-		const outer = Str.replace(inner, "")(Str.slice(sql.indexOf("FROM traces"))(sql))
+		const outer = Str.replace(
+			inner,
+			"",
+		)(Str.slice(Option.getOrThrow(Str.indexOf("FROM traces")(sql)))(sql))
 		expect(outer).toContain("OrgId = 'org_1'")
 		expect(outer).not.toContain("ServiceName = 'api'")
 		expect(outer).toContain("Timestamp >= subtractHours(toDateTime('2024-01-01 00:00:00'), 1)")
 		expect(outer).toContain("Timestamp <= addHours(toDateTime('2024-01-02 00:00:00'), 1)")
 	})
 })
-
-// slowTracesQuery
 
 describe("slowTracesQuery", () => {
 	it("reads slow root spans from the pre-extracted trace list MV", () => {
@@ -598,8 +593,6 @@ describe("slowTracesQuery", () => {
 		expect(sql).not.toContain("ResourceAttributes")
 	})
 })
-
-// spanSearchQuery
 
 describe("spanSearchQuery", () => {
 	it("seeks the trace through trace_index when a trace id is provided", () => {

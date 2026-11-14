@@ -7,13 +7,14 @@
 // hours count whole. No raw edge, so nothing here splices and the boundary gate
 // never applies. The rollup holds Server spans with a response status only.
 
-import { Schema, type DateTime } from "effect"
+import { Schema, type DateTime, Array as Arr } from "effect"
 import * as CH from "@maple-dev/effect-orm/expr"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, type ColumnAccessor } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse, DateTimeUtcFromWarehouse64 } from "../../datetime"
-import { ServiceEndpointDetailsHourly, orgIdParam } from "../tables"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
 import { utcHourFloor } from "./query-helpers"
 import { httpEndpointCondition } from "./service-operations"
 
@@ -22,17 +23,17 @@ export interface ServiceEndpointDetailsScopeOpts {
 	readonly environments?: readonly string[]
 }
 
-type DetailColumns = ColumnAccessor<typeof ServiceEndpointDetailsHourly.columns>
+type DetailColumns = ColumnAccessor<typeof Datasources.serviceEndpointDetailsHourly.columns>
 
 const scopeConditions = ($: DetailColumns, opts: ServiceEndpointDetailsScopeOpts) => [
 	$.OrgId.eq(orgIdParam),
 	$.ServiceName.eq(opts.serviceName),
 	$.Hour.gte(utcHourFloor("startTime")),
 	$.Hour.lte(utcHourFloor("endTime")),
-	opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+	opts.environments !== undefined && opts.environments.length > 0
+		? CH.inList($.DeploymentEnv, opts.environments)
+		: undefined,
 ]
-
-// D. Status code x error.type breakdown
 
 export interface ServiceEndpointStatusBreakdownOpts extends ServiceEndpointDetailsScopeOpts {
 	/** One endpoint; omitted means every HTTP endpoint of the service. */
@@ -57,7 +58,7 @@ export const serviceEndpointStatusBreakdownRowSchema = Schema.Struct({
 })
 
 export function serviceEndpointStatusBreakdownQuery(opts: ServiceEndpointStatusBreakdownOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			spanName: $.SpanName,
 			httpStatusCode: $.HttpStatusCode,
@@ -76,8 +77,6 @@ export function serviceEndpointStatusBreakdownQuery(opts: ServiceEndpointStatusB
 		.limit(opts.limit ?? 500)
 		.format("JSON")
 }
-
-// E1. One endpoint's distributions and top user agents
 
 /** Latency levels the detail panel draws; finalize-time, so any set reads the stored digests. */
 export const ENDPOINT_LATENCY_QUANTILE_LEVELS = [
@@ -110,13 +109,16 @@ export const serviceEndpointDistributionRowSchema = Schema.Struct({
 	userAgentCounts: Schema.Array(CHNumber),
 })
 
-const LATENCY_LEVELS_SQL = ENDPOINT_LATENCY_QUANTILE_LEVELS.join(", ")
+const LATENCY_LEVELS_SQL = Arr.join(
+	Arr.map(ENDPOINT_LATENCY_QUANTILE_LEVELS, (level) => `${level}`),
+	", ",
+)
 // An agent-less span still takes an approx_top_k slot as ''; it is not an agent.
 const TOP_AGENTS_SQL = "arrayFilter(x -> x.1 != '', approx_top_kMerge(10)(UserAgents))"
 
 /** Always one row: no GROUP BY, so an endpoint with no traffic reads as zeros. */
 export function serviceEndpointDistributionQuery(opts: ServiceEndpointDetailOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			spanCount: CH.sum($.SpanCount),
 			latencyQuantilesMs: CH.rawExpr<ReadonlyArray<number>>(
@@ -145,8 +147,6 @@ export function serviceEndpointDistributionQuery(opts: ServiceEndpointDetailOpts
 		.where(($) => [...scopeConditions($, opts), $.SpanName.eq(opts.spanName)])
 		.format("JSON")
 }
-
-// E2. One endpoint's slowest requests
 
 export interface ServiceEndpointSlowestOpts extends ServiceEndpointDetailOpts {
 	readonly limit?: number
@@ -177,7 +177,7 @@ export const serviceEndpointSlowestRowSchema = Schema.Struct({
  * without reading a raw span. Two of them never come from the same hour and status.
  */
 export function serviceEndpointSlowestQuery(opts: ServiceEndpointSlowestOpts) {
-	return from(ServiceEndpointDetailsHourly)
+	return from(Datasources.serviceEndpointDetailsHourly)
 		.select(($) => ({
 			hour: $.Hour,
 			httpStatusCode: $.HttpStatusCode,

@@ -1,8 +1,9 @@
 # OTel Coverage Roadmap
 
-Status (2026-09-25): `LogsFilters` now accepts `attributeFilters`, `resourceAttributeFilters`, and
-`minSeverity` (`packages/domain/src/query-engine.ts`), but the logs UI does not expose them yet.
-GenAI data has a dedicated surface in `/agent-sessions`. Other items below are still open.
+Status (2026-11-11): log and trace attribute filters (#3, #8) ship through the where-clause
+advanced filter on `/logs` and `/traces`, and span events render on the timeline and in span
+detail (#5). `minSeverity` is still backend-only (#4). GenAI data has a dedicated surface in
+`/agent-sessions`. Other items below are still open.
 
 Tracks OpenTelemetry-standard capabilities Maple does **not** yet surface for filtering and
 visualization. Maple ingests all three OTel signals and stores a near-complete span/log/metric model
@@ -42,17 +43,17 @@ data exists:
 
 - [ ] ~~**1. Span kind filter** (Server/Client/Producer/Consumer/Internal)~~. ✗ **REJECTED (tried and reverted).** Built end-to-end and verified working (Client → 36 traces), but judged not useful enough for the sidebar. Don't rebuild without a clearer use case.
 - [ ] ~~**2. Span status filter** (Ok / Unset / Error, not just `has_error`)~~. ✗ **REJECTED (tried and reverted).** The existing `has_error` toggle covers the common case; granular Ok/Unset/Error wasn't worth the sidebar space.
-- [ ] **3. Log attribute filters** (arbitrary `log_attributes`). _S–M, logs_
-      Backend done: `LogsFilters` has `attributeFilters` and `resourceAttributeFilters`. The logs sidebar has no control for them yet. Reuse the trace-side `AttributeFilter` UI.
+- [x] **3. Log attribute filters** (arbitrary `log_attributes`). _S–M, logs_
+      Done: the `/logs` where-clause filter maps attribute clauses onto `attributeFilters` / `resourceAttributeFilters` (`apps/web/src/page/logs/list/advanced-filter-sync.ts`).
 - [ ] **4. Log severity range** (`>= ERROR`). _S, logs_
-      Backend done: `LogsFilters.minSeverity` filters on `severity_number` and is accepted by `apps/web/src/api/warehouse/logs.ts`. The `/logs` route does not expose it yet.
-- [ ] **5. Span events on the waterfall/timeline.** _M, trace visuals_
-      `events_*` arrays are stored and never rendered. Add event markers to `trace-timeline.tsx` / `span-hierarchy.tsx` and an events list in span detail. Highest-visibility visual win.
+      Backend done: `LogsFilters.minSeverity` filters on `severity_number` and is accepted by `packages/web-data/src/warehouse/logs.ts`. The `/logs` route only offers the per-severity list (`severities`), not a range.
+- [x] **5. Span events on the waterfall/timeline.** _M, trace visuals_
+      Done: event markers on timeline rows (`packages/views/src/traces/timeline/view-row.ts`) and an events section in span detail (`packages/views/src/traces/span-panel/events.ts`).
 - [ ] **6. Span links rendered** (clickable links to related traces). _M, trace visuals_. ⏸ **DEPRIORITIZED: 0 links in prod data.** `links_*` arrays are stored, never shown. Revisit once a producer emits links.
 - [ ] **7. Scope / instrumentation filter** (`scope_name` / `scope_version`). _S, trace + log filtering_
       Stored on all three signals, filterable on none. Isolates one SDK/library.
-- [ ] **8. Generic attribute filter UI builder.** _M, trace filtering_
-      `attributeFilters` and `resourceAttributeFilters` work end-to-end in the query engine, and `hasActiveFilters` counts them. Span detail attribute rows can open a filtered trace list (`trace-attribute-filter-provider.tsx`), but the sidebar has no control to add a filter. Wire a key/op/value row builder backed by `explore-attributes` autocomplete.
+- [x] **8. Generic attribute filter UI builder.** _M, trace filtering_
+      Done as a where-clause filter rather than a sidebar row builder (`apps/web/src/page/traces/advanced-filter-sync.ts`, shared parsing in `apps/web/src/page/kit/where-clause-filters.ts`).
 
 ## Tier 2: medium (data stored, new query/visual work)
 
@@ -78,13 +79,12 @@ data exists:
 
 ## Recommended build order
 
-1. Filter quick-wins batch (Tier 1: #4, #7; #1 and #2 were rejected). Shared schema → query operator → facet → sidebar pattern.
-2. Log attribute filters (#3): logs filtering parity with traces.
-3. Span events visualization (#5): the most visible "we have OTel data you can't see" gap.
-4. Generic attribute filter UI builder (#8): backend done, pure UI, multiplies the value of every stored attribute.
-5. Span links (#6), then exemplar links (#9): the two OTel correlation bridges.
-6. Histogram / exp-histogram visuals (#10, #11) and GenAI conventions (#13).
-7. Tier 3 ingest work as separate, demand-driven efforts.
+Done: #3, #5, #8. Rejected: #1, #2.
+
+1. Filter quick-wins batch (Tier 1: #4, #7). Shared schema → query operator → facet → sidebar pattern.
+2. Span links (#6), then exemplar links (#9): the two OTel correlation bridges.
+3. Histogram / exp-histogram visuals (#10, #11) and GenAI conventions (#13).
+4. Tier 3 ingest work as separate, demand-driven efforts.
 
 ## Critical files (by area)
 
@@ -92,9 +92,9 @@ data exists:
 - **Filter operator → SQL:** `packages/query-engine/src/traces-shared.ts`.
 - **Trace/log search + facets:** `packages/query-engine/src/observability/{search-traces,search-logs,explore-attributes}.ts`.
 - **DSL queries:** `packages/query-engine/src/ch/queries/*.ts` (+ export from `packages/query-engine/src/ch/index.ts`).
-- **Filter UIs:** `apps/web/src/components/traces/traces-filter-sidebar.tsx`, `apps/web/src/components/logs/logs-filter-sidebar.tsx`, shared `apps/web/src/components/filters/filter-section.tsx`.
-- **Trace visuals:** `packages/ui/src/components/traces/{trace-timeline,span-hierarchy,flamegraph,flow-view}.tsx`, `apps/web/src/components/traces/span-detail-panel.tsx`.
-- **Chart registry / metric visuals:** `packages/ui/src/components/charts/registry.ts`; verify via `/lab/widgets`.
+- **Filter UIs:** `apps/web/src/page/traces/list/view-filters.ts`, `apps/web/src/page/logs/list/view-filters.ts`, shared `packages/views/src/ui/filters/` (`filter-sidebar.ts`, `filter-section.ts`); where-clause filters in `apps/web/src/page/{traces,logs/list}/advanced-filter-sync.ts`.
+- **Trace visuals:** `packages/views/src/traces/` (`timeline/`, `waterfall/`, `flamegraph.ts`, `span-panel/`), page wiring in `apps/web/src/page/traces/detail/`.
+- **Chart registry / metric visuals:** `apps/web/src/page/dashboards/kit/chart-registry.ts`; verify via `/lab/widgets`.
 - **Datasource schemas:** `packages/domain/src/tinybird/datasources.ts` (traces, logs, metric\_\* tables).
 - **Ingest encoder (Tier 3 only):** `apps/ingest/src/telemetry.rs`.
 - **MCP parity:** `apps/ai/src/mcp/tools/{search-traces,search-logs,explore-attributes}.ts`.

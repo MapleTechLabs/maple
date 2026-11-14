@@ -19,8 +19,7 @@ import { panel, panelHeader } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { metricTypeBadge } from "../shared"
-import { formatTimestampInTimezone } from "@maple/web-data/lib/timezone-format"
+import { metricTypeBadge } from "@maple/views/ui/metric-type"
 import {
 	breakdownAggregation,
 	breakdownGroupBy,
@@ -34,9 +33,8 @@ import type { Model } from "./model"
 import { breakdownKeyOf } from "./update"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
+import { timestamp } from "@maple/views/ui/timestamp"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
-
-// `MetricChart`, `MetricBreakdown` and `MetricMetadataPanel` (components/metrics/).
 
 type H = HtmlBuilder<Message>
 
@@ -88,7 +86,6 @@ const isCapped = (model: Model, draft: MetricsQueryDraft): boolean =>
 		),
 	).size >= GROUP_BY_SERIES_LIMIT
 
-/** `MetricChart` in its `ChartCard`. */
 export const metricChart = (
 	h: H,
 	model: Model,
@@ -100,7 +97,7 @@ export const metricChart = (
 	const capped = isCapped(model, draft)
 	return panel(h, {}, [
 		panelHeader(h, {
-			title: h.span([h.Class("font-mono"), h.Title(label)], [label]),
+			title: typography(h, { mono: true, attributes: [h.Title(label)] }, [label]),
 			action:
 				capped || unit !== ""
 					? hstack(
@@ -139,15 +136,14 @@ const breakdownBars = (h: H, model: Model, filterKey: string): Html =>
 						{
 							onClick: Message.ClickedBreakdownValue({ groupBy: filterKey, value: row.name }),
 							className:
-								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-accent active:bg-accent",
+								"group relative flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1 text-left hover:bg-surface-sunken active:bg-surface-sunken",
 							attributes: [h.Key(row.name)],
 						},
 						[
 							backdropBar(h, {
 								value: row.value,
 								max,
-								className:
-									"inset-y-0.5 left-0 bg-primary-a2 transition-colors group-hover:bg-primary-a3",
+								className: "inset-y-0.5 left-0 bg-primary-a2 group-hover:bg-primary-a3",
 							}) ?? h.empty,
 							h.span([h.Class("sr-only")], ["Filter to ", filterKey, " = "]),
 							truncatedText(h, {
@@ -172,7 +168,7 @@ const attributeKeyNames = (model: Model): ReadonlyArray<string> =>
 		onSome: (rows) => Arr.map(rows, (row) => row.attributeKey),
 	})
 
-/** `MetricBreakdown`: top values of one attribute; each bar narrows the where clause. */
+/** Top values of one attribute; each bar narrows the where clause. */
 export const metricBreakdown = (h: H, model: Model, draft: MetricsQueryDraft): Html => {
 	const filterKey = breakdownGroupBy(breakdownKeyOf(model.search))
 	return panel(h, {}, [
@@ -214,24 +210,27 @@ const attributesList = (h: H, model: Model): Html =>
 				: h.ul(
 						[h.Class("space-y-1")],
 						Arr.map(rows, (row) =>
-							h.li(
-								[
-									h.Key(row.attributeKey),
-									h.Class("flex items-center justify-between gap-2 text-xs"),
-								],
+							hstack(
+								h,
+								{
+									gap: "2",
+									align: "center",
+									justify: "between",
+									as: "li",
+									className: "text-xs",
+									attributes: [h.Key(row.attributeKey)],
+								},
 								[
 									typography(h, { mono: true, truncate: true }, [row.attributeKey]),
-									h.span(
-										[h.Class("shrink-0 font-mono text-muted-foreground")],
-										[formatNumber(row.usageCount)],
-									),
+									typography(h, { tone: "muted", mono: true, className: "shrink-0" }, [
+										formatNumber(row.usageCount),
+									]),
 								],
 							),
 						),
 					),
 	})
 
-/** `MetricMetadataPanel`. */
 export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZone: string): Html =>
 	panel(h, { className: "gap-4 p-3" }, [
 		h.div(
@@ -258,10 +257,10 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 		keyValueList(h, { className: "gap-2" }, [
 			keyValue(h, { label: "Datapoints in range", mono: true }, [formatNumber(summary.dataPointCount)]),
 			keyValue(h, { label: "First seen", mono: true }, [
-				formatTimestampInTimezone(summary.firstSeen, { timeZone, withYear: true }),
+				timestamp(h, { value: summary.firstSeen, timeZone, nowMs: model.nowMs, withYear: true }),
 			]),
 			keyValue(h, { label: "Last seen", mono: true }, [
-				formatTimestampInTimezone(summary.lastSeen, { timeZone, withYear: true }),
+				timestamp(h, { value: summary.lastSeen, timeZone, nowMs: model.nowMs, withYear: true }),
 			]),
 		]),
 		...(summary.services.length === 0
@@ -287,7 +286,7 @@ export const metadataPanel = (h: H, model: Model, summary: CatalogSummary, timeZ
 											className: "max-w-full",
 											attributes: [h.Title(service)],
 										},
-										[h.span([h.Class("min-w-0 truncate")], [service])],
+										[typography(h, { truncate: true, className: "min-w-0" }, [service])],
 									),
 								),
 							),

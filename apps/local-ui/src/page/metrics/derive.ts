@@ -12,10 +12,10 @@ export const sparklineWindow = (
 	bounds: TimeBounds,
 	nowMs: number,
 ): ChartWindow => {
-	const firstSeen = entries.reduce<number | null>((earliest, entry) => {
+	const firstSeen = Arr.reduce(entries, null, (earliest: number | null, entry) => {
 		const ms = parseClickHouseDateTime(entry.firstSeen)
 		return ms !== null && (earliest === null || ms < earliest) ? ms : earliest
-	}, null)
+	})
 	return chartWindow(bounds, firstSeen, nowMs)
 }
 
@@ -44,7 +44,7 @@ export const previewValues = (
 	)
 }
 
-/** `StatSparkline`'s values: non-finite readings draw as 0. */
+/** Sparkline values: non-finite readings draw as 0. */
 export const sparklineValues = (values: ReadonlyArray<number>): ReadonlyArray<number> =>
 	Arr.map(values, (value) => (Number.isFinite(value) ? value : 0))
 
@@ -66,7 +66,7 @@ export const GridViewport = Schema.Struct({
 })
 export type GridViewport = typeof GridViewport.Type
 
-/** `useVirtualizer` (fixed rows, overscan 4): the row indexes to draw. Unmeasured, the first rows. */
+/** Fixed rows, overscan 4: the row indexes to draw. Unmeasured, the first rows. */
 export const visibleRows = (rowCount: number, viewport: GridViewport): ReadonlyArray<number> => {
 	if (rowCount === 0) return []
 	const lastIndex = rowCount - 1

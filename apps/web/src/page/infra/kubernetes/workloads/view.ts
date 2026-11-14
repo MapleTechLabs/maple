@@ -1,4 +1,4 @@
-import { deriveHostStatus, severityLevel } from "../../../../components/infra/format"
+import { deriveHostStatus, severityLevel } from "../../kit/format"
 import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { TONE_FILL } from "@maple/ui/lib/tone"
@@ -24,13 +24,13 @@ import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import type { PageViewInputs } from "../../../contract"
 import { dashboardPage } from "../../../kit/dashboard-page"
 import { fleetBand } from "../../kit/fleet-band"
-import * as Frame from "../../kit/frame"
+import * as Frame from "../../../kit/time-frame"
 import * as InstallModal from "../../kit/install-modal"
 import * as InstallModalView from "../../kit/install-modal-view"
 import { countLabel, searchToolbar, setupEmpty } from "../../kit/page-parts"
 import { emptyActions, filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { type SortAccessors, sortRowsBy } from "../../../kit/table-sort"
-import { kubernetesViewTabs } from "../../kit/view-tabs"
+import { kubernetesViewTabs } from "../../../kit/view-tabs"
 import { type Facet, Message, type WorkloadScope } from "./message"
 import {
 	type Model,
@@ -41,8 +41,6 @@ import {
 } from "./model"
 import { DEFAULT_PRESET, filtersOf, kindOf } from "./update"
 import { workloadTable, workloadTableLoading } from "./view-table"
-
-// `WorkloadsPage` and `WorkloadsFilterSidebarView`.
 
 type H = HtmlBuilder<Message>
 
@@ -107,7 +105,7 @@ const loadedRail = (h: H, model: Model, facets: WorkloadFacets, label: string): 
 
 const toInstall = (message: InstallModal.Message) => Message.GotInstallMessage({ message })
 
-/** The sidebar's presence probe (`useInfraSurfaces()`): any Kubernetes surface means the chart is in. */
+/** The sidebar's presence probe: any Kubernetes surface means the chart is in. */
 const isClusterReporting = (presence: ReadonlyArray<string>): boolean =>
 	Arr.some(
 		presence,
@@ -179,7 +177,10 @@ const workloadList = (
 	inputs: PageViewInputs,
 ): Html => {
 	const kind = kindOf(model.search)
-	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
+	const kindLabel = Arr.findFirst(KIND_OPTIONS, (option) => option.value === kind).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => "Deployments"),
+	)
 	const isWaiting = AsyncData.isRefreshing(model.workloads.data)
 	const hasStructuredFilter = Arr.some(
 		Rec.values(filtersOf(model.search)),
@@ -207,7 +208,7 @@ const workloadList = (
 		(workload) => q === "" || Str.includes(q)(Str.toLowerCase(workload.workloadName)),
 	)
 	return h.div(
-		[h.Class(cn("space-y-5", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
+		[h.Class(cn("space-y-4", refreshingClass(isWaiting))), ...(isWaiting ? [h.AriaBusy(true)] : [])],
 		[
 			fleetBand(h, {
 				total: workloads.length,
@@ -315,7 +316,10 @@ const toFrame = (message: Frame.Message) => Message.GotFrameMessage({ message })
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
 	const kind = kindOf(model.search)
-	const kindLabel = KIND_OPTIONS.find((option) => option.value === kind)?.label ?? "Deployments"
+	const kindLabel = Arr.findFirst(KIND_OPTIONS, (option) => option.value === kind).pipe(
+		Option.flatMapNullishOr((found) => found.label),
+		Option.getOrElse(() => "Deployments"),
+	)
 	return h.div(
 		[h.Class("contents")],
 		[

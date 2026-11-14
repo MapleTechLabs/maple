@@ -1,18 +1,7 @@
-import { Array as Arr, Effect, Order, pipe } from "effect"
-import type {
-	SpanAttributeKeysOutput,
-	SpanAttributeValuesOutput,
-	ResourceAttributeValuesOutput,
-} from "@maple/domain/tinybird"
+import { Array as Arr, Effect, Order, pipe, Option } from "effect"
+import type { AttributeKeysRow, AttributeValuesRow } from "../ch/pipe-rows"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { ExploreAttributesInput, AttributeKeyResult, AttributeValueResult } from "./types"
-
-// All three key endpoints (span_attribute_keys, resource_attribute_keys, metric_attribute_keys)
-// share the same output shape: { attributeKey, usageCount }
-type AttributeKeyRow = SpanAttributeKeysOutput
-
-// Both value endpoints share: { attributeValue, usageCount }
-type AttributeValueRow = SpanAttributeValuesOutput | ResourceAttributeValuesOutput
 
 const byCountDesc = Order.mapInput(Order.flip(Order.Number), (r: AttributeKeyResult) => r.count)
 
@@ -39,7 +28,12 @@ const metricScopeParams = Effect.fnUntraced(function* (input: ExploreAttributesI
 			},
 			{ profile: "discovery" },
 		)
-		metricType = catalog.data.find((row) => row.metricName === input.metricName)?.metricType
+		metricType = Option.getOrUndefined(
+			Option.map(
+				Arr.findFirst(catalog.data, (row) => row.metricName === input.metricName),
+				(row) => row.metricType,
+			),
+		)
 	}
 	return metricType === undefined ? undefined : { metric_name: input.metricName, metric_type: metricType }
 })
@@ -92,7 +86,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 
 	const metricScope = yield* metricScopeParams(input)
 	if (metricScope === undefined) return []
-	const result = yield* executor.query<AttributeKeyRow>(
+	const result = yield* executor.query<AttributeKeysRow>(
 		pipeName,
 		{
 			start_time: input.timeRange.startTime,
@@ -132,7 +126,7 @@ export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeV
 
 	const metricScope = yield* metricScopeParams(input)
 	if (metricScope === undefined) return []
-	const result = yield* executor.query<AttributeValueRow>(
+	const result = yield* executor.query<AttributeValuesRow>(
 		pipeName,
 		{
 			attribute_key: input.key,

@@ -1,6 +1,6 @@
-import { Clock, Effect, String as Str } from "effect"
+import { Clock, Effect, Option, String as Str } from "effect"
 import type { HttpServerRequest } from "effect/http"
-import type { ApiKeyId, OrgId, UserId } from "@maple/domain/primitives"
+import type { ApiKeyId, OrgId, UserId } from "@maple/primitives"
 import { httpRequestForensics, type AuditLogServiceApi } from "@maple/backend/services/audit/AuditLogService"
 
 /** Suppress duplicate denial rows for the same key/reason within this window. */
@@ -12,7 +12,7 @@ const MAX_TRACKED_DENIALS = 10_000
 /**
  * Isolate-local coalescing cache: last-recorded time per denial signature.
  * Tradeoff: Workers isolates multiply and recycle, so suppression is
- * best-effort — each isolate still records the first denial it sees, which is
+ * best-effort: each isolate still records the first denial it sees, which is
  * the forensic signal; only the repeat volume is shed, with no network hop.
  */
 const recentDenials = new Map<string, number>()
@@ -39,14 +39,16 @@ export interface ApiDenialInput {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly apiKeyId: ApiKeyId
-	/** The key's name, frozen onto the entry — a refused key is often revoked next. */
+	/** The key's name, frozen onto the entry: a refused key is often revoked next. */
 	readonly apiKeyName: string
 	readonly denialReason: string
 }
 
 const requestPath = (url: string): string => {
-	const queryStart = url.indexOf("?")
-	return queryStart === -1 ? url : Str.slice(0, queryStart)(url)
+	return Option.match(Str.indexOf("?")(url), {
+		onNone: () => url,
+		onSome: (queryStart) => Str.slice(0, queryStart)(url),
+	})
 }
 
 /**
@@ -54,7 +56,7 @@ const requestPath = (url: string): string => {
  * `cf-ray`/`cf-connecting-ip`/`cf-ipcountry` headers), coalescing duplicates:
  * the same (org, key, method+path, reason) is written at most once per window
  * so a client looping mis-scoped requests cannot amplify into unbounded queue
- * messages, rows, and warn logs. Never fails — same contract as `record`.
+ * messages, rows, and warn logs. Never fails, same contract as `record`.
  */
 export const recordApiDenial = (
 	audit: AuditLogServiceApi,

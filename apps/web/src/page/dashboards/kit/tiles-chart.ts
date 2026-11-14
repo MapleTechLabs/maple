@@ -3,7 +3,7 @@ import type { Html, HtmlBuilder } from "foldkit/html"
 import * as AreaChart from "@maple/views/charts/area-chart"
 import * as BarChart from "@maple/views/charts/bar-chart"
 import { bucketBarSeries } from "@maple/views/charts/bar-chart"
-import { OTHER_LABEL } from "@maple/ui/components/charts/_shared/bucket-series"
+import { OTHER_LABEL } from "@maple/views/charts/series/bucket-series"
 import * as Chart from "@maple/views/charts/chart"
 import { type ChartRuntime, isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import * as FunnelChart from "@maple/views/charts/funnel-chart"
@@ -19,15 +19,14 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { validateCssColor } from "@maple/ui/lib/sanitizers"
 import { chartSkeleton, type ChartSkeletonVariant } from "@maple/views/ui/chart-skeleton"
 import { type ChartCategory, chartCategoryOf } from "./chart-registry"
-import { widgetEmptyState, widgetFrame } from "./tile-shell"
+import { chartRuntimeFailedState, widgetEmptyState, widgetFrame } from "./tile-shell"
 import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 import { Array as Arr, Record as Rec } from "effect"
 
-// `makeChartWidget`: one factory for every widget
-// that mounts a registry chart, each branch handing its chart only the settings it declares.
+// Each chart branch hands its chart only the settings it declares.
 // TODO(chart-axes): line/area/bar thresholds, log scale and soft bounds are not drawn yet.
 
 type Widget = TileWidget
@@ -71,7 +70,7 @@ const toPrimitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
 				([key, value]): ReadonlyArray<readonly [string, string | number | boolean]> =>
 					typeof value === "string" || typeof value === "boolean"
 						? [[key, value] as const]
-						: // `asFiniteNumber`: a null or NaN reading is plotted as 0, the key kept in place.
+						: // A null or NaN reading is plotted as 0, the key kept in place.
 							typeof value === "number" || value === null
 							? [
 									[
@@ -103,7 +102,7 @@ type Render = Readonly<{
 	legend: "visible" | "hidden" | "right" | undefined
 }>
 
-/** `canvasSafeThresholdColor`: a validated colour resolved to a literal, else `--destructive`. */
+/** A validated colour resolved to a literal, else `--destructive`. */
 const thresholdColor = (theme: ThemeColors, color: string | undefined): string => {
 	const fallback = resolveColor(theme, "--destructive")
 	const validated = validateCssColor(color)
@@ -112,7 +111,7 @@ const thresholdColor = (theme: ThemeColors, color: string | undefined): string =
 	return /var\(|currentcolor/i.test(resolved) ? fallback : resolved
 }
 
-/** The cartesian block every line, area and bar chart reads (`renderChart`'s `cartesian`). */
+/** The cartesian block every line, area and bar chart reads. */
 const axisSpecOf = (widget: Widget, theme: ThemeColors): TimeseriesAxisSpec => ({
 	thresholds: Arr.map(widget.display.thresholds ?? [], (threshold) => ({
 		value: threshold.value,
@@ -132,6 +131,8 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 	const common = { slotId: `chart-${widget.id}`, model: ctx.chart, toParentMessage: ctx.onChart }
 	const theme = ctx.themeColors
 	const { data, className } = render
+	if (isCanvas(render.category) && ctx.chartRuntime._tag === "Failed")
+		return chartRuntimeFailedState(h, ctx.reloadPage ?? null)
 	if (isCanvas(render.category) && (theme === null || !isChartRuntimeReady(ctx.chartRuntime)))
 		return chartSkeleton(h, skeletonOf(render.category, widget))
 	switch (render.category) {
@@ -293,8 +294,8 @@ export type RegistryChartInputs<M> = Readonly<{
 }>
 
 /**
- * A registry chart with only `data` and `className` set (`ChartPreview`, the gallery thumbnails):
- * every other setting at the chart component's own default.
+ * A registry chart with only `data` and `className` set (the picker and gallery thumbnails): every
+ * other setting at the chart's own default.
  */
 export const registryChartView = <M>(h: HtmlBuilder<M>, inputs: RegistryChartInputs<M>): Html => {
 	const category = chartCategoryOf(inputs.chartId) ?? "line"
@@ -362,9 +363,18 @@ export const chartWidgetTile = <M>(
 								: item,
 						)
 					: hoistedSeries(data, theme)
-	const options_ = frame(ctx, widget, { loadingSkeleton: skeleton, legendItems })
+	// A tile that needs the chart runtime says it failed even while its data is still loading.
+	const runtimeFailed =
+		category !== undefined &&
+		(isCanvas(category) || isServiceChart(chartId)) &&
+		ctx.chartRuntime._tag === "Failed"
+	const options_ = frame(ctx, widget, {
+		loadingSkeleton: runtimeFailed ? chartRuntimeFailedState(h, ctx.reloadPage ?? null) : skeleton,
+		legendItems,
+	})
 	return widgetFrame(h, options_, () => {
 		if (category === undefined) return []
+		if (runtimeFailed) return [chartRuntimeFailedState(h, ctx.reloadPage ?? null)]
 		if (data === undefined || data.length === 0) return [widgetEmptyState(h)]
 		if (isServiceChart(chartId))
 			return theme === null || ctx.nowMs === null || !isChartRuntimeReady(ctx.chartRuntime)

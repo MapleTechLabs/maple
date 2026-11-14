@@ -64,9 +64,17 @@ describe("buildRawSqlDataSource", () => {
 })
 
 describe("validateRawSql", () => {
-	it("returns null when $__orgFilter is present", () => {
-		expect(validateRawSql("SELECT 1 WHERE $__orgFilter")).toBeNull()
-		expect(validateRawSql("SELECT 1 WHERE foo = 1 AND $__orgFilter")).toBeNull()
+	it("returns null when $__orgFilter and a time bound are present", () => {
+		expect(
+			validateRawSql("SELECT 1 FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp)"),
+		).toBeNull()
+		expect(
+			validateRawSql("SELECT 1 FROM logs WHERE foo = 1 AND $__orgFilter AND Timestamp >= $__startTime"),
+		).toBeNull()
+	})
+
+	it("rejects a widget that reads outside the dashboard range", () => {
+		expect(validateRawSql("SELECT count() FROM logs WHERE $__orgFilter")).toContain("$__timeFilter")
 	})
 
 	it("returns an error message when $__orgFilter is missing", () => {
@@ -100,6 +108,10 @@ describe("validateRawSql", () => {
 	})
 
 	it("accepts a query that ends with FORMAT — the driver owns the wire format", () => {
-		expect(validateRawSql("SELECT 1 WHERE $__orgFilter FORMAT JSONEachRow")).toBeNull()
+		expect(
+			validateRawSql(
+				"SELECT 1 FROM logs WHERE $__orgFilter AND $__timeFilter(Timestamp) FORMAT JSONEachRow",
+			),
+		).toBeNull()
 	})
 })

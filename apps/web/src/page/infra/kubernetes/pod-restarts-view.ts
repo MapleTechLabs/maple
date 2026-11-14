@@ -1,18 +1,17 @@
-import { restartTone, summarizePodRestarts } from "../../../components/infra/pod-restarts"
+import { restartTone, summarizePodRestarts } from "./pod-restarts"
 import { EMPTY_VALUE } from "@maple/ui/lib/format"
 import { TONE_TEXT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { columnHead, dataTable } from "../kit/data-table"
+import { columnHead, dataTable } from "../../kit/data-table"
 import { sectionHeading } from "../../kit/section-heading"
 import { statRailItem, statRailItemSkeleton } from "../../kit/stat-rail"
 import type { RestartRow } from "./pod-data"
 import { columnClass } from "@maple/views/ui/column"
 import { Array as Arr } from "effect"
-
-// `PodRestartsStat` and `PodContainerRestarts`.
+import { hstack } from "@maple/views/ui/stack"
 
 type Restarts = AsyncData.AsyncData<ReadonlyArray<RestartRow>, LoadFailure>
 
@@ -46,11 +45,14 @@ export const podRestartsStat = <M>(h: HtmlBuilder<M>, restarts: Restarts): Html 
 	})
 
 const containerRow = <M>(h: HtmlBuilder<M>, row: RestartRow): Html =>
-	h.div(
-		[
-			h.Key(row.containerName),
-			h.Class("flex items-center gap-4 border-b border-border-subtle px-4 py-3 last:border-0"),
-		],
+	hstack(
+		h,
+		{
+			gap: "4",
+			align: "center",
+			className: "border-b border-border-subtle px-4 py-3 last:border-0",
+			attributes: [h.Key(row.containerName)],
+		},
 		[
 			h.span(
 				[h.Class("w-0 min-w-52 flex-1 truncate font-mono text-xs text-foreground")],
@@ -91,7 +93,7 @@ export const podContainerRestarts = <M>(h: HtmlBuilder<M>, restarts: Restarts): 
 				{ ariaLabel: "Container restarts" },
 				[
 					columnHead(h, { label: "Container", width: columnClass({ min: "52" }) }),
-					columnHead(h, { label: "In window", align: "right", width: "w-24" }),
+					columnHead(h, { label: "This window", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Total", align: "right", width: "w-24" }),
 					columnHead(h, { label: "Last terminated", align: "right", width: "w-40" }),
 				],

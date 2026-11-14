@@ -1,5 +1,5 @@
 import { cn } from "@maple/ui/lib/utils"
-import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "@maple/ui/styles/ui/radio-group"
+import { radioGroupStyles, radioIndicatorStyles, radioStyles } from "./radio-group.styles"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, Dom, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -12,14 +12,10 @@ import { hiddenInput, labelIdOf, toggleKey } from "./choice"
  * move to the next enabled radio and check it, as a native radio group does.
  */
 
-// MODEL
-
 export const Model = Schema.Struct({ maybeValue: Schema.Option(Schema.String) })
 export type Model = typeof Model.Type
 
 export const init = (value?: string): Model => ({ maybeValue: Option.fromNullishOr(value) })
-
-// MESSAGE
 
 export const Message = defineMessageUnion({
 	SelectedRadio: { value: Schema.String },
@@ -28,16 +24,12 @@ export const Message = defineMessageUnion({
 })
 export type Message = typeof Message.Type
 
-// COMMAND
-
 export const FocusRadio = Command.define("FocusRadio", {
 	args: { id: Schema.String },
 	messages: [Message.CompletedFocusRadio],
 	execute: ({ id }) =>
 		Dom.focus(`#${CSS.escape(id)}`).pipe(Effect.ignore, Effect.as(Message.CompletedFocusRadio())),
 })
-
-// UPDATE
 
 export const update = (model: Model, message: Message): Update.Return<Model, Message> =>
 	Message.match<Update.Return<Model, Message>>(message, {
@@ -50,8 +42,6 @@ export const update = (model: Model, message: Message): Update.Return<Model, Mes
 		}),
 		CompletedFocusRadio: () => ({ model }),
 	})
-
-// VIEW
 
 export type RadioItem = Readonly<{ value: string; id: string; inputId: string; isDisabled?: boolean }>
 
@@ -84,7 +74,7 @@ const tabStop = (config: RadioGroupViewConfig<unknown>): Option.Option<string> =
 	Option.isSome(config.model.maybeValue)
 		? config.model.maybeValue
 		: Option.map(
-				Option.fromNullishOr(config.items.find((item) => item.isDisabled !== true)),
+				Arr.findFirst(config.items, (item) => item.isDisabled !== true),
 				(item) => item.value,
 			)
 
@@ -94,11 +84,13 @@ const arrowTarget = (
 	key: string,
 ): Option.Option<RadioItem> => {
 	const enabled = Arr.filter(config.items, (item) => item.isDisabled !== true)
-	const index = enabled.findIndex((item) => item.value === value)
 	const step =
 		key === "ArrowRight" || key === "ArrowDown" ? 1 : key === "ArrowLeft" || key === "ArrowUp" ? -1 : 0
-	if (step === 0 || index === -1) return Option.none()
-	return Option.fromNullishOr(enabled[(index + step + enabled.length) % enabled.length])
+	if (step === 0) return Option.none()
+	return Option.flatMap(
+		Arr.findFirstIndex(enabled, (item) => item.value === value),
+		(index) => Option.fromNullishOr(enabled[(index + step + enabled.length) % enabled.length]),
+	)
 }
 
 export const labelId = labelIdOf
@@ -114,8 +106,9 @@ export const radio = <ParentMessage>(
 	className?: string,
 	primitive?: Readonly<{ children: ReadonlyArray<Html | string> }>,
 ): ReadonlyArray<Html> => {
-	const item = config.items.find((candidate) => candidate.value === value)
-	if (item === undefined) return []
+	const found = Arr.findFirst(config.items, (candidate) => candidate.value === value)
+	if (Option.isNone(found)) return []
+	const item = found.value
 	const isDisabled = item.isDisabled ?? false
 	const checked = isChecked(config.model, value)
 	const isTabStop = !isDisabled && Option.contains(tabStop(config), value)

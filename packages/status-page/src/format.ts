@@ -2,7 +2,7 @@ import type {
 	StatusPageComponentStatus,
 	StatusPageIncidentImpact,
 	StatusPageIncidentStatus,
-} from "@maple/domain/primitives"
+} from "@maple/primitives"
 import type { StatusPageDayBar, StatusPageDayState } from "@maple/domain/status-page"
 import { Array as Arr, String as Str } from "effect"
 
@@ -70,6 +70,17 @@ export const formatAge = (ageMs: number): string => {
 	const hours = Math.floor(minutes / 60)
 	if (hours < 48) return `${hours} h ago`
 	return `${Math.floor(hours / 24)} d ago`
+}
+
+/** How long an incident lasted: `under 1 min`, `45 min`, `1 h 15 min`, `2 d 3 h`. */
+export const formatDuration = (durationMs: number): string => {
+	const minutes = Math.floor(Math.max(0, durationMs) / 60_000)
+	if (minutes < 1) return "under 1 min"
+	if (minutes < 60) return `${minutes} min`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`
+	const days = Math.floor(hours / 24)
+	return hours % 24 === 0 ? `${days} d` : `${days} d ${hours % 24} h`
 }
 
 /** Floors so a day with any downtime never reads as 100%. */

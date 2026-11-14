@@ -1,6 +1,9 @@
 import { AsyncData } from "foldkit"
 
-/** An optional page input: a failed load reads as empty, so it neither holds the page back nor fails it. */
+/**
+ * An optional page input: a failed load reads as empty, so it neither holds the page back nor fails it.
+ * A page whose meaning changes without it says so (`healthGapNotice` for service health).
+ */
 export const emptyOnFailure = <A, E>(
 	data: AsyncData.AsyncData<ReadonlyArray<A>, E>,
 ): AsyncData.AsyncData<ReadonlyArray<A>, never> =>

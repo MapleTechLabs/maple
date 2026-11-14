@@ -1,4 +1,11 @@
-import { AlertComparator, AlertDestinationId, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import {
+	AlertComparator,
+	AlertDestinationId,
+	AlertSeverity,
+	AlertSignalType,
+	AnomalySignalType,
+	EscalationChainId,
+} from "@maple/domain/http"
 import { QueryEngineAlertReducer } from "@maple/domain/query-engine"
 import type { RuleFormState } from "@maple/web-data/alerts/form-utils"
 import { Schema } from "effect"
@@ -14,6 +21,7 @@ export const EscalationTier = Schema.Struct({
 	threshold: Schema.String,
 	recoveryValue: Schema.String,
 	destinationIds: DestinationIds,
+	escalationChainId: Schema.NullOr(EscalationChainId),
 })
 
 export const RuleForm = Schema.Struct({
@@ -24,6 +32,7 @@ export const RuleForm = Schema.Struct({
 	serviceNames: Strings,
 	excludeServiceNames: Strings,
 	environments: Strings,
+	anomalySignals: Schema.mutable(Schema.Array(AnomalySignalType)),
 	tags: Strings,
 	groupBy: Strings,
 	signalType: AlertSignalType,
@@ -45,6 +54,7 @@ export const RuleForm = Schema.Struct({
 	rawQuerySql: Schema.String,
 	rawQueryReducer: QueryEngineAlertReducer,
 	destinationIds: DestinationIds,
+	escalationChainId: Schema.NullOr(EscalationChainId),
 	notificationTitle: Schema.String,
 	notificationBody: Schema.String,
 })
@@ -53,3 +63,10 @@ export type RuleForm = typeof RuleForm.Type
 /** Both directions are checked: a field added to one side fails the build. */
 export const asFormState = (form: RuleForm): RuleFormState => form
 export const fromFormState = (form: RuleFormState): RuleForm => form
+
+/** The editor's sentence cards: "When" (signal and scope), "Alert when", "Notify", "Name". */
+export const RuleCard = Schema.Literals(["watch", "condition", "notify", "name"])
+export type RuleCard = typeof RuleCard.Type
+
+/** The warning tier's destinations, or the critical tier's. */
+export { AlertSeverity as Tier } from "@maple/domain/http"

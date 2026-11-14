@@ -21,7 +21,7 @@ const boundsKey = (bounds: TimeBounds) => `${bounds.startTime}/${bounds.endTime}
 export const cardOf = (model: Model, fingerprintHash: string): Card =>
 	Option.getOrElse(Record.get(model.cards, fingerprintHash), () => ({ isExpanded: false, traces: idle() }))
 
-/** `useLocalErrorTraces` for one open card, under the view's filters and window. */
+/** One open card's error traces, under the view's filters and window. */
 export const loadCard = (
 	model: Model,
 	context: PageContext,
@@ -95,9 +95,9 @@ export const load = (model: Model, context: PageContext, force = false): Step =>
 					),
 				]),
 			}
-			return Record.keys(model.cards).reduce<Step>((step, fingerprintHash) => {
+			return Array.reduce(Record.keys(model.cards), base, (step, fingerprintHash): Step => {
 				const card = loadCard(step.model, context, fingerprintHash, force)
 				return { model: card.model, commands: [...(step.commands ?? []), ...(card.commands ?? [])] }
-			}, base)
+			})
 		},
 	})

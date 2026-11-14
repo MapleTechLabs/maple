@@ -1,9 +1,10 @@
 // Supabase Management API calls made with an OAuth access token. Field names follow the OpenAPI specs
 // (https://api.supabase.com/api/v1-json, v2-json for log drains); extra fields are ignored so
 // additions never break decode.
-import { SupabaseProjectRef } from "@maple/domain/primitives"
-import { Duration, Effect, Option, Redacted, Schedule, Schema, Array as Arr, String as Str } from "effect"
+import { SupabaseProjectRef } from "@maple/primitives"
+import { Duration, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { parseDeltaSeconds, VENDOR_TRANSIENT_RETRY } from "../vendor-retry"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 
@@ -71,16 +72,11 @@ const upstreamDetail = (text: string) =>
 	})
 
 /** `retry-after`, else `x-ratelimit-reset` (seconds until the window resets). */
-const retryAfterSeconds = (headers: Readonly<Record<string, string | undefined>>) => {
-	const header = headers["retry-after"] ?? headers["x-ratelimit-reset"]
-	const seconds = header === undefined ? Number.NaN : Number(header)
-	return Number.isFinite(seconds) && seconds >= 0 ? { retryAfterSeconds: seconds } : undefined
-}
-
-const TRANSIENT_RETRY = Schedule.max([
-	Schedule.jittered(Schedule.exponential("500 millis")),
-	Schedule.recurs(2),
-])
+const retryAfterSeconds = (headers: Readonly<Record<string, string | undefined>>) =>
+	Option.match(parseDeltaSeconds(headers["retry-after"] ?? headers["x-ratelimit-reset"]), {
+		onNone: () => undefined,
+		onSome: (seconds) => ({ retryAfterSeconds: seconds }),
+	})
 
 const isTransient = (error: SupabaseApiError) =>
 	error.kind === "upstream" && (error.status === undefined || error.status >= 500)
@@ -141,7 +137,10 @@ export const send = (
 					new SupabaseApiError({ message: `Supabase timed out while ${what}`, kind: "upstream" }),
 				),
 		}),
-		Effect.retry({ schedule: TRANSIENT_RETRY, while: (error) => options.retry && isTransient(error) }),
+		Effect.retry({
+			schedule: VENDOR_TRANSIENT_RETRY,
+			while: (error) => options.retry && isTransient(error),
+		}),
 		Effect.annotateSpans("peer.service", "supabase"),
 	)
 
@@ -214,7 +213,7 @@ export const revokeGrant = Effect.fn("SupabaseApi.revokeGrant")(function* (
 	baseUrl: string,
 	params: {
 		readonly clientId: string
-		readonly clientSecret: Redacted.Redacted<string>
+		readonly clientSecret: Redacted.Redacted
 		readonly refreshToken: string
 	},
 ) {
@@ -296,7 +295,7 @@ export interface OtlpLogDrainSpec {
 	readonly description: string
 	/** Full OTLP/HTTP logs URL, e.g. `https://ingest.maple.dev/v1/logs`. */
 	readonly endpoint: string
-	readonly token: Redacted.Redacted<string>
+	readonly token: Redacted.Redacted
 }
 
 /** The `CreateLogDrainRequestOpenApi` body for an OTLP drain. */

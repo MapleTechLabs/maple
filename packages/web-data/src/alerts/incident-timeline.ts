@@ -1,17 +1,18 @@
 import type {
 	AlertComparator,
 	AlertDeliveryEventDocument,
+	AlertIncidentAckSource,
 	AlertDestinationType,
 	AlertIncidentDocument,
 	AlertIncidentHoldReason,
 	AlertSignalType,
 	InvestigationId,
 } from "@maple/domain/http"
-import type { V2Investigation } from "@maple/domain/http/v2"
+import type { V2AlertIncidentEvent, V2Investigation } from "@maple/domain/http/v2"
 import type { Tone } from "@maple/ui/lib/tone"
 import { UNGROUPED_GROUP_KEY } from "@maple/domain/http"
 import { formatAlertDuration, formatSignalValue, signalLabels } from "./form-utils"
-import { Array as Arr } from "effect"
+import { Array as Arr, Order } from "effect"
 
 export interface IncidentTimelineEntry {
 	readonly key: string
@@ -31,6 +32,81 @@ export const holdReasonLabel: Record<AlertIncidentHoldReason, string> = {
 	sampling_changed: "Sampling changed while the breach cleared. Resolves when the signal settles.",
 	probe_failed: "Maple could not verify telemetry. Resolves on the next successful check.",
 } satisfies Record<AlertIncidentHoldReason, string>
+
+const ackSourceLabel: Record<AlertIncidentAckSource, string> = {
+	web: "the dashboard",
+	api: "the API",
+	mcp: "MCP",
+	slack: "Slack",
+	discord: "Discord",
+} satisfies Record<AlertIncidentAckSource, string>
+
+/** "Dana Kim", or who it was when the source named nobody: an MCP agent or a teammate. */
+export function ackActorLabel(name: string | null, source: AlertIncidentAckSource | null): string {
+	if (name != null) return name
+	return source === "mcp" ? "an agent over MCP" : "a teammate"
+}
+
+/** "Acknowledged by Dana Kim", or null when nobody has acknowledged the incident. */
+export function acknowledgedLine(
+	incident: Pick<AlertIncidentDocument, "acknowledgedAt" | "acknowledgedByName" | "acknowledgedVia">,
+): string | null {
+	return incident.acknowledgedAt == null
+		? null
+		: `Acknowledged by ${ackActorLabel(incident.acknowledgedByName, incident.acknowledgedVia)}`
+}
+
+function activityEntry(event: V2AlertIncidentEvent): IncidentTimelineEntry {
+	const who = ackActorLabel(event.actor?.name ?? null, event.source)
+	const from = event.source != null ? `From ${ackSourceLabel[event.source]}` : null
+	const base = {
+		key: `activity:${event.id}`,
+		at: Date.parse(event.created_at),
+		pending: false,
+		investigation: null,
+	}
+	switch (event.type) {
+		case "acknowledged":
+			return {
+				...base,
+				tone: "info",
+				title: `Acknowledged by ${who}`,
+				detail: Arr.join(
+					Arr.filter([from, "reminders paused"], (p) => p != null),
+					" · ",
+				),
+			}
+		case "unacknowledged":
+			return {
+				...base,
+				tone: "neutral",
+				title: `Unacknowledged by ${who}`,
+				detail: Arr.join(
+					Arr.filter([from, "reminders resume"], (p) => p != null),
+					" · ",
+				),
+			}
+		case "ack_cleared":
+			return {
+				...base,
+				tone: "warn",
+				title: "Acknowledgement cleared",
+				detail: "The incident escalated, so it notified again",
+			}
+		case "paged":
+			// Without its page the event says only that someone was paged: no channel or outcome invented.
+			return event.page === undefined
+				? { ...base, key: `page:${event.id}`, tone: "neutral", title: "Paged a member", detail: null }
+				: pageEntry({
+						id: event.id,
+						at: event.created_at,
+						name: event.page.name,
+						channel: event.page.channel,
+						status: event.page.status,
+						errorMessage: event.page.error_message,
+					})
+	}
+}
 
 const comparatorWords: Record<AlertComparator, string> = {
 	gt: "above",
@@ -58,7 +134,13 @@ export function conditionPhrase(input: {
 }
 
 /** The incident's group, or null for an ungrouped rule. */
-export function incidentGroup(incident: Pick<AlertIncidentDocument, "groupKey">): string | null {
+export function incidentGroup(
+	incident: Pick<AlertIncidentDocument, "groupKey"> &
+		Partial<Pick<AlertIncidentDocument, "groupLabel" | "signalType">>,
+): string | null {
+	// An anomaly's key is the anomaly incident id: its stored label is what people read.
+	if (incident.groupLabel != null) return incident.groupLabel
+	if (incident.signalType === "anomaly") return null
 	return incident.groupKey == null || incident.groupKey === UNGROUPED_GROUP_KEY ? null : incident.groupKey
 }
 
@@ -76,19 +158,26 @@ function deliveryEntry(
 	const name = event.destinationName
 	const failed = event.status === "failed"
 	const sending = event.status === "queued" || event.status === "processing"
-	const title = sending
-		? `Sending to ${name}`
-		: event.eventType === "resolve"
-			? failed
-				? `All-clear to ${name} failed`
-				: `Sent all-clear to ${name}`
+	const silenced = event.status === "silenced"
+	const title = silenced
+		? event.eventType === "resolve"
+			? `All-clear to ${name} held back by a silence`
 			: event.eventType === "renotify"
+				? `Reminder to ${name} held back by a silence`
+				: `Page to ${name} held back by a silence`
+		: sending
+			? `Sending to ${name}`
+			: event.eventType === "resolve"
 				? failed
-					? `Reminder to ${name} failed`
-					: `Reminded ${name}`
-				: failed
-					? `Could not notify ${name}`
-					: `Notified ${name}`
+					? `All-clear to ${name} failed`
+					: `Sent all-clear to ${name}`
+				: event.eventType === "renotify"
+					? failed
+						? `Reminder to ${name} failed`
+						: `Reminded ${name}`
+					: failed
+						? `Could not notify ${name}`
+						: `Notified ${name}`
 	const reason = failed
 		? (event.errorMessage ?? (event.responseCode != null ? `HTTP ${event.responseCode}` : null))
 		: null
@@ -100,13 +189,76 @@ function deliveryEntry(
 	return {
 		key: `delivery:${event.id}`,
 		at: Date.parse(event.attemptedAt ?? event.scheduledAt),
-		tone: failed ? "crit" : sending ? "neutral" : event.eventType === "resolve" ? "ok" : "info",
+		tone: failed
+			? "crit"
+			: sending || silenced
+				? "neutral"
+				: event.eventType === "resolve"
+					? "ok"
+					: "info",
 		pending: sending,
 		title,
 		detail: Arr.join(
 			Arr.filter(parts, (part) => part != null),
 			" · ",
 		),
+		investigation: null,
+	}
+}
+
+/** A `paged` incident event: an escalation step paged one member on one channel. */
+export interface IncidentPage {
+	readonly id: string
+	/** ISO timestamp. */
+	readonly at: string
+	readonly name: string | null
+	readonly channel: string
+	readonly status: "queued" | "sending" | "sent" | "failed" | "skipped"
+	readonly errorMessage: string | null
+}
+
+/** "email", "Slack DM", "Discord DM". */
+export function pageChannelLabel(channel: string): string {
+	switch (channel) {
+		case "email":
+			return "email"
+		case "slack":
+			return "Slack DM"
+		case "discord":
+			return "Discord DM"
+		default:
+			return `${channel} DM`
+	}
+}
+
+/** "Paged Ben Brook by Slack DM"; a failed or skipped page says so and why. */
+export function pageEntry(page: IncidentPage): IncidentTimelineEntry {
+	// The directory could not name them: that is not proof they left.
+	const who = page.name ?? "a member"
+	const by = pageChannelLabel(page.channel)
+	const sending = page.status === "queued" || page.status === "sending"
+	const title =
+		page.status === "failed"
+			? `Couldn't page ${who} by ${by}`
+			: page.status === "skipped"
+				? `Skipped paging ${who} by ${by}`
+				: sending
+					? `Paging ${who} by ${by}`
+					: `Paged ${who} by ${by}`
+	return {
+		key: `page:${page.id}`,
+		at: Date.parse(page.at),
+		tone: page.status === "failed" ? "crit" : page.status === "skipped" || sending ? "neutral" : "info",
+		pending: sending,
+		title,
+		detail:
+			page.status === "failed" || page.status === "skipped"
+				? (page.errorMessage ??
+					(page.status === "skipped" ? "Acknowledged or resolved first" : "The channel refused it"))
+				: // A pending page with an error is between retries.
+					sending && page.errorMessage !== null
+					? `Retrying: ${page.errorMessage}`
+					: null,
 		investigation: null,
 	}
 }
@@ -164,17 +316,23 @@ function investigationEntries(investigation: V2Investigation): ReadonlyArray<Inc
 export function buildIncidentTimeline(input: {
 	incident: AlertIncidentDocument
 	deliveries: ReadonlyArray<AlertDeliveryEventDocument>
+	/** Acknowledgement history, oldest first. */
+	activity: ReadonlyArray<V2AlertIncidentEvent>
 	investigation: V2Investigation | null
 	renotifyIntervalMinutes: number | null
 	destinationTypeLabel: (type: AlertDestinationType) => string
 }): ReadonlyArray<IncidentTimelineEntry> {
 	const { incident } = input
 	const group = incidentGroup(incident)
-	// An uptime rule has no threshold to read out: the monitor's checks failed.
+	// An uptime rule has no threshold to read out; an SLO's reads its tier factor, not today's burn.
 	const condition =
 		incident.signalType === "uptime"
 			? `${incident.ruleName} went down`
-			: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
+			: incident.signalType === "slo_burn_rate"
+				? `SLO burning its error budget at ${formatSignalValue(incident.signalType, incident.threshold)} or more`
+				: incident.signalType === "anomaly"
+					? "Maple detected an anomaly"
+					: `${signalTitle(incident.signalType)} ${conditionPhrase(incident)}`
 
 	const opened: IncidentTimelineEntry = {
 		key: "opened",
@@ -191,6 +349,7 @@ export function buildIncidentTimeline(input: {
 		const entry = deliveryEntry(delivery, input.destinationTypeLabel)
 		if (entry != null) events.push(entry)
 	}
+	for (const event of input.activity) events.push(activityEntry(event))
 	if (input.investigation != null) events.push(...investigationEntries(input.investigation))
 
 	if (incident.status === "resolved" && incident.resolvedAt != null) {
@@ -215,9 +374,11 @@ export function buildIncidentTimeline(input: {
 		})
 	} else if (incident.status === "open") {
 		const reminder =
-			input.renotifyIntervalMinutes != null
-				? `reminders every ${input.renotifyIntervalMinutes}m while open`
-				: null
+			incident.acknowledgedAt != null
+				? "reminders paused while acknowledged"
+				: input.renotifyIntervalMinutes != null
+					? `reminders every ${input.renotifyIntervalMinutes}m while open`
+					: null
 		events.push({
 			key: "breaching",
 			at: Date.parse(incident.lastTriggeredAt),
@@ -238,6 +399,16 @@ export function buildIncidentTimeline(input: {
 		})
 	}
 
-	// Stable sort keeps the insertion order (opened first) for identical stamps.
-	return Arr.filter(events, (entry) => Number.isFinite(entry.at)).toSorted((a, b) => a.at - b.at)
+	// Stable sort keeps the insertion order (opened first) for identical stamps. The state still in
+	// effect ends the story even when an ack came after its stamp (a hold's start, the last check).
+	const isCurrent = (entry: IncidentTimelineEntry) => CURRENT_STATE_KEYS.has(entry.key)
+	return [
+		...Arr.sort(
+			Arr.filter(events, (entry) => !isCurrent(entry) && Number.isFinite(entry.at)),
+			Order.mapInput(Order.Number, (entry: { readonly at: number }) => entry.at),
+		),
+		...Arr.filter(events, isCurrent),
+	]
 }
+
+const CURRENT_STATE_KEYS: ReadonlySet<string> = new Set(["held", "breaching"])
