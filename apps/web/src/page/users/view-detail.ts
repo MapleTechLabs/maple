@@ -788,6 +788,15 @@ const sessionsTable = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): 
 				),
 			])
 
+/** The Service lane: wide enough for most names, and the full name on hover for longer ones. */
+const SERVICE_LANE = columnClass({ width: "44", shrink: false })
+
+const serviceCell = <M>(h: HtmlBuilder<M>, service: string): Html =>
+	hstack(h, { gap: "1.5", as: "span", className: SERVICE_LANE, attributes: [h.Title(service)] }, [
+		serviceDot(h, { serviceName: service }),
+		typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [service]),
+	])
+
 /** The issue's workflow state as the errors hub draws it; a fingerprint not yet an issue says so. */
 const issueStatus = <M>(h: HtmlBuilder<M>, status: UserDetail["issues"][number]["status"]): Html =>
 	status === null
@@ -818,7 +827,7 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 		toolTable(h, [
 			toolTableHead(h, [
 				th(h, { label: "Issue", width: columnClass({ min: "0" }) }),
-				th(h, { label: "Service", width: "w-28 shrink-0" }),
+				th(h, { label: "Service", width: SERVICE_LANE }),
 				th(h, { label: "This user", width: "w-20 shrink-0", align: "right" }),
 				th(h, { label: "Last seen", width: columnClass({ width: "28", shrink: false, inset: "4" }) }),
 				th(h, { label: "Status", width: "w-32 shrink-0" }),
@@ -838,12 +847,7 @@ const errorsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 									issue.message,
 								]),
 							]),
-							hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-								serviceDot(h, { serviceName: issue.service }),
-								typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-									issue.service,
-								]),
-							]),
+							serviceCell(h, issue.service),
 							cellText(h, formatNumber(issue.hits), "w-20 shrink-0", { right: true }),
 							timeCell(
 								h,
@@ -873,7 +877,7 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 					toolTableHead(h, [
 						th(h, { label: "Time", width: "w-28 shrink-0" }),
 						th(h, { label: "Root span", width: columnClass({ min: "0" }) }),
-						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Service", width: SERVICE_LANE }),
 						th(h, { label: "Duration", width: "w-20 shrink-0", align: "right" }),
 						th(h, { label: "Status", width: "w-16 shrink-0", align: "right" }),
 					]),
@@ -883,12 +887,7 @@ const tracesBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Htm
 							toolTableRow(h, { href: trace.href }, [
 								timeCell(h, trace.atMs, clock),
 								cellText(h, trace.rootSpan, "w-0 flex-1"),
-								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-									serviceDot(h, { serviceName: trace.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										trace.service,
-									]),
-								]),
+								serviceCell(h, trace.service),
 								cellText(h, formatLatency(trace.durationMs), "w-20 shrink-0", {
 									right: true,
 									tone: trace.durationMs >= SLOW_MS ? "warning" : "foreground",
@@ -912,7 +911,7 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 					toolTableHead(h, [
 						th(h, { label: "Time", width: "w-28 shrink-0" }),
 						th(h, { label: "Level", width: "w-16 shrink-0" }),
-						th(h, { label: "Service", width: "w-28 shrink-0" }),
+						th(h, { label: "Service", width: SERVICE_LANE }),
 						th(h, { label: "Message", width: columnClass({ min: "0" }) }),
 					]),
 					toolTableBody(
@@ -924,12 +923,7 @@ const logsBody = <M>(h: HtmlBuilder<M>, detail: UserDetail, clock: Clock): Html 
 									[h.Class("w-16 shrink-0")],
 									[severityBadge(h, { severity: log.severity })],
 								),
-								hstack(h, { gap: "1.5", as: "span", className: "w-28 shrink-0" }, [
-									serviceDot(h, { serviceName: log.service }),
-									typography(h, { size: "xs", mono: true, truncate: true, as: "span" }, [
-										log.service,
-									]),
-								]),
+								serviceCell(h, log.service),
 								cellText(h, log.body, "w-0 flex-1"),
 							]),
 						),
