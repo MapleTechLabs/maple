@@ -220,30 +220,15 @@ export const sourcesSection = (
 	nowMs: number,
 	timeZone: string,
 	options: Readonly<{
-		/** A credential write is in flight: the actions wait for it. */
+		/** A credential write is in flight: the row actions wait for it. */
 		isBusy: boolean
-		/** The viewer may add, replace and remove sources; without it no such action is offered. */
+		/** The viewer may replace and remove sources; without it no such action is offered. */
 		canManage: boolean
 	}>,
 ): Html =>
 	panel(h, {}, [
-		panelHeader(h, {
-			title: "Sources",
-			...(options.canManage
-				? {
-						action: button(
-							h,
-							{
-								variant: "outline",
-								size: "sm",
-								isDisabled: options.isBusy,
-								attributes: [h.OnClick(Message.ClickedAddSource())],
-							},
-							["Add source"],
-						),
-					}
-				: undefined),
-		}),
+		// Add source is in the page header, in sight without scrolling to this panel.
+		panelHeader(h, { title: "Sources" }),
 		vstack(
 			h,
 			{ as: "ul", gap: "0" },
