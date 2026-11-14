@@ -742,7 +742,10 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 						? "the last setup run did not grant metric reads; run the setup script again"
 						: c.lastMetricsReceivedAt === null
 							? notRun
-							: null,
+							: // A partial read is healthy but says what it missed.
+								metricsStatus === "healthy"
+								? c.lastMetricsError
+								: null,
 			},
 			{
 				kind: "inventory",

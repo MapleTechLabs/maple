@@ -495,6 +495,10 @@ describe("google cloud", () => {
 			"gcp",
 		)
 		expect(gcp?.status).toBe("healthy")
+		expect(
+			Arr.findFirst(gcp?.resources ?? [], (r) => r.kind === "metrics").pipe(Option.getOrUndefined)
+				?.note,
+		).toBe("3 of 30 metric queries were not read in full")
 	})
 
 	it("is pending before the setup script has run, and leaves out what is switched off", () => {
