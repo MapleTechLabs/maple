@@ -43,7 +43,7 @@ import {
 import {
 	DEFAULT_PATHS_BRANCHES,
 	DEFAULT_PATHS_DEPTH,
-	FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+	funnelBreakdownLimit,
 	ProductEventsFunnelWidgetParams,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
@@ -225,7 +225,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 				const widgetParams = yield* decodeProductEventsFunnelWidgetParams(params)
 				// No steps yet: the empty state, not a 400 from the builder.
 				if (widgetParams.steps.length === 0) return { data: [] }
-				const { breakdownBy, details, ...rest } = widgetParams
+				const { breakdownBy, breakdownLimit, details, ...rest } = widgetParams
 				const request = {
 					keyBy: "person",
 					windowSeconds: 24 * 3600,
@@ -242,7 +242,7 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 					const breakdownPayload = yield* decodeProductEventsFunnelBreakdown({
 						...request,
 						breakdownBy,
-						limit: FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+						limit: funnelBreakdownLimit(breakdownLimit),
 					})
 					yield* validateFunnelDefinition({
 						...productEventsFunnelOpts(breakdownPayload),
@@ -291,6 +291,8 @@ export const ROUTE_ENDPOINT_PLANS: RouteEndpointPlanRegistry = {
 								step: row.step,
 								p50Ms: row.p50Ms,
 								p90Ms: row.p90Ms,
+								sinceStartP50Ms: row.sinceStartP50Ms,
+								sinceStartP90Ms: row.sinceStartP90Ms,
 							})),
 							Arr.map(leavers, (row) => ({
 								step: row.step,

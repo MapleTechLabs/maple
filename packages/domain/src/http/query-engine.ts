@@ -3472,8 +3472,19 @@ export class ProductEventsFunnelTimingRequest extends Schema.Class<ProductEvents
 export class ProductEventsFunnelTimingResponse extends Schema.Class<ProductEventsFunnelTimingResponse>(
 	"ProductEventsFunnelTimingResponse",
 )({
-	/** One row per step 2..N: milliseconds from the previous step, over persons who reached this one. */
-	data: Schema.Array(Schema.Struct({ step: Schema.Number, p50Ms: Schema.Number, p90Ms: Schema.Number })),
+	/**
+	 * One row per step 2..N, over persons who reached it: milliseconds from the previous step, and
+	 * (`sinceStart*`) from step 1.
+	 */
+	data: Schema.Array(
+		Schema.Struct({
+			step: Schema.Number,
+			p50Ms: Schema.Number,
+			p90Ms: Schema.Number,
+			sinceStartP50Ms: Schema.Number,
+			sinceStartP90Ms: Schema.Number,
+		}),
+	),
 }) {}
 
 export class ProductEventsFunnelLeaversRequest extends Schema.Class<ProductEventsFunnelLeaversRequest>(
