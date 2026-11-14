@@ -15,7 +15,7 @@ import { icon } from "@maple/views/ui/icon"
 import { iconButton } from "@maple/views/ui/icon-button"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { WORKFLOW_LABEL } from "../../kit/issue-workflow"
 import { actorAvatar } from "../../kit/issue-actor"
 import { ANOMALY_CHART_TOKENS, anomalySignalChart } from "../../kit/anomaly-evidence"
@@ -211,8 +211,11 @@ export const linkedIssueCard = (
 							[shortIssueId(issue.id)],
 						),
 						badge(h, { variant: "meta", pill: true, size: "sm", className: META_CHIP_CLASS }, [
-							serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-							h.span([h.Class("max-w-[140px] truncate")], [issue.serviceName]),
+							serviceLabel(h, {
+								serviceName: issue.serviceName,
+								dot: "sm",
+								className: "max-w-[140px]",
+							}),
 						]),
 					]),
 					typography(

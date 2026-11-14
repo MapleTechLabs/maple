@@ -8,11 +8,11 @@ import { spinner } from "@maple/views/ui/spinner"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead, dataTable, dataTableEmpty } from "../../../kit/data-table"
 import { relativeTime } from "../../../kit/relative-time"
-import { railwayTokenForm } from "./view-railway-token"
+import { railwayTokenForm, toHub } from "./view-railway-token"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
-import { unsyncedEnvironments } from "./railway"
+import { RailwayMessage, unsyncedEnvironments } from "./railway"
 import {
 	connectedIntegrationCard,
 	disconnectButton,
@@ -150,7 +150,7 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 								size: "sm",
 								variant: "outline",
 								isLoading: card.isSyncing,
-								attributes: [h.OnClick(Message.ClickedRailwaySync())],
+								attributes: [h.OnClick(toHub(RailwayMessage.ClickedSync()))],
 							},
 							["Sync now"],
 						),
@@ -159,7 +159,7 @@ const connectedView = (h: H, model: Model, status: RailwayIntegrationStatus, tim
 							{
 								size: "sm",
 								variant: "outline",
-								attributes: [h.OnClick(Message.ClickedRailwayRotate())],
+								attributes: [h.OnClick(toHub(RailwayMessage.ClickedRotate()))],
 							},
 							["Update credential"],
 						),

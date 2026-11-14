@@ -161,7 +161,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 								values: options.spark.slice(-28),
 								color: options.sparkColor ?? SPARK_COLOR[options.tone ?? "neutral"],
 								opacityRamp: true,
-								className: "h-7 w-24 min-w-0 shrink",
+								className: "hidden h-7 w-24 min-w-0 shrink @min-[14rem]/stat:block",
 							}),
 						]
 					: options.compact === true || isSmall
@@ -174,7 +174,7 @@ export const statRailItem = <M>(h: HtmlBuilder<M>, options: StatRailItemOptions<
 			: [h.div([h.Class("mt-2 truncate text-2xs text-muted-foreground")], [options.subline])]),
 	]
 	// No entry animation: tiles remount on every refetch and tab switch, so it would replay each time.
-	const shell = cn("relative", isSmall ? "px-4 py-3" : "px-5 py-4", options.className)
+	const shell = cn("@container/stat relative", isSmall ? "px-4 py-3" : "px-5 py-4", options.className)
 	if (options.onSelect === undefined) return h.div([h.Class(shell)], body)
 	const isDisabled = options.isDisabled === true
 	return h.button(

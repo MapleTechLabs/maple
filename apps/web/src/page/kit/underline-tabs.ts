@@ -64,7 +64,11 @@ export const linkTabStrip = <M>(
 	h: HtmlBuilder<M>,
 	label: string,
 	tabs: ReadonlyArray<LinkTab<M>>,
-	options?: Readonly<{ className?: string }>,
+	options?: Readonly<{
+		className?: string
+		/** Tighter tabs, for a strip with many counted tabs beside a rail. */
+		isDense?: boolean
+	}>,
 ): Html =>
 	underlineTabStrip(
 		h,
@@ -83,7 +87,9 @@ export const linkTabStrip = <M>(
 					h.Class(
 						cn(
 							underlineTabClass(tab.isCurrent),
-							"h-9 gap-2 px-3 first:pl-0.5",
+							options?.isDense === true
+								? "h-9 gap-1 px-2 first:pl-0.5 last:pr-0.5"
+								: "h-9 gap-2 px-3 first:pl-0.5",
 							tab.isCurrent ? "[&_svg]:text-foreground" : "[&_svg]:text-muted-foreground",
 							tab.isRouteActive && "active",
 						),
@@ -104,7 +110,7 @@ export const linkTabStrip = <M>(
 									[
 										h.Class(
 											cn(
-												"font-mono text-xs tabular-nums",
+												"text-xs tabular-nums",
 												tab.countTone === "error"
 													? "text-severity-error"
 													: "text-muted-foreground",

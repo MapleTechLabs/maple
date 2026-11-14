@@ -14,7 +14,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { copyToast } from "../../kit/clipboard"
-import { sourcesListKey, sourceUsageKey } from "../kit/data"
+import { RESUME_COPY, sourcesListKey, sourceUsageKey } from "../kit/data"
 import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { hasOwnRemoval } from "../kit/integration"
@@ -520,11 +520,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				success: "Source paused. Takes effect within a minute.",
 				error: "Couldn't pause source",
 			}),
-		CompletedResume: ({ result }) =>
-			settled(model, context, result, {
-				success: "Source resumed. Takes effect within a minute.",
-				error: "Couldn't resume source",
-			}),
+		CompletedResume: ({ result }) => settled(model, context, result, RESUME_COPY),
 		CompletedRoll: ({ result }) => {
 			const closed = liftDialog({ ...model, busy: null }, "rollDialog", Dialog.close(model.rollDialog))
 			return Result.match(result, {

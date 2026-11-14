@@ -25,6 +25,7 @@ import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { releaseHealthFigure, releaseHref } from "../kit"
 import { type Overlays, releaseHealthPill } from "../overlays-view"
@@ -155,8 +156,7 @@ const serviceRow = <M>(
 							className: "gap-2",
 						},
 						[
-							serviceDot(h, { serviceName: impact.serviceName }),
-							impact.serviceName,
+							serviceLabel(h, { serviceName: impact.serviceName, truncate: "none" }),
 							...(impact.environment &&
 							(environments === undefined || environments.length === 0)
 								? [typography(h, { tone: "subtle" }, [impact.environment])]

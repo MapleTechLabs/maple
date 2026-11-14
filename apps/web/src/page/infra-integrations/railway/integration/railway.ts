@@ -3,10 +3,11 @@ import { countLabel } from "@maple/ui/lib/format"
 import { displayError, isUnexpectedError } from "@maple/web-data/lib/error-messages"
 import { Effect, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
-import { toLoadFailure } from "@maple/views/data/load-failure"
+import { defineMessageUnion } from "foldkit/message"
+import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { IntegrationStatuses } from "../../../../data/integration-statuses"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import * as Field from "@maple/views/ui/field"
-import { Message } from "../../../integrations/message"
 
 export const RailwayCardModel = Schema.Struct({
 	/** The token form's state (the shape the infra page's form shares). */
@@ -25,6 +26,28 @@ export const initRailwayCard = (): RailwayCardModel => ({
 	isRotating: false,
 	isSyncing: false,
 })
+
+/** The Railway module's own messages; the hub carries them in `GotRailwayMessage`. */
+export const RailwayMessage = defineMessageUnion({
+	GotTokenMessage: { message: Field.Message },
+	SubmittedToken: {},
+	SucceededConnect: { title: Schema.String, description: Schema.String },
+	FailedConnect: { error: Schema.String },
+	ClickedSync: {},
+	CompletedSync: { failure: Schema.NullOr(LoadFailure) },
+	ClickedRotate: {},
+	ClickedRotateCancel: {},
+	/** Every 15 s while environments wait for their first sync. */
+	TickedSettle: {},
+})
+export type RailwayMessage = typeof RailwayMessage.Type
+
+/** The hub's status read for Railway, shared with the sidebar. */
+export const RAILWAY_STATUS_READ = {
+	name: "LoadIntegrationsRailwayStatus",
+	read: (refresh: boolean) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.railway({ refresh })),
+}
 
 /** Environments the poller has not completed a first sync for yet (and has not failed on). */
 export const unsyncedEnvironments = (status: RailwayIntegrationStatus): number =>
@@ -55,7 +78,7 @@ export const connectedToastOf = (status: RailwayIntegrationStatus, mode: "connec
 
 export const ConnectRailwayToken = Command.define("ConnectRailwayFromIntegrations", {
 	args: { token: Schema.String, mode: Schema.Literals(["connect", "rotate"]) },
-	messages: [Message.SucceededRailwayConnect, Message.FailedRailwayConnect],
+	messages: [RailwayMessage.SucceededConnect, RailwayMessage.FailedConnect],
 	execute: ({ token, mode }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
@@ -63,12 +86,12 @@ export const ConnectRailwayToken = Command.define("ConnectRailwayFromIntegration
 				payload: new RailwayConnectRequest({ token }),
 			})
 			const toast = connectedToastOf(status, mode)
-			return Message.SucceededRailwayConnect({ title: toast.title, description: toast.description })
+			return RailwayMessage.SucceededConnect({ title: toast.title, description: toast.description })
 		}).pipe(
 			Effect.catch((error) => {
 				const presentation = displayError(error)
 				return Effect.succeed(
-					Message.FailedRailwayConnect({
+					RailwayMessage.FailedConnect({
 						error: isUnexpectedError(presentation)
 							? "Couldn't connect Railway."
 							: presentation.message,
@@ -79,14 +102,14 @@ export const ConnectRailwayToken = Command.define("ConnectRailwayFromIntegration
 })
 
 export const SyncRailway = Command.define("SyncRailway", {
-	messages: [Message.CompletedRailwaySync],
+	messages: [RailwayMessage.CompletedSync],
 	execute: Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		yield* client.integrations.railwaySync()
 	}).pipe(
 		Effect.match({
-			onFailure: (error) => Message.CompletedRailwaySync({ failure: toLoadFailure(error) }),
-			onSuccess: () => Message.CompletedRailwaySync({ failure: null }),
+			onFailure: (error) => RailwayMessage.CompletedSync({ failure: toLoadFailure(error) }),
+			onSuccess: () => RailwayMessage.CompletedSync({ failure: null }),
 		}),
 	),
 })

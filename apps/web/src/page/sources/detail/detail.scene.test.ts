@@ -11,6 +11,8 @@ import {
 import { Option, Result, Schema, Array as Arr } from "effect"
 import {
 	all,
+	click,
+	Command,
 	expect as expectView,
 	expectAll,
 	given,
@@ -21,6 +23,7 @@ import {
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
+import * as Animation from "@foldkit/ui/animation"
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { AppRoute } from "../../../route"
@@ -149,7 +152,7 @@ describe("source detail", () => {
 			resolveTheme,
 			expectView(role("tab", { name: "Overview" })).toExist(),
 			expectView(role("tab", { name: "Settings" })).not.toExist(),
-			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).not.toExist(),
 			expectView(role("button", { name: "Roll token" })).not.toExist(),
 		)
 	})
@@ -169,6 +172,63 @@ describe("source detail", () => {
 			resolveTheme,
 			expectView(text("Rate limited at 200 requests per second")).toExist(),
 			expectView(role("alert")).toExist(),
+		)
+	})
+
+	test("a source that stopped sending says when its last data came, once, in the header", () => {
+		const stopped = source({
+			health: {
+				status: "stale",
+				last_data_at: "2026-10-01T09:00:00.000Z",
+				problem: null,
+				resources: null,
+			},
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(stopped)),
+			resolveTheme,
+			expectView(text(/No recent data · last data 3h ago/)).toExist(),
+		)
+	})
+
+	test("the overview lists the rules a source has set, and says so when it has none", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source())),
+			resolveTheme,
+			expectView(text("Rate limit")).toExist(),
+			expectView(text("200 req/s")).toExist(),
+			expectView(text("Expires")).not.toExist(),
+			expectView(role("link", { name: "Edit rules" })).toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source({ allowed_signals: null, rate_limit_rps: null }))),
+			resolveTheme,
+			expectView(text(/^None set\./)).toExist(),
+			expectView(text("Rate limit")).not.toExist(),
+		)
+	})
+
+	test("a token source is deleted from its Settings, not its header", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source())),
+			resolveTheme,
+			expectView(role("button", { name: /^Delete/ })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded(source(), "settings")),
+			resolveTheme,
+			click(role("button", { name: "Delete source" })),
+			Mount.resolve(Dialog.MountDialog, Dialog.Message.CompletedMountDialog()),
+			expectView(text("Delete source?")).toExist(),
+			Command.resolveAll(
+				[Animation.WaitForPaint, Animation.Message.CompletedWaitForPaint({ generation: 1 })],
+				[Animation.WaitForAnimationSettled, Animation.Message.EndedAnimation({ generation: 1 })],
+			),
 		)
 	})
 
@@ -401,14 +461,14 @@ describe("integration sources", () => {
 		)
 	})
 
-	test("Connection replaces Setup, and the overview says when it last synced", () => {
+	test("Connection replaces Setup, and the header says when it last synced", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(prometheus())),
 			resolveTheme,
 			expectView(role("tab", { name: "Connection" })).toExist(),
 			expectView(role("tab", { name: "Setup" })).not.toExist(),
-			expectView(text("Last sync")).toExist(),
+			expectView(text(/No recent data · last sync/)).toExist(),
 		)
 	})
 
@@ -458,7 +518,7 @@ describe("integration sources", () => {
 		expect(names(pausing.commands)).toContain("PauseSource")
 	})
 
-	test("the integration's actions need integrations:manage, its pause and delete sources:manage", () => {
+	test("the integration's actions need integrations:manage, its pause sources:manage", () => {
 		const withGrants = (
 			sourceGrants: ReadonlyArray<Policy.Permission>,
 			integrationGrants: ReadonlyArray<Policy.Permission>,
@@ -481,21 +541,23 @@ describe("integration sources", () => {
 			given(withGrants([], [])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).not.toExist(),
-			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withGrants([], ["integrations:manage"])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).toExist(),
-			expectView(role("button", { name: "Delete" })).not.toExist(),
+			expectView(role("button", { name: "Pause" })).not.toExist(),
 		)
 		scene(
 			{ update: pageUpdate, view },
 			given(withGrants(["sources:manage"], ["integrations:manage"])),
 			resolveTheme,
 			expectView(role("link", { name: "Docs" })).toExist(),
-			expectView(role("button", { name: "Delete" })).toExist(),
+			expectView(role("button", { name: "Pause" })).toExist(),
+			// Delete is in Settings' danger zone, never in the header.
+			expectView(role("button", { name: /^Delete/ })).not.toExist(),
 		)
 	})
 
@@ -682,7 +744,8 @@ describe("integration sources", () => {
 			given(withUsage),
 			resolveTheme,
 			expectView(text("300 KB")).toExist(),
-			expectView(text("2K metric points")).toExist(),
+			expectView(text("Metric points")).toExist(),
+			expectView(text("2K")).toExist(),
 		)
 	})
 

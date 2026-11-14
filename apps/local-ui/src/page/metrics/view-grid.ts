@@ -9,7 +9,7 @@ import { METRIC_TYPE_COLORS, metricTypeBadge } from "@maple/views/ui/metric-type
 import { badge } from "@maple/views/ui/display"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { selectableRow } from "@maple/views/ui/selectable-row"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 import type { MetricEntry } from "./catalog"
@@ -84,12 +84,9 @@ const footer = (h: H, entry: MetricEntry, services: string): Html => {
 			className: cn("w-full", typographyClass({ size: "3xs", tone: "muted" })),
 		},
 		[
-			hstack(h, { as: "span", gap: "1.5", shrink: true }, [
-				...(entry.serviceNames.length === 1 && only !== undefined
-					? [serviceDot(h, { serviceName: only, size: "sm" })]
-					: []),
-				typography(h, { truncate: true }, [services]),
-			]),
+			entry.serviceNames.length === 1 && only !== undefined
+				? serviceLabel(h, { serviceName: only, dot: "sm" })
+				: typography(h, { truncate: true, className: "min-w-0" }, [services]),
 			hstack(h, { gap: "1.5", align: "center", as: "span", className: "shrink-0" }, [
 				...(unit
 					? [

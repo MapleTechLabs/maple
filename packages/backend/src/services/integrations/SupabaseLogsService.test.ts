@@ -11,7 +11,7 @@ import {
 	Option,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/http"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { OrgId, UserId, SupabaseProjectUpdateRequest } from "@maple/domain/http"
 import { SourceId, SupabaseProjectRef } from "@maple/primitives"
 import { Env } from "@maple/backend/platform/Env"
@@ -107,19 +107,23 @@ const makeWorld = () => {
 	const authorizations: Array<string | null> = []
 	/** `failRequest` answers that request (1-based, counted across ticks) with a 503, once. */
 	const ingest = { status: 200, bodies, authorizations, requests: 0, failRequest: 0 }
-	const fetch: typeof globalThis.fetch = async (input, init) => {
-		const requestInit: RequestInit & { readonly duplex: "half" } = { ...init, duplex: "half" }
-		const request = new Request(input, requestInit)
-		if (new URL(request.url).host !== "ingest.example.com") return supabase.fetch(input, init)
-		const text = await request.text()
-		ingest.requests += 1
-		if (ingest.requests === ingest.failRequest) return new Response("unavailable", { status: 503 })
-		if (ingest.status >= 300) return new Response("unavailable", { status: ingest.status })
-		ingest.bodies.push(decodeIngestBody(text))
-		ingest.authorizations.push(request.headers.get("authorization"))
-		return new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
-	}
-	return { supabase, ingest, fetch }
+	const api = VendorFake.make({
+		routes: [
+			{
+				respond: (request) => {
+					if (request.url.host !== "ingest.example.com") return undefined
+					ingest.requests += 1
+					if (ingest.requests === ingest.failRequest) return VendorFake.text("unavailable", 503)
+					if (ingest.status >= 300) return VendorFake.text("unavailable", ingest.status)
+					ingest.bodies.push(decodeIngestBody(request.body))
+					ingest.authorizations.push(request.authorization)
+					return VendorFake.json({})
+				},
+			},
+			...supabase.routes,
+		],
+	})
+	return { supabase, ingest, layer: api.layer }
 }
 type World = ReturnType<typeof makeWorld>
 
@@ -132,7 +136,7 @@ const makeLayer = (testDb: TestDb, world: World) =>
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.merge(Layer.succeed(FetchHttpClient.Fetch, world.fetch)),
+		Layer.merge(world.layer),
 	)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

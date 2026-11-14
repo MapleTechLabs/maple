@@ -20,7 +20,7 @@ import { item, itemActions, itemContent, itemDescription, itemTitle } from "@map
 import { meter } from "@maple/views/ui/meter"
 import { pressable } from "@maple/views/ui/pressable"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { pickTimeSearch } from "../../kit/view-tabs"
 import { type RuntimeLink, runtimeLink, workloadLink } from "../../kit/service-runtimes"
 import { type DependencyKind, type StripTarget, stripTargets } from "./derive-panels"
@@ -252,10 +252,7 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 					h.Href(hrefOf(AppRoute.Service({ serviceName: target.name, search: {} }))),
 					h.Class(CHIP),
 				],
-				[
-					serviceDot(h, { serviceName: target.name }),
-					typography(h, { truncate: true }, [target.name]),
-				],
+				[serviceLabel(h, { serviceName: target.name })],
 			)
 		: pressable(
 				h,

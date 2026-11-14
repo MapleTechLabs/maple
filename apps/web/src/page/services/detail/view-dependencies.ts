@@ -14,7 +14,8 @@ import { icon, type IconName } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHeader, tableRow } from "@maple/views/ui/table"
-import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
+import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import {
 	type DependencyRow,
 	dependencyRows,
@@ -82,24 +83,24 @@ const dependencyRow = (h: H, row: DependencyRow, maxima: Readonly<{ calls: numbe
 					hstack(h, { gap: "2.5", shrink: true }, [
 						typeBadge(h, row.kind),
 						vstack(h, { shrink: true, className: "leading-tight" }, [
-							hstack(
-								h,
-								{
-									gap: "1.5",
-									align: "center",
-									shrink: true,
-									as: "span",
-									className: "text-xs text-foreground",
-								},
-								[
-									...(row.kind === "service"
-										? [serviceDot(h, { serviceName: row.name, size: "sm" })]
-										: []),
-									typography(h, { truncate: true, attributes: [h.Title(row.name)] }, [
-										row.name,
-									]),
-								],
-							),
+							row.kind === "service"
+								? serviceLabel(h, {
+										serviceName: row.name,
+										dot: "sm",
+										size: "xs",
+										tone: "foreground",
+									})
+								: typography(
+										h,
+										{
+											size: "xs",
+											tone: "foreground",
+											truncate: true,
+											className: "min-w-0",
+											attributes: [h.Title(row.name)],
+										},
+										[row.name],
+									),
 							...(row.subtitle === undefined
 								? []
 								: [

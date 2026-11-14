@@ -216,13 +216,55 @@ const googleSearchNote = (model: Model, referrers: ReadonlyArray<{ name: string;
 		)
 }
 
-/** The overview's cards, built from the page's data (the dialog reads the same list). */
-export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
+/**
+ * The overview's cards, built from the page's data (the dialog reads the same list). The events
+ * card links to Product analytics only for an org in that rollout.
+ */
+export const overviewCards = (
+	model: Model,
+	hasProductAnalytics = false,
+): ReadonlyArray<BreakdownCard & { readonly isWide?: boolean }> => {
 	const breakdowns = dataOf(model.breakdowns)
 	if (breakdowns === undefined) return []
 	const pages = dataOf(model.pages) ?? []
 	const isMultiSite = new Set(Arr.map(pages, (page) => page.host)).size > 1
 	const events = dataOf(model.events) ?? []
+	const eventsCard: BreakdownCard & { readonly isWide?: boolean } = {
+		id: "events",
+		isWide: true,
+		dimensions: [
+			{
+				tab: "Events",
+				rows: Arr.map(events, (event) => ({
+					name: event.name,
+					count: event.sessions,
+					views: event.events,
+				})),
+				filterKey: "eventName",
+				noun: "event",
+				nounPlural: "events",
+				viewsLabel: "Events",
+				emptyMessage: (h: H) => [
+					'No custom events in this window. Send one with track("name", props) from the browser SDK.',
+					hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
+						docsLink(h, "productEventsApi"),
+					]),
+				],
+			},
+		],
+	}
+	const funnelsLink = {
+		label: "Funnels and paths",
+		href: hrefOf(
+			AppRoute.ProductAnalytics({
+				search: {
+					startTime: model.search.startTime,
+					endTime: model.search.endTime,
+					timePreset: model.search.timePreset,
+				},
+			}),
+		),
+	}
 	return [
 		{
 			id: "acquisition",
@@ -360,42 +402,7 @@ export const overviewCards = (model: Model): ReadonlyArray<BreakdownCard & { rea
 				},
 			],
 		},
-		{
-			id: "events",
-			isWide: true,
-			link: {
-				label: "Funnels and paths",
-				href: hrefOf(
-					AppRoute.ProductAnalytics({
-						search: {
-							startTime: model.search.startTime,
-							endTime: model.search.endTime,
-							timePreset: model.search.timePreset,
-						},
-					}),
-				),
-			},
-			dimensions: [
-				{
-					tab: "Events",
-					rows: Arr.map(events, (event) => ({
-						name: event.name,
-						count: event.sessions,
-						views: event.events,
-					})),
-					filterKey: "eventName",
-					noun: "event",
-					nounPlural: "events",
-					viewsLabel: "Events",
-					emptyMessage: (h: H) => [
-						'No custom events in this window. Send one with track("name", props) from the browser SDK.',
-						hstack(h, { align: "stretch", justify: "center", as: "span", className: "mt-2" }, [
-							docsLink(h, "productEventsApi"),
-						]),
-					],
-				},
-			],
-		},
+		hasProductAnalytics ? { ...eventsCard, link: funnelsLink } : eventsCard,
 	]
 }
 
@@ -469,7 +476,7 @@ const traceSamples = (h: H, model: Model, eventName: string, timeZone: string): 
 	})
 }
 
-const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
+const breakdownSection = (h: H, model: Model, timeZone: string, hasProductAnalytics: boolean): Html =>
 	AsyncData.matchData(model.breakdowns.data, {
 		onEmpty: () =>
 			h.div(
@@ -490,7 +497,7 @@ const breakdownSection = (h: H, model: Model, timeZone: string): Html =>
 			return h.div(
 				[h.Class("grid items-start gap-4 @min-[880px]/page:grid-cols-2")],
 				[
-					...Arr.map(overviewCards(model), (card) =>
+					...Arr.map(overviewCards(model, hasProductAnalytics), (card) =>
 						h.div(
 							[
 								h.Key(card.id),
@@ -521,12 +528,21 @@ export const sharedPageFailure = (model: Model) => {
 		: undefined
 }
 
-export const overviewContent = (h: H, model: Model, timeZone: string, isNarrow = false): Html => {
+export const overviewContent = (
+	h: H,
+	model: Model,
+	timeZone: string,
+	isNarrow: boolean,
+	hasProductAnalytics: boolean,
+): Html => {
 	const shared = sharedPageFailure(model)
 	return h.div(
 		[h.Class("space-y-6")],
 		shared === undefined
-			? [...summarySection(h, model, timeZone, isNarrow), breakdownSection(h, model, timeZone)]
+			? [
+					...summarySection(h, model, timeZone, isNarrow),
+					breakdownSection(h, model, timeZone, hasProductAnalytics),
+				]
 			: [
 					errorState(h, {
 						failure: shared,

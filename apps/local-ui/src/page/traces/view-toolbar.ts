@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { badge } from "@maple/views/ui/display"
 import { button } from "@maple/views/ui/button"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import {
 	refreshButton,
@@ -25,9 +25,8 @@ const spanScopeBanner = (h: HtmlBuilder<Message>, filters: TraceFilters): Html =
 		...(filters.service
 			? [
 					typography(h, { tone: "muted" }, ["from"]),
-					badge(h, { variant: "outline", className: typographyClass({ mono: true, size: "xs" }) }, [
-						serviceDot(h, { serviceName: filters.service, size: "sm" }),
-						filters.service,
+					badge(h, { variant: "outline", className: typographyClass({ size: "xs" }) }, [
+						serviceLabel(h, { serviceName: filters.service, dot: "sm", truncate: "none" }),
 					]),
 				]
 			: []),

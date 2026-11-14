@@ -1,7 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { flowIcon } from "./flow-icon"
-import { serviceDot } from "./node-card"
+import { serviceLabel } from "../../ui/service-label"
 import type { SpanCategory } from "./span-category"
 import { hstack } from "../../ui/stack"
 import { Array as Arr } from "effect"
@@ -42,10 +42,12 @@ export const flowLegend = <M>(
 							h,
 							{ gap: "3" },
 							Arr.map(services, (service) =>
-								hstack(h, { gap: "1.5" }, [
-									serviceDot(h, service, "size-2.5"),
-									typography(h, { weight: "medium" }, [service]),
-								]),
+								serviceLabel(h, {
+									serviceName: service,
+									dot: "md",
+									weight: "medium",
+									truncate: "none",
+								}),
 							),
 						),
 					]

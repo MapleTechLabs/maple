@@ -14,7 +14,7 @@ import {
 	tableHeader,
 	tableRow,
 } from "@maple/views/ui/table"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import { heading } from "@maple/views/ui/heading"
@@ -99,13 +99,10 @@ const breakdownRow = (h: H, row: BreakdownRow, chartUnit: string | undefined, sh
 			h,
 			[
 				row.name
-					? hstack(h, { gap: "1.5", align: "center", as: "span" }, [
-							serviceDot(h, { serviceName: row.name, size: "sm" }),
-							row.name,
-						])
+					? serviceLabel(h, { serviceName: row.name, dot: "sm", truncate: "none" })
 					: EMPTY_VALUE,
 			],
-			"font-mono text-xs",
+			"text-xs",
 		),
 		numericTableCell(h, [formatValueByUnit(row.avgValue, chartUnit)]),
 		...(showSum ? [numericTableCell(h, [formatValueByUnit(row.sumValue, chartUnit)])] : []),

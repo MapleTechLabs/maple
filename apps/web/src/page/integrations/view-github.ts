@@ -1,11 +1,9 @@
 import type { GithubIntegrationStatus } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
-import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { heading } from "@maple/views/ui/heading"
 import { AppRoute, hrefOf } from "../../route"
 import { button, linkButton } from "@maple/views/ui/button"
-import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
 import { item, itemActions, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
 import { panel } from "@maple/views/ui/panel"
@@ -17,6 +15,7 @@ import { switchControl } from "@maple/views/ui/switch"
 import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
+import { integrationStatusCard } from "./view-integration-card"
 import type { Model } from "./model"
 import { ciTracesShown, githubStatusOf } from "./update-github"
 import { disconnectDialog } from "./view-disconnect"
@@ -277,18 +276,12 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 }
 
 export const githubCard = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> => {
-	const body = AsyncData.match(model.statuses.github.data, {
-		onIdle: () => loadingState(h),
-		onLoading: () => loadingState(h),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load the GitHub integration",
-				onRetry: Message.ClickedGithubRefresh(),
-			}),
-		onStale: ({ data }) => byState(h, model, data, timeZone),
-		onRefreshing: (data) => byState(h, model, data, timeZone),
-		onSuccess: (data) => byState(h, model, data, timeZone),
+	const body = integrationStatusCard(h, model.statuses.github, {
+		name: "github",
+		failureTitle: "Couldn't load the GitHub integration",
+		render: (data) => byState(h, model, data, timeZone),
+		loading: () => loadingState(h),
+		onRetry: Message.ClickedGithubRefresh(),
 	})
 	return [body, disconnectDialog(h, model, "github"), ...repoDialogs(h, model)]
 }

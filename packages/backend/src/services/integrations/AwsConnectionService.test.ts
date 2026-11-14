@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient } from "effect/http"
 import { hashIngestKey } from "../../platform/credential-tokens"
@@ -645,6 +645,17 @@ describe("AwsConnectionService", () => {
 			aws.beforeEachCall = Effect.void
 			yield* TestClock.adjust("1 hour")
 			assert.strictEqual((yield* service.checkDue).checked, 80)
+		}).pipe(Effect.provide(makeLayer(testDb, aws)))
+	})
+	it.effect("an interrupted check stops the sweep instead of counting as a failed connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const aws = makeFakeAws()
+		return Effect.gen(function* () {
+			const service = yield* AwsConnectionService
+			yield* service.create(orgId, userId, { accountId: account, modules: [] })
+			aws.beforeEachCall = Effect.interrupt
+			const exit = yield* Effect.exit(service.checkDue)
+			assert.isTrue(Exit.hasInterrupts(exit))
 		}).pipe(Effect.provide(makeLayer(testDb, aws)))
 	})
 })

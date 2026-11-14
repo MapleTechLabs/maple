@@ -9,7 +9,7 @@ import { AppRoute, hrefOf } from "../../../../route"
 import { laneLink } from "@maple/views/ui/lane-link"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { skeletonList } from "@maple/views/ui/skeleton"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { TimeSearch } from "../../../kit/view-tabs"
 import type { Model } from "./rail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -163,19 +163,13 @@ const railRow = <M>(
 			attributes: [h.Key(service.serviceName)],
 		},
 		[
-			serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-			h.span(
-				[
-					h.Class(
-						cn(
-							"min-w-0 flex-1 truncate font-mono text-xs",
-							isActive ? "text-foreground" : "text-muted-foreground",
-						),
-					),
-					h.Title(service.serviceName),
-				],
-				[service.serviceName],
-			),
+			serviceLabel(h, {
+				serviceName: service.serviceName,
+				dot: "sm",
+				size: "xs",
+				tone: isActive ? "foreground" : "muted",
+				className: "flex-1",
+			}),
 			h.span(
 				[
 					h.Class(

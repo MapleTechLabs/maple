@@ -33,7 +33,8 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/primitives"
-import { Cause, Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Array as Arr } from "effect"
+import { isolatePollFailure } from "./poll-fleet"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { ingestKeyLookupHmacKey } from "@maple/backend/platform/Crypto"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
@@ -737,15 +738,12 @@ export class AwsConnectionService extends Context.Service<AwsConnectionService, 
 							Effect.withSpan("AwsConnectionService.checkDue.connection", {
 								attributes: { orgId: row.orgId, "maple.aws.connection_id": row.id },
 							}),
-							// One connection's failure, expected or not, is that connection's alone.
-							Effect.catchCause((cause) =>
-								Effect.logWarning("AWS connection check failed").pipe(
-									Effect.annotateLogs({
-										"maple.aws.connection_id": row.id,
-										cause: Cause.pretty(cause),
-									}),
-									Effect.as(false),
-								),
+							// One connection's failure, expected or not, is that connection's alone. An
+							// interruption is not a failure: it stops the sweep.
+							isolatePollFailure(
+								"AWS connection check failed",
+								{ "maple.aws.connection_id": row.id },
+								false,
 							),
 						),
 					{ concurrency: SWEEP_CONCURRENCY },

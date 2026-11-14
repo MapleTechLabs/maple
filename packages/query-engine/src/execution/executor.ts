@@ -125,6 +125,11 @@ interface CachedCapabilities {
 type TrustedSqlError = WarehouseReadExecutionError
 type BoundedTrustedSqlError = TrustedSqlError | WarehouseResponseLimitError
 type RawSqlError = WarehouseExecutionError | RawSqlValidationError
+/**
+ * How a statement reached the driver. `trusted` is a compiled read that passed the tenant-scope
+ * gate, `cross-org` a compiled read declared to span tenants, `raw` SQL a caller wrote.
+ */
+type SqlExecution = "trusted" | "raw" | "cross-org"
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
 
@@ -470,7 +475,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options?: SqlQueryOptions,
-		execution: "trusted" | "raw" = "trusted",
+		execution: SqlExecution = "trusted",
 		responseLimits?: WarehouseResponseLimits,
 	) {
 		const startedAtMs = yield* Clock.currentTimeMillis
@@ -516,7 +521,14 @@ WHERE name = 'enable_full_text_index'`,
 		// query definition (`.route("ingest")` → `options.route`).
 		const purpose: RoutePurpose =
 			execution === "raw" ? "raw" : options?.route === "ingest" ? "ingest" : "read"
-		const resolved = yield* deps.resolveRoute(tenant, purpose, pipe)
+		// Only a read `validateTenantScope` let through is one tenant's alone, and only that
+		// may run on credentials scoped to the tenant.
+		const resolved = yield* deps.resolveRoute(
+			tenant,
+			purpose,
+			pipe,
+			execution === "trusted" ? { kind: "tenant", sql } : undefined,
+		)
 		// Safety net for the silent-empty-table failure: an ingest-pinned table
 		// read against an org's own BYO ClickHouse returns no rows, not an error.
 		if (purpose !== "ingest" && resolved.source === "org-byo") {
@@ -700,7 +712,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted",
+		execution: "trusted" | "cross-org",
 		responseLimits?: undefined,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, TrustedSqlError>
 	function executeSqlOnce(
@@ -724,7 +736,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted" | "raw",
+		execution: SqlExecution,
 		responseLimits?: WarehouseResponseLimits,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, BoundedTrustedSqlError | RawSqlError>
 	function executeSqlOnce(
@@ -732,7 +744,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted" | "raw",
+		execution: SqlExecution,
 		responseLimits?: WarehouseResponseLimits,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, BoundedTrustedSqlError | RawSqlError> {
 		return executeSqlOnceEffect(tenant, sql, pipe, options, execution, responseLimits)
@@ -765,7 +777,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options?: SqlQueryOptions,
-		execution: "trusted" | "raw" = "trusted",
+		execution: SqlExecution = "trusted",
 		responseLimits?: WarehouseResponseLimits,
 	) => {
 		const attempt = executeSqlOnce(tenant, sql, pipe, options, execution, responseLimits)
@@ -793,7 +805,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted",
+		execution: "trusted" | "cross-org",
 		responseLimits?: undefined,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, TrustedSqlError>
 	function executeSql(
@@ -817,7 +829,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted" | "raw",
+		execution: SqlExecution,
 		responseLimits?: WarehouseResponseLimits,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, BoundedTrustedSqlError | RawSqlError>
 	function executeSql(
@@ -825,7 +837,7 @@ WHERE name = 'enable_full_text_index'`,
 		sql: string,
 		pipe: string,
 		options: SqlQueryOptions | undefined,
-		execution: "trusted" | "raw",
+		execution: SqlExecution,
 		responseLimits?: WarehouseResponseLimits,
 	): Effect.Effect<ReadonlyArray<Record<string, unknown>>, BoundedTrustedSqlError | RawSqlError> {
 		return executeSqlEffect(tenant, sql, pipe, options, execution, responseLimits)
@@ -1168,11 +1180,12 @@ WHERE name = 'enable_full_text_index'`,
 		// traces themselves rather than from code review alone.
 		yield* Effect.annotateCurrentSpan("tenant.scope", "cross-org")
 		yield* Effect.annotateCurrentSpan("tenant.crossOrg.justification", rawOptions.justification)
-		const rows = yield* executeTrustedSql(
+		const rows = yield* executeSql(
 			tenant,
 			compiled.sql,
 			context,
 			withCompiledRouting(compiled, options),
+			"cross-org",
 		)
 		return yield* compiled.decodeRows(rows).pipe(
 			Effect.mapError(

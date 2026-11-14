@@ -16,13 +16,13 @@ import { resolveColor, type ThemeColors } from "@maple/views/charts/theme-colors
 import { badge } from "@maple/views/ui/display"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { meter } from "@maple/views/ui/meter"
-import { middleTruncate } from "@maple/views/ui/middle-truncate"
 import { pressable } from "@maple/views/ui/pressable"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { table, tableBody, tableCell, tableHead, tableHeader, tableRow } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
-import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
+import { errorRateValue, latencyValue } from "@maple/views/ui/values"
 import { rowFocusAttributes } from "@maple/views/ui/row-focus"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { presenceOf } from "@maple/views/data/signal-presence"
@@ -233,12 +233,17 @@ const serviceRow = (
 						attributes: [h.Title(service.serviceName)],
 					},
 					[
-						serviceDot(h, { serviceName: service.serviceName }),
-						typography(h, { truncate: true, className: "min-w-0" }, [service.serviceName]),
-						isUnnamedService(service.serviceName)
-							? unnamedServiceHint(h, ctx.overlays?.tooltip("unnamed", rowIdOf(service)) ?? [])
-							: null,
-						healthDot(h, health),
+						serviceLabel(h, { serviceName: service.serviceName }, [
+							...(isUnnamedService(service.serviceName)
+								? [
+										unnamedServiceHint(
+											h,
+											ctx.overlays?.tooltip("unnamed", rowIdOf(service)) ?? [],
+										),
+									]
+								: []),
+							healthDot(h, health),
+						]),
 					],
 				),
 				...(subtitle !== ""
@@ -580,31 +585,30 @@ const mobileList = (
 													h.div(
 														[h.Class("min-w-0 flex-1")],
 														[
-															hstack(
+															serviceLabel(
 																h,
 																{
-																	gap: "1.5",
-																	align: "center",
-																	className:
-																		"text-sm font-medium text-foreground",
+																	serviceName: service.serviceName,
+																	size: "sm",
+																	tone: "foreground",
+																	weight: "medium",
+																	truncate: "middle",
 																},
 																[
-																	serviceDot(h, {
-																		serviceName: service.serviceName,
-																	}),
-																	middleTruncate(h, {
-																		text: service.serviceName,
-																		tail: 12,
-																	}),
-																	isUnnamedService(service.serviceName)
-																		? unnamedServiceHint(
-																				h,
-																				ctx.overlays?.tooltip(
-																					"unnamed",
-																					rowIdOf(service, true),
-																				) ?? [],
-																			)
-																		: null,
+																	...(isUnnamedService(service.serviceName)
+																		? [
+																				unnamedServiceHint(
+																					h,
+																					ctx.overlays?.tooltip(
+																						"unnamed",
+																						rowIdOf(
+																							service,
+																							true,
+																						),
+																					) ?? [],
+																				),
+																			]
+																		: []),
 																	healthDot(
 																		h,
 																		healthOf(ctx.summary, service),

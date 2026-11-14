@@ -86,6 +86,8 @@ interface StubOptions {
 	readonly ingestStatus?: number
 	/** Pages of the `projects` connection, served by cursor. Defaults to one page with `shop`. */
 	readonly projectPages?: ReadonlyArray<ReadonlyArray<ProjectNode>>
+	/** Runs before each Railway call is answered, e.g. to save a new token mid-poll. */
+	readonly beforeRailway?: () => Promise<void>
 }
 
 interface ProjectNode {
@@ -160,6 +162,7 @@ const stubFetch = (calls: StubCalls, options: StubOptions = {}) => {
 		}
 		const query = body.query ?? ""
 		calls.railway.push({ query, authorization: headers.get("authorization") })
+		await options.beforeRailway?.()
 		if (options.railway === "rate_limited") {
 			return new Response("slow down", { status: 429, headers: { "retry-after": "60" } })
 		}
@@ -489,9 +492,9 @@ describe("RailwayMetricsService", () => {
 			assert.strictEqual(summary.failures, 1)
 			const rows = yield* Effect.promise(() =>
 				Promise.all([
-					queryFirstRow<{ lease_until: Date | null }>(
+					queryFirstRow<{ hold_until: Date | null }>(
 						testDb,
-						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						"SELECT hold_until FROM railway_connections WHERE org_id = $1",
 						[orgId],
 					),
 					queryFirstRow<{ watermark_at: Date | null }>(
@@ -501,7 +504,7 @@ describe("RailwayMetricsService", () => {
 				]),
 			)
 			assert.isAbove(
-				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.lease_until!)),
+				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.hold_until!)),
 				now + 10 * minute,
 			)
 			assert.isNull(rows[1]!.watermark_at)
@@ -535,14 +538,14 @@ describe("RailwayMetricsService", () => {
 				assert.strictEqual(summary.failures, 1)
 				assert.strictEqual(calls.ingest.length, 2)
 				const connection = yield* Effect.promise(() =>
-					queryFirstRow<{ lease_until: Date | null }>(
+					queryFirstRow<{ hold_until: Date | null }>(
 						testDb,
-						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						"SELECT hold_until FROM railway_connections WHERE org_id = $1",
 						[orgId],
 					),
 				)
 				assert.isAbove(
-					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.lease_until!)),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.hold_until!)),
 					now + 30 * minute,
 				)
 				const held = yield* run(
@@ -589,6 +592,78 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
+	it.effect("a rejected token neither pauses nor marks a token saved while the poll ran", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return Effect.gen(function* () {
+			yield* run(
+				testDb,
+				stubFetch(calls),
+				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
+			)
+			yield* resetWatermarks(testDb)
+			const savedMidPoll = stubFetch(calls, {
+				railway: "unauthorized",
+				beforeRailway: async () => {
+					await testDb.pglite.query(
+						"UPDATE railway_connections SET token_ciphertext = 'saved-mid-poll'",
+					)
+				},
+			})
+			yield* run(
+				testDb,
+				savedMidPoll,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{
+					auth_failed_at: Date | null
+					last_error: string | null
+					disconnected_at: Date | null
+				}>(
+					testDb,
+					"SELECT c.auth_failed_at, c.last_error, s.disconnected_at FROM railway_connections c JOIN sources s ON s.id = c.source_id",
+				),
+			)
+			assert.isNull(row!.auth_failed_at)
+			assert.isNull(row!.last_error)
+			assert.isNull(row!.disconnected_at)
+		})
+	})
+
+	it.effect("a pass that fails after a new token is saved leaves the new token's source alone", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return Effect.gen(function* () {
+			yield* run(
+				testDb,
+				stubFetch(calls),
+				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
+			)
+			yield* resetWatermarks(testDb)
+			const refusedAfterSave = stubFetch(calls, {
+				ingestStatus: 403,
+				beforeRailway: async () => {
+					await testDb.pglite.query(
+						"UPDATE railway_connections SET token_ciphertext = 'saved-mid-poll'",
+					)
+				},
+			})
+			yield* run(
+				testDb,
+				refusedAfterSave,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
+			const source = yield* Effect.promise(() =>
+				queryFirstRow<{ last_poll_error: string | null }>(
+					testDb,
+					"SELECT s.last_poll_error FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			)
+			assert.isNull(source!.last_poll_error)
+		})
+	})
+
 	it.effect("each tick reports onto the source and a reconnect clears a rejected token", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
@@ -604,7 +679,10 @@ describe("RailwayMetricsService", () => {
 				),
 			)
 		const behindAndUnleased = Effect.promise(() =>
-			queryFirstRow(testDb, "UPDATE railway_connections SET lease_until = NULL RETURNING id"),
+			queryFirstRow(
+				testDb,
+				"UPDATE railway_connections SET lease_until = NULL, hold_until = NULL RETURNING id",
+			),
 		).pipe(Effect.andThen(resetWatermarks(testDb)))
 		return Effect.gen(function* () {
 			const okStub = stubFetch(calls)
