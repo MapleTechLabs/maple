@@ -25,6 +25,11 @@ export interface EnvConfig {
 	readonly TINYBIRD_WORKSPACE_ID: Option.Option<string>
 	/** Optional Tinybird-enforced RPS ceiling, bucketed independently per org. */
 	readonly TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Option.Option<number>
+	/**
+	 * Read the managed Tinybird warehouse with an org-scoped JWT instead of the shared token, so
+	 * Tinybird itself keeps a query to its tenant's rows. Set per Worker; needs the signing key.
+	 */
+	readonly MAPLE_WAREHOUSE_ORG_SCOPED_READS: boolean
 	readonly CLICKHOUSE_URL: Option.Option<string>
 	readonly CLICKHOUSE_PROVIDER: string
 	readonly CLICKHOUSE_USER: string
@@ -242,6 +247,9 @@ const envConfig = Config.all({
 	TINYBIRD_SIGNING_KEY: optionalRedacted("TINYBIRD_SIGNING_KEY"),
 	TINYBIRD_WORKSPACE_ID: optionalString("TINYBIRD_WORKSPACE_ID"),
 	TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Config.option(Config.Number("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT")),
+	MAPLE_WAREHOUSE_ORG_SCOPED_READS: stringWithDefault("MAPLE_WAREHOUSE_ORG_SCOPED_READS", "false").pipe(
+		Config.map((value) => value === "1" || value === "true"),
+	),
 	CLICKHOUSE_URL: optionalString("CLICKHOUSE_URL"),
 	CLICKHOUSE_PROVIDER: stringWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
@@ -427,6 +435,18 @@ const makeEnv = Effect.gen(function* () {
 		return yield* new EnvValidationError({
 			message:
 				"TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID must be configured together for Tinybird raw SQL",
+		})
+	}
+
+	// At boot, not at the first query: with the flag on, every read of this Worker needs the token.
+	if (
+		env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
+		env.CLICKHOUSE_PROVIDER === "tinybird" &&
+		!hasTinybirdSigningKey
+	) {
+		return yield* new EnvValidationError({
+			message:
+				"MAPLE_WAREHOUSE_ORG_SCOPED_READS needs TINYBIRD_SIGNING_KEY and TINYBIRD_WORKSPACE_ID to mint the org-scoped read token",
 		})
 	}
 

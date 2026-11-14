@@ -23,6 +23,7 @@ import { WarehouseResponseLimitError } from "./response-limits"
 import type {
 	ExecutionTenant,
 	ResolvedWarehouseConfig,
+	RouteScope,
 	SqlQueryOptions,
 	WarehouseExecutorDeps,
 	WarehouseSqlClient,
@@ -152,6 +153,50 @@ describe("makeWarehouseExecutor ingest routing", () => {
 				route: "ingest",
 			})
 			assert.deepStrictEqual(created, ["tinybird"])
+		}),
+	)
+})
+
+describe("makeWarehouseExecutor route scope", () => {
+	// A host may run a `tenant` read on credentials scoped to that org, so the mark must reach it
+	// for exactly the reads that passed the tenant-scope gate.
+	it.effect("marks only gated compiled reads as one tenant's", () =>
+		Effect.gen(function* () {
+			const scopes: Array<readonly [string, string | undefined]> = []
+			const executor = makeWarehouseExecutor({
+				...makeDeps([]),
+				resolveRoute: (_tenant, purpose, label, scope?: RouteScope) => {
+					scopes.push([label, scope?.kind])
+					return Effect.succeed({
+						source: "managed" as const,
+						config: tinybirdConfig,
+						clientCacheKey: purpose === "ingest" ? "write:managed" : "read:managed",
+					})
+				},
+			})
+			const crossOrg = rawCompiledQuery<Record<string, unknown>>({
+				sql: "SELECT OrgId FROM traces GROUP BY OrgId\nFORMAT JSON",
+				tenantScope: "cross-tenant",
+				reason: "test-fixture",
+				justification: "Synthetic SQL asserting executor behaviour, not a product query.",
+			})
+
+			yield* executor.compiledQuery(tenant, untaggedCompiled, { context: "scoped" })
+			yield* executor.compiledQuery(tenant, compiled, { context: "scopedIngestRead" })
+			yield* executor.crossOrgQuery(tenant, crossOrg, {
+				context: "crossOrg",
+				justification: "test",
+			})
+			yield* executor.rawSqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'")
+			yield* executor.ingest(tenant, "traces", [{ OrgId: "org_test" }])
+
+			assert.deepStrictEqual(scopes, [
+				["scoped", "tenant"],
+				["scopedIngestRead", "tenant"],
+				["crossOrg", undefined],
+				["rawSqlQuery", undefined],
+				["ingest:traces", undefined],
+			])
 		}),
 	)
 })
