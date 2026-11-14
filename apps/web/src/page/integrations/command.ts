@@ -13,6 +13,8 @@ import { organizationFeatureFlagsFrom } from "@maple/domain/organization-feature
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { trackProduct } from "../../data/analytics"
 import { readAllPages } from "../../platform/read-all-pages"
+import { RAILWAY } from "../infra-integrations/railway/integration/railway-provider"
+import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-provider"
 
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
@@ -50,9 +52,7 @@ export const STATUS_READS = {
 	cloudflare: statusRead("LoadIntegrationsCloudflareStatus", Message.CompletedLoadCloudflare, (refresh) =>
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.cloudflare({ refresh })),
 	),
-	railway: statusRead("LoadIntegrationsRailwayStatus", Message.CompletedLoadRailway, (refresh) =>
-		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.railway({ refresh })),
-	),
+	railway: statusRead(RAILWAY.statusRead.name, Message.CompletedLoadRailway, RAILWAY.statusRead.read),
 	vercel: statusRead("LoadIntegrationsVercelStatus", Message.CompletedLoadVercel, () =>
 		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.vercelStatus()),
 	),
@@ -64,9 +64,7 @@ export const STATUS_READS = {
 	gcp: statusRead("LoadIntegrationsGcpStatus", Message.CompletedLoadGcp, (refresh) =>
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
 	),
-	supabase: statusRead("LoadIntegrationsSupabaseStatus", Message.CompletedLoadSupabase, (refresh) =>
-		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.supabase({ refresh })),
-	),
+	supabase: statusRead(SUPABASE.statusRead.name, Message.CompletedLoadSupabase, SUPABASE.statusRead.read),
 	aws: statusRead("LoadIntegrationsAwsStatus", Message.CompletedLoadAws, () =>
 		Effect.flatMap(MapleApiV2Client, (client) => client.awsIntegration.status()),
 	),

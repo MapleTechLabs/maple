@@ -16,7 +16,6 @@ import {
 	metricsLastCollectedAt,
 	metricsLastError,
 } from "../infra-integrations/planetscale/setup-steps"
-import type { Keyed } from "@maple/views/data/keyed"
 import { chatIntegrationId, type IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import {
@@ -27,17 +26,32 @@ import {
 } from "../infra-integrations/vercel/integration/vercel-model"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
+import { providerModuleOf } from "./provider-modules"
+import {
+	attentionOr,
+	type CardStatus,
+	CONNECT,
+	fold,
+	type IntegrationOverview,
+	type LastSync,
+	lastSyncOf,
+	NOT_CONFIGURED,
+	NOT_CONNECTED,
+	SET_UP,
+	UNCONFIGURED,
+	unavailableOverview,
+	unavailableStatus,
+} from "./overview"
 
-/** Success (also while revalidating), initial (`null`), else the failure value. */
-export const fold = <A, E, R>(slot: Keyed<A, E>, onSuccess: (data: A) => R, onFailure: () => R): R | null =>
-	AsyncData.match(slot.data, {
-		onIdle: () => null,
-		onLoading: () => null,
-		onRefreshing: onSuccess,
-		onSuccess,
-		onFailure: () => onFailure(),
-		onStale: () => onFailure(),
-	})
+export {
+	type AvailableOverview,
+	type CardStatus,
+	type ConnectedOverview,
+	fold,
+	type IntegrationOverview,
+	type LastSync,
+	type UnavailableOverview,
+} from "./overview"
 
 /** `Date.parse` of an ISO timestamp (lint-banned), `null` when absent or unparseable. */
 export const isoMs = (iso: string | null | undefined): number | null =>
@@ -109,53 +123,12 @@ export const AWS_CONDITION_LABEL = {
 	receiving: "Receiving metrics",
 } satisfies Record<AwsConnectionCondition, string>
 
-export interface CardStatus {
-	readonly label: string
-	readonly variant: "ok" | "warn" | "crit" | "outline"
-}
-
-const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
-const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
-/** The status read failed: a warning, not the neutral look of a quiet connection. */
-const STATUS_UNAVAILABLE: CardStatus = { label: "Couldn't check status", variant: "warn" }
-
-/** The newest data or sync, read as `{verb} {relative time}`: `synced 3m ago`. */
-export type LastSync = Readonly<{ verb: string; at: number }>
-
-export interface ConnectedOverview {
-	readonly kind: "connected"
-	readonly health: "healthy" | "attention" | "pending"
-	readonly stateLabel: string
-	readonly context: string | null
-	readonly stat: string | null
-	readonly lastSync: LastSync | null
-	readonly issue: string | null
-}
-export interface AvailableOverview {
-	readonly kind: "available"
-	readonly cta: "Connect" | "Set up"
-}
-export interface UnavailableOverview {
-	readonly kind: "unavailable"
-	/** `failed`: the status read failed. `not-configured`: this deployment has no setup for it. */
-	readonly reason: "failed" | "not-configured"
-}
-export type IntegrationOverview = ConnectedOverview | AvailableOverview | UnavailableOverview | null
-
-const CONNECT: AvailableOverview = { kind: "available", cta: "Connect" }
-const SET_UP: AvailableOverview = { kind: "available", cta: "Set up" }
-const UNAVAILABLE: UnavailableOverview = { kind: "unavailable", reason: "failed" }
-const UNCONFIGURED: UnavailableOverview = { kind: "unavailable", reason: "not-configured" }
-
 export const HEALTH_TONE = {
 	healthy: "ok",
 	attention: "warn",
 	pending: "neutral",
 	unavailable: "warn",
 } as const
-
-const lastSyncOf = (ms: number | null, verb = "synced"): LastSync | null =>
-	ms === null ? null : { verb, at: ms }
 
 /** `synced 3m ago`: a last sync as plain text, for places that cannot hold a timestamp. */
 export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
@@ -165,8 +138,6 @@ const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null 
 	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
 		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
 	)
-
-const unavailableStatus = () => STATUS_UNAVAILABLE
 
 const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
 	fold(
@@ -227,6 +198,8 @@ const connectedOrNot = (connected: boolean): CardStatus =>
 
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
+	const provider = providerModuleOf(id)
+	if (provider !== undefined) return provider.cardStatus(statuses)
 	switch (id) {
 		case "gcp":
 			return fold(
@@ -252,17 +225,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 				},
 				unavailableStatus,
 			)
-		case "railway":
-			return fold(
-				statuses.railway,
-				(status): CardStatus =>
-					!status.connected
-						? NOT_CONNECTED
-						: status.authFailed
-							? { label: "Token rejected", variant: "crit" }
-							: { label: countLabel(status.environments.length, "environment"), variant: "ok" },
-				unavailableStatus,
-			)
 		case "vercel":
 			return fold(
 				statuses.vercel,
@@ -274,19 +236,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 							: vercelIssues(status).length > 0
 								? { label: "Needs attention", variant: "warn" }
 								: { label: status.team?.name ?? "Connected", variant: "ok" },
-				unavailableStatus,
-			)
-		case "supabase":
-			return fold(
-				statuses.supabase,
-				(status): CardStatus =>
-					!status.configured
-						? NOT_CONFIGURED
-						: !status.connected
-							? NOT_CONNECTED
-							: status.revoked
-								? { label: "Access revoked", variant: "crit" }
-								: { label: status.organization?.name ?? "Connected", variant: "ok" },
 				unavailableStatus,
 			)
 		case "cloudflare":
@@ -350,14 +299,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			return chatStatus(statuses, id)
 	}
 }
-
-const unavailableOverview = (): IntegrationOverview => UNAVAILABLE
-
-const attentionOr = (issue: string | null) =>
-	({
-		health: issue !== null ? "attention" : "healthy",
-		stateLabel: issue !== null ? "Needs attention" : "Healthy",
-	}) as const
 
 const gcpOverview = (statuses: Statuses, nowMs: number) =>
 	fold(
@@ -458,32 +399,6 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const railwayOverview = (statuses: Statuses) =>
-	fold(
-		statuses.railway,
-		(status): IntegrationOverview => {
-			if (!status.connected) return CONNECT
-			const failing = Arr.filter(
-				status.environments,
-				(environment) => environment.lastError != null,
-			).length
-			const issue = status.authFailed
-				? "Token rejected"
-				: failing > 0
-					? `${countLabel(failing, "environment")} failing`
-					: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.workspaceNames,
-				stat: `${countLabel(status.environments.length, "environment")} polled`,
-				lastSync: lastSyncOf(status.lastSyncedAt ?? null),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
 const VERCEL_STATE_LABEL = { attention: "Needs attention", pending: "Syncing", healthy: "Healthy" } as const
 
 const vercelOverview = (statuses: Statuses) =>
@@ -505,30 +420,6 @@ const vercelOverview = (statuses: Statuses) =>
 					: issues.length > 0
 						? `${countLabel(issues.length, "drain")} failing`
 						: null,
-			}
-		},
-		unavailableOverview,
-	)
-
-const supabaseOverview = (statuses: Statuses) =>
-	fold(
-		statuses.supabase,
-		(status): IntegrationOverview => {
-			if (!status.configured) return UNCONFIGURED
-			if (!status.connected) return CONNECT
-			const issue = status.revoked
-				? "Reconnect to resume"
-				: status.lastDiscoveryError !== null
-					? "Project discovery failing"
-					: null
-			const collecting = Arr.filter(status.projects, (project) => project.metricsEnabled).length
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.organization?.name ?? null,
-				stat: `${countLabel(status.projects.length, "project")} · ${collecting} collecting metrics`,
-				lastSync: lastSyncOf(status.lastDiscoveryAt),
-				issue,
 			}
 		},
 		unavailableOverview,
@@ -761,17 +652,15 @@ const chatOverview = (statuses: Statuses, id: IntegrationId) =>
 
 /** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
+	const provider = providerModuleOf(id)
+	if (provider !== undefined) return provider.overview(statuses)
 	switch (id) {
 		case "gcp":
 			return gcpOverview(statuses, nowMs)
 		case "aws":
 			return awsOverview(statuses, nowMs)
-		case "railway":
-			return railwayOverview(statuses)
 		case "vercel":
 			return vercelOverview(statuses)
-		case "supabase":
-			return supabaseOverview(statuses)
 		case "cloudflare":
 			return cloudflareOverview(statuses)
 		case "prometheus":

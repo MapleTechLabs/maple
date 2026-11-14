@@ -3,13 +3,13 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../../route/index"
 import { button, linkButton } from "@maple/views/ui/button"
-import { errorState } from "@maple/views/ui/error-state"
 import { skeletonBlock } from "@maple/views/ui/skeleton"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { cloudflareConnected } from "./view-cloudflare-connected"
 import { disconnectDialog } from "../../../integrations/view-disconnect"
+import { integrationStatusCard } from "../../../integrations/view-integration-card"
 import { hstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
@@ -26,23 +26,12 @@ const cloudflareReconnect = (h: H): Html =>
 	})
 
 export const cloudflareCard = (h: H, model: Model, timeZone: string): Html =>
-	AsyncData.match(model.statuses.cloudflare.data, {
-		onIdle: () => skeletonBlock(h, { height: "40" }),
-		onLoading: () => skeletonBlock(h, { height: "40" }),
-		onFailure: (failure) =>
-			errorState(h, {
-				failure,
-				title: "Couldn't load the Cloudflare integration",
-				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
-			}),
-		onStale: ({ error }) =>
-			errorState(h, {
-				failure: error,
-				title: "Couldn't load the Cloudflare integration",
-				onRetry: Message.ClickedRetryStatus({ name: "cloudflare" }),
-			}),
-		onRefreshing: (status) => byStatus(h, model, status, timeZone),
-		onSuccess: (status) => byStatus(h, model, status, timeZone),
+	integrationStatusCard(h, model.statuses.cloudflare, {
+		name: "cloudflare",
+		failureTitle: "Couldn't load the Cloudflare integration",
+		render: (status) => byStatus(h, model, status, timeZone),
+		loading: () => skeletonBlock(h, { height: "40" }),
+		stale: "failure",
 	})
 
 const byStatus = (h: H, model: Model, status: CloudflareIntegrationStatus, timeZone: string): Html =>
