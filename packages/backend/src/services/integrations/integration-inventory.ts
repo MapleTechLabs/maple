@@ -44,6 +44,8 @@ const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 const GCP_INVENTORY_STALE_MS = 3 * 60 * 60 * 1000
 /** GCP reads every 5 minutes; an error with no read for three ticks is a failed read, not a partial one. */
 const GCP_METRICS_FAILED_AFTER_MS = 15 * 60 * 1000
+/** Resources sync hourly; an error with no sync for 70 minutes is a failed sync, not a truncated one. */
+const GCP_RESOURCES_FAILED_AFTER_MS = 70 * 60 * 1000
 
 /** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
 export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
@@ -717,8 +719,10 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 			lastError: c.lastMetricsError,
 		}
 		const metricsStatus = pollStatus(metricsState, now, POLLER_STALE_MS)
+		// A truncated sync keeps a note but stamps a fresh sync; a failed one leaves the hour-old stamp.
 		const inventoryStatus: IntegrationStatus =
-			c.lastResourcesError !== null
+			c.lastResourcesError !== null &&
+			(c.resourcesSyncedAt === null || now - c.resourcesSyncedAt > GCP_RESOURCES_FAILED_AFTER_MS)
 				? "failing"
 				: c.resourcesSyncedAt === null
 					? "pending"

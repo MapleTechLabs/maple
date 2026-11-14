@@ -460,6 +460,27 @@ describe("google cloud", () => {
 		expect(gcp?.problem).toContain("PERMISSION_DENIED")
 	})
 
+	it("reads a truncated resource sync as healthy, and a failed one as failing", () => {
+		const statusOf = (resourcesSyncedAt: number) =>
+			Arr.findFirst(
+				providerOf(
+					{
+						gcpConnectors: [
+							{
+								...connector,
+								resourcesSyncedAt,
+								lastResourcesError: "The resource listing ran out of time and is incomplete.",
+							},
+						],
+					},
+					"gcp",
+				)?.resources ?? [],
+				(r) => r.kind === "inventory",
+			).pipe(Option.getOrUndefined)?.status
+		expect(statusOf(NOW - 10 * MINUTE)).toBe("healthy")
+		expect(statusOf(NOW - 90 * MINUTE)).toBe("failing")
+	})
+
 	it("stays healthy on a partial metrics read that still delivered", () => {
 		const gcp = providerOf(
 			{
