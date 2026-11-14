@@ -18,7 +18,7 @@
 }
 
 /* Navigation's pending state (`page/page-hold.ts`): the page left stays drawn but takes no clicks
-   while the next one loads; once the hold runs out, that page already waited the skeleton delay. */
+   (the top bar, a `header`, is the open page's); after the hold the next page skips the skeleton delay. */
 [data-page-hold="held"] > :not(header) {
 	pointer-events: none;
 }

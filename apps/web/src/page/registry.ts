@@ -214,6 +214,9 @@ export const pages = [
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */
 export const isBarePageRoute = AppRoute.isAnyOf(["Share"])
 
+/** A page drawn alone, outside the shell (`isBarePageRoute`). */
+export const isBareSlot = (slot: PageSlotBase): boolean => slot._tag === Share.page.id
+
 export const PageSlot = Schema.Union(Array.map(pages, (page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
 
@@ -289,9 +292,9 @@ const someAsyncData =
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
 const hasLoadInFlight = someAsyncData(AsyncData.isPending)
 
-/** The page still waits on a first read: some `AsyncData` is `Loading`, with no data to show. */
-export const isFirstLoading = (slot: PageSlot | null): boolean =>
-	slot !== null && someAsyncData(AsyncData.isLoading)(slot.model)
+/** The page has nothing to show yet: a read is `Loading` and none has data (a revived page has its last). */
+export const isFirstLoading = (slot: PageSlot): boolean =>
+	someAsyncData(AsyncData.isLoading)(slot.model) && !someAsyncData(AsyncData.hasData)(slot.model)
 
 /** How many left pages are kept to revive; each holds its last data. */
 const PARKED_PAGES_MAX = 4

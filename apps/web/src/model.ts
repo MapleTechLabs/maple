@@ -4,6 +4,7 @@ import { defineTaggedUnion } from "foldkit/schema"
 import * as Onboarding from "./page/onboarding"
 import { CustomerSlot } from "./page/onboarding/plan-gate"
 import { ClerkSnapshot } from "./platform/clerk"
+import * as PageHold from "./page/page-hold"
 import * as Preload from "./page/preload"
 import { RootToastAction } from "./page/contract"
 import { PageMessage, PageSlot } from "./page/registry"
@@ -31,14 +32,6 @@ export const ClerkPhase = defineTaggedUnion({
 })
 export type ClerkPhase = typeof ClerkPhase.Type
 
-/** Navigation's pending state (`page/page-hold.ts`): the page left, drawn while the entered one loads. */
-export const PageHold = defineTaggedUnion({
-	None: {},
-	Holding: { leaving: PageSlot, instance: Schema.Number },
-	Waited: { instance: Schema.Number },
-})
-export type PageHold = typeof PageHold.Type
-
 export const Model = Schema.Struct({
 	route: AppRoute,
 	session: Session,
@@ -61,7 +54,7 @@ export const Model = Schema.Struct({
 	/** Pages left recently, newest first: going back revives one with its last data (`parkPages`). */
 	parkedPages: Schema.Array(PageSlot),
 	/** The page left, still drawn while the entered page's first reads run (`page/page-hold.ts`). */
-	pageHold: PageHold,
+	pageHold: PageHold.Model,
 	/** The open onboarding or auth-handoff screen (`page/onboarding`): outside the shell and `PageContext`. */
 	onboarding: Schema.NullOr(Onboarding.Model),
 	/** The last Clerk emit, Clerk mode only. */

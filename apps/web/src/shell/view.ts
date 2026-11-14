@@ -124,7 +124,8 @@ export type FrameInputs = Readonly<{
 	topbarActions: () => Html
 	/** The page's source, linked from the top bar. */
 	sourceLink?: SourceLink | null
-	/** `held`: the page a navigation left, drawn while the next loads; `waited`: that one, after the hold. */
+	/** `held`: the page left is drawn while the next loads; `waited`: the next page, shown after the hold
+	 * with no skeleton delay (`page/page-hold.ts`). */
 	pageHold?: "held" | "waited" | null
 }>
 

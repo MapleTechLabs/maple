@@ -7,7 +7,8 @@ vi.hoisted(() => {
 	vi.stubEnv("VITE_MAPLE_AUTH_MODE", "clerk")
 	Object.assign(globalThis, { window: new EventTarget() })
 })
-import { ClerkPhase, type Model, PageHold, Session } from "./model"
+import { ClerkPhase, type Model, Session } from "./model"
+import * as PageHold from "./page/page-hold"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -55,7 +56,7 @@ const signedIn = (role: string | null): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
-	pageHold: PageHold.None(),
+	pageHold: PageHold.Model.None(),
 	onboarding: null,
 	clerkSnapshot: snapshotOf(role),
 	customer: initCustomer(),
