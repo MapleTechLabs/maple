@@ -96,12 +96,15 @@ const NOT_YET =
 
 /** A reply saying the finding still stands: it takes back an earlier "fixed" or "won't fix". */
 const STILL_OPEN =
-	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|reproduces|an issue|a problem|there|open)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|es))\b/i
+	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|happening|reproduces|an issue|a problem|there|open|see|seeing|logged|logs|leaks|missing|present|reaches)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|es))\b/i
 
 /** `open` takes back an earlier verdict in the thread: the finding stays with the reviewer. */
-/** A hedged claim ("I don't think it's fixed", "not sure", "nothing was fixed"): no verdict either way. */
+/**
+ * A hedged or reported claim ("I don't think it's fixed", "not sure", "you said it was fixed"): no
+ * verdict either way.
+ */
 const HEDGED =
-	/\b(?:don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|may|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
+	/\b(?:said|says|claimed|claims|marked|supposedly|apparently|reportedly|don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|may|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
 
 type ReplyVerdict = "dismissed" | "resolved" | "open"
 

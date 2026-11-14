@@ -104,6 +104,10 @@ describe("settledFindings", () => {
 			"Nothing was fixed in this PR",
 			"I think this is fixed by #12",
 			"It may be fixed in abc1234",
+			// Reported speech, or a fix the person still sees broken.
+			"You said this was fixed in abc1234",
+			"It was marked fixed in abc1234, yet I still see the token in the logs",
+			"Fixed in abc1234, but the guard is still missing",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
