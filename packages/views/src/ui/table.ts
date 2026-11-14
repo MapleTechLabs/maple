@@ -9,6 +9,7 @@ import {
 	tableHeaderStickyStyles,
 	tableHeaderStyles,
 	tableRowLinkLiftStyles,
+	tableGroupCellStyles,
 	tableRowLinkStyles,
 	tableRowNameLinkStyles,
 	tableRowStyles,
@@ -113,14 +114,7 @@ export const tableGroupRow = <M>(
 		[
 			h.th(
 				[
-					h.Attribute(
-						"class",
-						cn(
-							tableCellStyles,
-							"bg-surface-sunken py-1 text-left font-normal",
-							options.className,
-						),
-					),
+					h.Attribute("class", cn(tableCellStyles, tableGroupCellStyles, options.className)),
 					h.DataAttribute("slot", "table-group"),
 					h.Attribute("colspan", String(options.colSpan)),
 				],

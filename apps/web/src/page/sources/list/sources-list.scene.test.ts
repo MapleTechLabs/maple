@@ -136,7 +136,8 @@ describe("sources list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource])),
 			expectView(role("link", { name: "Default" })).toExist(),
-			expectView(text("Nothing sent with an org ingest key lately")).toExist(),
+			expectView(text("Everything sent with an org ingest key")).toExist(),
+			expectView(text(/^Not sending · 1$/)).toExist(),
 			expectView(text("Connect your first source")).toExist(),
 			expectView(label("Search sources")).not.toExist(),
 		)
@@ -163,7 +164,7 @@ describe("sources list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([added, defaultSource])),
 			expectView(text("Connect your first source")).not.toExist(),
-			expectView(role("heading", { name: /^Receiving/ })).toExist(),
+			expectView(text(/^Receiving · 1$/)).toExist(),
 			expectView(role("link", { name: "Source 2" })).toHaveAttr("href", sourceHref(added)),
 			// A name cut off by a narrow list is still readable on hover.
 			expectView(role("link", { name: "Source 2" })).toHaveAttr("title", "Source 2"),
@@ -230,25 +231,15 @@ describe("the list's groups", () => {
 		expect(namesOf(groupSources(rows, null).receiving)).toEqual(["Checkout", "Storefront"])
 	})
 
-	test("a source to fix says why and links to where it is fixed", () => {
+	test("a source to fix says why, under the label that groups it", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(rows)),
-			expectView(role("heading", { name: /^Needs attention/ })).toExist(),
-			expectView(text(/Failing · 1 of 3 unhealthy · Token revoked/)).toExist(),
-			expectView(role("link", { name: "Review connection: Cloudflare acme" })).toHaveAttr(
-				"href",
-				sourceHref(cloudflare, "connection"),
-			),
+			expectView(text(/^Needs attention · 2$/)).toExist(),
+			expectView(text("1 of 3 unhealthy · Token revoked")).toExist(),
 			expectView(text(/No recent data · last data 3h ago/)).toExist(),
-			expectView(role("link", { name: "Check setup: prod-eu" })).toHaveAttr(
-				"href",
-				sourceHref(cluster, "setup"),
-			),
-			expectView(role("link", { name: "Finish setup: Staging" })).toHaveAttr(
-				"href",
-				sourceHref(staging, "setup"),
-			),
+			expectView(text(/^Receiving · 2$/)).toExist(),
+			expectView(text(/^Not sending · 3$/)).toExist(),
 		)
 	})
 
@@ -256,7 +247,7 @@ describe("the list's groups", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource, checkout])),
-			expectView(role("heading", { name: /^Needs attention/ })).not.toExist(),
+			expectView(text(/^Needs attention · /)).not.toExist(),
 			expectView(role("link", { name: "Checkout" })).toExist(),
 		)
 	})
@@ -302,7 +293,7 @@ describe("the list's groups", () => {
 			type(label("Search sources"), "kubernetes"),
 			expectView(role("link", { name: "prod-eu" })).toExist(),
 			expectView(role("link", { name: "Checkout" })).not.toExist(),
-			expectView(role("heading", { name: /^Receiving/ })).not.toExist(),
+			expectView(text(/^Receiving · /)).not.toExist(),
 			type(label("Search sources"), "nothing like this"),
 			expectView(text("No sources match")).toExist(),
 			click(role("button", { name: "Clear search" })),
@@ -310,27 +301,18 @@ describe("the list's groups", () => {
 		)
 	})
 
-	test("a source the gateway refuses links to its rules, for those who can change them", () => {
+	test("a source the gateway refuses says why on its row", () => {
 		const expired = source(8, {
 			name: "Expired",
 			status: "expired",
 			expires_at: "2026-09-30T12:00:00.000Z",
 			health: health("disconnected", null, { problem: "The token expired; senders get 401" }),
 		})
-		const model = loaded([defaultSource, expired])
 		scene(
 			{ update: pageUpdate, view },
-			given(model),
-			expectView(text(/Disconnected · The token expired/)).toExist(),
-			expectView(role("link", { name: "Review rules: Expired" })).toHaveAttr(
-				"href",
-				sourceHref(expired, "settings"),
-			),
-		)
-		scene(
-			{ update: pageUpdate, view },
-			given(pageUpdate(model, Message.CompletedReadGrants({ grants: [] })).model),
-			expectView(role("link", { name: /^Review rules/ })).not.toExist(),
+			given(loaded([defaultSource, expired])),
+			expectView(text(/^Needs attention · 1$/)).toExist(),
+			expectView(text("The token expired; senders get 401")).toExist(),
 		)
 	})
 
@@ -346,8 +328,8 @@ describe("the list's groups", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded([refused, checkout])),
-			expectView(role("heading", { name: /^Needs attention/ })).not.toExist(),
-			expectView(text(/Failing · Over the ingest quota/)).toExist(),
+			expectView(text(/^Needs attention · /)).not.toExist(),
+			expectView(text("Over the ingest quota")).toExist(),
 		)
 	})
 

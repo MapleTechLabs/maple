@@ -19,8 +19,6 @@ const TONE = {
 	disconnected: "crit",
 } as const satisfies Record<SourceStatus, "neutral" | "ok" | "warn" | "crit">
 
-export const statusTone = (status: SourceStatus): (typeof TONE)[SourceStatus] => TONE[status]
-
 const LABEL = {
 	pending: "Waiting for data",
 	healthy: "Receiving",
@@ -41,7 +39,7 @@ export const rollupLabel = (source: V2Source): string | null => {
 }
 
 /** What a source's last arrival is called: an integration syncs, a push source sends data. */
-export const lastSeenWord = (source: V2Source): string =>
+const lastSeenWord = (source: V2Source): string =>
 	isPushSourcePlatform(source.platform) ? "last data" : "last sync"
 
 /** Worst first, the order the list sorts by (`SOURCE_HEALTH_STATUSES`). */
@@ -64,7 +62,12 @@ export const needsAttention = (source: V2Source): boolean => statusRank(source) 
  * that stopped, "No recent data · last data 3h ago" (an integration's reads "last sync").
  */
 export type StatusBadgeOptions = Readonly<
-	{ nowMs: number; className?: string } & ({ showTime: false } | { showTime?: true; timeZone: string })
+	{
+		nowMs: number
+		className?: string
+		/** Leaves "1 of 3 unhealthy" out, for a caller that shows it on its own line. */
+		hideRollup?: boolean
+	} & ({ showTime: false } | { showTime?: true; timeZone: string })
 >
 
 export const sourceStatusBadge = <M>(
@@ -82,7 +85,7 @@ export const sourceStatusBadge = <M>(
 					text: `${prefix}${formatRelativeTime(lastDataAt, options.nowMs)}`,
 				}
 			: null
-	const rollup = rollupLabel(source)
+	const rollup = options.hideRollup === true ? null : rollupLabel(source)
 	const full = Arr.join(
 		Arr.filter([LABEL[status], time?.text ?? null, rollup], (part) => part !== null),
 		" · ",
