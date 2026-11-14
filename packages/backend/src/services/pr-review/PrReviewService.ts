@@ -1212,6 +1212,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				orgId: OrgId,
 				ids: ReadonlyArray<string>,
 				values: PG.UpdateSetOf<typeof PrReviewFindings>,
+				/** Only rows still open: a person's verdict never overwrites a fix a review confirmed meanwhile. */
+				options: { readonly onlyOpen?: boolean } = {},
 			) =>
 				ids.length === 0
 					? Effect.void
@@ -1219,7 +1221,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							db.run(
 								PG.update(PrReviewFindings)
 									.set(values)
-									.where(($) => [$.orgId.eq(orgId), $.id.in_(...ids)]),
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.id.in_(...ids),
+										options.onlyOpen === true ? $.status.eq("open") : undefined,
+									]),
 							),
 						).pipe(Effect.asVoid)
 
@@ -1611,12 +1617,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					orgId,
 					Arr.map(settled.dismissed, (finding) => finding.id),
 					{ status: "dismissed", updatedAt: nowMs },
+					{ onlyOpen: true },
 				)
 				// No review confirmed these fixes, so they carry no head and never count as unchecked.
 				yield* setFindingStatus(
 					orgId,
 					Arr.map(settled.resolved, (finding) => finding.id),
 					{ status: "resolved", resolvedSha: null, updatedAt: nowMs },
+					{ onlyOpen: true },
 				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.dismissed": settled.dismissed.length,

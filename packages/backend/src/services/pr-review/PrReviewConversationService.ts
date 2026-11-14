@@ -828,10 +828,31 @@ export class PrReviewConversationService extends Context.Service<
 		 * resolved (fixed at the head, no review confirmed it, so no head is stamped). A handle that
 		 * is not open on this pull request is ignored. Answers the note added to the reply.
 		 */
+		/** Whether the pull request's head is still the one the answer read; unknown counts as moved. */
+		const headStillAt = Effect.fn("PrReviewConversationService.headStillAt")(function* (
+			orgId: OrgId,
+			row: PrReviewReplyRow,
+			readHead: string | null,
+		) {
+			if (readHead === null) return false
+			const repo = yield* repositories
+				.getRepositoryById(orgId, row.repositoryId)
+				.pipe(Effect.mapError(toPersistence))
+			const upstream = Option.isNone(repo) ? Option.none() : yield* upstreamFor(orgId, repo.value)
+			if (Option.isNone(upstream)) return false
+			const { provider, installation, ref } = upstream.value
+			const head = yield* provider
+				.fetchPullRequestHead(installation, ref, row.number)
+				.pipe(Effect.option)
+			return Option.isSome(head) && head.value.headSha === readHead
+		})
+
 		const settleFindings = Effect.fn("PrReviewConversationService.settleFindings")(function* (
 			orgId: OrgId,
 			row: PrReviewReplyRow,
 			settle: ReplySettlement | undefined,
+			/** The head the answer read: the reply's own, or the commit its fix just pushed. */
+			readHead: string | null,
 		) {
 			const none = { note: "", dismissed: 0, resolved: 0 }
 			if (settle === undefined || settle.dismissed.length + settle.resolved.length === 0) return none
@@ -849,10 +870,14 @@ export class PrReviewConversationService extends Context.Service<
 			)
 			const dismissed = resolvedByHandle(settle.dismissed, open)
 			// A handle in both lists is dismissed: the stronger claim needs the code to agree.
-			const resolved = Arr.filter(
+			const claimedFixed = Arr.filter(
 				resolvedByHandle(settle.resolved, open),
 				(finding) => !dismissed.includes(finding),
 			)
+			// A fix is a claim about the head the answer read; a push since may have undone it, so a
+			// moved (or unreadable) head leaves those findings for the next review.
+			const headHeld = claimedFixed.length === 0 ? true : yield* headStillAt(orgId, row, readHead)
+			const resolved = headHeld ? claimedFixed : []
 			const nowMs = yield* Clock.currentTimeMillis
 			const mark = (
 				findings: ReadonlyArray<{ readonly id: string }>,
@@ -877,6 +902,9 @@ export class PrReviewConversationService extends Context.Service<
 				[
 					...(dismissed.length === 0 ? [] : [`Dismissed ${handleList(dismissed)}.`]),
 					...(resolved.length === 0 ? [] : [`Marked ${handleList(resolved)} resolved.`]),
+					...(headHeld
+						? []
+						: [`Left ${handleList(claimedFixed)} open: the branch moved since I read it.`]),
 				],
 				" ",
 			)
@@ -893,7 +921,7 @@ export class PrReviewConversationService extends Context.Service<
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
-			const settled = yield* settleFindings(orgId, row, settle)
+			const settled = yield* settleFindings(orgId, row, settle, fix.commitSha ?? row.headSha)
 			const text = Arr.join(
 				Arr.filter([Str.trim(body), fix.note, settled.note], (part) => part !== ""),
 				"\n\n",

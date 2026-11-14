@@ -81,7 +81,9 @@ const DISMISSAL = new RegExp(
 
 /** A reply saying the finding was dealt with: "Fixed in c88ba3a", "Done.", "Addressed by #12". */
 const FIXED = new RegExp(
-	String.raw`(?:^\s*(?:done|fixed|addressed|resolved)\b|${NEGATED}\b(?:fixed|addressed|resolved)\s+(?:in|by|with|via)\b)`,
+	// A leading verb must end its clause ("Done.", "Fixed, thanks") or go on to say how, so
+	// "Fixed-size buffers still overflow" is not read as a fix.
+	String.raw`(?:^\s*(?:done|fixed|addressed|resolved)(?:\s*(?:[.!,:;]|$)|\s+(?:in|by|with|via|now|it|this|that|here)\b)|${NEGATED}\b(?:fixed|addressed|resolved)\s+(?:in|by|with|via)\b)`,
 	"i",
 )
 
@@ -89,7 +91,12 @@ const FIXED = new RegExp(
 const NOT_YET =
 	/\b(?:will|would|should|could|shall|going to|gonna|plan(?:ning)? to|need(?:s|ed)? to|has to|have to|later|follow[- ]?up|next (?:pr|pull request|push|commit)|todo|please|let['’]?s|if|once|when|until)\b/i
 
-type ReplyVerdict = "dismissed" | "resolved"
+/** A reply saying the finding still stands: it takes back an earlier "fixed" or "won't fix". */
+const STILL_OPEN =
+	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|reproduces|an issue|a problem|there|open)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|ion)?)\b/i
+
+/** `open` takes back an earlier verdict in the thread: the finding stays with the reviewer. */
+type ReplyVerdict = "dismissed" | "resolved" | "open"
 
 /**
  * A reply's verdict, only when it is an unambiguous statement. A completed fix outranks a dismissal
@@ -97,6 +104,7 @@ type ReplyVerdict = "dismissed" | "resolved"
  * requested or conditional is left for the reviewer.
  */
 const verdictOf = (body: string): ReplyVerdict | undefined => {
+	if (STILL_OPEN.test(body)) return "open"
 	if (Str.includes("?")(body) || NOT_YET.test(body)) return undefined
 	if (FIXED.test(body)) return "resolved"
 	return DISMISSAL.test(body) ? "dismissed" : undefined
@@ -104,7 +112,8 @@ const verdictOf = (body: string): ReplyVerdict | undefined => {
 
 /**
  * What people did with open findings since the last review. A person's latest reply with a verdict
- * decides: a dismissal ("won't fix") dismisses, a fix ("Fixed in c88ba3a") resolves. A thread a
+ * decides: a dismissal ("won't fix") dismisses, a fix ("Fixed in c88ba3a") resolves, a retraction
+ * ("still broken") leaves it open whatever came before. With no verdict, a thread a
  * person resolved without a word, on a file this push left alone, is resolved too: most such
  * threads were fixed elsewhere or in a push whose review missed it (prod sample 2026-11-14: 19 of 28).
  * A resolved thread on a changed file (or unknown changes) stays open for the reviewer to judge.
@@ -135,8 +144,10 @@ export const settledFindings = (
 			const verdict = reply.author === poster ? undefined : verdictOf(reply.body)
 			return verdict === undefined ? [] : [verdict]
 		})
+		const latest = verdicts.at(-1)
+		if (latest === "open") continue
 		const verdict =
-			verdicts.at(-1) ??
+			latest ??
 			(thread.isResolved && changedPaths !== undefined && !changedPaths.has(finding.path)
 				? "resolved"
 				: undefined)

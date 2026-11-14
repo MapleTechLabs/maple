@@ -81,6 +81,8 @@ const layerFor = (
 	options: {
 		readonly permission?: string
 		readonly pr?: PullRequestHead
+		/** Read on every head lookup, so a test can move the branch mid-reply. */
+		readonly livePr?: { current: PullRequestHead }
 		readonly files?: Readonly<Record<string, string>>
 	} = {},
 ) => {
@@ -121,7 +123,7 @@ const layerFor = (
 		resolveReviewThread: unused,
 		hideEarlierComments: unused,
 		fetchChangesSince: unused,
-		fetchPullRequestHead: () => Effect.succeed(options.pr ?? head()),
+		fetchPullRequestHead: () => Effect.sync(() => options.livePr?.current ?? options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				recorded.posted.push({
@@ -457,6 +459,68 @@ describe("PrReviewConversationService", () => {
 				{ handle: "F3", status: "resolved", resolvedSha: null },
 			])
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+	})
+
+	it.effect("leaves a claimed fix open when the branch moved since the answer read it", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		const live = { current: head() }
+		return Effect.gen(function* () {
+			yield* seed
+			const repo = yield* VcsRepository
+			const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
+			const database = yield* Database
+			const finding = (handle: string, status: "open" | "resolved") => ({
+				id: `finding-${handle}`,
+				orgId,
+				repositoryId,
+				number: 612,
+				reviewId: Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-000000000000"),
+				handle,
+				path: "src/a.ts",
+				line: 1,
+				category: "correctness" as const,
+				severity: "warn" as const,
+				title: `finding ${handle}`,
+				status,
+				createdAt: 0,
+				updatedAt: 0,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(PrReviewFindings).values([
+						finding("F1", "open"),
+						finding("F2", "open"),
+						finding("F3", "resolved"),
+					]),
+				),
+			)
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(orgId, comment())
+			live.current = head({ headSha: sha("3333333333333333333333333333333333333333") })
+			yield* conversations.submitReply(orgId, outcome.replyId!, "Both handled.", {
+				dismissed: ["F1"],
+				resolved: ["F2"],
+			})
+			assert.deepEqual(recorded.posted, [
+				{
+					body: "Both handled.\n\n_Dismissed F1. Left F2 open: the branch moved since I read it._",
+				},
+			])
+			const rows = yield* database.execute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
+						.select("handle", "status")
+						.where(($) => [$.repositoryId.eq(repositoryId)])
+						.orderBy(["handle", "asc"]),
+				),
+			)
+			assert.deepEqual(rows, [
+				{ handle: "F1", status: "dismissed" },
+				{ handle: "F2", status: "open" },
+				{ handle: "F3", status: "resolved" },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { livePr: live })))
 	})
 
 	it.effect("ignores people outside a public repository and comments on disabled repositories", () => {

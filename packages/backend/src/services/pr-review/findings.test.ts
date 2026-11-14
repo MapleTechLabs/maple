@@ -92,6 +92,9 @@ describe("settledFindings", () => {
 			"This isn't intentional.",
 			"That wasn’t by design, my bad.",
 			"Never intentional, good catch.",
+			// A technical adjective is not an acknowledgement.
+			"Fixed-size buffers still overflow here.",
+			"Fixed size arrays are the problem",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
@@ -117,6 +120,19 @@ describe("settledFindings", () => {
 			settle([withReplies("Fixed in 9ab12cd", "Actually reverted, by design")]),
 			"dismissed",
 		)
+	})
+
+	it("lets a later retraction take back an earlier verdict", () => {
+		assert.strictEqual(
+			settle([withReplies("Fixed in abc1234", "This is not fixed; the failure remains.")]),
+			"open",
+		)
+		// Even a thread someone resolved stays with the reviewer after a retraction.
+		const retracted = thread({
+			isResolved: true,
+			comments: [BOT_COMMENT, reply("Done."), reply("Reopening, it still fails on main")],
+		})
+		assert.strictEqual(settle([retracted], new Set(["src/other.ts"])), "open")
 	})
 
 	it("reads a completed fix over a dismissal phrase in the same reply", () => {
