@@ -31,7 +31,9 @@ export const flowFooter = (h: H, options: FlowFooterOptions): Html =>
 						]),
 					],
 		actions: [
-			typography(h, { size: "xs", tone: "muted", className: "hidden @2xl/page:inline" }, [options.hint]),
+			typography(h, { size: "xs", tone: "muted", className: "hidden @2xl/page:inline" }, [
+				options.hint,
+			]),
 			...options.actions,
 		],
 	})

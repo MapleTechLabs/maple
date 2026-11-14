@@ -14,6 +14,7 @@ export const Message = defineMessageUnion({
 	CompletedReadGrants: { grants: Schema.Array(Policy.PermissionName) },
 	ClickedPushPlatform: { platform: PushSourcePlatform },
 	ClickedIntegration: { integration: DataIntegration },
+	ChangedSearch: { value: Schema.String },
 	ChangedName: { value: Schema.String },
 	ToggledAdvanced: {},
 	GotRulesMessage: { message: Rules.Message },

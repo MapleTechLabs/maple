@@ -27,12 +27,14 @@ const STAGE_LABEL = { connect: "Connect", choose: "Choose data", live: "Go live"
 >
 
 export const trailOf = (model: Model): ReadonlyArray<TrailItem> => {
-	// The token step stays on screen once a source exists, even if the route moved on.
+	// A created source stays on screen, even if the route moved on.
 	if (model.created !== null) {
 		const { source } = model.created
+		const platform = platformMeta(source.platform).label
 		return [
-			done(platformMeta(source.platform).label),
-			done(source.name),
+			done(platform),
+			// The default name is the platform's label: the chip says it is named, not the label twice.
+			done(source.name === platform ? "Named" : source.name),
 			isReceiving(model) ? done("Receiving data") : current("Send data"),
 		]
 	}

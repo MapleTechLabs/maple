@@ -1,4 +1,4 @@
-import { DATA_INTEGRATIONS, DataIntegration, isDataIntegration } from "../../route/data-integrations"
+import { DataIntegration, isDataIntegration } from "../../route/data-integrations"
 import { Submodel } from "foldkit"
 import { icon } from "@maple/views/ui/icon"
 import type { PageContext, PageReturn } from "../contract"
@@ -29,7 +29,7 @@ export { canContinue, type FlowSpec, FlowStage, flowOf, nextStage, previousStage
 export { connectionsOf as awsConnectionsOf } from "../infra-integrations/aws/integration/update-aws"
 export { gcpConnectors } from "../infra-integrations/gcp/integration/update-gcp"
 
-export { DATA_INTEGRATIONS, DataIntegration, isDataIntegration }
+export { DataIntegration, isDataIntegration }
 
 /** `/integrations?integration=<id>`'s state and reads, without the page around it. */
 export const initEmbedded = (
