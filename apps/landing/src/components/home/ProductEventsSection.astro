@@ -35,14 +35,14 @@ const points = [
 				>
 					{m.pe_title()}
 				</h2>
-				<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted">{m.pe_lede()}</p>
+				<p class="mt-5 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted md:text-base">{m.pe_lede()}</p>
 
 				<dl class="mt-8">
 					{
 						points.map((point) => (
 							<div class="border-t border-border py-4">
-								<dt class="text-[13px] font-medium text-fg">{point.title}</dt>
-								<dd class="mt-1.5 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted">
+								<dt class="text-[15px] font-medium text-fg">{point.title}</dt>
+								<dd class="mt-1.5 max-w-[52ch] text-sm leading-relaxed text-fg-muted">
 									{point.body}
 								</dd>
 							</div>
@@ -50,7 +50,7 @@ const points = [
 					}
 				</dl>
 
-				<div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[13px]">
+				<div class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm">
 					<a href={l("/features/product-events")} class="text-fg transition-colors hover:text-primary">
 						{m.pe_link_feature()}
 					</a>

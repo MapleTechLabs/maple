@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Acme</title>
+		<style>
+			* { box-sizing: border-box; }
+			body { margin: 0; font: 15px/1.5 -apple-system, "Helvetica Neue", sans-serif; background: #f6f3ee; color: #1c1917; }
+			a { color: inherit; text-decoration: none; }
+			.bar { display: flex; justify-content: space-between; align-items: center; padding: 18px 40px; border-bottom: 1px solid #e7e2d9; background: #fbf9f5; }
+			.brand { font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
+			.brand span { color: #c2410c; }
+			nav { display: flex; gap: 28px; font-size: 14px; color: #57534e; }
+			nav .cart { color: #1c1917; font-weight: 600; }
+			main { padding: 40px; max-width: 1120px; margin: 0 auto; }
+			h1 { font-size: 34px; letter-spacing: -0.02em; margin: 0 0 6px; }
+			.lede { color: #78716c; margin: 0 0 28px; }
+			.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+			.card { display: block; background: #fff; border: 1px solid #e7e2d9; border-radius: 10px; overflow: hidden; }
+			.swatch { aspect-ratio: 4 / 3; }
+			.row { display: flex; justify-content: space-between; padding: 12px 14px; font-size: 14px; }
+			.pdp { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: start; }
+			.swatch.big { border-radius: 12px; aspect-ratio: 1; }
+			.price { font-size: 20px; margin: 0 0 12px; }
+			.sizes { display: flex; gap: 8px; margin: 0 0 20px; }
+			.size { width: 48px; height: 40px; border: 1px solid #d6d0c4; background: #fff; border-radius: 8px; font: inherit; cursor: pointer; }
+			.size.on { border-color: #1c1917; background: #1c1917; color: #fff; }
+			.primary { padding: 12px 22px; background: #1c1917; color: #fff; border: 0; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; }
+			.checkout { max-width: 520px; }
+			.line { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e7e2d9; }
+			.total { font-weight: 700; border: 0; margin-bottom: 18px; }
+			label { display: block; font-size: 13px; color: #57534e; margin-bottom: 12px; }
+			input { display: block; width: 100%; margin-top: 4px; padding: 10px 12px; border: 1px solid #d6d0c4; border-radius: 8px; font: inherit; background: #fff; }
+			.status { margin-top: 14px; font-size: 14px; }
+			.status.error { color: #b91c1c; }
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+		<script type="module" src="/shop.js"></script>
+	</body>
+</html>

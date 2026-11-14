@@ -28,6 +28,8 @@ Original shared rounded buttons, sharp frames, thin shared border rules. Dither 
 
 Existing navigation, authentication-aware CTAs, carousel, walkthrough, calculator, pricing and FAQs retain their behavior. Buttons have visible hover and keyboard focus. The hero image is eager; lower imagery is lazy. The page is usable without animation and respects reduced motion.
 
+A capture in a narrow column is a crop, not the whole screen scaled down: `MediaFrame` takes `crop` (top-left corner and zoom), the right and bottom edges fade out, and the lightbox still opens the full capture. The signals strip and the platform sheet use it. Pick a window that starts on a layout edge and holds nothing you would not print at full size. Section ledes are 15px (16px from `md`), row titles 15px, row copy and links 14px.
+
 ## Do's and Don'ts
 
 Keep localized content and real commercial facts. Use the generated monument at hero scale. Do not tint screenshots, invent metrics, replace working controls with decorative labels, or change the product theme.

@@ -30,9 +30,9 @@ export const useCases: UseCase[] = [
 		constantLabel: "slo",
 		storyTitle: m.uc_api_story_title,
 		storyLede: m.uc_api_story_lede,
-		// surface-alerts and hero-dashboard are both ~1.94:1, and the authored
-		// third plate matches, so this story is aspect-clean.
-		storyAspect: "1280 / 660",
+		// surface-alerts and hero-dashboard are 16:9 captures; the authored
+		// story-api-releases (1.94:1) is the one plate that letterboxes.
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "alert",
@@ -42,8 +42,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_api_step_1_body,
 				plate: {
 					src: "/screenshots/surface-alerts.webp",
-					width: 2560,
-					height: 1320,
+					width: 2880,
+					height: 1620,
 					alt: "Alert rules listed with severity, signal type and current state",
 				},
 			},
@@ -55,8 +55,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_api_step_2_body,
 				plate: {
 					src: "/screenshots/hero-dashboard.webp",
-					width: 3600,
-					height: 1850,
+					width: 2880,
+					height: 1620,
 					alt: "The overview dashboard with request volume, error rate, latency and log volume charts",
 				},
 			},
@@ -106,7 +106,7 @@ export const useCases: UseCase[] = [
 		constantLabel: "order",
 		storyTitle: m.uc_ecom_story_title,
 		storyLede: m.uc_ecom_story_lede,
-		storyAspect: "992 / 600",
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "alert",
@@ -116,8 +116,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_ecom_step_1_body,
 				plate: {
 					src: "/screenshots/flow-01-alert.webp",
-					width: 2976,
-					height: 1800,
+					width: 2880,
+					height: 1620,
 					alt: "An alert rule with its threshold, evaluation window and firing history",
 				},
 			},
@@ -129,8 +129,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_ecom_step_2_body,
 				plate: {
 					src: "/screenshots/strip-trace.webp",
-					width: 2976,
-					height: 1800,
+					width: 2880,
+					height: 1620,
 					alt: "An 18-span API trace waterfall with nested application and SQL operations",
 				},
 			},
@@ -180,10 +180,9 @@ export const useCases: UseCase[] = [
 		constantLabel: "deploy",
 		storyTitle: m.uc_micro_story_title,
 		storyLede: m.uc_micro_story_lede,
-		// surface-map is 1.94:1 against flow-02/03's 1.65:1. Running the story at
-		// 992/600 letterboxes one plate; running it at 1280/660 would letterbox
-		// two. `.story-frame__stage` insets with object-fit: contain either way.
-		storyAspect: "992 / 600",
+		// surface-map, flow-02 and flow-03 are all 16:9 captures, so no plate
+		// letterboxes (`.story-frame__stage` insets with object-fit: contain).
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "map",
@@ -193,8 +192,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_micro_step_1_body,
 				plate: {
 					src: "/screenshots/surface-map.webp",
-					width: 2560,
-					height: 1320,
+					width: 2880,
+					height: 1620,
 					alt: "A service neighborhood showing API, database and cache dependencies with live request flow",
 				},
 			},
@@ -206,8 +205,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_micro_step_2_body,
 				plate: {
 					src: "/screenshots/flow-02-trace.webp",
-					width: 2976,
-					height: 1800,
+					width: 2880,
+					height: 1620,
 					alt: "A span selected in the waterfall with its full attribute set open alongside",
 				},
 			},
@@ -219,8 +218,8 @@ export const useCases: UseCase[] = [
 				body: m.uc_micro_step_3_body,
 				plate: {
 					src: "/screenshots/flow-03-logs.webp",
-					width: 2976,
-					height: 1800,
+					width: 2880,
+					height: 1620,
 					alt: "A log detail with linked trace and span IDs, correlated events and full resource attributes",
 				},
 			},

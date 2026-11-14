@@ -24,7 +24,7 @@ import { Command, Flag } from "effect/cli"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { chromium, type BrowserContext, type Page } from "playwright"
-import { RELABEL, SHOTS, TIMEZONE, VIEWPORT, type Shot } from "./shots"
+import { RELABEL, RELABEL_EXACT, SHOTS, TIMEZONE, VIEWPORT, type Shot } from "./shots"
 import { THREAD_RELABEL, THREAD_SHOTS } from "./thread-shots"
 
 const ROOT = new URL("../../../../", import.meta.url).pathname
@@ -121,15 +121,26 @@ const FREEZE_CSS = `
 
 const relabel = (page: Page, labels: ShotSet["relabel"]) =>
 	pw("relabel", () =>
-		page.evaluate((pairs) => {
-			const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-			for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-				for (const [from, to] of pairs) {
-					if (node.nodeValue?.includes(from))
-						node.nodeValue = Str.replaceAll(from, to)(node.nodeValue)
+		// Runs in the page: no module imports reach it, so plain string methods only.
+		page.evaluate(
+			([pairs, exact]) => {
+				const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+				for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+					const whole = exact.find(([from]) => node?.nodeValue?.trim() === from)
+					if (whole) node.nodeValue = whole[1]
+					for (const [from, to] of pairs) {
+						if (node.nodeValue?.includes(from))
+							node.nodeValue = node.nodeValue.split(from).join(to)
+					}
 				}
-			}
-		}, Rec.toEntries(labels)),
+				for (const input of document.querySelectorAll<HTMLInputElement>("input[value]")) {
+					for (const [from, to] of pairs) {
+						if (input.value.includes(from)) input.value = input.value.split(from).join(to)
+					}
+				}
+			},
+			[Rec.toEntries(labels), Rec.toEntries(RELABEL_EXACT)] as const,
+		),
 	)
 
 /** Network quiet and no skeletons left: the page is showing data, not a loading state. */
@@ -137,7 +148,9 @@ const settle = (page: Page, shot: string) =>
 	pw(
 		"wait for data",
 		async () => {
-			await page.waitForLoadState("networkidle")
+			// Live sync holds a long-poll open, so the network never idles once it runs; the
+			// skeleton check below is what proves the data arrived.
+			await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined)
 			await page.waitForFunction(
 				() => document.querySelectorAll('[data-slot="skeleton"], .animate-pulse').length === 0,
 				null,
@@ -271,6 +284,20 @@ const command = Command.make(
 				reducedMotion: "reduce",
 				ignoreHTTPSErrors: true,
 			}),
+		)
+		// The dev org never went through billing, so the plan gate would hold every page on
+		// the plan picker. Answer the customer read with an active plan instead.
+		yield* pw("stub billing", () =>
+			context.route("**/internal/billing/customer", (route) =>
+				route.fulfill({
+					status: 200,
+					contentType: "application/json",
+					body: encodeJson({
+						id: state.orgId ?? "demo",
+						subscriptions: [{ planId: "startup", status: "active" }],
+					}),
+				}),
+			),
 		)
 		const signIn = yield* pw("open sign-in", () => context.newPage())
 		yield* pw("sign in", async () => {
