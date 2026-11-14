@@ -260,15 +260,16 @@ export interface TableInfo extends TableSummary {
  */
 const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log", "audit_trail_events"])
 
+// `Datasources` exports a mix of datasource definitions, type aliases, helper
+// functions, and constant lookup tables. `isDatasourceDefinition` is the
+// runtime filter; we cast to `unknown` first because the static union of all
+// exports is too wide for TS to narrow with the predicate.
+const collectEveryDatasource = () =>
+	Arr.filter(Rec.values(Datasources) as ReadonlyArray<unknown>, isDatasourceDefinition)
+
+/** What a caller's SQL, the table list and `describe` may see. */
 function collectDatasources() {
-	// `Datasources` exports a mix of datasource definitions, type aliases, helper
-	// functions, and constant lookup tables. `isDatasourceDefinition` is the
-	// runtime filter; we cast to `unknown` first because the static union of all
-	// exports is too wide for TS to narrow with the predicate.
-	return Arr.filter(
-		Arr.filter(Rec.values(Datasources) as ReadonlyArray<unknown>, isDatasourceDefinition),
-		(ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name),
-	)
+	return Arr.filter(collectEveryDatasource(), (ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name))
 }
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {
@@ -295,6 +296,20 @@ export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
 	return Arr.sort(
 		Arr.map(
 			Arr.filter(collectDatasources(), (ds) => "OrgId" in ds._schema),
+			(ds) => ds._name,
+		),
+		Order.String,
+	)
+}
+
+/**
+ * Every datasource with an `OrgId` column, the ones raw SQL must not reach included: what a
+ * query Maple compiled may read under an org-scoped token. Never the allowlist for caller SQL.
+ */
+export function listTrustedReadDatasourceNames(): ReadonlyArray<string> {
+	return Arr.sort(
+		Arr.map(
+			Arr.filter(collectEveryDatasource(), (ds) => "OrgId" in ds._schema),
 			(ds) => ds._name,
 		),
 		Order.String,

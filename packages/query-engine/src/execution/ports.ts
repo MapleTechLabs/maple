@@ -78,6 +78,17 @@ export interface WarehouseSqlClient {
  */
 export type RoutePurpose = "read" | "raw" | "ingest"
 
+/**
+ * Whose rows a statement may see. `tenant` marks a read the executor has verified is pinned to
+ * one org, so a host may run it on credentials scoped to that org and, knowing the statement, to
+ * the datasources it reads. Absent for whatever needs the shared credential: writes, cross-org
+ * reads and capability probes.
+ */
+export interface RouteScope {
+	readonly kind: "tenant"
+	readonly sql: string
+}
+
 export type WarehouseTrustedRouteError = WarehouseSettingsRouteError
 export type WarehouseRawRouteError =
 	| WarehouseSettingsRouteError
@@ -120,6 +131,7 @@ export interface WarehouseRouteResolver {
 		tenant: ExecutionTenant,
 		purpose: RoutePurpose,
 		label: string,
+		scope?: RouteScope,
 	): Effect.Effect<WarehouseRoute, WarehouseRawRouteError>
 }
 

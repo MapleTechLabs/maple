@@ -12,6 +12,7 @@ import {
 	type ExecutionTenant,
 	type ResolvedWarehouseConfig,
 	type RoutePurpose,
+	type RouteScope,
 	type SqlQueryOptions,
 	type TinybirdBackendConfig,
 	type WarehouseExecutorDeps,
@@ -23,7 +24,7 @@ import {
 	type WarehouseTrustedRouteError,
 } from "@maple/query-engine/execution"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
-import { Env } from "@maple/backend/platform/Env"
+import { Env, managedReadsAreTinybird } from "@maple/backend/platform/Env"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 
@@ -413,11 +414,29 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				},
 			)
 
+			/** The org-scoped token a compiled read of `tenant` runs on where org-scoped reads are on. */
+			const orgReadToken = (tenant: ExecutionTenant, label: string, sql: string) =>
+				orgTokens.getOrgReadToken(tenant.orgId, "trusted-read", sql).pipe(
+					// A compiled read has no token error of its own: a token that cannot be minted
+					// is this deployment's configuration, and it fails the read closed.
+					Effect.mapError(
+						(error) =>
+							new WarehouseConfigError({
+								pipeName: label,
+								message: `Org-scoped read token is unavailable: ${error.message}`,
+							}),
+					),
+				)
+
 			/**
 			 * The single routing decision: purpose → backend + credentials.
 			 *
-			 *   ingest → managed Tinybird Events API, always            (source: managed)
+			 *   ingest → org-scoped reads on + a tenant's read?
+			 *              managed Tinybird, org-scoped JWT             (source: org-jwt)
+			 *            else managed Tinybird Events API               (source: managed)
 			 *   read   → org BYO row? that org's ClickHouse             (source: org-byo)
+			 *            org-scoped reads on + managed tinybird/gateway?
+			 *              org-scoped JWT                               (source: org-jwt)
 			 *            else env: tinybird-gateway|clickhouse|tinybird (source: managed)
 			 *   raw    → org BYO row? that org's ClickHouse             (source: org-byo)
 			 *            managed tinybird/gateway? org-scoped JWT       (source: org-jwt)
@@ -441,14 +460,44 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 			 * datasource-scoped org JWT (works through both the SDK and the CH
 			 * gateway); a shared vanilla ClickHouse credential has no DB-enforced OrgId
 			 * scope, so raw SQL there is allowed only in single-org self-hosted mode.
+			 *
+			 * Org-scoped reads (`MAPLE_WAREHOUSE_ORG_SCOPED_READS`) put Maple's own compiled
+			 * reads behind the same JWT, on the read route and on tenant reads of the ingest
+			 * route alike: a query compiled for another org than its tenant then returns
+			 * nothing instead of that org's rows. The executor says which reads are one
+			 * tenant's (`scope`); writes and cross-org reads never are and keep the shared token.
 			 */
 			const resolveRouteEffect = Effect.fn("WarehouseQueryService.resolveRoute")(function* (
 				tenant: ExecutionTenant,
 				purpose: RoutePurpose,
 				label: string,
+				scope?: RouteScope,
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 				yield* Effect.annotateCurrentSpan("warehouse.route", purpose)
+				// A read the executor verified is one tenant's, on a Worker that asks for the
+				// org-scoped token. Writes and cross-org reads carry no scope and keep the shared one.
+				// Where managed reads are vanilla ClickHouse there is no such token, and the flag
+				// changes nothing on either route: the same rule `Env` checks the signing key by.
+				const orgScopedRead =
+					scope?.kind === "tenant" &&
+					env.MAPLE_WAREHOUSE_ORG_SCOPED_READS &&
+					managedReadsAreTinybird(env)
+						? scope
+						: undefined
+
+				if (purpose === "ingest" && orgScopedRead !== undefined) {
+					const jwt = yield* orgReadToken(tenant, label, orgScopedRead.sql)
+					yield* Effect.annotateCurrentSpan("clientSource", "managed")
+					yield* Effect.annotateCurrentSpan("query.routing", "ingest")
+					yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+					yield* Effect.annotateCurrentSpan("maple.tinybird.token.scope", "org_jwt")
+					return {
+						source: "org-jwt" as const,
+						config: { kind: "tinybird" as const, host: env.TINYBIRD_HOST, token: jwt },
+						clientCacheKey: `ingest-read:${tenant.orgId}`,
+					}
+				}
 
 				if (purpose === "ingest") {
 					// Legacy attrs, dual-emitted until dashboards move to `warehouse.*`.
@@ -500,14 +549,19 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 
 				yield* Effect.annotateCurrentSpan("clientSource", "managed")
 				const managed = yield* resolveManagedConfig()
-				if (purpose === "read") return { source: "managed" as const, ...managed }
+				if (purpose === "read" && orgScopedRead === undefined) {
+					return { source: "managed" as const, ...managed }
+				}
 
 				// Raw SQL on the shared warehouse needs tenant isolation. Shared Tinybird
 				// is isolated with a datasource-scoped JWT; the same token works through
 				// both the SDK and Tinybird's ClickHouse-compatible gateway.
-				const clientCacheKey = `raw:${tenant.orgId}`
+				const clientCacheKey = `${purpose === "read" ? "read" : "raw"}:${tenant.orgId}`
 				if (managed.config.kind === "tinybird" || managed.config.kind === "tinybird-gateway") {
-					const jwt = yield* orgTokens.getOrgReadToken(tenant.orgId)
+					const jwt =
+						purpose === "read" && orgScopedRead !== undefined
+							? yield* orgReadToken(tenant, label, orgScopedRead.sql)
+							: yield* orgTokens.getOrgReadToken(tenant.orgId, "raw-sql")
 					yield* Effect.annotateCurrentSpan("maple.tinybird.token.scope", "org_jwt")
 					return {
 						source: "org-jwt" as const,
@@ -555,13 +609,15 @@ export class WarehouseQueryService extends Context.Service<WarehouseQueryService
 				tenant: ExecutionTenant,
 				purpose: RoutePurpose,
 				label: string,
+				scope?: RouteScope,
 			): Effect.Effect<WarehouseRoute, WarehouseRawRouteError>
 			function resolveRoute(
 				tenant: ExecutionTenant,
 				purpose: RoutePurpose,
 				label: string,
+				scope?: RouteScope,
 			): Effect.Effect<WarehouseRoute, WarehouseRawRouteError> {
-				return resolveRouteEffect(tenant, purpose, label)
+				return resolveRouteEffect(tenant, purpose, label, scope)
 			}
 
 			// Credential-rotation self-heal. `resolveRuntimeConfig` answers from a

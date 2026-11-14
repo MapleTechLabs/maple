@@ -26,6 +26,8 @@ import {
 	merge,
 	optionalPlain,
 	optionalSecret,
+	plainFrom,
+	type PlainEnv,
 	planetScaleOAuthEnv,
 	supabaseOAuthEnv,
 } from "@maple/infra/env"
@@ -55,6 +57,13 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		mapleServerEnv(stage, region, domains),
 		// "1" runs crons on a non-prod stage (which otherwise skips them).
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
+		// "1" runs every tick's tenant reads on an org-scoped warehouse token, so a query aimed at
+		// another org returns nothing. Under its own deploy var: the rollout reaches no other Worker.
+		plainFrom(["MAPLE_ALERTING_ORG_SCOPED_READS"], "").pipe(
+			Config.map((value): PlainEnv =>
+				value === "" ? {} : { MAPLE_WAREHOUSE_ORG_SCOPED_READS: value },
+			),
+		),
 		linearOAuthEnv,
 		// Signs the chart image URL in notifications; unset sends them text-only.
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
