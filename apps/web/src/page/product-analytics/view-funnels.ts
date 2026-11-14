@@ -287,9 +287,14 @@ const points = (magnitude: number): string => `${(magnitude * 100).toFixed(1)} p
 
 /** The same funnel over the window before, once it answered with people in it. */
 const previousOf = (model: Model): ReadonlyArray<FunnelRow> | undefined => {
+	// A refetch still holds the last definition's rows: people must not be compared with sessions.
+	if (AsyncData.isRefreshing(model.previousFunnel.data)) return undefined
 	const rows = Option.getOrUndefined(AsyncData.getData(model.previousFunnel.data))
 	return rows === undefined || (rows[0]?.value ?? 0) === 0 ? undefined : rows
 }
+
+/** A span people actually took; the query answers 0 both for "instant" and for "nobody". */
+const span = (ms: number): string => (ms < 1_000 ? "under 1s" : fmtSpan(ms))
 
 const stats = (h: H, model: Model, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy): Html => {
 	const entered = rows[0]?.value ?? 0
@@ -323,13 +328,12 @@ const stats = (h: H, model: Model, rows: ReadonlyArray<FunnelRow>, keyBy: Funnel
 		statRailItem(h, {
 			eyebrow: "Time to convert",
 			eyebrowTooltip: "From the first step to the last, for those who reached the last step.",
-			value: last?.sinceStartP50Ms === undefined ? "–" : fmtSpan(last.sinceStartP50Ms),
-			subline:
-				last?.sinceStartP90Ms === undefined
-					? hasSteps
-						? "nobody converted"
-						: "one step"
-					: `median · 90% within ${fmtSpan(last.sinceStartP90Ms)}`,
+			value: converted === 0 || last?.sinceStartP50Ms === undefined ? "–" : span(last.sinceStartP50Ms),
+			subline: !hasSteps
+				? "one step"
+				: converted === 0 || last?.sinceStartP90Ms === undefined
+					? "nobody converted"
+					: `median · 90% within ${span(last.sinceStartP90Ms)}`,
 		}),
 		statRailItem(h, {
 			eyebrow: "Biggest drop",
@@ -413,17 +417,18 @@ const stepsTable = (h: H, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy): H
 						numericTableCell(h, [index === 0 ? "–" : formatNumber(dropped)]),
 						numericTableCell(
 							h,
-							row.p50Ms === undefined
+							// Nobody reached the step: the query's zeros are not a time.
+							row.p50Ms === undefined || row.value === 0
 								? ["–"]
 								: [
-										fmtSpan(row.p50Ms),
+										span(row.p50Ms),
 										...(row.p90Ms === undefined
 											? []
 											: [
 													typography(
 														h,
 														{ size: "2xs", tone: "muted", className: "ml-1.5" },
-														[`p90 ${fmtSpan(row.p90Ms)}`],
+														[`p90 ${span(row.p90Ms)}`],
 													),
 												]),
 									],
@@ -442,14 +447,24 @@ const stepsTable = (h: H, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy): H
 	])
 }
 
+/** One muted line inside a panel, where a table would have nothing to list. */
+const panelNote = (h: H, text: string): Html =>
+	typography(h, { size: "xs", tone: "muted", as: "p", className: "px-4 py-3" }, [text])
+
 type Group = Readonly<{ name: string; entered: number; converted: number }>
 
-/** The grouped rows as one line per group: who entered and who reached the last step. */
+/**
+ * The grouped rows as one line per group: who entered and who reached the last step. A group
+ * nobody entered (its people did a later step only) has no conversion to show and is left out.
+ */
 const groupsOf = (rows: ReadonlyArray<FunnelGroupRow>): ReadonlyArray<Group> =>
-	Arr.map(Arr.dedupe(Arr.map(rows, (row) => row.group)), (name) => {
-		const steps = Arr.filter(rows, (row) => row.group === name)
-		return { name, entered: steps[0]?.value ?? 0, converted: steps.at(-1)?.value ?? 0 }
-	})
+	Arr.filter(
+		Arr.map(Arr.dedupe(Arr.map(rows, (row) => row.group)), (name) => {
+			const steps = Arr.filter(rows, (row) => row.group === name)
+			return { name, entered: steps[0]?.value ?? 0, converted: steps.at(-1)?.value ?? 0 }
+		}),
+		(group) => group.entered > 0,
+	)
 
 const breakdownTable = (
 	h: H,
@@ -495,7 +510,11 @@ const breakdownTable = (
 							]),
 						]),
 						numericTableCell(h, [
-							delta(h, { ratio: conversion - inputs.overall, format: points }),
+							delta(h, {
+								ratio: conversion - inputs.overall,
+								format: points,
+								comparedWith: "everyone in this window",
+							}),
 						]),
 					],
 					undefined,
@@ -531,7 +550,12 @@ const breakdown = (
 							title: "Couldn't split the funnel",
 							onRetry: Message.ClickedRetry({ slot: "funnelBreakdown" }),
 						}),
-					onData: (rows) => breakdownTable(h, groupsOf(rows), { label, ...inputs }),
+					onData: (rows) => {
+						const groups = groupsOf(rows)
+						return groups.length === 0
+							? panelNote(h, `Nobody who entered has a ${label} in this window.`)
+							: breakdownTable(h, groups, { label, ...inputs })
+					},
 				}),
 	])
 }
@@ -567,14 +591,24 @@ const results = (h: H, model: Model): Html =>
 							}),
 							panelChartBody(h, [chart(h, model, rows, isDropoff)]),
 						]),
-						...(breakdownBy === undefined || rows.length < 2
+						...(breakdownBy === undefined
 							? []
-							: [
-									breakdown(h, model, breakdownBy, {
-										keyBy,
-										overall: conversionOf(rows) ?? 0,
-									}),
-								]),
+							: rows.length < 2
+								? [
+										panel(h, {}, [
+											panelHeader(h, { title: `By ${breakdownLabel(breakdownBy)}` }),
+											panelNote(
+												h,
+												"Add a second step to compare how each group converts.",
+											),
+										]),
+									]
+								: [
+										breakdown(h, model, breakdownBy, {
+											keyBy,
+											overall: conversionOf(rows) ?? 0,
+										}),
+									]),
 						panel(h, {}, [panelHeader(h, { title: "Steps" }), stepsTable(h, rows, keyBy)]),
 					])
 				},

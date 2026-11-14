@@ -92,7 +92,8 @@ export const funnelCountsParamsOf = (search: Search): ProductEventsFunnelWidgetP
 export const funnelBreakdownParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
 	const params = funnelCountsParamsOf(search)
 	const breakdownBy = funnelOf(search).breakdownBy
-	if (params === null || breakdownBy === undefined) return null
+	// One step has no conversion to compare, so the split is not asked for.
+	if (params === null || breakdownBy === undefined || params.steps.length < 2) return null
 	return { ...params, breakdownBy, breakdownLimit: FUNNEL_BREAKDOWN_MAX_LIMIT }
 }
 
@@ -143,19 +144,25 @@ const trimmed = <S extends FunnelStep>(step: S): S => {
 }
 
 /**
- * A draft step as the URL keeps it: the typed filter compiled to `attributeEquals`. A clause still
- * being typed does not parse yet, so the step keeps the filter `running` has for the same event.
+ * A draft whose typed filter parses, with `attributeEquals` set to what it compiles to. One that
+ * does not parse yet is left alone, so it keeps the last filter that did, wherever the step moves.
  */
-export const toFunnelStep = (draft: StepDraft, running?: FunnelStep): FunnelStep => {
+export const withParsedFilter = (draft: StepDraft): StepDraft => {
 	if (draft.kind !== "event") return draft
 	const compiled = compileFunnelStep(draft)
-	if (compiled.ok) return compiled.value
-	const step: FunnelStep = { kind: "event", eventName: draft.eventName }
-	return running?.kind === "event" &&
-		running.eventName === draft.eventName &&
-		running.attributeEquals !== undefined
-		? { ...step, attributeEquals: running.attributeEquals }
-		: step
+	if (!compiled.ok || compiled.value.kind !== "event") return draft
+	const { attributeEquals: _stale, ...rest } = draft
+	return compiled.value.attributeEquals === undefined
+		? rest
+		: { ...rest, attributeEquals: compiled.value.attributeEquals }
+}
+
+/** A draft step as the URL keeps it: the event and the last filter that parsed, no typed text. */
+export const toFunnelStep = (draft: StepDraft): FunnelStep => {
+	const parsed = withParsedFilter(draft)
+	if (parsed.kind !== "event") return parsed
+	const { filterClause: _clause, ...step } = parsed
+	return step
 }
 
 /** Whether any step narrows its event by a property. */

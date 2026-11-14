@@ -35,6 +35,8 @@ export type WhereEditorOptions<M> = Readonly<
 		/** The wrapper's, after `relative`. */
 		className?: string
 		textareaClassName: string
+		/** The textarea's own, where `textareaClassName` styles its frame: its minimum height, `resize-none`. */
+		controlClassName?: string
 		onInput: (value: string) => M
 	} & (
 		| { /** Enter is swallowed and reported. */ onEnter: M; autocomplete?: undefined }
@@ -105,8 +107,7 @@ export const whereEditor = <M>(h: HtmlBuilder<M>, options: WhereEditorOptions<M>
 					options.textareaClassName,
 					isHighlighting && "text-transparent caret-foreground",
 				),
-				// One row means one line: without this the control keeps its two-row minimum.
-				controlClassName: options.rows === 1 ? "min-h-0 resize-none max-sm:min-h-0" : undefined,
+				controlClassName: options.controlClassName,
 				defaultValue: options.value,
 				attributes: [
 					h.AriaLabel(options.ariaLabel),

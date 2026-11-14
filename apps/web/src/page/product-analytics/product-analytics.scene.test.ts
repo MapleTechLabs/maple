@@ -1,7 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { Array as Arr, Option, Result, Schema } from "effect"
 import { fromString } from "foldkit/url"
-import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
+import { expect as expectView, given, Mount, scene, selector, text, withViewInputs } from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
 import * as Select from "@maple/views/ui/select"
 import { MeasureChartContainer } from "@maple/views/charts/chart-mounts"
@@ -360,7 +360,20 @@ describe("product analytics", () => {
 			{ name: "signup_started", value: 1_000 },
 			{ name: "signup_completed", value: 500 },
 		])
-		scene({ update: pageUpdate, view }, given(compared), measured, expectView(text("11.5 pts")).toExist())
+		scene(
+			{ update: pageUpdate, view },
+			given(compared),
+			measured,
+			expectView(selector('[title="Up 11.5 pts vs the previous period"]')).toExist(),
+		)
+		// While the previous period refetches for a new definition, the old rows are not compared.
+		const refetching = pageUpdate(compared, Message.ClickedRetry({ slot: "previousFunnel" })).model
+		scene(
+			{ update: pageUpdate, view },
+			given(refetching),
+			measured,
+			expectView(selector('[title="Up 11.5 pts vs the previous period"]')).not.toExist(),
+		)
 	})
 
 	test("a breakdown splits the funnel into up to twenty groups and compares each with everyone", () => {
@@ -386,8 +399,62 @@ describe("product analytics", () => {
 			expectView(text("By UTM source")).toExist(),
 			// The newsletter converts 75% against 61.5% overall; google 54.8%.
 			expectView(text("75%")).toExist(),
-			expectView(text("13.5 pts")).toExist(),
-			expectView(text("6.7 pts")).toExist(),
+			expectView(selector('[title="Up 13.5 pts vs everyone in this window"]')).toExist(),
+			expectView(selector('[title="Down 6.7 pts vs everyone in this window"]')).toExist(),
+		)
+	})
+
+	test("a group nobody entered is left out, and a breakdown with no groups says so", () => {
+		const model = settled(
+			resolved({ tab: "funnels", steps: SIGNUP, breakdown: "utmSource" }).model,
+			"funnel",
+			FUNNEL,
+		)
+		const lateOnly = [
+			{ name: "signup_started", value: 0, group: "partner" },
+			{ name: "signup_completed", value: 4, group: "partner" },
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(settled(model, "funnelBreakdown", lateOnly)),
+			measured,
+			expectView(text("partner")).not.toExist(),
+			expectView(text("Nobody who entered has a UTM source in this window.")).toExist(),
+		)
+	})
+
+	test("a one-step funnel asks for no breakdown and says a second step is needed", () => {
+		const one: Search["steps"] = [{ kind: "event", eventName: "signup_started" }]
+		const { commands, model } = resolved({ tab: "funnels", steps: one, breakdown: "country" })
+		expect(
+			Arr.filter(commands ?? [], (command) => command.args?.slot === "funnelBreakdown"),
+		).toHaveLength(0)
+		scene(
+			{ update: pageUpdate, view },
+			given(settled(model, "funnel", [{ name: "signup_started", value: 1_206 }])),
+			measured,
+			expectView(text("Add a second step to compare how each group converts.")).toExist(),
+		)
+	})
+
+	test("a funnel nobody finished says so instead of showing a time", () => {
+		const unfinished: ReadonlyArray<FunnelRow> = [
+			{ name: "signup_started", value: 1_206 },
+			{
+				name: "signup_completed",
+				value: 0,
+				p50Ms: 0,
+				p90Ms: 0,
+				sinceStartP50Ms: 0,
+				sinceStartP90Ms: 0,
+			},
+		]
+		scene(
+			{ update: pageUpdate, view },
+			given(settled(resolved({ tab: "funnels", steps: SIGNUP }).model, "funnel", unfinished)),
+			measured,
+			expectView(text("nobody converted")).toExist(),
+			expectView(text("under 1s")).not.toExist(),
 		)
 	})
 
@@ -428,6 +495,64 @@ describe("product analytics", () => {
 			given(halfway.model),
 			expectView(text('"plan" is not a key = "value" clause')).toExist(),
 		)
+	})
+
+	test("a step keeps its own filter when another step is removed while its clause is half typed", () => {
+		const twoFilters: Search["steps"] = [
+			{ kind: "event", eventName: "page_viewed", attributeEquals: { page: "pricing" } },
+			{ kind: "event", eventName: "page_viewed", attributeEquals: { page: "checkout" } },
+		]
+		const halfTyped = pageUpdate(
+			resolved({ tab: "funnels", steps: twoFilters }).model,
+			Message.ChangedStep({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 1, field: "filterClause", value: "page = " }),
+			}),
+		).model
+		const removed = pageUpdate(
+			halfTyped,
+			Message.ChangedStep({ scope: "funnel", edit: StepEdit.Removed({ index: 0 }) }),
+		)
+		expect(searchOf(removed.outMessage).steps).toEqual([
+			{ kind: "event", eventName: "page_viewed", attributeEquals: { page: "checkout" } },
+		])
+	})
+
+	test("emptying a filter to retype it keeps the filter lines", () => {
+		const filtered: Search["steps"] = [
+			{ kind: "event", eventName: "signup_started" },
+			{ kind: "event", eventName: "signup_completed", attributeEquals: { method: "google" } },
+		]
+		const emptied = pageUpdate(
+			resolved({ tab: "funnels", steps: filtered }).model,
+			Message.ChangedStep({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 1, field: "filterClause", value: "" }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(emptied),
+			expectView(selector('[aria-label="Step 2 attribute filter"]')).toExist(),
+		)
+	})
+
+	test("an Events row's Funnel starts clean, even on the event being edited", () => {
+		const halfTyped = pageUpdate(
+			pageUpdate(
+				resolved({ tab: "funnels", steps: [{ kind: "event", eventName: "signup_started" }] }).model,
+				Message.ToggledStepFilters(),
+			).model,
+			Message.ChangedStep({
+				scope: "funnel",
+				edit: StepEdit.ChangedText({ index: 0, field: "filterClause", value: "plan =" }),
+			}),
+		).model
+		const opened = pageUpdate(
+			halfTyped,
+			Message.ClickedStartFunnel({ step: { kind: "event", eventName: "signup_started" } }),
+		)
+		expect(opened.model.steps).toEqual([{ kind: "event", eventName: "signup_started" }])
 	})
 
 	test("a shared funnel with a filtered step opens with its filter line, and the toggle clears it", () => {

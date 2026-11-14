@@ -24,7 +24,15 @@ import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CompleteReloadSpin, ResolveWindow, WaitForTypingPause } from "./command"
 import { draftFromFunnelStep } from "../dashboards/widget/funnel-filters"
-import { anchorNameOf, hasStepFilter, pathsOf, type Search, toAnchor, toFunnelStep } from "./definition"
+import {
+	anchorNameOf,
+	hasStepFilter,
+	pathsOf,
+	type Search,
+	toAnchor,
+	toFunnelStep,
+	withParsedFilter,
+} from "./definition"
 import { FilterKey, Message, type RequestMode, SlotName } from "./message"
 import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PathsRow } from "./model"
 import { requestSlots } from "./requests"
@@ -78,9 +86,10 @@ const searchHref = (search: Search) => hrefOf(AppRoute.ProductAnalytics({ search
  * Goes to `search`. A new definition (a row's Funnel) replaces the drafts; the drafts' own (a blank
  * Page anchor the URL leaves out) keeps them. Either way a pending typing pause is cancelled.
  */
-const navigate = (model: Model, search: Search, isReplace = false): Return => {
+const navigate = (model: Model, search: Search, isReplace = false, isNewDefinition = false): Return => {
 	const committed = committedOf(search)
-	const drafts = committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
+	const drafts =
+		!isNewDefinition && committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
 	return {
 		model: {
 			...model,
@@ -111,7 +120,7 @@ const draftsOf = (search: Search): Pick<Model, "steps" | "anchor" | "committed">
 
 /** The search with the drafts written in, so a tab or filter change carries what is being typed. */
 export const withDrafts = (model: Model): Search => {
-	const steps = Arr.map(model.steps, (draft, index) => toFunnelStep(draft, model.search.steps?.[index]))
+	const steps = Arr.map(model.steps, toFunnelStep)
 	const anchor = toAnchor(model.anchor)
 	return {
 		...model.search,
@@ -125,7 +134,10 @@ const commit = (model: Model): Return => navigate(model, withDrafts(model), true
 
 const applyEdit = (model: Model, scope: StepScope, edit: StepEdit): Model =>
 	scope === "funnel"
-		? { ...model, steps: applyStepEdit(model.steps, edit, FUNNEL_MAX_STEPS) }
+		? {
+				...model,
+				steps: Arr.map(applyStepEdit(model.steps, edit, FUNNEL_MAX_STEPS), withParsedFilter),
+			}
 		: { ...model, anchor: applyAnchorEdit(model.anchor, edit) }
 
 /** A typed value waits for a pause before it runs; anything picked runs now. */
@@ -183,7 +195,8 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		attributeKeys: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
-		showsStepFilters: false,
+		// A funnel that arrives with a filter shows its lines, and keeps them while one is retyped.
+		showsStepFilters: hasStepFilter(Arr.map(route.search.steps ?? [], draftFromFunnelStep)),
 		typingVersion: 0,
 		navigatedTo: null,
 		stepCombos: {},
@@ -225,7 +238,11 @@ export const routeChanged = (
 		: isOwn
 			? {}
 			: { typingVersion }
-	const next: Model = { ...model, ...drafts, search: route.search }
+	const withDefinition: Model = { ...model, ...drafts, search: route.search }
+	const next: Model = {
+		...withDefinition,
+		showsStepFilters: withDefinition.showsStepFilters || hasStepFilter(withDefinition.steps),
+	}
 	const isAhead = !isNewDefinition && !isOwn && committedOf(withDrafts(next)) !== committedOf(route.search)
 	const step = routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
@@ -291,11 +308,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedEventsQuery: ({ value }) => ({ model: { ...model, eventsQuery: value } }),
 		PickedEventsKind: ({ kind }) => ({ model: { ...model, eventsKind: kind } }),
 		ClickedClearEventsFilters: () => ({ model: { ...model, eventsQuery: "", eventsKind: "all" } }),
+		// A row's Funnel and a suggested funnel start over: nothing half-typed carries into them.
 		ClickedStartFunnel: ({ step }) =>
-			navigate(model, { ...withDrafts(model), tab: "funnels", steps: [step] }),
+			navigate(model, { ...withDrafts(model), tab: "funnels", steps: [step] }, false, true),
 		ClickedStartPaths: ({ anchor }) => navigate(model, { ...withDrafts(model), tab: "paths", anchor }),
 		ClickedSuggestedFunnel: ({ steps }) =>
-			navigate(model, { ...withDrafts(model), tab: "funnels", steps }),
+			navigate(model, { ...withDrafts(model), tab: "funnels", steps }, false, true),
 		ChangedStep: ({ scope, edit }) => edited(model, scope, edit, edit._tag === "ChangedText"),
 		GotStepComboMessage: ({ id, message: inner }) => {
 			const next = stepComboUpdate(model.stepCombos, id, inner, (m) =>
