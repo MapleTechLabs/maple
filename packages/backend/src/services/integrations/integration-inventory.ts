@@ -42,6 +42,8 @@ const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
 /** Google Cloud's resource inventory syncs hourly; three missed syncs is no longer a blip. */
 const GCP_INVENTORY_STALE_MS = 3 * 60 * 60 * 1000
+/** GCP reads every 5 minutes; an error with no read for three ticks is a failed read, not a partial one. */
+const GCP_METRICS_FAILED_AFTER_MS = 15 * 60 * 1000
 
 /** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
 export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
@@ -705,8 +707,13 @@ const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry 
 		const total = Arr.reduce(counts, 0, (n, r) => n + r.count)
 		const metricsState: PollState = {
 			lastSuccessAt: c.lastMetricsReceivedAt,
-			// The poller clears its error on success, so a set one is the latest outcome.
-			lastErrorAt: c.lastMetricsError === null ? null : now,
+			// A partial read keeps a note but stamps a fresh read; a failed read leaves the old stamp.
+			lastErrorAt:
+				c.lastMetricsError !== null &&
+				(c.lastMetricsReceivedAt === null ||
+					now - c.lastMetricsReceivedAt > GCP_METRICS_FAILED_AFTER_MS)
+					? now
+					: null,
 			lastError: c.lastMetricsError,
 		}
 		const metricsStatus = pollStatus(metricsState, now, POLLER_STALE_MS)

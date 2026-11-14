@@ -446,13 +446,34 @@ describe("google cloud", () => {
 		const gcp = providerOf(
 			{
 				gcpConnectors: [
-					{ ...connector, lastMetricsError: "PERMISSION_DENIED: monitoring.timeSeries.list" },
+					{
+						...connector,
+						// A failed read leaves the last good read's stamp behind.
+						lastMetricsReceivedAt: NOW - 20 * MINUTE,
+						lastMetricsError: "PERMISSION_DENIED: monitoring.timeSeries.list",
+					},
 				],
 			},
 			"gcp",
 		)
 		expect(gcp?.status).toBe("failing")
 		expect(gcp?.problem).toContain("PERMISSION_DENIED")
+	})
+
+	it("stays healthy on a partial metrics read that still delivered", () => {
+		const gcp = providerOf(
+			{
+				gcpConnectors: [
+					{
+						...connector,
+						lastMetricsReceivedAt: NOW - 2 * MINUTE,
+						lastMetricsError: "3 of 30 metric queries were not read in full",
+					},
+				],
+			},
+			"gcp",
+		)
+		expect(gcp?.status).toBe("healthy")
 	})
 
 	it("is pending before the setup script has run, and leaves out what is switched off", () => {
