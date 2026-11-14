@@ -294,7 +294,7 @@ describe("VendorHttp", () => {
 			Effect.map(() => {
 				assert.deepStrictEqual(
 					Arr.map(spans, (span) => [span.name, span.kind]),
-					[["GET acme", "client"]],
+					[["VendorHttp.request", "client"]],
 				)
 				const attributes = Rec.fromEntries([...(spans[0]?.attributes ?? [])])
 				assert.deepStrictEqual(attributes, {

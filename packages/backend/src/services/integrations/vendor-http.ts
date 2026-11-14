@@ -219,7 +219,7 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 				orElse: () => Effect.fail(fail("timeout", "timed out", request)),
 			}),
 			Effect.tapError((error) => Effect.annotateCurrentSpan("error.type", error.kind)),
-			Effect.withSpan(`${built.method} ${peerService}`, {
+			Effect.withSpan("VendorHttp.request", {
 				kind: "client",
 				attributes: {
 					"peer.service": peerService,
