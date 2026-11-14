@@ -4655,7 +4655,7 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [df456bc1]
+-- builder:product-events:productEventsFunnelBreakdownQuery:attribute-session-step  [9bf9b182]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3, 4]) AS step,
@@ -4665,8 +4665,29 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3), countIf(level >= 4)] AS counts,
           countIf(level >= 1) AS entered
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level,
+          group AS group
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayMap((x, p) -> if(x.5 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a3), toUInt64(0))) AS b4,
+          arrayFill(v -> v > 0, b4) AS a4,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b4), 1) AS f4,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0) + (f4 > 0)) AS level,
+          greatest(f1, f2, f3, f4) AS reachedAt,
+          group AS group
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level,
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4, 1 - x.5), groupArray(tuple(ord, s1, s2, s3, s4))) AS evs,
           argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group
         FROM (
 SELECT
@@ -4699,14 +4720,14 @@ SELECT
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.UserId != ''
 ) AS funnel_events
-        GROUP BY key) AS levels
+        GROUP BY key) AS person_events) AS walked) AS levels
         GROUP BY group
         ORDER BY entered DESC, group ASC
         LIMIT 5) AS groups
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [829aeae4]
+-- builder:product-events:productEventsFunnelBreakdownQuery:session-dimension  [210cccc5]
 SELECT
           groups.group AS group,
           arrayJoin([1, 2, 3]) AS step,
@@ -4716,8 +4737,26 @@ SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts,
           countIf(level >= 1) AS entered
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level,
+          group AS group
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt,
+          group AS group
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level,
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs,
           argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group
         FROM (SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
@@ -4751,14 +4790,14 @@ SELECT
           AND e.Timestamp <= '2026-01-03 14:15:00'
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
-        GROUP BY key) AS levels
+        GROUP BY key) AS person_events) AS walked) AS levels
         GROUP BY group
         ORDER BY entered DESC, group ASC
         LIMIT 10) AS groups
         ORDER BY group ASC, step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [e3739cab]
+-- builder:product-events:productEventsFunnelLeaversQuery:visitor-filtered  [e4ee4b23]
 SELECT
           hops.step AS step,
           tupleElement(hop, 1) AS next,
@@ -4784,7 +4823,7 @@ SELECT
         FROM (SELECT
           walked.key AS key,
           walked.level AS level,
-          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND x.1 + 634178765848575 >= reachedAt, evs), 0) AS i1,
+          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND intDiv(x.1, 1048576) + 604800000 >= intDiv(reachedAt, 1048576), evs), 0) AS i1,
           if(i1 > 0, tupleElement(arrayElement(evs, i1), 1), toUInt64(0)) AS o1,
           if(level >= 2, arrayFirstIndex((x, i) -> x.3 = 1 AND i > i1, evs, arrayEnumerate(evs)), 0) AS i2,
           if(i2 > 0, tupleElement(arrayElement(evs, i2), 1), toUInt64(0)) AS o2,
@@ -4794,9 +4833,9 @@ SELECT
           person_events.key AS key,
           person_events.evs AS evs,
           arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
-          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
           arrayFill(v -> v > 0, b2) AS a2,
-          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
           arrayFill(v -> v > 0, b3) AS a3,
           arrayFirst(v -> v > 0, a1) AS f1,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
@@ -4908,15 +4947,31 @@ SELECT
         ORDER BY step ASC, count DESC, next ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:person  [a82e226b]
+-- builder:product-events:productEventsFunnelQuery:person  [3ef2759a]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
         FROM (SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
         FROM (SELECT
           multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) AS key,
           plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
@@ -4940,19 +4995,35 @@ SELECT
           AND e.Timestamp <= '2026-01-03 14:15:00'
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND multiIf(e.UserId != '', e.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), e.VisitorId) != '') AS funnel_events
-        GROUP BY key) AS levels) AS totals
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-key  [7c4906ca]
+-- builder:product-events:productEventsFunnelQuery:session-key  [6abee1d1]
 SELECT
           arrayJoin([1, 2, 3]) AS step,
           arrayElement(totals.counts, step) AS count
         FROM (SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 1800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 1800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0)) AS level,
+          greatest(f1, f2, f3) AS reachedAt
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(1887437848575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs
         FROM (SELECT
           e.SessionId AS key,
           plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord,
@@ -4965,19 +5036,38 @@ SELECT
           AND e.Timestamp <= '2026-01-03 14:15:00'
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.SessionId != '') AS funnel_events
-        GROUP BY key) AS levels) AS totals
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:session-step-filtered  [03d83cd4]
+-- builder:product-events:productEventsFunnelQuery:session-step-filtered  [a221d533]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
         FROM (SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3), countIf(level >= 4)] AS counts
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayMap((x, p) -> if(x.5 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a3), toUInt64(0))) AS b4,
+          arrayFill(v -> v > 0, b4) AS a4,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b4), 1) AS f4,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0) + (f4 > 0)) AS level,
+          greatest(f1, f2, f3, f4) AS reachedAt
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(634178765848575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4, 1 - x.5), groupArray(tuple(ord, s1, s2, s3, s4))) AS evs
         FROM (
 SELECT
           multiIf(s.UserId != '', s.UserId, coalesce(link.UserId, '') != '', coalesce(link.UserId, ''), s.VisitorId) AS key,
@@ -5123,19 +5213,38 @@ SELECT
         GROUP BY sessionId)
         GROUP BY key)
 ) AS funnel_events
-        GROUP BY key) AS levels) AS totals
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelQuery:visitor-session-step  [36bdf192]
+-- builder:product-events:productEventsFunnelQuery:visitor-session-step  [81721d45]
 SELECT
           arrayJoin([1, 2, 3, 4]) AS step,
           arrayElement(totals.counts, step) AS count
         FROM (SELECT
           [countIf(level >= 1), countIf(level >= 2), countIf(level >= 3), countIf(level >= 4)] AS counts
         FROM (SELECT
+          walked.key AS key,
+          walked.level AS level
+        FROM (SELECT
+          person_events.key AS key,
+          person_events.evs AS evs,
+          arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 3600000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayFill(v -> v > 0, b2) AS a2,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 3600000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayFill(v -> v > 0, b3) AS a3,
+          arrayMap((x, p) -> if(x.5 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 3600000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a3), toUInt64(0))) AS b4,
+          arrayFill(v -> v > 0, b4) AS a4,
+          arrayFirst(v -> v > 0, a1) AS f1,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b3), 1) AS f3,
+          tupleElement(arrayFirst((x, b) -> b > 0, evs, b4), 1) AS f4,
+          toUInt8((f1 > 0) + (f2 > 0) + (f3 > 0) + (f4 > 0)) AS level,
+          greatest(f1, f2, f3, f4) AS reachedAt
+        FROM (SELECT
           funnel_events.key AS key,
-          windowFunnel(3774874648575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level
+          arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4, 1 - x.5), groupArray(tuple(ord, s1, s2, s3, s4))) AS evs
         FROM (
 SELECT
           s.VisitorId AS key,
@@ -5165,11 +5274,11 @@ SELECT
           AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))
           AND e.VisitorId != ''
 ) AS funnel_events
-        GROUP BY key) AS levels) AS totals
+        GROUP BY key) AS person_events) AS walked) AS levels) AS totals
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelTimingQuery:person  [fa479286]
+-- builder:product-events:productEventsFunnelTimingQuery:person  [746bb43e]
 SELECT
           arrayJoin([2, 3]) AS step,
           arrayElement(totals.p50s, step) AS p50Ms,
@@ -5184,7 +5293,7 @@ SELECT
         FROM (SELECT
           walked.key AS key,
           walked.level AS level,
-          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND x.1 + 634178765848575 >= reachedAt, evs), 0) AS i1,
+          if(level >= 1, arrayFirstIndex(x -> x.2 = 1 AND intDiv(x.1, 1048576) + 604800000 >= intDiv(reachedAt, 1048576), evs), 0) AS i1,
           if(i1 > 0, tupleElement(arrayElement(evs, i1), 1), toUInt64(0)) AS o1,
           if(level >= 2, arrayFirstIndex((x, i) -> x.3 = 1 AND i > i1, evs, arrayEnumerate(evs)), 0) AS i2,
           if(i2 > 0, tupleElement(arrayElement(evs, i2), 1), toUInt64(0)) AS o2,
@@ -5194,9 +5303,9 @@ SELECT
           person_events.key AS key,
           person_events.evs AS evs,
           arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs)) AS a1,
-          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
+          arrayMap((x, p) -> if(x.3 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a1), toUInt64(0))) AS b2,
           arrayFill(v -> v > 0, b2) AS a2,
-          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND x.1 <= p + 634178765848575, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
+          arrayMap((x, p) -> if(x.4 = 1 AND p > 0 AND intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 604800000, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a2), toUInt64(0))) AS b3,
           arrayFill(v -> v > 0, b3) AS a3,
           arrayFirst(v -> v > 0, a1) AS f1,
           tupleElement(arrayFirst((x, b) -> b > 0, evs, b2), 1) AS f2,

@@ -30,7 +30,7 @@ const oneLine = (sql: string): string => Str.replace(/\s+/g, " ")(sql)
 const rejection = (built: Result.Result<unknown, ProductEventsFunnelError>) =>
 	Result.isFailure(built) ? built.failure : undefined
 
-// One `windowFunnel` per person over the rows matching any step, then
+// One walk per person over the rows matching any step, then
 // `countIf(level >= n)` per step, unpacked to `{ step, count }` rows.
 
 describe("productEventsFunnelQuery", () => {
@@ -55,16 +55,15 @@ describe("productEventsFunnelQuery", () => {
 		).toBeGreaterThanOrEqual(4)
 	})
 
-	it("emits one windowFunnel condition per step and one output row per step", () => {
+	it("walks each person's rows once per step and emits one output row per step", () => {
 		const { sql } = compileUnsafe(
 			Result.getOrThrow(
 				productEventsFunnelQuery({ steps: STEPS, keyBy: "visitor", windowSeconds: 3_600 }),
 			),
 			params,
 		)
-		// The window is in the order key's unit: 3600 s as milliseconds times 2^20, to the end of
-		// its last millisecond.
-		expect(sql).toContain("windowFunnel(3774874648575)(ord, s1 = 1, s2 = 1, s3 = 1) AS level")
+		// The window compares milliseconds (the order key without its Seq): 3600 s.
+		expect(sql).toContain("intDiv(x.1, 1048576) <= intDiv(p, 1048576) + 3600000")
 		expect(sql).toContain(
 			"plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord",
 		)
@@ -158,7 +157,6 @@ describe("productEventsFunnelQuery", () => {
 		expect(oneLine(sql)).toContain(
 			"SELECT e.VisitorId AS key, plus(multiply(toUInt64(toUnixTimestamp64Milli(e.Timestamp)), 1048576), modulo(e.Seq, 1048576)) AS ord, 0 AS s1,",
 		)
-		expect(sql).toContain("windowFunnel(90596967448575)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
 	})
 
 	it("has no session_replays branch without a session step", () => {
@@ -381,7 +379,9 @@ describe("funnel drop-off details", () => {
 			"arraySort(x -> (x.1, 1 - x.2, 1 - x.3, 1 - x.4), groupArray(tuple(ord, s1, s2, s3))) AS evs",
 		)
 		// The first step-1 row still inside the window when the deepest step was first reached.
-		expect(sql).toContain("arrayFirstIndex(x -> x.2 = 1 AND x.1 + 3774874648575 >= reachedAt, evs)")
+		expect(sql).toContain(
+			"arrayFirstIndex(x -> x.2 = 1 AND intDiv(x.1, 1048576) + 3600000 >= intDiv(reachedAt, 1048576), evs)",
+		)
 		// Each later step is the first matching row after the previous step's, by position.
 		expect(sql).toContain("arrayFirstIndex((x, i) -> x.3 = 1 AND i > i1, evs, arrayEnumerate(evs))")
 		expect(sql).toContain(
