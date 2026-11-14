@@ -10,7 +10,8 @@ import * as Rules from "../kit/rules"
 import * as Setup from "../kit/setup"
 import { DataIntegration, FlowStage, Model as IntegrationModel } from "../../integrations/embed"
 
-// `/sources/new`: pick a platform, name it, copy the token. Onboarding's drawer runs the same flow.
+// `/sources/new`: pick a source, then name it and copy its token on one page. Onboarding's drawer
+// runs the same flow.
 
 /** Where the flow shows: its own page, or onboarding's drawer (no links away, Done closes it). */
 export type FlowHost = "page" | "drawer"
@@ -22,17 +23,20 @@ export type Created = typeof Created.Type
 export const Model = Schema.Struct({
 	/** The session's permissions on the page (`null` until read; the drawer never reads them). */
 	grants: Schema.NullOr(Schema.Array(Policy.PermissionName)),
-	/** `?platform=`: step 2 when set. */
+	/** The picker's search: narrows every group by label and description. */
+	search: Schema.String,
+	/** `?platform=`: the push source's page when set. */
 	platform: Schema.NullOr(PushSourcePlatform),
 	name: Schema.String,
 	isAdvancedOpen: Schema.Boolean,
 	rules: Rules.Model,
 	isSaving: Schema.Boolean,
-	/** The sources list, which step 2's form reads. */
+	/** The sources list, which the push page and an integration's step read. */
 	list: KeyedSchema(SourceList, LoadFailure),
 	created: Schema.NullOr(Created),
 	/** The created source's `sources.retrieve`, polled every 5 s until data arrives. */
 	firstData: KeyedSchema(V2Source, LoadFailure),
+	/** The picked platform's snippet tabs, kept across Create. */
 	setup: Setup.Model,
 	tokenCopy: CopyButton.Model,
 	/** `?integration=`: a data integration's connect step instead of the push form. */

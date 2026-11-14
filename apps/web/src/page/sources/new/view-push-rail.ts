@@ -1,13 +1,11 @@
 import type { PushSourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { type DocsPage, docsUrl } from "../../kit/docs"
-import { ingestUrl } from "../../../platform/ingest-url"
 import { flowRail, type RailItem } from "../../kit/connect-flow"
 import { platformMeta } from "../kit/platforms"
 import type { Message } from "./message"
 
-// The push flow's rails: how a push source works beside the name step, where its data shows up
-// beside the send step.
+// The push flow's rail: where the source's data shows up.
 
 type H = HtmlBuilder<Message>
 
@@ -51,23 +49,6 @@ const landsIn = (platform: PushSourcePlatform): RailItem =>
 	platform === "host"
 		? LANDS_IN[platform]
 		: { icon: "LayersIcon", title: "Services", detail: "One row per service.name" }
-
-export const howItWorksRail = (h: H, platform: PushSourcePlatform): Html =>
-	flowRail(h, {
-		eyebrow: "How this source works",
-		items: [
-			{
-				icon: "PaperPlaneIcon",
-				title: "Your app pushes to Maple",
-				detail: "Maple never calls into your network",
-			},
-			{ icon: "GlobeIcon", title: "Endpoint", detail: ingestUrl },
-			{ icon: "ConnectionIcon", title: "OTLP over HTTP", detail: "Traces, logs and metrics" },
-		],
-		trust: "The token can only write to this source, never read. Roll it on the source page to replace it.",
-		timeNote: "Takes about 3 minutes",
-		docs: docsOf(platform),
-	})
 
 export const showsUpRail = (h: H, platform: PushSourcePlatform): Html =>
 	flowRail(h, {

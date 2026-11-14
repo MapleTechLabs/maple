@@ -3,7 +3,7 @@ import * as Policy from "@maple/domain/policy"
 import { Schema } from "effect"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { SourceId } from "@maple/primitives"
 import { SourceList } from "../kit/data"
 
 // `/sources`.
@@ -16,14 +16,12 @@ export const Model = Schema.Struct({
 	list: KeyedSchema(SourceList, LoadFailure),
 	/** Every source's volume over the last 24 hours; the list shows without it. */
 	usage: KeyedSchema(V2SourceUsageSummary, LoadFailure),
-	/** All, OpenTelemetry (push) or Integrations: one value, "all" when the active chip is unpressed. */
-	kindFilter: ToggleGroup.Model,
-	/** "Needs attention": pressed narrows to disconnected, failing and stale sources. */
-	attentionFilter: ToggleGroup.Model,
+	/** Narrows every group to the sources whose name or platform matches. */
+	search: Schema.String,
+	/** The paused source a row's Resume is in flight for. */
+	resuming: Schema.NullOr(SourceId),
 })
 
-export const SOURCE_KINDS = ["all", "push", "integration"] as const
-export type SourceKind = (typeof SOURCE_KINDS)[number]
 export type Model = typeof Model.Type
 
 export const canManage = (model: Pick<Model, "grants">): boolean => Policy.has(model.grants, "sources:manage")

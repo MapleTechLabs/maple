@@ -2,7 +2,7 @@ import { readClock } from "@maple/views/data/timing"
 import { Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { readGrants } from "../../../data/session-tenant"
-import { fetchSourcesList, loadSourcesUsage } from "../kit/data"
+import { fetchSourcesList, loadSourcesUsage, resumeSource } from "../kit/data"
 import { Message } from "./message"
 
 export const ReadSourcesClock = readClock("ReadSourcesClock", Message.ReadClock)
@@ -23,3 +23,5 @@ export const FetchSourcesUsage = Command.define("FetchSourcesUsage", {
 			Effect.map((result) => Message.CompletedFetchUsage({ key, result })),
 		),
 })
+
+export const ResumeSource = resumeSource(Message.CompletedResume)
