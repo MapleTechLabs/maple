@@ -35,6 +35,8 @@ export class VendorHttpError extends Schema.TaggedError<VendorHttpError>()(
 		body: Schema.optionalKey(Schema.String),
 		/** The vendor's own message, read from the whole body by the client's `detail`. */
 		detail: Schema.optionalKey(Schema.String),
+		/** A 3xx answer's `location`, which the kit never follows. */
+		location: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -74,10 +76,14 @@ export interface VendorHttpOptions<E> {
 	readonly retry?: Schedule.Schedule<unknown> | false
 	/** The longest `retry-after` a request waits out before failing as `rate_limited`. */
 	readonly maxRetryAfter?: Duration.Input
+	/** False sends a rate-limited request only once, whatever its Retry-After (even 0). */
+	readonly replayRateLimit?: boolean
 	/** Also retry an answer that does not decode, for a vendor whose bodies are sometimes cut short. */
 	readonly retryInvalidResponse?: boolean
-	/** A delta-seconds header read when `retry-after` is absent, e.g. `x-ratelimit-reset`. */
+	/** A header read when `retry-after` is absent, e.g. `x-ratelimit-reset`. */
 	readonly rateLimitResetHeader?: string
+	/** How `rateLimitResetHeader` counts: seconds from now (the default) or a Unix time in seconds. */
+	readonly rateLimitResetFormat?: "delta-seconds" | "epoch-seconds"
 }
 
 export interface VendorRequest {
@@ -155,7 +161,7 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 		message: string,
 		request: VendorRequest,
 		extra: Partial<
-			Pick<VendorHttpError, "status" | "retryAfterSeconds" | "body" | "detail" | "cause">
+			Pick<VendorHttpError, "status" | "retryAfterSeconds" | "body" | "detail" | "location" | "cause">
 		> = {},
 	) =>
 		new VendorHttpError({
@@ -184,11 +190,16 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 		return options.auth(withBody)
 	}
 
+	const resetOf = (header: string | undefined, nowMs: number) =>
+		options.rateLimitResetFormat === "epoch-seconds"
+			? Option.map(parseDeltaSeconds(header), (epoch) => Math.max(0, Math.ceil(epoch - nowMs / 1000)))
+			: parseDeltaSeconds(header)
+
 	const retryAfterOf = (headers: Readonly<Record<string, string | undefined>>, nowMs: number) =>
 		Option.orElse(parseRetryAfterSeconds(headers["retry-after"], nowMs), () =>
 			options.rateLimitResetHeader === undefined
 				? Option.none()
-				: parseDeltaSeconds(headers[options.rateLimitResetHeader]),
+				: resetOf(headers[options.rateLimitResetHeader], nowMs),
 		)
 
 	/** A non-2xx answer as a classified failure; its body is read for the client's message. */
@@ -200,8 +211,11 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			const nowMs = yield* Clock.currentTimeMillis
 			const retryAfter = kind === "rate_limited" ? retryAfterOf(response.headers, nowMs) : Option.none()
 			const detail = options.detail?.(body)
+			const location =
+				response.status >= 300 && response.status < 400 ? response.headers["location"] : undefined
 			return yield* fail(kind, `answered ${response.status}`, request, {
 				status: response.status,
+				...(location === undefined ? undefined : { location }),
 				body: Str.slice(0, MAX_ERROR_BODY_CHARS)(body),
 				...(detail === undefined
 					? undefined
@@ -282,7 +296,8 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			(error) =>
 				error.kind === "rate_limited" &&
 				error.retryAfterSeconds !== undefined &&
-				error.retryAfterSeconds <= maxRetryAfterSeconds,
+				error.retryAfterSeconds <= maxRetryAfterSeconds &&
+				options.replayRateLimit !== false,
 			(error) =>
 				Effect.sleep(Duration.seconds(error.retryAfterSeconds ?? 0)).pipe(Effect.andThen(retried)),
 		)

@@ -7,6 +7,7 @@ import type { CostProviderError } from "../../CostProvider"
 import { monthsOfWindow } from "./billing-usage"
 import { type FakeGithub, fakeGithubDeps, insertInstallation, makeFakeGithub } from "./fake-github"
 import { GithubCostProvider } from "./GithubCostProvider"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -129,7 +130,8 @@ describe("GithubCostProvider", () => {
 						world.usageStatus = status
 						// A long rate limit is not waited out: the sync comes back to it.
 						world.retryAfter = status === 429 ? 600 : null
-						return (yield* Effect.flip(pull(ORG, INSTALLATION))).reason
+						// A 502 is retried with a back-off before it is surfaced.
+						return (yield* Effect.flip(VendorFake.elapsing(pull(ORG, INSTALLATION)))).reason
 					}),
 				)
 				assert.deepStrictEqual(reasons, [

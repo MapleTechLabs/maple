@@ -24,6 +24,7 @@ import {
 	type TestDb,
 } from "@maple/backend/testing/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { GoogleOAuthService } from "@maple/backend/services/auth/GoogleOAuthService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { addDays, daysBetween, planImport } from "./google-search-console/import-plan"
@@ -39,9 +40,6 @@ const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-08T12:00:00Z"))
 const SITE = "sc-domain:acme.dev"
 const SCOPE = "openid email https://www.googleapis.com/auth/webmasters.readonly"
 const ID_TOKEN = `h.${Buffer.from(JSON.stringify({ sub: "g-1", email: "owner@acme.dev" })).toString("base64url")}.s`
-
-const jsonResponse = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 const SearchAnalyticsBody = Schema.Struct({
 	startDate: Schema.String,
@@ -71,14 +69,6 @@ const WrittenRow = Schema.Struct({
 	IngestedAt: Schema.String,
 })
 const decodeWrittenRows = Schema.decodeUnknownSync(Schema.Array(WrittenRow))
-
-const readBody = (url: string, init?: RequestInit) =>
-	new Request(url, {
-		method: "POST",
-		body: init?.body,
-		// @ts-expect-error duplex is required for streaming bodies in undici/Bun
-		duplex: "half",
-	}).text()
 
 const daysOf = (start: string, end: string) =>
 	Arr.map(Arr.range(0, daysBetween(start, end) - 1), (offset) => addDays(start, offset))
@@ -129,10 +119,10 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 	const hungDays = new Set<string>()
 	/** Resolves once the next hanging Search Analytics request is in flight. */
 	const nextHang = () => new Promise<void>((resolve) => hangWaiters.push(resolve))
-	const fetch: typeof globalThis.fetch = async (input, init) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+	const respond = async (request: VendorFake.VendorFakeRequest): Promise<Response> => {
+		const url = request.url.href
 		if (url === "https://oauth2.googleapis.com/token") {
-			return jsonResponse({
+			return VendorFake.json({
 				access_token: "g-access",
 				refresh_token: "g-refresh",
 				expires_in: 3599,
@@ -141,10 +131,10 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 			})
 		}
 		if (url === "https://www.googleapis.com/webmasters/v3/sites") {
-			return jsonResponse({ siteEntry: [{ siteUrl: SITE, permissionLevel: "siteOwner" }] })
+			return VendorFake.json({ siteEntry: [{ siteUrl: SITE, permissionLevel: "siteOwner" }] })
 		}
 		if (Str.endsWith("/searchAnalytics/query")(url)) {
-			const body = decodeBody(await readBody(url, init))
+			const body = decodeBody(request.body)
 			queries.push(body)
 			querySites.push(siteOfUrl(url))
 			const hangOnce =
@@ -152,20 +142,18 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 			if (hangOnce) hungDays.add(body.startDate)
 			if (options.hang === true || hangOnce) {
 				Arr.forEach(hangWaiters.splice(0), (resolve) => resolve())
-				return new Promise<Response>((_resolve, reject) =>
-					init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)),
-				)
+				return VendorFake.hang(request)
 			}
-			if (options.failStatus !== undefined) return jsonResponse({}, options.failStatus)
-			if (options.failingSites?.includes(siteOfUrl(url))) return jsonResponse({}, 500)
-			if (options.failDays?.includes(body.startDate)) return jsonResponse({}, 500)
+			if (options.failStatus !== undefined) return VendorFake.json({}, options.failStatus)
+			if (options.failingSites?.includes(siteOfUrl(url))) return VendorFake.json({}, 500)
+			if (options.failDays?.includes(body.startDate)) return VendorFake.json({}, 500)
 			const isQueryGrain = body.dimensions.includes("query")
 			if (
 				isQueryGrain &&
 				options.failPage?.day === body.startDate &&
 				options.failPage.startRow === body.startRow
 			)
-				return jsonResponse({}, 500)
+				return VendorFake.json({}, 500)
 			const keys = (day: string, query: string) =>
 				Arr.map(body.dimensions, (dimension) => keyFor(dimension, day, query))
 			const total =
@@ -173,7 +161,7 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 					? options.queryRowsTotal
 					: undefined
 			if (total === undefined) {
-				return jsonResponse({
+				return VendorFake.json({
 					rows: Arr.map(daysOf(body.startDate, body.endDate), (day) => ({
 						keys: keys(day, "maple observability"),
 						clicks: 3,
@@ -184,7 +172,7 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 				})
 			}
 			const end = Math.min(total, body.startRow + body.rowLimit)
-			return jsonResponse({
+			return VendorFake.json({
 				rows:
 					body.startRow >= end
 						? []
@@ -197,9 +185,10 @@ const fakeGoogle = (options: FakeGoogleOptions) => {
 							})),
 			})
 		}
-		return jsonResponse({}, 404)
+		return VendorFake.json({}, 404)
 	}
-	return { fetch, queries, querySites, nextHang }
+	const fake = VendorFake.make({ routes: [{ respond }] })
+	return { fake, queries, querySites, nextHang }
 }
 
 const config = {
@@ -264,7 +253,7 @@ const harness = (options: FakeGoogleOptions = {}) => {
 		Layer.provide(testDb.layer),
 		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, google.fetch)),
+		Layer.provideMerge(google.fake.layer),
 	)
 	const sql = (statement: string, params: unknown[] = []) =>
 		Effect.promise(() => executeSql(testDb, statement, params))

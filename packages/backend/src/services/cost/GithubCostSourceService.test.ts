@@ -4,6 +4,7 @@ import { VcsInstallationId } from "@maple/domain/vcs"
 import { DateTime, Effect, Layer, Schema, Array as Arr } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { GithubCostSourceService } from "./GithubCostSourceService"
 import {
 	type FakeGithub,
@@ -235,7 +236,8 @@ describe("GithubCostSourceService", () => {
 				testDb,
 				world,
 				Effect.gen(function* () {
-					const outage = yield* Effect.flip(add(ORGANIZATION))
+					// A 503 is retried with a back-off before it is surfaced.
+					const outage = yield* Effect.flip(VendorFake.elapsing(add(ORGANIZATION)))
 					assert.strictEqual(outage._tag, "@maple/http/github-cost/GithubCostUnavailableError")
 
 					world.usageStatus = 429

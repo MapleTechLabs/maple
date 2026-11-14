@@ -5,6 +5,7 @@ import { FetchHttpClient } from "effect/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { LinearOAuthService } from "@maple/backend/services/auth/LinearOAuthService"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { LinearIssueTracker } from "./LinearIssueTracker"
 import {
 	DEFAULT_CLOCK_EPOCH_MS,
@@ -19,16 +20,29 @@ import {
 } from "./alerts-service-test-support"
 import { LinearAlertDestinationConfig } from "@maple/domain/http"
 
-/** Fetch bodies arrive as a string or, from the Effect HTTP client, as bytes. */
-const requestBodyText = (body: RequestInit["body"]): string =>
-	body instanceof Uint8Array ? new TextDecoder().decode(body) : typeof body === "string" ? body : ""
+const GraphqlRequest = Schema.fromJsonString(
+	Schema.Struct({
+		operationName: Schema.String,
+		variables: Schema.Record(Schema.String, Schema.Unknown),
+	}),
+)
+const decodeGraphqlRequest = Schema.decodeUnknownSync(GraphqlRequest)
+
+/** Linear's token endpoint, answering every exchange with one token. */
+const tokenRoute = (refreshToken: string): VendorFake.VendorFakeRoute => ({
+	path: "/oauth/token",
+	respond: () =>
+		VendorFake.json({
+			access_token: "lin-access",
+			refresh_token: refreshToken,
+			expires_in: 86399,
+			scope: "read,write",
+		}),
+})
 
 const trackedDbs: TestDb[] = []
 
 afterEach(() => cleanupTestDbs(trackedDbs))
-
-const json = (body: unknown, status = 200) =>
-	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
 interface Operation {
 	readonly name: string
@@ -39,28 +53,18 @@ interface Operation {
 const linearServer = () => {
 	const operations: Operation[] = []
 	const issues = new Map<string, { id: string; identifier: string; url: string }>()
-	const fetch: typeof globalThis.fetch = async (input, init) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		if (url === "https://api.linear.app/oauth/token") {
-			return json({
-				access_token: "lin-access",
-				refresh_token: "lin-refresh",
-				expires_in: 86399,
-				scope: "read,write",
-			})
-		}
-		if (url !== "https://api.linear.app/graphql") return new Response("ok", { status: 200 })
-		const body = JSON.parse(requestBodyText(init?.body))
+	const graphql = (request: VendorFake.VendorFakeRequest) => {
+		const body = decodeGraphqlRequest(request.body)
 		const operation: Operation = { name: body.operationName, variables: body.variables }
 		operations.push(operation)
 		switch (operation.name) {
 			case "MapleConnectedWorkspace":
-				return json({ data: { organization: { id: "lin_org", name: "Acme" } } })
+				return VendorFake.json({ data: { organization: { id: "lin_org", name: "Acme" } } })
 			case "MapleTeamLookup": {
 				const known = operation.variables.id === "team_1"
 				return known
-					? json({ data: { team: { id: "team_1", key: "ENG", name: "Engineering" } } })
-					: json({
+					? VendorFake.json({ data: { team: { id: "team_1", key: "ENG", name: "Engineering" } } })
+					: VendorFake.json({
 							data: null,
 							errors: [
 								{
@@ -71,7 +75,7 @@ const linearServer = () => {
 						})
 			}
 			case "MapleTeam":
-				return json({
+				return VendorFake.json({
 					data: {
 						team: {
 							id: "team_1",
@@ -84,13 +88,13 @@ const linearServer = () => {
 					},
 				})
 			case "MapleTeams":
-				return json({
+				return VendorFake.json({
 					data: { teams: { nodes: [{ id: "team_1", key: "ENG", name: "Engineering" }] } },
 				})
 			case "MapleIssue": {
 				const issue = issues.get(String(operation.variables.id))
 				return issue === undefined
-					? json({
+					? VendorFake.json({
 							data: null,
 							errors: [
 								{
@@ -99,7 +103,7 @@ const linearServer = () => {
 								},
 							],
 						})
-					: json({
+					: VendorFake.json({
 							data: { issue: { ...issue, state: { type: "triage" }, team: { id: "team_1" } } },
 						})
 			}
@@ -107,13 +111,20 @@ const linearServer = () => {
 				const id = String(operation.variables.input?.id)
 				const issue = { id, identifier: "ENG-1", url: "https://linear.app/acme/issue/ENG-1" }
 				issues.set(id, issue)
-				return json({ data: { issueCreate: { success: true, issue } } })
+				return VendorFake.json({ data: { issueCreate: { success: true, issue } } })
 			}
 			default:
-				return json({ data: { ok: { success: true } } })
+				return VendorFake.json({ data: { ok: { success: true } } })
 		}
 	}
-	return { fetch, operations }
+	const fake = VendorFake.make({
+		routes: [
+			tokenRoute("lin-refresh"),
+			{ path: "/graphql", respond: graphql },
+			{ respond: () => VendorFake.text("ok") },
+		],
+	})
+	return { fetch: fake.fetch, operations }
 }
 
 const oauthConfig = ConfigProvider.layer(
@@ -303,23 +314,21 @@ describe("AlertsService with a Linear destination", () => {
 				errors: [{ message: "Forbidden", extensions: { code: "FORBIDDEN" } }],
 			},
 		}
-		const fetch: typeof globalThis.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url === "https://api.linear.app/oauth/token") {
-				return json({
-					access_token: "lin-access",
-					refresh_token: "r",
-					expires_in: 86399,
-					scope: "read,write",
-				})
-			}
-			const name: unknown = JSON.parse(requestBodyText(init?.body)).operationName
-			return json(
-				name === "MapleIssueCreate" || name === "MapleComment"
-					? answers[name]
-					: { data: { organization: { id: "lin_org", name: "Acme" } } },
-			)
-		}
+		const { fetch } = VendorFake.make({
+			routes: [
+				tokenRoute("r"),
+				{
+					respond: (request) => {
+						const name = decodeGraphqlRequest(request.body).operationName
+						return VendorFake.json(
+							name === "MapleIssueCreate" || name === "MapleComment"
+								? answers[name]
+								: { data: { organization: { id: "lin_org", name: "Acme" } } },
+						)
+					},
+				},
+			],
+		})
 		const operation = (name: string) => ({ name, document: "", variables: {} })
 		return Effect.gen(function* () {
 			yield* connectLinear(testDb, fetch, orgId)

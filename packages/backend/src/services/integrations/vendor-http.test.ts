@@ -243,6 +243,54 @@ describe("VendorHttp", () => {
 		)
 	})
 
+	it.effect("keeps a 3xx answer's location on the failure, for a client that follows it by hand", () => {
+		const fake = VendorFake.make({
+			routes: [
+				{
+					path: "/v1/logs",
+					respond: () =>
+						VendorFake.text("", 302, { location: "https://blobs.acme.test/log?sig=1" }),
+				},
+			],
+		})
+		return Effect.gen(function* () {
+			const client = VendorHttp.make({
+				httpClient: yield* HttpClient.HttpClient,
+				peerService: "acme",
+				baseUrl: "https://api.acme.test",
+				auth: VendorHttp.noAuth,
+				toError: (error: VendorHttp.VendorHttpError) => error,
+				timeout: "5 seconds",
+			})
+			const error = yield* Effect.flip(client.text({ path: "/v1/logs" }))
+			assert.deepStrictEqual([error.status, error.location], [302, "https://blobs.acme.test/log?sig=1"])
+		}).pipe(Effect.provide(Layer.merge(FetchHttpClient.layer, fake.layer)))
+	})
+
+	it.effect("reads a rate limit reset given as a Unix time", () => {
+		const fake = VendorFake.make({
+			routes: [
+				{
+					path: "/v1/items",
+					respond: () =>
+						VendorFake.json({ message: "slow down" }, 429, {
+							// The test clock starts at the epoch: the budget returns in 120 seconds.
+							"x-ratelimit-reset": "120",
+						}),
+				},
+			],
+		})
+		return withClient(
+			fake,
+			(client) =>
+				Effect.gen(function* () {
+					const error = yield* Effect.flip(client.json(Page, { path: "/v1/items" }))
+					assert.deepStrictEqual([error.kind, error.retryAfterSeconds], ["rate_limited", 120])
+				}),
+			{ rateLimitResetFormat: "epoch-seconds" },
+		)
+	})
+
 	it.effect("classifies refusals, with a client's own override", () => {
 		const statuses = [401, 403, 404, 410, 400]
 		const fake = VendorFake.make({
