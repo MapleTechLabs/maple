@@ -74,14 +74,14 @@ a recovery incident.
   `branch show`, before anything is created.
 - **In CI:** the workflow runs only on its schedule or via
   `gh workflow run backup-restore-test.yml` after merge. A PR's CI does not run it. The first
-  dispatch validates the service token. On the database it needs `read_branch`,
+  dispatch validates the OIDC trust. On the database it needs `read_branch`,
   `create_branch`, `delete_branch`, `connect_branch`, `delete_branch_password`, `read_backups`
   and `restore_production_branch_backup`. Beyond the restore access these are
-  development-branch accesses; it never needs `delete_production_branch`. A token missing
+  development-branch accesses; it never needs `delete_production_branch`. A trust missing
   `read_backups` fails at `backup list`. One missing the restore access fails at
   `branch create`. Both fail before anything is created. One missing the delete accesses
   restores fine and then leaves the branch behind, which the drill reports as a failed check.
-  Only the token's creator or an organization administrator can change its accesses.
+  Only an organization administrator can change a trust's accesses.
 - **Why the restore is `--cluster-size PS_DEV`:** a restore without an explicit size becomes a
   PS-10 branch flagged `production: true`, which only `delete_production_branch` can remove.
   PlanetScale cannot demote a Postgres restore branch afterwards. A PS_DEV restore is a
@@ -90,10 +90,29 @@ a recovery incident.
 ### Schedule
 
 [`backup-restore-test.yml`](../.github/workflows/backup-restore-test.yml) runs the drill at 06:23
-UTC on the first day of every quarter and on `workflow_dispatch`. It authenticates the `pscale`
-CLI with the PlanetScale service token from Infisical (`PLANETSCALE_SERVICE_TOKEN_ID` / `_TOKEN` /
-`PLANETSCALE_ORG`). The preview-orphan sweep uses the same token, which already has branch create
-and delete on the `maple` database.
+UTC on the first day of every quarter and on `workflow_dispatch`. No PlanetScale credential is
+stored for it: `planetscale/auth-action` trades the job's GitHub OIDC token for a service token
+that lives 45 minutes (the job timeout), and the step hands it to `pscale` as
+`PLANETSCALE_SERVICE_TOKEN_ID` / `_TOKEN`. The org slug is `PLANETSCALE_ORG` from Infisical `dev`,
+masked in the public run logs. The trust's ID is the `PLANETSCALE_OIDC_TRUST_ID` variable on the
+`maintenance` GitHub environment, and the trust accepts only that environment of this repository:
+
+```bash
+pscale oidc-trust create --org <org> --name "github: backup restore drill" \
+  --provider github_actions --max-ttl 2700 \
+  --condition repository_id=1158615018 --condition repository_owner_id=282671153 \
+  --condition environment=maintenance \
+  --condition workflow_ref=MapleTechLabs/maple/.github/workflows/backup-restore-test.yml@refs/heads/main \
+  --database-access maple:read_branch --database-access maple:create_branch \
+  --database-access maple:delete_branch --database-access maple:connect_branch \
+  --database-access maple:delete_branch_password --database-access maple:read_backups \
+  --database-access maple:restore_production_branch_backup
+```
+
+The provider requires `repository_id` and `repository_owner_id`
+(`gh api repos/MapleTechLabs/maple --jq '.id, .owner.id'`). `environment` alone would let any
+`maintenance` job on `main` (the preview-orphan sweep too) mint this token, so `workflow_ref` pins
+it to the drill's workflow.
 
 Point-in-time recovery is the other restore path PlanetScale offers: any timestamp inside the
 retention window, from the dashboard or `pscale branch create --from main --restore-point <iso>`

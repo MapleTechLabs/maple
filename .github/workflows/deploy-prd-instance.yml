@@ -58,8 +58,15 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            # Schema migrations run in this deploy (`Planetscale.PostgresBranch`), using the
-            # PLANETSCALE_* credentials from Infisical.
+            # Schema migrations run in this deploy (`Planetscale.PostgresBranch`). Its PlanetScale
+            # service token is short-lived, minted over OIDC by the trust for this environment;
+            # the org slug comes masked from Infisical, since the run logs are public.
+            - name: PlanetScale credentials (OIDC)
+              id: planetscale
+              uses: planetscale/auth-action@aa8f73f656f858eb798916ce2fe9769ab1ba0d76 # v1.0.0
+              with:
+                  organization: ${{ env.PLANETSCALE_ORGANIZATION }}
+                  oidc-trust: ${{ vars.PLANETSCALE_OIDC_TRUST_ID }}
 
             # AWS_ACCOUNT_ID skips alchemy's STS account lookup, which self-deadlocks under CI=true (#378).
             # One pass, no retry: the stack validates its own ACM certificates.
@@ -68,6 +75,8 @@ jobs:
               run: bun run alchemy:deploy:prd
               env:
                   AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
+                  PLANETSCALE_API_TOKEN_ID: ${{ steps.planetscale.outputs.service-token-id }}
+                  PLANETSCALE_API_TOKEN: ${{ steps.planetscale.outputs.service-token }}
 
             # alchemy isolates per-Worker failures, so a deploy can leave prod on two commits.
             # Runs on failure too, to name the stale Worker. Other Workers are covered by the

@@ -16,8 +16,8 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 
 const ORG = Schema.decodeSync(OrgId)("org_cost")
 const USER = Schema.decodeSync(UserId)("user_cost")
-const KEY = "sk-admin-0123456789abcdefghijABCDEFGHIJ0123456789"
-const OTHER_KEY = "sk-admin-9876543210zyxwvutsrqZYXWVUTSRQ9876543210"
+const KEY = "sk-admin-FAKE-TEST-KEY-not-a-real-secret"
+const OTHER_KEY = "sk-admin-FAKE-TEST-KEY-not-a-real-secret-2"
 const NOW = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-11T06:00:00Z"))
 const SPEND = [{ day: "2026-10-20", value: 1.5, lineItem: "gpt-4o, input" }]
 const VALIDATION = "@maple/http/cost-connections/CostConnectionValidationError"
