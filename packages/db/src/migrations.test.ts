@@ -615,6 +615,62 @@ describe("bundled migrations", () => {
 		await pg.close()
 	}, 30_000)
 
+	it("moves live Vercel and Supabase-logs holds out of the lease and leaves live leases", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("poller_hold_vercel_supabase"))
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at) VALUES
+				('src_v1', 'org_1', 'Vercel', 'vercel', 'pull', now(), now()),
+				('src_v2', 'org_2', 'Vercel', 'vercel', 'pull', now(), now()),
+				('src_s', 'org_1', 'Supabase', 'supabase', 'pull', now(), now())`,
+		)
+		// A 15 minute lease is a rate-limit hold; a 2 minute one is a tick still running.
+		const vercel = (id: string, org: string, source: string, leaseSql: string) =>
+			pg.query(
+				`INSERT INTO vercel_connections (id, org_id, source_id, team_id, team_slug, team_name, token_ciphertext,
+					token_iv, token_tag, connected_by_user_id, project_scope, created_at, updated_at, lease_until)
+				VALUES ($1, $2, $3, $1, $1, $1, 'x', 'x', 'x', 'user_1', 'all', now(), now(), ${leaseSql})`,
+				[id, org, source],
+			)
+		await vercel("v_held", "org_1", "src_v1", "now() + interval '15 minutes'")
+		await vercel("v_ticking", "org_2", "src_v2", "now() + interval '2 minutes'")
+		await pg.query(
+			`INSERT INTO supabase_connections (id, org_id, source_id, supabase_organization_id,
+				supabase_organization_slug, supabase_organization_name, connected_by_user_id, created_at, updated_at)
+			VALUES ('sc1', 'org_1', 'src_s', 'so1', 'acme', 'Acme', 'user_1', now(), now())`,
+		)
+		const project = (id: string, leaseSql: string) =>
+			pg.query(
+				`INSERT INTO supabase_projects (id, org_id, connection_id, project_ref, name, region, status,
+					last_seen_at, created_at, updated_at, logs_lease_until)
+				VALUES ($1, 'org_1', 'sc1', $1, $1, 'eu-central-1', 'ACTIVE_HEALTHY', now(), now(), now(), ${leaseSql})`,
+				[id],
+			)
+		await project("p_held", "now() + interval '60 minutes'")
+		await project("p_ticking", "now() + interval '2 minutes'")
+
+		await pg.exec(readMigrationSql("poller_hold_vercel_supabase"))
+
+		const minutes = (column: string) => `round(extract(epoch FROM ${column} - now()) / 60)::int`
+		const vercelRows = await pg.query(
+			`SELECT id, ${minutes("lease_until")} AS lease, ${minutes("hold_until")} AS hold
+			FROM vercel_connections ORDER BY id`,
+		)
+		expect(vercelRows.rows).toEqual([
+			{ id: "v_held", lease: null, hold: 15 },
+			{ id: "v_ticking", lease: 2, hold: null },
+		])
+		const projectRows = await pg.query(
+			`SELECT id, ${minutes("logs_lease_until")} AS lease, ${minutes("logs_hold_until")} AS hold
+			FROM supabase_projects ORDER BY id`,
+		)
+		expect(projectRows.rows).toEqual([
+			{ id: "p_held", lease: null, hold: 60 },
+			{ id: "p_ticking", lease: 2, hold: null },
+		])
+		await pg.close()
+	}, 30_000)
+
 	it("links every integration row to the source it sends as", async () => {
 		const pg = new PGlite()
 		await pg.exec(readMigrationSqlBefore("source_ownership"))

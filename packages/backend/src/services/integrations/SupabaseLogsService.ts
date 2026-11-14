@@ -16,7 +16,16 @@ import {
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { leaseClaimable, leaseStillOurs } from "./lease"
+import { leaseStillOurs } from "./lease"
+import {
+	type Lease,
+	type LeaseSpec,
+	leaseFree,
+	makeSourceReporter,
+	pollFailureOutcome,
+	skipIfPaused,
+	withLease,
+} from "./poller"
 import {
 	SupabaseConnections,
 	SupabaseProjects,
@@ -35,12 +44,7 @@ import {
 	makeIngestSender,
 } from "@maple/backend/services/ingest/ingest-sender"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import {
-	isSourcePaused,
-	type PollOutcome,
-	reportPoll,
-	stampedSourceId,
-} from "@maple/backend/services/integrations/integration-sources"
+import { stampedSourceId } from "@maple/backend/services/integrations/integration-sources"
 import {
 	acceptedWatermark,
 	advanceWatermark,
@@ -59,9 +63,8 @@ const MAX_QUERIES_PER_PROJECT = 3
 const LEASE_MS = 3 * 60_000
 /** No query starts after this, so a tick finishes inside its minute. */
 const TICK_BUDGET_MS = 40_000
+/** Supabase allows 10 logs queries a minute: a 429 waits one tick, not the shared table's 15 minutes. */
 const RATE_LIMIT_HOLD_MS = 60_000
-/** Ingest refused the org's key: retrying every minute cannot succeed. */
-const REFUSED_HOLD_MS = 60 * 60_000
 /** Records per ingest request; a full page is split so no body gets too large. */
 const INGEST_CHUNK = 250
 const PROJECT_CONCURRENCY = 4
@@ -85,6 +88,12 @@ interface ProjectPollResult {
 	/** Ingest refused the org's key (billing, revoked key): the project backs off for an hour. */
 	readonly refused: boolean
 }
+
+type ProjectLease = Lease<
+	SupabaseProjectRow,
+	PG.UpdateSetOf<typeof SupabaseProjects>,
+	IntegrationsPersistenceError
+>
 
 const EMPTY_RESULT: ProjectPollResult = {
 	calls: 0,
@@ -157,15 +166,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 					),
 				)
 
-			/** Best effort: a failed health report must not fail the tick it describes. */
-			const reportTick = (connection: SupabaseConnectionRow, outcome: PollOutcome, now: number) =>
-				dbExecute((db) => reportPoll(db, connection.sourceId, outcome, now)).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-						Effect.logWarning("supabase logs source health report failed").pipe(
-							Effect.annotateLogs({ sourceId: connection.sourceId, error: error.message }),
-						),
-					),
-				)
+			const reportTick = makeSourceReporter(dbExecute, "supabase logs")
 
 			const setLogsEnabled = Effect.fn("SupabaseLogsService.setLogsEnabled")(function* (
 				orgId: OrgId,
@@ -212,8 +213,10 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 											logsWatermarkAt: now - LOGS_INITIAL_LOOKBACK_MS,
 											logsBoundaryIds: [],
 											logsError: null,
-											// Drops a refusal hold, so turning logs back on polls on the next tick.
+											// Drops a refusal hold, and the lease of any tick still in flight so its
+											// late release cannot bring the hold back.
 											logsLeaseUntil: null,
+											logsHoldUntil: null,
 											updatedAt: now,
 										}
 									: { logsEnabled: false, logsError: null, updatedAt: now },
@@ -229,51 +232,52 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				)
 			})
 
-			const claimLease = (project: SupabaseProjectRow, now: number) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(SupabaseProjects)
-							.set({ logsLeaseUntil: now + LEASE_MS })
-							.where(($) => [
-								$.id.eq(project.id),
-								$.logsEnabled.eq(true),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the project;
-								// the bound sits above the longest intentional hold so refusal holds survive.
-								leaseClaimable($.logsLeaseUntil, now, REFUSED_HOLD_MS + LEASE_MS),
-							])
-							.returning(),
-					),
-				).pipe(Effect.map((rows) => rows[0] ?? null))
-
-			/** Compare-and-set on our own claim so a late tick never clears a successor's lease. */
-			const releaseLease = (claimed: SupabaseProjectRow, holdUntil: number | null) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(SupabaseProjects)
-							.set({ logsLeaseUntil: holdUntil })
-							.where(($) => [
-								$.id.eq(claimed.id),
-								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
-							]),
-					),
-				)
-
-			/** Writes only while this tick still holds the project's lease and logs are still on. */
-			const updateClaimed = (
-				claimed: SupabaseProjectRow,
-				set: PG.UpdateSetOf<typeof SupabaseProjects>,
-			) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(SupabaseProjects)
-							.set(set)
-							.where(($) => [
-								$.id.eq(claimed.id),
-								$.logsEnabled.eq(true),
-								leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
-							]),
-					),
-				)
+			/** The project row is the tick's lease; a failure's back-off is its hold. */
+			const logsLease = (
+				project: SupabaseProjectRow,
+			): LeaseSpec<
+				SupabaseProjectRow,
+				PG.UpdateSetOf<typeof SupabaseProjects>,
+				IntegrationsPersistenceError
+			> => {
+				/** Compare-and-set on our own claim, so a late tick never touches a successor's row. */
+				const writeWhere =
+					(logsStillOn: boolean) =>
+					(claimed: SupabaseProjectRow, set: PG.UpdateSetOf<typeof SupabaseProjects>) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(SupabaseProjects)
+									.set(set)
+									.where(($) => [
+										$.id.eq(claimed.id),
+										logsStillOn ? $.logsEnabled.eq(true) : undefined,
+										leaseStillOurs($.logsLeaseUntil, claimed.logsLeaseUntil),
+									])
+									.returning("id"),
+							),
+						).pipe(Effect.map((rows) => rows.length > 0))
+				return {
+					leaseMs: LEASE_MS,
+					claim: (leaseUntil, now) =>
+						dbExecute((db) =>
+							db.run(
+								PG.update(SupabaseProjects)
+									.set({ logsLeaseUntil: leaseUntil })
+									.where(($) => [
+										$.id.eq(project.id),
+										$.logsEnabled.eq(true),
+										leaseFree($.logsLeaseUntil, $.logsHoldUntil, now, LEASE_MS),
+									])
+									.returning(),
+							),
+						).pipe(Effect.map((rows) => rows[0] ?? null)),
+					// Writes land only while logs are still on.
+					write: writeWhere(true),
+					release: (holdUntil) => ({ logsLeaseUntil: null, logsHoldUntil: holdUntil }),
+					// Logs switched off mid-tick still get the row back.
+					releaseWrite: writeWhere(false),
+				}
+			}
 
 			const pollProject = Effect.fn("SupabaseLogsService.pollProject")(function* (
 				connection: SupabaseConnectionRow,
@@ -284,8 +288,22 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				const orgId = connection.orgId
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": project.projectRef })
 				const now = yield* Clock.currentTimeMillis
-				const claimed = yield* claimLease(project, now)
-				if (claimed === null) return EMPTY_RESULT
+				const polled = yield* withLease(logsLease(project), now, (lease) =>
+					readProject(connection, lease, ingestKey, tickStartedAt),
+				)
+				return Option.getOrElse(polled, () => EMPTY_RESULT)
+			})
+
+			/** The project's new logs under its lease, query by query while it is behind. */
+			const readProject = Effect.fnUntraced(function* (
+				connection: SupabaseConnectionRow,
+				lease: ProjectLease,
+				ingestKey: string,
+				tickStartedAt: number,
+			) {
+				const orgId = connection.orgId
+				const now = lease.now
+				const claimed = lease.row
 				const resource = {
 					projectRef: claimed.projectRef,
 					projectName: claimed.name,
@@ -295,7 +313,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				}
 
 				const recordError = (message: string) =>
-					updateClaimed(claimed, { logsError: Str.slice(0, 500)(message) }).pipe(Effect.as(message))
+					lease.write({ logsError: Str.slice(0, 500)(message) }).pipe(Effect.as(message))
 
 				/** One query and its batch; recurses while the project is behind and the tick has budget. */
 				const step = (
@@ -373,7 +391,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 									return { delivered, failure: accepted.failure }
 								if (index < chunks.length - 1) {
 									const mark = acceptedWatermark(rows, Arr.lastNonEmpty(chunk))
-									yield* updateClaimed(claimed, {
+									yield* lease.write({
 										logsWatermarkAt: mark.watermarkAt,
 										logsBoundaryIds: mark.boundaryIds,
 										logsLastPolledAt: now,
@@ -396,7 +414,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							}
 						}
 						const next = advanceWatermark(window, page.success.length, rows, fresh.length)
-						yield* updateClaimed(claimed, {
+						yield* lease.write({
 							logsWatermarkAt: next.watermarkAt,
 							logsBoundaryIds: next.boundaryIds,
 							logsLastPolledAt: now,
@@ -419,17 +437,12 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 							"maple.supabase.logs.calls": result.calls,
 						}),
 					),
-					Effect.onExit((exit) =>
-						releaseLease(
-							claimed,
-							exit._tag !== "Success"
-								? null
-								: exit.value.refused
-									? now + REFUSED_HOLD_MS
-									: exit.value.rateLimited
-										? now + RATE_LIMIT_HOLD_MS
-										: null,
-						).pipe(Effect.ignore),
+					Effect.tap((result) =>
+						result.refused
+							? lease.holdFor({ _tag: "IngestRefused", message: result.error ?? "" })
+							: result.rateLimited
+								? lease.hold(now + RATE_LIMIT_HOLD_MS)
+								: Effect.void,
 					),
 				)
 				return result
@@ -452,7 +465,11 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				if (connection === null) return skip("not connected")
 				const now = yield* Clock.currentTimeMillis
 				if (!(yield* oauth.isGrantUsable(orgId))) {
-					yield* reportTick(connection, { _tag: "Disconnected", reason: REVOKED_REASON }, now)
+					yield* reportTick(
+						connection.sourceId,
+						pollFailureOutcome({ _tag: "Rejected", reason: REVOKED_REASON }),
+						now,
+					)
 					return skip("grant revoked")
 				}
 				const projects = yield* loadProjects(connection)
@@ -460,7 +477,7 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 				if (due.length === 0) return skip("no projects")
 
 				// A paused source reads nothing; its watermarks follow the clock so a resume starts at now.
-				if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
+				const followClock = Effect.gen(function* () {
 					const horizon = nextLogsWindow(null, now)?.endMs ?? now
 					yield* dbExecute((db) =>
 						db.run(
@@ -474,49 +491,53 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 						),
 					)
 					return skip("source paused")
-				}
-
-				const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
-					Effect.map((keys) => keys.publicKey),
-					Effect.option,
-				)
-				if (ingestKey._tag === "None") return skip("ingest key unavailable")
-
-				const results = yield* Effect.forEach(
-					due,
-					(project) => pollProject(connection, project, ingestKey.value, tickStartedAt),
-					{ concurrency: PROJECT_CONCURRENCY },
-				)
-				const errors = Arr.flatMap(results, (result) => (result.error === null ? [] : [result.error]))
-				const resources = {
-					total: projects.length,
-					unhealthy: Arr.filter(projects, (project) => UNHEALTHY_STATUSES.has(project.status))
-						.length,
-				}
-				const revoked = Arr.some(results, (result) => result.revoked)
-				yield* reportTick(
-					connection,
-					revoked
-						? { _tag: "Disconnected", reason: REVOKED_REASON }
-						: errors[0] === undefined
-							? { _tag: "Ok", resources }
-							: { _tag: "Failed", error: Str.slice(0, 500)(errors[0]), resources },
-					now,
-				)
-				const summary = {
-					orgId,
-					skipped: null,
-					projects: due.length,
-					calls: Arr.reduce(results, 0, (sum, result) => sum + result.calls),
-					rows: Arr.reduce(results, 0, (sum, result) => sum + result.rows),
-					failures: errors.length,
-				} satisfies SupabaseLogsPollOrgSummary
-				yield* Effect.annotateCurrentSpan({
-					"maple.supabase.logs.rows": summary.rows,
-					"maple.supabase.logs.calls": summary.calls,
-					"maple.supabase.logs.failures": summary.failures,
 				})
-				return summary
+				const poll = Effect.gen(function* () {
+					const ingestKey = yield* ingestKeys.getOrCreate(orgId, SYSTEM_USER_ID).pipe(
+						Effect.map((keys) => keys.publicKey),
+						Effect.option,
+					)
+					if (ingestKey._tag === "None") return skip("ingest key unavailable")
+
+					const results = yield* Effect.forEach(
+						due,
+						(project) => pollProject(connection, project, ingestKey.value, tickStartedAt),
+						{ concurrency: PROJECT_CONCURRENCY },
+					)
+					const errors = Arr.flatMap(results, (result) =>
+						result.error === null ? [] : [result.error],
+					)
+					const resources = {
+						total: projects.length,
+						unhealthy: Arr.filter(projects, (project) => UNHEALTHY_STATUSES.has(project.status))
+							.length,
+					}
+					const revoked = Arr.some(results, (result) => result.revoked)
+					yield* reportTick(
+						connection.sourceId,
+						revoked
+							? pollFailureOutcome({ _tag: "Rejected", reason: REVOKED_REASON })
+							: errors[0] === undefined
+								? { _tag: "Ok", resources }
+								: pollFailureOutcome({ _tag: "Upstream", message: errors[0] }, resources),
+						now,
+					)
+					const summary = {
+						orgId,
+						skipped: null,
+						projects: due.length,
+						calls: Arr.reduce(results, 0, (sum, result) => sum + result.calls),
+						rows: Arr.reduce(results, 0, (sum, result) => sum + result.rows),
+						failures: errors.length,
+					} satisfies SupabaseLogsPollOrgSummary
+					yield* Effect.annotateCurrentSpan({
+						"maple.supabase.logs.rows": summary.rows,
+						"maple.supabase.logs.calls": summary.calls,
+						"maple.supabase.logs.failures": summary.failures,
+					})
+					return summary
+				})
+				return yield* poll.pipe(skipIfPaused(dbExecute, connection.sourceId, now, followClock))
 			})
 
 			const pollOrg = (orgId: OrgId) =>

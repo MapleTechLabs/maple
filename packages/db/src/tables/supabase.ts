@@ -96,6 +96,8 @@ export const SupabaseProjects = PG.table("supabase_projects", {
 			default: [],
 		}),
 		logsLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_lease_until" }),
+		// A failed logs poll's back-off (a rate limit, an ingest refusal).
+		logsHoldUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_hold_until" }),
 		logsLastPolledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "logs_last_polled_at" }),
 		logsError: PG.column(PG.nullable(PG.text), { name: "logs_error" }),
 		lastSeenAt: PG.column(PG.timestamptzMillis, { name: "last_seen_at" }),
@@ -149,6 +151,8 @@ export const SupabaseProjectInsights = PG.table("supabase_project_insights", {
 		advisorsError: PG.column(PG.nullable(PG.text), { name: "advisors_error" }),
 		queriesError: PG.column(PG.nullable(PG.text), { name: "queries_error" }),
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		// A rate-limited poll's back-off: no tick claims the row before then.
+		holdUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "hold_until" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 		updatedAt: PG.column(PG.timestamptzMillis, { name: "updated_at" }),
 	},
