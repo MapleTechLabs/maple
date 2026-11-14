@@ -136,8 +136,16 @@ type CellBase = {
  * template, so the MediaFrame branch keeps `shot`/`src` as required strings.
  */
 type Cell =
-	| (CellBase & { shot: string; src: string; width: number; height: number; marks?: never })
-	| (CellBase & { marks: Mark[]; shot?: never; src?: never; width?: never; height?: never });
+	| (CellBase & {
+			shot: string;
+			src: string;
+			width: number;
+			height: number;
+			/** The part of the capture the cell shows; see MediaFrame. */
+			crop: { x: number; y: number; zoom: number };
+			marks?: never;
+	  })
+	| (CellBase & { marks: Mark[]; shot?: never; src?: never; width?: never; height?: never; crop?: never });
 
 const cells: Cell[] = [
 	{
@@ -149,6 +157,7 @@ const cells: Cell[] = [
 		src: "/screenshots/surface-metrics.webp",
 		width: 1280,
 		height: 660,
+		crop: { x: 0.045, y: 0.1, zoom: 2.3 },
 	},
 	{
 		name: m.platform_map_name(),
@@ -159,6 +168,7 @@ const cells: Cell[] = [
 		src: "/screenshots/surface-map.webp",
 		width: 1280,
 		height: 660,
+		crop: { x: 0.14, y: 0.36, zoom: 2.2 },
 	},
 	{
 		name: m.platform_errors_name(),
@@ -169,6 +179,7 @@ const cells: Cell[] = [
 		src: "/screenshots/surface-errors.webp",
 		width: 1280,
 		height: 660,
+		crop: { x: 0.365, y: 0.17, zoom: 2.7 },
 	},
 	{
 		name: m.platform_alerts_name(),
@@ -179,6 +190,7 @@ const cells: Cell[] = [
 		src: "/screenshots/surface-alerts.webp",
 		width: 1280,
 		height: 660,
+		crop: { x: 0.045, y: 0.1, zoom: 2.2 },
 	},
 	{
 		name: m.platform_mcp_name(),
@@ -189,6 +201,7 @@ const cells: Cell[] = [
 		src: "/screenshots/surface-mcp.webp",
 		width: 1280,
 		height: 660,
+		crop: { x: 0.045, y: 0.1, zoom: 2.2 },
 	},
 	{
 		name: m.platform_cloud_name(),
@@ -208,7 +221,7 @@ const cells: Cell[] = [
 		>
 			{m.platform_title()}
 		</h2>
-		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{m.platform_lede()}</p>
+		<p class="mt-5 max-w-[62ch] text-[15px] leading-relaxed text-fg-muted md:text-base">{m.platform_lede()}</p>
 
 		<div
 			class="mt-12 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:mt-16 md:grid-cols-2 lg:grid-cols-3"
@@ -220,7 +233,7 @@ const cells: Cell[] = [
 							<h3 class="font-display text-lg leading-snug tracking-[-0.01em] text-fg md:text-xl">
 								{cell.name}
 							</h3>
-							<p class="mt-2.5 max-w-[46ch] text-[13px] leading-relaxed text-fg-muted">{cell.desc}</p>
+							<p class="mt-2.5 max-w-[46ch] text-sm leading-relaxed text-fg-muted">{cell.desc}</p>
 						</div>
 						{cell.marks ? (
 							/* Reuses `live-frame` and the same 1280×660 aspect as the
@@ -233,7 +246,7 @@ const cells: Cell[] = [
 							   a stray single mark reads as a mistake. 4 + 3 is the
 							   same deliberate shape at every width. */
 							<div
-								class="live-frame grid max-w-[380px] grid-cols-4 place-content-center justify-items-center gap-y-7 px-5"
+								class="live-frame grid grid-cols-4 place-content-center justify-items-center gap-y-7 px-5"
 								style={`aspect-ratio: ${MARK_ASPECT};`}
 							>
 								{cell.marks.map((mark) => (
@@ -261,21 +274,20 @@ const cells: Cell[] = [
 								))}
 							</div>
 						) : (
-							/* Capped, not stretched: a cell is a third of the shell at
-							   `lg` but full width on mobile, where an uncapped frame
-							   would swamp its own copy. */
+							/* A crop, not the whole capture: at a third of the shell
+							   the full screen is unreadable. */
 							<MediaFrame
 								label={cell.shot}
 								src={cell.src}
 								width={cell.width}
 								height={cell.height}
-								class="max-w-[380px]"
+								crop={cell.crop}
 							/>
 						)}
 						{cell.href && (
 							<a
 								href={cell.href}
-								class="group mt-auto inline-flex items-center gap-1.5 pt-2 text-xs text-fg-muted transition-colors hover:text-fg"
+								class="group mt-auto inline-flex items-center gap-1.5 pt-2 text-[13px] text-fg-muted transition-colors hover:text-fg"
 							>
 								{cell.link}
 								<span class="transition-transform group-hover:translate-x-0.5">→</span>

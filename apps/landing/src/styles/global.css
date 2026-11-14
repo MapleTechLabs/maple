@@ -57,6 +57,26 @@
 }
 
 /* ──────────────────────────────────────────────────────────────
+   MediaFrame crop window.
+   A capture scaled into a column is too small to read, so the frame
+   shows part of it at a legible size. The image runs off the right
+   and bottom edges, which fade out instead of cutting text in half.
+   ────────────────────────────────────────────────────────────── */
+.media-crop {
+	overflow: hidden;
+	mask-image:
+		linear-gradient(to right, black 80%, transparent), linear-gradient(to bottom, black 76%, transparent);
+	mask-composite: intersect;
+}
+.media-crop > img {
+	display: block;
+	width: calc(var(--crop-zoom) * 100%);
+	max-width: none;
+	height: auto;
+	translate: calc(var(--crop-x) * -100%) calc(var(--crop-y) * -100%);
+}
+
+/* ──────────────────────────────────────────────────────────────
    MediaFrame placeholder body.
    The dot grid is the product's own /infra texture, not a
    loading affordance — placeholders are deliberate reserved

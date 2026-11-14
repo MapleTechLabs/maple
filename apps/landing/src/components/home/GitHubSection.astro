@@ -38,8 +38,8 @@ const steps = [
 				</h2>
 			</div>
 			<div>
-				<p class="max-w-[58ch] text-sm leading-relaxed text-fg-muted">{m.home_github_lede()}</p>
-				<a href={featurePath} class="mt-5 inline-flex items-center gap-1.5 text-[13px] text-fg transition-colors hover:text-primary">
+				<p class="max-w-[58ch] text-[15px] leading-relaxed text-fg-muted md:text-base">{m.home_github_lede()}</p>
+				<a href={featurePath} class="mt-5 inline-flex items-center gap-1.5 text-sm text-fg transition-colors hover:text-primary">
 					{m.home_github_link()}
 					<span class="text-primary" aria-hidden="true">→</span>
 				</a>
@@ -53,7 +53,7 @@ const steps = [
 						<h3 class="border-b border-border pb-3.5 text-base font-medium tracking-[-0.01em] text-fg">
 							{step.title}
 						</h3>
-						<p class="mt-3.5 text-[13px] leading-relaxed text-fg-muted lg:min-h-[4.5rem]">{step.body}</p>
+						<p class="mt-3.5 text-sm leading-relaxed text-fg-muted lg:min-h-[4.5rem]">{step.body}</p>
 						<div class="mt-5">
 							{index === 0 && <PrReviewComment variant="compact" />}
 							{index === 1 && (

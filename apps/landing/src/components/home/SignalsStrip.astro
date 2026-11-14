@@ -9,6 +9,9 @@
  *
  * Columns are separated by the grid gap, not by rules — vertical rules here
  * would turn a strip into a table.
+ *
+ * Each plate is a crop: a whole capture in a third of the shell is unreadable,
+ * so the frame shows the part of the screen the heading is about.
  */
 import * as m from "../../paraglide/messages.js";
 import MediaFrame from "./MediaFrame.astro";
@@ -21,6 +24,7 @@ const columns = [
 		src: "/screenshots/strip-trace.webp",
 		width: 992,
 		height: 600,
+		crop: { x: 0.036, y: 0.07, zoom: 1.75 },
 	},
 	{
 		title: m.signals_logs_title(),
@@ -29,6 +33,7 @@ const columns = [
 		src: "/screenshots/strip-logs.webp",
 		width: 992,
 		height: 600,
+		crop: { x: 0.205, y: 0.07, zoom: 1.75 },
 	},
 	{
 		title: m.signals_session_title(),
@@ -37,6 +42,7 @@ const columns = [
 		src: "/screenshots/strip-session.webp",
 		width: 992,
 		height: 600,
+		crop: { x: 0.036, y: 0.07, zoom: 1.6 },
 	},
 ];
 ---
@@ -56,7 +62,7 @@ const columns = [
 							<h2 class="font-display text-[22px] leading-tight tracking-[-0.01em] text-fg md:text-2xl lg:text-[26px]">
 								{col.title}
 							</h2>
-							<p class="mt-3 max-w-[34ch] text-[13px] leading-relaxed text-fg-muted">{col.sub}</p>
+							<p class="mt-3 max-w-[38ch] text-[15px] leading-relaxed text-fg-muted">{col.sub}</p>
 						</div>
 						<MediaFrame
 							label={col.shot}
@@ -64,6 +70,7 @@ const columns = [
 							src={col.src}
 							width={col.width}
 							height={col.height}
+							crop={col.crop}
 						/>
 					</div>
 				))

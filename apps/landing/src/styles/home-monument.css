@@ -57,6 +57,7 @@
 }
 .monumental-home main > section:not(.monument-hero):not(.monument-product) :where(p, dd) {
 	line-height: 1.65;
+	text-wrap: pretty;
 }
 .monumental-home .live-frame {
 	border-color: var(--home-rule);
@@ -204,7 +205,9 @@
 	max-width: 42ch;
 	font-size: 18px;
 	line-height: 1.6;
-	color: var(--home-ink);
+	/* One step under the headline, so the two do not compete. */
+	color: color-mix(in oklab, var(--home-ink) 84%, var(--home-paper));
+	text-wrap: pretty;
 }
 .monument-actions {
 	display: flex;
