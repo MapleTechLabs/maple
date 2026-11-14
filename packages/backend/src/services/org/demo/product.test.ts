@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Random, String as Str } from "effect"
+import { Array as Arr, Effect, Predicate, Random, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { generateDemoProductRows } from "./product"
 
@@ -37,6 +37,19 @@ describe("generateDemoProductRows", () => {
 		expect(counts[0]).toBeGreaterThan(0)
 		expect(counts[1]).toBeLessThanOrEqual(counts[0] ?? 0)
 		expect(counts[2]).toBeLessThanOrEqual(counts[1] ?? 0)
+	})
+
+	it("gives breakdowns something to split by: campaigns on sessions, properties on events", () => {
+		const campaigns = new Set(Arr.map(rows.sessionRows, (row) => row.utm_campaign))
+		expect(campaigns.has("launch-week")).toBe(true)
+		expect(campaigns.has("")).toBe(true)
+		const methods = new Set(
+			Arr.map(
+				Arr.filter(rows.eventRows, (row) => row.event_name === "signup_completed"),
+				(row) => Predicate.hasProperty(row.attributes, "method") && row.attributes.method,
+			),
+		)
+		expect([...methods].sort()).toEqual(["email", "github", "google"])
 	})
 
 	it("keeps every event inside the window", () => {

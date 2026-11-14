@@ -28,6 +28,8 @@ export interface DeltaOptions {
 	readonly flatThreshold?: number
 	readonly format?: (magnitude: number) => string
 	readonly muteWorse?: boolean
+	/** What the change is measured against, for the hover text. Default "the previous period". */
+	readonly comparedWith?: string
 	readonly className?: string
 }
 
@@ -54,7 +56,9 @@ export const delta = <M>(h: HtmlBuilder<M>, options: DeltaOptions): Html => {
 	return h.span(
 		[
 			h.Class(cn(deltaStyles, tone, options.className)),
-			h.Title(`${flat ? "Flat" : rose ? "Up" : "Down"} ${magnitude} vs the previous period`),
+			h.Title(
+				`${flat ? "Flat" : rose ? "Up" : "Down"} ${magnitude} vs ${options.comparedWith ?? "the previous period"}`,
+			),
 			h.DataAttribute("slot", "delta"),
 		],
 		[

@@ -21,6 +21,8 @@ import * as Select from "@maple/views/ui/select"
 import { view as selectView, type SelectOption } from "@maple/views/ui/select-view"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { typography, typographyClass } from "@maple/views/ui/typography"
+import { eyebrow } from "@maple/views/ui/eyebrow"
+import { type WhereEditorAutocomplete, whereEditor } from "./query-builder/where-editor"
 import { FUNNEL_SESSION_DIMENSIONS } from "../dashboards/kit/funnel-definition"
 
 // The funnel step builder: an ordered list of steps, each an event name, a page path or (first
@@ -512,6 +514,45 @@ const stepRow = <M>(
 		...(options.eventStepExtra !== undefined && step.kind === "event"
 			? [options.eventStepExtra(step, index)]
 			: []),
+	])
+}
+
+export type StepFilterLineOptions<M> = Readonly<{
+	id: string
+	index: number
+	value: string
+	/** Why the clause does not parse, shown under it. */
+	error: string | undefined
+	onInput: (value: string) => M
+	/** The clause's suggestions, or what Enter does when the owner offers none. */
+	submit: Readonly<{ autocomplete: WhereEditorAutocomplete<M> }> | Readonly<{ onEnter: M }>
+}>
+
+/** An event step's property filter under its row (`plan = "pro"`), for `eventStepExtra`. */
+export const stepFilterLine = <M>(h: HtmlBuilder<M>, options: StepFilterLineOptions<M>): Html => {
+	const editor = {
+		id: options.id,
+		value: options.value,
+		ariaLabel: `Step ${options.index + 1} attribute filter`,
+		placeholder: 'plan = "pro" AND source = "cli"',
+		rows: 1,
+		className: "min-w-0 flex-1",
+		textareaClassName: "min-h-[28px] text-xs",
+		// One line: the control's own minimum is two rows.
+		controlClassName: "min-h-0 resize-none max-sm:min-h-0",
+		isInvalid: options.error !== undefined,
+		onInput: options.onInput,
+	}
+	return vstack(h, { gap: "0.5", className: "pl-6" }, [
+		hstack(h, { gap: "1.5" }, [
+			eyebrow(h, { className: "shrink-0" }, ["Where"]),
+			"autocomplete" in options.submit
+				? whereEditor(h, { ...editor, autocomplete: options.submit.autocomplete })
+				: whereEditor(h, { ...editor, onEnter: options.submit.onEnter }),
+		]),
+		...(options.error === undefined
+			? []
+			: [typography(h, { size: "2xs", tone: "error", as: "p" }, [options.error])]),
 	])
 }
 

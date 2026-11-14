@@ -90,6 +90,7 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 					orgId: tenant.orgId,
 					hours: safeHours,
 					visitorsPerHour: DEMO_VISITORS_PER_HOUR,
+					random: () => random.nextDoubleUnsafe(),
 				})
 				yield* ingestAll("session_replays", sessionRows)
 				yield* ingestAll("product_events", eventRows)

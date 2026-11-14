@@ -1,4 +1,4 @@
-import { FUNNEL_MAX_STEPS, FUNNEL_POPULATION_FILTER_FIELDS } from "@maple/query-model"
+import { FUNNEL_MAX_STEPS, FUNNEL_POPULATION_FILTER_FIELDS, FunnelBreakdownBy } from "@maple/query-model"
 import { Array as Arr, Option, Result, Schema, Struct } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -23,9 +23,18 @@ import { routeWindowStep, snapModeOf } from "../kit/route-window"
 import type { PresetValue } from "../kit/time-controls"
 import * as TimeRangePicker from "../kit/time-range-picker"
 import { CompleteReloadSpin, ResolveWindow, WaitForTypingPause } from "./command"
-import { anchorNameOf, pathsOf, type Search, toAnchor, toFunnelStep } from "./definition"
+import { draftFromFunnelStep } from "../dashboards/widget/funnel-filters"
+import {
+	anchorNameOf,
+	hasStepFilter,
+	pathsOf,
+	type Search,
+	toAnchor,
+	toFunnelStep,
+	withParsedFilter,
+} from "./definition"
 import { FilterKey, Message, type RequestMode, SlotName } from "./message"
-import { EventRow, FunnelRow, type Model, PathsRow } from "./model"
+import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PageRow, PathsRow } from "./model"
 import { requestSlots } from "./requests"
 
 type Return = PageReturn<Model, Message>
@@ -38,6 +47,10 @@ const SLOT_SCHEMAS = {
 	events: Schema.Array(EventRow),
 	previousEvents: Schema.Array(EventRow),
 	funnel: Schema.Array(FunnelRow),
+	previousFunnel: Schema.Array(FunnelRow),
+	funnelBreakdown: Schema.Array(FunnelGroupRow),
+	attributeKeys: Schema.Array(AttributeKeyRow),
+	pages: Schema.Array(PageRow),
 	paths: Schema.Array(PathsRow),
 } satisfies Record<SlotName, Schema.Top>
 
@@ -74,9 +87,10 @@ const searchHref = (search: Search) => hrefOf(AppRoute.ProductAnalytics({ search
  * Goes to `search`. A new definition (a row's Funnel) replaces the drafts; the drafts' own (a blank
  * Page anchor the URL leaves out) keeps them. Either way a pending typing pause is cancelled.
  */
-const navigate = (model: Model, search: Search, isReplace = false): Return => {
+const navigate = (model: Model, search: Search, isReplace = false, isNewDefinition = false): Return => {
 	const committed = committedOf(search)
-	const drafts = committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
+	const drafts =
+		!isNewDefinition && committed === committedOf(withDrafts(model)) ? { committed } : draftsOf(search)
 	return {
 		model: {
 			...model,
@@ -100,7 +114,7 @@ const committedOf = (search: Search): string =>
 	encodeJson({ steps: search.steps ?? [], anchor: search.anchor ?? null })
 
 const draftsOf = (search: Search): Pick<Model, "steps" | "anchor" | "committed"> => ({
-	steps: search.steps ?? [],
+	steps: Arr.map(search.steps ?? [], draftFromFunnelStep),
 	anchor: pathsOf(search).anchor,
 	committed: committedOf(search),
 })
@@ -121,7 +135,10 @@ const commit = (model: Model): Return => navigate(model, withDrafts(model), true
 
 const applyEdit = (model: Model, scope: StepScope, edit: StepEdit): Model =>
 	scope === "funnel"
-		? { ...model, steps: applyStepEdit(model.steps, edit, FUNNEL_MAX_STEPS) }
+		? {
+				...model,
+				steps: Arr.map(applyStepEdit(model.steps, edit, FUNNEL_MAX_STEPS), withParsedFilter),
+			}
 		: { ...model, anchor: applyAnchorEdit(model.anchor, edit) }
 
 /** A typed value waits for a pause before it runs; anything picked runs now. */
@@ -150,6 +167,20 @@ const withFilter = (search: Search, key: FilterKey, value: string | undefined): 
 	[key]: value === "" ? undefined : value,
 })
 
+/** The breakdown select's id among the page's selects. */
+export const BREAKDOWN_SELECT_ID = "funnel-breakdown"
+
+const decodeBreakdown = Schema.decodeUnknownOption(FunnelBreakdownBy)
+
+/** `""` clears the breakdown; anything that is not a dimension or `attribute:<key>` is ignored. */
+const pickBreakdown = (model: Model, value: string): Return =>
+	value === ""
+		? navigate(model, { ...withDrafts(model), breakdown: undefined }, true)
+		: Option.match(decodeBreakdown(value), {
+				onNone: () => ({ model }),
+				onSome: (breakdown) => navigate(model, { ...withDrafts(model), breakdown }, true),
+			})
+
 // ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
@@ -160,8 +191,14 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		events: Keyed.idle(),
 		previousEvents: Keyed.idle(),
 		funnel: Keyed.idle(),
+		previousFunnel: Keyed.idle(),
+		funnelBreakdown: Keyed.idle(),
+		attributeKeys: Keyed.idle(),
+		pages: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
+		// A funnel that arrives with a filter shows its lines, and keeps them while one is retyped.
+		showsStepFilters: hasStepFilter(Arr.map(route.search.steps ?? [], draftFromFunnelStep)),
 		typingVersion: 0,
 		navigatedTo: null,
 		stepCombos: {},
@@ -203,7 +240,11 @@ export const routeChanged = (
 		: isOwn
 			? {}
 			: { typingVersion }
-	const next: Model = { ...model, ...drafts, search: route.search }
+	const withDefinition: Model = { ...model, ...drafts, search: route.search }
+	const next: Model = {
+		...withDefinition,
+		showsStepFilters: withDefinition.showsStepFilters || hasStepFilter(withDefinition.steps),
+	}
 	const isAhead = !isNewDefinition && !isOwn && committedOf(withDrafts(next)) !== committedOf(route.search)
 	const step = routeWindowStep(model.search, route.search, {
 		resolve: (): Return => ({
@@ -269,11 +310,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ChangedEventsQuery: ({ value }) => ({ model: { ...model, eventsQuery: value } }),
 		PickedEventsKind: ({ kind }) => ({ model: { ...model, eventsKind: kind } }),
 		ClickedClearEventsFilters: () => ({ model: { ...model, eventsQuery: "", eventsKind: "all" } }),
+		// A row's Funnel and a suggested funnel start over: nothing half-typed carries into them.
 		ClickedStartFunnel: ({ step }) =>
-			navigate(model, { ...withDrafts(model), tab: "funnels", steps: [step] }),
+			navigate(model, { ...withDrafts(model), tab: "funnels", steps: [step] }, false, true),
 		ClickedStartPaths: ({ anchor }) => navigate(model, { ...withDrafts(model), tab: "paths", anchor }),
 		ClickedSuggestedFunnel: ({ steps }) =>
-			navigate(model, { ...withDrafts(model), tab: "funnels", steps }),
+			navigate(model, { ...withDrafts(model), tab: "funnels", steps }, false, true),
 		ChangedStep: ({ scope, edit }) => edited(model, scope, edit, edit._tag === "ChangedText"),
 		GotStepComboMessage: ({ id, message: inner }) => {
 			const next = stepComboUpdate(model.stepCombos, id, inner, (m) =>
@@ -292,12 +334,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const lifted = lift(model, next.commands, (m) => Message.GotSelectMessage({ id, message: m }), {
 				selects: { ...model.selects, [id]: next.model },
 			})
+			if (id === BREAKDOWN_SELECT_ID && next.outMessage !== undefined) {
+				const picked = pickBreakdown(lifted.model, next.outMessage.value)
+				return { ...picked, commands: [...(lifted.commands ?? []), ...(picked.commands ?? [])] }
+			}
 			const target =
 				next.outMessage === undefined ? Option.none() : stepEditOf(id, next.outMessage.value)
 			if (Option.isNone(target)) return lifted
 			const step = edited(lifted.model, target.value.scope, target.value.edit, false)
 			return { ...step, commands: [...(lifted.commands ?? []), ...(step.commands ?? [])] }
 		},
+		ToggledStepFilters: () => {
+			if (!model.showsStepFilters && !hasStepFilter(model.steps))
+				return { model: { ...model, showsStepFilters: true } }
+			// Turning it off clears the filters, so nothing keeps narrowing a step out of sight.
+			return commit({
+				...model,
+				showsStepFilters: false,
+				steps: Arr.map(model.steps, (step) =>
+					step.kind === "event" ? { kind: "event", eventName: step.eventName } : step,
+				),
+			})
+		},
+		SubmittedStepFilter: () => commit(model),
 		PausedTyping: ({ version }) => (version === model.typingVersion ? commit(model) : { model }),
 		PickedKeyBy: ({ keyBy }) => navigate(model, { ...withDrafts(model), keyBy }, true),
 		PickedWindow: ({ seconds }) => navigate(model, { ...withDrafts(model), within: seconds }, true),

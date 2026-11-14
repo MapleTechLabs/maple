@@ -1,7 +1,9 @@
 import {
 	DEFAULT_PATHS_BRANCHES,
 	DEFAULT_PATHS_DEPTH,
+	FUNNEL_BREAKDOWN_MAX_LIMIT,
 	FUNNEL_POPULATION_FILTER_FIELDS,
+	type FunnelBreakdownBy,
 	type FunnelKeyBy,
 	type FunnelPopulationFilters,
 	type FunnelStep,
@@ -14,6 +16,7 @@ import {
 	type ProductEventsPathsWidgetParams,
 } from "@maple/query-model"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
+import { compileFunnelStep } from "../dashboards/widget/funnel-filters"
 import {
 	completedSteps,
 	DEFAULT_FUNNEL_KEY_BY,
@@ -48,6 +51,7 @@ export type FunnelDefinition = Readonly<{
 	keyBy: FunnelKeyBy
 	windowSeconds: number
 	variant: FunnelVariant
+	breakdownBy: FunnelBreakdownBy | undefined
 }>
 
 export const funnelOf = (search: Search): FunnelDefinition => ({
@@ -58,9 +62,13 @@ export const funnelOf = (search: Search): FunnelDefinition => ({
 			? search.within
 			: DEFAULT_FUNNEL_WINDOW_SECONDS,
 	variant: search.view ?? "dropoff",
+	breakdownBy: search.breakdown,
 })
 
-/** The funnel's widget params, or `null` until a step has something to match on. */
+/**
+ * The funnel's widget params, or `null` until a step has something to match on. Both views show
+ * the steps table, so the time between steps and the leavers are always asked for.
+ */
 export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
 	const funnel = funnelOf(search)
 	const steps = Arr.map(completedSteps(funnel.steps), trimmed)
@@ -70,8 +78,23 @@ export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams 
 		steps,
 		keyBy: funnel.keyBy,
 		windowSeconds: funnel.windowSeconds,
-		details: funnel.variant === "dropoff",
+		details: true,
 	}
+}
+
+/** The same funnel with counts only: what the previous period is compared on. */
+export const funnelCountsParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
+	const params = funnelParamsOf(search)
+	return params === null ? null : { ...params, details: false }
+}
+
+/** The funnel split by its breakdown, as many groups as the query answers; `null` without one. */
+export const funnelBreakdownParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
+	const params = funnelCountsParamsOf(search)
+	const breakdownBy = funnelOf(search).breakdownBy
+	// One step has no conversion to compare, so the split is not asked for.
+	if (params === null || breakdownBy === undefined || params.steps.length < 2) return null
+	return { ...params, breakdownBy, breakdownLimit: FUNNEL_BREAKDOWN_MAX_LIMIT }
 }
 
 const clamp = (value: number | undefined, fallback: number, max: number): number =>
@@ -120,12 +143,31 @@ const trimmed = <S extends FunnelStep>(step: S): S => {
 	}
 }
 
-/** A draft step as the URL keeps it: no typed attribute filter (this page offers none). */
-export const toFunnelStep = (draft: StepDraft): FunnelStep => {
+/**
+ * A draft whose typed filter parses, with `attributeEquals` set to what it compiles to. One that
+ * does not parse yet is left alone, so it keeps the last filter that did, wherever the step moves.
+ */
+export const withParsedFilter = (draft: StepDraft): StepDraft => {
 	if (draft.kind !== "event") return draft
-	const { filterClause: _filterClause, ...step } = draft
+	const compiled = compileFunnelStep(draft)
+	if (!compiled.ok || compiled.value.kind !== "event") return draft
+	const { attributeEquals: _stale, ...rest } = draft
+	return compiled.value.attributeEquals === undefined
+		? rest
+		: { ...rest, attributeEquals: compiled.value.attributeEquals }
+}
+
+/** A draft step as the URL keeps it: the event and the last filter that parsed, no typed text. */
+export const toFunnelStep = (draft: StepDraft): FunnelStep => {
+	const parsed = withParsedFilter(draft)
+	if (parsed.kind !== "event") return parsed
+	const { filterClause: _clause, ...step } = parsed
 	return step
 }
+
+/** Whether any step narrows its event by a property. */
+export const hasStepFilter = (steps: ReadonlyArray<StepDraft>): boolean =>
+	Arr.some(steps, (step) => step.kind === "event" && (step.filterClause ?? "") !== "")
 
 /** The paths anchor of a draft; a session step has no place in a sequence. */
 export const toAnchor = (draft: StepDraft): PathsAnchor => {

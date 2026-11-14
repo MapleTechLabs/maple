@@ -1,10 +1,15 @@
 import { ProductEventsFunnelWidgetParams, ProductEventsPathsWidgetParams } from "@maple/query-model"
 import {
+	getProductEventAttributeKeys,
 	getProductEventNames,
 	getProductEventsFunnelWidget,
 	getProductEventsPathsWidget,
 } from "@maple/web-data/warehouse/product-events"
-import { getWebAnalyticsBreakdowns, WebAnalyticsFilterFields } from "@maple/web-data/warehouse/web-analytics"
+import {
+	getWebAnalyticsBreakdowns,
+	getWebAnalyticsPages,
+	WebAnalyticsFilterFields,
+} from "@maple/web-data/warehouse/web-analytics"
 import { Clock, Duration, Effect, Schema } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
@@ -60,6 +65,16 @@ export const FetchFunnel = define(
 	"FetchProductAnalyticsFunnel",
 	{ ...Window, ...ProductEventsFunnelWidgetParams.fields },
 	(data) => getProductEventsFunnelWidget({ data }).pipe(Effect.map((response) => response.data)),
+)
+export const FetchAttributeKeys = define(
+	"FetchProductAnalyticsAttributeKeys",
+	{ ...Window, limit: Schema.optional(Schema.Number) },
+	(data) => getProductEventAttributeKeys({ data }).pipe(Effect.map((response) => response.data)),
+)
+export const FetchPages = define(
+	"FetchProductAnalyticsPages",
+	{ ...Window, limit: Schema.optional(Schema.Number) },
+	(data) => getWebAnalyticsPages({ data }).pipe(Effect.map((response) => response.data)),
 )
 export const FetchPaths = define(
 	"FetchProductAnalyticsPaths",
