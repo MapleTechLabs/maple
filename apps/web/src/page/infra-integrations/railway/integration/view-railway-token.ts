@@ -6,12 +6,15 @@ import * as Field from "@maple/views/ui/field"
 import { input } from "@maple/views/ui/input"
 import { whereToFind } from "../../../kit/connect-flow"
 import { Message } from "../../../integrations/message"
-import type { RailwayCardModel } from "./railway"
+import { type RailwayCardModel, RailwayMessage } from "./railway"
 import { hstack } from "@maple/views/ui/stack"
 
 // The connect flow's Connect step, and Update credential on the connected card.
 
 type H = HtmlBuilder<Message>
+
+/** A Railway message, as the hub carries it. */
+export const toHub = (message: RailwayMessage): Message => Message.GotRailwayMessage({ message })
 
 const TOKENS_URL = "https://railway.com/account/tokens"
 const LABEL_ID = "railway-token-label"
@@ -33,7 +36,7 @@ export const railwayTokenForm = (
 	const ids: Field.FieldIds = { ...base, description: DESCRIPTION_ID }
 	const state = Field.stateOf(form.token, hasError)
 	return h.form(
-		[h.Class("flex w-full flex-col gap-4 text-left"), h.OnSubmit(Message.SubmittedRailwayToken())],
+		[h.Class("flex w-full flex-col gap-4 text-left"), h.OnSubmit(toHub(RailwayMessage.SubmittedToken()))],
 		[
 			Field.field(h, { className: "items-stretch gap-2", state }, [
 				hstack(h, { gap: "2", justify: "between" }, [
@@ -48,7 +51,7 @@ export const railwayTokenForm = (
 						h.Autocomplete("off"),
 						h.Placeholder("Paste a Railway API token"),
 						...Field.controlAttributes(h, form.token, (message) =>
-							Message.GotRailwayTokenMessage({ message }),
+							toHub(RailwayMessage.GotTokenMessage({ message })),
 						),
 						h.AriaLabelledBy(LABEL_ID),
 						...(hasError ? [h.AriaInvalid(true)] : []),
@@ -75,7 +78,7 @@ export const railwayTokenForm = (
 								{
 									variant: "outline",
 									isDisabled: form.isSubmitting,
-									attributes: [h.OnClick(Message.ClickedRailwayRotateCancel())],
+									attributes: [h.OnClick(toHub(RailwayMessage.ClickedRotateCancel()))],
 								},
 								["Cancel"],
 							),

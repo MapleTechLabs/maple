@@ -154,7 +154,8 @@ const titleContent = (h: H, model: Model): Html =>
 	pageTitle(h, { title: model.serviceName }, [
 		serviceDot(h, {
 			serviceName: model.serviceName,
-			className: "relative -top-px mr-2.5 inline-block size-3 align-middle",
+			size: "lg",
+			className: "relative -top-px mr-2.5 inline-block align-middle",
 		}),
 		model.serviceName,
 	])

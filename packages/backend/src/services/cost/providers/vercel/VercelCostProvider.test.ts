@@ -7,6 +7,7 @@ import type { Database } from "@maple/backend/platform/DatabaseLive"
 import type { Env } from "@maple/backend/platform/Env"
 import type { CostProviderError, CostPullWindow } from "../../CostProvider"
 import { connectFakeVercel, type FakeVercel, fakeVercelDeps, jsonl, makeFakeVercel } from "./fake-vercel"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { VercelCostProvider } from "./VercelCostProvider"
 
 const trackedDbs: TestDb[] = []
@@ -282,7 +283,8 @@ describe("VercelCostProvider", () => {
 				const refusals = yield* Effect.forEach([401, 403, 404, 410, 429, 500, 503], (status) =>
 					Effect.gen(function* () {
 						world.chargesStatus = status
-						const error = yield* Effect.flip(pull(ORG, connectionRef))
+						// A 5xx is retried; the clock moves the back-off along.
+						const error = yield* Effect.flip(VendorFake.elapsing(pull(ORG, connectionRef)))
 						return [status, error.reason, error.requests]
 					}),
 				)

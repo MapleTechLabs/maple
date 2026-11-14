@@ -21,6 +21,12 @@ export interface TinybirdJwtScope {
 	readonly filter: string
 }
 
+/**
+ * What reads with the token: SQL a customer wrote, or a query Maple compiled. Each draws from its
+ * own Tinybird rate bucket, so a customer's raw SQL cannot starve the org's alert evaluation.
+ */
+export type OrgReadJwtUse = "raw-sql" | "trusted-read"
+
 export interface MintOrgReadJwtInput {
 	/** The explicitly configured HMAC signing secret. */
 	readonly signingKey: string
@@ -36,6 +42,8 @@ export interface MintOrgReadJwtInput {
 	readonly ttlSeconds: number
 	/** Optional Tinybird-enforced request ceiling for this org's token bucket. */
 	readonly rpsLimit?: number
+	/** Which bucket the token draws from; `raw-sql` when unset. */
+	readonly use?: OrgReadJwtUse
 }
 
 /**
@@ -43,8 +51,8 @@ export interface MintOrgReadJwtInput {
  * one noisy tenant cannot consume every org's allowance, while hashing the org
  * id keeps customer identifiers out of Tinybird's token-name analytics.
  */
-const tokenNameForOrg = (orgId: string): string =>
-	`maple-raw-sql-${Str.slice(0, 16)(createHash("sha256").update(orgId).digest("hex"))}`
+const tokenNameForOrg = (orgId: string, use: OrgReadJwtUse): string =>
+	`${use === "raw-sql" ? "maple-raw-sql" : "maple-read"}-${Str.slice(0, 16)(createHash("sha256").update(orgId).digest("hex"))}`
 
 /**
  * Mint a per-org Tinybird read JWT scoped to `datasourceNames`, each filtered to
@@ -63,7 +71,7 @@ export function mintOrgReadJwt(input: MintOrgReadJwtInput): string {
 		{ alg: "HS256", typ: "JWT" },
 		{
 			workspace_id: input.workspaceId,
-			name: tokenNameForOrg(input.orgId),
+			name: tokenNameForOrg(input.orgId, input.use ?? "raw-sql"),
 			exp: input.nowSeconds + input.ttlSeconds,
 			scopes,
 			...(!(input.rpsLimit === undefined) ? { limits: { rps: input.rpsLimit } } : undefined),

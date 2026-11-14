@@ -14,13 +14,13 @@ import {
 } from "../../../kit/connect-flow"
 import { relativeTime } from "../../../kit/relative-time"
 import { catalogEntry } from "../../../integrations/catalog"
-import { fold } from "../../../integrations/derive"
+import { fold } from "../../../integrations/overview"
 import type { FlowStage } from "../../../integrations/flow"
 import { railwayReach } from "./flow-railway"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
-import { unsyncedEnvironments } from "./railway"
-import { railwayTokenForm } from "./view-railway-token"
+import { RailwayMessage, unsyncedEnvironments } from "./railway"
+import { railwayTokenForm, toHub } from "./view-railway-token"
 import { Array as Arr, Record as Rec, Option } from "effect"
 
 // Railway in the connect flow: paste a token, then watch the first sync land.
@@ -128,7 +128,7 @@ const connectStep = (h: H, model: Model): Html => {
 								variant: "outline",
 								size: "sm",
 								className: "w-fit",
-								attributes: [h.OnClick(Message.ClickedRailwayRotate())],
+								attributes: [h.OnClick(toHub(RailwayMessage.ClickedRotate()))],
 							},
 							["Use a different token"],
 						),

@@ -16,7 +16,7 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import { detailRailField, detailRailGroup, detailRailRow } from "@maple/views/ui/detail-rail"
 import * as SelectView from "@maple/views/ui/select-view"
 import { tooltipTrigger } from "@maple/views/ui/tooltip-host"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { actorChip } from "../../kit/issue-actor"
 import { clampPriority, PRIORITY_LABEL, priorityBarsIcon } from "../kit/priority"
 import { isIssueSeverity, SEVERITY_LABEL, SEVERITY_ORDER, severityDot } from "../../kit/issue-severity"
@@ -292,10 +292,12 @@ export const issueSidebar = (
 		]),
 		detailRailGroup(h, "Scope", [
 			detailRailField(h, { label: "Service", title: issue.serviceName }, [
-				hstack(h, { gap: "2", shrink: true, as: "span" }, [
-					serviceDot(h, { serviceName: issue.serviceName, size: "sm" }),
-					typography(h, { size: "sm", tone: "foreground", truncate: true }, [issue.serviceName]),
-				]),
+				serviceLabel(h, {
+					serviceName: issue.serviceName,
+					dot: "sm",
+					size: "sm",
+					tone: "foreground",
+				}),
 			]),
 			detailRailField(
 				h,

@@ -9,7 +9,7 @@ import { traceIdBadge } from "@maple/views/ui/trace-badges"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { timestamp } from "@maple/views/ui/timestamp"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { computeServiceShares, serviceSpectrumBar } from "@maple/views/traces/service-shares"
 import { Message } from "./message"
@@ -147,18 +147,11 @@ export const anatomyStrip = (h: HtmlBuilder<Message>, input: AnatomyInput): Html
 				h,
 				{ align: "center", wrap: true, className: "gap-x-4 gap-y-1" },
 				Arr.map(shares, (share) =>
-					hstack(
+					serviceLabel(
 						h,
-						{
-							gap: "1.5",
-							align: "center",
-							as: "span",
-							className: typographyClass({ mono: true, size: "xs" }),
-						},
+						{ serviceName: share.serviceName, dot: "sm", size: "xs", truncate: "none" },
 						[
-							serviceDot(h, { serviceName: share.serviceName, size: "sm" }),
-							h.span([], [share.serviceName]),
-							typography(h, { size: "3xs", tone: "muted", numeric: true }, [
+							typography(h, { size: "3xs", tone: "muted", mono: true, numeric: true }, [
 								formatPercent(share.percent / 100),
 							]),
 						],

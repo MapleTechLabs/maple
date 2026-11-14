@@ -11,7 +11,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { statFigure } from "@maple/views/ui/stat-figure"
 import { statusDot } from "@maple/views/ui/status-dot"
 import { traceIdBadge } from "@maple/views/ui/trace-badges"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Message } from "./message"
 import { hstack } from "@maple/views/ui/stack"
@@ -39,9 +39,7 @@ export const httpInfoOf = (span: SpanNodeData) =>
 export const httpStatusOf = (span: SpanNodeData): number | null | undefined => httpInfoOf(span)?.statusCode
 
 const shareChip = (h: HtmlBuilder<Message>, share: ServiceShare): Html =>
-	hstack(h, { as: "span", gap: "1.5", className: typographyClass({ size: "xs", mono: true }) }, [
-		serviceDot(h, { serviceName: share.serviceName, size: "sm" }),
-		h.span([], [share.serviceName]),
+	serviceLabel(h, { serviceName: share.serviceName, dot: "sm", size: "xs", truncate: "none" }, [
 		typography(h, { size: "3xs", tone: "muted", numeric: true }, [formatPercent(share.percent / 100)]),
 	])
 

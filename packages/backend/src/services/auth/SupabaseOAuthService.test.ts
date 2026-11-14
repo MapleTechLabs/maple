@@ -46,7 +46,7 @@ const makeLayer = (
 			Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...extra }))),
 		),
 		FetchHttpClient.layer,
-		Layer.succeed(FetchHttpClient.Fetch, fake.fetch),
+		fake.layer,
 	)
 
 /** A Supabase call made through the service's token handling, as discovery makes it. */

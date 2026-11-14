@@ -16,7 +16,7 @@ import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { relativeTime } from "../../kit/relative-time"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { rowLink } from "@maple/views/ui/table"
+import { rowNameLink } from "@maple/views/ui/table"
 import { newStatusPageHref, publicAddress, statusPageHref } from "../shared/commands"
 import { COMPONENT_STATUS_LABEL, COMPONENT_STATUS_TONE, type StatusPageSummary } from "../shared/derive"
 import { Message } from "./message"
@@ -89,7 +89,10 @@ const VISIBILITY_BADGE = {
 	public: { label: "Public", variant: "outline" },
 	password: { label: "Password", variant: "info" },
 	internal: { label: "Internal", variant: "secondary" },
-} as const satisfies Record<StatusPageVisibility, { label: string; variant: "outline" | "info" | "secondary" }>
+} as const satisfies Record<
+	StatusPageVisibility,
+	{ label: string; variant: "outline" | "info" | "secondary" }
+>
 
 const lastPublished = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => {
 	const page = summary.page
@@ -123,20 +126,15 @@ const pageRow = (h: H, summary: StatusPageSummary, inputs: ViewInputs): Html => 
 					h.div(
 						[h.Class("min-w-0")],
 						[
-							rowLink(
-								h,
-								{
-									href: statusPageHref(page.id),
-									className: "block truncate text-sm font-medium",
-								},
-								[page.name],
-							),
+							rowNameLink(h, { href: statusPageHref(page.id), name: page.name }),
 							hstack(h, { gap: "2", align: "center", className: "mt-0.5 min-w-0" }, [
 								badge(h, { variant: VISIBILITY_BADGE[page.visibility].variant, size: "sm" }, [
 									VISIBILITY_BADGE[page.visibility].label,
 								]),
 								typography(h, { size: "xs", tone: "muted", mono: true, truncate: true }, [
-									page.visibility === "internal" ? "Members only, in Maple" : publicAddress(page.slug),
+									page.visibility === "internal"
+										? "Members only, in Maple"
+										: publicAddress(page.slug),
 								]),
 							]),
 						],

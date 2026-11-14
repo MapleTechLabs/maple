@@ -11,7 +11,8 @@ import {
 	tableRow,
 } from "@maple/views/ui/table"
 import { tableSkeleton } from "@maple/views/ui/table-skeleton"
-import { errorRateValue, latencyValue, serviceDot } from "@maple/views/ui/values"
+import { errorRateValue, latencyValue } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { hrefFor } from "../../route"
 import { linkRow, rowLink } from "../kit/row-link"
@@ -53,15 +54,22 @@ const serviceRow = (h: HtmlBuilder<Message>, entry: ServiceCatalogEntry, query: 
 					className: hstackClass({ gap: "2" }),
 				},
 				[
-					serviceDot(h, { serviceName: entry.serviceName }),
-					typography(h, { weight: "medium" }, [entry.serviceName]),
-					...(entry.serviceNamespaces.length > 0
-						? [
-								typography(h, { size: "xs", tone: "muted", truncate: true }, [
-									Arr.join(entry.serviceNamespaces, ", "),
-								]),
-							]
-						: []),
+					serviceLabel(
+						h,
+						{
+							serviceName: entry.serviceName,
+							weight: "medium",
+							truncate: "none",
+							className: "min-w-0",
+						},
+						entry.serviceNamespaces.length > 0
+							? [
+									typography(h, { size: "xs", tone: "muted", truncate: true }, [
+										Arr.join(entry.serviceNamespaces, ", "),
+									]),
+								]
+							: [],
+					),
 				],
 			),
 		]),

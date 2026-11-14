@@ -14,10 +14,9 @@ import {
 } from "@maple/views/ui/table"
 import { truncatedId } from "@maple/views/ui/truncated-id"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { relativeTime } from "../../kit/relative-time"
 import { typographyClass } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 export type OccurrencesTableInputs = Readonly<{ nowMs: number; timeZone: string }>
@@ -47,12 +46,7 @@ const occurrenceRow = <M>(
 				],
 				typographyClass({ tone: "muted", numeric: true }),
 			),
-			tableCell(h, [
-				hstack(h, { gap: "1.5", inline: true, as: "span" }, [
-					serviceDot(h, { serviceName: trace.serviceName, size: "sm" }),
-					h.span([], [trace.serviceName]),
-				]),
-			]),
+			tableCell(h, [serviceLabel(h, { serviceName: trace.serviceName, dot: "sm", truncate: "none" })]),
 			truncatedTableCell(h, [
 				truncatedText(h, { text: trace.exceptionMessage }, [
 					Arr.headNonEmpty(Str.split("\n")(trace.exceptionMessage)),

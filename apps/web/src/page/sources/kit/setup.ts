@@ -11,7 +11,7 @@ import { panel } from "@maple/views/ui/panel"
 import * as Tabs from "@maple/views/ui/tabs"
 import * as TabsView from "@maple/views/ui/tabs-view"
 import { codeBlock } from "../../kit/code-block"
-import { maskedToken, sourceSnippets } from "./snippets"
+import { maskedToken, type SourceSnippet, sourceSnippets } from "./snippets"
 import { typography } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 
@@ -94,80 +94,23 @@ export type SetupViewConfig<P> = Readonly<{
 	keyPrefix: string | null
 	/** Prefix for the copyable inputs' ids, unique on the page. */
 	idPrefix: string
+	/** The connect flow: the snippets alone, without the endpoint and header panel or the roll note. */
+	isCompact?: boolean
 }>
 
 export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => {
-	const { model, toParentMessage, token } = config
+	const { model, token } = config
 	const shown = token ?? maskedToken(config.keyPrefix)
 	const snippets = sourceSnippets(config.platform, shown, config.name)
 	const snippet = Option.getOrElse(
 		Arr.findFirst(snippets, (entry) => entry.id === model.tabs.selected),
 		() => snippets[0],
 	)
+	const isCompact = config.isCompact ?? false
 	return vstack(h, { gap: "4" }, [
-		panel(h, { padded: true, className: "gap-3" }, [
-			vstack(h, { gap: "1.5" }, [
-				eyebrow(h, {}, ["OTLP endpoint"]),
-				copyableField(h, {
-					id: `${config.idPrefix}-endpoint`,
-					value: ingestUrl,
-					copyLabel: "OTLP endpoint",
-					copy: model.endpointCopy,
-					toCopyMessage: (message) => toParentMessage(Message.GotEndpointCopyMessage({ message })),
-				}),
-			]),
-			vstack(h, { gap: "1.5" }, [
-				eyebrow(h, {}, ["Header"]),
-				token === null
-					? h.div(
-							[
-								h.Class(
-									"bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs",
-								),
-							],
-							["Authorization: Bearer ", shown],
-						)
-					: copyableField(h, {
-							id: `${config.idPrefix}-header`,
-							value: `Authorization: Bearer ${token}`,
-							copyLabel: "Header",
-							copy: model.headerCopy,
-							toCopyMessage: (message) =>
-								toParentMessage(Message.GotHeaderCopyMessage({ message })),
-						}),
-			]),
-		]),
-		...(snippet === undefined
-			? []
-			: [
-					vstack(h, { gap: "2" }, [
-						...(snippets.length > 1
-							? [
-									h.submodel({
-										slotId: `${config.idPrefix}-snippet-tabs`,
-										model: model.tabs,
-										view: TabsView.view,
-										toParentMessage: (message) =>
-											toParentMessage(Message.GotTabsMessage({ message })),
-										viewInputs: {
-											variant: "underline",
-											labels: Arr.map(snippets, (entry) => entry.label),
-											panel: () => undefined,
-										},
-									}),
-								]
-							: []),
-						codeBlock(h, {
-							code: snippet.code,
-							language: snippets.length > 1 ? snippet.language : snippet.label,
-							lang: snippet.language,
-							copy: model.codeCopy,
-							toCopyMessage: (message) =>
-								toParentMessage(Message.GotCodeCopyMessage({ message })),
-						}),
-					]),
-				]),
-		...(token === null
+		...(isCompact ? [] : [reference(h, config, shown)]),
+		...snippetTabs(h, config, snippets, snippet),
+		...(token === null && !isCompact
 			? [
 					typography(h, { size: "xs", tone: "muted", as: "p" }, [
 						"The token is only shown when the source is created or rolled. Roll it to get a new one.",
@@ -175,4 +118,80 @@ export const view = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>): Html => 
 				]
 			: []),
 	])
+}
+
+/** The OTLP endpoint and the header, for a sender set up by hand. */
+const reference = <P>(h: HtmlBuilder<P>, config: SetupViewConfig<P>, shown: string): Html => {
+	const { model, toParentMessage, token } = config
+	return panel(h, { padded: true, className: "gap-3" }, [
+		vstack(h, { gap: "1.5" }, [
+			eyebrow(h, {}, ["OTLP endpoint"]),
+			copyableField(h, {
+				id: `${config.idPrefix}-endpoint`,
+				value: ingestUrl,
+				copyLabel: "OTLP endpoint",
+				copy: model.endpointCopy,
+				toCopyMessage: (message) => toParentMessage(Message.GotEndpointCopyMessage({ message })),
+			}),
+		]),
+		vstack(h, { gap: "1.5" }, [
+			eyebrow(h, {}, ["Header"]),
+			token === null
+				? h.div(
+						[
+							h.Class(
+								"bg-surface-sunken text-muted-foreground rounded-md border px-3 py-2 font-mono text-xs",
+							),
+						],
+						["Authorization: Bearer ", shown],
+					)
+				: copyableField(h, {
+						id: `${config.idPrefix}-header`,
+						value: `Authorization: Bearer ${token}`,
+						copyLabel: "Header",
+						copy: model.headerCopy,
+						toCopyMessage: (message) =>
+							toParentMessage(Message.GotHeaderCopyMessage({ message })),
+					}),
+		]),
+	])
+}
+
+/** The platform's snippets, behind tabs when it has more than one. */
+const snippetTabs = <P>(
+	h: HtmlBuilder<P>,
+	config: SetupViewConfig<P>,
+	snippets: ReadonlyArray<SourceSnippet>,
+	snippet: SourceSnippet | undefined,
+): ReadonlyArray<Html> => {
+	const { model, toParentMessage } = config
+	return snippet === undefined
+		? []
+		: [
+				vstack(h, { gap: "2" }, [
+					...(snippets.length > 1
+						? [
+								h.submodel({
+									slotId: `${config.idPrefix}-snippet-tabs`,
+									model: model.tabs,
+									view: TabsView.view,
+									toParentMessage: (message) =>
+										toParentMessage(Message.GotTabsMessage({ message })),
+									viewInputs: {
+										variant: "underline",
+										labels: Arr.map(snippets, (entry) => entry.label),
+										panel: () => undefined,
+									},
+								}),
+							]
+						: []),
+					codeBlock(h, {
+						code: snippet.code,
+						language: snippets.length > 1 ? snippet.language : snippet.label,
+						lang: snippet.language,
+						copy: model.codeCopy,
+						toCopyMessage: (message) => toParentMessage(Message.GotCodeCopyMessage({ message })),
+					}),
+				]),
+			]
 }

@@ -2183,6 +2183,55 @@ describe("AlertsService", () => {
 			)
 		})
 
+		it.effect("never sends a delivery row to a destination of another org", () => {
+			const fixedTime = 1_710_000_225_000
+			const testDb = createTestDb(trackedDbs)
+			let requestCount = 0
+			const countingFetch = (async () => {
+				requestCount += 1
+				return new Response("", { status: 400, headers: { "content-type": "application/json" } })
+			}) as typeof fetch
+
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(fixedTime)
+				const alerts = yield* alertServices
+				const victimOrg = asOrgId("org_drain_victim")
+				const victimUser = asUserId("user_drain_victim")
+				const victimDestination = yield* createWebhookDestination(alerts, victimOrg, victimUser)
+				const otherOrg = asOrgId("org_drain_other")
+				const otherUser = asUserId("user_drain_other")
+				const otherDestination = yield* createWebhookDestination(alerts, otherOrg, otherUser)
+				const otherRule = yield* createErrorRateRule(alerts, otherOrg, otherUser, otherDestination.id)
+				yield* breakRuleQuery(testDb, otherRule.id)
+
+				// A row of one org naming the other org's destination: no writer produces one, and the
+				// drain loads destinations by id alone.
+				yield* seedDeliveryFor(testDb, otherOrg, otherRule.id, victimDestination.id, fixedTime - 1, 1)
+				yield* alerts.runSchedulerTick()
+
+				assert.strictEqual(requestCount, 0)
+				const events = yield* alerts.listDeliveryEvents(otherOrg)
+				const refused = Option.getOrUndefined(
+					Arr.findFirst(
+						events.events,
+						(event: { deliveryKey: string }) => event.deliveryKey === "dead-destination-1",
+					),
+				)
+				assert.strictEqual(refused?.status, "failed")
+				assert.strictEqual(refused?.errorMessage, "Destination not found")
+				// The failure is not counted against the destination it was aimed at.
+				const health = yield* readDestinationHealth(testDb, victimDestination.id)
+				assert.strictEqual(health?.enabled, true)
+				assert.strictEqual(health?.consecutiveFailures, 0)
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+						fetch: countingFetch,
+					}),
+				),
+			)
+		})
+
 		it.effect("never disables a destination over Maple's own delivery faults", () => {
 			const fixedTime = 1_710_000_250_000
 			const testDb = createTestDb(trackedDbs)

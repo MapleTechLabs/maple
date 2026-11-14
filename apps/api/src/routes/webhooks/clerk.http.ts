@@ -1,8 +1,10 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
+import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
 	CLERK_MEMBERSHIP_EVENTS,
 	decodeClerkEnvelope,
@@ -35,6 +37,12 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  *
  * Public route; authenticity is the Svix signature (`CLERK_WEBHOOK_SECRET`).
  * Any other event type is acknowledged with 200 so Clerk does not retry it.
+ *
+ * One Clerk instance serves every region, so each region's API registers its
+ * own endpoint (and secret) and receives every event. Every region runs the
+ * revocation sweep, because a credential is honoured by the instance that
+ * minted it; only the organization's home region writes the audit entry and
+ * the product event, and `user.created` is counted by the default region.
  */
 const ROUTE = "/webhooks/clerk"
 
@@ -47,6 +55,7 @@ const handler = Effect.gen(function* () {
 	const productEvents = yield* ProductEventsService
 	const revocation = yield* MembershipRevocationService
 	const audit = yield* AuditLogService
+	const regions = yield* OrganizationRegionService
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -94,29 +103,50 @@ const handler = Effect.gen(function* () {
 			})
 			return webhookText("Unrecognized membership identifiers", 400)
 		}
-		// Clerk's payload names the member, never the admin who acted, so
-		// attributing this to a user would be a guess. `system` says truthfully
-		// that Maple learned of the change rather than made it. Recorded before
-		// the sweep: a revocation that fails and retries must not lose the entry.
-		yield* audit.record({
-			orgId: orgId.value,
-			actor: { type: "system" },
-			source: "system",
-			action: `member.${CLERK_MEMBERSHIP_EVENTS[event]}`,
-			affectedUserId: userId.value,
-			...(payload.value.role !== undefined ? { metadata: { role: payload.value.role } } : undefined),
+		const home = yield* regions.servedHere(orgId.value)
+		yield* Effect.annotateCurrentSpan({ "maple.webhook.org_home": home })
+		// Recording is the home region's alone; the sweep below is every region's. An API key is
+		// honoured by the instance that minted it, and an organization that chose its region after
+		// sign-up may still have keys on the default one.
+		const recorded = home === "here"
+		// Recording on a guess would put the entry in the wrong region, or in two: Svix redelivers.
+		const regionUnknown = Effect.gen(function* () {
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 503,
+				"maple.webhook.outcome": "region_unknown",
+			})
+			return webhookText("Could not tell which region the organization lives in", 503)
 		})
-		const productEvent = membershipProductEvent(event, payload.value, timestamp)
+		if (recorded) {
+			// Clerk's payload names the member, never the admin who acted, so
+			// attributing this to a user would be a guess. `system` says truthfully
+			// that Maple learned of the change rather than made it. Recorded before
+			// the sweep: a revocation that fails and retries must not lose the entry.
+			yield* audit.record({
+				orgId: orgId.value,
+				actor: { type: "system" },
+				source: "system",
+				action: `member.${CLERK_MEMBERSHIP_EVENTS[event]}`,
+				affectedUserId: userId.value,
+				...(payload.value.role !== undefined
+					? { metadata: { role: payload.value.role } }
+					: undefined),
+			})
+		}
+		const productEvent = recorded ? membershipProductEvent(event, payload.value, timestamp) : undefined
 		if (event === "organizationMembership.created") {
+			if (home === "unknown") return yield* regionUnknown
 			if (productEvent !== undefined) yield* productEvents.track(productEvent)
 			yield* Effect.annotateCurrentSpan({
 				"http.response.status_code": 200,
-				"maple.webhook.outcome": "handled",
+				"maple.webhook.outcome": recorded ? "handled" : "not_home_region",
 			})
 			return webhookText("ok", 200)
 		}
 		if (event === "organizationMembership.deleted") {
 			const response = yield* revoke(revocation.revokeMembership(orgId.value, userId.value))
+			// Swept first, so an unanswered lookup never leaves credentials standing while it retries.
+			if (home === "unknown" && response.status === 200) return yield* regionUnknown
 			// Only once the sweep succeeded: a 500 is retried by Clerk and would emit it twice.
 			if (response.status === 200 && productEvent !== undefined)
 				yield* productEvents.track(productEvent)
@@ -135,9 +165,11 @@ const handler = Effect.gen(function* () {
 				Effect.annotateLogs({ orgId: orgId.value, userId: userId.value }),
 			)
 			yield* Effect.annotateCurrentSpan({ "maple.webhook.role_missing": true })
-			return yield* revoke(revocation.invalidateMembership(userId.value))
+			const evicted = yield* revoke(revocation.invalidateMembership(userId.value))
+			return home === "unknown" && evicted.status === 200 ? yield* regionUnknown : evicted
 		}
-		return yield* revoke(revocation.demoteMembership(orgId.value, userId.value, [role.value]))
+		const demoted = yield* revoke(revocation.demoteMembership(orgId.value, userId.value, [role.value]))
+		return home === "unknown" && demoted.status === 200 ? yield* regionUnknown : demoted
 	})
 
 	return Effect.fn("ClerkWebhook.receive")(function* (req: HttpServerRequest.HttpServerRequest) {
@@ -190,7 +222,10 @@ const handler = Effect.gen(function* () {
 			return yield* revoke(revocation.revokeUser(userId.value))
 		}
 
-		if (envelope.value.type === "user.created") {
+		// A signup has no home region, so one region counts it.
+		if (envelope.value.type === "user.created" && regions.region !== DEFAULT_MAPLE_REGION) {
+			yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "other_region" })
+		} else if (envelope.value.type === "user.created") {
 			const user = yield* decodeClerkUserCreated(envelope.value.data).pipe(
 				Effect.tapError((error) =>
 					Effect.logInfo("Clerk user.created payload failed to decode").pipe(

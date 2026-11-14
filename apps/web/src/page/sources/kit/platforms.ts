@@ -1,5 +1,4 @@
-import type { PushSourcePlatform, SourcePlatform } from "@maple/primitives"
-import { PUSH_SOURCE_PLATFORMS } from "@maple/primitives"
+import type { SourcePlatform } from "@maple/primitives"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { icon, type IconName } from "@maple/views/ui/icon"
 import { type ProviderId, PROVIDERS } from "../../kit/providers"
@@ -54,17 +53,11 @@ export const PLATFORMS = {
 
 export const platformMeta = (platform: SourcePlatform): PlatformMeta => PLATFORMS[platform]
 
-export const PUSH_PLATFORMS: ReadonlyArray<PushSourcePlatform> = PUSH_SOURCE_PLATFORMS
-
 /** Source name prefilled on create: the platform label. */
-export const defaultSourceName = (platform: PushSourcePlatform): string => PLATFORMS[platform].label
+export const defaultSourceName = (platform: SourcePlatform): string => PLATFORMS[platform].label
 
-/** Icon in a small bordered tile, the same frame the integrations catalog uses. */
-export const platformTile = <M>(
-	h: HtmlBuilder<M>,
-	platform: SourcePlatform,
-	size: "sm" | "md" = "md",
-): Html =>
+/** A source's mark in a small bordered tile, the same frame the integrations catalog uses. */
+export const platformTile = <M>(h: HtmlBuilder<M>, meta: PlatformMeta, size: "sm" | "md" = "md"): Html =>
 	h.span(
 		[
 			h.AriaHidden(true),
@@ -74,5 +67,5 @@ export const platformTile = <M>(
 					: "bg-card inline-flex size-10 shrink-0 items-center justify-center rounded-lg border",
 			),
 		],
-		[icon(h, PLATFORMS[platform].icon, { size: size === "sm" ? 14 : 18 })],
+		[icon(h, meta.icon, { size: size === "sm" ? 14 : 18 })],
 	)

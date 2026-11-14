@@ -18,12 +18,14 @@ import {
 	role,
 	scene,
 	text,
+	type,
 	withViewInputs,
 } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as Field from "@maple/views/ui/field"
 import * as Tabs from "@maple/views/ui/tabs"
+import * as Setup from "../kit/setup"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message as IntegrationMessage } from "../../integrations/embed"
 import { ScrollToTop } from "./command"
@@ -59,11 +61,11 @@ const indicatorMeasured = () =>
 		}),
 	)
 
-const created = (lastUsedAt: string | null = null) =>
+const created = (lastUsedAt: string | null = null, name = "Node.js") =>
 	Schema.decodeSync(V2SourceWithSecret)({
 		id: encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000010"),
 		object: "source",
-		name: "Node.js",
+		name,
 		description: null,
 		platform: "nodejs",
 		kind: "token",
@@ -121,6 +123,32 @@ describe("connect a source", () => {
 		)
 	})
 
+	test("the picker groups sources by what they are; search narrows it and an empty result clears", () => {
+		const search = role("textbox", { name: "Search sources" })
+		scene(
+			{ update: pageUpdate, view },
+			given(init(route(), context).model),
+			expectView(role("heading", { name: "Your code" })).toExist(),
+			expectView(role("heading", { name: "Infrastructure" })).toExist(),
+			expectView(role("heading", { name: "Cloud and platforms" })).toExist(),
+			expectView(role("heading", { name: "AI" })).toExist(),
+			// A language is its mark and name; everything else says what it collects.
+			expectView(role("button", { name: "Node.js" })).toExist(),
+			expectView(text("Scrape a metrics endpoint")).toExist(),
+			// The description is searched too, and groups with no match go.
+			type(search, "Metrics"),
+			expectView(text("Scrape a metrics endpoint")).toExist(),
+			expectView(role("button", { name: "Node.js" })).not.toExist(),
+			expectView(role("heading", { name: "Your code" })).not.toExist(),
+			expectView(role("heading", { name: "AI" })).not.toExist(),
+			type(search, "no such source"),
+			expectView(role("heading", { name: "Infrastructure" })).not.toExist(),
+			click(role("button", { name: "Clear search" })),
+			expectView(role("button", { name: "Node.js" })).toExist(),
+			expectView(role("heading", { name: "AI" })).toExist(),
+		)
+	})
+
 	test("the form prefills the platform label and mounts the list", () => {
 		const entered = init(route("nodejs"), context)
 		expect(names(entered.commands)).toContain("FetchSourcesList")
@@ -128,7 +156,12 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(entered.model),
+			indicatorMeasured(),
 			expectView(role("listitem", { current: "step", name: "Name" })).toExist(),
+			// The snippet is on the page before Create, waiting for its token.
+			expectView(text("Send data from Node.js")).toExist(),
+			expectView(text("Create the source to put its token in the snippet.")).toExist(),
+			expectView(text("Token")).not.toExist(),
 			click(role("button", { name: "Advanced" })),
 			expectView(text("Resource attributes")).toExist(),
 			click(role("button", { name: "Back" })),
@@ -158,6 +191,7 @@ describe("connect a source", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(blank),
+			indicatorMeasured(),
 			expectView(role("button", { name: "Create source" })).toBeDisabled(),
 		)
 		const started = pageUpdate(entered, Message.SubmittedForm())
@@ -174,21 +208,29 @@ describe("connect a source", () => {
 		)
 	})
 
-	test("a create shows the token, refreshes the list and polls until data arrives", () => {
+	test("a create fills the token in on the same page, refreshes the list and polls until data arrives", () => {
 		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
 		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) }))
 		expect(names(done.commands)).toEqual(
 			expect.arrayContaining(["FetchSourcesList", "FetchCreatedSource"]),
 		)
+		// The source exists: a second submit creates nothing.
+		expect(pageUpdate(done.model, Message.SubmittedForm()).commands ?? []).toHaveLength(0)
 		scene(
 			{ update: pageUpdate, view },
 			given(done.model),
 			indicatorMeasured(),
 			expectView(role("listitem", { current: "step", name: "Send data" })).toExist(),
-			expectView(text("Waiting for first data")).toExist(),
-			expectView(text("Waiting for the first request signed with maple_src_Q7xZa")).toExist(),
-			expectView(role("link", { name: "Skip for now" })).toExist(),
-			expectView(role("button", { name: "Open source" })).toBeDisabled(),
+			// The default name is the platform's label, so the trail does not say it twice.
+			expectView(role("listitem", { name: "Named (done)" })).toExist(),
+			expectView(role("textbox", { name: "Name" })).toBeDisabled(),
+			expectView(role("button", { name: "Create source" })).not.toExist(),
+			expectView(text("Token")).toExist(),
+			expectView(text("Create the source to put its token in the snippet.")).not.toExist(),
+			expectView(text("Waiting for first data. Checked every 5 seconds.")).toExist(),
+			// One way on, usable before the first data arrives.
+			expectView(role("link", { name: "Open source" })).toExist(),
+			expectView(role("link", { name: "Skip for now" })).not.toExist(),
 		)
 		const key = done.model.firstData.key ?? ""
 		const pending = pageUpdate(
@@ -214,10 +256,33 @@ describe("connect a source", () => {
 			indicatorMeasured(),
 			expectView(role("link", { name: "Open source" })).toExist(),
 			expectView(role("listitem", { name: "Receiving data (done)" })).toExist(),
+			expectView(text("Receiving data.")).toExist(),
 		)
 	})
 
-	test("the token step keeps the created source's trail after the route moves to another platform", () => {
+	test("a named source's trail shows its name, and the snippet tab picked before Create stays", () => {
+		const entered = init(route("nodejs"), context).model
+		const picked = pageUpdate(
+			entered,
+			Message.GotSetupMessage({
+				message: Setup.Message.GotTabsMessage({ message: Tabs.Message.ClickedTab({ index: 1 }) }),
+			}),
+		).model
+		const done = pageUpdate(
+			pageUpdate(picked, Message.SubmittedForm()).model,
+			Message.CompletedCreate({ result: Result.succeed(created(null, "checkout-api")) }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(done),
+			indicatorMeasured(),
+			expectView(role("listitem", { name: "checkout-api (done)" })).toExist(),
+			expectView(text("Send data from checkout-api")).toExist(),
+			expectView(role("tab", { name: "Install", selected: true })).toExist(),
+		)
+	})
+
+	test("a created source keeps its trail after the route moves to another platform", () => {
 		const started = pageUpdate(init(route("nodejs"), context).model, Message.SubmittedForm()).model
 		const done = pageUpdate(started, Message.CompletedCreate({ result: Result.succeed(created()) })).model
 		const moved = routeChanged(done, route("kubernetes"), context).model

@@ -7,7 +7,7 @@ import {
 	advanceWatermark,
 	decodeLogRows,
 	LOGS_PAGE_SIZE,
-	logsQueryUrl,
+	logsQueryRequest,
 	logsToOtlp,
 	nextLogsWindow,
 	parseRowTimestamp,
@@ -50,20 +50,20 @@ describe("nextLogsWindow", () => {
 	})
 })
 
-describe("logsQueryUrl", () => {
+describe("logsQueryRequest", () => {
 	it("bounds the SQL exactly and widens the minute-rounded range outward", () => {
 		const window = {
 			startMs: Date.UTC(2026, 9, 21, 17, 55, 0, 123),
 			endMs: Date.UTC(2026, 9, 21, 17, 59, 30),
 		}
-		const url = new URL(logsQueryUrl("https://api.supabase.com", REF, window))
-		assert.strictEqual(url.pathname, "/v1/projects/abcdefghijklmnopqrst/analytics/endpoints/logs")
+		const request = logsQueryRequest(REF, window)
+		assert.strictEqual(request.path, "/v1/projects/abcdefghijklmnopqrst/analytics/endpoints/logs")
 		assert.strictEqual(
-			url.searchParams.get("sql"),
+			request.query.sql,
 			"select id, timestamp, source, event_message, log_attributes from logs where timestamp >= '2026-10-21 17:55:00.123000' and timestamp < '2026-10-21 17:59:30.000000' order by timestamp asc, id asc limit 1000",
 		)
-		assert.strictEqual(url.searchParams.get("iso_timestamp_start"), "2026-10-21T17:55:00.000Z")
-		assert.strictEqual(url.searchParams.get("iso_timestamp_end"), "2026-10-21T18:00:00.000Z")
+		assert.strictEqual(request.query.iso_timestamp_start, "2026-10-21T17:55:00.000Z")
+		assert.strictEqual(request.query.iso_timestamp_end, "2026-10-21T18:00:00.000Z")
 	})
 })
 

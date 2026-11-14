@@ -3,7 +3,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, verificationVerdictAutoCloses, WarehouseQueryError } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
+import { ErrorIssuePullRequests, ErrorIssues, ErrorIssueVerifications } from "@maple/db/tables"
 import { Array as Arr, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -114,6 +114,7 @@ describe("splitVersionRows", () => {
 })
 
 const ORG = Schema.decodeSync(OrgId)("org_verification_tick")
+const OTHER_ORG = Schema.decodeSync(OrgId)("org_verification_tick_other")
 const DAY = 24 * 60 * 60_000
 const NOW = 1_750_000_000_000
 const PR_URL = "https://github.com/MapleTechLabs/maple/pull/612"
@@ -188,7 +189,7 @@ const makeTickLayer = () => {
 }
 
 /** An issue in review whose linked PR merged 30 days ago, so its window has long closed. */
-const seedOverdueVerification = Effect.gen(function* () {
+const seedOverdueVerificationIn = Effect.fnUntraced(function* (org: OrgId) {
 	const database = yield* Database
 	const verification = yield* IssueFixVerificationService
 	const issueId = Schema.decodeSync(ErrorIssueId)(randomUUID())
@@ -196,7 +197,7 @@ const seedOverdueVerification = Effect.gen(function* () {
 		db.run(
 			PG.insertInto(ErrorIssues).values({
 				id: issueId,
-				orgId: ORG,
+				orgId: org,
 				kind: "error",
 				fingerprintHash: `fp-${issueId}`,
 				serviceName: "checkout",
@@ -215,9 +216,9 @@ const seedOverdueVerification = Effect.gen(function* () {
 			}),
 		),
 	)
-	yield* verification.linkPullRequest(ORG, null, issueId, PR_URL, "agent")
+	yield* verification.linkPullRequest(org, null, issueId, PR_URL, "agent")
 	yield* verification.onPullRequestEvent({
-		orgId: ORG,
+		orgId: org,
 		provider: "github",
 		externalRepoId: "999",
 		repoFullName: "MapleTechLabs/maple",
@@ -233,6 +234,7 @@ const seedOverdueVerification = Effect.gen(function* () {
 	})
 	return issueId
 })
+const seedOverdueVerification = seedOverdueVerificationIn(ORG)
 
 const verificationOf = (issueId: ErrorIssueId) =>
 	Effect.gen(function* () {
@@ -286,6 +288,38 @@ describe("FixVerificationTickService.runTick", () => {
 			assert.strictEqual(row?.updatedAt, NOW + 60_000)
 
 			assert.strictEqual((yield* tick.runTick).examined, 1)
+		}).pipe(Effect.provide(makeTickLayer())),
+	)
+
+	// The link's URL goes into the verification agent's prompt, so it must be this org's link.
+	it.effect("treats a row pointing at another org's pull request link as having none", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const tick = yield* FixVerificationTickService
+			const database = yield* Database
+			const issueId = yield* seedOverdueVerification
+			const otherIssueId = yield* seedOverdueVerificationIn(OTHER_ORG)
+			const otherLinks = yield* database.execute((db) =>
+				db.run(
+					PG.from(ErrorIssuePullRequests)
+						.select("id")
+						.where(($) => [$.orgId.eq(OTHER_ORG), $.issueId.eq(otherIssueId)]),
+				),
+			)
+			const otherLink = otherLinks[0]
+			assert.isDefined(otherLink)
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(ErrorIssueVerifications)
+						.set({ pullRequestId: otherLink.id })
+						.where(($) => [$.orgId.eq(ORG), $.issueId.eq(issueId)]),
+				),
+			)
+
+			yield* tick.runTick
+			assert.strictEqual((yield* verificationOf(issueId))?.status, "abandoned")
+			// The other org's own row is untouched by it: its occurrences could not be read, so it waits.
+			assert.strictEqual((yield* verificationOf(otherIssueId))?.status, "waiting")
 		}).pipe(Effect.provide(makeTickLayer())),
 	)
 })

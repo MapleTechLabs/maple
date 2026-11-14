@@ -1,4 +1,5 @@
 import type { V2Source } from "@maple/domain/http/v2"
+import { isPushSourcePlatform } from "@maple/primitives"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import { cn } from "@maple/ui/lib/utils"
@@ -37,6 +38,10 @@ export const rollupLabel = (source: V2Source): string | null => {
 		: `${resources.unhealthy} of ${resources.total} unhealthy`
 }
 
+/** What a source's last arrival is called: an integration syncs, a push source sends data. */
+const lastSeenWord = (source: V2Source): string =>
+	isPushSourcePlatform(source.platform) ? "last data" : "last sync"
+
 /** Worst first, the order the list sorts by (`SOURCE_HEALTH_STATUSES`). */
 const STATUS_RANK = {
 	disconnected: 0,
@@ -52,9 +57,17 @@ export const statusRank = (source: V2Source): number => STATUS_RANK[source.healt
 /** Disconnected, failing or stale: something to fix. Paused and waiting are on purpose or new. */
 export const needsAttention = (source: V2Source): boolean => statusRank(source) <= STATUS_RANK.stale
 
-/** `showTime` (the default) appends the relative time of the last data to "Receiving". */
+/**
+ * `showTime` (the default) appends when data last arrived: "Receiving · 2m ago", and for a source
+ * that stopped, "No recent data · last data 3h ago" (an integration's reads "last sync").
+ */
 export type StatusBadgeOptions = Readonly<
-	{ nowMs: number; className?: string } & ({ showTime: false } | { showTime?: true; timeZone: string })
+	{
+		nowMs: number
+		className?: string
+		/** Leaves "1 of 3 unhealthy" out, for a caller that shows it on its own line. */
+		hideRollup?: boolean
+	} & ({ showTime: false } | { showTime?: true; timeZone: string })
 >
 
 export const sourceStatusBadge = <M>(
@@ -63,11 +76,16 @@ export const sourceStatusBadge = <M>(
 	options: StatusBadgeOptions,
 ): Html => {
 	const { status, last_data_at: lastDataAt } = source.health
+	const prefix = status === "healthy" ? "" : `${lastSeenWord(source)} `
 	const time =
-		options.showTime !== false && status === "healthy" && lastDataAt !== null
-			? { lastDataAt, timeZone: options.timeZone, text: formatRelativeTime(lastDataAt, options.nowMs) }
+		options.showTime !== false && lastDataAt !== null
+			? {
+					lastDataAt,
+					timeZone: options.timeZone,
+					text: `${prefix}${formatRelativeTime(lastDataAt, options.nowMs)}`,
+				}
 			: null
-	const rollup = rollupLabel(source)
+	const rollup = options.hideRollup === true ? null : rollupLabel(source)
 	const full = Arr.join(
 		Arr.filter([LABEL[status], time?.text ?? null, rollup], (part) => part !== null),
 		" · ",
@@ -84,6 +102,7 @@ export const sourceStatusBadge = <M>(
 							typography(h, { tone: "muted" }, [
 								" ",
 								"· ",
+								prefix,
 								timestamp(h, {
 									value: time.lastDataAt,
 									format: "relative",

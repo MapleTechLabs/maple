@@ -6,7 +6,8 @@
 import { randomUUID } from "node:crypto"
 import { IntegrationsPersistenceError, type OrgId } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { leaseClaimable } from "../lease"
+import { leaseClaimable, leaseStillOurs } from "../lease"
+import { leaseFree, type LeaseSpec } from "../poller"
 import { PlanetscalePollState } from "@maple/db/tables"
 import { Clock, Duration, Effect, Array as Arr } from "effect"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
@@ -151,5 +152,63 @@ export const makePlanetScalePollState = (database: DatabaseApi, service: string)
 		)
 	})
 
-	return { claimPollWork, readPollState, pollStateByDatabaseId, recordPollResult }
+	/**
+	 * The (org, dataset, database) row as a {@link LeaseSpec}: created on first use, claimed while
+	 * enabled, past `freshMs` since its last success, and free of a lease or hold.
+	 */
+	const pollStateLease = (
+		orgId: OrgId,
+		dataset: string,
+		databaseId: string,
+		freshMs: number,
+	): LeaseSpec<
+		PG.SelectRowOf<typeof PlanetscalePollState>,
+		PG.UpdateSetOf<typeof PlanetscalePollState>,
+		IntegrationsPersistenceError
+	> => ({
+		leaseMs: LEASE_MS,
+		claim: (leaseUntil, now) =>
+			dbExecute((db) =>
+				Effect.gen(function* () {
+					yield* db.run(
+						PG.insertInto(PlanetscalePollState)
+							.values({
+								id: randomUUID(),
+								orgId,
+								dataset,
+								databaseId,
+								createdAt: now,
+								updatedAt: now,
+							})
+							.onConflictDoNothing({ target: ["orgId", "dataset", "databaseId"] }),
+					)
+					const rows = yield* db.run(
+						PG.update(PlanetscalePollState)
+							.set({ leaseUntil, updatedAt: now })
+							.where(($) => [
+								$.orgId.eq(orgId),
+								$.dataset.eq(dataset),
+								$.databaseId.eq(databaseId),
+								$.enabled.eq(true),
+								PG.or($.lastSuccessAt.isNull(), $.lastSuccessAt.lte(now - freshMs)),
+								leaseFree($.leaseUntil, $.holdUntil, now, LEASE_MS),
+							])
+							.returning(),
+					)
+					return rows[0] ?? null
+				}),
+			),
+		write: (claimed, set) =>
+			dbExecute((db) =>
+				db.run(
+					PG.update(PlanetscalePollState)
+						.set(set)
+						.where(($) => [$.id.eq(claimed.id), leaseStillOurs($.leaseUntil, claimed.leaseUntil)])
+						.returning("id"),
+				),
+			).pipe(Effect.map((rows) => rows.length > 0)),
+		release: (holdUntil, now) => ({ leaseUntil: null, holdUntil, updatedAt: now }),
+	})
+
+	return { claimPollWork, readPollState, pollStateByDatabaseId, recordPollResult, pollStateLease }
 }

@@ -18,7 +18,7 @@ import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
 import { meter } from "@maple/views/ui/meter"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { heroChip } from "../../../infra/kit/hero-chip"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import type { StatementSpan } from "../data"
@@ -210,11 +210,12 @@ const callers = (h: H, peek: QueryPeek, timeSearch: TimeSearch): Html => {
 							className: PEEK_ROW,
 						},
 						[
-							serviceDot(h, { serviceName: service }),
-							h.span(
-								[h.Class("min-w-0 flex-1 truncate font-mono text-xs text-foreground")],
-								[service],
-							),
+							serviceLabel(h, {
+								serviceName: service,
+								size: "xs",
+								tone: "foreground",
+								className: "flex-1",
+							}),
 							typography(h, { tone: "muted" }, [icon(h, "ChevronRightIcon", { size: 14 })]),
 						],
 					),
@@ -253,7 +254,12 @@ const spanRow = (
 				mono: true,
 				className: typographyClass({ size: "2xs", tone: "muted", className: "w-16 shrink-0" }),
 			}),
-			h.span([h.Class("w-28 shrink-0 truncate font-mono text-xs text-foreground")], [span.serviceName]),
+			serviceLabel(h, {
+				serviceName: span.serviceName,
+				size: "xs",
+				tone: "foreground",
+				className: "w-28 shrink-0",
+			}),
 			meter(h, {
 				value: span.durationMs,
 				max: slowestMs,

@@ -20,7 +20,6 @@ import {
 	DigestSubscriptions,
 	ErrorIssueEvents,
 	ErrorIssues,
-	GcpConnectors,
 	Investigations,
 	OrgOnboardingState,
 	ScrapeTargetChecks,
@@ -58,7 +57,6 @@ import {
 	Layer,
 	Option,
 	Order,
-	Predicate,
 	Schema,
 	Array as Arr,
 	String as Str,
@@ -123,14 +121,6 @@ export const errorClassOf = (message: string): CancellationErrorClass => {
 
 export type SourceHealthRow = Pick<SourceRow, (typeof SOURCE_HEALTH_COLUMNS)[number]>
 
-export interface GcpConnectorHealthRow {
-	readonly lastReceivedAt: number | null
-	readonly lastMetricsReceivedAt: number | null
-	readonly lastError: string | null
-	readonly lastMetricsError: string | null
-	readonly lastResourcesError: string | null
-}
-
 const PROVIDERS: ReadonlySet<string> = new Set(INTEGRATION_PROVIDERS)
 /**
  * SDK tokens, shown only when something is wrong with them. Whether their
@@ -163,13 +153,11 @@ const resourceCountsOf = (entry: IntegrationEntry): CancellationIntegrationHealt
 
 /**
  * The inventory's integrations, plus the ingest sources it leaves out (SDK
- * tokens with a problem, GCP, Claude Code, ...) one entry per platform. A GCP connector's errors clear on
- * its next success, so one that is set is a current error.
+ * tokens with a problem, Claude Code, ...) one entry per platform.
  */
 export const integrationHealthOf = (
 	inventory: IntegrationInventory,
 	sources: ReadonlyArray<SourceHealthRow>,
-	gcpConnectors: ReadonlyArray<GcpConnectorHealthRow>,
 	atMs: number,
 	now: number,
 ): ReadonlyArray<CancellationIntegrationHealth> => {
@@ -189,11 +177,6 @@ export const integrationHealthOf = (
 	const platforms = Arr.map([...byPlatform], ([platform, rows]): CancellationIntegrationHealth => {
 		const healths = Arr.map(rows, (row) => sourceRowHealth(row, now))
 		const status = worstSourceStatus(Arr.map(healths, (health) => health.status))
-		const connectors = platform === "gcp" ? gcpConnectors : []
-		const connectorError = Arr.findFirst(
-			Arr.flatMap(connectors, (c) => [c.lastError, c.lastMetricsError, c.lastResourcesError]),
-			Predicate.isNotNull,
-		)
 		const problem = Arr.findFirst(healths, (health) => health.status === status).pipe(
 			Option.flatMapNullishOr((health) => health.problem),
 			Option.getOrNull,
@@ -201,13 +184,7 @@ export const integrationHealthOf = (
 		return {
 			kind: platform,
 			status,
-			lastSuccessDaysBeforeCancel: days(
-				atMs,
-				newest([
-					...Arr.map(healths, (health) => health.lastDataAt),
-					...Arr.flatMap(connectors, (c) => [c.lastReceivedAt, c.lastMetricsReceivedAt]),
-				]),
-			),
+			lastSuccessDaysBeforeCancel: days(atMs, newest(Arr.map(healths, (health) => health.lastDataAt))),
 			lastErrorDaysBeforeCancel: days(
 				atMs,
 				newest(
@@ -218,9 +195,7 @@ export const integrationHealthOf = (
 					),
 				),
 			),
-			errorClass: isBroken(status)
-				? errorClassOf(problem ?? "")
-				: Option.getOrNull(Option.map(connectorError, errorClassOf)),
+			errorClass: isBroken(status) ? errorClassOf(problem ?? "") : null,
 			resources: [],
 		}
 	})
@@ -453,21 +428,8 @@ export class CancellationAppEvidenceReader extends Context.Service<
 							.where(($) => [$.orgId.eq(orgId)]),
 					),
 				)
-				const gcp = yield* rows((db) =>
-					db.run(
-						PG.from(GcpConnectors)
-							.select(
-								"lastReceivedAt",
-								"lastMetricsReceivedAt",
-								"lastError",
-								"lastMetricsError",
-								"lastResourcesError",
-							)
-							.where(($) => [$.orgId.eq(orgId)]),
-					),
-				)
 				const now = yield* Clock.currentTimeMillis
-				return integrationHealthOf(listed, sources, gcp, atMs, now)
+				return integrationHealthOf(listed, sources, atMs, now)
 			})
 
 		const readOnboarding = ({ orgId, atMs }: CancellationEvidenceInput) =>

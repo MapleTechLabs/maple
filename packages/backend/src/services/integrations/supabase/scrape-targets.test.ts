@@ -52,7 +52,7 @@ const makeLayer = (testDb: TestDb, fake: Fake) =>
 		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
-		Layer.merge(Layer.succeed(FetchHttpClient.Fetch, fake.fetch)),
+		Layer.merge(fake.layer),
 	)
 
 const ORG = Schema.decodeSync(OrgId)("org_a")

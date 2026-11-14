@@ -5,7 +5,7 @@ import { icon } from "@maple/views/ui/icon"
 import { pressable } from "@maple/views/ui/pressable"
 import { hstack, hstackClass } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { ErrorTypeRow } from "./fetch"
 import { cardTraces, type Clock, relativeTime } from "./view-traces"
@@ -21,9 +21,8 @@ const services = (h: H, row: ErrorTypeRow): ReadonlyArray<Html> =>
 	row.serviceNames.length > 0
 		? [
 				...Arr.map(row.serviceNames, (serviceName) =>
-					badge(h, { variant: "outline", size: "xs", mono: true, className: "gap-1.5" }, [
-						serviceDot(h, { serviceName }),
-						serviceName,
+					badge(h, { variant: "outline", size: "xs" }, [
+						serviceLabel(h, { serviceName, truncate: "none" }),
 					]),
 				),
 				...(row.affectedServicesCount > row.serviceNames.length

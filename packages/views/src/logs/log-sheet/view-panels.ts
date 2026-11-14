@@ -18,7 +18,7 @@ import { type LogRecord, severityLabel } from "@maple/views/ui/logs/log-row-view
 import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import { timestampTrigger } from "@maple/views/ui/timestamp"
 import { Message, type Model } from "./model"
 import {
@@ -348,20 +348,13 @@ const timelineRows = (h: H, model: Model, current: LogRecord, data: ReadonlyArra
 							...(log.serviceName === current.serviceName
 								? []
 								: [
-										hstack(
-											h,
-											{
-												gap: "1",
-												align: "center",
-												as: "span",
-												className:
-													"max-w-[72px] shrink-0 truncate text-3xs text-foreground-subtle",
-											},
-											[
-												serviceDot(h, { serviceName: log.serviceName, size: "sm" }),
-												typography(h, { truncate: true }, [log.serviceName]),
-											],
-										),
+										serviceLabel(h, {
+											serviceName: log.serviceName,
+											dot: "sm",
+											size: "3xs",
+											tone: "subtle",
+											className: "max-w-[72px] shrink-0",
+										}),
 									]),
 							h.span(
 								[

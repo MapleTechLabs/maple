@@ -13,6 +13,7 @@ import { vercelTokenSlot } from "@maple/backend/platform/secret-slots"
 import { createIntegrationSource } from "@maple/backend/services/integrations/integration-sources"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import type { TestDb } from "@maple/backend/testing/test-pglite"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { CostProviderError } from "../../CostProvider"
 
 export interface FakeVercel {
@@ -47,35 +48,34 @@ export const jsonl = (charges: ReadonlyArray<Readonly<Record<string, unknown>>>)
 		"",
 	)
 
-const fetchStub =
-	(world: FakeVercel): typeof fetch =>
-	async (input: string | URL | Request, init?: RequestInit) => {
-		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-		world.urls.push(url)
-		world.authorizations.push(new Headers(init?.headers).get("authorization"))
-		await world.onRequest()
-		// A 2xx that is not the 200 the charges come with: no content, or part of them.
-		if (world.chargesStatus === 204) return new Response(null, { status: 204 })
-		if (world.chargesStatus === 206) {
-			return new Response(
-				typeof world.charges === "string" ? world.charges : jsonl(world.charges ?? []),
-				{
-					status: 206,
+const fakeVercelApi = (world: FakeVercel) =>
+	VendorFake.make({
+		routes: [
+			{
+				method: "GET",
+				path: "/v1/billing/charges",
+				respond: async (request) => {
+					world.urls.push(request.url.href)
+					world.authorizations.push(request.authorization)
+					await world.onRequest()
+					const { charges } = world
+					const body = typeof charges === "string" ? charges : jsonl(charges ?? [])
+					// A 2xx that is not the 200 the charges come with: no content, or part of them.
+					if (world.chargesStatus === 204) return VendorFake.empty(204)
+					if (world.chargesStatus === 206) return VendorFake.text(body, 206)
+					if (world.chargesStatus !== 200) {
+						return VendorFake.json(
+							{ error: { code: "refused", message: `status ${world.chargesStatus}` } },
+							world.chargesStatus,
+						)
+					}
+					return VendorFake.text(charges === null ? null : body, 200, {
+						"content-type": "application/jsonl",
+					})
 				},
-			)
-		}
-		if (world.chargesStatus !== 200) {
-			return Response.json(
-				{ error: { code: "refused", message: `status ${world.chargesStatus}` } },
-				{ status: world.chargesStatus },
-			)
-		}
-		const { charges } = world
-		return new Response(charges === null || typeof charges === "string" ? charges : jsonl(charges), {
-			status: 200,
-			headers: { "content-type": "application/jsonl" },
-		})
-	}
+			},
+		],
+	})
 
 const config = (encryptionKey: string) =>
 	ConfigProvider.layer(
@@ -109,10 +109,7 @@ export const fakeVercelDeps = (
 		}),
 		testDb.layer,
 		Env.layer,
-	).pipe(
-		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchStub(world))),
-		Layer.provide(config(encryptionKey)),
-	)
+	).pipe(Layer.provide(fakeVercelApi(world).layer), Layer.provide(config(encryptionKey)))
 
 export interface FakeVercelConnection {
 	readonly orgId: OrgId

@@ -24,7 +24,7 @@ import * as Menu from "@maple/views/ui/menu"
 import type { MenuEntry } from "@maple/views/ui/menu-view"
 import { rowActionsMenu } from "@maple/views/ui/row-actions-menu"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { ROW_LINK_LIFT, rowLink } from "@maple/views/ui/table"
+import { ROW_LINK_LIFT, rowNameLink } from "@maple/views/ui/table"
 import { listToolbar, toolbarCount } from "../../kit/list-toolbar"
 import { filteredEmpty } from "@maple/views/ui/signal-empty-state"
 import { HEADROOM_FILL } from "../shared/headroom-tone"
@@ -333,18 +333,11 @@ const ruleRow = (h: H, model: Model, row: RowInputs): Html => {
 			[h.Class("min-w-0 space-y-0.5")],
 			[
 				hstack(h, { gap: "2", shrink: true }, [
-					rowLink(
-						h,
-						{
-							href: ruleHref(rule.id),
-							className: cn(
-								"block truncate text-sm font-medium",
-								!rule.enabled && "text-muted-foreground",
-							),
-							attributes: [h.Title(rule.name)],
-						},
-						[rule.name],
-					),
+					rowNameLink(h, {
+						href: ruleHref(rule.id),
+						name: rule.name,
+						isMuted: !rule.enabled,
+					}),
 					...(isDefault
 						? [badge(h, { variant: "outline", size: "sm", className: "shrink-0" }, ["Default"])]
 						: []),

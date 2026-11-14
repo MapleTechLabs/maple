@@ -18,7 +18,7 @@ import { icon } from "@maple/views/ui/icon"
 import { listRow } from "@maple/views/ui/list-row"
 import { skeletonList } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { serviceDot } from "@maple/views/ui/values"
+import { serviceLabel } from "@maple/views/ui/service-label"
 import {
 	countByHealth,
 	type EnrichedService,
@@ -31,7 +31,7 @@ import { alertFiringHero, heroCountsOf } from "./view-hero"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
 import { hstack, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, Option } from "effect"
-import { typography, typographyClass } from "@maple/views/ui/typography"
+import { typographyClass } from "@maple/views/ui/typography"
 import { textLink } from "@maple/views/ui/text-link"
 import { dividedList } from "@maple/views/ui/rule"
 import type { HealthIncident } from "../kit/service-health"
@@ -335,14 +335,22 @@ const serviceRow = <M>(
 					tone: health === "healthy" && !isVouched ? "neutral" : HEALTH_TONE[health],
 					size: "lg",
 				}),
-				title: hstack(h, { gap: "2", shrink: true, as: "span" }, [
-					serviceDot(h, { serviceName: service.serviceName, size: "sm" }),
-					typography(h, { size: "sm", tone: "foreground", weight: "medium", truncate: true }, [
-						service.serviceName,
-					]),
-					badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [service.environment]),
-					...(primary === undefined ? [] : [causeBadge(h, primary)]),
-				]),
+				title: serviceLabel(
+					h,
+					{
+						serviceName: service.serviceName,
+						dot: "sm",
+						size: "sm",
+						tone: "foreground",
+						weight: "medium",
+					},
+					[
+						badge(h, { variant: "muted", size: "xs", className: "shrink-0" }, [
+							service.environment,
+						]),
+						...(primary === undefined ? [] : [causeBadge(h, primary)]),
+					],
+				),
 				trailing: hstack(
 					h,
 					{ gap: "5", align: "center", className: "shrink-0 font-mono text-xs tabular-nums" },
