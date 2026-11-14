@@ -49,6 +49,7 @@ import {
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 	chatSessionKind,
+	orgIdFromChatSessionId,
 } from "@maple/domain/chat-session"
 import { type ChatAbortReason, type ChatSessionRpc, isChatAbortReason } from "@maple/domain/chat-session-stub"
 import { type ChatSessionNamespace, ChatSessionObject } from "@maple/backend/platform/chat-sessions"
@@ -543,7 +544,8 @@ export class ChatSession {
 	 *
 	 * `tenant` is the caller's *resolved* identity, passed in rather than re-derived here: the DO
 	 * has no auth context of its own, and the route has already matched the session's org against
-	 * the caller's before it gets this far.
+	 * the caller's before it gets this far. A tenant from another org is refused all the same
+	 * ({@link tenantOwnsSession}): the turn's tools read whatever org the tenant names.
 	 */
 	beginTurn(input: {
 		/** `"<orgId>:<tabId>"`. A DO cannot recover its own name, and the turn needs it for mode. */
@@ -554,6 +556,7 @@ export class ChatSession {
 		/** Who is driving the turn, stated by whoever raised it. */
 		readonly origin: ChatTurnOrigin
 	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
+		if (!tenantOwnsSession(input)) return undefined
 		this.transition({ _tag: "Expire" })
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
@@ -860,6 +863,15 @@ export class ChatSession {
 }
 
 /**
+ * Whether a turn's tenant is the org its session belongs to. A session id is `<orgId>:<tabId>` and
+ * names the object, so a turn under any other org would run that org's tools in this conversation.
+ */
+export const tenantOwnsSession = (input: {
+	readonly sessionId: string
+	readonly tenant: ChatTurnTenantEncoded
+}): boolean => orgIdFromChatSessionId(input.sessionId) === input.tenant.orgId
+
+/**
  * The session's methods, one Effect each. alchemy runs the Effect per RPC call and hands its value
  * back as-is — a `ReadableStream` included, which Workers RPC carries by reference — so
  * `ChatSessionStub` stays what a caller sees.
@@ -872,7 +884,16 @@ export const chatSessionRpc = (session: ChatSession) =>
 		since: (cursor) => Effect.sync(() => session.since(cursor)),
 		subscribe: (cursor) => Effect.sync(() => session.subscribe(cursor)),
 		append: (event) => Effect.sync(() => session.append(event)),
-		beginTurn: (input) => Effect.sync(() => session.beginTurn(input)),
+		beginTurn: (input) =>
+			tenantOwnsSession(input)
+				? Effect.sync(() => session.beginTurn(input))
+				: Effect.logError("[chat.turn] Refused a turn whose tenant is not the session's org").pipe(
+						Effect.annotateLogs({
+							"maple.chat.session_org": orgIdFromChatSessionId(input.sessionId) ?? "",
+							"maple.chat.tenant_org": input.tenant.orgId,
+						}),
+						Effect.as(undefined),
+					),
 		settleProposal: (input) => Effect.promise(() => session.settleProposal(input)),
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
 		// A caller releasing a turn without saying how it ended is ending one that failed.

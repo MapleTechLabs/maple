@@ -2,8 +2,8 @@
 //
 // `product_events` is the one time-sorted table every product event lands in:
 // browser page views and `track()` calls via the `session_events` MV, backend
-// and mobile events via `POST /v1/events`. Funnels step over it with
-// `windowFunnel`, grouped by a per-person key, and every query here keeps the
+// and mobile events via `POST /v1/events`. Funnels step over it per person, in
+// `orderKey` order (docs/product-events-funnels.md), and every query here keeps the
 // page-level filter surface (`ProductEventsFilters`) so the `/analytics`
 // sidebar narrows a funnel exactly the way it narrows the page-view panels.
 //
@@ -46,13 +46,29 @@ export function flag(cond: CH.Condition): CH.Expr<number> {
 	return CH.compileTypedFnCall("toUInt8", T.uint8.schema, cond)
 }
 
-// toUInt64(toUnixTimestamp64Milli(ts)) — `windowFunnel` accepts Date, DateTime
-// and unsigned integers but NOT DateTime64, so both branches carry their
-// timestamp as epoch milliseconds and the window is `windowSeconds * 1000`.
-// Milliseconds rather than `toDateTime()` so two events in the same second
-// (page load → track()) keep their real order instead of tying.
+// toUInt64(toUnixTimestamp64Milli(ts)): a timestamp as epoch milliseconds, so two events in the
+// same second (page load → track()) keep their real order instead of tying.
 export function epochMs(ts: CH.Expr<DateTime.Utc>): CH.Expr<number> {
 	return CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
+}
+
+/** How many {@link orderKey} units one millisecond spans: room for a session's `Seq`. */
+const ORDER_UNITS_PER_MS = 1_048_576
+
+/**
+ * A row's place in its person's history, as one unsigned integer: milliseconds * 2^20 +
+ * (`Seq` % 2^20). `Seq` is the tiebreak inside a millisecond (a page load and the `track()` it
+ * fires share one). Server rows carry `Seq` 0, so two of them in one millisecond tie; a tie
+ * counts in step order. Counts, times and leavers all read this key, so they agree on order.
+ */
+function orderKey(ts: CH.Expr<DateTime.Utc>, seq: CH.Expr<number>): CH.Expr<number> {
+	const millis = CH.toUInt64(compileFnCall<number>("toUnixTimestamp64Milli", ts))
+	return CH.compileTypedFnCall(
+		"plus",
+		T.uint64.schema,
+		CH.compileTypedFnCall("multiply", T.uint64.schema, millis, CH.lit(ORDER_UNITS_PER_MS)),
+		CH.compileTypedFnCall("modulo", T.uint64.schema, seq, CH.lit(ORDER_UNITS_PER_MS)),
+	)
 }
 
 // argMinIf(value, orderBy, cond) — the `value` on the earliest row matching
@@ -82,8 +98,8 @@ export type FunnelSessionDimension =
  *
  * - `event`: a `track()` (or direct-ingested) event by name, optionally
  *   narrowed by `Attributes[k] = v` for every entry of `attributeEquals`.
- * - `page`: a page view of `pagePath` (`Kind = 'navigation'`), optionally on
- *   one `host`.
+ * - `page`: a browser page view or a mobile screen view of `pagePath`, optionally
+ *   on one `host`.
  * - `session`: "started a session with this acquisition dimension" — the
  *   referral / campaign entry point. Only valid as step 1: it is evaluated
  *   against `session_replays` and enters the funnel as a synthetic
@@ -179,6 +195,8 @@ export class ProductEventsFunnelError extends Schema.TaggedError<ProductEventsFu
 ) {}
 
 export const FUNNEL_BREAKDOWN_MAX_GROUPS = 20
+/** `product_events` keeps a year, so no conversion can take longer than that. */
+export const FUNNEL_MAX_WINDOW_SECONDS = 366 * 86_400
 
 function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
 	if (opts.steps.length === 0) {
@@ -203,10 +221,14 @@ function validate(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | und
 			message: `a session step is only valid as step 1, found one at step ${misplacedSession.value + 1}`,
 		})
 	}
-	if (!Number.isFinite(opts.windowSeconds) || opts.windowSeconds <= 0) {
+	if (
+		!Number.isFinite(opts.windowSeconds) ||
+		opts.windowSeconds <= 0 ||
+		opts.windowSeconds > FUNNEL_MAX_WINDOW_SECONDS
+	) {
 		return new ProductEventsFunnelError({
 			reason: "InvalidWindow",
-			message: `windowSeconds must be a positive number, got ${String(opts.windowSeconds)}`,
+			message: `windowSeconds must be a positive number up to ${FUNNEL_MAX_WINDOW_SECONDS} (${FUNNEL_MAX_WINDOW_SECONDS / 86_400} days), got ${String(opts.windowSeconds)}`,
 		})
 	}
 	return undefined
@@ -301,6 +323,15 @@ function sessionDimensionColumn($: ReplaysAccessor, dimension: FunnelSessionDime
 	}
 }
 
+/** The `Kind`s of a view: a browser page view and a mobile screen view, both named by `PagePath`. */
+export const PAGE_VIEW_KINDS = ["navigation", "screen"]
+
+function isPageView(
+	$: EventsAccessor | OpenJoinAccessor<typeof Datasources.productEvents.columns>,
+): CH.Condition {
+	return CH.inList($.Kind, PAGE_VIEW_KINDS)
+}
+
 /** The step's predicate over a `product_events` row. `session` steps never match an event row. */
 export function eventStepCondition($: EventsAccessor, step: FunnelStep): CH.Condition | undefined {
 	switch (step.kind) {
@@ -312,7 +343,7 @@ export function eventStepCondition($: EventsAccessor, step: FunnelStep): CH.Cond
 			return cond
 		}
 		case "page": {
-			const cond = $.Kind.eq("navigation").and($.PagePath.eq(step.pagePath))
+			const cond = isPageView($).and($.PagePath.eq(step.pagePath))
 			return step.host === undefined ? cond : cond.and($.Host.eq(step.host))
 		}
 		case "session":
@@ -445,7 +476,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
 				return cond ? flag(cond) : CH.lit(0)
 			})
 			const d = dimExpr($)
-			const row = { key, ts: epochMs($.Timestamp), seq: $.Seq, ...flags }
+			const row = { key, ord: orderKey($.Timestamp, $.Seq), ...flags }
 			return d ? { ...row, dim: d } : row
 		})
 		.where(($) => {
@@ -472,7 +503,7 @@ function eventsBranch(plan: FunnelPlan): FunnelBranch {
  * The session-entry branch for a `session` step 1: one synthetic
  * `$session_entry` row per matching session at its `StartTime`, with `s1 = 1`
  * and every other step 0. Un-merged v1/v2 rows of one session yield two chain
- * starts at the same instant, which `windowFunnel` treats as one.
+ * starts at the same instant, which the walk treats as one.
  */
 function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: "session" }>): FunnelBranch {
 	const { opts, filters, breakdownBy } = plan
@@ -492,8 +523,8 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 		.select(($) => {
 			const key = personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined)
 			const flags = stepFlags(opts.steps, (_, index) => CH.lit(index === 0 ? 1 : 0))
-			// A session entry has no row order of its own; 0 sorts it first inside its millisecond.
-			const row = { key, ts: epochMs($.StartTime), seq: CH.lit(0), ...flags }
+			// A session entry has no row order of its own; 0 sorts it first inside its timestamp.
+			const row = { key, ord: orderKey($.StartTime, CH.lit(0)), ...flags }
 			if (dim === undefined) return row
 			// An attribute breakdown has no value on a session row; the events
 			// branch supplies it. A session dimension is read straight off the row.
@@ -518,21 +549,19 @@ function sessionEntryBranch(plan: FunnelPlan, step: Extract<FunnelStep, { kind: 
 }
 
 /**
- * `SELECT key, windowFunnel(w)(ts, s1 = 1, …, sN = 1) AS level [, first dim AS group]
- *  FROM <events ∪ session entries> GROUP BY key` — one row per person with the
- * deepest step they reached in order within the window.
+ * The rows a funnel reads: every step-matching event, plus one entry row per matching session
+ * when step 1 is a session step.
  *
  * A funnel whose ONLY step is a `session` step has no event predicate at all, so
  * the events branch would have nothing to filter on and would read every
- * `product_events` row in range to project `s1..sN` as zeros — rows that can
+ * `product_events` row in range to project `s1..sN` as zeros: rows that can
  * never reach a level. That funnel is answered by the session-entry branch
  * alone, which is the state the step builder is in the moment step 1 becomes a
  * session step, so the branch is dropped rather than scanned.
  */
-function levelsQuery(plan: FunnelPlan) {
-	const { opts } = plan
-	const hasEventStep = Arr.some(opts.steps, (step) => step.kind !== "session")
-	const source = plan.sessionStep
+function funnelSource(plan: FunnelPlan) {
+	const hasEventStep = Arr.some(plan.opts.steps, (step) => step.kind !== "session")
+	return plan.sessionStep
 		? hasEventStep
 			? fromUnion(
 					unionAll(sessionEntryBranch(plan, plan.sessionStep), eventsBranch(plan)),
@@ -540,22 +569,111 @@ function levelsQuery(plan: FunnelPlan) {
 				)
 			: fromQuery(sessionEntryBranch(plan, plan.sessionStep), "funnel_events")
 		: fromQuery(eventsBranch(plan), "funnel_events")
+}
 
-	return source
+/** The conversion window in milliseconds, the unit the walk compares elapsed time in. */
+const windowMs = (opts: ProductEventsFunnelOpts): string => String(Math.round(opts.windowSeconds * 1000))
+
+/** `intDiv(<ord>, 2^20)`: the milliseconds of an order key, without its `Seq`. */
+const millisOf = (ord: string): string => `intDiv(${ord}, ${ORDER_UNITS_PER_MS})`
+
+/**
+ * `SELECT key, level [, group]`: one row per person with the deepest step they reached in order
+ * within the window.
+ *
+ * Read from {@link walkQuery} for every funnel, not from `windowFunnel`. That aggregate takes
+ * one number for both order and elapsed time, so it cannot keep `Seq` order and an exact window
+ * at once, and it lets a row that matches two steps (a repeated step, or a `$pageview` event step
+ * beside a page step) count for both. Its `strict_once` mode forbids that but is quadratic in a
+ * person's rows: 31 s on 72,000 rows where the walk takes 26 ms.
+ */
+function levelsQuery(plan: FunnelPlan) {
+	return fromQuery(walkQuery(plan), "walked").select(($) => {
+		const row = { key: $.key, level: $.level }
+		if (plan.breakdownBy === undefined) return row
+		// Not `$.group`: the walk projects it only for a breakdown, so it is not on the accessor's type.
+		return { ...row, group: CH.dynamicColumn("group", T.string) }
+	})
+}
+
+/**
+ * `SELECT key, evs, level, reachedAt [, group]`: each person's funnel rows as one sorted array,
+ * how deep they got, and the order key at which they first got there.
+ *
+ * One step at a time over the whole array, so the engine vectorizes it. `aK[i]` is the start of
+ * the latest attempt that has reached step K by row `i` (the latest has the most window left);
+ * `bK[i]` is that start on the rows that moved an attempt onto step K, else 0. A row reads the
+ * state from before it (`aK` shifted by one), so it moves an attempt one step and never two. The
+ * window compares milliseconds, so `Seq` orders rows without stretching or shrinking it.
+ *
+ * Raw SQL, because the builder has no lambdas; every name it uses is a column projected here.
+ * Tuple element 1 is `ord`, element k + 1 is step k's flag.
+ */
+function walkQuery(plan: FunnelPlan) {
+	const { opts } = plan
+	const n = opts.steps.length
+	const window = windowMs(opts)
+	const flags = Arr.join(
+		Arr.map(opts.steps, (_, index) => stepColumn(index)),
+		", ",
+	)
+	const tieOrder = Arr.join(["x.1", ...Arr.map(opts.steps, (_, index) => `1 - x.${index + 2}`)], ", ")
+	const perPerson = funnelSource(plan)
 		.select(($) => {
-			const ts = $.ts as CH.Expr<number>
-			const conditions = Arr.map(opts.steps, (_, index) =>
-				($[stepColumn(index)] as CH.Expr<number>).eq(1),
-			)
 			const row = {
 				key: $.key as CH.Expr<string>,
-				level: CH.windowFunnel(opts.windowSeconds * 1000)(ts, ...conditions),
+				// By order key; rows that tie sort in step order, so two events a backend sent in one
+				// millisecond convert, and a session entry comes before the session's first event.
+				evs: CH.untypedExpr(`arraySort(x -> (${tieOrder}), groupArray(tuple(ord, ${flags})))`),
 			}
 			if (plan.breakdownBy === undefined) return row
 			const dim = $.dim as CH.Expr<string>
-			return { ...row, group: argMinIf(dim, ts, dim.neq("")) }
+			return { ...row, group: argMinIf(dim, $.ord as CH.Expr<number>, dim.neq("")) }
 		})
 		.groupBy("key")
+
+	// Steps 2..N. `Arr.makeBy(0, …)` would still answer one element, hence the drop.
+	const later = Arr.drop(
+		Arr.makeBy(n, (index) => index + 1),
+		1,
+	)
+	const firsts = Arr.makeBy(n, (index) => `f${index + 1}`)
+	return fromQuery(perPerson, "person_events").select(($) => {
+		const row = {
+			key: $.key,
+			evs: $.evs,
+			a1: CH.untypedExpr("arrayFill(v -> v > 0, arrayMap(x -> if(x.2 = 1, x.1, toUInt64(0)), evs))"),
+			...Rec.fromEntries(
+				Arr.flatMap(later, (step) => [
+					[
+						`b${step}`,
+						CH.untypedExpr(
+							`arrayMap((x, p) -> if(x.${step + 1} = 1 AND p > 0 AND ${millisOf("x.1")} <= ${millisOf("p")} + ${window}, p, toUInt64(0)), evs, arrayPushFront(arrayPopBack(a${step - 1}), toUInt64(0)))`,
+						),
+					],
+					[`a${step}`, CH.untypedExpr(`arrayFill(v -> v > 0, b${step})`)],
+				]),
+			),
+			f1: CH.untypedExpr("arrayFirst(v -> v > 0, a1)"),
+			...Rec.fromEntries(
+				Arr.map(later, (step) => [
+					`f${step}`,
+					CH.untypedExpr(`tupleElement(arrayFirst((x, b) -> b > 0, evs, b${step}), 1)`),
+				]),
+			),
+			level: CH.rawExpr<number>(
+				`toUInt8(${Arr.join(
+					Arr.map(firsts, (column) => `(${column} > 0)`),
+					" + ",
+				)})`,
+				T.uint8,
+			),
+			// Steps are reached in order, so the deepest one's first time is the largest.
+			reachedAt: CH.rawExpr<number>(n === 1 ? "f1" : `greatest(${Arr.join(firsts, ", ")})`, T.uint64),
+		}
+		if (plan.breakdownBy === undefined) return row
+		return { ...row, group: CH.dynamicColumn("group", T.string) }
+	})
 }
 
 /** `[countIf(level >= 1), …, countIf(level >= N)]` over a levels row set. */
@@ -672,10 +790,11 @@ export function productEventsFunnelBreakdownQuery(
  * Event names in range for the step picker: `{ eventName, kind, count,
  * sessions, persons }`, most frequent first.
  *
- * `persons` is the unstitched `if(UserId != '', UserId, VisitorId)` — a cheap
- * approximation that needs no `identity_links` join; the funnel itself does the
- * stitching. Sidebar filters narrow by `SessionId`, so under an active filter
- * server-side events (which carry no session) are not listed.
+ * `persons` is the visitor id where the row has one, else the user id: a cheap count that needs
+ * no `identity_links` join. A browser row keeps its visitor id after sign-in, so a visitor who
+ * signs up is one person, not two; a server row has only the user id. The funnel itself does the
+ * stitching. Sidebar filters narrow by `SessionId`, so under an active filter server-side events
+ * (which carry no session) are not listed.
  */
 export function productEventNamesQuery(
 	opts: ProductEventNamesOpts = {},
@@ -688,7 +807,7 @@ export function productEventNamesQuery(
 			kind: $.Kind,
 			count: CH.count(),
 			sessions: CH.uniqIf($.SessionId, $.SessionId.neq("")),
-			persons: CH.uniq(CH.if_($.UserId.neq(""), $.UserId, $.VisitorId)),
+			persons: CH.uniq(CH.if_($.VisitorId.neq(""), $.VisitorId, $.UserId)),
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
@@ -811,16 +930,13 @@ export function productEventTraceSamplesQuery(
 
 // Funnel drop-off details: time between steps, and where the leavers went.
 //
-// Both read the same per-person chain: the funnel's `level` (windowFunnel, as
-// above) plus the timestamp of each step's first qualifying event, walked in
-// order from the first step-1 event within the window. That walk is a first-
-// occurrence approximation of the chain `windowFunnel` counted — it can start
-// at a later step-1 event than the walk does — so a person the funnel counts at
-// level N can occasionally have no step-N timestamp; such persons are left out
-// of the timing quantiles (guarded by `t_n > 0`) rather than contributing a
-// negative duration. The counts stay the funnel's own.
+// Both read each person's chain: the attempt the funnel counted, as the order key of the row that
+// satisfied each step. An attempt starts at a step-1 row and takes, for every later step, the
+// first row after the previous one that matches and is still inside the window. A person's chain
+// is the earliest attempt that gets as deep as any of theirs, so a first try that ran out of time
+// gives way to the later one that converted, and the level is the number the funnel counts.
 
-/** Every event of a funnel's population in range, as `(key, ts, name)` — the rows a leaver went on to. */
+/** Every event of a funnel's population in range, as `(key, ord, name)`: the rows a leaver went on to. */
 function personEventsBranch(plan: FunnelPlan) {
 	const { opts, filters } = plan
 	const keyBy = opts.keyBy
@@ -833,7 +949,7 @@ function personEventsBranch(plan: FunnelPlan) {
 	return base
 		.select(($) => ({
 			key: personKey(keyBy, $, keyBy === "person" ? $[LINK_ALIAS] : undefined),
-			ts: epochMs($.Timestamp),
+			ord: orderKey($.Timestamp, $.Seq),
 			name: eventDisplayName($),
 		}))
 		.where(($) => {
@@ -850,66 +966,54 @@ function personEventsBranch(plan: FunnelPlan) {
 		})
 }
 
-/** What a row is called in a path or a leavers list: the page for a page view, else the event name. */
+/** What a row is called in a path or a leavers list: the page or screen for a view, else the event name. */
 export function eventDisplayName(
 	$: EventsAccessor | OpenJoinAccessor<typeof Datasources.productEvents.columns>,
 ): CH.Expr<string> {
-	return CH.if_($.Kind.eq("navigation"), $.PagePath, $.EventName)
+	return CH.if_(isPageView($).and($.PagePath.neq("")), $.PagePath, $.EventName)
 }
 
-const stepTimeColumn = (index: number) => `t${index + 1}`
+const stepOrderColumn = (index: number) => `o${index + 1}`
+
+const stepIndexColumn = (index: number) => `i${index + 1}`
 
 /**
- * `SELECT key, level, t1, …, tN FROM (per-person sorted events)` — the funnel
- * level beside the epoch-ms timestamp of each step's first event in chain
- * order (0 when the walk never reached it).
+ * `SELECT key, level, o1, …, oN`: per person, the funnel level and the order key of each step's
+ * row in their chain (0 for a step the chain did not reach).
  *
- * The walk is raw SQL over the per-person `evs` array — `arrayFirst` with a
- * lambda referencing the previous step's alias — because the builder has no
- * lambda support; every column it names is one this query projects itself.
+ * The chain's start is the first step-1 row still inside the window when the deepest step was
+ * first reached ({@link walkQuery}'s `reachedAt`): an earlier start had expired by then, and no
+ * later one is needed. From there each step is the first matching row after the previous one,
+ * by position in the array as the walk counts, so rows that tie on the order key still chain.
+ * One scan of the person's rows per step.
  */
 function chainQuery(plan: FunnelPlan) {
 	const { opts } = plan
-	const windowMs = opts.windowSeconds * 1000
-	const perPerson = fromQuery(eventsBranch(plan), "funnel_events")
-		.select(($) => {
-			const ts = $.ts as CH.Expr<number>
-			const conditions = Arr.map(opts.steps, (_, index) =>
-				($[stepColumn(index)] as CH.Expr<number>).eq(1),
-			)
-			const tuple = Arr.join(
-				["ts", "seq", ...Arr.map(opts.steps, (_, index) => stepColumn(index))],
-				", ",
-			)
-			return {
-				key: $.key as CH.Expr<string>,
-				level: CH.windowFunnel(windowMs)(ts, ...conditions),
-				// `Seq` breaks ties inside a millisecond, as the table's sorting key does.
-				evs: CH.untypedExpr(`arraySort(x -> (x.1, x.2), groupArray(tuple(${tuple})))`),
-			}
-		})
-		.groupBy("key")
-
-	return fromQuery(perPerson, "chain_events").select(($) => {
-		const times = Rec.fromEntries(
-			Arr.map(opts.steps, (_, index) => {
-				// Tuple element index: 1 is `ts`, 2 is `seq`, k + 3 is the flag of step k (0-based).
-				const flagIndex = index + 3
-				// A step only counts once the previous one was found: with `t_{k-1}`
-				// still 0 the `>=` would match any row and hand the quantiles a
-				// duration measured from the epoch.
-				const walk =
-					index === 0
-						? `x.${flagIndex} = 1`
-						: `${stepTimeColumn(index - 1)} > 0 AND x.${flagIndex} = 1 AND x.1 >= ${stepTimeColumn(index - 1)} AND x.1 <= t1 + ${windowMs}`
+	const window = windowMs(opts)
+	return fromQuery(walkQuery(plan), "walked").select(($) => ({
+		key: $.key,
+		level: $.level,
+		...Rec.fromEntries(
+			Arr.flatMap(opts.steps, (_, index) => {
+				const step = index + 1
+				const at = stepIndexColumn(index)
+				const found =
+					step === 1
+						? `arrayFirstIndex(x -> x.2 = 1 AND ${millisOf("x.1")} + ${window} >= ${millisOf("reachedAt")}, evs)`
+						: `arrayFirstIndex((x, i) -> x.${step + 1} = 1 AND i > ${stepIndexColumn(index - 1)}, evs, arrayEnumerate(evs))`
 				return [
-					stepTimeColumn(index),
-					CH.rawExpr<number>(`tupleElement(arrayFirst(x -> ${walk}, evs), 1)`, T.uint64),
+					[at, CH.rawExpr<number>(`if(level >= ${step}, ${found}, 0)`, T.uint32)],
+					[
+						stepOrderColumn(index),
+						CH.rawExpr<number>(
+							`if(${at} > 0, tupleElement(arrayElement(evs, ${at}), 1), toUInt64(0))`,
+							T.uint64,
+						),
+					],
 				]
 			}),
-		)
-		return { key: $.key, level: $.level, ...times }
-	})
+		),
+	}))
 }
 
 function validateDetails(opts: ProductEventsFunnelOpts): ProductEventsFunnelError | undefined {
@@ -929,13 +1033,16 @@ export const productEventsFunnelTimingRowSchema = Schema.Struct({
 	/** Median milliseconds from the previous step's event to this one's, over persons who reached it. */
 	p50Ms: CHNumber,
 	p90Ms: CHNumber,
+	/** The same from step 1's event; on the last step, the time the whole funnel took. */
+	sinceStartP50Ms: CHNumber,
+	sinceStartP90Ms: CHNumber,
 })
 export type ProductEventsFunnelTimingOutput = typeof productEventsFunnelTimingRowSchema.Type
 
 /**
- * Time between consecutive steps: `{ step, p50Ms, p90Ms }` for steps 2..N, in
- * step order, over the persons the funnel counts at that step. An empty range
- * (or a step nobody reached) answers `0`, never a missing row.
+ * Time between steps: `{ step, p50Ms, p90Ms, sinceStartP50Ms, sinceStartP90Ms }` for steps
+ * 2..N, in step order, over the persons the funnel counts at that step. An empty range (or a
+ * step nobody reached) answers `0`, never a missing row.
  */
 export function productEventsFunnelTimingQuery(
 	opts: ProductEventsFunnelOpts,
@@ -947,20 +1054,25 @@ export function productEventsFunnelTimingQuery(
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
 
-	const quantileArray = (q: number): string =>
+	const millis = (index: number): string => `intDiv(${stepOrderColumn(index)}, ${ORDER_UNITS_PER_MS})`
+	// One quantile per step 2..N of the span since the previous step, or since step 1.
+	const quantileArray = (q: number, since: "previous" | "start"): string =>
 		`[0, ${Arr.join(
 			Array.from({ length: n - 1 }, (_, i) => {
 				const step = i + 2
-				const to = stepTimeColumn(step - 1)
-				const fromCol = stepTimeColumn(step - 2)
-				return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromCol}), level >= ${step} AND ${to} > 0), 0)`
+				const from = since === "start" ? millis(0) : millis(step - 2)
+				return `ifNotFinite(quantileIf(${q})(toFloat64(${millis(step - 1)} - ${from}), level >= ${step}), 0)`
 			}),
 			", ",
 		)}]`
+	const quantiles = (q: number, since: "previous" | "start") =>
+		CH.rawExpr<ReadonlyArray<number>>(quantileArray(q, since), T.array(T.float64))
 
 	const totals = fromQuery(chainQuery(plan), "chain").select(() => ({
-		p50s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.5), T.array(T.float64)),
-		p90s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.9), T.array(T.float64)),
+		p50s: quantiles(0.5, "previous"),
+		p90s: quantiles(0.9, "previous"),
+		start50s: quantiles(0.5, "start"),
+		start90s: quantiles(0.9, "start"),
 	}))
 
 	return Result.succeed(
@@ -969,6 +1081,8 @@ export function productEventsFunnelTimingQuery(
 				step: CH.arrayJoin(CH.arrayOf(...Array.from({ length: n - 1 }, (_, i) => CH.lit(i + 2)))),
 				p50Ms: CH.arrayElement($.p50s, CH.dynamicColumn<number>("step")),
 				p90Ms: CH.arrayElement($.p90s, CH.dynamicColumn<number>("step")),
+				sinceStartP50Ms: CH.arrayElement($.start50s, CH.dynamicColumn<number>("step")),
+				sinceStartP90Ms: CH.arrayElement($.start90s, CH.dynamicColumn<number>("step")),
 			}))
 			.orderBy(["step", "asc"])
 			.format("JSON"),
@@ -984,13 +1098,13 @@ export const productEventsFunnelLeaversRowSchema = Schema.Struct({
 })
 export type ProductEventsFunnelLeaversOutput = typeof productEventsFunnelLeaversRowSchema.Type
 
-/** Rows kept per step in the leavers list — the chart draws four and folds the rest. */
+/** Rows kept per step in the leavers list: the chart draws four and folds the rest. */
 export const FUNNEL_LEAVERS_PER_STEP = 6
 
 /**
  * Where the drop-offs went: for each step 2..N, the first event after the last
  * step a leaver did reach, counted by name, most common first. `next = ''`
- * means no later event in range — the person simply stopped.
+ * means no later event in range: the person simply stopped.
  *
  * Reads every event of the population (not just step matches) once, joined to
  * the per-person chain on the key; bounded to the top rows per step.
@@ -1004,8 +1118,8 @@ export function productEventsFunnelLeaversQuery(
 	const first = opts.steps[0]
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
-	const timeColumns = Arr.join(
-		Arr.map(opts.steps, (_, index) => stepTimeColumn(index)),
+	const orderColumns = Arr.join(
+		Arr.map(opts.steps, (_, index) => stepOrderColumn(index)),
 		", ",
 	)
 
@@ -1013,25 +1127,20 @@ export function productEventsFunnelLeaversQuery(
 		.select(($) => ({
 			key: $.key,
 			step: ($.level as CH.Expr<number>).add(1),
-			tLast: CH.rawExpr<number>(`arrayElement([${timeColumns}], level)`, T.uint64),
+			lastOrd: CH.rawExpr<number>(`arrayElement([${orderColumns}], level)`, T.uint64),
 		}))
-		.where(($) => [
-			($.level as CH.Expr<number>).gte(1),
-			($.level as CH.Expr<number>).lt(n),
-			// A person the funnel counts at this level but whose first-occurrence
-			// walk never reached it has no "last step" instant to look after.
-			CH.rawCond(`arrayElement([${timeColumns}], level) > 0`),
-		])
+		.where(($) => [($.level as CH.Expr<number>).gte(1), ($.level as CH.Expr<number>).lt(n)])
 
-	const nexts = fromQuery(personEventsBranch(plan), "e")
-		.innerJoinQuery(dropped, "d", (e, d) => e.key.eq(d.key))
+	// From the dropped persons outward: one with no event at all (a session entry and nothing else)
+	// still counts, under `''`. Ties on the order key break by name, so the answer does not vary.
+	const nexts = fromQuery(dropped, "d")
+		.leftJoinQuery(personEventsBranch(plan), "e", (d, e) => d.key.eq(e.key))
 		.select(($) => ({
 			key: $.key,
-			step: $.d.step as CH.Expr<number>,
-			next: argMinIf(
-				$.name as CH.Expr<string>,
-				$.ts,
-				($.ts as CH.Expr<number>).gt($.d.tLast as CH.Expr<number>),
+			step: $.step,
+			next: CH.rawExpr<string>(
+				"argMinIf(coalesce(e.name, ''), tuple(coalesce(e.ord, 0), coalesce(e.name, '')), coalesce(e.ord, 0) > d.lastOrd)",
+				T.string,
 			),
 		}))
 		.groupBy("key", "step")
@@ -1040,13 +1149,13 @@ export function productEventsFunnelLeaversQuery(
 		.select(($) => ({ step: $.step, next: $.next, count: CH.count() }))
 		.groupBy("step", "next")
 
-	// Top rows per step without `LIMIT BY`: fold each step's rows into an array,
-	// take the head, and explode it again.
+	// Top rows per step without `LIMIT BY`: fold each step's rows into an array, sort it by count
+	// (ties by name, so the cut is the same on every run), take the head, and explode it again.
 	const ranked = fromQuery(counted, "counted")
 		.select(($) => ({
 			step: $.step,
 			head: CH.untypedExpr(
-				`arraySlice(arrayReverseSort(x -> x.2, groupArray(tuple(next, count))), 1, ${FUNNEL_LEAVERS_PER_STEP})`,
+				`arraySlice(arraySort(x -> (-toInt64(x.2), x.1), groupArray(tuple(next, count))), 1, ${FUNNEL_LEAVERS_PER_STEP})`,
 			),
 		}))
 		.groupBy("step")

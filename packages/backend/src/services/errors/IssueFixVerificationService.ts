@@ -993,8 +993,9 @@ const make: Effect.Effect<
 		const rows = yield* dbExecute((db) =>
 			db.run(
 				PG.from(ErrorIssueVerifications)
+					// On the org too: the run's summary is written into this org's issue.
 					.innerJoin(Investigations, "inv", (verification, inv) =>
-						verification.investigationId.eq(inv.id),
+						verification.investigationId.eq(inv.id).and(verification.orgId.eq(inv.orgId)),
 					)
 					.select(({ inv, ...verification }) => ({
 						...verification,
