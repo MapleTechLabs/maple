@@ -214,6 +214,9 @@ export const pages = [
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */
 export const isBarePageRoute = AppRoute.isAnyOf(["Share"])
 
+/** A page drawn alone, outside the shell (`isBarePageRoute`). */
+export const isBareSlot = (slot: PageSlotBase): boolean => slot._tag === Share.page.id
+
 export const PageSlot = Schema.Union(Array.map(pages, (page) => page.Slot))
 export type PageSlot = typeof PageSlot.Type
 
@@ -275,14 +278,52 @@ export const enterRoute = (
 		},
 	)
 
+/** Some `AsyncData` in the Model passes `test`. */
+const someAsyncData =
+	(test: (data: AsyncData.AsyncData<unknown, unknown>) => boolean) =>
+	(value: unknown): boolean => {
+		if (Array.isArray(value)) return Array.some(value, someAsyncData(test))
+		if (!Predicate.isReadonlyObject(value)) return false
+		// An `AsyncData`'s own data holds no requests: rows are not walked.
+		if (AsyncData.isAsyncData(value)) return test(value)
+		return Array.some(Rec.values(value), someAsyncData(test))
+	}
+
 /** Some `AsyncData` in the Model is in flight; its answer would be dropped while parked. */
-const hasLoadInFlight = (value: unknown): boolean => {
-	if (Array.isArray(value)) return Array.some(value, hasLoadInFlight)
-	if (!Predicate.isReadonlyObject(value)) return false
-	// An `AsyncData`'s own data holds no requests: rows are not walked.
-	if (AsyncData.isAsyncData(value)) return AsyncData.isPending(value)
-	return Array.some(Rec.values(value), hasLoadInFlight)
+const hasLoadInFlight = someAsyncData(AsyncData.isPending)
+
+/** Some read of the page is `Loading`. Any `{ _tag: "Loading" }` counts, so a chart runtime still
+ * importing or an Electric sync still connecting holds a navigation too: its page is not drawable yet. */
+export const isLoading = (slot: PageSlot): boolean => someAsyncData(AsyncData.isLoading)(slot.model)
+
+/** A request-keyed read (`Keyed`): `key` is null until it is first requested. */
+const isKeyed = (
+	value: unknown,
+): value is { readonly key: unknown; readonly data: AsyncData.AsyncData<unknown, unknown> } =>
+	Predicate.isReadonlyObject(value) &&
+	"key" in value &&
+	"data" in value &&
+	AsyncData.isAsyncData(value.data)
+
+/** The page's top-level request-keyed reads: what it opens with, not a nested panel's. */
+const topLevelReads = (slot: PageSlot) => {
+	const model: unknown = slot.model
+	return Predicate.isReadonlyObject(model) ? Array.filter(Rec.values(model), isKeyed) : []
 }
+
+/** The page is still reading what it opens with: a read is `Loading`, or none of its top-level reads
+ * is requested yet (they wait on its window). Some stay unrequested on purpose (a lazy column), so
+ * one requested read is enough to stop counting them. */
+export const isAwaitingReads = (slot: PageSlot): boolean => {
+	if (isLoading(slot)) return true
+	const reads = topLevelReads(slot)
+	return reads.length > 0 && Array.every(reads, (read) => read.key === null)
+}
+
+/** The page shows its own content: done reading, or one of its top-level reads has data. A side read
+ * (presence, incidents) answering first does not count. */
+export const showsContent = (slot: PageSlot): boolean =>
+	!isAwaitingReads(slot) || Array.some(topLevelReads(slot), (read) => AsyncData.hasData(read.data))
 
 /** How many left pages are kept to revive; each holds its last data. */
 const PARKED_PAGES_MAX = 4

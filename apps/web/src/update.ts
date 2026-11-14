@@ -24,6 +24,7 @@ import {
 	IdentifySession,
 	SaveSessionToken,
 	WaitForAuthSettle,
+	WaitPageHold,
 	WaitPreloadDelay,
 	WriteSessionTimeRange,
 } from "./command"
@@ -41,6 +42,7 @@ import {
 	planGate,
 } from "./page/onboarding/plan-gate"
 import { type PageContext, PageOutMessage, type RootToastAction } from "./page/contract"
+import * as PageHold from "./page/page-hold"
 import * as Preload from "./page/preload"
 import {
 	changeContext,
@@ -412,6 +414,13 @@ const writePage =
 		)
 			return { model }
 		const followed = actOnPageOut(model, transition.outMessage)
+		const pageHold = PageHold.written(
+			followed.model.pageHold,
+			followed.model.page,
+			transition.slot,
+			PageHold.isRevived(followed.model.parkedPages, transition.slot),
+		)
+		const startedHold = PageHold.startedHold(followed.model.pageHold, pageHold)
 		const held = Preload.held(
 			followed.model.preload,
 			pageIdentity(transition.slot),
@@ -422,6 +431,7 @@ const writePage =
 			model: modifyFields(followed.model, {
 				page: () => transition.slot,
 				parkedPages: (parked) => parkPages(parked, followed.model.page, transition.slot),
+				pageHold: () => pageHold,
 				pageInstances: (built) => Math.max(built, transition.slot?.instance ?? 0),
 				preload: () => held.model,
 			}),
@@ -433,6 +443,7 @@ const writePage =
 					transition.commands,
 					Command.mapMessage((message) => Message.GotPageMessage({ message })),
 				),
+				...(startedHold === null ? [] : [WaitPageHold({ instance: startedHold })]),
 				...followed.outCommands,
 				...followed.toastCommands,
 			],
@@ -1100,6 +1111,12 @@ const foldMessage = (model: Model, message: Message) =>
 		FailedLoadCustomer: ({ orgId }) =>
 			settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		ElapsedCustomerGrace: ({ orgId }) => elapsedCustomerGrace(model, orgId),
+		ElapsedPageHold: ({ instance }) => {
+			const pageHold = PageHold.elapsed(model.pageHold, instance, model.page)
+			return pageHold === model.pageHold
+				? { model }
+				: { model: modifyFields(model, { pageHold: () => pageHold }) }
+		},
 		CompletedSaveSelectedPlanKnown: () => ({ model }),
 		CompletedSignOutOfClerk: () => ({ model }),
 		CompletedIdentifySession: () => ({ model }),

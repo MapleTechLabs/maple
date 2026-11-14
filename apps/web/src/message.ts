@@ -35,6 +35,8 @@ export const Message = defineMessageUnion({
 	FailedLoadCustomer: { orgId: Schema.String },
 	/** The plan gate's splash waited out its grace: a slow customer read no longer holds the app. */
 	ElapsedCustomerGrace: { orgId: Schema.String },
+	/** `PAGE_HOLD_MS` ran out for the page built as `instance`: it shows, loaded or not. */
+	ElapsedPageHold: { instance: Schema.Number },
 	CompletedSaveSelectedPlanKnown: {},
 	CompletedReconnectOrgCollections: {},
 	/** The Undo's write: `error` is why the widgets could not be put back. */

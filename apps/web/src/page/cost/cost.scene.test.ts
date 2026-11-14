@@ -229,6 +229,23 @@ const planetScaleAnswered = (model: Model, status: typeof PlanetScaleCostStatus.
 	).model
 
 describe("cost page", () => {
+	test("while the sources read runs, the page draws its own frame: toolbar, chart title, table headers", () => {
+		const loading = pageUpdate(
+			init({ search: {} }, context).model,
+			Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loading),
+			resolveTheme,
+			expectView(text("Group by")).toExist(),
+			expectView(text("Cost by service")).toExist(),
+			expectView(role("columnheader", { name: "Service" })).toExist(),
+			expectView(role("columnheader", { name: "Previous period" })).toExist(),
+			expectView(text("No cost source yet")).not.toExist(),
+		)
+	})
+
 	test("an org with no cost source gets the connect on-ramp and no warehouse read", () => {
 		const step = entered({}, [])
 		expect(names(step.commands)).toEqual([])

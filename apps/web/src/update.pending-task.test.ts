@@ -9,6 +9,7 @@ vi.hoisted(() => {
 })
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
+import * as PageHold from "./page/page-hold"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -34,6 +35,7 @@ const base = (route: AppRoute): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
+	pageHold: PageHold.Model.None(),
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),

@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest"
 vi.hoisted(() => Object.assign(globalThis, { window: new EventTarget() }))
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
+import * as PageHold from "./page/page-hold"
 import { CustomerData, initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import { enterRoute, pageIdentity } from "./page/registry"
@@ -41,6 +42,7 @@ const base = (route: AppRoute): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
+	pageHold: PageHold.Model.None(),
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),
@@ -355,5 +357,50 @@ describe("dashboard widget undo", () => {
 		).toEqual([{ type: "error", title: "Couldn't restore the widget", description: "Network down" }])
 		const restored = update(model, Message.CompletedRestoreDashboardWidgets({ error: null })).model
 		expect(restored.toasts.toasts).toEqual([])
+	})
+})
+
+describe("navigation hold", () => {
+	test("navigating to a loading page keeps the page left on screen until its timer, then shows it", () => {
+		const toServices = (model: Model, message: ServicesMessage): Model => {
+			const slot = model.page
+			return slot === null
+				? model
+				: update(
+						model,
+						Message.GotPageMessage({
+							message: {
+								_tag: "ServicesList",
+								key: slot.key,
+								orgId: slot.orgId,
+								instance: slot.instance,
+								message,
+							},
+						}),
+					).model
+		}
+		const entered = settle(base(AppRoute.Services({ search: {} }))).model
+		const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
+		const windowed = toServices(
+			entered,
+			ServicesMessage.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+		)
+		const overviewKey =
+			windowed.page?._tag === "ServicesList" ? (windowed.page.model.overview.key ?? "") : ""
+		// The services list with rows on screen: the page a navigation leaves.
+		const onServices = toServices(
+			windowed,
+			ServicesMessage.CompletedFetchOverview({ key: overviewKey, result: Result.succeed([]) }),
+		)
+		expect(onServices.pageHold).toEqual(PageHold.Model.None())
+		const toLogs = update(onServices, Message.ChangedUrl({ url: urlOf("/logs") }))
+		const instance = toLogs.model.page?.instance ?? -1
+		expect(toLogs.model.page?._tag).toBe("LogsList")
+		expect(toLogs.model.pageHold).toEqual({ _tag: "Holding", leaving: onServices.page, instance })
+		expect(Arr.filter(commandsOf(toLogs), ({ name }) => name === "WaitPageHold")).toEqual([
+			{ name: "WaitPageHold", args: { instance } },
+		])
+		const shown = update(toLogs.model, Message.ElapsedPageHold({ instance }))
+		expect(shown.model.pageHold).toEqual(PageHold.Model.Waited({ instance }))
 	})
 })

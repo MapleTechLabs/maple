@@ -14,8 +14,16 @@ import type { Attribute, Html, HtmlBuilder } from "foldkit/html"
 
 type Children = ReadonlyArray<Html | string>
 
-export const pageLayoutRoot = <M>(h: HtmlBuilder<M>, children: Children, className?: string): Html =>
-	h.div([h.DataAttribute("slot", "page-layout"), h.Class(cn(pageLayoutStyles, className))], children)
+export const pageLayoutRoot = <M>(
+	h: HtmlBuilder<M>,
+	children: Children,
+	className?: string,
+	attributes: ReadonlyArray<Attribute<M>> = [],
+): Html =>
+	h.div(
+		[h.DataAttribute("slot", "page-layout"), h.Class(cn(pageLayoutStyles, className)), ...attributes],
+		children,
+	)
 
 /** `PageLayout.Title`: the one canonical page `<h1>`; `title` is the native tooltip when it truncates. */
 export const pageTitle = <M>(
