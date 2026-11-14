@@ -127,7 +127,8 @@ timeout, since alchemy resolves it once and migrations run late in the deploy.
 `PLANETSCALE_ORGANIZATION` still comes from the instance's Infisical environment, masked in the
 public run logs. Each instance has its own trust, conditioned on its GitHub environment
 (`production`, `production-eu`), whose ID is that environment's `PLANETSCALE_OIDC_TRUST_ID`
-variable. A trust reaches only its instance's database, with the four accesses alchemy needs:
+variable. Only this workflow runs in those environments; a new job there could mint the token, so
+add a `workflow_ref` condition if one ever does. A trust reaches only its instance's database, with the four accesses alchemy needs:
 
 ```bash
 pscale oidc-trust create --org <org> --name "github: prd deploy us" \

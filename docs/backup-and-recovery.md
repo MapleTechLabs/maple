@@ -102,6 +102,7 @@ pscale oidc-trust create --org <org> --name "github: backup restore drill" \
   --provider github_actions --max-ttl 2700 \
   --condition repository_id=1158615018 --condition repository_owner_id=282671153 \
   --condition environment=maintenance \
+  --condition workflow_ref=MapleTechLabs/maple/.github/workflows/backup-restore-test.yml@refs/heads/main \
   --database-access maple:read_branch --database-access maple:create_branch \
   --database-access maple:delete_branch --database-access maple:connect_branch \
   --database-access maple:delete_branch_password --database-access maple:read_backups \
@@ -109,8 +110,9 @@ pscale oidc-trust create --org <org> --name "github: backup restore drill" \
 ```
 
 The provider requires `repository_id` and `repository_owner_id`
-(`gh api repos/MapleTechLabs/maple --jq '.id, .owner.id'`); `environment` is what keeps other
-jobs in the repository out.
+(`gh api repos/MapleTechLabs/maple --jq '.id, .owner.id'`). `environment` alone would let any
+`maintenance` job on `main` (the preview-orphan sweep too) mint this token, so `workflow_ref` pins
+it to the drill's workflow.
 
 Point-in-time recovery is the other restore path PlanetScale offers: any timestamp inside the
 retention window, from the dashboard or `pscale branch create --from main --restore-point <iso>`
