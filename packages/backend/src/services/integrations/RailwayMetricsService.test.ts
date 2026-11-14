@@ -592,7 +592,7 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
-	it.effect("a rejected token does not pause a token saved while the poll ran", () => {
+	it.effect("a rejected token neither pauses nor marks a token saved while the poll ran", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
 		return Effect.gen(function* () {
@@ -616,12 +616,17 @@ describe("RailwayMetricsService", () => {
 				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
 			)
 			const row = yield* Effect.promise(() =>
-				queryFirstRow<{ auth_failed_at: Date | null; disconnected_at: Date | null }>(
+				queryFirstRow<{
+					auth_failed_at: Date | null
+					last_error: string | null
+					disconnected_at: Date | null
+				}>(
 					testDb,
-					"SELECT c.auth_failed_at, s.disconnected_at FROM railway_connections c JOIN sources s ON s.id = c.source_id",
+					"SELECT c.auth_failed_at, c.last_error, s.disconnected_at FROM railway_connections c JOIN sources s ON s.id = c.source_id",
 				),
 			)
 			assert.isNull(row!.auth_failed_at)
+			assert.isNull(row!.last_error)
 			assert.isNull(row!.disconnected_at)
 		})
 	})
