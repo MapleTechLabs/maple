@@ -30,8 +30,8 @@ export const useCases: UseCase[] = [
 		constantLabel: "slo",
 		storyTitle: m.uc_api_story_title,
 		storyLede: m.uc_api_story_lede,
-		// surface-alerts and hero-dashboard are both ~1.94:1, and the authored
-		// third plate matches, so this story is aspect-clean.
+		// surface-alerts and hero-dashboard are 16:9 captures; the authored
+		// story-api-releases (1.94:1) is the one plate that letterboxes.
 		storyAspect: "1440 / 810",
 		steps: [
 			{
@@ -180,9 +180,8 @@ export const useCases: UseCase[] = [
 		constantLabel: "deploy",
 		storyTitle: m.uc_micro_story_title,
 		storyLede: m.uc_micro_story_lede,
-		// surface-map is 1.94:1 against flow-02/03's 1.65:1. Running the story at
-		// 992/600 letterboxes one plate; running it at 1280/660 would letterbox
-		// two. `.story-frame__stage` insets with object-fit: contain either way.
+		// surface-map, flow-02 and flow-03 are all 16:9 captures, so no plate
+		// letterboxes (`.story-frame__stage` insets with object-fit: contain).
 		storyAspect: "1440 / 810",
 		steps: [
 			{
