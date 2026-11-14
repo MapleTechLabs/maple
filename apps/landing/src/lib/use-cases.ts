@@ -32,7 +32,7 @@ export const useCases: UseCase[] = [
 		storyLede: m.uc_api_story_lede,
 		// surface-alerts and hero-dashboard are both ~1.94:1, and the authored
 		// third plate matches, so this story is aspect-clean.
-		storyAspect: "1280 / 660",
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "alert",
@@ -106,7 +106,7 @@ export const useCases: UseCase[] = [
 		constantLabel: "order",
 		storyTitle: m.uc_ecom_story_title,
 		storyLede: m.uc_ecom_story_lede,
-		storyAspect: "992 / 600",
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "alert",
@@ -183,7 +183,7 @@ export const useCases: UseCase[] = [
 		// surface-map is 1.94:1 against flow-02/03's 1.65:1. Running the story at
 		// 992/600 letterboxes one plate; running it at 1280/660 would letterbox
 		// two. `.story-frame__stage` insets with object-fit: contain either way.
-		storyAspect: "992 / 600",
+		storyAspect: "1440 / 810",
 		steps: [
 			{
 				surface: "map",
