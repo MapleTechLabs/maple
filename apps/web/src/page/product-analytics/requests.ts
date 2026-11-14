@@ -6,7 +6,14 @@ import { previousWindow } from "../analytics/previous-window"
 import type { TimeWindow } from "../../data/time-range"
 import type { Resources } from "../../platform/resources"
 import type { PageContext } from "../contract"
-import { FetchAttributeKeys, FetchBreakdowns, FetchEventNames, FetchFunnel, FetchPaths } from "./command"
+import {
+	FetchAttributeKeys,
+	FetchBreakdowns,
+	FetchEventNames,
+	FetchFunnel,
+	FetchPages,
+	FetchPaths,
+} from "./command"
 import {
 	funnelBreakdownParamsOf,
 	funnelCountsParamsOf,
@@ -24,6 +31,8 @@ type Cmd = Command.Command<Message, never, Resources>
 
 const BREAKDOWN_LIMIT = 50
 export const EVENTS_LIMIT = 200
+/** Pages a page step's input offers. */
+const PAGES_LIMIT = 100
 /** Property keys the breakdown picker offers. */
 const ATTRIBUTE_KEYS_LIMIT = 30
 
@@ -48,6 +57,13 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 		fn: "getWebAnalyticsBreakdowns",
 		input: breakdownsInput,
 		command: (key) => FetchBreakdowns({ slot: "breakdowns", key, input: breakdownsInput }),
+	}
+	const pagesInput = { startTime, endTime, limit: PAGES_LIMIT }
+	const pages: Request = {
+		slot: "pages",
+		fn: "getWebAnalyticsPages",
+		input: pagesInput,
+		command: (key) => FetchPages({ slot: "pages", key, input: pagesInput }),
 	}
 	switch (tabOf(model.search)) {
 		case "events":
@@ -77,6 +93,7 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 			return [
 				rail,
 				events("events", window),
+				pages,
 				{
 					slot: "attributeKeys",
 					fn: "getProductEventAttributeKeys",
@@ -98,6 +115,7 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 			return [
 				rail,
 				events("events", window),
+				pages,
 				...(input === null
 					? []
 					: [

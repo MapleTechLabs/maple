@@ -60,12 +60,16 @@ export const eventSuggestions = (model: Model): ReadonlyArray<StepSuggestion> =>
 		count: row.persons,
 	}))
 
-/** The window's entry pages, for page steps. */
+/** The window's viewed pages, most viewed first; the rail's entry pages until that read answers. */
 export const pageSuggestions = (model: Model): ReadonlyArray<StepSuggestion> =>
-	Option.getOrElse(
-		Option.map(AsyncData.getData(model.breakdowns.data), (breakdowns) => breakdowns.entryPaths),
-		() => [],
-	)
+	Option.match(AsyncData.getData(model.pages.data), {
+		onSome: (rows) => Arr.map(rows, (row) => ({ name: row.pagePath, count: row.pageViews })),
+		onNone: () =>
+			Option.getOrElse(
+				Option.map(AsyncData.getData(model.breakdowns.data), (breakdowns) => breakdowns.entryPaths),
+				() => [],
+			),
+	})
 
 /** What a funnel or path counts, as people read it: "1 person", "12 sessions". */
 export const countNoun = (keyBy: FunnelKeyBy, count: number): string => {

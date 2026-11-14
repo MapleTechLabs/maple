@@ -423,6 +423,67 @@ describe("product analytics", () => {
 		)
 	})
 
+	test("breakdown groups read as the filter rail names them", () => {
+		const byCountry = settled(
+			settled(
+				resolved({ tab: "funnels", steps: SIGNUP, breakdown: "country" }).model,
+				"funnel",
+				FUNNEL,
+			),
+			"funnelBreakdown",
+			[
+				{ name: "signup_started", value: 700, group: "DE" },
+				{ name: "signup_completed", value: 400, group: "DE" },
+				{ name: "signup_started", value: 506, group: "(none)" },
+				{ name: "signup_completed", value: 342, group: "(none)" },
+			],
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(byCountry),
+			measured,
+			expectView(text("🇩🇪 Germany")).toExist(),
+			expectView(text("Not set")).toExist(),
+		)
+		const byReferrer = settled(
+			settled(
+				resolved({ tab: "funnels", steps: SIGNUP, breakdown: "referrerHost" }).model,
+				"funnel",
+				FUNNEL,
+			),
+			"funnelBreakdown",
+			[
+				{ name: "signup_started", value: 1_206, group: "(none)" },
+				{ name: "signup_completed", value: 742, group: "(none)" },
+			],
+		)
+		scene({ update: pageUpdate, view }, given(byReferrer), measured, expectView(text("Direct")).toExist())
+	})
+
+	test("counting by User with nobody identified says why the funnel is empty", () => {
+		const model = settled(resolved({ tab: "funnels", steps: SIGNUP, keyBy: "user" }).model, "funnel", [
+			{ name: "signup_started", value: 0 },
+			{ name: "signup_completed", value: 0 },
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(
+				text(
+					"Count by User only counts identified users. Try Person, or check the first step's name.",
+				),
+			).toExist(),
+		)
+	})
+
+	test("a page step is offered every page viewed in the window", () => {
+		const { commands } = resolved({ tab: "funnels", steps: SIGNUP })
+		expect(sentAs(commands, "FetchProductAnalyticsPages")?.args).toMatchObject({
+			slot: "pages",
+			input: { startTime: window.startTime, limit: 100 },
+		})
+	})
+
 	test("a one-step funnel asks for no breakdown and says a second step is needed", () => {
 		const one: Search["steps"] = [{ kind: "event", eventName: "signup_started" }]
 		const { commands, model } = resolved({ tab: "funnels", steps: one, breakdown: "country" })

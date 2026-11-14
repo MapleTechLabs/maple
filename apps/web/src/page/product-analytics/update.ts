@@ -34,7 +34,7 @@ import {
 	withParsedFilter,
 } from "./definition"
 import { FilterKey, Message, type RequestMode, SlotName } from "./message"
-import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PathsRow } from "./model"
+import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PageRow, PathsRow } from "./model"
 import { requestSlots } from "./requests"
 
 type Return = PageReturn<Model, Message>
@@ -50,6 +50,7 @@ const SLOT_SCHEMAS = {
 	previousFunnel: Schema.Array(FunnelRow),
 	funnelBreakdown: Schema.Array(FunnelGroupRow),
 	attributeKeys: Schema.Array(AttributeKeyRow),
+	pages: Schema.Array(PageRow),
 	paths: Schema.Array(PathsRow),
 } satisfies Record<SlotName, Schema.Top>
 
@@ -193,6 +194,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		previousFunnel: Keyed.idle(),
 		funnelBreakdown: Keyed.idle(),
 		attributeKeys: Keyed.idle(),
+		pages: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
 		// A funnel that arrives with a filter shows its lines, and keeps them while one is retyped.

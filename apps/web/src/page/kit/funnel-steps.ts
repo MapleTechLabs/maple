@@ -540,6 +540,7 @@ export const stepFilterLine = <M>(h: HtmlBuilder<M>, options: StepFilterLineOpti
 		textareaClassName: "min-h-[28px] text-xs",
 		// One line: the control's own minimum is two rows.
 		controlClassName: "min-h-0 resize-none max-sm:min-h-0",
+		isInvalid: options.error !== undefined,
 		onInput: options.onInput,
 	}
 	return vstack(h, { gap: "0.5", className: "pl-6" }, [

@@ -51,6 +51,10 @@ export type FunnelGroupRow = typeof FunnelGroupRow.Type
 export const AttributeKeyRow = Schema.Struct({ attributeKey: Schema.String, usageCount: Schema.Number })
 export type AttributeKeyRow = typeof AttributeKeyRow.Type
 
+/** A page people viewed in the window, for a page step's suggestions. */
+export const PageRow = Schema.Struct({ pagePath: Schema.String, pageViews: Schema.Number })
+export type PageRow = typeof PageRow.Type
+
 /** `PathsWidgetRow`: one hop between two nodes. */
 export const PathsRow = Schema.Struct({
 	hop: Schema.Number,
@@ -74,6 +78,7 @@ export const Model = Schema.Struct({
 	previousFunnel: KeyedSchema(Schema.Array(FunnelRow), LoadFailure),
 	funnelBreakdown: KeyedSchema(Schema.Array(FunnelGroupRow), LoadFailure),
 	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
+	pages: KeyedSchema(Schema.Array(PageRow), LoadFailure),
 	paths: KeyedSchema(Schema.Array(PathsRow), LoadFailure),
 	/** The funnel steps as edited; the URL catches up on a pick, or once typing pauses. */
 	steps: Schema.Array(StepDraft),

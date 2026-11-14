@@ -1,4 +1,5 @@
 import {
+	FUNNEL_EMPTY_GROUP_LABEL,
 	FUNNEL_MAX_STEPS,
 	FUNNEL_SESSION_DIMENSION_LABEL,
 	type FunnelBreakdownBy,
@@ -38,6 +39,7 @@ import {
 	FUNNEL_SESSION_DIMENSIONS,
 	FUNNEL_WINDOW_OPTIONS,
 } from "../dashboards/kit/funnel-definition"
+import { countryLabel } from "../analytics/labels"
 import { parseFunnelStepFilter } from "../dashboards/widget/funnel-filters"
 import { type StepDraft, StepEdit, stepBuilder, stepFilterLine } from "../kit/funnel-steps"
 import { statRail, statRailItem, statRailLoading } from "../kit/stat-rail"
@@ -447,6 +449,12 @@ const stepsTable = (h: H, rows: ReadonlyArray<FunnelRow>, keyBy: FunnelKeyBy): H
 	])
 }
 
+/** A group as the filter rail names it: a country by name, a missing referrer as Direct, else Not set. */
+const groupLabel = (breakdownBy: FunnelBreakdownBy, name: string): string => {
+	if (name === FUNNEL_EMPTY_GROUP_LABEL) return breakdownBy === "referrerHost" ? "Direct" : "Not set"
+	return breakdownBy === "country" ? countryLabel(name) : name
+}
+
 /** One muted line inside a panel, where a table would have nothing to list. */
 const panelNote = (h: H, text: string): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p", className: "px-4 py-3" }, [text])
@@ -469,7 +477,7 @@ const groupsOf = (rows: ReadonlyArray<FunnelGroupRow>): ReadonlyArray<Group> =>
 const breakdownTable = (
 	h: H,
 	groups: ReadonlyArray<Group>,
-	inputs: Readonly<{ label: string; keyBy: FunnelKeyBy; overall: number }>,
+	inputs: Readonly<{ label: string; breakdownBy: FunnelBreakdownBy; keyBy: FunnelKeyBy; overall: number }>,
 ): Html => {
 	const best = Arr.reduce(groups, 0, (max, group) =>
 		Math.max(max, group.entered === 0 ? 0 : group.converted / group.entered),
@@ -491,7 +499,11 @@ const breakdownTable = (
 				return tableRow(
 					h,
 					[
-						tableCell(h, [typography(h, { size: "xs", truncate: true }, [group.name])]),
+						tableCell(h, [
+							typography(h, { size: "xs", truncate: true }, [
+								groupLabel(inputs.breakdownBy, group.name),
+							]),
+						]),
 						numericTableCell(h, [formatNumber(group.entered)]),
 						numericTableCell(h, [formatNumber(group.converted)]),
 						tableCell(h, [
@@ -504,7 +516,8 @@ const breakdownTable = (
 								meter(h, {
 									value: conversion,
 									max: best === 0 ? 1 : best,
-									className: "flex-1",
+									// Too narrow to read on a phone: the percentage beside it carries the value.
+									className: "flex-1 max-sm:hidden",
 									fillClassName: "bg-chart-2",
 								}),
 							]),
@@ -537,7 +550,9 @@ const breakdown = (
 		panelHeader(h, {
 			title: `By ${label}`,
 			scope: typography(h, { size: "2xs", tone: "muted" }, [
-				`each ${countNoun(inputs.keyBy, 1)} counts under the first value seen, most entered first`,
+				Str.startsWith(ATTRIBUTE_PREFIX)(breakdownBy)
+					? `each ${countNoun(inputs.keyBy, 1)} counts under the first value their step events carry; without one they are Not set`
+					: `each ${countNoun(inputs.keyBy, 1)} counts under the first value seen, most entered first`,
 			]),
 		}),
 		AsyncData.isRefreshing(model.funnelBreakdown.data)
@@ -554,7 +569,7 @@ const breakdown = (
 						const groups = groupsOf(rows)
 						return groups.length === 0
 							? panelNote(h, `Nobody who entered has a ${label} in this window.`)
-							: breakdownTable(h, groups, { label, ...inputs })
+							: breakdownTable(h, groups, { label, breakdownBy, ...inputs })
 					},
 				}),
 	])
@@ -578,7 +593,11 @@ const results = (h: H, model: Model): Html =>
 					const entered = rows[0]?.value ?? 0
 					if (entered === 0)
 						return emptyPanel(h, "Nobody reached step 1 in this window", [
-							"Check the first step's name, widen the time range, or clear the filters.",
+							keyBy === "user"
+								? "Count by User only counts identified users. Try Person, or check the first step's name."
+								: keyBy === "session"
+									? "Count by Session leaves out server-side events. Try Person, or check the first step's name."
+									: "Check the first step's name, widen the time range, or clear the filters.",
 						])
 					return vstack(h, { gap: "4" }, [
 						stats(h, model, rows, keyBy),

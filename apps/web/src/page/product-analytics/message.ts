@@ -30,6 +30,7 @@ export const SlotName = Schema.Literals([
 	"previousFunnel",
 	"funnelBreakdown",
 	"attributeKeys",
+	"pages",
 	"paths",
 ])
 export type SlotName = typeof SlotName.Type

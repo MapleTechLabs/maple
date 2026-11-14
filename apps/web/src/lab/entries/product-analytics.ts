@@ -260,6 +260,9 @@ const init = (flags: typeof Flags.Type) => {
 		previousFunnel: loaded(PREVIOUS_FUNNEL),
 		funnelBreakdown: loaded(FUNNEL_BY_SOURCE),
 		attributeKeys: loaded(ATTRIBUTE_KEYS),
+		pages: loaded(
+			Arr.map(BREAKDOWNS.entryPaths, (row) => ({ pagePath: row.name, pageViews: row.count })),
+		),
 		paths: loaded(PATHS),
 	}
 	return { model }

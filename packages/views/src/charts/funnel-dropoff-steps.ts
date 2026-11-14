@@ -34,6 +34,8 @@ export const fmtSpan = (ms: number): string => {
 	if (!Number.isFinite(ms) || ms <= 0) return EMPTY_VALUE
 	const s = Math.round(ms / 1000)
 	if (s < 60) return `${s}s`
+	// Under ten minutes the seconds are the difference between a p50 and a p90.
+	if (s < 600) return s % 60 === 0 ? `${s / 60}m` : `${Math.floor(s / 60)}m ${s % 60}s`
 	const m = Math.round(s / 60)
 	if (m < 60) return `${m}m`
 	const h = Math.floor(m / 60)
