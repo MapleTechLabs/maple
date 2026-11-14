@@ -338,7 +338,6 @@ const numberCell = <M>(
 		h,
 		{
 			size: "xs",
-			mono: true,
 			numeric: true,
 			tone: tone ?? "foreground",
 			as: "span",
@@ -414,11 +413,9 @@ const channelCell = <M>(h: HtmlBuilder<M>, row: UserRow): Html => {
 					...(summary.share === null
 						? []
 						: [
-								typography(
-									h,
-									{ size: "xs", mono: true, numeric: true, tone: "muted", as: "span" },
-									[summary.share],
-								),
+								typography(h, { size: "xs", numeric: true, tone: "muted", as: "span" }, [
+									summary.share,
+								]),
 							]),
 				],
 	)
@@ -471,7 +468,6 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 						value: row.lastSeenMs,
 						nowMs: options.nowMs,
 						timeZone: options.timeZone,
-						mono: true,
 						className: typographyClass({ size: "xs", tone: "soft" }),
 					}),
 				],
@@ -495,9 +491,7 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 									className: "h-5 w-14",
 								}),
 							]),
-					typography(h, { size: "xs", mono: true, numeric: true, as: "span" }, [
-						formatNumber(row.requests),
-					]),
+					typography(h, { size: "xs", numeric: true, as: "span" }, [formatNumber(row.requests)]),
 				],
 			),
 			channelCell(h, row),
@@ -514,7 +508,6 @@ const userRow = <M>(h: HtmlBuilder<M>, row: UserRow, options: UsersListOptions<M
 						nowMs: options.nowMs,
 						timeZone: options.timeZone,
 						variant: "short",
-						mono: true,
 						className: typographyClass({ size: "xs", tone: "muted" }),
 					}),
 				],
@@ -678,7 +671,6 @@ const groupRow = <M>(h: HtmlBuilder<M>, row: UsersGroupRow, options: UsersGroups
 						value: row.lastSeenMs,
 						nowMs: options.nowMs,
 						timeZone: options.timeZone,
-						mono: true,
 						className: typographyClass({ size: "xs", tone: "soft" }),
 					}),
 				],
