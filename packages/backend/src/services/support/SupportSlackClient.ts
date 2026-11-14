@@ -12,6 +12,7 @@ import {
 } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { SupportSlackBotToken } from "@maple/infra/secrets"
 
 /**
  * The handful of Slack Web API calls a shared support channel needs, made with the bot token of
@@ -92,7 +93,8 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
-			const token = Option.map(env.MAPLE_SUPPORT_SLACK_BOT_TOKEN, Redacted.value)
+			const botToken = yield* SupportSlackBotToken
+			const token = Option.map(botToken, Redacted.value)
 			const teamUserIds = Option.match(env.MAPLE_SUPPORT_SLACK_TEAM_USER_IDS, {
 				onNone: () => [],
 				onSome: (raw) =>

@@ -6,6 +6,12 @@ import { BillingCustomerResolver } from "@maple/backend/services/billing/Billing
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { DatabasePgLive } from "@maple/backend/platform/DatabasePgLive"
 import { Env } from "@maple/backend/platform/Env"
+import {
+	GithubAppClientSecret,
+	GithubAppPrivateKey,
+	GithubAppWebhookSecret,
+	SandboxInternalServiceToken,
+} from "@maple/infra/secrets"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import { layerMapleDbConnection } from "@maple/backend/platform/pg-connection-source"
@@ -31,9 +37,16 @@ const auditTelemetry = eventTelemetry({ serviceName: "maple-security-audit", flu
  * the repository sandbox and the execution sandbox.
  */
 const runServices = (env: Record<string, unknown>) => {
-	const base = Layer.mergeAll(DatabasePgLive, Env.layer, EdgeCacheServiceLive, FetchHttpClient.layer).pipe(
-		Layer.provideMerge(Layer.mergeAll(layerMapleDbConnection(env), envPorts(env))),
-	)
+	const base = Layer.mergeAll(
+		DatabasePgLive,
+		Env.layer,
+		GithubAppPrivateKey.layer,
+		GithubAppClientSecret.layer,
+		GithubAppWebhookSecret.layer,
+		SandboxInternalServiceToken.layer,
+		EdgeCacheServiceLive,
+		FetchHttpClient.layer,
+	).pipe(Layer.provideMerge(Layer.mergeAll(layerMapleDbConnection(env), envPorts(env))))
 	const sandbox = Layer.merge(
 		RepoSandboxService.layer.pipe(Layer.provide(CloudflareRepoSandboxLive)),
 		ExecutorService.layer,

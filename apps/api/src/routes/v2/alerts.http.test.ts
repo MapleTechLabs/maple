@@ -31,7 +31,7 @@ import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -118,7 +118,7 @@ const makeHarness = (
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const configLive = testConfig()
-	const envLive = Env.layer.pipe(Layer.provide(configLive))
+	const envLive = EnvTestLive.pipe(Layer.provide(configLive))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseService)
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))

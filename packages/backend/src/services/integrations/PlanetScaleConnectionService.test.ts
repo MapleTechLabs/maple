@@ -12,7 +12,7 @@ import {
 } from "effect"
 import { CreateScrapeTargetRequest, OrgId, PlanetScaleMetricsTokenRequest, UserId } from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -72,7 +72,7 @@ const makeLayer = (testDb: TestDb) => {
 		webhooksLive,
 		scrapeTargetsLive,
 		oauthLive,
-	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
+	).pipe(Layer.provide(testDb.layer), Layer.provide(EnvTestLive), Layer.provide(makeConfig()))
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)

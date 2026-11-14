@@ -15,7 +15,7 @@ import { IngestKeysResponse, IsoDateTimeString, OrgId, UserId } from "@maple/dom
 import type { UptimeMonitorId } from "@maple/primitives"
 import { UPTIME_CHECK_REPORT_BATCH_MAX } from "@maple/domain/uptime"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { UptimeMonitorAllowance } from "@maple/backend/services/uptime/UptimeMonitorAllowance"
 import { UptimeMonitorsService } from "@maple/backend/services/uptime/UptimeMonitorsService"
@@ -53,7 +53,7 @@ const ingestKeysStub = Layer.succeed(OrgIngestKeysService, {
 
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
-	const envLive = Env.layer.pipe(
+	const envLive = EnvTestLive.pipe(
 		Layer.provide(
 			ConfigProvider.layer(
 				ConfigProvider.fromUnknown({

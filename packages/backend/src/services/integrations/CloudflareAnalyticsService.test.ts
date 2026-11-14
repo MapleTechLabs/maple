@@ -36,7 +36,7 @@ import { FetchHttpClient } from "effect/http"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { oauthAccessTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -540,7 +540,7 @@ const makeLayer = (
 		),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseStub(captured, queryStub))),
 		Layer.provideMerge(testDb.layer),
-		Layer.provideMerge(Env.layer),
+		Layer.provideMerge(EnvTestLive),
 		Layer.provideMerge(
 			ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...configOverrides })),
 		),
