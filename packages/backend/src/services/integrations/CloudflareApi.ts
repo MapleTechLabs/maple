@@ -244,9 +244,10 @@ const listPages = <S extends Schema.Top>(
 				const lastPage =
 					items.length === 0 ||
 					(typeof info?.total_pages === "number" && number >= info.total_pages) ||
-					(typeof info?.total_count === "number" &&
-						items.length < perPage &&
-						all.length >= info.total_count)
+					// A short page is the last, unless the total says more exist (an endpoint that
+					// ignores `page` answers short and would otherwise be re-read to the cap).
+					(items.length < perPage &&
+						(typeof info?.total_count !== "number" || all.length >= info.total_count))
 				return lastPage || all.length > max ? Effect.succeed(bounded(all)) : page(number + 1, all)
 			}),
 		)
@@ -358,25 +359,28 @@ export const listWorkerScripts: (
 ) => Effect.Effect<BoundedListing<string>, CloudflareApiError> = Effect.fn("CloudflareApi.listWorkerScripts")(
 	function* (accessToken: string, accountId: string, apiBaseUrl?: string) {
 		yield* Effect.annotateCurrentSpan("maple.cloudflare.account_id", accountId)
-		// The scripts listing is one unpaged answer.
-		const response = yield* withClient(accessToken, apiBaseUrl, (cloudflare) =>
-			restResult(cloudflare, Schema.Array(Script), {
-				path: `/accounts/${encodeURIComponent(accountId)}/workers/scripts`,
-				operation: "listing worker scripts",
-			}),
-		)
-		const scripts = response.result ?? []
-		const truncated = scripts.length > MAX_SCRIPTS
-		yield* Effect.annotateCurrentSpan(
-			"maple.cloudflare.script_count",
-			Math.min(scripts.length, MAX_SCRIPTS),
-		)
-		yield* Effect.annotateCurrentSpan("maple.cloudflare.script_listing_truncated", truncated)
-		return {
-			items: Arr.flatMap(scripts.slice(0, MAX_SCRIPTS), (script) =>
-				script.id === undefined || script.id === null || script.id === "" ? [] : [script.id],
+		// Paged as the SDK paged it; ids are de-duplicated in case a page number is ignored.
+		const scripts = yield* withClient(accessToken, apiBaseUrl, (cloudflare) =>
+			listPages(
+				cloudflare,
+				Script,
+				(page) => ({
+					path: `/accounts/${encodeURIComponent(accountId)}/workers/scripts`,
+					query: { page: String(page), per_page: String(PAGE_SIZE) },
+					operation: "listing worker scripts",
+				}),
+				MAX_SCRIPTS,
 			),
-			truncated,
+		)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.script_count", scripts.items.length)
+		yield* Effect.annotateCurrentSpan("maple.cloudflare.script_listing_truncated", scripts.truncated)
+		return {
+			items: Arr.dedupe(
+				Arr.flatMap(scripts.items, (script) =>
+					script.id === undefined || script.id === null || script.id === "" ? [] : [script.id],
+				),
+			),
+			truncated: scripts.truncated,
 		}
 	},
 )

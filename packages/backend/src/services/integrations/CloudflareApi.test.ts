@@ -108,6 +108,26 @@ describe("Cloudflare API access", () => {
 		}),
 	)
 
+	it.effect("lists Worker scripts across pages, so none falls out of the workers dataset", () =>
+		Effect.gen(function* () {
+			const fake = VendorFake.make({
+				routes: [
+					{
+						path: "/client/v4/accounts/acc_1/workers/scripts",
+						respond: (request) =>
+							Number(request.search.get("page")) === 1
+								? envelope(Arr.map(Arr.range(0, 49), (index) => ({ id: `w${index}` })))
+								: envelope([{ id: "w50" }, { id: "w51" }]),
+					},
+				],
+			})
+			const scripts = yield* listWorkerScripts("token", "acc_1", BASE).pipe(Effect.provide(fake.layer))
+			assert.lengthOf(scripts.items, 52)
+			assert.isFalse(scripts.truncated)
+			assert.lengthOf(fake.calls, 2)
+		}),
+	)
+
 	it.effect("caps the Worker scripts listing at 1,000 and says it was cut", () =>
 		Effect.gen(function* () {
 			const fake = VendorFake.make({
