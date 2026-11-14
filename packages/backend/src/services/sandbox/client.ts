@@ -31,7 +31,7 @@ import {
 import { Context, Effect, Layer, Option, Redacted, Schema, String as Str } from "effect"
 import { HttpClientRequest } from "effect/http"
 import { SandboxFetcher } from "@maple/backend/platform/bindings"
-import { Env } from "@maple/backend/platform/Env"
+import { SandboxInternalServiceToken } from "@maple/infra/secrets"
 
 export class SandboxClientError extends Schema.TaggedError<SandboxClientError>()(
 	"@maple/backend/sandbox/SandboxClientError",
@@ -85,8 +85,8 @@ export class SandboxClient extends Context.Service<SandboxClient, SandboxClientA
 	{
 		make: Effect.gen(function* () {
 			const binding = yield* SandboxFetcher
-			const config = yield* Env
-			const token = Option.map(config.SANDBOX_INTERNAL_SERVICE_TOKEN, Redacted.value)
+			const boundToken = yield* SandboxInternalServiceToken
+			const token = Option.map(boundToken, Redacted.value)
 
 			// Decided once, at build: both values are fixed for the isolate's life, and
 			// a deployment missing either turns four agent tools off for good. Without

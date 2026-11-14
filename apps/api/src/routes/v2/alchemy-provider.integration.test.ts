@@ -33,7 +33,7 @@ import { make as makeMapleApi, MapleApi } from "../../../../../packages/alchemy-
 import { MapleEnvironment } from "../../../../../packages/alchemy-maple/src/MapleEnvironment.ts"
 import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -107,7 +107,7 @@ const session = noopSession
 const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
 	const configLive = testConfig()
-	const envLive = Env.layer.pipe(Layer.provide(configLive))
+	const envLive = EnvTestLive.pipe(Layer.provide(configLive))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))

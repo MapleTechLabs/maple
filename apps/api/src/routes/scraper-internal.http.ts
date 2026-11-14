@@ -9,7 +9,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import type { SourceId } from "@maple/primitives"
-import { Env } from "@maple/backend/platform/Env"
+import { ScraperInternalToken } from "@maple/infra/secrets"
 import { isValidInternalBearer } from "@maple/backend/services/auth/internal-auth"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
@@ -145,11 +145,11 @@ const warnIfNone =
  */
 export const ScraperInternalRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
-		const env = yield* Env
 		const service = yield* ScrapeTargetsService
 		const ingestKeys = yield* OrgIngestKeysService
 		const discovery = yield* PlanetScaleDiscoveryService
-		const internalToken = Option.match(env.SD_INTERNAL_TOKEN, {
+		const boundToken = yield* ScraperInternalToken
+		const internalToken = Option.match(boundToken, {
 			onNone: () => undefined,
 			onSome: Redacted.value,
 		})

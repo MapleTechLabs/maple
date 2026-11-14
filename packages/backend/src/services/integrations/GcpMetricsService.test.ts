@@ -18,7 +18,7 @@ import {
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { GCP_ASSET_TYPES, GCP_METRIC_GROUPS } from "@maple/domain/gcp-metrics"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -427,7 +427,7 @@ const run = <A, E>(
 				Layer.provide(Layer.mergeAll(FetchHttpClient.layer, OrgIngestKeysService.layer)),
 				Layer.provide(Layer.succeed(FetchHttpClient.Fetch, stub)),
 				Layer.provide(testDb.layer),
-				Layer.provide(Env.layer),
+				Layer.provide(EnvTestLive),
 				Layer.provide(
 					ConfigProvider.layer(
 						ConfigProvider.fromUnknown({

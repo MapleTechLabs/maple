@@ -14,6 +14,19 @@ import { DigestService } from "@maple/backend/services/digest/DigestService"
 import { WebAnalyticsDigestService } from "@maple/backend/services/digest/WebAnalyticsDigestService"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
+import {
+	ApnsPrivateKey,
+	CloudflareOAuthClientSecret,
+	GcpServiceAccountKey,
+	GithubAppClientSecret,
+	GithubAppPrivateKey,
+	GithubAppWebhookSecret,
+	LinearOAuthClientSecret,
+	PlanetScaleOAuthClientSecret,
+	SearchConsoleClientSecret,
+	StatusDomainsApiToken,
+	SupabaseOAuthClientSecret,
+} from "@maple/infra/secrets"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
@@ -67,6 +80,21 @@ const statusPagesLayerIfBound = (bindings: Option.Option<StatusPageBindings>) =>
 			),
 	})
 
+/** The secrets the ticks' services read. Unbound here, a secret reads as absent (`resources/env.ts`). */
+const TickSecretsLive = Layer.mergeAll(
+	ApnsPrivateKey.layer,
+	CloudflareOAuthClientSecret.layer,
+	GcpServiceAccountKey.layer,
+	GithubAppClientSecret.layer,
+	GithubAppPrivateKey.layer,
+	GithubAppWebhookSecret.layer,
+	LinearOAuthClientSecret.layer,
+	PlanetScaleOAuthClientSecret.layer,
+	SearchConsoleClientSecret.layer,
+	StatusDomainsApiToken.layer,
+	SupabaseOAuthClientSecret.layer,
+)
+
 /**
  * The tick graph for one fire. Deliberately without a tracer or logger of its
  * own: those come from the SDK the Worker bridge builds into each fire's
@@ -110,7 +138,15 @@ export const layerTick = (
 		IncidentClassifier.layer,
 		statusPagesLayerIfBound(statusPages),
 	).pipe(
-		Layer.provide(Layer.mergeAll(Env.layer, DatabasePgLive, EdgeCacheServiceLive, FetchHttpClient.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				Env.layer,
+				TickSecretsLive,
+				DatabasePgLive,
+				EdgeCacheServiceLive,
+				FetchHttpClient.layer,
+			),
+		),
 		Layer.provideMerge(
 			Layer.mergeAll(
 				layerMapleDbConnection(env),

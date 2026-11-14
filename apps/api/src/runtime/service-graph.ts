@@ -6,7 +6,25 @@ import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 
 import { Env } from "@maple/backend/platform/Env"
-import { StripeSecretKey } from "@maple/infra/secrets"
+import {
+	ApnsPrivateKey,
+	AutumnWebhookSecret,
+	ClerkWebhookSecret,
+	CloudflareOAuthClientSecret,
+	GithubAppClientSecret,
+	GithubAppPrivateKey,
+	GithubAppWebhookSecret,
+	LinearOAuthClientSecret,
+	PlanetScaleOAuthClientSecret,
+	PreviewSigninKey,
+	ProductEventsIngestKey,
+	ScraperInternalToken,
+	SearchConsoleClientSecret,
+	StatusDomainsApiToken,
+	StripeSecretKey,
+	SupabaseOAuthClientSecret,
+	SupportSlackBotToken,
+} from "@maple/infra/secrets"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -124,6 +142,27 @@ import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSo
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
 import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
+
+/** The secrets the api's services and routes read, each bound to this Worker (`resources/env.ts`). */
+const ApiSecretsLive = Layer.mergeAll(
+	ApnsPrivateKey.layer,
+	AutumnWebhookSecret.layer,
+	ClerkWebhookSecret.layer,
+	CloudflareOAuthClientSecret.layer,
+	GithubAppClientSecret.layer,
+	GithubAppPrivateKey.layer,
+	GithubAppWebhookSecret.layer,
+	LinearOAuthClientSecret.layer,
+	PlanetScaleOAuthClientSecret.layer,
+	PreviewSigninKey.layer,
+	ProductEventsIngestKey.layer,
+	ScraperInternalToken.layer,
+	SearchConsoleClientSecret.layer,
+	StatusDomainsApiToken.layer,
+	StripeSecretKey.layer,
+	SupabaseOAuthClientSecret.layer,
+	SupportSlackBotToken.layer,
+)
 
 /**
  * Services the HTTP routes read, at group build or per request; each service owns its
@@ -255,4 +294,4 @@ export const HttpServicesLive = Layer.mergeAll(
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,
-).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, StripeSecretKey.layer, EdgeCacheServiceLive)))
+).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, ApiSecretsLive, EdgeCacheServiceLive)))

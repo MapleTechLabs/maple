@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Fiber, Layer, Schema, Array as Arr, String as S
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { PlanetScaleOAuthService } from "./PlanetScaleOAuthService"
 import {
 	cleanupTestDbs,
@@ -147,7 +147,7 @@ const makeConfig = (extra: Record<string, string> = {}) =>
 const makeLayer = (testDb: TestDb, extra: Record<string, string> = {}) =>
 	PlanetScaleOAuthService.layer.pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(makeConfig(extra)),
 	)
 
