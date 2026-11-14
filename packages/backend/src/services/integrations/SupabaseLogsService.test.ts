@@ -476,6 +476,38 @@ describe("SupabaseLogsService", () => {
 		)
 	})
 
+	it.effect("turning logs back on drops a tick's lease, so its late release cannot restore a hold", () => {
+		const testDb = createTestDb(trackedDbs)
+		const world = makeWorld()
+		return run(
+			testDb,
+			world,
+			Effect.gen(function* () {
+				yield* connectWithLogs(world)
+				// A tick is still in flight when the user turns logs off and on again.
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE supabase_projects SET logs_lease_until = $1 WHERE project_ref = $2",
+						[DateTime.formatIso(DateTime.makeUnsafe(NOW + 2 * minute)), REF_A],
+					),
+				)
+				const logs = yield* SupabaseLogsService
+				yield* logs.setLogsEnabled(ORG, asRef(REF_A), false)
+				yield* logs.setLogsEnabled(ORG, asRef(REF_A), true)
+				const state = yield* Effect.promise(() =>
+					queryFirstRow<{ logs_lease_until: Date | null; logs_hold_until: Date | null }>(
+						testDb,
+						"SELECT logs_lease_until, logs_hold_until FROM supabase_projects WHERE project_ref = $1",
+						[REF_A],
+					),
+				)
+				assert.isNull(state?.logs_lease_until ?? null)
+				assert.isNull(state?.logs_hold_until ?? null)
+			}),
+		)
+	})
+
 	it.effect("an ingest refusal holds the project for an hour, then polling resumes", () => {
 		const testDb = createTestDb(trackedDbs)
 		const world = makeWorld()

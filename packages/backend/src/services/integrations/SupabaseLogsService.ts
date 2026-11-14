@@ -213,7 +213,9 @@ export class SupabaseLogsService extends Context.Service<SupabaseLogsService, Su
 											logsWatermarkAt: now - LOGS_INITIAL_LOOKBACK_MS,
 											logsBoundaryIds: [],
 											logsError: null,
-											// Drops a refusal hold, so turning logs back on polls on the next tick.
+											// Drops a refusal hold, and the lease of any tick still in flight so its
+											// late release cannot bring the hold back.
+											logsLeaseUntil: null,
 											logsHoldUntil: null,
 											updatedAt: now,
 										}
