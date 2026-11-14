@@ -6,6 +6,7 @@ import type { PageContext } from "./contract"
 import { elapsed, isRevived, Model, shownSlot, startedHold, written } from "./page-hold"
 import { enterRoute, type PageMessage, type PageSlot, updatePage } from "./registry"
 import { Message } from "./services/list/message"
+import { Message as TracesMessage } from "./traces/list/message"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -96,6 +97,21 @@ describe("navigation hold", () => {
 		expect(startedHold(holding, holding)).toBeNull()
 		const landed = settledServices(servicesWithRows(services))
 		expect(shownSlot(step(holding, services, landed), landed)).toBe(landed)
+	})
+
+	test("a page whose main reads wait on its window stays held when a cached side read lands first", () => {
+		const traces = slotOf(AppRoute.Traces({ search: {} }), 2)
+		const holding = step(NONE, left, traces)
+		expect(holding).toEqual(Model.Holding({ leaving: left, instance: 2 }))
+		const message: PageMessage = {
+			_tag: "TracesList",
+			key: traces.key,
+			orgId: traces.orgId,
+			instance: traces.instance,
+			message: TracesMessage.CompletedLoadSignalPresence({ result: Result.succeed({}) }),
+		}
+		const presence = Option.getOrThrow(Option.fromNullishOr(updatePage(traces, message, context).slot))
+		expect(step(holding, traces, presence)).toBe(holding)
 	})
 
 	test("the timer running out shows the page; its skeletons skip their delay until it has data", () => {

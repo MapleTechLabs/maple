@@ -296,6 +296,23 @@ const hasLoadInFlight = someAsyncData(AsyncData.isPending)
  * importing or an Electric sync still connecting holds a navigation too: its page is not drawable yet. */
 export const isLoading = (slot: PageSlot): boolean => someAsyncData(AsyncData.isLoading)(slot.model)
 
+/** A request-keyed read (`Keyed`): `key` is null until it is first requested. */
+const isKeyed = (value: unknown): value is { readonly key: unknown; readonly data: unknown } =>
+	Predicate.isReadonlyObject(value) &&
+	"key" in value &&
+	"data" in value &&
+	AsyncData.isAsyncData(value.data)
+
+/** The page is still reading what it opens with: a read is `Loading`, or none of its top-level reads
+ * is requested yet (they wait on its window). Some stay unrequested on purpose (a lazy column), so
+ * one requested read is enough to stop counting them. */
+export const isAwaitingReads = (slot: PageSlot): boolean => {
+	if (isLoading(slot)) return true
+	const model: unknown = slot.model
+	const keyed = Predicate.isReadonlyObject(model) ? Array.filter(Rec.values(model), isKeyed) : []
+	return keyed.length > 0 && Array.every(keyed, (read) => read.key === null)
+}
+
 /** The page has nothing to show yet: a read is `Loading` and none has data (a revived page has its last). */
 export const isFirstLoading = (slot: PageSlot): boolean =>
 	isLoading(slot) && !someAsyncData(AsyncData.hasData)(slot.model)
