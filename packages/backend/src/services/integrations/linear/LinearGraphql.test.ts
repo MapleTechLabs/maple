@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Layer, Array as Arr } from "effect"
+import { Effect, Layer, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { isNotFound, linearGraphql } from "./LinearGraphql"
@@ -54,6 +54,28 @@ describe("linearGraphql", () => {
 				["@maple/http/errors/IntegrationsUpstreamError", "Linear API returned 502"],
 			)
 			assert.strictEqual(server.fake.calls.length, 1)
+		}).pipe(Effect.provide(server.layer))
+	})
+
+	it.effect("reads not found from a 400 body longer than the kit keeps", () => {
+		const server = linear([
+			() =>
+				VendorFake.json(
+					{
+						data: null,
+						errors: [
+							{
+								message: "Could not find referenced Issue.",
+								extensions: { code: "INPUT_ERROR", meta: Str.repeat(3_000)("x") },
+							},
+						],
+					},
+					400,
+				),
+		])
+		return Effect.gen(function* () {
+			const result = yield* send(QUERY, "MapleIssue")
+			assert.isTrue(result.errors.length === 1 && Arr.every(result.errors, isNotFound))
 		}).pipe(Effect.provide(server.layer))
 	})
 

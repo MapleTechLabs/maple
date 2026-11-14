@@ -25,6 +25,7 @@ const GraphqlEnvelopeSchema = Schema.Struct({
 })
 
 const decodeEnvelope = Schema.decodeUnknownOption(Schema.fromJsonString(GraphqlEnvelopeSchema))
+const encodeEnvelope = Schema.encodeSync(Schema.fromJsonString(GraphqlEnvelopeSchema))
 
 export interface LinearGraphqlError {
 	readonly message: string
@@ -72,10 +73,16 @@ const classifyLinear = (refusal: VendorHttp.VendorRefusal): VendorHttp.VendorFai
 	return undefined
 }
 
-const linearDetail = (body: string) => {
-	const errors = errorsOf(body)
-	return errors.length === 0 ? undefined : errorSummary(errors)
-}
+/**
+ * The refusal's GraphQL errors, re-encoded without their bulky extensions, read from the whole
+ * body before the kit cuts it, so a long "not found" still decodes as an answer.
+ */
+const linearDetail = (body: string) =>
+	Option.match(decodeEnvelope(body), {
+		onNone: () => undefined,
+		onSome: (envelope) =>
+			(envelope.errors ?? []).length === 0 ? undefined : encodeEnvelope({ errors: envelope.errors }),
+	})
 
 const revoked = () =>
 	new IntegrationsRevokedError({ message: "Linear rejected the access token. Reconnect Linear." })
@@ -106,7 +113,7 @@ const fromRefusal = (
 				return Effect.fail(
 					new IntegrationsUpstreamError({ message: `Linear API request failed: ${error.message}` }),
 				)
-			const envelope = decodeEnvelope(error.body ?? "")
+			const envelope = decodeEnvelope(error.detail ?? error.body ?? "")
 			if (Option.isSome(envelope) && (envelope.value.errors ?? []).length > 0)
 				return Effect.succeed({
 					data: envelope.value.data ?? null,
@@ -114,7 +121,7 @@ const fromRefusal = (
 				})
 			return Effect.fail(
 				new IntegrationsUpstreamError({
-					message: `Linear API returned ${error.status}${error.detail === undefined ? "" : `: ${error.detail}`}`,
+					message: `Linear API returned ${error.status}`,
 					status: error.status,
 				}),
 			)

@@ -821,23 +821,23 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					: undefined
 			}
 
+			/** Drops a token GitHub rejected from the cache, so the next call mints a fresh one. */
+			const evictIfRejected = (token: string, answer: GithubAnswer) =>
+				rejectsCredentials(answer)
+					? installationTokens
+							.removeWhere((cached) => cached.token === token)
+							.pipe(
+								Effect.andThen(
+									Effect.annotateCurrentSpan({ "vcs.provider.token_evicted": true }),
+								),
+							)
+					: Effect.void
+
 			/** A call with an installation (or user) token; a token GitHub rejects is evicted from the cache. */
 			const tokenCall = (token: string, call: Omit<GithubCall, "auth">, follow: boolean) => {
 				const once = (url: string) =>
 					send({ ...call, url, auth: tokenAuth(token) }).pipe(
-						Effect.tap((answer) =>
-							rejectsCredentials(answer)
-								? installationTokens
-										.removeWhere((cached) => cached.token === token)
-										.pipe(
-											Effect.andThen(
-												Effect.annotateCurrentSpan({
-													"vcs.provider.token_evicted": true,
-												}),
-											),
-										)
-								: Effect.void,
-						),
+						Effect.tap((answer) => evictIfRejected(token, answer)),
 					)
 				return once(call.url).pipe(
 					Effect.flatMap((answer) => {
@@ -1381,7 +1381,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						...(retry === undefined ? undefined : { retry }),
 						errorMessage: `${context} failed`,
 					},
-					false,
+					// A renamed repository answers a write with a same-origin redirect; method and body go along.
+					true,
 				)
 
 			// Every page: a review needs the whole diff, and GitHub itself stops at
@@ -2419,20 +2420,25 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const blob = yield* githubHttp(
-					tokenAuth(token),
-					apiHeaders("application/vnd.github.raw+json"),
-				)
-					.stream({
-						path: `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`,
-					})
-					.pipe(
-						Effect.catch((error) =>
-							answerOf(error, "Could not read the blob").pipe(
-								Effect.flatMap((answer) => failure(answer, "Read blob", "repository")),
+				const url = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`
+				const open = (path: string) =>
+					githubHttp(tokenAuth(token), apiHeaders("application/vnd.github.raw+json"))
+						.stream({ path })
+						.pipe(
+							Effect.map((blob) => ({ _tag: "Blob" as const, blob })),
+							Effect.catch((error) =>
+								answerOf(error, "Could not read the blob").pipe(
+									Effect.tap((answer) => evictIfRejected(token, answer)),
+									Effect.map((answer) => ({ _tag: "Refused" as const, answer })),
+								),
 							),
-						),
-					)
+						)
+				const first = yield* open(url)
+				// A renamed repository redirects within the API host; follow it once with the token.
+				const next = first._tag === "Refused" ? sameOriginRedirect(first.answer, url) : undefined
+				const result = next === undefined ? first : yield* open(next)
+				if (result._tag === "Refused") return yield* failure(result.answer, "Read blob", "repository")
+				const blob = result.blob
 				return yield* readTextWithin(
 					blob.body.pipe(
 						Stream.mapError(
@@ -2503,7 +2509,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						const downloadUrl = yield* tokenCall(
 							token,
 							{ url, errorMessage: "Get job log request failed" },
-							false,
+							// Follows only a same-origin rename; the signed download URL is another host's.
+							true,
 						).pipe(
 							Effect.flatMap((response) =>
 								!response.ok &&
