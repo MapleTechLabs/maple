@@ -10,7 +10,10 @@ import {
 	Record as Rec,
 	Redacted,
 } from "effect"
-import type { SecretConsumer } from "./secret.ts"
+import { Stage } from "alchemy/Stage"
+import { type MapleDeployment, parseMapleDeploymentEffect } from "./cloudflare/stage.ts"
+import type { MapleRegion } from "./region.ts"
+import type { SecretConsumer, SecretEnvironment } from "./secret.ts"
 import * as Catalog from "./secrets.ts"
 
 const secrets = Rec.values(Catalog)
@@ -53,11 +56,58 @@ const guard = (provider: ConfigProvider.ConfigProvider): ConfigProvider.ConfigPr
 		}),
 	)
 
+const PRD_ENVIRONMENT = { us: "prod", eu: "prod-eu" } satisfies Record<MapleRegion, SecretEnvironment>
+
+/** The Infisical environment a deployment loads its config from. */
+export const secretEnvironment = ({ stage, region }: MapleDeployment): SecretEnvironment => {
+	switch (stage.kind) {
+		case "prd":
+			return PRD_ENVIRONMENT[region]
+		case "pr":
+			return "preview"
+		case "dev":
+			return "dev"
+	}
+}
+
+/** Fails when `environment` holds a secret the catalog keeps out of it. Blank counts as unset. */
+const refuseMisplaced = (environment: SecretEnvironment) =>
+	Effect.gen(function* () {
+		const provider = yield* ConfigProvider.ConfigProvider
+		const held = yield* Effect.filter(
+			Arr.filter(secrets, (secret) => !(secret.meta.environments?.includes(environment) ?? true)),
+			(secret) => secret.optionalValue.parse(provider).pipe(Effect.map(Option.isSome)),
+		)
+		if (Arr.isReadonlyArrayNonEmpty(held)) {
+			const keys = Arr.join(
+				Arr.map(held, (secret) => secret.envKey),
+				", ",
+			)
+			return yield* Effect.fail(
+				new Config.ConfigError(
+					refusal(
+						`The ${environment} environment holds ${keys}, which ${CATALOG_PATH} keeps out of it. Remove it there.`,
+					),
+				),
+			)
+		}
+	})
+
 /**
  * Run `effect` with the catalog guarding its config. Around the whole stack, a secret read outside
- * any deployable's scope (a Worker's init included) fails the deploy instead of going unchecked.
+ * any deployable's scope (a Worker's init included) fails the deploy instead of going unchecked, as
+ * does a secret the stage's environment may not hold.
  */
-export const withSecretGuard = Effect.updateService(ConfigProvider.ConfigProvider, guard)
+export const withSecretGuard = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+	Effect.gen(function* () {
+		const stage = yield* Stage
+		// `Alchemy.Stack` admits only `ConfigError`.
+		const deployment = yield* parseMapleDeploymentEffect(stage).pipe(
+			Effect.mapError((error) => new Config.ConfigError(refusal(error.message))),
+		)
+		yield* refuseMisplaced(secretEnvironment(deployment))
+		return yield* effect.pipe(Effect.updateService(ConfigProvider.ConfigProvider, guard))
+	})
 
 /** Resolve `config` as `consumer`: the only way a deploy reads a catalog secret. */
 export const resolveAs = <A>(consumer: SecretConsumer, config: Config.Config<A>) =>

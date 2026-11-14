@@ -67,6 +67,10 @@ deploy fails.
 - A new secret is a class there, bound with `Secrets.X.required` / `.optional` in the deployable's
   `src/resources/env.ts` (`alchemy/secrets.ts` for a stack file). Widening access is an edit to
   `consumers`.
+- `environments` lists the Infisical environments (`dev`, `preview`, `prod`, `prod-eu`) that may
+  hold a secret; a deploy loading one elsewhere fails. dev and preview must hold their own value
+  unless `sharedOutsideProd`. `bun run secrets:drift` checks Infisical against all of this (names
+  and value hashes only); run it after changing either.
 - The chat connectors declare their own secret keys (`requiredConfig`), bound by `configKeysEnv`.
   Those are not in the catalog and not scoped by deployable.
 - `test/alchemy/secret-grants.test.ts` holds every deployable's grants exact and needs a row per
