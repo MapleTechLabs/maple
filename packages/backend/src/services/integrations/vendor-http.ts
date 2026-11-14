@@ -74,6 +74,8 @@ export interface VendorHttpOptions<E> {
 	readonly retry?: Schedule.Schedule<unknown> | false
 	/** The longest `retry-after` a request waits out before failing as `rate_limited`. */
 	readonly maxRetryAfter?: Duration.Input
+	/** Also retry an answer that does not decode, for a vendor whose bodies are sometimes cut short. */
+	readonly retryInvalidResponse?: boolean
 	/** A delta-seconds header read when `retry-after` is absent, e.g. `x-ratelimit-reset`. */
 	readonly rateLimitResetHeader?: string
 }
@@ -266,7 +268,14 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) => {
 		const retryable = request.retry ?? IDEMPOTENT.has(request.method ?? "GET")
 		const retried =
-			schedule === false || !retryable ? effect : Effect.retry(effect, { schedule, while: isTransient })
+			schedule === false || !retryable
+				? effect
+				: Effect.retry(effect, {
+						schedule,
+						while: (error) =>
+							isTransient(error) ||
+							(options.retryInvalidResponse === true && error.kind === "invalid_response"),
+					})
 		// A 429 means the request was not processed, so even a POST may be sent again.
 		return Effect.catchIf(
 			retried,
