@@ -1089,6 +1089,7 @@
     "@effect/vitest@4.1.4": "patches/@effect%2Fvitest@4.1.4.patch",
     "effect@4.1.4": "patches/effect@4.1.4.patch",
     "@effect/ai-openrouter@4.1.4": "patches/@effect%2Fai-openrouter@4.1.4.patch",
+    "@yielded/agent@0.1.0-beta.192": "patches/@yielded%2Fagent@0.1.0-beta.192.patch",
   },
   "overrides": {
     "@effect/platform-browser": "4.1.4",

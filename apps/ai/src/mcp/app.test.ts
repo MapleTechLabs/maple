@@ -1045,7 +1045,7 @@ describe("MCP server spans", () => {
 
 		const server = Arr.filter(
 			spans,
-			(span) => span.kind === "server" && span.attributes.has("mcp.method.name"),
+			(span) => span.kind === "server" && span.sampled && span.attributes.has("mcp.method.name"),
 		)
 		expect(
 			Arr.map(server, (span) => ({
@@ -1095,7 +1095,10 @@ describe("MCP server spans", () => {
 		])
 
 		// The handshake the transport synthesises for the tool call is not recorded.
-		const handshakes = Arr.filter(spans, (span) => Str.endsWith("/initialize")(span.name))
+		const handshakes = Arr.filter(
+			spans,
+			(span) => span.attributes.get("jsonrpc.request.id") === "__maple/mcp/synthetic-initialize",
+		)
 		expect(Arr.map(handshakes, (span) => span.sampled)).toEqual([false])
 
 		// The caller's span is the parent; the HTTP request's span is only a link.
