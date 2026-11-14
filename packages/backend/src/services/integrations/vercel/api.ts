@@ -4,10 +4,12 @@
  * {@link VercelApiError} whose `kind` drives the poller (auth failure, back-off, missing drain).
  */
 import { Duration, Effect, Option, Schema, Stream, Array as Arr, Record as Rec, String as Str } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import type { HttpClient } from "effect/http"
+import * as VendorHttp from "../vendor-http"
 
 const BASE_URL = "https://api.vercel.com"
 const REQUEST_TIMEOUT = Duration.seconds(20)
+const CHARGES_TIMEOUT = Duration.seconds(60)
 const PAGE_SIZE = 100
 const MAX_PROJECT_PAGES = 10
 const MAX_TEAM_PAGES = 10
@@ -28,6 +30,7 @@ export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 		status: Schema.optionalKey(Schema.Number),
 		/** Vercel's own error message, without the status prefix. */
 		detail: Schema.optionalKey(Schema.String),
+		retryAfterSeconds: Schema.optionalKey(Schema.Number),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
@@ -35,71 +38,62 @@ export class VercelApiError extends Schema.TaggedError<VercelApiError>()(
 const ErrorBody = Schema.Struct({
 	error: Schema.Struct({ message: Schema.optionalKey(Schema.String) }),
 })
-const decodeErrorBody = Schema.decodeUnknownOption(ErrorBody)
+const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBody))
 
-const errorKind = (status: number): VercelApiError["kind"] =>
-	status === 401
-		? "unauthorized"
-		: status === 403
-			? "forbidden"
-			: status === 404 || status === 410
-				? "not_found"
-				: status === 429
-					? "rate_limited"
-					: "upstream"
-
-/** A non-2xx answer as the error callers branch on, with Vercel's own message when the body has one. */
-const refusal = (status: number, body: unknown) => {
-	const detail = Option.getOrUndefined(decodeErrorBody(body))?.error.message
+/** A failed call as the error callers branch on, with Vercel's own message when the body has one. */
+const toVercelError = (error: VendorHttp.VendorHttpError): VercelApiError => {
+	const cut = error.detail === undefined ? undefined : Str.slice(0, 300)(error.detail)
+	const message =
+		error.status !== undefined
+			? `Vercel API returned ${error.status}${cut === undefined ? "" : `: ${cut}`}`
+			: error.kind === "timeout"
+				? "Vercel API request timed out"
+				: error.kind === "invalid_response"
+					? "Vercel API answered with an unexpected body"
+					: "Vercel API request failed"
 	return new VercelApiError({
-		message: `Vercel API returned ${status}${detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`}`,
-		kind: errorKind(status),
-		status,
-		...(detail === undefined ? undefined : { detail: Str.slice(0, 300)(detail) }),
+		message,
+		// A decode failure outside the charges read stays `upstream`, as callers have always seen it.
+		kind: error.kind === "timeout" || error.kind === "invalid_response" ? "upstream" : error.kind,
+		...(error.status === undefined ? undefined : { status: error.status }),
+		...(cut === undefined ? undefined : { detail: cut }),
+		...(error.retryAfterSeconds === undefined
+			? undefined
+			: { retryAfterSeconds: error.retryAfterSeconds }),
+		...(error.cause === undefined ? undefined : { cause: error.cause }),
 	})
 }
 
-const call = <S extends Schema.Top>(
-	httpClient: HttpClient.HttpClient,
-	token: string,
-	request: HttpClientRequest.HttpClientRequest,
-	schema: S,
-): Effect.Effect<S["Type"], VercelApiError, S["DecodingServices"]> => {
-	const failed = (what: string) => (cause: unknown) =>
-		Effect.fail(new VercelApiError({ message: `Vercel API ${what}`, kind: "upstream", cause }))
-	return Effect.gen(function* () {
-		const response = yield* httpClient.execute(HttpClientRequest.bearerToken(request, token))
-		const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-		if (response.status >= 300) return yield* refusal(response.status, body)
-		return yield* Schema.decodeEffect(schema)(body)
-	}).pipe(
-		Effect.timeout(REQUEST_TIMEOUT),
-		Effect.catchTags({
-			HttpClientError: failed("request failed"),
-			TimeoutError: failed("request timed out"),
-			SchemaError: failed("answered with an unexpected body"),
-		}),
-		Effect.annotateSpans("peer.service", "vercel"),
-	)
-}
+const client = (httpClient: HttpClient.HttpClient, token: string) =>
+	VendorHttp.make({
+		httpClient,
+		peerService: "vercel",
+		baseUrl: BASE_URL,
+		auth: VendorHttp.bearer(token),
+		toError: toVercelError,
+		detail: (body) => Option.getOrUndefined(decodeErrorBody(body))?.error.message,
+		timeout: REQUEST_TIMEOUT,
+	})
 
-const teamUrl = (path: string, teamId: string, params: Record<string, string> = {}) =>
-	HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}${path}`), { teamId, ...params })
+type Cursor = string | number
 
 /**
  * The next page of a listing. Vercel pages backwards with `until=<timestamp>`; a listing that
  * answers with a continuation token instead takes it back as `from=<token>`.
  */
-const pageFrom = (request: HttpClientRequest.HttpClientRequest, next: string | number | null) =>
-	next === null
-		? request
-		: typeof next === "string"
-			? HttpClientRequest.setUrlParam(request, "from", next)
-			: HttpClientRequest.setUrlParam(request, "until", String(next))
+const pageFrom = (next: Option.Option<Cursor>): Readonly<Record<string, string>> =>
+	Option.match(next, {
+		onNone: () => ({}),
+		onSome: (cursor): Readonly<Record<string, string>> =>
+			typeof cursor === "string" ? { from: cursor } : { until: String(cursor) },
+	})
 
 const Pagination = Schema.Struct({
 	next: Schema.optionalKey(Schema.NullOr(Schema.Union([Schema.String, Schema.Number]))),
 })
+
+const nextOf = (body: { readonly pagination?: typeof Pagination.Type }): Option.Option<Cursor> =>
+	Option.fromNullishOr(body.pagination?.next)
 
 // Teams
 
@@ -130,32 +124,20 @@ export const listTeams = Effect.fn("VercelApi.listTeams")(function* (
 	httpClient: HttpClient.HttpClient,
 	token: string,
 ) {
-	const teams: Array<VercelTeamInfo> = []
-	let next: string | number | null = null
-	for (let page = 0; page < MAX_TEAM_PAGES; page++) {
-		const body: typeof TeamsBody.Type = yield* call(
-			httpClient,
-			token,
-			pageFrom(
-				HttpClientRequest.setUrlParams(HttpClientRequest.get(`${BASE_URL}/v2/teams`), {
-					limit: String(PAGE_SIZE),
-				}),
-				next,
-			),
-			TeamsBody,
-		)
-		for (const team of body.teams) {
-			teams.push({
-				id: team.id,
-				slug: team.slug,
-				name: team.name ?? team.slug,
-				plan: team.billing?.plan ?? null,
-			})
-		}
-		next = body.pagination?.next ?? null
-		if (next === null) break
-	}
-	return teams
+	const { pages } = yield* client(httpClient, token).paginate({
+		schema: TeamsBody,
+		maxPages: MAX_TEAM_PAGES,
+		next: nextOf,
+		request: (next) => ({ path: "/v2/teams", query: { limit: String(PAGE_SIZE), ...pageFrom(next) } }),
+	})
+	return Arr.flatMap(pages, (body) =>
+		Arr.map(body.teams, (team): VercelTeamInfo => ({
+			id: team.id,
+			slug: team.slug,
+			name: team.name ?? team.slug,
+			plan: team.billing?.plan ?? null,
+		})),
+	)
 })
 
 // Projects
@@ -197,31 +179,28 @@ export const listProjects = Effect.fn("VercelApi.listProjects")(function* (
 	token: string,
 	teamId: string,
 ) {
-	const projects: Array<VercelProjectInfo> = []
-	let next: string | number | null = null
-	for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
-		const body: typeof ProjectsBody.Type = yield* call(
-			httpClient,
-			token,
-			pageFrom(teamUrl("/v10/projects", teamId, { limit: String(PAGE_SIZE) }), next),
-			ProjectsBody,
-		)
-		for (const project of body.projects) {
-			projects.push({
-				id: project.id,
-				name: project.name,
-				framework: project.framework ?? null,
-				productionDeploymentId: project.targets?.production?.id ?? null,
-			})
-		}
-		next = body.pagination?.next ?? null
-		if (next === null) break
-	}
+	const { pages, complete } = yield* client(httpClient, token).paginate({
+		schema: ProjectsBody,
+		maxPages: MAX_PROJECT_PAGES,
+		next: nextOf,
+		request: (next) => ({
+			path: "/v10/projects",
+			query: { teamId, limit: String(PAGE_SIZE), ...pageFrom(next) },
+		}),
+	})
+	const projects = Arr.flatMap(pages, (body) =>
+		Arr.map(body.projects, (project): VercelProjectInfo => ({
+			id: project.id,
+			name: project.name,
+			framework: project.framework ?? null,
+			productionDeploymentId: project.targets?.production?.id ?? null,
+		})),
+	)
 	yield* Effect.annotateCurrentSpan({
 		"maple.vercel.projects": projects.length,
-		"maple.vercel.projects_complete": next === null,
+		"maple.vercel.projects_complete": complete,
 	})
-	return { projects, complete: next === null } satisfies VercelProjectListing
+	return { projects, complete } satisfies VercelProjectListing
 })
 
 // Deployments
@@ -285,41 +264,40 @@ export const listDeployments = Effect.fn("VercelApi.listDeployments")(function* 
 	sinceMs: number,
 	maxPages: number,
 ) {
-	const deployments: Array<VercelDeploymentInfo> = []
-	let next: string | number | null = null
-	for (let page = 0; page < maxPages; page++) {
-		const body: typeof DeploymentsBody.Type = yield* call(
-			httpClient,
-			token,
-			pageFrom(
-				teamUrl("/v7/deployments", teamId, { limit: String(PAGE_SIZE), since: String(sinceMs) }),
-				next,
-			),
-			DeploymentsBody,
-		)
-		for (const d of body.deployments) {
-			if (d.projectId === undefined) continue
-			deployments.push({
-				id: d.uid,
-				projectId: d.projectId,
-				url: d.url ?? "",
-				target: d.target ?? null,
-				state: d.readyState ?? d.state ?? "UNKNOWN",
-				branch: gitMeta(d.meta, "CommitRef"),
-				commitSha: gitMeta(d.meta, "CommitSha"),
-				commitMessage: gitMeta(d.meta, "CommitMessage"),
-				creator: d.creator?.username ?? null,
-				errorCode: d.errorCode ?? null,
-				errorMessage: d.errorMessage ?? null,
-				createdAt: d.created,
-				buildingAt: d.buildingAt ?? null,
-				readyAt: d.ready ?? null,
-				inspectorUrl: d.inspectorUrl ?? null,
-			})
-		}
-		next = body.pagination?.next ?? null
-		if (next === null) break
-	}
+	const { pages } = yield* client(httpClient, token).paginate({
+		schema: DeploymentsBody,
+		maxPages,
+		next: nextOf,
+		request: (next) => ({
+			path: "/v7/deployments",
+			query: { teamId, limit: String(PAGE_SIZE), since: String(sinceMs), ...pageFrom(next) },
+		}),
+	})
+	const deployments = Arr.flatMap(pages, (body) =>
+		Arr.flatMap(body.deployments, (d): Array<VercelDeploymentInfo> =>
+			d.projectId === undefined
+				? []
+				: [
+						{
+							id: d.uid,
+							projectId: d.projectId,
+							url: d.url ?? "",
+							target: d.target ?? null,
+							state: d.readyState ?? d.state ?? "UNKNOWN",
+							branch: gitMeta(d.meta, "CommitRef"),
+							commitSha: gitMeta(d.meta, "CommitSha"),
+							commitMessage: gitMeta(d.meta, "CommitMessage"),
+							creator: d.creator?.username ?? null,
+							errorCode: d.errorCode ?? null,
+							errorMessage: d.errorMessage ?? null,
+							createdAt: d.created,
+							buildingAt: d.buildingAt ?? null,
+							readyAt: d.ready ?? null,
+							inspectorUrl: d.inspectorUrl ?? null,
+						},
+					],
+		),
+	)
 	yield* Effect.annotateCurrentSpan("maple.vercel.deployments", deployments.length)
 	return deployments
 })
@@ -357,8 +335,8 @@ const toDrainInfo = (drain: typeof DrainBody.Type): VercelDrainInfo => ({
 	disabledReason: drain.disabledReason ?? null,
 })
 
-const drainUrl = (teamId: string, drainId?: string) =>
-	`${BASE_URL}/v1/drains${drainId === undefined ? "" : `/${encodeURIComponent(drainId)}`}?teamId=${encodeURIComponent(teamId)}`
+const drainPath = (drainId?: string) =>
+	`/v1/drains${drainId === undefined ? "" : `/${encodeURIComponent(drainId)}`}`
 
 export const createDrain = Effect.fn("VercelApi.createDrain")(function* (
 	httpClient: HttpClient.HttpClient,
@@ -366,12 +344,12 @@ export const createDrain = Effect.fn("VercelApi.createDrain")(function* (
 	teamId: string,
 	body: VercelDrainBody,
 ) {
-	const drain = yield* call(
-		httpClient,
-		token,
-		HttpClientRequest.post(drainUrl(teamId)).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
-		DrainBody,
-	)
+	const drain = yield* client(httpClient, token).json(DrainBody, {
+		method: "POST",
+		path: drainPath(),
+		query: { teamId },
+		body,
+	})
 	return toDrainInfo(drain)
 })
 
@@ -382,12 +360,12 @@ export const updateDrain = Effect.fn("VercelApi.updateDrain")(function* (
 	drainId: string,
 	body: VercelDrainBody,
 ) {
-	const drain = yield* call(
-		httpClient,
-		token,
-		HttpClientRequest.patch(drainUrl(teamId, drainId)).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
-		DrainBody,
-	)
+	const drain = yield* client(httpClient, token).json(DrainBody, {
+		method: "PATCH",
+		path: drainPath(drainId),
+		query: { teamId },
+		body,
+	})
 	return toDrainInfo(drain)
 })
 
@@ -448,7 +426,10 @@ export const listDrains = Effect.fn("VercelApi.listDrains")(function* (
 	token: string,
 	teamId: string,
 ) {
-	const body = yield* call(httpClient, token, HttpClientRequest.get(drainUrl(teamId)), ListedDrainsBody)
+	const body = yield* client(httpClient, token).json(ListedDrainsBody, {
+		path: drainPath(),
+		query: { teamId },
+	})
 	yield* Effect.annotateCurrentSpan("maple.vercel.drains", body.drains.length)
 	return Arr.map(body.drains, (drain): VercelListedDrain => ({
 		...toDrainInfo(drain),
@@ -467,12 +448,14 @@ export const deleteDrain = Effect.fn("VercelApi.deleteDrain")(function* (
 	teamId: string,
 	drainId: string,
 ) {
-	yield* call(httpClient, token, HttpClientRequest.delete(drainUrl(teamId, drainId)), Schema.Unknown).pipe(
-		Effect.catchIf(
-			(error) => error.kind === "not_found",
-			() => Effect.void,
-		),
-	)
+	yield* client(httpClient, token)
+		.json(Schema.Unknown, { method: "DELETE", path: drainPath(drainId), query: { teamId } })
+		.pipe(
+			Effect.catchIf(
+				(error) => error.kind === "not_found",
+				() => Effect.void,
+			),
+		)
 })
 
 // Billing
@@ -540,18 +523,12 @@ export const streamBillingCharges = (
 ): Stream.Stream<VercelCharge, VercelApiError> =>
 	Stream.unwrap(
 		Effect.gen(function* () {
-			const response = yield* httpClient
-				.execute(
-					HttpClientRequest.bearerToken(
-						teamUrl("/v1/billing/charges", teamId, { from: range.from, to: range.to }),
-						token,
-					),
-				)
-				.pipe(Effect.annotateSpans("peer.service", "vercel"))
-			if (response.status >= 300) {
-				const body = yield* response.json.pipe(Effect.orElseSucceed(() => null))
-				return yield* refusal(response.status, body)
-			}
+			const response = yield* client(httpClient, token).stream({
+				path: "/v1/billing/charges",
+				query: { teamId, from: range.from, to: range.to },
+				// Until the answer starts: a long range can take Vercel a while to begin streaming.
+				timeout: CHARGES_TIMEOUT,
+			})
 			// Only a 200 is the whole range: a 204 or a 206 would store days empty or by halves.
 			if (response.status !== 200) {
 				return yield* new VercelApiError({
@@ -560,34 +537,23 @@ export const streamBillingCharges = (
 					status: response.status,
 				})
 			}
-			return response.stream.pipe(
+			return response.body.pipe(
 				Stream.decodeText(),
 				Stream.splitLines,
 				Stream.map(Str.trim),
 				Stream.filter(Str.isNonEmpty),
-				Stream.mapEffect((line) => decodeChargeLine(line)),
-			)
-		}),
-	).pipe(
-		Stream.catchTags({
-			HttpClientError: (cause) =>
-				// A team with no charges in the range may answer with no body at all.
-				cause.reason._tag === "EmptyBodyError"
-					? Stream.empty
-					: Stream.fail(
-							new VercelApiError({
-								message: "Vercel API request failed",
-								kind: "upstream",
-								cause,
-							}),
+				Stream.mapEffect((line) =>
+					decodeChargeLine(line).pipe(
+						Effect.mapError(
+							(cause) =>
+								new VercelApiError({
+									message: "Vercel API answered with a charge Maple could not read",
+									kind: "invalid_response",
+									cause,
+								}),
 						),
-			SchemaError: (cause) =>
-				Stream.fail(
-					new VercelApiError({
-						message: "Vercel API answered with a charge Maple could not read",
-						kind: "invalid_response",
-						cause,
-					}),
+					),
 				),
+			)
 		}),
 	)

@@ -11,6 +11,7 @@ import {
 	fakeVercelDeps,
 	makeFakeVercel,
 } from "./providers/vercel/fake-vercel"
+import * as VendorFake from "@maple/backend/testing/vendor-fake"
 import { VercelCostProvider } from "./providers/vercel/VercelCostProvider"
 import { VercelCostSourceService } from "./VercelCostSourceService"
 
@@ -199,7 +200,8 @@ describe("VercelCostSourceService", () => {
 				const tags = yield* Effect.forEach([500, 429], (status) =>
 					Effect.gen(function* () {
 						world.chargesStatus = status
-						return (yield* Effect.flip(add))._tag
+						// A 5xx is retried; the clock moves the back-off along.
+						return (yield* Effect.flip(VendorFake.elapsing(add)))._tag
 					}),
 				)
 				world.chargesStatus = 200

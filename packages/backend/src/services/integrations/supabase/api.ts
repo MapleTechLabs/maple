@@ -3,8 +3,8 @@
 // additions never break decode.
 import { SupabaseProjectRef } from "@maple/primitives"
 import { Duration, Effect, Option, Redacted, Schema, Array as Arr, String as Str } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
-import { parseDeltaSeconds, VENDOR_TRANSIENT_RETRY } from "../vendor-retry"
+import type { HttpClient } from "effect/http"
+import * as VendorHttp from "../vendor-http"
 
 const REQUEST_TIMEOUT = Duration.seconds(20)
 
@@ -62,109 +62,96 @@ const ErrorBodySchema = Schema.Union([
 ])
 const decodeErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ErrorBodySchema))
 
-const upstreamDetail = (text: string) =>
+/** Supabase's own message, read from the whole body before the kit cuts it. */
+const supabaseDetail = (text: string) =>
 	Option.match(decodeErrorBody(text), {
-		onNone: () => "",
-		onSome: (body) => {
-			const detail = "error" in body ? (body.error.description ?? body.error.message) : body.message
-			return detail === undefined ? "" : `: ${Str.slice(0, 300)(detail)}`
-		},
-	})
-
-/** `retry-after`, else `x-ratelimit-reset` (seconds until the window resets). */
-const retryAfterSeconds = (headers: Readonly<Record<string, string | undefined>>) =>
-	Option.match(parseDeltaSeconds(headers["retry-after"] ?? headers["x-ratelimit-reset"]), {
 		onNone: () => undefined,
-		onSome: (seconds) => ({ retryAfterSeconds: seconds }),
+		onSome: (body) => ("error" in body ? (body.error.description ?? body.error.message) : body.message),
 	})
 
-const isTransient = (error: SupabaseApiError) =>
-	error.kind === "upstream" && (error.status === undefined || error.status >= 500)
-
-/** Execute one request; any non-2xx becomes a classified {@link SupabaseApiError}. */
-export const send = (
-	httpClient: HttpClient.HttpClient,
-	request: HttpClientRequest.HttpClientRequest,
-	what: string,
-	// A create is not retried: a 5xx after Supabase stored it would add a second drain.
-	options: { readonly retry: boolean } = { retry: true },
-) =>
-	Effect.gen(function* () {
-		const response = yield* httpClient.execute(request)
-		const text = yield* response.text
-		const status = response.status
-		if (status >= 200 && status < 300) return text
-		if (status === 401) {
-			return yield* new SupabaseApiError({
+/** A failed call as a {@link SupabaseApiError}, in the words each status has always had. */
+const toSupabaseError = (error: VendorHttp.VendorHttpError): SupabaseApiError => {
+	const what = error.operation ?? "calling the Management API"
+	const status = error.status === undefined ? undefined : { status: error.status }
+	const detail = error.detail === undefined ? "" : `: ${Str.slice(0, 300)(error.detail)}`
+	switch (error.kind) {
+		case "unauthorized":
+			return new SupabaseApiError({
 				message: `Supabase rejected the access token while ${what}`,
 				kind: "unauthorized",
-				status,
+				...status,
 			})
-		}
-		if (status === 403) {
-			return yield* new SupabaseApiError({
-				message: `Supabase denied ${what}${upstreamDetail(text) || ": the OAuth app may be missing a scope"}`,
+		case "forbidden":
+			return new SupabaseApiError({
+				message: `Supabase denied ${what}${detail || ": the OAuth app may be missing a scope"}`,
 				kind: "forbidden",
-				status,
+				...status,
 			})
-		}
-		if (status === 429) {
-			return yield* new SupabaseApiError({
+		case "rate_limited":
+			return new SupabaseApiError({
 				message: `Supabase rate limited ${what}`,
 				kind: "rate_limited",
-				status,
-				...retryAfterSeconds(response.headers),
+				...status,
+				...(error.retryAfterSeconds === undefined
+					? undefined
+					: { retryAfterSeconds: error.retryAfterSeconds }),
 			})
-		}
-		return yield* new SupabaseApiError({
-			message: `Supabase answered ${status} while ${what}${upstreamDetail(text)}`,
-			kind: "upstream",
-			status,
-		})
-	}).pipe(
-		Effect.catchTag("HttpClientError", (error) =>
-			Effect.fail(
-				new SupabaseApiError({
-					message: `Supabase request failed while ${what}: ${error.message}`,
-					kind: "upstream",
-				}),
-			),
-		),
-		Effect.timeoutOrElse({
-			duration: REQUEST_TIMEOUT,
-			orElse: () =>
-				Effect.fail(
-					new SupabaseApiError({ message: `Supabase timed out while ${what}`, kind: "upstream" }),
-				),
-		}),
-		Effect.retry({
-			schedule: VENDOR_TRANSIENT_RETRY,
-			while: (error) => options.retry && isTransient(error),
-		}),
-		Effect.annotateSpans("peer.service", "supabase"),
-	)
+		case "timeout":
+			return new SupabaseApiError({ message: `Supabase timed out while ${what}`, kind: "upstream" })
+		case "not_found":
+		case "upstream":
+		case "invalid_response":
+			return new SupabaseApiError({
+				message:
+					error.status === undefined
+						? `Supabase request failed while ${what}`
+						: `Supabase answered ${error.status} while ${what}${detail}`,
+				kind: "upstream",
+				...status,
+			})
+	}
+}
 
-const getArray = (httpClient: HttpClient.HttpClient, url: string, accessToken: string, what: string) =>
-	send(
+/** A Management API client; `auth` is the OAuth bearer, or none for the OAuth endpoints. */
+export const supabaseClient = (
+	httpClient: HttpClient.HttpClient,
+	baseUrl: string,
+	auth: VendorHttp.VendorAuth,
+) =>
+	VendorHttp.make({
 		httpClient,
-		HttpClientRequest.get(url).pipe(
-			HttpClientRequest.bearerToken(accessToken),
-			HttpClientRequest.acceptJson,
-		),
-		what,
-	).pipe(
-		Effect.flatMap((text) =>
-			decodeJsonArray(text).pipe(
-				Effect.mapError(
-					() =>
-						new SupabaseApiError({
-							message: `Supabase returned an unexpected body while ${what}`,
-							kind: "upstream",
-						}),
+		peerService: "supabase",
+		baseUrl,
+		auth,
+		headers: { accept: "application/json" },
+		toError: toSupabaseError,
+		detail: supabaseDetail,
+		timeout: REQUEST_TIMEOUT,
+		rateLimitResetHeader: "x-ratelimit-reset",
+	})
+
+const getArray = (
+	httpClient: HttpClient.HttpClient,
+	baseUrl: string,
+	path: string,
+	accessToken: string,
+	what: string,
+) =>
+	supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
+		.text({ path, operation: what })
+		.pipe(
+			Effect.flatMap((text) =>
+				decodeJsonArray(text).pipe(
+					Effect.mapError(
+						() =>
+							new SupabaseApiError({
+								message: `Supabase returned an unexpected body while ${what}`,
+								kind: "upstream",
+							}),
+					),
 				),
 			),
-		),
-	)
+		)
 
 /** Organizations the token reaches. A Management API OAuth grant covers exactly one. */
 export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(function* (
@@ -174,7 +161,8 @@ export const listOrganizations = Effect.fn("SupabaseApi.listOrganizations")(func
 ) {
 	const items = yield* getArray(
 		httpClient,
-		`${baseUrl}/v1/organizations`,
+		baseUrl,
+		"/v1/organizations",
 		accessToken,
 		"listing organizations",
 	)
@@ -198,7 +186,7 @@ export const listProjects = Effect.fn("SupabaseApi.listProjects")(function* (
 	baseUrl: string,
 	accessToken: string,
 ) {
-	const items = yield* getArray(httpClient, `${baseUrl}/v1/projects`, accessToken, "listing projects")
+	const items = yield* getArray(httpClient, baseUrl, "/v1/projects", accessToken, "listing projects")
 	const projects = Arr.flatMap(items, (item) => Option.toArray(decodeProject(item)))
 	yield* Effect.annotateCurrentSpan({
 		"maple.supabase.projects_listed": items.length,
@@ -217,15 +205,18 @@ export const revokeGrant = Effect.fn("SupabaseApi.revokeGrant")(function* (
 		readonly refreshToken: string
 	},
 ) {
-	const request = HttpClientRequest.post(`${baseUrl}/v1/oauth/revoke`).pipe(
-		HttpClientRequest.acceptJson,
-		HttpClientRequest.bodyJsonUnsafe({
+	// Revoking twice is harmless, so a passing failure is retried like a read.
+	yield* supabaseClient(httpClient, baseUrl, VendorHttp.noAuth).text({
+		method: "POST",
+		path: "/v1/oauth/revoke",
+		body: {
 			client_id: params.clientId,
 			client_secret: Redacted.value(params.clientSecret),
 			refresh_token: params.refreshToken,
-		}),
-	)
-	yield* send(httpClient, request, "revoking the authorization")
+		},
+		operation: "revoking the authorization",
+		retry: true,
+	})
 })
 
 /** A `log_drain` resource (`ListLogDrainsResponse_Output.data[]`); the config stays opaque here. */
@@ -316,8 +307,7 @@ export const otlpLogDrainBody = (spec: OtlpLogDrainSpec) => ({
 	},
 })
 
-const drainsUrl = (baseUrl: string, ref: string) =>
-	`${baseUrl}/v2/projects/${encodeURIComponent(ref)}/analytics/log-drains`
+const drainsPath = (ref: string) => `/v2/projects/${encodeURIComponent(ref)}/analytics/log-drains`
 
 const unexpectedBody = (what: string) =>
 	new SupabaseApiError({ message: `Supabase returned an unexpected body while ${what}`, kind: "upstream" })
@@ -332,17 +322,15 @@ export const createLogDrain = Effect.fn("SupabaseApi.createLogDrain")(function* 
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.supabase.project_ref": ref })
 	const what = "creating a log drain"
-	const request = HttpClientRequest.post(drainsUrl(baseUrl, ref)).pipe(
-		HttpClientRequest.bearerToken(accessToken),
-		HttpClientRequest.acceptJson,
-		HttpClientRequest.bodyJsonUnsafe(otlpLogDrainBody(spec)),
-	)
-	const text = yield* send(httpClient, request, what, { retry: false }).pipe(
-		Effect.catchIf(
-			(error) => error.status === 402,
-			() => Effect.fail(new SupabasePlanRequiredError({ message: DRAINS_PLAN_MESSAGE })),
-		),
-	)
+	// Not retried: a 5xx after Supabase stored the drain would add a second one.
+	const text = yield* supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
+		.text({ method: "POST", path: drainsPath(ref), body: otlpLogDrainBody(spec), operation: what })
+		.pipe(
+			Effect.catchIf(
+				(error) => error.status === 402,
+				() => Effect.fail(new SupabasePlanRequiredError({ message: DRAINS_PLAN_MESSAGE })),
+			),
+		)
 	const created = yield* decodeCreatedDrain(text).pipe(Effect.mapError(() => unexpectedBody(what)))
 	return created.data
 })
@@ -359,20 +347,15 @@ export const listLogDrains = Effect.fn("SupabaseApi.listLogDrains")(function* (
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.supabase.project_ref": ref })
 	const what = "listing log drains"
-	const text = yield* send(
-		httpClient,
-		HttpClientRequest.get(drainsUrl(baseUrl, ref)).pipe(
-			HttpClientRequest.bearerToken(accessToken),
-			HttpClientRequest.acceptJson,
-		),
-		what,
-	).pipe(
-		Effect.asSome,
-		Effect.catchIf(
-			(error) => error.kind === "forbidden",
-			() => Effect.succeed(Option.none<string>()),
-		),
-	)
+	const text = yield* supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
+		.text({ path: drainsPath(ref), operation: what })
+		.pipe(
+			Effect.asSome,
+			Effect.catchIf(
+				(error) => error.kind === "forbidden",
+				() => Effect.succeed(Option.none<string>()),
+			),
+		)
 	if (Option.isNone(text)) {
 		yield* Effect.annotateCurrentSpan({ "maple.supabase.log_drains_available": false })
 		return Option.none<ReadonlyArray<SupabaseLogDrain>>()
@@ -395,13 +378,16 @@ export const deleteLogDrain = Effect.fn("SupabaseApi.deleteLogDrain")(function* 
 	drainId: string,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.supabase.project_ref": ref })
-	const request = HttpClientRequest.delete(
-		`${drainsUrl(baseUrl, ref)}/${encodeURIComponent(drainId)}`,
-	).pipe(HttpClientRequest.bearerToken(accessToken), HttpClientRequest.acceptJson)
-	yield* send(httpClient, request, "deleting a log drain").pipe(
-		Effect.catchIf(
-			(error) => error.status === 404,
-			() => Effect.void,
-		),
-	)
+	yield* supabaseClient(httpClient, baseUrl, VendorHttp.bearer(accessToken))
+		.text({
+			method: "DELETE",
+			path: `${drainsPath(ref)}/${encodeURIComponent(drainId)}`,
+			operation: "deleting a log drain",
+		})
+		.pipe(
+			Effect.catchIf(
+				(error) => error.status === 404,
+				() => Effect.void,
+			),
+		)
 })
