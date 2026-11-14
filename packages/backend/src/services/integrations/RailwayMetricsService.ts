@@ -603,19 +603,32 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 				const summary = yield* Effect.gen(function* () {
 					const token = yield* decryptToken(claimed)
 
+					// Only against the token that failed: a token saved meanwhile is not paused.
 					const markAuthFailed = (message: string) =>
-						updateConnection(claimed.id, {
-							authFailedAt: now,
-							lastError: message,
-							lastErrorAt: now,
-							updatedAt: now,
-						}).pipe(
-							Effect.andThen(
-								reportTick(
-									claimed.sourceId,
-									{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
-									now,
-								),
+						dbExecute((db) =>
+							db.run(
+								PG.update(RailwayConnections)
+									.set({
+										authFailedAt: now,
+										lastError: message,
+										lastErrorAt: now,
+										updatedAt: now,
+									})
+									.where(($) => [
+										$.id.eq(claimed.id),
+										$.tokenCiphertext.eq(claimed.tokenCiphertext),
+									])
+									.returning("id"),
+							),
+						).pipe(
+							Effect.flatMap((rows) =>
+								rows.length === 0
+									? Effect.void
+									: reportTick(
+											claimed.sourceId,
+											{ _tag: "Disconnected", reason: TOKEN_REJECTED_REASON },
+											now,
+										),
 							),
 						)
 

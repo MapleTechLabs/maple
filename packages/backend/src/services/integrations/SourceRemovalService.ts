@@ -13,6 +13,7 @@ import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { RailwayMetricsService } from "./RailwayMetricsService"
 import { ScrapeTargetsService } from "./ScrapeTargetsService"
 import { SupabaseConnectionService } from "./SupabaseConnectionService"
+import { VercelIntegrationService } from "./VercelIntegrationService"
 import { VcsRepository } from "./vcs/VcsRepository"
 
 const toPersistenceError = (error: DatabaseError) => new SourcePersistenceError({ message: error.message })
@@ -45,6 +46,7 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 			const railway = yield* RailwayMetricsService
 			const planetscale = yield* PlanetScaleConnectionService
 			const supabase = yield* SupabaseConnectionService
+			const vercel = yield* VercelIntegrationService
 			const vcs = yield* VcsRepository
 
 			const scrapeTargetsOf = (orgId: OrgId, sourceId: SourceId) =>
@@ -156,6 +158,9 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 					case "supabase":
 						yield* supabase.disconnect(orgId)
 						break
+					case "vercel":
+						yield* vercel.disconnect(orgId)
+						break
 					default:
 						// Push-only platforms have no connection to remove.
 						break
@@ -214,6 +219,7 @@ export class SourceRemovalService extends Context.Service<SourceRemovalService>(
 				RailwayMetricsService.layer,
 				PlanetScaleConnectionService.layer,
 				SupabaseConnectionService.layer,
+				VercelIntegrationService.layer,
 				VcsRepository.layer,
 			),
 		),
