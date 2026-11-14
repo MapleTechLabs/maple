@@ -20,8 +20,6 @@ import { Array as Arr, String as Str } from "effect"
  * fall through to `formatNumber`, but the picker offers them and human-authored
  * widgets store them. A catalog built from the match arms alone would reject
  * every such widget on a get -> edit -> update round trip.
- *
- * `formatValueByUnit` keys its formatters by `WidgetUnitToken`, so (1) cannot drift.
  */
 export interface WidgetUnitMeta {
 	readonly token: string
@@ -65,9 +63,6 @@ export const WIDGET_UNITS = [
 	{ token: "requests_per_sec", label: "Requests/sec", expects: "a per-second rate" },
 	{ token: "short", label: "Short", expects: "any number; rendered like `number`" },
 ] as const satisfies ReadonlyArray<WidgetUnitMeta>
-
-/** A catalogued unit token; `formatValueByUnit` gives every one a formatter. */
-type WidgetUnitToken = (typeof WIDGET_UNITS)[number]["token"]
 
 export const WIDGET_UNIT_TOKENS: ReadonlyArray<string> = Arr.map(WIDGET_UNITS, (unit) => unit.token)
 

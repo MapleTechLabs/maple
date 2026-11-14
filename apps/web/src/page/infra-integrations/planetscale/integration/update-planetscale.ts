@@ -6,7 +6,6 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
-import type { Model } from "../../../integrations/model"
 import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
 import {
 	FetchOrganizations,
