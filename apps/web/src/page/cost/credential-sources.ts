@@ -235,10 +235,10 @@ export const CREDENTIAL_SOURCES = {
 				before: "Create a ",
 				link: "static token",
 				href: "https://www.tinybird.co/docs/forward/administration/tokens/static-tokens",
-				after: " with only the ORG_DATASOURCES:READ scope, under Tokens in Tinybird or with ",
+				after: " with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes, under Tokens in Tinybird or with ",
 				command: {
-					code: "tb --cloud token create static maple_cost --scope ORG_DATASOURCES:READ",
-					after: ". Maple finds its region, reads only the organization's usage tables with it, and stores it encrypted. A token without that scope is refused.",
+					code: "tb --cloud token create static maple_cost --scope WORKSPACE:READ_ALL --scope ORG_DATASOURCES:READ",
+					after: ". Tinybird reads its usage tables only with both scopes, and WORKSPACE:READ_ALL can also read the workspace's data: Maple only queries the organization's usage tables with it, and stores it encrypted. Make one just for Maple so you can revoke it on its own.",
 				},
 			},
 		},

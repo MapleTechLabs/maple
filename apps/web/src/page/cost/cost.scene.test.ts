@@ -697,7 +697,9 @@ describe("cost page", () => {
 				"https://www.tinybird.co/docs/forward/administration/tokens/static-tokens",
 			),
 			expectView(
-				text("tb --cloud token create static maple_cost --scope ORG_DATASOURCES:READ"),
+				text(
+					"tb --cloud token create static maple_cost --scope WORKSPACE:READ_ALL --scope ORG_DATASOURCES:READ",
+				),
 			).toExist(),
 			// Tinybird has no spend report: the reader learns what the estimate leaves out before adding it.
 			expectView(text(/The plan's monthly fee, QPS overages and LLM usage are not included/)).toExist(),

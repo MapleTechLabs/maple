@@ -1,6 +1,6 @@
 // The Tinybird token an org's Tinybird usage is read with: checked with Tinybird, then kept in the
-// shared cost connection store. A static token with the ORG_DATASOURCES:READ scope reads only the
-// organization's service data sources; an org admin's workspace admin token works too.
+// shared cost connection store. Live: `/v0/sql` reads the organization's service data sources only
+// with WORKSPACE:READ_ALL and ORG_DATASOURCES:READ together, or an org admin's workspace admin token.
 import {
 	CloudCostDisabledError,
 	CostConnectionPersistenceError,
@@ -27,7 +27,7 @@ const toTokenError = (
 			return refused("Tinybird rejected this token.")
 		case "no_scope":
 			return refused(
-				"This token cannot read the organization's usage. Create one with the ORG_DATASOURCES:READ scope.",
+				"This token cannot read the organization's usage. Create one with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes.",
 			)
 		default:
 			return new CostConnectionPersistenceError({

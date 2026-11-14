@@ -27,7 +27,7 @@ const failed = (reason: Reason, message: string) =>
 
 const UNREADABLE = "Tinybird's usage could not be read."
 const NO_SCOPE =
-	"Tinybird no longer lets the saved token read the organization's usage. Replace it with a token with the ORG_DATASOURCES:READ scope."
+	"Tinybird no longer lets the saved token read the organization's usage. Replace it with a token with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes."
 
 const fromHostError = (error: TinybirdCost.TinybirdHostError): CostProviderError => {
 	switch (error.kind) {

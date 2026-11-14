@@ -528,8 +528,11 @@ real organization with spend, restated days, and how far back OpenAI serves.
   public list prices (tinybird.co/pricing, checked 2026-11-14). First provider with `basis:
   "estimated"`.
 - Read with a static token the org pastes (`tb --cloud token create static maple_cost --scope
-  ORG_DATASOURCES:READ`; an org admin's workspace admin token works too), kept in
-  `cost_connections`. Queries go to `GET <host>/v0/sql`.
+  WORKSPACE:READ_ALL --scope ORG_DATASOURCES:READ`; an org admin's workspace admin token works
+  too), kept in `cost_connections`. Live: a token with only `ORG_DATASOURCES:READ` is refused on
+  `/v0/sql` ("can't be directly accessed without an ADMIN token"); with `WORKSPACE:READ_ALL`
+  beside it every table reads. That scope can also read the workspace's own data, which the dialog
+  says; Maple only queries the usage tables. Queries go to `GET <host>/v0/sql`.
 - A token works on one regional host. Every allowlisted host is asked at once who the organization
   is: a 200 picks the host. Live: another region's host answers 403 "Workspace not found", a bad
   signature 403 "Signature verification failed". One host refusing otherwise is the token's own

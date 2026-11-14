@@ -23,7 +23,7 @@ const VALIDATION = "@maple/http/cost-connections/CostConnectionValidationError"
 const PERSISTENCE = "@maple/http/cost-connections/CostConnectionPersistenceError"
 const REJECTED = "Tinybird rejected this token."
 const NO_SCOPE =
-	"This token cannot read the organization's usage. Create one with the ORG_DATASOURCES:READ scope."
+	"This token cannot read the organization's usage. Create one with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes."
 
 const run = <A, E>(
 	testDb: TestDb,

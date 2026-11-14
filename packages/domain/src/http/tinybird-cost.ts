@@ -13,7 +13,7 @@ import { CloudCostDisabledError } from "./query-engine"
 /** Far above any Tinybird token: it only bounds what the request carries. */
 export const TINYBIRD_COST_TOKEN_MAX_LENGTH = 512
 
-/** A Tinybird token with the ORG_DATASOURCES:READ scope (p.ey...). */
+/** A Tinybird token with the WORKSPACE:READ_ALL and ORG_DATASOURCES:READ scopes (p.ey...). */
 export class TinybirdCostTokenRequest extends Schema.Class<TinybirdCostTokenRequest>(
 	"TinybirdCostTokenRequest",
 )({
