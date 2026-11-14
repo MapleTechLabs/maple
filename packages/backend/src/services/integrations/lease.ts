@@ -1,10 +1,9 @@
 // The leased row every integration poller claims per tick: a claim writes `now + lease` into a
 // nullable epoch-ms column, and every later write compares-and-sets on the value it wrote.
 //
-// Corrupt-lease escape hatches are per poller and deliberately not normalized (2026-11):
-// Cloudflare, Search Console and Supabase insights reclaim past `2 * LEASE_MS`; Railway past
-// `2 * BILLING_HOLD_MS`; Supabase discovery past 2 hours; Supabase logs past
-// `REFUSED_HOLD_MS + LEASE_MS`. AWS checks, GCP metrics and PlanetScale poll state have none.
+// `withLease` (./poller) keeps a failed tick's back-off in its own hold column, so one corrupt
+// bound fits every poller on it: twice its lease. Railway and PlanetScale metrics use it; the
+// pollers not migrated yet still pass their own bound here, or none.
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 

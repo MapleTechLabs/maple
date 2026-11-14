@@ -492,9 +492,9 @@ describe("RailwayMetricsService", () => {
 			assert.strictEqual(summary.failures, 1)
 			const rows = yield* Effect.promise(() =>
 				Promise.all([
-					queryFirstRow<{ lease_until: Date | null }>(
+					queryFirstRow<{ hold_until: Date | null }>(
 						testDb,
-						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						"SELECT hold_until FROM railway_connections WHERE org_id = $1",
 						[orgId],
 					),
 					queryFirstRow<{ watermark_at: Date | null }>(
@@ -504,7 +504,7 @@ describe("RailwayMetricsService", () => {
 				]),
 			)
 			assert.isAbove(
-				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.lease_until!)),
+				DateTime.toEpochMillis(DateTime.makeUnsafe(rows[0]!.hold_until!)),
 				now + 10 * minute,
 			)
 			assert.isNull(rows[1]!.watermark_at)
@@ -538,14 +538,14 @@ describe("RailwayMetricsService", () => {
 				assert.strictEqual(summary.failures, 1)
 				assert.strictEqual(calls.ingest.length, 2)
 				const connection = yield* Effect.promise(() =>
-					queryFirstRow<{ lease_until: Date | null }>(
+					queryFirstRow<{ hold_until: Date | null }>(
 						testDb,
-						"SELECT lease_until FROM railway_connections WHERE org_id = $1",
+						"SELECT hold_until FROM railway_connections WHERE org_id = $1",
 						[orgId],
 					),
 				)
 				assert.isAbove(
-					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.lease_until!)),
+					DateTime.toEpochMillis(DateTime.makeUnsafe(connection!.hold_until!)),
 					now + 30 * minute,
 				)
 				const held = yield* run(
@@ -679,7 +679,10 @@ describe("RailwayMetricsService", () => {
 				),
 			)
 		const behindAndUnleased = Effect.promise(() =>
-			queryFirstRow(testDb, "UPDATE railway_connections SET lease_until = NULL RETURNING id"),
+			queryFirstRow(
+				testDb,
+				"UPDATE railway_connections SET lease_until = NULL, hold_until = NULL RETURNING id",
+			),
 		).pipe(Effect.andThen(resetWatermarks(testDb)))
 		return Effect.gen(function* () {
 			const okStub = stubFetch(calls)

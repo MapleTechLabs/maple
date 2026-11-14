@@ -29,6 +29,7 @@ import {
 	Duration,
 	Effect,
 	Layer,
+	Option,
 	Schema,
 	String as Str,
 	Array as Arr,
@@ -38,6 +39,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { pollFleet } from "./poll-fleet"
+import { type Lease, skipIfPaused, withLease } from "./poller"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { IngestRefused, keepRefusal, makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
@@ -64,6 +66,8 @@ const LAG_MS = 2 * MINUTE_MS
 /** How far back a first poll, or one after an outage, reaches. */
 const MAX_BACKFILL_MS = 30 * MINUTE_MS
 const FIRST_WINDOW_MS = 10 * MINUTE_MS
+/** A refused org waits this long, well inside the backfill, so the window it kept is still read. */
+const INGEST_REFUSED_HOLD_MS = 20 * MINUTE_MS
 /** One request per branch per tick; a runaway org cannot spend the whole API allowance. */
 const MAX_BRANCHES_PER_ORG = 150
 const BRANCH_CONCURRENCY = 4
@@ -91,6 +95,9 @@ const toPersistenceError = makePersistenceErrorMapper(
 	"PlanetScale metrics persistence failed",
 )
 
+/** The start of the last minute PlanetScale has finished filling. */
+const lastCompleteMinute = (now: number) => now - LAG_MS - ((now - LAG_MS) % MINUTE_MS)
+
 /** A managed target scraping with a stored service token: Prometheus already has the branch. */
 export const scrapesWithToken = (target: ScrapeTargetRow | null) =>
 	target !== null &&
@@ -110,10 +117,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const ingestKeys = yield* OrgIngestKeysService
 		const ingest = yield* makeIngestSender
-		const { claimPollWork, recordPollResult } = makePlanetScalePollState(
-			database,
-			"PlanetScaleMetricsService",
-		)
+		const { pollStateLease } = makePlanetScalePollState(database, "PlanetScaleMetricsService")
 
 		const callApi = <A, E extends SdkError>(
 			connection: PlanetScaleConnectionRow,
@@ -232,6 +236,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 			connection: PlanetScaleConnectionRow,
 			branch: ApiMetricBranch,
 			watermarkAt: number | null,
+			pausedUntil: number | null,
 			ingestKey: string,
 		) {
 			yield* Effect.annotateCurrentSpan({
@@ -240,8 +245,10 @@ export class PlanetScaleMetricsService extends Context.Service<
 			})
 			const now = yield* Clock.currentTimeMillis
 			// The last complete minute; `to` covers the whole of it.
-			const endMs = now - LAG_MS - ((now - LAG_MS) % MINUTE_MS)
-			const startMs = Math.max(watermarkAt ?? endMs - FIRST_WINDOW_MS, endMs - MAX_BACKFILL_MS)
+			const endMs = lastCompleteMinute(now)
+			// A branch with no watermark starts no earlier than where a pause left the org.
+			const firstStartMs = Math.max(endMs - FIRST_WINDOW_MS, pausedUntil ?? 0)
+			const startMs = Math.max(watermarkAt ?? firstStartMs, endMs - MAX_BACKFILL_MS)
 			if (startMs > endMs) return 0
 			const response = yield* callApi(
 				connection,
@@ -278,6 +285,30 @@ export class PlanetScaleMetricsService extends Context.Service<
 			return rows.length
 		}, keepRefusal)
 
+		/** Why the org row was not claimed, so a routine fresh tick does not read as an overlap. */
+		const unclaimedReason = (connection: PlanetScaleConnectionRow, now: number) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscalePollState)
+						.select("enabled", "lastSuccessAt", "holdUntil")
+						.where(($) => [
+							$.orgId.eq(connection.orgId),
+							$.dataset.eq(PLANETSCALE_METRICS_DATASET),
+							$.databaseId.eq(""),
+						])
+						.limit(1),
+				),
+			).pipe(
+				Effect.map(([row]) => {
+					if (row === undefined) return "lease_held"
+					if (!row.enabled) return "disabled"
+					if (row.lastSuccessAt !== null && now - row.lastSuccessAt < ORG_LEASE_TTL_MS)
+						return "fresh"
+					if (row.holdUntil !== null && row.holdUntil > now) return "held"
+					return "lease_held"
+				}),
+			)
+
 		const pollOrg = Effect.fn("PlanetScaleMetricsService.pollOrg")(function* (
 			connection: PlanetScaleConnectionRow,
 			deadlineMs: number,
@@ -303,15 +334,65 @@ export class PlanetScaleMetricsService extends Context.Service<
 					),
 				)
 			}
-			// Guards against an overlapping tick only; each branch's watermark says what is due.
-			const claim = yield* claimPollWork(
-				connection.orgId,
-				PLANETSCALE_METRICS_DATASET,
-				"",
-				ORG_LEASE_TTL_MS,
+			const now = yield* Clock.currentTimeMillis
+			// A paused source reads nothing; its branches' watermarks follow the clock so a resume starts at now.
+			// The org row ("") carries the same frontier for branches that have never been polled.
+			const followClock = Effect.gen(function* () {
+				const nextStartMs = lastCompleteMinute(now) + MINUTE_MS
+				yield* dbExecute((db) =>
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.insertInto(PlanetscalePollState)
+								.values({
+									id: randomUUID(),
+									orgId: connection.orgId,
+									dataset: PLANETSCALE_METRICS_DATASET,
+									databaseId: "",
+									createdAt: now,
+									updatedAt: now,
+								})
+								.onConflictDoNothing({ target: ["orgId", "dataset", "databaseId"] }),
+						)
+						yield* db.run(
+							PG.update(PlanetscalePollState)
+								.set({ watermarkAt: nextStartMs, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(connection.orgId),
+									$.dataset.eq(PLANETSCALE_METRICS_DATASET),
+									PG.or($.watermarkAt.isNull(), $.watermarkAt.lt(nextStartMs)),
+								]),
+						)
+					}),
+				)
+				return yield* skip("source_paused")
+			})
+			// Guards against an overlapping tick, and holds an org the gateway refused; each branch's
+			// watermark says what is due.
+			const polled = withLease(
+				pollStateLease(connection.orgId, PLANETSCALE_METRICS_DATASET, "", ORG_LEASE_TTL_MS),
+				now,
+				(lease) => pollBranches(connection, target, deadlineMs, lease),
+			).pipe(
+				Effect.flatMap(
+					Option.match({
+						onNone: () => Effect.flatMap(unclaimedReason(connection, now), skip),
+						onSome: Effect.succeed,
+					}),
+				),
 			)
-			if (claim !== "claimed") return yield* skip(claim)
+			return yield* polled.pipe(skipIfPaused(dbExecute, connection.sourceId, now, followClock))
+		})
 
+		const pollBranches = Effect.fnUntraced(function* (
+			connection: PlanetScaleConnectionRow,
+			target: ScrapeTargetRow | null,
+			deadlineMs: number,
+			lease: Lease<
+				PG.SelectRowOf<typeof PlanetscalePollState>,
+				PG.UpdateSetOf<typeof PlanetscalePollState>,
+				IntegrationsPersistenceError
+			>,
+		) {
 			const all = yield* branchesOf(connection, target)
 			const branches = all.slice(0, MAX_BRANCHES_PER_ORG)
 			if (all.length > branches.length) {
@@ -337,11 +418,13 @@ export class PlanetScaleMetricsService extends Context.Service<
 							connection,
 							branch,
 							watermarks.get(branch.branchId) ?? null,
+							watermarks.get("") ?? null,
 							ingestKey,
 						)
 						// Billing or a refused key: the org's state, recorded on the branch but not a fault.
 						if (rows instanceof IngestRefused) {
 							const error = rows.error.message
+							yield* lease.hold(lease.now + INGEST_REFUSED_HOLD_MS)
 							yield* recordBranch(connection, branch, { error }).pipe(
 								Effect.ignore({ log: "Warn" }),
 							)
@@ -389,17 +472,18 @@ export class PlanetScaleMetricsService extends Context.Service<
 				0,
 				(sum, result) => sum + (result._tag === "Ingested" ? result.rows : 0),
 			)
-			yield* recordPollResult(
-				connection.orgId,
-				PLANETSCALE_METRICS_DATASET,
-				"",
+			const finishedAt = yield* Clock.currentTimeMillis
+			yield* lease.write(
 				failures.length === 0
-					? null
-					: Str.slice(
-							0,
-							500,
-						)(`${failures.length} of ${branches.length} branches failed. ${failures[0]}`),
-				null,
+					? { lastSuccessAt: finishedAt, lastError: null, lastErrorAt: null, updatedAt: finishedAt }
+					: {
+							lastError: Str.slice(
+								0,
+								500,
+							)(`${failures.length} of ${branches.length} branches failed. ${failures[0]}`),
+							lastErrorAt: finishedAt,
+							updatedAt: finishedAt,
+						},
 			)
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.metrics.branches": branches.length,
