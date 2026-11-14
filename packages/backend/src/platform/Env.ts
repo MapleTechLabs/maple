@@ -95,7 +95,6 @@ export interface EnvConfig {
 	 * IDs on the Stripe customer Autumn links. Unset → those routes answer
 	 * `BillingNotConfiguredError`; nothing else depends on it.
 	 */
-	readonly STRIPE_SECRET_KEY: Option.Option<Redacted.Redacted>
 	readonly STRIPE_API_URL: string
 	/**
 	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
@@ -287,7 +286,6 @@ const envConfig = Config.all({
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	AUTUMN_API_URL: stringWithDefault("AUTUMN_API_URL", DEFAULT_AUTUMN_API_URL),
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
-	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
 	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
 	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),

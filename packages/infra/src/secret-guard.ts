@@ -1,0 +1,94 @@
+// Holds every deploy to the catalog. A secret resolves only for a deployable the catalog grants it
+// to, enforced where the value is read (the `ConfigProvider`), so it covers Workers and ECS alike.
+import {
+	Array as Arr,
+	Config,
+	ConfigProvider,
+	Context,
+	Effect,
+	Option,
+	Record as Rec,
+	Redacted,
+} from "effect"
+import type { SecretConsumer } from "./secret.ts"
+import * as Catalog from "./secrets.ts"
+
+const secrets = Rec.values(Catalog)
+const bySourceKey = new Map<string, (typeof secrets)[number]>(
+	Arr.map(secrets, (secret) => [secret.envKey, secret]),
+)
+const boundNames = new Set(Arr.map(secrets, (secret) => secret.boundAs))
+
+/** The deployable resolving config on this fiber. None outside a deployable's scope. */
+const CurrentSecretConsumer = Context.Reference<Option.Option<SecretConsumer>>(
+	"@maple/infra/CurrentSecretConsumer",
+	{ defaultValue: () => Option.none() },
+)
+
+const CATALOG_PATH = "packages/infra/src/secrets.ts"
+
+const refusal = (message: string) => new ConfigProvider.SourceError({ message })
+
+/**
+ * Default-deny over the catalog: one of its keys loads only for a consumer the secret lists. The
+ * whole path names the key, since an env-backed provider resolves `["A", "B"]` as `A_B`.
+ */
+const guard = (provider: ConfigProvider.ConfigProvider): ConfigProvider.ConfigProvider =>
+	ConfigProvider.make((path) =>
+		Effect.gen(function* () {
+			const secret = bySourceKey.get(Arr.join(Arr.map(path, String), "_"))
+			if (secret === undefined) return yield* provider.load(path)
+			const consumer = yield* CurrentSecretConsumer
+			if (Option.isNone(consumer)) {
+				return yield* refusal(
+					`${secret.envKey} was read outside a deployable's scope. Resolve it through resolveAs or resolveWorkerEnv (@maple/infra/secret-guard).`,
+				)
+			}
+			if (!secret.meta.consumers.includes(consumer.value)) {
+				return yield* refusal(
+					`${consumer.value} may not read ${secret.envKey}: ${CATALOG_PATH} does not list it as a consumer.`,
+				)
+			}
+			return yield* provider.load(path)
+		}),
+	)
+
+/**
+ * Run `effect` with the catalog guarding its config. Around the whole stack, a secret read outside
+ * any deployable's scope (a Worker's init included) fails the deploy instead of going unchecked.
+ */
+export const withSecretGuard = Effect.updateService(ConfigProvider.ConfigProvider, guard)
+
+/** Resolve `config` as `consumer`: the only way a deploy reads a catalog secret. */
+export const resolveAs = <A>(consumer: SecretConsumer, config: Config.Config<A>) =>
+	Effect.gen(function* () {
+		const provider = yield* ConfigProvider.ConfigProvider
+		return yield* config.parse(guard(provider))
+	}).pipe(Effect.provideService(CurrentSecretConsumer, Option.some(consumer)))
+
+/**
+ * A Worker's config-sourced env, resolved as `consumer`. Also refuses a catalog secret read as a
+ * plain value, which would make it a plain-text var on the Worker. By bound name only: one bound
+ * under another name is not seen.
+ */
+export const resolveWorkerEnv = <A extends Record<string, unknown>>(
+	consumer: SecretConsumer,
+	config: Config.Config<A>,
+) =>
+	Effect.gen(function* () {
+		const env = yield* resolveAs(consumer, config)
+		const plainText = Arr.filter(
+			Rec.keys(env),
+			(name) => boundNames.has(name) && !Redacted.isRedacted(env[name]),
+		)
+		if (Arr.isReadonlyArrayNonEmpty(plainText)) {
+			return yield* Effect.fail(
+				new Config.ConfigError(
+					refusal(
+						`${consumer} would bind ${Arr.join(plainText, ", ")} as plain text. Bind it through its class in ${CATALOG_PATH}.`,
+					),
+				),
+			)
+		}
+		return env
+	})
