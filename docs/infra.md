@@ -522,6 +522,8 @@ writes to `apps/scraper/dist`, and ECS replaces the task when its `/health` stop
   stage shares the account: `profile.deploys.awsSecurityBaseline` gives US prd the one
   multi-region CloudTrail trail (S3 + CloudWatch Logs) plus Config and GuardDuty in us-east-1,
   and EU prd Config and GuardDuty in eu-central-1. Its buckets and log group are retained.
+  Config takes a daily snapshot and skips network interfaces: it bills per recorded change,
+  and preview deploys churn the shared account. CloudTrail still logs every change.
 - **Every workflow that deploys the stack must set `AWS_ACCOUNT_ID`.** Without it alchemy's
   `CI=true` credential path self-deadlocks on an STS lookup with no log line (#378).
 - **The binary is compiled outside the image build** (`build-ingest-binary.yml`, native

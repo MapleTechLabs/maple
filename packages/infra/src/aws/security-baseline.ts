@@ -22,6 +22,12 @@ export interface AwsSecurityBaselineOptions {
 /** Audit log retention in the trail's CloudWatch Logs group. */
 const TRAIL_LOG_RETENTION = "365 days"
 
+/** Short-lived resources Config would record on every attach and detach. */
+const UNRECORDED_TYPES = ["AWS::EC2::NetworkInterface"]
+
+/** Recorded once, by the us-east-1 recorder. */
+const GLOBAL_IAM_TYPES = ["AWS::IAM::User", "AWS::IAM::Group", "AWS::IAM::Role", "AWS::IAM::Policy"]
+
 const publicAccessBlock = {
 	blockPublicAcls: true,
 	blockPublicPolicy: true,
@@ -230,15 +236,25 @@ const regionalConfig = (
 			tags,
 		})
 
-		// One recorder and one channel per account-region. Global types (IAM) only in
-		// us-east-1, so the EU recorder does not record them a second time.
+		// One recorder and one channel per account-region. Daily snapshots, since Config bills
+		// per recorded change and preview deploys churn the shared account; CloudTrail keeps
+		// every change. The exclusion strategy records global IAM types everywhere, so the EU
+		// recorder excludes them to avoid recording them a second time.
 		const recorder = yield* AWS.Config.ConfigurationRecorder("audit-config-recorder", {
 			name: name("config"),
 			roleArn: role.roleArn,
 			recordingGroup: {
-				allSupported: true,
-				includeGlobalResourceTypes: awsRegion === "us-east-1",
+				allSupported: false,
+				includeGlobalResourceTypes: false,
+				recordingStrategy: { useOnly: "EXCLUSION_BY_RESOURCE_TYPES" },
+				exclusionByResourceTypes: {
+					resourceTypes: [
+						...UNRECORDED_TYPES,
+						...(awsRegion === "us-east-1" ? [] : GLOBAL_IAM_TYPES),
+					],
+				},
 			},
+			recordingMode: { recordingFrequency: "DAILY" },
 			recording: true,
 			tags,
 		})
