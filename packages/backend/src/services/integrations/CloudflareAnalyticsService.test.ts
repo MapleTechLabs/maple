@@ -222,6 +222,9 @@ interface HyperdriveConfigFixture {
 }
 
 interface FetchOptions {
+	settingsData?: unknown
+	zoneData?: unknown
+
 	readonly zones?: ReadonlyArray<typeof zoneFixture>
 	/**
 	 * When set, the `/zones` listing serves only the zones of the account whose id appears
@@ -368,11 +371,11 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 					errors: options.graphqlFirstErrorOnly ? errors.slice(0, 1) : errors,
 				})
 			}
-			if (Str.includes("MapleCfDatasetSettings")(body.query))
-				return jsonResponse({ data: settingsData })
-			if (Str.includes("MapleCfZoneAnalytics")(body.query)) return jsonResponse({ data: httpData })
-			if (Str.includes("MapleCfAccountAnalytics")(body.query))
-				return jsonResponse({ data: workersData })
+			if (body.query.includes("MapleCfDatasetSettings"))
+				return jsonResponse({ data: options.settingsData ?? settingsData })
+			if (body.query.includes("MapleCfZoneAnalytics"))
+				return jsonResponse({ data: options.zoneData ?? httpData })
+			if (body.query.includes("MapleCfAccountAnalytics")) return jsonResponse({ data: workersData })
 			return jsonResponse({ data: null, errors: [{ message: "unknown query" }] })
 		}
 		if (Str.includes("/hyperdrive/configs")(url)) {
@@ -1471,6 +1474,274 @@ describe("CloudflareAnalyticsService", () => {
 				Arr.makeBy(6, () => HORIZON),
 			)
 		}).pipe(Effect.provide(makeLayer(testDb, captured)))
+	})
+
+	for (const unavailable of [
+		{ enabled: false, maxDuration: 3600 },
+		{ enabled: true, maxDuration: 0 },
+	]) {
+		it.effect(
+			`cached unavailable ${JSON.stringify(unavailable)} survives discovery and clears stale connection error`,
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const queries: string[] = []
+				const enabledDuringRequests: boolean[] = []
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					yield* seedStateRow({
+						dataset: "firewall_events",
+						enabled: unavailable.enabled,
+						zoneId: ZONE_ID,
+						zoneName: ZONE_NAME,
+						settingsJson: JSON.stringify(unavailable),
+						settingsFetchedAt: T0 - 5 * MIN,
+						lastError: "Cloudflare OAuth request timed out",
+						lastErrorAt: T0 - MIN,
+					})
+					const summary = yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+					const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+					assert.isFalse(row.enabled)
+					assert.isAbove(enabledDuringRequests.length, 0)
+					assert.isFalse(enabledDuringRequests.some(Boolean))
+					assert.isNull(row.lastError)
+					assert.isNull(row.lastErrorAt)
+					assert.isNull(row.lastSuccessAt)
+					assert.strictEqual(summary.failures.length, 0)
+					assert.isFalse(
+						queries.some(
+							(query) =>
+								query.includes("MapleCfZoneAnalytics") &&
+								query.includes("firewallEventsAdaptiveGroups"),
+						),
+					)
+				}).pipe(
+					Effect.provide(
+						makeLayer(testDb, [], {
+							graphqlQueries: queries,
+							onGraphql: async () => {
+								const row = await queryFirstRow<{ enabled: boolean }>(
+									testDb,
+									"SELECT enabled FROM cloudflare_analytics_state WHERE dataset = 'firewall_events'",
+								)
+								enabledDuringRequests.push(row!.enabled)
+							},
+						}),
+					),
+				)
+			},
+		)
+	}
+
+	it.effect(
+		"unavailable settings refresh after 24h resumes polling without discovery re-enabling the row",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const queries: string[] = []
+			const options: FetchOptions = {
+				zoneData: { viewer: { zones: [{ zoneTag: ZONE_ID, firewall: [] }] } },
+				graphqlQueries: queries,
+				settingsData: {
+					viewer: {
+						...settingsData.viewer,
+						zones: [
+							{
+								zoneTag: ZONE_ID,
+								settings: {
+									...settingsData.viewer.zones[0]!.settings,
+									firewallEventsAdaptiveGroups: {
+										enabled: true,
+										maxDuration: 3600,
+										notOlderThan: 7200,
+									},
+								},
+							},
+						],
+					},
+				},
+			}
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				yield* seedStateRow({
+					dataset: "workers_invocations",
+					discoveredAt: T0,
+					settingsFetchedAt: T0,
+				})
+				yield* seedStateRow({
+					dataset: "firewall_events",
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					enabled: false,
+					settingsJson: JSON.stringify({ enabled: false, maxDuration: 0 }),
+					settingsFetchedAt: T0 - 25 * 60 * MIN,
+				})
+				yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+				const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+				assert.isTrue(row.enabled)
+				assert.strictEqual(row.lastSuccessAt, T0)
+				assert.isNotNull(row.watermarkAt)
+				assert.isTrue(queries.some((query) => query.includes("MapleCfDatasetSettings")))
+				assert.isTrue(
+					queries.some(
+						(query) =>
+							query.includes("MapleCfZoneAnalytics") &&
+							query.includes("firewallEventsAdaptiveGroups"),
+					),
+				)
+			}).pipe(Effect.provide(makeLayer(testDb, [], options)))
+		},
+	)
+
+	for (const next of [null, { enabled: false, maxDuration: 0 }, { enabled: true, maxDuration: 3600 }]) {
+		it.effect(`unavailable settings refresh preserves a paused zone ${JSON.stringify(next)}`, () => {
+			const testDb = createTestDb(trackedDbs)
+			const queries: string[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				yield* seedStateRow({
+					dataset: "workers_invocations",
+					discoveredAt: T0,
+					settingsFetchedAt: T0,
+				})
+				yield* seedStateRow({
+					dataset: "firewall_events",
+					zoneId: ZONE_ID,
+					zoneName: ZONE_NAME,
+					enabled: false,
+					settingsJson: JSON.stringify({ enabled: false, maxDuration: 0 }),
+					settingsFetchedAt: T0 - 25 * 60 * MIN,
+				})
+				const database = yield* Database
+				yield* database.execute((db) =>
+					db.run(
+						PG.insertInto(CloudflareZoneSettings).values({
+							orgId: ORG,
+							accountId: ACCOUNT_ID,
+							watchNewZones: false,
+							zoneOverrides: {},
+							createdAt: T0,
+							updatedAt: T0,
+						}),
+					),
+				)
+				yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+				const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+				assert.isFalse(row.enabled)
+				assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+			}).pipe(
+				Effect.provide(
+					makeLayer(testDb, [], {
+						graphqlQueries: queries,
+						settingsData: {
+							viewer: {
+								...settingsData.viewer,
+								zones: [
+									{ zoneTag: ZONE_ID, settings: { firewallEventsAdaptiveGroups: next } },
+								],
+							},
+						},
+					}),
+				),
+			)
+		})
+	}
+
+	it.effect("unavailable settings refresh does not resume on an unknown upstream settings node", () => {
+		const testDb = createTestDb(trackedDbs)
+		const queries: string[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({ dataset: "workers_invocations", discoveredAt: T0, settingsFetchedAt: T0 })
+			yield* seedStateRow({
+				dataset: "firewall_events",
+				zoneId: ZONE_ID,
+				zoneName: ZONE_NAME,
+				enabled: false,
+				settingsJson: JSON.stringify({ enabled: false, maxDuration: 0 }),
+				settingsFetchedAt: T0 - 25 * 60 * MIN,
+			})
+			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			assert.include(row.settingsJson!, '"enabled":false')
+			assert.isFalse(row.enabled)
+			assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+		}).pipe(
+			Effect.provide(
+				makeLayer(testDb, [], {
+					graphqlQueries: queries,
+					settingsData: {
+						viewer: {
+							...settingsData.viewer,
+							zones: [{ zoneTag: ZONE_ID, settings: { firewallEventsAdaptiveGroups: null } }],
+						},
+					},
+				}),
+			),
+		)
+	})
+
+	it.effect("resuming a watched zone respects cached unavailable capability", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "firewall_events",
+				zoneId: ZONE_ID,
+				zoneName: ZONE_NAME,
+				enabled: false,
+				settingsJson: JSON.stringify({ enabled: false, maxDuration: 0 }),
+				settingsFetchedAt: T0,
+			})
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(CloudflareZoneSettings).values({
+						orgId: ORG,
+						accountId: ACCOUNT_ID,
+						watchNewZones: false,
+						zoneOverrides: {},
+						createdAt: T0,
+						updatedAt: T0,
+					}),
+				),
+			)
+			yield* CloudflareAnalyticsService.use((service) =>
+				service.setZoneSettings(ORG, Schema.decodeUnknownSync(UserId)("user_1"), {
+					accountId: ACCOUNT_ID,
+					watchNewZones: true,
+					zones: [{ zoneId: ZONE_ID, watched: true }],
+				}),
+			)
+			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			assert.isFalse(row.enabled)
+		}).pipe(Effect.provide(makeLayer(testDb, [])))
+	})
+
+	it.effect("disappeared unavailable zones invalidate settings and remain unpolled", () => {
+		const testDb = createTestDb(trackedDbs)
+		const queries: string[] = []
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			yield* seedConnection()
+			yield* seedStateRow({
+				dataset: "firewall_events",
+				zoneId: ZONE_ID,
+				zoneName: ZONE_NAME,
+				enabled: false,
+				settingsJson: JSON.stringify({ enabled: false, maxDuration: 0 }),
+				settingsFetchedAt: T0,
+			})
+			yield* CloudflareAnalyticsService.use((service) => service.pollOrg(ORG))
+			const row = (yield* loadStateRows).find((row) => row.dataset === "firewall_events")!
+			assert.isFalse(row.enabled)
+			assert.isNull(row.settingsJson)
+			assert.isNull(row.settingsFetchedAt)
+			assert.isFalse(queries.some((query) => query.includes("MapleCfZoneAnalytics")))
+		}).pipe(Effect.provide(makeLayer(testDb, [], { zones: [], graphqlQueries: queries })))
 	})
 
 	it.effect("pollOrg disables state rows for vanished zones", () => {

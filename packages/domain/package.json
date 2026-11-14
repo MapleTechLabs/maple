@@ -12,6 +12,7 @@
 		"./audit-trail": "./src/audit-trail.ts",
 		"./billing": "./src/billing.ts",
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
+		"./cloudflare-analytics": "./src/cloudflare-analytics.ts",
 		"./clerk-js-url": "./src/clerk-js-url.ts",
 		"./cloud-platform": "./src/cloud-platform.ts",
 		"./format": "./src/format.ts",
