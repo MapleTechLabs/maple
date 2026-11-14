@@ -229,6 +229,8 @@ export interface StepTiming {
 	readonly step: number
 	readonly p50Ms: number
 	readonly p90Ms: number
+	readonly sinceStartP50Ms: number
+	readonly sinceStartP90Ms: number
 }
 
 export const sqlTiming = (
@@ -566,12 +568,21 @@ export const referenceTiming = (
 	const persons = referencePersons(dataset, opts, range)
 	return Arr.makeBy(opts.steps.length - 1, (index) => {
 		const step = index + 2
-		const spans = Arr.flatMap(persons, (person) => {
-			const to = person.chain[step - 1]
-			const from = person.chain[step - 2]
-			return to === undefined || from === undefined ? [] : [to.atMs - from.atMs]
-		})
-		return { step, p50Ms: quantile(spans, 0.5), p90Ms: quantile(spans, 0.9) }
+		const spansFrom = (from: number) =>
+			Arr.flatMap(persons, (person) => {
+				const to = person.chain[step - 1]
+				const start = person.chain[from]
+				return to === undefined || start === undefined ? [] : [to.atMs - start.atMs]
+			})
+		const previous = spansFrom(step - 2)
+		const start = spansFrom(0)
+		return {
+			step,
+			p50Ms: quantile(previous, 0.5),
+			p90Ms: quantile(previous, 0.9),
+			sinceStartP50Ms: quantile(start, 0.5),
+			sinceStartP90Ms: quantile(start, 0.9),
+		}
 	})
 }
 

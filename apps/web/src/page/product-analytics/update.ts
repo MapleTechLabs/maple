@@ -1,4 +1,4 @@
-import { FUNNEL_MAX_STEPS, FUNNEL_POPULATION_FILTER_FIELDS } from "@maple/query-model"
+import { FUNNEL_MAX_STEPS, FUNNEL_POPULATION_FILTER_FIELDS, FunnelBreakdownBy } from "@maple/query-model"
 import { Array as Arr, Option, Result, Schema, Struct } from "effect"
 import { Command } from "foldkit"
 import * as Chart from "@maple/views/charts/chart"
@@ -25,7 +25,7 @@ import * as TimeRangePicker from "../kit/time-range-picker"
 import { CompleteReloadSpin, ResolveWindow, WaitForTypingPause } from "./command"
 import { anchorNameOf, pathsOf, type Search, toAnchor, toFunnelStep } from "./definition"
 import { FilterKey, Message, type RequestMode, SlotName } from "./message"
-import { EventRow, FunnelRow, type Model, PathsRow } from "./model"
+import { AttributeKeyRow, EventRow, FunnelGroupRow, FunnelRow, type Model, PathsRow } from "./model"
 import { requestSlots } from "./requests"
 
 type Return = PageReturn<Model, Message>
@@ -38,6 +38,9 @@ const SLOT_SCHEMAS = {
 	events: Schema.Array(EventRow),
 	previousEvents: Schema.Array(EventRow),
 	funnel: Schema.Array(FunnelRow),
+	previousFunnel: Schema.Array(FunnelRow),
+	funnelBreakdown: Schema.Array(FunnelGroupRow),
+	attributeKeys: Schema.Array(AttributeKeyRow),
 	paths: Schema.Array(PathsRow),
 } satisfies Record<SlotName, Schema.Top>
 
@@ -150,6 +153,20 @@ const withFilter = (search: Search, key: FilterKey, value: string | undefined): 
 	[key]: value === "" ? undefined : value,
 })
 
+/** The breakdown select's id among the page's selects. */
+export const BREAKDOWN_SELECT_ID = "funnel-breakdown"
+
+const decodeBreakdown = Schema.decodeUnknownOption(FunnelBreakdownBy)
+
+/** `""` clears the breakdown; anything that is not a dimension or `attribute:<key>` is ignored. */
+const pickBreakdown = (model: Model, value: string): Return =>
+	value === ""
+		? navigate(model, { ...withDrafts(model), breakdown: undefined }, true)
+		: Option.match(decodeBreakdown(value), {
+				onNone: () => ({ model }),
+				onSome: (breakdown) => navigate(model, { ...withDrafts(model), breakdown }, true),
+			})
+
 // ENTRY POINTS
 
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
@@ -160,6 +177,9 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		events: Keyed.idle(),
 		previousEvents: Keyed.idle(),
 		funnel: Keyed.idle(),
+		previousFunnel: Keyed.idle(),
+		funnelBreakdown: Keyed.idle(),
+		attributeKeys: Keyed.idle(),
 		paths: Keyed.idle(),
 		...draftsOf(route.search),
 		typingVersion: 0,
@@ -292,6 +312,10 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const lifted = lift(model, next.commands, (m) => Message.GotSelectMessage({ id, message: m }), {
 				selects: { ...model.selects, [id]: next.model },
 			})
+			if (id === BREAKDOWN_SELECT_ID && next.outMessage !== undefined) {
+				const picked = pickBreakdown(lifted.model, next.outMessage.value)
+				return { ...picked, commands: [...(lifted.commands ?? []), ...(picked.commands ?? [])] }
+			}
 			const target =
 				next.outMessage === undefined ? Option.none() : stepEditOf(id, next.outMessage.value)
 			if (Option.isNone(target)) return lifted

@@ -5166,14 +5166,18 @@ SELECT
         ORDER BY step ASC
         FORMAT JSON
 
--- builder:product-events:productEventsFunnelTimingQuery:person  [bb4dad6c]
+-- builder:product-events:productEventsFunnelTimingQuery:person  [61465ef0]
 SELECT
           arrayJoin([2, 3]) AS step,
           arrayElement(totals.p50s, step) AS p50Ms,
-          arrayElement(totals.p90s, step) AS p90Ms
+          arrayElement(totals.p90s, step) AS p90Ms,
+          arrayElement(totals.start50s, step) AS sinceStartP50Ms,
+          arrayElement(totals.start90s, step) AS sinceStartP90Ms
         FROM (SELECT
           [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3), 0)] AS p50s,
-          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3), 0)] AS p90s
+          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3), 0)] AS p90s,
+          [0, ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.5)(toFloat64(intDiv(o3, 1024000) - intDiv(o1, 1024000)), level >= 3), 0)] AS start50s,
+          [0, ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2), 0), ifNotFinite(quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o1, 1024000)), level >= 3), 0)] AS start90s
         FROM (SELECT
           walked.key AS key,
           walked.level AS level,

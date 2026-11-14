@@ -1044,13 +1044,16 @@ export const productEventsFunnelTimingRowSchema = Schema.Struct({
 	/** Median milliseconds from the previous step's event to this one's, over persons who reached it. */
 	p50Ms: CHNumber,
 	p90Ms: CHNumber,
+	/** The same from step 1's event; on the last step, the time the whole funnel took. */
+	sinceStartP50Ms: CHNumber,
+	sinceStartP90Ms: CHNumber,
 })
 export type ProductEventsFunnelTimingOutput = typeof productEventsFunnelTimingRowSchema.Type
 
 /**
- * Time between consecutive steps: `{ step, p50Ms, p90Ms }` for steps 2..N, in
- * step order, over the persons the funnel counts at that step. An empty range
- * (or a step nobody reached) answers `0`, never a missing row.
+ * Time between steps: `{ step, p50Ms, p90Ms, sinceStartP50Ms, sinceStartP90Ms }` for steps
+ * 2..N, in step order, over the persons the funnel counts at that step. An empty range (or a
+ * step nobody reached) answers `0`, never a missing row.
  */
 export function productEventsFunnelTimingQuery(
 	opts: ProductEventsFunnelOpts,
@@ -1062,20 +1065,25 @@ export function productEventsFunnelTimingQuery(
 	const plan: FunnelPlan = { opts, filters, sessionStep: first?.kind === "session" ? first : undefined }
 	const n = opts.steps.length
 
-	const quantileArray = (q: number): string =>
+	const millis = (index: number): string => `intDiv(${stepOrderColumn(index)}, ${ORDER_UNITS_PER_MS})`
+	// One quantile per step 2..N of the span since the previous step, or since step 1.
+	const quantileArray = (q: number, since: "previous" | "start"): string =>
 		`[0, ${Arr.join(
 			Array.from({ length: n - 1 }, (_, i) => {
 				const step = i + 2
-				const to = `intDiv(${stepOrderColumn(step - 1)}, ${ORDER_UNITS_PER_MS})`
-				const fromStep = `intDiv(${stepOrderColumn(step - 2)}, ${ORDER_UNITS_PER_MS})`
-				return `ifNotFinite(quantileIf(${q})(toFloat64(${to} - ${fromStep}), level >= ${step}), 0)`
+				const from = since === "start" ? millis(0) : millis(step - 2)
+				return `ifNotFinite(quantileIf(${q})(toFloat64(${millis(step - 1)} - ${from}), level >= ${step}), 0)`
 			}),
 			", ",
 		)}]`
+	const quantiles = (q: number, since: "previous" | "start") =>
+		CH.rawExpr<ReadonlyArray<number>>(quantileArray(q, since), T.array(T.float64))
 
 	const totals = fromQuery(chainQuery(plan), "chain").select(() => ({
-		p50s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.5), T.array(T.float64)),
-		p90s: CH.rawExpr<ReadonlyArray<number>>(quantileArray(0.9), T.array(T.float64)),
+		p50s: quantiles(0.5, "previous"),
+		p90s: quantiles(0.9, "previous"),
+		start50s: quantiles(0.5, "start"),
+		start90s: quantiles(0.9, "start"),
 	}))
 
 	return Result.succeed(
@@ -1084,6 +1092,8 @@ export function productEventsFunnelTimingQuery(
 				step: CH.arrayJoin(CH.arrayOf(...Array.from({ length: n - 1 }, (_, i) => CH.lit(i + 2)))),
 				p50Ms: CH.arrayElement($.p50s, CH.dynamicColumn<number>("step")),
 				p90Ms: CH.arrayElement($.p90s, CH.dynamicColumn<number>("step")),
+				sinceStartP50Ms: CH.arrayElement($.start50s, CH.dynamicColumn<number>("step")),
+				sinceStartP90Ms: CH.arrayElement($.start90s, CH.dynamicColumn<number>("step")),
 			}))
 			.orderBy(["step", "asc"])
 			.format("JSON"),

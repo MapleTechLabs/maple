@@ -33,9 +33,23 @@ export const FunnelRow = Schema.Struct({
 	value: Schema.Number,
 	p50Ms: Schema.optionalKey(Schema.Number),
 	p90Ms: Schema.optionalKey(Schema.Number),
+	sinceStartP50Ms: Schema.optionalKey(Schema.Number),
+	sinceStartP90Ms: Schema.optionalKey(Schema.Number),
 	leavers: Schema.optionalKey(Schema.Array(Schema.Struct({ name: Schema.String, count: Schema.Number }))),
 })
 export type FunnelRow = typeof FunnelRow.Type
+
+/** One step of one breakdown group, in the query's group rank. */
+export const FunnelGroupRow = Schema.Struct({
+	name: Schema.String,
+	value: Schema.Number,
+	group: Schema.String,
+})
+export type FunnelGroupRow = typeof FunnelGroupRow.Type
+
+/** A `track()` property key in use, for the breakdown picker. */
+export const AttributeKeyRow = Schema.Struct({ attributeKey: Schema.String, usageCount: Schema.Number })
+export type AttributeKeyRow = typeof AttributeKeyRow.Type
 
 /** `PathsWidgetRow`: one hop between two nodes. */
 export const PathsRow = Schema.Struct({
@@ -56,6 +70,10 @@ export const Model = Schema.Struct({
 	events: KeyedSchema(Schema.Array(EventRow), LoadFailure),
 	previousEvents: KeyedSchema(Schema.Array(EventRow), LoadFailure),
 	funnel: KeyedSchema(Schema.Array(FunnelRow), LoadFailure),
+	/** The same funnel over the window before this one, counts only. */
+	previousFunnel: KeyedSchema(Schema.Array(FunnelRow), LoadFailure),
+	funnelBreakdown: KeyedSchema(Schema.Array(FunnelGroupRow), LoadFailure),
+	attributeKeys: KeyedSchema(Schema.Array(AttributeKeyRow), LoadFailure),
 	paths: KeyedSchema(Schema.Array(PathsRow), LoadFailure),
 	/** The funnel steps as edited; the URL catches up on a pick, or once typing pauses. */
 	steps: Schema.Array(StepDraft),

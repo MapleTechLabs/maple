@@ -1,7 +1,9 @@
 import {
 	DEFAULT_PATHS_BRANCHES,
 	DEFAULT_PATHS_DEPTH,
+	FUNNEL_BREAKDOWN_MAX_LIMIT,
 	FUNNEL_POPULATION_FILTER_FIELDS,
+	type FunnelBreakdownBy,
 	type FunnelKeyBy,
 	type FunnelPopulationFilters,
 	type FunnelStep,
@@ -48,6 +50,7 @@ export type FunnelDefinition = Readonly<{
 	keyBy: FunnelKeyBy
 	windowSeconds: number
 	variant: FunnelVariant
+	breakdownBy: FunnelBreakdownBy | undefined
 }>
 
 export const funnelOf = (search: Search): FunnelDefinition => ({
@@ -58,9 +61,13 @@ export const funnelOf = (search: Search): FunnelDefinition => ({
 			? search.within
 			: DEFAULT_FUNNEL_WINDOW_SECONDS,
 	variant: search.view ?? "dropoff",
+	breakdownBy: search.breakdown,
 })
 
-/** The funnel's widget params, or `null` until a step has something to match on. */
+/**
+ * The funnel's widget params, or `null` until a step has something to match on. Both views show
+ * the steps table, so the time between steps and the leavers are always asked for.
+ */
 export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
 	const funnel = funnelOf(search)
 	const steps = Arr.map(completedSteps(funnel.steps), trimmed)
@@ -70,8 +77,22 @@ export const funnelParamsOf = (search: Search): ProductEventsFunnelWidgetParams 
 		steps,
 		keyBy: funnel.keyBy,
 		windowSeconds: funnel.windowSeconds,
-		details: funnel.variant === "dropoff",
+		details: true,
 	}
+}
+
+/** The same funnel with counts only: what the previous period is compared on. */
+export const funnelCountsParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
+	const params = funnelParamsOf(search)
+	return params === null ? null : { ...params, details: false }
+}
+
+/** The funnel split by its breakdown, as many groups as the query answers; `null` without one. */
+export const funnelBreakdownParamsOf = (search: Search): ProductEventsFunnelWidgetParams | null => {
+	const params = funnelCountsParamsOf(search)
+	const breakdownBy = funnelOf(search).breakdownBy
+	if (params === null || breakdownBy === undefined) return null
+	return { ...params, breakdownBy, breakdownLimit: FUNNEL_BREAKDOWN_MAX_LIMIT }
 }
 
 const clamp = (value: number | undefined, fallback: number, max: number): number =>

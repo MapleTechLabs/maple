@@ -29,6 +29,7 @@ import {
 	seeded,
 	session,
 	type SimEvent,
+	type StepTiming,
 	sqlBreakdown,
 	sqlFunnel,
 	sqlLeavers,
@@ -45,6 +46,10 @@ const page = (pagePath: string, host?: string): CH.FunnelStep =>
 	host === undefined ? { kind: "page", pagePath } : { kind: "page", pagePath, host }
 
 const KEYS: ReadonlyArray<CH.FunnelKeyBy> = ["person", "visitor", "user", "session"]
+
+/** One person's span is both quantiles. */
+const both = (ms: number) => ({ p50Ms: ms, p90Ms: ms })
+const sinceStart = (ms: number) => ({ sinceStartP50Ms: ms, sinceStartP90Ms: ms })
 
 // Hand-built cases: one person each, in their own org, so a wrong count names its cause.
 
@@ -273,8 +278,8 @@ describeWithChdb("product event funnels over example products", () => {
 		expect(counts(caseDataset("restart"), opts)).toEqual([1, 1, 1])
 		// The times are the converting attempt's: 5 minutes, then 15, not a span from the abandoned one.
 		expect(sqlTiming(db, "case_restart", opts)).toEqual([
-			{ step: 2, p50Ms: 5 * MINUTE_MS, p90Ms: 5 * MINUTE_MS },
-			{ step: 3, p50Ms: 15 * MINUTE_MS, p90Ms: 15 * MINUTE_MS },
+			{ step: 2, ...both(5 * MINUTE_MS), ...sinceStart(5 * MINUTE_MS) },
+			{ step: 3, ...both(15 * MINUTE_MS), ...sinceStart(20 * MINUTE_MS) },
 		])
 	})
 
@@ -295,9 +300,9 @@ describeWithChdb("product event funnels over example products", () => {
 		// The earliest attempt that still fits the hour starts 3,600 s before the checkout:
 		// three searches a second apart, then the wait for the checkout.
 		expect(sqlTiming(db, "case_heavyRepeats", opts)).toEqual([
-			{ step: 2, p50Ms: 1_000, p90Ms: 1_000 },
-			{ step: 3, p50Ms: 1_000, p90Ms: 1_000 },
-			{ step: 4, p50Ms: 3_598_000, p90Ms: 3_598_000 },
+			{ step: 2, ...both(1_000), ...sinceStart(1_000) },
+			{ step: 3, ...both(1_000), ...sinceStart(2_000) },
+			{ step: 4, ...both(3_598_000), ...sinceStart(3_600_000) },
 		])
 	})
 
@@ -505,6 +510,8 @@ describeWithChdb("product event funnels over example products", () => {
 					expect(timing[index]?.step).toBe(step.step)
 					expect(timing[index]?.p50Ms ?? Number.NaN).toBeCloseTo(step.p50Ms, 3)
 					expect(timing[index]?.p90Ms ?? Number.NaN).toBeCloseTo(step.p90Ms, 3)
+					expect(timing[index]?.sinceStartP50Ms ?? Number.NaN).toBeCloseTo(step.sinceStartP50Ms, 3)
+					expect(timing[index]?.sinceStartP90Ms ?? Number.NaN).toBeCloseTo(step.sinceStartP90Ms, 3)
 				})
 				expect(sqlLeavers(db, funnel.dataset.orgId, opts)).toEqual([
 					...referenceLeavers(funnel.dataset, opts),
@@ -629,8 +636,14 @@ describeWithChdb("product event funnels over example products", () => {
 	})
 
 	test("random small histories give the reference's times and leavers", () => {
-		const round = (timing: ReadonlyArray<{ step: number; p50Ms: number; p90Ms: number }>) =>
-			Arr.map(timing, (step) => [step.step, Math.round(step.p50Ms), Math.round(step.p90Ms)])
+		const round = (timing: ReadonlyArray<StepTiming>) =>
+			Arr.map(timing, (step) => [
+				step.step,
+				Math.round(step.p50Ms),
+				Math.round(step.p90Ms),
+				Math.round(step.sinceStartP50Ms),
+				Math.round(step.sinceStartP90Ms),
+			])
 		const mismatches = Arr.flatMap(random, ({ dataset, funnels }) =>
 			Arr.flatMap(
 				Arr.filter(funnels, (opts: Opts) => opts.steps.length >= 2),

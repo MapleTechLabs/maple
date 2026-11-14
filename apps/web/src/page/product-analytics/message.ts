@@ -22,7 +22,16 @@ export const RequestMode = Schema.Literals(["Load", "Refresh"])
 export type RequestMode = typeof RequestMode.Type
 
 /** Every Keyed slot of the page, by its Model field. */
-export const SlotName = Schema.Literals(["breakdowns", "events", "previousEvents", "funnel", "paths"])
+export const SlotName = Schema.Literals([
+	"breakdowns",
+	"events",
+	"previousEvents",
+	"funnel",
+	"previousFunnel",
+	"funnelBreakdown",
+	"attributeKeys",
+	"paths",
+])
 export type SlotName = typeof SlotName.Type
 
 /** A population filter: a `session_replays` dimension, one value each. */

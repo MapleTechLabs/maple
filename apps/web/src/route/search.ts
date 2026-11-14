@@ -19,6 +19,7 @@ import {
 } from "@maple/domain/http"
 import { PushSourcePlatform } from "@maple/primitives"
 import {
+	FunnelBreakdownBy,
 	FunnelKeyBy,
 	FunnelPopulationFilters,
 	FunnelStep,
@@ -569,6 +570,7 @@ export const ProductAnalyticsSearch = Schema.Struct({
 	keyBy: Schema.optional(FunnelKeyBy),
 	within: NumberParam,
 	view: Schema.optional(FunnelVariant),
+	breakdown: Schema.optional(FunnelBreakdownBy),
 	anchor: Schema.optional(PathsAnchor),
 	direction: Schema.optional(PathsDirection),
 	depth: NumberParam,

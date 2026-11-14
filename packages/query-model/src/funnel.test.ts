@@ -68,8 +68,14 @@ describe("funnel drop-off details", () => {
 	it("merges timing and leavers onto the step rows, by 1-based step", () => {
 		const details = funnelStepDetails(
 			[
-				{ step: 2, p50Ms: 60_000, p90Ms: 3_600_000 },
-				{ step: 3, p50Ms: 0, p90Ms: 0 },
+				{
+					step: 2,
+					p50Ms: 60_000,
+					p90Ms: 3_600_000,
+					sinceStartP50Ms: 60_000,
+					sinceStartP90Ms: 3_600_000,
+				},
+				{ step: 3, p50Ms: 0, p90Ms: 0, sinceStartP50Ms: 0, sinceStartP90Ms: 0 },
 			],
 			[
 				{ step: 2, next: "", count: 5 },
@@ -91,6 +97,8 @@ describe("funnel drop-off details", () => {
 			value: 2,
 			p50Ms: 60_000,
 			p90Ms: 3_600_000,
+			sinceStartP50Ms: 60_000,
+			sinceStartP90Ms: 3_600_000,
 			leavers: [
 				{ name: "", count: 5 },
 				{ name: "/docs", count: 3 },

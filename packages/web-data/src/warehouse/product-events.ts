@@ -19,7 +19,7 @@ import {
 import {
 	DEFAULT_PATHS_BRANCHES,
 	DEFAULT_PATHS_DEPTH,
-	FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+	funnelBreakdownLimit,
 	ProductEventsFunnelWidgetParams,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
@@ -203,7 +203,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 	// empty state rather than asking the warehouse for a definition it rejects.
 	if (input.steps.length === 0) return { data: [] satisfies ReadonlyArray<FunnelWidgetRow> }
 
-	const { breakdownBy, details, ...rest } = input
+	const { breakdownBy, breakdownLimit, details, ...rest } = input
 	const request = {
 		...rest,
 		keyBy: input.keyBy ?? WIDGET_DEFAULT_KEY_BY,
@@ -218,7 +218,7 @@ const getProductEventsFunnelWidgetEffect = Effect.fn("QueryEngine.getProductEven
 					payload: new ProductEventsFunnelBreakdownRequest({
 						...request,
 						breakdownBy,
-						limit: FUNNEL_WIDGET_BREAKDOWN_LIMIT,
+						limit: funnelBreakdownLimit(breakdownLimit),
 					}),
 				})
 			}),

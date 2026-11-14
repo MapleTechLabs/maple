@@ -5,7 +5,14 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import type { PageContext } from "../../page/contract"
 import type { Search } from "../../page/product-analytics/definition"
 import { Message } from "../../page/product-analytics/message"
-import { type EventRow, type FunnelRow, Model, type PathsRow } from "../../page/product-analytics/model"
+import {
+	type AttributeKeyRow,
+	type EventRow,
+	type FunnelGroupRow,
+	type FunnelRow,
+	Model,
+	type PathsRow,
+} from "../../page/product-analytics/model"
 import { init as pageInit, update as pageUpdate } from "../../page/product-analytics/update"
 import { view as pageView } from "../../page/product-analytics/view"
 import type { Breakdowns } from "../../page/kit/analytics-filter-rail"
@@ -20,6 +27,7 @@ const Scenario = Schema.Literals([
 	"events-loading",
 	"funnels",
 	"funnels-bars",
+	"funnels-breakdown",
 	"funnels-new",
 	"funnels-error",
 	"paths",
@@ -51,29 +59,79 @@ const PREVIOUS: ReadonlyArray<EventRow> = Arr.map(EVENTS, (row) => ({
 	count: Math.round(row.count * 0.89),
 }))
 
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
 const FUNNEL: ReadonlyArray<FunnelRow> = [
 	{ name: "signup_started", value: 1_206 },
 	{
 		name: "signup_completed",
 		value: 742,
-		p50Ms: 190_000,
-		p90Ms: 1_420_000,
-		leavers: [{ name: "docs_opened", count: 210 }],
+		p50Ms: 3 * MINUTE,
+		p90Ms: 24 * MINUTE,
+		sinceStartP50Ms: 3 * MINUTE,
+		sinceStartP90Ms: 24 * MINUTE,
+		leavers: [
+			{ name: "docs_opened", count: 210 },
+			{ name: "", count: 152 },
+			{ name: "/pricing", count: 64 },
+			{ name: "/", count: 38 },
+		],
 	},
 	{
 		name: "onboarding_connected",
 		value: 388,
-		p50Ms: 6_720_000,
-		p90Ms: 86_000_000,
-		leavers: [{ name: "", count: 190 }],
+		p50Ms: 112 * MINUTE,
+		p90Ms: 26 * HOUR,
+		sinceStartP50Ms: 2 * HOUR,
+		sinceStartP90Ms: 27 * HOUR,
+		leavers: [
+			{ name: "", count: 190 },
+			{ name: "docs_opened", count: 96 },
+			{ name: "query_run", count: 41 },
+		],
 	},
 	{
 		name: "plan_started",
 		value: 61,
-		p50Ms: 187_000_000,
-		p90Ms: 520_000_000,
-		leavers: [{ name: "dashboard_viewed", count: 140 }],
+		p50Ms: 2 * DAY + 3 * HOUR,
+		p90Ms: 6 * DAY,
+		sinceStartP50Ms: 2 * DAY + 6 * HOUR,
+		sinceStartP90Ms: 6 * DAY + 8 * HOUR,
+		leavers: [
+			{ name: "dashboard_created", count: 140 },
+			{ name: "query_run", count: 88 },
+			{ name: "", count: 61 },
+		],
 	},
+]
+
+/** The week before: a little less traffic, converting worse. */
+const PREVIOUS_FUNNEL: ReadonlyArray<FunnelRow> = [
+	{ name: "signup_started", value: 1_104 },
+	{ name: "signup_completed", value: 655 },
+	{ name: "onboarding_connected", value: 318 },
+	{ name: "plan_started", value: 47 },
+]
+
+const GROUPS: ReadonlyArray<readonly [group: string, counts: ReadonlyArray<number>]> = [
+	["google", [412, 268, 131, 14]],
+	["(none)", [388, 231, 124, 19]],
+	["newsletter", [164, 121, 82, 21]],
+	["twitter", [142, 71, 29, 3]],
+	["producthunt", [64, 33, 14, 3]],
+	["linkedin", [36, 18, 8, 1]],
+]
+
+const FUNNEL_BY_SOURCE: ReadonlyArray<FunnelGroupRow> = Arr.flatMap(GROUPS, ([group, counts]) =>
+	Arr.map(FUNNEL, (row, index) => ({ name: row.name, value: counts[index] ?? 0, group })),
+)
+
+const ATTRIBUTE_KEYS: ReadonlyArray<AttributeKeyRow> = [
+	{ attributeKey: "plan", usageCount: 742 },
+	{ attributeKey: "method", usageCount: 742 },
+	{ attributeKey: "source", usageCount: 388 },
 ]
 
 const PATHS: ReadonlyArray<PathsRow> = [
@@ -138,6 +196,9 @@ const BREAKDOWNS: Breakdowns = {
 	],
 }
 
+/** A paid plan starts days after signup, so the fixture funnel runs with the 7-day window. */
+const WITHIN_SECONDS = 7 * 24 * 3600
+
 const SIGNUP_TO_PAID: Search["steps"] = Arr.map(FUNNEL, (row) => ({ kind: "event", eventName: row.name }))
 
 const searchOf = (scenario: Scenario): Search => {
@@ -148,9 +209,11 @@ const searchOf = (scenario: Scenario): Search => {
 			return {}
 		case "funnels":
 		case "funnels-error":
-			return { tab: "funnels", steps: SIGNUP_TO_PAID }
+			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS }
 		case "funnels-bars":
-			return { tab: "funnels", steps: SIGNUP_TO_PAID, view: "bars" }
+			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, view: "bars" }
+		case "funnels-breakdown":
+			return { tab: "funnels", steps: SIGNUP_TO_PAID, within: WITHIN_SECONDS, breakdown: "utmSource" }
 		case "funnels-new":
 			return { tab: "funnels" }
 		case "paths":
@@ -181,6 +244,9 @@ const init = (flags: typeof Flags.Type) => {
 						data: AsyncData.Failure({ error: toLoadFailure("The warehouse timed out.") }),
 					}
 				: loaded(FUNNEL),
+		previousFunnel: loaded(PREVIOUS_FUNNEL),
+		funnelBreakdown: loaded(FUNNEL_BY_SOURCE),
+		attributeKeys: loaded(ATTRIBUTE_KEYS),
 		paths: loaded(PATHS),
 	}
 	return { model }

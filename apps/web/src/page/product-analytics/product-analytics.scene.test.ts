@@ -3,6 +3,7 @@ import { Array as Arr, Option, Result, Schema } from "effect"
 import { fromString } from "foldkit/url"
 import { expect as expectView, given, Mount, scene, text, withViewInputs } from "foldkit/scene"
 import * as Chart from "@maple/views/charts/chart"
+import * as Select from "@maple/views/ui/select"
 import { MeasureChartContainer } from "@maple/views/charts/chart-mounts"
 import { describe, expect, test } from "vitest"
 import { StepEdit } from "../kit/funnel-steps"
@@ -11,7 +12,7 @@ import type { PageContext } from "../contract"
 import type { Search } from "./definition"
 import { Message, type SlotName } from "./message"
 import type { EventRow, FunnelRow, Model } from "./model"
-import { init, routeChanged, update } from "./update"
+import { BREAKDOWN_SELECT_ID, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -66,8 +67,33 @@ const EVENTS: ReadonlyArray<EventRow> = [
 
 const FUNNEL: ReadonlyArray<FunnelRow> = [
 	{ name: "signup_started", value: 1_206 },
-	{ name: "signup_completed", value: 742, p50Ms: 41_000, leavers: [{ name: "docs_opened", count: 120 }] },
+	{
+		name: "signup_completed",
+		value: 742,
+		p50Ms: 41_000,
+		p90Ms: 600_000,
+		sinceStartP50Ms: 41_000,
+		sinceStartP90Ms: 600_000,
+		leavers: [
+			{ name: "docs_opened", count: 116 },
+			{ name: "", count: 232 },
+		],
+	},
 ]
+
+const measured = Mount.resolve(
+	MeasureChartContainer,
+	Chart.Message.ResizedChartContainer({ width: 800, height: 320 }),
+)
+
+const pickBreakdown = (model: Model, value: string) =>
+	pageUpdate(
+		model,
+		Message.GotSelectMessage({
+			id: BREAKDOWN_SELECT_ID,
+			message: Select.Message.SelectedItem({ index: 0, value }),
+		}),
+	)
 
 const SIGNUP: Search["steps"] = [
 	{ kind: "event", eventName: "signup_started" },
@@ -303,17 +329,74 @@ describe("product analytics", () => {
 		)
 	})
 
-	test("a funnel's answer draws its conversion, biggest drop and what leavers did", () => {
+	test("a funnel's answer draws its conversion, how long it takes and where the leavers went", () => {
 		const model = settled(resolved({ tab: "funnels", steps: SIGNUP }).model, "funnel", FUNNEL)
 		scene(
 			{ update: pageUpdate, view },
 			given(model),
-			Mount.resolve(
-				MeasureChartContainer,
-				Chart.Message.ResizedChartContainer({ width: 800, height: 320 }),
-			),
+			measured,
 			expectView(text("Biggest drop")).toExist(),
+			expectView(text("median · 90% within 10m")).toExist(),
+			// 464 dropped before signup_completed: 116 opened the docs, 232 did nothing else.
 			expectView(text("docs_opened")).toExist(),
+			expectView(text("25%")).toExist(),
+			expectView(text("nothing after")).toExist(),
+			expectView(text("50%")).toExist(),
 		)
+	})
+
+	test("the funnel is read again for the window before, counts only, and compared with it", () => {
+		const { commands, model } = resolved({ tab: "funnels", steps: SIGNUP })
+		const runs = Arr.filter(commands ?? [], (command) => command.name === "FetchProductAnalyticsFunnel")
+		expect(Arr.map(runs, (run) => run.args)).toMatchObject([
+			{ slot: "funnel", input: { startTime: window.startTime, details: true } },
+			{
+				slot: "previousFunnel",
+				input: { startTime: "2026-10-20 00:00:00", endTime: window.startTime, details: false },
+			},
+		])
+		// 61.5% now against 50% the week before.
+		const compared = settled(settled(model, "funnel", FUNNEL), "previousFunnel", [
+			{ name: "signup_started", value: 1_000 },
+			{ name: "signup_completed", value: 500 },
+		])
+		scene({ update: pageUpdate, view }, given(compared), measured, expectView(text("11.5 pts")).toExist())
+	})
+
+	test("a breakdown splits the funnel into up to twenty groups and compares each with everyone", () => {
+		const { commands, model } = resolved({ tab: "funnels", steps: SIGNUP, breakdown: "utmSource" })
+		const split = Arr.findFirst(
+			commands ?? [],
+			(command) =>
+				command.name === "FetchProductAnalyticsFunnel" && command.args?.slot === "funnelBreakdown",
+		)
+		expect(Option.getOrUndefined(split)?.args).toMatchObject({
+			input: { breakdownBy: "utmSource", breakdownLimit: 20, details: false },
+		})
+		const answered = settled(settled(model, "funnel", FUNNEL), "funnelBreakdown", [
+			{ name: "signup_started", value: 400, group: "newsletter" },
+			{ name: "signup_completed", value: 300, group: "newsletter" },
+			{ name: "signup_started", value: 806, group: "google" },
+			{ name: "signup_completed", value: 442, group: "google" },
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(answered),
+			measured,
+			expectView(text("By UTM source")).toExist(),
+			// The newsletter converts 75% against 61.5% overall; google 54.8%.
+			expectView(text("75%")).toExist(),
+			expectView(text("13.5 pts")).toExist(),
+			expectView(text("6.7 pts")).toExist(),
+		)
+	})
+
+	test("picking a breakdown writes it to the URL, and None clears it", () => {
+		const model = resolved({ tab: "funnels", steps: SIGNUP }).model
+		expect(searchOf(pickBreakdown(model, "attribute:plan").outMessage).breakdown).toBe("attribute:plan")
+		expect(pickBreakdown(model, "not-a-dimension").outMessage).toBeUndefined()
+		const split = resolved({ tab: "funnels", steps: SIGNUP, breakdown: "country" }).model
+		expect(searchOf(pickBreakdown(split, "").outMessage)).toMatchObject({ tab: "funnels", steps: SIGNUP })
+		expect(searchOf(pickBreakdown(split, "").outMessage).breakdown).toBeUndefined()
 	})
 })

@@ -6,8 +6,15 @@ import { previousWindow } from "../analytics/previous-window"
 import type { TimeWindow } from "../../data/time-range"
 import type { Resources } from "../../platform/resources"
 import type { PageContext } from "../contract"
-import { FetchBreakdowns, FetchEventNames, FetchFunnel, FetchPaths } from "./command"
-import { funnelParamsOf, pathsParamsOf, populationOf, tabOf } from "./definition"
+import { FetchAttributeKeys, FetchBreakdowns, FetchEventNames, FetchFunnel, FetchPaths } from "./command"
+import {
+	funnelBreakdownParamsOf,
+	funnelCountsParamsOf,
+	funnelParamsOf,
+	pathsParamsOf,
+	populationOf,
+	tabOf,
+} from "./definition"
 import type { Message, SlotName } from "./message"
 import type { Model } from "./model"
 
@@ -17,6 +24,8 @@ type Cmd = Command.Command<Message, never, Resources>
 
 const BREAKDOWN_LIMIT = 50
 export const EVENTS_LIMIT = 200
+/** Property keys the breakdown picker offers. */
+const ATTRIBUTE_KEYS_LIMIT = 30
 
 type Request = Readonly<{ slot: SlotName; fn: string; input: object; command: (key: string) => Cmd }>
 
@@ -48,21 +57,39 @@ const plan = (model: Model, window: TimeWindow): ReadonlyArray<Request> => {
 				events("previousEvents", previousWindow(startTime, endTime)),
 			]
 		case "funnels": {
-			const params = funnelParamsOf(model.search)
-			const input = params === null ? null : { startTime, endTime, ...params }
+			const funnel = (
+				slot: "funnel" | "previousFunnel" | "funnelBreakdown",
+				range: TimeWindow,
+				params: ReturnType<typeof funnelParamsOf>,
+			): ReadonlyArray<Request> => {
+				if (params === null) return []
+				const input = { ...range, ...params }
+				return [
+					{
+						slot,
+						fn: "getProductEventsFunnelWidget",
+						input,
+						command: (key) => FetchFunnel({ slot, key, input }),
+					},
+				]
+			}
+			const keysInput = { startTime, endTime, limit: ATTRIBUTE_KEYS_LIMIT }
 			return [
 				rail,
 				events("events", window),
-				...(input === null
-					? []
-					: [
-							{
-								slot: "funnel" as const,
-								fn: "getProductEventsFunnelWidget",
-								input,
-								command: (key: string) => FetchFunnel({ slot: "funnel", key, input }),
-							},
-						]),
+				{
+					slot: "attributeKeys",
+					fn: "getProductEventAttributeKeys",
+					input: keysInput,
+					command: (key) => FetchAttributeKeys({ slot: "attributeKeys", key, input: keysInput }),
+				},
+				...funnel("funnel", window, funnelParamsOf(model.search)),
+				...funnel(
+					"previousFunnel",
+					previousWindow(startTime, endTime),
+					funnelCountsParamsOf(model.search),
+				),
+				...funnel("funnelBreakdown", window, funnelBreakdownParamsOf(model.search)),
 			]
 		}
 		case "paths": {
