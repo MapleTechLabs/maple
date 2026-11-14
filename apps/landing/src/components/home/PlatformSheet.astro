@@ -51,7 +51,7 @@ const markWidth = (viewBox: string) => {
  * makes the collage frame exactly as tall as the screenshots beside it — keep
  * these in step if those two cells are ever re-captured at another size.
  */
-const MARK_ASPECT = "1280 / 660";
+const MARK_ASPECT = "1440 / 810";
 
 // Kubernetes, Cloudflare and Prometheus reuse the same simple-icons paths
 // SdkBand renders (MIT); PlanetScale, WarpStream, GitHub and Hazel are ported
@@ -287,7 +287,7 @@ const cells: Cell[] = [
 						{cell.href && (
 							<a
 								href={cell.href}
-								class="group mt-auto inline-flex items-center gap-1.5 pt-2 text-[13px] text-fg-muted transition-colors hover:text-fg"
+								class="group mt-auto inline-flex items-center gap-1.5 pt-2 text-sm text-fg-muted transition-colors hover:text-fg"
 							>
 								{cell.link}
 								<span class="transition-transform group-hover:translate-x-0.5">→</span>

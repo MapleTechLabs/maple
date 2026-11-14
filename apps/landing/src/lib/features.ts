@@ -329,9 +329,8 @@ export const features: Feature[] = [
 			route: "/services",
 			constant: "12 services · env production",
 			plate: {
-				// 2974×2122 is this capture's real 1.40:1 aspect — passing it means
-				// the plate renders taller here rather than showing a different crop
-				// than the homepage carousel, which covers it into a 1400×720 stage.
+				// The capture's real 16:9 size, so this plate shows the whole page,
+				// where the homepage carousel covers it into a 1400×720 stage.
 				src: "/screenshots/hero-services.webp",
 				width: 2880,
 				height: 1620,
