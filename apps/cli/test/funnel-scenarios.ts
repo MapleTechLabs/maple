@@ -360,5 +360,3 @@ export const contentSite = (orgId = "scenario_content"): Dataset => {
 	})
 	return data.done()
 }
-
-export const SCENARIOS = { saasSignup, shopCheckout, mobileOnboarding, contentSite } as const

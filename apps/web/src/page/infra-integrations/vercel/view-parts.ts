@@ -70,8 +70,6 @@ export const fillAiSeries = (rows: ReadonlyArray<VercelAiGatewayBucket>, window:
 /** A 0–100 share as text, or the empty value without a denominator. */
 export const percentText = (percent: number | null) =>
 	percent === null ? EMPTY_VALUE : formatPercent(percent / 100)
-export const errorText = (percent: number | null) =>
-	percent === null ? EMPTY_VALUE : formatErrorRate(percent / 100)
 export const errorTone = (percent: number | null) => errorRateLevel(percent === null ? 0 : percent / 100)
 
 export const projectHref = (projectId: string, time: TimeSearch) =>

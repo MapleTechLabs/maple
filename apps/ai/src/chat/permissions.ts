@@ -90,6 +90,3 @@ export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
 	...Arr.map([...PR_REVIEW_TOOLS].sort(), (tool) => new PermissionRule({ tool, action: "allow" })),
 ]
-
-/** A reply reads what a review reads; its only writes are its own completion tools. */
-export const PR_REPLY_RULESET: PermissionRuleset = PR_REVIEW_RULESET

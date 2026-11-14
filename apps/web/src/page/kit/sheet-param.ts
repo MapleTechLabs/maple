@@ -9,9 +9,6 @@ import { back, replaceUrl } from "foldkit/navigation"
  */
 export const SHEET_PARAM = "sheet"
 
-/** Spread into a route's search schema. */
-export const SheetSearchFields = { [SHEET_PARAM]: Schema.optional(Schema.String) }
-
 const BASE = "http://maple.local"
 
 /** `href` with `?sheet=` set to `id`, or removed when `id` is undefined; other params stay. */

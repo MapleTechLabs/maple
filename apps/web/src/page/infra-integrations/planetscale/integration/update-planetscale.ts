@@ -6,7 +6,6 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Field from "@maple/views/ui/field"
-import type { Model } from "../../../integrations/model"
 import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
 import {
 	FetchOrganizations,
@@ -33,10 +32,6 @@ const withCard = (
 
 const statusOf = (env: Pick<Env, "status">): V2PlanetScaleIntegration | null =>
 	Option.getOrNull(AsyncData.getData(env.status.data))
-
-/** The page's PlanetScale status, once read. */
-export const planetscaleStatusOf = (model: Pick<Model, "statuses">): V2PlanetScaleIntegration | null =>
-	Option.getOrNull(AsyncData.getData(model.statuses.planetscale.data))
 
 /** The shown card awaits its first metrics. */
 export const isAwaiting = (env: Pick<Env, "status" | "isShown" | "nowMs">): boolean =>

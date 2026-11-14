@@ -252,6 +252,8 @@ export const ErrorNotificationPolicyOutput = Schema.Struct({
 	updatedBy: Schema.String,
 })
 
+/** @alias The get tool's output, named per tool. */
 export const GetErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput
 
+/** @alias The update tool's output, named per tool. */
 export const UpdateErrorNotificationPolicyOutput = ErrorNotificationPolicyOutput
