@@ -1,8 +1,10 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
+import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
 import { Env } from "@maple/backend/platform/Env"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
 	CLERK_MEMBERSHIP_EVENTS,
 	decodeClerkEnvelope,
@@ -35,6 +37,11 @@ import { receiveSvixWebhook, webhookText } from "./svix-receiver"
  *
  * Public route; authenticity is the Svix signature (`CLERK_WEBHOOK_SECRET`).
  * Any other event type is acknowledged with 200 so Clerk does not retry it.
+ *
+ * One Clerk instance serves every region, so each region's API registers its
+ * own endpoint (and secret) and receives every event. A membership event is
+ * acted on by the organization's home region only; `user.deleted` sweeps in
+ * every region, and `user.created` is recorded by the default region.
  */
 const ROUTE = "/webhooks/clerk"
 
@@ -47,6 +54,7 @@ const handler = Effect.gen(function* () {
 	const productEvents = yield* ProductEventsService
 	const revocation = yield* MembershipRevocationService
 	const audit = yield* AuditLogService
+	const regions = yield* OrganizationRegionService
 
 	/**
 	 * A revocation that only half-ran is the state this whole handler exists to
@@ -93,6 +101,35 @@ const handler = Effect.gen(function* () {
 				"maple.webhook.outcome": "parse_rejected",
 			})
 			return webhookText("Unrecognized membership identifiers", 400)
+		}
+		const home = yield* regions.servedHere(orgId.value)
+		yield* Effect.annotateCurrentSpan({ "maple.webhook.org_home": home })
+		if (home === "unknown") {
+			// Acting on a guess would audit and sweep in the wrong region, or in none: Svix redelivers.
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 503,
+				"maple.webhook.outcome": "region_unknown",
+			})
+			return webhookText("Could not tell which region the organization lives in", 503)
+		}
+		if (home === "elsewhere") {
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 200,
+				"maple.webhook.outcome": "other_region",
+			})
+			return webhookText("ok", 200)
+		}
+		if (home === "deleted") {
+			// Every region gets this answer and any of them may still hold the member's
+			// credentials, so each sweeps. Nobody is left to read an audit entry.
+			if (event === "organizationMembership.deleted") {
+				return yield* revoke(revocation.revokeMembership(orgId.value, userId.value))
+			}
+			yield* Effect.annotateCurrentSpan({
+				"http.response.status_code": 200,
+				"maple.webhook.outcome": "org_deleted",
+			})
+			return webhookText("ok", 200)
 		}
 		// Clerk's payload names the member, never the admin who acted, so
 		// attributing this to a user would be a guess. `system` says truthfully
@@ -190,7 +227,10 @@ const handler = Effect.gen(function* () {
 			return yield* revoke(revocation.revokeUser(userId.value))
 		}
 
-		if (envelope.value.type === "user.created") {
+		// A signup has no home region, so one region counts it.
+		if (envelope.value.type === "user.created" && regions.region !== DEFAULT_MAPLE_REGION) {
+			yield* Effect.annotateCurrentSpan({ "maple.webhook.outcome": "other_region" })
+		} else if (envelope.value.type === "user.created") {
 			const user = yield* decodeClerkUserCreated(envelope.value.data).pipe(
 				Effect.tapError((error) =>
 					Effect.logInfo("Clerk user.created payload failed to decode").pipe(
