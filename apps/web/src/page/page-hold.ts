@@ -4,7 +4,7 @@
 
 import { Schema, Array as Arr } from "effect"
 import { defineTaggedUnion } from "foldkit/schema"
-import { isBareSlot, isFirstLoading, isLoading, PageSlot } from "./registry"
+import { isAwaitingReads, isBareSlot, isFirstLoading, isLoading, PageSlot } from "./registry"
 
 export const PAGE_HOLD_MS = 300
 
@@ -40,13 +40,15 @@ export const written = (
 		// A second navigation during a hold keeps the page that is on screen.
 		const leaving = hold._tag === "Holding" ? hold.leaving : previous
 		// A literal, not `Model.Holding`: the constructor copies the slot, and the page cache keys on it.
-		return !revived && canStandIn(leaving, next) && isLoading(next)
+		return !revived && canStandIn(leaving, next) && isAwaitingReads(next)
 			? { _tag: "Holding", leaving, instance: next.instance }
 			: NONE
 	}
-	// Both last while any read loads: a side read landing first (presence, incidents) is not the page,
-	// and dropping `Waited`'s 0ms delay would hide the skeletons still up.
-	return hold._tag !== "None" && hold.instance === next.instance && isLoading(next) ? hold : NONE
+	if (hold._tag === "None" || hold.instance !== next.instance) return NONE
+	// A hold lasts while the page reads what it opens with: a side read landing first (presence from
+	// the cache) is not the page. `Waited` lasts while a read loads: dropping its 0ms delay would hide
+	// the skeletons still up.
+	return (hold._tag === "Holding" ? isAwaitingReads(next) : isLoading(next)) ? hold : NONE
 }
 
 /** `PAGE_HOLD_MS` ran out for `instance`: its page shows, with skeletons at once while it loads. */
