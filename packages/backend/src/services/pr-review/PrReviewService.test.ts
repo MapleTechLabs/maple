@@ -109,6 +109,8 @@ const layerFor = (
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
 		readonly threads?: ReadonlyArray<PullRequestReviewThread>
+		/** Runs while the threads are read, to land a concurrent write mid-sync. */
+		readonly duringThreadRead?: { current: Effect.Effect<void> }
 		readonly resolvedThreads?: Array<string>
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
 		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
@@ -159,7 +161,10 @@ const layerFor = (
 				? Effect.die("GitHub is down")
 				: Effect.succeed(options.prFiles ?? []),
 		fetchPullRequestContext: unused,
-		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
+		fetchReviewThreads: () =>
+			Effect.suspend(() => options.duringThreadRead?.current ?? Effect.void).pipe(
+				Effect.as(options.threads ?? []),
+			),
 		resolveReviewThread: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
@@ -1269,6 +1274,80 @@ describe("PrReviewService.submitReview", () => {
 			)
 		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads, hidden })))
 	})
+
+	it.effect(
+		"settles a finding a person answered, but never over a fix a review confirmed meanwhile",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const duringThreadRead = { current: Effect.void }
+			const threads: ReadonlyArray<PullRequestReviewThread> = [
+				{
+					id: "T1",
+					isResolved: false,
+					comments: [
+						{ commentId: "c-0", author: "maple[bot]", body: "F1", thumbsUp: 0, thumbsDown: 0 },
+						{ commentId: "c-8", author: "octocat", body: "Done.", thumbsUp: 0, thumbsDown: 0 },
+					],
+				},
+				{
+					id: "T2",
+					isResolved: false,
+					comments: [
+						{ commentId: "c-1", author: "maple[bot]", body: "F2", thumbsUp: 0, thumbsDown: 0 },
+						{ commentId: "c-9", author: "octocat", body: "Done.", thumbsUp: 0, thumbsDown: 0 },
+					],
+				},
+			]
+			const finding = (path: string, title: string) =>
+				new PrReviewFinding({
+					path,
+					line: 10,
+					category: "correctness",
+					severity: "warn",
+					title,
+					body: "b",
+				})
+			const stored = Effect.gen(function* () {
+				const database = yield* Database
+				return yield* database.execute((db) =>
+					db.run(
+						PG.from(PrReviewFindings)
+							.select("handle", "status", "resolvedSha")
+							.orderBy(["handle", "asc"]),
+					),
+				)
+			})
+			return Effect.gen(function* () {
+				yield* seed(true)
+				const reviews = yield* PrReviewService
+				const database = yield* Database
+				const first = yield* reviews.onPullRequestEvent(orgId, job())
+				yield* reviews.submitReview(
+					orgId,
+					first.reviewId!,
+					new SubmitPrReviewRequest({
+						report: report([finding("a.ts", "off by one"), finding("b.ts", "unchecked null")]),
+					}),
+				)
+				// A review confirms the fix while this push's sync is still reading the threads.
+				duringThreadRead.current = database
+					.execute((db) =>
+						db.run(
+							PG.update(PrReviewFindings)
+								.set({ status: "resolved", resolvedSha: HEAD_2 })
+								.where(($) => [$.handle.eq("F1")]),
+						),
+					)
+					.pipe(Effect.asVoid, Effect.orDie)
+				yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha: HEAD_4 }))
+				// F2's "Done." resolves it with no head; F1 keeps the head the review confirmed.
+				assert.deepEqual(yield* stored, [
+					{ handle: "F1", status: "resolved", resolvedSha: HEAD_2 },
+					{ handle: "F2", status: "resolved", resolvedSha: null },
+				])
+			}).pipe(Effect.provide(layerFor(testDb, { threads, duringThreadRead })))
+		},
+	)
 
 	it.effect("drops a submission for a review that was superseded while it ran", () => {
 		const testDb = createTestDb(trackedDbs)

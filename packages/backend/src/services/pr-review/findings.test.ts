@@ -95,6 +95,11 @@ describe("settledFindings", () => {
 			// A technical adjective is not an acknowledgement.
 			"Fixed-size buffers still overflow here.",
 			"Fixed size arrays are the problem",
+			// A hedge is not a claim.
+			"I don't think it's fixed in c88ba3a",
+			"Not sure this is fixed in c88ba3a",
+			"Nothing was fixed in this PR",
+			"I think this is fixed by #12",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}

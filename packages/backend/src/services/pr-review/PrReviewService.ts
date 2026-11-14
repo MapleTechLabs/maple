@@ -1215,8 +1215,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				/** Only rows still open: a person's verdict never overwrites a fix a review confirmed meanwhile. */
 				options: { readonly onlyOpen?: boolean } = {},
 			) =>
+				// Answers how many rows it changed.
 				ids.length === 0
-					? Effect.void
+					? Effect.succeed(0)
 					: dbExecute((db) =>
 							db.run(
 								PG.update(PrReviewFindings)
@@ -1225,9 +1226,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 										$.orgId.eq(orgId),
 										$.id.in_(...ids),
 										options.onlyOpen === true ? $.status.eq("open") : undefined,
-									]),
+									])
+									.returning("id"),
 							),
-						).pipe(Effect.asVoid)
+						).pipe(Effect.map((rows) => rows.length))
 
 			/**
 			 * Stored findings the team voted on, embedded with `model`, newest first. `repositoryId`
@@ -1613,22 +1615,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					{ discard: true },
 				)
 				const settled = settledFindings(open, threads, changedPaths)
-				yield* setFindingStatus(
+				const dismissed = yield* setFindingStatus(
 					orgId,
 					Arr.map(settled.dismissed, (finding) => finding.id),
 					{ status: "dismissed", updatedAt: nowMs },
 					{ onlyOpen: true },
 				)
 				// No review confirmed these fixes, so they carry no head and never count as unchecked.
-				yield* setFindingStatus(
+				const resolvedByPerson = yield* setFindingStatus(
 					orgId,
 					Arr.map(settled.resolved, (finding) => finding.id),
 					{ status: "resolved", resolvedSha: null, updatedAt: nowMs },
 					{ onlyOpen: true },
 				)
 				yield* Effect.annotateCurrentSpan({
-					"maple.pr_review.dismissed": settled.dismissed.length,
-					"maple.pr_review.resolved_by_person": settled.resolved.length,
+					"maple.pr_review.dismissed": dismissed,
+					"maple.pr_review.resolved_by_person": resolvedByPerson,
 					"maple.pr_review.reactions_up": up,
 					"maple.pr_review.reactions_down": down,
 				})
