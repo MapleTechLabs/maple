@@ -13,6 +13,7 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
+import { StripeSecretKey } from "@maple/infra/secrets"
 import type { AutumnResult, AutumnTransportFailure } from "./autumn-http"
 import { camelizeKeys, withBillingTimeout } from "./autumn-http"
 import { STRIPE_API_VERSION } from "./stripe-api"
@@ -196,10 +197,8 @@ export class StripeClient extends Context.Service<StripeClient, StripeClientApi>
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const httpClient = yield* HttpClient.HttpClient
-			const secretKey = Option.match(env.STRIPE_SECRET_KEY, {
-				onNone: () => undefined,
-				onSome: (value) => Redacted.value(value),
-			})
+			const boundKey = yield* StripeSecretKey
+			const secretKey = Option.getOrUndefined(Option.map(boundKey, Redacted.value))
 			const apiUrl = trimTrailingSlash(env.STRIPE_API_URL)
 
 			const call = (route: StripeRoute, request: HttpClientRequest.HttpClientRequest) =>

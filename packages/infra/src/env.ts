@@ -1,8 +1,7 @@
 import * as Config from "effect/Config"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
-import * as Schema from "effect/Schema"
-import { optionalString } from "./config-helpers.ts"
+import { requiredTrimmed, trimmedOption } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import {
 	PRD_DOMAINS,
@@ -11,24 +10,20 @@ import {
 	resolveWorkerName,
 } from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
+import type { SecretBinding } from "./secret.ts"
+import * as Secrets from "./secrets.ts"
 import { Array as Arr, String as Str } from "effect"
 
 /**
  * Deploy-time Worker env, as effect `Config`s: never read `process.env`, which misses alchemy's
  * `.env` / `--env-file` provider. Values are trimmed (blank = absent), absent optional keys are
- * omitted (never `""`), and secrets are `Redacted`.
+ * omitted (never `""`). A secret is a class from `./secrets.ts`, resolved through
+ * `resolveWorkerEnv` (`./secret-guard.ts`), which is what holds a deployable to its grants.
  */
 
 export type PlainEnv = Record<string, string>
-export type SecretEnv = Record<string, Redacted.Redacted>
-/** A union-valued record, not `PlainEnv & SecretEnv` (that intersection is uninhabited). */
+/** A union-valued record: a plain value or a secret per key. */
 export type WorkerEnv = Record<string, string | Redacted.Redacted>
-
-/** Present-and-non-blank, trimmed (`optionalString` returns the raw value). */
-const trimmedOption = (key: string): Config.Config<Option.Option<string>> =>
-	optionalString(key).pipe(
-		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => Str.trim(raw))),
-	)
 
 const entry = <A>(key: string, value: Option.Option<A>): Record<string, A> =>
 	Option.match(value, { onNone: () => ({}), onSome: (v) => ({ [key]: v }) })
@@ -42,19 +37,11 @@ export const merge = (...parts: ReadonlyArray<Config.Config<Partial<WorkerEnv>>>
 	)
 
 /** Required plain value, trimmed; blank fails with a `ConfigError`. */
-export const requiredPlain = (key: string): Config.Config<string> =>
-	Config.schema(Schema.Trim.check(Schema.isNonEmpty()), key)
-
-export const requiredSecret = (key: string): Config.Config<Redacted.Redacted> =>
-	requiredPlain(key).pipe(Config.map(Redacted.make))
+export const requiredPlain = requiredTrimmed
 
 /** Required plain value as a single-entry record, for spreading into a group. */
 export const requirePlainEntry = (key: string): Config.Config<PlainEnv> =>
 	requiredPlain(key).pipe(Config.map((value) => ({ [key]: value })))
-
-/** Required secret as a single-entry record. */
-export const requireSecretEntry = (key: string): Config.Config<SecretEnv> =>
-	requiredSecret(key).pipe(Config.map((value) => ({ [key]: value })))
 
 /** Optional plain value, omitted when unset. `fallback` applies only if the key is absent. */
 export const optionalPlain = (key: string, fallback?: string): Config.Config<PlainEnv> =>
@@ -66,8 +53,11 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
 		}),
 	)
 
-/** Optional secret, omitted when unset. */
-export const optionalSecret = (key: string): Config.Config<SecretEnv> =>
+/**
+ * An optional secret by name, for a registry that declares its own keys (the chat connectors').
+ * Maple's own secrets are the classes in `./secrets.ts`, never a name passed here.
+ */
+const registrySecret = (key: string): Config.Config<SecretBinding> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
 
 /** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */
@@ -120,17 +110,17 @@ export const authEnv: Config.Config<WorkerEnv> = merge(
 	plainWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	derived("CLERK_TELEMETRY_DISABLED", "1"),
 	plainWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
-	optionalSecret("MAPLE_ROOT_PASSWORD"),
-	optionalSecret("CLERK_SECRET_KEY"),
+	Secrets.MapleRootPassword.optional,
+	Secrets.ClerkSecretKey.optional,
 	optionalPlain("CLERK_PUBLISHABLE_KEY"),
-	optionalSecret("CLERK_JWT_KEY"),
+	Secrets.ClerkJwtKey.optional,
 )
 
 /** Warehouse access. `SIGNING_KEY` + `WORKSPACE_ID` are required for raw-SQL alerts too. */
 export const tinybirdEnv: Config.Config<WorkerEnv> = merge(
 	requirePlainEntry("TINYBIRD_HOST"),
-	requireSecretEntry("TINYBIRD_TOKEN"),
-	optionalSecret("TINYBIRD_SIGNING_KEY"),
+	Secrets.TinybirdToken.required,
+	Secrets.TinybirdSigningKey.optional,
 	optionalPlain("TINYBIRD_WORKSPACE_ID"),
 	optionalPlain("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT"),
 )
@@ -144,14 +134,14 @@ export const clickhouseEnv: Config.Config<WorkerEnv> = merge(
 	plainWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
 	optionalPlain("CLICKHOUSE_USER"),
 	optionalPlain("CLICKHOUSE_DATABASE"),
-	optionalSecret("CLICKHOUSE_PASSWORD"),
+	Secrets.ClickhousePassword.optional,
 )
 
 /** Ingest-key envelope encryption + lookup HMAC. Required wherever ingest keys are read. */
 export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
-	requireSecretEntry("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
-	optionalSecret("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
-	requireSecretEntry("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
+	Secrets.IngestKeyEncryptionKey.required,
+	Secrets.IngestKeyDecryptionKeys.optional,
+	Secrets.IngestKeyLookupHmacKey.required,
 )
 
 /** Public URLs for links, defaulting to the deploy's own hostnames (else production's). */
@@ -188,7 +178,7 @@ export const statusDomainsEnv = (
 ): Config.Config<WorkerEnv> =>
 	merge(
 		optionalPlain("MAPLE_STATUS_DOMAINS_ZONE_ID"),
-		optionalSecret("MAPLE_STATUS_DOMAINS_API_TOKEN"),
+		Secrets.StatusDomainsApiToken.optional,
 		plainWithDefault("MAPLE_STATUS_DOMAINS_CNAME_TARGET", STATUS_DOMAINS_CNAME_TARGET),
 		derived("MAPLE_STATUS_WORKER_NAME", resolveWorkerName("status", stage, region)),
 	)
@@ -199,18 +189,8 @@ export const selfObservabilityEnv = (
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
 ): Config.Config<WorkerEnv> =>
 	merge(
-		// Optional on dev only (absent = self-observability off). Rebound as MAPLE_INGEST_KEY.
-		stage.kind === "dev"
-			? optionalSecret("MAPLE_OTEL_INGEST_KEY").pipe(
-					Config.map((record) =>
-						"MAPLE_OTEL_INGEST_KEY" in record
-							? { MAPLE_INGEST_KEY: record.MAPLE_OTEL_INGEST_KEY }
-							: {},
-					),
-				)
-			: requiredSecret("MAPLE_OTEL_INGEST_KEY").pipe(
-					Config.map((value) => ({ MAPLE_INGEST_KEY: value })),
-				),
+		// Optional on dev only (absent = self-observability off). Bound as MAPLE_INGEST_KEY.
+		stage.kind === "dev" ? Secrets.OtelIngestKey.optional : Secrets.OtelIngestKey.required,
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
 		// Read for Durable Object jurisdiction (`layerChatSessions`).
@@ -238,18 +218,18 @@ export const PRD_LOCKSTEP_REVISION_SERVICES = [
 export const configKeysEnv = (
 	keys: ReadonlyArray<{ readonly name: string; readonly secret: boolean }>,
 ): Config.Config<WorkerEnv> =>
-	merge(...Arr.map(keys, (key) => (key.secret ? optionalSecret(key.name) : optionalPlain(key.name))))
+	merge(...Arr.map(keys, (key) => (key.secret ? registrySecret(key.name) : optionalPlain(key.name))))
 
 /** Linear OAuth client: api installs it, alerting refreshes the org's token at delivery time. */
 export const linearOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("LINEAR_OAUTH_CLIENT_ID"),
-	optionalSecret("LINEAR_OAUTH_CLIENT_SECRET"),
+	Secrets.LinearOAuthClientSecret.optional,
 )
 
 /** Google Search Console OAuth client: api connects, alerting's importer refreshes, maple-ai reports it. */
 export const searchConsoleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("GOOGLE_SEARCH_CONSOLE_CLIENT_ID"),
-	optionalSecret("GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET"),
+	Secrets.SearchConsoleClientSecret.optional,
 )
 
 /**
@@ -275,8 +255,8 @@ export const mapleServerEnv = (
 		// Dev-only; the runtime ignores it outside MAPLE_ENVIRONMENT=development.
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		// Without it billing and the BYOK entitlement fail open.
-		optionalSecret("AUTUMN_SECRET_KEY"),
-		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		Secrets.AutumnSecretKey.optional,
+		Secrets.InternalServiceToken.optional,
 		githubAppSourceEnv,
 		searchConsoleOAuthEnv,
 	)
@@ -284,7 +264,7 @@ export const mapleServerEnv = (
 /** Cloudflare account integration (account OAuth — Authorization Code + PKCE). */
 export const cloudflareOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("CLOUDFLARE_OAUTH_CLIENT_ID"),
-	optionalSecret("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
+	Secrets.CloudflareOAuthClientSecret.optional,
 	optionalPlain("CLOUDFLARE_OAUTH_SCOPES"),
 	optionalPlain("CLOUDFLARE_OAUTH_AUTHORIZE_URL"),
 	optionalPlain("CLOUDFLARE_OAUTH_TOKEN_URL"),
@@ -295,7 +275,7 @@ export const cloudflareOAuthEnv: Config.Config<WorkerEnv> = merge(
 /** PlanetScale integration (OAuth application — confidential client, no PKCE). */
 export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("PLANETSCALE_OAUTH_CLIENT_ID"),
-	optionalSecret("PLANETSCALE_OAUTH_CLIENT_SECRET"),
+	Secrets.PlanetScaleOAuthClientSecret.optional,
 	optionalPlain("PLANETSCALE_OAUTH_AUTHORIZE_URL"),
 	optionalPlain("PLANETSCALE_OAUTH_TOKEN_URL"),
 	optionalPlain("PLANETSCALE_OAUTH_TOKEN_INFO_URL"),
@@ -305,7 +285,7 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 /** Supabase integration (Management API OAuth app: confidential client with PKCE). */
 export const supabaseOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("SUPABASE_OAUTH_CLIENT_ID"),
-	optionalSecret("SUPABASE_OAUTH_CLIENT_SECRET"),
+	Secrets.SupabaseOAuthClientSecret.optional,
 	optionalPlain("MAPLE_SUPABASE_API_BASE_URL"),
 )
 
@@ -316,7 +296,7 @@ export const supabaseOAuthEnv: Config.Config<WorkerEnv> = merge(
 export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("GITHUB_APP_ID"),
 	optionalPlain("GITHUB_APP_SLUG"),
-	optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+	Secrets.GithubAppPrivateKey.optional,
 	optionalPlain("GITHUB_API_BASE_URL"),
 )
 
@@ -324,7 +304,7 @@ export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
 export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),
-	optionalSecret("APNS_PRIVATE_KEY"),
+	Secrets.ApnsPrivateKey.optional,
 	// App Attest for device credentials: App ID = <APNS_TEAM_ID>.<MAPLE_IOS_BUNDLE_ID>.
 	optionalPlain("MAPLE_IOS_BUNDLE_ID"),
 	optionalPlain("MAPLE_APP_ATTEST_ALLOW_DEVELOPMENT"),

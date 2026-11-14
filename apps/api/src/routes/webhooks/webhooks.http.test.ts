@@ -3,7 +3,7 @@ import { BillingCustomerResolver } from "@maple/backend/services/billing/Billing
 import { BillingAccountPersistenceError, BillingCustomerId, OrgId } from "@maple/domain/http"
 import { Clock, ConfigProvider, Context, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { HttpRouter } from "effect/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { CancellationReviewQueueProducer, QueueSendError } from "@maple/backend/platform/bindings"
 import {
 	CancellationReviewJob,
@@ -150,7 +150,7 @@ const makeRouterLayer = (
 		Layer.provide(cancellationQueue),
 		Layer.provide(revocation),
 		Layer.provide(audit),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(makeConfig(config)),
 	)
 

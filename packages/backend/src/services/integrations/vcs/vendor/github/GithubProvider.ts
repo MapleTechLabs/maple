@@ -40,6 +40,7 @@ import {
 	Array as Arr,
 } from "effect"
 import { Env } from "@maple/backend/platform/Env"
+import { GithubAppWebhookSecret } from "@maple/infra/secrets"
 import type {
 	PullRequestDelta,
 	VcsProviderClient,
@@ -480,6 +481,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
+			const webhookSecret = yield* GithubAppWebhookSecret
 			const client = yield* GithubAppClient
 			const reviewerMention = reviewerMentionFor(Option.getOrUndefined(env.GITHUB_APP_SLUG))
 			/** The login the App comments as; unknown without a slug, when any bot's comment is read. */
@@ -506,7 +508,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const verifySignature = Effect.fn("GithubProvider.verifySignature")(
 				function* (rawBody: string, signatureHeader: string | undefined) {
-					const secret = env.GITHUB_APP_WEBHOOK_SECRET
+					const secret = webhookSecret
 					if (Option.isNone(secret)) {
 						yield* Effect.logWarning(
 							"[GitHub] Webhook secret is not configured (GITHUB_APP_WEBHOOK_SECRET)",

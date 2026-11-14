@@ -55,6 +55,7 @@ export type SearchEntry = typeof SearchEntry.Type
 /** Nav rows an org rollout flag can hide; the shell passes the ones it shows. */
 export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 	"/cost",
+	"/product-analytics",
 	"/releases",
 	"/security",
 	"/status-pages",
@@ -64,7 +65,13 @@ export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 const icon = (name: IconName): Glyph => ({ _tag: "Icon", name })
 const href = (url: string): Target => ({ _tag: "Href", href: url })
 
-const EVERY_FLAG = { cloudCost: true, releases: true, securityAudit: true, statusPages: true }
+const EVERY_FLAG = {
+	cloudCost: true,
+	productAnalytics: true,
+	releases: true,
+	securityAudit: true,
+	statusPages: true,
+}
 
 /** A page's palette row under each title the nav gives it: the section, its children, their views. */
 const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>

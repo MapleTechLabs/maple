@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Opt
 import { TestClock } from "effect/testing"
 import { OrgId, UserId } from "@maple/domain/http"
 import { SupabaseProjectRef } from "@maple/primitives"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
 import {
@@ -96,7 +96,7 @@ const makeLayer = (testDb: TestDb, world: World) =>
 		SupabaseOAuthService.layer,
 	).pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config))),
 		Layer.merge(world.layer),
 	)

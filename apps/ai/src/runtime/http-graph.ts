@@ -45,6 +45,7 @@ import { SecurityAuditStore } from "@maple/backend/services/security-audit/Secur
 import { ApiErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { rawRoutes } from "@maple/backend/http/raw-routes"
 import type { AiPortsLayer } from "../worker/bindings"
+import { GithubAppClientSecret, GithubAppPrivateKey, GithubAppWebhookSecret } from "@maple/infra/secrets"
 
 const RawRoutes = rawRoutes<Layer.Success<AiPortsLayer>>()(ChatSessionsRouter)
 
@@ -66,6 +67,13 @@ const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 					OrganizationFeatureFlagsService.layer,
 					AiCredits.layer,
 					SecurityAuditRepositorySize.layer,
+				),
+			),
+			Layer.provide(
+				Layer.mergeAll(
+					GithubAppPrivateKey.layer,
+					GithubAppClientSecret.layer,
+					GithubAppWebhookSecret.layer,
 				),
 			),
 		),

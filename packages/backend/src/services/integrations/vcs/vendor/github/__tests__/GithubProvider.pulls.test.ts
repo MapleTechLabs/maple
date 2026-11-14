@@ -15,7 +15,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { GitCommitSha, type PullRequestReviewPublication, VcsInstallation } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import { fakeGithubHttp } from "@maple/backend/services/integrations/vcs/__tests__/harness"
 import { GithubProvider } from "@maple/backend/services/integrations/vcs/vendor/github/GithubProvider"
@@ -26,7 +26,7 @@ const privateKey = generateKeyPairSync("rsa", {
 	privateKeyEncoding: { type: "pkcs8", format: "pem" },
 }).privateKey
 
-const env = Env.layer.pipe(
+const env = EnvTestLive.pipe(
 	Layer.provide(
 		ConfigProvider.layer(
 			ConfigProvider.fromUnknown({

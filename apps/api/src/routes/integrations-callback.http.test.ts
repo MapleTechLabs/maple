@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { decodeOAuthReturnHash, OrgId, UserId } from "@maple/domain/http"
 import { ConfigProvider, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
 import { ChatCallbackRouter } from "./chat-integration.http"
@@ -32,7 +32,7 @@ const testConfig = () =>
 
 const makeHarness = () => {
 	const db = createTestDb(createdDbs)
-	const base = Layer.mergeAll(db.layer, Env.layer.pipe(Layer.provide(testConfig())))
+	const base = Layer.mergeAll(db.layer, EnvTestLive.pipe(Layer.provide(testConfig())))
 	const service = CloudflareOAuthService.layer.pipe(Layer.provideMerge(base))
 	const routes = Layer.mergeAll(IntegrationsCallbackRouter, ChatCallbackRouter).pipe(
 		Layer.provideMerge(base),

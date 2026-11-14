@@ -4,15 +4,9 @@
  * `/mcp` and chat here so the OAuth issuer and resource ids stay on api's origin.
  * Heavy graphs stay behind dynamic imports (startup CPU limit, error 10021).
  */
-import {
-	mapleDbEnv,
-	MapleStack,
-	type MapleStackContext,
-	mapleWorkerProps,
-	SandboxWorker,
-} from "@maple/infra/cloudflare"
+import { mapleDbEnv, MapleStack, mapleWorkerProps, SandboxWorker } from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { mapleServerEnv, merge, optionalPlain, optionalSecret, requireSecretEntry } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { IsolateAge } from "@maple/infra/isolate-age"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -21,32 +15,13 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer, Option } from "effect"
 import { ChatSessionObject } from "@maple/backend/platform/chat-sessions"
 import { ChatSessionLive } from "./chat/ChatSession"
+import { aiConfiguredEnv } from "./resources/env"
 import SecurityAuditWorkflow from "./security-audit/SecurityAuditWorkflow"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { WorkersAiGateway } from "./platform/WorkersAiHttpClient"
 import { aiPorts, AiBindingsLive, bindAiClients, WorkersAiGatewayLive } from "./worker/bindings"
 import { buildApp, buildMcpApp, makeFetch } from "./worker/http"
 import { AiObservabilityLive } from "./worker/observability"
-
-/** Config-sourced env. The tools query the warehouse as the calling org, so this is largely api's set. */
-const configuredEnv = ({ stage, region, domains, profile }: MapleStackContext) =>
-	merge(
-		// Also the GitHub App reader the source and sandbox tools resolve repositories through, and
-		// the Search Console client its tools need to report a connectable org.
-		mapleServerEnv(stage, region, domains),
-		// `MAPLE_LLM_PROVIDER` picks OpenRouter (default) or Workers AI (`@/platform/Llm`).
-		optionalPlain("MAPLE_LLM_PROVIDER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
-		optionalPlain("MAPLE_REVIEW_MODEL_OPENROUTER"),
-		optionalSecret("OPENROUTER_API_KEY"),
-		// Decision model, on Workers AI via the gateway binding (`layerDecisionModel`).
-		optionalPlain("MAPLE_DECISION_MODEL"),
-		// Maple's own org: the only one `list_maple_feedback` reads across orgs for.
-		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
-		// Required wherever a sandbox Worker deploys: without it every sandbox call is refused.
-		...(profile.deploys.sandbox ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
-	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
@@ -55,7 +30,15 @@ const props = Effect.gen(function* () {
 	const { devEnv, db } = stack
 	// Absent on stages without a sandbox; `SandboxClient` then reports the tools unavailable.
 	const sandbox = yield* Effect.serviceOption(SandboxWorker)
-	const env = yield* configuredEnv(stack)
+	const env = yield* resolveWorkerEnv(
+		"ai",
+		aiConfiguredEnv({
+			stage: stack.stage,
+			region: stack.region,
+			domains: stack.domains,
+			sandbox: stack.profile.deploys.sandbox,
+		}),
+	)
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("ai", stack),

@@ -22,6 +22,8 @@ export interface FunnelChartInputs {
 	readonly className?: string | undefined
 	readonly unit?: string | undefined
 	readonly showStepPercent?: boolean | undefined
+	/** Ordered steps of one funnel draw in one hue; categories drawn as a funnel keep their own. */
+	readonly isSingleHue?: boolean | undefined
 }
 
 type H = HtmlBuilder<Message>
@@ -34,6 +36,10 @@ const ROW_MIN_H = 22
 const ROW_FULL_H = ROW_MIN_H + ROW_GAP
 const MORE_ROW_H = 16
 const GROUP_BAR_H = 8
+const BAR_MIN_H = 10
+const BAR_MAX_H = 28
+/** A row's label line and the gap under it, above its bar. */
+const ROW_LABEL_H = 14
 export const PERCENT_FLOOR = { floor: 0.0005 }
 const LEGEND_H = 18
 
@@ -156,6 +162,16 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	const maxRows = height > 0 ? Math.max(1, Math.floor((height - chromeH) / rowFullH)) : stages.length
 	const truncated = stages.length > maxRows
 	const visible = truncated ? stages.slice(0, maxRows) : stages
+	// With room to spare the bars thicken, so a few steps fill a tall panel instead of floating in it.
+	const barH =
+		height > 0
+			? Math.round(
+					Math.min(
+						BAR_MAX_H,
+						Math.max(BAR_MIN_H, (height - chromeH) / visible.length - ROW_GAP - ROW_LABEL_H - 4),
+					),
+				)
+			: BAR_MIN_H
 	const hiddenCount = stages.length - visible.length
 	const hover = Option.getOrNull(model.activeKey)
 	const hoverGroup = Option.getOrNull(model.activeGroup)
@@ -226,7 +242,7 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 						),
 						isGrouped
 							? groupBars(h, stage, hoverGroup, fade, inputs.unit)
-							: stageBar(h, stage, fade),
+							: stageBar(h, stage, fade, barH, inputs.isSingleHue === true),
 					],
 				)
 			}),
@@ -243,15 +259,18 @@ export const view = Submodel.defineView<Model, Message, FunnelChartInputs>((mode
 	)
 })
 
-const stageBar = (h: H, stage: Stage, fade: number): Html =>
+const stageBar = (h: H, stage: Stage, fade: number, height: number, isSingleHue: boolean): Html =>
 	h.div(
-		[h.Class("relative h-2.5 w-full overflow-hidden rounded-xs bg-foreground/5")],
+		[
+			h.Class("relative w-full overflow-hidden rounded-xs bg-foreground/5"),
+			h.Style({ height: `${height}px` }),
+		],
 		[
 			h.div([
 				h.Class(barFillClass()),
 				h.Style({
 					width: `${stage.widthPct * 100}%`,
-					"background-color": stage.color,
+					"background-color": isSingleHue ? "var(--chart-2)" : stage.color,
 					opacity: String(fade),
 					transition: "opacity 140ms ease, width 220ms ease",
 				}),

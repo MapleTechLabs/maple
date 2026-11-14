@@ -24,6 +24,7 @@ import { hstack, vstack } from "@maple/views/ui/stack"
 import { switchControl } from "@maple/views/ui/switch"
 import { typography } from "@maple/views/ui/typography"
 import { Message } from "../../../integrations/message"
+import { VercelMessage } from "./vercel"
 import type { Model } from "../../../integrations/model"
 import { settingsChange, vercelStatusOf } from "./update-vercel"
 import { VERCEL_CONFIGURE_DIALOG_ID, VERCEL_TOKENS_URL } from "./vercel"
@@ -35,6 +36,9 @@ import { SMALL } from "../../gcp/integration/view-gcp-parts"
 // as steps in one dialog. Every primary button says what it does on Vercel, and when.
 
 type H = HtmlBuilder<Message>
+
+/** A Vercel message, as the hub carries it. */
+export const toHub = (message: VercelMessage): Message => Message.GotVercelMessage({ message })
 type Close = ReadonlyArray<ChildAttribute>
 
 const TITLE = "text-sm/5 font-medium"
@@ -82,7 +86,7 @@ const back = (h: H, configure: VercelConfigureModel): Html =>
 		{
 			variant: "outline",
 			isDisabled: configure.isLookingUp || configure.isSaving,
-			attributes: [h.OnClick(Message.ClickedVercelConfigureBack())],
+			attributes: [h.OnClick(toHub(VercelMessage.ClickedConfigureBack()))],
 		},
 		["Back"],
 	)
@@ -142,7 +146,7 @@ const tokenFields = (h: H, configure: VercelConfigureModel): Html => {
 					h.Spellcheck(false),
 					h.Placeholder("Paste a token"),
 					...Field.controlAttributes(h, configure.token, (message) =>
-						Message.GotVercelTokenMessage({ message }),
+						toHub(VercelMessage.GotTokenMessage({ message })),
 					),
 					h.AriaLabelledBy(ids.label),
 					...(hasError ? [h.AriaInvalid(true)] : []),
@@ -199,7 +203,10 @@ const tokenStage = (
 ): ReadonlyArray<Html> => [
 	header(h, copy.title),
 	body(h, [
-		h.form([h.Id(FORM_ID), h.OnSubmit(Message.SubmittedVercelToken())], [tokenFields(h, configure)]),
+		h.form(
+			[h.Id(FORM_ID), h.OnSubmit(toHub(VercelMessage.SubmittedToken()))],
+			[tokenFields(h, configure)],
+		),
 	]),
 	footer(h, [
 		footerNote(h, [copy.note]),
@@ -226,7 +233,7 @@ const teamStage = (
 ): ReadonlyArray<Html> => {
 	const config: RadioGroup.RadioGroupViewConfig<Message> = {
 		model: configure.team,
-		toParentMessage: (message) => Message.GotVercelTeamMessage({ message }),
+		toParentMessage: (message) => toHub(VercelMessage.GotTeamMessage({ message })),
 		items: Arr.map(teams, (team) => ({
 			value: team.id,
 			id: `vercel-team-${team.id}`,
@@ -299,7 +306,7 @@ const teamStage = (
 				{
 					isDisabled: Option.isNone(configure.team.maybeValue),
 					isLoading: configure.isLookingUp,
-					attributes: [h.OnClick(Message.SubmittedVercelTeam())],
+					attributes: [h.OnClick(toHub(VercelMessage.SubmittedTeam()))],
 				},
 				["Continue"],
 			),
@@ -372,8 +379,8 @@ const projectList = (
 								id: "vercel-project-search",
 								value: configure.projectQuery,
 								placeholder: "Search projects…",
-								onInput: (value) => Message.ChangedVercelProjectQuery({ value }),
-								onClear: Message.ChangedVercelProjectQuery({ value: "" }),
+								onInput: (value) => toHub(VercelMessage.ChangedProjectQuery({ value })),
+								onClear: toHub(VercelMessage.ChangedProjectQuery({ value: "" })),
 							}),
 						],
 					),
@@ -411,7 +418,7 @@ const projectList = (
 												isChecked: configure.draft.projectIds.includes(project.id),
 											},
 											toParentMessage: () =>
-												Message.ToggledVercelProject({ id: project.id }),
+												toHub(VercelMessage.ToggledProject({ id: project.id })),
 											id: `${inputId}-root`,
 											inputId,
 										}),
@@ -480,7 +487,7 @@ const settingsFields = (
 									inputId: `vercel-${signal.flag}-input`,
 									isChecked: draft[signal.flag],
 									labelledBy: `vercel-${signal.flag}-label`,
-									onToggle: Message.ToggledVercelSignal({ signal: signal.flag }),
+									onToggle: toHub(VercelMessage.ToggledSignal({ signal: signal.flag })),
 								}),
 							],
 						),
@@ -499,7 +506,7 @@ const settingsFields = (
 						{ value: "all", label: "All projects" },
 						{ value: "some", label: "Pick projects" },
 					],
-					onChange: (scope) => Message.ChangedVercelScope({ scope }),
+					onChange: (scope) => toHub(VercelMessage.ChangedScope({ scope })),
 				}),
 			]),
 			draft.projectScope === "all"
@@ -525,7 +532,7 @@ const settingsFields = (
 						defaultValue: String(draft.samplingRate),
 						attributes: [
 							h.Id("vercel-sampling"),
-							h.OnChange((value) => Message.ChangedVercelSampling({ value })),
+							h.OnChange((value) => toHub(VercelMessage.ChangedSampling({ value }))),
 						],
 					},
 					Arr.map(VERCEL_SAMPLING_RATES, (rate) => nativeOption(String(rate), samplingLabel(rate))),
@@ -601,7 +608,7 @@ const connectSettingsStage = (
 				{
 					isDisabled: problem !== null,
 					isLoading: configure.isSaving,
-					attributes: [h.OnClick(Message.SubmittedVercelConnect())],
+					attributes: [h.OnClick(toHub(VercelMessage.SubmittedConnect()))],
 				},
 				["Connect"],
 			),
@@ -631,7 +638,7 @@ const settingsStage = (
 				{
 					isDisabled: !change.isChanged || change.problem !== null,
 					isLoading: configure.isSaving && !configure.confirm.isOpen,
-					attributes: [h.OnClick(Message.ClickedVercelSave())],
+					attributes: [h.OnClick(toHub(VercelMessage.ClickedSave()))],
 				},
 				["Save and apply"],
 			),
@@ -644,12 +651,12 @@ const forwardLessConfirm = (h: H, configure: VercelConfigureModel, status: Verce
 	confirmDialog(h, {
 		slotId: "vercel-configure-confirm",
 		model: configure.confirm,
-		toParentMessage: (message) => Message.GotVercelConfirmDialogMessage({ message }),
+		toParentMessage: (message) => toHub(VercelMessage.GotConfirmDialogMessage({ message })),
 		isNested: true,
 		title: "Forward less from Vercel?",
 		description: "This takes effect on Vercel as soon as you confirm.",
 		confirmLabel: "Apply",
-		onConfirm: Message.ConfirmedVercelSave(),
+		onConfirm: toHub(VercelMessage.ConfirmedSave()),
 		isPending: configure.isSaving,
 		children: [
 			vstack(
@@ -698,7 +705,7 @@ export const vercelConfigure = (h: H, model: Model): ReadonlyArray<Html> => {
 			slotId: "vercel-configure",
 			model: configure.dialog,
 			view: DialogView.view,
-			toParentMessage: (message) => Message.GotVercelConfigureDialogMessage({ message }),
+			toParentMessage: (message) => toHub(VercelMessage.GotConfigureDialogMessage({ message })),
 			viewInputs: {
 				hasTrigger: false,
 				hasDescription: false,

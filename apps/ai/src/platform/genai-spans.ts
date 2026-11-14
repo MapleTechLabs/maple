@@ -267,8 +267,12 @@ const reportedCost = (finish: FinishPart): number | undefined => reportedCostOf(
 
 /** The same, from a finish part's metadata, for hosts that price runs through the engine. */
 export const reportedCostOf = (metadata: FinishPart["metadata"] | undefined): number | undefined => {
-	const cost = metadata?.openrouter?.usage?.cost
-	return Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0 ? cost : undefined
+	const usage = metadata?.openrouter?.usage
+	const cost = usage?.cost
+	if (!(Predicate.isNumber(cost) && Number.isFinite(cost) && cost >= 0)) return undefined
+	// On a BYOK key `cost` is only OpenRouter's fee; the provider bills the model price separately.
+	const upstream = usage?.is_byok === true ? usage.cost_details?.upstream_inference_cost : undefined
+	return Predicate.isNumber(upstream) && Number.isFinite(upstream) && upstream > 0 ? cost + upstream : cost
 }
 
 export interface ModelCallTelemetry {

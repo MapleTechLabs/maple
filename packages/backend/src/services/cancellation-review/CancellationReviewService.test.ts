@@ -27,7 +27,7 @@ import {
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -512,7 +512,7 @@ const makeLayer = (world: World, testDb: TestDb) =>
 				Layer.succeed(ChatConnectorRegistry, [fakeHazel(world)]),
 			),
 		),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(config(world)))),
 	)
 

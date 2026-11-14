@@ -1,8 +1,10 @@
 import { formatNumber, formatPercent, pluralize } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import type { Html, HtmlBuilder } from "foldkit/html"
+import { linkButton } from "@maple/views/ui/button"
 import { stripClass } from "@maple/views/ui/rule"
 import { emptyMessage } from "@maple/views/ui/empty"
+import { icon } from "@maple/views/ui/icon"
 import { panel } from "@maple/views/ui/panel"
 import { pressable } from "@maple/views/ui/pressable"
 import { searchInput } from "@maple/views/ui/search-input"
@@ -39,7 +41,12 @@ export type BreakdownDimension = Readonly<{
 	note?: (h: H) => Html
 }>
 
-export type BreakdownCard = Readonly<{ id: string; dimensions: ReadonlyArray<BreakdownDimension> }>
+export type BreakdownCard = Readonly<{
+	id: string
+	dimensions: ReadonlyArray<BreakdownDimension>
+	/** A page that goes further with this card's data, beside its filter. */
+	link?: Readonly<{ label: string; href: string }>
+}>
 
 type ShareRow = BreakdownRow & Readonly<{ share: number }>
 
@@ -346,7 +353,23 @@ export const breakdownPanel = (
 			},
 			[
 				dimensionTabs(h, card.id, card.dimensions, view.activeTab),
-				panelFilterInput(h, card.id, state.query, dimension.nounPlural, "min-w-24 max-w-40 flex-1"),
+				hstack(h, { gap: "2", className: "min-w-24 flex-1 justify-end" }, [
+					...(card.link === undefined
+						? []
+						: [
+								linkButton(h, { variant: "ghost", size: "xs", href: card.link.href }, [
+									card.link.label,
+									icon(h, "ArrowRightIcon"),
+								]),
+							]),
+					panelFilterInput(
+						h,
+						card.id,
+						state.query,
+						dimension.nounPlural,
+						"min-w-24 max-w-40 flex-1",
+					),
+				]),
 			],
 		),
 		...(dimension.rows.length === 0

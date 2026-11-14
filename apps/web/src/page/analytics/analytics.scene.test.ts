@@ -6,7 +6,8 @@ import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
 import { Message } from "./message"
-import type { Breakdowns, Model, Summary } from "./model"
+import type { Breakdowns } from "../kit/analytics-filter-rail"
+import type { Model, Summary } from "./model"
 import { init, panelOf, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -210,6 +211,31 @@ describe("web analytics", () => {
 			resolveTheme,
 			expectView(text("www.google.com")).toExist(),
 			expectView(text("Clear all")).toExist(),
+		)
+	})
+
+	test("the events card links to Product analytics only for an org in that rollout", () => {
+		const model = settled(settled(windowed({ timePreset: "7d" }), "breakdowns", breakdowns), "events", [
+			{ name: "add_to_cart", events: 12, sessions: 4 },
+		])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			resolveTheme,
+			expectView(text("add_to_cart")).toExist(),
+			expectView(text("Funnels and paths")).not.toExist(),
+		)
+		scene(
+			{
+				update: pageUpdate,
+				view: withViewInputs(pageView, { context: { ...context, hasProductAnalytics: true } })(),
+			},
+			given(model),
+			resolveTheme,
+			expectView(role("link", { name: "Funnels and paths" })).toHaveAttr(
+				"href",
+				"/product-analytics?timePreset=7d",
+			),
 		)
 	})
 

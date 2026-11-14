@@ -4,7 +4,7 @@ import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-
 import { type OrgId, UserId } from "@maple/domain/http"
 import { Effect, Layer, Schema, Array as Arr, Option, String as Str } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { executeSql, insertTestSource, type TestDb } from "@maple/backend/testing/test-pglite"
@@ -200,7 +200,7 @@ export const fakePlanetScaleDeps = (testDb: TestDb, world: FakePlanetScale) =>
 						})),
 				}),
 				testDb.layer,
-				Env.layer,
+				EnvTestLive,
 			),
 		),
 		Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fakePlanetScaleFetch(world))),

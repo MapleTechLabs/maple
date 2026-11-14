@@ -34,6 +34,7 @@ const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 			"Logs",
 			"Replays",
 			"Analytics",
+			"ProductAnalytics",
 			"ErrorIssue",
 			"AgentSessionTool",
 			"AgentSessionTools",

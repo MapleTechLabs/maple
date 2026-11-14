@@ -9,23 +9,13 @@ import {
 	gcpScopeLabel,
 	gcpWorstState,
 } from "../infra-integrations/gcp/connector-state"
-import { DateTime, Option, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import {
-	metricsAuthOf,
-	metricsLastCollectedAt,
-	metricsLastError,
-} from "../infra-integrations/planetscale/setup-steps"
-import { chatIntegrationId, type IntegrationId } from "./catalog"
+import type { IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
-import {
-	scopeLabel,
-	signalsLabel,
-	vercelHealth,
-	vercelIssues,
-} from "../infra-integrations/vercel/integration/vercel-model"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
+import { scrapeOverview, scrapeStatus } from "./scrape-overview"
 import { providerModuleOf } from "./provider-modules"
 import {
 	attentionOr,
@@ -33,12 +23,12 @@ import {
 	CONNECT,
 	fold,
 	type IntegrationOverview,
+	isoMs,
 	type LastSync,
 	lastSyncOf,
-	NOT_CONFIGURED,
+	maxMs,
 	NOT_CONNECTED,
 	SET_UP,
-	UNCONFIGURED,
 	unavailableOverview,
 	unavailableStatus,
 } from "./overview"
@@ -49,15 +39,10 @@ export {
 	type ConnectedOverview,
 	fold,
 	type IntegrationOverview,
+	isoMs,
 	type LastSync,
 	type UnavailableOverview,
 } from "./overview"
-
-/** `Date.parse` of an ISO timestamp (lint-banned), `null` when absent or unparseable. */
-export const isoMs = (iso: string | null | undefined): number | null =>
-	iso === null || iso === undefined
-		? null
-		: Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
 
 /** Where a connection's metric stream stands, as the source's health reads it. */
 export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStreamState =>
@@ -134,52 +119,6 @@ export const HEALTH_TONE = {
 export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
-const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
-	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
-		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
-	)
-
-const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
-	fold(
-		statuses.scrapeTargets,
-		(data): CardStatus => {
-			const targets = Arr.filter(data, (target) => target.target_type === targetType)
-			if (targets.length === 0) return NOT_CONNECTED
-			const failing = Arr.some(targets, (target) => target.enabled && target.last_scrape_error !== null)
-			const enabled = Arr.filter(targets, (target) => target.enabled).length
-			const noun = targetType === "planetscale" ? "org" : "target"
-			return {
-				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
-				variant: failing ? "warn" : "ok",
-			}
-		},
-		unavailableStatus,
-	)
-
-const chatStatus = (statuses: Statuses, id: IntegrationId) =>
-	fold(
-		statuses.chat,
-		(response): CardStatus => {
-			const connector = Arr.findFirst(response.data, (entry) => chatIntegrationId(entry.id) === id)
-			const workspaces = Option.match(connector, {
-				onNone: () => [],
-				onSome: (found) => found.workspaces,
-			})
-			if (workspaces.length === 0)
-				return Option.exists(connector, (found) => found.available === false)
-					? NOT_CONFIGURED
-					: NOT_CONNECTED
-			return {
-				label:
-					workspaces.length === 1
-						? (workspaces[0]?.name ?? "Connected")
-						: `${workspaces.length} workspaces`,
-				variant: "ok",
-			}
-		},
-		unavailableStatus,
-	)
-
 const githubStatus = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -193,13 +132,10 @@ const githubStatus = (statuses: Statuses) =>
 		unavailableStatus,
 	)
 
-const connectedOrNot = (connected: boolean): CardStatus =>
-	connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED
-
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.cardStatus(statuses)
+	if (provider !== undefined) return provider.cardStatus(statuses, { id, nowMs })
 	switch (id) {
 		case "gcp":
 			return fold(
@@ -225,78 +161,14 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 				},
 				unavailableStatus,
 			)
-		case "vercel":
-			return fold(
-				statuses.vercel,
-				(status): CardStatus =>
-					!status.connected
-						? NOT_CONNECTED
-						: status.authFailed
-							? { label: "Token rejected", variant: "crit" }
-							: vercelIssues(status).length > 0
-								? { label: "Needs attention", variant: "warn" }
-								: { label: status.team?.name ?? "Connected", variant: "ok" },
-				unavailableStatus,
-			)
-		case "cloudflare":
-			return fold(statuses.cloudflare, (status) => connectedOrNot(status.connected), unavailableStatus)
 		case "prometheus":
 			return scrapeStatus(statuses, "prometheus")
-		case "planetscale":
-			return fold(
-				statuses.planetscale,
-				(status): CardStatus | null =>
-					status.connected
-						? {
-								label: status.organization ?? "Connected",
-								variant: metricsLastError(status) !== null ? "warn" : "ok",
-							}
-						: scrapeStatus(statuses, "planetscale"),
-				unavailableStatus,
-			)
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
-		case "linear":
-			return fold(
-				statuses.linear,
-				(status): CardStatus =>
-					status.revoked
-						? { label: "Revoked", variant: "warn" }
-						: status.connected
-							? {
-									label:
-										status.workspaceName === null || status.workspaceName === ""
-											? "Connected"
-											: status.workspaceName,
-									variant: "ok",
-								}
-							: NOT_CONNECTED,
-				unavailableStatus,
-			)
 		case "github":
 			return githubStatus(statuses)
-		case "google-search-console":
-			return fold(
-				statuses.searchConsole,
-				(status): CardStatus =>
-					status.revoked
-						? { label: "Revoked", variant: "warn" }
-						: !status.connected
-							? status.configured
-								? NOT_CONNECTED
-								: NOT_CONFIGURED
-							: {
-									label: countLabel(
-										Arr.filter(status.sites, (site) => site.enabled).length,
-										"property",
-										"properties",
-									),
-									variant: "ok",
-								},
-				unavailableStatus,
-			)
 		default:
-			return chatStatus(statuses, id)
+			return null
 	}
 }
 
@@ -399,190 +271,6 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const VERCEL_STATE_LABEL = { attention: "Needs attention", pending: "Syncing", healthy: "Healthy" } as const
-
-const vercelOverview = (statuses: Statuses) =>
-	fold(
-		statuses.vercel,
-		(status): IntegrationOverview => {
-			if (!status.connected) return CONNECT
-			const issues = vercelIssues(status)
-			const health = vercelHealth(status)
-			return {
-				kind: "connected",
-				health,
-				stateLabel: VERCEL_STATE_LABEL[health],
-				context: status.team?.name ?? null,
-				stat: `${signalsLabel(status)} · ${scopeLabel(status)}`,
-				lastSync: lastSyncOf(status.lastSuccessAt, "checked"),
-				issue: status.authFailed
-					? "Token rejected"
-					: issues.length > 0
-						? `${countLabel(issues.length, "drain")} failing`
-						: null,
-			}
-		},
-		unavailableOverview,
-	)
-
-const cloudflareOverview = (statuses: Statuses) =>
-	fold(
-		statuses.cloudflare,
-		(status): IntegrationOverview => {
-			if (!status.connected) return CONNECT
-			const zones = status.zones
-			const enabledZones = Arr.filter(zones, (zone) => zone.enabled).length
-			const erroringZones = Arr.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
-			const workersFailing = status.workers?.enabled === true && status.workers.lastError != null
-			const issue = !status.analyticsCapable
-				? "Update access"
-				: erroringZones > 0
-					? `${countLabel(erroringZones, "zone")} erroring`
-					: workersFailing
-						? "Workers sync failing"
-						: null
-			const statParts = [
-				...(zones.length > 0
-					? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`]
-					: []),
-				...(status.workers?.enabled === true ? ["Workers"] : []),
-			]
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.accountName,
-				stat: statParts.length > 0 ? Arr.join(statParts, " · ") : null,
-				lastSync: lastSyncOf(
-					maxMs([...Arr.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
-				),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
-const scrapeOverview = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
-	fold(
-		statuses.scrapeTargets,
-		(data): IntegrationOverview => {
-			const targets = Arr.filter(data, (target) => target.target_type === targetType)
-			if (targets.length === 0) return targetType === "prometheus" ? SET_UP : CONNECT
-			const enabled = Arr.filter(targets, (target) => target.enabled).length
-			const failing = Arr.filter(
-				targets,
-				(target) => target.enabled && target.last_scrape_error !== null,
-			).length
-			const noun = targetType === "planetscale" ? "org" : "target"
-			return {
-				kind: "connected",
-				health: failing > 0 ? "attention" : "healthy",
-				stateLabel: failing > 0 ? "Needs attention" : "Healthy",
-				context: countLabel(targets.length, `scrape ${noun}`),
-				stat: `${enabled} of ${targets.length} enabled`,
-				lastSync: lastSyncOf(maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))), "scraped"),
-				issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
-			}
-		},
-		unavailableOverview,
-	)
-
-const planetscaleOverview = (statuses: Statuses) => {
-	const dbCount = fold(
-		statuses.planetscaleDatabases,
-		(response): number | null => response.databases.length,
-		() => null,
-	)
-	return fold(
-		statuses.planetscale,
-		(status): IntegrationOverview => {
-			if (!status.connected) return scrapeOverview(statuses, "planetscale")
-			const issue = status.pending_org_selection
-				? "Finish org selection"
-				: metricsLastError(status) !== null
-					? metricsAuthOf(status) === "api"
-						? "Metrics polling failing"
-						: "Scrape failing"
-					: status.last_inventory_error != null
-						? "Inventory failing"
-						: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.organization,
-				stat:
-					dbCount !== null && dbCount > 0
-						? `${countLabel(dbCount, "database")} tracked`
-						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
-							? "Branch metrics on"
-							: null,
-				lastSync: lastSyncOf(
-					maxMs(Arr.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
-				),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-}
-
-const linearOverview = (statuses: Statuses) =>
-	fold(
-		statuses.linear,
-		(status): IntegrationOverview =>
-			status.revoked
-				? {
-						kind: "connected",
-						health: "attention",
-						stateLabel: "Revoked",
-						context: status.workspaceName,
-						stat: null,
-						lastSync: null,
-						issue: "Reconnect Linear",
-					}
-				: status.connected
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.workspaceName,
-							stat: "Incident issues ready",
-							lastSync: null,
-							issue: null,
-						}
-					: CONNECT,
-		unavailableOverview,
-	)
-
-const searchConsoleOverview = (statuses: Statuses) =>
-	fold(
-		statuses.searchConsole,
-		(status): IntegrationOverview => {
-			if (!status.connected) return status.configured ? CONNECT : UNCONFIGURED
-			const enabled = Arr.filter(status.sites, (site) => site.enabled)
-			const failing = Arr.filter(enabled, (site) => site.lastError !== null).length
-			const issue = status.revoked
-				? "Reconnect Google"
-				: enabled.length === 0
-					? "Choose properties"
-					: failing > 0
-						? `${countLabel(failing, "property", "properties")} failing`
-						: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				...(status.revoked ? { stateLabel: "Revoked" } : undefined),
-				context: status.accountEmail,
-				stat:
-					enabled.length > 0
-						? `${countLabel(enabled.length, "property", "properties")} selected`
-						: null,
-				lastSync: lastSyncOf(maxMs(Arr.map(enabled, (site) => site.lastSyncedAt))),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
 const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -622,61 +310,23 @@ const githubOverview = (statuses: Statuses) =>
 		unavailableOverview,
 	)
 
-const chatOverview = (statuses: Statuses, id: IntegrationId) =>
-	fold(
-		statuses.chat,
-		(response): IntegrationOverview => {
-			const workspaces = Arr.findFirst(
-				response.data,
-				(entry) => chatIntegrationId(entry.id) === id,
-			).pipe(
-				Option.flatMapNullishOr((found) => found.workspaces),
-				Option.getOrElse(() => []),
-			)
-			if (workspaces.length === 0) return CONNECT
-			return {
-				kind: "connected",
-				health: "healthy",
-				stateLabel: "Healthy",
-				context:
-					workspaces.length === 1
-						? (workspaces[0]?.name ?? null)
-						: countLabel(workspaces.length, "workspace"),
-				stat: "Alerts & agent ready",
-				lastSync: null,
-				issue: null,
-			}
-		},
-		unavailableOverview,
-	)
-
 /** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
 	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.overview(statuses)
+	if (provider !== undefined) return provider.overview(statuses, { id, nowMs })
 	switch (id) {
 		case "gcp":
 			return gcpOverview(statuses, nowMs)
 		case "aws":
 			return awsOverview(statuses, nowMs)
-		case "vercel":
-			return vercelOverview(statuses)
-		case "cloudflare":
-			return cloudflareOverview(statuses)
 		case "prometheus":
 			return scrapeOverview(statuses, "prometheus")
-		case "planetscale":
-			return planetscaleOverview(statuses)
 		case "warpstream":
 			return SET_UP
-		case "linear":
-			return linearOverview(statuses)
 		case "github":
 			return githubOverview(statuses)
-		case "google-search-console":
-			return searchConsoleOverview(statuses)
 		default:
-			return chatOverview(statuses, id)
+			return null
 	}
 }
 

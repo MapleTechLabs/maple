@@ -15,6 +15,7 @@ import { listAccounts } from "@maple/backend/services/integrations/CloudflareApi
 import { integrationSourceName } from "@maple/backend/services/integrations/integration-sources"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { CloudflareOAuthClientSecret } from "@maple/infra/secrets"
 import {
 	deriveCodeChallenge,
 	generateCodeVerifier,
@@ -72,7 +73,10 @@ interface ResolvedCloudflareOAuthConfig {
 	readonly scopes: string
 }
 
-const resolveConfig = Effect.fn("CloudflareOAuthService.resolveConfig")(function* (env: EnvConfig) {
+const resolveConfig = Effect.fn("CloudflareOAuthService.resolveConfig")(function* (
+	env: EnvConfig,
+	clientSecret: Option.Option<Redacted.Redacted>,
+) {
 	// Only the client id is mandatory. Cloudflare public clients (any-user SaaS) authenticate the
 	// token exchange with PKCE alone and carry no secret; confidential clients add one via env.
 	const clientId = yield* Effect.fromOption(
@@ -85,7 +89,7 @@ const resolveConfig = Effect.fn("CloudflareOAuthService.resolveConfig")(function
 
 	return {
 		clientId,
-		clientSecret: Option.match(env.CLOUDFLARE_OAUTH_CLIENT_SECRET, {
+		clientSecret: Option.match(clientSecret, {
 			onNone: () => null,
 			onSome: (value) => value,
 		}),
@@ -191,6 +195,7 @@ export class CloudflareOAuthService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
+		const clientSecret = yield* CloudflareOAuthClientSecret
 		const oauth = yield* makeOAuthConnectionHelpers({
 			provider: CLOUDFLARE_PROVIDER,
 			providerLabel: "Cloudflare",
@@ -227,7 +232,7 @@ export class CloudflareOAuthService extends Context.Service<
 			options: { readonly callbackUrl: string; readonly returnTo?: string },
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			const state = yield* newOAuthState
 			// Cloudflare requires PKCE (S256) for public clients and accepts it for confidential ones.
 			const codeVerifier = generateCodeVerifier()
@@ -259,7 +264,7 @@ export class CloudflareOAuthService extends Context.Service<
 			state: string,
 			initiator: OAuthFlowInitiator,
 		) {
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			if (!stateRow.codeVerifier) {
@@ -344,7 +349,7 @@ export class CloudflareOAuthService extends Context.Service<
 			accountId: string,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.cloudflare.account_id": accountId })
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			const { accessToken, row } = yield* oauth.getValidConnectionToken(config, orgId)
 			// A token is always addressed to one account of the grant. Callers name it: there is
 			// no "the org's account" to fall back to once a grant can cover several.
@@ -386,7 +391,7 @@ export class CloudflareOAuthService extends Context.Service<
 			// failure block the disconnect: the deleted row is the real backstop.
 			const row = yield* oauth.loadConnection(orgId)
 			if (row != null) {
-				const config = yield* resolveConfig(env).pipe(Effect.option)
+				const config = yield* resolveConfig(env, clientSecret).pipe(Effect.option)
 				const accessToken = yield* oauth
 					.openAccessToken(row.orgId, {
 						ciphertext: row.accessTokenCiphertext,

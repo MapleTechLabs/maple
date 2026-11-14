@@ -3,7 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema, String as Str } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { OrgId, UserId } from "@maple/domain/http"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -127,7 +127,7 @@ const withOAuthApp = {
 const makeLayer = (testDb: TestDb, google: MockGoogle, extra: Record<string, string> = withOAuthApp) =>
 	Layer.mergeAll(GoogleOAuthService.layer, FetchHttpClient.layer).pipe(
 		Layer.provide(testDb.layer),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...extra }))),
 		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, google.fetch)),
 	)

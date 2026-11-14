@@ -111,7 +111,13 @@ because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-pl
   data and there is one `maple.dev`, so `profile.deploys.sharedApps` keeps them off the EU
   deploy.
 - **Secrets** come from a per-instance Infisical environment (`prod`, `prod-eu`) holding the
-  same variable names with that instance's values. `deploy-prd-instance.yml` picks the
+  same variable names with that instance's values. Which deployable may bind which secret is
+  declared in `packages/infra/src/secrets.ts` and enforced where the stack reads config
+  (`withSecretGuard` in `alchemy.run.ts`, `packages/infra/src/secret-guard.ts`). A secret's
+  `environments` also bounds where it may live: a deploy whose environment holds one outside
+  that list fails, and `bun run secrets:drift` checks all four environments, including dev
+  or preview holding a prd value. The deploy process itself sees its whole environment, so
+  everything in `preview` is readable by the code of any PR with a preview label. `deploy-prd-instance.yml` picks the
   environment, the stage and the AWS region from one `region` input, and the stack refuses
   an `AWS_REGION` that disagrees with the stage. The EU deploy is opt-in through the
   `MAPLE_DEPLOY_EU` repository variable until its accounts exist.

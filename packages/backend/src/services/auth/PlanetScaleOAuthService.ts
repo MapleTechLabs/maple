@@ -27,6 +27,7 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { PlanetScaleOAuthClientSecret } from "@maple/infra/secrets"
 import {
 	collectPages,
 	decodeConsumed,
@@ -77,7 +78,10 @@ interface ResolvedPlanetScaleOAuthConfig {
 	readonly scopes: string
 }
 
-const resolveConfig = Effect.fn("PlanetScaleOAuthService.resolveConfig")(function* (env: EnvConfig) {
+const resolveConfig = Effect.fn("PlanetScaleOAuthService.resolveConfig")(function* (
+	env: EnvConfig,
+	configuredSecret: Option.Option<Redacted.Redacted>,
+) {
 	const clientId = yield* Effect.fromOption(
 		env.PLANETSCALE_OAUTH_CLIENT_ID,
 		() =>
@@ -86,7 +90,7 @@ const resolveConfig = Effect.fn("PlanetScaleOAuthService.resolveConfig")(functio
 			}),
 	)
 	const clientSecret = yield* Effect.fromOption(
-		env.PLANETSCALE_OAUTH_CLIENT_SECRET,
+		configuredSecret,
 		() =>
 			new IntegrationsConfigurationError({
 				message: "PLANETSCALE_OAUTH_CLIENT_SECRET is required to use the PlanetScale integration",
@@ -230,6 +234,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
+		const clientSecret = yield* PlanetScaleOAuthClientSecret
 		const httpClient = yield* HttpClient.HttpClient
 		const oauth = yield* makeOAuthConnectionHelpers({
 			provider: PLANETSCALE_PROVIDER,
@@ -360,7 +365,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			options: { readonly callbackUrl: string; readonly returnTo?: string },
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			const state = yield* newOAuthState
 			yield* oauth.saveState(
 				state,
@@ -388,7 +393,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			state: string,
 			initiator: OAuthFlowInitiator,
 		) {
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			const stateRow = yield* oauth.consumeStateRow(state, initiator)
 
 			const tokenResponse = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri)
@@ -512,7 +517,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			orgId: OrgId,
 		) {
 			yield* Effect.annotateCurrentSpan({ orgId })
-			const config = yield* resolveConfig(env)
+			const config = yield* resolveConfig(env, clientSecret)
 			// A stamped grant failed a refresh or had a fresh token rejected: refreshing or calling
 			// with it again only repeats the 401. Reconnecting clears the stamp.
 			const { accessToken } = yield* oauth.getValidConnectionToken(config, orgId, {
@@ -526,7 +531,7 @@ export class PlanetScaleOAuthService extends Context.Service<
 			use: (accessToken: string) => Effect.Effect<A, E | PlanetScaleTokenRejectedError>,
 			options?: { readonly stampRevoked?: boolean },
 		) =>
-			resolveConfig(env).pipe(
+			resolveConfig(env, clientSecret).pipe(
 				Effect.flatMap((config) =>
 					oauth.withRejectedTokenRetry(config, orgId, isPlanetScaleTokenRejected, use, options),
 				),

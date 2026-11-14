@@ -10,9 +10,10 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { SearchConsoleSites } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { SearchConsoleClientSecret } from "@maple/infra/secrets"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	isSearchConsoleTokenRejected,
@@ -56,7 +57,10 @@ const idTokenClaims = (idToken: string | undefined) => {
 			)
 }
 
-const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (env: EnvConfig) {
+const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (
+	env: EnvConfig,
+	configuredSecret: Option.Option<Redacted.Redacted>,
+) {
 	const clientId = yield* Effect.fromOption(
 		env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID,
 		() =>
@@ -66,7 +70,7 @@ const resolveConfig = Effect.fn("GoogleOAuthService.resolveConfig")(function* (e
 			}),
 	)
 	const clientSecret = yield* Effect.fromOption(
-		env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET,
+		configuredSecret,
 		() =>
 			new IntegrationsConfigurationError({
 				message:
@@ -139,6 +143,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
+			const clientSecret = yield* SearchConsoleClientSecret
 			const oauth = yield* makeOAuthConnectionHelpers({
 				provider: GOOGLE_PROVIDER,
 				providerLabel: "Google",
@@ -158,7 +163,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				options: { readonly callbackUrl: string; readonly returnTo?: string },
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const config = yield* resolveConfig(env)
+				const config = yield* resolveConfig(env, clientSecret)
 				const state = yield* newOAuthState
 				yield* oauth.saveState(
 					state,
@@ -186,7 +191,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				initiator: OAuthFlowInitiator,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId: initiator.orgId })
-				const config = yield* resolveConfig(env)
+				const config = yield* resolveConfig(env, clientSecret)
 				const stateRow = yield* oauth.consumeStateRow(state, initiator)
 				const tokens = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri)
 				// Google's consent screen lets the user untick a scope; without it nothing works.
@@ -242,7 +247,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 				orgId: OrgId,
 				use: (accessToken: string) => Effect.Effect<A, E | SearchConsoleTokenRejectedError>,
 			) =>
-				resolveConfig(env).pipe(
+				resolveConfig(env, clientSecret).pipe(
 					Effect.flatMap((config) =>
 						oauth.withRejectedTokenRetry(config, orgId, isSearchConsoleTokenRejected, use),
 					),
@@ -292,6 +297,7 @@ export class GoogleOAuthService extends Context.Service<GoogleOAuthService, Goog
 	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
 }
 
-export const isGoogleOAuthConfigured = (env: EnvConfig): boolean =>
-	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) &&
-	Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET)
+export const isGoogleOAuthConfigured = (
+	env: EnvConfig,
+	clientSecret: Option.Option<Redacted.Redacted>,
+): boolean => Option.isSome(env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID) && Option.isSome(clientSecret)
