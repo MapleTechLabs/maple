@@ -6,6 +6,13 @@ import { nonZeroOr } from "@maple/ui/lib/number"
 
 // The rrweb engine, for browser recordings. Every quirk documented here was a shipped bug once.
 
+/**
+ * rrweb writes into the events it plays (`delay`, rebuilt node text). Foldkit
+ * deep-freezes the model in dev builds, which left the player blank there; a
+ * frozen input gets a mutable copy, and production pays nothing.
+ */
+const mutable = <A>(value: A): A => (Object.isFrozen(value) ? structuredClone(value) : value)
+
 class RrwebEngine implements ReplayEngine {
 	private readonly replayer: Replayer
 	private readonly fallbackViewport: ReplayEngineCreateInput["fallbackViewport"]
@@ -15,7 +22,7 @@ class RrwebEngine implements ReplayEngine {
 			Str.trim(getComputedStyle(document.documentElement).getPropertyValue("--primary")) || "#6366f1"
 
 		this.fallbackViewport = input.fallbackViewport
-		this.replayer = new Replayer(input.events as never, {
+		this.replayer = new Replayer(mutable(input.events) as never, {
 			root: input.mount,
 			speed: 1,
 			// We skip idle ourselves by jumping; rrweb's own skipInactive only
@@ -69,7 +76,7 @@ class RrwebEngine implements ReplayEngine {
 	}
 
 	addEvent(event: unknown): void {
-		this.replayer.addEvent(event as never)
+		this.replayer.addEvent(mutable(event) as never)
 	}
 
 	/**
