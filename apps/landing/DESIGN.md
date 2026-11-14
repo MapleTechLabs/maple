@@ -2,7 +2,7 @@
 
 ## Overview
 
-The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage, pricing page, feature-page illustrations, and their locale variants; other marketing pages and the application retain their existing design.
+The homepage is a Persuade surface for engineers evaluating open-source observability. Its signature is monumental typography above an Rome-inspired, amber dithered temple and aqueduct. This direction applies to the homepage, pricing page, feature-page illustrations, their locale variants, and the docs home; other marketing pages, the docs reading pages and the application retain their existing design.
 
 ## Colors
 
@@ -49,6 +49,10 @@ Pricing carries the shared orange-and-charcoal palette, Geist typography, sharp 
 Each `/features/*` page has its own Roman engraving in the hero, shared across English, Japanese and Korean. Match the balanced hero's amber-on-charcoal palette and medium-fine dithering. Choose a subject that relates to the feature: aqueduct channels for tracing, an archive for logs, a water clock for metrics, a connected city for services, a cracked keystone for errors, a watchtower for alerts, a theater for session replay, a scholar's instrument for MCP, and an organized harbor for Kubernetes.
 
 The illustration occupies the right background and fades behind the copy; on smaller screens its opacity drops to keep the full-width text readable. Preserve all localized copy, breadcrumbs, CTAs, real screenshots and interactive demos. Illustration paths belong to the feature registry; generated WebP assets and prompts live in `public/art/features/`. Use-case and comparison heroes retain their existing layout.
+
+## Documentation home
+
+`/docs` carries the direction into the docs chrome (header, section strip and sidebar stay as they are). The title is set in the heavy display face over the Roman archive from `features/log-management.webp`, the same engraving as the docs social card, placed top right and faded behind the copy; below `lg` it drops to a faint backdrop. "Start here" is a framed strip under the lede, like the pricing rate card. Sections use an eyebrow, a heavy heading and sharp hairline frames; cells have no radius and hover to `--card`. The catch-all "Any OTLP exporter" row spans the language grid so no slot is left empty. Article pages are a reading surface and keep their own type scale. The docs 404 uses the same title weight and sharp list frame.
 
 ## Social previews
 

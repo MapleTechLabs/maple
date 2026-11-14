@@ -91,152 +91,512 @@ const introduction = bySlug("getting-started/introduction");
     headings={[]}
     currentSlug=""
     mdHref="/docs.md"
-    wide
+    bleed
 >
-    <div class="docs-index">
-        <header>
-            <h1 class="text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-fg md:text-[40px]">Documentation</h1>
-            <p class="mt-4 max-w-[58ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">
+    {/* ── Hero: title, lede and the four ways in, over the Roman archive ── */}
+    <section class="docs-hero">
+        <div class="docs-shell docs-hero__inner">
+            {/* Inside the shell so the artwork tracks the content column on wide screens. */}
+            <img class="docs-hero__art" src="/art/features/log-management.webp" width="1536" height="1024" alt="" decoding="async" />
+            <h1 class="docs-hero__title">Documentation</h1>
+            <p class="docs-hero__lede">
                 Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring.
                 {introduction && (
                     <>
-                        New here? Read the <a href={`/docs/${introduction.id}`} class="text-fg underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-primary">introduction</a>.
+                        New here? Read the <a href={`/docs/${introduction.id}`} class="docs-inline-link">introduction</a>.
                     </>
                 )}
             </p>
-        </header>
 
-        {/* ── Start here ─────────────────────────────────────── */}
-        <section class="mt-10" aria-labelledby="start-here">
-            <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
-            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {START_HERE.map(({ doc, icon, blurb }) => (
-                    <a href={`/docs/${doc.id}`} class="cell group flex flex-col p-5 transition-colors hover:bg-bg-elevated">
-                        <span class="flex items-center justify-between">
-                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
-                                <DocsCategoryIcon name={icon} class="h-4 w-4" />
+            <section class="docs-start" aria-labelledby="start-here">
+                <h2 id="start-here" class="docs-eyebrow">Start here</h2>
+                <div class="docs-frame docs-start__grid">
+                    {START_HERE.map(({ doc, icon, blurb }) => (
+                        <a href={`/docs/${doc.id}`} class="docs-cell docs-start__cell">
+                            <span class="docs-start__top">
+                                <span class="docs-start__icon" aria-hidden="true">
+                                    <DocsCategoryIcon name={icon} class="h-5 w-5" />
+                                </span>
+                                <svg class="docs-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                                    <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                                </svg>
                             </span>
-                            <svg
-                                class="h-3.5 w-3.5 -translate-x-1 text-fg-muted opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="square"
-                                aria-hidden="true"
-                            >
-                                <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
-                            </svg>
-                        </span>
-                        <span class="mt-4 block text-[14px] font-medium text-fg">{doc.data.title}</span>
-                        <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{blurb}</p>
-                    </a>
-                ))}
-            </div>
-        </section>
+                            <span class="docs-start__title">{doc.data.title}</span>
+                            <span class="docs-start__blurb">{blurb}</span>
+                        </a>
+                    ))}
+                </div>
+            </section>
+        </div>
+    </section>
 
-        {/* ── Instrumentation ─────────────────────────────────── */}
-        <section class="mt-12" aria-labelledby="instrument">
-            <div class="flex items-baseline justify-between gap-4">
-                <h2 id="instrument" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Instrument your application</h2>
-                <a href={`/docs/${INSTRUMENTATION_SLUG}`} class="text-[13px] text-primary transition-colors hover:text-fg">All guides</a>
+    {/* ── Instrumentation ─────────────────────────────────── */}
+    <section class="docs-shell docs-section" aria-labelledby="instrument">
+        <div class="docs-section__head">
+            <div>
+                <p class="docs-eyebrow">Instrumentation</p>
+                <h2 id="instrument" class="docs-section__title">Instrument your application</h2>
             </div>
-            <div class="hairline-grid mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                {LANGUAGES.map((lang) => (
-                    <a href={`/docs/${lang.slug}`} class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
-                        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
-                            <LanguageLogo id={lang.id} class="h-4 w-4" />
-                        </span>
-                        <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">{lang.name}</span>
-                    </a>
-                ))}
-                <a href="/docs/session-replay/browser-sdk" class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
-                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
-                        <BrandMarkIcon id="javascript" class="h-4 w-4" />
+            <a href={`/docs/${INSTRUMENTATION_SLUG}`} class="docs-section__link">
+                All guides
+                <svg class="docs-arrow docs-arrow--inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                    <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                </svg>
+            </a>
+        </div>
+        <div class="docs-frame docs-lang__grid">
+            {LANGUAGES.map((lang) => (
+                <a href={`/docs/${lang.slug}`} class="docs-cell docs-lang__cell">
+                    <span class="docs-lang__logo" aria-hidden="true">
+                        <LanguageLogo id={lang.id} class="h-[18px] w-[18px]" />
                     </span>
-                    <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">Browser</span>
+                    <span class="docs-lang__name">{lang.name}</span>
                 </a>
-                <a href={`/docs/${INSTRUMENTATION_SLUG}#anything-that-speaks-otlp`} class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
-                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
-                        <BrandMarkIcon id="opentelemetry" class="h-4 w-4" />
-                    </span>
-                    <span class="min-w-0 text-[14px] leading-snug font-medium text-fg">Any OTLP exporter</span>
-                </a>
-            </div>
-        </section>
+            ))}
+            <a href="/docs/session-replay/browser-sdk" class="docs-cell docs-lang__cell">
+                <span class="docs-lang__logo" aria-hidden="true">
+                    <BrandMarkIcon id="javascript" class="h-[18px] w-[18px]" />
+                </span>
+                <span class="docs-lang__name">Browser</span>
+            </a>
+            <a href={`/docs/${INSTRUMENTATION_SLUG}#anything-that-speaks-otlp`} class="docs-cell docs-lang__cell docs-lang__cell--wide">
+                <span class="docs-lang__logo" aria-hidden="true">
+                    <BrandMarkIcon id="opentelemetry" class="h-[18px] w-[18px]" />
+                </span>
+                <span class="docs-lang__name">Any OTLP exporter</span>
+                <span class="docs-lang__hint">Not listed? Point any OpenTelemetry SDK or Collector at the ingest endpoint.</span>
+                <svg class="docs-arrow docs-arrow--inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                    <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                </svg>
+            </a>
+        </div>
+    </section>
 
-        {/* ── Common tasks ────────────────────────────────────── */}
-        <section class="mt-12" aria-labelledby="tasks">
-            <h2 id="tasks" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Common tasks</h2>
-            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {TASKS.map(({ title, icon, links }) => (
-                    <div class="cell p-5">
-                        <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
-                            <DocsCategoryIcon name={icon} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
-                            {title}
-                        </h3>
-                        {/* Full-width rows with a chevron: these must read as links at
-                            rest, not as a bullet list that happens to be clickable. */}
-                        <ul class="-mx-2 mt-3 space-y-px">
-                            {links.map((link) => (
-                                <li>
-                                    <a
-                                        href={link.href}
-                                        class="group/link flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13.5px] text-fg/85 transition-colors hover:bg-bg-elevated hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-                                    >
-                                        <span>{link.label}</span>
-                                        <svg
-                                            class="h-3.5 w-3.5 shrink-0 text-fg-muted/60 transition-[color,transform] duration-200 group-hover/link:translate-x-0.5 group-hover/link:text-primary motion-reduce:transition-none"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2"
-                                            stroke-linecap="square"
-                                            aria-hidden="true"
-                                        >
-                                            <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
-                                        </svg>
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ))}
+    {/* ── Common tasks ────────────────────────────────────── */}
+    <section class="docs-shell docs-section" aria-labelledby="tasks">
+        <div class="docs-section__head">
+            <div>
+                <p class="docs-eyebrow">By task</p>
+                <h2 id="tasks" class="docs-section__title">Common tasks</h2>
             </div>
-        </section>
+        </div>
+        <div class="docs-frame docs-tasks__grid">
+            {TASKS.map(({ title, icon, links }) => (
+                <div class="docs-cell docs-tasks__cell">
+                    <h3 class="docs-tasks__title">
+                        <DocsCategoryIcon name={icon} class="h-4 w-4 shrink-0 text-primary" />
+                        {title}
+                    </h3>
+                    {/* Full-width rows with a chevron: these must read as links at
+                        rest, not as a bullet list that happens to be clickable. */}
+                    <ul class="docs-tasks__list">
+                        {links.map((link) => (
+                            <li>
+                                <a href={link.href} class="docs-tasks__link">
+                                    <span>{link.label}</span>
+                                    <svg class="docs-arrow docs-arrow--inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                                        <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                                    </svg>
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            ))}
+        </div>
+    </section>
 
-        {/* ── Footer ──────────────────────────────────────────── */}
-        <footer class="mt-14 flex flex-col gap-2 border-t border-border pt-6 text-[13px] text-fg-muted sm:flex-row sm:items-center sm:justify-between">
+    {/* ── Footer ──────────────────────────────────────────── */}
+    <footer class="docs-shell docs-foot">
+        <div class="docs-foot__inner">
             <p>
-                Every page is also plain markdown: append <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">.md</code> to its URL, or start from
-                <a href="/llms.txt" class="text-fg underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-primary"><code class="rounded bg-bg-elevated px-1.5 py-0.5">/llms.txt</code></a>.
+                Every page is also plain markdown: append <code class="docs-foot__code">.md</code> to its URL, or start from
+                <a href="/llms.txt" class="docs-inline-link"><code class="docs-foot__code">/llms.txt</code></a>.
             </p>
-            <p class="flex flex-wrap items-center gap-3">
-                <a href="/changelog" class="text-fg transition-colors hover:text-primary">Changelog</a>
-                <a href="/pricing" class="text-fg transition-colors hover:text-primary">Pricing</a>
-                <a href="https://github.com/MapleTechLabs/maple" class="text-fg transition-colors hover:text-primary">GitHub</a>
-                <a href="https://github.com/MapleTechLabs/maple/issues" class="text-fg transition-colors hover:text-primary">Report a docs issue</a>
+            <p class="docs-foot__links">
+                <a href="/changelog">Changelog</a>
+                <a href="/pricing">Pricing</a>
+                <a href="https://github.com/MapleTechLabs/maple">GitHub</a>
+                <a href="https://github.com/MapleTechLabs/maple/issues">Report a docs issue</a>
             </p>
-        </footer>
-    </div>
+        </div>
+    </footer>
 </DocsLayout>
 
 <style>
-    /* Hairline grid that tolerates a short last row: each cell draws its own
-       1px frame, so an empty slot reads as an empty cell rather than a block
-       of border colour. */
-    .hairline-grid {
+    /* The docs home speaks the homepage and pricing language: heavy Geist
+       display type, a Roman engraving behind the title, sharp hairline frames. */
+    .docs-shell {
+        margin-inline: auto;
+        max-width: 1344px;
+        padding-inline: 24px;
+    }
+
+    .docs-eyebrow {
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted-foreground);
+    }
+
+    .docs-inline-link {
+        color: var(--foreground);
+        text-decoration: underline;
+        text-decoration-color: color-mix(in oklab, var(--primary) 60%, transparent);
+        text-underline-offset: 4px;
+        transition:
+            color 150ms ease,
+            text-decoration-color 150ms ease;
+    }
+    .docs-inline-link:hover {
+        color: var(--primary);
+        text-decoration-color: var(--primary);
+    }
+
+    /* ── Hero ── */
+    .docs-hero {
+        container-type: inline-size;
+        isolation: isolate;
+        overflow: hidden;
+        border-bottom: 1px solid var(--border);
+    }
+    .docs-hero__art {
+        position: absolute;
+        top: 0;
+        right: calc(-1 * var(--docs-gutter));
+        z-index: -1;
+        width: 100%;
+        height: 360px;
+        object-fit: cover;
+        object-position: 70% 32%;
+        opacity: 0.22;
+        pointer-events: none;
+        mask-image:
+            linear-gradient(to right, transparent 5%, black 80%),
+            linear-gradient(to bottom, transparent, black 22%, black 55%, transparent);
+        mask-composite: intersect;
+    }
+    /* The space between the centred shell and the hero's right edge. The art
+       reaches across it, so it always runs off the edge of the page. */
+    .docs-hero__inner {
+        --docs-gutter: max(0px, (100cqw - 1344px) / 2);
+        position: relative;
+        padding-top: 8px;
+        padding-bottom: 44px;
+    }
+    .docs-hero__title {
+        font-size: clamp(2.25rem, 5vw, 4rem);
+        font-weight: 700;
+        line-height: 1.03;
+        letter-spacing: -0.04em;
+        color: var(--foreground);
+    }
+    .docs-hero__lede {
+        max-width: 52ch;
+        margin-top: 20px;
+        font-size: 17px;
+        line-height: 1.65;
+        text-wrap: pretty;
+        color: var(--foreground);
+    }
+    .docs-start {
+        margin-top: 44px;
+    }
+
+    /* ── Frames ── Each cell draws its own 1px rule, so a short last row
+       reads as empty cells rather than a block of border colour. */
+    .docs-frame {
+        display: grid;
         gap: 1px;
         overflow: hidden;
-        border-radius: 12px;
         border: 1px solid var(--border);
         background: var(--background);
     }
-    .hairline-grid > .cell {
+    .docs-cell {
+        min-width: 0;
         background: var(--background);
         box-shadow: 0 0 0 1px var(--border);
     }
-    .hairline-grid > a.cell:hover {
-        background: var(--bg-elevated);
+    a.docs-cell {
+        transition: background-color 150ms ease;
+    }
+    a.docs-cell:hover {
+        background: var(--card);
+    }
+    a.docs-cell:focus-visible,
+    .docs-tasks__link:focus-visible,
+    .docs-section__link:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+    }
+
+    .docs-arrow {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        color: color-mix(in oklab, var(--muted-foreground) 60%, transparent);
+        transition:
+            color 200ms ease,
+            transform 200ms ease;
+    }
+    .docs-arrow--inline {
+        width: 14px;
+        height: 14px;
+    }
+    a:hover > .docs-arrow,
+    a:hover > span > .docs-arrow {
+        color: var(--primary);
+        transform: translateX(2px);
+    }
+
+    /* ── Start here ── */
+    .docs-start__grid {
+        margin-top: 16px;
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .docs-start__cell {
+        display: grid;
+        grid-template-rows: subgrid;
+        grid-row: span 3;
+        row-gap: 0;
+        padding: 22px 24px 24px;
+    }
+    .docs-start__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .docs-start__icon {
+        display: flex;
+        color: var(--primary);
+    }
+    .docs-start__title {
+        margin-top: 22px;
+        font-size: 19px;
+        font-weight: 650;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+        color: var(--foreground);
+    }
+    .docs-start__blurb {
+        margin-top: 8px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--muted-foreground);
+    }
+
+    /* ── Sections ── */
+    .docs-section {
+        padding-top: 56px;
+    }
+    .docs-section__head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .docs-section__title {
+        margin-top: 12px;
+        font-size: clamp(1.625rem, 2.6vw, 2.125rem);
+        font-weight: 700;
+        line-height: 1.08;
+        letter-spacing: -0.035em;
+        text-wrap: balance;
+        color: var(--foreground);
+    }
+    .docs-section__link {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        gap: 6px;
+        padding-bottom: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--primary);
+    }
+    .docs-section__link .docs-arrow {
+        color: var(--primary);
+    }
+
+    /* ── Languages ── */
+    .docs-lang__grid {
+        margin-top: 24px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .docs-lang__cell {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 18px;
+    }
+    .docs-lang__logo {
+        display: flex;
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        background: var(--card);
+    }
+    .docs-lang__name {
+        min-width: 0;
+        font-size: 15px;
+        font-weight: 550;
+        line-height: 1.3;
+        color: var(--foreground);
+    }
+    /* The catch-all closes the grid as one full row, so no slot is left empty. */
+    .docs-lang__cell--wide {
+        grid-column: 1 / -1;
+    }
+    .docs-lang__cell--wide .docs-lang__name {
+        flex-shrink: 0;
+    }
+    .docs-lang__hint {
+        display: none;
+        min-width: 0;
+        flex: 1;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--muted-foreground);
+    }
+    .docs-lang__cell--wide .docs-arrow {
+        margin-left: auto;
+    }
+
+    /* ── Tasks ── */
+    .docs-tasks__grid {
+        margin-top: 24px;
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .docs-tasks__cell {
+        padding: 22px 24px 18px;
+    }
+    .docs-tasks__title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 16px;
+        font-weight: 650;
+        letter-spacing: -0.015em;
+        color: var(--foreground);
+    }
+    .docs-tasks__list {
+        margin: 14px -10px 0;
+    }
+    .docs-tasks__link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 7px 10px;
+        font-size: 14px;
+        line-height: 1.45;
+        color: color-mix(in oklab, var(--foreground) 85%, transparent);
+        transition:
+            background-color 150ms ease,
+            color 150ms ease;
+    }
+    .docs-tasks__link:hover {
+        background: var(--card);
+        color: var(--foreground);
+    }
+
+    /* ── Footer ── */
+    .docs-foot {
+        padding-top: 56px;
+        padding-bottom: 48px;
+    }
+    .docs-foot__inner {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border-top: 1px solid var(--border);
+        padding-top: 24px;
+        font-size: 13px;
+        color: var(--muted-foreground);
+    }
+    .docs-foot__code {
+        background: var(--card);
+        padding: 2px 6px;
+        font-size: 12px;
+        color: var(--foreground);
+    }
+    .docs-foot__links {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 20px;
+    }
+    .docs-foot__links a {
+        color: var(--foreground);
+        transition: color 150ms ease;
+    }
+    .docs-foot__links a:hover {
+        color: var(--primary);
+    }
+
+    @media (min-width: 640px) {
+        .docs-start__grid,
+        .docs-tasks__grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .docs-lang__grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+    @media (min-width: 768px) {
+        .docs-shell {
+            padding-inline: 52px;
+        }
+        .docs-lang__hint {
+            display: block;
+        }
+        .docs-foot__inner {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+    /* From here the sidebar is docked and the hero opens the page. */
+    @media (min-width: 1024px) {
+        .docs-hero__inner {
+            padding-top: 72px;
+            padding-bottom: 56px;
+        }
+        .docs-hero__art {
+            width: calc(62% + var(--docs-gutter));
+            height: 420px;
+            opacity: 0.5;
+            mask-image:
+                linear-gradient(to right, transparent 12%, black 88%),
+                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
+        }
+        .docs-section {
+            padding-top: 72px;
+        }
+    }
+    @media (min-width: 1280px) {
+        .docs-hero__art {
+            width: min(calc(72% + var(--docs-gutter)), 1100px);
+            opacity: 0.72;
+            mask-image:
+                linear-gradient(to right, transparent, black 62%),
+                linear-gradient(to bottom, transparent, black 18%, black 50%, transparent 94%);
+        }
+        .docs-start__grid,
+        .docs-tasks__grid,
+        .docs-lang__grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .docs-arrow,
+        a.docs-cell,
+        .docs-tasks__link {
+            transition: none;
+        }
     }
 </style>
