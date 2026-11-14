@@ -1,16 +1,14 @@
 /**
- * The OpenTelemetry MCP conventions (https://semconv.com/domains/mcp) on the
- * server span Effect's `RpcServer` opens for each message. That span is named
- * `McpServer.@effect/mcp/<version>/<method>` and carries only `rpc.*`; the
- * transport wraps each message's tracer so the span is born with the spec name
- * and attributes instead, and takes its parent from `params._meta`.
+ * Maple's attributes on the OpenTelemetry MCP server span (https://semconv.com/domains/mcp).
+ * Effect's `McpServer` opens that span per message, already spec-named (`<method>` or
+ * `<method> <target>`) with the `mcp.*` attributes and its parent from `params._meta`. The
+ * transport wraps each message's tracer to add who called, and to drop the synthesised handshake.
  */
 import { Option, Predicate, Tracer, Array as Arr, String as Str } from "effect"
 import { Headers, HttpTraceContext } from "effect/http"
 import type { HttpServerRequest } from "effect/http"
 import type { FromClientEncoded } from "effect/rpc/RpcMessage"
 
-const RPC_SERVER_SPAN = /^McpServer\.@effect\/mcp\/([^/]+)\/(.+)$/
 const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
 const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
 /** A spec version is a date; anything else the caller sends is not recorded. */
@@ -76,7 +74,7 @@ export interface McpServerSpan {
 
 export const mcpServerSpan = (
 	message: FromClientEncoded & { readonly _tag: "Request" },
-	protocolVersion: string,
+	protocolVersion: string | undefined,
 	caller: McpCaller,
 ): McpServerSpan => {
 	const method = message.tag
@@ -85,11 +83,12 @@ export const mcpServerSpan = (
 	const meta = Predicate.hasProperty(payload, "_meta") ? payload._meta : undefined
 	const attributes = new Map([
 		["mcp.method.name", method],
-		["mcp.protocol.version", metaVersion(meta) ?? protocolVersion],
 		["jsonrpc.request.id", String(message.id)],
 		["network.transport", "tcp"],
 		["network.protocol.name", "http"],
 	])
+	const version = metaVersion(meta) ?? protocolVersion
+	if (version !== undefined) attributes.set("mcp.protocol.version", version)
 	if (caller.userAgent !== undefined) attributes.set("user_agent.original", caller.userAgent)
 	if (caller.clientAddress !== undefined) attributes.set("client.address", caller.clientAddress)
 	if (caller.userId !== undefined) attributes.set("user.id", caller.userId)
@@ -131,9 +130,9 @@ export const mcpServerSpan = (
 }
 
 /**
- * A tracer for one message: its `RpcServer` span is renamed and annotated, or,
- * for the handshake the transport synthesises, not recorded at all. Every other
- * span passes through untouched.
+ * A tracer for one message: its MCP server span gains the caller's attributes or,
+ * for the handshake the transport synthesises, is not recorded at all. Every
+ * other span passes through untouched.
  */
 export const mcpMessageTracer = (
 	base: Tracer.Tracer,
@@ -144,20 +143,22 @@ export const mcpMessageTracer = (
 	if (message._tag !== "Request") return base
 	return Tracer.make({
 		span(spanOptions) {
-			const match = RPC_SERVER_SPAN.exec(spanOptions.name)
-			if (match === null || match[2] !== message.tag || spanOptions.kind !== "server") {
-				return base.span(spanOptions)
-			}
+			// `McpServer` names the span `<method>` or `<method> <target>`, and sets its
+			// own `mcp.*` attributes only after the tracer has made it.
+			const isMcpServerSpan =
+				spanOptions.kind === "server" &&
+				(spanOptions.name === message.tag || Str.startsWith(`${message.tag} `)(spanOptions.name))
+			if (!isMcpServerSpan) return base.span(spanOptions)
 			if (options.synthetic) return base.span({ ...spanOptions, sampled: false })
-			const conventions = mcpServerSpan(message, match[1] ?? "", caller)
-			// `RpcServer` links the HTTP span even when, with no caller span, it is
-			// already the parent.
+			const conventions = mcpServerSpan(message, undefined, caller)
+			// The HTTP span is never also a link when it is already the parent.
 			const links = Option.match(spanOptions.parent, {
 				onNone: () => spanOptions.links,
 				onSome: (parent) =>
 					Arr.filter(spanOptions.links, (link) => link.span.spanId !== parent.spanId),
 			})
-			const span = base.span({ ...spanOptions, name: conventions.name, links })
+			// Sampled whatever the caller's `_meta` parent decided: Maple records its own server.
+			const span = base.span({ ...spanOptions, name: conventions.name, links, sampled: true })
 			conventions.attributes.forEach((value, key) => span.attribute(key, value))
 			return span
 		},

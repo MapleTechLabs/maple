@@ -36,16 +36,19 @@ const base64UrlJson = (value: unknown) => Buffer.from(JSON.stringify(value)).toS
  */
 const sessionWithoutOrganization = ({ privateKey = clerkKeys.privateKey, pending = false } = {}) => {
 	const now = Math.floor(Date.now() / 1000)
-	const data = `${base64UrlJson({ alg: "RS256", typ: "JWT", kid: "ins_test" })}.${base64UrlJson({
-		sub: "user_no_org",
-		sid: "sess_no_org",
-		iss: "https://clerk.maple.test",
-		iat: now - 5,
-		nbf: now - 5,
-		exp: now + 300,
-		v: 2,
-		...(pending ? { sts: "pending" } : undefined),
-	})}`
+	// `cat` is Clerk's session-token class; @clerk/backend 3.28+ rejects a session token without it.
+	const data = `${base64UrlJson({ alg: "RS256", typ: "JWT", kid: "ins_test", cat: "cl_B7d4PD111AAA" })}.${base64UrlJson(
+		{
+			sub: "user_no_org",
+			sid: "sess_no_org",
+			iss: "https://clerk.maple.test",
+			iat: now - 5,
+			nbf: now - 5,
+			exp: now + 300,
+			v: 2,
+			...(pending ? { sts: "pending" } : undefined),
+		},
+	)}`
 	return `${data}.${createSign("RSA-SHA256").update(data).sign(privateKey).toString("base64url")}`
 }
 

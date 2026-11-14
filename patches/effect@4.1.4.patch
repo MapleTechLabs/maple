@@ -1,8 +1,8 @@
 diff --git a/dist/ai/LanguageModel.js b/dist/ai/LanguageModel.js
-index d78ccb5..03ce448 100644
+index a45cb6a..85bdd0a 100644
 --- a/dist/ai/LanguageModel.js
 +++ b/dist/ai/LanguageModel.js
-@@ -339,16 +339,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -340,16 +340,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        previousResponseId: undefined,
        incrementalPrompt: undefined
      };
@@ -26,7 +26,7 @@ index d78ccb5..03ce448 100644
      return stream.pipe(Stream.mapArray(parts => {
        content.push(...parts);
        return parts;
-@@ -528,7 +531,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -529,7 +532,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // Retain pre-resolved results so Chat can recognize completed approvals on later turns.
      return [...preResolvedResults, ...content, ...toolResults];
    });
@@ -35,7 +35,7 @@ index d78ccb5..03ce448 100644
      const tracker = Option.getOrUndefined(yield* Effect.serviceOption(ResponseIdTracker.ResponseIdTracker));
      const toolChoice = options.toolChoice ?? "auto";
      const concurrency = options.concurrency ?? "unbounded";
-@@ -556,6 +559,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -557,6 +560,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
          if (part.type !== "response-metadata") emitted = true;
        })), Stream.catchReason("AiError", "InvalidRequestError", (_, error) => emitted ? Stream.fail(error) : params.streamText(fallbackOptions))) : params.streamText(requestOptions);
      };
@@ -79,7 +79,7 @@ index d78ccb5..03ce448 100644
      // Check for pending approvals that need resolution
      const {
        approved: allResolved,
-@@ -585,14 +625,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -586,14 +626,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(withUndeclaredToolCalls(Response.StreamPart(Toolkit.empty), deferToolCallValidation));
        const decodeParts = Schema.decodeEffect(schema);
@@ -95,7 +95,7 @@ index d78ccb5..03ce448 100644
      }
      // If there is a toolkit resolve and apply it to the provider options
      const toolkit = yield* resolveToolkit(options.toolkit);
-@@ -617,14 +650,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -618,14 +651,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(withUndeclaredToolCalls(Response.StreamPart(Toolkit.empty), deferToolCallValidation));
        const decodeParts = Schema.decodeEffect(schema);
@@ -111,7 +111,7 @@ index d78ccb5..03ce448 100644
      }
      // Pre-resolve pending tool approvals before calling the LLM
      let preResolvedStreamParts = [];
-@@ -684,14 +710,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -685,14 +711,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // resolving the tool calls that were generated
      if (options.disableToolCallResolution === true) {
        const encodedToolkit = deferToolCallValidation ? makeToolkitWithEncodedParameters(toolkit) : undefined;
@@ -128,10 +128,10 @@ index d78ccb5..03ce448 100644
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
 diff --git a/dist/http-api/HttpApiBuilder.js b/dist/http-api/HttpApiBuilder.js
-index f076d83..70938cd 100644
+index 3764c44..101ae35 100644
 --- a/dist/http-api/HttpApiBuilder.js
 +++ b/dist/http-api/HttpApiBuilder.js
-@@ -488,7 +488,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
+@@ -496,7 +496,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
   */
  export function handlerToRoute(api, group, handler, context) {
    const endpoint = handler.endpoint;

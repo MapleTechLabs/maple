@@ -397,13 +397,14 @@ What each kind of Worker keeps beside the module:
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts`, so a test can drive it
   without a runtime.
-- **The application database** (`api`, `ai`, `alerting`, `chat-bot`): on dev stages and the
-  US prd, `yield* MapleDb(consumer)` in the init binds `MAPLE_DB`:
-  `Hyperdrive.Connect(ManagedMapleDb)` on dev stages, `Hyperdrive.Connect` of a
-  `Hyperdrive.lookup` of the dashboard-managed config by id on the US prd (a lookup has no
-  state row, so destroy and nuke never touch it). On the EU prd the props bind the
-  declared config through `mapleDbEnv`, and so do previews (one shared config on their Neon
-  branch). The api's Workflow yields it
+- **The application database** (`api`, `ai`, `alerting`, `chat-bot`): on dev stages,
+  `yield* MapleDb` in the init binds `MAPLE_DB` with
+  `Hyperdrive.Connect(ManagedMapleDb)`. Everywhere else the props bind it through
+  `mapleDbEnv`: on the US prd a `Hyperdrive.Connection.lookup` of the dashboard-managed
+  config by id (`refMapleDbHyperdrives`; a lookup has no state row, so destroy and nuke never
+  touch it), on the EU prd the declared config, and on previews one shared config on their
+  Neon branch. A lookup is never `Connect`ed: its binding would be named after the config id,
+  not `MAPLE_DB`. The api's Workflow yields it
   too, from its outer phase. The root yields `ManagedMapleDb` first on dev stages so its
   `MAPLE_PG_URL` read happens outside any init, where alchemy's plan-time ConfigProvider
   would bind it as a secret. Every Postgres layer reads the `MapleDbConnection` port
@@ -567,9 +568,10 @@ the database rather than at the pool.
 `stg`. A new shared stage needs its own PlanetScale branch and per-consumer configs before
 it gets a `MAPLE_DB` binding at all.
 
-Binding a dashboard-managed config by id is a `Hyperdrive.lookup` read at plan time from the
-Worker's init (`MapleDb`, `packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is
-created and the origin credentials stay in the dashboard. A config id that no longer exists
+Binding a dashboard-managed config by id is a `Hyperdrive.Connection.lookup` read at plan time
+and bound from the Worker's props (`refMapleDbHyperdrives` and `mapleDbEnv`,
+`packages/infra/src/cloudflare/maple-db.ts`); no cloud resource is created and the origin
+credentials stay in the dashboard. A config id that no longer exists
 fails the plan.
 
 ## Status page custom domains

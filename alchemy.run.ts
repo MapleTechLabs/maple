@@ -33,6 +33,7 @@ import {
 	type MapleStackContext,
 	parseMapleDeploymentEffect,
 	prdOrigin,
+	refMapleDbHyperdrives,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
 	resolveWorkerName,
@@ -146,8 +147,8 @@ const declarePreviewDb = ({ stage, region }: MapleDeployment, profile: MapleProf
 
 /**
  * prd's `main` branch (its deploy applies migrations) and the ECS services' roles. On EU, also a
- * role and a Hyperdrive config per consumer on the role's direct origin; US prd binds dashboard
- * configs by id.
+ * role and a Hyperdrive config per consumer on the role's direct origin; US prd looks up its
+ * dashboard configs by id.
  */
 const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile) =>
 	Effect.gen(function* () {
@@ -179,6 +180,8 @@ const declarePrdDb = ({ stage, region }: MapleDeployment, profile: MapleProfile)
 			ingest: { id: ingestRole.id, url: ingestRole.connectionUrlPooled },
 			electric: electricRole && { id: electricRole.id, url: electricRole.connectionUrl },
 		}
+		if (profile.database === "ref")
+			return { ...resources, hyperdrives: refMapleDbHyperdrives(stage) } satisfies MapleDbResources
 		if (profile.database !== "declared")
 			return { ...resources, hyperdrives: undefined } satisfies MapleDbResources
 		// Distinct ids on purpose: alchemy keys state by id alone, across resource types.

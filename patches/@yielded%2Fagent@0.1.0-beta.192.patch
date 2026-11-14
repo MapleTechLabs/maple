@@ -1,0 +1,28 @@
+diff --git a/dist/AgentRuntime-CxG2iNOn.mjs b/dist/AgentRuntime-CxG2iNOn.mjs
+index 259ba24..c4b594f 100644
+--- a/dist/AgentRuntime-CxG2iNOn.mjs
++++ b/dist/AgentRuntime-CxG2iNOn.mjs
+@@ -3476,6 +3476,9 @@ const makeTurn = (agent, context, prompt, turn, priorToolCalls, options, restart
+ 			prompt: providerPrompt,
+ 			toolkit: deferredToolParameterToolkit(requestToolkit),
+ 			disableToolCallResolution: true,
++			// Patched (maple): Effect 4.1.4 validates encoded params through the toolkit's
++			// `toCodecJson`, which is strict here; the runtime validates every call itself.
++			toolCallValidation: "deferred",
+ 			...toolChoice === void 0 ? {} : { toolChoice }
+ 		}), options.budget).pipe((stream) => policy.runStatus === "appended" || options.context !== void 0 || options.transientContext !== void 0 ? stream.pipe(Stream.provideServiceEffect(ResponseIdTracker.ResponseIdTracker, ResponseIdTracker.make)) : stream, Stream.provideServiceEffect(Tracer.Tracer, modelTelemetryTracer(context, turnId, (span) => {
+ 			activeModelSpan = span;
+diff --git a/src/engine/internal/agent-runtime.ts b/src/engine/internal/agent-runtime.ts
+index 8e6506b..7f4a515 100644
+--- a/src/engine/internal/agent-runtime.ts
++++ b/src/engine/internal/agent-runtime.ts
+@@ -6586,6 +6586,9 @@ const makeTurn = <
+                         prompt: providerPrompt,
+                         toolkit: deferredToolParameterToolkit(requestToolkit),
+                         disableToolCallResolution: true,
++                        // Patched (maple): Effect 4.1.4 validates encoded params through the toolkit's
++                        // `toCodecJson`, which is strict here; the runtime validates every call itself.
++                        toolCallValidation: "deferred",
+                         // Exact required Tool selection preserves the toolkit. A oneOf
+                         // subset can drop other schemas and break the cached prefix.
+                         ...(toolChoice === undefined ? {} : { toolChoice }),
