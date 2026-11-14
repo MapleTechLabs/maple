@@ -1310,6 +1310,28 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
+	it.effect("reads a page again when Google's answer is cut short, instead of skipping its data", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let requestCountCalls = 0
+		const stub = stubFetch(calls, {
+			monitoring: (call) =>
+				call.metricType === REQUEST_COUNT && requestCountCalls++ === 0
+					? new Response('{"timeSeries": [', { headers: { "content-type": "application/json" } })
+					: onlyRequestCount(call),
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 0, rowsIngested: 2 })
+				assert.lengthOf(calls.monitoring, QUERY_COUNT + 1)
+				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).last_metrics_error)
+			}),
+		)
+	})
+
 	it.effect("tries a query Google failed once more, then skips it for this window", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
@@ -1391,6 +1413,36 @@ describe("GcpMetricsService", () => {
 				assert.deepStrictEqual([source.last_poll_at?.getTime(), source.last_poll_error], [now, null])
 				yield* TestClock.setTime(now + 10 * minute)
 				assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
+			}),
+		)
+	})
+
+	it.effect("a rate-limit hold never shortens a longer organization hold set while it polled", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		const orgHoldUntil = now + 5 * minute + 30 * minute
+		let limited = false
+		const stub = stubFetch(calls, {
+			monitoring: async (call) => {
+				if (!limited) return onlyRequestCount(call)
+				// A sibling's ingest refusal holds the whole organization while this poll runs.
+				await executeSql(testDb, "UPDATE gcp_connectors SET metrics_hold_until = $1", [
+					new Date(orgHoldUntil).toISOString(),
+				])
+				return googleError(429, "RESOURCE_EXHAUSTED")
+			},
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				limited = true
+				yield* TestClock.setTime(now + 5 * minute)
+				yield* pollAll
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(state.metrics_hold_until?.getTime(), orgHoldUntil)
 			}),
 		)
 	})

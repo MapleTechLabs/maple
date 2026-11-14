@@ -188,6 +188,8 @@ const google = (
 		detail: googleDetail,
 		timeout: REQUEST_TIMEOUT,
 		retry: Schedule.recurs(1),
+		// A page that does not decode is read once more, as before the kit.
+		retryInvalidResponse: true,
 		maxRetryAfter: Duration.zero,
 	})
 

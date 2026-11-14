@@ -397,16 +397,29 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 				yield* lease.hold(holdUntil)
 				// A hold fails every connector it holds, so each of their sources says so.
 				const siblings = yield* dbExecute((db) =>
-					db.run(
-						PG.update(GcpConnectors)
-							.set({ lastMetricsError: message, metricsHoldUntil: holdUntil })
-							.where(($) => [
-								$.orgId.eq(connector.orgId),
-								$.metricsEnabled.eq(true),
-								$.id.neq(connector.id),
-							])
-							.returning("sourceId"),
-					),
+					Effect.gen(function* () {
+						// The longest hold wins: a sibling's own longer hold is not cut short.
+						yield* db.run(
+							PG.update(GcpConnectors)
+								.set({ metricsHoldUntil: holdUntil })
+								.where(($) => [
+									$.orgId.eq(connector.orgId),
+									$.metricsEnabled.eq(true),
+									$.id.neq(connector.id),
+									PG.or($.metricsHoldUntil.isNull(), $.metricsHoldUntil.lt(holdUntil)),
+								]),
+						)
+						return yield* db.run(
+							PG.update(GcpConnectors)
+								.set({ lastMetricsError: message })
+								.where(($) => [
+									$.orgId.eq(connector.orgId),
+									$.metricsEnabled.eq(true),
+									$.id.neq(connector.id),
+								])
+								.returning("sourceId"),
+						)
+					}),
 				)
 				yield* Effect.forEach(
 					[connector, ...siblings],
@@ -860,17 +873,31 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 								.returning(),
 						),
 					).pipe(Effect.map((rows) => rows[0] ?? null)),
-				write: (claimed, set) =>
+				write: (claimed, { metricsHoldUntil: hold, ...rest }) =>
 					dbExecute((db) =>
-						db.run(
-							PG.update(GcpConnectors)
-								.set(set)
-								.where(($) => [
-									$.id.eq(claimed.id),
-									leaseStillOurs($.metricsLeaseUntil, claimed.metricsLeaseUntil),
-								])
-								.returning("id"),
-						),
+						Effect.gen(function* () {
+							// A hold never shortens one already on the row (a sibling's organization hold).
+							if (typeof hold === "number") {
+								yield* db.run(
+									PG.update(GcpConnectors)
+										.set({ metricsHoldUntil: hold })
+										.where(($) => [
+											$.id.eq(claimed.id),
+											leaseStillOurs($.metricsLeaseUntil, claimed.metricsLeaseUntil),
+											PG.or($.metricsHoldUntil.isNull(), $.metricsHoldUntil.lt(hold)),
+										]),
+								)
+							}
+							return yield* db.run(
+								PG.update(GcpConnectors)
+									.set(rest)
+									.where(($) => [
+										$.id.eq(claimed.id),
+										leaseStillOurs($.metricsLeaseUntil, claimed.metricsLeaseUntil),
+									])
+									.returning("id"),
+							)
+						}),
 					).pipe(Effect.map((rows) => rows.length > 0)),
 				// Without a hold of its own the release leaves the column: an organization hold set
 				// by another connector's tick runs out instead of being lifted.
