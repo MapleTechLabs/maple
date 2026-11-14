@@ -5,6 +5,7 @@ import {
 	SearchConsoleAvailableSitesResponse,
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
+	VercelIntegrationStatus,
 } from "@maple/domain/http"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { SupabaseProjectRef } from "@maple/primitives"
@@ -20,8 +21,16 @@ import { ChatMessage } from "./chat"
 import { cardStatusOf, overviewOf } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { CHAT_PROVIDER, providerModuleOf, RAILWAY_PROVIDER, SUPABASE_PROVIDER } from "./provider-modules"
+import {
+	CHAT_PROVIDER,
+	providerModuleOf,
+	RAILWAY_PROVIDER,
+	SUPABASE_PROVIDER,
+	VERCEL_PROVIDER,
+} from "./provider-modules"
 import { SearchConsoleMessage } from "./search-console"
+import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
+import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
 import { receivedCallback, receivedRelay } from "./update-connect"
 
@@ -39,6 +48,15 @@ const railway = (message: RailwayMessage) => Message.GotRailwayMessage({ message
 const supabase = (message: SupabaseMessage) => Message.GotSupabaseMessage({ message })
 const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
 const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsoleMessage({ message })
+const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
+
+const withVercel = (search: Model["search"], status: VercelIntegrationStatus, nowMs = NOW): Model => {
+	const model = { ...init({ search }, context).model, nowMs }
+	return pageUpdate(
+		model,
+		Message.CompletedLoadVercel({ key: model.statuses.vercel.key ?? "", result: Result.succeed(status) }),
+	).model
+}
 
 const chatList = Schema.decodeSync(V2ChatConnectorList)({
 	object: "chat_connector_list",
@@ -317,6 +335,45 @@ describe("provider modules", () => {
 		expect(
 			names(receivedRelay(supabaseModel, context, "supabase", "success", "").commands),
 		).not.toContain("SyncSupabase")
+	})
+
+	test("Vercel's settle poll runs only on its own card while a fresh connection waits", () => {
+		const settling = new VercelIntegrationStatus({
+			...VERCEL_STATUS,
+			connectedAt: NOW - 60_000,
+			lastSuccessAt: null,
+		})
+		const ticker = VERCEL_PROVIDER.ticker
+		expect(ticker?.isActive(withVercel({ integration: "vercel" }, settling))).toBe(true)
+		expect(ticker?.isActive(withVercel({ integration: "vercel" }, VERCEL_STATUS))).toBe(false)
+		expect(ticker?.isActive(withVercel({}, settling))).toBe(false)
+		const shown = withVercel({ integration: "vercel" }, settling)
+		// The tick re-reads the status, then the clock that ends the window.
+		const sent = ticker === null ? [] : names(pageUpdate(shown, ticker.tick).commands)
+		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeGreaterThanOrEqual(0)
+		expect(sent.indexOf("LoadIntegrationsVercelStatus")).toBeLessThan(
+			sent.indexOf("ReadIntegrationsClock"),
+		)
+	})
+
+	test("a module's own dialog stays in its slot, and closing it toasts before the re-read", () => {
+		const model = withVercel({ integration: "vercel" }, VERCEL_STATUS)
+		const opened = pageUpdate(model, vercel(VercelMessage.ClickedConfigure({ target: "token" }))).model
+		expect(opened.vercelCard.configure?.target).toBe("token")
+		expect(opened.disconnect).toBe(model.disconnect)
+		const done = pageUpdate(
+			opened,
+			vercel(VercelMessage.CompletedConnect({ mode: "token", teamName: "Acme", error: null })),
+		)
+		expect(done.model.vercelCard.configure).toBeNull()
+		expect(done.outMessage).toEqual(
+			PageOutMessage.RequestedToast({
+				type: "success",
+				title: "Vercel token updated",
+				description: "",
+			}),
+		)
+		expect(names(done.commands)).toContain("LoadIntegrationsVercelStatus")
 	})
 
 	test("the header badge and catalog row of a module come from the module", () => {

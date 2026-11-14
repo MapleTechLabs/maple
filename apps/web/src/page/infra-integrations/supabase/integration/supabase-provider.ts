@@ -46,7 +46,7 @@ export const SUPABASE: ProviderModule<SupabaseIntegrationStatus, SupabaseCardMod
 		isActive: (_model, env) => env.isShown && isSupabaseConnected(env),
 		tick: SupabaseMessage.TickedClock(),
 	},
-	card: supabaseCard,
+	card: (h, model, timeZone) => [supabaseCard(h, model, timeZone)],
 	flow: supabaseFlow,
 	flowView: supabaseFlowView,
 	cardStatus: (slot) =>

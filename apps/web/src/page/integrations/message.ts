@@ -15,9 +15,7 @@ import {
 	SearchConsoleIntegrationStatus,
 	SupabaseIntegrationStatus,
 	VcsRepositoryId,
-	VercelDiscoverResponse,
 	VercelIntegrationStatus,
-	VercelProjectScope,
 } from "@maple/domain/http"
 import {
 	V2AwsConnection,
@@ -48,7 +46,6 @@ import { LoadFailure } from "@maple/views/data/load-failure"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Popover from "@maple/views/ui/popover"
-import * as RadioGroup from "@maple/views/ui/radio-group"
 import * as Field from "@maple/views/ui/field"
 import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
@@ -68,7 +65,7 @@ import {
 	LogVolume,
 	RemovedConnector,
 } from "../infra-integrations/gcp/integration/gcp-schema"
-import { VercelConfigureTarget, VercelSignal } from "../infra-integrations/vercel/integration/vercel-schema"
+import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import {
 	AwsRemovedStack,
 	AwsSetupMethod,
@@ -239,41 +236,7 @@ export const Message = defineMessageUnion({
 	GotSupabaseMessage: { message: SupabaseMessage },
 	GotSearchConsoleMessage: { message: SearchConsoleMessage },
 	GotChatMessage: { message: ChatMessage },
-	/** Every 15 s while a fresh connection waits for its first sync. */
-	TickedVercelSettle: {},
-	ClickedVercelSync: {},
-	CompletedVercelSync: { failure: Schema.NullOr(LoadFailure) },
-	/** An issue alert's "Re-apply drains": an empty settings save. */
-	ClickedVercelReapply: {},
-	ClickedVercelConfigure: { target: VercelConfigureTarget },
-	GotVercelConfigureDialogMessage: { message: Dialog.Message },
-	GotVercelTokenMessage: { message: Field.Message },
-	/** The token step's form submit: look the token up, or save it as the new token. */
-	SubmittedVercelToken: {},
-	CompletedVercelDiscover: {
-		forTeam: Schema.NullOr(Schema.String),
-		response: Schema.NullOr(VercelDiscoverResponse),
-		error: Schema.NullOr(Schema.String),
-	},
-	GotVercelTeamMessage: { message: RadioGroup.Message },
-	SubmittedVercelTeam: {},
-	ClickedVercelConfigureBack: {},
-	ToggledVercelSignal: { signal: VercelSignal },
-	ChangedVercelScope: { scope: VercelProjectScope },
-	ToggledVercelProject: { id: Schema.String },
-	ChangedVercelProjectQuery: { value: Schema.String },
-	ChangedVercelSampling: { value: Schema.String },
-	SubmittedVercelConnect: {},
-	CompletedVercelConnect: {
-		mode: Schema.Literals(["connect", "token"]),
-		teamName: Schema.NullOr(Schema.String),
-		error: Schema.NullOr(Schema.String),
-	},
-	/** The settings step's "Save and apply": straight to Vercel, or through the confirmation. */
-	ClickedVercelSave: {},
-	GotVercelConfirmDialogMessage: { message: Dialog.Message },
-	ConfirmedVercelSave: {},
-	CompletedVercelSave: { isReapply: Schema.Boolean, error: Schema.NullOr(Schema.String) },
+	GotVercelMessage: { message: VercelMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },

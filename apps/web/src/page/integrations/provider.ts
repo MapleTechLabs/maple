@@ -104,8 +104,17 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 		isActive: (model: M, env: Omit<ProviderEnv<S>, "context">) => boolean
 		tick: Msg
 	}>
-	/** The source page's card, under the integration's header. */
-	card: (h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html
+	/** The source page's card, under the integration's header; `focusId`: the one source shown. */
+	card: (
+		h: HtmlBuilder<Message>,
+		model: Model,
+		timeZone: string,
+		focusId: string | null,
+	) => ReadonlyArray<Html>
+	/** The connected header's actions. */
+	headerActions?: (h: HtmlBuilder<Message>, model: Model) => ReadonlyArray<Html>
+	/** The connected header's line under the title, in place of the overview's. */
+	headerStatus?: (h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html | undefined
 	/** Where the provider stands in `/sources/new`'s flow, and the step's view; the generic flow without. */
 	flow?: (model: Model) => FlowSpec
 	flowView?: (h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html

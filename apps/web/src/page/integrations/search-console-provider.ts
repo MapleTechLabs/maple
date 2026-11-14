@@ -41,7 +41,7 @@ export const SEARCH_CONSOLE: ProviderModule<
 	// A reconnect as the same account keeps the grant key, so its property list is re-read outright.
 	onConnected: (model, env) => requestSites(model, env, "Supersede"),
 	onRelayedConnect: (model, env) => requestSites(model, env, "Supersede"),
-	card: (h, model) => searchConsoleCard(h, model),
+	card: (h, model) => [searchConsoleCard(h, model)],
 	cardStatus: (slot) =>
 		fold(
 			slot,

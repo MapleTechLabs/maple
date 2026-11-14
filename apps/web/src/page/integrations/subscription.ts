@@ -19,8 +19,6 @@ import { planetscaleStatusOf } from "../infra-integrations/planetscale/integrati
 import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
 import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
 import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
-import { vercelStatusOf } from "../infra-integrations/vercel/integration/update-vercel"
-import { isVercelSettling, VERCEL_SETTLING_REFRESH_MS } from "../infra-integrations/vercel/integration/vercel"
 import { backoffPollTicks, pollTicks, whenPresent } from "../../data/poll"
 
 /** The popup's document could not be written: it is already on the provider's cross-origin page. */
@@ -168,12 +166,6 @@ const CLOUDFLARE_INGEST_MS = 30_000
 
 /** A metric stream delivers about every minute. */
 const AWS_WATCH_MS = 60_000
-
-const isVercelPolling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "vercel") return false
-	const status = vercelStatusOf(model)
-	return status !== null && isVercelSettling(status, model.nowMs)
-}
 
 /** A setup is open for a connection whose stack Maple has not assumed yet. */
 const isAwsPending = (model: Model): boolean => {
@@ -368,17 +360,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 				}),
 				dependenciesToStream: ({ selectedId }) =>
 					selectedId === null ? Stream.empty : every(10_000, () => Message.TickedChecksRefresh()),
-			},
-		),
-		/** `useIntervalRefresh(refreshStatus, { intervalMs: 15_000, enabled: settling })`, the usage too. */
-		vercelSettle: entry(
-			{ isSettling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isSettling: isVercelPolling(model) }),
-				dependenciesToStream: ({ isSettling }) =>
-					isSettling
-						? every(VERCEL_SETTLING_REFRESH_MS, () => Message.TickedVercelSettle())
-						: Stream.empty,
 			},
 		),
 		awsPending: entry(

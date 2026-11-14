@@ -2,6 +2,7 @@ import { Array as Arr, Option } from "effect"
 import { describe, expect, test } from "vitest"
 import { vercelHealth, vercelIssues } from "../page/infra-integrations/vercel/integration/vercel-model"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
+import { VercelMessage } from "../page/infra-integrations/vercel/integration/vercel"
 import { init, Message, update } from "./vercel-lab"
 
 const NOW = Date.UTC(2026, 9, 20, 12)
@@ -69,7 +70,10 @@ describe("vercel lab", () => {
 		)
 		const connected = update(
 			settings,
-			Message.GotHubMessage({ index, message: IntegrationsMessage.SubmittedVercelConnect() }),
+			Message.GotHubMessage({
+				index,
+				message: IntegrationsMessage.GotVercelMessage({ message: VercelMessage.SubmittedConnect() }),
+			}),
 		)
 		expect(sceneOf(connected.model, "connect").hub.vercelCard.configure).toBeNull()
 	})

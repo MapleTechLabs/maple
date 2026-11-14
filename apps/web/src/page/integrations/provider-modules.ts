@@ -10,6 +10,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { type IntegrationId, integrationOfSearch } from "./catalog"
 import { SEARCH_CONSOLE } from "./search-console-provider"
 import { LINEAR } from "./linear-provider"
+import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider"
 import { CHAT } from "./chat-provider"
 import { ReadClock, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
@@ -53,7 +54,14 @@ export type MountedProvider = Readonly<{
 	onConfirmDisconnect: ((model: Model, context: PageContext) => Return) | null
 	isDisconnecting: (model: Model) => boolean
 	ticker: Readonly<{ everyMs: number; isActive: (model: Model) => boolean; tick: Message }> | null
-	card: (h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html
+	card: (
+		h: HtmlBuilder<Message>,
+		model: Model,
+		timeZone: string,
+		focusId: string | null,
+	) => ReadonlyArray<Html>
+	headerActions: ((h: HtmlBuilder<Message>, model: Model) => ReadonlyArray<Html>) | null
+	headerStatus: ((h: HtmlBuilder<Message>, model: Model, timeZone: string) => Html | undefined) | null
 	/** `null`: the generic flow. */
 	flow: ((model: Model) => FlowSpec) | null
 	flowView: ((h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html) | null
@@ -184,6 +192,8 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 						tick: spec.toHub(subscription.tick),
 					},
 		card: module.card,
+		headerActions: module.headerActions ?? null,
+		headerStatus: module.headerStatus ?? null,
 		flow: module.flow ?? null,
 		flowView: module.flowView ?? null,
 		cardStatus: (statuses, context) => module.cardStatus(spec.slot(statuses), context),
@@ -236,6 +246,15 @@ export const CHAT_PROVIDER = mount({
 	toHub: (message) => Message.GotChatMessage({ message }),
 })
 
+export const VERCEL_PROVIDER = mount({
+	module: VERCEL,
+	statusName: "vercel",
+	slot: (statuses) => statuses.vercel,
+	get: (model) => model.vercelCard,
+	set: (model, vercelCard) => ({ ...model, vercelCard }),
+	toHub: (message) => Message.GotVercelMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -243,6 +262,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	SEARCH_CONSOLE_PROVIDER,
 	LINEAR_PROVIDER,
 	CHAT_PROVIDER,
+	VERCEL_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

@@ -28,7 +28,7 @@ export const LINEAR: ProviderModule<LinearIntegrationStatus, null, never> = {
 	statusRead: LINEAR_STATUS_READ,
 	init: () => null,
 	update: (model) => ({ model }),
-	card: (h, model) => linearCard(h, model),
+	card: (h, model) => [linearCard(h, model)],
 	cardStatus: (slot) =>
 		fold(
 			slot,
