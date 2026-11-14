@@ -5,6 +5,7 @@ import {
 	FUNNEL_EMPTY_GROUP_LABEL,
 	ProductEventsPathsWidgetParams,
 	funnelStepDetails,
+	funnelStepLabel,
 	funnelWidgetBreakdownRows,
 	funnelWidgetRows,
 	funnelWidgetRowsWithDetails,
@@ -64,12 +65,43 @@ describe("funnelWidgetBreakdownRows", () => {
 	})
 })
 
+describe("funnelStepLabel", () => {
+	it("names an event step's filter, a page's host and a session step's dimension", () => {
+		expect(
+			Arr.map(
+				[
+					{ kind: "event", eventName: "plan_started" },
+					{
+						kind: "event",
+						eventName: "plan_started",
+						attributeEquals: { plan: "startup", seats: "5" },
+					},
+					{ kind: "page", pagePath: "/pricing", host: "acme.dev" },
+					{ kind: "session", dimension: "utmSource", value: "twitter" },
+				] satisfies ReadonlyArray<FunnelStep>,
+				funnelStepLabel,
+			),
+		).toEqual([
+			"plan_started",
+			"plan_started (plan = startup, seats = 5)",
+			"acme.dev/pricing",
+			"UTM source: twitter",
+		])
+	})
+})
+
 describe("funnel drop-off details", () => {
 	it("merges timing and leavers onto the step rows, by 1-based step", () => {
 		const details = funnelStepDetails(
 			[
-				{ step: 2, p50Ms: 60_000, p90Ms: 3_600_000 },
-				{ step: 3, p50Ms: 0, p90Ms: 0 },
+				{
+					step: 2,
+					p50Ms: 60_000,
+					p90Ms: 3_600_000,
+					sinceStartP50Ms: 60_000,
+					sinceStartP90Ms: 3_600_000,
+				},
+				{ step: 3, p50Ms: 0, p90Ms: 0, sinceStartP50Ms: 0, sinceStartP90Ms: 0 },
 			],
 			[
 				{ step: 2, next: "", count: 5 },
@@ -91,6 +123,8 @@ describe("funnel drop-off details", () => {
 			value: 2,
 			p50Ms: 60_000,
 			p90Ms: 3_600_000,
+			sinceStartP50Ms: 60_000,
+			sinceStartP90Ms: 3_600_000,
 			leavers: [
 				{ name: "", count: 5 },
 				{ name: "/docs", count: 3 },

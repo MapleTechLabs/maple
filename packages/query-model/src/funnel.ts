@@ -1,4 +1,4 @@
-import { Schema, Array as Arr } from "effect"
+import { Schema, Array as Arr, Record as Rec } from "effect"
 
 // A product-event funnel definition, as every surface that stores one keeps
 // it: the /analytics URL, a dashboard funnel widget, an MCP tool call, and the
@@ -72,8 +72,14 @@ export const FUNNEL_SESSION_DIMENSION_LABEL = {
  */
 export const funnelStepLabel = (step: FunnelStep): string => {
 	switch (step.kind) {
-		case "event":
-			return step.eventName
+		case "event": {
+			// A filtered step names its filter, so two steps on one event read apart.
+			const filter = Arr.join(
+				Arr.map(Rec.toEntries(step.attributeEquals ?? {}), ([key, value]) => `${key} = ${value}`),
+				", ",
+			)
+			return filter === "" ? step.eventName : `${step.eventName} (${filter})`
+		}
 		case "page":
 			return step.host ? `${step.host}${step.pagePath}` : step.pagePath
 		case "session":
@@ -121,7 +127,15 @@ export const FUNNEL_POPULATION_FILTER_FIELDS = [
 ] as const satisfies ReadonlyArray<FunnelPopulationFilterField>
 
 /** Groups a dashboard funnel widget draws when broken down — one bar per group per step. */
-export const FUNNEL_WIDGET_BREAKDOWN_LIMIT = 6
+const FUNNEL_WIDGET_BREAKDOWN_LIMIT = 6
+/** The most groups a breakdown answers; mirrors `FUNNEL_BREAKDOWN_MAX_GROUPS` in the query engine. */
+export const FUNNEL_BREAKDOWN_MAX_LIMIT = 20
+
+/** How many groups a breakdown asks for: the widget's six unless a reader with room asks for more. */
+export const funnelBreakdownLimit = (requested: number | undefined): number =>
+	requested === undefined || !Number.isFinite(requested)
+		? FUNNEL_WIDGET_BREAKDOWN_LIMIT
+		: Math.min(FUNNEL_BREAKDOWN_MAX_LIMIT, Math.max(1, Math.round(requested)))
 
 /**
  * The params bag of the `product_events_funnel` widget route — the stored
@@ -135,6 +149,8 @@ export const ProductEventsFunnelWidgetParams = Schema.Struct({
 	keyBy: Schema.optional(FunnelKeyBy),
 	windowSeconds: Schema.optional(Schema.Number),
 	breakdownBy: Schema.optional(FunnelBreakdownBy),
+	/** Groups a breakdown answers, 1 to 20; a tile draws six, a table has room for more. */
+	breakdownLimit: Schema.optional(Schema.Number),
 	/** Also fetch the time between steps and where the leavers went — the drop-off view's extras. */
 	details: Schema.optional(Schema.Boolean),
 	...FunnelPopulationFilters.fields,
@@ -226,18 +242,33 @@ export interface FunnelStepDetails {
 	/** Milliseconds from the previous step's event; absent on step 1. */
 	readonly p50Ms?: number
 	readonly p90Ms?: number
+	/** Milliseconds from step 1's event; on the last step, how long the whole funnel took. */
+	readonly sinceStartP50Ms?: number
+	readonly sinceStartP90Ms?: number
 	/** Most common next events of persons who stopped before this step; absent on step 1. */
 	readonly leavers?: ReadonlyArray<FunnelLeaver>
 }
 
 /** Query rows → per-step details keyed by 1-based step. */
 export const funnelStepDetails = (
-	timing: ReadonlyArray<{ readonly step: number; readonly p50Ms: number; readonly p90Ms: number }>,
+	timing: ReadonlyArray<{
+		readonly step: number
+		readonly p50Ms: number
+		readonly p90Ms: number
+		readonly sinceStartP50Ms: number
+		readonly sinceStartP90Ms: number
+	}>,
 	leavers: ReadonlyArray<{ readonly step: number; readonly next: string; readonly count: number }>,
 ): ReadonlyMap<number, FunnelStepDetails> => {
 	const byStep = new Map<number, FunnelStepDetails>()
 	for (const row of timing) {
-		byStep.set(row.step, { ...byStep.get(row.step), p50Ms: row.p50Ms, p90Ms: row.p90Ms })
+		byStep.set(row.step, {
+			...byStep.get(row.step),
+			p50Ms: row.p50Ms,
+			p90Ms: row.p90Ms,
+			sinceStartP50Ms: row.sinceStartP50Ms,
+			sinceStartP90Ms: row.sinceStartP90Ms,
+		})
 	}
 	for (const row of leavers) {
 		const current = byStep.get(row.step) ?? {}

@@ -23,13 +23,8 @@ rather than by a separate `drop_web_events` migration.
    gateway now writes the new `session_events` columns and `product_events` directly.
 3. **Secrets** (api worker): `CLERK_WEBHOOK_SECRET`, `AUTUMN_WEBHOOK_SECRET` (both routes answer
    503 until set); optional `MAPLE_PRODUCT_EVENTS_INGEST_KEY` (defaults to `MAPLE_INGEST_KEY`).
-   Register `POST /webhooks/autumn` (`billing.updated`) in Autumn. Clerk is one instance for
-   every region, so register `POST /webhooks/clerk` once per regional API, each with its own
-   signing secret in that region's environment: `organizationMembership.created/updated/deleted`
-   and `user.deleted` everywhere, `user.created` on the default region only. Every region
-   revokes a removed member's credentials (a key is honoured by the instance that minted it); the
-   organization's home region writes the audit entry and the product event. Without these
-   endpoints a removed member keeps every credential they made.
+   Register `POST /webhooks/clerk` (event `user.created`) in Clerk and `POST /webhooks/autumn`
+   (`billing.updated`) in Autumn.
 4. **Ingest**: `INGEST_TINYBIRD_DATASOURCE_PRODUCT_EVENTS` defaults to `product_events`; nothing
    to set unless the datasource name differs.
 5. Publish `@maple-dev/effect-sdk` / `@maple-dev/browser` so customers' events start carrying
@@ -499,30 +494,40 @@ ClickHouse.
 ## How a funnel is counted (2026-11-14)
 
 Every funnel query orders a person's rows by one key, `orderKey` in
-`packages/query-engine/src/ch/queries/product-events.ts`: microseconds times 1024, plus
-`Seq % 1024`. `Seq` is what tells a page load from the `track()` call it fires in the same
-millisecond; server rows carry `Seq` 0 and order by their own clock. Before this key, counts
-ordered by millisecond only, so two rows in one millisecond converted in either order.
+`packages/query-engine/src/ch/queries/product-events.ts`: milliseconds times 2^20, plus
+`Seq % 2^20`. `Seq` is what tells a page load from the `track()` call it fires in the same
+millisecond. Before this key, counts ordered by millisecond only, so two rows in one millisecond
+converted in either order.
 
+- **A tie** is two rows with the same millisecond and `Seq`. Direct-ingested rows always carry
+  `Seq` 0, so a backend that sends two events in one request ties them. Tied rows are read in step
+  order, so they convert. A session entry ties with its session's first event the same way and
+  comes first.
 - **An attempt** starts at a step-1 row and takes, for each later step, the first later row that
-  matches and is still inside the window of the start. One row serves one step.
+  matches and is no more than the window after the start. One row serves one step.
+- **The window** is at most 366 days, the year `product_events` keeps plus a day.
 - **The level** is the person's deepest attempt. That is `windowFunnel` whenever no row can match
-  two steps. A funnel that repeats a step (`product_viewed`, `product_viewed`, `add_to_cart`) is
-  read from `walkQuery` instead: plain `windowFunnel` lets one row satisfy both repeats, and its
-  `strict_once` mode, which forbids that, took 31 s on 72,000 rows where the walk takes 26 ms.
+  two steps. Two steps can share a row when the funnel repeats a step (`product_viewed`,
+  `product_viewed`, `add_to_cart`), or when an event step on a reserved name sits beside a page
+  step (a page view is stored as a `$pageview` event). Those funnels are read from `walkQuery`
+  instead: plain `windowFunnel` lets one row satisfy both steps, and its `strict_once` mode, which
+  forbids that, took 31 s on 72,000 rows where the walk takes 26 ms.
 - **The chain** is the earliest attempt that gets that deep. A first try that ran out of time gives
   way to the later one that converted. Time between steps and "where the leavers went" are both
-  read from the chain, so a funnel never reports a time for people it did not count. This replaced
-  a walk from the person's first step-1 event, which dropped everyone whose first attempt expired
-  and returned nothing at all when step 1 was a session step.
+  read from the chain, by position in the person's rows as the walk counts them, so a funnel
+  never reports a time for people it did not count. This replaced a walk from the person's first
+  step-1 event, which dropped everyone whose first attempt expired and returned nothing at all
+  when step 1 was a session step.
+- **A leaver** is anyone who stopped short, including a visitor whose session matched step 1 and
+  who sent no event at all: they count under "nothing after".
 - **A page step** matches a browser page view or a mobile screen view (`Kind` `navigation` or
   `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way.
 
 `apps/cli/test/funnel-scenarios.test.ts` holds this definition as a plain TypeScript reference
 funnel and runs the compiled SQL against it on chDB: four example products (a SaaS signup with
 server-side steps, a shop checkout with restarts, a mobile onboarding, a two-host content site),
-hand-built edge cases and random histories. It needs no Docker; run it with
+hand-built edge cases and random histories with tied rows. It needs no Docker; run it with
 `bun test test/funnel-scenarios.test.ts` in `apps/cli`.
 
-On 2.9M rows and 200,000 people (chDB, five steps): counts 30 ms, time between steps 80 ms (118 ms
-before), leavers 122 ms (133 ms before), a funnel with a repeated step 45 ms.
+On 2.9M rows and 200,000 people (chDB, five steps): counts 30 ms, time between steps 100 ms (118 ms
+before), leavers 155 ms (133 ms before), a funnel with a repeated step 41 ms.
