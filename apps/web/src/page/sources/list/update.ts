@@ -1,27 +1,30 @@
 import * as Policy from "@maple/domain/policy"
-import { Option } from "effect"
-import { Command } from "foldkit"
-import * as ToggleGroup from "@maple/views/ui/toggle-group"
+import { Option, Result } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { sourcesListKey, sourcesUsageKey } from "../kit/data"
+import { RESUME_COPY, sourcesListKey, sourcesUsageKey } from "../kit/data"
 import { isClerkAuthEnabled } from "../../../platform/auth-mode"
-import { FetchSourcesList, FetchSourcesUsage, ReadSourcesClock, ReadSourcesGrants } from "./command"
+import {
+	FetchSourcesList,
+	FetchSourcesUsage,
+	ReadSourcesClock,
+	ReadSourcesGrants,
+	ResumeSource,
+} from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
-const loadList = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
-	const key = sourcesListKey(context.orgId)
-	return Option.match(Keyed.request(model.list, key, mode), {
+/** `Supersede` after a write: it re-reads even while an earlier read is still in flight. */
+const loadList = (model: Model, context: PageContext, mode: Keyed.ReadMode): Return =>
+	Option.match(Keyed.requestFor(model.list, sourcesListKey(context.orgId), mode), {
 		onNone: () => ({ model }),
 		onSome: (list) => ({
 			model: { ...model, list },
-			commands: [FetchSourcesList({ key, refresh: mode === "Refresh" })],
+			commands: [FetchSourcesList({ key: list.key, refresh: mode !== "Load" })],
 		}),
 	})
-}
 
 const loadUsage = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
 	const key = sourcesUsageKey(context.orgId)
@@ -42,20 +45,14 @@ const load = (model: Model, context: PageContext, mode: Keyed.RequestMode): Retu
 }
 
 export const init = (_route: unknown, context: PageContext): Return => {
-	const kindFilter = ToggleGroup.init({ label: "Filter sources by kind", values: ["all"] })
-	const attentionFilter = ToggleGroup.init({
-		label: "Filter sources by health",
-		isMultiple: true,
-		values: [],
-	})
 	const loaded = load(
 		{
 			nowMs: null,
 			grants: isClerkAuthEnabled ? [] : Policy.allPermissions,
 			list: Keyed.idle(),
 			usage: Keyed.idle(),
-			kindFilter,
-			attentionFilter,
+			search: "",
+			resuming: null,
 		},
 		context,
 		"Load",
@@ -81,31 +78,29 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),
 		ClickedRetry: () => load(model, context, "Refresh"),
-		GotKindFilterMessage: ({ message: child }) => {
-			const next = ToggleGroup.update(model.kindFilter, child)
-			return {
-				// Unpressing the active chip falls back to All, like the zone filter.
-				model: {
-					...model,
-					kindFilter:
-						next.model.values.length === 0 ? { ...next.model, values: ["all"] } : next.model,
-				},
-				commands: Command.mapMessages(next.commands ?? [], (inner) =>
-					Message.GotKindFilterMessage({ message: inner }),
-				),
-			}
-		},
-		GotAttentionFilterMessage: ({ message: child }) => {
-			const next = ToggleGroup.update(model.attentionFilter, child)
-			return {
-				model: { ...model, attentionFilter: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (inner) =>
-					Message.GotAttentionFilterMessage({ message: inner }),
-				),
-			}
-		},
-		ClickedSource: ({ url }) => ({
-			model,
-			outMessage: PageOutMessage.RequestedNavigation({ url, isReplace: false }),
-		}),
+		ChangedSearch: ({ value }) => ({ model: { ...model, search: value } }),
+		ClickedResume: ({ id }) =>
+			model.resuming !== null
+				? { model }
+				: { model: { ...model, resuming: id }, commands: [ResumeSource({ id })] },
+		// The list is read again on success, so the row leaves "Not sending" once it sends.
+		CompletedResume: ({ result }) =>
+			Result.match(result, {
+				onFailure: (failure) => ({
+					model: { ...model, resuming: null },
+					outMessage: PageOutMessage.RequestedToast({
+						type: "error",
+						title: RESUME_COPY.error,
+						description: failure.message,
+					}),
+				}),
+				onSuccess: () => ({
+					...loadList({ ...model, resuming: null }, context, "Supersede"),
+					outMessage: PageOutMessage.RequestedToast({
+						type: "success",
+						title: RESUME_COPY.success,
+						description: "",
+					}),
+				}),
+			}),
 	})
