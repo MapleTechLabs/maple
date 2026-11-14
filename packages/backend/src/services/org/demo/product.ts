@@ -4,17 +4,27 @@ import { Array as Arr, Random } from "effect"
 
 // Demo browser sessions and product events: `session_replays` rows (what web analytics and the
 // funnel population filters read) and the `product_events` page views and track() calls inside
-// them, walking a signup funnel so Product analytics has events, funnels and paths to show.
+// them, walking a signup funnel so Product analytics has events, funnels and paths to show. Where
+// a visitor came from tilts how far they get, and the funnel's events carry properties, so a
+// breakdown by channel or by property has something to say.
 // Rows use the datasources' ingestion JSON (snake_case, see packages/domain/src/tinybird/datasources.ts).
 
 const HOST = "app.demo-shop.dev"
 
+/** Where a session came from, and how much more (or less) likely its visitor is to take each step. */
 const REFERRERS = [
-	{ referrerHost: "google.com", utmSource: "" },
-	{ referrerHost: "github.com", utmSource: "" },
-	{ referrerHost: "news.ycombinator.com", utmSource: "" },
-	{ referrerHost: "", utmSource: "newsletter" },
-	{ referrerHost: "", utmSource: "" },
+	{ referrerHost: "google.com", utmSource: "", utmMedium: "", utmCampaign: "", lift: 1 },
+	{ referrerHost: "github.com", utmSource: "", utmMedium: "", utmCampaign: "", lift: 1.2 },
+	{ referrerHost: "news.ycombinator.com", utmSource: "", utmMedium: "", utmCampaign: "", lift: 0.8 },
+	{
+		referrerHost: "t.co",
+		utmSource: "twitter",
+		utmMedium: "social",
+		utmCampaign: "launch-week",
+		lift: 0.6,
+	},
+	{ referrerHost: "", utmSource: "newsletter", utmMedium: "email", utmCampaign: "november", lift: 1.5 },
+	{ referrerHost: "", utmSource: "", utmMedium: "", utmCampaign: "", lift: 1 },
 ] as const
 
 const CLIENTS = [
@@ -26,13 +36,36 @@ const CLIENTS = [
 
 const COUNTRIES = ["US", "US", "DE", "GB", "FR", "IN"] as const
 
-/** Each step reached with this chance once the previous one was. Leavers drift to the side events. */
-const FUNNEL: ReadonlyArray<{ event: string; page: string; chance: number }> = [
+/**
+ * Each step reached with this chance once the previous one was. Leavers drift to the side events.
+ * `property` is the one the event carries, with the values it takes.
+ */
+const FUNNEL: ReadonlyArray<{
+	event: string
+	page: string
+	chance: number
+	property?: readonly [key: string, values: readonly [string, ...ReadonlyArray<string>]]
+}> = [
 	{ event: "signup_started", page: "/signup", chance: 0.35 },
-	{ event: "signup_completed", page: "/onboarding", chance: 0.65 },
-	{ event: "onboarding_connected", page: "/onboarding", chance: 0.55 },
+	{
+		event: "signup_completed",
+		page: "/onboarding",
+		chance: 0.65,
+		property: ["method", ["google", "google", "github", "email"]],
+	},
+	{
+		event: "onboarding_connected",
+		page: "/onboarding",
+		chance: 0.55,
+		property: ["source", ["sdk", "sdk", "collector", "cloudflare"]],
+	},
 	{ event: "dashboard_created", page: "/dashboards", chance: 0.6 },
-	{ event: "plan_started", page: "/billing", chance: 0.2 },
+	{
+		event: "plan_started",
+		page: "/billing",
+		chance: 0.2,
+		property: ["plan", ["startup", "startup", "scale"]],
+	},
 ]
 
 const SIDE_EVENTS = [
@@ -80,7 +113,12 @@ export const generateDemoProductRows = (input: {
 		let userId = ""
 		const pages: Array<string> = []
 
-		const push = (kind: "navigation" | "custom", eventName: string, pagePath: string) => {
+		const push = (
+			kind: "navigation" | "custom",
+			eventName: string,
+			pagePath: string,
+			attributes: Readonly<Record<string, string>> = {},
+		) => {
 			atMs += 5_000 + rand() * 90_000
 			seq += 1
 			if (kind === "navigation") pages.push(pagePath)
@@ -98,6 +136,7 @@ export const generateDemoProductRows = (input: {
 				page_path: pagePath,
 				url: `https://${HOST}${pagePath}`,
 				service_name: "demo-frontend",
+				attributes,
 			})
 		}
 		const visit = (pagePath: string) => push("navigation", "$pageview", pagePath)
@@ -105,7 +144,7 @@ export const generateDemoProductRows = (input: {
 		visit("/")
 		if (rand() < 0.5) visit("/pricing")
 		Arr.every(FUNNEL, (step) => {
-			if (rand() >= step.chance) {
+			if (rand() >= Math.min(0.95, step.chance * referral.lift)) {
 				if (rand() < 0.6) {
 					const side = pick(rand, SIDE_EVENTS)
 					visit(side.page)
@@ -115,7 +154,12 @@ export const generateDemoProductRows = (input: {
 			}
 			visit(step.page)
 			if (step.event === "signup_completed") userId = id("u")
-			push("custom", step.event, step.page)
+			push(
+				"custom",
+				step.event,
+				step.page,
+				step.property === undefined ? {} : { [step.property[0]]: pick(rand, step.property[1]) },
+			)
 			return true
 		})
 
@@ -146,6 +190,8 @@ export const generateDemoProductRows = (input: {
 			referrer: referral.referrerHost === "" ? "" : `https://${referral.referrerHost}/`,
 			referrer_host: referral.referrerHost,
 			utm_source: referral.utmSource,
+			utm_medium: referral.utmMedium,
+			utm_campaign: referral.utmCampaign,
 			host: HOST,
 			entry_path: pages[0] ?? "/",
 			exit_path: pages.at(-1) ?? "/",
