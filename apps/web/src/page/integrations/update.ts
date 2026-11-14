@@ -1,17 +1,15 @@
 import * as Policy from "@maple/domain/policy"
 import { Option, Result, Array as Arr, String as Str } from "effect"
-import { Command as FoldkitCommand } from "foldkit"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../contract"
 import * as Dialog from "@maple/views/ui/dialog"
-import { chatConnectorOf, integrationOfSearch } from "./catalog"
+import { integrationOfSearch } from "./catalog"
 import { chatCallbackOf } from "./chat-callback"
 import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
-import * as Chat from "./update-chat"
 import * as Github from "./update-github"
 import * as CloudflareCard from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import { initCloudflareCard } from "../infra-integrations/cloudflare/integration/cloudflare"
@@ -20,8 +18,6 @@ import { initPlanetscaleCard } from "../infra-integrations/planetscale/integrati
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
 import * as Aws from "../infra-integrations/aws/integration/update-aws"
-import * as SearchConsole from "./update-search-console"
-import { initSearchConsoleCard } from "./search-console"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
@@ -42,7 +38,16 @@ import {
 } from "./command"
 import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
-import { everyProvider, providerModuleOf, RAILWAY_PROVIDER, SUPABASE_PROVIDER } from "./provider-modules"
+import {
+	CHAT_PROVIDER,
+	everyProvider,
+	PROVIDER_MODULES,
+	providerModuleOf,
+	RAILWAY_PROVIDER,
+	SEARCH_CONSOLE_PROVIDER,
+	SUPABASE_PROVIDER,
+	withDisconnectDialog,
+} from "./provider-modules"
 import { Message } from "./message"
 import type { Model, Statuses } from "./model"
 
@@ -157,7 +162,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		filter: "all",
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
-		chatCard: { busy: null, confirmId: null, identityBusy: false },
+		chatCard: CHAT_PROVIDER.initial(),
 		githubCard: initGithubCard(),
 		cloudflareCard: initCloudflareCard(),
 		prometheusCard: initPrometheusCard(),
@@ -167,7 +172,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		railwayCard: RAILWAY_PROVIDER.initial(),
 		vercelCard: initVercelCard(),
 		supabaseCard: SUPABASE_PROVIDER.initial(),
-		searchConsoleCard: initSearchConsoleCard(),
+		searchConsoleCard: SEARCH_CONSOLE_PROVIDER.initial(),
 	}
 	const loaded = chain(model, [
 		...Arr.map(
@@ -205,7 +210,6 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
 	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
-	if (integration === "google-search-console") return SearchConsole.requestSites(model, context, "Load")
 	return providerModuleOf(integration)?.onEnter(model, context) ?? { model }
 }
 
@@ -231,7 +235,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			RAILWAY_PROVIDER.onStatus(
 				accepted(model, { ...s, railway: Keyed.accept(s.railway, key, result) }).model,
 				context,
-				s.railway.key === key,
+				{ isCurrent: s.railway.key === key, previous: s.railway },
 			),
 		CompletedLoadVercel: ({ key, result }) =>
 			accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }),
@@ -269,7 +273,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			SUPABASE_PROVIDER.onStatus(
 				accepted(model, { ...s, supabase: Keyed.accept(s.supabase, key, result) }).model,
 				context,
-				s.supabase.key === key,
+				{ isCurrent: s.supabase.key === key, previous: s.supabase },
 			),
 		GotRailwayMessage: ({ message: child }) => RAILWAY_PROVIDER.update(model, child, context),
 		GotSupabaseMessage: ({ message: child }) => SUPABASE_PROVIDER.update(model, child, context),
@@ -277,28 +281,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
-		CompletedLoadSearchConsole: ({ key, result }) => {
-			const read = SearchConsole.resetOnGrantChange(
-				model,
-				accepted(model, {
-					...s,
-					searchConsole: Keyed.accept(s.searchConsole, key, result),
-				}).model,
-			)
-			return SearchConsole.requestSites(
-				s.searchConsole.key === key ? SearchConsole.settledStatus(read) : read,
+		CompletedLoadSearchConsole: ({ key, result }) =>
+			SEARCH_CONSOLE_PROVIDER.onStatus(
+				accepted(model, { ...s, searchConsole: Keyed.accept(s.searchConsole, key, result) }).model,
 				context,
-				"Load",
-			)
-		},
-		CompletedLoadSearchConsoleSites: ({ key, result }) =>
-			SearchConsole.completedSites(model, key, result),
-		ToggledSearchConsoleSite: ({ siteUrl }) => SearchConsole.toggledSite(model, siteUrl),
-		ClickedSaveSearchConsoleSites: () => SearchConsole.clickedSave(model),
-		ClickedRetrySearchConsoleSites: () => SearchConsole.requestSites(model, context, "Refresh"),
-		CompletedSaveSearchConsoleSites: ({ failure }) =>
-			SearchConsole.completedSave(model, context, failure),
-		CompletedSearchConsolePrime: () => SearchConsole.completedPrime(model, context),
+				{ isCurrent: s.searchConsole.key === key, previous: s.searchConsole },
+			),
+		GotSearchConsoleMessage: ({ message: child }) =>
+			SEARCH_CONSOLE_PROVIDER.update(model, child, context),
+		GotChatMessage: ({ message: child }) => CHAT_PROVIDER.update(model, child, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>
@@ -342,7 +333,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			Github.clickedInstallation(model, installationId),
 		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
 			Github.completedInstallation(model, context, state, installationId, failure),
-		ClickedChatInstall: () => Chat.clickedInstall(model),
 		CompletedLoadCloudflareUsage: ({ key, result }) => ({
 			model: {
 				...model,
@@ -580,11 +570,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ConfirmedBranch: () => Github.confirmedBranch(model),
 		CompletedTrackedBranch: ({ repoId, branch, backfillQueued, failure }) =>
 			Github.completedTrackedBranch(model, context, repoId, branch, backfillQueued, failure),
-		CompletedChatInstall: ({ failure }) => Chat.completedInstall(model, context, failure),
-		ClickedChatIdentity: () => Chat.clickedIdentity(model),
-		CompletedChatIdentity: ({ kind, failure }) => Chat.completedIdentity(model, context, kind, failure),
-		ClickedChatDisconnect: ({ workspaceId }) => Chat.clickedDisconnect(model, workspaceId),
-		CompletedChatDisconnect: ({ failure }) => Chat.completedDisconnect(model, context, failure),
 		SucceededStartConnect: ({ attempt }) => Connect.succeededStart(model, context, attempt),
 		FailedStartConnect: ({ attempt, title, description }) =>
 			Connect.failedStart(model, attempt, title, description),
@@ -612,13 +597,13 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		ClickedDisconnect: () => withDisconnectDialog(model, Dialog.open(model.disconnect.dialog)),
 		GotDisconnectDialogMessage: ({ message: child }) =>
 			model.disconnect.isPending ||
-			(model.chatCard.busy !== null && model.chatCard.busy === model.chatCard.confirmId)
+			Arr.some(PROVIDER_MODULES, (provider) => provider.isDisconnecting(model))
 				? { model }
 				: withDisconnectDialog(model, Dialog.update(model.disconnect.dialog, child)),
 		ConfirmedDisconnect: () => {
 			const integration = integrationOfSearch(model.search.integration)
-			if (integration !== null && chatConnectorOf(integration) !== null)
-				return Chat.confirmedDisconnect(model)
+			const ownDisconnect = providerModuleOf(integration)?.onConfirmDisconnect ?? null
+			if (ownDisconnect !== null) return ownDisconnect(model, context)
 			if (integration === null || model.disconnect.isPending) return { model }
 			// The dialog stays open, its confirm pending, until `CompletedDisconnect` closes it.
 			return {
@@ -676,10 +661,3 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		},
 	})
 }
-
-const withDisconnectDialog = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
-	model: { ...model, disconnect: { ...model.disconnect, dialog: step.model } },
-	commands: FoldkitCommand.mapMessages(step.commands ?? [], (message) =>
-		Message.GotDisconnectDialogMessage({ message }),
-	),
-})

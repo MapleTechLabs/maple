@@ -15,6 +15,9 @@ import { trackProduct } from "../../data/analytics"
 import { readAllPages } from "../../platform/read-all-pages"
 import { RAILWAY } from "../infra-integrations/railway/integration/railway-provider"
 import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-provider"
+import { SEARCH_CONSOLE_STATUS_READ } from "./search-console"
+import { LINEAR_STATUS_READ } from "./linear-provider"
+import { CHAT_STATUS_READ } from "./chat"
 
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
@@ -74,18 +77,16 @@ export const STATUS_READS = {
 		Message.CompletedLoadPlanetscaleDatabases,
 		() => Effect.flatMap(MapleApiV2Client, (client) => client.planetscaleIntegration.databases()),
 	),
-	linear: statusRead("LoadIntegrationsLinearStatus", Message.CompletedLoadLinear, () =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.linearStatus()),
-	),
-	searchConsole: statusRead("LoadIntegrationsSearchConsoleStatus", Message.CompletedLoadSearchConsole, () =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.searchConsoleStatus()),
+	linear: statusRead(LINEAR_STATUS_READ.name, Message.CompletedLoadLinear, LINEAR_STATUS_READ.read),
+	searchConsole: statusRead(
+		SEARCH_CONSOLE_STATUS_READ.name,
+		Message.CompletedLoadSearchConsole,
+		SEARCH_CONSOLE_STATUS_READ.read,
 	),
 	github: statusRead("LoadIntegrationsGithubStatus", Message.CompletedLoadGithub, () =>
 		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.githubStatus()),
 	),
-	chat: statusRead("LoadIntegrationsChatConnectors", Message.CompletedLoadChat, () =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.chatIntegration.connectors()),
-	),
+	chat: statusRead(CHAT_STATUS_READ.name, Message.CompletedLoadChat, CHAT_STATUS_READ.read),
 	/** Every page of 100. */
 	scrapeTargets: statusRead("LoadIntegrationsScrapeTargets", Message.CompletedLoadScrapeTargets, () =>
 		Effect.flatMap(MapleApiV2Client, (client) =>

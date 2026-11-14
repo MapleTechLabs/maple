@@ -57,8 +57,8 @@ const genericFlow = (model: Model, integration: DataIntegration): FlowSpec => {
 }
 
 export const flowOf = (model: Model, integration: DataIntegration, context: FlowContext): FlowSpec => {
-	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.flow(model)
+	const flow = providerModuleOf(integration)?.flow ?? null
+	if (flow !== null) return flow(model)
 	switch (integration) {
 		case "prometheus":
 		case "warpstream":

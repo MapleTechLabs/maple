@@ -9,14 +9,14 @@ import {
 	gcpScopeLabel,
 	gcpWorstState,
 } from "../infra-integrations/gcp/connector-state"
-import { DateTime, Option, Array as Arr } from "effect"
+import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import {
 	metricsAuthOf,
 	metricsLastCollectedAt,
 	metricsLastError,
 } from "../infra-integrations/planetscale/setup-steps"
-import { chatIntegrationId, type IntegrationId } from "./catalog"
+import type { IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import {
 	scopeLabel,
@@ -33,12 +33,12 @@ import {
 	CONNECT,
 	fold,
 	type IntegrationOverview,
+	isoMs,
 	type LastSync,
 	lastSyncOf,
-	NOT_CONFIGURED,
+	maxMs,
 	NOT_CONNECTED,
 	SET_UP,
-	UNCONFIGURED,
 	unavailableOverview,
 	unavailableStatus,
 } from "./overview"
@@ -49,15 +49,10 @@ export {
 	type ConnectedOverview,
 	fold,
 	type IntegrationOverview,
+	isoMs,
 	type LastSync,
 	type UnavailableOverview,
 } from "./overview"
-
-/** `Date.parse` of an ISO timestamp (lint-banned), `null` when absent or unparseable. */
-export const isoMs = (iso: string | null | undefined): number | null =>
-	iso === null || iso === undefined
-		? null
-		: Option.getOrNull(Option.map(DateTime.make(iso), DateTime.toEpochMillis))
 
 /** Where a connection's metric stream stands, as the source's health reads it. */
 export const awsStreamOf = (connection: V2AwsConnection, nowMs: number): AwsStreamState =>
@@ -134,11 +129,6 @@ export const HEALTH_TONE = {
 export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
-const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null =>
-	Arr.reduce<(typeof values)[number], number | null>(values, null, (acc, v) =>
-		v !== null && v !== undefined && (acc === null || v > acc) ? v : acc,
-	)
-
 const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
 	fold(
 		statuses.scrapeTargets,
@@ -151,30 +141,6 @@ const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscal
 			return {
 				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
 				variant: failing ? "warn" : "ok",
-			}
-		},
-		unavailableStatus,
-	)
-
-const chatStatus = (statuses: Statuses, id: IntegrationId) =>
-	fold(
-		statuses.chat,
-		(response): CardStatus => {
-			const connector = Arr.findFirst(response.data, (entry) => chatIntegrationId(entry.id) === id)
-			const workspaces = Option.match(connector, {
-				onNone: () => [],
-				onSome: (found) => found.workspaces,
-			})
-			if (workspaces.length === 0)
-				return Option.exists(connector, (found) => found.available === false)
-					? NOT_CONFIGURED
-					: NOT_CONNECTED
-			return {
-				label:
-					workspaces.length === 1
-						? (workspaces[0]?.name ?? "Connected")
-						: `${workspaces.length} workspaces`,
-				variant: "ok",
 			}
 		},
 		unavailableStatus,
@@ -199,7 +165,7 @@ const connectedOrNot = (connected: boolean): CardStatus =>
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.cardStatus(statuses)
+	if (provider !== undefined) return provider.cardStatus(statuses, { id, nowMs })
 	switch (id) {
 		case "gcp":
 			return fold(
@@ -256,47 +222,10 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			)
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
-		case "linear":
-			return fold(
-				statuses.linear,
-				(status): CardStatus =>
-					status.revoked
-						? { label: "Revoked", variant: "warn" }
-						: status.connected
-							? {
-									label:
-										status.workspaceName === null || status.workspaceName === ""
-											? "Connected"
-											: status.workspaceName,
-									variant: "ok",
-								}
-							: NOT_CONNECTED,
-				unavailableStatus,
-			)
 		case "github":
 			return githubStatus(statuses)
-		case "google-search-console":
-			return fold(
-				statuses.searchConsole,
-				(status): CardStatus =>
-					status.revoked
-						? { label: "Revoked", variant: "warn" }
-						: !status.connected
-							? status.configured
-								? NOT_CONNECTED
-								: NOT_CONFIGURED
-							: {
-									label: countLabel(
-										Arr.filter(status.sites, (site) => site.enabled).length,
-										"property",
-										"properties",
-									),
-									variant: "ok",
-								},
-				unavailableStatus,
-			)
 		default:
-			return chatStatus(statuses, id)
+			return null
 	}
 }
 
@@ -525,64 +454,6 @@ const planetscaleOverview = (statuses: Statuses) => {
 	)
 }
 
-const linearOverview = (statuses: Statuses) =>
-	fold(
-		statuses.linear,
-		(status): IntegrationOverview =>
-			status.revoked
-				? {
-						kind: "connected",
-						health: "attention",
-						stateLabel: "Revoked",
-						context: status.workspaceName,
-						stat: null,
-						lastSync: null,
-						issue: "Reconnect Linear",
-					}
-				: status.connected
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.workspaceName,
-							stat: "Incident issues ready",
-							lastSync: null,
-							issue: null,
-						}
-					: CONNECT,
-		unavailableOverview,
-	)
-
-const searchConsoleOverview = (statuses: Statuses) =>
-	fold(
-		statuses.searchConsole,
-		(status): IntegrationOverview => {
-			if (!status.connected) return status.configured ? CONNECT : UNCONFIGURED
-			const enabled = Arr.filter(status.sites, (site) => site.enabled)
-			const failing = Arr.filter(enabled, (site) => site.lastError !== null).length
-			const issue = status.revoked
-				? "Reconnect Google"
-				: enabled.length === 0
-					? "Choose properties"
-					: failing > 0
-						? `${countLabel(failing, "property", "properties")} failing`
-						: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				...(status.revoked ? { stateLabel: "Revoked" } : undefined),
-				context: status.accountEmail,
-				stat:
-					enabled.length > 0
-						? `${countLabel(enabled.length, "property", "properties")} selected`
-						: null,
-				lastSync: lastSyncOf(maxMs(Arr.map(enabled, (site) => site.lastSyncedAt))),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
 const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -622,38 +493,10 @@ const githubOverview = (statuses: Statuses) =>
 		unavailableOverview,
 	)
 
-const chatOverview = (statuses: Statuses, id: IntegrationId) =>
-	fold(
-		statuses.chat,
-		(response): IntegrationOverview => {
-			const workspaces = Arr.findFirst(
-				response.data,
-				(entry) => chatIntegrationId(entry.id) === id,
-			).pipe(
-				Option.flatMapNullishOr((found) => found.workspaces),
-				Option.getOrElse(() => []),
-			)
-			if (workspaces.length === 0) return CONNECT
-			return {
-				kind: "connected",
-				health: "healthy",
-				stateLabel: "Healthy",
-				context:
-					workspaces.length === 1
-						? (workspaces[0]?.name ?? null)
-						: countLabel(workspaces.length, "workspace"),
-				stat: "Alerts & agent ready",
-				lastSync: null,
-				issue: null,
-			}
-		},
-		unavailableOverview,
-	)
-
 /** One integration's overview; `null` while its status loads. */
 export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId): IntegrationOverview => {
 	const provider = providerModuleOf(id)
-	if (provider !== undefined) return provider.overview(statuses)
+	if (provider !== undefined) return provider.overview(statuses, { id, nowMs })
 	switch (id) {
 		case "gcp":
 			return gcpOverview(statuses, nowMs)
@@ -669,14 +512,10 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return planetscaleOverview(statuses)
 		case "warpstream":
 			return SET_UP
-		case "linear":
-			return linearOverview(statuses)
 		case "github":
 			return githubOverview(statuses)
-		case "google-search-console":
-			return searchConsoleOverview(statuses)
 		default:
-			return chatOverview(statuses, id)
+			return null
 	}
 }
 

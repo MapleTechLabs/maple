@@ -26,9 +26,18 @@ import {
 } from "../kit/integration-empty"
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
-import { isDirty, permissionLabel, selectionOf, unavailableSaved } from "./search-console"
+import {
+	isDirty,
+	permissionLabel,
+	SearchConsoleMessage,
+	selectionOf,
+	unavailableSaved,
+} from "./search-console"
 import { connectedIntegrationCard, integrationStatusCard } from "./view-integration-card"
 import { providerBrand } from "../kit/providers"
+
+/** A Search Console message, as the hub carries it. */
+const toHub = (message: SearchConsoleMessage): Message => Message.GotSearchConsoleMessage({ message })
 
 type H = HtmlBuilder<Message>
 
@@ -119,7 +128,7 @@ const siteOption = (
 			isChecked,
 			isDisabled: isLocked || !site.selectable,
 			label,
-			onChange: Message.ToggledSearchConsoleSite({ siteUrl: site.siteUrl }),
+			onChange: toHub(SearchConsoleMessage.ToggledSite({ siteUrl: site.siteUrl })),
 			className: "items-center gap-3 px-3 py-2.5",
 		},
 		[
@@ -179,7 +188,7 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 				errorState(h, {
 					failure,
 					title: "Couldn't load your Search Console properties",
-					onRetry: Message.ClickedRetrySearchConsoleSites(),
+					onRetry: toHub(SearchConsoleMessage.ClickedRetrySites()),
 				}),
 			onStale: ({ data }) => list(data.sites),
 			onRefreshing: (data) => list(data.sites),
@@ -194,7 +203,7 @@ const sitePicker = (h: H, model: Model, status: SearchConsoleIntegrationStatus):
 								size: "sm",
 								isDisabled: !isDirty(card, status) || card.isSaving,
 								isLoading: card.isSaving,
-								attributes: [h.OnClick(Message.ClickedSaveSearchConsoleSites())],
+								attributes: [h.OnClick(toHub(SearchConsoleMessage.ClickedSave()))],
 							},
 							["Save properties"],
 						),
