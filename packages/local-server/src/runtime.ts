@@ -282,7 +282,7 @@ const own = (options: LocalOptions, portChoice: PortChoice, parent: Scope.Scope)
 		const attempt = yield* Scope.fork(parent)
 		return yield* acquireLocal(options, portChoice).pipe(
 			Scope.provide(attempt),
-			Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(attempt, exit) : Effect.void)),
+			Effect.onError((cause) => Scope.close(attempt, Exit.failCause(cause))),
 		)
 	})
 
