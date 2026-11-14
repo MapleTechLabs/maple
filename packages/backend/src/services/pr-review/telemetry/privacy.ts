@@ -30,9 +30,9 @@ const MORE_LOGS =
 
 /** A line that passes the value through a redaction or a one-way transform first. */
 const TRANSFORMED_LINE =
-	/\b(?:redact\w*|mask\w*|hash\w*|sha(?:1|256|512)\w*|digest|anonymi[sz]e\w*|obfuscat\w*|scrub\w*|truncate\w*|Redacted\.make)\s*\(/i
+	/(?:\b(?:redact\w*|mask\w*|hash\w*|sha(?:1|256|512)\w*|digest|anonymi[sz]e\w*|obfuscat\w*|scrub\w*|truncate\w*|Redacted\.make)\s*\(|\.(?:slice|substring|substr)\(\s*0\s*,\s*(?:[1-9]|1[0-6])\s*\))/i
 
-/** Words that make a name about the value, not the value: `hashedPassword`, `hasToken`, `maxTokens`. */
+/** Words before the match that make a name about the value, not the value: `hashedPassword`, `hasToken`. */
 const NOT_THE_VALUE = new Set([
 	"hash",
 	"hashed",
@@ -53,100 +53,23 @@ const NOT_THE_VALUE = new Set([
 	"total",
 ])
 
-/** Words after the match that name metadata about it: `tokenCount`, `emailVerified`, `cookieName`. */
-const META_WORDS = new Set([
-	"scope",
-	"scopes",
-	"subject",
-	"prompt",
-	"completion",
-	"limit",
-	"usage",
-	"introspection",
-	"verdict",
-	"result",
-	"outcome",
-	"state",
-	"validation",
-	"reason",
-	"age",
-	"issuer",
-	"audience",
-	"algorithm",
-	"lifetime",
-	"details",
-	"destination",
-	"destinations",
-	"updated",
-	"changed",
-	"delivered",
-	"failed",
-	"attempts",
-	"retries",
-	"cache",
-	"hit",
-	"miss",
-	"rejected",
-	"accepted",
-	"looks",
-	"used",
-	"last",
-	"created",
-	"revoked",
-	"rotated",
-	"count",
-	"length",
-	"len",
-	"size",
-	"id",
-	"ids",
-	"type",
-	"kind",
-	"name",
-	"names",
-	"verified",
-	"enabled",
-	"required",
-	"present",
-	"exists",
-	"valid",
-	"configured",
-	"set",
-	"status",
-	"domain",
-	"provider",
-	"expires",
-	"expiry",
-	"ttl",
-	"prefix",
-	"suffix",
-	"last4",
-	"source",
-	"mode",
-	"policy",
-	"format",
-	"version",
-	"field",
-	"fields",
-	"service",
-	"client",
-	"template",
-	"queue",
-	"job",
-	"config",
-	"url",
-	"path",
-	"error",
-	"errors",
-	"schema",
-	"sent",
-	"ref",
-	"refs",
-	"arn",
-	"store",
-	"vault",
-	"manager",
-	"rotation",
+/**
+ * Words that may follow the match and still name the value itself: `token.value`, `email_address`.
+ * Any other word after it names something about the value (`tokenCount`, `auth.token.iss`,
+ * `api_key_network.asn`, `widgetCredentialAction`), so the name is only flagged when the sensitive
+ * word ends it or only these follow.
+ */
+const VALUE_WORDS = new Set([
+	"value",
+	"raw",
+	"plain",
+	"plaintext",
+	"str",
+	"string",
+	"text",
+	"header",
+	"address",
+	"data",
 ])
 
 /** Single words, matched whole: `token` but not `tokens` (`gen_ai.usage.output_tokens`). */
@@ -288,8 +211,8 @@ const firstMatch = (words: ReadonlyArray<string>) => {
 
 /**
  * What a key or an expression (`{ chain: true }`, which alone can be a whole payload) names. A
- * metadata word after the match (`token.count`) or a non-person owner before contact data
- * (`repo.fullName`) makes it not sensitive.
+ * word after the match that is not part of the value (`token.count`) or a non-person owner before
+ * contact data (`repo.fullName`) makes it not sensitive.
  */
 export const classifyName = (
 	name: string,
@@ -301,7 +224,7 @@ export const classifyName = (
 	const match = firstMatch(words)
 	if (match === undefined)
 		return options.chain === true && words.length > 1 && PAYLOAD_WORDS.has(last) ? "payload" : undefined
-	if (Arr.some(words.slice(match.end), (word) => META_WORDS.has(word))) return undefined
+	if (!Arr.every(words.slice(match.end), (word) => VALUE_WORDS.has(word))) return undefined
 	if (match.kind === "contact" && Arr.some(words.slice(0, match.start), (word) => NOT_A_PERSON.has(word)))
 		return undefined
 	return match.kind
@@ -474,6 +397,8 @@ export interface PrivacyHit {
 	readonly kind: PrivacyKind
 	readonly subject: string
 	readonly sink: Sink
+	/** The value itself was recognized (a JWT, a card number), not only a name that suggests it. */
+	readonly byValue: boolean
 }
 
 const KIND_RANK = {
@@ -495,10 +420,10 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	if (sink === undefined) return undefined
 	for (const { kind, label, pattern } of VALUE_PATTERNS) {
 		if (Arr.some(literals, (literal) => pattern.test(literal.value)))
-			return { kind, subject: label, sink }
+			return { kind, subject: label, sink, byValue: true }
 	}
 	if (Arr.some(literals, (literal) => hasCardNumber(literal.value)))
-		return { kind: "payment", subject: "a card number", sink }
+		return { kind: "payment", subject: "a card number", sink, byValue: true }
 
 	// Each comma-separated entry is judged on its own value: `{ email: user.email, ok: true }`.
 	const segments = segmentsOf(code)
@@ -566,7 +491,9 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 		named,
 		(hit) => hit.kind !== "contact" || !ownerSegments.has(segmentAt(hit.offset)),
 	).sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind])
-	return worst === undefined ? undefined : { ...worst, sink }
+	return worst === undefined
+		? undefined
+		: { kind: worst.kind, subject: worst.subject, sink, byValue: false }
 }
 
 const SEVERITY = {
@@ -577,6 +504,14 @@ const SEVERITY = {
 	payload: "warn",
 	network: "info",
 } as const satisfies Record<PrivacyKind, PrReviewSeverity>
+
+/**
+ * A name alone is a guess (`auth.token.iss` reads like a token), so it is at most a warning; only a
+ * recognized value is critical. Prod, 2026-11: most name-only critical findings were dismissed or
+ * renamed around.
+ */
+const severityOf = (hit: PrivacyHit): PrReviewSeverity =>
+	hit.byValue || SEVERITY_RANK[SEVERITY[hit.kind]] <= SEVERITY_RANK.warn ? SEVERITY[hit.kind] : "warn"
 
 const TITLE = {
 	secret: "Credential",
@@ -636,23 +571,32 @@ export const privacyFindings = (files: ReadonlyArray<PullRequestFile>): Readonly
 		),
 		(file: PullRequestFile) => {
 			const lines = parsePatch(file.patch)
-			const byKind = new Map<PrivacyKind, { readonly hit: PrivacyHit; readonly lines: Array<number> }>()
+			const byKind = new Map<
+				PrivacyKind,
+				{ readonly hit: PrivacyHit; readonly lines: Array<number>; severity: PrReviewSeverity }
+			>()
 			Arr.forEach(lines, (line, index) => {
 				const hit = privacyHitAt(lines, index)
 				if (hit === undefined) return
 				const seen = byKind.get(hit.kind)
-				if (seen === undefined) byKind.set(hit.kind, { hit, lines: [line.newLine] })
-				else seen.lines.push(line.newLine)
+				if (seen === undefined)
+					byKind.set(hit.kind, { hit, lines: [line.newLine], severity: severityOf(hit) })
+				else {
+					seen.lines.push(line.newLine)
+					// A recognized value on any line of the kind makes the one finding as severe as it.
+					if (SEVERITY_RANK[severityOf(hit)] > SEVERITY_RANK[seen.severity])
+						seen.severity = severityOf(hit)
+				}
 			})
 			return Arr.map(
 				[...byKind.values()],
-				({ hit, lines: [first = 1, ...others] }) =>
+				({ hit, severity, lines: [first = 1, ...others] }) =>
 					new PrReviewFinding({
 						path: file.path,
 						line: first,
 						category: "security",
 						checkId: "PII-01",
-						severity: SEVERITY[hit.kind],
+						severity,
 						title: `${TITLE[hit.kind]} ${hit.subject} written to ${SINK_LABEL[hit.sink]}`,
 						body: `${WHY[hit.kind]}${otherLines(others)}`,
 					}),

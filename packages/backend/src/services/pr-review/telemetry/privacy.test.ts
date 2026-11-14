@@ -111,6 +111,13 @@ describe("privacyHitAt", () => {
 			"user.email",
 		],
 		["worst kind wins", ["logger.info({ email: user.email, token: session.token })"], "secret", "token"],
+		["a token's value", ['span.setAttribute("auth.token.value", token)'], "secret", "auth.token.value"],
+		[
+			"an email address",
+			["logger.info({ email_address: input.email_address })"],
+			"contact",
+			"email_address",
+		],
 	]
 	for (const [name, snippet, kind, subject] of exposes) {
 		it(`flags ${name}`, () => {
@@ -159,6 +166,15 @@ describe("privacyHitAt", () => {
 		],
 		["a repository's full name", ['span.setAttribute("vcs.repository.full_name", checkout.fullName)']],
 		["a span name", ['Effect.withSpan("AuthService.withAccessToken", { attributes: { orgId } })']],
+		// Prod false positives, 2026-11: a word after the sensitive one names something about it.
+		["a token's network metadata", ['span.setAttribute("auth.api_key_network.asn", asn)']],
+		["a token's issuer claim", ['span.setAttribute("auth.token.iss", claims.iss)']],
+		["a token's purpose", ['Effect.annotateCurrentSpan({ "sealed_token.purpose": purpose })']],
+		["a token's issue time", ['logger.info({ "agentToken.issued_at": issuedAt })']],
+		["a token's revision", ["Effect.annotateCurrentSpan({ refreshTokenRevision })"]],
+		["an enum named after credentials", ["logger.info({ action: widgetCredentialAction })"]],
+		["a class named after secrets", ["Effect.logInfo(SecretResealSweep.name)"]],
+		["a short token prefix", ['span.setAttribute("auth.token", token.slice(0, 12))']],
 	]
 	for (const [name, snippet] of quiet) {
 		it(`stays quiet on ${name}`, () => {
@@ -214,11 +230,25 @@ describe("privacyFindings", () => {
 				finding.title,
 			]),
 			[
-				[12, "critical", "PII-01", "security", "Credential `password` written to a log"],
 				[10, "warn", "PII-01", "security", "Personal data `user.email` written to a span attribute"],
+				[12, "warn", "PII-01", "security", "Credential `password` written to a log"],
 			],
 		)
-		assert.match(findings[1]?.body ?? "", /Also on line 11\./)
+		assert.match(findings[0]?.body ?? "", /Also on line 11\./)
+	})
+
+	// A name is a guess; a value recognized by its shape is not.
+	it("files a name-only hit as a warning and a recognized value as critical", () => {
+		const severities = (added: ReadonlyArray<string>) =>
+			Arr.map(privacyFindings([file("src/a.ts", added)]), (finding) => finding.severity)
+		assert.deepStrictEqual(severities(['logger.info("x", { password })']), ["warn"])
+		assert.deepStrictEqual(
+			severities([
+				'logger.info("x", { password })',
+				'logger.debug("using eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N")',
+			]),
+			["critical"],
+		)
 	})
 
 	it("skips tests, fixtures and docs", () => {
@@ -242,7 +272,6 @@ describe("privacyFindings", () => {
 			),
 		])
 		assert.strictEqual(finding?.line, 12)
-		assert.strictEqual(finding?.severity, "critical")
 	})
 })
 

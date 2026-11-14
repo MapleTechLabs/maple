@@ -186,6 +186,27 @@ const listOf = <A>(
 	decode: (text: string) => Option.Option<ReadonlyArray<A>>,
 ): ReadonlyArray<A> => (typeof value === "string" ? Option.getOrElse(decode(value), () => []) : (value ?? []))
 
+/**
+ * Finding handles (`F3`) from a lenient list, uppercased and deduplicated. Text that is not a JSON
+ * list is read as handles separated by anything else (`"F1, f2"`).
+ */
+export const handlesOf = (
+	value: ReadonlyArray<string> | string | null | undefined,
+): ReadonlyArray<string> => {
+	const raw =
+		typeof value === "string"
+			? Option.getOrElse(decodeHandles(value), () => Str.split(/[^A-Za-z0-9]+/)(value))
+			: (value ?? [])
+	return [
+		...new Set(
+			Arr.filter(
+				Arr.map(raw, (handle) => Str.toUpperCase(Str.trim(handle))),
+				(handle) => /^F\d{1,4}$/.test(handle),
+			),
+		),
+	]
+}
+
 const trimmed = (value: string | null | undefined): string | undefined =>
 	value == null ? undefined : Str.trim(value)
 const trimmedPath = (value: string | null | undefined): string | undefined =>
@@ -392,16 +413,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		}),
 		filled,
 		droppedFindings: rawFindings.length - findings.length,
-		resolved: [
-			...new Set(
-				Arr.filter(
-					Arr.map(listOf(submission.resolved, decodeHandles), (handle) =>
-						Str.toUpperCase(Str.trim(handle)),
-					),
-					(handle) => /^F\d{1,4}$/.test(handle),
-				),
-			),
-		].slice(0, MAX_FINDINGS),
+		resolved: handlesOf(submission.resolved).slice(0, MAX_FINDINGS),
 		// Bounded and deduplicated: each one costs a file read at the head before it is accepted.
 		telemetryDismissals: Arr.dedupeWith(
 			telemetryDismissals,

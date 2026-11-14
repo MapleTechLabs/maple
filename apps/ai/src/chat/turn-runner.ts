@@ -602,8 +602,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							)
 						: prReplyId !== undefined
 							? replyCompletion(origin, {
-									submit: (body) =>
-										conversations.submitReply(tenant.orgId, prReplyId, body),
+									submit: (body, settle) =>
+										conversations.submitReply(tenant.orgId, prReplyId, body, settle),
 									stageEdit: (edit) =>
 										conversations.stageEdit(tenant.orgId, prReplyId, edit),
 								})

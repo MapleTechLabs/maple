@@ -54,10 +54,23 @@ import { makeDbExecute } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { resolvedByHandle } from "./findings"
 import { isTrustedAuthorAssociation, PrReviewService } from "./PrReviewService"
 import { makeRepoUpstream } from "./repo-upstream"
 
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
+
+/** Handles of open findings a reply settles: ones it agrees do not hold, ones the head fixes. */
+export interface ReplySettlement {
+	readonly dismissed: ReadonlyArray<string>
+	readonly resolved: ReadonlyArray<string>
+}
+
+const handleList = (findings: ReadonlyArray<{ readonly handle: string }>) =>
+	Arr.join(
+		Arr.map(findings, (finding) => finding.handle),
+		", ",
+	)
 
 /** Answers an organization may start per UTC day, across its pull requests. */
 export const PR_REPLY_DAILY_CEILING = 100
@@ -95,11 +108,15 @@ export interface PrReviewConversationServiceApi {
 		Option.Option<{ readonly repository: string; readonly number: number }>,
 		PrReviewPersistenceError
 	>
-	/** Post the agent's answer, committing a `fix`'s staged edits first. */
+	/**
+	 * Post the agent's answer, committing a `fix`'s staged edits first, and settle the open findings
+	 * the answer names by handle.
+	 */
 	readonly submitReply: (
 		orgId: OrgId,
 		replyId: PrReviewReplyId,
 		body: string,
+		settle?: ReplySettlement,
 	) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
 	/** Stage one exact edit for a `fix`. Answers why an edit was refused, for the agent to read. */
 	readonly stageEdit: (
@@ -250,7 +267,7 @@ export const buildReplyKickoff = (input: {
 		"",
 		input.command === "fix"
 			? "They asked you to fix it. Stage the smallest correct change with propose_edit (exact text from the file at the head), then call submit_reply with a short note of what you changed. The edits are committed to the pull request's branch after you submit."
-			: "Answer with submit_reply. Read the code before you answer; say what you checked.",
+			: "Answer with submit_reply. Read the code before you answer; say what you checked. If they show one of your open findings does not hold, or the head already fixes it, and the code confirms it, list its handle in `dismissed` or `resolved` so it stops being raised.",
 	)
 	return wrapChatContext(Arr.join(lines, "\n"), "")
 }
@@ -806,14 +823,79 @@ export class PrReviewConversationService extends Context.Service<
 			}
 		})
 
+		/**
+		 * Mark the open findings a reply names: dismissed (the reviewer agreed they do not hold) or
+		 * resolved (fixed at the head, no review confirmed it, so no head is stamped). A handle that
+		 * is not open on this pull request is ignored. Answers the note added to the reply.
+		 */
+		const settleFindings = Effect.fn("PrReviewConversationService.settleFindings")(function* (
+			orgId: OrgId,
+			row: PrReviewReplyRow,
+			settle: ReplySettlement | undefined,
+		) {
+			const none = { note: "", dismissed: 0, resolved: 0 }
+			if (settle === undefined || settle.dismissed.length + settle.resolved.length === 0) return none
+			const open = yield* dbExecute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
+						.select("id", "handle")
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.repositoryId.eq(row.repositoryId),
+							$.number.eq(row.number),
+							$.status.eq("open"),
+						]),
+				),
+			)
+			const dismissed = resolvedByHandle(settle.dismissed, open)
+			// A handle in both lists is dismissed: the stronger claim needs the code to agree.
+			const resolved = Arr.filter(
+				resolvedByHandle(settle.resolved, open),
+				(finding) => !dismissed.includes(finding),
+			)
+			const nowMs = yield* Clock.currentTimeMillis
+			const mark = (
+				findings: ReadonlyArray<{ readonly id: string }>,
+				values: PG.UpdateSetOf<typeof PrReviewFindings>,
+			) =>
+				findings.length === 0
+					? Effect.void
+					: dbExecute((db) =>
+							db.run(
+								PG.update(PrReviewFindings)
+									.set(values)
+									.where(($) => [
+										$.orgId.eq(orgId),
+										$.status.eq("open"),
+										$.id.in_(...Arr.map(findings, (finding) => finding.id)),
+									]),
+							),
+						).pipe(Effect.asVoid)
+			yield* mark(dismissed, { status: "dismissed", updatedAt: nowMs })
+			yield* mark(resolved, { status: "resolved", resolvedSha: null, updatedAt: nowMs })
+			const note = Arr.join(
+				[
+					...(dismissed.length === 0 ? [] : [`Dismissed ${handleList(dismissed)}.`]),
+					...(resolved.length === 0 ? [] : [`Marked ${handleList(resolved)} resolved.`]),
+				],
+				" ",
+			)
+			return {
+				note: note === "" ? "" : `_${note}_`,
+				dismissed: dismissed.length,
+				resolved: resolved.length,
+			}
+		})
+
 		const submitReply: PrReviewConversationServiceApi["submitReply"] = Effect.fn(
 			"PrReviewConversationService.submitReply",
-		)(function* (orgId, replyId, body) {
+		)(function* (orgId, replyId, body, settle) {
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
+			const settled = yield* settleFindings(orgId, row, settle)
 			const text = Arr.join(
-				Arr.filter([Str.trim(body), fix.note], (part) => part !== ""),
+				Arr.filter([Str.trim(body), fix.note, settled.note], (part) => part !== ""),
 				"\n\n",
 			)
 			const url = yield* post(orgId, row, text === "" ? "I have nothing to add." : text)
@@ -827,6 +909,8 @@ export class PrReviewConversationService extends Context.Service<
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_reply.id": replyId,
+				"maple.pr_reply.dismissed": settled.dismissed,
+				"maple.pr_reply.resolved": settled.resolved,
 				"maple.pr_reply.posted": Option.isSome(url),
 				"maple.pr_reply.committed": fix.commitSha !== null,
 			})

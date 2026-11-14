@@ -124,7 +124,7 @@ import {
 	withDismissals,
 } from "./telemetry/render"
 import {
-	dismissedFindings,
+	settledFindings,
 	nextHandles,
 	pathIgnored,
 	renderFollowUp,
@@ -1606,24 +1606,35 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					{ discard: true },
 				)
-				const dismissed = dismissedFindings(open, threads, changedPaths)
+				const settled = settledFindings(open, threads, changedPaths)
 				yield* setFindingStatus(
 					orgId,
-					Arr.map(dismissed, (finding) => finding.id),
+					Arr.map(settled.dismissed, (finding) => finding.id),
 					{ status: "dismissed", updatedAt: nowMs },
 				)
+				// No review confirmed these fixes, so they carry no head and never count as unchecked.
+				yield* setFindingStatus(
+					orgId,
+					Arr.map(settled.resolved, (finding) => finding.id),
+					{ status: "resolved", resolvedSha: null, updatedAt: nowMs },
+				)
 				yield* Effect.annotateCurrentSpan({
-					"maple.pr_review.dismissed": dismissed.length,
+					"maple.pr_review.dismissed": settled.dismissed.length,
+					"maple.pr_review.resolved_by_person": settled.resolved.length,
 					"maple.pr_review.reactions_up": up,
 					"maple.pr_review.reactions_down": down,
 				})
-				return Arr.filter(open, (finding) => !dismissed.includes(finding))
+				return Arr.filter(
+					open,
+					(finding) => !settled.dismissed.includes(finding) && !settled.resolved.includes(finding),
+				)
 			})
 
 			/**
 			 * What a later push's kickoff says: the last reviewed head, what changed since, and the
-			 * findings still open. Threads answered "won't fix", or resolved on a file this push left
-			 * alone, are marked dismissed first, so the reviewer never re-raises them. Provider reads
+			 * findings still open. Threads answered "won't fix" are dismissed, and ones answered "fixed"
+			 * or resolved on a file this push left alone are resolved first, so the reviewer never
+			 * re-raises them. Provider reads
 			 * that fail degrade to less context, never to a failed review.
 			 */
 			const followUpFor = Effect.fn("PrReviewService.followUpFor")(function* (

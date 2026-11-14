@@ -8,6 +8,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import {
 	GitCommitSha,
+	PrReviewId,
 	type PullRequestCiApprovedJob,
 	type PullRequestCommentJob,
 	type PullRequestHead,
@@ -15,6 +16,9 @@ import {
 import { fakeChatSessionsLayer } from "@maple/backend/testing/chat-sessions-fake"
 import { envPorts } from "@maple/backend/platform/env-ports"
 import { Effect, Layer, Option, Schema } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { PrReviewFindings } from "@maple/db/tables"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
 import {
 	asOrgId,
@@ -393,6 +397,65 @@ describe("PrReviewConversationService", () => {
 				(yield* conversations.onPullRequestComment(orgId, comment({ commentId: "901" }))).skipReason,
 				"duplicate",
 			)
+		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+	})
+
+	it.effect("settles the open findings an answer names, and says so", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seed
+			const repo = yield* VcsRepository
+			const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
+			const database = yield* Database
+			const finding = (handle: string, status: "open" | "resolved") => ({
+				id: `finding-${handle}`,
+				orgId,
+				repositoryId,
+				number: 612,
+				reviewId: Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-000000000000"),
+				handle,
+				path: "src/a.ts",
+				line: 1,
+				category: "correctness" as const,
+				severity: "warn" as const,
+				title: `finding ${handle}`,
+				status,
+				createdAt: 0,
+				updatedAt: 0,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(PrReviewFindings).values([
+						finding("F1", "open"),
+						finding("F2", "open"),
+						finding("F3", "resolved"),
+					]),
+				),
+			)
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(orgId, comment())
+			yield* conversations.submitReply(orgId, outcome.replyId!, "You are right about F1.", {
+				dismissed: ["F1"],
+				// F3 is already settled and F9 does not exist: neither is touched or mentioned.
+				resolved: ["F2", "F3", "F9"],
+			})
+			assert.deepEqual(recorded.posted, [
+				{ body: "You are right about F1.\n\n_Dismissed F1. Marked F2 resolved._" },
+			])
+			const rows = yield* database.execute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
+						.select("handle", "status", "resolvedSha")
+						.where(($) => [$.repositoryId.eq(repositoryId)])
+						.orderBy(["handle", "asc"]),
+				),
+			)
+			assert.deepEqual(rows, [
+				{ handle: "F1", status: "dismissed", resolvedSha: null },
+				{ handle: "F2", status: "resolved", resolvedSha: null },
+				{ handle: "F3", status: "resolved", resolvedSha: null },
+			])
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
 	})
 

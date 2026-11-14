@@ -1,7 +1,6 @@
 import { PrReviewFinding, type PullRequestReviewThread } from "@maple/domain/http"
 import { assert, describe, it } from "vitest"
 import {
-	dismissedFindings,
 	followUpScope,
 	ignoredPathsInKickoff,
 	mergeSavedFindings,
@@ -10,6 +9,7 @@ import {
 	renderFollowUp,
 	renderIgnoredPaths,
 	resolvedByHandle,
+	settledFindings,
 	type TrackedFinding,
 	uncheckedFixes,
 	withoutRepeats,
@@ -38,64 +38,89 @@ const thread = (overrides: Partial<PullRequestReviewThread> = {}): PullRequestRe
 	...overrides,
 })
 
-describe("dismissedFindings", () => {
-	it("dismisses a finding whose thread a person resolved without touching its file", () => {
-		const resolved = thread({ isResolved: true })
-		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/other.ts"])), 1)
+const reply = (body: string, author = "alice") => ({
+	commentId: `c-${body.length}-${author}`,
+	author,
+	body,
+	thumbsUp: 0,
+	thumbsDown: 0,
+})
+const BOT_COMMENT = { commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 }
+const withReplies = (...bodies: ReadonlyArray<string>) =>
+	thread({ comments: [BOT_COMMENT, ...Arr.map(bodies, (body) => reply(body))] })
+
+const settle = (
+	threads: ReadonlyArray<PullRequestReviewThread>,
+	changedPaths?: ReadonlySet<string>,
+	finding: TrackedFinding = tracked(),
+) => {
+	const { dismissed, resolved } = settledFindings([finding], threads, changedPaths)
+	return dismissed.length > 0 ? "dismissed" : resolved.length > 0 ? "resolved" : "open"
+}
+
+describe("settledFindings", () => {
+	// Most silently resolved threads were fixed elsewhere, so they never count against the finding.
+	it("resolves a finding whose thread a person resolved without touching its file", () => {
+		assert.strictEqual(settle([thread({ isResolved: true })], new Set(["src/other.ts"])), "resolved")
 	})
 
 	// Authors resolve the thread once they push the fix; the reviewer decides whether it is fixed.
 	it("leaves a resolved thread open when its file changed or the changes are unknown", () => {
-		const resolved = thread({ isResolved: true })
-		assert.lengthOf(dismissedFindings([tracked()], [resolved], new Set(["src/a.ts"])), 0)
-		assert.lengthOf(dismissedFindings([tracked()], [resolved], undefined), 0)
+		assert.strictEqual(settle([thread({ isResolved: true })], new Set(["src/a.ts"])), "open")
+		assert.strictEqual(settle([thread({ isResolved: true })], undefined), "open")
 	})
 
-	it("never dismisses on a question or a negation", () => {
+	it("resolves a finding someone answered with a fix", () => {
+		for (const body of ["Fixed in c88ba3a", "Done.", "Addressed by #2412, thanks", "fixed"]) {
+			assert.strictEqual(settle([withReplies(body)]), "resolved", body)
+		}
+	})
+
+	it("never settles on a question or a negation", () => {
 		for (const body of [
 			"Is this intended?",
 			"Why is this not an issue here?",
 			"This is not by design, fix it.",
+			"This is not fixed in the latest commit.",
+			"Is this fixed in main?",
 		]) {
-			const replied = thread({
-				comments: [
-					{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
-					{ commentId: "101", author: "alice", body, thumbsUp: 0, thumbsDown: 0 },
-				],
-			})
-			assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 0, body)
+			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
 	})
 
-	it("dismisses a finding someone answered won't fix, but not on the bot's own reply", () => {
-		const replied = thread({
-			comments: [
-				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
-				{
-					commentId: "101",
-					author: "octo",
-					body: "Won't fix, this is intended.",
-					thumbsUp: 0,
-					thumbsDown: 0,
-				},
-			],
-		})
-		assert.lengthOf(dismissedFindings([tracked()], [replied], undefined), 1)
-		const botReply = thread({
-			comments: [
-				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
-				{ commentId: "101", author: "maple[bot]", body: "not an issue", thumbsUp: 0, thumbsDown: 0 },
-			],
-		})
-		assert.lengthOf(dismissedFindings([tracked()], [botReply], undefined), 0)
+	it("dismisses a finding someone answered won't fix or explained away", () => {
+		for (const body of [
+			"Won't fix, this is intended.",
+			"Not a credential: asn and country are network metadata.",
+			"Intentional, the gate reads receipt time.",
+			"Leaving it as is.",
+		]) {
+			assert.strictEqual(settle([withReplies(body)]), "dismissed", body)
+		}
+	})
+
+	it("takes the latest reply with a verdict", () => {
+		assert.strictEqual(
+			settle([withReplies("Won't fix", "Changed my mind. Fixed in 9ab12cd")]),
+			"resolved",
+		)
+		assert.strictEqual(
+			settle([withReplies("Fixed in 9ab12cd", "Actually reverted, by design")]),
+			"dismissed",
+		)
+	})
+
+	it("ignores the bot's own replies", () => {
+		const botReply = thread({ comments: [BOT_COMMENT, reply("not an issue", "maple[bot]")] })
+		assert.strictEqual(settle([botReply]), "open")
 	})
 
 	it("keeps a finding with no thread or an open, quiet one", () => {
-		assert.lengthOf(
-			dismissedFindings([tracked({ commentId: null })], [thread({ isResolved: true })], new Set()),
-			0,
+		assert.strictEqual(
+			settle([thread({ isResolved: true })], new Set(), tracked({ commentId: null })),
+			"open",
 		)
-		assert.lengthOf(dismissedFindings([tracked()], [thread()], new Set()), 0)
+		assert.strictEqual(settle([thread()], new Set()), "open")
 	})
 })
 
@@ -141,8 +166,29 @@ describe("withoutRepeats", () => {
 		assert.lengthOf(withoutRepeats([finding(30)], [tracked()]).fresh, 1)
 	})
 
-	it("lets a resolved finding's spot be raised again", () => {
-		assert.lengthOf(withoutRepeats([finding(10)], [tracked({ status: "resolved" })]).fresh, 1)
+	it("lets a fix a review confirmed be raised again, in case it regressed", () => {
+		const fixed = tracked({ status: "resolved", resolvedSha: "abc1234" })
+		assert.lengthOf(withoutRepeats([finding(10)], [fixed]).fresh, 1)
+	})
+
+	it("keeps a finding a person closed quiet", () => {
+		const closed = tracked({ status: "resolved", resolvedSha: null })
+		assert.lengthOf(withoutRepeats([finding(10)], [closed]).fresh, 0)
+	})
+
+	it("never re-posts a privacy scan finding, even after a fix", () => {
+		const title = "Credential `user.password` written to a log"
+		const scan = new PrReviewFinding({
+			path: "src/a.ts",
+			line: 80,
+			category: "security",
+			checkId: "PII-01",
+			severity: "warn",
+			title,
+			body: "",
+		})
+		const fixed = tracked({ category: "security", title, status: "resolved", resolvedSha: "abc1234" })
+		assert.lengthOf(withoutRepeats([scan], [fixed]).fresh, 0)
 	})
 })
 
