@@ -226,10 +226,16 @@ const RECENT_ROWS = [20_000, 200_000] as const
 /** The most users a filter may match and still be read in full; `uniq` is exact up to 65536. */
 const MATCHING_USERS_MAX = 50_000
 
+/** The tie-breaking id of a cursor resuming below an empty first page; any id serves. */
+const RESUME_USER_ID = "0"
+
 interface ListPage<Row> {
 	readonly rows: ReadonlyArray<Row>
-	/** Every user above the page's floor, fewer than a full page: more may rank below it. */
-	readonly partial: boolean
+	/**
+	 * Set when the page holds every user above its floor but not a full page: more may rank below
+	 * it, from this `toString` DateTime64 (the instant after the floor) down.
+	 */
+	readonly resume?: string
 }
 
 /**
@@ -247,7 +253,7 @@ const listPage = <Row, E, R>(
 	Effect.gen(function* () {
 		const warehouse = yield* WarehouseQueryService
 		const whole = (bound: CH.UsersListBound | undefined): Effect.Effect<ListPage<Row>, E, R> =>
-			Effect.map(run(bound), (rows) => ({ rows, partial: false }))
+			Effect.map(run(bound), (rows) => ({ rows }))
 		if (CH.usersListFiltered(filter)) {
 			const matching = yield* warehouse
 				.compiledQuery(tenant, CH.compile(CH.usersMatchingCountQuery(scope, filter), params), {
@@ -275,7 +281,12 @@ const listPage = <Row, E, R>(
 					Effect.map(Arr.head),
 					Effect.flatMap((floor) =>
 						Option.isSome(floor) && floor.value.rows >= rows
-							? Effect.asSome(run({ since: floor.value.floor }))
+							? Effect.asSome(
+									Effect.map(run({ since: floor.value.floor }), (page) => ({
+										rows: page,
+										resume: floor.value.resume,
+									})),
+								)
 							: Effect.succeedNone,
 					),
 				)
@@ -284,11 +295,12 @@ const listPage = <Row, E, R>(
 		const [narrow, wide] = RECENT_ROWS
 		const first = yield* ranked(narrow)
 		if (Option.isNone(first)) return yield* everyone()
-		if (first.value.length > limit) return { rows: first.value, partial: false }
+		if (first.value.rows.length > limit) return { rows: first.value.rows }
 		yield* Effect.annotateCurrentSpan({ "maple.users.list_widened": true })
 		const second = yield* ranked(wide)
 		if (Option.isNone(second)) return yield* everyone()
-		return { rows: second.value, partial: second.value.length <= limit }
+		const page = second.value
+		return page.rows.length > limit ? { rows: page.rows } : page
 	})
 
 export const readUsersList = Effect.fn("UsersReads.list")(function* (
@@ -339,7 +351,7 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 				context: "usersList",
 			},
 		)
-	const fetched = yield* withRollupFallback(scope, { rows: [], partial: false }, (scope) =>
+	const fetched = yield* withRollupFallback(scope, { rows: [] }, (scope) =>
 		Effect.flatMap(searchUserIds(scope), (ids) => {
 			const scoped = { ...filter, searchUserIds: ids }
 			const page = (scope: CH.UsersScope) =>
@@ -352,11 +364,17 @@ export const readUsersList = Effect.fn("UsersReads.list")(function* (
 	)
 	const rows = fetched.rows.slice(0, limit)
 	const last = rows.at(-1)
-	// A partial page holds every user above its floor, not a full page: more may follow it.
+	// A partial page holds every user above its floor, not a full page: more may follow it, and
+	// an empty one resumes just above the floor. No user that passes the filter has a lastSeen in
+	// between, so the cursor's tie-breaking id excludes none of them.
 	const next =
-		(fetched.rows.length > limit || fetched.partial) && last !== undefined
-			? { lastSeen: last.lastSeenKey, userId: last.userId }
-			: undefined
+		fetched.rows.length > limit || (fetched.resume !== undefined && last !== undefined)
+			? last === undefined
+				? undefined
+				: { lastSeen: last.lastSeenKey, userId: last.userId }
+			: fetched.resume !== undefined
+				? { lastSeen: fetched.resume, userId: payload.after?.userId ?? RESUME_USER_ID }
+				: undefined
 	// The rollup keeps no name: a page's unnamed users take the one their MCP spans carry.
 	// A row missing either the name or the email takes the missing one from its MCP spans.
 	const unnamed = Arr.map(

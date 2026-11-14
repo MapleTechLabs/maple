@@ -588,7 +588,11 @@ describe("a directory page over a large org", () => {
 			tenant,
 			new UsersListRequest({ startTime: request.startTime, endTime: request.endTime, ...payload }),
 		).pipe(Effect.provide(warehouse(rows, ran)))
-	const floor = { floor: "2026-11-01 23:40:00.000000000", rows: "20000" }
+	const floor = {
+		floor: "2026-11-01 23:40:00.000000000",
+		resume: "2026-11-01 23:40:00.000000001",
+		rows: "20000",
+	}
 
 	it.effect("aggregates only the users active after the newest rows' floor", () =>
 		Effect.gen(function* () {
@@ -632,6 +636,24 @@ describe("a directory page over a large org", () => {
 			assert.strictEqual(Arr.filter(ran, (query) => query.context === "usersList").length, 2)
 			// More users rank below the floor, so the page carries a cursor though it is short.
 			assert.strictEqual(response.next?.userId, "user_0")
+		}),
+	)
+
+	it.effect("resumes just above the floor when no user ranks above it", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const resume = "2026-11-01 23:40:00.000000001"
+			const response = yield* list(
+				{ limit: 5, hasErrors: true },
+				ran,
+				bounded([
+					["usersMatching", [{ users: "900000" }]],
+					["usersRecentFloor", [{ ...floor, resume, rows: "200000" }]],
+					["usersList", []],
+				]),
+			)
+			assert.deepStrictEqual(response.users, [])
+			assert.strictEqual(response.next?.lastSeen, resume)
 		}),
 	)
 

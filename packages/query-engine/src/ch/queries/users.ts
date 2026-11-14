@@ -668,32 +668,38 @@ interface UserRowColumns {
 }
 
 /**
- * Whether a row can belong to a user the filter keeps. Every filter holds for a user only if it
- * holds for one of their rows (a latest name was some row's name), so these rows' users are a
- * superset of the filtered users.
+ * Whether a row can belong to a user the filter keeps. A user passes each filter only if one of
+ * their rows does (a latest name was some row's name), but different filters may hold on different
+ * rows, so only one filter is pushed down: its rows' users are a superset of the filtered users.
  */
-const rowMatches = ($: UserRowColumns, filter: UsersListFilter) => [
-	filter.hasErrors === true ? $.errors.gt(0) : undefined,
-	filter.hasReplay === true ? $.sessions.gt(0) : undefined,
-	filter.groups !== undefined && filter.groups.length > 0
-		? CH.compileTypedFnCall(
-				"hasAny",
-				T.uint8.schema,
-				$.groupIds,
-				CH.arrayOf(...Arr.map(filter.groups, (group) => CH.lit(group))),
-			).eq(1)
-		: undefined,
-	CH.when(filter.search, (search) =>
-		CH.or(
-			containsText($.userId, search),
-			containsText($.name, search),
-			containsText($.email, search),
-			...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
-				? [CH.inList($.userId, filter.searchUserIds)]
-				: []),
+const rowMatches = ($: UserRowColumns, filter: UsersListFilter) => {
+	const each = [
+		filter.hasErrors === true ? $.errors.gt(0) : undefined,
+		filter.hasReplay === true ? $.sessions.gt(0) : undefined,
+		filter.groups !== undefined && filter.groups.length > 0
+			? CH.compileTypedFnCall(
+					"hasAny",
+					T.uint8.schema,
+					$.groupIds,
+					CH.arrayOf(...Arr.map(filter.groups, (group) => CH.lit(group))),
+				).eq(1)
+			: undefined,
+		CH.when(filter.search, (search) =>
+			CH.or(
+				containsText($.userId, search),
+				containsText($.name, search),
+				containsText($.email, search),
+				...(filter.searchUserIds !== undefined && filter.searchUserIds.length > 0
+					? [CH.inList($.userId, filter.searchUserIds)]
+					: []),
+			),
 		),
-	),
-]
+	]
+	return Arr.take(
+		Arr.filter(each, (cond) => cond !== undefined),
+		1,
+	)
+}
 
 /** Whether the filter narrows the directory at all. */
 export const usersListFiltered = (filter: UsersListFilter): boolean =>
@@ -730,7 +736,14 @@ export function usersRecentFloorQuery(scope: UsersScope, filter: UsersListFilter
 		.orderBy(["at", "desc"])
 		.limit(rows)
 	return fromQuery(recent, "recent")
-		.select(($) => ({ floor: CH.toString_(CH.min_($.at)), rows: CH.count() }))
+		.select(($) => ({
+			floor: CH.toString_(CH.min_($.at)),
+			// The first instant after the floor: a page with no user above the floor resumes here.
+			resume: CH.toString_(
+				CH.compileTypedFnCall("addNanoseconds", T.dateTime64.schema, CH.min_($.at), CH.lit(1)),
+			),
+			rows: CH.count(),
+		}))
 		.format("JSON")
 }
 

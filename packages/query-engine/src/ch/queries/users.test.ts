@@ -215,15 +215,21 @@ describe("a bounded directory page", () => {
 		expect(sql).toContain(`user_activity_hourly.Hour <= toDateTime64('${after.lastSeen}', 9)`)
 	})
 
-	it("pushes the filter to single rows when reading every matching user", () => {
-		const filter = { hasErrors: true, groups: ["acme"], search: "ada" } as const
+	it("pushes one filter to single rows, since filters may hold on different rows", () => {
+		// A user with errors on a request and a replay on a clean session passes both filters,
+		// though no single row does.
+		const filter = { hasErrors: true, hasReplay: true, groups: ["acme"], search: "ada" } as const
 		const { sql } = compileUnsafe(usersListQuery(rollup, filter, 201, { matching: true }), params)
-		expect(sql).toContain("rows.errors > 0")
-		expect(sql).toContain("hasAny(rows.groupIds, ['acme']) = 1")
-		expect(sql).toContain("positionCaseInsensitiveUTF8(rows.email, 'ada') > 0")
+		expect(sql).toContain("WHERE rows.errors > 0")
+		expect(sql).not.toContain("rows.sessions > 0")
+		expect(sql).not.toContain("hasAny(rows.groupIds")
+		expect(sql).toContain("HAVING sum(signals.errors) > 0")
+		expect(sql).toContain("sum(signals.sessions) > 0")
 		const counted = compileUnsafe(usersMatchingCountQuery(rollup, filter), params).sql
 		expect(counted).toContain("uniq(rows.userId) AS users")
 		expect(counted).toContain("rows.errors > 0")
+		const searched = compileUnsafe(usersMatchingCountQuery(rollup, { search: "ada" }), params).sql
+		expect(searched).toContain("positionCaseInsensitiveUTF8(rows.email, 'ada') > 0")
 	})
 
 	it("reads no candidate set without a bound", () => {
