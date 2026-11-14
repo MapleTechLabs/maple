@@ -165,6 +165,8 @@ describe("sources list", () => {
 			expectView(text("Connect your first source")).not.toExist(),
 			expectView(role("heading", { name: /^Receiving/ })).toExist(),
 			expectView(role("link", { name: "Source 2" })).toHaveAttr("href", sourceHref(added)),
+			// A name cut off by a narrow list is still readable on hover.
+			expectView(role("link", { name: "Source 2" })).toHaveAttr("title", "Source 2"),
 		)
 	})
 

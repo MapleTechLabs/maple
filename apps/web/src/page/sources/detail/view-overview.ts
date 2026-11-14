@@ -163,7 +163,7 @@ const volumeRail = (h: H, model: Model): Html => {
 			onSome: read,
 		})
 	return statRail(h, { columns: 4, isBusy: Option.isNone(totals) && !isFailed }, [
-		statRailItem(h, { eyebrow: "Stored, last 24h", value: figure(volumeSize), compact: true }),
+		statRailItem(h, { eyebrow: "Stored, last 24 hours", value: figure(volumeSize), compact: true }),
 		statRailItem(h, {
 			eyebrow: "Spans",
 			value: figure((value) => formatNumber(value.spans)),
