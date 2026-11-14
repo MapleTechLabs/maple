@@ -89,7 +89,7 @@ const stsError = (code: string, detail: string | undefined): AwsApiError => {
 }
 
 const codeOf = (error: { readonly _tag: string }) =>
-	error instanceof UnknownAwsError ? error.errorTag : error._tag
+	error instanceof UnknownAwsError ? (error.code ?? error._tag) : error._tag
 
 const messageOf = (error: unknown) =>
 	typeof error === "object" && error !== null && "message" in error && typeof error.message === "string"

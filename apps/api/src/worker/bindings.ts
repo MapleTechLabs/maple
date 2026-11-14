@@ -61,7 +61,7 @@ import {
  */
 export const bindApiClients = Effect.gen(function* () {
 	// `MAPLE_DB`, in the stage's flavor; read back off the env by the port below.
-	yield* MapleDb("api")
+	yield* MapleDb
 	return {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		vcsBackfill: yield* Cloudflare.Queues.WriteQueue(VcsBackfillQueue),

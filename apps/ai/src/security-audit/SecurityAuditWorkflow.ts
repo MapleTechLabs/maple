@@ -14,7 +14,7 @@ export default class SecurityAuditWorkflow extends Cloudflare.Workflow<SecurityA
 	{ limits: { steps: 25_000 } },
 	Effect.gen(function* () {
 		// The application database, bound to the host Worker under `MAPLE_DB`.
-		yield* MapleDb("ai")
+		yield* MapleDb
 		return Effect.fn("SecurityAuditWorkflow.run")(function* (payload: SecurityAuditWorkflowPayload) {
 			const env = yield* Cloudflare.WorkerEnvironment
 			const { runHostedAudit } = yield* Effect.promise(() => import("./workflow.host"))

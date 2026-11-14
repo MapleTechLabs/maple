@@ -70,7 +70,7 @@ export const makeMapleDb = (sql: SqlClient.SqlClient): MapleDb =>
  * The scope's Postgres handle: `@effect/sql-pg`'s own pooled client, scoped —
  * one per invocation on Workers, dialed lazily on the first statement.
  */
-export type MaplePgClient = PgClient.PgClient
+export type MaplePgClient = PgClient.PgClient & SqlClient.SqlClient
 
 export interface MaplePgClientOptions {
 	readonly maxConnections?: number

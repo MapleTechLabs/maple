@@ -91,7 +91,7 @@ const activateOn = (
 ) =>
 	Effect.gen(function* () {
 		// SAFETY: the fake carries the `storage.sql` and `waitUntil` the class reads, and nothing else.
-		const raw = state as unknown as import("@cloudflare/workers-types").DurableObjectState
+		const raw = state as unknown as Parameters<typeof Cloudflare.fromDurableObjectState>[0]
 		const build = yield* activateChatSession(options.ports).pipe(
 			Effect.provide([
 				Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(raw)),
@@ -111,7 +111,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 		Effect.gen(function* () {
 			// alchemy evaluates the outer Effect at plan time with `{ storage: {} }` as the state.
 			// SAFETY: that is alchemy's own mock, reproduced here.
-			const mock = { storage: {} } as unknown as import("@cloudflare/workers-types").DurableObjectState
+			const mock = { storage: {} } as unknown as Parameters<typeof Cloudflare.fromDurableObjectState>[0]
 			const build = yield* activateChatSession().pipe(
 				Effect.provide([
 					Layer.succeed(Cloudflare.DurableObjectState, Cloudflare.fromDurableObjectState(mock)),

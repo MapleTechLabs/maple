@@ -1,7 +1,7 @@
 /**
- * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` and `ref` bind from the
- * Worker init (`ref` through `Hyperdrive.lookup` of the dashboard-managed config); `declared` and
- * `preview` bind from props via `mapleDbEnv`.
+ * The `MAPLE_DB` Hyperdrive binding per the profile's database mode: `managed` binds from the Worker
+ * init; `ref` (the dashboard-managed configs, `refMapleDbHyperdrives`), `declared` and `preview`
+ * bind from props via `mapleDbEnv`.
  */
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Effect from "effect/Effect"
@@ -11,7 +11,7 @@ import { resolveMapleProfile } from "../profile.ts"
 import { resolveAs } from "../secret-guard.ts"
 import * as Secrets from "../secrets.ts"
 import { type MapleDbResources, stageDeployment } from "./stack.ts"
-import { type MapleDbConsumer, resolveHyperdriveRefId, resolveWorkerName } from "./stage.ts"
+import { type MapleDbConsumer, type MapleStage, resolveHyperdriveRefId, resolveWorkerName } from "./stage.ts"
 import { MAPLE_DB_BINDING } from "./worker-runtime.ts"
 import { String as Str } from "effect"
 
@@ -79,31 +79,42 @@ export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbCo
 	}
 
 /**
+ * US prd's dashboard-managed Hyperdrive configs, looked up by id (`"ref"` mode), or `undefined` on
+ * stages that have none. Bound through `mapleDbEnv`: a lookup binds under its id, not `MAPLE_DB`,
+ * so it is never `Connect`ed. Read-only, so destroy and nuke never touch the dashboard configs.
+ */
+export const refMapleDbHyperdrives = (
+	stage: MapleStage,
+): Record<MapleDbConsumer, Cloudflare.Hyperdrive.Connection> | undefined => {
+	const lookup = (consumer: MapleDbConsumer) => {
+		const hyperdriveId = resolveHyperdriveRefId(stage, consumer)
+		return hyperdriveId === undefined
+			? undefined
+			: Cloudflare.Hyperdrive.Connection.lookup({ hyperdriveId })
+	}
+	const api = lookup("api")
+	const ai = lookup("ai")
+	const chatBot = lookup("chat-bot")
+	const alerting = lookup("alerting")
+	return api && ai && chatBot && alerting && { api, ai, "chat-bot": chatBot, alerting }
+}
+
+/**
  * Bind `MAPLE_DB` from a Worker init (or a Workflow's outer phase; bindings are keyed by name).
  * Plan-time only. Needs `Cloudflare.Hyperdrive.ConnectBinding` on the init.
  */
-export const MapleDb = (consumer: MapleDbConsumer) =>
-	Effect.gen(function* () {
-		if (globalThis.__ALCHEMY_RUNTIME__) return
-		const deployment = yield* stageDeployment
-		const { stage } = deployment
-		switch (resolveMapleProfile(deployment).database) {
-			case "managed": {
-				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
-				return
-			}
-			case "ref": {
-				const hyperdriveId = resolveHyperdriveRefId(stage, consumer)
-				if (hyperdriveId === undefined) return
-				// Read-only: no state row, so destroy and nuke never touch the dashboard config.
-				yield* Cloudflare.Hyperdrive.Connect(
-					Cloudflare.Hyperdrive.lookup(MAPLE_DB_BINDING, { hyperdriveId }),
-				)
-				return
-			}
-			// Bound from the Worker's props (`mapleDbEnv`).
-			case "declared":
-			case "preview":
-				return
+export const MapleDb = Effect.gen(function* () {
+	if (globalThis.__ALCHEMY_RUNTIME__) return
+	const deployment = yield* stageDeployment
+	switch (resolveMapleProfile(deployment).database) {
+		case "managed": {
+			yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
+			return
 		}
-	})
+		// Bound from the Worker's props (`mapleDbEnv`).
+		case "ref":
+		case "declared":
+		case "preview":
+			return
+	}
+})

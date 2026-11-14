@@ -44,7 +44,7 @@ const NOT_READY_CODES = new Set(["AccessDeniedException", "DataUnavailableExcept
 type Reason = CostProviderError["reason"]
 
 const codeOf = (error: { readonly _tag: string }) =>
-	error instanceof UnknownAwsError ? error.errorTag : error._tag
+	error instanceof UnknownAwsError ? (error.code ?? error._tag) : error._tag
 
 const reasonOf = (error: { readonly _tag: string }): Reason => {
 	const code = codeOf(error)

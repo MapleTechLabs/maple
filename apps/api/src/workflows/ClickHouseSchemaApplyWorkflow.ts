@@ -28,7 +28,7 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 	Effect.gen(function* () {
 		// Init: the application database, bound to the host Worker under `MAPLE_DB`
 		// (a run reads it off its env through `layerMapleDbConnection`).
-		yield* MapleDb("api")
+		yield* MapleDb
 		return Effect.fn("ClickHouseSchemaApplyWorkflow.run")(function* (
 			payload: SchemaApplyWorkflowPayload,
 		) {
