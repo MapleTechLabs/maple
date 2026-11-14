@@ -50,11 +50,18 @@ import {
 	runPlanetScale,
 	type SdkError,
 } from "./planetscale/api"
-import { makePlanetScalePollState } from "./planetscale/poll-state"
+import { makePlanetScalePollState, pollStateResult } from "./planetscale/poll-state"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { timestampMs } from "@maple/backend/platform/time"
-import { type PollOutcome, reportPoll } from "@maple/backend/services/integrations/integration-sources"
+import { type PollOutcome } from "@maple/backend/services/integrations/integration-sources"
+import { type Lease, makeSourceReporter, withLease } from "./poller"
+
+type PollStateLease = Lease<
+	PG.SelectRowOf<typeof PlanetscalePollState>,
+	PG.UpdateSetOf<typeof PlanetscalePollState>,
+	IntegrationsPersistenceError
+>
 
 /**
  * PlanetScale management-API poller: keeps the org's database/branch inventory
@@ -355,8 +362,43 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const psOAuth = yield* PlanetScaleOAuthService
 			const httpClient = yield* HttpClient.HttpClient
 			const webhooks = yield* PlanetScaleWebhookService
-			const { claimPollWork, readPollState, pollStateByDatabaseId, recordPollResult } =
-				makePlanetScalePollState(database, "PlanetScaleService")
+			const { pollStateByDatabaseId, pollStateLease, unclaimedReason } = makePlanetScalePollState(
+				database,
+				"PlanetScaleService",
+			)
+
+			/**
+			 * Runs `body` under the (org, dataset, database) row's lease. A failure is recorded on
+			 * the row; None (with the reason on the span) when the row was not claimed.
+			 */
+			const underPollState = <A, E extends { readonly message: string }, R>(
+				orgId: OrgId,
+				dataset: string,
+				databaseId: string,
+				freshMs: number,
+				body: (lease: PollStateLease) => Effect.Effect<A, E, R>,
+			) =>
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					const polled = yield* withLease(
+						pollStateLease(orgId, dataset, databaseId, freshMs),
+						now,
+						(lease) =>
+							body(lease).pipe(
+								Effect.tapError((error) =>
+									lease
+										.write(pollStateResult(lease.now, error.message))
+										.pipe(Effect.ignore({ log: "Warn" })),
+								),
+							),
+					)
+					if (Option.isNone(polled)) {
+						const reason = yield* unclaimedReason(orgId, dataset, databaseId, freshMs, now)
+						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": reason })
+						return Option.none<A>()
+					}
+					return polled
+				})
 
 			/**
 			 * One management-API call with the org's grant. A 401 refreshes once and stamps the
@@ -379,10 +421,6 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					),
 				)
 
-			/** The org-wide inventory anchor row — also the tick-overlap lease. */
-			const claimInventoryWork = (orgId: OrgId) =>
-				claimPollWork(orgId, INVENTORY_DATASET, "", INVENTORY_TTL_MS)
-
 			/**
 			 * `insertPlanetScaleEvent` is shared with the webhook consumer, which
 			 * runs in a layer that provides `Database` directly. Here the service
@@ -393,38 +431,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				insertPlanetScaleEvent(input).pipe(Effect.provideService(Database, database))
 
 			const recordInventoryResult = Effect.fn("PlanetScaleService.recordInventoryResult")(function* (
-				orgId: OrgId,
+				lease: PollStateLease,
 				connectionId: string,
 				error: string | null,
 				unchangedSince?: number,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
-					db.run(
-						PG.update(PlanetscalePollState)
-							.set(
-								error === null
-									? {
-											lastSuccessAt: now,
-											lastError: null,
-											lastErrorAt: null,
-											leaseUntil: null,
-											updatedAt: now,
-										}
-									: {
-											lastError: error,
-											lastErrorAt: now,
-											leaseUntil: null,
-											updatedAt: now,
-										},
-							)
-							.where(($) => [
-								$.orgId.eq(orgId),
-								$.dataset.eq(INVENTORY_DATASET),
-								$.databaseId.eq(""),
-							]),
-					),
-				)
+				yield* lease.write(pollStateResult(now, error))
 				yield* dbExecute((db) =>
 					db.run(
 						PG.update(PlanetscaleConnections)
@@ -447,20 +460,13 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				)
 			})
 
+			const reportTick = makeSourceReporter(dbExecute, "PlanetScale")
+
 			/** Records an inventory tick on the connection's source; a failed report does not fail the poll. */
-			const reportInventoryPoll = Effect.fnUntraced(function* (
-				connection: PlanetScaleConnectionRow,
-				outcome: PollOutcome,
-			) {
-				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) => reportPoll(db, connection.sourceId, outcome, now)).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-						Effect.logWarning("PlanetScale source poll report failed").pipe(
-							Effect.annotateLogs({ orgId: connection.orgId, error: error.message }),
-						),
-					),
+			const reportInventoryPoll = (connection: PlanetScaleConnectionRow, outcome: PollOutcome) =>
+				Effect.flatMap(Clock.currentTimeMillis, (now) =>
+					reportTick(connection.sourceId, outcome, now),
 				)
-			})
 
 			const refreshInventory = Effect.fn("PlanetScaleService.refreshInventory")(function* (
 				connection: PlanetScaleConnectionRow,
@@ -599,108 +605,102 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			 */
 			const refreshDeployRequestsFor = Effect.fn("PlanetScaleService.refreshDeployRequestsFor")(
 				function* (connection: PlanetScaleConnectionRow, database_: PlanetScaleDatabaseRow) {
-					const claim = yield* claimPollWork(
+					const inserted = yield* underPollState(
 						connection.orgId,
 						DEPLOY_REQUESTS_DATASET,
 						database_.databaseId,
 						DEPLOY_REQUESTS_TTL_MS,
+						(lease) => backfillDeployRequests(connection, database_, lease),
 					)
-					if (claim !== "claimed") {
-						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
-						return 0
-					}
-
-					const state = yield* readPollState(
-						connection.orgId,
-						DEPLOY_REQUESTS_DATASET,
-						database_.databaseId,
-					)
-					const now = yield* Clock.currentTimeMillis
-					// First backfill reaches 30 days; afterwards only what changed since
-					// the watermark, so a steady-state tick pages once and stops.
-					const floor = Math.max(state?.watermarkAt ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
-
-					const organization = connection.psOrganization
-					const listing = yield* callApi(
-						connection,
-						`listing deploy requests of ${organization}/${database_.name}`,
-						collectPages(
-							PlanetScale.listDeployRequests,
-							{ organization, database: database_.name, per_page: PAGE_SIZE },
-							MAX_PAGES,
-						),
-					)
-					const requestsComplete = listing.complete
-					const requests = yield* decodeConsumed(
-						Schema.Array(DeployRequestSchema),
-						`deploy requests of ${database_.name}`,
-					)(listing.items)
-
-					const newestUpdate = Arr.reduce(requests, state?.watermarkAt ?? 0, (newest, request) =>
-						Math.max(newest, parseTimestamp(request.updated_at) ?? 0),
-					)
-					const pending = Arr.flatMap(requests, (request) => {
-						const updatedAt = parseTimestamp(request.updated_at) ?? 0
-						// Untouched since the watermark: its transitions are already stored.
-						if (updatedAt !== 0 && updatedAt <= floor) return []
-						const externalId =
-							request.number != null ? String(request.number) : (request.id ?? "")
-						const label = externalId === "" ? "Deploy request" : `Deploy request #${externalId}`
-						return Arr.map(
-							Arr.filter(
-								deployRequestTimelineRows(request),
-								(row) => row.occurredAtMs >= now - DEPLOY_REQUESTS_FLOOR_MS,
-							),
-							(row) => ({ request, row, externalId, label }),
-						)
-					})
-					const appended = yield* Effect.forEach(pending, ({ request, row, externalId, label }) =>
-						appendTimelineEvent({
-							orgId: connection.orgId,
-							databaseName: database_.name,
-							// A deploy request spans two branches; pinning the marker to
-							// one of them would be a guess the payload doesn't support.
-							branchName: "",
-							category: "deploy_request",
-							eventType: row.eventType,
-							state: row.state,
-							externalId,
-							title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
-							source: "backfill",
-							actorLogin: request.actor?.display_name ?? null,
-							url: request.html_url ?? null,
-							payload: {
-								branch: request.branch ?? null,
-								intoBranch: request.into_branch ?? null,
-							},
-							occurredAtMs: row.occurredAtMs,
-							createdAtMs: now,
-						}).pipe(Effect.mapError(toPersistenceError)),
-					)
-					const inserted = Arr.filter(appended, (result) => result.inserted).length
-
-					// A truncated listing has unobserved requests beyond the ceiling:
-					// advancing the watermark past them would skip them forever. Keep the
-					// old watermark — inserts are idempotent, so re-scanning is safe.
-					const watermark = requestsComplete
-						? newestUpdate > 0
-							? newestUpdate
-							: null
-						: (state?.watermarkAt ?? null)
-					yield* recordPollResult(
-						connection.orgId,
-						DEPLOY_REQUESTS_DATASET,
-						database_.databaseId,
-						null,
-						watermark,
-					)
-					yield* Effect.annotateCurrentSpan({
-						"maple.planetscale.deploy_requests.seen": requests.length,
-						"maple.planetscale.deploy_requests.inserted": inserted,
-					})
-					return inserted
+					return Option.getOrElse(inserted, () => 0)
 				},
 			)
+
+			const backfillDeployRequests = Effect.fnUntraced(function* (
+				connection: PlanetScaleConnectionRow,
+				database_: PlanetScaleDatabaseRow,
+				lease: PollStateLease,
+			) {
+				const state = lease.row
+				const now = lease.now
+				// First backfill reaches 30 days; afterwards only what changed since
+				// the watermark, so a steady-state tick pages once and stops.
+				const floor = Math.max(state.watermarkAt ?? 0, now - DEPLOY_REQUESTS_FLOOR_MS)
+
+				const organization = connection.psOrganization
+				const listing = yield* callApi(
+					connection,
+					`listing deploy requests of ${organization}/${database_.name}`,
+					collectPages(
+						PlanetScale.listDeployRequests,
+						{ organization, database: database_.name, per_page: PAGE_SIZE },
+						MAX_PAGES,
+					),
+				)
+				const requestsComplete = listing.complete
+				const requests = yield* decodeConsumed(
+					Schema.Array(DeployRequestSchema),
+					`deploy requests of ${database_.name}`,
+				)(listing.items)
+
+				const newestUpdate = Arr.reduce(requests, state.watermarkAt ?? 0, (newest, request) =>
+					Math.max(newest, parseTimestamp(request.updated_at) ?? 0),
+				)
+				const pending = Arr.flatMap(requests, (request) => {
+					const updatedAt = parseTimestamp(request.updated_at) ?? 0
+					// Untouched since the watermark: its transitions are already stored.
+					if (updatedAt !== 0 && updatedAt <= floor) return []
+					const externalId = request.number != null ? String(request.number) : (request.id ?? "")
+					const label = externalId === "" ? "Deploy request" : `Deploy request #${externalId}`
+					return Arr.map(
+						Arr.filter(
+							deployRequestTimelineRows(request),
+							(row) => row.occurredAtMs >= now - DEPLOY_REQUESTS_FLOOR_MS,
+						),
+						(row) => ({ request, row, externalId, label }),
+					)
+				})
+				const appended = yield* Effect.forEach(pending, ({ request, row, externalId, label }) =>
+					appendTimelineEvent({
+						orgId: connection.orgId,
+						databaseName: database_.name,
+						// A deploy request spans two branches; pinning the marker to
+						// one of them would be a guess the payload doesn't support.
+						branchName: "",
+						category: "deploy_request",
+						eventType: row.eventType,
+						state: row.state,
+						externalId,
+						title: `${label} ${DEPLOY_BACKFILL_VERB[row.state] ?? row.state}`,
+						source: "backfill",
+						actorLogin: request.actor?.display_name ?? null,
+						url: request.html_url ?? null,
+						payload: {
+							branch: request.branch ?? null,
+							intoBranch: request.into_branch ?? null,
+						},
+						occurredAtMs: row.occurredAtMs,
+						createdAtMs: now,
+					}).pipe(Effect.mapError(toPersistenceError)),
+				)
+				const inserted = Arr.filter(appended, (result) => result.inserted).length
+
+				// A truncated listing has unobserved requests beyond the ceiling:
+				// advancing the watermark past them would skip them forever. Keep the
+				// old watermark — inserts are idempotent, so re-scanning is safe.
+				const watermark = requestsComplete
+					? newestUpdate > 0
+						? newestUpdate
+						: null
+					: state.watermarkAt
+				const finishedAt = yield* Clock.currentTimeMillis
+				yield* lease.write(pollStateResult(finishedAt, null, watermark))
+				yield* Effect.annotateCurrentSpan({
+					"maple.planetscale.deploy_requests.seen": requests.length,
+					"maple.planetscale.deploy_requests.inserted": inserted,
+				})
+				return inserted
+			})
 
 			/**
 			 * Deploy-request backfill across the org, budgeted. Runs after the
@@ -773,8 +773,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					yield* reportInventoryPoll(connection, DISCONNECTED)
 					return { outcome: "skipped" as const, deployEvents: 0 }
 				}
-				const claim = yield* claimInventoryWork(connection.orgId)
-				// Deliberately outside the inventory claim: inventory refreshes hourly,
+				// Deliberately outside the inventory lease: inventory refreshes hourly,
 				// and a deploy marker an hour late is a deploy nobody can correlate.
 				// Each database row carries its own lease + 5-minute TTL, so this is
 				// safe to enter on every tick. Its own error boundary — a broken
@@ -790,34 +789,52 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					"maple.planetscale.deploy_events_inserted": deployEvents,
 				})
 
-				if (claim !== "claimed") {
-					// A silent skip is how the Cloudflare poller once hid a real outage —
-					// put the reason on the span (mirrors CloudflareAnalyticsService.pollOrg)
-					// so every skipped org is visible on the trace.
-					yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
-					// A fresh inventory still answers for the source, so a reconnect clears a disconnect.
-					if (claim === "fresh") {
-						yield* reportInventoryPoll(
-							connection,
-							connection.lastInventoryError === null
-								? { _tag: "Ok" }
-								: { _tag: "Failed", error: connection.lastInventoryError },
-						)
-					}
-					return { outcome: "skipped" as const, deployEvents }
+				// The org-wide inventory row is the lease; an unclaimed one puts its reason on the span,
+				// so every skipped org is visible on the trace.
+				const now = yield* Clock.currentTimeMillis
+				const polled = yield* withLease(
+					pollStateLease(connection.orgId, INVENTORY_DATASET, "", INVENTORY_TTL_MS),
+					now,
+					(lease) => inventoryUnderLease(connection, grant, lease),
+				)
+				if (Option.isSome(polled)) return { outcome: polled.value, deployEvents }
+				const reason = yield* unclaimedReason(
+					connection.orgId,
+					INVENTORY_DATASET,
+					"",
+					INVENTORY_TTL_MS,
+					now,
+				)
+				yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": reason })
+				// A fresh inventory still answers for the source, so a reconnect clears a disconnect.
+				if (reason === "fresh") {
+					yield* reportInventoryPoll(
+						connection,
+						connection.lastInventoryError === null
+							? { _tag: "Ok" }
+							: { _tag: "Failed", error: connection.lastInventoryError },
+					)
 				}
+				return { outcome: "skipped" as const, deployEvents }
+			})
 
+			/** One inventory refresh under the org row's lease, and what it means for the source. */
+			const inventoryUnderLease = Effect.fnUntraced(function* (
+				connection: PlanetScaleConnectionRow,
+				grant: Effect.Success<ReturnType<typeof psOAuth.grantStatus>>,
+				lease: PollStateLease,
+			) {
 				const result = yield* refreshInventory(connection).pipe(
 					Effect.map((count) => ({ ok: true as const, count })),
 					Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
 				)
 				if (result.ok) {
-					yield* recordInventoryResult(connection.orgId, connection.id, null)
+					yield* recordInventoryResult(lease, connection.id, null)
 					yield* reportInventoryPoll(connection, { _tag: "Ok" })
 					yield* Effect.logInfo("PlanetScale inventory refreshed").pipe(
 						Effect.annotateLogs({ orgId: connection.orgId, databases: result.count }),
 					)
-					return { outcome: "refreshed" as const, deployEvents }
+					return "refreshed" as const
 				}
 				// A 403 on the org listing means the grant lost access to the org; it does not clear
 				// on its own. Two ticks running stamps the grant revoked, so polling stops and the
@@ -828,7 +845,7 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 					grant.updatedAt !== null &&
 					(yield* psOAuth.markRevoked(connection.orgId, grant.updatedAt))
 				yield* recordInventoryResult(
-					connection.orgId,
+					lease,
 					connection.id,
 					result.error.message,
 					connection.updatedAt,
@@ -872,36 +889,30 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 						),
 					),
 				)
-				return { outcome: "failed" as const, deployEvents }
+				return "failed" as const
 			})
 
 			/** Register missing webhooks after the inventory, so a new connection gets them on its first tick. */
 			const syncWebhooks = Effect.fn("PlanetScaleService.syncWebhooks")(
 				function* (connection: PlanetScaleConnectionRow) {
 					yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
-					const claim = yield* claimPollWork(
-						connection.orgId,
-						WEBHOOKS_DATASET,
-						"",
-						WEBHOOKS_TTL_MS,
-					)
-					if (claim !== "claimed") {
-						yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": claim })
-						return
-					}
-					const result = yield* webhooks.reconcile(connection)
-					yield* recordPollResult(
-						connection.orgId,
-						WEBHOOKS_DATASET,
-						"",
-						// A skip (no write access yet) is not a success: the next tick checks the grant again,
-						// so a reauthorization registers within minutes, not after the TTL.
-						result.skipped !== null
-							? `Webhook sync skipped: ${result.skipped}`
-							: result.failed > 0
-								? `${result.failed} database webhook(s) failed to register`
-								: null,
-						null,
+					yield* underPollState(connection.orgId, WEBHOOKS_DATASET, "", WEBHOOKS_TTL_MS, (lease) =>
+						Effect.gen(function* () {
+							const result = yield* webhooks.reconcile(connection)
+							const finishedAt = yield* Clock.currentTimeMillis
+							yield* lease.write(
+								pollStateResult(
+									finishedAt,
+									// A skip (no write access yet) is not a success: the next tick checks the
+									// grant again, so a reauthorization registers within minutes, not after the TTL.
+									result.skipped !== null
+										? `Webhook sync skipped: ${result.skipped}`
+										: result.failed > 0
+											? `${result.failed} database webhook(s) failed to register`
+											: null,
+								),
+							)
+						}),
 					)
 				},
 				// Webhooks must never cost the org its inventory or deploy timeline.
