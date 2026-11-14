@@ -284,6 +284,52 @@ const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 		},
 	})
 
+/** The window's time controls, or Reload while the first sync is awaited; none before a source exists. */
+const timeActions = (h: H, model: Model): Html | undefined =>
+	showsData(model)
+		? pageTime(h, {
+				search: model.search,
+				defaultPreset: DEFAULT_PRESET,
+				presets: DAY_RANGE_PRESET_VALUES,
+				// Cost is per whole day, and the page reads a year at most.
+				maxRangeSeconds: LONG_RANGE_MAX_SECONDS,
+				minRangeSeconds: DAY_SECONDS,
+				window: model.window,
+				picker: model.timePicker,
+				toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
+				onReset: Message.ClickedResetTimeRange(),
+				onReload: Message.ClickedReload(),
+				isReloading: model.isReloading,
+			})
+		: isAwaitingCost(model)
+			? // The first sync lands while the page is open: Reload reads the sources again.
+				refreshButton(h, {
+					onRefresh: Message.ClickedReload(),
+					isPending: model.isReloading,
+					label: "Reload",
+				})
+			: undefined
+
+/**
+ * The header's right side. Once a source exists, Add source sits here too: the Sources panel is
+ * below the chart and table, out of sight. With none, the on-ramp in the body offers it.
+ */
+const headerActions = (h: H, model: Model): Html | undefined => {
+	const time = timeActions(h, model)
+	if (!canManageSources(model) || sourcesOf(model).length === 0) return time
+	const add = button(
+		h,
+		{
+			variant: "outline",
+			size: "sm",
+			isDisabled: model.sourceWrite !== "Idle",
+			attributes: [h.OnClick(Message.ClickedAddSource())],
+		},
+		[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add source"],
+	)
+	return time === undefined ? add : hstack(h, { gap: "2", wrap: true }, [add, time])
+}
+
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>
 	h.div(
 		[h.Class("contents"), h.OnMount(ResolveThemeColors({ tokens: BAR_CHART_TOKENS }))],
@@ -294,29 +340,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 					title: "Cost",
 					// The rail filters the window's reads: it shows once there is cost to read.
 					filters: showsData(model) ? filtersRail(h, model) : undefined,
-					actions: showsData(model)
-						? pageTime(h, {
-								search: model.search,
-								defaultPreset: DEFAULT_PRESET,
-								presets: DAY_RANGE_PRESET_VALUES,
-								// Cost is per whole day, and the page reads a year at most.
-								maxRangeSeconds: LONG_RANGE_MAX_SECONDS,
-								minRangeSeconds: DAY_SECONDS,
-								window: model.window,
-								picker: model.timePicker,
-								toPickerMessage: (message) => Message.GotTimePickerMessage({ message }),
-								onReset: Message.ClickedResetTimeRange(),
-								onReload: Message.ClickedReload(),
-								isReloading: model.isReloading,
-							})
-						: isAwaitingCost(model)
-							? // The first sync lands while the page is open: Reload reads the sources again.
-								refreshButton(h, {
-									onRefresh: Message.ClickedReload(),
-									isPending: model.isReloading,
-									label: "Reload",
-								})
-							: undefined,
+					actions: headerActions(h, model),
 				},
 				// A grid, not the scroll column's own flex: there a panel (it clips) is squeezed by a
 				// growing sibling such as the error state.
