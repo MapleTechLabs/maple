@@ -144,6 +144,16 @@ const TAB_LABEL = {
 	mcp: "MCP",
 } satisfies { readonly [K in UserTab]: string }
 
+const TAB_ICON = {
+	activity: "UnorderedListIcon",
+	sessions: "MediaPlayIcon",
+	errors: "CircleWarningIcon",
+	traces: "LayersIcon",
+	logs: "FileIcon",
+	events: "CursorPointerIcon",
+	mcp: "PlugIcon",
+} satisfies { readonly [K in UserTab]: IconName }
+
 export const tabCount = (tab: UserTab, detail: UserDetail): number | undefined => {
 	const { profile } = detail
 	switch (tab) {
@@ -176,6 +186,7 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 				key: tab,
 				href: options.hrefOf(tab),
 				label: TAB_LABEL[tab],
+				icon: TAB_ICON[tab],
 				count: count === undefined ? undefined : formatNumber(count),
 				countTone: tab === "errors" && count !== undefined && count > 0 ? "error" : "muted",
 				onClick: options.onSelectTab(tab),
@@ -183,6 +194,7 @@ export const userTabs = <M>(h: HtmlBuilder<M>, detail: UserDetail, options: User
 				isRouteActive: tab === options.tab,
 			}
 		}),
+		{ isDense: true },
 	)
 
 // --- stats --------------------------------------------------------------------------------------
