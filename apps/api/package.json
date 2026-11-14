@@ -42,6 +42,6 @@
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
-		"wrangler": "^4.158.0"
+		"wrangler": "^4.162.0"
 	}
 }
