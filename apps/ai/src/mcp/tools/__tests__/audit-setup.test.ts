@@ -256,6 +256,25 @@ describe("nextCallsOf", () => {
 		expect(finding("The drain draws no data.")).toEqual({})
 	})
 
+	it("routes a revoked grant to the provider its affected entities name, and stays unfiltered for several", () => {
+		const revoked = (providers: ReadonlyArray<string>) =>
+			callsFor([
+				check({
+					id: "CFG-INTEG-01",
+					category: "integrations",
+					detail: `${providers.length} integrations lost access.`,
+					affectedCount: providers.length,
+					affected: Arr.map(providers, (name) => ({
+						kind: "integration" as const,
+						name,
+						note: "access revoked",
+					})),
+				}),
+			])[0]?.args
+		expect(revoked(["vercel"])).toEqual({ provider: "vercel" })
+		expect(revoked(["vercel", "railway"])).toEqual({})
+	})
+
 	/** The call decodes against the target tool's own parameter schema, as the registry checks. */
 	const decodes = (call: { readonly tool: string; readonly args: unknown } | undefined) =>
 		Option.isSome(

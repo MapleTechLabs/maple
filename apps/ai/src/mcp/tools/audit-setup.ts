@@ -271,13 +271,20 @@ const nextCallsFor = (check: OutputCheck, openRecommendations: number): Readonly
 		const detail = Str.toLowerCase(check.detail ?? check.title)
 		// Whole words only: "aws" must not match inside "draws".
 		const words = Str.split(/[^a-z0-9]+/)(detail)
-		const provider = Arr.findFirst(INTEGRATION_PROVIDERS, (name) =>
-			Str.includes(` ${Str.replace("_", " ")(name)} `)(` ${Arr.join(words, " ")} `),
+		const named = Arr.map(check.affected, (entity) => entity.name)
+		// Providers named in the text or as affected entities (CFG-INTEG-01 names them only there).
+		const providers = Arr.filter(
+			INTEGRATION_PROVIDERS,
+			(name) =>
+				Arr.contains(named, name) ||
+				Str.includes(` ${Str.replace("_", " ")(name)} `)(` ${Arr.join(words, " ")} `),
 		)
+		// One provider narrows the call; several stay unfiltered so none is dropped.
+		const provider = providers.length === 1 ? providers[0] : undefined
 		return [
 			doc.next(
 				"list_integrations",
-				{ provider: Option.getOrUndefined(provider) },
+				{ provider },
 				`${check.id}: which integration resources fail and why`,
 			),
 		]
