@@ -2,8 +2,8 @@
 // nullable epoch-ms column, and every later write compares-and-sets on the value it wrote.
 //
 // `withLease` (./poller) keeps a failed tick's back-off in its own hold column, so one corrupt
-// bound fits every poller on it: twice its lease. Railway and PlanetScale metrics use it; the
-// pollers not migrated yet still pass their own bound here, or none.
+// bound fits every poller on it: twice its lease. Railway, PlanetScale, Google Cloud, Vercel and
+// Supabase use it; the pollers not on it yet still pass their own bound here, or none.
 
 import * as PG from "@maple-dev/effect-orm/postgres"
 

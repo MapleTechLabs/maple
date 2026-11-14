@@ -7,15 +7,16 @@
  * Cloud SQL instance's settings.
  *
  * Work per tick is bounded: connectors are taken least recently polled first, a few per
- * organization, until the tick's call or time budget runs out. A window is read again only when
- * nothing of it was ingested; the exceptions are an ingest failure and the hard timeout, which
- * repeat what a poll had already flushed.
+ * organization, until the tick's call or time budget runs out. Each poll holds its connector's
+ * lease (`withLease`), and a failure is classified through the shared `PollFailure` table. A
+ * window is read again only when nothing of it was ingested; the exceptions are an ingest failure
+ * and the hard timeout, which repeat what a poll had already flushed.
  */
 import { GCP_METRIC_GROUPS, type GcpMetric, type GcpMetricGroup } from "@maple/domain/gcp-metrics"
 import { IntegrationsPersistenceError, UserId } from "@maple/domain/http"
 import type { OrgId } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { leaseClaimable } from "./lease"
+import { leaseStillOurs } from "./lease"
 import { GcpConnectors, GcpResources, type GcpConnectorRow } from "@maple/db/tables"
 import {
 	Clock,
@@ -36,13 +37,24 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { pollFleet } from "./poll-fleet"
 import { GcpServiceAccountKey } from "@maple/infra/secrets"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
-import { makeIngestSender } from "@maple/backend/services/ingest/ingest-sender"
 import {
-	isSourcePaused,
-	type PollOutcome,
-	reportPoll,
-	stampedSourceId,
-} from "@maple/backend/services/integrations/integration-sources"
+	type IngestSendError,
+	isRefusal,
+	makeIngestSender,
+} from "@maple/backend/services/ingest/ingest-sender"
+import { stampedSourceId } from "@maple/backend/services/integrations/integration-sources"
+import {
+	type Lease,
+	type LeaseSpec,
+	leaseFree,
+	makeSourceReporter,
+	POLL_FAILURE_POLICY,
+	type PollFailure,
+	pollFailureMessage,
+	pollFailureOutcome,
+	skipIfPaused,
+	withLease,
+} from "./poller"
 import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
 import {
 	fetchMapleAccessToken,
@@ -93,8 +105,11 @@ const MAX_CONNECTORS_PER_ORG_TICK = 10
 const CONNECTOR_CONCURRENCY = 3
 /** Rows buffered per connector before they are shipped. */
 const FLUSH_ROWS = 5_000
-/** An organization over its plan limit is not read again for this long. */
-const BILLING_HOLD_MS = 60 * MINUTE_MS
+/**
+ * An organization the ingest gateway refused is not read again for this long. Shorter than the
+ * oldest window a poll reads, so the minutes of the hold are read once it ends.
+ */
+export const INGEST_REFUSED_HOLD_MS = 30 * MINUTE_MS
 const RESOURCE_SYNC_INTERVAL_MS = 60 * MINUTE_MS
 
 const METRIC_COUNT = Arr.reduce(GCP_METRIC_GROUPS, 0, (sum, group) => sum + group.metrics.length)
@@ -181,6 +196,8 @@ const readToEnd = <B extends { readonly nextPageToken?: string | undefined }>(la
 const SYSTEM_USER_ID = Schema.decodeSync(UserId)("system-gcp-metrics")
 
 const RETRIES = "Maple retries in 5 minutes."
+/** A rate limit that failed a whole poll holds the connector as long as the shared table says. */
+const RATE_LIMIT_RETRIES = `Maple retries in ${POLL_FAILURE_POLICY.RateLimited.holdMs / MINUTE_MS} minutes.`
 const NOT_STORED = `${RETRIES} Nothing to do.`
 
 /** What helps a scope too large for one read. A project has no parts to connect instead. */
@@ -194,6 +211,7 @@ const explainApiError = (
 	error: GcpApiError,
 	connector: GcpConnectorRow,
 	reading: "metrics" | "resources",
+	retries: string,
 ) => {
 	// The host project is the one Google checks for billing, enabled APIs and quota. A project
 	// scope is its own host, and reads as "the project".
@@ -221,17 +239,41 @@ const explainApiError = (
 	}
 	// Signing in is counted against Maple's own project, not the host project.
 	if (error.kind === "rate_limited" && error.api !== "IAM Credentials") {
-		return `Google rate-limited the ${error.api} API for the ${host}. ${RETRIES} If this repeats, raise that API's quota on the project.`
+		return `Google rate-limited the ${error.api} API for the ${host}. ${retries} If this repeats, raise that API's quota on the project.`
 	}
-	return `Maple's request to Google's ${error.api} API failed. ${RETRIES} If this repeats, write to support@maple.dev.`
+	return `Maple's request to Google's ${error.api} API failed. ${retries} If this repeats, write to support@maple.dev.`
 }
 
 /**
  * What the connection shows for a failed call: one sentence of cause, one of what to do, and
  * Google's status at the end.
  */
-const describeApiError = (error: GcpApiError, connector: GcpConnectorRow, reading: "metrics" | "resources") =>
-	`${explainApiError(error, connector, reading)} (${error.message})`
+const describeApiError = (
+	error: GcpApiError,
+	connector: GcpConnectorRow,
+	reading: "metrics" | "resources",
+	retries = RETRIES,
+) => `${explainApiError(error, connector, reading, retries)} (${error.message})`
+
+/**
+ * A failed metrics poll through the shared table: a refused sign-in or read is Rejected (the
+ * source reports Disconnected), unless the host project lacks billing or the API, which a
+ * reconnect does not fix.
+ */
+export const gcpPollFailure = (error: GcpApiError, message: string): PollFailure => {
+	const misconfigured = error.reason === "BILLING_DISABLED" || error.reason === "SERVICE_DISABLED"
+	if (!misconfigured && error.kind === "denied") return { _tag: "Rejected", reason: message }
+	if (error.kind === "not_found" && error.api === "IAM Credentials")
+		return { _tag: "Rejected", reason: message }
+	if (error.kind === "rate_limited") return { _tag: "RateLimited", message }
+	return { _tag: "Upstream", message }
+}
+
+type ConnectorLease = Lease<
+	GcpConnectorRow,
+	PG.UpdateSetOf<typeof GcpConnectors>,
+	IntegrationsPersistenceError
+>
 
 const toPersistenceError = makePersistenceErrorMapper(
 	IntegrationsPersistenceError,
@@ -247,6 +289,27 @@ export const nextWindow = (watermarkAt: number | null, now: number) => {
 	const startMs = Math.max(watermarkAt ?? 0, endMs - MAX_WINDOW_MS)
 	return startMs < endMs ? { startMs, endMs } : null
 }
+
+/** Enabled, and free of a live lease or hold. */
+const isDue = ($: PG.ColumnAccessor<typeof GcpConnectors.columns>, now: number) => [
+	$.metricsEnabled.eq(true),
+	leaseFree($.metricsLeaseUntil, $.metricsHoldUntil, now, LEASE_MS),
+]
+
+/** An ingest failure through the shared table: a refused org is held, anything else retried. */
+const ingestFailure = (error: IngestSendError): PollFailure =>
+	!isRefusal(error)
+		? {
+				_tag: "Upstream",
+				message: `Maple could not store the metrics it read just now. ${NOT_STORED} (${error.message})`,
+			}
+		: {
+				_tag: "IngestRefused",
+				message:
+					error.status === 402
+						? `Metrics are paused: this Maple organization is over its plan limit. Maple tries again in ${INGEST_REFUSED_HOLD_MS / MINUTE_MS} minutes. See Settings, Billing.`
+						: `Metrics are paused: Maple's ingest refused this organization's key. Maple tries again in ${INGEST_REFUSED_HOLD_MS / MINUTE_MS} minutes. (${error.message})`,
+			}
 
 export interface GcpMetricsPollSummary {
 	readonly polled: number
@@ -301,72 +364,68 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			const ingest = yield* makeIngestSender
 			const dbExecute = makeDbExecute(database, "GcpMetricsService", toPersistenceError)
 
-			const updateConnector = (id: GcpConnectorRow["id"], set: PG.UpdateSetOf<typeof GcpConnectors>) =>
-				dbExecute((db) =>
-					db.run(
-						PG.update(GcpConnectors)
-							.set(set)
-							.where(($) => [$.id.eq(id)]),
-					),
-				)
-
-			/** Records a tick on the connector's source; a failed report does not fail the poll. */
-			const reportOutcome = (
-				connector: Pick<GcpConnectorRow, "id" | "sourceId">,
-				outcome: PollOutcome,
-				now: number,
-			) =>
-				dbExecute((db) => reportPoll(db, connector.sourceId, outcome, now)).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-						Effect.logWarning("gcp source poll report failed").pipe(
-							Effect.annotateLogs({ connectorId: connector.id, error: error.message }),
-						),
-					),
-				)
+			const reportTick = makeSourceReporter(dbExecute, "gcp")
 
 			/**
-			 * A failed poll leaves the watermark alone and says why. With `holdUntilMs` the whole
-			 * organization is held, so its other connectors are not read for nothing.
+			 * A failed poll leaves the watermark alone, says why and holds the connector as the
+			 * failure asks. An ingest refusal holds the whole organization, so its other connectors
+			 * are not read for nothing.
 			 */
 			const recordFailure = Effect.fnUntraced(function* (
 				connector: GcpConnectorRow,
-				message: string,
-				holdUntilMs?: number,
+				lease: ConnectorLease,
+				failure: PollFailure,
 			) {
-				yield* Effect.annotateCurrentSpan({ "maple.gcp.poll_failed": true })
+				const message = pollFailureMessage(failure)
+				yield* Effect.annotateCurrentSpan({
+					"maple.gcp.poll_failed": true,
+					"maple.gcp.poll_failure": failure._tag,
+				})
 				yield* Effect.logWarning("gcp connector poll failed", {
 					orgId: connector.orgId,
 					connectorId: connector.id,
 					error: message,
 				})
-				yield* holdUntilMs === undefined
-					? updateConnector(connector.id, { lastMetricsError: message })
-					: dbExecute((db) =>
-							db.run(
-								PG.update(GcpConnectors)
-									.set({ lastMetricsError: message, metricsLeaseUntil: holdUntilMs })
-									.where(($) => [$.orgId.eq(connector.orgId), $.metricsEnabled.eq(true)]),
-							),
-						)
-				const now = yield* Clock.currentTimeMillis
-				const failed: PollOutcome = { _tag: "Failed", error: message }
+				yield* lease.write({ lastMetricsError: message })
+				const outcome = pollFailureOutcome(failure)
+				if (failure._tag !== "IngestRefused") {
+					yield* lease.holdFor(failure)
+					yield* reportTick(connector.sourceId, outcome, lease.now)
+					return FAILED
+				}
+				const holdUntil = lease.now + INGEST_REFUSED_HOLD_MS
+				yield* lease.hold(holdUntil)
 				// A hold fails every connector it holds, so each of their sources says so.
-				const held =
-					holdUntilMs === undefined
-						? [connector]
-						: yield* dbExecute((db) =>
-								db.run(
-									PG.from(GcpConnectors)
-										.select("id", "sourceId")
-										.where(($) => [
-											$.orgId.eq(connector.orgId),
-											$.metricsEnabled.eq(true),
-										]),
-								),
-							)
-				yield* Effect.forEach(held, (row) => reportOutcome(row, failed, now), {
-					discard: true,
-				})
+				const siblings = yield* dbExecute((db) =>
+					Effect.gen(function* () {
+						// The longest hold wins: a sibling's own longer hold is not cut short.
+						yield* db.run(
+							PG.update(GcpConnectors)
+								.set({ metricsHoldUntil: holdUntil })
+								.where(($) => [
+									$.orgId.eq(connector.orgId),
+									$.metricsEnabled.eq(true),
+									$.id.neq(connector.id),
+									PG.or($.metricsHoldUntil.isNull(), $.metricsHoldUntil.lt(holdUntil)),
+								]),
+						)
+						return yield* db.run(
+							PG.update(GcpConnectors)
+								.set({ lastMetricsError: message })
+								.where(($) => [
+									$.orgId.eq(connector.orgId),
+									$.metricsEnabled.eq(true),
+									$.id.neq(connector.id),
+								])
+								.returning("sourceId"),
+						)
+					}),
+				)
+				yield* Effect.forEach(
+					[connector, ...siblings],
+					(row) => reportTick(row.sourceId, outcome, lease.now),
+					{ discard: true },
+				)
 				return FAILED
 			})
 
@@ -527,7 +586,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 
 			/** One connector: its inventory sync when due, then its metrics window. */
 			const pollConnector = Effect.fn("GcpMetricsService.pollConnector")(
-				function* (connector: GcpConnectorRow, tick: Tick) {
+				function* (connector: GcpConnectorRow, tick: Tick, lease: ConnectorLease) {
 					// The id is validated when the connector is created; encoding keeps it inside the path.
 					const scope = `${connector.scopeType}s/${encodeURIComponent(connector.scopeId)}`
 					yield* Effect.annotateCurrentSpan({
@@ -538,266 +597,329 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 					const window = nextWindow(connector.metricsWatermarkAt, tick.now)
 					if (window === null) return NOTHING
 					// A paused source reads nothing; its watermark follows the clock so a resume starts at now.
-					if (yield* dbExecute((db) => isSourcePaused(db, connector.sourceId, tick.now))) {
+					const followClock = Effect.gen(function* () {
 						yield* Effect.annotateCurrentSpan("maple.gcp.skip_reason", "source paused")
-						yield* updateConnector(connector.id, { metricsWatermarkAt: window.endMs })
+						yield* lease.write({ metricsWatermarkAt: window.endMs })
 						return NOTHING
-					}
-					const reader = yield* impersonateReader(tick.httpClient, tick.mapleToken, connector)
-					if (
-						connector.resourcesSyncedAt === null ||
-						tick.now - connector.resourcesSyncedAt >= RESOURCE_SYNC_INTERVAL_MS
-					) {
-						const syncOutcome = yield* resourceSyncOutcome(connector, tick, scope, reader)
-						yield* updateConnector(connector.id, syncOutcome)
-					}
-					const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
-						.publicKey
-					const sourceId = stampedSourceId(connector.sourceId)
-
-					// The metrics get a full budget, whatever sign-in and the inventory sync took.
-					const startedAt = yield* Clock.currentTimeMillis
-					const outOfBudget = Effect.map(
-						Clock.currentTimeMillis,
-						(time) =>
-							time - startedAt >= POLL_BUDGET_MS || tick.budget.calls >= MAX_CALLS_PER_TICK,
-					)
-
-					const emptyRows: GcpMetricRows = { sumRows: [], gaugeRows: [] }
-					const buffer = yield* Ref.make(emptyRows)
-					const rowsIngested = yield* Ref.make(0)
-					const ship = (rows: GcpMetricRows) =>
-						emitMetrics(tick.httpClient, ingestKey, sourceId, rows).pipe(
-							Effect.flatMap((shipped) => Ref.update(rowsIngested, (total) => total + shipped)),
-						)
-					/** A page's rows of one metric, `keep`'s series only; shipped once enough are buffered. */
-					const store = Effect.fnUntraced(function* (
-						query: GcpTimeSeriesQuery,
-						series: ReadonlyArray<GcpTimeSeries>,
-						keep?: (series: GcpTimeSeries) => boolean,
-					) {
-						const rows = mapGcpTimeSeries(
-							query,
-							keep === undefined ? series : Arr.filter(series, keep),
-						)
-						const full = yield* Ref.modify(buffer, (held) => {
-							const next = {
-								sumRows: [...held.sumRows, ...rows.sumRows],
-								gaugeRows: [...held.gaugeRows, ...rows.gaugeRows],
-							}
-							return next.sumRows.length + next.gaugeRows.length >= FLUSH_ROWS
-								? [Option.some(next), emptyRows]
-								: [Option.none<GcpMetricRows>(), next]
-						})
-						if (Option.isSome(full)) yield* ship(full.value)
 					})
-					/**
-					 * One metric, page by page, each page's series through `read`; false when pages were
-					 * left unread. A Google failure is the outcome, not an error.
-					 */
-					const readMetric = <E>(
-						query: GcpTimeSeriesQuery,
-						read: (series: ReadonlyArray<GcpTimeSeries>) => Effect.Effect<void, E>,
-					) =>
-						pages(
-							MAX_PAGES_PER_METRIC,
-							(pageToken) =>
-								listTimeSeriesPage(tick.httpClient, reader, query, pageToken).pipe(
-									// One more try rides out a blip; a query that keeps failing is skipped.
-									Effect.retry({ times: 1, while: (error) => error.kind === "upstream" }),
+					const read = Effect.gen(function* () {
+						const reader = yield* impersonateReader(tick.httpClient, tick.mapleToken, connector)
+						if (
+							connector.resourcesSyncedAt === null ||
+							tick.now - connector.resourcesSyncedAt >= RESOURCE_SYNC_INTERVAL_MS
+						) {
+							const syncOutcome = yield* resourceSyncOutcome(connector, tick, scope, reader)
+							yield* lease.write(syncOutcome)
+						}
+						const ingestKey = (yield* ingestKeys.getOrCreate(connector.orgId, SYSTEM_USER_ID))
+							.publicKey
+						const sourceId = stampedSourceId(connector.sourceId)
+
+						// The metrics get a full budget, whatever sign-in and the inventory sync took.
+						const startedAt = yield* Clock.currentTimeMillis
+						const outOfBudget = Effect.map(
+							Clock.currentTimeMillis,
+							(time) =>
+								time - startedAt >= POLL_BUDGET_MS || tick.budget.calls >= MAX_CALLS_PER_TICK,
+						)
+
+						const emptyRows: GcpMetricRows = { sumRows: [], gaugeRows: [] }
+						const buffer = yield* Ref.make(emptyRows)
+						const rowsIngested = yield* Ref.make(0)
+						const ship = (rows: GcpMetricRows) =>
+							emitMetrics(tick.httpClient, ingestKey, sourceId, rows).pipe(
+								Effect.flatMap((shipped) =>
+									Ref.update(rowsIngested, (total) => total + shipped),
 								),
-							Effect.map(outOfBudget, (out) => !out),
-						).pipe(
-							Stream.tap((body) => read(body.timeSeries ?? [])),
-							Stream.runLast,
-							Effect.map(readToEnd),
-							Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
-								Effect.succeed(error),
-							),
-						)
+							)
+						/** A page's rows of one metric, `keep`'s series only; shipped once enough are buffered. */
+						const store = Effect.fnUntraced(function* (
+							query: GcpTimeSeriesQuery,
+							series: ReadonlyArray<GcpTimeSeries>,
+							keep?: (series: GcpTimeSeries) => boolean,
+						) {
+							const rows = mapGcpTimeSeries(
+								query,
+								keep === undefined ? series : Arr.filter(series, keep),
+							)
+							const full = yield* Ref.modify(buffer, (held) => {
+								const next = {
+									sumRows: [...held.sumRows, ...rows.sumRows],
+									gaugeRows: [...held.gaugeRows, ...rows.gaugeRows],
+								}
+								return next.sumRows.length + next.gaugeRows.length >= FLUSH_ROWS
+									? [Option.some(next), emptyRows]
+									: [Option.none<GcpMetricRows>(), next]
+							})
+							if (Option.isSome(full)) yield* ship(full.value)
+						})
+						/**
+						 * One metric, page by page, each page's series through `read`; false when pages were
+						 * left unread. A Google failure is the outcome, not an error.
+						 */
+						const readMetric = <E>(
+							query: GcpTimeSeriesQuery,
+							read: (series: ReadonlyArray<GcpTimeSeries>) => Effect.Effect<void, E>,
+						) =>
+							pages(
+								MAX_PAGES_PER_METRIC,
+								// The client tries a failed page once more; a query that keeps failing is skipped.
+								(pageToken) => listTimeSeriesPage(tick.httpClient, reader, query, pageToken),
+								Effect.map(outOfBudget, (out) => !out),
+							).pipe(
+								Stream.tap((body) => read(body.timeSeries ?? [])),
+								Stream.runLast,
+								Effect.map(readToEnd),
+								Effect.catchTag("@maple/api/integrations/GcpApiError", (error) =>
+									Effect.succeed(error),
+								),
+							)
 
-					/** One metric on its own. */
-					const readOne = Effect.fnUntraced(function* (group: GcpMetricGroup, metric: GcpMetric) {
-						if (yield* outOfBudget) return "skipped" as const
-						const query = { scope, group, metric, ...window }
-						return yield* readMetric(query, (series) => store(query, series))
-					})
+						/** One metric on its own. */
+						const readOne = Effect.fnUntraced(function* (
+							group: GcpMetricGroup,
+							metric: GcpMetric,
+						) {
+							if (yield* outOfBudget) return "skipped" as const
+							const query = { scope, group, metric, ...window }
+							return yield* readMetric(query, (series) => store(query, series))
+						})
 
-					/**
-					 * A top group: its ranking metric in full, then the rest for the series the ranking
-					 * kept. A ranking that failed leaves the rest unread; one that kept nothing leaves
-					 * nothing to read.
-					 */
-					const readTop = Effect.fnUntraced(function* (
-						group: GcpTopGroup,
-						ranking: GcpMetric,
-						rest: ReadonlyArray<GcpMetric>,
-					) {
-						if (yield* outOfBudget) {
-							return Arr.map([ranking, ...rest], (metric): Read => [metric, "skipped"])
-						}
-						const query = { scope, group, metric: ranking, ...window }
-						const rankingSeries = yield* Ref.make<ReadonlyArray<GcpTimeSeries>>([])
-						const ranked = yield* readMetric(query, (page) =>
-							Ref.update(rankingSeries, (series) => [...series, ...page]),
-						)
-						if (typeof ranked !== "boolean") {
-							// A type that never had data in the scope has nothing to rank.
-							const nothing =
-								ranked.kind === "not_found"
-									? Arr.map(rest, (metric): Read => [metric, true])
-									: []
-							return [[ranking, ranked] satisfies Read, ...nothing]
-						}
-						const series = yield* Ref.get(rankingSeries)
-						const kept = gcpTopSeries(group, series)
-						const keep = (item: GcpTimeSeries) => kept.has(gcpTopKey(group, item))
-						yield* store(query, series, keep)
-						if (kept.size === 0) {
-							return [
-								[ranking, ranked] satisfies Read,
-								...Arr.map(rest, (metric): Read => [metric, true]),
-							]
-						}
-						const others = yield* Stream.fromIterable(rest).pipe(
+						/**
+						 * A top group: its ranking metric in full, then the rest for the series the ranking
+						 * kept. A ranking that failed leaves the rest unread; one that kept nothing leaves
+						 * nothing to read.
+						 */
+						const readTop = Effect.fnUntraced(function* (
+							group: GcpTopGroup,
+							ranking: GcpMetric,
+							rest: ReadonlyArray<GcpMetric>,
+						) {
+							if (yield* outOfBudget) {
+								return Arr.map([ranking, ...rest], (metric): Read => [metric, "skipped"])
+							}
+							const query = { scope, group, metric: ranking, ...window }
+							const rankingSeries = yield* Ref.make<ReadonlyArray<GcpTimeSeries>>([])
+							const ranked = yield* readMetric(query, (page) =>
+								Ref.update(rankingSeries, (series) => [...series, ...page]),
+							)
+							if (typeof ranked !== "boolean") {
+								// A type that never had data in the scope has nothing to rank.
+								const nothing =
+									ranked.kind === "not_found"
+										? Arr.map(rest, (metric): Read => [metric, true])
+										: []
+								return [[ranking, ranked] satisfies Read, ...nothing]
+							}
+							const series = yield* Ref.get(rankingSeries)
+							const kept = gcpTopSeries(group, series)
+							const keep = (item: GcpTimeSeries) => kept.has(gcpTopKey(group, item))
+							yield* store(query, series, keep)
+							if (kept.size === 0) {
+								return [
+									[ranking, ranked] satisfies Read,
+									...Arr.map(rest, (metric): Read => [metric, true]),
+								]
+							}
+							const others = yield* Stream.fromIterable(rest).pipe(
+								Stream.mapEffect(
+									Effect.fnUntraced(function* (metric) {
+										if (yield* outOfBudget) return [metric, "skipped"] satisfies Read
+										const next = { scope, group, metric, ...window }
+										const outcome = yield* readMetric(next, (page) =>
+											store(next, page, keep),
+										)
+										return [metric, outcome] satisfies Read
+									}),
+								),
+								Stream.takeUntil(([, outcome]) => halts(outcome)),
+								Stream.runCollect,
+							)
+							return [[ranking, ranked] satisfies Read, ...others]
+						})
+
+						// A different read goes first each tick, so a scope that always runs out of budget
+						// does not lose the same ones every time.
+						const first = Math.floor(window.endMs / TICK_MS) % READS.length
+						const reads = yield* Stream.fromIterable([
+							...READS.slice(first),
+							...READS.slice(0, first),
+						]).pipe(
 							Stream.mapEffect(
-								Effect.fnUntraced(function* (metric) {
-									if (yield* outOfBudget) return [metric, "skipped"] satisfies Read
-									const next = { scope, group, metric, ...window }
-									const outcome = yield* readMetric(next, (page) => store(next, page, keep))
-									return [metric, outcome] satisfies Read
+								Effect.fnUntraced(function* (read) {
+									if ("metric" in read) {
+										return [
+											[
+												read.metric,
+												yield* readOne(read.group, read.metric),
+											] satisfies Read,
+										]
+									}
+									return yield* readTop(read.group, read.ranking, read.rest)
 								}),
 							),
-							Stream.takeUntil(([, outcome]) => halts(outcome)),
+							Stream.takeUntil((reads) => Arr.some(reads, ([, outcome]) => halts(outcome))),
 							Stream.runCollect,
 						)
-						return [[ranking, ranked] satisfies Read, ...others]
-					})
+						const { complete, partial, skipped, firstFailure } = tallyReads(reads.flat())
+						// Nothing answered and nothing shipped: the window is left for the next poll.
+						if ((yield* Ref.get(rowsIngested)) === 0 && complete + partial === 0) {
+							return firstFailure === undefined ? NOTHING : yield* firstFailure.error
+						}
+						const remaining = yield* Ref.getAndSet(buffer, emptyRows)
+						yield* ship(remaining)
+						const rowsIngestedTotal = yield* Ref.get(rowsIngested)
 
-					// A different read goes first each tick, so a scope that always runs out of budget
-					// does not lose the same ones every time.
-					const first = Math.floor(window.endMs / TICK_MS) % READS.length
-					const reads = yield* Stream.fromIterable([
-						...READS.slice(first),
-						...READS.slice(0, first),
-					]).pipe(
-						Stream.mapEffect(
-							Effect.fnUntraced(function* (read) {
-								if ("metric" in read) {
-									return [
-										[read.metric, yield* readOne(read.group, read.metric)] satisfies Read,
-									]
-								}
-								return yield* readTop(read.group, read.ranking, read.rest)
-							}),
-						),
-						Stream.takeUntil((reads) => Arr.some(reads, ([, outcome]) => halts(outcome))),
-						Stream.runCollect,
-					)
-					const { complete, partial, skipped, firstFailure } = tallyReads(reads.flat())
-					// Nothing answered and nothing shipped: the window is left for the next poll.
-					if ((yield* Ref.get(rowsIngested)) === 0 && complete + partial === 0) {
-						return firstFailure === undefined ? NOTHING : yield* firstFailure.error
-					}
-					const remaining = yield* Ref.getAndSet(buffer, emptyRows)
-					yield* ship(remaining)
-					const rowsIngestedTotal = yield* Ref.get(rowsIngested)
-
-					const incomplete = partial + skipped
-					const failed = METRIC_COUNT - complete - incomplete
-					// The note that ends in Google's status goes last.
-					const notes = [
-						...(incomplete === 0
-							? []
-							: [
-									`${incomplete} of ${METRIC_COUNT} metric queries were not read in full: the ${connector.scopeType} holds more series than one read takes. To collect all of it, ${whenTooLarge(connector)}.`,
-								]),
-						...(firstFailure === undefined
-							? []
-							: [
-									firstFailure.error.kind === "rate_limited"
-										? describeApiError(firstFailure.error, connector, "metrics")
-										: `${failed} of ${METRIC_COUNT} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
-								]),
-					]
-					yield* updateConnector(connector.id, {
-						metricsWatermarkAt: window.endMs,
-						lastMetricsReceivedAt: tick.now,
-						lastMetricsError: notes.length === 0 ? null : Arr.join(notes, " "),
+						const incomplete = partial + skipped
+						const failed = METRIC_COUNT - complete - incomplete
+						// The note that ends in Google's status goes last.
+						const notes = [
+							...(incomplete === 0
+								? []
+								: [
+										`${incomplete} of ${METRIC_COUNT} metric queries were not read in full: the ${connector.scopeType} holds more series than one read takes. To collect all of it, ${whenTooLarge(connector)}.`,
+									]),
+							...(firstFailure === undefined
+								? []
+								: [
+										firstFailure.error.kind === "rate_limited"
+											? describeApiError(firstFailure.error, connector, "metrics")
+											: `${failed} of ${METRIC_COUNT} metric queries failed, first ${firstFailure.type}. The rest were stored. ${RETRIES} (${firstFailure.error.message})`,
+									]),
+						]
+						yield* lease.write({
+							metricsWatermarkAt: window.endMs,
+							lastMetricsReceivedAt: tick.now,
+							lastMetricsError: notes.length === 0 ? null : Arr.join(notes, " "),
+						})
+						// Incomplete or partly failed reads still count as a good read.
+						yield* reportTick(connector.sourceId, { _tag: "Ok" }, tick.now)
+						// A read proves the read-only account is set up, however it was: a setup in the console
+						// or as code sends no report. Not after a switch-off or a removal made during the read.
+						yield* dbExecute((db) =>
+							db.run(
+								PG.update(GcpConnectors)
+									.set({ appliedMetricsEnabled: true })
+									.where(($) => [
+										$.id.eq(connector.id),
+										$.metricsEnabled.eq(true),
+										$.appliedMetricsEnabled.isNull(),
+									]),
+							),
+						)
+						yield* Effect.annotateCurrentSpan({
+							"maple.gcp.rows_ingested": rowsIngestedTotal,
+							"maple.gcp.metric_queries_failed": failed,
+							"maple.gcp.metric_queries_incomplete": incomplete,
+						})
+						return {
+							rowsIngested: rowsIngestedTotal,
+							failed: false,
+							incompleteMetrics: incomplete,
+						} satisfies ConnectorOutcome
 					})
-					// Incomplete or partly failed reads still count as a good read.
-					yield* reportOutcome(connector, { _tag: "Ok" }, tick.now)
-					// A read proves the read-only account is set up, however it was: a setup in the console
-					// or as code sends no report. Not after a switch-off or a removal made during the read.
-					yield* dbExecute((db) =>
-						db.run(
-							PG.update(GcpConnectors)
-								.set({ appliedMetricsEnabled: true })
-								.where(($) => [
-									$.id.eq(connector.id),
-									$.metricsEnabled.eq(true),
-									$.appliedMetricsEnabled.isNull(),
-								]),
-						),
+					return yield* read.pipe(
+						skipIfPaused(dbExecute, connector.sourceId, tick.now, followClock),
 					)
-					yield* Effect.annotateCurrentSpan({
-						"maple.gcp.rows_ingested": rowsIngestedTotal,
-						"maple.gcp.metric_queries_failed": failed,
-						"maple.gcp.metric_queries_incomplete": incomplete,
-					})
-					return {
-						rowsIngested: rowsIngestedTotal,
-						failed: false,
-						incompleteMetrics: incomplete,
-					} satisfies ConnectorOutcome
 				},
 				// Handled inside the span: a scope that is not set up, or an organization over its
 				// plan limit, is a recorded state, not an exception on Maple's own traces.
-				(effect, connector, tick) =>
+				(effect, connector, _tick, lease) =>
 					effect.pipe(
 						Effect.timeoutOrElse({
 							duration: CONNECTOR_TIMEOUT,
 							orElse: () =>
-								recordFailure(
-									connector,
-									`Reading the metrics took longer than two minutes. ${RETRIES} If this repeats, ${whenTooLarge(connector)}.`,
-								),
+								recordFailure(connector, lease, {
+									_tag: "Upstream",
+									message: `Reading the metrics took longer than two minutes. ${RETRIES} If this repeats, ${whenTooLarge(connector)}.`,
+								}),
 						}),
 						Effect.catchTags({
 							"@maple/api/integrations/GcpApiError": (error) =>
-								recordFailure(connector, describeApiError(error, connector, "metrics")),
-							"@maple/backend/ingest/IngestSendError": (error) =>
-								error.status === 402
-									? recordFailure(
+								recordFailure(
+									connector,
+									lease,
+									gcpPollFailure(
+										error,
+										describeApiError(
+											error,
 											connector,
-											"Metrics are paused: this Maple organization is over its plan limit. Maple tries again in an hour. See Settings, Billing.",
-											tick.now + BILLING_HOLD_MS,
-										)
-									: recordFailure(
-											connector,
-											`Maple could not store the metrics it read just now. ${NOT_STORED} (${error.message})`,
+											"metrics",
+											error.kind === "rate_limited" ? RATE_LIMIT_RETRIES : RETRIES,
 										),
+									),
+								),
+							"@maple/backend/ingest/IngestSendError": (error) =>
+								recordFailure(connector, lease, ingestFailure(error)),
 						}),
 					),
 			)
+
+			/** The connector row is the tick's lease; a failed tick's back-off is its hold. */
+			const connectorLease = (
+				id: GcpConnectorRow["id"],
+			): LeaseSpec<
+				GcpConnectorRow,
+				PG.UpdateSetOf<typeof GcpConnectors>,
+				IntegrationsPersistenceError
+			> => ({
+				leaseMs: LEASE_MS,
+				claim: (leaseUntil, now) =>
+					dbExecute((db) =>
+						db.run(
+							PG.update(GcpConnectors)
+								.set({ metricsLeaseUntil: leaseUntil, metricsPolledAt: now })
+								.where(($) => [$.id.eq(id), ...isDue($, now)])
+								.returning(),
+						),
+					).pipe(Effect.map((rows) => rows[0] ?? null)),
+				write: (claimed, { metricsHoldUntil: hold, ...rest }) =>
+					dbExecute((db) =>
+						Effect.gen(function* () {
+							// A hold never shortens one already on the row (a sibling's organization hold).
+							if (typeof hold === "number") {
+								yield* db.run(
+									PG.update(GcpConnectors)
+										.set({ metricsHoldUntil: hold })
+										.where(($) => [
+											$.id.eq(claimed.id),
+											leaseStillOurs($.metricsLeaseUntil, claimed.metricsLeaseUntil),
+											PG.or($.metricsHoldUntil.isNull(), $.metricsHoldUntil.lt(hold)),
+										]),
+								)
+							}
+							return yield* db.run(
+								PG.update(GcpConnectors)
+									.set(rest)
+									.where(($) => [
+										$.id.eq(claimed.id),
+										leaseStillOurs($.metricsLeaseUntil, claimed.metricsLeaseUntil),
+									])
+									.returning("id"),
+							)
+						}),
+					).pipe(Effect.map((rows) => rows.length > 0)),
+				// Without a hold of its own the release leaves the column: an organization hold set
+				// by another connector's tick runs out instead of being lifted.
+				release: (holdUntil) =>
+					holdUntil === null
+						? { metricsLeaseUntil: null }
+						: { metricsLeaseUntil: null, metricsHoldUntil: holdUntil },
+			})
 
 			const pollAll = Effect.gen(function* () {
 				const encodedKey = serviceAccountKey
 				if (Option.isNone(encodedKey)) return IDLE
 				const now = yield* Clock.currentTimeMillis
-				const isDue = ($: PG.ColumnAccessor<typeof GcpConnectors.columns>) => [
-					$.metricsEnabled.eq(true),
-					leaseClaimable($.metricsLeaseUntil, now),
-				]
 				const due = yield* dbExecute((db) =>
 					db.run(
 						PG.from(GcpConnectors)
 							.select("id", "orgId")
-							.where(isDue)
+							.where(($) => isDue($, now))
 							// Never polled first, then least recently polled.
 							.orderBy(($) => [
-								[PG.asBoolean($.metricsLeaseUntil.isNull()), "desc"],
-								[$.metricsLeaseUntil, "asc"],
+								[PG.asBoolean($.metricsPolledAt.isNull()), "desc"],
+								[$.metricsPolledAt, "asc"],
 								[$.id, "asc"],
 							]),
 					),
@@ -837,15 +959,10 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 							) {
 								return null
 							}
-							const [connector] = yield* dbExecute((db) =>
-								db.run(
-									PG.update(GcpConnectors)
-										.set({ metricsLeaseUntil: now + LEASE_MS })
-										.where(($) => [$.id.eq(candidate.id), ...isDue($)])
-										.returning(),
-								),
+							const polled = yield* withLease(connectorLease(candidate.id), now, (lease) =>
+								pollConnector(lease.row, tick, lease),
 							)
-							return connector === undefined ? null : yield* pollConnector(connector, tick)
+							return Option.getOrNull(polled)
 						}),
 					{
 						message: "gcp connector poll failed",

@@ -1242,7 +1242,30 @@ describe("VercelIntegrationService", () => {
 				yield* VercelIntegrationService.use((vercel) =>
 					vercel.updateSettings(orgId, VercelSettingsRequest.make({ samplingRate: 1 })),
 				)
-				assert.strictEqual((yield* poll()).skipped, "lease held")
+				// The hold reads apart from an overlapping tick's lease.
+				assert.strictEqual((yield* poll()).skipped, "held")
+			}),
+		)
+	})
+
+	it.effect("a 429 with a long Retry-After holds the org that long, not the default 15 minutes", () => {
+		const testDb = createTestDb(trackedDbs)
+		const fake = makeFake()
+		return run(
+			testDb,
+			fake,
+			Effect.gen(function* () {
+				yield* connect()
+				fake.respond = (call) =>
+					call.path === "/v7/deployments"
+						? json({ error: { message: "Too many requests" } }, 429, { "retry-after": "1800" })
+						: undefined
+				assert.strictEqual((yield* poll()).skipped, "rate_limited")
+				fake.respond = () => undefined
+				yield* TestClock.setTime(now + 20 * minute)
+				assert.strictEqual((yield* poll()).skipped, "held")
+				yield* TestClock.setTime(now + 31 * minute)
+				assert.isNull((yield* poll()).skipped)
 			}),
 		)
 	})

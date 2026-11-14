@@ -63,11 +63,19 @@ import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysS
 import {
 	deleteSourcesOf,
 	integrationSourceName,
-	type PollOutcome,
 	publicSourceId,
-	reportPoll,
 	upsertWithSource,
 } from "@maple/backend/services/integrations/integration-sources"
+import { leaseStillOurs } from "./lease"
+import {
+	type Lease,
+	type LeaseSpec,
+	leaseFree,
+	makeSourceReporter,
+	type PollFailure,
+	pollFailureOutcome,
+	withLease,
+} from "./poller"
 import { releaseVercelCostSources, removeVercelCostSources } from "../cost/vercel-cost-sources"
 import {
 	createDrain,
@@ -109,7 +117,7 @@ const DISCOVERY_TTL_MS = 60 * 60_000
 const LEASE_MS = 4 * 60_000
 /** One org's pass must end inside its lease; what is left resumes next tick. */
 const POLL_BUDGET = Duration.seconds(150)
-const RATE_LIMIT_HOLD_MS = 15 * 60_000
+
 /** Deployment state changes after creation, so each read re-covers the last hour. */
 const DEPLOYMENT_LOOKBACK_MS = 60 * 60_000
 const INITIAL_DEPLOYMENTS_MS = 7 * 24 * 60 * 60_000
@@ -282,6 +290,25 @@ const isRefusal = (error: VercelApiError) =>
 /** A token that cannot list its own team's projects or deployments has lost access. */
 const isTokenRejection = (error: VercelApiError) =>
 	error.kind === "unauthorized" || error.kind === "forbidden"
+
+/** What a failure that ends the pass means, through the shared table; anything else is recorded. */
+const vercelPollFailure = (error: VercelApiError): PollFailure =>
+	isTokenRejection(error)
+		? { _tag: "Rejected", reason: error.message }
+		: error.kind === "rate_limited"
+			? {
+					_tag: "RateLimited",
+					message: error.message,
+					retryAfterMs:
+						error.retryAfterSeconds === undefined ? undefined : error.retryAfterSeconds * 1000,
+				}
+			: { _tag: "Upstream", message: error.message }
+
+type VercelLease = Lease<
+	VercelConnectionRow,
+	PG.UpdateSetOf<typeof VercelConnections>,
+	IntegrationsPersistenceError
+>
 
 const tokenRejected = () =>
 	new IntegrationsValidationError({
@@ -1110,38 +1137,51 @@ export class VercelIntegrationService extends Context.Service<
 				() => new IntegrationsValidationError({ message: "This token cannot see that Vercel team." }),
 			)
 
-		const claimLease = (connectionId: string, now: number) =>
-			dbExecute((db) =>
-				db.run(
-					PG.update(VercelConnections)
-						.set({ leaseUntil: now + LEASE_MS, updatedAt: now })
-						.where(($) => [
-							$.id.eq(connectionId),
-							PG.or(
-								$.leaseUntil.isNull(),
-								$.leaseUntil.lt(now),
-								// A bogus far-future lease (clock jump, crashed writer) must not wedge the org.
-								$.leaseUntil.gt(now + 2 * RATE_LIMIT_HOLD_MS),
-							),
-						])
-						.returning(),
-				),
-			).pipe(Effect.map((rows) => rows[0] ?? null))
-
-		/** Compare-and-set on our own claim so a late release never clears a successor's lease. */
-		const releaseLease = (connectionId: string, claimedUntil: number, holdUntilMs: number | null) =>
-			Clock.currentTimeMillis.pipe(
-				Effect.flatMap((now) =>
-					dbExecute((db) =>
-						db.run(
-							PG.update(VercelConnections)
-								.set({ leaseUntil: holdUntilMs, updatedAt: now })
-								.where(($) => [$.id.eq(connectionId), $.leaseUntil.eq(claimedUntil)]),
-						),
+		/** Compare-and-set on this tick's lease; `sameTeam` also keeps it off a reconnect elsewhere. */
+		const writeClaimed =
+			(sameTeam: boolean) =>
+			(claimed: VercelConnectionRow, set: PG.UpdateSetOf<typeof VercelConnections>) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(VercelConnections)
+							.set(set)
+							.where(($) => [
+								$.id.eq(claimed.id),
+								sameTeam ? $.teamId.eq(claimed.teamId) : undefined,
+								leaseStillOurs($.leaseUntil, claimed.leaseUntil),
+							])
+							.returning("id"),
 					),
-				),
-				Effect.ignore,
-			)
+				).pipe(Effect.map((rows) => rows.length > 0))
+
+		/** The connection row is the tick's lease; a rate limit's back-off is its hold. */
+		const vercelLease = (
+			connectionId: string,
+		): LeaseSpec<
+			VercelConnectionRow,
+			PG.UpdateSetOf<typeof VercelConnections>,
+			IntegrationsPersistenceError
+		> => ({
+			leaseMs: LEASE_MS,
+			claim: (leaseUntil, now) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(VercelConnections)
+							.set({ leaseUntil, updatedAt: now })
+							.where(($) => [
+								$.id.eq(connectionId),
+								leaseFree($.leaseUntil, $.holdUntil, now, LEASE_MS),
+							])
+							.returning(),
+					),
+				).pipe(Effect.map((rows) => rows[0] ?? null)),
+			write: writeClaimed(true),
+			release: (holdUntil, now) => ({ leaseUntil: null, holdUntil, updatedAt: now }),
+			// A reconnect to another team mid-tick still gets the row back.
+			releaseWrite: writeClaimed(false),
+		})
+
+		const reportTick = makeSourceReporter(dbExecute, "vercel")
 
 		/**
 		 * Saves the connection before touching a drain, so a request cut short after a create still
@@ -1387,31 +1427,35 @@ export class VercelIntegrationService extends Context.Service<
 			if (connection === null) return skip("not connected")
 			if (connection.authFailedAt !== null) return skip("token rejected")
 			const now = yield* Clock.currentTimeMillis
-			const claimed = yield* claimLease(connection.id, now)
-			if (claimed === null) return skip("lease held")
-			const lease = now + LEASE_MS
+			const polled = yield* withLease(vercelLease(connection.id), now, (lease) =>
+				pollClaimed(orgId, lease, skip),
+			)
+			if (Option.isSome(polled)) return polled.value
+			// A rate limit's hold reads apart from an overlapping tick's lease on the span.
+			return skip(connection.holdUntil !== null && connection.holdUntil > now ? "held" : "lease held")
+		})
+
+		/** One org's pass under its connection's lease. */
+		const pollClaimed = Effect.fnUntraced(function* (
+			orgId: OrgId,
+			lease: VercelLease,
+			skip: (reason: string) => VercelPollOrgSummary,
+		) {
+			const claimed = lease.row
+			const now = lease.now
 			yield* Effect.annotateCurrentSpan("maple.vercel.team_id", claimed.teamId)
 
 			// Lands only while the org is still on the claimed team: a reconnect elsewhere is not overwritten.
 			const write = (set: PG.UpdateSetOf<typeof VercelConnections>) =>
-				updateConnection(orgId, claimed.teamId, { ...set, updatedAt: now })
-			/** Best effort: a failed health report must not fail the tick it describes. */
-			const reportTick = (outcome: PollOutcome) =>
-				dbExecute((db) => reportPoll(db, claimed.sourceId, outcome, now)).pipe(
-					Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-						Effect.logWarning("vercel source health report failed").pipe(
-							Effect.annotateLogs({ sourceId: claimed.sourceId, error: error.message }),
-						),
-					),
-				)
-			const holdUntilRef = yield* Ref.make<number | null>(null)
+				lease.write({ ...set, updatedAt: now })
 			const errorsRef = yield* Ref.make<ReadonlyArray<string>>([])
 			const recordError = (message: string) => Ref.update(errorsRef, (errors) => [...errors, message])
 
 			/** Ends the pass for a token or rate-limit failure; returns whether it did. */
 			const stopFor = (error: VercelApiError) =>
 				Effect.gen(function* () {
-					if (isTokenRejection(error)) {
+					const failure = vercelPollFailure(error)
+					if (failure._tag === "Rejected") {
 						// Only against the token that failed: a token saved meanwhile is not paused.
 						yield* dbExecute((db) =>
 							db.run(
@@ -1428,11 +1472,11 @@ export class VercelIntegrationService extends Context.Service<
 									]),
 							),
 						)
-						yield* reportTick({ _tag: "Disconnected", reason: error.message })
+						yield* reportTick(claimed.sourceId, pollFailureOutcome(failure), now)
 						return true
 					}
-					if (error.kind === "rate_limited") {
-						yield* Ref.set(holdUntilRef, now + RATE_LIMIT_HOLD_MS)
+					if (failure._tag === "RateLimited") {
+						yield* lease.holdFor(failure)
 						yield* write({ lastError: error.message, lastErrorAt: now })
 						return true
 					}
@@ -1522,7 +1566,13 @@ export class VercelIntegrationService extends Context.Service<
 						? { lastSuccessAt: now, lastError: null, lastErrorAt: null }
 						: { lastError, lastErrorAt: now },
 				)
-				yield* reportTick(lastError === null ? { _tag: "Ok" } : { _tag: "Failed", error: lastError })
+				yield* reportTick(
+					claimed.sourceId,
+					lastError === null
+						? { _tag: "Ok" }
+						: pollFailureOutcome({ _tag: "Upstream", message: lastError }),
+					now,
+				)
 				yield* Effect.annotateCurrentSpan({
 					"maple.vercel.deployments_upserted": deploymentsUpserted,
 					"maple.vercel.drains_repaired": drainsRepaired,
@@ -1546,11 +1596,6 @@ export class VercelIntegrationService extends Context.Service<
 							lastErrorAt: now,
 						}).pipe(Effect.as({ ...skip("timed out"), failures: 1 })),
 				}),
-				Effect.ensuring(
-					Ref.get(holdUntilRef).pipe(
-						Effect.flatMap((holdUntil) => releaseLease(claimed.id, lease, holdUntil)),
-					),
-				),
 			)
 		})
 

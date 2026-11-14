@@ -78,6 +78,8 @@ export interface VendorHttpOptions<E> {
 	readonly maxRetryAfter?: Duration.Input
 	/** False sends a rate-limited request only once, whatever its Retry-After (even 0). */
 	readonly replayRateLimit?: boolean
+	/** Also retry an answer that does not decode, for a vendor whose bodies are sometimes cut short. */
+	readonly retryInvalidResponse?: boolean
 	/** A header read when `retry-after` is absent, e.g. `x-ratelimit-reset`. */
 	readonly rateLimitResetHeader?: string
 	/** How `rateLimitResetHeader` counts: seconds from now (the default) or a Unix time in seconds. */
@@ -88,9 +90,12 @@ export interface VendorRequest {
 	readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 	/** Appended to the base URL; encode path segments yourself. */
 	readonly path: string
-	readonly query?: Readonly<Record<string, string | undefined>>
+	/** An array value repeats the parameter. */
+	readonly query?: Readonly<Record<string, string | number | ReadonlyArray<string> | undefined>>
 	/** Sent as JSON. */
 	readonly body?: unknown
+	/** Sent as `application/x-www-form-urlencoded`, in place of `body`. */
+	readonly form?: Readonly<Record<string, string>>
 	readonly headers?: Readonly<Record<string, string>>
 	/** What the caller is doing, for the error message and the span. */
 	readonly operation?: string
@@ -177,9 +182,11 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			...request.headers,
 		})
 		const withBody =
-			request.body === undefined
-				? withHeaders
-				: HttpClientRequest.bodyJsonUnsafe(withHeaders, request.body)
+			request.form !== undefined
+				? HttpClientRequest.bodyUrlParams(withHeaders, request.form)
+				: request.body === undefined
+					? withHeaders
+					: HttpClientRequest.bodyJsonUnsafe(withHeaders, request.body)
 		return options.auth(withBody)
 	}
 
@@ -275,7 +282,14 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 	const withRetries = <A, R>(request: VendorRequest, effect: Effect.Effect<A, VendorHttpError, R>) => {
 		const retryable = request.retry ?? IDEMPOTENT.has(request.method ?? "GET")
 		const retried =
-			schedule === false || !retryable ? effect : Effect.retry(effect, { schedule, while: isTransient })
+			schedule === false || !retryable
+				? effect
+				: Effect.retry(effect, {
+						schedule,
+						while: (error) =>
+							isTransient(error) ||
+							(options.retryInvalidResponse === true && error.kind === "invalid_response"),
+					})
 		// A 429 means the request was not processed, so even a POST may be sent again.
 		return Effect.catchIf(
 			retried,

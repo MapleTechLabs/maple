@@ -46,9 +46,12 @@ export const GcpConnectors = PG.table("gcp_connectors", {
 			name: "last_metrics_received_at",
 		}),
 		lastMetricsError: PG.column(PG.nullable(PG.text), { name: "last_metrics_error" }),
-		// A tick claims the connector by moving this past now, and it is never cleared: it also
-		// orders the next tick, least recently polled first.
+		// A tick's claim on the connector, cleared when the tick ends.
 		metricsLeaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "metrics_lease_until" }),
+		// A failed tick's back-off (a rate limit, an ingest refusal): no tick claims it before then.
+		metricsHoldUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "metrics_hold_until" }),
+		// When a tick last claimed the connector; the next tick takes the least recently polled first.
+		metricsPolledAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "metrics_polled_at" }),
 		// Last sync of `gcp_resources` that Google answered, whole or cut short at a cap; the next
 		// one is due an hour later. The error says why the latest attempt fell short.
 		resourcesSyncedAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "resources_synced_at" }),
