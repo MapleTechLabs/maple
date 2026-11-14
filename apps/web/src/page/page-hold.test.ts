@@ -1,57 +1,96 @@
+import { OrgId } from "@maple/domain"
+import { Option, Result, Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { elapsed, noHold, type PageHold, shownSlot, startedHold, written } from "./page-hold"
+import { AppRoute } from "../route"
+import type { PageContext } from "./contract"
+import { elapsed, Model, shownSlot, startedHold, written } from "./page-hold"
+import { enterRoute, type PageMessage, type PageSlot, updatePage } from "./registry"
+import { Message } from "./services/list/message"
 
-const slot = (instance: number, orgId = "org_acme") => ({ _tag: "Logs", key: "logs", orgId, instance })
-type Slot = ReturnType<typeof slot>
+const orgId = Schema.decodeSync(OrgId)("org_acme")
+const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
+const window = { startTime: "2026-10-01 00:00:00", endTime: "2026-10-01 12:00:00" }
+const NOW = Date.parse("2026-10-01T12:00:00Z")
 
-const services = slot(1)
-const logs = slot(2)
-const traces = slot(3)
+const slotOf = (route: AppRoute, instance: number, pageContext = context): PageSlot =>
+	Option.getOrThrow(Option.fromNullishOr(enterRoute(null, route, pageContext, instance).slot))
+
+const stamp = (slot: PageSlot, message: Message): PageMessage => ({
+	_tag: "ServicesList",
+	key: slot.key,
+	orgId: slot.orgId,
+	instance: slot.instance,
+	message,
+})
+
+const sendServices = (slot: PageSlot, message: Message): PageSlot =>
+	Option.getOrThrow(Option.fromNullishOr(updatePage(slot, stamp(slot, message), context).slot))
+
+/** The services list with its window resolved: its reads are out, nothing to show yet. */
+const loadingServices = (instance: number): PageSlot =>
+	sendServices(
+		slotOf(AppRoute.Services({ search: {} }), instance),
+		Message.CompletedResolveWindow({ window, nowMs: NOW, mode: "Load" }),
+	)
+
+/** The same page once its first read landed: it has rows to show while the rest load. */
+const servicesWithRows = (slot: PageSlot): PageSlot => {
+	const key = slot._tag === "ServicesList" ? (slot.model.overview.key ?? "") : ""
+	return sendServices(slot, Message.CompletedFetchOverview({ key, result: Result.succeed([]) }))
+}
+
+const logs = slotOf(AppRoute.Logs({ search: {} }), 1)
+const NONE = Model.None()
 
 describe("navigation hold", () => {
-	test("entering a loading page keeps the page left on screen and starts the timer", () => {
-		const hold = written<Slot>(noHold(), services, logs, true)
-		expect(hold).toEqual({ _tag: "Holding", leaving: services, instance: 2 })
-		expect(shownSlot(hold, logs)).toBe(services)
-		expect(startedHold(noHold(), hold)).toBe(2)
+	test("entering a page with nothing to show keeps the page left on screen and starts the timer", () => {
+		const services = loadingServices(2)
+		const hold = written(NONE, logs, services)
+		expect(hold).toEqual(Model.Holding({ leaving: logs, instance: 2 }))
+		expect(shownSlot(hold, services)).toBe(logs)
+		expect(startedHold(NONE, hold)).toBe(2)
 	})
 
-	test("a page with its data at hand (cache hit, revived) shows at once", () => {
-		const hold = written<Slot>(noHold(), services, logs, false)
-		expect(shownSlot(hold, logs)).toBe(logs)
-		expect(startedHold(noHold(), hold)).toBeNull()
+	test("a page with something to show (a cache hit, a revived page) shows at once", () => {
+		const services = servicesWithRows(loadingServices(2))
+		expect(written(NONE, logs, services)).toEqual(NONE)
 	})
 
-	test("the entered page's first reads landing ends the hold before the timer", () => {
-		const holding = written<Slot>(noHold(), services, logs, true)
-		const stillLoading = written(holding, logs, logs, true)
-		expect(stillLoading).toBe(holding)
-		expect(startedHold(holding, stillLoading)).toBeNull()
-		expect(shownSlot(written(holding, logs, logs, false), logs)).toBe(logs)
+	test("the entered page's first read landing ends the hold before the timer", () => {
+		const services = loadingServices(2)
+		const holding = written(NONE, logs, services)
+		expect(written(holding, services, services)).toBe(holding)
+		expect(startedHold(holding, holding)).toBeNull()
+		const landed = servicesWithRows(services)
+		expect(shownSlot(written(holding, services, landed), landed)).toBe(landed)
 	})
 
-	test("the timer running out shows the page; its skeletons then skip their delay until it loads", () => {
-		const holding = written<Slot>(noHold(), services, logs, true)
-		const waited = elapsed(holding, 2, true)
-		expect(waited).toEqual({ _tag: "Waited", instance: 2 })
-		expect(shownSlot(waited, logs)).toBe(logs)
-		expect(written(waited, logs, logs, false)).toEqual(noHold())
-		expect(elapsed(holding, 2, false)).toEqual(noHold())
+	test("the timer running out shows the page; its skeletons skip their delay until it has data", () => {
+		const services = loadingServices(2)
+		const waited = elapsed(written(NONE, logs, services), 2, services)
+		expect(waited).toEqual(Model.Waited({ instance: 2 }))
+		expect(shownSlot(waited, services)).toBe(services)
+		expect(written(waited, services, servicesWithRows(services))).toEqual(NONE)
 	})
 
-	test("a second navigation during a hold keeps the page that is on screen, under a new timer", () => {
-		const holding = written<Slot>(noHold(), services, logs, true)
-		const again = written(holding, logs, traces, true)
-		expect(again).toEqual({ _tag: "Holding", leaving: services, instance: 3 })
+	test("a second navigation during a hold keeps the page on screen, under the new page's timer", () => {
+		const services = loadingServices(2)
+		const holding = written(NONE, logs, services)
+		const next = loadingServices(3)
+		const again = written(holding, services, next)
+		expect(again).toEqual(Model.Holding({ leaving: logs, instance: 3 }))
 		expect(startedHold(holding, again)).toBe(3)
-		// The first navigation's timer no longer applies.
-		expect(elapsed(again, 2, true)).toBe(again)
+		expect(elapsed(again, 2, next)).toBe(again)
 	})
 
-	test("another org's page is never held on screen, and the first page has nothing to hold", () => {
-		expect(written<Slot>(noHold(), services, slot(2, "org_other"), true)).toEqual(noHold())
-		expect(written<Slot>(noHold(), null, logs, true)).toEqual(noHold())
-		const holding: PageHold<Slot> = written<Slot>(noHold(), services, logs, true)
-		expect(written(holding, logs, null, true)).toEqual(noHold())
+	test("never across orgs, into or out of a bare page, or with nothing on screen before", () => {
+		const otherOrg: PageContext = { ...context, orgId: Schema.decodeSync(OrgId)("org_other") }
+		const elsewhere = slotOf(AppRoute.Services({ search: {} }), 2, otherOrg)
+		expect(written(NONE, logs, elsewhere)).toEqual(NONE)
+		const share = slotOf(AppRoute.Share({ token: "tok_1", search: {} }), 2)
+		expect(written(NONE, logs, share)).toEqual(NONE)
+		expect(written(NONE, share, loadingServices(3))).toEqual(NONE)
+		expect(written(NONE, null, loadingServices(2))).toEqual(NONE)
+		expect(written(written(NONE, logs, loadingServices(2)), loadingServices(2), null)).toEqual(NONE)
 	})
 })

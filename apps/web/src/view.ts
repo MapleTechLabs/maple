@@ -138,14 +138,13 @@ const pageView = (model: Model, h: HtmlBuilder<Message>, position: PagePosition)
 		model.route._tag === "NotFound" ? notFoundContent(h) : placeholderContent(h),
 	)
 
-/** The routed page's own top-bar actions, if it has any. */
+/** The routed page's own top-bar actions, if it has any: the open page's, live even while held. */
 const topbarActionsView = (model: Model, h: HtmlBuilder<Message>): Html => {
 	const maybeContext = pageContextOf(model)
-	const page = shownPage(model)
-	return page !== null && Option.isSome(maybeContext)
+	return model.page !== null && Option.isSome(maybeContext)
 		? viewPageTopbarActions(
 				h,
-				page,
+				model.page,
 				{
 					context: maybeContext.value,
 					isMobile: model.shell.isMobile,
@@ -170,6 +169,7 @@ const sourceLinkOf = (model: Model): SourceLink | null => {
 const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> => {
 	const currentPath = Str.split("?")(hrefOf(model.route))[0] ?? "/"
 	const clerk = shellClerkOf(model)
+	const shown = shownPage(model)
 	return [
 		h.submodel({
 			slotId: "shell-frame",
@@ -179,10 +179,7 @@ const shellRoute = (model: Model, h: HtmlBuilder<Message>): ReadonlyArray<Html> 
 			viewInputs: {
 				currentPath,
 				clerk,
-				breadcrumbs: Option.match(Option.fromNullishOr(shownPage(model)), {
-					onNone: () => breadcrumbsOf(model.route),
-					onSome: pageBreadcrumbs,
-				}),
+				breadcrumbs: shown === null ? breadcrumbsOf(model.route) : pageBreadcrumbs(shown),
 				pageHold: PageHold.holdAttribute(model.pageHold),
 				page: () => pageView(model, h, "shell"),
 				topbarActions: () => topbarActionsView(model, h),
@@ -301,15 +298,13 @@ const body = (model: Model, h: HtmlBuilder<Message>): Html =>
 /** The tab names the open page; a route with no page up yet (or none at all) is just "Maple". */
 export const titleOf = (model: Model): string =>
 	documentTitleOf(
-		Option.match(Option.fromNullishOr(shownPage(model)), {
-			onSome: pageBreadcrumbs,
-			onNone: () =>
-				AppRoute.matchOrElse<ReadonlyArray<Shell.BreadcrumbEntry>>(
+		model.page !== null
+			? pageBreadcrumbs(model.page)
+			: AppRoute.matchOrElse<ReadonlyArray<Shell.BreadcrumbEntry>>(
 					model.route,
 					{ NotFound: () => breadcrumbsOf(model.route) },
 					() => [],
 				),
-		}),
 	)
 
 // NOTE: Foldkit's first render replaces the container, so the view root is `div#app` itself.

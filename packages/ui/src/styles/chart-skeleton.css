@@ -24,7 +24,7 @@
 	mask-size: 300% 100%;
 	mask-position: 100% 0;
 	animation:
-		chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay, 300ms) backwards,
+		chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay) backwards,
 		chart-skeleton-sweep 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
@@ -33,7 +33,7 @@
 	.chart-skeleton {
 		mask-image: none;
 		opacity: 0.55;
-		animation: chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay, 300ms) backwards;
+		animation: chart-skeleton-enter 150ms var(--ease-out) var(--loading-delay) backwards;
 	}
 }
 

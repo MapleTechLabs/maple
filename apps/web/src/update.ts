@@ -51,7 +51,6 @@ import {
 	enterRoute,
 	parkPages,
 	isBarePageRoute,
-	isFirstLoading,
 	PageMessage,
 	pageHasSource,
 	pageIdentity,
@@ -415,12 +414,7 @@ const writePage =
 		)
 			return { model }
 		const followed = actOnPageOut(model, transition.outMessage)
-		const pageHold = PageHold.written(
-			followed.model.pageHold,
-			followed.model.page,
-			transition.slot,
-			isFirstLoading(transition.slot),
-		)
+		const pageHold = PageHold.written(followed.model.pageHold, followed.model.page, transition.slot)
 		const startedHold = PageHold.startedHold(followed.model.pageHold, pageHold)
 		const held = Preload.held(
 			followed.model.preload,
@@ -1112,11 +1106,12 @@ const foldMessage = (model: Model, message: Message) =>
 		FailedLoadCustomer: ({ orgId }) =>
 			settledCustomer(model, orgId, CustomerData.Failure({ error: "Failed" })),
 		ElapsedCustomerGrace: ({ orgId }) => elapsedCustomerGrace(model, orgId),
-		ElapsedPageHold: ({ instance }) => ({
-			model: modifyFields(model, {
-				pageHold: (hold) => PageHold.elapsed(hold, instance, isFirstLoading(model.page)),
-			}),
-		}),
+		ElapsedPageHold: ({ instance }) => {
+			const pageHold = PageHold.elapsed(model.pageHold, instance, model.page)
+			return pageHold === model.pageHold
+				? { model }
+				: { model: modifyFields(model, { pageHold: () => pageHold }) }
+		},
 		CompletedSaveSelectedPlanKnown: () => ({ model }),
 		CompletedSignOutOfClerk: () => ({ model }),
 		CompletedIdentifySession: () => ({ model }),
