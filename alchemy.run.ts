@@ -450,11 +450,12 @@ export default Alchemy.Stack(
 			chatBotWorker: chatBot.workerName,
 		}
 	}).pipe(
-		// Default-deny: a catalog secret read outside a deployable's scope fails the deploy.
-		withSecretGuard,
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(MapleStackLive),
+		// Default-deny, over the stack layer's build too: a catalog secret read outside a
+		// deployable's scope fails the deploy.
+		withSecretGuard,
 		// `Alchemy.Stack` admits only `ConfigError`.
 		Effect.catchTags({
 			"@maple/infra/MapleStageError": asConfigError,

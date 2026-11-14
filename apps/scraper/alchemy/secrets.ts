@@ -3,6 +3,6 @@ import * as Config from "effect/Config"
 import * as Secrets from "@maple/infra/secrets"
 
 export const scraperSecrets = Config.all({
-	internalToken: Secrets.ScraperInternalToken.value,
-	otelIngestKey: Secrets.OtelIngestKey.value,
+	internalToken: Secrets.ScraperInternalToken.requiredValue,
+	otelIngestKey: Secrets.OtelIngestKey.requiredValue,
 })

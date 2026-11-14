@@ -16,13 +16,6 @@ import {
 	supabaseOAuthEnv,
 } from "@maple/infra/env"
 import * as Secrets from "@maple/infra/secrets"
-import { Array as Arr } from "effect"
-
-/** The connectors declare their own secret keys; the Worker env audit accepts these beside the catalog. */
-export const alertingConnectorSecretNames: ReadonlyArray<string> = Arr.map(
-	Arr.filter(chatConnectorOutboundConfigKeys, (key) => key.secret),
-	(key) => key.name,
-)
 
 export const alertingConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(

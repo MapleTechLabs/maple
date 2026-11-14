@@ -240,13 +240,7 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 			if (!candidate.ci && testOnlyName(candidate.name)) return
 			names.set(candidate.name, candidate)
 		}
-		for (const [index, { text: ownText, line }] of added.entries()) {
-			// A formatter wraps a long first argument onto the next line; read the call as one.
-			const next = added[index + 1]
-			const text =
-				next !== undefined && next.line === line + 1 && /\(\s*$/.test(ownText)
-					? `${ownText}${Str.trim(next.text)}`
-					: ownText
+		for (const [index, { text, line }] of added.entries()) {
 			if (DOTENV_TEMPLATE.test(path)) {
 				const name = DOTENV_LINE.exec(text)?.[1]
 				if (name !== undefined)
@@ -260,13 +254,17 @@ export const detectMergeSteps = (files: ReadonlyArray<PullRequestFile>): Detecte
 				}
 				continue
 			}
-			for (const { name, secret } of namesRead(text)) {
+			// A formatter wraps a long first argument onto the next line; read the call as one,
+			// and report the name on the line it is written on.
+			const next = added[index + 1]
+			const wrapped = next !== undefined && next.line === line + 1 && /\(\s*$/.test(text)
+			for (const { name, secret } of namesRead(wrapped ? `${text}${Str.trim(next.text)}` : text)) {
 				remember({
 					name,
 					kind: secret || looksSecret(name) ? "secret" : "env",
 					ci: false,
 					path,
-					line,
+					line: Str.includes(name)(text) ? line : line + 1,
 				})
 			}
 		}

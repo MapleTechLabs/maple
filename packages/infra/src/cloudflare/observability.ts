@@ -15,7 +15,7 @@ const PRD_LOGS_DESTINATION = "maple-workers-logs"
 const PRD_TRACES_DESTINATION = "maple-workers-traces"
 
 /** What the account's Workers Observability destinations read from the deploy's environment. */
-export const workersObservabilitySecrets = Secrets.OtelIngestKey.value
+export const workersObservabilitySecrets = Secrets.OtelIngestKey.requiredValue
 
 /**
  * Account-wide Workers Observability destinations for the asset Workers, owned only by the `us`
@@ -29,7 +29,6 @@ export const WorkersObservabilityDestinations = Effect.gen(function* () {
 
 	const endpoint = yield* plainFrom(["MAPLE_ENDPOINT"], prdOrigin("ingest"))
 	const ingestEndpoint = Str.replace(/\/+$/, "")(endpoint)
-	// As the account's observability destinations, which the catalog grants this one key.
 	const ingestKey = yield* resolveAs("workers-observability", workersObservabilitySecrets)
 	const headers = { authorization: `Bearer ${Redacted.value(ingestKey)}` }
 	const tracesDestination = yield* Cloudflare.Workers.ObservabilityDestination(

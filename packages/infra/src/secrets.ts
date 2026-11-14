@@ -1,7 +1,6 @@
-// The catalog: every secret a deploy reads from the environment (Infisical) and hands a deployable.
-// Only secret classes are exported here: `secret-guard.ts` treats the module's exports as the list.
-// Not here: credentials a deploy mints itself (declared Postgres roles, R2 tokens, signing keys), the
-// connectors' own config keys (`@maple/chat-platform`), and the deploy tooling's own credentials.
+// The catalog of Maple's own deployment secrets. Export only secret classes: `secret-guard.ts`
+// reads the module's exports as the list. Not here: credentials a deploy mints itself, the chat
+// connectors' config keys (`@maple/chat-platform`) and the deploy tooling's own credentials.
 import { Secret } from "./secret.ts"
 
 // Database URLs (each carries its role's password)

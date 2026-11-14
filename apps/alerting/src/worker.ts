@@ -23,7 +23,7 @@ import { bindEmailSender } from "@maple/backend/platform/email-sender"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Config, Effect, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
-import { alertingConfiguredEnv, alertingConnectorSecretNames } from "./resources/env.ts"
+import { alertingConfiguredEnv } from "./resources/env.ts"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 import { isolateColoCache, lookupColo } from "./worker-colo.ts"
@@ -42,12 +42,7 @@ const props = Effect.gen(function* () {
 	const { stage, region, domains, devEnv, db } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
-	// As `alerting`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
-	const env = yield* resolveWorkerEnv(
-		"alerting",
-		alertingConfiguredEnv(stage, region, domains),
-		alertingConnectorSecretNames,
-	)
+	const env = yield* resolveWorkerEnv("alerting", alertingConfiguredEnv(stage, region, domains))
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("alerting", stack),

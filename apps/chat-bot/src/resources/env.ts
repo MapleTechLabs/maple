@@ -21,12 +21,6 @@ import { Array as Arr } from "effect"
 
 const ingressConfigKeys = Arr.flatMap(connectors, (connector) => connector.ingress.requiredConfig)
 
-/** The connectors declare their own secret keys; the Worker env audit accepts these beside the catalog. */
-export const chatBotConnectorSecretNames: ReadonlyArray<string> = Arr.map(
-	Arr.filter(ingressConfigKeys, (key) => key.secret),
-	(key) => key.name,
-)
-
 /** Config-sourced env. Connector config is optional: a connector without it is skipped. */
 export const chatBotConfiguredEnv = (input: {
 	readonly stage: MapleStage

@@ -5,11 +5,12 @@
  */
 import { expect, test } from "vitest"
 import type * as Config from "effect/Config"
-import { Array as Arr, Effect, Order, Record as Rec } from "effect"
+import { Array as Arr, ConfigProvider, Effect, Order, Record as Rec } from "effect"
 import { managedDbSecrets, type MapleStage, workersObservabilitySecrets } from "@maple/infra/cloudflare"
 import { selfObservabilityEnv } from "@maple/infra/env"
 import type { SecretConsumer } from "@maple/infra/secret"
-import { grantedTo, secretsReadBy } from "@maple/infra/secret-guard"
+import { resolveAs } from "@maple/infra/secret-guard"
+import * as Catalog from "@maple/infra/secrets"
 import { aiConfiguredEnv } from "../../apps/ai/src/resources/env.ts"
 import { alertingConfiguredEnv } from "../../apps/alerting/src/resources/env.ts"
 import { apiConfiguredEnv } from "../../apps/api/src/resources/env.ts"
@@ -21,12 +22,46 @@ import { landingBuildSecrets } from "../../apps/landing/src/resources/env.ts"
 import { sandboxSecrets } from "../../apps/sandbox/alchemy/secrets.ts"
 import { scraperSecrets } from "../../apps/scraper/alchemy/secrets.ts"
 
-/** A secret bound on only some stages is still a grant, so each config is read on all three. */
-const onEveryStage = <A>(config: (stage: MapleStage) => Config.Config<A>) =>
-	Arr.map<ReadonlyArray<MapleStage>, Config.Config<unknown>>(
-		[{ kind: "prd" }, { kind: "pr", prNumber: 1 }, { kind: "dev", name: "dev" }],
-		config,
+const catalog = Rec.values(Catalog)
+const catalogKeys = new Set<string>(Arr.map(catalog, (secret) => secret.envKey))
+
+const grantedTo = (consumer: SecretConsumer) =>
+	Arr.sort(
+		Arr.map(
+			Arr.filter(catalog, (secret) => secret.meta.consumers.includes(consumer)),
+			(secret) => secret.envKey,
+		),
+		Order.String,
 	)
+
+/**
+ * The catalog secrets `config` reads through the deploy's own `resolveAs`, set in the environment
+ * or not: every key is answered, and a read the catalog denies throws.
+ */
+const secretsRead = (consumer: SecretConsumer, config: Config.Config<unknown>) => {
+	const read = new Set<string>()
+	// "1" parses as a string, a number and a boolean, so a typed var beside a secret still resolves.
+	const answersEverything = ConfigProvider.make((path) =>
+		Effect.sync(() => {
+			const key = Arr.join(Arr.map(path, String), "_")
+			if (catalogKeys.has(key)) read.add(key)
+			return ConfigProvider.makeValue("1")
+		}),
+	)
+	Effect.runSync(
+		Effect.provideService(resolveAs(consumer, config), ConfigProvider.ConfigProvider, answersEverything),
+	)
+	return Arr.fromIterable(read)
+}
+
+const STAGES: ReadonlyArray<MapleStage> = [
+	{ kind: "prd" },
+	{ kind: "pr", prNumber: 1 },
+	{ kind: "dev", name: "dev" },
+]
+
+/** A secret bound on only some stages is still a grant, so each config is read on all three. */
+const onEveryStage = (config: (stage: MapleStage) => Config.Config<unknown>) => Arr.map(STAGES, config)
 
 const DEPLOYABLES = {
 	api: onEveryStage((stage) => apiConfiguredEnv(stage, "us", {})),
@@ -53,14 +88,19 @@ const DEPLOYABLES = {
 test.each(Rec.toEntries(DEPLOYABLES))(
 	"%s reads exactly the secrets the catalog grants it",
 	(consumer, configs) => {
-		const read = Arr.flatMap(configs, (config) => Effect.runSync(secretsReadBy(consumer, config)))
+		const read = Arr.flatMap(configs, (config) => secretsRead(consumer, config))
 		expect(Arr.sort(Arr.dedupe(read), Order.String)).toEqual(grantedTo(consumer))
 	},
 )
 
-test("api binds the preview sign-in key on a PR preview only", () => {
-	const readOn = (stage: MapleStage) =>
-		Effect.runSync(secretsReadBy("api", apiConfiguredEnv(stage, "us", {})))
-	expect(readOn({ kind: "prd" })).not.toContain("PREVIEW_SIGNIN_KEY")
-	expect(readOn({ kind: "pr", prNumber: 1 })).toContain("PREVIEW_SIGNIN_KEY")
+test("a deployable is refused a secret the catalog grants only to others", () => {
+	expect(() => secretsRead("landing", Catalog.StripeSecretKey.required)).toThrow(
+		"landing may not read STRIPE_SECRET_KEY",
+	)
+})
+
+test("api binds the preview sign-in key on a PR preview and on no other stage", () => {
+	const readsIt = (stage: MapleStage) =>
+		secretsRead("api", apiConfiguredEnv(stage, "us", {})).includes("PREVIEW_SIGNIN_KEY")
+	expect(Arr.map(STAGES, readsIt)).toEqual([false, true, false])
 })

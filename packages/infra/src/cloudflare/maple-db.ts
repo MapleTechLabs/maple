@@ -16,7 +16,7 @@ import { MAPLE_DB_BINDING } from "./worker-runtime.ts"
 import { String as Str } from "effect"
 
 /** What the dev stages' managed Hyperdrive config reads from the deploy's environment. */
-export const managedDbSecrets = Secrets.MaplePgUrl.value
+export const managedDbSecrets = Secrets.MaplePgUrl.requiredValue
 
 /** `MAPLE_PG_URL` is not a URL. Carries no raw value: the URL holds the password. */
 export class MaplePgUrlError extends Schema.TaggedError<MaplePgUrlError>()("@maple/infra/MaplePgUrlError", {

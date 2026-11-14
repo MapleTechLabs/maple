@@ -16,7 +16,7 @@ import { Effect, Layer, Ref, Scope, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
-import { chatBotConfiguredEnv, chatBotConnectorSecretNames } from "./resources/env.ts"
+import { chatBotConfiguredEnv } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
 import { ConnectorRelayLive, ConnectorRelayObject } from "./relay/ConnectorRelay.ts"
 import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSocket.ts"
@@ -27,11 +27,9 @@ const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
 	const { stage, region, domains, devEnv, db } = stack
-	// As `chat-bot`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 	const env = yield* resolveWorkerEnv(
 		"chat-bot",
 		chatBotConfiguredEnv({ stage, region, webOrigin: `https://${domains.web ?? PRD_DOMAINS.web}` }),
-		chatBotConnectorSecretNames,
 	)
 	return {
 		main: import.meta.url,

@@ -62,7 +62,6 @@ export const createMapleScraper = ({
 		})
 
 		const secret = ecsSecrets(name("scraper"), tags)
-		// As `scraper`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 		const secrets = yield* resolveAs("scraper", scraperSecrets)
 		const internalToken = yield* secret("internal-token", secrets.internalToken)
 		const otelIngestKey = yield* secret("otel-ingest-key", secrets.otelIngestKey)

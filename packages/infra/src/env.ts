@@ -1,8 +1,7 @@
 import * as Config from "effect/Config"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
-import * as Schema from "effect/Schema"
-import { optionalString } from "./config-helpers.ts"
+import { requiredTrimmed, trimmedOption } from "./config-helpers.ts"
 import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import {
 	PRD_DOMAINS,
@@ -11,6 +10,7 @@ import {
 	resolveWorkerName,
 } from "./cloudflare/stage.ts"
 import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
+import type { SecretBinding } from "./secret.ts"
 import * as Secrets from "./secrets.ts"
 import { Array as Arr, String as Str } from "effect"
 
@@ -22,15 +22,8 @@ import { Array as Arr, String as Str } from "effect"
  */
 
 export type PlainEnv = Record<string, string>
-export type SecretEnv = Record<string, Redacted.Redacted>
-/** A union-valued record, not `PlainEnv & SecretEnv` (that intersection is uninhabited). */
+/** A union-valued record: a plain value or a secret per key. */
 export type WorkerEnv = Record<string, string | Redacted.Redacted>
-
-/** Present-and-non-blank, trimmed (`optionalString` returns the raw value). */
-const trimmedOption = (key: string): Config.Config<Option.Option<string>> =>
-	optionalString(key).pipe(
-		Config.map((value: Option.Option<string>) => Option.map(value, (raw) => Str.trim(raw))),
-	)
 
 const entry = <A>(key: string, value: Option.Option<A>): Record<string, A> =>
 	Option.match(value, { onNone: () => ({}), onSome: (v) => ({ [key]: v }) })
@@ -44,8 +37,7 @@ export const merge = (...parts: ReadonlyArray<Config.Config<Partial<WorkerEnv>>>
 	)
 
 /** Required plain value, trimmed; blank fails with a `ConfigError`. */
-export const requiredPlain = (key: string): Config.Config<string> =>
-	Config.schema(Schema.Trim.check(Schema.isNonEmpty()), key)
+export const requiredPlain = requiredTrimmed
 
 /** Required plain value as a single-entry record, for spreading into a group. */
 export const requirePlainEntry = (key: string): Config.Config<PlainEnv> =>
@@ -65,7 +57,7 @@ export const optionalPlain = (key: string, fallback?: string): Config.Config<Pla
  * An optional secret by name, for a registry that declares its own keys (the chat connectors').
  * Maple's own secrets are the classes in `./secrets.ts`, never a name passed here.
  */
-const registrySecret = (key: string): Config.Config<SecretEnv> =>
+const registrySecret = (key: string): Config.Config<SecretBinding> =>
 	trimmedOption(key).pipe(Config.map((value) => entry(key, Option.map(value, Redacted.make))))
 
 /** The first present-and-non-blank of `keys`, else `fallback`. For build vars with a `VITE_` twin. */

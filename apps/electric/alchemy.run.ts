@@ -92,7 +92,6 @@ export const createMapleElectric = ({
 		// Direct connection (5432), never a pooler: logical replication needs it. The role
 		// must carry the REPLICATION attribute itself (membership does not grant it).
 		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbLogin.url))
-		// As `electric`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 		const electricSecret = yield* resolveAs("electric", electricSecrets)
 		const apiSecret = yield* secret("api-secret", electricSecret)
 

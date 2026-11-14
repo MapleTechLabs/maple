@@ -57,19 +57,22 @@ with `packageManager`.
 
 ## Deployment secrets
 
-Every secret a deploy reads from the environment is a class in `packages/infra/src/secrets.ts`, with
-the deployables allowed to bind it (`consumers`). A deploy reads one only through
-`resolveWorkerEnv(consumer, config)` (a Worker's env) or `resolveAs(consumer, config)` (anything
-else), from `@maple/infra/secret-guard`: the stack's config is default-deny, so a secret read by a
-deployable outside its `consumers`, or outside any scope, fails the deploy.
+Maple's own deployment secrets are classes in `packages/infra/src/secrets.ts`, each listing the
+deployables allowed to bind it (`consumers`, a `SecretConsumer` from `secret.ts`). A deploy reads one
+only through `resolveWorkerEnv(consumer, config)` (a Worker's env) or `resolveAs(consumer, config)`
+(anything else) from `@maple/infra/secret-guard`. The stack's config is default-deny over those keys:
+read by a deployable outside `consumers`, or outside any scope (a Worker's init included), the
+deploy fails.
 
-- A new secret is a class there plus `Secrets.X.required` / `.optional` in the deployable's
-  `src/resources/env.ts` (`alchemy/secrets.ts` for a stack file); there is no by-name secret helper.
-  Widening access is an edit to `consumers`.
-- `test/alchemy/secret-grants.test.ts` holds every deployable's grants exact; a new deployable needs a
-  row there. Run it with `bunx vitest run --config test/alchemy/vitest.config.mts secret-grants`.
-- At runtime a secret is read as a service (`yield* Secrets.X`), its layer provided at the app root
-  beside `Env.layer`. Only `StripeSecretKey` has moved off `Env` so far.
+- A new secret is a class there, bound with `Secrets.X.required` / `.optional` in the deployable's
+  `src/resources/env.ts` (`alchemy/secrets.ts` for a stack file). Widening access is an edit to
+  `consumers`.
+- The chat connectors declare their own secret keys (`requiredConfig`), bound by `configKeysEnv`.
+  Those are not in the catalog and not scoped by deployable.
+- `test/alchemy/secret-grants.test.ts` holds every deployable's grants exact and needs a row per
+  `SecretConsumer`. Run it with `bunx vitest run --config test/alchemy/vitest.config.mts secret-grants`.
+- At runtime a secret can be its own service (`yield* Secrets.X`, its layer at the app root beside
+  `Env.layer`); most are still fields on `Env`.
 
 ## Warehouse queries
 

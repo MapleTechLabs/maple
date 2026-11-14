@@ -59,7 +59,7 @@ const Stack = Alchemy.Stack(
 		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		return { apiUrl: api.url }
-	}).pipe(withSecretGuard, Effect.provide(TestMapleStack)),
+	}).pipe(Effect.provide(TestMapleStack), withSecretGuard),
 )
 
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({

@@ -30,7 +30,6 @@ const props = Effect.gen(function* () {
 	const { devEnv, db } = stack
 	// Absent on stages without a sandbox; `SandboxClient` then reports the tools unavailable.
 	const sandbox = yield* Effect.serviceOption(SandboxWorker)
-	// As `ai`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 	const env = yield* resolveWorkerEnv(
 		"ai",
 		aiConfiguredEnv({

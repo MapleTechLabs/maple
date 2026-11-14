@@ -39,25 +39,31 @@ const names = (files: ReadonlyArray<PullRequestFile>) =>
 describe("detectMergeSteps", () => {
 	it("reads a secret declared through a generic factory, on one line or wrapped by the formatter", () => {
 		assert.deepEqual(
-			names([
-				file(
-					"packages/infra/src/secrets.ts",
-					Arr.join(
-						[
-							"@@ -10,1 +10,7 @@",
-							'+export class BillingToken extends Secret<BillingToken>()("BILLING_TOKEN", {',
-							'+\tissuer: "billing",',
-							"+}) {}",
-							"+export class WebhookSigning extends Secret<WebhookSigning>()(",
-							'+\t"MAPLE_BILLING_WEBHOOK_SIGNING",',
-							'+\t{ issuer: "maple", consumers: ["api"] },',
-							"+) {}",
-						],
-						"\n",
+			Arr.map(
+				detectMergeSteps([
+					file(
+						"packages/infra/src/secrets.ts",
+						Arr.join(
+							[
+								"@@ -10,1 +10,7 @@",
+								'+export class BillingToken extends Secret<BillingToken>()("BILLING_TOKEN", {',
+								'+\tissuer: "billing",',
+								"+}) {}",
+								"+export class WebhookSigning extends Secret<WebhookSigning>()(",
+								'+\t"MAPLE_BILLING_WEBHOOK_SIGNING",',
+								'+\t{ issuer: "maple", consumers: ["api"] },',
+								"+) {}",
+							],
+							"\n",
+						),
 					),
-				),
-			]),
-			["secret:BILLING_TOKEN", "secret:MAPLE_BILLING_WEBHOOK_SIGNING"],
+				]).names,
+				(candidate) => [candidate.kind, candidate.name, candidate.line],
+			),
+			[
+				["secret", "BILLING_TOKEN", 10],
+				["secret", "MAPLE_BILLING_WEBHOOK_SIGNING", 14],
+			],
 		)
 	})
 

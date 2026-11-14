@@ -23,7 +23,6 @@ const props = Effect.gen(function* () {
 		workersDev: true,
 		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.sync,
-		// As `electric-sync`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 		env: yield* resolveWorkerEnv("electric-sync", electricSyncConfiguredEnv(stage, region, domains)),
 	}
 })

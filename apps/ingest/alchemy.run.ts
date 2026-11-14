@@ -270,7 +270,6 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
-		// As `ingest`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
 		const secrets = yield* resolveAs("ingest", ingestSecrets)
 		const tinybirdToken = yield* secret("tinybird-token", secrets.tinybirdToken)
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
