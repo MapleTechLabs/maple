@@ -5,7 +5,7 @@ export const IntegrationProviderLiteral = Schema.Literals(INTEGRATION_PROVIDERS)
 export const IntegrationStatusLiteral = Schema.Literals(INTEGRATION_STATUSES)
 
 export const IntegrationResourceRow = Schema.Struct({
-	/** repository, zone, workers, logpush, hyperdrive, environment, database, scrape target, workspace. */
+	/** repository, zone, workers, logpush, hyperdrive, environment, database, project, logs, metrics, metric stream, role, scrape target, workspace. */
 	kind: Schema.String,
 	name: Schema.String,
 	status: IntegrationStatusLiteral,

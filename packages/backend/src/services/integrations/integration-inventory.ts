@@ -10,6 +10,14 @@ import {
 	type IntegrationResource,
 	type IntegrationStatus,
 } from "@maple/domain/integration-inventory"
+import {
+	AWS_METRICS_OFF,
+	AWS_NO_DELIVERY,
+	AWS_TEMPLATE_VERSION,
+	type AwsMetricStream,
+	awsStreamState,
+} from "@maple/domain/aws"
+import { GCP_PROJECT_ASSET_TYPE } from "@maple/domain/gcp-metrics"
 import { type SourceHealthResult, worstSourceStatus } from "@maple/domain/source-health"
 import { redactUrlSecrets } from "@maple/domain/url-redaction"
 import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
@@ -32,6 +40,12 @@ const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
 /** Search Console re-imports its head every few hours; two days without a success is no longer a blip. */
 const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
+/** Google Cloud's resource inventory syncs hourly; three missed syncs is no longer a blip. */
+const GCP_INVENTORY_STALE_MS = 3 * 60 * 60 * 1000
+/** GCP reads every 5 minutes; an error with no read for three ticks is a failed read, not a partial one. */
+const GCP_METRICS_FAILED_AFTER_MS = 15 * 60 * 1000
+/** Resources sync hourly; an error with no sync for 70 minutes is a failed sync, not a truncated one. */
+const GCP_RESOURCES_FAILED_AFTER_MS = 70 * 60 * 1000
 
 /** How long a scrape target may go without a good scrape: ten intervals, at least 10 minutes. */
 export const scrapeStaleAfterMs = (scrapeIntervalSeconds: number) =>
@@ -149,6 +163,61 @@ export interface IntegrationInventoryInputs {
 		readonly name: string
 		readonly createdAt: number
 	}>
+	readonly gcpConnectors: ReadonlyArray<{
+		readonly id: string
+		readonly scopeType: string
+		readonly scopeId: string
+		readonly logsEnabled: boolean
+		readonly metricsEnabled: boolean
+		readonly lastReceivedAt: number | null
+		readonly lastError: string | null
+		readonly appliedLogsEnabled: boolean | null
+		readonly appliedMetricsEnabled: boolean | null
+		readonly setupReportedAt: number | null
+		readonly lastMetricsReceivedAt: number | null
+		readonly lastMetricsError: string | null
+		readonly resourcesSyncedAt: number | null
+		readonly lastResourcesError: string | null
+		readonly createdAt: number
+	}>
+	/** `gcp_resources` rows per connector and asset type. */
+	readonly gcpResourceCounts: ReadonlyArray<{
+		readonly connectorId: string
+		readonly assetType: string
+		readonly count: number
+	}>
+	readonly awsConnections: ReadonlyArray<{
+		readonly accountId: string
+		readonly modules: ReadonlyArray<string>
+		readonly grantedModules: ReadonlyArray<string> | null
+		readonly templateVersion: number | null
+		readonly verifiedAt: number | null
+		readonly lastCheckedAt: number | null
+		readonly lastCheckError: string | null
+		readonly metricStream: AwsMetricStream | null
+		readonly metricStreamChangedAt: number | null
+		readonly streamLastReceivedAt: number | null
+		readonly streamLastError: string | null
+		readonly createdAt: number
+	}>
+	/** Its grant is the `oauthConnections` row with provider "supabase". */
+	readonly supabaseConnection: {
+		readonly organizationName: string
+		readonly lastDiscoveryAt: number | null
+		readonly lastDiscoveryError: string | null
+		readonly createdAt: number
+	} | null
+	/** The connection's projects that discovery still lists. */
+	readonly supabaseProjects: ReadonlyArray<{
+		readonly name: string
+		readonly region: string
+		readonly status: string
+		readonly logDrainEnabled: boolean
+		readonly logDrainError: string | null
+		readonly logsEnabled: boolean
+		readonly logsLastPolledAt: number | null
+		readonly logsError: string | null
+	}>
 	/** Search Console properties under the org's Google grant (`oauthConnections` provider "google"). */
 	readonly searchConsoleSites: ReadonlyArray<{
 		readonly siteUrl: string
@@ -175,6 +244,11 @@ export const INTEGRATION_FEEDS = {
 		"Logpush HTTP request logs",
 		"Hyperdrive origins resolved on the service map",
 	],
+	gcp: [
+		"Cloud Logging logs through a Pub/Sub push subscription",
+		"Cloud Monitoring metrics and the Cloud Asset Inventory of the connected scope",
+	],
+	aws: ["CloudWatch metrics through a metric stream, for the regions and namespaces picked"],
 	railway: ["per-service CPU, memory, network and disk metrics"],
 	vercel: [
 		"function, edge, build and request logs through a log drain",
@@ -184,6 +258,11 @@ export const INTEGRATION_FEEDS = {
 	planetscale: [
 		"database metrics through a managed Prometheus scrape",
 		"query insights and deploy-request events",
+	],
+	supabase: [
+		"project database and API metrics through a managed Prometheus scrape",
+		"project logs through a log drain or polled logs",
+		"advisor findings and the slowest statements per project",
 	],
 	prometheus: ["metrics scraped from Prometheus endpoints (list_metrics)"],
 	chat: ["the Maple bot in chat workspaces", "alert issues and comments in Linear"],
@@ -593,6 +672,264 @@ export const scrapeResource = (
 	}
 }
 
+const gcp = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const connectors = inputs.gcpConnectors
+	if (connectors.length === 0) return null
+	const resources = Arr.flatMap(connectors, (c): ReadonlyArray<IntegrationResource> => {
+		const scope = `${c.scopeType} ${c.scopeId}`
+		const notRun = c.setupReportedAt === null ? "the setup script has not reported yet" : null
+		const logs: ReadonlyArray<IntegrationResource> = c.logsEnabled
+			? [
+					{
+						kind: "logs",
+						name: scope,
+						// Log pushes can be quiet for hours; silence is the source's to report.
+						status:
+							c.lastError !== null
+								? "failing"
+								: c.lastReceivedAt === null
+									? "pending"
+									: "healthy",
+						lastSuccessAt: c.lastReceivedAt,
+						lastError: c.lastError,
+						note:
+							c.appliedLogsEnabled === false
+								? "the last setup run did not set up the log sink; run the setup script again"
+								: c.lastReceivedAt === null
+									? notRun
+									: null,
+					},
+				]
+			: []
+		if (!c.metricsEnabled) return logs
+		const counts = Arr.filter(inputs.gcpResourceCounts, (r) => r.connectorId === c.id)
+		const projects = Arr.reduce(counts, 0, (n, r) =>
+			r.assetType === GCP_PROJECT_ASSET_TYPE ? n + r.count : n,
+		)
+		const total = Arr.reduce(counts, 0, (n, r) => n + r.count)
+		const metricsState: PollState = {
+			lastSuccessAt: c.lastMetricsReceivedAt,
+			// A partial read keeps a note but stamps a fresh read; a failed read leaves the old stamp.
+			lastErrorAt:
+				c.lastMetricsError !== null &&
+				(c.lastMetricsReceivedAt === null ||
+					now - c.lastMetricsReceivedAt > GCP_METRICS_FAILED_AFTER_MS)
+					? now
+					: null,
+			lastError: c.lastMetricsError,
+		}
+		const metricsStatus = pollStatus(metricsState, now, POLLER_STALE_MS)
+		// A truncated sync keeps a note but stamps a fresh sync; a failed one leaves the hour-old stamp.
+		const inventoryStatus: IntegrationStatus =
+			c.lastResourcesError !== null &&
+			(c.resourcesSyncedAt === null || now - c.resourcesSyncedAt > GCP_RESOURCES_FAILED_AFTER_MS)
+				? "failing"
+				: c.resourcesSyncedAt === null
+					? "pending"
+					: now - c.resourcesSyncedAt > GCP_INVENTORY_STALE_MS
+						? "stale"
+						: "healthy"
+		return [
+			...logs,
+			{
+				kind: "metrics",
+				name: scope,
+				status: metricsStatus,
+				lastSuccessAt: c.lastMetricsReceivedAt,
+				lastError: failingError(metricsState, metricsStatus),
+				note:
+					c.appliedMetricsEnabled === false
+						? "the last setup run did not grant metric reads; run the setup script again"
+						: c.lastMetricsReceivedAt === null
+							? notRun
+							: // A partial read is healthy but says what it missed.
+								metricsStatus === "healthy"
+								? c.lastMetricsError
+								: null,
+			},
+			{
+				kind: "inventory",
+				name: scope,
+				status: inventoryStatus,
+				lastSuccessAt: c.resourcesSyncedAt,
+				lastError: c.lastResourcesError,
+				note: `${projects} project${projects === 1 ? "" : "s"}, ${total - projects} resource${total - projects === 1 ? "" : "s"}`,
+			},
+		]
+	})
+	return entry("gcp", now, {
+		account: Arr.join(
+			Arr.map(connectors, (c) => `${c.scopeType} ${c.scopeId}`),
+			", ",
+		),
+		connectedAt: Math.min(...Arr.map(connectors, (c) => c.createdAt)),
+		resources,
+	})
+}
+
+const sameModules = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
+	a.length === b.length && Arr.every(a, (module) => b.includes(module))
+
+const aws = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const connections = inputs.awsConnections
+	if (connections.length === 0) return null
+	const resources = Arr.flatMap(connections, (c): ReadonlyArray<IntegrationResource> => {
+		const outdated =
+			c.grantedModules !== null &&
+			(c.templateVersion !== AWS_TEMPLATE_VERSION || !sameModules(c.modules, c.grantedModules))
+		// Before the first check that assumed the role, the setup is still being done.
+		const role: IntegrationResource =
+			c.verifiedAt === null
+				? {
+						kind: "role",
+						name: c.accountId,
+						status: "pending",
+						lastSuccessAt: null,
+						lastError: null,
+						note: c.lastCheckError ?? "the setup has not been deployed yet",
+					}
+				: {
+						kind: "role",
+						name: c.accountId,
+						status: c.lastCheckError === null ? "healthy" : "failing",
+						lastSuccessAt: c.lastCheckError === null ? c.lastCheckedAt : null,
+						lastError: c.lastCheckError,
+						note: outdated
+							? "the deployed setup is out of date; run the setup script again"
+							: null,
+					}
+		const state = awsStreamState(
+			{
+				verifiedAt: c.verifiedAt,
+				metricStream: c.metricStream,
+				metricStreamChangedAt: c.metricStreamChangedAt,
+				metricsLastReceivedAt: c.streamLastReceivedAt,
+				metricsLastError: c.streamLastError,
+			},
+			now,
+		)
+		const regions = c.metricStream === null ? null : Arr.join(c.metricStream.regions, ", ")
+		const stream = (status: IntegrationStatus, lastError: string | null, note: string | null) => [
+			{
+				kind: "metric stream",
+				name: c.accountId,
+				status,
+				lastSuccessAt: c.streamLastReceivedAt,
+				lastError,
+				note,
+			} satisfies IntegrationResource,
+		]
+		const streams = ((): ReadonlyArray<IntegrationResource> => {
+			switch (state._tag) {
+				case "off":
+					return c.verifiedAt === null ? [] : stream("paused", null, AWS_METRICS_OFF)
+				case "waiting":
+					return stream("pending", null, `waiting for the first delivery (${regions})`)
+				case "undelivered":
+					return stream("failing", AWS_NO_DELIVERY, regions)
+				case "refused":
+					return stream("failing", state.error, regions)
+				case "silent":
+				case "delivering":
+					return stream(state._tag === "silent" ? "stale" : "healthy", null, regions)
+			}
+		})()
+		return [role, ...streams]
+	})
+	return entry("aws", now, {
+		account: Arr.join(
+			Arr.map(connections, (c) => c.accountId),
+			", ",
+		),
+		connectedAt: Math.min(...Arr.map(connections, (c) => c.createdAt)),
+		resources,
+	})
+}
+
+/** Supabase's project lifecycle states, as Maple reads them. */
+const SUPABASE_PAUSED_STATES: ReadonlySet<string> = new Set(["INACTIVE", "PAUSING", "PAUSED"])
+const SUPABASE_FAILED_STATES: ReadonlySet<string> = new Set([
+	"ACTIVE_UNHEALTHY",
+	"INIT_FAILED",
+	"PAUSE_FAILED",
+	"RESTORE_FAILED",
+	"REMOVED",
+])
+
+const supabaseLifecycle = (status: string): IntegrationStatus =>
+	status === "ACTIVE_HEALTHY"
+		? "healthy"
+		: SUPABASE_PAUSED_STATES.has(status)
+			? "paused"
+			: SUPABASE_FAILED_STATES.has(status)
+				? "failing"
+				: "pending"
+
+const supabase = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
+	const connection = inputs.supabaseConnection
+	if (connection === null) return null
+	const oauth = oauthFor(inputs, "supabase")
+	const projects = Arr.map(inputs.supabaseProjects, (project): IntegrationResource => {
+		const drainError = project.logDrainEnabled ? project.logDrainError : null
+		const logsError = project.logsEnabled ? project.logsError : null
+		const lifecycle = supabaseLifecycle(project.status)
+		// Discovery keeps the shared source fresh, so a log feed that stops is caught by its own age.
+		const logs: IntegrationStatus = !project.logsEnabled
+			? "healthy"
+			: project.logsLastPolledAt === null
+				? "pending"
+				: lifecycle === "healthy" && now - project.logsLastPolledAt > POLLER_STALE_MS
+					? "stale"
+					: "healthy"
+		const status = worstStatus([
+			lifecycle,
+			drainError !== null || logsError !== null ? "failing" : "healthy",
+			logs,
+		])
+		return {
+			kind: "project",
+			name: project.name,
+			status,
+			lastSuccessAt: project.logsEnabled ? project.logsLastPolledAt : null,
+			lastError: drainError ?? logsError,
+			note: Arr.join(
+				[
+					project.region,
+					project.status,
+					...(project.logDrainEnabled ? ["log drain on"] : []),
+					...(project.logsEnabled ? ["logs polled"] : []),
+				],
+				", ",
+			),
+		}
+	})
+	const scrape = Arr.map(
+		Arr.filter(
+			inputs.scrapeTargets,
+			(t) => t.managedBy != null && Str.startsWith("supabase:")(t.managedBy) && t.enabled !== false,
+		),
+		(t) => scrapeResource(t, now, "metrics scrape"),
+	)
+	// Discovery clears its error on success, so a set error is the latest outcome.
+	const own =
+		oauth === undefined || isRevoked(oauth)
+			? revokedProblem("Supabase")
+			: connection.lastDiscoveryError !== null
+				? {
+						status: "failing" as const,
+						problem: `Project discovery failing: ${connection.lastDiscoveryError}`,
+					}
+				: connection.lastDiscoveryAt === null
+					? { status: "pending" as const, problem: "The first project discovery has not run yet." }
+					: undefined
+	return entry("supabase", now, {
+		account: connection.organizationName,
+		connectedAt: connection.createdAt,
+		own,
+		resources: [...projects, ...scrape],
+	})
+}
+
 const prometheus = (inputs: IntegrationInventoryInputs, now: number): IntegrationEntry | null => {
 	const targets = Arr.filter(inputs.scrapeTargets, (t) => t.managedBy === null)
 	if (targets.length === 0) return null
@@ -671,21 +1008,30 @@ const searchConsole = (inputs: IntegrationInventoryInputs, now: number): Integra
 	})
 }
 
+/** One builder per provider, so a provider without one fails the typecheck. */
+const BUILDERS = {
+	github,
+	cloudflare,
+	gcp,
+	aws,
+	railway,
+	vercel,
+	planetscale,
+	supabase,
+	prometheus,
+	chat,
+	search_console: searchConsole,
+} satisfies Record<
+	IntegrationProvider,
+	(inputs: IntegrationInventoryInputs, now: number) => IntegrationEntry | null
+>
+
 export const buildIntegrationInventory = (
 	inputs: IntegrationInventoryInputs,
 	now: number,
 ): IntegrationInventory => {
 	const integrations = Arr.filter(
-		[
-			github(inputs, now),
-			cloudflare(inputs, now),
-			railway(inputs, now),
-			vercel(inputs, now),
-			planetscale(inputs, now),
-			prometheus(inputs, now),
-			chat(inputs, now),
-			searchConsole(inputs, now),
-		],
+		Arr.map(INTEGRATION_PROVIDERS, (provider) => BUILDERS[provider](inputs, now)),
 		(e): e is IntegrationEntry => e !== null,
 	)
 	const connected = new Set(Arr.map(integrations, (e) => e.provider))

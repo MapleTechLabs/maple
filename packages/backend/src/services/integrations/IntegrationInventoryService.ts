@@ -1,9 +1,12 @@
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
+	AwsConnections,
 	ChatWorkspaces,
 	CloudflareAnalyticsState,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
+	GcpConnectors,
+	GcpResources,
 	OAuthConnections,
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
@@ -13,6 +16,8 @@ import {
 	RailwayEnvironments,
 	ScrapeTargets,
 	Sources,
+	SupabaseConnections,
+	SupabaseProjects,
 	VcsInstallations,
 	VcsRepositories,
 	VercelConnections,
@@ -105,6 +110,91 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 						PG.from(CloudflareHyperdriveConfigs)
 							.select("name", "originScheme", "originHost", "originDatabase")
 							.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+					),
+					gcpConnectors: db.run(
+						PG.from(GcpConnectors)
+							.select(
+								"id",
+								"scopeType",
+								"scopeId",
+								"logsEnabled",
+								"metricsEnabled",
+								"lastReceivedAt",
+								"lastError",
+								"appliedLogsEnabled",
+								"appliedMetricsEnabled",
+								"setupReportedAt",
+								"lastMetricsReceivedAt",
+								"lastMetricsError",
+								"resourcesSyncedAt",
+								"lastResourcesError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					gcpResourceCounts: db.run(
+						PG.from(GcpResources)
+							.select(($) => ({
+								connectorId: $.connectorId,
+								assetType: $.assetType,
+								count: PG.count(),
+							}))
+							// The connector filter is served by the (connector_id, name) key; org_id has no index.
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.inSubquery(
+									$.connectorId,
+									PG.from(GcpConnectors)
+										.select("id")
+										.where(($c) => [$c.orgId.eq(orgId)]),
+								),
+							])
+							.groupBy("connectorId", "assetType"),
+					),
+					awsConnections: db.run(
+						PG.from(AwsConnections)
+							.select(
+								"accountId",
+								"modules",
+								"grantedModules",
+								"templateVersion",
+								"verifiedAt",
+								"lastCheckedAt",
+								"lastCheckError",
+								"metricStream",
+								"metricStreamChangedAt",
+								"streamLastReceivedAt",
+								"streamLastError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)]),
+					),
+					supabaseConnections: db.run(
+						PG.from(SupabaseConnections)
+							.select(
+								"id",
+								"supabaseOrganizationName",
+								"lastDiscoveryAt",
+								"lastDiscoveryError",
+								"createdAt",
+							)
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+					supabaseProjects: db.run(
+						PG.from(SupabaseProjects)
+							.select(
+								"connectionId",
+								"name",
+								"region",
+								"status",
+								"logDrainEnabled",
+								"logDrainError",
+								"logsEnabled",
+								"logsLastPolledAt",
+								"logsError",
+							)
+							.where(($) => [$.orgId.eq(orgId), $.removedAt.isNull()]),
 					),
 					railwayConnections: db.run(
 						PG.from(RailwayConnections)
@@ -232,6 +322,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 
 		const now = yield* Clock.currentTimeMillis
 		const planetscale = rows.planetscaleConnections[0]
+		const supabase = rows.supabaseConnections[0]
 		const inventory = buildIntegrationInventory(
 			{
 				oauthConnections: rows.oauthConnections,
@@ -240,6 +331,23 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 				cloudflareStates: rows.cloudflareStates,
 				cloudflareLogpush: rows.cloudflareLogpush,
 				cloudflareHyperdrives: rows.cloudflareHyperdrives,
+				gcpConnectors: rows.gcpConnectors,
+				gcpResourceCounts: rows.gcpResourceCounts,
+				awsConnections: rows.awsConnections,
+				supabaseConnection:
+					supabase === undefined
+						? null
+						: {
+								organizationName: supabase.supabaseOrganizationName,
+								lastDiscoveryAt: supabase.lastDiscoveryAt,
+								lastDiscoveryError: supabase.lastDiscoveryError,
+								createdAt: supabase.createdAt,
+							},
+				// Only the current connection's: rows a disconnect raced with do not count.
+				supabaseProjects: Arr.filter(
+					rows.supabaseProjects,
+					(project) => project.connectionId === supabase?.id,
+				),
 				railwayConnection: rows.railwayConnections[0] ?? null,
 				railwayEnvironments: Arr.map(rows.railwayEnvironments, ({ servicesJson, ...env }) => ({
 					...env,
