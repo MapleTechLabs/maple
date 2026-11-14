@@ -1,7 +1,7 @@
 import { formatNumber, formatStorageBytes } from "@maple/ui/lib/format"
 import { Array as Arr } from "effect"
 
-// How much a source stored: the list's Last 24h column and the overview's stat.
+// How much a source stored: the list's size per source and the overview's figures.
 
 export type VolumeTotals = Readonly<{ spans: number; logs: number; metrics: number; bytes: number }>
 

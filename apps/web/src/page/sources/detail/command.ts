@@ -7,7 +7,7 @@ import { baseKey } from "@maple/views/data/keyed"
 import { MapleApiV2Client } from "../../../platform/api-clients"
 import { V2SourceUpdateParams } from "@maple/domain/http/v2"
 import { readGrants } from "../../../data/session-tenant"
-import { loadSources, loadSourceUsage } from "../kit/data"
+import { loadSources, loadSourceUsage, resumeSource } from "../kit/data"
 import { ExpiryChoice, expiresAtOf } from "../kit/rules"
 import { Message } from "./message"
 
@@ -54,14 +54,7 @@ export const PauseSource = Command.define("PauseSource", {
 		}).pipe(settleTo((result) => Message.CompletedPause({ result }))),
 })
 
-export const ResumeSource = Command.define("ResumeSource", {
-	args: { id: SourceId },
-	messages: [Message.CompletedResume],
-	execute: ({ id }) =>
-		Effect.flatMap(MapleApiV2Client, (client) => client.sources.resume({ params: { id } })).pipe(
-			settleTo((result) => Message.CompletedResume({ result })),
-		),
-})
+export const ResumeSource = resumeSource(Message.CompletedResume)
 
 export const RollSourceToken = Command.define("RollSourceToken", {
 	args: { id: SourceId },
