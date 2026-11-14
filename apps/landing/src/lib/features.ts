@@ -112,8 +112,8 @@ export const features: Feature[] = [
 			constant: "session s_9f31 · 6:12",
 			plate: {
 				src: "/screenshots/strip-session.webp",
-				width: 2976,
-				height: 1800,
+				width: 2880,
+				height: 1620,
 				alt: "A session replay with the recorded viewport playing beside its console, network and error tabs",
 			},
 			facts: [

@@ -26,6 +26,9 @@ export const RELABEL = {
 	"premium-landing-page.api.localhost": "api.maple.dev",
 	"https://api.localhost": "https://api.maple.dev",
 	"david+clerk_test@gmail.com": "ada@acme.dev",
+	// The replay plate's storefront, served locally by `replay-shop/record.ts`.
+	"http://localhost:4180": "https://shop.acme.dev",
+	"localhost:4180": "shop.acme.dev",
 } as const
 
 /** Whole text nodes swapped as-is: avatar initials derived from the dev names. */
@@ -194,6 +197,26 @@ export const SHOTS: ReadonlyArray<Shot> = [
 		setup: openWaterfall,
 	},
 	{ id: "strip-logs", route: "/logs", search: { timePreset: "1h" }, fakeNowMinutes: 0 },
+	// Recorded live by `replay-shop/record.ts`, so it reads "now" rather than the seed anchor.
+	{
+		id: "strip-session",
+		route: "/replays",
+		search: { timePreset: "1h" },
+		setup: async (page) => {
+			// The row's open control is an overlay button under the cell content.
+			await page
+				.getByRole("button", { name: /^Open session/ })
+				.first()
+				.dispatchEvent("click")
+			await page.waitForURL(/\/replays\/[^/?]+/)
+			// Seek to the first failed checkout: the player shows the storefront's error state.
+			await page
+				.getByText(/POST \/api\/checkout 50/)
+				.first()
+				.click()
+			await page.waitForTimeout(2500)
+		},
+	},
 	{ id: "surface-metrics", route: "/metrics", search: { timePreset: "6h" }, fakeNowMinutes: 0 },
 	{
 		id: "surface-map",
