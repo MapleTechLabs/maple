@@ -1,11 +1,9 @@
-import { ChartRuntimeMessages } from "@maple/views/charts/chart-env"
 import * as Policy from "@maple/domain/policy"
 import { DataSourceKind } from "@maple/domain/data-sources"
 import { HubFilter } from "./catalog"
 import {
 	BillingCustomer,
 	CloudflareIntegrationStatus,
-	CloudflareUsageResponse,
 	GcpResourcesResponse,
 	GithubIntegrationStatus,
 	GithubInstallationSelection,
@@ -50,7 +48,6 @@ import * as Menu from "@maple/views/ui/menu"
 import * as Select from "@maple/views/ui/select"
 import { FormFieldName } from "./prometheus-form-field"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
-import * as Chart from "@maple/views/charts/chart"
 import { ConnectProvider } from "./connect"
 import { OAuthReturnOutcome } from "./oauth-return"
 import { FleetRead } from "../infra-integrations/gcp/data"
@@ -66,6 +63,7 @@ import {
 } from "../infra-integrations/gcp/integration/gcp-schema"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
+import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
 	AwsRemovedStack,
 	AwsSetupMethod,
@@ -179,25 +177,6 @@ export const Message = defineMessageUnion({
 		backfillQueued: Schema.Boolean,
 		failure: Schema.NullOr(LoadFailure),
 	},
-	CompletedLoadCloudflareUsage: result(CloudflareUsageResponse),
-	CompletedCloudflarePrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
-	/** Every 30 s while a fresh Cloudflare connection settles. */
-	TickedCloudflareIngest: {},
-	GotZoneFilterMessage: { message: ToggleGroup.Message },
-	ChangedZoneSearch: { value: Schema.String },
-	ClickedZoneSort: { key: Schema.Literals(["name", "status", "requests"]) },
-	ClickedWorkersExpand: {},
-	ClickedManageZones: {},
-	GotZoneDialogMessage: { message: Dialog.Message },
-	ToggledManagedZone: { accountId: Schema.String, zoneId: Schema.String },
-	ToggledWatchNewZones: { accountId: Schema.String },
-	/** "Select all" / "Select none" over the account's zones the name filter shows. */
-	ClickedSetAccountZones: { accountId: Schema.String, watched: Schema.Boolean },
-	ChangedManagedZoneSearch: { value: Schema.String },
-	SubmittedZoneSettings: {},
-	CompletedCloudflareZones: { failure: Schema.NullOr(LoadFailure) },
-	...ChartRuntimeMessages,
-	GotSparklineMessage: { message: Chart.Message },
 	ClickedTarget: { id: ScrapeTargetId },
 	CompletedFetchChecks: {
 		key: Schema.String,
@@ -238,6 +217,7 @@ export const Message = defineMessageUnion({
 	GotChatMessage: { message: ChatMessage },
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
+	GotCloudflareMessage: { message: CloudflareMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },

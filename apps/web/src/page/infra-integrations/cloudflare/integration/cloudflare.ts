@@ -5,16 +5,50 @@ import {
 } from "@maple/domain/http"
 import { Effect, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import { ChartRuntimeMessages } from "@maple/views/charts/chart-env"
+import * as Chart from "@maple/views/charts/chart"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
-import { Message } from "../../../integrations/message"
+import { IntegrationStatuses } from "../../../../data/integration-statuses"
 
 export const ZoneSortKey = Schema.Literals(["name", "status", "requests"])
 export type ZoneSortKey = typeof ZoneSortKey.Type
+
+/** The Cloudflare module's own messages; the hub carries them in `GotCloudflareMessage`. */
+export const CloudflareMessage = defineMessageUnion({
+	CompletedLoadUsage: { key: Schema.String, result: Schema.Result(CloudflareUsageResponse, LoadFailure) },
+	CompletedPrime: { isConnected: Schema.Boolean, isOk: Schema.Boolean },
+	/** Every 30 s while a fresh connection settles. */
+	TickedIngest: {},
+	GotZoneFilterMessage: { message: ToggleGroup.Message },
+	ChangedZoneSearch: { value: Schema.String },
+	ClickedZoneSort: { key: Schema.Literals(["name", "status", "requests"]) },
+	ClickedWorkersExpand: {},
+	ClickedManageZones: {},
+	GotZoneDialogMessage: { message: Dialog.Message },
+	ToggledManagedZone: { accountId: Schema.String, zoneId: Schema.String },
+	ToggledWatchNewZones: { accountId: Schema.String },
+	/** "Select all" / "Select none" over the account's zones the name filter shows. */
+	ClickedSetAccountZones: { accountId: Schema.String, watched: Schema.Boolean },
+	ChangedManagedZoneSearch: { value: Schema.String },
+	SubmittedZoneSettings: {},
+	CompletedZones: { failure: Schema.NullOr(LoadFailure) },
+	...ChartRuntimeMessages,
+	GotSparklineMessage: { message: Chart.Message },
+})
+export type CloudflareMessage = typeof CloudflareMessage.Type
+
+/** The hub's status read for Cloudflare, shared with the sidebar. */
+export const CLOUDFLARE_STATUS_READ = {
+	name: "LoadIntegrationsCloudflareStatus",
+	read: (refresh: boolean) =>
+		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.cloudflare({ refresh })),
+}
 
 /** One account's zone choice as the "Manage zones" dialog edits it. */
 export const ZoneChoice = Schema.Struct({
@@ -64,25 +98,25 @@ export type CloudflareCardModel = typeof CloudflareCardModel.Type
 
 export const LoadCloudflareUsage = Command.define("LoadIntegrationsCloudflareUsage", {
 	args: { key: Schema.String },
-	messages: [Message.CompletedLoadCloudflareUsage],
+	messages: [CloudflareMessage.CompletedLoadUsage],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.cloudflareUsage()
-		}).pipe(settleTo((result) => Message.CompletedLoadCloudflareUsage({ key, result }))),
+		}).pipe(settleTo((result) => CloudflareMessage.CompletedLoadUsage({ key, result }))),
 })
 
 /** `cloudflarePrime`: discovery and a first poll now instead of on the next cron tick. */
 export const PrimeCloudflare = Command.define("PrimeCloudflare", {
-	messages: [Message.CompletedCloudflarePrime],
+	messages: [CloudflareMessage.CompletedPrime],
 	execute: Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		return yield* client.integrations.cloudflarePrime()
 	}).pipe(
 		Effect.match({
-			onFailure: () => Message.CompletedCloudflarePrime({ isConnected: false, isOk: false }),
+			onFailure: () => CloudflareMessage.CompletedPrime({ isConnected: false, isOk: false }),
 			onSuccess: (response) =>
-				Message.CompletedCloudflarePrime({ isConnected: response.connected, isOk: true }),
+				CloudflareMessage.CompletedPrime({ isConnected: response.connected, isOk: true }),
 		}),
 	),
 })
@@ -90,7 +124,7 @@ export const PrimeCloudflare = Command.define("PrimeCloudflare", {
 /** `cloudflareZoneSettings`, one PUT per changed account, in order; the first failure stops the rest. */
 export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 	args: { accounts: Schema.Array(ZoneChoice) },
-	messages: [Message.CompletedCloudflareZones],
+	messages: [CloudflareMessage.CompletedZones],
 	execute: ({ accounts }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
@@ -115,8 +149,8 @@ export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 			)
 		}).pipe(
 			Effect.match({
-				onFailure: (error) => Message.CompletedCloudflareZones({ failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedCloudflareZones({ failure: null }),
+				onFailure: (error) => CloudflareMessage.CompletedZones({ failure: toLoadFailure(error) }),
+				onSuccess: () => CloudflareMessage.CompletedZones({ failure: null }),
 			}),
 		),
 })

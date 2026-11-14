@@ -13,10 +13,6 @@ import { isClerkAuthEnabled } from "../../platform/auth-mode"
 import { visibleSections } from "../settings/nav"
 import { settingsNavVisibility } from "./derive"
 import { entryGlyph } from "./view-entry"
-import {
-	cloudflareCard,
-	cloudflareHeaderActions,
-} from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { githubCard } from "./view-github"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
@@ -60,8 +56,6 @@ export const cardView = (
 	switch (integration) {
 		case "github":
 			return githubCard(h, model, timeZone)
-		case "cloudflare":
-			return [cloudflareCard(h, model, timeZone)]
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
 		case "aws":
@@ -93,10 +87,7 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 				entry,
 				{
 					connect: connectButton(h, model, integration),
-					actions:
-						integration === "cloudflare"
-							? cloudflareHeaderActions(h, model)
-							: (provider?.headerActions?.(h, model) ?? undefined),
+					actions: provider?.headerActions?.(h, model) ?? undefined,
 					statusLine:
 						integration === "gcp"
 							? gcpHeaderStatus(h, model)

@@ -1,5 +1,5 @@
 import * as Policy from "@maple/domain/policy"
-import { Option, Result, Array as Arr, String as Str } from "effect"
+import { Option, Result, Array as Arr } from "effect"
 import * as Keyed from "@maple/views/data/keyed"
 import { requestKey } from "@maple/views/data/request-key"
 import { AppRoute, hrefOf } from "../../route"
@@ -11,8 +11,6 @@ import { initConnect } from "./connect"
 import { Disconnect, DISCONNECTS } from "./disconnect"
 import { initGithubCard } from "./github"
 import * as Github from "./update-github"
-import * as CloudflareCard from "../infra-integrations/cloudflare/integration/update-cloudflare"
-import { initCloudflareCard } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { initPrometheusCard } from "./prometheus"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
@@ -20,7 +18,6 @@ import * as Aws from "../infra-integrations/aws/integration/update-aws"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import * as Prometheus from "./update-prometheus"
-import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import * as Connect from "./update-connect"
 import { isClerkAuthEnabled } from "../../platform/auth-mode"
@@ -36,6 +33,7 @@ import type { OAuthReturnOutcome } from "./oauth-return"
 import { chain, requestStatus, statusNamesOf } from "./update-status"
 import {
 	CHAT_PROVIDER,
+	CLOUDFLARE_PROVIDER,
 	everyProvider,
 	PLANETSCALE_PROVIDER,
 	PROVIDER_MODULES,
@@ -162,7 +160,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: CHAT_PROVIDER.initial(),
 		githubCard: initGithubCard(),
-		cloudflareCard: initCloudflareCard(),
+		cloudflareCard: CLOUDFLARE_PROVIDER.initial(),
 		prometheusCard: initPrometheusCard(),
 		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
 		gcpCard: initGcpCard(),
@@ -203,7 +201,6 @@ export const routeChanged = (
 /** The reads an integration's card mounts (Cloudflare's usage, PlanetScale's watch clock). */
 const enterIntegration = (model: Model, context: PageContext): Return => {
 	const integration = integrationOfSearch(model.search.integration)
-	if (integration === "cloudflare") return CloudflareCard.enterCloudflare(model, context)
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
@@ -282,6 +279,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotChatMessage: ({ message: child }) => CHAT_PROVIDER.update(model, child, context),
 		GotVercelMessage: ({ message: child }) => VERCEL_PROVIDER.update(model, child, context),
 		GotPlanetscaleMessage: ({ message: child }) => PLANETSCALE_PROVIDER.update(model, child, context),
+		GotCloudflareMessage: ({ message: child }) => CLOUDFLARE_PROVIDER.update(model, child, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>
@@ -319,50 +317,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const callback = chatCallbackOf(model.search)
 			return callback === null ? { model } : navigateTo(model, hrefOfSearch(callback.next), true)
 		},
-		ClickedConnect: () => Connect.clickedConnect(model),
-		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, "install"),
+		ClickedConnect: () => Connect.clickedConnect(model, context),
+		ClickedOpenGithubInstallPage: () => Connect.clickedConnect(model, context, "install"),
 		ClickedSelectGithubInstallation: ({ installationId }) =>
 			Github.clickedInstallation(model, installationId),
 		CompletedSelectGithubInstallation: ({ state, installationId, failure }) =>
 			Github.completedInstallation(model, context, state, installationId, failure),
-		CompletedLoadCloudflareUsage: ({ key, result }) => ({
-			model: {
-				...model,
-				cloudflareCard: {
-					...model.cloudflareCard,
-					usage: Keyed.accept(model.cloudflareCard.usage, key, result),
-				},
-			},
-		}),
-		CompletedCloudflarePrime: ({ isOk, isConnected }) =>
-			CloudflareCard.completedPrime(model, context, isOk, isConnected),
-		TickedCloudflareIngest: () => {
-			// The ingest phase (stalled, backfill) follows the clock, so each tick rereads it.
-			const refreshed = CloudflareCard.refreshCloudflare(model, context)
-			return { ...refreshed, commands: [...(refreshed.commands ?? []), ReadClock()] }
-		},
-		GotZoneFilterMessage: ({ message: child }) => CloudflareCard.gotZoneFilter(model, child),
-		ChangedZoneSearch: ({ value }) => CloudflareCard.updateBoard(model, { zoneSearch: value }),
-		ClickedZoneSort: ({ key }) => CloudflareCard.clickedZoneSort(model, key),
-		ClickedWorkersExpand: () =>
-			CloudflareCard.updateBoard(model, { workersExpanded: !model.cloudflareCard.workersExpanded }),
-		ClickedManageZones: () => CloudflareCard.clickedManageZones(model),
-		GotZoneDialogMessage: ({ message: child }) => CloudflareCard.gotZoneDialog(model, child),
-		ToggledManagedZone: ({ accountId, zoneId }) =>
-			CloudflareCard.toggledManagedZone(model, accountId, zoneId),
-		ToggledWatchNewZones: ({ accountId }) => CloudflareCard.toggledWatchNewZones(model, accountId),
-		ClickedSetAccountZones: ({ accountId, watched }) =>
-			CloudflareCard.clickedSetAccountZones(model, accountId, watched),
-		ChangedManagedZoneSearch: ({ value }) =>
-			CloudflareCard.updateBoard(model, { zoneDraftSearch: value }),
-		SubmittedZoneSettings: () => CloudflareCard.submittedZoneSettings(model),
-		CompletedCloudflareZones: ({ failure }) =>
-			CloudflareCard.completedZoneSettings(model, context, failure),
-		CompletedLoadChartRuntime: () =>
-			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Ready() }),
-		FailedLoadChartRuntime: ({ reason }) =>
-			CloudflareCard.updateBoard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
-		GotSparklineMessage: () => ({ model }),
 		ClickedTarget: ({ id }) => Prometheus.clickedTarget(model, context, id),
 		CompletedFetchChecks: ({ key, result }) => ({
 			model: {
@@ -597,8 +557,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					(name) => (next: Model) => requestStatus(next, context, name, "Supersede"),
 				),
 				(next) =>
-					failure === null && Str.startsWith("cloudflare")(integration)
-						? CloudflareCard.requestUsage(next, context, "Refresh")
+					failure === null
+						? (providerModuleOf(
+								integrationOfSearch(
+									integration === "cloudflare-multi" ? "cloudflare" : integration,
+								),
+							)?.onDisconnected(next, context) ?? { model: next })
 						: { model: next },
 			])
 		},

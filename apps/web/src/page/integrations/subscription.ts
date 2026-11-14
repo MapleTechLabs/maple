@@ -1,7 +1,6 @@
 import { Duration, Effect, Option, Queue, Record as Rec, Schema, Stream, Array as Arr } from "effect"
 import { AsyncData, Subscription } from "foldkit"
 import { gcpConnectionState } from "../infra-integrations/gcp/connector-state"
-import { ingestPhaseOf } from "../infra-integrations/cloudflare/ingest"
 import type { Resources } from "../../platform/resources"
 import type { PageSubscriptionInput } from "../contract"
 import { integrationOfSearch } from "./catalog"
@@ -167,8 +166,6 @@ const after = (millis: number, message: () => Message) =>
 		Stream.concat(Stream.never),
 	)
 
-const CLOUDFLARE_INGEST_MS = 30_000
-
 /** A metric stream delivers about every minute. */
 const AWS_WATCH_MS = 60_000
 
@@ -233,15 +230,6 @@ const isAwaitingRun = (model: Model): boolean => {
 const isScrapePage = (model: Model): boolean => {
 	const integration = integrationOfSearch(model.search.integration)
 	return integration === "prometheus" || integration === "warpstream"
-}
-
-const isCloudflareSettling = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "cloudflare") return false
-	const status = Option.getOrNull(AsyncData.getData(model.statuses.cloudflare.data))
-	const usageData = model.cloudflareCard.usage.data
-	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
-	const phase = ingestPhaseOf(status, usage, model.nowMs)
-	return phase !== null && phase.kind !== "live"
 }
 
 /** The popup is out, repository discovery is pending, or a repository is still syncing. */
@@ -324,17 +312,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 										Stream.make(Message.TickedGithubPoll(), ended),
 									),
 							),
-			},
-		),
-		/** Status and usage every 30 s while a fresh Cloudflare connection settles. */
-		cloudflareIngest: entry(
-			{ isSettling: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isSettling: isCloudflareSettling(model) }),
-				dependenciesToStream: ({ isSettling }) =>
-					isSettling
-						? every(CLOUDFLARE_INGEST_MS, () => Message.TickedCloudflareIngest())
-						: Stream.empty,
 			},
 		),
 		/** The scrape target list every 30 s; the selected target's checks every 10 s. */

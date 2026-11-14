@@ -5,7 +5,6 @@ import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
 import { prometheusFlow } from "./flow-prometheus"
-import { cloudflareFlow } from "../infra-integrations/cloudflare/integration/flow-cloudflare"
 import { githubFlow } from "./flow-github"
 import { awsFlow } from "../infra-integrations/aws/integration/flow-aws"
 
@@ -66,8 +65,6 @@ export const flowOf = (model: Model, integration: DataIntegration, context: Flow
 			return awsFlow(model)
 		case "gcp":
 			return gcpFlow(model)
-		case "cloudflare":
-			return cloudflareFlow(model)
 		case "github":
 			return githubFlow(model)
 		default:

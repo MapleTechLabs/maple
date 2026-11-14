@@ -132,9 +132,6 @@ const githubStatus = (statuses: Statuses) =>
 		unavailableStatus,
 	)
 
-const connectedOrNot = (connected: boolean): CardStatus =>
-	connected ? { label: "Connected", variant: "ok" } : NOT_CONNECTED
-
 /** The header badge per integration; `null` while loading. */
 export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: number): CardStatus | null => {
 	const provider = providerModuleOf(id)
@@ -164,8 +161,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 				},
 				unavailableStatus,
 			)
-		case "cloudflare":
-			return fold(statuses.cloudflare, (status) => connectedOrNot(status.connected), unavailableStatus)
 		case "prometheus":
 			return scrapeStatus(statuses, "prometheus")
 		case "warpstream":
@@ -276,42 +271,6 @@ const awsOverview = (statuses: Statuses, nowMs: number) =>
 		unavailableOverview,
 	)
 
-const cloudflareOverview = (statuses: Statuses) =>
-	fold(
-		statuses.cloudflare,
-		(status): IntegrationOverview => {
-			if (!status.connected) return CONNECT
-			const zones = status.zones
-			const enabledZones = Arr.filter(zones, (zone) => zone.enabled).length
-			const erroringZones = Arr.filter(zones, (zone) => zone.enabled && zone.lastError != null).length
-			const workersFailing = status.workers?.enabled === true && status.workers.lastError != null
-			const issue = !status.analyticsCapable
-				? "Update access"
-				: erroringZones > 0
-					? `${countLabel(erroringZones, "zone")} erroring`
-					: workersFailing
-						? "Workers sync failing"
-						: null
-			const statParts = [
-				...(zones.length > 0
-					? [`${enabledZones} of ${countLabel(zones.length, "zone")} streaming`]
-					: []),
-				...(status.workers?.enabled === true ? ["Workers"] : []),
-			]
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.accountName,
-				stat: statParts.length > 0 ? Arr.join(statParts, " · ") : null,
-				lastSync: lastSyncOf(
-					maxMs([...Arr.map(zones, (zone) => zone.lastSyncedAt), status.workers?.lastSyncedAt]),
-				),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-
 const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -360,8 +319,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return gcpOverview(statuses, nowMs)
 		case "aws":
 			return awsOverview(statuses, nowMs)
-		case "cloudflare":
-			return cloudflareOverview(statuses)
 		case "prometheus":
 			return scrapeOverview(statuses, "prometheus")
 		case "warpstream":

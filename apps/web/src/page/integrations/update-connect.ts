@@ -8,7 +8,6 @@ import type { Message } from "./message"
 import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
-import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import { providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -44,7 +43,7 @@ export const refreshProvider = (
 	mode: Keyed.ReadMode = "Supersede",
 ): Return => requestStatus(model, context, STATUS_OF[provider], mode)
 
-export const clickedConnect = (model: Model, githubMode?: "install"): Return => {
+export const clickedConnect = (model: Model, context: PageContext, githubMode?: "install"): Return => {
 	const integration = integrationOfSearch(model.search.integration)
 	if (
 		!Schema.is(ConnectProvider)(integration) ||
@@ -55,7 +54,7 @@ export const clickedConnect = (model: Model, githubMode?: "install"): Return => 
 	if ((integration === "linear" || integration === "google-search-console") && !canManage(model))
 		return { model }
 	const attempt = model.connect.attempts + 1
-	const base = integration === "cloudflare" ? Cloudflare.resetPrime(model) : model
+	const base = providerModuleOf(integration)?.onConnectStart(model, context).model ?? model
 	const active = { provider: integration, attempt }
 	return {
 		model: withConnect(base, {
@@ -118,9 +117,8 @@ export const closedPopup = (model: Model, context: PageContext, attempt: number)
 	if (active === null || active.attempt !== attempt) return { model }
 	const hasGrace = PROVIDERS[active.provider].closeGraceMs > 0
 	const next = hasGrace ? withConnect(model, { isClosed: true }) : withConnect(model, { active: null })
-	return active.provider === "cloudflare"
-		? chain(next, [(after) => Cloudflare.refreshCloudflare(after, context), Cloudflare.prime])
-		: refreshProvider(next, context, active.provider)
+	const onClosed = providerModuleOf(active.provider)?.onPopupClosed ?? null
+	return onClosed !== null ? onClosed(next, context) : refreshProvider(next, context, active.provider)
 }
 
 export const endedGrace = (model: Model, attempt: number): Return =>
@@ -158,7 +156,9 @@ export const receivedCallback = (
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+				providerModuleOf(provider)?.replacesConnectedRead === true
+					? { model: next }
+					: refreshProvider(next, context, provider),
 			(next) => providerModuleOf(provider)?.onConnected(next, context) ?? { model: next },
 		])
 	}
@@ -199,7 +199,9 @@ export const receivedRelay = (
 		return chain(ended, [
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
-				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),
+				providerModuleOf(provider)?.replacesConnectedRead === true
+					? { model: next }
+					: refreshProvider(next, context, provider),
 			(next) => providerModuleOf(provider)?.onRelayedConnect(next, context) ?? { model: next },
 		])
 	}

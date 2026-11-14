@@ -20,6 +20,7 @@ import { LINEAR_STATUS_READ } from "./linear-provider"
 import { CHAT_STATUS_READ } from "./chat"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
+import { CLOUDFLARE_STATUS_READ } from "../infra-integrations/cloudflare/integration/cloudflare"
 
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
@@ -54,8 +55,10 @@ const statusRead = <const Name extends string, A, E, R>(
 
 /** Every status read the page makes, by its slot in `Statuses`. */
 export const STATUS_READS = {
-	cloudflare: statusRead("LoadIntegrationsCloudflareStatus", Message.CompletedLoadCloudflare, (refresh) =>
-		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.cloudflare({ refresh })),
+	cloudflare: statusRead(
+		CLOUDFLARE_STATUS_READ.name,
+		Message.CompletedLoadCloudflare,
+		CLOUDFLARE_STATUS_READ.read,
 	),
 	railway: statusRead(RAILWAY.statusRead.name, Message.CompletedLoadRailway, RAILWAY.statusRead.read),
 	vercel: statusRead(VERCEL_STATUS_READ.name, Message.CompletedLoadVercel, VERCEL_STATUS_READ.read),

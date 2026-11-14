@@ -16,7 +16,8 @@ import { statusDot } from "@maple/views/ui/status-dot"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import { truncatedText } from "@maple/views/ui/truncated-text"
 import { columnHead } from "../../../kit/data-table"
-import type { ZoneSortKey } from "./cloudflare"
+import { CloudflareMessage, type ZoneSortKey } from "./cloudflare"
+import { toHub } from "./view-cloudflare-zones"
 import {
 	CHIP_ORDER,
 	rowHasData,
@@ -82,7 +83,8 @@ const sparkline = (h: H, model: Model, name: string, usage: RowUsage): Html =>
 						slotId: `cf-integration-spark-${name}`,
 						model: CHART_MODEL,
 						view: Sparkline.view,
-						toParentMessage: (message: Chart.Message) => Message.GotSparklineMessage({ message }),
+						toParentMessage: (message: Chart.Message) =>
+							toHub(CloudflareMessage.GotSparklineMessage({ message })),
 						viewInputs: {
 							chartId: `cf-integration-spark-${Str.replace(/\W+/g, "_")(name)}`,
 							values: usage.points,
@@ -209,7 +211,7 @@ export const zoneBoard = (
 			sort: {
 				isActive: card.zoneSort.key === key,
 				dir: card.zoneSort.dir,
-				onSort: Message.ClickedZoneSort({ key }),
+				onSort: toHub(CloudflareMessage.ClickedZoneSort({ key })),
 			},
 		})
 	return panel(h, { className: cn("@container border-border-subtle", className) }, [
@@ -219,7 +221,7 @@ export const zoneBoard = (
 				heading(h, { level: 3, variant: "section" }, ["Zones"]),
 				ToggleGroup.view(h, {
 					model: card.zoneFilter,
-					toParentMessage: (message) => Message.GotZoneFilterMessage({ message }),
+					toParentMessage: (message) => toHub(CloudflareMessage.GotZoneFilterMessage({ message })),
 					isConnected: false,
 					size: "xs",
 					className: "ml-auto gap-1.5",
@@ -242,8 +244,8 @@ export const zoneBoard = (
 					className: "w-full sm:w-44",
 					value: card.zoneSearch,
 					placeholder: "Filter zones…",
-					onInput: (value) => Message.ChangedZoneSearch({ value }),
-					onClear: Message.ChangedZoneSearch({ value: "" }),
+					onInput: (value) => toHub(CloudflareMessage.ChangedZoneSearch({ value })),
+					onClear: toHub(CloudflareMessage.ChangedZoneSearch({ value: "" })),
 					attributes: [h.AriaLabel("Filter zones by name")],
 				}),
 				button(
@@ -253,7 +255,7 @@ export const zoneBoard = (
 						size: "xs",
 						isDisabled: !canManage(model),
 						attributes: [
-							h.OnClick(Message.ClickedManageZones()),
+							h.OnClick(toHub(CloudflareMessage.ClickedManageZones())),
 							...(canManage(model)
 								? []
 								: [h.Title("Only org admins and engineers can change zones")]),
@@ -394,7 +396,9 @@ export const workersCard = (
 										size: "xs",
 										className:
 											"h-auto justify-start p-0 pb-1 pt-2.5 text-2xs font-normal text-muted-foreground hover:text-foreground active:text-foreground",
-										attributes: [h.OnClick(Message.ClickedWorkersExpand())],
+										attributes: [
+											h.OnClick(toHub(CloudflareMessage.ClickedWorkersExpand())),
+										],
 									},
 									[
 										expanded
