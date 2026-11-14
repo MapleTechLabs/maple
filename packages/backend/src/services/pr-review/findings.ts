@@ -67,8 +67,11 @@ const SAME_ISSUE_LINES = 3
 /** Share of title words two findings must have in common to read as one issue restated. */
 const SAME_TITLE_OVERLAP = 0.6
 
-/** A negation just before a verdict word: "not", "never", or a contraction ("isn't", "wasn’t"). */
-const NEGATED = String.raw`(?<!\b(?:not|never|no)\s)(?<!n['’]t\s)`
+/**
+ * A negation just before a verdict phrase, past an article or adverb: "not", "never", or a
+ * contraction ("isn't", "wasn’t a", "not really").
+ */
+const NEGATED = String.raw`(?<!\b(?:not|never|no)\s(?:(?:a|an|the|really|actually)\s)?)(?<!n['’]t\s(?:(?:a|an|the|really|actually)\s)?)`
 
 /**
  * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
@@ -93,7 +96,7 @@ const NOT_YET =
 
 /** A reply saying the finding still stands: it takes back an earlier "fixed" or "won't fix". */
 const STILL_OPEN =
-	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|reproduces|an issue|a problem|there|open)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|ion)?)\b/i
+	/\b(?:not (?:yet |actually |really )?(?:fixed|resolved|addressed)|(?:is|are)n['’]t (?:fixed|resolved)|still (?:broken|fails|failing|happens|reproduces|an issue|a problem|there|open)|(?:failure|bug|issue|problem) remains|reopen(?:ing|ed)?|regress(?:ed|es))\b/i
 
 /** `open` takes back an earlier verdict in the thread: the finding stays with the reviewer. */
 /** A hedged claim ("I don't think it's fixed", "not sure", "nothing was fixed"): no verdict either way. */
@@ -123,7 +126,7 @@ const verdictOf = (body: string): ReplyVerdict | undefined => {
  * person resolved without a word, on a file this push left alone, is resolved too: most such
  * threads were fixed elsewhere or in a push whose review missed it (prod sample 2026-11-14: 19 of 28).
  * A resolved thread on a changed file (or unknown changes) stays open for the reviewer to judge.
- * Replies from the bot that posted the finding do not count. Resolved here carries no head: no
+ * Replies from the bot that posted the finding, or from any other automation, do not count. Resolved here carries no head: no
  * review confirmed it.
  */
 export const settledFindings = (
@@ -147,7 +150,8 @@ export const settledFindings = (
 		if (thread === undefined) continue
 		const poster = thread.comments[0]?.author
 		const verdicts = Arr.flatMap(thread.comments.slice(1), (reply) => {
-			const verdict = reply.author === poster ? undefined : verdictOf(reply.body)
+			const verdict =
+				reply.author === poster || reply.isBot === true ? undefined : verdictOf(reply.body)
 			return verdict === undefined ? [] : [verdict]
 		})
 		const latest = verdicts.at(-1)

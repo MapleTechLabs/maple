@@ -443,7 +443,10 @@ const GithubReviewThreadsResponse = Schema.Struct({
 													Schema.Struct({
 														databaseId: Schema.NullOr(Schema.Number),
 														author: Schema.NullOr(
-															Schema.Struct({ login: Schema.String }),
+															Schema.Struct({
+																login: Schema.String,
+																__typename: Schema.optionalKey(Schema.String),
+															}),
 														),
 														body: Schema.String,
 														reactionGroups: Schema.optionalKey(
@@ -608,7 +611,7 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
         nodes {
           id isResolved
           comments(first: 20) {
-            nodes { databaseId author { login } body reactionGroups { content reactors { totalCount } } }
+            nodes { databaseId author { login __typename } body reactionGroups { content reactors { totalCount } } }
           }
         }
       }

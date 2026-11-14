@@ -146,7 +146,13 @@ describe("privacyHitAt", () => {
 			"shipping_address_line1",
 		],
 		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
-		// A short prefix exempts only its own entry.
+		// A short prefix exempts only its own entry, and only when it is the whole value.
+		[
+			"a password joined to a short id",
+			["logger.info({ password: password + requestId.slice(0, 8) })"],
+			"secret",
+			"password",
+		],
 		[
 			"a password beside a short trace id",
 			["logger.info({ password, traceId: traceId.slice(0, 8) })"],

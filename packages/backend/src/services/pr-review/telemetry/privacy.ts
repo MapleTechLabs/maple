@@ -366,7 +366,7 @@ const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
  * check, a length, or a constant (`hasToken: token !== undefined`, `"cache": "hit"`).
  */
 const DERIVED_VALUE =
-	/(?:\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
+	/(?:(?:^|[(:{])\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
 
 /** Calls that hand their argument on unchanged, so what goes in still reaches the sink. */
 const PASS_THROUGH =

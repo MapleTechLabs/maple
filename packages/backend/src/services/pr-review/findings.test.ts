@@ -92,6 +92,8 @@ describe("settledFindings", () => {
 			"This isn't intentional.",
 			"That wasn’t by design, my bad.",
 			"Never intentional, good catch.",
+			"This is not a false positive; the code leaks credentials.",
+			"It isn't a false positive.",
 			// A technical adjective is not an acknowledgement.
 			"Fixed-size buffers still overflow here.",
 			"Fixed size arrays are the problem",
@@ -139,6 +141,17 @@ describe("settledFindings", () => {
 			comments: [BOT_COMMENT, reply("Done."), reply("Reopening, it still fails on main")],
 		})
 		assert.strictEqual(settle([retracted], new Set(["src/other.ts"])), "open")
+	})
+
+	it("reads a fix with a regression test as a fix", () => {
+		assert.strictEqual(settle([withReplies("Fixed in abc1234 with a regression test.")]), "resolved")
+	})
+
+	it("ignores replies from other automation", () => {
+		const botFix = thread({
+			comments: [BOT_COMMENT, { ...reply("Fixed in abc1234", "repair"), isBot: true }],
+		})
+		assert.strictEqual(settle([botFix]), "open")
 	})
 
 	it("never reads a question as a retraction", () => {
