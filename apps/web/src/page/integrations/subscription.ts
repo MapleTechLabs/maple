@@ -9,13 +9,8 @@ import { ConnectAttempt, ConnectProvider, currentReturnPath, PROVIDERS, startCon
 import { Message } from "./message"
 import { openerReturns, relayedReturns } from "./connect-returns"
 import type { Model } from "./model"
-import { PROVIDER_MODULES } from "./provider-modules"
+import { type MountedProvider, PROVIDER_MODULES } from "./provider-modules"
 import { githubStatusOf } from "./update-github"
-import {
-	isAwaitingFirstMetrics,
-	isWatchExpired,
-} from "../infra-integrations/planetscale/integration/planetscale"
-import { planetscaleStatusOf } from "../infra-integrations/planetscale/integration/update-planetscale"
 import { CAPABILITIES, CAPABILITY_IDS } from "../infra-integrations/gcp/integration/gcp-configure-copy"
 import { runConfirmed } from "../infra-integrations/gcp/integration/gcp-configure-derive"
 import { configureConnector } from "../infra-integrations/gcp/integration/update-gcp-configure"
@@ -157,6 +152,16 @@ const FORCE_POLL_WINDOW_MS = 10_000
 const every = (millis: number, message: () => Message) =>
 	Stream.map(pollTicks(Duration.millis(millis)), message)
 
+/** A provider module's ticks while it is active: steady, or fast first then steady. */
+export const tickerStream = (ticker: NonNullable<MountedProvider["ticker"]>): Stream.Stream<Message> =>
+	ticker.fast === null
+		? every(ticker.everyMs, () => ticker.tick)
+		: backoffPollTicks(
+				Duration.millis(ticker.fast.everyMs),
+				ticker.fast.ticks,
+				Duration.millis(ticker.everyMs),
+			).pipe(Stream.map(() => ticker.tick))
+
 const after = (millis: number, message: () => Message) =>
 	Stream.fromEffect(Effect.delay(Effect.sync(message), Duration.millis(millis))).pipe(
 		Stream.concat(Stream.never),
@@ -192,17 +197,6 @@ const isAwsStreaming = (model: Model): boolean => {
 			status.connections,
 			(connection) => connection.verified_at !== null && connection.metric_stream !== null,
 		)
-	)
-}
-
-/** Polls at 5 s for the first 2 minutes, then every minute, until the watch runs out. */
-const PLANETSCALE_FAST_POLLS = 24
-
-const isWatchingPlanetscale = (model: Model): boolean => {
-	if (integrationOfSearch(model.search.integration) !== "planetscale") return false
-	return (
-		isAwaitingFirstMetrics(planetscaleStatusOf(model), model.nowMs) &&
-		!isWatchExpired(model.planetscaleCard, model.nowMs)
 	)
 }
 
@@ -378,19 +372,6 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 					isStreaming ? every(AWS_WATCH_MS, () => Message.TickedAwsWatch()) : Stream.empty,
 			},
 		),
-		/** Watches for the first metrics; the card offers "Check again" once the watch runs out. */
-		planetscaleWatch: entry(
-			{ isWatching: Schema.Boolean },
-			{
-				modelToDependencies: ({ model }) => ({ isWatching: isWatchingPlanetscale(model) }),
-				dependenciesToStream: ({ isWatching }) =>
-					isWatching
-						? backoffPollTicks("5 seconds", PLANETSCALE_FAST_POLLS, "1 minute").pipe(
-								Stream.map(() => Message.TickedPlanetscaleWatch()),
-							)
-						: Stream.empty,
-			},
-		),
 		gcpRefresh: entry(
 			{ intervalMs: Schema.NullOr(Schema.Number) },
 			{
@@ -437,9 +418,7 @@ export const subscriptions = Subscription.make<PageSubscriptionInput<Model>, Mes
 											isActive: ticker.isActive(model),
 										}),
 										dependenciesToStream: ({ isActive }) =>
-											isActive
-												? every(ticker.everyMs, () => ticker.tick)
-												: Stream.empty,
+											isActive ? tickerStream(ticker) : Stream.empty,
 									},
 								),
 							),

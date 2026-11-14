@@ -8,7 +8,7 @@ import type { PageContext } from "../contract"
 import type { IntegrationId } from "./catalog"
 import type { FlowSpec, FlowStage } from "./flow"
 import type { Message } from "./message"
-import type { Model } from "./model"
+import type { Model, Statuses } from "./model"
 import type { CardStatus, IntegrationOverview } from "./overview"
 
 // One provider's part of `/integrations` and `/sources/new` as a self-contained module: it owns a
@@ -27,7 +27,7 @@ export type ProviderEnv<S> = Readonly<{
 
 /** What only the hub can do, asked for by a provider's update. */
 export type HubRequest =
-	| Readonly<{ _tag: "ReadStatus"; mode: Keyed.ReadMode }>
+	| Readonly<{ _tag: "ReadStatus"; mode: Keyed.ReadMode; name: keyof Statuses | null }>
 	| Readonly<{ _tag: "Toast"; type: "success" | "error"; title: string; description: string }>
 	| Readonly<{ _tag: "ReadClock" }>
 	| Readonly<{ _tag: "SetClock"; nowMs: number }>
@@ -37,7 +37,13 @@ export type HubRequest =
 
 export const HubRequest = {
 	/** Re-reads the provider's own status. */
-	readStatus: (mode: Keyed.ReadMode): HubRequest => ({ _tag: "ReadStatus", mode }),
+	readStatus: (mode: Keyed.ReadMode): HubRequest => ({ _tag: "ReadStatus", mode, name: null }),
+	/** Re-reads another of the hub's status reads the provider shows (PlanetScale's databases). */
+	readStatusOf: (name: keyof Statuses, mode: Keyed.ReadMode): HubRequest => ({
+		_tag: "ReadStatus",
+		mode,
+		name,
+	}),
 	toast: (type: "success" | "error", title: string, description = ""): HubRequest => ({
 		_tag: "Toast",
 		type,
@@ -65,8 +71,8 @@ export type ProviderReturn<M, Msg> = Readonly<{
 /** The status read that answered: `isCurrent` when it answers the read in flight. */
 export type StatusAnswer<S> = Readonly<{ isCurrent: boolean; previous: Keyed.Keyed<S, LoadFailure> }>
 
-/** What a header badge or catalog row reads besides the status: the row's id and the clock. */
-export type StatusContext = Readonly<{ id: IntegrationId; nowMs: number }>
+/** What a header badge or catalog row reads besides its status: the row's id, the clock, every read. */
+export type StatusContext = Readonly<{ id: IntegrationId; nowMs: number; statuses: Statuses }>
 
 /** A provider step outside its own messages (a hub event). */
 export type ProviderHook<S, M, Msg> = (model: M, env: ProviderEnv<S>) => ProviderReturn<M, Msg>
@@ -98,9 +104,10 @@ export type ProviderModule<S, M, Msg> = Readonly<{
 	onConfirmDisconnect?: ProviderHook<S, M, Msg>
 	/** The module's own removal is in flight: the shared dialog ignores its messages. */
 	isDisconnecting?: (model: M) => boolean
-	/** A tick every `everyMs` while `isActive`, answered by `tick`. */
+	/** A tick every `everyMs` while `isActive`, answered by `tick`; `fast` ticks come first. */
 	subscription?: Readonly<{
 		everyMs: number
+		fast?: Readonly<{ everyMs: number; ticks: number }>
 		isActive: (model: M, env: Omit<ProviderEnv<S>, "context">) => boolean
 		tick: Msg
 	}>

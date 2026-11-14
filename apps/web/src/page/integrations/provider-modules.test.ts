@@ -7,7 +7,7 @@ import {
 	SupabaseIntegrationStatus,
 	VercelIntegrationStatus,
 } from "@maple/domain/http"
-import { V2ChatConnectorList } from "@maple/domain/http/v2"
+import { V2ChatConnectorList, V2PlanetScaleIntegration, V2ScrapeTarget } from "@maple/domain/http/v2"
 import { SupabaseProjectRef } from "@maple/primitives"
 import { Array as Arr, Result, Schema } from "effect"
 import { AsyncData } from "foldkit"
@@ -30,6 +30,7 @@ import {
 } from "./provider-modules"
 import { SearchConsoleMessage } from "./search-console"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
+import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { VERCEL_STATUS } from "../../lab/vercel-infra-fixtures"
 import { init, update } from "./update"
 import { receivedCallback, receivedRelay } from "./update-connect"
@@ -49,6 +50,23 @@ const supabase = (message: SupabaseMessage) => Message.GotSupabaseMessage({ mess
 const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
 const searchConsole = (message: SearchConsoleMessage) => Message.GotSearchConsoleMessage({ message })
 const vercel = (message: VercelMessage) => Message.GotVercelMessage({ message })
+const planetscale = (message: PlanetscaleMessage) => Message.GotPlanetscaleMessage({ message })
+
+const planetscaleStatus = (connected: boolean) =>
+	Schema.decodeSync(V2PlanetScaleIntegration)({
+		object: "planetscale_integration",
+		connected,
+		pending_org_selection: false,
+		organization: connected ? "acme" : null,
+		connected_by_user_id: null,
+		detected_permissions: null,
+		metrics_auth: "api",
+		scrape_target: null,
+		last_inventory_at: null,
+		last_inventory_error: null,
+		revoked_at: null,
+		expires_at: null,
+	})
 
 const withVercel = (search: Model["search"], status: VercelIntegrationStatus, nowMs = NOW): Model => {
 	const model = { ...init({ search }, context).model, nowMs }
@@ -374,6 +392,68 @@ describe("provider modules", () => {
 			}),
 		)
 		expect(names(done.commands)).toContain("LoadIntegrationsVercelStatus")
+	})
+
+	test("a module can re-read another of the hub's status reads", () => {
+		const model = init({ search: { integration: "planetscale" } }, context).model
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedLoadPlanetscale({
+				key: model.statuses.planetscale.key ?? "",
+				result: Result.succeed(planetscaleStatus(true)),
+			}),
+		).model
+		const saved = pageUpdate(loaded, planetscale(PlanetscaleMessage.CompletedToken({ failure: null })))
+		const sent = names(saved.commands)
+		expect(sent).toContain("LoadIntegrationsPlanetscaleStatus")
+		expect(sent).toContain("LoadIntegrationsPlanetscaleDatabases")
+		expect(saved.model.statuses.planetscaleDatabases.key).not.toBe(
+			loaded.statuses.planetscaleDatabases.key,
+		)
+	})
+
+	test("a module's header badge can read the hub's other statuses", () => {
+		const model = init({ search: {} }, context).model
+		const notConnected = pageUpdate(
+			model,
+			Message.CompletedLoadPlanetscale({
+				key: model.statuses.planetscale.key ?? "",
+				result: Result.succeed(planetscaleStatus(false)),
+			}),
+		).model
+		const target = Schema.decodeSync(V2ScrapeTarget)({
+			id: "scrp_YoxMqYdzUJ1tH4BqCWxPH3",
+			object: "scrape_target",
+			name: "acme",
+			service_name: "planetscale",
+			url: "https://api.planetscale.com/metrics",
+			target_type: "planetscale",
+			organization: "acme",
+			include_branches: [],
+			exclude_branches: [],
+			scrape_interval_seconds: 60,
+			labels_json: null,
+			auth_type: "none",
+			has_credentials: true,
+			managed_by: null,
+			enabled: true,
+			last_scrape_at: null,
+			last_scrape_error: null,
+			created_at: "2026-09-01T00:00:00.000Z",
+			updated_at: "2026-09-02T00:00:00.000Z",
+		})
+		const withTargets = pageUpdate(
+			notConnected,
+			Message.CompletedLoadScrapeTargets({
+				key: notConnected.statuses.scrapeTargets.key ?? "",
+				result: Result.succeed([target]),
+			}),
+		).model
+		// Not connected through OAuth, the row counts its scrape targets instead.
+		expect(cardStatusOf(withTargets.statuses, "planetscale", NOW)).toEqual({
+			label: "1 org · 1 enabled",
+			variant: "ok",
+		})
 	})
 
 	test("the header badge and catalog row of a module come from the module", () => {

@@ -19,7 +19,6 @@ import {
 } from "../infra-integrations/cloudflare/integration/view-cloudflare"
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { githubCard } from "./view-github"
-import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -63,8 +62,6 @@ export const cardView = (
 			return githubCard(h, model, timeZone)
 		case "cloudflare":
 			return [cloudflareCard(h, model, timeZone)]
-		case "planetscale":
-			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
 			return [gcpCard(h, model, timeZone, focusId)]
 		case "aws":

@@ -4,7 +4,6 @@ import { overviewOf } from "./derive"
 import type { Model } from "./model"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlow } from "../infra-integrations/gcp/integration/flow-gcp"
-import { planetscaleFlow } from "../infra-integrations/planetscale/integration/flow-planetscale"
 import { prometheusFlow } from "./flow-prometheus"
 import { cloudflareFlow } from "../infra-integrations/cloudflare/integration/flow-cloudflare"
 import { githubFlow } from "./flow-github"
@@ -67,8 +66,6 @@ export const flowOf = (model: Model, integration: DataIntegration, context: Flow
 			return awsFlow(model)
 		case "gcp":
 			return gcpFlow(model)
-		case "planetscale":
-			return planetscaleFlow(model)
 		case "cloudflare":
 			return cloudflareFlow(model)
 		case "github":

@@ -13,6 +13,7 @@ import * as Field from "@maple/views/ui/field"
 import type { PageContext } from "../../contract"
 import { ScrollToTop } from "./command"
 import { Message } from "./message"
+import { PlanetscaleMessage } from "../../infra-integrations/planetscale/integration/planetscale"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
@@ -74,9 +75,11 @@ const entered = (loaded: V2PlanetScaleIntegration) => {
 const withOrganizations = (model: Model) =>
 	send(
 		model,
-		IntegrationMessage.CompletedFetchOrganizations({
-			key: model.integrations.planetscaleCard.organizations.key ?? "",
-			result: Result.succeed(organizations),
+		IntegrationMessage.GotPlanetscaleMessage({
+			message: PlanetscaleMessage.CompletedFetchOrganizations({
+				key: model.integrations.planetscaleCard.organizations.key ?? "",
+				result: Result.succeed(organizations),
+			}),
 		}),
 	).model
 
@@ -125,8 +128,16 @@ describe("PlanetScale connect flow", () => {
 			expectView(role("button", { name: "Start collecting" })).toBeDisabled(),
 			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
-		const picked = send(listed, IntegrationMessage.SelectedOrganization({ name: "labs" })).model
-		const saved = send(picked, IntegrationMessage.SubmittedOrganization())
+		const picked = send(
+			listed,
+			IntegrationMessage.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.SelectedOrganization({ name: "labs" }),
+			}),
+		).model
+		const saved = send(
+			picked,
+			IntegrationMessage.GotPlanetscaleMessage({ message: PlanetscaleMessage.SubmittedOrganization() }),
+		)
 		expect(names(saved.commands)).toEqual(["SelectPlanetscaleOrganization"])
 	})
 
@@ -155,9 +166,11 @@ describe("PlanetScale connect flow", () => {
 		)
 		const edited = send(
 			choosing,
-			IntegrationMessage.GotBranchFieldMessage({
-				field: "exclude",
-				message: Field.Message.ChangedValue({ value: "pr-*, preview-*" }),
+			IntegrationMessage.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.GotBranchFieldMessage({
+					field: "exclude",
+					message: Field.Message.ChangedValue({ value: "pr-*, preview-*" }),
+				}),
 			}),
 		).model
 		scene(
@@ -172,17 +185,23 @@ describe("PlanetScale connect flow", () => {
 		const connected = entered(status()).model
 		const chosen = send(
 			connected,
-			IntegrationMessage.SelectedPlanetscaleMetricsMethod({ method: "service_token" }),
+			IntegrationMessage.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.SelectedMetricsMethod({ method: "service_token" }),
+			}),
 		).model
 		const filled = Arr.reduce(
 			[
-				IntegrationMessage.GotPlanetscaleTokenField({
-					field: "id",
-					message: Field.Message.ChangedValue({ value: "tok_1" }),
+				IntegrationMessage.GotPlanetscaleMessage({
+					message: PlanetscaleMessage.GotTokenField({
+						field: "id",
+						message: Field.Message.ChangedValue({ value: "tok_1" }),
+					}),
 				}),
-				IntegrationMessage.GotPlanetscaleTokenField({
-					field: "secret",
-					message: Field.Message.ChangedValue({ value: "pscale_tkn_x" }),
+				IntegrationMessage.GotPlanetscaleMessage({
+					message: PlanetscaleMessage.GotTokenField({
+						field: "secret",
+						message: Field.Message.ChangedValue({ value: "pscale_tkn_x" }),
+					}),
 				}),
 			],
 			chosen,
@@ -194,12 +213,17 @@ describe("PlanetScale connect flow", () => {
 			expectView(role("button", { name: /^Service token/ })).toHaveAttr("aria-pressed", "true"),
 			expectView(role("button", { name: "Check and save token" })).toBeEnabled(),
 		)
-		const sent = send(filled, IntegrationMessage.SubmittedPlanetscaleToken())
+		const sent = send(
+			filled,
+			IntegrationMessage.GotPlanetscaleMessage({ message: PlanetscaleMessage.SubmittedToken() }),
+		)
 		expect(names(sent.commands)).toEqual(["SetPlanetscaleMetricsToken"])
 		const rejected = send(
 			sent.model,
-			IntegrationMessage.CompletedPlanetscaleToken({
-				failure: toLoadFailure(new Error("401 Unauthorized.")),
+			IntegrationMessage.GotPlanetscaleMessage({
+				message: PlanetscaleMessage.CompletedToken({
+					failure: toLoadFailure(new Error("401 Unauthorized.")),
+				}),
 			}),
 		).model
 		scene(

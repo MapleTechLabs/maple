@@ -19,6 +19,7 @@ import { SEARCH_CONSOLE_STATUS_READ } from "./search-console"
 import { LINEAR_STATUS_READ } from "./linear-provider"
 import { CHAT_STATUS_READ } from "./chat"
 import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
+import { PLANETSCALE_STATUS_READ } from "../infra-integrations/planetscale/integration/planetscale"
 
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
@@ -59,9 +60,9 @@ export const STATUS_READS = {
 	railway: statusRead(RAILWAY.statusRead.name, Message.CompletedLoadRailway, RAILWAY.statusRead.read),
 	vercel: statusRead(VERCEL_STATUS_READ.name, Message.CompletedLoadVercel, VERCEL_STATUS_READ.read),
 	planetscale: statusRead(
-		"LoadIntegrationsPlanetscaleStatus",
+		PLANETSCALE_STATUS_READ.name,
 		Message.CompletedLoadPlanetscale,
-		(refresh) => Effect.flatMap(IntegrationStatuses, (statuses) => statuses.planetscale({ refresh })),
+		PLANETSCALE_STATUS_READ.read,
 	),
 	gcp: statusRead("LoadIntegrationsGcpStatus", Message.CompletedLoadGcp, (refresh) =>
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.gcp({ refresh })),
