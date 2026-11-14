@@ -250,6 +250,21 @@ export const sqlTiming = (
 type Leaver = readonly [step: number, next: string, count: number]
 export type Leavers = ReadonlyArray<Leaver>
 
+const decodeNames = decodeJsonEachRow(CH.productEventNamesRowSchema)
+
+/** How many people sent each event name, as the Events list counts them. */
+export const sqlEventPersons = (
+	db: Chdb,
+	orgId: string,
+	range: Range = FULL_RANGE,
+): Readonly<Record<string, number>> =>
+	Rec.fromEntries(
+		Arr.map(
+			decodeNames(run(db, CH.compileUnsafe(CH.productEventNamesQuery(), params(orgId, range)).sql)),
+			(row) => [row.eventName, row.persons] as const,
+		),
+	)
+
 export const sqlLeavers = (
 	db: Chdb,
 	orgId: string,

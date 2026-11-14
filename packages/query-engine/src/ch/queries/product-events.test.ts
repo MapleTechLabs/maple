@@ -336,7 +336,7 @@ describe("productEventNamesQuery", () => {
 		expect(compiled.tenantScope).toBe("single-tenant")
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain(
-			"SELECT product_events.EventName AS eventName, product_events.Kind AS kind, count() AS count, uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions, uniq(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId)) AS persons FROM product_events",
+			"SELECT product_events.EventName AS eventName, product_events.Kind AS kind, count() AS count, uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions, uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons FROM product_events",
 		)
 		expect(flat).toContain("WHERE product_events.OrgId = 'org_1'")
 		expect(flat).toContain("GROUP BY eventName, kind ORDER BY count DESC, eventName ASC LIMIT 25")

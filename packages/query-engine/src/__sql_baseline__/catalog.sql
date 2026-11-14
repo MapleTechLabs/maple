@@ -4567,13 +4567,13 @@ SELECT
         ORDER BY hop ASC, count DESC, fromNode ASC, toNode ASC
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:default  [1562ead5]
+-- builder:product-events:productEventNamesQuery:default  [d05b039c]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId)) AS persons
+          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
@@ -4583,13 +4583,13 @@ SELECT
         LIMIT 100
         FORMAT JSON
 
--- builder:product-events:productEventNamesQuery:filtered  [d2ec0a20]
+-- builder:product-events:productEventNamesQuery:filtered  [b9a881b9]
 SELECT
           product_events.EventName AS eventName,
           product_events.Kind AS kind,
           count() AS count,
           uniqIf(product_events.SessionId, product_events.SessionId != '') AS sessions,
-          uniq(if(product_events.UserId != '', product_events.UserId, product_events.VisitorId)) AS persons
+          uniq(if(product_events.VisitorId != '', product_events.VisitorId, product_events.UserId)) AS persons
         FROM product_events
         WHERE product_events.OrgId = 'org_sql_catalog'
           AND product_events.Timestamp >= '2026-01-01 10:30:00'
