@@ -250,6 +250,16 @@ const ACQUISITION: Dataset = {
 			host: "acme.dev",
 		}),
 		event({
+			atMs: DAY_MS + 500,
+			sessionId: "a2",
+			visitorId: "ann",
+			userId: "u_ann",
+			kind: "navigation",
+			eventName: "$pageview",
+			pagePath: "/signup",
+			host: "acme.dev",
+		}),
+		event({
 			atMs: DAY_MS + 1_000,
 			sessionId: "a2",
 			visitorId: "ann",
@@ -454,7 +464,7 @@ describeWithChdb("product event funnels over example products", () => {
 	})
 
 	test("the event list counts a visitor who signs in as one person", () => {
-		// Ann, Bob and Cy viewed a page; Ann signed in before her signup event. The plan came from the backend.
+		// Ann, Bob and Cy viewed a page, Ann once anonymous and once signed in. The plan came from the backend.
 		expect(sqlEventPersons(db, ACQUISITION.orgId)).toEqual({
 			$pageview: 3,
 			signup_started: 2,
