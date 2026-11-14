@@ -67,23 +67,39 @@ const SAME_ISSUE_LINES = 3
 /** Share of title words two findings must have in common to read as one issue restated. */
 const SAME_TITLE_OVERLAP = 0.6
 
+/** A negation just before a verdict word: "not", "never", or a contraction ("isn't", "wasn’t"). */
+const NEGATED = String.raw`(?<!\b(?:not|never|no)\s)(?<!n['’]t\s)`
+
 /**
  * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
- * negation ("this is not by design") asks for an answer, so it never dismisses.
+ * negation ("this isn't by design") asks for an answer, so it never dismisses.
  */
-const DISMISSAL =
-	/(?<!\bnot\s)\b(won'?t fix|wontfix|not an issue|not a (?:credential|secret|bug|problem|real issue)|false positive|by design|as intended|intended behaviou?r|intentional(?:ly)?|ignore this|no change needed|(?:keeping|leaving) (?:it |this )?as is)\b/i
+const DISMISSAL = new RegExp(
+	String.raw`${NEGATED}\b(won['’]?t fix|wontfix|not an issue|not a (?:credential|secret|bug|problem|real issue)|false positive|by design|as intended|intended behaviou?r|intentional(?:ly)?|ignore this|no change needed|(?:keeping|leaving) (?:it |this )?as is)\b`,
+	"i",
+)
 
 /** A reply saying the finding was dealt with: "Fixed in c88ba3a", "Done.", "Addressed by #12". */
-const FIXED =
-	/(?:^\s*(?:done|fixed|addressed|resolved)\b|(?<!\bnot\s)(?<!n't\s)\b(?:fixed|addressed|resolved)\s+(?:in|by|with|via)\b)/i
+const FIXED = new RegExp(
+	String.raw`(?:^\s*(?:done|fixed|addressed|resolved)\b|${NEGATED}\b(?:fixed|addressed|resolved)\s+(?:in|by|with|via)\b)`,
+	"i",
+)
+
+/** A promise, request or condition: "will be fixed", "please fix", "fixed in a follow-up". */
+const NOT_YET =
+	/\b(?:will|would|should|could|shall|going to|gonna|plan(?:ning)? to|need(?:s|ed)? to|has to|have to|later|follow[- ]?up|next (?:pr|pull request|push|commit)|todo|please|let['’]?s|if|once|when|until)\b/i
 
 type ReplyVerdict = "dismissed" | "resolved"
 
+/**
+ * A reply's verdict, only when it is an unambiguous statement. A completed fix outranks a dismissal
+ * phrase in the same reply ("Fixed in c88ba3a, the call was intentional before"); anything future,
+ * requested or conditional is left for the reviewer.
+ */
 const verdictOf = (body: string): ReplyVerdict | undefined => {
-	if (Str.includes("?")(body)) return undefined
-	if (DISMISSAL.test(body)) return "dismissed"
-	return FIXED.test(body) ? "resolved" : undefined
+	if (Str.includes("?")(body) || NOT_YET.test(body)) return undefined
+	if (FIXED.test(body)) return "resolved"
+	return DISMISSAL.test(body) ? "dismissed" : undefined
 }
 
 /**

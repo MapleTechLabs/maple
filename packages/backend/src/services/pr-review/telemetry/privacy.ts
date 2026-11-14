@@ -30,7 +30,15 @@ const MORE_LOGS =
 
 /** A line that passes the value through a redaction or a one-way transform first. */
 const TRANSFORMED_LINE =
-	/(?:\b(?:redact\w*|mask\w*|hash\w*|sha(?:1|256|512)\w*|digest|anonymi[sz]e\w*|obfuscat\w*|scrub\w*|truncate\w*|Redacted\.make)\s*\(|\.(?:slice|substring|substr)\(\s*0\s*,\s*(?:[1-9]|1[0-6])\s*\))/i
+	/\b(?:redact\w*|mask\w*|hash\w*|sha(?:1|256|512)\w*|digest|anonymi[sz]e\w*|obfuscat\w*|scrub\w*|truncate\w*|Redacted\.make)\s*\(/i
+
+/**
+ * A value cut to a short prefix (`token.slice(0, 12)`), too short to use. Judged per entry like any
+ * derived value: its comma is blanked first so the entry is not split, and its neighbours are still read.
+ */
+const SHORT_PREFIX = /\.(?:slice|substring|substr)\(\s*0\s*,\s*(?:[1-9]|1[0-6])\s*\)/g
+const blankPrefixCommas = (text: string) =>
+	Str.replace(SHORT_PREFIX, (match: string) => Str.replace(",", " ")(match))(text)
 
 /** Words before the match that make a name about the value, not the value: `hashedPassword`, `hasToken`. */
 const NOT_THE_VALUE = new Set([
@@ -69,6 +77,8 @@ const VALUE_WORDS = new Set([
 	"text",
 	"header",
 	"address",
+	"number",
+	"body",
 	"data",
 ])
 
@@ -193,20 +203,27 @@ const wordsOf = (name: string): ReadonlyArray<string> =>
 		(word) => word.length > 0,
 	)
 
-/** The first sensitive word or compound in a name, and the words it spans. */
-const firstMatch = (words: ReadonlyArray<string>) => {
-	for (let start = 0; start < words.length; start++) {
-		for (const span of [3, 2]) {
-			const kind =
-				start + span <= words.length
-					? COMPOUNDS.get(Arr.join(words.slice(start, start + span), ""))
-					: undefined
-			if (kind !== undefined) return { kind, start, end: start + span }
-		}
-		const kind = WORDS.get(words[start] ?? "")
-		if (kind !== undefined) return { kind, start, end: start + 1 }
+/**
+ * The sensitive word or compound that ends furthest right in a name, the longest on a tie, and the
+ * words it spans. The rightmost is the one the name is about: `tokenResponse.access_token` is an
+ * access token, `auth.token.iss` is not a token.
+ */
+const lastMatch = (words: ReadonlyArray<string>) => {
+	let best: { readonly kind: PrivacyKind; readonly start: number; readonly end: number } | undefined
+	const consider = (kind: PrivacyKind | undefined, start: number, end: number) => {
+		if (
+			kind !== undefined &&
+			(best === undefined || end > best.end || (end === best.end && start < best.start))
+		)
+			best = { kind, start, end }
 	}
-	return undefined
+	for (let start = 0; start < words.length; start++) {
+		for (const span of [3, 2])
+			if (start + span <= words.length)
+				consider(COMPOUNDS.get(Arr.join(words.slice(start, start + span), "")), start, start + span)
+		consider(WORDS.get(words[start] ?? ""), start, start + 1)
+	}
+	return best
 }
 
 /**
@@ -221,7 +238,7 @@ export const classifyName = (
 	const words = wordsOf(name)
 	const last = words.at(-1)
 	if (last === undefined || Arr.some(words, (word) => NOT_THE_VALUE.has(word))) return undefined
-	const match = firstMatch(words)
+	const match = lastMatch(words)
 	if (match === undefined)
 		return options.chain === true && words.length > 1 && PAYLOAD_WORDS.has(last) ? "payload" : undefined
 	if (!Arr.every(words.slice(match.end), (word) => VALUE_WORDS.has(word))) return undefined
@@ -342,7 +359,7 @@ const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
  * check, a length, or a constant (`hasToken: token !== undefined`, `"cache": "hit"`).
  */
 const DERIVED_VALUE =
-	/(?:[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
+	/(?:\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
 
 /** Calls that hand their argument on unchanged, so what goes in still reaches the sink. */
 const PASS_THROUGH =
@@ -415,7 +432,9 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	const line = lines[index]
 	if (line === undefined || line.kind !== "add" || line.text.length > MAX_LINE_CHARS) return undefined
 	if (isCommentLine(line.text) || TRANSFORMED_LINE.test(line.text)) return undefined
-	const { literals, code, interpolations } = blankLiterals(line.text)
+	// Same length as the line, so every offset below reads either.
+	const text = blankPrefixCommas(line.text)
+	const { literals, code, interpolations } = blankLiterals(text)
 	const sink = sinkOf(lines, index)
 	if (sink === undefined) return undefined
 	for (const { kind, label, pattern } of VALUE_PATTERNS) {
@@ -438,9 +457,8 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	]
 	const values = Arr.reduce(
 		blanked,
-		line.text,
-		(text, [start, end]) =>
-			Str.slice(0, start)(text) + Str.repeat(end - start)(" ") + Str.slice(end)(text),
+		text,
+		(acc, [start, end]) => Str.slice(0, start)(acc) + Str.repeat(end - start)(" ") + Str.slice(end)(acc),
 	)
 	const derived = Arr.map(segments, ([start, end]) =>
 		DERIVED_VALUE.test(Str.trim(Str.slice(start, end)(values))),
@@ -453,7 +471,7 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 	const isDerived = (offset: number, valueFollows = false) => {
 		const within = Arr.findFirst(interpolations, ([start, end]) => offset >= start && offset < end)
 		if (Option.isSome(within))
-			return DERIVED_VALUE.test(Str.trim(Str.slice(within.value[0], within.value[1])(line.text)))
+			return DERIVED_VALUE.test(Str.trim(Str.slice(within.value[0], within.value[1])(text)))
 		const at = segmentAt(offset)
 		return derived[at] === true || (valueFollows && derived[at + 1] === true)
 	}
@@ -465,7 +483,7 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 		if (kind !== undefined && !isDerived(literal.offset, literal.key === "argument"))
 			named.push({ kind, subject: `\`${literal.value}\``, offset: literal.offset })
 	}
-	for (const match of Str.matchAll(BRACKET_ACCESS)(line.text)) {
+	for (const match of Str.matchAll(BRACKET_ACCESS)(text)) {
 		const kind = classifyName(`${match[1]}.${match[2]}`, { chain: true })
 		if (kind !== undefined && !isDerived(match.index ?? 0))
 			named.push({ kind, subject: `\`${match[0]}\``, offset: match.index ?? 0 })

@@ -83,6 +83,15 @@ describe("settledFindings", () => {
 			"This is not by design, fix it.",
 			"This is not fixed in the latest commit.",
 			"Is this fixed in main?",
+			// A promise, a request or a condition is not a fix.
+			"This will be fixed in the next PR.",
+			"Should be fixed in a follow-up",
+			"Please get this fixed in this PR",
+			"Fixed once #12 lands",
+			// A contraction or "never" negates a dismissal too.
+			"This isn't intentional.",
+			"That wasn’t by design, my bad.",
+			"Never intentional, good catch.",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
@@ -107,6 +116,13 @@ describe("settledFindings", () => {
 		assert.strictEqual(
 			settle([withReplies("Fixed in 9ab12cd", "Actually reverted, by design")]),
 			"dismissed",
+		)
+	})
+
+	it("reads a completed fix over a dismissal phrase in the same reply", () => {
+		assert.strictEqual(
+			settle([withReplies("Fixed in c88ba3a, the extra call was intentional before")]),
+			"resolved",
 		)
 	})
 

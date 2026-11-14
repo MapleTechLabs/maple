@@ -118,6 +118,40 @@ describe("privacyHitAt", () => {
 			"contact",
 			"email_address",
 		],
+		// The rightmost sensitive word names the value, whatever comes before it.
+		[
+			"a token inside a response",
+			["logger.info(tokenResponse.access_token)"],
+			"secret",
+			"tokenResponse.access_token",
+		],
+		[
+			"a password among credentials",
+			["logger.info(credentials.password)"],
+			"secret",
+			"credentials.password",
+		],
+		["a token under a secret", ["logger.info(secret.token)"], "secret", "secret.token"],
+		[
+			"a social security number",
+			["logger.info({ socialSecurityNumber })"],
+			"government_id",
+			"socialSecurityNumber",
+		],
+		["a credit card number", ["logger.info({ creditCardNumber })"], "payment", "creditCardNumber"],
+		// A short prefix exempts only its own entry.
+		[
+			"a password beside a short trace id",
+			["logger.info({ password, traceId: traceId.slice(0, 8) })"],
+			"secret",
+			"password",
+		],
+		[
+			"an email beside a short request id",
+			['Effect.annotateCurrentSpan({ "user.email": user.email, "request.id": requestId.slice(0, 8) })'],
+			"contact",
+			"user.email",
+		],
 	]
 	for (const [name, snippet, kind, subject] of exposes) {
 		it(`flags ${name}`, () => {
@@ -175,6 +209,7 @@ describe("privacyHitAt", () => {
 		["an enum named after credentials", ["logger.info({ action: widgetCredentialAction })"]],
 		["a class named after secrets", ["Effect.logInfo(SecretResealSweep.name)"]],
 		["a short token prefix", ['span.setAttribute("auth.token", token.slice(0, 12))']],
+		["a short prefix in a template", ["logger.info(`using ${apiKey.slice(0, 6)}`)"]],
 	]
 	for (const [name, snippet] of quiet) {
 		it(`stays quiet on ${name}`, () => {
