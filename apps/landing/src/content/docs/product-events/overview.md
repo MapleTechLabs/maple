@@ -76,3 +76,4 @@ For `POST /v1/events`, a `200` response with `{"accepted": 1}` means the row was
 - [Product events from traces](/docs/product-events/from-traces)
 - [Product events API](/docs/product-events/api)
 - [Web analytics](/docs/product-events/web-analytics)
+- [Funnels](/docs/product-events/funnels)
