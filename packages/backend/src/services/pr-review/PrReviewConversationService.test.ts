@@ -83,6 +83,8 @@ const layerFor = (
 		readonly pr?: PullRequestHead
 		/** Read on every head lookup, so a test can move the branch mid-reply. */
 		readonly livePr?: { current: PullRequestHead }
+		/** Present and true: posting an answer fails. */
+		readonly postFails?: { value: boolean }
 		readonly files?: Readonly<Record<string, string>>
 	} = {},
 ) => {
@@ -125,13 +127,19 @@ const layerFor = (
 		fetchChangesSince: unused,
 		fetchPullRequestHead: () => Effect.sync(() => options.livePr?.current ?? options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>
-			Effect.sync(() => {
-				recorded.posted.push({
-					body: input.body,
-					...(input.threadRootId === undefined ? undefined : { threadRootId: input.threadRootId }),
-				})
-				return { url: `https://github.com/octo/repo/pull/612#reply-${recorded.posted.length}` }
-			}),
+			options.postFails?.value === true
+				? Effect.die("GitHub is down")
+				: Effect.sync(() => {
+						recorded.posted.push({
+							body: input.body,
+							...(input.threadRootId === undefined
+								? undefined
+								: { threadRootId: input.threadRootId }),
+						})
+						return {
+							url: `https://github.com/octo/repo/pull/612#reply-${recorded.posted.length}`,
+						}
+					}),
 		reactToComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
 				recorded.reactions.push(`${input.commentId}:${input.content}`)
@@ -459,6 +467,64 @@ describe("PrReviewConversationService", () => {
 				{ handle: "F3", status: "resolved", resolvedSha: null },
 			])
 		}).pipe(Effect.provide(layerFor(testDb, recorded)))
+	})
+
+	it.effect("leaves findings open when the answer could not be posted", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		const postFails = { value: false }
+		return Effect.gen(function* () {
+			yield* seed
+			const repo = yield* VcsRepository
+			const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
+			const database = yield* Database
+			const finding = (handle: string, status: "open" | "resolved") => ({
+				id: `finding-${handle}`,
+				orgId,
+				repositoryId,
+				number: 612,
+				reviewId: Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-000000000000"),
+				handle,
+				path: "src/a.ts",
+				line: 1,
+				category: "correctness" as const,
+				severity: "warn" as const,
+				title: `finding ${handle}`,
+				status,
+				createdAt: 0,
+				updatedAt: 0,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(PrReviewFindings).values([
+						finding("F1", "open"),
+						finding("F2", "open"),
+						finding("F3", "resolved"),
+					]),
+				),
+			)
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(orgId, comment())
+			postFails.value = true
+			yield* conversations.submitReply(orgId, outcome.replyId!, "You are right about F1.", {
+				dismissed: ["F1"],
+				// F3 is already settled and F9 does not exist: neither is touched or mentioned.
+				resolved: ["F2", "F3", "F9"],
+			})
+			const rows = yield* database.execute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
+						.select("handle", "status", "resolvedSha")
+						.where(($) => [$.repositoryId.eq(repositoryId)])
+						.orderBy(["handle", "asc"]),
+				),
+			)
+			assert.deepEqual(rows, [
+				{ handle: "F1", status: "open", resolvedSha: null },
+				{ handle: "F2", status: "open", resolvedSha: null },
+				{ handle: "F3", status: "resolved", resolvedSha: null },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { postFails })))
 	})
 
 	it.effect("leaves a claimed fix open when the branch moved since the answer read it", () => {

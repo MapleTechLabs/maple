@@ -847,14 +847,18 @@ export class PrReviewConversationService extends Context.Service<
 			return Option.isSome(head) && head.value.headSha === readHead
 		})
 
-		const settleFindings = Effect.fn("PrReviewConversationService.settleFindings")(function* (
+		/**
+		 * What a reply settles, decided before it is posted: the findings to dismiss and resolve, the
+		 * note that says so, and the write (`apply`), run only once the answer is on the pull request.
+		 */
+		const planSettlement = Effect.fn("PrReviewConversationService.planSettlement")(function* (
 			orgId: OrgId,
 			row: PrReviewReplyRow,
 			settle: ReplySettlement | undefined,
 			/** The head the answer read: the reply's own, or the commit its fix just pushed. */
 			readHead: string | null,
 		) {
-			const none = { note: "", dismissed: 0, resolved: 0 }
+			const none = { note: "", dismissed: 0, resolved: 0, apply: Effect.void }
 			if (settle === undefined || settle.dismissed.length + settle.resolved.length === 0) return none
 			const open = yield* dbExecute((db) =>
 				db.run(
@@ -878,7 +882,6 @@ export class PrReviewConversationService extends Context.Service<
 			// moved (or unreadable) head leaves those findings for the next review.
 			const headHeld = claimedFixed.length === 0 ? true : yield* headStillAt(orgId, row, readHead)
 			const resolved = headHeld ? claimedFixed : []
-			const nowMs = yield* Clock.currentTimeMillis
 			const mark = (
 				findings: ReadonlyArray<{ readonly id: string }>,
 				values: PG.UpdateSetOf<typeof PrReviewFindings>,
@@ -896,8 +899,11 @@ export class PrReviewConversationService extends Context.Service<
 									]),
 							),
 						).pipe(Effect.asVoid)
-			yield* mark(dismissed, { status: "dismissed", updatedAt: nowMs })
-			yield* mark(resolved, { status: "resolved", resolvedSha: null, updatedAt: nowMs })
+			const apply = Effect.gen(function* () {
+				const nowMs = yield* Clock.currentTimeMillis
+				yield* mark(dismissed, { status: "dismissed", updatedAt: nowMs })
+				yield* mark(resolved, { status: "resolved", resolvedSha: null, updatedAt: nowMs })
+			})
 			const note = Arr.join(
 				[
 					...(dismissed.length === 0 ? [] : [`Dismissed ${handleList(dismissed)}.`]),
@@ -912,6 +918,7 @@ export class PrReviewConversationService extends Context.Service<
 				note: note === "" ? "" : `_${note}_`,
 				dismissed: dismissed.length,
 				resolved: resolved.length,
+				apply,
 			}
 		})
 
@@ -921,12 +928,14 @@ export class PrReviewConversationService extends Context.Service<
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
-			const settled = yield* settleFindings(orgId, row, settle, fix.commitSha ?? row.headSha)
+			const settled = yield* planSettlement(orgId, row, settle, fix.commitSha ?? row.headSha)
 			const text = Arr.join(
 				Arr.filter([Str.trim(body), fix.note, settled.note], (part) => part !== ""),
 				"\n\n",
 			)
 			const url = yield* post(orgId, row, text === "" ? "I have nothing to add." : text)
+			// Only an answer people can read closes findings; one that failed to post leaves them open.
+			if (Option.isSome(url)) yield* settled.apply
 			const nowMs = yield* Clock.currentTimeMillis
 			yield* updateReply(orgId, replyId, ACTIVE, {
 				status: "completed",
@@ -937,8 +946,8 @@ export class PrReviewConversationService extends Context.Service<
 			})
 			yield* Effect.annotateCurrentSpan({
 				"maple.pr_reply.id": replyId,
-				"maple.pr_reply.dismissed": settled.dismissed,
-				"maple.pr_reply.resolved": settled.resolved,
+				"maple.pr_reply.dismissed": Option.isSome(url) ? settled.dismissed : 0,
+				"maple.pr_reply.resolved": Option.isSome(url) ? settled.resolved : 0,
 				"maple.pr_reply.posted": Option.isSome(url),
 				"maple.pr_reply.committed": fix.commitSha !== null,
 			})
