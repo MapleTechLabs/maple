@@ -212,6 +212,7 @@ export type NavAudience = typeof NavAudience.Type
 /** The org rollout flags that gate a nav row each. */
 export type NavFlags = Readonly<{
 	cloudCost: boolean
+	productAnalytics: boolean
 	releases: boolean
 	securityAudit: boolean
 	statusPages: boolean
@@ -276,6 +277,15 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			exploreItem,
 			{ title: "Web analytics", href: "/analytics", icon: "ChartBarHorizontalIcon" },
+			...(flags.productAnalytics
+				? [
+						{
+							title: "Product analytics",
+							href: "/product-analytics",
+							icon: "ChartBarTrendUpIcon",
+						} as const,
+					]
+				: []),
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
 		],
@@ -303,7 +313,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 ]
 
 /**
- * `navGroups(flags, audience)`; `cloudCost`, `releases`, `securityAudit` and `statusPages` gate a
+ * `navGroups(flags, audience)`; `cloudCost`, `productAnalytics`, `releases`, `securityAudit` and `statusPages` gate a
  * row each, and an analyst gets {@link analystNavGroups}.
  */
 export const navGroups = (flags: NavFlags, audience: NavAudience = "operator"): ReadonlyArray<NavGroup> =>

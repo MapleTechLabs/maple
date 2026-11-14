@@ -12,12 +12,13 @@ import { integrationIconPlate } from "../../../kit/integration-empty"
 import { liveChecklist } from "../../../kit/connect-flow"
 import { integrationNotice } from "../../../integrations/kit/notice"
 import { Message } from "../../../integrations/message"
+import { PlanetscaleMessage } from "./planetscale"
 import type { Model } from "../../../integrations/model"
 import { isWatchExpired } from "./planetscale"
 import { disconnectDialog } from "../../../integrations/view-disconnect"
 import { connectedIntegrationCard, integrationStatusCard } from "../../../integrations/view-integration-card"
 import { inventoryCountsOf } from "./flow-planetscale"
-import { metricsHealth } from "./view-planetscale-parts"
+import { metricsHealth, toHub } from "./view-planetscale-parts"
 import { pickerDialog } from "./view-planetscale-picker"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -133,7 +134,7 @@ const watchExpired = (h: H): Html =>
 			{
 				size: "sm",
 				variant: "outline",
-				attributes: [h.OnClick(Message.ClickedPlanetscaleCheckAgain())],
+				attributes: [h.OnClick(toHub(PlanetscaleMessage.ClickedCheckAgain()))],
 			},
 			["Check again"],
 		),
@@ -168,7 +169,9 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 									size: "sm",
 									variant: "outline",
 									isDisabled: busy,
-									attributes: [h.OnClick(Message.ClickedChangeOrganization())],
+									attributes: [
+										h.OnClick(toHub(PlanetscaleMessage.ClickedChangeOrganization())),
+									],
 								},
 								["Edit data"],
 							),

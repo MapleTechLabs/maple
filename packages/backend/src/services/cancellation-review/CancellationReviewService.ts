@@ -57,6 +57,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { ProductEventsIngestKey } from "@maple/infra/secrets"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { ALERTING_SYSTEM_USER_ID, systemTenant } from "@maple/backend/services/auth/system-tenant"
 import { AUDIT_ACCESS_ACTION_SUFFIXES, AuditLogService } from "@maple/backend/services/audit/AuditLogService"
@@ -242,6 +243,7 @@ export class CancellationReviewService extends Context.Service<
 >()("@maple/backend/cancellation-review/CancellationReviewService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
+		const productEventsKey = yield* ProductEventsIngestKey
 		const database = yield* Database
 		const regions = yield* OrganizationRegionService
 		const organizations = yield* OrganizationService
@@ -396,7 +398,7 @@ export class CancellationReviewService extends Context.Service<
 		 * there, tagged with the customer's org as `GroupId`.
 		 */
 		const readOwnOrg = Effect.gen(function* () {
-			const key = Option.orElse(env.MAPLE_PRODUCT_EVENTS_INGEST_KEY, () => env.MAPLE_INGEST_KEY)
+			const key = Option.orElse(productEventsKey, () => env.MAPLE_INGEST_KEY)
 			if (Option.isNone(key)) return null
 			const own = yield* ingestKeys.resolveIngestKey(Redacted.value(key.value))
 			return Option.isNone(own) ? null : own.value.orgId

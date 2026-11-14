@@ -1,14 +1,17 @@
+import type { CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Option, Array as Arr, String as Str } from "effect"
-import { Command } from "foldkit"
-import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
+import { AsyncData, Command } from "foldkit"
+import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as ToggleGroup from "@maple/views/ui/toggle-group"
 import * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { requestKey } from "@maple/views/data/request-key"
-import type { PageContext, PageReturn } from "../../../contract"
+import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
+import { ingestPhaseOf } from "../ingest"
 import {
 	type CloudflareCardModel,
+	CloudflareMessage,
 	LoadCloudflareUsage,
 	PrimeCloudflare,
 	SaveCloudflareZones,
@@ -16,73 +19,94 @@ import {
 	type ZoneSortKey,
 } from "./cloudflare"
 import { changedZoneChoices, zoneChoicesOf } from "./cloudflare-derive"
-import { Message } from "../../../integrations/message"
-import type { Model } from "../../../integrations/model"
-import { chain, requestStatus } from "../../../integrations/update-status"
 import { successOf } from "../../kit/success-of"
 
-type Return = PageReturn<Model, Message>
+// The Cloudflare card's state changes, as the Cloudflare module's update.
 
-const withCard = (model: Model, card: Partial<CloudflareCardModel>): Model => ({
+type Env = ProviderEnv<CloudflareIntegrationStatus>
+type Return = ProviderReturn<CloudflareCardModel, CloudflareMessage>
+
+const withCard = (model: CloudflareCardModel, card: Partial<CloudflareCardModel>): CloudflareCardModel => ({
 	...model,
-	cloudflareCard: { ...model.cloudflareCard, ...card },
+	...card,
 })
 
-export const requestUsage = (model: Model, context: PageContext, mode: Keyed.RequestMode): Return => {
-	const key = requestKey(context.orgId, "integrations.cloudflareUsage", {})
-	return Option.match(Keyed.request(model.cloudflareCard.usage, key, mode), {
+/** Both answers concatenated: the second step's model, every request and Command in order. */
+const then = (first: Return, second: (model: CloudflareCardModel) => Return): Return => {
+	const next = second(first.model)
+	return {
+		model: next.model,
+		requests: [...(first.requests ?? []), ...(next.requests ?? [])],
+		commands: [...(first.commands ?? []), ...(next.commands ?? [])],
+	}
+}
+
+export const requestUsage = (model: CloudflareCardModel, env: Env, mode: Keyed.RequestMode): Return => {
+	const key = requestKey(env.context.orgId, "integrations.cloudflareUsage", {})
+	return Option.match(Keyed.request(model.usage, key, mode), {
 		onNone: () => ({ model }),
 		onSome: (usage) => ({ model: withCard(model, { usage }), commands: [LoadCloudflareUsage({ key })] }),
 	})
 }
 
-export const refreshCloudflare = (model: Model, context: PageContext): Return =>
-	chain(model, [
-		(next) => requestStatus(next, context, "cloudflare", "Supersede"),
-		(next) => requestUsage(next, context, "Refresh"),
-	])
+/** The status and the usage, re-read together. */
+export const refreshCloudflare = (model: CloudflareCardModel, env: Env): Return =>
+	then({ model, requests: [HubRequest.readStatus("Supersede")] }, (next) =>
+		requestUsage(next, env, "Refresh"),
+	)
 
 /** Once per attempt, unless the last prime found no grant yet. */
-export const prime = (model: Model): Return =>
-	model.cloudflareCard.isPrimed || model.cloudflareCard.isPriming
+export const prime = (model: CloudflareCardModel): Return =>
+	model.isPrimed || model.isPriming
 		? { model }
 		: { model: withCard(model, { isPrimed: true, isPriming: true }), commands: [PrimeCloudflare()] }
 
-export const completedPrime = (
-	model: Model,
-	context: PageContext,
-	isOk: boolean,
-	isConnected: boolean,
-): Return => refreshCloudflare(withCard(model, { isPriming: false, isPrimed: isOk && isConnected }), context)
+const completedPrime = (model: CloudflareCardModel, env: Env, isOk: boolean, isConnected: boolean): Return =>
+	refreshCloudflare(withCard(model, { isPriming: false, isPrimed: isOk && isConnected }), env)
 
 /** The card's entry: the usage read and the chart runtime its sparklines draw with. */
-export const enterCloudflare = (model: Model, context: PageContext): Return => {
-	const usage = requestUsage(model, context, "Load")
-	const loadsRuntime = model.cloudflareCard.chartRuntime._tag !== "Ready"
-	return loadsRuntime
-		? {
+export const enterCloudflare = (model: CloudflareCardModel, env: Env): Return => {
+	const usage = requestUsage(model, env, "Load")
+	return model.chartRuntime._tag === "Ready"
+		? usage
+		: {
 				...usage,
-				commands: [...(usage.commands ?? []), LoadChartRuntime()],
+				commands: [
+					...(usage.commands ?? []),
+					Command.mapMessage(LoadChartRuntime(), (message) =>
+						message._tag === "CompletedLoadChartRuntime"
+							? CloudflareMessage.CompletedLoadChartRuntime()
+							: CloudflareMessage.FailedLoadChartRuntime({ reason: message.reason }),
+					),
+				],
 			}
-		: usage
 }
 
-export const gotZoneFilter = (model: Model, message: ToggleGroup.Message): Return => {
-	const next = ToggleGroup.update(model.cloudflareCard.zoneFilter, message)
+/** A fresh connection still discovering or collecting: its status and usage are re-read. */
+export const isSettling = (model: CloudflareCardModel, env: Pick<Env, "status" | "nowMs">): boolean => {
+	const status = Option.getOrNull(AsyncData.getData(env.status.data))
+	const usageData = model.usage.data
+	const usage = AsyncData.isSuccess(usageData) || AsyncData.isRefreshing(usageData) ? usageData.data : null
+	const phase = ingestPhaseOf(status, usage, env.nowMs)
+	return phase !== null && phase.kind !== "live"
+}
+
+const gotZoneFilter = (model: CloudflareCardModel, message: ToggleGroup.Message): Return => {
+	const next = ToggleGroup.update(model.zoneFilter, message)
 	return {
 		// Unpressing the active chip falls back to "All".
 		model: withCard(model, {
 			zoneFilter: next.model.values.length === 0 ? { ...next.model, values: ["all"] } : next.model,
 		}),
 		commands: Command.mapMessages(next.commands ?? [], (inner) =>
-			Message.GotZoneFilterMessage({ message: inner }),
+			CloudflareMessage.GotZoneFilterMessage({ message: inner }),
 		),
 	}
 }
 
 /** The active column flips; a new one starts high-to-low for traffic, else low-to-high. */
-export const clickedZoneSort = (model: Model, key: ZoneSortKey): Return => {
-	const sort = model.cloudflareCard.zoneSort
+const clickedZoneSort = (model: CloudflareCardModel, key: ZoneSortKey): Return => {
+	const sort = model.zoneSort
 	return {
 		model: withCard(model, {
 			zoneSort:
@@ -93,53 +117,43 @@ export const clickedZoneSort = (model: Model, key: ZoneSortKey): Return => {
 	}
 }
 
-export const updateBoard = (model: Model, card: Partial<CloudflareCardModel>): Return => ({
-	model: withCard(model, card),
+/** A new attempt primes again. */
+export const resetPrime = (model: CloudflareCardModel): Return => ({
+	model: withCard(model, { isPrimed: false }),
 })
 
-/** A new attempt primes again. */
-export const resetPrime = (model: Model): Model => withCard(model, { isPrimed: false })
-
-const storedZoneChoices = (model: Model): ReadonlyArray<ZoneChoice> => {
-	const data = model.statuses.cloudflare.data
-	const value = successOf(data)
+const storedZoneChoices = (env: Env): ReadonlyArray<ZoneChoice> => {
+	const value = successOf(env.status.data)
 	return value === null ? [] : zoneChoicesOf(value)
 }
 
-const zoneDialogStep = (model: Model, step: ReturnType<typeof Dialog.update>): Return => ({
+const zoneDialogStep = (model: CloudflareCardModel, step: ReturnType<typeof Dialog.update>): Return => ({
 	model: withCard(model, { zoneDialog: step.model }),
 	commands: Command.mapMessages(step.commands ?? [], (message) =>
-		Message.GotZoneDialogMessage({ message }),
+		CloudflareMessage.GotZoneDialogMessage({ message }),
 	),
 })
 
 /** Opening starts the draft from what is stored, so a dismissed edit leaves nothing behind. */
-export const clickedManageZones = (model: Model): Return =>
+const clickedManageZones = (model: CloudflareCardModel, env: Env): Return =>
 	zoneDialogStep(
-		withCard(model, {
-			zoneDraft: storedZoneChoices(model),
-			zoneDraftSearch: "",
-			zoneSaveError: null,
-		}),
-		Dialog.open(model.cloudflareCard.zoneDialog),
+		withCard(model, { zoneDraft: storedZoneChoices(env), zoneDraftSearch: "", zoneSaveError: null }),
+		Dialog.open(model.zoneDialog),
 	)
 
-export const gotZoneDialog = (model: Model, message: Dialog.Message): Return =>
-	zoneDialogStep(model, Dialog.update(model.cloudflareCard.zoneDialog, message))
-
 const updateDraftAccount = (
-	model: Model,
+	model: CloudflareCardModel,
 	accountId: string,
 	edit: (account: ZoneChoice) => ZoneChoice,
 ): Return => ({
 	model: withCard(model, {
-		zoneDraft: Arr.map(model.cloudflareCard.zoneDraft, (account) =>
+		zoneDraft: Arr.map(model.zoneDraft, (account) =>
 			account.accountId === accountId ? edit(account) : account,
 		),
 	}),
 })
 
-export const toggledManagedZone = (model: Model, accountId: string, zoneId: string): Return =>
+const toggledManagedZone = (model: CloudflareCardModel, accountId: string, zoneId: string): Return =>
 	updateDraftAccount(model, accountId, (account) => ({
 		...account,
 		zones: Arr.map(account.zones, (zone) =>
@@ -147,12 +161,9 @@ export const toggledManagedZone = (model: Model, accountId: string, zoneId: stri
 		),
 	}))
 
-export const toggledWatchNewZones = (model: Model, accountId: string): Return =>
-	updateDraftAccount(model, accountId, (account) => ({ ...account, watchNewZones: !account.watchNewZones }))
-
 /** Applies to the zones the name filter shows, so "Select none" then a search picks a few. */
-export const clickedSetAccountZones = (model: Model, accountId: string, watched: boolean): Return => {
-	const query = Str.toLowerCase(Str.trim(model.cloudflareCard.zoneDraftSearch))
+const clickedSetAccountZones = (model: CloudflareCardModel, accountId: string, watched: boolean): Return => {
+	const query = Str.toLowerCase(Str.trim(model.zoneDraftSearch))
 	return updateDraftAccount(model, accountId, (account) => ({
 		...account,
 		zones: Arr.map(account.zones, (zone) =>
@@ -161,11 +172,10 @@ export const clickedSetAccountZones = (model: Model, accountId: string, watched:
 	}))
 }
 
-export const submittedZoneSettings = (model: Model): Return => {
-	const card = model.cloudflareCard
-	if (card.isSavingZones) return { model }
-	const changed = changedZoneChoices(storedZoneChoices(model), card.zoneDraft)
-	if (changed.length === 0) return zoneDialogStep(model, Dialog.close(card.zoneDialog))
+const submittedZoneSettings = (model: CloudflareCardModel, env: Env): Return => {
+	if (model.isSavingZones) return { model }
+	const changed = changedZoneChoices(storedZoneChoices(env), model.zoneDraft)
+	if (changed.length === 0) return zoneDialogStep(model, Dialog.close(model.zoneDialog))
 	return {
 		model: withCard(model, { isSavingZones: true, zoneSaveError: null }),
 		commands: [SaveCloudflareZones({ accounts: changed })],
@@ -176,21 +186,50 @@ export const submittedZoneSettings = (model: Model): Return => {
  * Success closes the dialog; a failure keeps the draft open with its error. Both re-read the
  * status, since an earlier account of the save may have landed.
  */
-export const completedZoneSettings = (
-	model: Model,
-	context: PageContext,
-	failure: LoadFailure | null,
-): Return => {
+const completedZoneSettings = (model: CloudflareCardModel, env: Env, failure: LoadFailure | null): Return => {
 	const settled = withCard(model, { isSavingZones: false })
 	if (failure !== null)
-		return requestStatus(
-			withCard(settled, { zoneSaveError: failure.message }),
-			context,
-			"cloudflare",
-			"Supersede",
-		)
-	return chain(settled, [
-		(next) => zoneDialogStep(next, Dialog.close(next.cloudflareCard.zoneDialog)),
-		(next) => refreshCloudflare(next, context),
-	])
+		return {
+			model: withCard(settled, { zoneSaveError: failure.message }),
+			requests: [HubRequest.readStatus("Supersede")],
+		}
+	return then(zoneDialogStep(settled, Dialog.close(settled.zoneDialog)), (next) =>
+		refreshCloudflare(next, env),
+	)
 }
+
+export const update = (model: CloudflareCardModel, message: CloudflareMessage, env: Env): Return =>
+	CloudflareMessage.match<Return>(message, {
+		CompletedLoadUsage: ({ key, result }) => ({
+			model: withCard(model, { usage: Keyed.accept(model.usage, key, result) }),
+		}),
+		CompletedPrime: ({ isOk, isConnected }) => completedPrime(model, env, isOk, isConnected),
+		// The ingest phase (stalled, backfill) follows the clock, so each tick rereads it.
+		TickedIngest: () =>
+			then(refreshCloudflare(model, env), (next) => ({
+				model: next,
+				requests: [HubRequest.readClock()],
+			})),
+		GotZoneFilterMessage: ({ message: child }) => gotZoneFilter(model, child),
+		ChangedZoneSearch: ({ value }) => ({ model: withCard(model, { zoneSearch: value }) }),
+		ClickedZoneSort: ({ key }) => clickedZoneSort(model, key),
+		ClickedWorkersExpand: () => ({ model: withCard(model, { workersExpanded: !model.workersExpanded }) }),
+		ClickedManageZones: () => clickedManageZones(model, env),
+		GotZoneDialogMessage: ({ message: child }) =>
+			zoneDialogStep(model, Dialog.update(model.zoneDialog, child)),
+		ToggledManagedZone: ({ accountId, zoneId }) => toggledManagedZone(model, accountId, zoneId),
+		ToggledWatchNewZones: ({ accountId }) =>
+			updateDraftAccount(model, accountId, (account) => ({
+				...account,
+				watchNewZones: !account.watchNewZones,
+			})),
+		ClickedSetAccountZones: ({ accountId, watched }) => clickedSetAccountZones(model, accountId, watched),
+		ChangedManagedZoneSearch: ({ value }) => ({ model: withCard(model, { zoneDraftSearch: value }) }),
+		SubmittedZoneSettings: () => submittedZoneSettings(model, env),
+		CompletedZones: ({ failure }) => completedZoneSettings(model, env, failure),
+		CompletedLoadChartRuntime: () => ({ model: withCard(model, { chartRuntime: ChartRuntime.Ready() }) }),
+		FailedLoadChartRuntime: ({ reason }) => ({
+			model: withCard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),
+		}),
+		GotSparklineMessage: () => ({ model }),
+	})

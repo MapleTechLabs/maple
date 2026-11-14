@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option, Redacted, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { StatusDomainsApiToken } from "@maple/infra/secrets"
 
 // Cloudflare for SaaS, for status page custom domains: a custom hostname (with its DV
 // certificate) per domain, and a Worker route sending that hostname's traffic to the status
@@ -182,9 +183,10 @@ export class CloudflareCustomHostnames extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const baseUrl = Str.replace(/\/+$/u, "")(env.MAPLE_CLOUDFLARE_API_BASE_URL)
 		const cnameTarget = env.MAPLE_STATUS_DOMAINS_CNAME_TARGET
+		const apiToken = yield* StatusDomainsApiToken
 		const configured: Option.Option<Configured> = Option.all({
 			zoneId: env.MAPLE_STATUS_DOMAINS_ZONE_ID,
-			token: env.MAPLE_STATUS_DOMAINS_API_TOKEN,
+			token: apiToken,
 			workerName: env.MAPLE_STATUS_WORKER_NAME,
 			cnameTarget,
 		})
@@ -390,7 +392,10 @@ export class CloudflareCustomHostnames extends Context.Service<
 						yield* guard("createHostname")
 						const taken =
 							(yield* Ref.get(foreign)).has(hostname) ||
-							Arr.some([...(yield* Ref.get(hostnames)).values()], (h) => h.hostname === hostname)
+							Arr.some(
+								[...(yield* Ref.get(hostnames)).values()],
+								(h) => h.hostname === hostname,
+							)
 						if (taken)
 							return yield* new CustomHostnameConflictError({
 								message: `${hostname} is already added to Cloudflare elsewhere`,

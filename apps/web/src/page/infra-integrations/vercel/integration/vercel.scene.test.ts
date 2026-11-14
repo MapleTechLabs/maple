@@ -26,6 +26,7 @@ import * as Field from "@maple/views/ui/field"
 import * as RadioGroup from "@maple/views/ui/radio-group"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { Message } from "../../../integrations/message"
+import { VercelMessage } from "./vercel"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
 import { view as pageView } from "../../../integrations/view"
@@ -144,23 +145,32 @@ const opened = [
 ]
 
 const typed = (value: string) =>
-	Message.GotVercelTokenMessage({ message: Field.Message.ChangedValue({ value }) })
+	Message.GotVercelMessage({
+		message: VercelMessage.GotTokenMessage({ message: Field.Message.ChangedValue({ value }) }),
+	})
 
 describe("vercel card: connecting", () => {
 	test("token, team, settings, connect: each step sends once and the connection closes the dialog", () => {
 		const opened = run(withStatus(NOT_CONNECTED).model, [
-			Message.ClickedVercelConfigure({ target: "connect" }),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
 			typed("vc_token_0001"),
 		])
-		const lookedUp = step(opened, Message.SubmittedVercelToken())
+		const lookedUp = step(opened, Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() }))
 		expect(names(lookedUp.commands)).toEqual(["DiscoverVercel"])
-		expect(names(step(lookedUp.model, Message.SubmittedVercelToken()).commands)).toEqual([])
+		expect(
+			names(
+				step(lookedUp.model, Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() }))
+					.commands,
+			),
+		).toEqual([])
 
 		const teams = run(lookedUp.model, [
-			Message.CompletedVercelDiscover({
-				forTeam: null,
-				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: [] }),
-				error: null,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: null,
+					response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: [] }),
+					error: null,
+				}),
 			}),
 		])
 		scene(
@@ -171,17 +181,21 @@ describe("vercel card: connecting", () => {
 		)
 
 		const picked = run(teams, [
-			Message.GotVercelTeamMessage({
-				message: RadioGroup.Message.SelectedRadio({ value: "team_acme" }),
+			Message.GotVercelMessage({
+				message: VercelMessage.GotTeamMessage({
+					message: RadioGroup.Message.SelectedRadio({ value: "team_acme" }),
+				}),
 			}),
 		])
-		const forTeam = step(picked, Message.SubmittedVercelTeam())
+		const forTeam = step(picked, Message.GotVercelMessage({ message: VercelMessage.SubmittedTeam() }))
 		expect(names(forTeam.commands)).toEqual(["DiscoverVercel"])
 		const settings = run(forTeam.model, [
-			Message.CompletedVercelDiscover({
-				forTeam: "team_acme",
-				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: PROJECTS }),
-				error: null,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: "team_acme",
+					response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: PROJECTS }),
+					error: null,
+				}),
 			}),
 		])
 		scene(
@@ -191,12 +205,19 @@ describe("vercel card: connecting", () => {
 			expectView(text("Creates 3 drains on Acme right away.")).toExist(),
 		)
 
-		const sent = step(settings, Message.SubmittedVercelConnect())
+		const sent = step(settings, Message.GotVercelMessage({ message: VercelMessage.SubmittedConnect() }))
 		expect(names(sent.commands)).toEqual(["ConnectVercel"])
-		expect(names(step(sent.model, Message.SubmittedVercelConnect()).commands)).toEqual([])
+		expect(
+			names(
+				step(sent.model, Message.GotVercelMessage({ message: VercelMessage.SubmittedConnect() }))
+					.commands,
+			),
+		).toEqual([])
 		const done = step(
 			sent.model,
-			Message.CompletedVercelConnect({ mode: "connect", teamName: "Acme", error: null }),
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedConnect({ mode: "connect", teamName: "Acme", error: null }),
+			}),
 		)
 		expect(done.model.vercelCard.configure).toBeNull()
 		expect(done.outMessage).toEqual(
@@ -212,12 +233,14 @@ describe("vercel card: connecting", () => {
 	test("warns before connecting a team Vercel reports on Hobby", () => {
 		const settingsFor = (team: VercelTeam) =>
 			run(withStatus(NOT_CONNECTED).model, [
-				Message.ClickedVercelConfigure({ target: "connect" }),
+				Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
 				typed("vc_token_0001"),
-				Message.CompletedVercelDiscover({
-					forTeam: null,
-					response: new VercelDiscoverResponse({ teams: [team], projects: PROJECTS }),
-					error: null,
+				Message.GotVercelMessage({
+					message: VercelMessage.CompletedDiscover({
+						forTeam: null,
+						response: new VercelDiscoverResponse({ teams: [team], projects: PROJECTS }),
+						error: null,
+					}),
 				}),
 			])
 		const hobby = new VercelTeam({ id: "team_acme", slug: "acme", name: "Acme", plan: "hobby" })
@@ -237,53 +260,74 @@ describe("vercel card: connecting", () => {
 
 	test("a single team skips the team step; picking projects with none picked cannot connect", () => {
 		const settings = run(withStatus(NOT_CONNECTED).model, [
-			Message.ClickedVercelConfigure({ target: "connect" }),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
 			typed("vc_token_0001"),
-			Message.SubmittedVercelToken(),
-			Message.CompletedVercelDiscover({
-				forTeam: null,
-				response: new VercelDiscoverResponse({ teams: [ACME], projects: PROJECTS }),
-				error: null,
+			Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() }),
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: null,
+					response: new VercelDiscoverResponse({ teams: [ACME], projects: PROJECTS }),
+					error: null,
+				}),
 			}),
-			Message.ChangedVercelScope({ scope: "some" }),
+			Message.GotVercelMessage({ message: VercelMessage.ChangedScope({ scope: "some" }) }),
 		])
 		expect(configureOf(settings).projects).toEqual(PROJECTS)
-		expect(names(step(settings, Message.SubmittedVercelConnect()).commands)).toEqual([])
-		const one = run(settings, [Message.ToggledVercelProject({ id: "prj_web" })])
-		expect(names(step(one, Message.SubmittedVercelConnect()).commands)).toEqual(["ConnectVercel"])
+		expect(
+			names(
+				step(settings, Message.GotVercelMessage({ message: VercelMessage.SubmittedConnect() }))
+					.commands,
+			),
+		).toEqual([])
+		const one = run(settings, [
+			Message.GotVercelMessage({ message: VercelMessage.ToggledProject({ id: "prj_web" }) }),
+		])
+		expect(
+			names(
+				step(one, Message.GotVercelMessage({ message: VercelMessage.SubmittedConnect() })).commands,
+			),
+		).toEqual(["ConnectVercel"])
 	})
 
 	test("Back to the team step and a new pick keeps the settings, minus projects the new team lacks", () => {
 		const discovered = (forTeam: string, projects: typeof PROJECTS) =>
-			Message.CompletedVercelDiscover({
-				forTeam,
-				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects }),
-				error: null,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam,
+					response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects }),
+					error: null,
+				}),
 			})
 		const pick = (value: string) =>
-			Message.GotVercelTeamMessage({ message: RadioGroup.Message.SelectedRadio({ value }) })
+			Message.GotVercelMessage({
+				message: VercelMessage.GotTeamMessage({
+					message: RadioGroup.Message.SelectedRadio({ value }),
+				}),
+			})
 		const tuned = run(withStatus(NOT_CONNECTED).model, [
-			Message.ClickedVercelConfigure({ target: "connect" }),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
 			typed("vc_token_0001"),
-			Message.SubmittedVercelToken(),
-			Message.CompletedVercelDiscover({
-				forTeam: null,
-				response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: [] }),
-				error: null,
+			Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() }),
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: null,
+					response: new VercelDiscoverResponse({ teams: [ACME, LABS], projects: [] }),
+					error: null,
+				}),
 			}),
 			pick("team_acme"),
-			Message.SubmittedVercelTeam(),
+			Message.GotVercelMessage({ message: VercelMessage.SubmittedTeam() }),
 			discovered("team_acme", PROJECTS),
-			Message.ChangedVercelScope({ scope: "some" }),
-			Message.ToggledVercelProject({ id: "prj_web" }),
-			Message.ToggledVercelProject({ id: "prj_docs" }),
-			Message.ChangedVercelSampling({ value: "0.1" }),
-			Message.ToggledVercelSignal({ signal: "logsEnabled" }),
+			Message.GotVercelMessage({ message: VercelMessage.ChangedScope({ scope: "some" }) }),
+			Message.GotVercelMessage({ message: VercelMessage.ToggledProject({ id: "prj_web" }) }),
+			Message.GotVercelMessage({ message: VercelMessage.ToggledProject({ id: "prj_docs" }) }),
+			Message.GotVercelMessage({ message: VercelMessage.ChangedSampling({ value: "0.1" }) }),
+			Message.GotVercelMessage({ message: VercelMessage.ToggledSignal({ signal: "logsEnabled" }) }),
 		])
 		const repicked = run(tuned, [
-			Message.ClickedVercelConfigureBack(),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigureBack() }),
 			pick("team_labs"),
-			Message.SubmittedVercelTeam(),
+			Message.GotVercelMessage({ message: VercelMessage.SubmittedTeam() }),
 			discovered("team_labs", [{ id: "prj_docs", name: "docs", framework: null }]),
 		])
 		expect(configureOf(repicked).draft).toEqual({
@@ -295,15 +339,17 @@ describe("vercel card: connecting", () => {
 
 	test("a refused token stays on the token step with Vercel's reason; a token seeing no team says why", () => {
 		const sent = run(withStatus(NOT_CONNECTED).model, [
-			Message.ClickedVercelConfigure({ target: "connect" }),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
 			typed("vc_token_0001"),
-			Message.SubmittedVercelToken(),
+			Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() }),
 		])
 		const refused = run(sent, [
-			Message.CompletedVercelDiscover({
-				forTeam: null,
-				response: null,
-				error: "Vercel didn't accept this token.",
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: null,
+					response: null,
+					error: "Vercel didn't accept this token.",
+				}),
 			}),
 		])
 		expect(configureOf(refused).isLookingUp).toBe(false)
@@ -314,10 +360,12 @@ describe("vercel card: connecting", () => {
 			expectView(text("Vercel didn't accept this token.")).toExist(),
 		)
 		const teamless = run(sent, [
-			Message.CompletedVercelDiscover({
-				forTeam: null,
-				response: new VercelDiscoverResponse({ teams: [], projects: [] }),
-				error: null,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam: null,
+					response: new VercelDiscoverResponse({ teams: [], projects: [] }),
+					error: null,
+				}),
 			}),
 		])
 		expect(configureOf(teamless).error).toBe(
@@ -418,10 +466,20 @@ describe("vercel card: connected", () => {
 			expectView(text("The logs drain was deleted on Vercel")).toExist(),
 			expectView(role("button", { name: "Re-apply drains" })).toExist(),
 		)
-		const sent = step(model, Message.ClickedVercelReapply())
+		const sent = step(model, Message.GotVercelMessage({ message: VercelMessage.ClickedReapply() }))
 		expect(names(sent.commands)).toEqual(["SaveVercelSettings"])
-		expect(names(step(sent.model, Message.ClickedVercelReapply()).commands)).toEqual([])
-		const done = step(sent.model, Message.CompletedVercelSave({ isReapply: true, error: null }))
+		expect(
+			names(
+				step(sent.model, Message.GotVercelMessage({ message: VercelMessage.ClickedReapply() }))
+					.commands,
+			),
+		).toEqual([])
+		const done = step(
+			sent.model,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedSave({ isReapply: true, error: null }),
+			}),
+		)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({
 				type: "success",
@@ -444,11 +502,15 @@ describe("vercel card: connected", () => {
 			expectView(text("New token for Acme")).toExist(),
 		)
 		const typedIn = run(model, [
-			Message.ClickedVercelConfigure({ target: "token" }),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "token" }) }),
 			typed("vc_token_0002"),
 		])
 		expect(configureOf(typedIn).target).toBe("token")
-		expect(names(step(typedIn, Message.SubmittedVercelToken()).commands)).toEqual(["ConnectVercel"])
+		expect(
+			names(
+				step(typedIn, Message.GotVercelMessage({ message: VercelMessage.SubmittedToken() })).commands,
+			),
+		).toEqual(["ConnectVercel"])
 	})
 
 	test("the disconnect confirmation names only the drains Maple installed", () => {
@@ -487,20 +549,29 @@ describe("vercel card: connected", () => {
 
 describe("vercel card: configure", () => {
 	const configured = (status: VercelIntegrationStatus) =>
-		run(withStatus(status).model, [Message.ClickedVercelConfigure({ target: "configure" })])
+		run(withStatus(status).model, [
+			Message.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "configure" }) }),
+		])
 
 	test("a change that forwards less asks first; confirming saves only what changed", () => {
-		const draft = run(configured(connected()), [Message.ToggledVercelSignal({ signal: "tracesEnabled" })])
-		const asked = step(draft, Message.ClickedVercelSave())
+		const draft = run(configured(connected()), [
+			Message.GotVercelMessage({ message: VercelMessage.ToggledSignal({ signal: "tracesEnabled" }) }),
+		])
+		const asked = step(draft, Message.GotVercelMessage({ message: VercelMessage.ClickedSave() }))
 		expect(names(asked.commands)).not.toContain("SaveVercelSettings")
 		expect(configureOf(asked.model).confirm.isOpen).toBe(true)
-		const saved = step(asked.model, Message.ConfirmedVercelSave())
+		const saved = step(asked.model, Message.GotVercelMessage({ message: VercelMessage.ConfirmedSave() }))
 		expect(
 			Option.getOrUndefined(
 				Arr.findFirst(saved.commands ?? [], ({ name }) => name === "SaveVercelSettings"),
 			)?.args,
 		).toEqual(expect.objectContaining({ request: expect.objectContaining({ tracesEnabled: false }) }))
-		const done = step(saved.model, Message.CompletedVercelSave({ isReapply: false, error: null }))
+		const done = step(
+			saved.model,
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedSave({ isReapply: false, error: null }),
+			}),
+		)
 		expect(done.model.vercelCard.configure).toBeNull()
 		expect(names(done.commands)).toEqual(["LoadIntegrationsVercelStatus"])
 	})
@@ -518,11 +589,15 @@ describe("vercel card: configure", () => {
 			).toExist(),
 		)
 		const asked = step(
-			run(opened, [Message.ToggledVercelSignal({ signal: "aiGatewayEnabled" })]),
-			Message.ClickedVercelSave(),
+			run(opened, [
+				Message.GotVercelMessage({
+					message: VercelMessage.ToggledSignal({ signal: "aiGatewayEnabled" }),
+				}),
+			]),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedSave() }),
 		)
 		expect(configureOf(asked.model).confirm.isOpen).toBe(true)
-		const saved = step(asked.model, Message.ConfirmedVercelSave())
+		const saved = step(asked.model, Message.GotVercelMessage({ message: VercelMessage.ConfirmedSave() }))
 		expect(
 			Option.getOrUndefined(
 				Arr.findFirst(saved.commands ?? [], ({ name }) => name === "SaveVercelSettings"),
@@ -541,8 +616,12 @@ describe("vercel card: configure", () => {
 			).toExist(),
 		)
 		const sent = step(
-			run(opened, [Message.ToggledVercelSignal({ signal: "auditLogEnabled" })]),
-			Message.ClickedVercelSave(),
+			run(opened, [
+				Message.GotVercelMessage({
+					message: VercelMessage.ToggledSignal({ signal: "auditLogEnabled" }),
+				}),
+			]),
+			Message.GotVercelMessage({ message: VercelMessage.ClickedSave() }),
 		)
 		expect(
 			Option.getOrUndefined(
@@ -553,19 +632,28 @@ describe("vercel card: configure", () => {
 
 	test("a change that forwards more applies at once; a refusal stays in the dialog", () => {
 		const draft = run(configured(connected({ samplingRate: 0.5 })), [
-			Message.ChangedVercelSampling({ value: "1" }),
+			Message.GotVercelMessage({ message: VercelMessage.ChangedSampling({ value: "1" }) }),
 		])
-		const sent = step(draft, Message.ClickedVercelSave())
+		const sent = step(draft, Message.GotVercelMessage({ message: VercelMessage.ClickedSave() }))
 		expect(names(sent.commands)).toEqual(["SaveVercelSettings"])
 		const refused = step(
 			sent.model,
-			Message.CompletedVercelSave({ isReapply: false, error: "Vercel said no." }),
+			Message.GotVercelMessage({
+				message: VercelMessage.CompletedSave({ isReapply: false, error: "Vercel said no." }),
+			}),
 		)
 		expect(configureOf(refused.model).error).toBe("Vercel said no.")
 		expect(configureOf(refused.model).isSaving).toBe(false)
 	})
 
 	test("nothing changed, nothing to save", () => {
-		expect(names(step(configured(connected()), Message.ClickedVercelSave()).commands)).toEqual([])
+		expect(
+			names(
+				step(
+					configured(connected()),
+					Message.GotVercelMessage({ message: VercelMessage.ClickedSave() }),
+				).commands,
+			),
+		).toEqual([])
 	})
 })

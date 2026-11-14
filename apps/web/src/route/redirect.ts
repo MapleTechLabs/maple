@@ -160,15 +160,19 @@ const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "Sta
 
 const isCostRoute = AppRoute.isAnyOf(["Cost"])
 
+const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
+
 /**
  * A route an org outside its rollout cannot open goes home (`/status-pages` without `statusPages`,
- * `/cost` without `cloudCost`).
+ * `/cost` without `cloudCost`, `/product-analytics` without `productAnalytics`).
  */
 export const flaggedRouteRedirect = (
 	route: AppRoute,
-	flags: Pick<OrganizationFeatureFlags, "statusPages" | "cloudCost">,
+	flags: Pick<OrganizationFeatureFlags, "statusPages" | "cloudCost" | "productAnalytics">,
 ): Option.Option<Redirect> =>
-	(!flags.statusPages && isStatusPageRoute(route)) || (!flags.cloudCost && isCostRoute(route))
+	(!flags.statusPages && isStatusPageRoute(route)) ||
+	(!flags.cloudCost && isCostRoute(route)) ||
+	(!flags.productAnalytics && isProductAnalyticsRoute(route))
 		? redirect(AppRoute.Home({ search: {} }), true)
 		: Option.none()
 

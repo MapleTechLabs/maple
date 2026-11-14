@@ -8,7 +8,9 @@ import {
 	resolveWorkerName,
 	type MapleStackContext,
 } from "@maple/infra/cloudflare"
-import { commitShaEnv, plainWithDefault, requiredPlain } from "@maple/infra/env"
+import { commitShaEnv, plainWithDefault } from "@maple/infra/env"
+import { resolveAs } from "@maple/infra/secret-guard"
+import { scraperSecrets } from "./alchemy/secrets.ts"
 
 /**
  * `bun run --cwd apps/scraper bundle` writes the single-file bundle here before the deploy
@@ -60,10 +62,9 @@ export const createMapleScraper = ({
 		})
 
 		const secret = ecsSecrets(name("scraper"), tags)
-		const internalTokenValue = yield* requiredPlain("SD_INTERNAL_TOKEN")
-		const internalToken = yield* secret("internal-token", internalTokenValue)
-		const otelIngestKeyValue = yield* requiredPlain("MAPLE_OTEL_INGEST_KEY")
-		const otelIngestKey = yield* secret("otel-ingest-key", otelIngestKeyValue)
+		const secrets = yield* resolveAs("scraper", scraperSecrets)
+		const internalToken = yield* secret("internal-token", secrets.internalToken)
+		const otelIngestKey = yield* secret("otel-ingest-key", secrets.otelIngestKey)
 
 		// Its own telemetry goes to the internal org's ingest, like the Workers' (US even for EU).
 		const { MAPLE_ENDPOINT: telemetryEndpoint } = yield* plainWithDefault(

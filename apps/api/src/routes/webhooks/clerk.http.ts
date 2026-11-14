@@ -2,7 +2,7 @@ import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { DEFAULT_MAPLE_REGION } from "@maple/domain/organization-regions"
-import { Env } from "@maple/backend/platform/Env"
+import { ClerkWebhookSecret } from "@maple/infra/secrets"
 import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
@@ -51,7 +51,7 @@ const decodeUserId = Schema.decodeUnknownOption(UserId)
 const decodeRole = Schema.decodeUnknownOption(RoleName)
 
 const handler = Effect.gen(function* () {
-	const env = yield* Env
+	const webhookSecret = yield* ClerkWebhookSecret
 	const productEvents = yield* ProductEventsService
 	const revocation = yield* MembershipRevocationService
 	const audit = yield* AuditLogService
@@ -177,7 +177,7 @@ const handler = Effect.gen(function* () {
 
 		const received = yield* receiveSvixWebhook({
 			provider: "clerk",
-			secret: env.CLERK_WEBHOOK_SECRET,
+			secret: webhookSecret,
 			request: req,
 		})
 		if (received._tag === "rejected") return received.response

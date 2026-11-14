@@ -47,7 +47,7 @@ export const RAILWAY: ProviderModule<RailwayIntegrationStatus, RailwayCardModel,
 		},
 		tick: RailwayMessage.TickedSettle(),
 	},
-	card: railwayCard,
+	card: (h, model, timeZone) => [railwayCard(h, model, timeZone)],
 	flow: railwayFlow,
 	flowView: railwayFlowView,
 	cardStatus: (slot) =>

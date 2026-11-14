@@ -9,7 +9,7 @@ import { FetchHttpClient, HttpRouter } from "effect/http"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { planetScaleDatabaseWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -60,7 +60,7 @@ const makeRouterLayer = (
 		Layer.provide(FetchHttpClient.layer),
 		Layer.provide(testDb.layer),
 		Layer.provide(Layer.succeed(PlanetScaleWebhookQueue, { send: (prepared) => send(prepared.body) })),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(makeConfig()),
 	)
 

@@ -1,4 +1,3 @@
-import type { ChatConnectorId } from "@maple/primitives"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
@@ -12,10 +11,10 @@ import {
 	integrationEmptyMedia,
 } from "../kit/integration-empty"
 import { relativeTime } from "../kit/relative-time"
-import { chatEntry, chatManifestOf } from "./catalog"
+import { chatConnectorOf, chatEntry, chatManifestOf, integrationOfSearch } from "./catalog"
+import { ChatMessage, connectorStatusOf } from "./chat"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { chatConnectorStatus } from "./update-chat"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
 import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
@@ -31,10 +30,16 @@ type H = HtmlBuilder<Message>
 
 const IS_ADMIN = true
 
-export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZone: string): Html => {
-	const manifest = chatManifestOf(connector)
+/** A chat message, as the hub carries it. */
+export const toHub = (message: ChatMessage): Message => Message.GotChatMessage({ message })
+
+/** The card of the chat connector the page shows. */
+export const chatCard = (h: H, model: Model, timeZone: string): Html => {
+	const integration = integrationOfSearch(model.search.integration)
+	const connector = integration === null ? null : chatConnectorOf(integration)
+	const manifest = connector === null ? undefined : chatManifestOf(connector)
 	if (manifest === undefined) return h.empty
-	const status = chatConnectorStatus(model)
+	const status = connectorStatusOf(model.statuses.chat, connector)
 	const data = model.statuses.chat.data
 	if (status === null && (AsyncData.isIdle(data) || AsyncData.isLoading(data))) return chatCardLoading(h)
 	if (status === null && AsyncData.isFailure(data))
@@ -60,7 +65,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 					{
 						isDisabled: connectDisabled,
 						isLoading: busy === "install",
-						attributes: [h.OnClick(Message.ClickedChatInstall())],
+						attributes: [h.OnClick(toHub(ChatMessage.ClickedInstall()))],
 					},
 					[monoGlyph(h, manifest), `Add to ${manifest.name}`],
 				),
@@ -114,7 +119,9 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 								variant: "outline",
 								isDisabled: !IS_ADMIN || busy !== null,
 								attributes: [
-									h.OnClick(Message.ClickedChatDisconnect({ workspaceId: workspace.id })),
+									h.OnClick(
+										toHub(ChatMessage.ClickedDisconnect({ workspaceId: workspace.id })),
+									),
 								],
 							},
 							["Disconnect"],
@@ -136,7 +143,7 @@ export const chatCard = (h: H, model: Model, connector: ChatConnectorId, timeZon
 						variant: "outline",
 						isDisabled: connectDisabled,
 						isLoading: busy === "install",
-						attributes: [h.OnClick(Message.ClickedChatInstall())],
+						attributes: [h.OnClick(toHub(ChatMessage.ClickedInstall()))],
 					},
 					["Add another workspace"],
 				),

@@ -135,6 +135,11 @@ jobs:
                         - 'test/alchemy/**'
                         - 'apps/api/**'
                         - 'apps/ai/**'
+                        # Every deployable's secret config, which `secret-grants.test.ts` reads.
+                        - 'apps/*/alchemy.run.ts'
+                        - 'apps/*/alchemy/**'
+                        - 'apps/*/src/resources/**'
+                        - 'apps/*/src/worker.ts'
                         - 'packages/**'
                         - 'lib/**'
                       shell:

@@ -5,10 +5,10 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../platform/api-clients"
-import { Message } from "./message"
 
 export const SearchConsoleCardModel = Schema.Struct({
 	/** The Google account's properties, live from Google. */
@@ -28,6 +28,28 @@ export const initSearchConsoleCard = (): SearchConsoleCardModel => ({
 	isSaving: false,
 	isSettling: false,
 })
+
+/** The Search Console module's own messages; the hub carries them in `GotSearchConsoleMessage`. */
+export const SearchConsoleMessage = defineMessageUnion({
+	CompletedLoadSites: {
+		key: Schema.String,
+		result: Schema.Result(SearchConsoleAvailableSitesResponse, LoadFailure),
+	},
+	/** A property's checkbox in the picker. */
+	ToggledSite: { siteUrl: Schema.String },
+	ClickedSave: {},
+	ClickedRetrySites: {},
+	CompletedSave: { failure: Schema.NullOr(LoadFailure) },
+	CompletedPrime: {},
+})
+export type SearchConsoleMessage = typeof SearchConsoleMessage.Type
+
+/** The hub's status read for Search Console, shared with the headers. */
+export const SEARCH_CONSOLE_STATUS_READ = {
+	name: "LoadIntegrationsSearchConsoleStatus",
+	read: (_refresh: boolean) =>
+		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.searchConsoleStatus()),
+}
 
 /** The saved, enabled properties: what the importer reads. */
 export const savedSelection = (status: SearchConsoleIntegrationStatus): ReadonlyArray<string> =>
@@ -97,26 +119,26 @@ export const permissionLabel = (permissionLevel: string): string => {
 
 export const FetchSearchConsoleSites = Command.define("FetchSearchConsoleSites", {
 	args: { key: Schema.String },
-	messages: [Message.CompletedLoadSearchConsoleSites],
+	messages: [SearchConsoleMessage.CompletedLoadSites],
 	execute: ({ key }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			return yield* client.integrations.searchConsoleSites()
-		}).pipe(settleTo((result) => Message.CompletedLoadSearchConsoleSites({ key, result }))),
+		}).pipe(settleTo((result) => SearchConsoleMessage.CompletedLoadSites({ key, result }))),
 })
 
 /** `searchConsolePrime`: a first import now instead of on the next cron tick; a failure is left to the cron. */
 export const PrimeSearchConsole = Command.define("PrimeSearchConsole", {
-	messages: [Message.CompletedSearchConsolePrime],
+	messages: [SearchConsoleMessage.CompletedPrime],
 	execute: Effect.gen(function* () {
 		const client = yield* MapleInternalApiClient
 		return yield* client.integrations.searchConsolePrime()
-	}).pipe(Effect.ignore, Effect.as(Message.CompletedSearchConsolePrime())),
+	}).pipe(Effect.ignore, Effect.as(SearchConsoleMessage.CompletedPrime())),
 })
 
 export const SaveSearchConsoleSites = Command.define("SaveSearchConsoleSites", {
 	args: { siteUrls: Schema.Array(Schema.String) },
-	messages: [Message.CompletedSaveSearchConsoleSites],
+	messages: [SearchConsoleMessage.CompletedSave],
 	execute: ({ siteUrls }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
@@ -124,9 +146,8 @@ export const SaveSearchConsoleSites = Command.define("SaveSearchConsoleSites", {
 			yield* client.integrations.searchConsoleSaveSites({ payload })
 		}).pipe(
 			Effect.match({
-				onFailure: (error) =>
-					Message.CompletedSaveSearchConsoleSites({ failure: toLoadFailure(error) }),
-				onSuccess: () => Message.CompletedSaveSearchConsoleSites({ failure: null }),
+				onFailure: (error) => SearchConsoleMessage.CompletedSave({ failure: toLoadFailure(error) }),
+				onSuccess: () => SearchConsoleMessage.CompletedSave({ failure: null }),
 			}),
 		),
 })

@@ -50,6 +50,7 @@
 		"local-schema:bump": "bun run ./scripts/bump-local-schema.ts",
 		"clickhouse:schema:lint": "bun run ./scripts/lint-clickhouse-schema.ts",
 		"check:tokens": "bun run ./scripts/check-token-drift.ts",
+		"secrets:drift": "bun run ./scripts/secret-drift.ts",
 		"lint:ui-baseline": "bun run ./scripts/ui-kit-baseline.ts",
 		"ui:index": "bun run ./scripts/gen-ui-kit-index.ts",
 		"ui:patterns": "bun run ./scripts/ui-class-patterns.ts",
