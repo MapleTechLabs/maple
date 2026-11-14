@@ -12,13 +12,12 @@ import {
 	type SourceAttributeMode,
 	type SourceSignal,
 } from "@maple/primitives"
-import { Option, Schema, Array as Arr, Order } from "effect"
+import { Option, Schema, Array as Arr } from "effect"
 import { formatTimestampInTimezone } from "@maple/ui/lib/timezone-format"
 import { timestamp } from "@maple/views/ui/timestamp"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { AppRoute, hrefOf } from "../../../route"
 import { SOURCE_TABS, type SourceTab } from "../../../route/search"
-import { statusRank } from "./status"
 
 export const SIGNALS: ReadonlyArray<{ value: SourceSignal; label: string; hint: string }> = [
 	{ value: "traces", label: "Traces", hint: "/v1/traces" },
@@ -33,18 +32,17 @@ export const MODE_LABELS = {
 	default: "If missing",
 } as const satisfies Record<SourceAttributeMode, string>
 
-export const signalsSummary = (signals: V2Source["allowed_signals"]): string =>
-	signals === null
-		? "All signals"
-		: Arr.join(
-				Arr.map(
-					Arr.filter(SIGNALS, (signal) => signals.includes(signal.value)),
-					(signal) => signal.label,
-				),
-				", ",
-			)
+/** The signals a source is limited to: "Traces, Logs". */
+export const signalsSummary = (signals: ReadonlyArray<SourceSignal>): string =>
+	Arr.join(
+		Arr.map(
+			Arr.filter(SIGNALS, (signal) => signals.includes(signal.value)),
+			(signal) => signal.label,
+		),
+		", ",
+	)
 
-export const rateLimitLabel = (rps: number | null): string => (rps === null ? "No limit" : `${rps} req/s`)
+export const rateLimitLabel = (rps: number): string => `${rps} req/s`
 
 // The API decodes `src_` ids into raw UUIDs; URLs use the public form.
 export const toPublicSourceId = Schema.encodeSync(SourcePublicId)
@@ -69,15 +67,6 @@ export const pausedLabel = <M>(
 
 /** Token sources take rules and actions; the default source and integrations have no token. */
 export const hasToken = (source: V2Source): boolean => source.key_prefix !== null
-
-/** Default source first, then worst status first, then the API's order (newest first). */
-export const orderSources = (sources: ReadonlyArray<V2Source>): ReadonlyArray<V2Source> => [
-	...Arr.filter(sources, (source) => source.is_default),
-	...Arr.sort(
-		Arr.filter(sources, (source) => !source.is_default),
-		Order.mapInput(Order.Number, statusRank),
-	),
-]
 
 /** `/sources/$sourceId` in its public id form; the overview tab drops `tab`. */
 export const sourceHref = (source: V2Source, tab: SourceTab = "overview"): string =>
@@ -114,13 +103,8 @@ const VIA = {
 	supabase: "OAuth",
 } as const satisfies Record<PullSourcePlatform, string>
 
-/** How the source reaches Maple: its token prefix, the org keys, or the integration's credential. */
-export const viaLabel = (source: V2Source): string => {
-	const platform = integrationPlatformOf(source)
-	if (platform !== null) return VIA[platform]
-	if (source.key_prefix !== null) return `${source.key_prefix}…`
-	return source.is_default ? "Org ingest keys" : "-"
-}
+/** The credential an integration source reads through. */
+export const viaLabel = (platform: PullSourcePlatform): string => VIA[platform]
 
 const decodeScrapeTargetId = Schema.decodeUnknownOption(ScrapeTargetPublicId)
 

@@ -37,6 +37,9 @@ export const truncatedCellStyles = "w-full max-w-0"
 export const tableRowLinkStyles =
 	"after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring focus-visible:after:ring-inset"
 
+// A row's name when it is the row's link: one medium line that truncates.
+export const tableRowNameLinkStyles = "block truncate text-sm font-medium"
+
 // Lifts a control inside a linked row above the overlay so it keeps its own clicks.
 export const tableRowLinkLiftStyles = "relative z-10"
 

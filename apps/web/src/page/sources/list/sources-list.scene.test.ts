@@ -7,14 +7,27 @@ import {
 	V2SourceUsageSummary,
 } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import { click, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	click,
+	Command,
+	expect as expectView,
+	expectOutMessage,
+	given,
+	label,
+	role,
+	scene,
+	text,
+	type,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
-import { SourceId } from "@maple/primitives"
 import { toLoadFailure } from "@maple/views/data/load-failure"
-import { orderSources } from "../kit/shared"
+import { sourceHref } from "../kit/shared"
+import { groupSources } from "./groups"
 import { type PageContext, PageOutMessage } from "../../contract"
 import { Message } from "./message"
 import type { Model } from "./model"
+import { FetchSourcesList, ResumeSource } from "./command"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -76,24 +89,45 @@ const loaded = (rows: ReadonlyArray<V2Source>): Model => {
 	)
 }
 
+const health = (
+	status: string,
+	lastDataAt: string | null,
+	extra: Readonly<Record<string, unknown>> = {},
+) => ({
+	status,
+	last_data_at: lastDataAt,
+	problem: null,
+	resources: null,
+	...extra,
+})
+const RECEIVING = health("healthy", "2026-10-01T11:56:00.000Z")
+
+const usageOf = (model: Model, data: ReadonlyArray<Readonly<{ source: V2Source; bytes: number }>>): Model =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchUsage({
+			key: model.usage.key ?? "",
+			result: Result.succeed(
+				Schema.decodeSync(V2SourceUsageSummary)({
+					object: "source_usage_summary",
+					window_start: "2026-09-30T13:00:00.000Z",
+					window_end: "2026-10-01T12:00:00.000Z",
+					data: Arr.map(data, ({ source: row, bytes }) => ({
+						source_id: encodeSourceId(row.id),
+						spans: 1200,
+						logs: 300,
+						metrics: 0,
+						bytes,
+					})),
+				}),
+			),
+		}),
+	).model
+
 describe("sources list", () => {
 	test("entry reads the clock and the list", () => {
 		expect(names(init({ _tag: "Sources" }, context).commands)).toEqual(
 			expect.arrayContaining(["ReadSourcesClock", "FetchSourcesList", "FetchSourcesUsage"]),
-		)
-	})
-
-	test("the default source is listed before the sources added ahead of it", () => {
-		const added = source(2, { name: "Checkout" })
-		expect(Arr.map(orderSources([added, defaultSource]), ({ name }) => name)).toEqual([
-			"Default",
-			"Checkout",
-		])
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded([added, defaultSource])),
-			expectView(role("link", { name: "Default" })).toExist(),
-			expectView(role("link", { name: "Checkout" })).toExist(),
 		)
 	})
 
@@ -102,42 +136,35 @@ describe("sources list", () => {
 			{ update: pageUpdate, view },
 			given(loaded([defaultSource])),
 			expectView(role("link", { name: "Default" })).toExist(),
-			expectView(text("Org ingest keys")).toExist(),
+			expectView(text("Nothing sent with an org ingest key lately")).toExist(),
 			expectView(text("Connect your first source")).toExist(),
+			expectView(label("Search sources")).not.toExist(),
 		)
 	})
 
 	test("a member without sources:manage reads the list without the connect actions", () => {
-		const member = pageUpdate(loaded([defaultSource]), Message.CompletedReadGrants({ grants: [] })).model
+		const paused = source(2, { name: "Billing", status: "paused", health: health("paused", null) })
+		const member = pageUpdate(
+			loaded([defaultSource, paused]),
+			Message.CompletedReadGrants({ grants: [] }),
+		).model
 		scene(
 			{ update: pageUpdate, view },
 			given(member),
-			expectView(role("link", { name: "Default" })).toExist(),
-			expectView(text("No sources added yet")).toExist(),
+			expectView(role("link", { name: "Billing" })).toExist(),
 			expectView(role("link", { name: "Connect source" })).not.toExist(),
-			expectView(role("link", { name: "Cloudflare" })).not.toExist(),
+			expectView(role("button", { name: /^Resume/ })).not.toExist(),
 		)
 	})
 
-	test("an added source hides the empty state and opens on click", () => {
-		const added = source(2, {
-			health: {
-				status: "healthy",
-				last_data_at: "2026-10-01T11:56:00.000Z",
-				problem: null,
-				resources: null,
-			},
-		})
-		const model = loaded([added, defaultSource])
+	test("an added source hides the empty state, and its name links to its page", () => {
+		const added = source(2, { health: RECEIVING })
 		scene(
 			{ update: pageUpdate, view },
-			given(model),
+			given(loaded([added, defaultSource])),
 			expectView(text("Connect your first source")).not.toExist(),
-			expectView(text("Receiving")).toExist(),
-		)
-		const href = `/sources/${encodePublicId(PublicIdPrefixes.source, "0199a0e1-0000-7000-8000-000000000002")}`
-		expect(pageUpdate(model, Message.ClickedSource({ url: href })).outMessage).toEqual(
-			PageOutMessage.RequestedNavigation({ url: href, isReplace: false }),
+			expectView(role("heading", { name: /^Receiving/ })).toExist(),
+			expectView(role("link", { name: "Source 2" })).toHaveAttr("href", sourceHref(added)),
 		)
 	})
 
@@ -168,131 +195,211 @@ describe("sources list", () => {
 	})
 })
 
-describe("integrations on the sources list", () => {
-	const rows = [
-		defaultSource,
-		source(2, { name: "Checkout" }),
-		source(3, { name: "node-exporter", platform: "prometheus", kind: "integration", key_prefix: null }),
-		source(4, { name: "GitHub acme", platform: "github", key_prefix: null }),
-	]
+describe("the list's groups", () => {
+	const checkout = source(2, { name: "Checkout", health: RECEIVING })
+	const storefront = source(3, { name: "Storefront", platform: "browser", health: RECEIVING })
+	const cluster = source(4, {
+		name: "prod-eu",
+		platform: "kubernetes",
+		health: health("stale", "2026-10-01T09:00:00.000Z"),
+	})
+	const cloudflare = source(5, {
+		name: "Cloudflare acme",
+		platform: "cloudflare",
+		kind: "integration",
+		key_prefix: null,
+		health: health("failing", null, { problem: "Token revoked", resources: { total: 3, unhealthy: 1 } }),
+	})
+	const billing = source(6, { name: "Billing", status: "paused", health: health("paused", null) })
+	const staging = source(7, { name: "Staging" })
+	const rows = [defaultSource, checkout, storefront, cluster, cloudflare, billing, staging]
+	const namesOf = (group: ReadonlyArray<V2Source>) => Arr.map(group, (row) => row.name)
 
-	test("each row says how its data arrives", () => {
+	test("sources to fix lead worst first, sending ones rank by what they stored, the rest wait", () => {
+		const usage = new Map([
+			[checkout.id, { spans: 0, logs: 0, metrics: 0, bytes: 1_000 }],
+			[storefront.id, { spans: 0, logs: 0, metrics: 0, bytes: 9_000 }],
+		])
+		const groups = groupSources(rows, usage)
+		expect(namesOf(groups.attention)).toEqual(["Cloudflare acme", "prod-eu"])
+		expect(namesOf(groups.receiving)).toEqual(["Storefront", "Checkout"])
+		// An unused Default source is not a fault: it waits with the paused and the new.
+		expect(namesOf(groups.idle)).toEqual(["Billing", "Default", "Staging"])
+		expect(namesOf(groupSources(rows, null).receiving)).toEqual(["Checkout", "Storefront"])
+	})
+
+	test("a source to fix says why and links to where it is fixed", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(rows)),
-			expectView(role("columnheader", { name: "Via" })).toExist(),
-			expectView(text("Org ingest keys")).toExist(),
-			expectView(text("maple_src_Q7xZa…")).toExist(),
-			expectView(text("Scrape target")).toExist(),
-			expectView(text("GitHub App")).toExist(),
+			expectView(role("heading", { name: /^Needs attention/ })).toExist(),
+			expectView(text(/Failing · 1 of 3 unhealthy · Token revoked/)).toExist(),
+			expectView(role("link", { name: "Review connection: Cloudflare acme" })).toHaveAttr(
+				"href",
+				sourceHref(cloudflare, "connection"),
+			),
+			expectView(text(/No recent data · last data 3h ago/)).toExist(),
+			expectView(role("link", { name: "Check setup: prod-eu" })).toHaveAttr(
+				"href",
+				sourceHref(cluster, "setup"),
+			),
+			expectView(role("link", { name: "Finish setup: Staging" })).toHaveAttr(
+				"href",
+				sourceHref(staging, "setup"),
+			),
 		)
 	})
 
-	test("each row shows what it stored in the last 24 hours, and the org total sits by the filters", () => {
-		const model = loaded([
-			...rows,
-			source(5, { name: "PlanetScale acme", platform: "planetscale", key_prefix: null }),
-		])
-		const summary = Schema.decodeSync(V2SourceUsageSummary)({
-			object: "source_usage_summary",
-			window_start: "2026-09-30T13:00:00.000Z",
-			window_end: "2026-10-01T12:00:00.000Z",
-			data: [
-				{
-					source_id: rows[1]?.id === undefined ? "" : encodeSourceId(rows[1].id),
-					spans: 1200,
-					logs: 300,
-					metrics: 0,
-					bytes: 2_000_000,
-				},
-				{
-					source_id: rows[2]?.id === undefined ? "" : encodeSourceId(rows[2].id),
-					spans: 0,
-					logs: 0,
-					metrics: 4000,
-					bytes: 600_000,
-				},
-				// A source deleted since: still in the rollup, left out of the total.
-				{
-					source_id: encodeSourceId(
-						Schema.decodeSync(SourceId)("0199a0e1-0000-7000-8000-0000000000ff"),
-					),
-					spans: 9,
-					logs: 0,
-					metrics: 0,
-					bytes: 9_000_000,
-				},
-			],
-		})
-		const withUsage = pageUpdate(
-			model,
-			Message.CompletedFetchUsage({ key: model.usage.key ?? "", result: Result.succeed(summary) }),
-		).model
+	test("a healthy list has no group for sources to fix", () => {
 		scene(
 			{ update: pageUpdate, view },
-			given(withUsage),
-			expectView(role("columnheader", { name: "Last 24h" })).toExist(),
-			expectView(text("1.2K spans · 300 logs")).toExist(),
-			expectView(text("4K metric points")).toExist(),
+			given(loaded([defaultSource, checkout])),
+			expectView(role("heading", { name: /^Needs attention/ })).not.toExist(),
+			expectView(role("link", { name: "Checkout" })).toExist(),
+		)
+	})
+
+	test("a source named after its platform says what it collects instead of repeating the name", () => {
+		const named = source(8, {
+			name: "Cloudflare",
+			platform: "cloudflare",
+			kind: "integration",
+			key_prefix: null,
+			health: RECEIVING,
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([defaultSource, checkout, named])),
+			expectView(text(/^Zone and Workers analytics/)).toExist(),
+			expectView(text(/^Node\.js/)).toExist(),
+		)
+	})
+
+	test("each sending source shows what it stored, and the org total leaves out deleted sources", () => {
+		const model = loaded(rows)
+		const deleted = source(9, { name: "Deleted" })
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				usageOf(model, [
+					{ source: checkout, bytes: 2_000_000 },
+					{ source: storefront, bytes: 600_000 },
+					{ source: deleted, bytes: 9_000_000 },
+				]),
+			),
+			expectView(text("2.0 MB")).toExist(),
+			expectView(text("600 KB")).toExist(),
 			expectView(text("2.6 MB")).toExist(),
 		)
 	})
 
-	test("the kind filter narrows the table to integrations or OpenTelemetry sources", () => {
+	test("search narrows every group by name or platform, and says when nothing matches", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(rows)),
-			click(role("button", { name: /^Integrations/ })),
-			expectView(role("link", { name: "node-exporter" })).toExist(),
+			type(label("Search sources"), "kubernetes"),
+			expectView(role("link", { name: "prod-eu" })).toExist(),
 			expectView(role("link", { name: "Checkout" })).not.toExist(),
-			click(role("button", { name: /^OpenTelemetry/ })),
+			expectView(role("heading", { name: /^Receiving/ })).not.toExist(),
+			type(label("Search sources"), "nothing like this"),
+			expectView(text("No sources match")).toExist(),
+			click(role("button", { name: "Clear search" })),
 			expectView(role("link", { name: "Checkout" })).toExist(),
-			expectView(role("link", { name: "GitHub acme" })).not.toExist(),
 		)
 	})
 
-	test("integrations nothing comes from yet link to their connect step", () => {
+	test("a source the gateway refuses links to its rules, for those who can change them", () => {
+		const expired = source(8, {
+			name: "Expired",
+			status: "expired",
+			expires_at: "2026-09-30T12:00:00.000Z",
+			health: health("disconnected", null, { problem: "The token expired; senders get 401" }),
+		})
+		const model = loaded([defaultSource, expired])
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text(/Disconnected · The token expired/)).toExist(),
+			expectView(role("link", { name: "Review rules: Expired" })).toHaveAttr(
+				"href",
+				sourceHref(expired, "settings"),
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(pageUpdate(model, Message.CompletedReadGrants({ grants: [] })).model),
+			expectView(role("link", { name: /^Review rules/ })).not.toExist(),
+		)
+	})
+
+	test("a Default source the gateway refuses still says why", () => {
+		const refused = source(1, {
+			name: "Default",
+			platform: "opentelemetry",
+			kind: "default",
+			is_default: true,
+			key_prefix: null,
+			health: health("failing", "2026-10-01T11:00:00.000Z", { problem: "Over the ingest quota" }),
+		})
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded([refused, checkout])),
+			expectView(role("heading", { name: /^Needs attention/ })).not.toExist(),
+			expectView(text(/Failing · Over the ingest quota/)).toExist(),
+		)
+	})
+
+	test("Resume on a paused row resumes it in place, toasts, and reads the list again", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded(rows)),
-			expectView(role("link", { name: "Cloudflare" })).toHaveAttr(
-				"href",
-				"/sources/new?integration=cloudflare",
+			click(role("button", { name: "Resume: Billing" })),
+			Command.resolve(ResumeSource, Message.CompletedResume({ result: Result.succeed(billing) })),
+			expectOutMessage(
+				PageOutMessage.RequestedToast({
+					type: "success",
+					title: "Source resumed. Takes effect within a minute.",
+					description: "",
+				}),
 			),
-			expectView(role("link", { name: "GitHub" })).not.toExist(),
+			// The list is read again; this answer carries an old key, so the model keeps waiting.
+			Command.resolve(
+				FetchSourcesList,
+				Message.CompletedFetchList({ key: "superseded", result: Result.succeed(rows) }),
+			),
 		)
 	})
 
-	test("Needs attention narrows to the sources to fix, worst first, with a zone count", () => {
-		const cloudflare = source(5, {
-			name: "Cloudflare acme",
-			platform: "cloudflare",
-			key_prefix: null,
-			health: {
-				status: "failing",
-				last_data_at: null,
-				problem: "Token revoked",
-				resources: { total: 3, unhealthy: 1 },
-			},
-		})
-		const all = [...rows, cloudflare]
-		expect(Arr.map(orderSources(all), (row) => row.name)[1]).toBe("Cloudflare acme")
+	test("a resume in flight holds the other rows' Resume, and a refusal frees them", () => {
+		const other = source(9, { name: "Other", status: "paused", health: health("paused", null) })
+		const clicked = pageUpdate(loaded([...rows, other]), Message.ClickedResume({ id: billing.id }))
+		expect(names(clicked.commands)).toEqual(["ResumeSource"])
 		scene(
 			{ update: pageUpdate, view },
-			given(loaded(all)),
-			expectView(text("1 of 3 unhealthy")).toExist(),
-			click(role("button", { name: /^Needs attention/ })),
-			expectView(role("link", { name: "Cloudflare acme" })).toExist(),
-			expectView(role("link", { name: "Checkout" })).not.toExist(),
+			given(clicked.model),
+			expectView(role("button", { name: "Resume: Other" })).toBeDisabled(),
+		)
+		expect(pageUpdate(clicked.model, Message.ClickedResume({ id: other.id })).commands).toBeUndefined()
+		const refused = pageUpdate(
+			clicked.model,
+			Message.CompletedResume({ result: Result.fail(toLoadFailure(new Error("boom"))) }),
+		)
+		expect(refused.outMessage).toMatchObject({ _tag: "RequestedToast", type: "error" })
+		scene(
+			{ update: pageUpdate, view },
+			given(refused.model),
+			expectView(role("button", { name: "Resume: Other" })).toBeEnabled(),
 		)
 	})
 
-	test("a filter that hides every source says so", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(loaded([defaultSource, source(2, { name: "Checkout" })])),
-			click(role("button", { name: /^Integrations/ })),
-			expectView(text("No sources match these filters")).toExist(),
+	test("a resume reads the list again even while an earlier read is in flight", () => {
+		const refreshing = pageUpdate(loaded(rows), Message.ClickedRetry())
+		expect(names(refreshing.commands)).toEqual(["FetchSourcesList"])
+		const resumed = pageUpdate(
+			{ ...refreshing.model, resuming: billing.id },
+			Message.CompletedResume({ result: Result.succeed(billing) }),
 		)
+		expect(names(resumed.commands)).toEqual(["FetchSourcesList"])
+		expect(resumed.model.list.key).not.toBe(refreshing.model.list.key)
 	})
 })

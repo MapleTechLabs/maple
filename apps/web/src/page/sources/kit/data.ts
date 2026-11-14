@@ -1,11 +1,11 @@
-import type { SourceId } from "@maple/primitives"
+import { SourceId } from "@maple/primitives"
 import { V2Source, V2SourceUsage, V2SourceUsageSummary } from "@maple/domain/http/v2"
 import { collectV2Pages } from "@maple/web-data/lib/v2-pagination"
 import { Effect, type Result, Schema } from "effect"
 import { Command } from "foldkit"
 import { baseKey } from "@maple/views/data/keyed"
 import { IdleTtl } from "../../../data/idle-ttl"
-import { type LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
+import { type LoadFailure, settleTo, toLoadFailure } from "@maple/views/data/load-failure"
 import { readThrough } from "../../../data/read-cache"
 import { type RequestKey, requestKey } from "@maple/views/data/request-key"
 import { MapleApiV2Client } from "../../../platform/api-clients"
@@ -50,7 +50,7 @@ export const loadSourceUsage = (key: RequestKey, id: SourceId) =>
 
 export const sourcesUsageKey = (orgId: string): RequestKey => requestKey(orgId, "sources.usageSummary", {})
 
-/** Every source's volume over the last 24 hours, for the list's Last 24h column. */
+/** Every source's volume over the last 24 hours, which the list ranks and totals by. */
 export const loadSourcesUsage = (key: RequestKey, refresh: boolean) =>
 	readThrough(
 		{ key, idleTtlMs: IdleTtl.retainedQuery, schema: V2SourceUsageSummary, refresh },
@@ -72,6 +72,25 @@ type ListDone<M> = Schema.Top &
 		readonly key: string
 		readonly result: Result.Result<typeof SourceList.Type, LoadFailure>
 	}) => M)
+
+type ResumeDone<M> = Schema.Top & ((fields: { readonly result: Result.Result<V2Source, LoadFailure> }) => M)
+
+/** `sources.resume`, answered with the page's Message: the list's row and the source page both resume. */
+export const resumeSource = <M>(done: ResumeDone<M>) =>
+	Command.define("ResumeSource", {
+		args: { id: SourceId },
+		messages: [done],
+		execute: ({ id }) =>
+			Effect.flatMap(MapleApiV2Client, (client) => client.sources.resume({ params: { id } })).pipe(
+				settleTo((result) => done({ result })),
+			),
+	})
+
+/** The toasts a resume answers with, wherever it was clicked. */
+export const RESUME_COPY = {
+	success: "Source resumed. Takes effect within a minute.",
+	error: "Couldn't resume source",
+} as const
 
 /** The sources list, read through the cache and answered with the page's Message; a superseded key re-reads. */
 export const fetchSourcesList = <M>(done: ListDone<M>) =>

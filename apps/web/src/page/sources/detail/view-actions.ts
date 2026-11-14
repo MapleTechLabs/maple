@@ -15,7 +15,7 @@ import { vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
-const inlineIcon = (h: H, name: "MediaPauseIcon" | "MediaPlayIcon" | "ArrowPathIcon" | "TrashIcon") =>
+const inlineIcon = (h: H, name: "MediaPauseIcon" | "MediaPlayIcon" | "ArrowPathIcon") =>
 	icon(h, name, { attributes: [h.DataAttribute("icon", "inline-start")] })
 
 const isIntegration = (source: V2Source) => integrationPlatformOf(source) !== null
@@ -96,18 +96,6 @@ export const pauseControl = (h: H, model: Model, source: V2Source): Html =>
 			)
 		: pauseMenu(h, model, source)
 
-const deleteButton = (h: H) =>
-	button(
-		h,
-		{
-			variant: "ghost",
-			size: "sm",
-			className: "text-destructive",
-			attributes: [h.OnClick(Message.ClickedDelete())],
-		},
-		[inlineIcon(h, "TrashIcon"), "Delete"],
-	)
-
 /** A token source's delete: its senders are refused. */
 const tokenDeleteDialog = (h: H, model: Model, source: V2Source): Html =>
 	confirmDialog(h, {
@@ -156,14 +144,13 @@ const integrationDeleteDialog = (h: H, model: Model, source: V2Source): Html => 
 	)
 }
 
-/** Pause or Resume, Roll token and Delete: a token source's actions. */
+/** Pause or Resume and Roll token: a token source's actions. Delete is in Settings; its dialog lives here. */
 export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArray<Html> => [
 	pauseControl(h, model, source),
 	button(h, { variant: "outline", size: "sm", attributes: [h.OnClick(Message.ClickedRollToken())] }, [
 		inlineIcon(h, "ArrowPathIcon"),
 		"Roll token",
 	]),
-	deleteButton(h),
 	confirmDialog(h, {
 		slotId: "source-roll-confirm",
 		model: model.rollDialog,
@@ -180,7 +167,7 @@ export const sourceActions = (h: H, model: Model, source: V2Source): ReadonlyArr
 	tokenDeleteDialog(h, model, source),
 ]
 
-/** Pause or Resume, the integration's own actions (`connection`), and Delete. */
+/** Pause or Resume and the integration's own actions (`connection`). Delete is in Settings; its dialog lives here. */
 export const integrationActions = (
 	h: H,
 	model: Model,
@@ -189,7 +176,6 @@ export const integrationActions = (
 ): ReadonlyArray<Html> => [
 	pauseControl(h, model, source),
 	...(connection === null ? [] : [connection]),
-	deleteButton(h),
 	// Google Cloud's Delete opens the integration's removal dialog (rendered with `connection`) while its connector exists.
 	integrationDeleteDialog(h, model, source),
 ]

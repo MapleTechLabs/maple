@@ -181,12 +181,14 @@ const deleteSection = (h: H, source: V2Source): Html =>
 	dangerZone(h, { id: "source-settings-delete" }, [
 		dangerRow(h, {
 			title: "Delete source",
-			description: [
-				`Disconnects ${platformMeta(source.platform).label} and removes this source. `,
-				keepsStoredData(source)
-					? "Nothing new is collected or billed. Data already stored stays until retention ends."
-					: "Nothing new is collected, and its repositories and commits are deleted.",
-			],
+			description: hasToken(source)
+				? ["Removes this source and its token. Senders using it are rejected within a minute."]
+				: [
+						`Disconnects ${platformMeta(source.platform).label} and removes this source. `,
+						keepsStoredData(source)
+							? "Nothing new is collected or billed. Data already stored stays until retention ends."
+							: "Nothing new is collected, and its repositories and commits are deleted.",
+					],
 			action: button(
 				h,
 				{
@@ -199,7 +201,7 @@ const deleteSection = (h: H, source: V2Source): Html =>
 		}),
 	])
 
-/** General for every source; rules for token sources, pausing and deleting for integrations. */
+/** General for every source; rules for token sources, pausing for integrations, deleting for both. */
 export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: string): Html => {
 	const form = model.settings
 	if (form === null) return h.empty
@@ -232,6 +234,7 @@ export const settingsTab = (h: H, model: Model, source: V2Source, timeZone: stri
 						}),
 					],
 				),
+				deleteSection(h, source),
 				...save,
 			]
 		: [

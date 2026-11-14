@@ -10,6 +10,7 @@ import {
 	tableHeaderStyles,
 	tableRowLinkLiftStyles,
 	tableRowLinkStyles,
+	tableRowNameLinkStyles,
 	tableRowStyles,
 	tableSortButtonStyles,
 	tableSortIconStyles,
@@ -220,6 +221,26 @@ export const rowLink = <M>(
 			...(options.attributes ?? []),
 		],
 		children,
+	)
+
+/** A row's name as its `rowLink`: one truncating medium line, muted for a row that is switched off. */
+export const rowNameLink = <M>(
+	h: HtmlBuilder<M>,
+	options: {
+		readonly href: string
+		readonly name: string
+		readonly isMuted?: boolean
+		readonly attributes?: ReadonlyArray<Attribute<M>>
+	},
+): Html =>
+	rowLink(
+		h,
+		{
+			href: options.href,
+			className: cn(tableRowNameLinkStyles, options.isMuted === true && "text-muted-foreground"),
+			attributes: options.attributes ?? [],
+		},
+		[options.name],
 	)
 
 export type SortDirection = "asc" | "desc"

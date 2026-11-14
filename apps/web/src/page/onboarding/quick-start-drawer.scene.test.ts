@@ -162,9 +162,9 @@ describe("onboarding connect drawer", () => {
 			given(made),
 			tabsMeasured(),
 			dialogMounted(),
-			expectView(text("Copy the token")).toExist(),
+			expectView(text("Token")).toExist(),
 			// The page's links away to the source are Done here.
-			expectView(role("link", { name: "Skip for now" })).not.toExist(),
+			expectView(role("link", { name: "Open source" })).not.toExist(),
 			expectView(role("button", { name: "Done" })).toExist(),
 		)
 		const done = update(made, toFlow(FlowMessage.ClickedDone()))
