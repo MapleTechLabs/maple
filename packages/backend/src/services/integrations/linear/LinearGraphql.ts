@@ -73,42 +73,54 @@ const classifyLinear = (refusal: VendorHttp.VendorRefusal): VendorHttp.VendorFai
 	return undefined
 }
 
+const NOT_FOUND_PHRASE = /entity not found|could not find referenced[^.]*\.?/i
+
+/** A long text cut to 200 characters, keeping the not-found phrase that classifies it. */
+const shorten = (text: string) => {
+	const hit = NOT_FOUND_PHRASE.exec(text)
+	return hit === null ? Str.slice(0, 200)(text) : hit[0]
+}
+
+type RawError = NonNullable<typeof GraphqlEnvelopeSchema.Type.errors>[number]
+
+/** An error a caller branches on: it has a code, or says what was not found. */
+const isDecisive = (error: RawError) =>
+	error.extensions?.code !== undefined ||
+	NOT_FOUND_PHRASE.test(error.message) ||
+	NOT_FOUND_PHRASE.test(error.extensions?.userPresentableMessage ?? "")
+
+const compactError = (error: RawError): RawError => ({
+	message: shorten(error.message),
+	...(error.extensions === undefined
+		? undefined
+		: {
+				extensions: {
+					...(error.extensions.code === undefined ? undefined : { code: error.extensions.code }),
+					...(error.extensions.type === undefined ? undefined : { type: error.extensions.type }),
+					...(error.extensions.userPresentableMessage === undefined
+						? undefined
+						: { userPresentableMessage: shorten(error.extensions.userPresentableMessage) }),
+				},
+			}),
+})
+
 /**
  * The refusal's GraphQL errors, re-encoded without their bulky extensions, read from the whole
- * body before the kit cuts it, so a long "not found" still decodes as an answer.
+ * body before the kit cuts it, so a long "not found" still decodes as an answer. Bounded to five
+ * errors, the ones callers branch on first, so the JSON stays whole inside the kit's cut.
  */
 const linearDetail = (body: string) =>
 	Option.match(decodeEnvelope(body), {
 		onNone: () => undefined,
-		onSome: (envelope) =>
-			(envelope.errors ?? []).length === 0
-				? undefined
-				: // Bounded so the encoded errors stay whole inside the kit's cut.
-					encodeEnvelope({
-						errors: Arr.map(Arr.take(envelope.errors ?? [], 5), (error) => ({
-							message: Str.slice(0, 200)(error.message),
-							...(error.extensions === undefined
-								? undefined
-								: {
-										extensions: {
-											...(error.extensions.code === undefined
-												? undefined
-												: { code: error.extensions.code }),
-											...(error.extensions.type === undefined
-												? undefined
-												: { type: error.extensions.type }),
-											...(error.extensions.userPresentableMessage === undefined
-												? undefined
-												: {
-														userPresentableMessage: Str.slice(
-															0,
-															200,
-														)(error.extensions.userPresentableMessage),
-													}),
-										},
-									}),
-						})),
-					}),
+		onSome: (envelope) => {
+			const errors = envelope.errors ?? []
+			if (errors.length === 0) return undefined
+			const ordered = [
+				...Arr.filter(errors, isDecisive),
+				...Arr.filter(errors, (error) => !isDecisive(error)),
+			]
+			return encodeEnvelope({ errors: Arr.map(Arr.take(ordered, 5), compactError) })
+		},
 	})
 
 const revoked = () =>

@@ -101,6 +101,27 @@ describe("linearGraphql", () => {
 		}).pipe(Effect.provide(server.layer))
 	})
 
+	it.effect("keeps the not-found error when it is the sixth, and the phrase deep in a long message", () => {
+		const refusal = (errors: ReadonlyArray<unknown>) =>
+			linear([() => VendorFake.json({ data: null, errors }, 400)])
+		const sixth = refusal([
+			...Arr.map(Arr.range(1, 5), (index) => ({ message: `Field ${index} is invalid` })),
+			{ message: "Team missing", extensions: { code: "ENTITY_NOT_FOUND" } },
+		])
+		const deep = refusal([
+			{
+				message: `${Str.repeat(201)("x")} Could not find referenced Issue.`,
+				extensions: { code: "INPUT_ERROR" },
+			},
+		])
+		return Effect.forEach([sixth, deep], (server) =>
+			send(QUERY, "MapleIssue").pipe(
+				Effect.provide(server.layer),
+				Effect.map((result) => assert.isTrue(Arr.some(result.errors, isNotFound))),
+			),
+		)
+	})
+
 	it.effect("returns GraphQL errors on a 400 as an answer, so not found can be told apart", () => {
 		const server = linear([
 			() =>
