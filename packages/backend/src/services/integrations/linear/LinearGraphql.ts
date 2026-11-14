@@ -75,6 +75,9 @@ const classifyLinear = (refusal: VendorHttp.VendorRefusal): VendorHttp.VendorFai
 
 const NOT_FOUND_PHRASE = /entity not found|could not find referenced[^.]*\.?/i
 
+/** Below the kit's 2,000 character cut of a refusal's detail. */
+const MAX_DETAIL_CHARS = 1_900
+
 /** A long text cut to 200 characters, keeping the not-found phrase that classifies it. */
 const shorten = (text: string) => {
 	const hit = NOT_FOUND_PHRASE.exec(text)
@@ -132,7 +135,15 @@ const linearDetail = (body: string) =>
 				...Arr.filter(errors, (error) => rankOf(error) === 1),
 				...Arr.filter(errors, (error) => rankOf(error) === 2),
 			]
-			return encodeEnvelope({ errors: Arr.map(Arr.take(ordered, 5), compactError) })
+			// The most errors whose encoding fits inside the kit's cut, so the JSON always stays whole.
+			const kept = Arr.map(Arr.take(ordered, 5), compactError)
+			return Option.getOrElse(
+				Arr.findFirst(Arr.reverse(Arr.range(1, kept.length)), (count) => {
+					const encoded = encodeEnvelope({ errors: Arr.take(kept, count) })
+					return encoded.length <= MAX_DETAIL_CHARS ? Option.some(encoded) : Option.none()
+				}),
+				() => undefined,
+			)
 		},
 	})
 

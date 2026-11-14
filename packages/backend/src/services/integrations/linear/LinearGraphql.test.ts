@@ -131,6 +131,33 @@ describe("linearGraphql", () => {
 		)
 	})
 
+	it.effect("keeps the not-found answer when five long errors would not fit the kit's cut together", () => {
+		const long = Str.repeat(400)("y")
+		const server = linear([
+			() =>
+				VendorFake.json(
+					{
+						data: null,
+						errors: [
+							{
+								message: `Could not find referenced Issue ${long}`,
+								extensions: { code: "ENTITY_NOT_FOUND", userPresentableMessage: long },
+							},
+							...Arr.map(Arr.range(1, 4), () => ({
+								message: long,
+								extensions: { code: "INPUT_ERROR", userPresentableMessage: long },
+							})),
+						],
+					},
+					400,
+				),
+		])
+		return Effect.gen(function* () {
+			const result = yield* send(QUERY, "MapleIssue")
+			assert.isTrue(Arr.some(result.errors, isNotFound))
+		}).pipe(Effect.provide(server.layer))
+	})
+
 	it.effect("returns GraphQL errors on a 400 as an answer, so not found can be told apart", () => {
 		const server = linear([
 			() =>
