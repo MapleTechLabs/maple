@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import * as AWS from "@alchemy.run/aws"
 import * as Output from "alchemy/Output"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
 import { cloudflareIpv4Ranges, issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import type { MapleDbLogin, MapleRegion, MapleStackContext, MapleStage } from "@maple/infra/cloudflare"
@@ -15,7 +16,9 @@ import {
 import { r2BucketCredentials } from "@maple/infra/r2-credentials"
 // Only the primitives: these values feed ECS `env:` and Secrets Manager, not Worker bindings.
 import { commitShaEnv, optionalPlain, requiredPlain } from "@maple/infra/env"
+import { resolveAs } from "@maple/infra/secret-guard"
 import { createIngestCollector } from "./alchemy/collector.ts"
+import { ingestPgUrl, ingestSecrets } from "./alchemy/secrets.ts"
 import { blockedIngestKeysEnv, blockIngestKeysAtEdge } from "./alchemy/edge-block.ts"
 import { gatewayTuningEnv } from "./alchemy/gateway-env.ts"
 
@@ -267,30 +270,24 @@ export const createMapleIngest = ({ stage, region, hostname, profile, dbLogin }:
 
 		const secret = ecsSecrets(name("ingest"), tags)
 
-		const tinybirdTokenValue = yield* requiredPlain("TINYBIRD_TOKEN")
-		const tinybirdToken = yield* secret("tinybird-token", tinybirdTokenValue)
+		// As `ingest`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
+		const secrets = yield* resolveAs("ingest", ingestSecrets)
+		const tinybirdToken = yield* secret("tinybird-token", secrets.tinybirdToken)
 		// NOT `MAPLE_PG_URL`: that is the migration admin's URL. The gateway reads
 		// ingest keys through the pooler as its own role.
 		const pgUrl = dbLogin
 			? yield* secret("maple-pg-url", pgUrlRequireSsl(dbLogin.url))
-			: yield* requiredPlain("MAPLE_INGEST_PG_URL").pipe(
+			: yield* resolveAs("ingest", ingestPgUrl).pipe(
 					Effect.flatMap((url) => secret("maple-pg-url", url)),
 				)
-		const keyEncryptionKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
-		const keyEncryptionKey = yield* secret("ingest-key-encryption-key", keyEncryptionKeyValue)
-		// Only set while a key rotation is in flight (docs/secret-encryption.md).
-		const { MAPLE_INGEST_KEY_DECRYPTION_KEYS: decryptionKeysValue } = yield* optionalPlain(
-			"MAPLE_INGEST_KEY_DECRYPTION_KEYS",
-		)
-		const keyDecryptionKeys = decryptionKeysValue
-			? yield* secret("ingest-key-decryption-keys", decryptionKeysValue)
+		const keyEncryptionKey = yield* secret("ingest-key-encryption-key", secrets.keyEncryptionKey)
+		const keyDecryptionKeys = Option.isSome(secrets.keyDecryptionKeys)
+			? yield* secret("ingest-key-decryption-keys", secrets.keyDecryptionKeys.value)
 			: undefined
-		const keyLookupHmacKeyValue = yield* requiredPlain("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY")
-		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", keyLookupHmacKeyValue)
-
-		// Autumn absent means billing enforcement is dark.
-		const { AUTUMN_SECRET_KEY: autumnKey } = yield* optionalPlain("AUTUMN_SECRET_KEY")
-		const autumnSecret = autumnKey ? yield* secret("autumn-secret-key", autumnKey) : undefined
+		const keyLookupHmacKey = yield* secret("ingest-key-lookup-hmac-key", secrets.keyLookupHmacKey)
+		const autumnSecret = Option.isSome(secrets.autumnSecretKey)
+			? yield* secret("autumn-secret-key", secrets.autumnSecretKey.value)
+			: undefined
 
 		// The access key id is not secret, but it only exists once the token does and
 		// `env` takes plan-time strings only.

@@ -8,36 +8,22 @@ import {
 	createMapleAwsOidcKey,
 	MapleDb,
 	mapleDbEnv,
-	type MapleDomains,
-	type MapleRegion,
 	MapleStack,
-	type MapleStage,
 	mapleWorkerProps,
 	StatusSnapshotsBucket,
 	StatusSnapshotsKv,
 } from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import {
-	apnsEnv,
-	cloudflareOAuthEnv,
-	configKeysEnv,
-	linearOAuthEnv,
-	mapleServerEnv,
-	merge,
-	optionalPlain,
-	optionalSecret,
-	planetScaleOAuthEnv,
-	supabaseOAuthEnv,
-} from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { WORKER_PURE_OPTIONS } from "@maple/infra/worker-build"
 import { dischargeRuntimeContext, workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import { bindChatSessions } from "@maple/backend/platform/chat-sessions"
 import { bindEmailSender } from "@maple/backend/platform/email-sender"
-import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Config, Effect, Option, Ref } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
+import { alertingConfiguredEnv, alertingConnectorSecretNames } from "./resources/env.ts"
 import { ALERTING_CRONS, scheduleFor } from "./schedule.ts"
 import { authorizeTickRequest, dispatchTick, SELF_BINDING } from "./tick-dispatch.ts"
 import { isolateColoCache, lookupColo } from "./worker-colo.ts"
@@ -49,26 +35,6 @@ import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticip
  */
 export type AlertingWorkerEnv = Record<string, unknown>
 
-/** Config-sourced env; largely shared with api via `@maple/infra/env`. */
-const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
-	merge(
-		mapleServerEnv(stage, region, domains),
-		// "1" runs crons on a non-prod stage (which otherwise skips them).
-		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
-		linearOAuthEnv,
-		// Signs the chart image URL in notifications; unset sends them text-only.
-		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
-		// Push for incidents, plus OAuth refresh for the Cloudflare, PlanetScale and Supabase pollers.
-		apnsEnv,
-		cloudflareOAuthEnv,
-		planetScaleOAuthEnv,
-		supabaseOAuthEnv,
-		// Sign-in for the Google Cloud metrics poller; unset leaves its tick a no-op.
-		optionalSecret("MAPLE_GCP_SERVICE_ACCOUNT_KEY"),
-		// Outbound config for `chat` destinations' connectors.
-		configKeysEnv(chatConnectorOutboundConfigKeys),
-	)
-
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
@@ -76,7 +42,12 @@ const props = Effect.gen(function* () {
 	const { stage, region, domains, devEnv, db } = stack
 	// For `IncidentClassifier`. Yielded, not `Worker.ref`: a ref cannot see a sibling this deploy creates.
 	const ai = yield* AiWorker
-	const env = yield* configuredEnv(stage, region, domains)
+	// As `alerting`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
+	const env = yield* resolveWorkerEnv(
+		"alerting",
+		alertingConfiguredEnv(stage, region, domains),
+		alertingConnectorSecretNames,
+	)
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("alerting", stack),

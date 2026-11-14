@@ -6,6 +6,7 @@ import { Layer } from "effect"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 
 import { Env } from "@maple/backend/platform/Env"
+import { StripeSecretKey } from "@maple/infra/secrets"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
@@ -254,4 +255,4 @@ export const HttpServicesLive = Layer.mergeAll(
 	VcsCommitService.layer,
 	VcsSourceService.layer,
 	ChatWorkspaceService.layer,
-).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)))
+).pipe(Layer.provideMerge(Layer.mergeAll(Env.layer, StripeSecretKey.layer, EdgeCacheServiceLive)))

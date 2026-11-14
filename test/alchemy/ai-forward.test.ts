@@ -21,6 +21,7 @@ import {
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
 import { resolveMapleProfile } from "@maple/infra/profile"
+import { withSecretGuard } from "@maple/infra/secret-guard"
 import MapleAiLive, { MapleAi } from "../../apps/ai/src/worker.ts"
 import MapleApi from "../../apps/api/src/worker.ts"
 
@@ -53,12 +54,12 @@ const Stack = Alchemy.Stack(
 		secrets: existsSync(envFile) ? [Secrets.DotEnv({ path: envFile })] : undefined,
 	},
 	Effect.gen(function* () {
-		// Same order as alchemy.run.ts: the DB URL is read outside any Worker init.
+		// Same order and secret guard as alchemy.run.ts: the DB URL is read outside any Worker init.
 		yield* ManagedMapleDb
 		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
 		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		return { apiUrl: api.url }
-	}).pipe(Effect.provide(TestMapleStack)),
+	}).pipe(withSecretGuard, Effect.provide(TestMapleStack)),
 )
 
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({

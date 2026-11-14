@@ -1,7 +1,10 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
-import { plainFrom, requiredPlain } from "../env.ts"
+import * as Redacted from "effect/Redacted"
+import { plainFrom } from "../env.ts"
+import { resolveAs } from "../secret-guard.ts"
+import * as Secrets from "../secrets.ts"
 import { DEFAULT_MAPLE_REGION } from "../region.ts"
 import { MapleStack } from "./stack.ts"
 import { prdOrigin } from "./stage.ts"
@@ -10,6 +13,9 @@ import { String as Str } from "effect"
 /** prd destination slugs (derived from their names), referenced by non-owning stages. */
 const PRD_LOGS_DESTINATION = "maple-workers-logs"
 const PRD_TRACES_DESTINATION = "maple-workers-traces"
+
+/** What the account's Workers Observability destinations read from the deploy's environment. */
+export const workersObservabilitySecrets = Secrets.OtelIngestKey.value
 
 /**
  * Account-wide Workers Observability destinations for the asset Workers, owned only by the `us`
@@ -23,7 +29,9 @@ export const WorkersObservabilityDestinations = Effect.gen(function* () {
 
 	const endpoint = yield* plainFrom(["MAPLE_ENDPOINT"], prdOrigin("ingest"))
 	const ingestEndpoint = Str.replace(/\/+$/, "")(endpoint)
-	const headers = { authorization: `Bearer ${yield* requiredPlain("MAPLE_OTEL_INGEST_KEY")}` }
+	// As the account's observability destinations, which the catalog grants this one key.
+	const ingestKey = yield* resolveAs("workers-observability", workersObservabilitySecrets)
+	const headers = { authorization: `Bearer ${Redacted.value(ingestKey)}` }
 	const tracesDestination = yield* Cloudflare.Workers.ObservabilityDestination(
 		"workers-observability-traces",
 		{

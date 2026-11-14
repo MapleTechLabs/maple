@@ -14,20 +14,26 @@ import {
 	mapleServerEnv,
 	merge,
 	optionalPlain,
-	optionalSecret,
 	planetScaleOAuthEnv,
 	plainWithDefault,
-	requireSecretEntry,
 	supabaseOAuthEnv,
 } from "@maple/infra/env"
+import * as Secrets from "@maple/infra/secrets"
+import { Array as Arr } from "effect"
+
+/** The connectors declare their own secret keys; the Worker env audit accepts these beside the catalog. */
+export const apiConnectorSecretNames: ReadonlyArray<string> = Arr.map(
+	Arr.filter([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys], (key) => key.secret),
+	(key) => key.name,
+)
 
 export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		mapleServerEnv(stage, region, domains),
 		devOrgOverrideEnv(stage),
 		// PR previews only: the shared key behind the sign-in page's preview access form.
-		...(stage.kind === "pr" ? [optionalSecret("PREVIEW_SIGNIN_KEY")] : []),
-		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+		...(stage.kind === "pr" ? [Secrets.PreviewSigninKey.optional] : []),
+		Secrets.ShareTokenHmacKey.required,
 		plainWithDefault("QE_BUCKET_CACHE_ENABLED", "true"),
 		plainWithDefault("QE_BUCKET_CACHE_TTL_SECONDS", "86400"),
 		plainWithDefault("QE_BUCKET_CACHE_FLUX_SECONDS", "60"),
@@ -37,29 +43,29 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		plainWithDefault("QE_BUCKET_CACHE_READ_CONCURRENCY", "6"),
 		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
 		// Webhook signing secrets; each receiver answers 503 until its secret is set.
-		optionalSecret("CLERK_WEBHOOK_SECRET"),
-		optionalSecret("AUTUMN_WEBHOOK_SECRET"),
+		Secrets.ClerkWebhookSecret.optional,
+		Secrets.AutumnWebhookSecret.optional,
 		// Defaults to MAPLE_INGEST_KEY; set to land product events in another org.
-		optionalSecret("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),
+		Secrets.ProductEventsIngestKey.optional,
 		// Billing details go straight to Stripe; Autumn has no API for them.
-		optionalSecret("STRIPE_SECRET_KEY"),
+		Secrets.StripeSecretKey.optional,
 		// Shared customer support channels, created in Maple's own Slack workspace.
-		optionalSecret("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
+		Secrets.SupportSlackBotToken.optional,
 		optionalPlain("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 		optionalPlain("MAPLE_CANCELLATION_SLACK_CHANNEL_ID"),
 		// Cancellation reports also go to this channel of the Hazel workspace Maple's own org linked.
 		optionalPlain("MAPLE_CANCELLATION_HAZEL_CHANNEL_ID"),
 		optionalPlain("MAPLE_INTERNAL_ORG_ID"),
 		optionalPlain("MAPLE_CLERK_DASHBOARD_URL"),
-		optionalSecret("SD_INTERNAL_TOKEN"),
+		Secrets.ScraperInternalToken.optional,
 		linearOAuthEnv,
 		// Each connector's declared install and outbound config.
 		configKeysEnv([...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys]),
 		apnsEnv,
 		// The GitHub App's reader is in `mapleServerEnv`; install and webhooks are api's alone.
 		optionalPlain("GITHUB_APP_CLIENT_ID"),
-		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
-		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
+		Secrets.GithubAppClientSecret.optional,
+		Secrets.GithubAppWebhookSecret.optional,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
 		supabaseOAuthEnv,

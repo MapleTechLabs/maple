@@ -21,7 +21,8 @@ import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect } from "effect"
 import { makeVcsSyncIsolateCaches } from "@maple/backend/services/integrations/vcs/vcs-sync-isolate-caches"
 import { ApiObservabilityLive } from "./http/api-observability"
-import { apiConfiguredEnv } from "./resources/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
+import { apiConfiguredEnv, apiConnectorSecretNames } from "./resources/env"
 import { ApiBindingsLive, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
@@ -38,7 +39,12 @@ const props = Effect.gen(function* () {
 	// api keeps the hostname and OAuth, and forwards `/mcp` and chat to maple-ai.
 	const ai = yield* AiWorker
 	// Resolved up front so a misconfigured deploy fails before applying anything.
-	const configuredEnv = yield* apiConfiguredEnv(stage, region, domains)
+	// As `api`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
+	const configuredEnv = yield* resolveWorkerEnv(
+		"api",
+		apiConfiguredEnv(stage, region, domains),
+		apiConnectorSecretNames,
+	)
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("api", stack),

@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect"
 import { ecsSecrets, pgUrlRequireSsl, resolveAwsRegion } from "@maple/infra/aws"
 import { issueRegionalCertificate, publishProxiedCname } from "@maple/infra/acm"
 import { type MapleDbLogin, type MapleStackContext, resolveWorkerName } from "@maple/infra/cloudflare"
-import { requiredPlain } from "@maple/infra/env"
+import { resolveAs } from "@maple/infra/secret-guard"
+import { electricSecrets } from "./alchemy/secrets.ts"
 
 /** Port Electric's HTTP API binds (`ELECTRIC_PORT`, whose own default is 3000). */
 const ELECTRIC_PORT = 3000
@@ -91,8 +92,8 @@ export const createMapleElectric = ({
 		// Direct connection (5432), never a pooler: logical replication needs it. The role
 		// must carry the REPLICATION attribute itself (membership does not grant it).
 		const databaseUrl = yield* secret("database-url", pgUrlRequireSsl(dbLogin.url))
-		// Shared with the electric-sync Worker; rotate by redeploying this first, then the Worker.
-		const electricSecret = yield* requiredPlain("ELECTRIC_SECRET")
+		// As `electric`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
+		const electricSecret = yield* resolveAs("electric", electricSecrets)
 		const apiSecret = yield* secret("api-secret", electricSecret)
 
 		const issuedCertificateArn = yield* issueRegionalCertificate({

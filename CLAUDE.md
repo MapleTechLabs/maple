@@ -55,6 +55,22 @@ with `packageManager`.
 - Each service owns `static readonly layer = Layer.effect(this, this.make)` with internal deps via
   `Layer.provide`. `Env`, `Database`, caches, and bindings come from the app root.
 
+## Deployment secrets
+
+Every secret a deploy reads from the environment is a class in `packages/infra/src/secrets.ts`, with
+the deployables allowed to bind it (`consumers`). A deploy reads one only through
+`resolveWorkerEnv(consumer, config)` (a Worker's env) or `resolveAs(consumer, config)` (anything
+else), from `@maple/infra/secret-guard`: the stack's config is default-deny, so a secret read by a
+deployable outside its `consumers`, or outside any scope, fails the deploy.
+
+- A new secret is a class there plus `Secrets.X.required` / `.optional` in the deployable's
+  `src/resources/env.ts` (`alchemy/secrets.ts` for a stack file); there is no by-name secret helper.
+  Widening access is an edit to `consumers`.
+- `test/alchemy/secret-grants.test.ts` holds every deployable's grants exact; a new deployable needs a
+  row there. Run it with `bunx vitest run --config test/alchemy/vitest.config.mts secret-grants`.
+- At runtime a secret is read as a service (`yield* Secrets.X`), its layer provided at the app root
+  beside `Env.layer`. Only `StripeSecretKey` has moved off `Env` so far.
+
 ## Warehouse queries
 
 No Tinybird pipes/endpoints. All queries use the ClickHouse DSL in `@maple/query-engine` and run

@@ -6,18 +6,9 @@
  */
 import { BoundChatSessions } from "@maple/backend/platform/chat-sessions"
 import { connectors } from "@maple/chat-platform/connectors"
-import {
-	MapleDb,
-	mapleDbEnv,
-	type MapleDomains,
-	type MapleRegion,
-	MapleStack,
-	type MapleStage,
-	mapleWorkerProps,
-	PRD_DOMAINS,
-} from "@maple/infra/cloudflare"
+import { MapleDb, mapleDbEnv, MapleStack, mapleWorkerProps, PRD_DOMAINS } from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
@@ -25,32 +16,23 @@ import { Effect, Layer, Ref, Scope, Array as Arr } from "effect"
 import { HttpRouter } from "effect/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
-import { connectorConfigEnv } from "./resources/env.ts"
+import { chatBotConfiguredEnv, chatBotConnectorSecretNames } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
 import { ConnectorRelayLive, ConnectorRelayObject } from "./relay/ConnectorRelay.ts"
 import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSocket.ts"
 import { CHAT_ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/chat-platform/anticipated"
-
-/** Config-sourced env. Connector config is optional: a connector without it is skipped. */
-const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
-	merge(
-		selfObservabilityEnv(stage, region),
-		// Not on previews: no webhook hostname, and a socket would fight dev's bot session.
-		...(stage.kind === "pr" ? [] : [connectorConfigEnv]),
-		// App link base, and the chart-image signing key (without it charts render as text).
-		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? PRD_DOMAINS.web}`),
-		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
-		// Opens credentials a connector sealed on a workspace row; only those connectors need it.
-		optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
-		optionalSecret("MAPLE_INGEST_KEY_DECRYPTION_KEYS"),
-	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const stack = yield* MapleStack
 	const { stage, region, domains, devEnv, db } = stack
-	const env = yield* configuredEnv(stage, region, domains)
+	// As `chat-bot`: a secret the catalog (`@maple/infra/secrets`) does not grant it fails the deploy.
+	const env = yield* resolveWorkerEnv(
+		"chat-bot",
+		chatBotConfiguredEnv({ stage, region, webOrigin: `https://${domains.web ?? PRD_DOMAINS.web}` }),
+		chatBotConnectorSecretNames,
+	)
 	return {
 		main: import.meta.url,
 		...mapleWorkerProps("chat-bot", stack),

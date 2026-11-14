@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import { AwsRegionMismatchError, resolveAwsRegion } from "@maple/infra/aws"
+import { withSecretGuard } from "@maple/infra/secret-guard"
 import {
 	ApiWorker,
 	AiWorker,
@@ -449,6 +450,8 @@ export default Alchemy.Stack(
 			chatBotWorker: chatBot.workerName,
 		}
 	}).pipe(
+		// Default-deny: a catalog secret read outside a deployable's scope fails the deploy.
+		withSecretGuard,
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(MapleStackLive),
