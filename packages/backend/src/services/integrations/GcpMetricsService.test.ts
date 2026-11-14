@@ -145,7 +145,7 @@ interface StubOptions {
 	readonly assets?: (call: ScopedCall) => Response | undefined
 	/** Answer for one `assets.list` call; undefined answers "no instances". */
 	readonly instances?: (call: ScopedCall) => Response | undefined
-	readonly ingestStatus?: number
+	readonly ingestStatus?: number | (() => number)
 }
 
 const json = (body: unknown, status = 200) =>
@@ -361,7 +361,8 @@ const stubFetch = (calls: Calls, options: StubOptions = {}) =>
 		}
 		if (url.host === "ingest.test") {
 			calls.ingest.push({ authorization, body })
-			return json({}, options.ingestStatus ?? 200)
+			const status = options.ingestStatus
+			return json({}, (typeof status === "function" ? status() : status) ?? 200)
 		}
 		throw new Error(`unexpected request to ${url.host}`)
 	}) as typeof fetch
@@ -490,6 +491,7 @@ interface PollState {
 	readonly last_metrics_received_at: Date | null
 	readonly last_metrics_error: string | null
 	readonly metrics_lease_until: Date | null
+	readonly metrics_hold_until: Date | null
 	readonly resources_synced_at: Date | null
 	readonly last_resources_error: string | null
 	readonly applied_metrics_enabled: boolean | null
@@ -500,7 +502,7 @@ const pollState = (testDb: TestDb, id: string) =>
 		queryFirstRow<PollState>(
 			testDb,
 			`SELECT metrics_watermark_at, last_metrics_received_at, last_metrics_error, metrics_lease_until,
-			        resources_synced_at, last_resources_error, applied_metrics_enabled
+			        metrics_hold_until, resources_synced_at, last_resources_error, applied_metrics_enabled
 			 FROM gcp_connectors WHERE id = $1`,
 			[id],
 		),
@@ -761,8 +763,15 @@ describe("GcpMetricsService", () => {
 			Effect.gen(function* () {
 				yield* insertConnector(testDb, CONNECTOR_A)
 				yield* pollAll
+				// The tick hands its lease back when it ends.
+				assert.isNull((yield* pollState(testDb, CONNECTOR_A)).metrics_lease_until)
 
-				// An overlapping tick a minute later finds the lease held and does nothing.
+				// A tick that starts while another still holds the lease does nothing.
+				yield* Effect.promise(() =>
+					executeSql(testDb, "UPDATE gcp_connectors SET metrics_lease_until = $1", [
+						DateTime.formatIso(DateTime.makeUnsafe(now + 3 * minute)),
+					]),
+				)
 				yield* TestClock.setTime(now + minute)
 				assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
 				assert.lengthOf(calls.oauth, 1)
@@ -887,9 +896,12 @@ describe("GcpMetricsService", () => {
 					2,
 				)
 				assert.notInclude(recorder.text(), "must not be stored")
-				// The HTTP client fails its own span on the 403 (OTel client semantics); Maple's do not.
+				// The request's Client span fails on the 403 (OTel client semantics); Maple's do not.
 				assert.deepStrictEqual(
-					Arr.filter(recorder.failedSpans(), (span) => !Str.startsWith("POST: ")(span)),
+					Arr.filter(
+						recorder.failedSpans(),
+						(span) => !Str.startsWith("VendorHttp.request: ")(span),
+					),
 					[],
 				)
 			}),
@@ -942,7 +954,7 @@ describe("GcpMetricsService", () => {
 					yield* TestClock.setTime(now + 5 * minute)
 					yield* pollAll
 					const failed = yield* sourcePollState(testDb, CONNECTOR_A)
-					// The source says what the connection says, and it is not a disconnect.
+					// The source says what the connection says, and a refused sign-in is a disconnect.
 					assert.strictEqual(
 						failed.last_poll_error,
 						(yield* pollState(testDb, CONNECTOR_A)).last_metrics_error,
@@ -950,7 +962,7 @@ describe("GcpMetricsService", () => {
 					assert.include(failed.last_poll_error, "can no longer sign in")
 					assert.strictEqual(failed.last_poll_at?.getTime(), now + 5 * minute)
 					assert.strictEqual(failed.last_poll_ok_at?.getTime(), now)
-					assert.isNull(failed.disconnected_at)
+					assert.strictEqual(failed.disconnected_at?.getTime(), now + 5 * minute)
 
 					impersonate = () => undefined
 					yield* TestClock.setTime(now + 10 * minute)
@@ -958,6 +970,7 @@ describe("GcpMetricsService", () => {
 					const recovered = yield* sourcePollState(testDb, CONNECTOR_A)
 					assert.strictEqual(recovered.last_poll_ok_at?.getTime(), now + 10 * minute)
 					assert.isNull(recovered.last_poll_error)
+					assert.isNull(recovered.disconnected_at)
 				}),
 			)
 		},
@@ -1351,6 +1364,37 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
+	it.effect("holds a connector whose every read was rate limited, keeping its source's last report", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls = makeCalls()
+		let limited = false
+		const stub = stubFetch(calls, {
+			monitoring: (call) => (limited ? googleError(429, "RESOURCE_EXHAUSTED") : onlyRequestCount(call)),
+		})
+		return run(
+			testDb,
+			stub,
+			Effect.gen(function* () {
+				yield* insertConnector(testDb, CONNECTOR_A)
+				yield* pollAll
+				limited = true
+				yield* TestClock.setTime(now + 5 * minute)
+				assert.deepInclude(yield* pollAll, { polled: 1, failures: 1 })
+				const state = yield* pollState(testDb, CONNECTOR_A)
+				assert.strictEqual(
+					state.last_metrics_error,
+					"Google rate-limited the Cloud Monitoring API for the project acme-prod. Maple retries in 15 minutes. If this repeats, raise that API's quota on the project. (Cloud Monitoring returned 429 RESOURCE_EXHAUSTED)",
+				)
+				assert.strictEqual(state.metrics_hold_until?.getTime(), now + 20 * minute)
+				// A rate limit is not the source's failure: it keeps the last report until it goes stale.
+				const source = yield* sourcePollState(testDb, CONNECTOR_A)
+				assert.deepStrictEqual([source.last_poll_at?.getTime(), source.last_poll_error], [now, null])
+				yield* TestClock.setTime(now + 10 * minute)
+				assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
+			}),
+		)
+	})
+
 	it.effect("stops a poll at its time budget when Google does not answer, keeping the window", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
@@ -1385,11 +1429,11 @@ describe("GcpMetricsService", () => {
 		)
 	})
 
-	it.effect("holds every connector of an organization that is over its plan limit for an hour", () => {
+	it.effect("holds every connector of an organization that is over its plan limit for 30 minutes", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls = makeCalls()
 		const paused =
-			"Metrics are paused: this Maple organization is over its plan limit. Maple tries again in an hour. See Settings, Billing."
+			"Metrics are paused: this Maple organization is over its plan limit. Maple tries again in 30 minutes. See Settings, Billing."
 		return run(
 			testDb,
 			stubFetch(calls, { monitoring: onlyRequestCount, ingestStatus: 402 }),
@@ -1408,15 +1452,77 @@ describe("GcpMetricsService", () => {
 				assert.strictEqual(state.last_metrics_error, paused)
 				assert.isNull(state.metrics_watermark_at)
 
-				// Neither is read again before the hour is over.
+				// Neither is read again before the hold is over, and the sibling's lease is left alone.
+				assert.strictEqual(state.metrics_hold_until?.getTime(), now + 30 * minute)
 				const sibling = yield* pollState(testDb, CONNECTOR_B)
 				assert.strictEqual(sibling.last_metrics_error, paused)
-				assert.strictEqual(sibling.metrics_lease_until?.getTime(), now + 60 * minute)
-				yield* TestClock.setTime(now + 30 * minute)
+				assert.strictEqual(sibling.metrics_hold_until?.getTime(), now + 30 * minute)
+				assert.strictEqual(sibling.metrics_lease_until?.getTime(), now + minute)
+				yield* TestClock.setTime(now + 25 * minute)
 				assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
 			}),
 		)
 	})
+
+	it.effect(
+		"holds an org whose key the gateway refused, then reads the held minutes instead of skipping them",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const calls = makeCalls()
+			let ingestStatus = 200
+			return run(
+				testDb,
+				stubFetch(calls, {
+					// A point in the last minute of whatever window is read, so every poll ships.
+					monitoring: (call) => {
+						if (call.metricType !== REQUEST_COUNT) return undefined
+						const endMs = Date.parse(call.params.get("interval.endTime") ?? "")
+						const series = requestCountSeries().timeSeries[0]
+						const point = {
+							interval: {
+								startTime: new Date(endMs - minute).toISOString(),
+								endTime: new Date(endMs).toISOString(),
+							},
+							value: { int64Value: "7" },
+						}
+						return json({ timeSeries: [{ ...series, points: [point] }] })
+					},
+					ingestStatus: () => ingestStatus,
+				}),
+				Effect.gen(function* () {
+					yield* insertConnector(testDb, CONNECTOR_A)
+					yield* pollAll
+					assert.strictEqual(
+						(yield* pollState(testDb, CONNECTOR_A)).metrics_watermark_at?.getTime(),
+						horizon,
+					)
+
+					// A revoked key is a refusal like a billing stop: the org is held, not read every tick.
+					ingestStatus = 403
+					yield* TestClock.setTime(now + 5 * minute)
+					assert.deepInclude(yield* pollAll, { polled: 1, failures: 1 })
+					const held = yield* pollState(testDb, CONNECTOR_A)
+					assert.include(held.last_metrics_error, "refused this organization's key")
+					assert.strictEqual(held.metrics_hold_until?.getTime(), now + 35 * minute)
+					assert.strictEqual(held.metrics_watermark_at?.getTime(), horizon)
+					yield* TestClock.setTime(now + 10 * minute)
+					assert.deepInclude(yield* pollAll, { polled: 0, calls: 0 })
+
+					// Once the hold runs out, the poll starts where the last good one ended.
+					ingestStatus = 200
+					yield* TestClock.setTime(now + 35 * minute)
+					assert.deepInclude(yield* pollAll, { polled: 1, failures: 0 })
+					assert.strictEqual(
+						calls.monitoring.at(-1)!.params.get("interval.startTime"),
+						new Date(horizon).toISOString(),
+					)
+					const resumed = yield* pollState(testDb, CONNECTOR_A)
+					assert.strictEqual(resumed.metrics_watermark_at?.getTime(), horizon + 35 * minute)
+					assert.isNull(resumed.last_metrics_error)
+				}),
+			)
+		},
+	)
 
 	it.effect("takes at most ten connectors of one organization per tick, the rest next time", () => {
 		const testDb = createTestDb(trackedDbs)

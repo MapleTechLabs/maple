@@ -82,9 +82,12 @@ export interface VendorRequest {
 	readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 	/** Appended to the base URL; encode path segments yourself. */
 	readonly path: string
-	readonly query?: Readonly<Record<string, string | undefined>>
+	/** An array value repeats the parameter. */
+	readonly query?: Readonly<Record<string, string | number | ReadonlyArray<string> | undefined>>
 	/** Sent as JSON. */
 	readonly body?: unknown
+	/** Sent as `application/x-www-form-urlencoded`, in place of `body`. */
+	readonly form?: Readonly<Record<string, string>>
 	readonly headers?: Readonly<Record<string, string>>
 	/** What the caller is doing, for the error message and the span. */
 	readonly operation?: string
@@ -171,9 +174,11 @@ export const make = <E>(options: VendorHttpOptions<E>): VendorHttpClient<E> => {
 			...request.headers,
 		})
 		const withBody =
-			request.body === undefined
-				? withHeaders
-				: HttpClientRequest.bodyJsonUnsafe(withHeaders, request.body)
+			request.form !== undefined
+				? HttpClientRequest.bodyUrlParams(withHeaders, request.form)
+				: request.body === undefined
+					? withHeaders
+					: HttpClientRequest.bodyJsonUnsafe(withHeaders, request.body)
 		return options.auth(withBody)
 	}
 
