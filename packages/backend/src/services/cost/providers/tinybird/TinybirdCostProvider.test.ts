@@ -83,7 +83,7 @@ describe("TinybirdCostProvider", () => {
 						[
 							"2026-11-09",
 							"Tinybird compute",
-							FAKE_ORG.workspace_id,
+							"",
 							"europe-west2",
 							FAKE_ORG.workspace_id,
 							"estimated",

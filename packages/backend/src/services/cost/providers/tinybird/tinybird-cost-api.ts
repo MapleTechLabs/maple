@@ -2,6 +2,7 @@
 // sources, on the one regional host the token belongs to. Tinybird has no spend API, so these are
 // usage reads that `normalize.ts` prices. Every failure is one `TinybirdCostApiError`.
 import { Array as Arr, Duration, Effect, Option, Redacted, Result, Schema, String as Str } from "effect"
+import { constTrue } from "effect/Function"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { CostPullWindow } from "../../CostProvider"
 import { addDays } from "../../sync-plan"
@@ -157,8 +158,21 @@ export const resolveHost = Effect.fn("TinybirdCost.resolveHost")(function* (
 	const answers = yield* Effect.forEach(
 		TINYBIRD_HOSTS,
 		(host) =>
-			Effect.result(query(httpClient, token, host, IDENTITY_SQL, Identity, PROBE_TIMEOUT)).pipe(
-				Effect.map((answer) => ({ host, answer })),
+			Effect.gen(function* () {
+				const answer = yield* Effect.result(
+					query(httpClient, token, host, IDENTITY_SQL, Identity, PROBE_TIMEOUT),
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.cost.tinybird.probe": Result.isSuccess(answer) ? "answered" : answer.failure.kind,
+				})
+				return { host, answer }
+			}).pipe(
+				// The client span fails every 4xx, and nine hosts answer each probe 403 by design: this
+				// span records the region's answer instead, failed only by a defect.
+				Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
+				Effect.withSpan("TinybirdCost.probeHost", {
+					attributes: { "maple.cost.tinybird.region": host.region },
+				}),
 			),
 		{ concurrency: "unbounded" },
 	)

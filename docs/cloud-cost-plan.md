@@ -550,8 +550,8 @@ real organization with spend, restated days, and how far back OpenAI serves.
   25 GB or 250 GB is not subtracted: at most $1.45 or $14.50 a month over.
 - Data transfer (`organization.data_transfer`): intra-region $0.01/GB, inter-region $0.10/GB, per
   day, workspace and kind.
-- Rows: `Tinybird compute`, `Tinybird storage` or `Tinybird data transfer` (the provider's name keeps generic words apart on the page), the workspace (by name) the resource, the host's
-  region the region. Only rows of no cost are left out: sub-cent days add up over workspaces.
+- Rows: `Tinybird compute`, `Tinybird storage` or `Tinybird data transfer` (the provider's name keeps generic words apart on the page), the workspace (by name) the resource of storage and
+  transfer, none for compute (the organization's own), the host's region the region. Only rows of no cost are left out: sub-cent days add up over workspaces.
 - Not counted: the plan's base fee (not readable), QPS and SaaS active-minute overages (no public
   price), LLM usage (covered by included credits), private link.
 - Live (2026-11-14, a real organization): the schemas, host refusals and the vCPU overage query

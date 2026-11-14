@@ -77,8 +77,9 @@ export const toCostRows = (
 			{
 				cloudService: "Tinybird compute",
 				usageType: "vCPU overage",
-				resourceId: account.accountId,
-				resourceType: "organization",
+				// The overage is the whole organization's, so no one resource carries it.
+				resourceId: "",
+				resourceType: "",
 				consumedUnit: "vCPU-second",
 			},
 			entry.overage_seconds,
