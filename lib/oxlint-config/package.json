@@ -24,7 +24,7 @@
 		"smoke": "node scripts/smoke.mjs"
 	},
 	"devDependencies": {
-		"@oxlint/plugins": "1.92.0"
+		"@oxlint/plugins": "1.93.0"
 	},
 	"peerDependencies": {
 		"@effect/tsgo": ">=0.64.1",
