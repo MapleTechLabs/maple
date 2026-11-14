@@ -83,6 +83,7 @@ import * as LogsList from "./logs/list"
 import * as LogPage from "./logs/log"
 import * as MetricsBrowse from "./metrics/browse"
 import * as Analytics from "./analytics"
+import * as ProductAnalytics from "./product-analytics"
 import * as Cost from "./cost"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
@@ -208,6 +209,7 @@ export const pages = [
 	UserDetail.page,
 	Share.page,
 	Analytics.page,
+	ProductAnalytics.page,
 	Cost.page,
 ]
 

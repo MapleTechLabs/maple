@@ -194,6 +194,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/alert-links.ts` `ruleHref`, `incidentHref`, `alertsHref`, `createHref`: A rule's page.
 - `apps/web/src/page/kit/alert-test-rows.ts` `hubAt`, `ruleId`, `ruleRow`, `stateRow`, `incidentRow`, `destinationRow`: Synced alert rows for the alerts pages' scene tests, the shape Electric delivers.
 - `apps/web/src/page/kit/alert-time.ts` `msIso`, `formatSpan`, `everyMinutes`: How alert pages write times: ISO stamps, spans in their two largest units, check cadences.
+- `apps/web/src/page/kit/analytics-filter-rail.ts` `isHostLike`, `favicon`, `analyticsFilterRail`: The session-dimension filter rail of /analytics and /product-analytics, its options from `getWebAnalyticsBreakdowns`.
 - `apps/web/src/page/kit/anomaly-evidence.ts` `anomalySummary`, `anomalySignalChart`, `anomalyFingerprintRow`: The anomaly detector's evidence: the observed value against its baseline, the signal chart with its baseline and threshold, and the error fingerprints grouped into it.
 - `apps/web/src/page/kit/anomaly-row.ts` `anomalyHref`, `anomalyRow`: One anomaly as a list row.
 - `apps/web/src/page/kit/audit-entry-link.ts` `auditEntryHref`: The Settings audit log ending at one entry, with that entry open.
