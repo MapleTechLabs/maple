@@ -46,7 +46,7 @@ export const integrationSourceName = {
 	github: (installation: { readonly accountLogin: string }) => `GitHub ${installation.accountLogin}`,
 	aws: (connection: { readonly accountId: string }) => `AWS ${connection.accountId}`,
 	supabase: (organization: { readonly name: string }) => `Supabase ${organization.name}`,
-}
+} satisfies Record<PullSourcePlatform, (owner: never) => string>
 
 /** A new integration source. Create it in the transaction that writes the row pointing at it. */
 export const createIntegrationSource = Effect.fnUntraced(function* (
@@ -311,57 +311,65 @@ export const readHealthOverrides = Effect.fnUntraced(function* (db: MapleDb, org
  * scrape targets and AWS streams add to its health.
  */
 export const readSourceOwners = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId, now: number) {
-	const [targets, awsConnections, ...owners] = yield* Effect.all(
-		[
-			db.run(
+	// Keyed by every pull platform, so a new integration's rows cannot go unlinked from their source.
+	const owners = yield* Effect.all(
+		{
+			prometheus: db.run(
 				PG.from(ScrapeTargets)
 					.select("id", "sourceId", "enabled", "scrapeIntervalSeconds")
 					.where(($) => [$.orgId.eq(orgId), $.managedBy.isNull()]),
 			),
-			readAwsHealth(db, orgId),
-			db.run(
+			aws: readAwsHealth(db, orgId),
+			gcp: db.run(
 				PG.from(GcpConnectors)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-			db.run(
+			railway: db.run(
 				PG.from(RailwayConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-			db.run(
+			vercel: db.run(
 				PG.from(VercelConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-			db.run(
+			planetscale: db.run(
 				PG.from(PlanetscaleConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-			db.run(
+			supabase: db.run(
 				PG.from(SupabaseConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-			db.run(
+			// Only Cloudflare OAuth grants own a source; Supabase and PlanetScale link theirs on their own rows.
+			cloudflare: db.run(
 				PG.from(OAuthConnections)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId), $.sourceId.isNotNull()]),
 			),
-			db.run(
+			github: db.run(
 				PG.from(VcsInstallations)
 					.select("id", "sourceId")
 					.where(($) => [$.orgId.eq(orgId)]),
 			),
-		],
+		} satisfies Record<
+			PullSourcePlatform,
+			Effect.Effect<ReadonlyArray<{ readonly id: string; readonly sourceId: SourceId | null }>, unknown>
+		>,
 		{ concurrency: "unbounded" },
 	)
-	const linked = Arr.flatMap([...targets, ...awsConnections, ...owners.flat()], (owner) =>
+	const linked = Arr.flatMap(Rec.values(owners).flat(), (owner) =>
 		owner.sourceId === null ? [] : [[owner.sourceId, owner.id] as const],
 	)
 	return {
 		integrationIds: new Map(linked),
-		overrides: new Map([...overridesBySource(targets), ...awsOverridesBySource(awsConnections, now)]),
+		overrides: new Map([
+			...overridesBySource(owners.prometheus),
+			...awsOverridesBySource(owners.aws, now),
+		]),
 	}
 })
