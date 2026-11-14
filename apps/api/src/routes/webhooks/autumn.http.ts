@@ -3,6 +3,7 @@ import { BillingCustomerResolver } from "@maple/backend/services/billing/Billing
 import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/http"
 import { Env } from "@maple/backend/platform/Env"
+import { AutumnWebhookSecret } from "@maple/infra/secrets"
 import { CancellationReviewQueue } from "@maple/backend/services/cancellation-review/CancellationReviewQueue"
 import {
 	AUTUMN_BILLING_UPDATED,
@@ -34,6 +35,7 @@ const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 export const AutumnWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
+		const webhookSecret = yield* AutumnWebhookSecret
 		const productEvents = yield* ProductEventsService
 		const cancellationReviews = yield* CancellationReviewQueue
 		const billingCustomers = yield* BillingCustomerResolver
@@ -45,7 +47,7 @@ export const AutumnWebhookRouter = HttpRouter.use((router) =>
 
 			const received = yield* receiveSvixWebhook({
 				provider: "autumn",
-				secret: env.AUTUMN_WEBHOOK_SECRET,
+				secret: webhookSecret,
 				request: req,
 			})
 			if (received._tag === "rejected") return received.response

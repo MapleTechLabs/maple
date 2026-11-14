@@ -16,3 +16,9 @@
 [data-slot="avatar"]:has(> img[data-slot="avatar-image"][data-loaded]) > [data-slot="avatar-fallback"] {
 	visibility: hidden;
 }
+
+/* Navigation's pending state (`page/page-hold.ts`): the page left's body (the frame's last child,
+   after the top bar and billing banners, which stay live) takes no clicks. */
+[data-page-hold="held"] > :last-child {
+	pointer-events: none;
+}

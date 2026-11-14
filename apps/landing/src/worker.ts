@@ -9,10 +9,12 @@ import {
 	WORKER_COMPATIBILITY_DATE,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
-import { optionalPlain, optionalSecret, plainFrom } from "@maple/infra/env"
+import { optionalPlain, plainFrom } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { siteBuildMemo } from "@maple/infra/worker-build"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
+import { landingBuildSecrets } from "./resources/env.ts"
 
 const props = Effect.gen(function* () {
 	const stack = yield* MapleStack
@@ -34,8 +36,7 @@ const props = Effect.gen(function* () {
 			...(yield* optionalPlain("PUBLIC_CLERK_PUBLISHABLE_KEY")),
 			...(yield* optionalPlain("PUBLIC_MAPLE_COOKIE_DOMAIN")),
 			// Server-side build reads: the pricing table and the star count.
-			...(yield* optionalSecret("AUTUMN_SECRET_KEY")),
-			...(yield* optionalSecret("GITHUB_TOKEN")),
+			...(yield* resolveWorkerEnv("landing", landingBuildSecrets)),
 		},
 		assets: {
 			// Assets are served before the Worker runs, so extensionless pages (the ones with

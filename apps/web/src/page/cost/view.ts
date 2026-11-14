@@ -9,7 +9,6 @@ import { failureKey } from "@maple/views/data/load-failure"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
 import { button } from "@maple/views/ui/button"
-import { chartLoading } from "@maple/views/ui/chart-state"
 import {
 	empty,
 	emptyContent,
@@ -26,14 +25,12 @@ import { refreshButton } from "@maple/views/ui/refresh-button"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { grid } from "@maple/views/ui/grid"
 import { emptyActions } from "@maple/views/ui/signal-empty-state"
-import { hstack, vstack } from "@maple/views/ui/stack"
-import { tableSkeleton } from "@maple/views/ui/table-skeleton"
+import { hstack } from "@maple/views/ui/stack"
 import { typography } from "@maple/views/ui/typography"
 import { COST_GROUP_BYS } from "../../route/search"
 import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { pageTime } from "../kit/page-time"
-import { statRailLoading } from "../kit/stat-rail"
 import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
 import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
 import { Message } from "./message"
@@ -200,13 +197,6 @@ const firstSync = (h: H, sources: ReadonlyArray<CostSourceSummary>): Html => {
 	)
 }
 
-const loading = (h: H): Html =>
-	vstack(h, { gap: "6" }, [
-		statRailLoading(h, 3, 3),
-		chartLoading(h, { variant: "bar", height: 300 }),
-		tableSkeleton(h, { columns: 5, rows: 6 }),
-	])
-
 /** Group by on the left, the filters in effect beside it. */
 const toolbar = (h: H, model: Model): Html => {
 	const chips = activeFilterChips(h, {
@@ -278,7 +268,8 @@ const isAwaitingCost = (model: Model): boolean =>
 
 const body = (h: H, model: Model, timeZone: string): ReadonlyArray<Html> =>
 	AsyncData.matchData(model.sources.data, {
-		onEmpty: () => [loading(h)],
+		// The page's own frame while sources load: each section draws its loading state in place.
+		onEmpty: () => content(h, model),
 		onFailure: (failure) => [
 			errorState(h, { failure, title: "Couldn't load cost", onRetry: Message.ClickedRetry() }),
 		],

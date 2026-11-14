@@ -24,7 +24,8 @@ import type { TileContext, TileWidget } from "./tiles"
 import { frame } from "./tiles-frame"
 import { isServiceChart, serviceChart, serviceLegend } from "./tiles-service"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
-import { Array as Arr, Record as Rec } from "effect"
+import { Array as Arr, Predicate, Record as Rec } from "effect"
+import { dataSourceEndpoint, PRODUCT_EVENTS_FUNNEL_ENDPOINT } from "@maple/widgets/dashboard"
 
 // Each chart branch hands its chart only the settings it declares.
 // TODO(chart-axes): line/area/bar thresholds, log scale and soft bounds are not drawn yet.
@@ -82,6 +83,17 @@ const toPrimitiveRows = (rows: Rows): ReadonlyArray<Primitive> =>
 			),
 		),
 	)
+
+/**
+ * The funnel's bars are ordered steps of one population, not categories: it reads the product-event
+ * funnel route. A share strips the endpoint, so there any route-fed funnel counts.
+ */
+const isStepFunnel = (dataSource: unknown): boolean => {
+	const endpoint = dataSourceEndpoint(dataSource)
+	return endpoint === null
+		? Predicate.hasProperty(dataSource, "kind") && dataSource.kind === "route"
+		: endpoint === PRODUCT_EVENTS_FUNNEL_ENDPOINT
+}
 
 const skeletonOf = (category: ChartCategory, widget: Widget): ChartSkeletonVariant =>
 	category === "funnel" && widget.display.funnel?.variant === "dropoff" ? "funnel-dropoff" : category
@@ -260,6 +272,7 @@ const chartView = <M>(h: HtmlBuilder<M>, ctx: TileContext<M>, widget: Widget, re
 				className,
 				unit: display.unit,
 				showStepPercent: display.funnel?.showStepPercent,
+				isSingleHue: isStepFunnel(widget.dataSource),
 			}
 			return display.funnel?.variant === "dropoff"
 				? h.submodel({ ...common, view: FunnelDropoffChart.view, viewInputs: inputs })

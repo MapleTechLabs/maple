@@ -10,6 +10,7 @@ vi.hoisted(() => {
 })
 import { Message } from "./message"
 import { ClerkPhase, type Model, Session } from "./model"
+import * as PageHold from "./page/page-hold"
 import { initCustomer } from "./page/onboarding/plan-gate"
 import * as Preload from "./page/preload"
 import * as SignIn from "./page/sign-in"
@@ -17,7 +18,7 @@ import type { ClerkSnapshot } from "./platform/clerk"
 import { AppRoute } from "./route"
 import * as Shell from "./shell"
 import * as Toast from "@maple/views/ui/toast"
-import { planGateOf, update } from "./update"
+import { pageContextOf, planGateOf, update } from "./update"
 import * as TooltipHost from "@maple/views/ui/tooltip-host"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -35,6 +36,7 @@ const base = (knownToRenderApp: Record<string, boolean>): Model => ({
 	page: null,
 	pageInstances: 0,
 	parkedPages: [],
+	pageHold: PageHold.Model.None(),
 	onboarding: null,
 	clerkSnapshot: null,
 	customer: initCustomer(),
@@ -59,6 +61,7 @@ const snapshot: ClerkSnapshot = {
 			aiAutoTriage: false,
 			cloudCost: false,
 			dataSources: false,
+			productAnalytics: false,
 			releases: false,
 			securityAudit: false,
 			statusPages: false,
@@ -133,5 +136,35 @@ describe("statusPages rollout", () => {
 		const loaded = update(atStatusPages(), Message.CompletedLoadClerk({ snapshot: withFlag(true) }))
 		expect(loaded.model.page).not.toBeNull()
 		expect(namesOf(loaded)).not.toContain("ReplaceUrl")
+	})
+})
+
+describe("productAnalytics rollout", () => {
+	const withFlag = (productAnalytics: boolean): ClerkSnapshot => ({
+		...snapshot,
+		maybeOrganization: Option.map(snapshot.maybeOrganization, (organization) => ({
+			...organization,
+			flags: { ...organization.flags, productAnalytics },
+		})),
+	})
+	const atProductAnalytics = (): Model => ({
+		...base({ [orgId]: true }),
+		route: AppRoute.ProductAnalytics({ search: {} }),
+	})
+	const linksOf = (model: Model) =>
+		Option.map(pageContextOf(model), (context) => context.hasProductAnalytics)
+
+	test("an org outside the rollout is sent home, and its pages are told not to link there", () => {
+		const loaded = update(atProductAnalytics(), Message.CompletedLoadClerk({ snapshot: withFlag(false) }))
+		expect(loaded.model.page).toBeNull()
+		expect(namesOf(loaded)).toContain("ReplaceUrl")
+		expect(linksOf(loaded.model)).toEqual(Option.some(false))
+	})
+
+	test("an org in the rollout gets the page, and its pages may link there", () => {
+		const loaded = update(atProductAnalytics(), Message.CompletedLoadClerk({ snapshot: withFlag(true) }))
+		expect(loaded.model.page).not.toBeNull()
+		expect(namesOf(loaded)).not.toContain("ReplaceUrl")
+		expect(linksOf(loaded.model)).toEqual(Option.some(true))
 	})
 })

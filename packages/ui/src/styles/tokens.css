@@ -9,6 +9,8 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+	/* How long a wait stays blank before its skeleton fades in (`loading-delay`, chart ghosts). */
+	--loading-delay: 300ms;
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.18 0.006 70);
 	--card: oklch(1 0 0);
@@ -542,7 +544,7 @@
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 	--ease-move: cubic-bezier(0.77, 0, 0.175, 1);
 	--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-	--animate-skeleton: skeleton 2s -1s infinite linear;
+	--animate-skeleton: skeleton 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 	--animate-caret-blink: 1s ease-out infinite caret-blink;
 	--animate-tile-in: tile-in 0.35s ease both;
 	/* Toast re-notify replays. The odd/even pairs are deliberate duplicates
@@ -694,10 +696,13 @@
 	--color-severity-fatal-a2: color-mix(in oklab, var(--color-severity-fatal) 12%, transparent);
 	--color-severity-fatal-a3: color-mix(in oklab, var(--color-severity-fatal) 24%, transparent);
 	--color-severity-fatal-a4: color-mix(in oklab, var(--color-severity-fatal) 40%, transparent);
+	/* Same timing as `chart-skeleton-sweep`: the band crosses, then rests. `syncSkeletonSweeps`
+	   puts every sweep on one clock. */
 	@keyframes skeleton {
 		from {
 			transform: translateX(-100%);
 		}
+		70%,
 		to {
 			transform: translateX(100%);
 		}
@@ -879,15 +884,21 @@
 	color: var(--foreground);
 }
 
-/* A wait stays blank for 300ms before its skeleton shows, so a fast load never flashes. */
+/* A wait stays blank for `--loading-delay` before its skeleton fades in, so a fast load never
+   flashes. A page that already waited sets it to 0ms. Charts share it (`chart-skeleton.css`). */
 @keyframes loading-delay {
 	from {
-		visibility: hidden;
+		opacity: 0;
 	}
 }
 
 @utility loading-delay {
-	animation: loading-delay 0s 300ms both;
+	animation: loading-delay 150ms var(--ease-out) var(--loading-delay) both;
+}
+
+/* A page shown after a navigation's hold ran out already waited: its skeletons show at once. */
+[data-page-hold="waited"] {
+	--loading-delay: 0ms;
 }
 
 /* A hatch for something missing (an on-call gap): the error tone's lines over no fill. */

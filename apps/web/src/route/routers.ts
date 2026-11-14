@@ -327,6 +327,11 @@ const routers = {
 		Route.mapTo(AppRoute.AlertsSection),
 	),
 	Analytics: pipe(path("analytics"), search(Search.AnalyticsSearch), Route.mapTo(AppRoute.Analytics)),
+	ProductAnalytics: pipe(
+		path("product-analytics"),
+		search(Search.ProductAnalyticsSearch),
+		Route.mapTo(AppRoute.ProductAnalytics),
+	),
 	Anomalies: pipe(path("anomalies"), search(Search.AnomaliesSearch), Route.mapTo(AppRoute.Anomalies)),
 	CodeReview: pipe(path("code-review"), search(Search.CodeReviewSearch), Route.mapTo(AppRoute.CodeReview)),
 	Cost: pipe(path("cost"), search(Search.CostSearch), Route.mapTo(AppRoute.Cost)),

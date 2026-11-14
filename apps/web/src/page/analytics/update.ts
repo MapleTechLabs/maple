@@ -32,7 +32,6 @@ import {
 	AiReferralPoint,
 	AnalyticsEvent,
 	AnalyticsPage,
-	Breakdowns,
 	Live,
 	type Model,
 	PageviewsPoint,
@@ -46,6 +45,7 @@ import {
 	TraceSample,
 } from "./model"
 import { filtersOf, requestSlots, searchSortOf, showsOverviewContent, tabOf } from "./requests"
+import { Breakdowns } from "../kit/analytics-filter-rail"
 
 type Return = PageReturn<Model, Message>
 type Cmd = Command.Command<Message, never, Resources>

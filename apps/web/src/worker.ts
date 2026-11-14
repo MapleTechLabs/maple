@@ -13,6 +13,7 @@ import {
 } from "@maple/infra/cloudflare"
 import { siteBuildMemo } from "@maple/infra/worker-build"
 import { commitSha, plainFrom, selfObservabilityEnv } from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Schema } from "effect"
 import { API_PROXY_PREFIX } from "./api-proxy.ts"
@@ -44,7 +45,7 @@ const props = Effect.gen(function* () {
 			// Share previews go over the service binding, which still needs an absolute URL.
 			...(urls.api === "" ? undefined : { MAPLE_API_BASE_URL: urls.api }),
 			API: api,
-			...(yield* selfObservabilityEnv(stage, region)),
+			...(yield* resolveWorkerEnv("web", selfObservabilityEnv(stage, region))),
 			// Client build inputs: a change here rebuilds with no source change.
 			// Same-origin through the proxy where the stage has an app domain.
 			VITE_API_BASE_URL:

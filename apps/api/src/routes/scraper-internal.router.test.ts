@@ -10,7 +10,7 @@ import {
 } from "@maple/domain/http"
 import { SourceId } from "@maple/primitives"
 import type { ScrapeTargetRow } from "@maple/db/tables"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import { publicSourceId } from "@maple/backend/services/integrations/integration-sources"
 import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
@@ -114,7 +114,7 @@ const makeHarness = Effect.fnUntraced(function* (rowCount: number) {
 				resolveIngestKey: die,
 			}),
 		),
-		Layer.provide(Env.layer),
+		Layer.provide(EnvTestLive),
 		Layer.provide(
 			ConfigProvider.layer(
 				ConfigProvider.fromUnknown({

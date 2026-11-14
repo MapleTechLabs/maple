@@ -9,9 +9,7 @@ import type { Model } from "./model"
 import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
-import { planetscaleFlowView } from "../infra-integrations/planetscale/integration/view-flow-planetscale"
 import { prometheusFlowView } from "./view-flow-prometheus"
-import { cloudflareFlowView } from "../infra-integrations/cloudflare/integration/view-flow-cloudflare"
 import { githubFlowView } from "./view-flow-github"
 import { awsFlowView } from "../infra-integrations/aws/integration/view-flow-aws"
 
@@ -74,8 +72,8 @@ export const flowView = (
 	stage: FlowStage,
 	timeZone: string,
 ): Html => {
-	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return provider.flowView(h, model, stage, timeZone)
+	const providerView = providerModuleOf(integration)?.flowView ?? null
+	if (providerView !== null) return providerView(h, model, stage, timeZone)
 	switch (integration) {
 		case "prometheus":
 		case "warpstream":
@@ -84,10 +82,6 @@ export const flowView = (
 			return awsFlowView(h, model, stage, timeZone)
 		case "gcp":
 			return gcpFlowView(h, model, stage, timeZone)
-		case "planetscale":
-			return planetscaleFlowView(h, model, stage)
-		case "cloudflare":
-			return cloudflareFlowView(h, model, stage)
 		case "github":
 			return githubFlowView(h, model, stage)
 		default:

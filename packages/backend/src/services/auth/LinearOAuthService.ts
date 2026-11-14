@@ -10,6 +10,7 @@ import {
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
+import { LinearOAuthClientSecret } from "@maple/infra/secrets"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import {
 	isNotFound,
@@ -45,24 +46,22 @@ const TeamsSchema = Schema.Struct({
 
 const resolveConfig = (
 	env: EnvConfig,
+	configuredSecret: Option.Option<Redacted.Redacted>,
 ): Effect.Effect<
 	OAuthTokenEndpointConfig & { readonly clientSecret: Redacted.Redacted },
 	IntegrationsValidationError
 > =>
-	Option.match(
-		Option.all({ clientId: env.LINEAR_OAUTH_CLIENT_ID, clientSecret: env.LINEAR_OAUTH_CLIENT_SECRET }),
-		{
-			onNone: () =>
-				Effect.fail(
-					new IntegrationsValidationError({
-						message:
-							"LINEAR_OAUTH_CLIENT_ID and LINEAR_OAUTH_CLIENT_SECRET are required to use Linear",
-					}),
-				),
-			onSome: ({ clientId, clientSecret }) =>
-				Effect.succeed({ tokenUrl: TOKEN_URL, clientId, clientSecret }),
-		},
-	)
+	Option.match(Option.all({ clientId: env.LINEAR_OAUTH_CLIENT_ID, clientSecret: configuredSecret }), {
+		onNone: () =>
+			Effect.fail(
+				new IntegrationsValidationError({
+					message:
+						"LINEAR_OAUTH_CLIENT_ID and LINEAR_OAUTH_CLIENT_SECRET are required to use Linear",
+				}),
+			),
+		onSome: ({ clientId, clientSecret }) =>
+			Effect.succeed({ tokenUrl: TOKEN_URL, clientId, clientSecret }),
+	})
 
 export interface LinearTeam {
 	readonly id: string
@@ -129,6 +128,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 		make: Effect.gen(function* () {
 			const database = yield* Database
 			const env = yield* Env
+			const clientSecret = yield* LinearOAuthClientSecret
 			const httpClient = yield* HttpClient.HttpClient
 			const oauth = yield* makeOAuthConnectionHelpers({
 				provider: LINEAR_PROVIDER,
@@ -142,7 +142,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				userId: UserId,
 				options: { readonly callbackUrl: string; readonly returnTo?: string },
 			) {
-				const config = yield* resolveConfig(env)
+				const config = yield* resolveConfig(env, clientSecret)
 				const state = yield* newOAuthState
 				yield* oauth.saveState(
 					state,
@@ -167,7 +167,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				state: string,
 				initiator: OAuthFlowInitiator,
 			) {
-				const config = yield* resolveConfig(env)
+				const config = yield* resolveConfig(env, clientSecret)
 				const stateRow = yield* oauth.consumeStateRow(state, initiator)
 				const tokens = yield* oauth.exchangeAuthorizationCode(config, code, stateRow.redirectUri)
 				const viewer = yield* linearGraphql(
@@ -218,7 +218,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				use: (accessToken: string) => Effect.Effect<A, E | IntegrationsRevokedError>,
 			): Effect.Effect<A, E | LinearAccessError> =>
 				Effect.gen(function* () {
-					const config = yield* resolveConfig(env)
+					const config = yield* resolveConfig(env, clientSecret)
 					return yield* oauth.withRejectedTokenRetry(
 						config,
 						orgId,

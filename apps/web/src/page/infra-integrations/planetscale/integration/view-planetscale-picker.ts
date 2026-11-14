@@ -9,6 +9,8 @@ import * as Field from "@maple/views/ui/field"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { skeleton } from "@maple/views/ui/skeleton"
 import { Message } from "../../../integrations/message"
+import { PlanetscaleMessage } from "./planetscale"
+import { toHub } from "./view-planetscale-parts"
 import type { Model } from "../../../integrations/model"
 import { parsePatternList } from "./planetscale"
 import { typography } from "@maple/views/ui/typography"
@@ -50,7 +52,7 @@ const optionCard = (h: H, name: string, isChecked: boolean): Html =>
 			name: "planetscale-organization",
 			isChecked,
 			label: name,
-			onChange: Message.SelectedOrganization({ name }),
+			onChange: toHub(PlanetscaleMessage.SelectedOrganization({ name })),
 			className: "items-start gap-3 p-4",
 		},
 		[
@@ -95,7 +97,7 @@ const branchField = (
 				h.Placeholder(options.placeholder),
 				h.Autocomplete("off"),
 				...Field.controlAttributes(h, fieldModel, (message) =>
-					Message.GotBranchFieldMessage({ field, message }),
+					toHub(PlanetscaleMessage.GotBranchFieldMessage({ field, message })),
 				),
 			],
 		}),
@@ -208,7 +210,7 @@ const dialogPicker = (h: H, model: Model): Html => {
 				{
 					variant: "outline",
 					isDisabled: card.isSelecting,
-					attributes: [h.OnClick(Message.ClickedPickerCancel())],
+					attributes: [h.OnClick(toHub(PlanetscaleMessage.ClickedPickerCancel()))],
 				},
 				["Cancel"],
 			),
@@ -217,7 +219,7 @@ const dialogPicker = (h: H, model: Model): Html => {
 				{
 					isDisabled: card.selectedOrg === null,
 					isLoading: card.isSelecting,
-					attributes: [h.OnClick(Message.SubmittedOrganization())],
+					attributes: [h.OnClick(toHub(PlanetscaleMessage.SubmittedOrganization()))],
 				},
 				["Save changes"],
 			),
@@ -249,6 +251,6 @@ export const pickerDialog = (h: H, model: Model): Html => {
 				DialogView.dialogPanel(h, "dialog", id, [dialogPicker(h, model)]),
 			],
 		},
-		toParentMessage: (message) => Message.GotPickerDialogMessage({ message }),
+		toParentMessage: (message) => toHub(PlanetscaleMessage.GotPickerDialogMessage({ message })),
 	})
 }

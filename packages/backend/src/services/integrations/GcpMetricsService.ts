@@ -35,7 +35,7 @@ import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { pollFleet } from "./poll-fleet"
-import { Env } from "@maple/backend/platform/Env"
+import { GcpServiceAccountKey } from "@maple/infra/secrets"
 import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
 import {
 	type IngestSendError,
@@ -358,7 +358,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
-			const env = yield* Env
+			const serviceAccountKey = yield* GcpServiceAccountKey
 			const baseHttpClient = yield* HttpClient.HttpClient
 			const ingestKeys = yield* OrgIngestKeysService
 			const ingest = yield* makeIngestSender
@@ -881,7 +881,7 @@ export class GcpMetricsService extends Context.Service<GcpMetricsService, GcpMet
 			})
 
 			const pollAll = Effect.gen(function* () {
-				const encodedKey = env.MAPLE_GCP_SERVICE_ACCOUNT_KEY
+				const encodedKey = serviceAccountKey
 				if (Option.isNone(encodedKey)) return IDLE
 				const now = yield* Clock.currentTimeMillis
 				const due = yield* dbExecute((db) =>

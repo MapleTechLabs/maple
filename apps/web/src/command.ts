@@ -4,6 +4,7 @@ import { Clock, Duration, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { load, pushUrl, replaceUrl } from "foldkit/navigation"
 import { Message } from "./message"
+import { PAGE_HOLD_MS } from "./page/page-hold"
 import { PRELOAD_HOLD_MS } from "./page/preload"
 import { clearSessionToken, MapleAuthApi, readSessionToken, saveSessionToken } from "./platform/auth-api"
 import { saveSelectedPlanKnown } from "./page/onboarding/plan-gate"
@@ -141,6 +142,14 @@ export const WaitCustomerGrace = Command.define("WaitCustomerGrace", {
 	messages: [Message.ElapsedCustomerGrace],
 	execute: ({ orgId }) =>
 		Effect.sleep(CUSTOMER_SPLASH_GRACE).pipe(Effect.as(Message.ElapsedCustomerGrace({ orgId }))),
+})
+
+/** Ends a navigation's hold on the page it left (`page/page-hold.ts`). */
+export const WaitPageHold = Command.define("WaitPageHold", {
+	args: { instance: Schema.Number },
+	messages: [Message.ElapsedPageHold],
+	execute: ({ instance }) =>
+		Effect.sleep(Duration.millis(PAGE_HOLD_MS)).pipe(Effect.as(Message.ElapsedPageHold({ instance }))),
 })
 
 /** The plan settled: remember whether this org may render the app. */

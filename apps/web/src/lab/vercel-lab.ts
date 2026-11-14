@@ -10,6 +10,7 @@ import { AsyncData, Command, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { Message as IntegrationsMessage } from "../page/integrations/message"
+import { VercelMessage } from "../page/infra-integrations/vercel/integration/vercel"
 import { Model as IntegrationsModel } from "../page/integrations/model"
 import * as Integrations from "../page/integrations/update"
 import { catalogEntry } from "../page/integrations/catalog"
@@ -165,28 +166,36 @@ const answerOf = (command: HubCommand): IntegrationsMessage | null => {
 	switch (command.name) {
 		case "DiscoverVercel": {
 			const forTeam = stringArg(command, "forTeam")
-			return IntegrationsMessage.CompletedVercelDiscover({
-				forTeam,
-				response: new VercelDiscoverResponse({
-					teams: TEAMS,
-					projects: forTeam === null ? [] : PICKABLE,
+			return IntegrationsMessage.GotVercelMessage({
+				message: VercelMessage.CompletedDiscover({
+					forTeam,
+					response: new VercelDiscoverResponse({
+						teams: TEAMS,
+						projects: forTeam === null ? [] : PICKABLE,
+					}),
+					error: null,
 				}),
-				error: null,
 			})
 		}
 		case "ConnectVercel":
-			return IntegrationsMessage.CompletedVercelConnect({
-				mode: stringArg(command, "mode") === "token" ? "token" : "connect",
-				teamName: "Acme",
-				error: null,
+			return IntegrationsMessage.GotVercelMessage({
+				message: VercelMessage.CompletedConnect({
+					mode: stringArg(command, "mode") === "token" ? "token" : "connect",
+					teamName: "Acme",
+					error: null,
+				}),
 			})
 		case "SaveVercelSettings":
-			return IntegrationsMessage.CompletedVercelSave({
-				isReapply: command.args?.["isReapply"] === true,
-				error: null,
+			return IntegrationsMessage.GotVercelMessage({
+				message: VercelMessage.CompletedSave({
+					isReapply: command.args?.["isReapply"] === true,
+					error: null,
+				}),
 			})
 		case "SyncVercel":
-			return IntegrationsMessage.CompletedVercelSync({ failure: null })
+			return IntegrationsMessage.GotVercelMessage({
+				message: VercelMessage.CompletedSync({ failure: null }),
+			})
 		case "DisconnectIntegration":
 			return IntegrationsMessage.CompletedDisconnect({ integration: "vercel", failure: null })
 		default:
@@ -228,35 +237,43 @@ const STEP_BUTTONS: ReadonlyArray<Readonly<{ step: ConnectStep; label: string }>
 ]
 
 const typedToken = [
-	IntegrationsMessage.ClickedVercelConfigure({ target: "connect" }),
-	IntegrationsMessage.GotVercelTokenMessage({
-		message: Field.Message.ChangedValue({ value: "vc_lab_token_0001" }),
+	IntegrationsMessage.GotVercelMessage({ message: VercelMessage.ClickedConfigure({ target: "connect" }) }),
+	IntegrationsMessage.GotVercelMessage({
+		message: VercelMessage.GotTokenMessage({
+			message: Field.Message.ChangedValue({ value: "vc_lab_token_0001" }),
+		}),
 	}),
 ]
 
 /** Each step as the admin reaches it: the token typed, the lookup answered, the team and settings picked. */
 const STEP_MESSAGES = {
 	token: typedToken,
-	team: [...typedToken, IntegrationsMessage.SubmittedVercelToken()],
+	team: [...typedToken, IntegrationsMessage.GotVercelMessage({ message: VercelMessage.SubmittedToken() })],
 	settings: [
 		...typedToken,
-		IntegrationsMessage.SubmittedVercelToken(),
-		IntegrationsMessage.GotVercelTeamMessage({
-			message: RadioGroup.Message.SelectedRadio({ value: TEAMS[0]?.id ?? "" }),
+		IntegrationsMessage.GotVercelMessage({ message: VercelMessage.SubmittedToken() }),
+		IntegrationsMessage.GotVercelMessage({
+			message: VercelMessage.GotTeamMessage({
+				message: RadioGroup.Message.SelectedRadio({ value: TEAMS[0]?.id ?? "" }),
+			}),
 		}),
-		IntegrationsMessage.SubmittedVercelTeam(),
-		IntegrationsMessage.ChangedVercelScope({ scope: "some" }),
-		IntegrationsMessage.ToggledVercelProject({ id: "prj_storefront" }),
-		IntegrationsMessage.ToggledVercelProject({ id: "prj_api" }),
-		IntegrationsMessage.ChangedVercelSampling({ value: "0.25" }),
+		IntegrationsMessage.GotVercelMessage({ message: VercelMessage.SubmittedTeam() }),
+		IntegrationsMessage.GotVercelMessage({ message: VercelMessage.ChangedScope({ scope: "some" }) }),
+		IntegrationsMessage.GotVercelMessage({
+			message: VercelMessage.ToggledProject({ id: "prj_storefront" }),
+		}),
+		IntegrationsMessage.GotVercelMessage({ message: VercelMessage.ToggledProject({ id: "prj_api" }) }),
+		IntegrationsMessage.GotVercelMessage({ message: VercelMessage.ChangedSampling({ value: "0.25" }) }),
 	],
 	refused: [
 		...typedToken,
 		// The lookup is not sent: Vercel's refusal arrives as its answer.
-		IntegrationsMessage.CompletedVercelDiscover({
-			forTeam: null,
-			response: null,
-			error: "Vercel rejected the token: it has expired or was revoked.",
+		IntegrationsMessage.GotVercelMessage({
+			message: VercelMessage.CompletedDiscover({
+				forTeam: null,
+				response: null,
+				error: "Vercel rejected the token: it has expired or was revoked.",
+			}),
 		}),
 	],
 } satisfies Record<ConnectStep, ReadonlyArray<IntegrationsMessage>>

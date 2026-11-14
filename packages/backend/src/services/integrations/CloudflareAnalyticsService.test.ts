@@ -1,7 +1,6 @@
 import { IntegrationsValidationError } from "@maple/domain/http"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { randomUUID } from "node:crypto"
-import { Retry } from "@distilled.cloud/cloudflare"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { OrgId, UserId } from "@maple/domain/http"
 import { clickHouseSchemaVersion } from "@maple/domain/clickhouse"
@@ -36,7 +35,7 @@ import { FetchHttpClient } from "effect/http"
 import { parseSecretKeyring, sealSecret } from "@maple/backend/platform/SecretBox"
 import { oauthAccessTokenSlot } from "@maple/backend/platform/secret-slots"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { Env } from "@maple/backend/platform/Env"
+import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
 	createTestDb,
@@ -380,7 +379,7 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 				return jsonResponse(
 					{
 						success: false,
-						errors: [{ code: 10000, message: "Authentication error" }],
+						errors: [{ code: 9109, message: "Invalid access token" }],
 						messages: [],
 						result: null,
 					},
@@ -418,7 +417,7 @@ const mockCloudflareFetch = (options: FetchOptions = {}): typeof globalThis.fetc
 				return jsonResponse(
 					{
 						success: false,
-						errors: [{ code: 10000, message: "Authentication error" }],
+						errors: [{ code: 9109, message: "Invalid access token" }],
 						messages: [],
 						result: null,
 					},
@@ -540,12 +539,11 @@ const makeLayer = (
 		),
 		Layer.provideMerge(Layer.succeed(WarehouseQueryService, makeWarehouseStub(captured, queryStub))),
 		Layer.provideMerge(testDb.layer),
-		Layer.provideMerge(Env.layer),
+		Layer.provideMerge(EnvTestLive),
 		Layer.provideMerge(
 			ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfig, ...configOverrides })),
 		),
 		Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, mockCloudflareFetch(fetchOptions))),
-		Layer.provideMerge(Layer.succeed(Retry.Retry, { while: () => false })),
 	)
 
 /**

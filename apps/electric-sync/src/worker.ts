@@ -2,43 +2,15 @@
  * The electric-sync Worker: an ElectricSQL shape proxy, deliberately DB-free. It
  * authenticates the session bearer, pins each shape's org scope and forwards.
  */
-import {
-	type MapleDomains,
-	type MapleRegion,
-	MapleStack,
-	type MapleStage,
-	mapleWorkerProps,
-} from "@maple/infra/cloudflare"
+import { MapleStack, mapleWorkerProps } from "@maple/infra/cloudflare"
 import { cachedRecoverable } from "@maple/infra/cached-recoverable"
-import {
-	authEnv,
-	derived,
-	devOrgOverrideEnv,
-	merge,
-	optionalPlain,
-	optionalSecret,
-	selfObservabilityEnv,
-} from "@maple/infra/env"
+import { resolveWorkerEnv } from "@maple/infra/secret-guard"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter } from "effect/http"
+import { electricSyncConfiguredEnv } from "./resources/env"
 import { ELECTRIC_SYNC_CORS_OPTIONS } from "./routes/cors"
-
-const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
-	merge(
-		authEnv,
-		devOrgOverrideEnv(stage),
-		// A preview proxies its own Electric, never the shared `dev` one (another stage's data);
-		// a `preview:web` stage has none, so sync stays off.
-		stage.kind === "pr"
-			? domains.electric
-				? derived("ELECTRIC_URL", `https://${domains.electric}`)
-				: merge()
-			: merge(optionalPlain("ELECTRIC_URL"), optionalPlain("ELECTRIC_SOURCE_ID")),
-		optionalSecret("ELECTRIC_SECRET"),
-		selfObservabilityEnv(stage, region),
-	)
 
 /** `__ALCHEMY_RUNTIME__` folds to `true` in the bundle, so the stack-side branch is tree-shaken. */
 const props = Effect.gen(function* () {
@@ -51,7 +23,7 @@ const props = Effect.gen(function* () {
 		workersDev: true,
 		// Custom domain, not a zone route: routes create no DNS, so pr hosts would NXDOMAIN.
 		domain: domains.sync,
-		env: yield* configuredEnv(stage, region, domains),
+		env: yield* resolveWorkerEnv("electric-sync", electricSyncConfiguredEnv(stage, region, domains)),
 	}
 })
 

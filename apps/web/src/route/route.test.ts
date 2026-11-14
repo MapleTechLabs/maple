@@ -226,26 +226,58 @@ describe("routes", () => {
 
 	test("an org outside the statusPages rollout is sent home from every status page route", () => {
 		for (const path of ["/status-pages", "/status-pages/new", "/status-pages/stp_abc"]) {
-			expect(flaggedRouteRedirect(parse(path), { statusPages: false, cloudCost: true })).toEqual(
+			expect(
+				flaggedRouteRedirect(parse(path), {
+					statusPages: false,
+					cloudCost: true,
+					productAnalytics: true,
+				}),
+			).toEqual(Option.some({ url: "/", isReplace: true }))
+			expect(
+				flaggedRouteRedirect(parse(path), {
+					statusPages: true,
+					cloudCost: false,
+					productAnalytics: true,
+				}),
+			).toEqual(Option.none())
+		}
+		expect(
+			flaggedRouteRedirect(parse("/services"), {
+				statusPages: false,
+				cloudCost: false,
+				productAnalytics: false,
+			}),
+		).toEqual(Option.none())
+	})
+
+	test("an org outside the productAnalytics rollout is sent home from /product-analytics", () => {
+		const flags = { statusPages: true, cloudCost: true }
+		for (const path of ["/product-analytics", "/product-analytics?tab=funnels&timePreset=7d"]) {
+			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: false })).toEqual(
 				Option.some({ url: "/", isReplace: true }),
 			)
-			expect(flaggedRouteRedirect(parse(path), { statusPages: true, cloudCost: false })).toEqual(
+			expect(flaggedRouteRedirect(parse(path), { ...flags, productAnalytics: true })).toEqual(
 				Option.none(),
 			)
 		}
-		expect(flaggedRouteRedirect(parse("/services"), { statusPages: false, cloudCost: false })).toEqual(
-			Option.none(),
-		)
 	})
 
 	test("an org outside the cloudCost rollout is sent home from /cost, filters and all", () => {
 		for (const path of ["/cost", "/cost?groupBy=region&region=%5B%22eu-west-1%22%5D"]) {
-			expect(flaggedRouteRedirect(parse(path), { statusPages: true, cloudCost: false })).toEqual(
-				Option.some({ url: "/", isReplace: true }),
-			)
-			expect(flaggedRouteRedirect(parse(path), { statusPages: false, cloudCost: true })).toEqual(
-				Option.none(),
-			)
+			expect(
+				flaggedRouteRedirect(parse(path), {
+					statusPages: true,
+					cloudCost: false,
+					productAnalytics: true,
+				}),
+			).toEqual(Option.some({ url: "/", isReplace: true }))
+			expect(
+				flaggedRouteRedirect(parse(path), {
+					statusPages: false,
+					cloudCost: true,
+					productAnalytics: true,
+				}),
+			).toEqual(Option.none())
 		}
 	})
 

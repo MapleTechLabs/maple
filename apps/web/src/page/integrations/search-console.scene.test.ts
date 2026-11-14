@@ -5,6 +5,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { type PageContext } from "../contract"
 import { Message } from "./message"
+import { SearchConsoleMessage } from "./search-console"
 import type { Model } from "./model"
 import { init, update } from "./update"
 import { view as pageView } from "./view"
@@ -15,6 +16,18 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
+
+/** Search Console module messages, as the hub carries them. */
+const sc = {
+	CompletedLoadSites: (fields: Parameters<typeof SearchConsoleMessage.CompletedLoadSites>[0]) =>
+		Message.GotSearchConsoleMessage({ message: SearchConsoleMessage.CompletedLoadSites(fields) }),
+	ToggledSite: (fields: Parameters<typeof SearchConsoleMessage.ToggledSite>[0]) =>
+		Message.GotSearchConsoleMessage({ message: SearchConsoleMessage.ToggledSite(fields) }),
+	ClickedSave: () => Message.GotSearchConsoleMessage({ message: SearchConsoleMessage.ClickedSave() }),
+	CompletedSave: (fields: Parameters<typeof SearchConsoleMessage.CompletedSave>[0]) =>
+		Message.GotSearchConsoleMessage({ message: SearchConsoleMessage.CompletedSave(fields) }),
+	CompletedPrime: () => Message.GotSearchConsoleMessage({ message: SearchConsoleMessage.CompletedPrime() }),
+}
 
 const status = (fields: {
 	connected: boolean
@@ -83,7 +96,7 @@ const withSites = (loaded: SearchConsoleIntegrationStatus) => {
 	const step = entered(loaded)
 	return pageUpdate(
 		step.model,
-		Message.CompletedLoadSearchConsoleSites({
+		sc.CompletedLoadSites({
 			key: step.model.searchConsoleCard.sites.key ?? "",
 			result: Result.succeed(SITES),
 		}),
@@ -151,15 +164,12 @@ describe("google search console card", () => {
 
 	test("saving sends the toggled selection once, then re-reads the status", () => {
 		const loaded = withSites(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
-		const toggled = pageUpdate(
-			loaded,
-			Message.ToggledSearchConsoleSite({ siteUrl: "https://blog.acme.dev/" }),
-		).model
+		const toggled = pageUpdate(loaded, sc.ToggledSite({ siteUrl: "https://blog.acme.dev/" })).model
 		expect(toggled.searchConsoleCard.draft).toEqual(["sc-domain:acme.dev", "https://blog.acme.dev/"])
-		const saving = pageUpdate(toggled, Message.ClickedSaveSearchConsoleSites())
+		const saving = pageUpdate(toggled, sc.ClickedSave())
 		expect(names(saving.commands)).toEqual(["SaveSearchConsoleSites"])
-		expect(names(pageUpdate(saving.model, Message.ClickedSaveSearchConsoleSites()).commands)).toEqual([])
-		const saved = pageUpdate(saving.model, Message.CompletedSaveSearchConsoleSites({ failure: null }))
+		expect(names(pageUpdate(saving.model, sc.ClickedSave()).commands)).toEqual([])
+		const saved = pageUpdate(saving.model, sc.CompletedSave({ failure: null }))
 		expect(names(saved.commands)).toContain("LoadIntegrationsSearchConsoleStatus")
 		// The draft holds until the re-read lands, so the checkboxes don't flick back meanwhile.
 		scene(
@@ -187,16 +197,13 @@ describe("google search console card", () => {
 
 	test("a save primes the first import, and its end re-reads the status", () => {
 		const loaded = withSites(status({ connected: true, enabled: [] }))
-		const toggled = pageUpdate(
-			loaded,
-			Message.ToggledSearchConsoleSite({ siteUrl: "sc-domain:acme.dev" }),
-		)
-		const saving = pageUpdate(toggled.model, Message.ClickedSaveSearchConsoleSites())
-		const saved = pageUpdate(saving.model, Message.CompletedSaveSearchConsoleSites({ failure: null }))
+		const toggled = pageUpdate(loaded, sc.ToggledSite({ siteUrl: "sc-domain:acme.dev" }))
+		const saving = pageUpdate(toggled.model, sc.ClickedSave())
+		const saved = pageUpdate(saving.model, sc.CompletedSave({ failure: null }))
 		expect(names(saved.commands)).toContain("PrimeSearchConsole")
 		const settled = statusRead(saved.model, status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
 		// Success or failure alike: the prime's end asks for a fresh status, with no toast.
-		const primed = pageUpdate(settled.model, Message.CompletedSearchConsolePrime())
+		const primed = pageUpdate(settled.model, sc.CompletedPrime())
 		expect(names(primed.commands)).toEqual(["LoadIntegrationsSearchConsoleStatus"])
 		expect(primed.outMessage).toBeUndefined()
 		const reread = statusRead(primed.model, status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
@@ -217,16 +224,13 @@ describe("google search console card", () => {
 			expectView(text(/saving stops importing gone\.dev \(domain\)/)).toExist(),
 			expectView(role("button", { name: "Save properties" })).toBeEnabled(),
 		)
-		const saving = pageUpdate(loaded, Message.ClickedSaveSearchConsoleSites())
+		const saving = pageUpdate(loaded, sc.ClickedSave())
 		expect(saving.commands?.[0]?.args).toEqual({ siteUrls: ["sc-domain:acme.dev"] })
 	})
 
 	test("reconnecting as another Google account lists that account's properties, with no stale draft", () => {
 		const first = withSites(status({ connected: true, enabled: ["sc-domain:acme.dev"] }))
-		const drafted = pageUpdate(
-			first,
-			Message.ToggledSearchConsoleSite({ siteUrl: "https://blog.acme.dev/" }),
-		).model
+		const drafted = pageUpdate(first, sc.ToggledSite({ siteUrl: "https://blog.acme.dev/" })).model
 		const firstSitesKey = drafted.searchConsoleCard.sites.key ?? ""
 		const disconnected = statusRead(drafted, status({ connected: false }))
 		expect(disconnected.model.searchConsoleCard.draft).toBeNull()
@@ -238,11 +242,11 @@ describe("google search console card", () => {
 		// The first account's list, answering late, is not taken for the new account's.
 		const late = pageUpdate(
 			reconnected.model,
-			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(SITES) }),
+			sc.CompletedLoadSites({ key: firstSitesKey, result: Result.succeed(SITES) }),
 		).model
 		const listed = pageUpdate(
 			late,
-			Message.CompletedLoadSearchConsoleSites({
+			sc.CompletedLoadSites({
 				key: late.searchConsoleCard.sites.key ?? "",
 				result: Result.succeed(OTHER_ACCOUNT_SITES),
 			}),
@@ -272,7 +276,7 @@ describe("google search console card", () => {
 		})
 		const listed = pageUpdate(
 			step.model,
-			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
+			sc.CompletedLoadSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
 		).model
 		const reconnected = pageUpdate(
 			listed,
@@ -293,11 +297,11 @@ describe("google search console card", () => {
 		// An answer from before the reconnect, landing late, is dropped.
 		const late = pageUpdate(
 			reread.model,
-			Message.CompletedLoadSearchConsoleSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
+			sc.CompletedLoadSites({ key: firstSitesKey, result: Result.succeed(ONE_SITE) }),
 		).model
 		const relisted = pageUpdate(
 			late,
-			Message.CompletedLoadSearchConsoleSites({ key: refetchKey, result: Result.succeed(SITES) }),
+			sc.CompletedLoadSites({ key: refetchKey, result: Result.succeed(SITES) }),
 		).model
 		scene(
 			{ update: pageUpdate, view },

@@ -5,6 +5,7 @@ import { expect as expectView, given, role, scene, text, withViewInputs } from "
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
+import { ChatMessage } from "./chat"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -16,6 +17,8 @@ const pageUpdate = (model: Model, message: Message) => update(model, message, co
 const view = withViewInputs(pageView, { context })()
 const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =>
 	Arr.map(commands ?? [], ({ name }) => name)
+
+const chat = (message: ChatMessage) => Message.GotChatMessage({ message })
 
 const WORKSPACE = "chatw_YoxMqYdzUJ1tH4BqCWxPH3"
 
@@ -65,14 +68,14 @@ describe("chat card", () => {
 			given(model),
 			expectView(role("button", { name: "Add to Slack" })).toExist(),
 		)
-		const started = pageUpdate(model, Message.ClickedChatInstall())
+		const started = pageUpdate(model, chat(ChatMessage.ClickedInstall()))
 		expect(names(started.commands)).toEqual(["InstallChatConnector"])
-		expect(names(pageUpdate(started.model, Message.ClickedChatInstall()).commands)).toEqual([])
-		const done = pageUpdate(started.model, Message.CompletedChatInstall({ failure: null }))
+		expect(names(pageUpdate(started.model, chat(ChatMessage.ClickedInstall())).commands)).toEqual([])
+		const done = pageUpdate(started.model, chat(ChatMessage.CompletedInstall({ failure: null })))
 		expect(done.model.chatCard.busy).toBe("install")
 		const failed = pageUpdate(
 			started.model,
-			Message.CompletedChatInstall({ failure: toLoadFailure("x") }),
+			chat(ChatMessage.CompletedInstall({ failure: toLoadFailure("x") })),
 		)
 		expect(failed.model.chatCard.busy).toBeNull()
 	})
@@ -82,11 +85,14 @@ describe("chat card", () => {
 		scene({ update: pageUpdate, view }, given(model), expectView(text("Acme Shop")).toExist())
 		const workspace = list(true).data[0]?.workspaces[0]
 		if (workspace === undefined) throw new Error("fixture")
-		const opened = pageUpdate(model, Message.ClickedChatDisconnect({ workspaceId: workspace.id })).model
+		const opened = pageUpdate(
+			model,
+			chat(ChatMessage.ClickedDisconnect({ workspaceId: workspace.id })),
+		).model
 		const confirmed = pageUpdate(opened, Message.ConfirmedDisconnect())
 		expect(names(confirmed.commands)).toEqual(["DisconnectChatWorkspace"])
 		expect(confirmed.model.disconnect.dialog.isOpen).toBe(true)
-		const done = pageUpdate(confirmed.model, Message.CompletedChatDisconnect({ failure: null }))
+		const done = pageUpdate(confirmed.model, chat(ChatMessage.CompletedDisconnect({ failure: null })))
 		expect(done.model.disconnect.dialog.isOpen).toBe(false)
 		expect(done.outMessage).toEqual(
 			PageOutMessage.RequestedToast({

@@ -4,6 +4,7 @@ import { BillingCustomerResolver } from "@maple/backend/services/billing/Billing
 import { McpServicesLive } from "./mcp-tool-graph"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import { Env } from "@maple/backend/platform/Env"
+import { GithubAppClientSecret, GithubAppPrivateKey, GithubAppWebhookSecret } from "@maple/infra/secrets"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
@@ -28,6 +29,13 @@ export const ChatApplyServicesLive = Layer.mergeAll(
 	OrgMembershipService.layer,
 ).pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)))
 
+/** The GitHub App's secrets, for the reviews' reads of the repository. */
+const GithubAppSecretsLive = Layer.mergeAll(
+	GithubAppPrivateKey.layer,
+	GithubAppClientSecret.layer,
+	GithubAppWebhookSecret.layer,
+)
+
 /** What a chat turn's runtime needs beyond the tools: the two completion tools' services. */
 export const InvestigationServicesLive = Layer.mergeAll(
 	McpServicesLive,
@@ -37,8 +45,12 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	OrgMembershipService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
 	// The review reads production telemetry through the warehouse, which caches at the edge.
-	PrReviewService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
-	PrReviewConversationService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
+	PrReviewService.layer.pipe(
+		Layer.provide(Layer.mergeAll(Env.layer, GithubAppSecretsLive, EdgeCacheServiceLive)),
+	),
+	PrReviewConversationService.layer.pipe(
+		Layer.provide(Layer.mergeAll(Env.layer, GithubAppSecretsLive, EdgeCacheServiceLive)),
+	),
 	// The org's own OpenRouter key, when it holds the add-on; the add-on check reads the cached customer.
 	OrgOpenRouterKeyService.layer.pipe(Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive))),
 	// Which org pays for the turn: a member org's AI credits are its billing org's.

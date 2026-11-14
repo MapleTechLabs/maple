@@ -23,6 +23,13 @@ describe("parseFunnelStepFilter", () => {
 		expect(parseFunnelStepFilter("attr.plan = 'pro'")).toEqual({ ok: true, value: { plan: "pro" } })
 	})
 
+	it("reads the word or inside a quoted value as part of the value", () => {
+		expect(parseFunnelStepFilter("label = \"Sign in or sign up\" AND state = 'OR'")).toEqual({
+			ok: true,
+			value: { label: "Sign in or sign up", state: "OR" },
+		})
+	})
+
 	it("rejects operators the funnel query cannot run, OR, duplicates and empty values", () => {
 		expect(parseFunnelStepFilter('plan != "pro"')).toMatchObject({ ok: false })
 		expect(parseFunnelStepFilter("plan contains pro")).toMatchObject({ ok: false })

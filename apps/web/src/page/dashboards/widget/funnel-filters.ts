@@ -41,7 +41,9 @@ const EQUALS_CLAUSE = /^([^\s=!<>~]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))$/
 function parseEqualsClauses(text: string): FunnelFilterParse<ReadonlyArray<EqualsClause>> {
 	const trimmed = Str.trim(text)
 	if (trimmed === "") return { ok: true, value: [] }
-	if (/\bOR\b/i.test(trimmed)) return { ok: false, error: 'only "AND" joins clauses here' }
+	// Outside quotes only: `label = "sign in or sign up"` is a value.
+	if (/\bOR\b/i.test(Str.replace(/"[^"]*"|'[^']*'/g, "")(trimmed)))
+		return { ok: false, error: 'only "AND" joins clauses here' }
 	const clauses: EqualsClause[] = []
 	for (const part of splitWhereClause(trimmed)) {
 		const match = EQUALS_CLAUSE.exec(part)

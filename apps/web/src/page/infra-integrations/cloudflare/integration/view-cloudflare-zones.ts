@@ -9,7 +9,7 @@ import { formDialog } from "@maple/views/ui/form-dialog"
 import { icon } from "@maple/views/ui/icon"
 import { searchInput } from "@maple/views/ui/search-input"
 import * as Switch from "@maple/views/ui/switch"
-import type { ZoneChoice } from "./cloudflare"
+import { CloudflareMessage, type ZoneChoice } from "./cloudflare"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { typography, typographyClass } from "@maple/views/ui/typography"
@@ -17,6 +17,9 @@ import { hstack, vstack, vstackClass } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
 
 // "Manage zones": which of each connected account's zones Maple collects.
+
+/** A Cloudflare message, as the hub carries it. */
+export const toHub = (message: CloudflareMessage): Message => Message.GotCloudflareMessage({ message })
 
 type H = HtmlBuilder<Message>
 
@@ -32,7 +35,8 @@ const zoneRow = (h: H, accountId: string, zone: ZoneChoice["zones"][number]): Ht
 		[
 			...Checkbox.view(h, {
 				model: { isChecked: zone.watched },
-				toParentMessage: () => Message.ToggledManagedZone({ accountId, zoneId: zone.id }),
+				toParentMessage: () =>
+					toHub(CloudflareMessage.ToggledManagedZone({ accountId, zoneId: zone.id })),
 				id: `${inputId}-root`,
 				inputId,
 			}),
@@ -58,7 +62,12 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 				isDisabled: shown.length === 0,
 				attributes: [
 					h.OnClick(
-						Message.ClickedSetAccountZones({ accountId: account.accountId, watched: value }),
+						toHub(
+							CloudflareMessage.ClickedSetAccountZones({
+								accountId: account.accountId,
+								watched: value,
+							}),
+						),
 					),
 				],
 			},
@@ -81,7 +90,7 @@ const accountSection = (h: H, account: ZoneChoice, query: string, isMulti: boole
 					inputId: switchInputId,
 					isChecked: account.watchNewZones,
 					labelledBy: Switch.labelId(switchInputId),
-					onToggle: Message.ToggledWatchNewZones({ accountId: account.accountId }),
+					onToggle: toHub(CloudflareMessage.ToggledWatchNewZones({ accountId: account.accountId })),
 				}),
 			],
 		),
@@ -121,11 +130,11 @@ export const zonesDialog = (h: H, model: Model): Html => {
 	return formDialog(h, {
 		slotId: "cloudflare-zones",
 		model: card.zoneDialog,
-		toParentMessage: (message) => Message.GotZoneDialogMessage({ message }),
+		toParentMessage: (message) => toHub(CloudflareMessage.GotZoneDialogMessage({ message })),
 		title: "Manage zones",
 		description:
 			"Maple collects analytics only for checked zones. Data already collected for a paused zone stays.",
-		onSubmit: Message.SubmittedZoneSettings(),
+		onSubmit: toHub(CloudflareMessage.SubmittedZoneSettings()),
 		submitLabel: "Save zones",
 		isPending: card.isSavingZones,
 		panelClassName: vstackClass({ gap: "5" }),
@@ -136,8 +145,8 @@ export const zonesDialog = (h: H, model: Model): Html => {
 							id: "cloudflare-zones-search",
 							value: card.zoneDraftSearch,
 							placeholder: "Filter zones…",
-							onInput: (value) => Message.ChangedManagedZoneSearch({ value }),
-							onClear: Message.ChangedManagedZoneSearch({ value: "" }),
+							onInput: (value) => toHub(CloudflareMessage.ChangedManagedZoneSearch({ value })),
+							onClear: toHub(CloudflareMessage.ChangedManagedZoneSearch({ value: "" })),
 							attributes: [h.AriaLabel("Filter zones by name")],
 						}),
 					]
