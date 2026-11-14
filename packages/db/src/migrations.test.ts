@@ -573,6 +573,48 @@ describe("bundled migrations", () => {
 		expect(deliveries.rows).toEqual([{ id: "delivery_webhook" }])
 	}, 30_000)
 
+	it("moves a live GCP refusal hold out of the lease and keeps the poll order", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("gcp_metrics_hold"))
+		await pg.query(
+			`INSERT INTO sources (id, org_id, name, platform, kind, created_at, updated_at)
+			VALUES ('src_g', 'org_1', 'GCP', 'gcp', 'pull', now(), now())`,
+		)
+		// The old column held three things: a refusal hold, a live tick's lease, and a stale cursor.
+		const connector = (id: string, leaseSql: string) =>
+			pg.query(
+				`INSERT INTO gcp_connectors (id, org_id, source_id, scope_type, scope_id, project_id, secret_ciphertext,
+					secret_iv, secret_tag, secret_hash, created_by, created_at, updated_at, metrics_lease_until)
+				VALUES ($1, 'org_1', 'src_g', 'project', $1, $1, 'x', 'x', 'x', $1, 'user_1', now(), now(), ${leaseSql})`,
+				[id],
+			)
+		await connector("held", "now() + interval '30 minutes'")
+		await connector("ticking", "now() + interval '2 minutes'")
+		await connector("polled", "now() - interval '1 hour'")
+
+		await pg.exec(readMigrationSql("gcp_metrics_hold"))
+
+		const rows = await pg.query<{
+			id: string
+			lease: boolean
+			hold_minutes: number | null
+			polled_minutes: number | null
+		}>(
+			`SELECT id, metrics_lease_until IS NOT NULL AS lease,
+				round(extract(epoch FROM metrics_hold_until - now()) / 60)::int AS hold_minutes,
+				round(extract(epoch FROM metrics_polled_at - now()) / 60)::int AS polled_minutes
+			FROM gcp_connectors ORDER BY id`,
+		)
+		expect(rows.rows).toEqual([
+			// The hold survives the deploy; its cursor is now.
+			{ id: "held", lease: false, hold_minutes: 30, polled_minutes: 0 },
+			{ id: "polled", lease: false, hold_minutes: null, polled_minutes: -64 },
+			// A live tick keeps its lease and is not held.
+			{ id: "ticking", lease: true, hold_minutes: null, polled_minutes: -2 },
+		])
+		await pg.close()
+	}, 30_000)
+
 	it("links every integration row to the source it sends as", async () => {
 		const pg = new PGlite()
 		await pg.exec(readMigrationSqlBefore("source_ownership"))
