@@ -62,6 +62,8 @@ export const VercelConnections = PG.table("vercel_connections", {
 			name: "deployments_watermark_at",
 		}),
 		leaseUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "lease_until" }),
+		// A failed poll's back-off (a rate limit): no tick claims the row before then.
+		holdUntil: PG.column(PG.nullable(PG.timestamptzMillis), { name: "hold_until" }),
 		lastSuccessAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_success_at" }),
 		lastError: PG.column(PG.nullable(PG.text), { name: "last_error" }),
 		lastErrorAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_error_at" }),

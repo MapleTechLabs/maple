@@ -16,7 +16,8 @@ import {
 } from "@maple/domain/http"
 import type { SupabaseProjectRef } from "@maple/primitives"
 import * as PG from "@maple-dev/effect-orm/postgres"
-import { leaseClaimable, leaseStillOurs } from "./lease"
+import { leaseStillOurs } from "./lease"
+import { type Lease, type LeaseSpec, leaseFree, skipIfPaused, withLease } from "./poller"
 import {
 	SupabaseConnections,
 	SupabaseProjectInsights as SupabaseProjectInsightsTable,
@@ -25,13 +26,13 @@ import {
 	type SupabaseProjectInsightsRow,
 	type SupabaseProjectRow,
 } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Order, Schema, Array as Arr, String as Str } from "effect"
+import { Clock, Context, Effect, Layer, Option, Order, Schema, Array as Arr, String as Str } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { pollFleet } from "./poll-fleet"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { isSourcePaused } from "@maple/backend/services/integrations/integration-sources"
+
 import type { SupabaseApiError } from "./supabase/api"
 import { getAdvisors, getTopQueries } from "./supabase/insights"
 import { shouldScrape } from "./supabase/scrape-targets"
@@ -84,6 +85,12 @@ interface ProjectPollResult {
 }
 
 const SKIPPED: ProjectPollResult = { advisors: "skipped", queries: "skipped" }
+
+type InsightsLease = Lease<
+	SupabaseProjectInsightsRow,
+	PG.UpdateSetOf<typeof SupabaseProjectInsightsTable>,
+	IntegrationsPersistenceError
+>
 
 export interface SupabaseInsightsPollOrgSummary {
 	readonly orgId: OrgId
@@ -199,38 +206,42 @@ export class SupabaseInsightsService extends Context.Service<
 				),
 			)
 
-		const claimLease = (project: SupabaseProjectRow, now: number) =>
-			dbExecute((db) =>
-				db.run(
-					PG.update(SupabaseProjectInsightsTable)
-						.set({ leaseUntil: now + LEASE_MS })
-						.where(($) => [
-							$.projectId.eq(project.id),
-							// A bogus far-future lease (clock jump, crashed writer) must not wedge the project.
-							leaseClaimable($.leaseUntil, now, 2 * LEASE_MS),
-						])
-						.returning(),
-				),
-			).pipe(Effect.map((rows) => rows[0] ?? null))
-
-		/** Writes only while this tick still holds the lease: a late tick never touches a successor. */
-		const updateClaimed = (
-			claimed: SupabaseProjectInsightsRow,
-			set: PG.UpdateSetOf<typeof SupabaseProjectInsightsTable>,
-		) =>
-			dbExecute((db) =>
-				db.run(
-					PG.update(SupabaseProjectInsightsTable)
-						.set(set)
-						.where(($) => [
-							$.projectId.eq(claimed.projectId),
-							leaseStillOurs($.leaseUntil, claimed.leaseUntil),
-						]),
-				),
-			)
-
-		const releaseLease = (claimed: SupabaseProjectInsightsRow, holdUntil: number | null) =>
-			updateClaimed(claimed, { leaseUntil: holdUntil })
+		/** The project's insights row is the tick's lease; a rate limit's back-off is its hold. */
+		const insightsLease = (
+			project: SupabaseProjectRow,
+		): LeaseSpec<
+			SupabaseProjectInsightsRow,
+			PG.UpdateSetOf<typeof SupabaseProjectInsightsTable>,
+			IntegrationsPersistenceError
+		> => ({
+			leaseMs: LEASE_MS,
+			claim: (leaseUntil, now) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(SupabaseProjectInsightsTable)
+							.set({ leaseUntil })
+							.where(($) => [
+								$.projectId.eq(project.id),
+								leaseFree($.leaseUntil, $.holdUntil, now, LEASE_MS),
+							])
+							.returning(),
+					),
+				).pipe(Effect.map((rows) => rows[0] ?? null)),
+			// Only while this tick still holds the lease: a late tick never touches a successor.
+			write: (claimed, set) =>
+				dbExecute((db) =>
+					db.run(
+						PG.update(SupabaseProjectInsightsTable)
+							.set(set)
+							.where(($) => [
+								$.projectId.eq(claimed.projectId),
+								leaseStillOurs($.leaseUntil, claimed.leaseUntil),
+							])
+							.returning("projectId"),
+					),
+				).pipe(Effect.map((rows) => rows.length > 0)),
+			release: (holdUntil) => ({ leaseUntil: null, holdUntil }),
+		})
 
 		/** Runs one read with the org's token; classifies the failure instead of failing the poll. */
 		const read = <A>(
@@ -240,12 +251,12 @@ export class SupabaseInsightsService extends Context.Service<
 			run: (accessToken: string) => Effect.Effect<A, SupabaseApiError>,
 			onSuccess: (value: A) => PG.UpdateSetOf<typeof SupabaseProjectInsightsTable>,
 			onError: (message: string) => PG.UpdateSetOf<typeof SupabaseProjectInsightsTable>,
-			claimed: SupabaseProjectInsightsRow,
+			lease: InsightsLease,
 		) =>
 			Effect.gen(function* () {
 				const result = yield* Effect.result(oauth.withAccessToken(orgId, run))
 				if (result._tag === "Success") {
-					yield* updateClaimed(claimed, onSuccess(result.success))
+					yield* lease.write(onSuccess(result.success))
 					return "ok" as const
 				}
 				const failure = result.failure
@@ -259,7 +270,7 @@ export class SupabaseInsightsService extends Context.Service<
 					tag: failure._tag,
 					error: failure.message,
 				})
-				yield* updateClaimed(claimed, onError(Str.slice(0, ERROR_CHARS)(failure.message)))
+				yield* lease.write(onError(Str.slice(0, ERROR_CHARS)(failure.message)))
 				return "failed" as const
 			})
 
@@ -271,8 +282,17 @@ export class SupabaseInsightsService extends Context.Service<
 			yield* Effect.annotateCurrentSpan({ orgId, "maple.supabase.project_ref": project.projectRef })
 			const now = yield* Clock.currentTimeMillis
 			if (now - tickStartedAt >= TICK_BUDGET_MS) return SKIPPED
-			const claimed = yield* claimLease(project, now)
-			if (claimed === null) return SKIPPED
+			const polled = yield* withLease(insightsLease(project), now, (lease) =>
+				readProject(project, lease),
+			)
+			return Option.getOrElse(polled, () => SKIPPED)
+		})
+
+		/** The project's due reads under its lease; a rate limit holds it for a while. */
+		const readProject = Effect.fnUntraced(function* (project: SupabaseProjectRow, lease: InsightsLease) {
+			const orgId = project.orgId
+			const now = lease.now
+			const claimed = lease.row
 			const advisorsDue = isDue(claimed.advisorsCheckedAt, ADVISORS_INTERVAL_MS, now)
 			const queriesDue = isDue(claimed.queriesCheckedAt, QUERIES_INTERVAL_MS, now)
 
@@ -308,7 +328,7 @@ export class SupabaseInsightsService extends Context.Service<
 								updatedAt: now,
 							}),
 							(message) => ({ advisorsError: message, updatedAt: now }),
-							claimed,
+							lease,
 						)
 					: "skipped"
 				if (advisors === "revoked" || advisors === "rate_limited") {
@@ -327,7 +347,7 @@ export class SupabaseInsightsService extends Context.Service<
 								updatedAt: now,
 							}),
 							(message) => ({ queriesError: message, updatedAt: now }),
-							claimed,
+							lease,
 						)
 					: "skipped"
 				return { advisors, queries } satisfies ProjectPollResult
@@ -340,14 +360,10 @@ export class SupabaseInsightsService extends Context.Service<
 						"maple.supabase.insights.queries": result.queries,
 					}),
 				),
-				Effect.onExit((exit) =>
-					releaseLease(
-						claimed,
-						exit._tag === "Success" &&
-							(exit.value.advisors === "rate_limited" || exit.value.queries === "rate_limited")
-							? now + RATE_LIMIT_HOLD_MS
-							: null,
-					).pipe(Effect.ignore),
+				Effect.tap((result) =>
+					result.advisors === "rate_limited" || result.queries === "rate_limited"
+						? lease.hold(now + RATE_LIMIT_HOLD_MS)
+						: Effect.void,
 				),
 			)
 		})
@@ -370,32 +386,39 @@ export class SupabaseInsightsService extends Context.Service<
 			if (!(yield* oauth.isGrantUsable(orgId))) return skip("grant revoked")
 			const now = yield* Clock.currentTimeMillis
 			// A paused source makes no upstream calls.
-			if (yield* dbExecute((db) => isSourcePaused(db, connection.sourceId, now))) {
-				return skip("source paused")
-			}
-			const projects = yield* loadProjects(connection)
-			const running = Arr.filter(projects, isRunning)
-			if (running.length === 0) return skip("no projects")
-			yield* ensureRows(running, now)
+			const poll = Effect.gen(function* () {
+				const projects = yield* loadProjects(connection)
+				const running = Arr.filter(projects, isRunning)
+				if (running.length === 0) return skip("no projects")
+				yield* ensureRows(running, now)
 
-			const results = yield* Effect.forEach(running, (project) => pollProject(project, tickStartedAt), {
-				concurrency: PROJECT_CONCURRENCY,
+				const results = yield* Effect.forEach(
+					running,
+					(project) => pollProject(project, tickStartedAt),
+					{
+						concurrency: PROJECT_CONCURRENCY,
+					},
+				)
+				const count = (pick: (result: ProjectPollResult) => boolean) =>
+					Arr.filter(results, pick).length
+				const summary = {
+					orgId,
+					skipped: null,
+					projects: running.length,
+					advisorsRead: count((result) => result.advisors === "ok"),
+					queriesRead: count((result) => result.queries === "ok"),
+					failures: count((result) => result.advisors === "failed" || result.queries === "failed"),
+				} satisfies SupabaseInsightsPollOrgSummary
+				yield* Effect.annotateCurrentSpan({
+					"maple.supabase.insights.advisors_read": summary.advisorsRead,
+					"maple.supabase.insights.queries_read": summary.queriesRead,
+					"maple.supabase.insights.failures": summary.failures,
+				})
+				return summary
 			})
-			const count = (pick: (result: ProjectPollResult) => boolean) => Arr.filter(results, pick).length
-			const summary = {
-				orgId,
-				skipped: null,
-				projects: running.length,
-				advisorsRead: count((result) => result.advisors === "ok"),
-				queriesRead: count((result) => result.queries === "ok"),
-				failures: count((result) => result.advisors === "failed" || result.queries === "failed"),
-			} satisfies SupabaseInsightsPollOrgSummary
-			yield* Effect.annotateCurrentSpan({
-				"maple.supabase.insights.advisors_read": summary.advisorsRead,
-				"maple.supabase.insights.queries_read": summary.queriesRead,
-				"maple.supabase.insights.failures": summary.failures,
-			})
-			return summary
+			return yield* poll.pipe(
+				skipIfPaused(dbExecute, connection.sourceId, now, Effect.succeed(skip("source paused"))),
+			)
 		})
 
 		const pollOrg = (orgId: OrgId) =>
