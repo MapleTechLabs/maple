@@ -21,8 +21,6 @@ import * as Aws from "../infra-integrations/aws/integration/update-aws"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
 import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
-import * as Vercel from "../infra-integrations/vercel/integration/update-vercel"
-import { initVercelCard } from "../infra-integrations/vercel/integration/vercel"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
@@ -46,6 +44,7 @@ import {
 	RAILWAY_PROVIDER,
 	SEARCH_CONSOLE_PROVIDER,
 	SUPABASE_PROVIDER,
+	VERCEL_PROVIDER,
 	withDisconnectDialog,
 } from "./provider-modules"
 import { Message } from "./message"
@@ -170,7 +169,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
 		railwayCard: RAILWAY_PROVIDER.initial(),
-		vercelCard: initVercelCard(),
+		vercelCard: VERCEL_PROVIDER.initial(),
 		supabaseCard: SUPABASE_PROVIDER.initial(),
 		searchConsoleCard: SEARCH_CONSOLE_PROVIDER.initial(),
 	}
@@ -290,6 +289,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotSearchConsoleMessage: ({ message: child }) =>
 			SEARCH_CONSOLE_PROVIDER.update(model, child, context),
 		GotChatMessage: ({ message: child }) => CHAT_PROVIDER.update(model, child, context),
+		GotVercelMessage: ({ message: child }) => VERCEL_PROVIDER.update(model, child, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>
@@ -400,31 +400,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotTargetDeleteDialogMessage: ({ message: child }) => Prometheus.gotDeleteDialog(model, child),
 		ConfirmedTargetDelete: () => Prometheus.confirmedDelete(model),
 		CompletedTargetDelete: ({ id, failure }) => Prometheus.completedDelete(model, context, id, failure),
-		TickedVercelSettle: () => Vercel.tickedSettle(model, context),
-		ClickedVercelSync: () => Vercel.clickedSync(model),
-		CompletedVercelSync: ({ failure }) => Vercel.completedSync(model, context, failure),
-		ClickedVercelReapply: () => Vercel.clickedReapply(model),
-		ClickedVercelConfigure: ({ target }) => Vercel.openConfigure(model, target),
-		GotVercelConfigureDialogMessage: ({ message: child }) => Vercel.gotConfigureDialog(model, child),
-		GotVercelTokenMessage: ({ message: child }) => Vercel.gotToken(model, child),
-		SubmittedVercelToken: () => Vercel.submittedToken(model),
-		CompletedVercelDiscover: ({ forTeam, response, error }) =>
-			Vercel.completedDiscover(model, forTeam, response, error),
-		GotVercelTeamMessage: ({ message: child }) => Vercel.gotTeam(model, child),
-		SubmittedVercelTeam: () => Vercel.submittedTeam(model),
-		ClickedVercelConfigureBack: () => Vercel.clickedBack(model),
-		ToggledVercelSignal: ({ signal }) => Vercel.toggledSignal(model, signal),
-		ChangedVercelScope: ({ scope }) => Vercel.changedScope(model, scope),
-		ToggledVercelProject: ({ id }) => Vercel.toggledProject(model, id),
-		ChangedVercelProjectQuery: ({ value }) => Vercel.changedProjectQuery(model, value),
-		ChangedVercelSampling: ({ value }) => Vercel.changedSampling(model, value),
-		SubmittedVercelConnect: () => Vercel.submittedConnect(model),
-		CompletedVercelConnect: ({ mode, teamName, error }) =>
-			Vercel.completedConnect(model, context, mode, teamName, error),
-		ClickedVercelSave: () => Vercel.clickedSave(model),
-		GotVercelConfirmDialogMessage: ({ message: child }) => Vercel.gotConfirmDialog(model, child),
-		ConfirmedVercelSave: () => Vercel.confirmedSave(model),
-		CompletedVercelSave: ({ isReapply, error }) => Vercel.completedSave(model, context, isReapply, error),
 		GotAwsAccountIdMessage: ({ message: child }) => Aws.gotAccountId(model, child),
 		SubmittedAwsAccount: () => Aws.submittedAccount(model),
 		SucceededAwsCreate: ({ connection }) => Aws.succeededCreate(model, context, connection),

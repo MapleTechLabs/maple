@@ -18,6 +18,7 @@ import { SUPABASE } from "../infra-integrations/supabase/integration/supabase-pr
 import { SEARCH_CONSOLE_STATUS_READ } from "./search-console"
 import { LINEAR_STATUS_READ } from "./linear-provider"
 import { CHAT_STATUS_READ } from "./chat"
+import { VERCEL_STATUS_READ } from "../infra-integrations/vercel/integration/vercel"
 
 const RefreshArgs = { key: Schema.String, refresh: Schema.Boolean }
 
@@ -56,9 +57,7 @@ export const STATUS_READS = {
 		Effect.flatMap(IntegrationStatuses, (statuses) => statuses.cloudflare({ refresh })),
 	),
 	railway: statusRead(RAILWAY.statusRead.name, Message.CompletedLoadRailway, RAILWAY.statusRead.read),
-	vercel: statusRead("LoadIntegrationsVercelStatus", Message.CompletedLoadVercel, () =>
-		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.vercelStatus()),
-	),
+	vercel: statusRead(VERCEL_STATUS_READ.name, Message.CompletedLoadVercel, VERCEL_STATUS_READ.read),
 	planetscale: statusRead(
 		"LoadIntegrationsPlanetscaleStatus",
 		Message.CompletedLoadPlanetscale,

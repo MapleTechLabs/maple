@@ -31,7 +31,7 @@ export const CHAT: ProviderModule<V2ChatConnectorList, ChatCardModel, ChatMessag
 	update,
 	onConfirmDisconnect: (model) => confirmedDisconnect(model),
 	isDisconnecting,
-	card: chatCard,
+	card: (h, model, timeZone) => [chatCard(h, model, timeZone)],
 	cardStatus: (slot, { id }) =>
 		fold(
 			slot,

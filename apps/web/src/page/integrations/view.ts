@@ -20,11 +20,6 @@ import {
 import { gcpCard, gcpHeaderStatus } from "../infra-integrations/gcp/integration/view-gcp"
 import { githubCard } from "./view-github"
 import { planetscaleCard } from "../infra-integrations/planetscale/integration/view-planetscale"
-import {
-	vercelCard,
-	vercelHeaderActions,
-	vercelHeaderStatus,
-} from "../infra-integrations/vercel/integration/view-vercel"
 import { awsCard } from "../infra-integrations/aws/integration/view-aws"
 import { scrapeIntro, scrapeTargetsSection } from "./view-prometheus"
 import { integrationHeader } from "./view-header"
@@ -62,14 +57,12 @@ export const cardView = (
 	focusId: string | null = null,
 ): ReadonlyArray<Html> => {
 	const provider = providerModuleOf(integration)
-	if (provider !== undefined) return [provider.card(h, model, timeZone)]
+	if (provider !== undefined) return provider.card(h, model, timeZone, focusId)
 	switch (integration) {
 		case "github":
 			return githubCard(h, model, timeZone)
 		case "cloudflare":
 			return [cloudflareCard(h, model, timeZone)]
-		case "vercel":
-			return vercelCard(h, model, timeZone)
 		case "planetscale":
 			return [planetscaleCard(h, model, timeZone)]
 		case "gcp":
@@ -91,6 +84,7 @@ export const cardView = (
 
 const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): Html => {
 	const integration = entry.id
+	const provider = providerModuleOf(integration)
 	return dashboardPage(
 		h,
 		{
@@ -105,15 +99,11 @@ const detailView = (h: H, model: Model, entry: CatalogEntry, timeZone: string): 
 					actions:
 						integration === "cloudflare"
 							? cloudflareHeaderActions(h, model)
-							: integration === "vercel"
-								? vercelHeaderActions(h, model)
-								: undefined,
+							: (provider?.headerActions?.(h, model) ?? undefined),
 					statusLine:
 						integration === "gcp"
 							? gcpHeaderStatus(h, model)
-							: integration === "vercel"
-								? vercelHeaderStatus(h, model, timeZone)
-								: undefined,
+							: (provider?.headerStatus?.(h, model, timeZone) ?? undefined),
 				},
 				timeZone,
 			),
