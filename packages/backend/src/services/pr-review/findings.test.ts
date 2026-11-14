@@ -94,6 +94,7 @@ describe("settledFindings", () => {
 			"Never intentional, good catch.",
 			"This is not a false positive; the code leaks credentials.",
 			"It isn't a false positive.",
+			"Not just a false positive; the token is logged on line 12.",
 			// A technical adjective is not an acknowledgement.
 			"Fixed-size buffers still overflow here.",
 			"Fixed size arrays are the problem",
@@ -141,6 +142,17 @@ describe("settledFindings", () => {
 			comments: [BOT_COMMENT, reply("Done."), reply("Reopening, it still fails on main")],
 		})
 		assert.strictEqual(settle([retracted], new Set(["src/other.ts"])), "open")
+	})
+
+	it("judges each clause on its own", () => {
+		for (const body of [
+			"Fixed in c88ba3a. Please re-review.",
+			"Done in c88ba3a; the guard runs only if the flag is set.",
+			"Thanks for catching this. Fixed in c88ba3a",
+			"Fixed in c88ba3a. Can you take another look?",
+		]) {
+			assert.strictEqual(settle([withReplies(body)]), "resolved", body)
+		}
 	})
 
 	it("reads a fix with a regression test as a fix", () => {

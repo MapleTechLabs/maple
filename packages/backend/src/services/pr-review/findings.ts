@@ -68,10 +68,10 @@ const SAME_ISSUE_LINES = 3
 const SAME_TITLE_OVERLAP = 0.6
 
 /**
- * A negation just before a verdict phrase, past an article or adverb: "not", "never", or a
- * contraction ("isn't", "wasn’t a", "not really").
+ * A negation just before a verdict phrase, past up to two articles or adverbs: "not", "never",
+ * or a contraction ("isn't", "wasn’t a", "not just a").
  */
-const NEGATED = String.raw`(?<!\b(?:not|never|no)\s(?:(?:a|an|the|really|actually)\s)?)(?<!n['’]t\s(?:(?:a|an|the|really|actually)\s)?)`
+const NEGATED = String.raw`(?<!\b(?:not|never|no)\s(?:(?:a|an|the|really|actually|just|merely|simply|only)\s){0,2})(?<!n['’]t\s(?:(?:a|an|the|really|actually|just|merely|simply|only)\s){0,2})`
 
 /**
  * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
@@ -105,18 +105,22 @@ const HEDGED =
 
 type ReplyVerdict = "dismissed" | "resolved" | "open"
 
+/** A reply's sentences and clauses, so a request in one ("Please re-review.") never voids another. */
+const clausesOf = (body: string): ReadonlyArray<string> =>
+	Arr.filter(Arr.map(Str.split(/(?<=[.!?;])\s+|\n+/)(body), Str.trim), (clause) => clause !== "")
+
 /**
- * A reply's verdict, only when it is an unambiguous statement. A completed fix outranks a dismissal
- * phrase in the same reply ("Fixed in c88ba3a, the call was intentional before"); anything future,
- * requested or conditional is left for the reviewer.
+ * A reply's verdict, only from a clause that states it plainly. A question carries none, not even a
+ * retraction ("Is this still broken?"); a retraction in any other clause wins; then a completed fix
+ * outranks a dismissal ("Fixed in c88ba3a, the call was intentional before"). A clause that is
+ * future, requested, conditional or hedged says nothing.
  */
 const verdictOf = (body: string): ReplyVerdict | undefined => {
-	// A question carries no verdict, not even a retraction ("Is this still broken?").
-	if (Str.includes("?")(body)) return undefined
-	if (STILL_OPEN.test(body)) return "open"
-	if (NOT_YET.test(body) || HEDGED.test(body)) return undefined
-	if (FIXED.test(body)) return "resolved"
-	return DISMISSAL.test(body) ? "dismissed" : undefined
+	const statements = Arr.filter(clausesOf(body), (clause) => !Str.includes("?")(clause))
+	if (Arr.some(statements, (clause) => STILL_OPEN.test(clause))) return "open"
+	const plain = Arr.filter(statements, (clause) => !NOT_YET.test(clause) && !HEDGED.test(clause))
+	if (Arr.some(plain, (clause) => FIXED.test(clause))) return "resolved"
+	return Arr.some(plain, (clause) => DISMISSAL.test(clause)) ? "dismissed" : undefined
 }
 
 /**

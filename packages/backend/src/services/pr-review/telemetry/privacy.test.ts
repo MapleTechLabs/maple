@@ -148,6 +148,12 @@ describe("privacyHitAt", () => {
 		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
 		// A short prefix exempts only its own entry, and only when it is the whole value.
 		[
+			"a password joined to a bracketed short id",
+			["logger.info({ password: password + (requestId.slice(0, 8)) })"],
+			"secret",
+			"password",
+		],
+		[
 			"a password joined to a short id",
 			["logger.info({ password: password + requestId.slice(0, 8) })"],
 			"secret",
@@ -222,6 +228,7 @@ describe("privacyHitAt", () => {
 		["an enum named after credentials", ["logger.info({ action: widgetCredentialAction })"]],
 		["a class named after secrets", ["Effect.logInfo(SecretResealSweep.name)"]],
 		["a short token prefix", ['span.setAttribute("auth.token", token.slice(0, 12))']],
+		["a short prefix as a call's argument", ["logger.info(token.slice(0, 12))"]],
 		["a short prefix in a template", ["logger.info(`using ${apiKey.slice(0, 6)}`)"]],
 	]
 	for (const [name, snippet] of quiet) {
