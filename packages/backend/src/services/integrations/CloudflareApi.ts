@@ -172,6 +172,17 @@ const restResult = <S extends Schema.Top>(
 			(envelope) => envelope.success !== false,
 			(envelope) => refusedEnvelope(request, envelope.errors ?? []),
 		),
+		// A success with no result must not read as an empty inventory that wipes the stored one.
+		Effect.filterOrFail(
+			(envelope) => envelope.result !== undefined && envelope.result !== null,
+			() =>
+				new VendorHttp.VendorHttpError({
+					message: `cloudflare answered success with no result${request.operation === undefined ? "" : ` while ${request.operation}`}`,
+					kind: "invalid_response",
+					peerService: "cloudflare",
+					...(request.operation === undefined ? undefined : { operation: request.operation }),
+				}),
+		),
 		// Inside the retry, so a 200 auth blip is retried like a 400 one.
 		Effect.retry({ schedule: AUTH_BLIP_RETRY, while: isAuthBlip }),
 	)

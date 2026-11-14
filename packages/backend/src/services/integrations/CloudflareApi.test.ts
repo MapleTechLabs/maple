@@ -65,7 +65,25 @@ describe("Cloudflare API access", () => {
 				Arr.map(zones.items, (item) => item.id),
 				["zone-0"],
 			)
+			assert.isTrue(zones.truncated)
 			assert.lengthOf(fake.calls, 2)
+		}),
+	)
+
+	it.effect("fails a success envelope with no result instead of reading it as empty", () =>
+		Effect.gen(function* () {
+			const fake = VendorFake.make({
+				routes: [
+					{
+						path: "/client/v4/accounts/acc_1/workers/scripts",
+						respond: () => VendorFake.json({ success: true, errors: [], messages: [] }),
+					},
+				],
+			})
+			const error = yield* Effect.flip(
+				listWorkerScripts("token", "acc_1", BASE).pipe(Effect.provide(fake.layer)),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsUpstreamError")
 		}),
 	)
 
