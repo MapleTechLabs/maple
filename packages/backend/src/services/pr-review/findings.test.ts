@@ -108,6 +108,7 @@ describe("settledFindings", () => {
 			"You said this was fixed in abc1234",
 			"It was marked fixed in abc1234, yet I still see the token in the logs",
 			"Fixed in abc1234, but the guard is still missing",
+			"This would be a false positive if we redacted the token, but we currently log it.",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "open", body)
 		}
@@ -120,6 +121,7 @@ describe("settledFindings", () => {
 			"Intentional, the gate reads receipt time.",
 			"Leaving it as is.",
 			"Won't fix, it only runs when the flag is set.",
+			"Won't fix, it only runs if the flag is set.",
 			"Not an issue - the token is redacted when logged.",
 		]) {
 			assert.strictEqual(settle([withReplies(body)]), "dismissed", body)

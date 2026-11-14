@@ -857,6 +857,8 @@ export class PrReviewConversationService extends Context.Service<
 			settle: ReplySettlement | undefined,
 			/** The head the answer read: the reply's own, or the commit its fix just pushed. */
 			readHead: string | null,
+			/** The fix the answer staged was not pushed, so nothing it claims fixed is. */
+			fixFailed: boolean,
 		) {
 			const none = { note: "", dismissed: 0, resolved: 0, apply: Effect.void }
 			if (settle === undefined || settle.dismissed.length + settle.resolved.length === 0) return none
@@ -880,8 +882,9 @@ export class PrReviewConversationService extends Context.Service<
 			)
 			// A fix is a claim about the head the answer read; a push since may have undone it, so a
 			// moved (or unreadable) head leaves those findings for the next review.
-			const headHeld = claimedFixed.length === 0 ? true : yield* headStillAt(orgId, row, readHead)
-			const resolved = headHeld ? claimedFixed : []
+			const headHeld =
+				claimedFixed.length === 0 || fixFailed ? true : yield* headStillAt(orgId, row, readHead)
+			const resolved = headHeld && !fixFailed ? claimedFixed : []
 			const mark = (
 				findings: ReadonlyArray<{ readonly id: string }>,
 				values: PG.UpdateSetOf<typeof PrReviewFindings>,
@@ -908,6 +911,9 @@ export class PrReviewConversationService extends Context.Service<
 				[
 					...(dismissed.length === 0 ? [] : [`Dismissed ${handleList(dismissed)}.`]),
 					...(resolved.length === 0 ? [] : [`Marked ${handleList(resolved)} resolved.`]),
+					...(claimedFixed.length > 0 && fixFailed
+						? [`Left ${handleList(claimedFixed)} open: the fix was not pushed.`]
+						: []),
 					...(headHeld
 						? []
 						: [`Left ${handleList(claimedFixed)} open: the branch moved since I read it.`]),
@@ -928,7 +934,9 @@ export class PrReviewConversationService extends Context.Service<
 			const row = yield* getReply(orgId, replyId)
 			if (!ACTIVE.includes(row.status)) return "This reply is already settled; nothing was posted."
 			const fix = row.command === "fix" ? yield* commitFix(orgId, row) : { note: "", commitSha: null }
-			const settled = yield* planSettlement(orgId, row, settle, fix.commitSha ?? row.headSha)
+			// A fix that staged edits and did not push them says why in its note; one with no edits says nothing.
+			const fixFailed = row.command === "fix" && fix.commitSha === null && fix.note !== ""
+			const settled = yield* planSettlement(orgId, row, settle, fix.commitSha ?? row.headSha, fixFailed)
 			const text = Arr.join(
 				Arr.filter([Str.trim(body), fix.note, settled.note], (part) => part !== ""),
 				"\n\n",

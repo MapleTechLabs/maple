@@ -106,6 +106,15 @@ const STILL_OPEN =
 const HEDGED =
 	/\b(?:said|says|claimed|claims|marked|supposedly|apparently|reportedly|don['’]?t think|not sure|unsure|nothing|doubt|unclear|maybe|may|might|perhaps|probably|hopefully|i think|i believe|seems)\b/i
 
+/** A conditional before a dismissal phrase: "this would be a false positive if we redacted it". */
+const CONDITIONAL = /\b(?:would|could|might|if|unless)\b/i
+
+const affirmsDismissal = (clause: string): boolean => {
+	if (HEDGED.test(clause)) return false
+	const match = DISMISSAL.exec(clause)
+	return match !== null && !CONDITIONAL.test(Str.slice(0, match.index)(clause))
+}
+
 type ReplyVerdict = "dismissed" | "resolved" | "open"
 
 /** A reply's sentences and clauses, so a request in one ("Please re-review.") never voids another. */
@@ -123,11 +132,9 @@ const verdictOf = (body: string): ReplyVerdict | undefined => {
 	if (Arr.some(statements, (clause) => STILL_OPEN.test(clause))) return "open"
 	const plain = Arr.filter(statements, (clause) => !NOT_YET.test(clause) && !HEDGED.test(clause))
 	if (Arr.some(plain, (clause) => FIXED.test(clause))) return "resolved"
-	// A dismissal promises no later work, so only a hedge voids it: "Won't fix, it only runs when
-	// the flag is set." still dismisses.
-	return Arr.some(statements, (clause) => !HEDGED.test(clause) && DISMISSAL.test(clause))
-		? "dismissed"
-		: undefined
+	// A dismissal promises no later work, so a reason after it stands ("Won't fix, it only runs
+	// when the flag is set."); a hedge, or a condition before it ("would be a false positive if"), voids it.
+	return Arr.some(statements, affirmsDismissal) ? "dismissed" : undefined
 }
 
 /**

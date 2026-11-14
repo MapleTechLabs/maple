@@ -527,6 +527,72 @@ describe("PrReviewConversationService", () => {
 		}).pipe(Effect.provide(layerFor(testDb, recorded, { postFails })))
 	})
 
+	it.effect("leaves a claimed fix open when the staged fix was not pushed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded = record()
+		return Effect.gen(function* () {
+			yield* seed
+			const repo = yield* VcsRepository
+			const repositoryId = Option.getOrThrow(yield* repo.resolveRepository(orgId, "github", "7")).id
+			const database = yield* Database
+			const finding = (handle: string, status: "open" | "resolved") => ({
+				id: `finding-${handle}`,
+				orgId,
+				repositoryId,
+				number: 612,
+				reviewId: Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-000000000000"),
+				handle,
+				path: "src/a.ts",
+				line: 1,
+				category: "correctness" as const,
+				severity: "warn" as const,
+				title: `finding ${handle}`,
+				status,
+				createdAt: 0,
+				updatedAt: 0,
+			})
+			yield* database.execute((db) =>
+				db.run(
+					PG.insertInto(PrReviewFindings).values([
+						finding("F1", "open"),
+						finding("F2", "open"),
+						finding("F3", "resolved"),
+					]),
+				),
+			)
+			const conversations = yield* PrReviewConversationService
+			const outcome = yield* conversations.onPullRequestComment(
+				orgId,
+				comment({ body: "@maple fix it" }),
+			)
+			// The edit does not apply to the file at the head, so nothing is pushed.
+			yield* conversations.stageEdit(orgId, outcome.replyId!, {
+				path: "src/a.ts",
+				oldText: "not in the file",
+				newText: "y",
+			})
+			yield* conversations.submitReply(orgId, outcome.replyId!, "Guarded it.", {
+				dismissed: [],
+				resolved: ["F1"],
+			})
+			assert.lengthOf(recorded.commits, 0)
+			assert.include(recorded.posted[0]?.body ?? "", "Left F1 open: the fix was not pushed.")
+			const rows = yield* database.execute((db) =>
+				db.run(
+					PG.from(PrReviewFindings)
+						.select("handle", "status", "resolvedSha")
+						.where(($) => [$.repositoryId.eq(repositoryId)])
+						.orderBy(["handle", "asc"]),
+				),
+			)
+			assert.deepEqual(rows, [
+				{ handle: "F1", status: "open", resolvedSha: null },
+				{ handle: "F2", status: "open", resolvedSha: null },
+				{ handle: "F3", status: "resolved", resolvedSha: null },
+			])
+		}).pipe(Effect.provide(layerFor(testDb, recorded, { files: { "src/a.ts": "const a = 1\n" } })))
+	})
+
 	it.effect("leaves a claimed fix open when the branch moved since the answer read it", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded = record()

@@ -369,12 +369,22 @@ const segmentsOf = (code: string): ReadonlyArray<readonly [number, number]> => {
 
 /**
  * An entry whose recorded value is derived, not the data: a comparison, a negation, a presence
- * check, a length, a constant (`hasToken: token !== undefined`, `"cache": "hit"`), or a short
- * prefix that is the entry's whole value (no operator before it, so `password + id.slice(0, 8)`
- * is not one).
+ * check, a length, or a constant (`hasToken: token !== undefined`, `"cache": "hit"`).
  */
+/**
+ * A short prefix that is the entry's whole value (no operator before it, so `password + id.slice(0, 8)`
+ * is not one). Only safe for a long secret: a prefix of a short value can be all of it.
+ */
+const SHORT_PREFIX_VALUE =
+	/(?<!(?:[+*/%|&^~-]|\?(?!\.)).*)(?:^|(?<=[\w$])\(|:)\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$/
+
+/** Secrets far longer than any exempt prefix: a key, token or secret, not a password or a PIN. */
+const prefixSafe = (kind: PrivacyKind, name: string) =>
+	kind === "secret" &&
+	!Arr.some(wordsOf(name), (word) => /^(?:pass(?:word|wd|phrase|code)|pin)$/.test(word))
+
 const DERIVED_VALUE =
-	/(?:(?<!(?:[+*/%|&^~-]|\?(?!\.)).*)(?:^|(?<=[\w$])\(|:)\s*[\w$.?]+\.(?:slice|substring|substr)\(\s*0\s+(?:[1-9]|1[0-6])\s*\)[)}\];\s]*$|[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
+	/(?:[!=]==?|\bOption\.is(?:Some|None)\b|\.(?:length|size)\b|\bBoolean\(|\btypeof\b|(?:^|[(:])\s*!\s*[\w$]|(?:^|[(:])\s*(?:true|false|nil|-?\d+(?:\.\d+)?)[)}\];\s]*$|(?:^|[(:])\s*(["'])[^"'`$]*\1[)}\];\s]*$)/
 
 /** Calls that hand their argument on unchanged, so what goes in still reaches the sink. */
 const PASS_THROUGH =
@@ -475,37 +485,46 @@ export const privacyHitAt = (lines: ReadonlyArray<DiffLine>, index: number): Pri
 		text,
 		(acc, [start, end]) => Str.slice(0, start)(acc) + Str.repeat(end - start)(" ") + Str.slice(end)(acc),
 	)
-	const derived = Arr.map(segments, ([start, end]) =>
-		DERIVED_VALUE.test(Str.trim(Str.slice(start, end)(values))),
-	)
+	const segmentText = (start: number, end: number) => Str.trim(Str.slice(start, end)(values))
+	const derived = Arr.map(segments, ([start, end]) => DERIVED_VALUE.test(segmentText(start, end)))
+	const shortPrefix = Arr.map(segments, ([start, end]) => SHORT_PREFIX_VALUE.test(segmentText(start, end)))
 	const segmentAt = (offset: number) =>
 		Option.getOrElse(
 			Arr.findFirstIndex(segments, ([start, end]) => offset >= start && offset <= end),
 			() => -1,
 		)
-	const isDerived = (offset: number, valueFollows = false) => {
+	/** Whether the value at `offset` is derived; `prefixOk` also accepts a short prefix of it. */
+	const isDerived = (offset: number, prefixOk: boolean, valueFollows = false) => {
 		const within = Arr.findFirst(interpolations, ([start, end]) => offset >= start && offset < end)
-		if (Option.isSome(within))
-			return DERIVED_VALUE.test(Str.trim(Str.slice(within.value[0], within.value[1])(text)))
+		if (Option.isSome(within)) {
+			const inner = Str.trim(Str.slice(within.value[0], within.value[1])(text))
+			return DERIVED_VALUE.test(inner) || (prefixOk && SHORT_PREFIX_VALUE.test(inner))
+		}
 		const at = segmentAt(offset)
-		return derived[at] === true || (valueFollows && derived[at + 1] === true)
+		const derivedAt = (i: number) => derived[i] === true || (prefixOk && shortPrefix[i] === true)
+		return derivedAt(at) || (valueFollows && derivedAt(at + 1))
 	}
 
 	const named: Array<{ readonly kind: PrivacyKind; readonly subject: string; readonly offset: number }> = []
 	for (const literal of literals) {
 		if (literal.key === undefined || !KEY_LITERAL.test(literal.value)) continue
 		const kind = classifyName(literal.value)
-		if (kind !== undefined && !isDerived(literal.offset, literal.key === "argument"))
+		if (
+			kind !== undefined &&
+			!isDerived(literal.offset, prefixSafe(kind, literal.value), literal.key === "argument")
+		)
 			named.push({ kind, subject: `\`${literal.value}\``, offset: literal.offset })
 	}
 	for (const match of Str.matchAll(BRACKET_ACCESS)(text)) {
-		const kind = classifyName(`${match[1]}.${match[2]}`, { chain: true })
-		if (kind !== undefined && !isDerived(match.index ?? 0))
+		const name = `${match[1]}.${match[2]}`
+		const kind = classifyName(name, { chain: true })
+		if (kind !== undefined && !isDerived(match.index ?? 0, prefixSafe(kind, name)))
 			named.push({ kind, subject: `\`${match[0]}\``, offset: match.index ?? 0 })
 	}
 	for (const { chain, offset } of chainsOf(code)) {
 		const kind = classifyName(chain, { chain: true })
-		if (kind !== undefined && !isDerived(offset)) named.push({ kind, subject: `\`${chain}\``, offset })
+		if (kind !== undefined && !isDerived(offset, prefixSafe(kind, chain)))
+			named.push({ kind, subject: `\`${chain}\``, offset })
 	}
 	// A key naming a non-person owner (`vcs.repository.full_name`) speaks for its own entry, and for
 	// the value entry after it in `set("k", v)`; never for other entries on the line.

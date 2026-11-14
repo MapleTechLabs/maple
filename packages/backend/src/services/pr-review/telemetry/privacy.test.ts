@@ -159,6 +159,14 @@ describe("privacyHitAt", () => {
 			"shipping_address_line1",
 		],
 		["an address zip", ["logger.info({ home_address_zip })"], "contact", "home_address_zip"],
+		// A prefix of a short value can be all of it, so only a long secret's prefix is exempt.
+		["a short prefix of an ssn", ["logger.info({ ssn: ssn.slice(0, 12) })"], "government_id", "ssn"],
+		[
+			"a short prefix of a password",
+			['span.setAttribute("user.password", password.slice(0, 12))'],
+			"secret",
+			"user.password",
+		],
 		// A short prefix exempts only its own entry, and only when it is the whole value.
 		[
 			"a password joined to a converted short id",
