@@ -143,10 +143,6 @@ import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalytic
 import { CodeReviewTeamService } from "@maple/backend/services/pr-review/CodeReviewTeamService"
 import { PrReviewAnalyticsService } from "@maple/backend/services/pr-review/PrReviewAnalyticsService"
 
-/**
- * Services the HTTP routes read, at group build or per request; each service owns its
- * implementation dependencies. A service only other services consume is theirs to provide.
- */
 /** The secrets the api's services and routes read, each bound to this Worker (`resources/env.ts`). */
 const ApiSecretsLive = Layer.mergeAll(
 	ApnsPrivateKey.layer,
@@ -168,6 +164,10 @@ const ApiSecretsLive = Layer.mergeAll(
 	SupportSlackBotToken.layer,
 )
 
+/**
+ * Services the HTTP routes read, at group build or per request; each service owns its
+ * implementation dependencies. A service only other services consume is theirs to provide.
+ */
 export const HttpServicesLive = Layer.mergeAll(
 	VcsProviderRegistry.layer,
 	OrgMembersService.layer,
