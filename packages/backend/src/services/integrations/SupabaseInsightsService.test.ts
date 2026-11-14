@@ -271,6 +271,14 @@ describe("SupabaseInsightsService", () => {
 				assert.strictEqual(result.advisorsCheckedAt, null)
 				assert.strictEqual(result.advisorsError, null)
 				assert.strictEqual(result.queriesCheckedAt, null)
+
+				// The rate limit holds the project: no call until the 5 minute hold runs out.
+				yield* TestClock.adjust("1 minute")
+				yield* insights.pollAllOrgs
+				assert.lengthOf(insightCalls(world), 1)
+				yield* TestClock.adjust("5 minutes")
+				yield* insights.pollAllOrgs
+				assert.lengthOf(insightCalls(world), 2)
 			}),
 		)
 	})
