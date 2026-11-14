@@ -23,7 +23,7 @@
 	"dependencies": {
 		"@effect/sql-pg": "4.1.2",
 		"@effect/sql-pglite": "4.1.2",
-		"@electric-sql/pglite": "^0.5.15",
+		"@electric-sql/pglite": "^0.5.16",
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",
