@@ -632,6 +632,27 @@ describe("supabase", () => {
 		])
 	})
 
+	it("reads a running project whose log polling stopped as stale, but not a paused one", () => {
+		const stopped = { ...project, logsEnabled: true, logsLastPolledAt: NOW - 3 * 60 * MINUTE }
+		const supabase = providerOf(
+			{
+				oauthConnections: [supabaseGrant],
+				supabaseConnection: connection,
+				supabaseProjects: [
+					stopped,
+					{ ...stopped, name: "old", status: "INACTIVE" },
+					{ ...project, name: "live", logsEnabled: true, logsLastPolledAt: NOW - MINUTE },
+				],
+			},
+			"supabase",
+		)
+		expect(Arr.map(supabase?.resources ?? [], (r) => `${r.name}:${r.status}`)).toEqual([
+			"shop:stale",
+			"old:paused",
+			"live:healthy",
+		])
+	})
+
 	it("reports a revoked grant as disconnected, and a discovery error as failing", () => {
 		expect(
 			providerOf(

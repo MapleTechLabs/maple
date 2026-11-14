@@ -858,10 +858,19 @@ const supabase = (inputs: IntegrationInventoryInputs, now: number): IntegrationE
 	const projects = Arr.map(inputs.supabaseProjects, (project): IntegrationResource => {
 		const drainError = project.logDrainEnabled ? project.logDrainError : null
 		const logsError = project.logsEnabled ? project.logsError : null
+		const lifecycle = supabaseLifecycle(project.status)
+		// Discovery keeps the shared source fresh, so a log feed that stops is caught by its own age.
+		const logs: IntegrationStatus = !project.logsEnabled
+			? "healthy"
+			: project.logsLastPolledAt === null
+				? "pending"
+				: lifecycle === "healthy" && now - project.logsLastPolledAt > POLLER_STALE_MS
+					? "stale"
+					: "healthy"
 		const status = worstStatus([
-			supabaseLifecycle(project.status),
+			lifecycle,
 			drainError !== null || logsError !== null ? "failing" : "healthy",
-			project.logsEnabled && project.logsLastPolledAt === null ? "pending" : "healthy",
+			logs,
 		])
 		return {
 			kind: "project",
