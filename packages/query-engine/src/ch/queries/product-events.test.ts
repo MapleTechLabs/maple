@@ -62,12 +62,11 @@ describe("productEventsFunnelQuery", () => {
 			),
 			params,
 		)
-		// The window is passed in the timestamp's unit — epoch milliseconds — since
-		// windowFunnel does not accept DateTime64.
+		// The window is in the order key's unit: 3600 s as microseconds, times 1024.
+		expect(sql).toContain("windowFunnel(3686400000000)(ord, s1 = 1, s2 = 1, s3 = 1) AS level")
 		expect(sql).toContain(
-			"windowFunnel(3600000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1) AS level",
+			"plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord",
 		)
-		expect(sql).toContain("toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts")
 		expect(sql).toContain("[countIf(level >= 1), countIf(level >= 2), countIf(level >= 3)] AS counts")
 		expect(sql).toContain("arrayJoin([1, 2, 3]) AS step")
 		expect(sql).toContain("arrayElement(totals.counts, step) AS count")
@@ -82,14 +81,14 @@ describe("productEventsFunnelQuery", () => {
 			params,
 		)
 		expect(sql).toContain(
-			"toUInt8(((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1",
+			"toUInt8(((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev')) AS s1",
 		)
 		expect(sql).toContain("toUInt8(e.EventName = 'signup_completed') AS s2")
 		expect(sql).toContain(
 			"toUInt8((e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup')) AS s3",
 		)
 		expect(oneLine(sql)).toContain(
-			"AND (((e.Kind = 'navigation' AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
+			"AND (((e.Kind IN ('navigation', 'screen') AND e.PagePath = '/pricing') AND e.Host = 'maple.dev') OR e.EventName = 'signup_completed' OR (e.EventName = 'plan_started' AND e.Attributes['plan'] = 'startup'))",
 		)
 	})
 
@@ -151,16 +150,14 @@ describe("productEventsFunnelQuery", () => {
 		)
 		// The session branch: s1 = 1, every other step 0, at the session's StartTime.
 		expect(oneLine(sql)).toContain(
-			"SELECT s.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(s.StartTime)) AS ts, 0 AS seq, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
+			"SELECT s.VisitorId AS key, plus(multiply(toUInt64(toUnixTimestamp64Micro(s.StartTime)), 1024), modulo(0, 1024)) AS ord, 1 AS s1, 0 AS s2, 0 AS s3, 0 AS s4 FROM session_replays AS s",
 		)
 		expect(sql).toContain("AND s.ReferrerHost = 'news.ycombinator.com'")
 		// The events branch never satisfies the session step.
 		expect(oneLine(sql)).toContain(
-			"SELECT e.VisitorId AS key, toUInt64(toUnixTimestamp64Milli(e.Timestamp)) AS ts, e.Seq AS seq, 0 AS s1,",
+			"SELECT e.VisitorId AS key, plus(multiply(toUInt64(toUnixTimestamp64Micro(e.Timestamp)), 1024), modulo(e.Seq, 1024)) AS ord, 0 AS s1,",
 		)
-		expect(sql).toContain(
-			"windowFunnel(86400000)(funnel_events.ts, funnel_events.s1 = 1, funnel_events.s2 = 1, funnel_events.s3 = 1, funnel_events.s4 = 1) AS level",
-		)
+		expect(sql).toContain("windowFunnel(88473600000000)(ord, s1 = 1, s2 = 1, s3 = 1, s4 = 1) AS level")
 	})
 
 	it("has no session_replays branch without a session step", () => {
@@ -256,7 +253,7 @@ describe("productEventsFunnelBreakdownQuery", () => {
 		const flat = oneLine(compiled.sql)
 		expect(flat).toContain("Attributes['plan'] AS dim")
 		expect(flat).toContain(
-			"argMinIf(funnel_events.dim, funnel_events.ts, funnel_events.dim != '') AS group",
+			"argMinIf(funnel_events.dim, funnel_events.ord, funnel_events.dim != '') AS group",
 		)
 		expect(flat).toContain("countIf(level >= 1) AS entered")
 		expect(flat).toContain("GROUP BY group ORDER BY entered DESC, group ASC LIMIT 5")
@@ -371,21 +368,24 @@ describe("productEventNamesQuery", () => {
 // every event of the population back onto the chain to find what came next.
 
 describe("funnel drop-off details", () => {
-	it("walks each step's first event in chain order and takes p50/p90 of the gaps", () => {
+	it("walks the chain from the start that reached the deepest step and takes p50/p90 of the gaps", () => {
 		const { sql } = compileUnsafe(
 			Result.getOrThrow(
 				productEventsFunnelTimingQuery({ steps: STEPS, keyBy: "person", windowSeconds: 3_600 }),
 			),
 			params,
 		)
-		expect(sql).toContain("arraySort(x -> (x.1, x.2), groupArray(tuple(ts, seq, s1, s2, s3))) AS evs")
-		expect(sql).toContain("tupleElement(arrayFirst(x -> x.3 = 1, evs), 1) AS t1")
-		// A step is only found once the previous one was.
+		expect(sql).toContain("arraySort(groupArray(tuple(ord, s1, s2, s3))) AS evs")
+		// The first step-1 row still inside the window when the deepest step was first reached.
+		expect(sql).toContain("arrayFirst(x -> x.2 = 1 AND x.1 + 3686400000000 >= reachedAt, evs)")
+		// Each later step is the first matching row after the previous step's.
+		expect(sql).toContain("arrayFirst(x -> x.3 = 1 AND x.1 > o1, evs)")
 		expect(sql).toContain(
-			"arrayFirst(x -> t1 > 0 AND x.4 = 1 AND x.1 >= t1 AND x.1 <= t1 + 3600000, evs), 1) AS t2",
+			"quantileIf(0.5)(toFloat64(intDiv(o2, 1024000) - intDiv(o1, 1024000)), level >= 2)",
 		)
-		expect(sql).toContain("quantileIf(0.5)(toFloat64(t2 - t1), level >= 2 AND t2 > 0)")
-		expect(sql).toContain("quantileIf(0.9)(toFloat64(t3 - t2), level >= 3 AND t3 > 0)")
+		expect(sql).toContain(
+			"quantileIf(0.9)(toFloat64(intDiv(o3, 1024000) - intDiv(o2, 1024000)), level >= 3)",
+		)
 		expect(sql).toContain("arrayJoin([2, 3]) AS step")
 		expect(sql).toContain("arrayElement(totals.p50s, step) AS p50Ms")
 	})
@@ -399,13 +399,14 @@ describe("funnel drop-off details", () => {
 		)
 		// oxlint-disable-next-line test-slop/no-sql-text-pin -- steps are 1-based, the chain level 0-based
 		expect(sql).toContain("level + 1 AS step")
-		expect(sql).toContain("arrayElement([t1, t2, t3], level) AS tLast")
+		expect(sql).toContain("arrayElement([o1, o2, o3], level) AS lastOrd")
 		expect(sql).toContain("WHERE chain.level >= 1")
 		expect(sql).toContain("AND chain.level < 3")
-		expect(sql).toContain("AND arrayElement([t1, t2, t3], level) > 0")
-		expect(sql).toContain("argMinIf(e.name, e.ts, e.ts > d.tLast) AS next")
+		expect(sql).toContain("argMinIf(e.name, e.ord, e.ord > d.lastOrd) AS next")
 		// No identity join on a visitor key, so the branch's columns go unprefixed.
-		expect(sql).toContain("if(e.Kind = 'navigation', e.PagePath, e.EventName) AS name")
+		expect(sql).toContain(
+			"if((e.Kind IN ('navigation', 'screen') AND e.PagePath != ''), e.PagePath, e.EventName) AS name",
+		)
 		expect(sql).toContain("groupArray(tuple(next, count))), 1, 6) AS head")
 		expect(sql).toContain("ORDER BY step ASC, count DESC, next ASC")
 	})

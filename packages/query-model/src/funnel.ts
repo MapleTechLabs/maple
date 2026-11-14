@@ -31,7 +31,7 @@ export const FunnelEventStep = Schema.Struct({
 	eventName: Schema.String,
 	attributeEquals: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
 })
-/** A page view of `pagePath`, optionally on one `host`. */
+/** A page view, or a mobile screen view, of `pagePath`, optionally on one `host`. */
 export const FunnelPageStep = Schema.Struct({
 	kind: Schema.Literal("page"),
 	pagePath: Schema.String,

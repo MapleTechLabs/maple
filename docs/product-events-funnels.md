@@ -465,10 +465,9 @@ the previous step. When the variant is set the route params carry
 `details: true` and the funnel route also runs `productEventsFunnelTimingQuery`
 (p50/p90 milliseconds between consecutive steps) and
 `productEventsFunnelLeaversQuery` (the first event after the last step a leaver
-reached, top 6 per step, `''` = nothing followed). Both walk each person's
-chain from the first step-1 event: a first-occurrence approximation of the
-chain `windowFunnel` counted, so a person the funnel counts at level N can
-occasionally have no step-N timestamp and is left out of the quantiles. The
+reached, top 6 per step, `''` = nothing followed). Both read each person's
+chain, described under "How a funnel is counted" below, so the times and the
+leavers belong to the same attempt the count does. The
 extras ride on the same `{ name, value }` rows as optional per-step fields
 (`p50Ms`, `p90Ms`, `leavers`), so a reader that only knows the bars ignores
 them. With a `breakdownBy` the route returns the grouped rows only: the drop-off view then draws one
@@ -491,3 +490,34 @@ The hop rows are a CTE so the ranking and both sides of the fold join read
 them once. The benchmark catalog (`packages/query-engine/src/benchmark/builders.ts`) carries fixtures for both,
 and `web-analytics-parity.clickhouse.e2e.test.ts` runs them against a real
 ClickHouse.
+
+## How a funnel is counted (2026-11-14)
+
+Every funnel query orders a person's rows by one key, `orderKey` in
+`packages/query-engine/src/ch/queries/product-events.ts`: microseconds times 1024, plus
+`Seq % 1024`. `Seq` is what tells a page load from the `track()` call it fires in the same
+millisecond; server rows carry `Seq` 0 and order by their own clock. Before this key, counts
+ordered by millisecond only, so two rows in one millisecond converted in either order.
+
+- **An attempt** starts at a step-1 row and takes, for each later step, the first later row that
+  matches and is still inside the window of the start. One row serves one step.
+- **The level** is the person's deepest attempt. That is `windowFunnel` whenever no row can match
+  two steps. A funnel that repeats a step (`product_viewed`, `product_viewed`, `add_to_cart`) is
+  read from `walkQuery` instead: plain `windowFunnel` lets one row satisfy both repeats, and its
+  `strict_once` mode, which forbids that, took 31 s on 72,000 rows where the walk takes 26 ms.
+- **The chain** is the earliest attempt that gets that deep. A first try that ran out of time gives
+  way to the later one that converted. Time between steps and "where the leavers went" are both
+  read from the chain, so a funnel never reports a time for people it did not count. This replaced
+  a walk from the person's first step-1 event, which dropped everyone whose first attempt expired
+  and returned nothing at all when step 1 was a session step.
+- **A page step** matches a browser page view or a mobile screen view (`Kind` `navigation` or
+  `screen`); both are named by `PagePath`. Paths and leavers name a screen the same way.
+
+`apps/cli/test/funnel-scenarios.test.ts` holds this definition as a plain TypeScript reference
+funnel and runs the compiled SQL against it on chDB: four example products (a SaaS signup with
+server-side steps, a shop checkout with restarts, a mobile onboarding, a two-host content site),
+hand-built edge cases and random histories. It needs no Docker; run it with
+`bun test test/funnel-scenarios.test.ts` in `apps/cli`.
+
+On 2.9M rows and 200,000 people (chDB, five steps): counts 30 ms, time between steps 80 ms (118 ms
+before), leavers 122 ms (133 ms before), a funnel with a repeated step 45 ms.
