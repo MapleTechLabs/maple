@@ -117,7 +117,10 @@ export class PlanetScaleMetricsService extends Context.Service<
 		const httpClient = yield* HttpClient.HttpClient
 		const ingestKeys = yield* OrgIngestKeysService
 		const ingest = yield* makeIngestSender
-		const { pollStateLease } = makePlanetScalePollState(database, "PlanetScaleMetricsService")
+		const { pollStateLease, unclaimedReason } = makePlanetScalePollState(
+			database,
+			"PlanetScaleMetricsService",
+		)
 
 		const callApi = <A, E extends SdkError>(
 			connection: PlanetScaleConnectionRow,
@@ -286,28 +289,6 @@ export class PlanetScaleMetricsService extends Context.Service<
 		}, keepRefusal)
 
 		/** Why the org row was not claimed, so a routine fresh tick does not read as an overlap. */
-		const unclaimedReason = (connection: PlanetScaleConnectionRow, now: number) =>
-			dbExecute((db) =>
-				db.run(
-					PG.from(PlanetscalePollState)
-						.select("enabled", "lastSuccessAt", "holdUntil")
-						.where(($) => [
-							$.orgId.eq(connection.orgId),
-							$.dataset.eq(PLANETSCALE_METRICS_DATASET),
-							$.databaseId.eq(""),
-						])
-						.limit(1),
-				),
-			).pipe(
-				Effect.map(([row]) => {
-					if (row === undefined) return "lease_held"
-					if (!row.enabled) return "disabled"
-					if (row.lastSuccessAt !== null && now - row.lastSuccessAt < ORG_LEASE_TTL_MS)
-						return "fresh"
-					if (row.holdUntil !== null && row.holdUntil > now) return "held"
-					return "lease_held"
-				}),
-			)
 
 		const pollOrg = Effect.fn("PlanetScaleMetricsService.pollOrg")(function* (
 			connection: PlanetScaleConnectionRow,
@@ -375,7 +356,17 @@ export class PlanetScaleMetricsService extends Context.Service<
 			).pipe(
 				Effect.flatMap(
 					Option.match({
-						onNone: () => Effect.flatMap(unclaimedReason(connection, now), skip),
+						onNone: () =>
+							Effect.flatMap(
+								unclaimedReason(
+									connection.orgId,
+									PLANETSCALE_METRICS_DATASET,
+									"",
+									ORG_LEASE_TTL_MS,
+									now,
+								),
+								skip,
+							),
 						onSome: Effect.succeed,
 					}),
 				),
