@@ -631,6 +631,39 @@ describe("RailwayMetricsService", () => {
 		})
 	})
 
+	it.effect("a pass that fails after a new token is saved leaves the new token's source alone", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: StubCalls = { railway: [], ingest: [] }
+		return Effect.gen(function* () {
+			yield* run(
+				testDb,
+				stubFetch(calls),
+				RailwayMetricsService.use((railway) => railway.connect(orgId, userId, "rw_token_123")),
+			)
+			yield* resetWatermarks(testDb)
+			const refusedAfterSave = stubFetch(calls, {
+				ingestStatus: 403,
+				beforeRailway: async () => {
+					await testDb.pglite.query(
+						"UPDATE railway_connections SET token_ciphertext = 'saved-mid-poll'",
+					)
+				},
+			})
+			yield* run(
+				testDb,
+				refusedAfterSave,
+				RailwayMetricsService.use((railway) => railway.pollOrg(orgId)),
+			)
+			const source = yield* Effect.promise(() =>
+				queryFirstRow<{ last_poll_error: string | null }>(
+					testDb,
+					"SELECT s.last_poll_error FROM sources s JOIN railway_connections c ON c.source_id = s.id",
+				),
+			)
+			assert.isNull(source!.last_poll_error)
+		})
+	})
+
 	it.effect("each tick reports onto the source and a reconnect clears a rejected token", () => {
 		const testDb = createTestDb(trackedDbs)
 		const calls: StubCalls = { railway: [], ingest: [] }
