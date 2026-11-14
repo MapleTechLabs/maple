@@ -139,7 +139,16 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 								assetType: $.assetType,
 								count: PG.count(),
 							}))
-							.where(($) => [$.orgId.eq(orgId)])
+							// The connector filter is served by the (connector_id, name) key; org_id has no index.
+							.where(($) => [
+								$.orgId.eq(orgId),
+								PG.inSubquery(
+									$.connectorId,
+									PG.from(GcpConnectors)
+										.select("id")
+										.where(($c) => [$c.orgId.eq(orgId)]),
+								),
+							])
 							.groupBy("connectorId", "assetType"),
 					),
 					awsConnections: db.run(
