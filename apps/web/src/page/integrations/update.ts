@@ -14,13 +14,11 @@ import * as Github from "./update-github"
 import * as CloudflareCard from "../infra-integrations/cloudflare/integration/update-cloudflare"
 import { initCloudflareCard } from "../infra-integrations/cloudflare/integration/cloudflare"
 import { initPrometheusCard } from "./prometheus"
-import { initPlanetscaleCard } from "../infra-integrations/planetscale/integration/planetscale"
 import { initGcpCard } from "../infra-integrations/gcp/integration/gcp"
 import { initAwsCard } from "../infra-integrations/aws/integration/aws"
 import * as Aws from "../infra-integrations/aws/integration/update-aws"
 import * as Gcp from "../infra-integrations/gcp/integration/update-gcp"
 import * as Configure from "../infra-integrations/gcp/integration/update-gcp-configure"
-import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
 import * as Prometheus from "./update-prometheus"
 import { ChartRuntime } from "@maple/views/charts/chart-runtime"
 import { isMultiAccount } from "../infra-integrations/cloudflare/integration/view-cloudflare"
@@ -39,6 +37,7 @@ import { chain, requestStatus, statusNamesOf } from "./update-status"
 import {
 	CHAT_PROVIDER,
 	everyProvider,
+	PLANETSCALE_PROVIDER,
 	PROVIDER_MODULES,
 	providerModuleOf,
 	RAILWAY_PROVIDER,
@@ -165,7 +164,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		githubCard: initGithubCard(),
 		cloudflareCard: initCloudflareCard(),
 		prometheusCard: initPrometheusCard(),
-		planetscaleCard: initPlanetscaleCard(),
+		planetscaleCard: PLANETSCALE_PROVIDER.initial(),
 		gcpCard: initGcpCard(),
 		awsCard: initAwsCard(),
 		railwayCard: RAILWAY_PROVIDER.initial(),
@@ -208,7 +207,6 @@ const enterIntegration = (model: Model, context: PageContext): Return => {
 	if (integration === "aws") return Aws.enterAws(model, context)
 	if (integration === "gcp")
 		return chain(model, [(next) => Gcp.enterGcp(next, context), (next) => Gcp.requestBand(next, context)])
-	if (integration === "planetscale") return Planetscale.enterPlanetscale(model)
 	return providerModuleOf(integration)?.onEnter(model, context) ?? { model }
 }
 
@@ -224,7 +222,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 	const s = model.statuses
 	return Message.match<Return>(message, {
 		CompletedReadClock: ({ nowMs }) =>
-			chain(Planetscale.withWatchStart({ ...model, nowMs }, nowMs), [
+			chain({ ...model, nowMs }, [
 				(next) => gcpBand(next, context),
 				(next) => everyProvider(next, (provider) => (each) => provider.onClock(each, context)),
 			]),
@@ -238,19 +236,12 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			),
 		CompletedLoadVercel: ({ key, result }) =>
 			accepted(model, { ...s, vercel: Keyed.accept(s.vercel, key, result) }),
-		CompletedLoadPlanetscale: ({ key, result }) => {
-			const read = accepted(model, {
-				...s,
-				planetscale: Keyed.accept(s.planetscale, key, result),
-			}).model
-			return chain(read, [
-				(next) => Planetscale.loadedStatus(next),
-				(next) =>
-					integrationOfSearch(next.search.integration) === "planetscale"
-						? Planetscale.ensurePicker(next, context)
-						: { model: next },
-			])
-		},
+		CompletedLoadPlanetscale: ({ key, result }) =>
+			PLANETSCALE_PROVIDER.onStatus(
+				accepted(model, { ...s, planetscale: Keyed.accept(s.planetscale, key, result) }).model,
+				context,
+				{ isCurrent: s.planetscale.key === key, previous: s.planetscale },
+			),
 		CompletedLoadPlanetscaleDatabases: ({ key, result }) =>
 			accepted(model, {
 				...s,
@@ -290,6 +281,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			SEARCH_CONSOLE_PROVIDER.update(model, child, context),
 		GotChatMessage: ({ message: child }) => CHAT_PROVIDER.update(model, child, context),
 		GotVercelMessage: ({ message: child }) => VERCEL_PROVIDER.update(model, child, context),
+		GotPlanetscaleMessage: ({ message: child }) => PLANETSCALE_PROVIDER.update(model, child, context),
 		CompletedLoadChat: ({ key, result }) =>
 			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>
@@ -436,30 +428,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedAwsModules: ({ id, connection, error }) =>
 			Aws.completedModules(model, context, id, connection, error),
 		ToggledAwsNewModule: ({ module }) => Aws.toggledNewModule(model, module),
-		CompletedFetchOrganizations: ({ key, result }) =>
-			Planetscale.updateCard(model, {
-				organizations: Keyed.accept(model.planetscaleCard.organizations, key, result),
-			}),
-		ClickedChangeOrganization: () => Planetscale.clickedChange(model, context),
-		GotPickerDialogMessage: ({ message: child }) => Planetscale.gotPickerDialog(model, child),
-		SelectedOrganization: ({ name }) => Planetscale.updateCard(model, { selectedOrg: name }),
-		GotBranchFieldMessage: ({ field, message: child }) => Planetscale.gotBranchField(model, field, child),
-		ClickedPickerCancel: () => Planetscale.clickedPickerCancel(model),
-		SubmittedOrganization: () => Planetscale.submittedOrganization(model),
-		CompletedSelectOrganization: ({ organization, failure }) =>
-			Planetscale.completedSelect(model, context, organization, failure),
-		ClickedMetricsDetails: () =>
-			Planetscale.updateCard(model, { isDetailsOpen: !model.planetscaleCard.isDetailsOpen }),
-		SelectedPlanetscaleMetricsMethod: ({ method }) =>
-			Planetscale.updateCard(model, { metricsMethod: method, tokenError: null }),
-		GotPlanetscaleTokenField: ({ field, message: child }) =>
-			Planetscale.gotTokenField(model, field, child),
-		SubmittedPlanetscaleToken: () => Planetscale.submittedToken(model),
-		CompletedPlanetscaleToken: ({ failure }) => Planetscale.completedToken(model, context, failure),
-		ClickedPlanetscaleReplaceToken: () =>
-			Planetscale.updateCard(model, { isReplacingToken: !model.planetscaleCard.isReplacingToken }),
-		TickedPlanetscaleWatch: () => Planetscale.refreshWatch(model, context),
-		ClickedPlanetscaleCheckAgain: () => Planetscale.clickedCheckAgain(model, context),
 		CompletedGcpLogVolume: ({ key, result }) =>
 			Gcp.updateGcpCard(model, { logVolume: Keyed.accept(model.gcpCard.logVolume, key, result) }),
 		CompletedGcpFleet: ({ key, result }) =>

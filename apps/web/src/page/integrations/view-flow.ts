@@ -9,7 +9,6 @@ import type { Model } from "./model"
 import { cardView } from "./view"
 import { providerModuleOf } from "./provider-modules"
 import { gcpFlowView } from "../infra-integrations/gcp/integration/view-flow-gcp"
-import { planetscaleFlowView } from "../infra-integrations/planetscale/integration/view-flow-planetscale"
 import { prometheusFlowView } from "./view-flow-prometheus"
 import { cloudflareFlowView } from "../infra-integrations/cloudflare/integration/view-flow-cloudflare"
 import { githubFlowView } from "./view-flow-github"
@@ -84,8 +83,6 @@ export const flowView = (
 			return awsFlowView(h, model, stage, timeZone)
 		case "gcp":
 			return gcpFlowView(h, model, stage, timeZone)
-		case "planetscale":
-			return planetscaleFlowView(h, model, stage)
 		case "cloudflare":
 			return cloudflareFlowView(h, model, stage)
 		case "github":

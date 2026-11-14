@@ -11,15 +11,11 @@ import {
 } from "../infra-integrations/gcp/connector-state"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
-import {
-	metricsAuthOf,
-	metricsLastCollectedAt,
-	metricsLastError,
-} from "../infra-integrations/planetscale/setup-steps"
 import type { IntegrationId } from "./catalog"
 import { hasBringYourOwnCloudAddOn } from "../kit/billing/plan-gating"
 import type { Visibility } from "../settings/nav"
 import type { Model, Statuses } from "./model"
+import { scrapeOverview, scrapeStatus } from "./scrape-overview"
 import { providerModuleOf } from "./provider-modules"
 import {
 	attentionOr,
@@ -123,23 +119,6 @@ export const HEALTH_TONE = {
 export const lastSyncText = (lastSync: LastSync, nowMs: number): string =>
 	`${lastSync.verb} ${formatRelativeTime(lastSync.at, nowMs)}`
 
-const scrapeStatus = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
-	fold(
-		statuses.scrapeTargets,
-		(data): CardStatus => {
-			const targets = Arr.filter(data, (target) => target.target_type === targetType)
-			if (targets.length === 0) return NOT_CONNECTED
-			const failing = Arr.some(targets, (target) => target.enabled && target.last_scrape_error !== null)
-			const enabled = Arr.filter(targets, (target) => target.enabled).length
-			const noun = targetType === "planetscale" ? "org" : "target"
-			return {
-				label: `${countLabel(targets.length, noun)} · ${enabled} enabled`,
-				variant: failing ? "warn" : "ok",
-			}
-		},
-		unavailableStatus,
-	)
-
 const githubStatus = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -189,18 +168,6 @@ export const cardStatusOf = (statuses: Statuses, id: IntegrationId, nowMs: numbe
 			return fold(statuses.cloudflare, (status) => connectedOrNot(status.connected), unavailableStatus)
 		case "prometheus":
 			return scrapeStatus(statuses, "prometheus")
-		case "planetscale":
-			return fold(
-				statuses.planetscale,
-				(status): CardStatus | null =>
-					status.connected
-						? {
-								label: status.organization ?? "Connected",
-								variant: metricsLastError(status) !== null ? "warn" : "ok",
-							}
-						: scrapeStatus(statuses, "planetscale"),
-				unavailableStatus,
-			)
 		case "warpstream":
 			return { label: "Via Prometheus", variant: "outline" }
 		case "github":
@@ -345,70 +312,6 @@ const cloudflareOverview = (statuses: Statuses) =>
 		unavailableOverview,
 	)
 
-const scrapeOverview = (statuses: Statuses, targetType: "prometheus" | "planetscale") =>
-	fold(
-		statuses.scrapeTargets,
-		(data): IntegrationOverview => {
-			const targets = Arr.filter(data, (target) => target.target_type === targetType)
-			if (targets.length === 0) return targetType === "prometheus" ? SET_UP : CONNECT
-			const enabled = Arr.filter(targets, (target) => target.enabled).length
-			const failing = Arr.filter(
-				targets,
-				(target) => target.enabled && target.last_scrape_error !== null,
-			).length
-			const noun = targetType === "planetscale" ? "org" : "target"
-			return {
-				kind: "connected",
-				health: failing > 0 ? "attention" : "healthy",
-				stateLabel: failing > 0 ? "Needs attention" : "Healthy",
-				context: countLabel(targets.length, `scrape ${noun}`),
-				stat: `${enabled} of ${targets.length} enabled`,
-				lastSync: lastSyncOf(maxMs(Arr.map(targets, (t) => isoMs(t.last_scrape_at))), "scraped"),
-				issue: failing > 0 ? `${countLabel(failing, noun)} failing` : null,
-			}
-		},
-		unavailableOverview,
-	)
-
-const planetscaleOverview = (statuses: Statuses) => {
-	const dbCount = fold(
-		statuses.planetscaleDatabases,
-		(response): number | null => response.databases.length,
-		() => null,
-	)
-	return fold(
-		statuses.planetscale,
-		(status): IntegrationOverview => {
-			if (!status.connected) return scrapeOverview(statuses, "planetscale")
-			const issue = status.pending_org_selection
-				? "Finish org selection"
-				: metricsLastError(status) !== null
-					? metricsAuthOf(status) === "api"
-						? "Metrics polling failing"
-						: "Scrape failing"
-					: status.last_inventory_error != null
-						? "Inventory failing"
-						: null
-			return {
-				kind: "connected",
-				...attentionOr(issue),
-				context: status.organization,
-				stat:
-					dbCount !== null && dbCount > 0
-						? `${countLabel(dbCount, "database")} tracked`
-						: metricsAuthOf(status) === "api" || status.scrape_target?.enabled === true
-							? "Branch metrics on"
-							: null,
-				lastSync: lastSyncOf(
-					maxMs(Arr.map([metricsLastCollectedAt(status), status.last_inventory_at], isoMs)),
-				),
-				issue,
-			}
-		},
-		unavailableOverview,
-	)
-}
-
 const githubOverview = (statuses: Statuses) =>
 	fold(
 		statuses.github,
@@ -461,8 +364,6 @@ export const overviewOf = (statuses: Statuses, nowMs: number, id: IntegrationId)
 			return cloudflareOverview(statuses)
 		case "prometheus":
 			return scrapeOverview(statuses, "prometheus")
-		case "planetscale":
-			return planetscaleOverview(statuses)
 		case "warpstream":
 			return SET_UP
 		case "github":

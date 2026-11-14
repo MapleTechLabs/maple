@@ -11,6 +11,7 @@ import { type IntegrationId, integrationOfSearch } from "./catalog"
 import { SEARCH_CONSOLE } from "./search-console-provider"
 import { LINEAR } from "./linear-provider"
 import { VERCEL } from "../infra-integrations/vercel/integration/vercel-provider"
+import { PLANETSCALE } from "../infra-integrations/planetscale/integration/planetscale-provider"
 import { CHAT } from "./chat-provider"
 import { ReadClock, TrackDisconnected } from "./command"
 import type { FlowSpec, FlowStage } from "./flow"
@@ -53,7 +54,12 @@ export type MountedProvider = Readonly<{
 	/** `null`: the hub's own disconnect runs. */
 	onConfirmDisconnect: ((model: Model, context: PageContext) => Return) | null
 	isDisconnecting: (model: Model) => boolean
-	ticker: Readonly<{ everyMs: number; isActive: (model: Model) => boolean; tick: Message }> | null
+	ticker: Readonly<{
+		everyMs: number
+		fast: Readonly<{ everyMs: number; ticks: number }> | null
+		isActive: (model: Model) => boolean
+		tick: Message
+	}> | null
 	card: (
 		h: HtmlBuilder<Message>,
 		model: Model,
@@ -65,8 +71,8 @@ export type MountedProvider = Readonly<{
 	/** `null`: the generic flow. */
 	flow: ((model: Model) => FlowSpec) | null
 	flowView: ((h: HtmlBuilder<Message>, model: Model, stage: FlowStage, timeZone: string) => Html) | null
-	cardStatus: (statuses: Statuses, context: StatusContext) => CardStatus | null
-	overview: (statuses: Statuses, context: StatusContext) => IntegrationOverview
+	cardStatus: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => CardStatus | null
+	overview: (statuses: Statuses, context: Omit<StatusContext, "statuses">) => IntegrationOverview
 }>
 
 const ownsOf =
@@ -90,7 +96,7 @@ const applyRequest =
 	(model: Model): Return => {
 		switch (request._tag) {
 			case "ReadStatus":
-				return requestStatus(model, context, statusName, request.mode)
+				return requestStatus(model, context, request.name ?? statusName, request.mode)
 			case "Toast":
 				return {
 					model,
@@ -182,6 +188,7 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 				? null
 				: {
 						everyMs: subscription.everyMs,
+						fast: subscription.fast ?? null,
 						isActive: (model) =>
 							subscription.isActive(spec.get(model), {
 								status: spec.slot(model.statuses),
@@ -196,8 +203,8 @@ const mount = <K extends keyof Statuses, S, M, Msg>(
 		headerStatus: module.headerStatus ?? null,
 		flow: module.flow ?? null,
 		flowView: module.flowView ?? null,
-		cardStatus: (statuses, context) => module.cardStatus(spec.slot(statuses), context),
-		overview: (statuses, context) => module.overview(spec.slot(statuses), context),
+		cardStatus: (statuses, context) => module.cardStatus(spec.slot(statuses), { ...context, statuses }),
+		overview: (statuses, context) => module.overview(spec.slot(statuses), { ...context, statuses }),
 	}
 }
 
@@ -255,6 +262,15 @@ export const VERCEL_PROVIDER = mount({
 	toHub: (message) => Message.GotVercelMessage({ message }),
 })
 
+export const PLANETSCALE_PROVIDER = mount({
+	module: PLANETSCALE,
+	statusName: "planetscale",
+	slot: (statuses) => statuses.planetscale,
+	get: (model) => model.planetscaleCard,
+	set: (model, planetscaleCard) => ({ ...model, planetscaleCard }),
+	toHub: (message) => Message.GotPlanetscaleMessage({ message }),
+})
+
 /** The providers built as modules; the rest still live in the hub's own Model, Message and update. */
 export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	RAILWAY_PROVIDER,
@@ -263,6 +279,7 @@ export const PROVIDER_MODULES: ReadonlyArray<MountedProvider> = [
 	LINEAR_PROVIDER,
 	CHAT_PROVIDER,
 	VERCEL_PROVIDER,
+	PLANETSCALE_PROVIDER,
 ]
 
 export const providerModuleOf = (id: IntegrationId | null): MountedProvider | undefined =>

@@ -9,7 +9,6 @@ import { canManage, type Model, type Statuses } from "./model"
 import { chain, requestStatus } from "./update-status"
 import { TrackConnected } from "./command"
 import * as Cloudflare from "../infra-integrations/cloudflare/integration/update-cloudflare"
-import * as Planetscale from "../infra-integrations/planetscale/integration/update-planetscale"
 import { providerModuleOf } from "./provider-modules"
 
 // The OAuth popup flow's state changes; the popup itself runs in `subscription.ts`.
@@ -155,7 +154,7 @@ export const receivedCallback = (
 		}
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(provider === "planetscale" ? Planetscale.restartWatch(model) : model, [
+		return chain(model, [
 			(next) => ({ model: next, commands: [TrackConnected({ provider })] }),
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
@@ -197,7 +196,7 @@ export const receivedRelay = (
 			: model
 	if (status === "success") {
 		const title = CONNECTED_TITLE[provider]
-		return chain(provider === "planetscale" ? Planetscale.restartWatch(ended) : ended, [
+		return chain(ended, [
 			(next) => (title === null ? { model: next } : toast(next, "success", title)),
 			(next) =>
 				provider === "cloudflare" ? Cloudflare.prime(next) : refreshProvider(next, context, provider),

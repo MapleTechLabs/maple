@@ -29,7 +29,6 @@ import {
 	V2GcpSetupScripts,
 	V2PlanetScaleDatabaseList,
 	V2PlanetScaleIntegration,
-	V2PlanetScaleOrganizationList,
 	V2ScrapeTarget,
 	V2ScrapeTargetCheck,
 } from "@maple/domain/http/v2"
@@ -66,6 +65,7 @@ import {
 	RemovedConnector,
 } from "../infra-integrations/gcp/integration/gcp-schema"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
+import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import {
 	AwsRemovedStack,
 	AwsSetupMethod,
@@ -237,6 +237,7 @@ export const Message = defineMessageUnion({
 	GotSearchConsoleMessage: { message: SearchConsoleMessage },
 	GotChatMessage: { message: ChatMessage },
 	GotVercelMessage: { message: VercelMessage },
+	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotAwsAccountIdMessage: { message: Field.Message },
 	SubmittedAwsAccount: {},
 	SucceededAwsCreate: { connection: V2AwsConnection },
@@ -290,24 +291,6 @@ export const Message = defineMessageUnion({
 	},
 	/** The connect flow's opt-in for a module on the account about to be connected. */
 	ToggledAwsNewModule: { module: AwsModule },
-	CompletedFetchOrganizations: result(V2PlanetScaleOrganizationList),
-	ClickedChangeOrganization: {},
-	GotPickerDialogMessage: { message: Dialog.Message },
-	SelectedOrganization: { name: Schema.String },
-	GotBranchFieldMessage: { field: Schema.Literals(["include", "exclude"]), message: Field.Message },
-	ClickedPickerCancel: {},
-	SubmittedOrganization: {},
-	CompletedSelectOrganization: { organization: Schema.String, failure: Schema.NullOr(LoadFailure) },
-	ClickedMetricsDetails: {},
-	SelectedPlanetscaleMetricsMethod: { method: Schema.Literals(["api", "service_token"]) },
-	GotPlanetscaleTokenField: { field: Schema.Literals(["id", "secret"]), message: Field.Message },
-	SubmittedPlanetscaleToken: {},
-	CompletedPlanetscaleToken: { failure: Schema.NullOr(LoadFailure) },
-	ClickedPlanetscaleReplaceToken: {},
-	/** While the first metrics are awaited: every 5 s, then every minute, for 30 minutes. */
-	TickedPlanetscaleWatch: {},
-	/** Restarts the watch once it ran out. */
-	ClickedPlanetscaleCheckAgain: {},
 	CompletedGcpLogVolume: { key: Schema.String, result: Schema.Result(LogVolume, LoadFailure) },
 	CompletedGcpFleet: { key: Schema.String, result: Schema.Result(Schema.Array(FleetRead), LoadFailure) },
 	CompletedGcpInventory: result(GcpResourcesResponse),
