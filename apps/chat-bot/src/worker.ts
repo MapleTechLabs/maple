@@ -62,7 +62,7 @@ export default ChatBot.make(
 		const sockets = yield* ConnectorSocketObject
 		const relays = yield* ConnectorRelayObject
 		// Light traffic, so it shares api's Hyperdrive config.
-		yield* MapleDb("chat-bot")
+		yield* MapleDb
 		const env = yield* Cloudflare.WorkerEnvironment
 
 		// Logged once per isolate, not once a minute.

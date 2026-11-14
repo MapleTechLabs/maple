@@ -97,7 +97,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// Lazy and recoverable: a rejected import retries on the next fire.
 		const scheduled = yield* cachedRecoverable(Effect.promise(() => import("./scheduled")))
 		// Its own Hyperdrive config on prd, so alerting cannot starve api's pool.
-		yield* MapleDb("alerting")
+		yield* MapleDb
 		// `send_email`, prd only; handed to each fire's graph as `EmailSender`.
 		const email = yield* bindEmailSender
 		// maple-ai's chat Durable Object, where ticks start investigations; handed to each fire's graph.

@@ -21,8 +21,8 @@
 		"db:restore-test": "bun scripts/restore-test.ts"
 	},
 	"dependencies": {
-		"@effect/sql-pg": "4.1.2",
-		"@effect/sql-pglite": "4.1.2",
+		"@effect/sql-pg": "4.1.4",
+		"@effect/sql-pglite": "4.1.4",
 		"@electric-sql/pglite": "^0.5.15",
 		"@maple-dev/effect-orm": "0.10.0",
 		"@maple/domain": "workspace:*",

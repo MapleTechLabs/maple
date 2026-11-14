@@ -39,7 +39,7 @@ const bindClients = Effect.gen(function* () {
 	// `MAPLE_DB` in the stage's flavor. The agents read and write the same
 	// application database api does — investigations, error issues, dashboards —
 	// so this is a connection budget of its own, not a share of api's.
-	yield* MapleDb("ai")
+	yield* MapleDb
 	return {
 		// Authenticated POST /mcp, per credential. A short window so a runaway
 		// agent loop is cut off in seconds, at twice the v2 API's throughput.
