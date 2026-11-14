@@ -69,6 +69,27 @@ describe("Cloudflare API access", () => {
 		}),
 	)
 
+	it.effect("marks a listing truncated when Cloudflare ignores the page it was asked for", () =>
+		Effect.gen(function* () {
+			const fake = VendorFake.make({
+				routes: [
+					{
+						path: "/client/v4/zones",
+						respond: () =>
+							envelope(Arr.map(Arr.range(0, 49), zone), {
+								page: 1,
+								per_page: 50,
+								total_pages: 3,
+							}),
+					},
+				],
+			})
+			const zones = yield* listZones("token", "acc_1", BASE).pipe(Effect.provide(fake.layer))
+			assert.lengthOf(zones.items, 50)
+			assert.isTrue(zones.truncated)
+		}),
+	)
+
 	it.effect("retries an 'Authentication error' blip and succeeds", () =>
 		Effect.gen(function* () {
 			let attempts = 0

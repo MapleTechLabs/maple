@@ -224,7 +224,8 @@ const listPages = <S extends Schema.Top>(
 			Effect.flatMap((envelope) => {
 				const info = envelope.result_info ?? undefined
 				if (number > 1 && typeof info?.page === "number" && info.page !== number) {
-					return Effect.succeed(bounded(collected))
+					// The endpoint ignored `page`: more exists upstream, so the listing is not complete.
+					return Effect.succeed({ items: collected.slice(0, max), truncated: true })
 				}
 				const items = envelope.result ?? []
 				const all = [...collected, ...items]
