@@ -435,6 +435,36 @@ describe("PlanetScaleMetricsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("a source paused before its first poll does not backfill the pause on resume", () => {
+		const testDb = createTestDb(trackedDbs)
+		const api = fakePlanetScale()
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory(["pr-*"])
+			const metrics = yield* PlanetScaleMetricsService
+			const pause = (pausedAt: string | null) =>
+				Effect.promise(() =>
+					executeSql(
+						testDb,
+						`UPDATE sources SET paused_at = ${pausedAt === null ? "NULL" : `'${pausedAt}'`}
+						 WHERE id = (SELECT source_id FROM planetscale_connections WHERE org_id = 'org_1')`,
+					),
+				)
+			yield* pause("2026-10-24T00:00:00.000Z")
+			yield* TestClock.adjust("20 minutes")
+			yield* metrics.pollAll
+			assert.lengthOf(api.metricRequests, 0)
+
+			yield* pause(null)
+			yield* TestClock.adjust("1 minute")
+			yield* metrics.pollAll
+			// The first window starts where the paused tick left the org, not ten minutes back.
+			assert.deepStrictEqual(
+				Arr.map(api.metricRequests, (request) => [request.branch, request.from]),
+				[["main", "2026-10-24T00:19:00.000Z"]],
+			)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("holds an org the gateway refused instead of reading PlanetScale every tick", () => {
 		const testDb = createTestDb(trackedDbs)
 		const api = fakePlanetScale({ ingestStatus: 402 })
@@ -446,10 +476,31 @@ describe("PlanetScaleMetricsService", () => {
 			yield* metrics.pollAll
 			assert.lengthOf(api.metricRequests, 1)
 
-			// The hold ends after an hour; the window the refusal kept is read again.
-			yield* TestClock.adjust("1 hour")
+			// The hold ends after 20 minutes; the window the refusal kept is read again.
+			yield* TestClock.adjust("16 minutes")
 			yield* metrics.pollAll
 			assert.lengthOf(api.metricRequests, 2)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads the refused window again once the hold ends, with no gap", () => {
+		const testDb = createTestDb(trackedDbs)
+		const options = { ingestStatus: 200 }
+		const api = fakePlanetScale(options)
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory(["pr-*"])
+			const metrics = yield* PlanetScaleMetricsService
+			yield* metrics.pollAll
+			yield* TestClock.adjust("1 minute")
+			options.ingestStatus = 402
+			yield* metrics.pollAll
+			const refused = api.metricRequests[1]
+			options.ingestStatus = 200
+
+			yield* TestClock.adjust("21 minutes")
+			yield* metrics.pollAll
+			assert.lengthOf(api.metricRequests, 3)
+			assert.strictEqual(api.metricRequests[2]?.from, refused?.from)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })
