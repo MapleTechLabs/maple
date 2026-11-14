@@ -774,7 +774,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 									}),
 					)
 
-					yield* updateClaimed(
+					const stillOurs = yield* updateClaimed(
 						lastError === null
 							? {
 									lastSuccessAt: now,
@@ -789,7 +789,7 @@ export class RailwayMetricsService extends Context.Service<RailwayMetricsService
 								},
 					)
 					const resources = enabled.length >= 2 ? yield* environmentHealth(orgId, now) : undefined
-					if (!rejected) {
+					if (stillOurs && !rejected) {
 						yield* reportTick(
 							claimed.sourceId,
 							lastError === null
