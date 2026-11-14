@@ -5,7 +5,8 @@ import {
 	type IntegrationInventoryInputs,
 	withSourceHealth,
 } from "./integration-inventory"
-import { Array as Arr, Option, String as Str } from "effect"
+import { AwsMetricStream } from "@maple/domain/aws"
+import { Array as Arr, Option, Schema, String as Str } from "effect"
 
 const NOW = Date.UTC(2026, 9, 15, 12, 0, 0)
 const MINUTE = 60_000
@@ -17,6 +18,11 @@ const empty: IntegrationInventoryInputs = {
 	cloudflareStates: [],
 	cloudflareLogpush: [],
 	cloudflareHyperdrives: [],
+	gcpConnectors: [],
+	gcpResourceCounts: [],
+	awsConnections: [],
+	supabaseConnection: null,
+	supabaseProjects: [],
 	railwayConnection: null,
 	railwayEnvironments: [],
 	vercelConnection: null,
@@ -390,6 +396,261 @@ describe("buildIntegrationInventory", () => {
 			lastError: "Not Found",
 			note: "tracks main, PR review on",
 		})
+	})
+})
+
+describe("google cloud", () => {
+	const connector = {
+		id: "gcp_1",
+		scopeType: "project",
+		scopeId: "acme-prod",
+		logsEnabled: true,
+		metricsEnabled: true,
+		lastReceivedAt: NOW - 5 * MINUTE,
+		lastError: null,
+		appliedLogsEnabled: true,
+		appliedMetricsEnabled: true,
+		setupReportedAt: NOW - 60 * MINUTE,
+		lastMetricsReceivedAt: NOW - 5 * MINUTE,
+		lastMetricsError: null,
+		resourcesSyncedAt: NOW - 30 * MINUTE,
+		lastResourcesError: null,
+		createdAt: NOW - 24 * 60 * MINUTE,
+	}
+
+	it("lists logs, metrics and inventory per scope, counting projects apart from resources", () => {
+		const gcp = providerOf(
+			{
+				gcpConnectors: [connector],
+				gcpResourceCounts: [
+					{
+						connectorId: "gcp_1",
+						assetType: "cloudresourcemanager.googleapis.com/Project",
+						count: 1,
+					},
+					{ connectorId: "gcp_1", assetType: "run.googleapis.com/Service", count: 4 },
+				],
+			},
+			"gcp",
+		)
+		expect(gcp?.status).toBe("healthy")
+		expect(gcp?.account).toBe("project acme-prod")
+		expect(Arr.map(gcp?.resources ?? [], (r) => r.kind).sort()).toEqual(["inventory", "logs", "metrics"])
+		expect(
+			Arr.findFirst(gcp?.resources ?? [], (r) => r.kind === "inventory").pipe(Option.getOrUndefined)
+				?.note,
+		).toBe("1 project, 4 resources")
+	})
+
+	it("fails on a metrics poll error and names it in the problem", () => {
+		const gcp = providerOf(
+			{
+				gcpConnectors: [
+					{ ...connector, lastMetricsError: "PERMISSION_DENIED: monitoring.timeSeries.list" },
+				],
+			},
+			"gcp",
+		)
+		expect(gcp?.status).toBe("failing")
+		expect(gcp?.problem).toContain("PERMISSION_DENIED")
+	})
+
+	it("is pending before the setup script has run, and leaves out what is switched off", () => {
+		const gcp = providerOf(
+			{
+				gcpConnectors: [
+					{
+						...connector,
+						metricsEnabled: false,
+						lastReceivedAt: null,
+						setupReportedAt: null,
+						appliedLogsEnabled: null,
+					},
+				],
+			},
+			"gcp",
+		)
+		expect(gcp?.status).toBe("pending")
+		expect(Arr.map(gcp?.resources ?? [], (r) => r.kind)).toEqual(["logs"])
+	})
+})
+
+describe("aws", () => {
+	const connection = {
+		accountId: "123456789012",
+		modules: ["observability"],
+		grantedModules: ["observability"],
+		templateVersion: 2,
+		verifiedAt: NOW - 24 * 60 * MINUTE,
+		lastCheckedAt: NOW - 30 * MINUTE,
+		lastCheckError: null,
+		metricStream: null,
+		metricStreamChangedAt: null,
+		streamLastReceivedAt: null,
+		streamLastError: null,
+		createdAt: NOW - 48 * 60 * MINUTE,
+	} satisfies IntegrationInventoryInputs["awsConnections"][number]
+	const stream = Schema.decodeSync(AwsMetricStream)({
+		regions: ["us-east-1"],
+		namespaces: ["AWS/Lambda"],
+	})
+
+	it("is healthy while the stream delivers", () => {
+		const aws = providerOf(
+			{
+				awsConnections: [
+					{ ...connection, metricStream: stream, streamLastReceivedAt: NOW - 2 * MINUTE },
+				],
+			},
+			"aws",
+		)
+		expect(aws?.status).toBe("healthy")
+		expect(aws?.account).toBe("123456789012")
+	})
+
+	it("fails on a stream that never delivered long after the setup", () => {
+		const aws = providerOf(
+			{
+				awsConnections: [
+					{ ...connection, metricStream: stream, metricStreamChangedAt: NOW - 120 * MINUTE },
+				],
+			},
+			"aws",
+		)
+		expect(aws?.status).toBe("failing")
+		expect(aws?.problem).toContain("No metrics have arrived")
+	})
+
+	it("reads an account with no metric stream as paused, and one not yet deployed as pending", () => {
+		expect(providerOf({ awsConnections: [connection] }, "aws")?.status).toBe("paused")
+		const undeployed = providerOf(
+			{ awsConnections: [{ ...connection, verifiedAt: null, grantedModules: null }] },
+			"aws",
+		)
+		expect(undeployed?.status).toBe("pending")
+	})
+
+	it("fails when the role can no longer be assumed", () => {
+		const aws = providerOf(
+			{ awsConnections: [{ ...connection, lastCheckError: "Maple can no longer assume the role" }] },
+			"aws",
+		)
+		expect(aws?.status).toBe("failing")
+		expect(aws?.problem).toContain("can no longer assume the role")
+	})
+})
+
+describe("supabase", () => {
+	const supabaseGrant = {
+		provider: "supabase",
+		externalAccountName: null,
+		externalUserEmail: null,
+		revokedAt: null,
+		createdAt: NOW - 24 * 60 * MINUTE,
+	}
+	const connection = {
+		organizationName: "Acme",
+		lastDiscoveryAt: NOW - 10 * MINUTE,
+		lastDiscoveryError: null,
+		createdAt: NOW - 24 * 60 * MINUTE,
+	}
+	const project = {
+		name: "shop",
+		region: "eu-central-1",
+		status: "ACTIVE_HEALTHY",
+		logDrainEnabled: false,
+		logDrainError: null,
+		logsEnabled: false,
+		logsLastPolledAt: null,
+		logsError: null,
+	}
+
+	it("is healthy with a healthy project and its metrics scrape", () => {
+		const supabase = providerOf(
+			{
+				oauthConnections: [supabaseGrant],
+				supabaseConnection: connection,
+				supabaseProjects: [project],
+				scrapeTargets: [
+					{
+						name: "Supabase shop",
+						url: "https://abcdefghijklmnopqrst.supabase.co/customer/v1/privileged/metrics",
+						serviceName: null,
+						managedBy: "supabase:conn_1",
+						scrapeIntervalSeconds: 60,
+						lastScrapeAt: NOW - MINUTE,
+						lastScrapeError: null,
+					},
+				],
+			},
+			"supabase",
+		)
+		expect(supabase?.status).toBe("healthy")
+		expect(supabase?.account).toBe("Acme")
+		expect(Arr.map(supabase?.resources ?? [], (r) => r.kind).sort()).toEqual([
+			"metrics scrape",
+			"project",
+		])
+	})
+
+	it("keeps Supabase's managed scrape targets out of Prometheus", () => {
+		const inventory = build({
+			oauthConnections: [supabaseGrant],
+			supabaseConnection: connection,
+			scrapeTargets: [
+				{
+					name: "Supabase shop",
+					url: "https://abcdefghijklmnopqrst.supabase.co/metrics",
+					serviceName: null,
+					managedBy: "supabase:conn_1",
+					scrapeIntervalSeconds: 60,
+					lastScrapeAt: NOW - MINUTE,
+					lastScrapeError: null,
+				},
+			],
+		})
+		expect(findProvider(inventory, "prometheus")).toBeUndefined()
+	})
+
+	it("fails on a log drain error and reads a paused project as paused", () => {
+		const supabase = providerOf(
+			{
+				oauthConnections: [supabaseGrant],
+				supabaseConnection: connection,
+				supabaseProjects: [
+					{ ...project, logDrainEnabled: true, logDrainError: "drain rejected: 403" },
+					{ ...project, name: "old", status: "INACTIVE" },
+				],
+			},
+			"supabase",
+		)
+		expect(supabase?.status).toBe("failing")
+		expect(supabase?.problem).toContain("drain rejected: 403")
+		expect(Arr.map(supabase?.resources ?? [], (r) => `${r.name}:${r.status}`)).toEqual([
+			"shop:failing",
+			"old:paused",
+		])
+	})
+
+	it("reports a revoked grant as disconnected, and a discovery error as failing", () => {
+		expect(
+			providerOf(
+				{
+					oauthConnections: [{ ...supabaseGrant, revokedAt: NOW - MINUTE }],
+					supabaseConnection: connection,
+				},
+				"supabase",
+			)?.status,
+		).toBe("disconnected")
+		const failing = providerOf(
+			{
+				oauthConnections: [supabaseGrant],
+				supabaseConnection: { ...connection, lastDiscoveryError: "Supabase answered 500" },
+			},
+			"supabase",
+		)
+		expect(failing?.status).toBe("failing")
+		expect(failing?.problem).toBe("Project discovery failing: Supabase answered 500")
 	})
 })
 

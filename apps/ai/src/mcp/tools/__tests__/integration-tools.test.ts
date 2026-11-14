@@ -49,7 +49,14 @@ describe("list_integrations", () => {
 		expect(byProvider.get("prometheus")?.resources.map((r) => r.name)).toEqual([
 			INTEGRATION_WORLD.failingScrapeTarget,
 		])
-		expect(Arr.map(output.available, (a) => a.provider)).toEqual(["vercel", "chat", "search_console"])
+		expect(Arr.map(output.available, (a) => a.provider)).toEqual([
+			"gcp",
+			"aws",
+			"vercel",
+			"supabase",
+			"chat",
+			"search_console",
+		])
 		expect(markdown(result)).toContain("no successful update for 4 h")
 	})
 

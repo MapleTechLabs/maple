@@ -269,8 +269,10 @@ const nextCallsFor = (check: OutputCheck, openRecommendations: number): Readonly
 	}
 	if (check.category === "integrations") {
 		const detail = Str.toLowerCase(check.detail ?? check.title)
+		// Whole words only: "aws" must not match inside "draws".
+		const words = Str.split(/[^a-z0-9]+/)(detail)
 		const provider = Arr.findFirst(INTEGRATION_PROVIDERS, (name) =>
-			Str.includes(Str.replace("_", " ")(name))(detail),
+			Str.includes(` ${Str.replace("_", " ")(name)} `)(` ${Arr.join(words, " ")} `),
 		)
 		return [
 			doc.next(

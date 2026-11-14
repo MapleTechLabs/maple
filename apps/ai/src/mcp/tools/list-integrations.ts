@@ -80,6 +80,12 @@ const nextFor = (integration: Output["integrations"][number]): ReadonlyArray<Nex
 					"search landing pages with Maple sessions, bounce rate and conversions",
 				),
 			]
+		case "gcp":
+			return [doc.next("list_metrics", {}, "the Cloud Monitoring metrics the connector delivers")]
+		case "aws":
+			return [doc.next("list_metrics", {}, "the CloudWatch metrics the metric stream delivers")]
+		case "supabase":
+			return [doc.next("list_metrics", {}, "the project metrics the managed scrape delivers")]
 		case "chat":
 			return []
 	}
@@ -90,11 +96,11 @@ export function registerListIntegrationsTool(server: McpToolRegistrar) {
 		name: TOOL,
 		title: "List Integrations",
 		description:
-			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Railway, Vercel, PlanetScale, Google Search Console, " +
+			"Every third-party integration connected to this Maple organization (GitHub, Cloudflare, Google Cloud, AWS, Railway, Vercel, PlanetScale, Supabase, Google Search Console, " +
 			"Prometheus scrape targets, chat workspaces), what Maple data each one feeds, and whether it is working: " +
 			"revoked grants, failing or stale pollers, repositories that do not sync, scrape targets that error. Each " +
 			"provider lists its resources (repositories, zones, Workers, Logpush jobs, Hyperdrive configs, Railway " +
-			"environments, Vercel drains, databases, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
+			"environments, Vercel drains, databases, Google Cloud scopes, AWS accounts, Supabase projects, scrape targets) worst first. Answers 'what is connected' and 'why is my Cloudflare / " +
 			"Railway / PlanetScale data missing'. Read from Maple's own state, so it never calls the providers. Which sender stopped sending: list_ingest_sources.",
 		parameters: Schema.Struct({
 			provider: P.optionalOneOf(
