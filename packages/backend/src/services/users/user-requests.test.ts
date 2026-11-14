@@ -219,10 +219,16 @@ describe("a cluster without user_activity_hourly", () => {
 				tenant,
 				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
 			).pipe(Effect.provide(warehouse(rows, ran, false)))
+			// The page's floor read hit the missing rollup first; the list ran once, without it.
+			assert.include(
+				Arr.findFirst(ran, (query) => query.context === "usersRecentFloor").pipe(
+					Option.match({ onNone: () => "", onSome: (query) => query.sql }),
+				),
+				"FROM user_activity_hourly",
+			)
 			const lists = Arr.filter(ran, (query) => query.context === "usersList")
-			assert.strictEqual(lists.length, 2)
-			assert.include(lists[0]?.sql ?? "", "FROM user_activity_hourly")
-			assert.notInclude(lists[1]?.sql ?? "", "user_activity_hourly")
+			assert.strictEqual(lists.length, 1)
+			assert.notInclude(lists[0]?.sql ?? "", "user_activity_hourly")
 			assert.deepStrictEqual(
 				Arr.map(response.users, (user) => [user.userId, user.topRoute, user.activity]),
 				[["user_42", null, []]],
@@ -562,6 +568,143 @@ describe("readUserProfile", () => {
 			assert.strictEqual(response.profile?.topRoute, "POST /checkout")
 			assert.deepStrictEqual(response.profile?.activity, [0, 0, 0, 0, 4, 0, 0])
 			assert.isFalse(Arr.some(ran, (query) => query.context === "userActivityTotals"))
+		}),
+	)
+})
+
+describe("a directory page over a large org", () => {
+	const bounded = (fixture: ReadonlyArray<readonly [string, ReadonlyArray<unknown>]>) =>
+		new Map<string, ReadonlyArray<unknown>>([
+			["usersServiceNamespaces", []],
+			["mcpServices", [{ service: "docs-mcp", serverSpans: "4" }]],
+			...fixture,
+		])
+	const list = (
+		payload: Partial<ConstructorParameters<typeof UsersListRequest>[0]>,
+		ran: Ran,
+		rows: Fixture,
+	) =>
+		readUsersList(
+			tenant,
+			new UsersListRequest({ startTime: request.startTime, endTime: request.endTime, ...payload }),
+		).pipe(Effect.provide(warehouse(rows, ran)))
+	const floor = {
+		floor: "2026-11-01 23:40:00.000000000",
+		resume: "2026-11-01 23:40:00.000000001",
+		rows: "20000",
+	}
+
+	it.effect("aggregates only the users active after the newest rows' floor", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const page = Arr.makeBy(3, (i) => listRow(`user_${i}`, ""))
+			const response = yield* list(
+				{ limit: 2 },
+				ran,
+				bounded([
+					["usersRecentFloor", [floor]],
+					["usersList", page],
+				]),
+			)
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			assert.strictEqual(lists.length, 1)
+			assert.include(lists[0]?.sql ?? "", "> '2026-11-01 23:40:00.000000000'")
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => user.userId),
+				["user_0", "user_1"],
+			)
+			assert.strictEqual(response.next?.userId, "user_1")
+		}),
+	)
+
+	it.effect("widens once when the floor leaves the page short, and still offers the next page", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const response = yield* list(
+				{ limit: 5 },
+				ran,
+				bounded([
+					["usersRecentFloor", [{ ...floor, rows: "200000" }]],
+					["usersList", [listRow("user_0", "")]],
+				]),
+			)
+			const floors = Arr.filter(ran, (query) => query.context === "usersRecentFloor")
+			assert.deepStrictEqual(
+				Arr.map(floors, (query) => Str.includes("LIMIT 200000")(query.sql)),
+				[false, true],
+			)
+			assert.strictEqual(Arr.filter(ran, (query) => query.context === "usersList").length, 2)
+			// More users rank below the floor, so the page carries a cursor though it is short.
+			assert.strictEqual(response.next?.userId, "user_0")
+		}),
+	)
+
+	it.effect("resumes just above the floor when no user ranks above it", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const resume = "2026-11-01 23:40:00.000000001"
+			const response = yield* list(
+				{ limit: 5, hasErrors: true },
+				ran,
+				bounded([
+					["usersMatching", [{ users: "900000" }]],
+					["usersRecentFloor", [{ ...floor, resume, rows: "200000" }]],
+					["usersList", []],
+				]),
+			)
+			assert.deepStrictEqual(response.users, [])
+			assert.strictEqual(response.next?.lastSeen, resume)
+		}),
+	)
+
+	it.effect("reads every user when the window holds fewer rows than the floor needs", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const response = yield* list(
+				{},
+				ran,
+				bounded([
+					["usersRecentFloor", [{ ...floor, rows: "12" }]],
+					["usersList", [listRow("user_0", "")]],
+				]),
+			)
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			assert.notInclude(lists[0]?.sql ?? "", "'2026-11-01 23:40:00.000000000'")
+			assert.isUndefined(response.next)
+		}),
+	)
+
+	it.effect("reads all the users a selective filter matches, without a floor", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			yield* list(
+				{ hasErrors: true },
+				ran,
+				bounded([
+					["usersMatching", [{ users: "49" }]],
+					["usersList", [listRow("user_0", "")]],
+				]),
+			)
+			assert.isFalse(Arr.some(ran, (query) => query.context === "usersRecentFloor"))
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			assert.strictEqual(lists.length, 1)
+		}),
+	)
+
+	it.effect("falls back to the floor when the filter matches too many users to read", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			yield* list(
+				{ search: "a" },
+				ran,
+				bounded([
+					["usersMatching", [{ users: "900000" }]],
+					["usersRecentFloor", [floor]],
+					["usersList", Arr.makeBy(201, (i) => listRow(`user_${i}`, "a"))],
+				]),
+			)
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			assert.include(lists[0]?.sql ?? "", "> '2026-11-01 23:40:00.000000000'")
 		}),
 	)
 })

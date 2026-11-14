@@ -132,12 +132,8 @@ describe("readUsersFacets", () => {
 			assert.strictEqual(facets.identified, 0)
 			assert.deepStrictEqual(facets.namespaces, [])
 			// The rollup read failed once; nothing was re-read without it.
-			assert.isTrue(
-				Arr.every(
-					Arr.filter(ran, (query) => query.context === "usersFacets"),
-					(query) => Str.includes("user_activity_hourly")(query.sql),
-				),
-			)
+			assert.strictEqual(Arr.filter(ran, (query) => query.context === "usersSummary").length, 1)
+			assert.strictEqual(Arr.filter(ran, (query) => query.context === "usersFacets").length, 1)
 		}),
 	)
 })
