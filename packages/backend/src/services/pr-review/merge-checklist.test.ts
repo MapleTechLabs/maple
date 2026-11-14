@@ -37,6 +37,30 @@ const names = (files: ReadonlyArray<PullRequestFile>) =>
 	Arr.map(detectMergeSteps(files).names, (candidate) => `${candidate.kind}:${candidate.name}`)
 
 describe("detectMergeSteps", () => {
+	it("reads a secret declared through a generic factory, on one line or wrapped by the formatter", () => {
+		assert.deepEqual(
+			names([
+				file(
+					"packages/infra/src/secrets.ts",
+					Arr.join(
+						[
+							"@@ -10,1 +10,7 @@",
+							'+export class BillingToken extends Secret<BillingToken>()("BILLING_TOKEN", {',
+							'+\tissuer: "billing",',
+							"+}) {}",
+							"+export class WebhookSigning extends Secret<WebhookSigning>()(",
+							'+\t"MAPLE_BILLING_WEBHOOK_SIGNING",',
+							'+\t{ issuer: "maple", consumers: ["api"] },',
+							"+) {}",
+						],
+						"\n",
+					),
+				),
+			]),
+			["secret:BILLING_TOKEN", "secret:MAPLE_BILLING_WEBHOOK_SIGNING"],
+		)
+	})
+
 	it("reads secrets and env vars from config helpers and runtime reads, with head line numbers", () => {
 		const detected = detectMergeSteps([
 			file(
