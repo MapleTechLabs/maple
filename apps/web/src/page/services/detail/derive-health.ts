@@ -23,6 +23,8 @@ export type Health = Readonly<{
 }>
 
 const APDEX_DROP = 0.05
+/** The share of buckets with traffic that makes a service steady enough for an empty one to alarm. */
+const STEADY_SHARE = 0.9
 
 const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (acc, value) => acc + value)
 
@@ -68,9 +70,13 @@ export const deriveHealth = (points: ReadonlyArray<DetailPoint>, endMs: number):
 	)
 	const served = Arr.filter(complete, (point) => point.totalCount > 0)
 	const latest = Arr.last(complete)
-	if (served.length === 0 || latest._tag === "None") return null
-	const now = latest.value
-	const isSilent = now.totalCount === 0
+	const lastServed = Arr.last(served)
+	if (latest._tag === "None" || lastServed._tag === "None") return null
+	// An empty bucket is an outage only for a service busy in nearly every bucket before it; a
+	// sparse one (a few requests a minute) has empty minutes all the time, so it reads its last busy one.
+	const isSteady = served.length >= STEADY_SHARE * (complete.length - 1)
+	const isSilent = latest.value.totalCount === 0 && isSteady
+	const now = isSilent ? latest.value : lastServed.value
 	const bucketSeconds = bucketSecondsOf(points)
 	const perSecond = (point: DetailPoint) => point.throughput / bucketSeconds
 	const errorWindow = weighted(served, (point) => point.errorRate) ?? 0
