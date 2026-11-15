@@ -175,6 +175,15 @@ describe("AlertsService cost budgets", () => {
 				),
 				1,
 			)
+			// November's resolve an hour earlier is no flap of December's: its trigger is sent.
+			const sent = Arr.map((yield* alerts.listDeliveryEvents(orgId)).events, (event) => event.eventType)
+			assert.deepStrictEqual(
+				[
+					Arr.filter(sent, (type) => type === "trigger").length,
+					Arr.filter(sent, (type) => type === "resolve").length,
+				],
+				[2, 1],
+			)
 		}).pipe(Effect.provide(layer))
 	})
 
