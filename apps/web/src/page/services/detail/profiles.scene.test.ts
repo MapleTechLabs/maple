@@ -4,7 +4,17 @@ import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colo
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import { Option, Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
+import {
+	expect as expectView,
+	given,
+	label,
+	Mount,
+	role,
+	scene,
+	selector,
+	text,
+	withViewInputs,
+} from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
 import { FetchOperations, FetchProfile, ProfileInput } from "./command"
@@ -94,6 +104,18 @@ describe("service detail, Profiles tab", () => {
 			given(opened.model),
 			themeResolved(),
 			expectView(role("link", { name: "Profiles" })).toHaveAttr("aria-current", "page"),
+		)
+	})
+
+	test("shows a busy skeleton, and no chart, while the first read is out", () => {
+		const page = pageFor(inRollout)
+		scene(
+			{ update: page.pageUpdate, view: page.view },
+			given(page.entered({ tab: "profiles" }).model),
+			themeResolved(),
+			expectView(label("Loading the profile")).toHaveAttr("aria-busy", "true"),
+			expectView(role("table", { name: "Top functions" })).not.toExist(),
+			expectView(selector("[data-profile-flamegraph]")).not.toExist(),
 		)
 	})
 
