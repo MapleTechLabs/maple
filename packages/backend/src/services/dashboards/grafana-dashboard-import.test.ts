@@ -301,6 +301,16 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 						"SELECT count() AS value FROM logs WHERE OrgId = 'legacy' OR ServiceName = 'api' AND $__timeFilter(Timestamp);",
 					),
 					panel(
+						"Commented",
+						"table",
+						"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) -- scoped",
+					),
+					panel(
+						"Grouped",
+						"table",
+						"SELECT SpanName, count() AS value FROM traces WHERE OrgId = 'x' AND $__timeFilter(Timestamp) -- scoped\nGROUP BY SpanName",
+					),
+					panel(
 						"Mean",
 						"stat",
 						"SELECT toStartOfMinute(Timestamp) AS t, count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) GROUP BY t",
@@ -317,6 +327,13 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 			// The OR is grouped, so the org filter binds every branch; the semicolon no longer ends the statement early.
 			expect(dataSourceRawSql(widgetNamed(converted, "Either").dataSource)?.sql).toBe(
 				"SELECT count() AS value FROM logs WHERE (OrgId = 'legacy' OR ServiceName = 'api' AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
+			// A trailing line comment would swallow the closing parenthesis; it gets its own line.
+			expect(dataSourceRawSql(widgetNamed(converted, "Commented").dataSource)?.sql).toBe(
+				"SELECT count() AS value FROM logs WHERE (OrgId = 'x' AND $__timeFilter(Timestamp) -- scoped\n) AND $__orgFilter",
+			)
+			expect(dataSourceRawSql(widgetNamed(converted, "Grouped").dataSource)?.sql).toBe(
+				"SELECT SpanName, count() AS value FROM traces WHERE (OrgId = 'x' AND $__timeFilter(Timestamp) -- scoped\n) AND $__orgFilter GROUP BY SpanName",
 			)
 			expect(converted.warnings).toEqual(
 				expect.arrayContaining([

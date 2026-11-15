@@ -88,9 +88,15 @@ function withOrgFilter(sql: string): string {
 	const head = trailingAt === undefined ? statement : Str.trimEnd(Str.slice(0, trailingAt)(statement))
 	const tail = trailingAt === undefined ? "" : ` ${Str.trimStart(Str.slice(trailingAt)(statement))}`
 	const whereAt = topLevelIndex(head, /WHERE/)
-	if (whereAt === undefined) return `${head} WHERE $__orgFilter${tail}`
+	// A `--` comment runs to the end of its line, so text placed after one starts a new line.
+	const endsInComment = (text: string) => Str.includes("--")(text)
+	if (whereAt === undefined) {
+		return `${head}${endsInComment(head) ? "\n" : " "}WHERE $__orgFilter${tail}`
+	}
 	const predicateAt = whereAt + "WHERE".length
-	return `${Str.slice(0, predicateAt)(head)} (${Str.trim(Str.slice(predicateAt)(head))}) AND $__orgFilter${tail}`
+	const predicate = Str.trim(Str.slice(predicateAt)(head))
+	const close = endsInComment(predicate) ? "\n)" : ")"
+	return `${Str.slice(0, predicateAt)(head)} (${predicate}${close} AND $__orgFilter${tail}`
 }
 
 export type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
