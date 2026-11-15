@@ -20,7 +20,7 @@ import type { SpanDetail } from "../trace-source"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
 import { spanLogs, spanProfileTab, tabsView } from "./view-tabs"
-import { TAB_VALUES } from "./update"
+import { subtreeIsCut, TAB_VALUES } from "./update"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
@@ -212,7 +212,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const hasProfileTab = AsyncData.matchData(model.profile.data, {
 		onEmpty: () => false,
 		onFailure: () => true,
-		onData: (profile) => profile !== null,
+		// A cut subtree with no samples may still have them past the cut: say so rather than hide.
+		onData: (profile) => profile !== null || subtreeIsCut(span),
 	})
 	const values = Arr.filter(
 		TAB_VALUES,
