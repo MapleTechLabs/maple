@@ -669,16 +669,44 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 		expect(result.error).toBeNull()
 	})
 
-	it("p95 on metrics is rejected and the error lists the valid set", () => {
+	it("a trace aggregation on metrics is rejected and the error lists the valid set", () => {
 		const result = buildTimeseriesQuerySpec({
 			...tracesDraft(),
 			dataSource: "metrics",
-			aggregation: "p95",
+			aggregation: "p95_duration",
 			metricName: "http.server.duration",
 			metricType: "gauge",
 		})
 		expect(result.error).toContain("Unsupported metrics aggregation")
 		expect(result.error).toContain("rate")
+	})
+
+	it("p95 on a histogram metric lowers to the percentile", () => {
+		const result = buildTimeseriesQuerySpec({
+			...tracesDraft(),
+			dataSource: "metrics",
+			aggregation: "p95",
+			metricName: "http.server.duration",
+			metricType: "histogram",
+		})
+		expect(result.error).toBeNull()
+		expect(result.query).toMatchObject({ source: "metrics", metric: "p95" })
+	})
+
+	it("a percentile on an exponential histogram is rejected until its buckets merge", () => {
+		const result = buildTimeseriesQuerySpec({
+			...tracesDraft(),
+			dataSource: "metrics",
+			aggregation: "p95",
+			metricName: "http.server.duration",
+			metricType: "exponential_histogram",
+		})
+		expect(result.error).toContain("exponential histograms")
+	})
+
+	it("histograms offer percentiles and exponential histograms offer none", () => {
+		expect(Arr.map(getMetricsAggregations("histogram"), (o) => o.value)).toContain("p95")
+		expect(Arr.map(getMetricsAggregations("exponential_histogram"), (o) => o.value)).not.toContain("p95")
 	})
 })
 
