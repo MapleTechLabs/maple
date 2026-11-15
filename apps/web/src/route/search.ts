@@ -470,6 +470,8 @@ export const ServiceSearch = Schema.Struct({
 	tab: StringParam,
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
 	endpoint: StringParam,
+	/** The Overview's open deploy drawer, by commit sha. */
+	deploy: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })

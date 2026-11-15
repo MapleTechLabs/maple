@@ -1,7 +1,8 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Array as Arr, Option, Order } from "effect"
 import { AsyncData } from "foldkit"
-import type { DeployRow, Model, ServiceDeploys } from "./model"
+import type { Model } from "./model"
+import type { DeployRow, ServiceDeploys } from "./model-deploys"
 
 // Each deploy's first minutes against the minutes just before it, judged into one verdict.
 
@@ -25,6 +26,7 @@ export type Verdict = "errors-up" | "slower" | "verifying" | "clean" | "unjudged
 export type Side = Readonly<{ spans: number; errorRate: number; p95Ms: number }>
 
 export type DeployCheck = Readonly<{
+	serviceName: string
 	sha: string
 	environment: string
 	firstSeenMs: number
@@ -65,6 +67,7 @@ export const judge = (row: DeployRow, windowSeconds: number, dataEndMs: number):
 					? "verifying"
 					: "clean"
 	return {
+		serviceName: row.serviceName,
 		sha: row.commitSha,
 		environment: row.environment,
 		firstSeenMs,
@@ -89,7 +92,7 @@ export const deployChecks = (deploys: ServiceDeploys, dataEndMs: number): Readon
 	)
 
 /** Where the page's read stops: now, or the end of a range in the past. */
-const dataEndOf = (model: Model): number => {
+export const dataEndOf = (model: Model): number => {
 	const nowMs = model.nowMs ?? 0
 	return model.window === null ? nowMs : Math.min(nowMs, parseWarehouseDateTime(model.window.endTime))
 }
@@ -113,6 +116,10 @@ export const leadDeploy = (checks: ReadonlyArray<DeployCheck>): DeployCheck | un
 /** The newest deploy at or before `atMs`: the one an issue first seen then arrived with. */
 export const deployBefore = (checks: ReadonlyArray<DeployCheck>, atMs: number): DeployCheck | undefined =>
 	Option.getOrUndefined(Arr.findFirst(checks, (check) => check.firstSeenMs <= atMs))
+
+/** The same deploy: one commit on one service and environment, however it was derived. */
+export const isSameDeploy = (a: DeployCheck | undefined, b: DeployCheck): boolean =>
+	a !== undefined && a.sha === b.sha && a.serviceName === b.serviceName && a.environment === b.environment
 
 /** Flagged deploys first, then newest first: the rail leads with what needs a look. */
 export const railOrder = (checks: ReadonlyArray<DeployCheck>): ReadonlyArray<DeployCheck> =>

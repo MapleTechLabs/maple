@@ -59,8 +59,10 @@ import {
 } from "./derive"
 import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { deployChecksOf, railOrder } from "./derive-deploys"
+import { type DeployCheck, dataEndOf, deployChecksOf, railOrder } from "./derive-deploys"
 import { matchesFilter } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/model"
+import * as DeployPeekUpdate from "./deploy-peek/update"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
 import { Message, type RetryTarget } from "./message"
@@ -514,6 +516,60 @@ const syncPeek = (result: Return, context: PageContext, mode: RequestMode): Retu
 		: { ...result, model: peeked.model, commands }
 }
 
+/** The open deploy: the newest check of `?deploy=`'s commit, on the Overview only. */
+export const deployPeekOf = (model: Model): DeployCheck | null =>
+	tabOf(model.search) !== "overview" || model.search.deploy === undefined
+		? null
+		: Option.getOrNull(Arr.findFirst(deployChecksOf(model), (check) => check.sha === model.search.deploy))
+
+const deployScope = (model: Model, context: PageContext): DeployPeekUpdate.DeployScope => ({
+	context,
+	serviceName: model.serviceName,
+	window: model.window,
+	dataEndMs: dataEndOf(model),
+})
+
+const liftDeployPeek = (model: Model, result: DeployPeekUpdate.Return): Return => {
+	const commands = Command.mapMessages(result.commands ?? [], (message) =>
+		Message.GotDeployPeekMessage({ message }),
+	)
+	const next = { ...model, deployPeek: result.model }
+	return result.outMessage?._tag === "Closed"
+		? {
+				model: next,
+				commands,
+				outMessage: navigate(next, { ...model.search, deploy: undefined }, true).outMessage,
+			}
+		: { model: next, commands }
+}
+
+/**
+ * The drawer follows the URL once the deploys loaded; a sha the window no longer holds leaves the
+ * URL, so it cannot reopen on its own later.
+ */
+const syncDeployPeek = (result: Return, context: PageContext, mode: RequestMode): Return => {
+	const model = result.model
+	const check = deployPeekOf(model)
+	const isStale =
+		check === null &&
+		model.search.deploy !== undefined &&
+		tabOf(model.search) === "overview" &&
+		AsyncData.isSuccess(model.deploys.data)
+	const peeked = liftDeployPeek(
+		model,
+		DeployPeekUpdate.sync(model.deployPeek, deployScope(model, context), check, mode),
+	)
+	const commands = [...(result.commands ?? []), ...(peeked.commands ?? [])]
+	return isStale
+		? {
+				model: peeked.model,
+				commands,
+				outMessage: navigate(peeked.model, { ...peeked.model.search, deploy: undefined }, true)
+					.outMessage,
+			}
+		: { ...result, model: peeked.model, commands, outMessage: result.outMessage ?? peeked.outMessage }
+}
+
 /**
  * Every query the current tab reads, keyed by its inputs. Idempotent under `Load`: a slot
  * already holding (or loading) its key sends nothing, so any Message may re-run it.
@@ -525,7 +581,7 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 		overviewStep(context, window, mode),
 		...tabSteps(model, context, window, mode),
 	])
-	return syncPeek(requested, context, mode)
+	return syncDeployPeek(syncPeek(requested, context, mode), context, mode)
 }
 
 type Search = Model["search"]
@@ -542,6 +598,7 @@ const navigate = (model: Model, search: Search, isReplace: boolean): Return => (
 export const tabSearch = (search: Search, tab: ServiceTab): Search => ({
 	...search,
 	endpoint: undefined,
+	deploy: undefined,
 	tab: tab === "overview" ? undefined : tab,
 })
 
@@ -567,6 +624,7 @@ export const init = (
 		endpointFilter: "all",
 		endpointQuery: "",
 		endpointPeek: EndpointPeek.init("service-endpoint-peek"),
+		deployPeek: DeployPeek.init("service-deploy-peek"),
 		issues: Keyed.idle(),
 		deploys: Keyed.idle(),
 		usage: Keyed.idle(),
@@ -774,6 +832,22 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			syncPeek({ model: { ...model, endpointFilter: filter } }, context, "Load"),
 		ChangedEndpointQuery: ({ value }) =>
 			syncPeek({ model: { ...model, endpointQuery: value } }, context, "Load"),
+		ClickedDeploy: ({ sha }) =>
+			navigate(
+				model,
+				{ ...model.search, deploy: model.search.deploy === sha ? undefined : sha },
+				false,
+			),
+		GotDeployPeekMessage: ({ message: inner }) =>
+			liftDeployPeek(
+				model,
+				DeployPeekUpdate.update(
+					model.deployPeek,
+					inner,
+					deployScope(model, context),
+					deployPeekOf(model),
+				),
+			),
 		GotEndpointPeekMessage: ({ message: inner }) => {
 			const lifted = liftPeek(
 				model,

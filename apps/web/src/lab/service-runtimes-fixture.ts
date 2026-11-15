@@ -1,7 +1,8 @@
 import { ServiceName } from "@maple/domain/http"
 import { Array as Arr, Order, Schema } from "effect"
 import type { ServiceRuntime } from "../page/kit/service-runtimes"
-import type { Issue, ServiceDeploys, Usage, Workload } from "../page/services/detail/model"
+import type { Issue, Usage, Workload } from "../page/services/detail/model"
+import type { ServiceDeploys } from "../page/services/detail/model-deploys"
 import type { DependencyBundle, Operation } from "../page/services/detail/model-tabs"
 import { type Commit, type DetailPoint, type Release } from "../page/kit/service-metrics/points"
 
@@ -48,7 +49,8 @@ export const RUNTIMES_POINTS: ReadonlyArray<DetailPoint> = Array.from({ length: 
 })
 
 const SHA_OLD = "c41e7a2d9f03b8e61c7a5d2e4f9b0c13a6e8d571"
-const SHA_DEPLOY = "9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28"
+/** The deploy that raised errors: the lab opens its drawer with `?deploy=`. */
+export const SHA_DEPLOY = "9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28"
 
 /** The build running at the window start, then one Cloud Run revision rolled out at 14:39. */
 export const RUNTIMES_RELEASES: ReadonlyArray<Release> = [
@@ -89,6 +91,26 @@ export const RUNTIMES_DEPLOYS: ServiceDeploys = {
 			beforeSpans: before.spans,
 			beforeErrors: before.errors,
 			beforeP95Ms: before.p95,
+		},
+	],
+	verifyWindowSeconds: 1800,
+}
+
+/** The same commit also went to fleet-web, which took it cleanly. */
+export const RUNTIMES_SHIPPED: ServiceDeploys = {
+	deploys: [
+		...RUNTIMES_DEPLOYS.deploys,
+		{
+			serviceName: "fleet-web",
+			environment: "production",
+			commitSha: SHA_DEPLOY,
+			firstSeen: iso(start + (DEPLOY_INDEX + 2) * MINUTE),
+			afterSpans: 18_400,
+			afterErrors: 20,
+			afterP95Ms: 140,
+			beforeSpans: 27_100,
+			beforeErrors: 30,
+			beforeP95Ms: 138,
 		},
 	],
 	verifyWindowSeconds: 1800,
@@ -152,6 +174,24 @@ export const RUNTIMES_OPERATIONS: ReadonlyArray<Operation> = [
 	operation("GET /v1/depots", 7_310, 0, 4.3, 11.9, 0.7),
 	operation("PATCH /v1/vehicles/{id}", 3_080, 27, 31.6, 140.2, 2.9),
 	operation("GET /healthz", 3_600, 0, 0.4, 1.1, 0.1),
+]
+
+/** The deploy drawer's sides: the batch write starts failing, the depot read gets its cache. */
+export const RUNTIMES_DEPLOY_BEFORE: ReadonlyArray<Operation> = [
+	operation("GET /v1/vehicles/{id}/position", 35_600, 18, 9.2, 31.5, 0.2),
+	operation("POST /v1/positions:batch", 21_000, 42, 24.8, 86.4, 1.4),
+	operation("GET /v1/routes/{id}", 9_400, 4, 14.1, 52.7, 2.1),
+	operation("GET /v1/depots", 3_650, 0, 4.3, 38.9, 0.7),
+	operation("PATCH /v1/vehicles/{id}", 1_540, 13, 31.6, 140.2, 2.9),
+]
+
+export const RUNTIMES_DEPLOY_AFTER: ReadonlyArray<Operation> = [
+	operation("GET /v1/vehicles/{id}/position", 25_100, 13, 9.4, 32.1, 0.2),
+	operation("POST /v1/positions:batch", 14_800, 1_480, 26.1, 131.0, 1.4),
+	operation("GET /v1/routes/{id}", 6_620, 3, 14.0, 51.9, 2.1),
+	operation("GET /v1/depots", 2_570, 0, 1.1, 3.2, 0.7),
+	operation("PATCH /v1/vehicles/{id}", 1_090, 9, 31.0, 138.7, 2.9),
+	operation("GET /v1/depots/{id}/cache", 410, 0, 0.6, 1.4, 0.4),
 ]
 
 export const RUNTIMES_ISSUES: ReadonlyArray<Issue> = [

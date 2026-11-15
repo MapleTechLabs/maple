@@ -8,7 +8,10 @@ import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricsGrid } from "./view-charts"
-import { deployChecksOf } from "./derive-deploys"
+import { type DeployCheck, dataEndOf, deployBefore, deployChecksOf, isSameDeploy } from "./derive-deploys"
+import * as DeployPeekView from "./deploy-peek/view"
+import { deployPeekOf } from "./update"
+import { Array as Arr } from "effect"
 import { deploysPanel, issuesPanel } from "./view-deploys"
 import { footprintPanel } from "./view-footprint"
 import { deployCallout, healthStrip } from "./view-health"
@@ -25,6 +28,40 @@ type H = HtmlBuilder<Message>
 
 /** Every colour the tab's canvases read off the theme. */
 export const THEME_TOKENS = [...CHART_TOKENS, SPARKLINE_TOKEN]
+
+/** The deploy drawer over the Overview; it gives the open deploy the issues the tags give it. */
+const deployDrawer = (
+	h: H,
+	model: Model,
+	context: PageContext,
+	deploys: ReadonlyArray<DeployCheck>,
+): Html => {
+	const check = deployPeekOf(model)
+	const issues = AsyncData.getOrElse(model.issues.data, () => [])
+	return h.submodel({
+		slotId: "deploy-peek",
+		model: model.deployPeek,
+		view: DeployPeekView.view,
+		viewInputs: {
+			check,
+			serviceName: model.serviceName,
+			commit: check === null ? undefined : model.commits[check.sha],
+			issues:
+				check === null
+					? []
+					: Arr.filter(issues, (issue) =>
+							isSameDeploy(
+								deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt)),
+								check,
+							),
+						),
+			dataEndMs: dataEndOf(model),
+			nowMs: model.nowMs ?? 0,
+			timeZone: context.timeZone,
+		},
+		toParentMessage: (message) => Message.GotDeployPeekMessage({ message }),
+	})
+}
 
 export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	const overview = model.overview.data
@@ -71,5 +108,6 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 		]),
 		topOperationsPanel(h, model, model.themeColors),
 		uptime === null ? footprint : grid(h, { lg: 2, gap: "3" }, [uptime, footprint]),
+		deployDrawer(h, model, context, deploys),
 	])
 }
