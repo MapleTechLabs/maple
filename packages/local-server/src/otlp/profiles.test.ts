@@ -424,9 +424,9 @@ describe("hostile input", () => {
 
 	it("stops on attributes every row repeats before it groups the samples they repeat in", () => {
 		// One attribute-heavy profile, every sample its own group: the rows would repeat 2 MB each.
-		const request = cpuRequest(
-			Arr.makeBy(1_000, (index) => ({ stackIndex: 1, linkIndex: index, values: ["1"] })),
-		)
+		const samples = Arr.makeBy(1_000, (index) => ({ stackIndex: 1, linkIndex: index, values: ["1"] }))
+		// Unreadable, so reaching it while grouping would fail as something other than too large.
+		const request = cpuRequest([...samples, { stackIndex: 1, values: ["not a number"] }])
 		const keys = Arr.makeBy(2_000, (index) => `attribute.${index}`)
 		request.dictionary = {
 			...dictionary,
@@ -441,6 +441,31 @@ describe("hostile input", () => {
 		})
 		const refused = () => encodeProfiles(request, NOW_NANO, undefined, 8 * 1024 * 1024)
 		expect(refused).toThrow(ProfilesTooLarge)
+	})
+
+	it("counts a sample attribute that replaces a profile's once, at the size it is written", () => {
+		// A 1 MB profile attribute every sample overrides with one character: the rows stay small.
+		const request = cpuRequest(
+			Arr.makeBy(100, (index) => ({
+				stackIndex: 1,
+				linkIndex: index,
+				values: ["1"],
+				attributeIndices: [2],
+			})),
+		)
+		request.dictionary = {
+			...dictionary,
+			attributeTable: [
+				{},
+				{ keyStrindex: 9, value: { stringValue: Str.repeat(1024 * 1024)("x") } },
+				{ keyStrindex: 9, value: { stringValue: "y" } },
+			],
+		}
+		Object.assign(request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0] ?? {}, {
+			attributeIndices: [1],
+		})
+		const { batches } = encodeProfiles(request, NOW_NANO, undefined, 1024 * 1024)
+		expect(batches[0]?.rowCount).toBe(100)
 	})
 
 	it("stores values the columns cannot hold as their nearest bound, not as a failed insert", () => {
