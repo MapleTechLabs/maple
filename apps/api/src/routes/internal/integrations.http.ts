@@ -563,6 +563,21 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
 					}),
 				)
+				.handle("cloudflareFeatures", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const features = yield* cloudflareAnalytics.setFeatures(
+							tenant.orgId,
+							tenant.userId,
+							payload,
+						)
+						yield* recordHttpAudit("cloudflare_integration.features_updated", {
+							metadata: { ...features },
+						})
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
+					}),
+				)
 				.handle("cloudflareDisconnect", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

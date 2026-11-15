@@ -37,6 +37,10 @@ export const PlanetscaleConnections = PG.table("planetscale_connections", {
 				name: "detected_permissions_json",
 			},
 		),
+		/** The person's switches: metrics off stops the poller and the managed scrape. */
+		metricsEnabled: PG.column(PG.bool, { name: "metrics_enabled", default: true }),
+		/** Events off removes Maple's webhooks, drops deliveries and stops deploy-request polling. */
+		eventsEnabled: PG.column(PG.bool, { name: "events_enabled", default: true }),
 		lastInventoryAt: PG.column(PG.nullable(PG.timestamptzMillis), { name: "last_inventory_at" }),
 		lastInventoryError: PG.column(PG.nullable(PG.text), { name: "last_inventory_error" }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),

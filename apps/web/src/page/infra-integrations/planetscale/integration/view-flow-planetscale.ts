@@ -32,6 +32,7 @@ import {
 import { Message } from "../../../integrations/message"
 import { PlanetscaleMessage } from "./planetscale"
 import { toHub } from "./view-planetscale-parts"
+import { planetscaleFeatureChoice } from "./view-planetscale-features"
 import type { Model } from "../../../integrations/model"
 import type { PlanetscaleMetricsMethod } from "./planetscale"
 import { branchFields, branchPreviewOf, orgChoices } from "./view-planetscale-picker"
@@ -423,6 +424,25 @@ const chooseStep = (h: H, model: Model): Html => {
 					},
 					[isBound ? "Save" : "Start collecting"],
 				),
+			]),
+			stepCard(h, { icon: "ChartBarIcon", title: "What to collect", note: "Change any time" }, [
+				...(status !== null && status.connected
+					? [
+							planetscaleFeatureChoice(h, model, status),
+							...(card.features.error === null
+								? []
+								: [
+										statusRow(h, {
+											tone: "error",
+											text: `Couldn't save: ${card.features.error}`,
+										}),
+									]),
+						]
+					: [
+							typography(h, { size: "sm", tone: "muted", as: "p" }, [
+								"Branch metrics and events are both on. Switch either off here once the organization is saved.",
+							]),
+						]),
 			]),
 			chooseStatus(h, model, status),
 		],

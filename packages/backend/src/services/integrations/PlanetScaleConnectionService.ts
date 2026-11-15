@@ -7,6 +7,7 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	PlanetScaleApiMetricsStatus,
+	type PlanetScaleFeaturesRequest,
 	PlanetScaleIntegrationStatus,
 	PlanetScaleScrapeTargetSummary,
 	ScrapeTargetId,
@@ -126,6 +127,17 @@ export interface PlanetScaleConnectionServiceApi {
 		| IntegrationsUpstreamError
 		| IntegrationsPersistenceError
 		| ScrapeTargetMutationError
+	>
+	/**
+	 * Turn metrics or events on or off. Events off deletes the webhooks Maple registered; on
+	 * registers them again. Data already collected stays.
+	 */
+	readonly setFeatures: (
+		orgId: OrgId,
+		request: PlanetScaleFeaturesRequest,
+	) => Effect.Effect<
+		PlanetScaleIntegrationStatus,
+		IntegrationsNotConnectedError | IntegrationsPersistenceError | ScrapeTargetStoredConfigInvalidError
 	>
 	/** Drop the org binding, the managed scrape target, and the OAuth grant. */
 	readonly disconnect: (
@@ -311,6 +323,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 					detectedPermissions: null,
 					scrapeTarget: null,
 					webhooks: null,
+					metricsEnabled: true,
+					eventsEnabled: true,
 					lastInventoryAt: null,
 					lastInventoryError: null,
 					revokedAt: grant.revokedAt,
@@ -380,6 +394,8 @@ export class PlanetScaleConnectionService extends Context.Service<
 						})
 					: null,
 				webhooks: planetScaleWebhookStatus(grant.scopes, databases),
+				metricsEnabled: connection.metricsEnabled,
+				eventsEnabled: connection.eventsEnabled,
 				lastInventoryAt: connection.lastInventoryAt,
 				lastInventoryError: connection.lastInventoryError,
 				revokedAt: grant.revokedAt,
@@ -771,6 +787,53 @@ export class PlanetScaleConnectionService extends Context.Service<
 			return yield* getStatus(orgId)
 		})
 
+		const setFeatures = Effect.fn("PlanetScaleConnectionService.setFeatures")(function* (
+			orgId: OrgId,
+			request: PlanetScaleFeaturesRequest,
+		) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			const connection = yield* selectConnection(orgId)
+			if (connection === null) {
+				return yield* new IntegrationsNotConnectedError({ message: "PlanetScale is not connected" })
+			}
+			const now = yield* Clock.currentTimeMillis
+			const next: PlanetScaleConnectionRow = {
+				...connection,
+				metricsEnabled: request.metricsEnabled ?? connection.metricsEnabled,
+				eventsEnabled: request.eventsEnabled ?? connection.eventsEnabled,
+				updatedAt: now,
+			}
+			yield* dbExecute((db) =>
+				db.run(
+					PG.update(PlanetscaleConnections)
+						.set({
+							metricsEnabled: next.metricsEnabled,
+							eventsEnabled: next.eventsEnabled,
+							updatedAt: now,
+						})
+						.where(($) => [$.orgId.eq(orgId), $.id.eq(connection.id)]),
+				),
+			)
+			yield* Effect.annotateCurrentSpan({
+				"maple.planetscale.metrics_enabled": next.metricsEnabled,
+				"maple.planetscale.events_enabled": next.eventsEnabled,
+			})
+			// The webhooks follow the events switch; the 15-minute sync retries a registration that fails here.
+			if (connection.eventsEnabled && !next.eventsEnabled) yield* webhooks.removeAll(next)
+			if (!connection.eventsEnabled && next.eventsEnabled) {
+				yield* webhooks
+					.reconcile(next)
+					.pipe(
+						Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
+							Effect.logWarning(
+								"PlanetScale webhook registration after turning events on failed",
+							).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+						),
+					)
+			}
+			return yield* statusForConnection(orgId, next)
+		})
+
 		const disconnect = Effect.fn("PlanetScaleConnectionService.disconnect")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan({ orgId })
 			const connection = yield* selectConnection(orgId)
@@ -877,6 +940,7 @@ export class PlanetScaleConnectionService extends Context.Service<
 			getStatus,
 			finalizeOrgSelection,
 			setMetricsToken,
+			setFeatures,
 			disconnect,
 			loadConnection,
 			loadConnectionById,
