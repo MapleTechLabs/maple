@@ -29,15 +29,16 @@ import { truncatedText } from "@maple/views/ui/truncated-text"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { noOrganization } from "../kit/account-skeleton"
 import { settingsSection, settingsSections } from "../../kit/settings-section"
-import { type DomainRow, type Enrollment, Message, type Model } from "./model"
+import { type ClerkEnrollment, type DomainRow, Message, type Model } from "./model"
 import { ENROLLMENTS, enrollmentSelectFor, isOnDomain, normalizeDomain } from "./update"
 
 type H = HtmlBuilder<Message>
 
 const ENROLLMENT_LABELS = {
 	automatic_invitation: "Invite automatically",
+	automatic_suggestion: "Suggest joining",
 	manual_invitation: "Invite only",
-} as const satisfies Record<Enrollment, string>
+} as const satisfies Record<ClerkEnrollment, string>
 
 const ENROLLMENT_ENTRIES: ReadonlyArray<SelectView.SelectEntry> = Arr.map(
 	ENROLLMENTS,
@@ -373,7 +374,7 @@ const dialogs = (h: H, model: Model): ReadonlyArray<Html> => [
 
 const footnote = (h: H): Html =>
 	typography(h, { size: "xs", tone: "muted", as: "p", className: "font-prose" }, [
-		"People invited automatically join with the Member role. Public email providers like gmail.com can't be added.",
+		"People invited automatically join with the organization's default role. Public email providers like gmail.com can't be added.",
 	])
 
 export const view = Submodel.defineView<Model, Message, Readonly<{}>>((model, _inputs, h) =>

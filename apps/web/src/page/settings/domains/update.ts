@@ -22,8 +22,7 @@ const toRow = (domain: ClerkOrganizationDomainResource): DomainRow => ({
 	id: domain.id,
 	name: domain.name,
 	isVerified: domain.verification?.status === "verified",
-	enrollment:
-		domain.enrollmentMode === "automatic_invitation" ? "automatic_invitation" : "manual_invitation",
+	enrollment: domain.enrollmentMode,
 	affiliationEmail: domain.affiliationEmailAddress,
 })
 
@@ -135,7 +134,7 @@ const RemoveDomain = Command.define("DeleteClerkDomain", {
 		),
 })
 
-const enrollmentSelect = (id: string, enrollment: Enrollment): Select.Model =>
+const enrollmentSelect = (id: string, enrollment: DomainRow["enrollment"]): Select.Model =>
 	Select.init(`domain-enrollment-${id}`, {
 		value: enrollment,
 		selectedIndex: Option.getOrNull(Array.findFirstIndex(ENROLLMENTS, (mode) => mode === enrollment)),
@@ -198,13 +197,14 @@ const merge = (first: Return, second: Return): Return => ({
 	commands: [...(first.commands ?? []), ...(second.commands ?? [])],
 })
 
-/** `Acme.com.` and `https://acme.com/` both mean `acme.com`. */
+/** `Acme.com.`, `ops@acme.com` and `https://acme.com/?to=a@b.com` all mean `acme.com`. */
 export const normalizeDomain = (raw: string): string =>
 	pipe(
 		Str.toLowerCase(Str.trim(raw)),
 		Str.replace(/^https?:\/\//, ""),
-		Str.replace(/^.*@/, ""),
+		// The path goes before the `@` split, so an address in a query never becomes the domain.
 		Str.replace(/[/?#].*$/, ""),
+		Str.replace(/^.*@/, ""),
 		Str.replace(/\.$/, ""),
 	)
 
@@ -270,8 +270,11 @@ export const update = (model: Model, message: Message): Return =>
 						{ ...model, isAdding: false, domainField: Field.init() },
 						Dialog.close(model.addDialog),
 					)
-					const refreshed = refetch(closed.model)
-					return merge(merge(closed, refreshed), openVerify(refreshed.model, row))
+					const refreshed = merge(closed, refetch(closed.model))
+					// Clerk verifies at once when the admin's own address is on the domain.
+					return row.isVerified
+						? { ...refreshed, outMessage: toast("success", `${row.name} verified`) }
+						: merge(refreshed, openVerify(refreshed.model, row))
 				},
 				onFailure: (error) => ({
 					model: { ...model, isAdding: false },

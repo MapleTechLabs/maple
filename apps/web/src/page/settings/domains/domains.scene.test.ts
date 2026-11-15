@@ -29,6 +29,8 @@ describe("domain input", () => {
 		expect(normalizeDomain(" https://Acme.com/login ")).toBe("acme.com")
 		expect(normalizeDomain("ops@acme.com")).toBe("acme.com")
 		expect(normalizeDomain("acme.com.")).toBe("acme.com")
+		expect(normalizeDomain("https://acme.com/?email=ops@other.com")).toBe("acme.com")
+		expect(normalizeDomain("acme.com/team/@ada")).toBe("acme.com")
 	})
 
 	test("the verification address must sit on the domain itself, not a lookalike", () => {
@@ -61,6 +63,29 @@ describe("domains tab", () => {
 		expect(names(added)).toContain("FetchClerkDomains")
 		expect(added.model.verifying).toMatchObject({ id: "dmn_1", step: "email" })
 		expect(added.model.verifyDialog.isOpen).toBe(true)
+	})
+
+	test("a domain Clerk verifies on creation skips the code dialog", () => {
+		const submitted = update({ ...init().model, domainField: typed("acme.com") }, Message.SubmittedAdd())
+		const added = update(
+			submitted.model,
+			Message.CompletedAdd({ result: Result.succeed(row({ isVerified: true })) }),
+		)
+		expect(added.model.verifying).toBeNull()
+		expect(added.model.verifyDialog.isOpen).toBe(false)
+		expect(names(added)).toContain("FetchClerkDomains")
+	})
+
+	test("a domain left on suggest joining can be moved to invite only", () => {
+		const model = loaded([row({ isVerified: true, enrollment: "automatic_suggestion" })])
+		const picked = update(
+			model,
+			Message.GotEnrollmentSelectMessage({
+				id: "dmn_1",
+				message: Select.Message.SelectedItem({ index: 1, value: "manual_invitation" }),
+			}),
+		)
+		expect(names(picked)).toContain("UpdateClerkDomainEnrollment")
 	})
 
 	test("no code is sent to an address off the domain", () => {

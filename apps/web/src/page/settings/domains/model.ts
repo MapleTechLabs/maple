@@ -10,9 +10,17 @@ import * as Select from "@maple/views/ui/select"
 // The Domains tab: the active Clerk organization's verified domains, read and written through
 // clerk-js. Free on every plan; enterprise SSO builds on the domains verified here.
 
+/** Who joins from a verified domain, as Clerk holds it. */
+export const ClerkEnrollment = Schema.Literals([
+	"automatic_invitation",
+	"automatic_suggestion",
+	"manual_invitation",
+])
+export type ClerkEnrollment = typeof ClerkEnrollment.Type
+
 /**
- * Who joins from a verified domain. Clerk's third mode, `automatic_suggestion`, files membership
- * requests the dashboard has no page to approve, so it is not offered.
+ * The modes this tab offers. `automatic_suggestion` files membership requests the dashboard has
+ * no page to approve; a domain already on it shows so, and can be moved off it.
  */
 export const Enrollment = Schema.Literals(["automatic_invitation", "manual_invitation"])
 export type Enrollment = typeof Enrollment.Type
@@ -21,8 +29,7 @@ export const DomainRow = Schema.Struct({
 	id: Schema.String,
 	name: Schema.String,
 	isVerified: Schema.Boolean,
-	/** Clerk's mode as it stands; one this tab does not offer reads as manual. */
-	enrollment: Enrollment,
+	enrollment: ClerkEnrollment,
 	/** The address the last code went to, `null` before one was sent. */
 	affiliationEmail: Schema.NullOr(Schema.String),
 })
