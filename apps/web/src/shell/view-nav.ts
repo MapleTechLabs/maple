@@ -1,6 +1,5 @@
 import { isClerkAuthEnabled } from "../platform/auth-mode"
 import * as Policy from "@maple/domain/policy"
-import { cn } from "@maple/ui/lib/utils"
 import { Option, Array as Arr, String as Str } from "effect"
 import type { InfraSurfaceLiteral } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
@@ -17,7 +16,6 @@ import {
 	sidebarMenuItem,
 	sidebarMenuSub,
 	sidebarMenuSubButton,
-	sidebarMenuSubItem,
 } from "@maple/views/ui/sidebar"
 import type { PinnedDashboardRow } from "./dashboards-shape"
 import { Menu, Message } from "./message"
@@ -123,24 +121,19 @@ const subList = (
 	const activeSubHref = activeSubHrefOf(subItems, currentPath)
 	return sidebarMenuSub(
 		h,
-		"mx-0 ms-4 translate-x-0 gap-0 border-l-0 px-0 py-0",
-		Arr.map(subItems, (sub, index) => {
+		undefined,
+		Arr.map(subItems, (sub) => {
 			const count = subCountOf(model, sub)
-			return sidebarMenuSubItem(
-				h,
-				cn(
-					"border-l-2 ps-2.5",
-					sub.href === activeSubHref ? "border-sidebar-primary" : "border-sidebar-border",
-					// A 4px gap, not a rule, sets a group of rows apart.
-					sub.startsGroup === true && index > 0 && "mt-1",
-				),
-				[
+			const isActive = sub.href === activeSubHref
+			return {
+				isActive,
+				startsGroup: sub.startsGroup === true,
+				children: [
 					sidebarMenuSubButton(
 						h,
 						{
-							className:
-								"translate-x-0 data-[active=true]:text-sidebar-primary [&>svg]:text-current",
-							isActive: sub.href === activeSubHref,
+							className: "data-[active=true]:text-sidebar-primary [&>svg]:text-current",
+							isActive,
 							link: { href: sub.href, currentPath },
 						},
 						[
@@ -171,7 +164,7 @@ const subList = (
 								),
 							]),
 				],
-			)
+			}
 		}),
 	)
 }
