@@ -1,5 +1,10 @@
-import { ProfileSampleTypesRequest, ProfileStacksRequest } from "@maple/domain/http"
-import { Effect, Option, Array as Arr } from "effect"
+import {
+	ProfileSampleType,
+	ProfileSampleTypesRequest,
+	ProfileSampleUnit,
+	ProfileStacksRequest,
+} from "@maple/domain/http"
+import { Effect, Option, Schema, Array as Arr } from "effect"
 import { decodeInput, runWarehouseQuery } from "./effect-utils"
 import { MapleInternalHttp } from "./warehouse-services"
 
@@ -65,6 +70,9 @@ export const getProfileStacks = Effect.fn("QueryEngine.getProfileStacks")(functi
 /** The sample type a profile opens on: CPU when the scope sent it, else its heaviest type. */
 const PREFERRED_SAMPLE_TYPE = "cpu"
 
+/** Ingest stores what a producer sent; a row the stacks read would refuse is never chosen. */
+const isReadable = Schema.is(Schema.Struct({ sampleType: ProfileSampleType, sampleUnit: ProfileSampleUnit }))
+
 /**
  * A scope's profile in two reads: its sample types, then the stacks of one row, in that row's
  * unit. None when it sent no profiles, which is every service without a profiler.
@@ -74,7 +82,7 @@ export const getProfile = Effect.fn("QueryEngine.getProfile")(function* ({
 }: {
 	data: ProfileScopeInput
 }) {
-	const { sampleTypes } = yield* getProfileSampleTypes({ data })
+	const sampleTypes = Arr.filter((yield* getProfileSampleTypes({ data })).sampleTypes, isReadable)
 	const chosen = Arr.findFirst(sampleTypes, (row) => row.sampleType === PREFERRED_SAMPLE_TYPE).pipe(
 		Option.orElse(() => Arr.head(sampleTypes)),
 	)
