@@ -352,7 +352,7 @@ export const V2UptimeLastCheck = Schema.Struct({
 	}),
 	certificate: Schema.optionalKey(V2UptimeCertificate).annotate({
 		description:
-			"HTTPS checks: the certificate the URL's host presented. A failed check that could not read one keeps the previous. Within 14 days of `expires_at` the monitor's alert opens a warning incident.",
+			"HTTPS checks: the certificate the URL's host presented on a completed handshake. A certificate that fails verification is never read, so a failed check keeps the previous one. Within 14 days of `expires_at` the monitor's alert opens a warning incident.",
 	}),
 }).annotate({ identifier: "UptimeLastCheck", title: "Last uptime check" })
 

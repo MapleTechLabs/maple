@@ -628,6 +628,9 @@ export interface AlertsServiceApi {
 	>
 }
 
+/** How often an open certificate warning re-notifies: once a day. */
+const CERTIFICATE_RENOTIFY_MINUTES = 24 * 60
+
 /** Longest an uptime incident's status-page write may delay the alert tick. */
 const STATUS_PAGE_SYNC_TIMEOUT = "3 seconds"
 
@@ -3448,7 +3451,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 							breachWindow: normalized.breachesOutOf ?? normalized.consecutiveBreachesRequired,
 							consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
-							renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
+							// A certificate warning stays open until renewal: a daily reminder is enough.
+							renotifyIntervalMinutes:
+								normalized.signalType === "uptime" &&
+								groupKey === UPTIME_CERTIFICATE_GROUP_KEY
+									? CERTIFICATE_RENOTIFY_MINUTES
+									: normalized.renotifyIntervalMinutes,
 							severities: Arr.map(normalized.thresholds, (tier) => tier.severity),
 						},
 						evaluation,
@@ -4219,11 +4227,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
 				// An audit detection is no fault in a service: it has no place in the triage queue,
 				// and a root-cause run over telemetry has nothing to find.
-				// Neither is a budget that is spent.
+				// Neither is a budget that is spent, nor a certificate to renew.
 				const ownsIssue =
 					normalized.signalType !== "anomaly" &&
 					normalized.signalType !== "audit" &&
-					normalized.signalType !== "cost_budget"
+					normalized.signalType !== "cost_budget" &&
+					!(normalized.signalType === "uptime" && groupKey === UPTIME_CERTIFICATE_GROUP_KEY)
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,

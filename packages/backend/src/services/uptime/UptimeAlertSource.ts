@@ -16,6 +16,7 @@ import {
 	describeMissedHeartbeat,
 	describeStaleProbe,
 	isCertificateExpiring,
+	UPTIME_CERTIFICATE_GROUP_KEY,
 	type UptimeCertificate,
 	heartbeatDeadline,
 	probeStaleAfterMs,
@@ -43,8 +44,7 @@ export interface UptimeAlertObservation {
 	readonly groupLabel?: string
 }
 
-/** The group an HTTPS monitor's certificate is observed under, beside the monitor's own. */
-export const UPTIME_CERTIFICATE_GROUP_KEY = "tls_certificate"
+export { UPTIME_CERTIFICATE_GROUP_KEY }
 
 /**
  * The certificate group's observation: a warning value inside the expiry window, healthy before it.

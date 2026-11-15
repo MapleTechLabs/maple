@@ -360,6 +360,21 @@ describe("UptimeHttpProbe", () => {
 			)
 			assert.strictEqual(recorded.length, 2)
 			assert.deepStrictEqual(outcome.certificate, certificateOf("api.example.com"))
+			// An http:// monitor redirected to https:// has no certificate of its own to report.
+			recorded.length = 0
+			const plain = yield* probeWith(
+				recorded,
+				() =>
+					recorded.length === 1
+						? new Response(null, {
+								status: 301,
+								headers: { location: "https://moved.example.org/h" },
+							})
+						: new Response("ok", { status: 200 }),
+				{ url: "http://api.example.com/checkout/health" },
+			)
+			assert.isTrue(plain.ok)
+			assert.isUndefined(plain.certificate)
 		}).pipe(Effect.provide(PresentingLive))
 	})
 })

@@ -208,9 +208,11 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 						Effect.provideService(PhaseRecorder, (hop) =>
 							Ref.update(phases, (total) => addPhases(total, hop)),
 						),
-						// The first hop's: a redirect to another host does not stand in for the monitored one.
+						// The first hop's, so only for an https:// URL: a redirect's host does not stand in for it.
 						Effect.provideService(CertificateRecorder, (seen) =>
-							Ref.update(certificate, (first) => first ?? seen),
+							Str.startsWith("https:")(Str.toLowerCase(Str.trim(config.url)))
+								? Ref.update(certificate, (first) => first ?? seen)
+								: Effect.void,
 						),
 					)
 					// The phases that completed, a failed check's too (DNS and connect before a TLS error).

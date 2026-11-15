@@ -390,6 +390,14 @@ describe("AlertsService uptime rules", () => {
 					),
 				)
 				assert.strictEqual(pageIncidents?.count, 0)
+				// Nothing to investigate: no issue, so no triage run either.
+				const issues = yield* Effect.promise(() =>
+					queryFirstRow<{ count: number }>(
+						testDb,
+						"SELECT count(*)::int AS count FROM error_issues",
+					),
+				)
+				assert.strictEqual(issues?.count, 0)
 				const state = yield* Effect.promise(() =>
 					queryFirstRow<{ status: string }>(
 						testDb,
