@@ -31,6 +31,9 @@ const toWorkspace = (workspace: ChatWorkspaceSummary): V2ChatWorkspace => ({
 	external_workspace_id: workspace.externalWorkspaceId,
 	name: workspace.name,
 	settings: workspace.settings,
+	alerts_enabled: workspace.features.alertsEnabled,
+	direct_messages_enabled: workspace.features.directMessagesEnabled,
+	assistant_enabled: workspace.features.assistantEnabled,
 	created_at: isoTimestamp(workspace.createdAt),
 })
 
@@ -194,15 +197,42 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						const workspace = yield* chat.updateSettings(
-							tenant.orgId,
-							params.id,
-							payload.settings,
-						)
-						yield* recordHttpAudit("chat_integration.settings_updated", {
-							resourceId: workspace.id,
-							metadata: { connector: workspace.connector },
-						})
+						const settled =
+							payload.settings === undefined
+								? undefined
+								: yield* chat.updateSettings(tenant.orgId, params.id, payload.settings)
+						if (settled !== undefined) {
+							yield* recordHttpAudit("chat_integration.settings_updated", {
+								resourceId: settled.id,
+								metadata: { connector: settled.connector },
+							})
+						}
+						const features = {
+							...(payload.alerts_enabled !== undefined && {
+								alertsEnabled: payload.alerts_enabled,
+							}),
+							...(payload.direct_messages_enabled !== undefined && {
+								directMessagesEnabled: payload.direct_messages_enabled,
+							}),
+							...(payload.assistant_enabled !== undefined && {
+								assistantEnabled: payload.assistant_enabled,
+							}),
+						}
+						const featuresSent =
+							payload.alerts_enabled !== undefined ||
+							payload.direct_messages_enabled !== undefined ||
+							payload.assistant_enabled !== undefined
+						// Also the read when nothing was sent: an empty update returns the workspace as stored.
+						const workspace =
+							settled !== undefined && !featuresSent
+								? settled
+								: yield* chat.updateFeatures(tenant.orgId, params.id, features)
+						if (featuresSent) {
+							yield* recordHttpAudit("chat_integration.features_updated", {
+								resourceId: workspace.id,
+								metadata: { connector: workspace.connector, ...workspace.features },
+							})
+						}
 						return toWorkspace(workspace)
 					}),
 				)

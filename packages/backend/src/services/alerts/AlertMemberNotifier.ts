@@ -321,7 +321,11 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 						db.run(
 							PG.from(ChatWorkspaces)
 								.select("id", "createdAt")
-								.where(($) => [$.orgId.eq(row.orgId), $.connector.eq(connector.value)])
+								.where(($) => [
+									$.orgId.eq(row.orgId),
+									$.connector.eq(connector.value),
+									$.directMessagesEnabled.eq(true),
+								])
 								.orderBy(["createdAt", "asc"], ["id", "asc"]),
 						),
 					)
@@ -334,7 +338,12 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 								chat
 									.postDirect({ orgId: row.orgId, workspaceId, externalUserId, blocks })
 									.pipe(
-										Effect.as<Attempt>({ status: "sent" }),
+										// Null: the workspace was switched off since it was read.
+										Effect.flatMap((posted): Effect.Effect<Attempt> =>
+											posted.messageId === null
+												? tryFrom(rest)
+												: Effect.succeed({ status: "sent" }),
+										),
 										Effect.catch((error: AlertDeliveryFailure) =>
 											error._tag ===
 											"@maple/http/errors/AlertDeliveryTargetMissingError"

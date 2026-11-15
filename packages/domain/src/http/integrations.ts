@@ -81,6 +81,14 @@ export const validateIntegrationReturnPath = (raw: string | null | undefined): s
 		? raw
 		: null
 
+/** What Maple does in Linear, one switch per feature of `INTEGRATION_FEATURES.linear`. */
+export class LinearFeatureSwitches extends Schema.Class<LinearFeatureSwitches>("LinearFeatureSwitches")({
+	openIssuesEnabled: Schema.Boolean,
+	updateCommentsEnabled: Schema.Boolean,
+	reopenIssuesEnabled: Schema.Boolean,
+	resolveCommentsEnabled: Schema.Boolean,
+}) {}
+
 export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatus>("LinearIntegrationStatus")(
 	{
 		connected: Schema.Boolean,
@@ -89,8 +97,20 @@ export class LinearIntegrationStatus extends Schema.Class<LinearIntegrationStatu
 		connectedByUserId: Schema.NullOr(UserId),
 		/** Set once Linear rejected the grant; the org must reconnect. */
 		revoked: Schema.Boolean,
+		/** optionalKey only for deploy-window compat; always sent. */
+		features: Schema.optionalKey(LinearFeatureSwitches),
 	},
 ) {}
+
+/** Turns Linear features on or off; a field left out keeps its switch. */
+export class LinearFeatureSettingsRequest extends Schema.Class<LinearFeatureSettingsRequest>(
+	"LinearFeatureSettingsRequest",
+)({
+	openIssuesEnabled: Schema.optionalKey(Schema.Boolean),
+	updateCommentsEnabled: Schema.optionalKey(Schema.Boolean),
+	reopenIssuesEnabled: Schema.optionalKey(Schema.Boolean),
+	resolveCommentsEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
 
 export class LinearTeamSummary extends Schema.Class<LinearTeamSummary>("LinearTeamSummary")({
 	id: Schema.String,
@@ -1705,6 +1725,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsUpstreamError,
 				IntegrationsPersistenceError,
 			],
+		}),
+	)
+	.add(
+		// Read by the next delivery; nothing is set up in Linear for them.
+		HttpApiEndpoint.patch("linearFeatures", "/linear/features", {
+			payload: LinearFeatureSettingsRequest,
+			success: LinearIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

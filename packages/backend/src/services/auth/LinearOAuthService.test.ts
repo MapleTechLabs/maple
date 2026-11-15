@@ -1,10 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
+import { LinearFeatureSettingsRequest, LinearFeatureSwitches, OrgId, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "@maple/backend/testing/test-pglite"
 import * as VendorFake from "@maple/backend/testing/vendor-fake"
-import { LinearOAuthService } from "./LinearOAuthService"
+import { ALL_LINEAR_FEATURES, LinearOAuthService } from "./LinearOAuthService"
 
 const trackedDbs: TestDb[] = []
 
@@ -184,7 +184,20 @@ describe("LinearOAuthService", () => {
 				workspaceName: "Acme",
 				connectedByUserId: userA,
 				revoked: false,
+				features: ALL_LINEAR_FEATURES,
 			})
+			// A switch saved here is the one every later read sees; the others stay on.
+			const saved = yield* (yield* LinearOAuthService).setFeatures(
+				orgA,
+				userA,
+				new LinearFeatureSettingsRequest({ reopenIssuesEnabled: false }),
+			)
+			assert.isFalse(saved.reopenIssuesEnabled)
+			const reread = yield* (yield* LinearOAuthService).getFeatures(orgA)
+			assert.deepStrictEqual(
+				reread,
+				new LinearFeatureSwitches({ ...ALL_LINEAR_FEATURES, reopenIssuesEnabled: false }),
+			)
 			const row = yield* Effect.promise(() =>
 				queryFirstRow<{ external_user_id: string; access_token_ciphertext: string }>(
 					testDb,

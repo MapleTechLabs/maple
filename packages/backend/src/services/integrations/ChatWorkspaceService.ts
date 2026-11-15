@@ -109,7 +109,15 @@ export interface ChatWorkspaceSummary {
 	readonly externalWorkspaceId: string
 	readonly name: string
 	readonly settings: ChatWorkspaceSettings
+	readonly features: ChatWorkspaceFeatures
 	readonly createdAt: number
+}
+
+/** The workspace's switches, one per feature of `INTEGRATION_FEATURES.chat`; all on when linked. */
+export interface ChatWorkspaceFeatures {
+	readonly alertsEnabled: boolean
+	readonly directMessagesEnabled: boolean
+	readonly assistantEnabled: boolean
 }
 
 /** One connector as the dashboard sees it: is it usable here, and what is linked. */
@@ -197,6 +205,12 @@ export interface ChatWorkspaceServiceApi {
 		ChatWorkspaceSummary,
 		IntegrationsNotFoundError | IntegrationsValidationError | IntegrationsPersistenceError
 	>
+	/** Saves the switches the update names; the others keep their value. */
+	readonly updateFeatures: (
+		orgId: OrgId,
+		workspaceId: ChatWorkspaceId,
+		update: Partial<ChatWorkspaceFeatures>,
+	) => Effect.Effect<ChatWorkspaceSummary, IntegrationsNotFoundError | IntegrationsPersistenceError>
 	readonly uninstall: (
 		orgId: OrgId,
 		workspaceId: ChatWorkspaceId,
@@ -311,6 +325,11 @@ const make: Effect.Effect<
 		externalWorkspaceId: row.externalWorkspaceId,
 		name: row.name,
 		settings: row.settings,
+		features: {
+			alertsEnabled: row.alertsEnabled,
+			directMessagesEnabled: row.directMessagesEnabled,
+			assistantEnabled: row.assistantEnabled,
+		},
 		createdAt: row.createdAt,
 	})
 
@@ -622,6 +641,28 @@ const make: Effect.Effect<
 		return toSummary(stored)
 	})
 
+	const updateFeatures = Effect.fn("ChatWorkspaceService.updateFeatures")(function* (
+		orgId: OrgId,
+		workspaceId: ChatWorkspaceId,
+		update: Partial<ChatWorkspaceFeatures>,
+	) {
+		yield* Effect.annotateCurrentSpan({ orgId })
+		const row = yield* loadOwned(orgId, workspaceId)
+		const current = toSummary(row).features
+		const next: ChatWorkspaceFeatures = { ...current, ...update }
+		const updated = yield* dbExecute((db) =>
+			db.run(
+				PG.update(ChatWorkspaces)
+					.set(next)
+					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
+					.returning(),
+			),
+		)
+		const stored = updated[0]
+		if (stored === undefined) return yield* notFound("No chat workspace with this id")
+		return toSummary(stored)
+	})
+
 	const uninstall = Effect.fn("ChatWorkspaceService.uninstall")(function* (
 		orgId: OrgId,
 		workspaceId: ChatWorkspaceId,
@@ -726,6 +767,7 @@ const make: Effect.Effect<
 		completeLink,
 		unlink,
 		updateSettings,
+		updateFeatures,
 		uninstall,
 		listDestinations,
 		resolve,

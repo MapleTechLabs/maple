@@ -519,6 +519,37 @@ describe("escalation pages the on-call", () => {
 		})
 	})
 
+	it.effect("pages by email only when the workspace has direct-message paging off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const state = { tracesAggregateRows: errorRate(10) }
+		const emails: Array<{ to: string; subject: string; html: string }> = []
+		return Effect.gen(function* () {
+			const chat = yield* makeChat
+			yield* TestClock.setTime(NOW)
+			return yield* Effect.gen(function* () {
+				const { alerts, orgId } = yield* setup("org_page_dm_off", testDb)
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"update chat_workspaces set direct_messages_enabled = false where org_id = $1",
+						[orgId],
+					),
+				)
+				yield* ticks(alerts, 10)
+				assert.deepStrictEqual(
+					Arr.map(emails, (email) => email.to),
+					["ben@acme.test"],
+				)
+				assert.deepStrictEqual(chat.opened, [])
+				assert.deepStrictEqual(chat.posted, [])
+				assert.deepStrictEqual(
+					Arr.map(yield* pageRows(testDb, orgId), (row) => [row.user_id, row.channel, row.status]),
+					[[ben, "email", "sent"]],
+				)
+			}).pipe(Effect.provide(layerFor(testDb, state, emails, chat)))
+		})
+	})
+
 	it.effect("pages nobody for a schedule with no one on call, and still moves to the next step", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = { tracesAggregateRows: errorRate(10) }

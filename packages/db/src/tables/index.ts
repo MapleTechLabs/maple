@@ -51,6 +51,7 @@ import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
+import { LinearFeatureSettings } from "./linear-feature-settings"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
 import { MobileDevices } from "./mobile-devices"
@@ -148,6 +149,7 @@ export * from "./cost-sources"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
 export * from "./investigations"
+export * from "./linear-feature-settings"
 export * from "./live-activities"
 export * from "./mcp-oauth"
 export * from "./mobile-devices"
@@ -236,6 +238,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AwsConnections,
 	CostSources,
 	Investigations,
+	LinearFeatureSettings,
 	LiveActivities,
 	McpOAuthClients,
 	McpOAuthAuthorizations,

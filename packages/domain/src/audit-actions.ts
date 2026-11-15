@@ -67,6 +67,7 @@ export const AuditResources = {
 		verbs: [
 			"install_started",
 			"settings_updated",
+			"features_updated",
 			"uninstalled",
 			"identity_link_started",
 			"identity_unlinked",
@@ -135,6 +136,8 @@ export const AuditResources = {
 	},
 	/** Org-singleton connection; per-account zone choices ride in `metadata`. */
 	cloudflare_integration: { verbs: ["zones_updated", "features_updated"] },
+	/** Org-singleton connection; the switches it saved ride in `metadata`. */
+	linear_integration: { verbs: ["features_updated"] },
 	/** A provider key the org's spend is read with, one per provider; the key is never in `changes`. */
 	cost_source_key: { verbs: ["updated", "deleted"] },
 	/** A cost source that reads through a connection the org already has; which one is in `metadata`. */
@@ -255,6 +258,7 @@ export const AuditResourceLabels = {
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
 	cloudflare_integration: "Cloudflare integration",
+	linear_integration: "Linear integration",
 	cost_source_key: "Cost source key",
 	cost_source: "Cost source",
 	member: "Member",
@@ -327,6 +331,7 @@ export const AuditActionLabels = {
 	"dashboard.version_restored": "Restored dashboard version",
 	"chat_integration.install_started": "Started chat integration install",
 	"chat_integration.settings_updated": "Updated chat integration",
+	"chat_integration.features_updated": "Changed what the chat bot does",
 	"chat_integration.uninstalled": "Uninstalled chat integration",
 	"chat_integration.identity_link_started": "Started linking chat account",
 	"chat_integration.identity_unlinked": "Unlinked chat account",
@@ -384,6 +389,7 @@ export const AuditActionLabels = {
 	"planetscale_integration.disconnected": "Disconnected PlanetScale",
 	"cloudflare_integration.zones_updated": "Updated Cloudflare zones",
 	"cloudflare_integration.features_updated": "Changed what Cloudflare collects",
+	"linear_integration.features_updated": "Changed what Maple does in Linear",
 	"cost_source_key.updated": "Updated cost source key",
 	"cost_source_key.deleted": "Removed cost source key",
 	"cost_source.created": "Added cost source",

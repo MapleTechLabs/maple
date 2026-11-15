@@ -1,4 +1,4 @@
-import type { V2ChatConnectorList } from "@maple/domain/http/v2"
+import type { V2ChatConnectorList, V2ChatWorkspace } from "@maple/domain/http/v2"
 import { ChatConnectorId, ChatWorkspaceId } from "@maple/primitives"
 import { Effect, Option, Schema, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
@@ -6,6 +6,23 @@ import { defineMessageUnion } from "foldkit/message"
 import type * as Keyed from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure } from "@maple/views/data/load-failure"
 import { MapleApiV2Client } from "../../platform/api-clients"
+import { FeatureSwitchesModel, initFeatureSwitches } from "./feature-switches"
+
+/** The `INTEGRATION_FEATURES.chat` switches of one workspace, as its card edits them. */
+export const ChatFeatureSwitches = Schema.Struct({
+	alertsEnabled: Schema.Boolean,
+	directMessagesEnabled: Schema.Boolean,
+	assistantEnabled: Schema.Boolean,
+})
+export type ChatFeatureSwitches = typeof ChatFeatureSwitches.Type
+export const ChatFeatureFlag = Schema.Literals(["alertsEnabled", "directMessagesEnabled", "assistantEnabled"])
+
+/** The workspace's switches as saved; an older API that sends none has every one on. */
+export const savedChatFeatures = (workspace: V2ChatWorkspace): ChatFeatureSwitches => ({
+	alertsEnabled: workspace.alerts_enabled ?? true,
+	directMessagesEnabled: workspace.direct_messages_enabled ?? true,
+	assistantEnabled: workspace.assistant_enabled ?? true,
+})
 
 /** The chat module's own messages; the hub carries them in `GotChatMessage`. */
 export const ChatMessage = defineMessageUnion({
@@ -15,6 +32,8 @@ export const ChatMessage = defineMessageUnion({
 	CompletedIdentity: { kind: Schema.Literals(["link", "unlink"]), failure: Schema.NullOr(LoadFailure) },
 	ClickedDisconnect: { workspaceId: ChatWorkspaceId },
 	CompletedDisconnect: { failure: Schema.NullOr(LoadFailure) },
+	ToggledFeature: { workspaceId: ChatWorkspaceId, flag: ChatFeatureFlag },
+	CompletedFeatures: { failure: Schema.NullOr(LoadFailure) },
 })
 export type ChatMessage = typeof ChatMessage.Type
 
@@ -107,13 +126,43 @@ export const DisconnectChatWorkspace = Command.define("DisconnectChatWorkspace",
 		),
 })
 
+/** `updateWorkspace` with the workspace's whole set of switches, so the last toggle wins. */
+export const SaveChatFeatures = Command.define("SaveChatWorkspaceFeatures", {
+	args: { id: ChatWorkspaceId, switches: ChatFeatureSwitches },
+	messages: [ChatMessage.CompletedFeatures],
+	execute: ({ id, switches }) =>
+		settled(
+			Effect.gen(function* () {
+				const client = yield* MapleApiV2Client
+				yield* client.chatIntegration.updateWorkspace({
+					params: { id },
+					payload: {
+						alerts_enabled: switches.alertsEnabled,
+						direct_messages_enabled: switches.directMessagesEnabled,
+						assistant_enabled: switches.assistantEnabled,
+					},
+				})
+			}),
+			(failure) => ChatMessage.CompletedFeatures({ failure }),
+		),
+})
+
 export const ChatCardModel = Schema.Struct({
 	/** One write at a time across the card: `"install"`, `"identity"` or a workspace id. */
 	busy: Schema.NullOr(Schema.String),
 	confirmId: Schema.NullOr(ChatWorkspaceId),
 	/** The account link or unlink in flight (its own action, apart from `busy`). */
 	identityBusy: Schema.Boolean,
+	/** The switches of `featuresWorkspaceId`, the one workspace a toggle is saving or failed on. */
+	features: FeatureSwitchesModel(ChatFeatureSwitches),
+	featuresWorkspaceId: Schema.NullOr(ChatWorkspaceId),
 })
 export type ChatCardModel = typeof ChatCardModel.Type
 
-export const initChatCard = (): ChatCardModel => ({ busy: null, confirmId: null, identityBusy: false })
+export const initChatCard = (): ChatCardModel => ({
+	busy: null,
+	confirmId: null,
+	identityBusy: false,
+	features: initFeatureSwitches,
+	featuresWorkspaceId: null,
+})

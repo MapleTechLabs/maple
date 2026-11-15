@@ -291,6 +291,8 @@ const host = (
 		/** Whether this connector can prove who clicked, and who the clicker is in Maple. */
 		readonly supportsIdentity?: boolean
 		readonly linkedUserId?: UserId
+		/** The workspace switched "Answer questions" off. */
+		readonly assistantOff?: boolean
 		/** A conversation the bot opened on some earlier event, as the relay object would remember it. */
 		readonly opened?: ReadonlyArray<string>
 		/** The relay object could not record the conversation the bot just opened. */
@@ -332,6 +334,7 @@ const host = (
 									? Option.none()
 									: Option.some({
 											orgId: ORG,
+											assistantEnabled: options?.assistantOff !== true,
 											// Only a caller that named an account gets an answer about one.
 											...(externalUserId === undefined ||
 											options?.linkedUserId === undefined
@@ -620,6 +623,19 @@ describe("relaying a mention", () => {
 			yield* relayInboundEvent(mention, deployment.ports)
 
 			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("stays quiet and starts no turn when the workspace switched answers off", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, { assistantOff: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(platform.calls).toEqual([])
+			expect(agent.turns).toEqual([])
 		}),
 	)
 
@@ -1642,7 +1658,10 @@ describe("reading the workspace row", () => {
 					reads.count += 1
 					return options?.linked === false
 						? Option.none()
-						: Option.some({ relay: { orgId: ORG }, credentials: "sealed" })
+						: Option.some({
+								relay: { orgId: ORG, assistantEnabled: true },
+								credentials: "sealed",
+							})
 				}),
 				(resolveWorkspace) => ({
 					...host(platform.outbound, stub, { opened: options?.opened ?? [] }).ports,

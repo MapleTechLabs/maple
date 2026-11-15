@@ -78,6 +78,7 @@ const chatLayer = (listDestinations: ChatWorkspaceServiceApi["listDestinations"]
 			completeLink: die,
 			unlink: die,
 			updateSettings: die,
+			updateFeatures: die,
 			uninstall: die,
 			listDestinations,
 			resolve: die,

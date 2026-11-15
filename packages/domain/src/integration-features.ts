@@ -239,6 +239,78 @@ export const INTEGRATION_FEATURES = {
 			apply: "provisions",
 		}),
 	],
+	linear: [
+		feature({
+			id: "openIssues",
+			title: "Open issues",
+			summary:
+				"When an alert fires and its Linear destination has no open issue for it, Maple opens one in the destination's team.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
+			id: "updateComments",
+			title: "Comment on updates",
+			summary: "Comments on the open issue when the alert fires again or its severity changes.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
+			id: "reopenIssues",
+			title: "Reopen closed issues",
+			summary:
+				"Moves an issue closed in the last 24 hours back to Triage or Todo when its alert fires again. Off, Maple only comments on it.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
+			id: "resolveComments",
+			title: "Comment when resolved",
+			summary:
+				"Comments on the issue when the alert resolves. The issue stays open for your team to close.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+	],
+	chat: [
+		feature({
+			id: "alerts",
+			title: "Alert notifications",
+			summary: "Alerts post to the channels your alert destinations pick in this workspace.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
+			id: "directMessages",
+			title: "Direct-message paging",
+			summary:
+				"Escalation policies page people by direct message here when their chat account is linked. Off, they still get the email.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+		feature({
+			id: "assistant",
+			title: "Answer questions",
+			summary:
+				"The Maple bot answers when someone mentions it, and follows up in the threads it started. Off, it stays quiet.",
+			signal: "actions",
+			defaultEnabled: true,
+			countsTowardIngest: false,
+			apply: "instant",
+		}),
+	],
 } as const satisfies Record<string, ReadonlyArray<IntegrationFeatureSpec>>
 
 export type IntegrationWithFeatures = keyof typeof INTEGRATION_FEATURES

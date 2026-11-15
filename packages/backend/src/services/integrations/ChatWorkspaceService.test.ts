@@ -613,6 +613,39 @@ describe("ChatWorkspaceService", () => {
 		}),
 	)
 
+	it.effect("saves feature switches one at a time and hands the bot its answer switch", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"77777777-7777-4777-8777-777777777777",
+				ORG,
+				"workspace-11",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const before = (yield* chat.list(ORG))[0]?.workspaces[0]
+				assert.deepStrictEqual(before?.features, {
+					alertsEnabled: true,
+					directMessagesEnabled: true,
+					assistantEnabled: true,
+				})
+				const saved = yield* chat.updateFeatures(ORG, id, { assistantEnabled: false })
+				assert.deepStrictEqual(saved.features, {
+					alertsEnabled: true,
+					directMessagesEnabled: true,
+					assistantEnabled: false,
+				})
+				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-11")
+				assert.isFalse(Option.getOrUndefined(resolved)?.assistantEnabled)
+				const other = yield* chat
+					.updateFeatures(OTHER_ORG, id, { alertsEnabled: false })
+					.pipe(Effect.flip)
+				assert.strictEqual(other._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
 	it.effect("scopes settings and unlink to the owning org", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)
