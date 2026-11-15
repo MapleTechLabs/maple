@@ -137,7 +137,8 @@ const CHANGE_BADGE = {
 /** "errors 0.2% → 10% · p95 86ms → 131ms", or the after figures alone for a new operation. */
 const operationFigures = (change: OperationChange): string => {
 	const { before, after } = change
-	return before === undefined
+	// A New operation's few earlier calls are no baseline: it shows its after figures alone.
+	return before === undefined || change.change === "new"
 		? `errors ${formatErrorRate(after.errorRate)} · p95 ${formatLatency(after.p95DurationMs)}`
 		: `errors ${formatErrorRate(before.errorRate)} → ${formatErrorRate(after.errorRate)} · p95 ${formatLatency(before.p95DurationMs)} → ${formatLatency(after.p95DurationMs)}`
 }

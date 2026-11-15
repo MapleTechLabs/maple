@@ -47,6 +47,10 @@ const sideOf = (spans: number, errors: number, p95Ms: number): Side => ({
 	p95Ms,
 })
 
+/** Both sides carried enough spans for their comparison to mean something. */
+export const isComparable = (check: Readonly<{ before: Side; after: Side }>): boolean =>
+	check.before.spans >= MIN_COMPARE_SPANS && check.after.spans >= MIN_COMPARE_SPANS
+
 /**
  * A flag beats "verifying": a deploy that is already failing says so before its window ends.
  * `dataEndMs` is where the read stops (now, or a past range's end): minutes after it were never read.
@@ -57,7 +61,7 @@ export const judge = (row: DeployRow, windowSeconds: number, dataEndMs: number):
 	const minutes = Math.max(0, Math.min(windowMinutes, Math.floor((dataEndMs - firstSeenMs) / 60_000)))
 	const before = sideOf(row.beforeSpans, row.beforeErrors, row.beforeP95Ms)
 	const after = sideOf(row.afterSpans, row.afterErrors, row.afterP95Ms)
-	const comparable = before.spans >= MIN_COMPARE_SPANS && after.spans >= MIN_COMPARE_SPANS
+	const comparable = isComparable({ before, after })
 	const verdict: Verdict = !comparable
 		? minutes < windowMinutes
 			? "verifying"
