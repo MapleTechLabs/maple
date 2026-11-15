@@ -29,8 +29,8 @@ import { loadingFill } from "../kit/page-body"
 
 const THEME_TOKENS = [...GOLDEN_TOKENS, ...AREA_CHART_TOKENS]
 
-const quiet = (h: HtmlBuilder<Message>, range: string): Html =>
-	vstack(h, { gap: "3", align: "center", justify: "center", className: "h-full" }, [
+const quiet = (h: HtmlBuilder<Message>, range: string, fill = true): Html =>
+	vstack(h, { gap: "3", align: "center", justify: "center", className: fill ? "h-full" : "py-6" }, [
 		emptyNotice(h, {
 			title: "No spans from this service in this window",
 			hint: "Widen the time range, or send some traffic to this service.",
@@ -118,7 +118,12 @@ const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs):
 			onRetry: Message.ClickedRetryOverview(),
 		})
 	const overview = Option.getOrNull(AsyncData.getData(model.overview.data))
-	return overview === null ? quiet(h, rangeOf(inputs.context)) : loaded(h, model, inputs, overview.stats)
+	if (overview !== null) return loaded(h, model, inputs, overview.stats)
+	// Profiles are read apart from spans: a window with samples and no spans still shows them.
+	const profile = serviceProfile(h, model)
+	return profile.length === 0
+		? quiet(h, rangeOf(inputs.context))
+		: h.div([h.Class("space-y-6 p-4")], [quiet(h, rangeOf(inputs.context), false), ...profile])
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) => {
