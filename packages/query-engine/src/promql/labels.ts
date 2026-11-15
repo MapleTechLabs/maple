@@ -84,7 +84,7 @@ export const seriesLabels = (row: StoredSeries): Readonly<Record<string, string>
 		if (notExcluded(key)) names.add(normalizeLabelName(key))
 	}
 	// fromEntries defines own properties, so a label called __proto__ stays a label.
-	return Object.fromEntries(
+	return Rec.fromEntries(
 		Arr.filter(
 			Arr.map([...names].sort(), (name) => [name, labelValue(row, name)] as const),
 			([, value]) => value !== "",

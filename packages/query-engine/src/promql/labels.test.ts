@@ -1,3 +1,4 @@
+import { Option, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	formatLe,
@@ -100,7 +101,7 @@ describe("seriesLabels", () => {
 describe("prototype-named labels", () => {
 	it("reads an attribute called constructor as its own string value", () => {
 		const labels = seriesLabels(row({ attributes: { constructor: "x" } }))
-		expect(Object.hasOwn(labels, "constructor") && labels.constructor).toBe("x")
+		expect(Rec.get(labels, "constructor")).toEqual(Option.some("x"))
 		expect(matchesAll(labels, [{ name: "constructor", op: "=", value: "x" }])).toBe(true)
 	})
 
