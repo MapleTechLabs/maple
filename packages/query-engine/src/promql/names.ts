@@ -28,6 +28,8 @@ export interface PromNameTarget {
 	readonly metricName: string
 	readonly component: MetricComponent
 	readonly promName: string
+	/** The stored unit: one name may be stored in two units, which are two metrics. */
+	readonly unit: string
 }
 
 const TABLES = {
@@ -206,5 +208,6 @@ export const resolveSelectorName = (
 			metricName: metric.metricName,
 			component,
 			promName,
+			unit: metric.unit,
 		}))
 	})

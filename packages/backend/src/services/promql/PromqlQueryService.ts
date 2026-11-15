@@ -275,6 +275,12 @@ const make = Effect.gen(function* () {
 					),
 				{ concurrency: WAREHOUSE_CONCURRENCY },
 			)
+			// A query that hit its LIMIT was cut before the `le` check after it; refuse a partial answer.
+			if (Arr.some(results, ({ rows }) => rows.length > DEFAULT_LIMITS.maxSeries)) {
+				return yield* new PromqlExecutionError({
+					message: `query selects more than ${DEFAULT_LIMITS.maxSeries} series; narrow the selector`,
+				})
+			}
 			return toSelectorData(request, results)
 		},
 		Effect.catchTag("@maple/query-engine/execution/WarehouseResponseLimitError", () =>
