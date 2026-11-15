@@ -21,9 +21,10 @@ use std::mem::size_of;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// The process-wide budget for request bodies being decoded: their raw bytes, the
-/// inflated bytes and the decoded form, reserved before each is allocated. A
-/// reservation that does not fit fails at once, so the caller can shed the request.
+/// The process-wide budget for requests being decoded and stored: their raw bytes,
+/// the inflated bytes, the decoded form and the rows or forward body built from it,
+/// reserved before each is allocated. A reservation that does not fit fails at once,
+/// so the caller can shed the request.
 #[derive(Clone, Debug)]
 pub struct DecodeMemory {
     kibibytes: Arc<Semaphore>,
@@ -93,6 +94,13 @@ impl DecodeReservation {
         }
         self.memory.report();
         true
+    }
+
+    /// Bytes this reservation holds.
+    pub fn held_bytes(&self) -> u64 {
+        self.held
+            .as_ref()
+            .map_or(0, |held| held.num_permits() as u64 * DecodeMemory::UNIT)
     }
 
     /// Gives back all but `keep` bytes (rounded up to whole KiB) of what is held.
