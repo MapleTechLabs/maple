@@ -515,6 +515,9 @@ export const multiStepConfigProblem = (config: UptimeMultiStepConfig): string | 
 	const problem = Arr.reduce(config.steps, start, (acc, step, index): Scan => {
 		if (acc.problem !== null) return acc
 		const label = `Step ${index + 1} (${step.name})`
+		// Names identify a step's hidden header values across edits, so two steps never share one.
+		if (Arr.some(config.steps.slice(0, index), (earlier) => earlier.name === step.name))
+			return { ...acc, problem: `${label}: another step already has this name` }
 		if (step.body !== undefined && (step.method === "GET" || step.method === "HEAD"))
 			return { ...acc, problem: `${label}: a request body needs POST, PUT, PATCH or DELETE` }
 		const unknown = Arr.findFirst(

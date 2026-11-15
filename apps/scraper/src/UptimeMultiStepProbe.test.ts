@@ -102,6 +102,11 @@ describe("UptimeMultiStepProbe", () => {
 				Arr.map(steps, (run) => `00-${TRACE.traceId}-${run.spanId}-01`),
 			)
 			assert.notStrictEqual(steps[0]?.spanId, steps[1]?.spanId)
+			// Each run keeps its configured URL: the filled-in one carries the region read from a response.
+			assert.deepStrictEqual(
+				Arr.map(steps, (run) => run.url),
+				["https://api.example.com/login", "https://api.example.com/orders?region={{region}}"],
+			)
 		}).pipe(Effect.provide(ProbeLive)),
 	)
 

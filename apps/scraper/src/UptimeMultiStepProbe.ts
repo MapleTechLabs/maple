@@ -85,7 +85,8 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 							run: {
 								name: step.name,
 								method: step.method,
-								url,
+								// The template, never the filled-in URL: it may hold a token a response gave.
+								url: step.url,
 								spanId,
 								startedAtMs,
 								endedAtMs,

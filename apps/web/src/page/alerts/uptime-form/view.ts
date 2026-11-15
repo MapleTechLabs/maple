@@ -59,6 +59,12 @@ const KINDS: ReadonlyArray<{ kind: MonitorKind; label: string; icon: IconName; d
 		description: "Checks that a record resolves to the value you expect.",
 	},
 	{
+		kind: "multistep",
+		label: "Multi-step",
+		icon: "UnorderedListIcon",
+		description: "Runs HTTP requests in order, passing values from one response to the next.",
+	},
+	{
 		kind: "heartbeat",
 		label: "Heartbeat",
 		icon: "PulseIcon",
@@ -82,7 +88,10 @@ const kindPicker = (h: H, model: Model): Html =>
 					value: option.kind,
 					label: option.label,
 					icon: icon(h, option.icon, { size: 14 }),
-					isDisabled: model.editingId !== null && option.kind !== model.form.kind,
+					// Multi-step steps are written through the API for now, so the form only edits one.
+					isDisabled:
+						(model.editingId !== null && option.kind !== model.form.kind) ||
+						(model.editingId === null && option.kind === "multistep"),
 				})),
 			}),
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [

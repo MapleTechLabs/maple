@@ -1,4 +1,4 @@
-import type { V2UptimeMonitorConfig } from "@maple/domain/http/v2"
+import { UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS, type V2UptimeMonitorConfig } from "@maple/domain/http/v2"
 import { parseHeartbeatCron } from "@maple/domain/uptime"
 import { Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import type { UptimeMonitor } from "./derive"
@@ -132,6 +132,9 @@ const headerLineIssues = (text: string): ReadonlyArray<string> =>
 		(line) => `Header line '${line}' needs a name and a colon, like Authorization: Bearer token.`,
 	)
 
+/** A multi-step check's timeout covers its whole run, so it may be longer than one request's. */
+const maxTimeoutMs = (form: Form): number => (form.kind === "multistep" ? 60000 : 30000)
+
 export const formIssues = (form: Form): ReadonlyArray<string> => {
 	const add = (condition: boolean, issue: string): ReadonlyArray<string> => (condition ? [issue] : [])
 	const kindIssues: ReadonlyArray<string> = (() => {
@@ -204,8 +207,8 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 					...add(
 						!isWhole(form.timeoutMs) ||
 							whole(form.timeoutMs) < 1000 ||
-							whole(form.timeoutMs) > 30000,
-						"The timeout must be 1000 to 30000 ms.",
+							whole(form.timeoutMs) > maxTimeoutMs(form),
+						`The timeout must be 1000 to ${maxTimeoutMs(form)} ms.`,
 					),
 				]
 	return [...add(Str.trim(form.name) === "", "Add a name."), ...kindIssues, ...checkIssues]
@@ -274,7 +277,7 @@ export const wireConfig = (form: Form): Readonly<Record<string, unknown>> => {
 				...timeout,
 			}
 		case "multistep":
-			return form.multistep ?? { type: "multistep", steps: [] }
+			return { ...(form.multistep ?? { type: "multistep", steps: [] }), ...timeout }
 		case "heartbeat":
 			return {
 				type: "heartbeat",
@@ -387,7 +390,11 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				timeoutMs: String(config.timeout_ms ?? 10000),
 			}
 		case "multistep":
-			return { ...base, multistep: config }
+			return {
+				...base,
+				multistep: config,
+				timeoutMs: String(config.timeout_ms ?? UPTIME_MULTISTEP_DEFAULT_TIMEOUT_MS),
+			}
 		case "heartbeat":
 			return {
 				...base,

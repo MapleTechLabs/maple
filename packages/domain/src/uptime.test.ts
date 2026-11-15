@@ -289,7 +289,7 @@ describe("multi-step checks", () => {
 		expect(interpolate("{{a}}/{{a}}", { a: "p$&q$1" })).toEqual(Result.succeed("p$&q$1/p$&q$1"))
 	})
 
-	it("refuses a variable no earlier step sets, a body on GET, and a name set twice", () => {
+	it("refuses a variable no earlier step sets, a body on GET, a variable or step name used twice", () => {
 		const problems = Arr.map(
 			[
 				[step("A", "https://a.dev/{{x}}")],
@@ -308,6 +308,7 @@ describe("multi-step checks", () => {
 					}),
 					step("B", "https://a.dev/{{x}}"),
 				],
+				[step("A", "https://a.dev/one"), step("A", "https://a.dev/two")],
 			],
 			(steps) => multiStepConfigProblem(decode({ _tag: "multistep", timeoutMs: 30_000, steps })),
 		)
@@ -316,6 +317,7 @@ describe("multi-step checks", () => {
 			"Step 1 (A): a request body needs POST, PUT, PATCH or DELETE",
 			"Step 2 (B) extracts x, which an earlier step already set",
 			null,
+			"Step 2 (A): another step already has this name",
 		])
 	})
 
