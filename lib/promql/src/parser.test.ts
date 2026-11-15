@@ -204,6 +204,10 @@ describe("second-review parser regressions", () => {
 		expect(ok('x{city="\\xc3\\xa9"}')).toMatchObject({ matchers: [{}, { value: "é" }] })
 	})
 
+	it("keeps a leading byte-order mark from byte escapes", () => {
+		expect(ok('x{v="\\xef\\xbb\\xbfabc"}')).toMatchObject({ matchers: [{}, { value: "\uFEFFabc" }] })
+	})
+
 	it("refuses a zero subquery step", () => {
 		expect(errorOf("max_over_time(up[5m:0s])")).toMatch(/subquery step/)
 	})

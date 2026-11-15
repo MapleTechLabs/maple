@@ -83,7 +83,8 @@ export const unquote = (text: string): string | undefined => {
 	// `\x` and octal escapes are bytes, as in Go: runs of them decode together as UTF-8.
 	let bytes: number[] = []
 	const flush = () => {
-		if (bytes.length > 0) out += new TextDecoder().decode(new Uint8Array(bytes))
+		if (bytes.length > 0)
+			out += new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(bytes))
 		bytes = []
 	}
 	for (let i = 0; i < body.length; i++) {
