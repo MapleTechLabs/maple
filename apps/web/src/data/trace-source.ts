@@ -19,14 +19,13 @@ import { isClerkAuthEnabled } from "../platform/auth-mode"
 /** The profile's rows carry a slice's first sample time; a slow export can stamp it a little off. */
 const PROFILE_PAD_MS = 60_000
 
-/**
- * The org's `profiling` rollout flag, read on every call: this layer outlives an org switch.
- * Self-hosted has every rollout.
- */
-const readProfilingFlag: Effect.Effect<boolean> = Effect.sync(
-	() =>
-		!isClerkAuthEnabled ||
-		organizationFeatureFlagsFrom(window.Clerk?.organization?.publicMetadata).profiling,
+/** Whether an org has the `profiling` rollout: self-hosted has every rollout, hosted reads Clerk. */
+export const hasProfilingRollout = (isClerkAuth: boolean, publicMetadata: unknown): boolean =>
+	!isClerkAuth || organizationFeatureFlagsFrom(publicMetadata).profiling
+
+/** The org's `profiling` rollout flag, read on every call: this layer outlives an org switch. */
+const readProfilingFlag: Effect.Effect<boolean> = Effect.sync(() =>
+	hasProfilingRollout(isClerkAuthEnabled, window.Clerk?.organization?.publicMetadata),
 )
 
 /**

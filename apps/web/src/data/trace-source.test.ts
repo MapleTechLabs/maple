@@ -8,7 +8,7 @@ import { Effect, Layer, Option, Schema, Array as Arr, String as Str } from "effe
 import { FetchHttpClient } from "effect/http"
 import { HttpApiClient } from "effect/http-api"
 import { beforeEach, describe, expect, test, vi } from "vitest"
-import { fetchSpanProfile } from "./trace-source"
+import { fetchSpanProfile, hasProfilingRollout } from "./trace-source"
 
 const mocks = { fetch: vi.fn<typeof globalThis.fetch>() }
 
@@ -136,5 +136,18 @@ describe("the span profile read", () => {
 		expect(Option.isNone(await run(fetchSpanProfile({ ...request, spanIds: [] }, enabled)))).toBe(true)
 		expect(Option.isNone(await run(fetchSpanProfile({ ...request, startTime: "" }, enabled)))).toBe(true)
 		expect(mocks.fetch).not.toHaveBeenCalled()
+	})
+})
+
+describe("the profiling rollout flag", () => {
+	test("a hosted org has it only when its metadata sets profiling to the literal true", () => {
+		expect(hasProfilingRollout(true, { profiling: true })).toBe(true)
+		expect(hasProfilingRollout(true, { profiling: "yes" })).toBe(false)
+		expect(hasProfilingRollout(true, { releases: true })).toBe(false)
+		expect(hasProfilingRollout(true, undefined)).toBe(false)
+	})
+
+	test("self-hosted has it whatever the metadata says", () => {
+		expect(hasProfilingRollout(false, undefined)).toBe(true)
 	})
 })
