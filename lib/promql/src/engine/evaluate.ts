@@ -3,8 +3,10 @@ import type { Call, Expr, LabelMatcher, MatrixSelector, SubqueryExpr, VectorSele
 import { valueTypeOf } from "../types"
 import {
 	aggregate,
+	compareLabels,
 	dropMetricName,
 	ensureUniqueLabelsets,
+	labelsKey,
 	type EvalError,
 	histogramQuantile,
 	instantFunction,
@@ -110,12 +112,6 @@ const DATE_FUNCTIONS: ReadonlySet<string> = new Set([
 	"year",
 ])
 
-const labelKey = (labels: Labels): string =>
-	Object.keys(labels)
-		.sort()
-		.map((k) => `${k}\u0000${labels[k] ?? ""}`)
-		.join("\u0001")
-
 /** Labels for absent(): the selector's equality matchers, unless a name is matched twice. */
 const absentLabels = (matchers: ReadonlyArray<LabelMatcher>): Labels => {
 	const out: Record<string, string> = {}
@@ -171,7 +167,7 @@ const transpose = (steps: Steps): RangeSeries[] => {
 	steps.vectors.forEach((vector, index) => {
 		const t = steps.times[index] ?? 0
 		for (const sample of vector) {
-			const key = labelKey(sample.labels)
+			const key = labelsKey(sample.labels)
 			const entry = byKey.get(key) ?? { labels: sample.labels, points: [] }
 			entry.points.push({ t, v: sample.value })
 			byKey.set(key, entry)
@@ -183,26 +179,11 @@ const transpose = (steps: Steps): RangeSeries[] => {
 const checkUnique = (vector: InstantVector): R<InstantVector> => {
 	const seen = new Set<string>()
 	for (const sample of vector) {
-		const key = labelKey(sample.labels)
+		const key = labelsKey(sample.labels)
 		if (seen.has(key)) return err("vector cannot contain metrics with the same labelset")
 		seen.add(key)
 	}
 	return Result.succeed(vector)
-}
-
-/** Prometheus' `labels.Compare`: label pairs in name order, name then value, shorter set first. */
-const compareLabels = (a: Labels, b: Labels): number => {
-	const ak = Object.keys(a).sort()
-	const bk = Object.keys(b).sort()
-	for (let i = 0; i < Math.min(ak.length, bk.length); i++) {
-		const an = ak[i] ?? ""
-		const bn = bk[i] ?? ""
-		if (an !== bn) return an < bn ? -1 : 1
-		const av = a[an] ?? ""
-		const bv = b[bn] ?? ""
-		if (av !== bv) return av < bv ? -1 : 1
-	}
-	return ak.length - bk.length
 }
 
 const sortedSelectors = new WeakMap<SelectorData, SelectorData>()
