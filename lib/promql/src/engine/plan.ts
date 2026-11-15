@@ -131,3 +131,52 @@ export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 	walk(expr, top, expr.type === "MatrixSelector")
 	return plan
 }
+
+/** Prometheus' cap on points per series, for the query and every subquery. */
+export const MAX_POINTS_PER_SERIES = 11_000
+
+/**
+ * Why the query would evaluate too many points per series, or undefined. Run it
+ * before reading anything: a subquery like `x[1y:1ms]` is rejected here, not
+ * after its selectors were read.
+ */
+export const resolutionError = (expr: Expr, params: QueryParams): string | undefined => {
+	const points = (g: TimeGrid) => (g.stepMs > 0 ? Math.floor((g.endMs - g.startMs) / g.stepMs) + 1 : 1)
+	const top: TimeGrid = { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
+	if (points(top) > MAX_POINTS_PER_SERIES) {
+		return `exceeded maximum resolution of ${MAX_POINTS_PER_SERIES} points per timeseries. Try decreasing the query resolution (?step=XX)`
+	}
+	const walk = (node: Expr, grid: TimeGrid): string | undefined => {
+		switch (node.type) {
+			case "Subquery": {
+				const inner = subqueryGrid(node, grid, params)
+				const n = points(inner)
+				if (n > MAX_POINTS_PER_SERIES) {
+					return `subquery resolution too fine: ${n} points per series, at most ${MAX_POINTS_PER_SERIES}; use a larger subquery step`
+				}
+				return walk(node.expr, inner)
+			}
+			case "Paren":
+			case "Unary":
+				return walk(node.expr, grid)
+			case "Aggregate":
+				return (
+					(node.param === undefined ? undefined : walk(node.param, grid)) ?? walk(node.expr, grid)
+				)
+			case "Binary":
+				return walk(node.lhs, grid) ?? walk(node.rhs, grid)
+			case "Call":
+				for (const arg of node.args) {
+					const error = walk(arg, grid)
+					if (error !== undefined) return error
+				}
+				return undefined
+			case "NumberLiteral":
+			case "StringLiteral":
+			case "VectorSelector":
+			case "MatrixSelector":
+				return undefined
+		}
+	}
+	return walk(expr, top)
+}
