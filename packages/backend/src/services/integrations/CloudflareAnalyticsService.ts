@@ -3683,16 +3683,46 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const current = yield* loadFeatures(orgId)
 			const next = new CloudflareFeatureSwitches({ ...current, ...update })
 			const now = yield* Clock.currentTimeMillis
+			const stillOff = disabledDatasets(next)
+			const resumed = Arr.filter([...disabledDatasets(current)], (dataset) => !stillOff.has(dataset))
+			const [firstResumed, ...restResumed] = resumed
+			// A feature turned back on starts from now: neither its head nor its backfill reads the off window.
+			const horizon = floorToBucket(now - SAFETY_LAG_MS)
+			const backfillDone = floorToBucket(now - SAFETY_LAG_MS - BACKFILL_MS)
 			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(CloudflareFeatureSettings)
-						.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
-						.onConflictDoUpdate({
-							target: ["orgId"],
-							set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
-						}),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.insertInto(CloudflareFeatureSettings)
+								.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
+								.onConflictDoUpdate({
+									target: ["orgId"],
+									set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
+								}),
+						)
+						if (firstResumed === undefined) return
+						yield* db.run(
+							PG.update(CloudflareAnalyticsState)
+								.set({ watermarkAt: horizon, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.dataset.in_(firstResumed, ...restResumed),
+									PG.or($.watermarkAt.isNull(), $.watermarkAt.lt(horizon)),
+								]),
+						)
+						yield* db.run(
+							PG.update(CloudflareAnalyticsState)
+								.set({ backfillAt: backfillDone, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.dataset.in_(firstResumed, ...restResumed),
+									$.backfillAt.isNull(),
+								]),
+						)
+					}),
 				),
 			)
+			yield* Effect.annotateCurrentSpan("maple.cloudflare.resumed_datasets", resumed.length)
 			return next
 		})
 

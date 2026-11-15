@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, PlanetScaleFeaturesRequest, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
@@ -1140,6 +1140,39 @@ describe("PlanetScaleService deploy-request backfill", () => {
 				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 			return Str.includes("/deploy-requests")(url) ? deployRequests() : base(input, init)
 		}) as typeof fetch
+
+	it.effect("events turned back on backfill no deploy request from the time they were off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubApi({
+			databases: [{ id: "db_1", name: "main-db" }],
+			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
+			// Opened, deployed and closed between 10:00 and 10:20, while events were off.
+			deployRequestsByDatabase: { "main-db": [deployRequest()] },
+		})
+		const setEvents = (eventsEnabled: boolean) =>
+			Effect.flatMap(PlanetScaleConnectionService, (connections) =>
+				connections.setFeatures(asOrgId("org_1"), new PlanetScaleFeaturesRequest({ eventsEnabled })),
+			)
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(Date.parse("2026-08-04T09:00:00Z"))
+			yield* connect("org_1")
+			yield* setEvents(false)
+			const service = yield* PlanetScaleService
+			yield* service.pollAllOrgs
+			yield* TestClock.setTime(Date.parse("2026-08-04T12:00:00Z"))
+			yield* service.pollAllOrgs
+
+			yield* setEvents(true)
+			const resumed = yield* service.pollAllOrgs
+
+			assert.strictEqual(resumed.deployEvents, 0)
+			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
 
 	it.effect("hands a failed backfill's lease back and records why on its row", () => {
 		const testDb = createTestDb(trackedDbs)

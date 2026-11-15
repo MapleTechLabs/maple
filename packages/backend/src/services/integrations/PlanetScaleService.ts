@@ -50,7 +50,11 @@ import {
 	runPlanetScale,
 	type SdkError,
 } from "./planetscale/api"
-import { makePlanetScalePollState, pollStateResult } from "./planetscale/poll-state"
+import {
+	makePlanetScalePollState,
+	PLANETSCALE_DEPLOY_REQUESTS_DATASET,
+	pollStateResult,
+} from "./planetscale/poll-state"
 import { insertPlanetScaleEvent } from "./planetscale/webhook-events"
 import { isolatePollFailure, pollFleet } from "./poll-fleet"
 import { timestampMs } from "@maple/backend/platform/time"
@@ -84,7 +88,7 @@ const INVENTORY_TTL_MS = Duration.toMillis(Duration.hours(1))
  * live source; this exists so an org that connects after the fact still has a
  * timeline, and so a missed delivery self-heals.
  */
-const DEPLOY_REQUESTS_DATASET = "deploy_requests"
+const DEPLOY_REQUESTS_DATASET = PLANETSCALE_DEPLOY_REQUESTS_DATASET
 /** Faster than inventory: a deploy an hour late is a deploy nobody can use. */
 const DEPLOY_REQUESTS_TTL_MS = Duration.toMillis(Duration.minutes(5))
 /** How far back a first backfill reaches. Older deploys have no chart left. */

@@ -21,6 +21,7 @@ import {
 	type PlanetScaleMetricsTokenRequest,
 	type PlanetScaleSelectOrganizationRequest,
 } from "@maple/domain/http"
+import type { MapleDb } from "@maple/db/client"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PlanetscaleConnections,
@@ -39,7 +40,7 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryConfigSchema } from "./planetscale/discovery-config"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
-import { PLANETSCALE_METRICS_DATASET } from "./planetscale/poll-state"
+import { PLANETSCALE_DEPLOY_REQUESTS_DATASET, PLANETSCALE_METRICS_DATASET } from "./planetscale/poll-state"
 import { scrapesWithToken } from "./PlanetScaleMetricsService"
 import {
 	PlanetScaleOAuthService,
@@ -787,6 +788,40 @@ export class PlanetScaleConnectionService extends Context.Service<
 			return yield* getStatus(orgId)
 		})
 
+		/**
+		 * Events back on start from now: every live database's deploy-request watermark moves to
+		 * `now`, so the backfill never reads the deploys of the window events were off.
+		 */
+		const resumeDeployRequestsAt = (db: MapleDb, orgId: OrgId, now: number) =>
+			Effect.gen(function* () {
+				const databases = yield* db.run(
+					PG.from(PlanetscaleDatabases)
+						.select("databaseId")
+						.where(($) => [$.orgId.eq(orgId), $.deletedAt.isNull()]),
+				)
+				yield* Effect.forEach(
+					databases,
+					({ databaseId }) =>
+						db.run(
+							PG.insertInto(PlanetscalePollState)
+								.values({
+									id: randomUUID(),
+									orgId,
+									dataset: PLANETSCALE_DEPLOY_REQUESTS_DATASET,
+									databaseId,
+									watermarkAt: now,
+									createdAt: now,
+									updatedAt: now,
+								})
+								.onConflictDoUpdate({
+									target: ["orgId", "dataset", "databaseId"],
+									set: () => ({ watermarkAt: now, updatedAt: now }),
+								}),
+						),
+					{ discard: true },
+				)
+			})
+
 		const setFeatures = Effect.fn("PlanetScaleConnectionService.setFeatures")(function* (
 			orgId: OrgId,
 			request: PlanetScaleFeaturesRequest,
@@ -803,15 +838,21 @@ export class PlanetScaleConnectionService extends Context.Service<
 				eventsEnabled: request.eventsEnabled ?? connection.eventsEnabled,
 				updatedAt: now,
 			}
+			const eventsResumed = !connection.eventsEnabled && next.eventsEnabled
 			yield* dbExecute((db) =>
-				db.run(
-					PG.update(PlanetscaleConnections)
-						.set({
-							metricsEnabled: next.metricsEnabled,
-							eventsEnabled: next.eventsEnabled,
-							updatedAt: now,
-						})
-						.where(($) => [$.orgId.eq(orgId), $.id.eq(connection.id)]),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.update(PlanetscaleConnections)
+								.set({
+									metricsEnabled: next.metricsEnabled,
+									eventsEnabled: next.eventsEnabled,
+									updatedAt: now,
+								})
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(connection.id)]),
+						)
+						if (eventsResumed) yield* resumeDeployRequestsAt(db, orgId, now)
+					}),
 				),
 			)
 			yield* Effect.annotateCurrentSpan({
