@@ -1265,7 +1265,7 @@ mod prometheus {
                 samples: (0..rng.below(60))
                     .map(|_| Sample {
                         value: rng.below(1_000) as f64,
-                        timestamp: 1_700_000_000_000 + rng.below(1_000_000) as i64,
+                        timestamp: 1_700_000_000_000 + i64::try_from(rng.below(1_000_000)).unwrap_or(0),
                     })
                     .collect(),
                 exemplars: vec![Skipped {}; rng.below(3)],
