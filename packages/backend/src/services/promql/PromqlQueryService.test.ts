@@ -214,11 +214,23 @@ const recordingWarehouse = () => {
 		if (Str.includes("FROM metric_catalog")(sql)) {
 			return [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }]
 		}
+		if (
+			Str.includes("FROM attribute_keys_hourly")(sql) &&
+			Str.includes("AttributeScope = 'resource'")(sql)
+		) {
+			return [
+				{ attributeKey: "host.name", usageCount: 5 },
+				{ attributeKey: "service.version", usageCount: 5 },
+			]
+		}
 		if (Str.includes("FROM attribute_keys_hourly")(sql)) {
 			return [
 				{ attributeKey: "http.route", usageCount: 10 },
 				{ attributeKey: "http_route", usageCount: 1 },
 			]
+		}
+		if (Str.includes("FROM attribute_values_hourly")(sql) && Str.includes("service.instance.id")(sql)) {
+			return [{ attributeValue: "pod-1" }]
 		}
 		if (Str.includes("FROM attribute_values_hourly")(sql)) return [{ attributeValue: "/checkout" }]
 		return []
@@ -292,7 +304,7 @@ describe("PromqlQueryService discovery", () => {
 		return Effect.gen(function* () {
 			const service = yield* PromqlQueryService
 			const names = yield* service.labelNames(tenant, { ...window, matches: [] })
-			expect(names).toEqual(["__name__", "http_route", "job"])
+			expect(names).toEqual(["__name__", "host_name", "http_route", "instance", "job"])
 			expect(Arr.some(statements, (sql) => Str.includes("metrics_sum")(sql))).toBe(false)
 			for (const sql of statements) expect(sql).toMatch(ORG_FILTER)
 		}).pipe(Effect.provide(layer))
@@ -308,6 +320,17 @@ describe("PromqlQueryService discovery", () => {
 			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeKey IN \('http\.route', 'http_route'\)/)
 			expect(Option.getOrThrow(valuesSql)).toMatch(ORG_FILTER)
 			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeScope = 'metric'/)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads instance values from service.instance.id in the resource rollup", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "instance" })
+			expect(values).toEqual(["pod-1"])
+			const valuesSql = Arr.findFirst(statements, (sql) => Str.includes("attribute_values_hourly")(sql))
+			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeScope = 'resource'/)
 		}).pipe(Effect.provide(layer))
 	})
 

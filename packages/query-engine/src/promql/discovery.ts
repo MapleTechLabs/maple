@@ -3,7 +3,7 @@
 
 import { Array as Arr, Order, String as Str } from "effect"
 import type { PromqlMetadataRow } from "../ch/queries/promql"
-import { normalizeLabelName } from "./labels"
+import { isExcludedResourceKey, normalizeLabelName } from "./labels"
 import { type CatalogMetric, type OtelMetricType, promNamesOf, unitSuffix } from "./names"
 
 const sortedUnique = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
@@ -24,14 +24,33 @@ export const canonicalPromNames = (catalog: ReadonlyArray<CatalogMetric>): Reado
 export const keysForLabel = (keys: ReadonlyArray<string>, name: string): ReadonlyArray<string> =>
 	Arr.filter(keys, (key) => normalizeLabelName(key) === name)
 
-/** Label names when no series selector narrows them: identity labels plus attribute keys. */
+/** The raw resource keys whose label name is `name`; `instance` reads `service.instance.id`. */
+export const resourceKeysForLabel = (keys: ReadonlyArray<string>, name: string): ReadonlyArray<string> =>
+	name === "instance"
+		? ["service.instance.id"]
+		: keysForLabel(
+				Arr.filter(keys, (key) => !isExcludedResourceKey(key)),
+				name,
+			)
+
+/**
+ * Label names when no series selector narrows them: identity labels plus datapoint and resource
+ * keys. The resource rollup is fed by spans, so it can name a label no metric carries, never hide one.
+ */
 export const labelNamesFrom = (
 	catalog: ReadonlyArray<CatalogMetric>,
 	attributeKeys: ReadonlyArray<string>,
+	resourceKeys: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
 	if (catalog.length === 0) return []
 	// `le` is left out: its values come from bucket bounds, which no rollup lists.
-	return sortedUnique(["__name__", "job", ...Arr.map(attributeKeys, normalizeLabelName)])
+	const resource = Arr.filter(resourceKeys, (key) => !isExcludedResourceKey(key))
+	return sortedUnique([
+		"__name__",
+		"job",
+		"instance",
+		...Arr.map([...attributeKeys, ...resource], normalizeLabelName),
+	])
 }
 
 export interface PrometheusMetadata {

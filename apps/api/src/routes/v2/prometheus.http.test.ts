@@ -300,7 +300,7 @@ describe("v2 Prometheus discovery API", () => {
 		})
 		expect((await harness.send(key.secret, "/labels", new URLSearchParams(window))).body).toEqual({
 			status: "success",
-			data: ["__name__", "job"],
+			data: ["__name__", "instance", "job"],
 		})
 		const buildInfo = await harness.send(key.secret, "/status/buildinfo")
 		expect(buildInfo.body).toMatchObject({ data: { version: "3.5.0", vendor: "Maple" } })
