@@ -95,9 +95,14 @@ describe("profiles ingest", () => {
 		})
 	const recordingInserts = () => {
 		const rowCounts: Array<number> = []
-		const insert = (batches: ReadonlyArray<{ readonly rowCount: number }>) =>
+		// One NDJSON line per row.
+		const insert = (batches: ReadonlyArray<{ readonly ndjson: string }>) =>
 			Effect.sync(() => {
-				const rows = Arr.reduce(batches, 0, (sum, batch) => sum + batch.rowCount)
+				const rows = Arr.reduce(
+					batches,
+					0,
+					(sum, batch) => sum + Str.split("\n")(batch.ndjson).length,
+				)
 				rowCounts.push(rows)
 				return rows
 			})
