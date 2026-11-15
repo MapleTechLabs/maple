@@ -55,12 +55,20 @@ type Query =
 	| { readonly kind: "clickhouse"; readonly sql: string }
 	| { readonly kind: "unsupported"; readonly datasource: string }
 
+const ASSUMED_PROMQL =
+	"Queries that name no datasource type (the default datasource, or a bare uid) were read as PromQL; check any that are not Prometheus."
+
 /** What a target queries; an unknown datasource with an `expr` is the default Prometheus. */
 function classifyTarget(target: UnknownRecord, panel: UnknownRecord, context: PanelContext): Query {
 	const type = datasourceType(target.datasource ?? panel.datasource, context.variables.datasourceTypes)
 	const expr = asString(target.expr)
 	const sql = asString(target.rawSql) ?? asString(target.query)
-	if ((type === undefined || type === "prometheus") && expr !== undefined) return { kind: "promql", expr }
+	if (type === "prometheus" && expr !== undefined) return { kind: "promql", expr }
+	if (type === undefined && expr !== undefined) {
+		// An unresolvable datasource (the default, or a bare uid) is read as Prometheus; said once.
+		if (!Arr.contains(context.warnings, ASSUMED_PROMQL)) context.warnings.push(ASSUMED_PROMQL)
+		return { kind: "promql", expr }
+	}
 	if (type !== undefined && CLICKHOUSE_TYPES.has(type) && sql !== undefined)
 		return { kind: "clickhouse", sql }
 	if (type === undefined && asString(target.rawSql) !== undefined) {

@@ -389,3 +389,24 @@ describe("review regressions", () => {
 		}),
 	)
 })
+
+describe("assumed PromQL", () => {
+	it.effect("says once that queries without a datasource type were read as PromQL", () =>
+		Effect.gen(function* () {
+			const bare = (id: number) => ({
+				id,
+				type: "timeseries",
+				title: `P${id}`,
+				gridPos: { x: 0, y: id * 8, w: 12, h: 8 },
+				datasource: { uid: "lo0" },
+				targets: [{ refId: "A", expr: "up", datasource: { uid: "lo0" } }],
+			})
+			const { warnings } = yield* convertGrafanaDashboardToPortable({
+				title: "Bare",
+				schemaVersion: 39,
+				panels: [bare(1), bare(2)],
+			})
+			expect(Arr.filter(warnings, Str.includes("were read as PromQL"))).toHaveLength(1)
+		}),
+	)
+})

@@ -36,7 +36,7 @@ export const importReportDialog = (h: H, model: Model): Html => {
 		tone: "default",
 		hasIcon: false,
 		title: ["Imported “", displayName(report.name), "”"],
-		description: `${report.converted} of ${countLabel(report.panels, "panel")} converted.${notes > 0 ? ` ${countLabel(notes, "panel")} Maple cannot run yet became notes that keep the original queries.` : ""}`,
+		description: `${report.converted} of ${countLabel(report.panels, "panel")} converted.${notes === 1 ? " 1 panel Maple cannot run yet became a note that keeps its original queries." : notes > 1 ? ` ${countLabel(notes, "panel")} Maple cannot run yet became notes that keep the original queries.` : ""}`,
 		children:
 			report.warnings.length === 0
 				? []

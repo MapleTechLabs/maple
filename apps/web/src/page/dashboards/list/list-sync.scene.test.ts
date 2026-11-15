@@ -197,7 +197,7 @@ describe("dashboards list write feedback", () => {
 			expectView(role("alertdialog", { name: "Imported “Node overview”" })).toExist(),
 			expectView(
 				text(
-					"6 of 7 panels converted. 1 panel Maple cannot run yet became notes that keep the original queries.",
+					"6 of 7 panels converted. 1 panel Maple cannot run yet became a note that keeps its original queries.",
 				),
 			).toExist(),
 			expectView(text(warnings[0] ?? "")).toExist(),
