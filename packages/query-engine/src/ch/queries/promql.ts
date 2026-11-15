@@ -743,7 +743,8 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 		.select(($) => ({
 			metricName: $.MetricName,
 			metricType: $.MetricType,
-			unit: CH.any_($.MetricUnit),
+			// One name in two units is two metrics (`_seconds`, `_milliseconds`), as in the catalog.
+			unit: $.MetricUnit,
 			description: CH.any_($.MetricDescription),
 			isMonotonic: sql(T.uint8)`max(${$.IsMonotonic})`,
 		}))
@@ -752,7 +753,7 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
-		.groupBy("metricName", "metricType")
+		.groupBy("metricName", "metricType", "unit")
 		.limit(opts.limit)
 		.format("JSON")
 }
