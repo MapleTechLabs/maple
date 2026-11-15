@@ -2123,6 +2123,34 @@ describe("cost page", () => {
 		)
 	})
 
+	// A budget is an alert rule: the link is for who manages alerts, and carries what is on screen.
+	test("Set budget opens the budget editor on the page's filters, for who manages alerts", () => {
+		const seenBy = (model: Model, roles: ReadonlyArray<string>) =>
+			pageUpdate(model, Message.CompletedReadGrants({ grants: Policy.grantsOf(roles) })).model
+
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget" })).toHaveAttr("href", "/cost/budgets/new"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({ provider: ["aws"], region: ["eu-west-1"] }), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget for this view" })).toHaveAttr(
+				"href",
+				"/cost/budgets/new?provider=%5B%22aws%22%5D&region=%5B%22eu-west-1%22%5D",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:member"])),
+			resolveTheme,
+			expectView(role("link", { name: /^Set budget/u })).not.toExist(),
+		)
+	})
+
 	test("grouped by provider, a row reads the provider's name and filters by its id", () => {
 		expect(keyLabel("provider", "openrouter")).toBe("OpenRouter")
 		expect(keyLabel("provider", "aws")).toBe("AWS")

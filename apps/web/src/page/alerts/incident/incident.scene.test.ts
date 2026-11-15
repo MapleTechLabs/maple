@@ -347,6 +347,48 @@ describe("alert incident", () => {
 		)
 	})
 
+	test("a cost budget incident asks for no rule preview, offers no rule edit, and links the budgets", () => {
+		const budgetIncident = incidentRow({
+			rule_name: "AWS production",
+			signal_type: "cost_budget",
+			comparator: "gte",
+			threshold: 100,
+			last_observed_value: 120,
+			group_key: "__total__",
+		})
+		const loaded = Arr.reduce(
+			[
+				Message.ReadClock({ nowMs: NOW }),
+				Message.UpdatedIncidents({ orgId: ORG, rows: [budgetIncident] }),
+			],
+			init(route(), context).model,
+			(model, message) => step(model, message).model,
+		)
+		const withRule = step(
+			loaded,
+			Message.UpdatedRules({
+				orgId: ORG,
+				rows: [ruleRow(2, { signal_type: "cost_budget", name: "AWS production" })],
+			}),
+		)
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentPreview")
+		expect(names(withRule.commands)).not.toContain("FetchAlertIncidentChecks")
+		scene(
+			{ update: pageUpdate, view },
+			given(withRule.model),
+			themeResolved(),
+			// The percent of the budget, not a bare number.
+			expectView(role("heading", { name: "Cost budget 120%" })).toExist(),
+			expectView(text(/__total__/u)).not.toExist(),
+			expectView(role("link", { name: "Edit rule" })).not.toExist(),
+			expectView(text(/This incident follows a cost budget/u)).toExist(),
+			expectView(role("link", { name: "Open budgets" })).toHaveAttr(
+				"href",
+				hrefOf(AppRoute.CostBudgets()),
+			),
+		)
+	})
+
 	test("an uptime incident links its monitor once known and keeps its rule's history, without a rule edit", () => {
 		const uptimeIncident = incidentRow({
 			rule_id: MONITOR_RULE,
