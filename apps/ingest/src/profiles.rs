@@ -544,6 +544,22 @@ impl<'a> Dictionary<'a> {
             })
     }
 
+    /// The JSON length of the map the attributes `indices` name: a key named again replaces
+    /// its earlier value, so each key counts once, at its last value. Keys are compared by
+    /// string-table index, never by their text.
+    fn indexed_json_len(&self, indices: &[i32]) -> usize {
+        let mut entries: BTreeMap<i32, usize> = BTreeMap::new();
+        for index in indices {
+            let Some(entry) = at(self.attributes, *index) else {
+                continue;
+            };
+            if let Some(cost) = at(self.attribute_costs, *index).copied().flatten() {
+                entries.insert(entry.key_strindex, cost.json_len);
+            }
+        }
+        entries.values().fold(0, |sum, len| sum.saturating_add(*len))
+    }
+
     /// Sample and profile attributes, looked up in the dictionary's attribute table.
     fn indexed_attributes(&self, indices: &'a [i32], out: &mut Attributes<'a>) {
         for (key, entry) in self.indexed_entries(indices) {
@@ -938,8 +954,9 @@ impl<'a> Flattener<'a, '_> {
         let mut profile_attributes = Attributes::new();
         self.dictionary
             .indexed_attributes(&profile.attribute_indices, &mut profile_attributes);
-        // Summed from the entries' worked-out lengths, never by rescanning their values.
-        let profile_attributes_len = profile_cost.json_len;
+        // Summed from the entries' worked-out lengths, never by rescanning their values; the
+        // heap charge above still counts every reference.
+        let profile_attributes_len = self.dictionary.indexed_json_len(&profile.attribute_indices);
         let shared_len = ROW_FIXED_BYTES
             + resource.json_len
             + json_text_len(terms.sample_type)
@@ -1782,6 +1799,35 @@ mod tests {
         request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
             (first_entry..first_entry + 100_000).collect();
         assert_eq!(flatten_quickly(&request).profile_count, 1);
+    }
+
+    #[test]
+    fn counts_a_profile_attribute_named_again_once() {
+        // One 1 MiB attribute, named four times: the row holds it once, well under 4 MiB.
+        let mut request = decode(&cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }])));
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let long = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.push("v".repeat(1024 * 1024));
+        let entry = i32::try_from(dictionary.attribute_table.len()).unwrap();
+        dictionary.attribute_table.push(KeyValueAndUnit {
+            key_strindex: 9,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValueStrindex(long)),
+            }),
+            ..Default::default()
+        });
+        request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
+            vec![entry; 4];
+        let flattened = flatten(
+            &request,
+            &ResourceStamps::default(),
+            NOW_NANO,
+            &mut test_profile_id,
+            2 * 1024 * 1024,
+            &mut |_| true,
+        )
+        .expect("the export flattens");
+        assert_eq!((flattened.rows.len(), flattened.dropped_rows), (1, 0));
     }
 
     #[test]
