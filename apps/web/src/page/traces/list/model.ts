@@ -8,6 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { AdvancedFilter } from "./advanced-model"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { Model as TraceDetailModel } from "../detail/model"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { laterPagesFields } from "../../kit/infinite-pages"
 
@@ -85,6 +86,8 @@ export const Model = Schema.Struct({
 	presence: SignalPresenceData.schema,
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
+	/** The header's Views control: the saved views of `/traces` and the one this URL is. */
+	savedViews: SavedViews.Model,
 	/** The duration inputs' text while typing; committed on blur, Enter or a 400 ms pause. */
 	durationDraft: Schema.Struct({ min: Schema.String, max: Schema.String }),
 	durationDraftVersion: Schema.Number,

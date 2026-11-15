@@ -22,7 +22,7 @@ const metricNames = (sql: string) =>
 
 describe("awsInfraMetricsSQL", () => {
 	it("reads a load balancer's own series, never its per-target-group or per-zone copies", () => {
-		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("loadBalancers"), params)
+		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("loadBalancers", "raw"), params)
 		expect(tenantScope).toBe("single-tenant")
 		// CloudWatch repeats RequestCount per target group and zone: those would count twice.
 		expect(sql).toContain("metrics_sum.Attributes['aws.dimension.load_balancer'] != ''")
@@ -32,14 +32,14 @@ describe("awsInfraMetricsSQL", () => {
 	})
 
 	it("reads an ECS service's series, not its cluster's", () => {
-		const { sql } = compileUnsafe(awsInfraMetricsSQL("ecs"), params)
+		const { sql } = compileUnsafe(awsInfraMetricsSQL("ecs", "raw"), params)
 		expect(sql).toContain("metrics_gauge.Attributes['aws.dimension.service_name'] != ''")
 		expect(sql).toContain("metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''")
 	})
 
 	it("reads every kind's sums from metrics_sum and means from metrics_gauge, none twice", () => {
 		for (const kind of AWS_INFRA_KIND_IDS) {
-			const { sql } = compileUnsafe(awsInfraMetricsSQL(kind), params)
+			const { sql } = compileUnsafe(awsInfraMetricsSQL(kind, "raw"), params)
 			expect(sql, kind).not.toContain("IN ()")
 			const [sums, gauges = ""] = Str.split("FROM metrics_gauge")(sql)
 			const metrics = AWS_INFRA_KINDS[kind].metrics
@@ -49,6 +49,20 @@ describe("awsInfraMetricsSQL", () => {
 			}
 			expect(metricNames(sql).sort(), kind).toEqual(Arr.map(metrics, (metric) => metric.name).sort())
 		}
+	})
+})
+
+describe("awsInfraMetricsSQL tiers", () => {
+	it("reads the rollup on the hourly tier", () => {
+		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("ec2", "hourly"), params)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("FROM aws_metrics_hourly")
+	})
+
+	it("reads raw points only on the raw tier", () => {
+		expect(compileUnsafe(awsInfraMetricsSQL("ec2", "raw"), params).sql).not.toContain(
+			"aws_metrics_hourly",
+		)
 	})
 })
 

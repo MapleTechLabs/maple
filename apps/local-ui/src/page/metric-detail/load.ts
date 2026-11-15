@@ -36,7 +36,7 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 	const { bucketSeconds } = chartOf(model, bounds)
 	const identity = { metricName: entry.metricName, metricType: entry.metricType, bounds: boundsKey(bounds) }
 	const timeseriesKey = keyOf("metric-timeseries", { ...identity, isMonotonic: entry.isMonotonic, bucketSeconds })
-	const breakdownKey = keyOf("metric-breakdown", identity)
+	const breakdownKey = keyOf("metric-breakdown", { ...identity, bucketSeconds })
 	const timeseries = requestKeepingFailure(model.timeseries, timeseriesKey, force ? "Refresh" : "Load")
 	const breakdown = isMetricType(entry.metricType) ? requestKeepingFailure(model.breakdown, breakdownKey, force ? "Refresh" : "Load") : Option.none()
 	return {
@@ -49,7 +49,7 @@ export const loadDependents = (model: Model, context: PageContext, force = false
 			Option.map(timeseries, () =>
 				FetchTimeseries({ key: timeseriesKey, entry, bucketSeconds, ...bounds, apiBase, readsCache: !force && model.timeseries.key !== timeseriesKey }),
 			),
-			Option.map(breakdown, () => FetchBreakdown({ key: breakdownKey, entry, ...bounds, apiBase, readsCache: !force && model.breakdown.key !== breakdownKey })),
+			Option.map(breakdown, () => FetchBreakdown({ key: breakdownKey, entry, bucketSeconds, ...bounds, apiBase, readsCache: !force && model.breakdown.key !== breakdownKey })),
 		]),
 	}
 }

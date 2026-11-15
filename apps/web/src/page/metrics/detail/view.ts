@@ -12,6 +12,8 @@ import { dashboardPage } from "../../kit/dashboard-page"
 import { detailTitle } from "../../kit/detail-header"
 import { docsLink } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
+import * as SavedViews from "../../kit/saved-views"
+import { metricViewsExplorer } from "../saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { CatalogSummary } from "./derive"
 import { Message } from "./message"
@@ -21,13 +23,21 @@ import { DEFAULT_PRESET, draftOf, summaryOf } from "./update"
 import { graduationActions, queryControls } from "./view-controls"
 import { metadataPanel, metricBreakdown, metricChart } from "./view-panels"
 import { typography } from "@maple/views/ui/typography"
-import { vstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 
 type H = HtmlBuilder<Message>
 
 const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePickerMessage({ message })
 
-const actions = (h: H, model: Model): Html =>
+const savedViews = (h: H, model: Model): Html =>
+	SavedViews.control(h, {
+		slotId: "metric-saved-views",
+		model: model.savedViews,
+		explorer: metricViewsExplorer([model.metricName, model.search]),
+		toMessage: (message) => Message.GotSavedViewsMessage({ message }),
+	})
+
+const timeActions = (h: H, model: Model): Html =>
 	timeControls(h, {
 		search: model.search,
 		defaultPreset: DEFAULT_PRESET,
@@ -128,7 +138,10 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 						title: [typography(h, { mono: true }, [model.metricName])],
 						titleText: model.metricName,
 					}),
-					actions: actions(h, model),
+					actions: hstack(h, { gap: "2", wrap: true }, [
+						savedViews(h, model),
+						timeActions(h, model),
+					]),
 				},
 				[body(h, model, inputs.context.timeZone)],
 			),

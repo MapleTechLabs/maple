@@ -686,7 +686,16 @@ const awsInfraMetrics = defineQuery({
 	profile: "aggregation",
 	cache: 15,
 	compile: (payload: AwsInfraMetricsRequest, orgId: OrgId) =>
-		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind), windowParams(payload, orgId)),
+		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind, "hourly"), windowParams(payload, orgId)),
+})
+
+/** `awsInfraMetrics` on a cluster without `aws_metrics_hourly` (migration 0066). */
+const awsInfraMetricsRaw = defineQuery({
+	id: "awsInfraMetricsRaw",
+	profile: "aggregation",
+	cache: 15,
+	compile: (payload: AwsInfraMetricsRequest, orgId: OrgId) =>
+		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind, "raw"), windowParams(payload, orgId)),
 })
 
 const awsInfraSparklines = defineQuery({
@@ -1322,6 +1331,7 @@ export const Queries = {
 	supabaseLogIssues,
 	awsInfraPresence,
 	awsInfraMetrics,
+	awsInfraMetricsRaw,
 	awsInfraSparklines,
 	awsInfraTimeseries,
 	gcpInfraPresence,
