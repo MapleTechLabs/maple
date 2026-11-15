@@ -11,6 +11,7 @@ import {
 	toQueryBuilderDataSource,
 	toQueryBuilderMetricType,
 } from "@maple/query-model"
+import { METRICS_PERCENTILES } from "@maple/domain/query-engine"
 import { Option, Schema, Array as Arr, String as Str } from "effect"
 import type { FormulaDraft, QueryDraft } from "./editor-state"
 
@@ -107,7 +108,8 @@ export const inferDisplayUnitForQuery = (
 	if (/\b(duration|latency|response[._]time)\b/.test(lower)) return "duration_ms"
 	if (/\b(bytes|memory|size)\b/.test(lower)) return "bytes"
 	// A metrics rate is already per second; `requests_per_sec` would divide it by the bucket again.
-	return ["count", "sum", "avg", "min", "max", "latest", "rate", "increase"].includes(query.aggregation)
+	return ["count", "sum", "avg", "min", "max", "latest", "rate", "increase"].includes(query.aggregation) ||
+		query.aggregation in METRICS_PERCENTILES
 		? "number"
 		: undefined
 }

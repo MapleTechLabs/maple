@@ -45,12 +45,13 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 				}
 				const safeHours = Math.max(1, Math.min(24, Math.floor(hours)))
 				const random = yield* Random.Random
-				const { traceRows, logRows, metricGaugeRows, metricSumRows } = generateDemoRows({
-					orgId: tenant.orgId,
-					hours: safeHours,
-					ratePerHour: DEMO_RATE_PER_HOUR,
-					random: () => random.nextDoubleUnsafe(),
-				})
+				const { traceRows, logRows, metricGaugeRows, metricSumRows, metricHistogramRows } =
+					generateDemoRows({
+						orgId: tenant.orgId,
+						hours: safeHours,
+						ratePerHour: DEMO_RATE_PER_HOUR,
+						random: () => random.nextDoubleUnsafe(),
+					})
 
 				const ingestAll = (
 					datasource:
@@ -58,6 +59,7 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 						| "logs"
 						| "metrics_gauge"
 						| "metrics_sum"
+						| "metrics_histogram"
 						| "session_replays"
 						| "product_events",
 					rows: ReadonlyArray<unknown>,
@@ -85,6 +87,8 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 				// Runtime, Metric Overview) have data to show.
 				yield* ingestAll("metrics_gauge", metricGaugeRows)
 				yield* ingestAll("metrics_sum", metricSumRows)
+				// Request durations as a histogram, so percentiles have something to read.
+				yield* ingestAll("metrics_histogram", metricHistogramRows)
 				// Browser sessions and their product events, so Web and Product analytics have data.
 				const { sessionRows, eventRows } = generateDemoProductRows({
 					orgId: tenant.orgId,
@@ -100,7 +104,7 @@ export class DemoService extends Context.Service<DemoService, DemoServiceApi>()(
 					skippedReason: null,
 					spansSent: traceRows.length,
 					logsSent: logRows.length,
-					metricsSent: metricGaugeRows.length + metricSumRows.length,
+					metricsSent: metricGaugeRows.length + metricSumRows.length + metricHistogramRows.length,
 				})
 			})
 
