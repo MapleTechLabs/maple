@@ -76,10 +76,11 @@ const waitReady = async (): Promise<void> => {
 }
 
 type Series = { labels: Record<string, string>; points: Array<[number, number]> }
+type Typed = { resultType: string; series: Series[] }
 
 const parseValue = (v: string): number => (v === "+Inf" ? Infinity : v === "-Inf" ? -Infinity : Number(v))
 
-const promQuery = async (path: string, params: Record<string, string>): Promise<Series[] | string> => {
+const promQuery = async (path: string, params: Record<string, string>): Promise<Typed | string> => {
 	const url = `http://localhost:${PORT}/api/v1/${path}?${new URLSearchParams(params)}`
 	const body = (await (await fetch(url)).json()) as {
 		status: string
@@ -90,23 +91,31 @@ const promQuery = async (path: string, params: Record<string, string>): Promise<
 	const { resultType, result } = body.data
 	if (resultType === "scalar") {
 		const [t, v] = result as [number, string]
-		return [{ labels: {}, points: [[t * 1000, parseValue(v)]] }]
+		return { resultType, series: [{ labels: {}, points: [[t * 1000, parseValue(v)]] }] }
 	}
 	if (resultType === "vector") {
-		return (result as Array<{ metric: Record<string, string>; value: [number, string] }>).map((s) => ({
-			labels: s.metric,
-			points: [[s.value[0] * 1000, parseValue(s.value[1])]],
-		}))
+		return {
+			resultType,
+			series: (result as Array<{ metric: Record<string, string>; value: [number, string] }>).map(
+				(s) => ({
+					labels: s.metric,
+					points: [[s.value[0] * 1000, parseValue(s.value[1])]],
+				}),
+			),
+		}
 	}
-	return (result as Array<{ metric: Record<string, string>; values: Array<[number, string]> }>).map(
-		(s) => ({
-			labels: s.metric,
-			points: s.values.map(([t, v]) => [t * 1000, parseValue(v)]),
-		}),
-	)
+	return {
+		resultType,
+		series: (result as Array<{ metric: Record<string, string>; values: Array<[number, string]> }>).map(
+			(s) => ({
+				labels: s.metric,
+				points: s.values.map(([t, v]) => [t * 1000, parseValue(v)]),
+			}),
+		),
+	}
 }
 
-const ours = (result: QueryResult): Series[] => {
+const oursSeries = (result: QueryResult): Series[] => {
 	switch (result.resultType) {
 		case "scalar":
 			return [{ labels: {}, points: [[result.result.t, result.result.v]] }]
@@ -122,17 +131,27 @@ const ours = (result: QueryResult): Series[] => {
 	}
 }
 
+const ours = (result: QueryResult): Typed => ({ resultType: result.resultType, series: oursSeries(result) })
+
 const key = (labels: Record<string, string>): string =>
 	JSON.stringify(Object.entries(labels).sort(([a], [b]) => a.localeCompare(b)))
 
 const close = (a: number, b: number): boolean =>
 	(Number.isNaN(a) && Number.isNaN(b)) ||
 	a === b ||
-	Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
+	(Number.isFinite(a) &&
+		Number.isFinite(b) &&
+		Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b)))
 
-const diff = (expected: Series[], actual: Series[]): string | undefined => {
+const diff = (typedExpected: Typed, typedActual: Typed): string | undefined => {
+	if (typedExpected.resultType !== typedActual.resultType)
+		return `result type ${typedActual.resultType}, want ${typedExpected.resultType}`
+	const expected = typedExpected.series
+	const actual = typedActual.series
 	const want = new Map(expected.map((s) => [key(s.labels), s]))
 	const got = new Map(actual.map((s) => [key(s.labels), s]))
+	if (got.size !== actual.length) return `duplicate series in our result`
+	if (want.size !== expected.length) return `duplicate series in the expected result`
 	for (const k of want.keys()) if (!got.has(k)) return `missing series ${k}`
 	for (const k of got.keys()) if (!want.has(k)) return `unexpected series ${k}`
 	for (const [k, w] of want) {
