@@ -1087,7 +1087,7 @@
 	"cmp_gf_oncall_them": "Grafana IRM with on-call schedules, escalation chains and incident timelines.",
 	"cmp_gf_mig_1_title": "Re-point the Collector",
 	"cmp_gf_mig_1_body": "If Alloy or the OpenTelemetry Collector already feeds Tempo, Loki and Mimir, add an OTLP exporter to Maple and run both until the alerts you care about fire from Maple.",
-	"cmp_gf_mig_2_title": "Rebuild the dashboards that matter",
+	"cmp_gf_mig_2_title": "Import the dashboards that matter",
 	"cmp_gf_mig_2_body": "Grafana JSON imports: panels keep their PromQL queries, rows become sections, and an import report lists anything Maple cannot run yet, such as log panels. Rebuild those in Maple's builder, and let the long tail of unused dashboards lapse.",
 	"cmp_gf_mig_3_title": "Decommission the stack",
 	"cmp_gf_mig_3_body": "Turn off Loki, Tempo, Mimir and Grafana once Maple is the source of truth. That is four services fewer to upgrade, scale and page on.",
