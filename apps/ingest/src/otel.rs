@@ -418,6 +418,9 @@ pub fn encode_rows_internal_span(signal_path: &'static str) -> Span {
         // Encoded NDJSON size. Compare against `ingest.decode`'s
         // `maple.ingest.decoded_bytes` to spot encode amplification.
         "maple.ingest.payload_bytes" = Empty,
+        // What the rows were estimated at before they were built: the memory
+        // reserved for them, and never below `payload_bytes`.
+        "maple.ingest.row_bytes_estimate" = Empty,
     )
 }
 

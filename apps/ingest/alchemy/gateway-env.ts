@@ -30,6 +30,7 @@ export const gatewayTuningEnv: Config.Config<PlainEnv> = Config.all([
 	optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODED_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES"),
+	optionalPlain("INGEST_MAX_ROW_EXPANSION"),
 	optionalPlain("INGEST_DECODE_MEMORY_BYTES"),
 	optionalPlain("INGEST_EXPORT_MAX_ATTEMPTS"),
 	optionalPlain("INGEST_REPLAY_MAX_SESSION_BYTES"),

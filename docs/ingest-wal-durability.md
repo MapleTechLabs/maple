@@ -193,6 +193,44 @@ The gateway's resource attributes name its host: `host.id`, `host.type`, `host.i
 `INGEST_QUEUE_DIR`. A host whose fsync is slow can be told apart by AMI or by an instance-store
 device that is not actually under the WAL.
 
+## Memory a request may use
+
+One process serves every tenant, so each request works inside one process-wide budget
+(`DecodeMemory`, `apps/ingest/src/decode_budget.rs`). Every stage reserves what it is about to
+allocate before allocating it, and the reservation is returned when the request ends:
+
+1. The body as received, and the size its gzip trailer declares.
+2. The decoded request, estimated from the wire bytes.
+3. The rows, estimated from the decoded request (`apps/ingest/src/row_budget.rs`), or the body
+   forwarded to a collector. A row repeats its resource, scope and metric strings, so this is
+   not bounded by the size of the request: it is counted row by row, shared strings included.
+
+A request that could never fit, even alone, is a 413. One that does not fit right now is a 503
+`@maple/ingest/DecodeBusy` with `Retry-After`. Both are decided before a row is built, so a
+refused request writes nothing.
+
+The rows are written straight into the buffer their WAL frame carries, sized once from the
+estimate, and the append writes that buffer after the frame header instead of copying it. A
+request's rows are therefore held once. `ingest.encode_rows` records the estimate
+(`maple.ingest.row_bytes_estimate`) beside what was written (`maple.ingest.payload_bytes`).
+
+Usage is metered on the decoded bytes, not on the rows. `INGEST_MAX_ROW_EXPANSION` bounds how far
+apart the two can be: a request whose rows come to more than that many times its metered bytes is
+a 413 `@maple/ingest/RowExpansion`, counted in `ingest_org_data_loss_total` as `row_expansion`.
+Real telemetry stores 3 to 13 times its decoded size, and up to 200 times when a long resource
+attribute such as a JVM command line sits on every row of small items.
+
+| Variable                        | Default | Notes                                                    |
+| ------------------------------- | ------- | -------------------------------------------------------- |
+| `INGEST_MAX_REQUEST_BODY_BYTES` | 20 MiB  | Body as received                                         |
+| `INGEST_MAX_DECODED_BODY_BYTES` | 8x body | Body after gzip                                          |
+| `INGEST_MAX_DECODE_HEAP_BYTES`  | 768 MiB | One request's decoded form                               |
+| `INGEST_MAX_ROW_EXPANSION`      | 512     | Rows as a multiple of the metered bytes; 0 turns it off  |
+| `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | The budget all requests share, for every stage above     |
+
+Frames waiting in a lane's channel are not in this budget: they are bounded per org by
+`INGEST_ORG_QUEUE_MAX_BYTES` and per lane by the channel capacity.
+
 ## Metrics
 
 | Metric                                  | Read it for                                                        |

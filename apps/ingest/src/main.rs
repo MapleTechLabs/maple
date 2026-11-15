@@ -16,7 +16,6 @@ mod sources;
 mod task_protection;
 
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -42,8 +41,6 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::ai_session;
 use maple_ingest::audit_trail;
@@ -64,6 +61,7 @@ use maple_ingest::otel::{
 };
 use maple_ingest::otlp_json;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
+use maple_ingest::row_budget::{self, ForwardBody, RowEstimate};
 use maple_ingest::session_analytics::{
     derive_referrer_host, sanitize_product_event, sanitize_session_event, sanitize_session_meta,
     BillableSessionStarts,
@@ -182,6 +180,9 @@ struct AppConfig {
     /// Ceiling on what decoding one OTLP payload may allocate, estimated before
     /// decoding (`decode_budget`); past it the request is a 413.
     max_decode_heap_bytes: u64,
+    /// `INGEST_MAX_ROW_EXPANSION`: how many times its metered bytes a request's rows
+    /// may come to; past it the request is a 413. 0 turns the ceiling off.
+    max_row_expansion: u64,
     /// Process-wide memory for request bodies being decoded, shared by every
     /// request; past it a request is shed with a retryable 503.
     decode_memory_bytes: u64,
@@ -245,6 +246,9 @@ struct AppConfig {
     /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
     blocked_ingest_keys: Arc<HashSet<String>>,
 }
+
+/// The default `INGEST_MAX_ROW_EXPANSION`.
+const DEFAULT_MAX_ROW_EXPANSION: u64 = 512;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WriteMode {
@@ -502,6 +506,14 @@ impl AppConfig {
             "INGEST_MAX_DECODE_HEAP_BYTES",
             std::env::var("INGEST_MAX_DECODE_HEAP_BYTES").ok(),
             768 * 1024 * 1024,
+        )?;
+        // A row repeats its resource, scope and metric strings, so a request can store
+        // far more than it is metered on. Real telemetry stores 3 to 13 times its
+        // decoded size, and up to 200 times with a JVM command line on every row.
+        let max_row_expansion = parse_u64(
+            "INGEST_MAX_ROW_EXPANSION",
+            std::env::var("INGEST_MAX_ROW_EXPANSION").ok(),
+            DEFAULT_MAX_ROW_EXPANSION,
         )?;
         // Holds one request at every ceiling at once, inside the 1536 MiB task; raised
         // to that if set lower (plus a KiB per part for rounding), so it always admits one.
@@ -790,6 +802,7 @@ impl AppConfig {
             max_request_body_bytes,
             max_decoded_body_bytes,
             max_decode_heap_bytes,
+            max_row_expansion,
             decode_memory_bytes,
             org_max_in_flight,
             rate_limit_fleet_size,
@@ -1883,18 +1896,47 @@ impl DecodedPayload {
         }
     }
 
-    fn encode(&self, payload_format: PayloadFormat) -> Result<Vec<u8>, ApiError> {
-        match (self, payload_format) {
-            (Self::Traces(request), PayloadFormat::Protobuf) => Ok(request.encode_to_vec()),
-            (Self::Logs(request), PayloadFormat::Protobuf) => Ok(request.encode_to_vec()),
-            (Self::Metrics(request), PayloadFormat::Protobuf) => Ok(request.encode_to_vec()),
-            (Self::Traces(request), PayloadFormat::Json) => serde_json::to_vec(request)
-                .map_err(|_| ApiError::service_unavailable("Failed to serialize traces payload")),
-            (Self::Logs(request), PayloadFormat::Json) => serde_json::to_vec(request)
-                .map_err(|_| ApiError::service_unavailable("Failed to serialize logs payload")),
-            (Self::Metrics(request), PayloadFormat::Json) => serde_json::to_vec(request)
-                .map_err(|_| ApiError::service_unavailable("Failed to serialize metrics payload")),
+    /// The rows this payload would be stored as, unsampled: what a collector it is
+    /// forwarded to writes.
+    fn rows(&self, org_id: &str) -> RowEstimate {
+        match self {
+            Self::Traces(request) => {
+                row_budget::trace_rows(org_id, request, &SamplingPolicy::default(), &[])
+            }
+            Self::Logs(request) => row_budget::log_rows(request),
+            Self::Metrics(request) => row_budget::metric_rows(request),
         }
+    }
+
+    /// The body this payload is forwarded as, costed so it is reserved before it is built.
+    fn forward_body(
+        &self,
+        payload_format: PayloadFormat,
+        gzip: bool,
+    ) -> Result<ForwardBody, ApiError> {
+        let json = matches!(payload_format, PayloadFormat::Json);
+        match self {
+            Self::Traces(request) => ForwardBody::of(request, json, gzip),
+            Self::Logs(request) => ForwardBody::of(request, json, gzip),
+            Self::Metrics(request) => ForwardBody::of(request, json, gzip),
+        }
+        .map_err(|_| self.serialize_failed())
+    }
+
+    fn encode(&self, body: &ForwardBody) -> Result<Vec<u8>, ApiError> {
+        match self {
+            Self::Traces(request) => body.build(request),
+            Self::Logs(request) => body.build(request),
+            Self::Metrics(request) => body.build(request),
+        }
+        .map_err(|_| self.serialize_failed())
+    }
+
+    fn serialize_failed(&self) -> ApiError {
+        ApiError::service_unavailable(format!(
+            "Failed to serialize {} payload",
+            self.signal().path()
+        ))
     }
 }
 
@@ -2109,6 +2151,18 @@ static INGEST_PAYLOAD_TOO_LARGE: FailureKind = FailureKind {
     recovery: "fix_request",
     retryable: false,
     error_kind: "payload_too_large",
+    retry_after_seconds: None,
+};
+
+/// A request whose rows come to far more than it is metered on, because each
+/// repeats a long resource, scope or metric string.
+static INGEST_ROW_EXPANSION: FailureKind = FailureKind {
+    tag: "@maple/ingest/RowExpansion",
+    code: "ingest_row_expansion",
+    title: "Batch repeats its shared attributes too many times",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "row_expansion",
     retry_after_seconds: None,
 };
 
@@ -3564,10 +3618,11 @@ async fn grpc_admission(
     response
 }
 
-/// An export `grpc_admission` decoded, with its size as received.
+/// An export `grpc_admission` decoded, with its size as received and the decode
+/// memory it holds.
 struct GrpcExport {
     decoded: DecodedPayload,
-    decoded_bytes: usize,
+    received: Received,
 }
 
 /// Carries a `GrpcExport` through the request extensions, which must be `Clone`,
@@ -3654,7 +3709,10 @@ async fn decode_grpc_export(
     Ok((
         GrpcExport {
             decoded: payload,
-            decoded_bytes,
+            received: Received {
+                bytes: decoded_bytes,
+                decode_heap: memory.held_bytes(),
+            },
         },
         memory,
     ))
@@ -3884,19 +3942,13 @@ async fn serve_grpc_export<T>(
         .extensions_mut()
         .remove::<GrpcExportSlot>()
         .and_then(|slot| slot.take());
-    let (mut decoded, decoded_bytes) = match export {
-        Some(export) => (export.decoded, export.decoded_bytes),
-        None => (empty(request.into_inner()), 0),
+    let (mut decoded, received) = match export {
+        Some(export) => (export.decoded, export.received),
+        None => (empty(request.into_inner()), Received::unbudgeted(0)),
     };
     let (admission, claims) = admit_grpc_claims(state, admission, &mut decoded, &resolved).await;
     accept_grpc_decoded(
-        state,
-        signal,
-        decoded,
-        &resolved,
-        admission,
-        decoded_bytes,
-        &claims,
+        state, signal, decoded, &resolved, admission, received, &claims,
     )
     .await
 }
@@ -3924,7 +3976,7 @@ async fn admit_grpc_claims(
 
 /// Accept a decoded export, already authenticated and entitlement-gated by
 /// `grpc_admission`.
-/// `decoded_bytes` is the export's size as received; only the share the claims and
+/// `received` is the export's size as received; only the share the claims and
 /// ingest rules leave is metered.
 async fn accept_grpc_decoded(
     state: &AppState,
@@ -3932,7 +3984,7 @@ async fn accept_grpc_decoded(
     mut decoded: DecodedPayload,
     resolved: &ResolvedIngestKey,
     admission: KeyAdmission,
-    decoded_bytes: usize,
+    received: Received,
     claims: &ClaimOutcome,
 ) -> Result<(), tonic::Status> {
     // The sentinel token is a PUBLIC constant, so anything it carries is never
@@ -3961,6 +4013,7 @@ async fn accept_grpc_decoded(
         &mut decoded,
         resolved,
         &mut retained,
+        received,
     )
     .await;
 
@@ -3980,7 +4033,7 @@ async fn accept_grpc_decoded(
             state
                 .resolver
                 .note_claimed_source_use(&claims.claimed_sources);
-            let decoded_bytes = retained.metered_bytes(decoded_bytes);
+            let decoded_bytes = retained.metered_bytes(received.bytes);
             if resolved.org_id != SENTINEL_ORG_ID && decoded_bytes > 0 {
                 if let Some(usage) = &state.usage_metrics {
                     usage.record(
@@ -6088,7 +6141,7 @@ async fn handle_signal_inner(
     let DecodedBody {
         payload: mut decoded,
         decoded_bytes,
-        memory: _decode_memory,
+        memory: decode_memory,
     } = decode_otlp_body(state, body, gzip, ingress, payload_format)
         .await
         .map_err(|DecodeRefusal { error, stage }| {
@@ -6156,16 +6209,20 @@ async fn handle_signal_inner(
         &mut decoded,
         &resolved_key,
         &mut claims.retained,
+        Received {
+            bytes: decoded_bytes,
+            decode_heap: decode_memory.held_bytes(),
+        },
     )
     .await;
     // Only the share left after paused-source drops and ingest rules is metered.
     let decoded_bytes = claims.metered_bytes(decoded_bytes);
     let item_count = claims.retained.metered_items(item_count);
 
-    // A scan-budget refusal keeps its own kind: it loses the sender's data, unlike a forward failure.
+    // A refusal before anything was written keeps its own kind, unlike a forward failure.
     let response = response_result.map_err(|error| {
-        let kind = error.error_kind();
-        (error, if kind == INGEST_RULES_SCAN_BUDGET.error_kind { kind } else { "forward" })
+        let kind = process_error_kind(&error);
+        (error, kind)
     })?;
     // A collector refusal that left nothing stored is not key use, and 0 bytes to meter.
     let stored = batch_was_stored(
@@ -6389,6 +6446,7 @@ async fn handle_cloudflare_logpush_inner(
                 &mut decoded,
                 &resolved_key,
                 &mut retained,
+                Received::unbudgeted(decoded_payload.len()),
             )
             .await
             {
@@ -6803,6 +6861,7 @@ async fn handle_gcp_logpush_inner(
         &mut DecodedPayload::Logs(request),
         &resolved.key,
         &mut retained,
+        Received::unbudgeted(body.len()),
     )
     .await
     {
@@ -7165,6 +7224,7 @@ async fn store_delivery(
             &mut decoded,
             key,
             &mut retained,
+            Received::unbudgeted(received_bytes),
         )
         .await
         {
@@ -7605,25 +7665,6 @@ fn decode_payload(
                 ApiError::payload_too_large("Decompressed request body too large")
             }
         }),
-        Some(_) => Err(ApiError::unsupported_media_type(
-            "Unsupported content-encoding",
-        )),
-    }
-}
-
-#[hotpath::measure]
-fn encode_payload(payload: &[u8], content_encoding: Option<&str>) -> Result<Vec<u8>, ApiError> {
-    match content_encoding {
-        None => Ok(payload.to_vec()),
-        Some("gzip") => {
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder
-                .write_all(payload)
-                .map_err(|_| ApiError::service_unavailable("Failed to encode gzip payload"))?;
-            encoder
-                .finish()
-                .map_err(|_| ApiError::service_unavailable("Failed to encode gzip payload"))
-        }
         Some(_) => Err(ApiError::unsupported_media_type(
             "Unsupported content-encoding",
         )),
@@ -8595,7 +8636,123 @@ fn record_rule_stats(state: &AppState, signal: Signal, applied: Option<&RulesApp
     }
 }
 
+/// What a request cost before its rows are built: the bytes it is metered on and
+/// the decode memory it still holds.
+#[derive(Clone, Copy)]
+struct Received {
+    bytes: usize,
+    decode_heap: u64,
+}
+
+impl Received {
+    /// A connector's batch, built by the gateway outside the decode budget.
+    const fn unbudgeted(bytes: usize) -> Self {
+        Self {
+            bytes,
+            decode_heap: 0,
+        }
+    }
+}
+
+/// What the stage after decoding is admitted on.
+#[derive(Clone, Copy)]
+struct RowStage {
+    /// The bytes the request is billed for, after drops.
+    metered_bytes: usize,
+    decode_heap: u64,
+    /// Whether the rows are built here; a forward-only request only encodes a body.
+    native: bool,
+    /// What building the body forwarded to a collector allocates.
+    forward_bytes: u64,
+}
+
+/// Admits the stage after decoding, before any of it runs: refuses a request whose
+/// rows come to far more than it is metered on, then reserves what its rows and
+/// forward body will allocate. Nothing is written yet, so a refusal leaves nothing.
+fn admit_rows(
+    state: &AppState,
+    signal: Signal,
+    org_id: &str,
+    rows: &RowEstimate,
+    stage: RowStage,
+    memory: &mut DecodeReservation,
+) -> Result<(), ApiError> {
+    let refuse = |error: ApiError| {
+        warn!(
+            signal = signal.path(),
+            org_id,
+            rows = rows.rows,
+            row_bytes = rows.row_bytes(),
+            metered_bytes = stage.metered_bytes,
+            reason = %error.message,
+            "Payload refused before its rows were built"
+        );
+        record_stage_error(
+            &Span::current(),
+            error.error_kind(),
+            &error.message,
+            error.status.is_server_error(),
+        );
+        error
+    };
+    let ceiling = state.config.max_row_expansion;
+    let allowed = (stage.metered_bytes as u64).saturating_mul(ceiling);
+    if ceiling > 0 && rows.row_bytes() > allowed {
+        // Counted per refusal, as a scan-budget refusal is: the batch is not stored.
+        metrics::org_data_loss(org_id, signal.path(), INGEST_ROW_EXPANSION.error_kind);
+        return Err(refuse(ApiError::tagged(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &INGEST_ROW_EXPANSION,
+            format!(
+                "This batch would be stored as more than {ceiling} times its size, because every \
+                 row repeats its resource, scope and metric attributes; shorten them or send \
+                 fewer items per resource"
+            ),
+        )));
+    }
+    let rows_heap = if stage.native { rows.heap_bytes() } else { 0 };
+    let need = rows_heap.saturating_add(stage.forward_bytes);
+    // With the decode memory this request already holds, it would not fit alone.
+    if stage.decode_heap.saturating_add(need) > state.decode_memory.total_bytes() {
+        return Err(refuse(ApiError::payload_too_large(format!(
+            "Request needs {} MiB to store, more than the gateway allows one request; send \
+             smaller batches",
+            need / (1024 * 1024)
+        ))));
+    }
+    if !memory.try_add(need) {
+        return Err(refuse(ApiError::tagged(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &INGEST_DECODE_BUSY,
+            "Ingest gateway is busy storing other requests; retry shortly",
+        )));
+    }
+    Ok(())
+}
+
+/// The `error.type` of a `process_decoded_payload` refusal: its own kind where the
+/// refusal has one, `forward` for the rest.
+fn process_error_kind(error: &ApiError) -> &'static str {
+    let kind = error.error_kind();
+    let own = [
+        &INGEST_RULES_SCAN_BUDGET,
+        &INGEST_ROW_EXPANSION,
+        &INGEST_PAYLOAD_TOO_LARGE,
+        &INGEST_DECODE_BUSY,
+    ];
+    if own.iter().any(|failure| failure.error_kind == kind) {
+        kind
+    } else {
+        "forward"
+    }
+}
+
 #[hotpath::measure]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one request's signal, wire format, payload, key and what it is metered on; a \
+              struct would only be built and taken apart again at each of five call sites"
+)]
 async fn process_decoded_payload(
     state: &AppState,
     signal: Signal,
@@ -8604,6 +8761,7 @@ async fn process_decoded_payload(
     decoded: &mut DecodedPayload,
     resolved_key: &ResolvedIngestKey,
     retained: &mut Retained,
+    received: Received,
 ) -> Result<Response, ApiError> {
     // Before the native/forward split: the WAL, S3 shipping and the collector never see raw values.
     let applied = apply_ingest_rules(state, decoded, &resolved_key.org_id, retained).await?;
@@ -8615,19 +8773,62 @@ async fn process_decoded_payload(
     let destination = native_destination_for(resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    if uses_native_pipeline_for(state.config.write_mode, destination) {
-        accept_native_decoded_payload(state, signal, decoded, resolved_key, destination)
-            .instrument(accept_internal_span(signal.path(), destination.as_str()))
-            .await?;
+    let native = uses_native_pipeline_for(state.config.write_mode, destination);
+    let forward = uses_forward_path_for(state.config.write_mode, destination);
+    let forward_gzip = match content_encoding {
+        Some("gzip") => true,
+        Some(_) if forward => {
+            return Err(ApiError::unsupported_media_type(
+                "Unsupported content-encoding",
+            ));
+        }
+        _ => false,
+    };
+    let forward_body = if forward {
+        Some(decoded.forward_body(payload_format, forward_gzip)?)
+    } else {
+        None
+    };
+    let stage = RowStage {
+        metered_bytes: retained.metered_bytes(received.bytes),
+        decode_heap: received.decode_heap,
+        native,
+        forward_bytes: forward_body.map_or(0, |body| body.heap_bytes()),
+    };
+    // Held until the rows are in the WAL and the forward body is sent.
+    let mut memory = state.decode_memory.reservation();
+
+    if native {
+        accept_native_decoded_payload(
+            state,
+            signal,
+            decoded,
+            resolved_key,
+            destination,
+            stage,
+            &mut memory,
+        )
+        .instrument(accept_internal_span(signal.path(), destination.as_str()))
+        .await?;
         if destination == ExportDestination::ClickHouse {
             record_rule_stats(state, signal, applied.as_ref());
             return Ok(StatusCode::OK.into_response());
         }
+    } else if forward {
+        // The collector builds the same rows, so the same ceiling applies.
+        let rows = decoded.rows(&resolved_key.org_id);
+        admit_rows(
+            state,
+            signal,
+            &resolved_key.org_id,
+            &rows,
+            stage,
+            &mut memory,
+        )?;
     }
 
-    if uses_forward_path_for(state.config.write_mode, destination) {
-        let outbound_payload = decoded.encode(payload_format)?;
-        let outbound_body = encode_payload(&outbound_payload, content_encoding)?;
+    if let Some(forward_body) = forward_body {
+        let outbound_body = decoded.encode(&forward_body)?;
         let outbound_bytes = outbound_body.len();
         let forward_span = forward_client_span("collector", outbound_bytes, signal.path());
         let response = forward_to_collector(
@@ -8658,12 +8859,15 @@ async fn accept_native_decoded_payload(
     decoded: &DecodedPayload,
     resolved_key: &ResolvedIngestKey,
     destination: ExportDestination,
+    stage: RowStage,
+    memory: &mut DecodeReservation,
 ) -> Result<(), ApiError> {
     let pipeline = state
         .telemetry_pipeline
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
     let native_start = Instant::now();
+    let org_id = resolved_key.org_id.as_str();
     let stats = match decoded {
         DecodedPayload::Traces(request) => {
             // Both lookups are 30s-TTL cached; the span exists so a TTL miss that
@@ -8672,13 +8876,10 @@ async fn accept_native_decoded_payload(
             let config_span = resolve_config_internal_span();
             let config_span_handle = config_span.clone();
             let (policy, attribute_mappings) = async {
-                let policy = state
-                    .sampling_resolver
-                    .resolve_policy(&resolved_key.org_id)
-                    .await;
+                let policy = state.sampling_resolver.resolve_policy(org_id).await;
                 let attribute_mappings = state
                     .attribute_mapping_resolver
-                    .resolve_mappings(&resolved_key.org_id)
+                    .resolve_mappings(org_id)
                     .await;
                 (policy, attribute_mappings)
             }
@@ -8689,24 +8890,25 @@ async fn accept_native_decoded_payload(
                 "maple.ingest.attribute_mapping_count",
                 attribute_mappings.len(),
             );
+            let mappings = attribute_mappings.as_slice();
+            let rows = row_budget::trace_rows(org_id, request, &policy, mappings);
+            admit_rows(state, signal, org_id, &rows, stage, memory)?;
             pipeline
-                .accept_traces_to(
-                    &resolved_key.org_id,
-                    request,
-                    &policy,
-                    attribute_mappings.as_slice(),
-                    destination,
-                )
+                .accept_traces_sized(org_id, request, &policy, mappings, destination, &rows)
                 .await
         }
         DecodedPayload::Logs(request) => {
+            let rows = row_budget::log_rows(request);
+            admit_rows(state, signal, org_id, &rows, stage, memory)?;
             pipeline
-                .accept_logs_to(&resolved_key.org_id, request, destination)
+                .accept_logs_sized(org_id, request, destination, &rows)
                 .await
         }
         DecodedPayload::Metrics(request) => {
+            let rows = row_budget::metric_rows(request);
+            admit_rows(state, signal, org_id, &rows, stage, memory)?;
             pipeline
-                .accept_metrics_to(&resolved_key.org_id, request, destination)
+                .accept_metrics_sized(org_id, request, destination, &rows)
                 .await
         }
     }
@@ -11233,6 +11435,9 @@ mod tests {
     }
 
     use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
     // `AtomicBool` is only used by the test fakes below; keeping it out of the
     // top-level import avoids an unused-import warning in non-test bin builds.
     use opentelemetry_proto::tonic::metrics::v1::metric;
@@ -12804,6 +13009,7 @@ mod tests {
                 max_request_body_bytes: 1024 * 1024,
                 max_decoded_body_bytes: 8 * 1024 * 1024,
                 max_decode_heap_bytes: 64 * 1024 * 1024,
+                max_row_expansion: DEFAULT_MAX_ROW_EXPANSION,
                 decode_memory_bytes: 128 * 1024 * 1024,
                 org_max_in_flight: 100,
                 rate_limit_fleet_size: 1,
@@ -14191,6 +14397,573 @@ mod tests {
                 .expect_err("two members");
         assert_eq!((error.status, error_kind), (StatusCode::BAD_REQUEST, "decode"));
         assert_eq!(state.decode_memory.reserved_bytes(), 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// A gateway that stores natively, with a pipeline that exports to a fake
+    /// Tinybird the test can read and queues large enough for a refused shape.
+    async fn native_test_state(
+        raw_key: &str,
+        org_id: &str,
+        queue_dir: &std::path::Path,
+    ) -> (AppState, TinybirdImports) {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: org_id.to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let mut state = test_app_state(
+            store,
+            queue_dir.to_path_buf(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tx);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let pipeline = TelemetryPipeline::new(
+            TinybirdConfig {
+                endpoint,
+                token: "token".to_owned(),
+                queue_max_bytes: 1024 * 1024 * 1024,
+                org_queue_max_bytes: 1024 * 1024 * 1024,
+                batch_max_rows: 100_000,
+                ..test_tinybird_config(queue_dir.join("native"))
+            },
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+        )
+        .await
+        .expect("the native pipeline should start");
+        state.config.write_mode = WriteMode::Tinybird;
+        state.telemetry_pipeline = Some(pipeline);
+        (state, rx)
+    }
+
+    /// The rows the fake Tinybird has been sent, per datasource, once `rows` arrived.
+    async fn exported_rows(
+        imports: &mut TinybirdImports,
+        rows: usize,
+    ) -> Vec<(String, serde_json::Value)> {
+        let mut exported = Vec::new();
+        while exported.len() < rows {
+            let (datasource, ndjson) = tokio::time::timeout(Duration::from_secs(5), imports.recv())
+                .await
+                .expect("rows are exported")
+                .expect("the fake Tinybird is running");
+            for line in ndjson.lines().filter(|line| !line.is_empty()) {
+                exported.push((datasource.clone(), serde_json::from_str(line).unwrap()));
+            }
+        }
+        exported
+    }
+
+    async fn nothing_is_exported(imports: &mut TinybirdImports) -> bool {
+        tokio::time::timeout(Duration::from_millis(200), imports.recv())
+            .await
+            .is_err()
+    }
+
+    const SHARED_STRING: usize = 64 * 1024;
+
+    /// `points` empty data points under one metric with a long description: a few
+    /// hundred bytes compressed, and the description again on every row.
+    fn repeated_description(points: usize) -> ExportMetricsServiceRequest {
+        use opentelemetry_proto::tonic::metrics::v1::{
+            Gauge, Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics,
+        };
+        ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                scope_metrics: vec![ScopeMetrics {
+                    metrics: vec![Metric {
+                        name: "m".to_owned(),
+                        description: "d".repeat(SHARED_STRING),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint::default(); points],
+                        })),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+    }
+
+    /// `spans` empty spans under a resource with one long attribute.
+    fn repeated_resource_attribute(spans: usize) -> ExportTraceServiceRequest {
+        use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span as OtlpSpan};
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource {
+                    attributes: vec![KeyValue {
+                        key: "process.command_line".to_owned(),
+                        key_strindex: 0,
+                        value: Some(AnyValue {
+                            value: Some(any_value::Value::StringValue("c".repeat(SHARED_STRING))),
+                        }),
+                    }],
+                    dropped_attributes_count: 0,
+                    entity_refs: Vec::new(),
+                }),
+                scope_spans: vec![ScopeSpans {
+                    spans: vec![OtlpSpan::default(); spans],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+    }
+
+    /// `records` empty log records under a scope with a long name.
+    fn repeated_scope_name(records: usize) -> ExportLogsServiceRequest {
+        let mut request = test_log_request("");
+        let scope_logs = &mut request.resource_logs[0].scope_logs[0];
+        scope_logs.scope = Some(InstrumentationScope {
+            name: "s".repeat(SHARED_STRING),
+            ..Default::default()
+        });
+        scope_logs.log_records = vec![LogRecord::default(); records];
+        request
+    }
+
+    /// Sends `points` empty data points under a long description, as protobuf.
+    async fn send_repeated_description(
+        state: &AppState,
+        raw_key: &str,
+        points: usize,
+    ) -> Result<(Response, usize, String, usize), (ApiError, &'static str)> {
+        handle_signal_inner(
+            state,
+            &test_headers(raw_key),
+            Bytes::from(repeated_description(points).encode_to_vec()),
+            Ingress::Otlp(Signal::Metrics),
+        )
+        .await
+    }
+
+    /// Each signal's request that repeats one shared string on thousands of rows.
+    fn repeating_requests() -> [(Signal, Vec<u8>); 3] {
+        [
+            (Signal::Metrics, repeated_description(8_000).encode_to_vec()),
+            (
+                Signal::Traces,
+                repeated_resource_attribute(8_000).encode_to_vec(),
+            ),
+            (Signal::Logs, repeated_scope_name(8_000).encode_to_vec()),
+        ]
+    }
+
+    fn gzip_headers(raw_key: &str) -> HeaderMap {
+        let mut headers = test_headers(raw_key);
+        headers.insert(CONTENT_ENCODING, "gzip".parse().unwrap());
+        headers
+    }
+
+    #[tokio::test]
+    async fn a_request_that_repeats_a_shared_string_is_refused_before_anything_is_stored() {
+        let queue_dir = unique_main_test_dir("row-expansion");
+        let raw_key = "maple_sk_test_row_expansion";
+        let (state, mut imports) =
+            native_test_state(raw_key, "org_row_expansion", &queue_dir).await;
+        let pipeline = state.telemetry_pipeline.clone().unwrap();
+
+        for (signal, protobuf) in repeating_requests() {
+            let body = gzip_bytes(&protobuf);
+            assert!(body.len() < 2 * 1024, "{}: tiny on the wire", signal.path());
+            let (error, error_kind) =
+                handle_signal_inner(&state, &gzip_headers(raw_key), body, Ingress::Otlp(signal))
+                    .await
+                    .expect_err(signal.path());
+            // The same refusal whichever signal carries the repeated string.
+            assert_eq!(
+                error.status,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "{}",
+                signal.path()
+            );
+            assert_eq!(
+                error.kind.tag,
+                "@maple/ingest/RowExpansion",
+                "{}",
+                signal.path()
+            );
+            assert_eq!(error_kind, "row_expansion", "{}", signal.path());
+            assert_eq!(
+                pipeline.wal_backlog_bytes(),
+                0,
+                "{}: no row committed",
+                signal.path()
+            );
+            assert_eq!(state.decode_memory.reserved_bytes(), 0, "{}", signal.path());
+        }
+        assert!(nothing_is_exported(&mut imports).await);
+
+        // Over gRPC the refusal is one an exporter does not retry.
+        let status = accept_grpc_decoded(
+            &state,
+            Signal::Metrics,
+            DecodedPayload::Metrics(repeated_description(8_000)),
+            &state
+                .resolver
+                .resolve_ingest_key(raw_key)
+                .await
+                .unwrap()
+                .unwrap(),
+            KeyAdmission::Ingest,
+            Received::unbudgeted(repeated_description(8_000).encoded_len()),
+            &ClaimOutcome::default(),
+        )
+        .await
+        .expect_err("refused over gRPC too");
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(pipeline.wal_backlog_bytes(), 0);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_request_that_repeats_a_shared_string_is_not_forwarded() {
+        let (forward_url, mut forward_rx) = spawn_forward_collector().await;
+        let queue_dir = unique_main_test_dir("row-expansion-forward");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_row_expansion_forward";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_row_expansion_forward".to_owned(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            store,
+            queue_dir.clone(),
+            forward_url,
+            Duration::from_millis(5),
+        )
+        .await;
+
+        let (error, error_kind) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(repeated_scope_name(8_000).encode_to_vec()),
+            Ingress::Otlp(Signal::Logs),
+        )
+        .await
+        .expect_err("the collector would store the same rows");
+        assert_eq!(
+            (error.status, error_kind),
+            (StatusCode::PAYLOAD_TOO_LARGE, "row_expansion")
+        );
+        assert!(
+            forward_rx.try_recv().is_err(),
+            "nothing refused is forwarded"
+        );
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+
+        // The same records without the long scope name are forwarded as ever.
+        let mut ordinary = repeated_scope_name(8_000);
+        ordinary.resource_logs[0].scope_logs[0].scope = None;
+        let body = ordinary.encode_to_vec();
+        let (response, item_count, _, metered) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(body.clone()),
+            Ingress::Otlp(Signal::Logs),
+        )
+        .await
+        .expect("an ordinary batch is forwarded");
+        assert_eq!(
+            (response.status(), item_count, metered),
+            (StatusCode::OK, 8_000, body.len())
+        );
+        assert!(
+            forward_rx.try_recv().is_ok(),
+            "the batch reached the collector"
+        );
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn the_row_expansion_ceiling_is_a_setting() {
+        let queue_dir = unique_main_test_dir("row-expansion-setting");
+        let raw_key = "maple_sk_test_row_expansion_setting";
+        let (mut state, mut imports) =
+            native_test_state(raw_key, "org_row_expansion_setting", &queue_dir).await;
+        // 500 rows of a 64 KiB description: about 480 times the request's size.
+        let body_len = repeated_description(500).encoded_len();
+
+        state.config.max_row_expansion = 400;
+        let (error, error_kind) = send_repeated_description(&state, raw_key, 500)
+            .await
+            .expect_err("past the ceiling");
+        assert_eq!(
+            (error.status, error_kind),
+            (StatusCode::PAYLOAD_TOO_LARGE, "row_expansion")
+        );
+        assert!(nothing_is_exported(&mut imports).await);
+
+        // Under the default ceiling, and with the ceiling off, it is stored whole.
+        for ceiling in [DEFAULT_MAX_ROW_EXPANSION, 0] {
+            state.config.max_row_expansion = ceiling;
+            let (response, item_count, _, metered) =
+                send_repeated_description(&state, raw_key, 500)
+                    .await
+                    .expect("within the ceiling");
+            assert_eq!(
+                (response.status(), item_count, metered),
+                (StatusCode::OK, 1, body_len),
+                "ceiling {ceiling}"
+            );
+            assert_eq!(exported_rows(&mut imports, 500).await.len(), 500);
+        }
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn rows_are_held_in_the_shared_memory_or_the_request_is_shed_unwritten() {
+        let queue_dir = unique_main_test_dir("row-memory");
+        let raw_key = "maple_sk_test_row_memory";
+        let (mut state, mut imports) =
+            native_test_state(raw_key, "org_row_memory", &queue_dir).await;
+        let pipeline = state.telemetry_pipeline.clone().unwrap();
+        // Only the memory bounds what these store.
+        state.config.max_row_expansion = 0;
+        let memory = state.decode_memory.clone();
+        let send = |points: usize| send_repeated_description(&state, raw_key, points);
+
+        // 4,000 rows of 64 KiB can never fit the 128 MiB this gateway has.
+        let (error, error_kind) = send(4_000).await.expect_err("more than the whole budget");
+        assert_eq!(
+            (error.status, error_kind),
+            (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large")
+        );
+
+        // 1,000 rows fit it, but not while other requests hold most of it: the
+        // request decodes, and is shed before its rows are built.
+        let mut others = memory.reservation();
+        assert!(others.try_add(memory.total_bytes() - 16 * 1024 * 1024));
+        let (error, error_kind) = send(1_000).await.expect_err("no room for the rows");
+        assert_eq!(
+            (error.status, error_kind),
+            (StatusCode::SERVICE_UNAVAILABLE, "decode_busy")
+        );
+        assert!(error.message.contains("storing"), "shed at the row stage");
+        assert_eq!(error.into_response().headers()[RETRY_AFTER], "1");
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "nothing was committed");
+        assert!(nothing_is_exported(&mut imports).await);
+
+        drop(others);
+        let body_len = repeated_description(1_000).encoded_len();
+        let (response, item_count, _, metered) = send(1_000).await.expect("accepted with room");
+        assert_eq!(
+            (response.status(), item_count, metered),
+            (StatusCode::OK, 1, body_len)
+        );
+        assert_eq!(
+            memory.reserved_bytes(),
+            0,
+            "a finished request returns its memory"
+        );
+        let rows = exported_rows(&mut imports, 1_000).await;
+        assert!(rows.iter().all(|(datasource, row)| {
+            datasource == "metrics_gauge"
+                && row["metric_description"].as_str().map(str::len) == Some(SHARED_STRING)
+        }));
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn the_row_stage_is_admitted_on_what_it_stores_and_allocates() {
+        let queue_dir = unique_main_test_dir("row-admission");
+        let (state, _imports) = native_test_state(
+            "maple_sk_test_row_admission",
+            "org_row_admission",
+            &queue_dir,
+        )
+        .await;
+        let mib = 1024 * 1024;
+        let rows = RowEstimate {
+            rows: 100,
+            payload_bytes: [8 * mib, 0, 0, 0],
+            work_bytes: mib,
+        };
+        let stage = RowStage {
+            metered_bytes: 1024 * 1024,
+            decode_heap: 4 * mib,
+            native: true,
+            forward_bytes: 2 * mib,
+        };
+        let admit = |stage: RowStage, memory: &mut DecodeReservation| {
+            admit_rows(
+                &state,
+                Signal::Logs,
+                "org_row_admission",
+                &rows,
+                stage,
+                memory,
+            )
+        };
+
+        // The rows and the forward body are both reserved, before either exists.
+        let mut memory = state.decode_memory.reservation();
+        admit(stage, &mut memory).expect("eight times its size, well inside the memory");
+        assert_eq!(memory.held_bytes(), rows.heap_bytes() + 2 * mib);
+        // A forward-only request builds no rows here, only the body.
+        let mut forward_only = state.decode_memory.reservation();
+        let forwarded = RowStage {
+            native: false,
+            ..stage
+        };
+        admit(forwarded, &mut forward_only).expect("forward only");
+        assert_eq!(forward_only.held_bytes(), 2 * mib);
+        drop((memory, forward_only));
+
+        // Past the ceiling on what it is metered for, in either mode.
+        for native in [true, false] {
+            let expanded = RowStage {
+                metered_bytes: 8 * 1024,
+                native,
+                ..stage
+            };
+            let error = admit(expanded, &mut state.decode_memory.reservation())
+                .expect_err("1024 times its metered size");
+            assert_eq!(error.kind.tag, "@maple/ingest/RowExpansion");
+        }
+
+        // With the decode memory the request still holds it could never fit, so
+        // retrying is pointless; without it, it is only waiting on other requests.
+        let total = state.decode_memory.total_bytes();
+        let holding = RowStage {
+            decode_heap: total - 8 * mib,
+            ..stage
+        };
+        let error = admit(holding, &mut state.decode_memory.reservation())
+            .expect_err("more than the gateway has, with what it already holds");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(total - 8 * mib));
+        let error = admit(stage, &mut state.decode_memory.reservation())
+            .expect_err("other requests hold the memory");
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(error.kind.retryable);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn ordinary_batches_are_stored_and_metered_on_their_decoded_size() {
+        use opentelemetry_proto::tonic::metrics::v1::{
+            Gauge, Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics,
+        };
+        use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span as OtlpSpan};
+        let queue_dir = unique_main_test_dir("row-ordinary");
+        let raw_key = "maple_sk_test_row_ordinary";
+        let (state, mut imports) = native_test_state(raw_key, "org_row_ordinary", &queue_dir).await;
+        let resource = || test_log_request("").resource_logs[0].resource.clone();
+        let logs = {
+            let mut request = test_log_request("checkout priced a cart");
+            let records = &mut request.resource_logs[0].scope_logs[0].log_records;
+            *records = vec![records[0].clone(); 40];
+            request
+        };
+        let traces = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: resource(),
+                scope_spans: vec![ScopeSpans {
+                    spans: (1..=40)
+                        .map(|index| OtlpSpan {
+                            trace_id: vec![index; 16],
+                            span_id: vec![index; 8],
+                            name: "GET /carts".to_owned(),
+                            start_time_unix_nano: 1_700_000_000_000_000_000,
+                            end_time_unix_nano: 1_700_000_000_040_000_000,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let metrics = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: resource(),
+                scope_metrics: vec![ScopeMetrics {
+                    metrics: vec![Metric {
+                        name: "process.cpu.time".to_owned(),
+                        description: "CPU seconds used by the process.".to_owned(),
+                        unit: "s".to_owned(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![
+                                NumberDataPoint {
+                                    time_unix_nano: 1_700_000_000_000_000_000,
+                                    ..Default::default()
+                                };
+                                40
+                            ],
+                        })),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+
+        // Items are records and spans, and for metrics the metrics themselves.
+        for (signal, protobuf, datasource, items) in [
+            (Signal::Logs, logs.encode_to_vec(), "logs", 40),
+            (Signal::Traces, traces.encode_to_vec(), "traces", 40),
+            (Signal::Metrics, metrics.encode_to_vec(), "metrics_gauge", 1),
+        ] {
+            let path = signal.path();
+            let (response, item_count, _, metered) = handle_signal_inner(
+                &state,
+                &test_headers(raw_key),
+                Bytes::from(protobuf.clone()),
+                Ingress::Otlp(signal),
+            )
+            .await
+            .expect(path);
+            // Metered on the bytes it decoded to, whatever its rows come to.
+            assert_eq!(
+                (response.status(), item_count, metered),
+                (StatusCode::OK, items, protobuf.len()),
+                "{}",
+                signal.path()
+            );
+            let rows = exported_rows(&mut imports, 40).await;
+            assert_eq!(rows.len(), 40, "{}", signal.path());
+            assert!(
+                rows.iter().all(|(name, row)| {
+                    name == datasource && row["service_name"] == "routing-test"
+                }),
+                "{}: each row carries its resource",
+                signal.path()
+            );
+            assert_eq!(state.decode_memory.reserved_bytes(), 0, "{}", signal.path());
+        }
 
         drop(std::fs::remove_dir_all(&queue_dir));
     }
@@ -15773,7 +16546,7 @@ mod tests {
             DecodedPayload::Logs(payload),
             &sentinel,
             KeyAdmission::Ingest,
-            decoded_bytes,
+            Received::unbudgeted(decoded_bytes),
             &ClaimOutcome::default(),
         )
         .await
@@ -15802,7 +16575,7 @@ mod tests {
             DecodedPayload::Logs(real),
             &resolved,
             KeyAdmission::Ingest,
-            real_bytes,
+            Received::unbudgeted(real_bytes),
             &ClaimOutcome::default(),
         )
         .await
@@ -15926,7 +16699,7 @@ mod tests {
         };
         let log = r#"{"id":"1","projectId":"prj_1","deploymentId":"dpl_1","source":"lambda","level":"info","message":"hi","timestamp":1573817187330}"#;
         let ndjson = format!("{log}\n{log}\n");
-        let gzipped_array = encode_payload(format!("[{log}]").as_bytes(), Some("gzip")).unwrap();
+        let gzipped_array = gzip_bytes(format!("[{log}]")).to_vec();
 
         // The drain's test delivery is an empty batch.
         for (body, encoding, rows) in [
@@ -17773,7 +18546,7 @@ mod tests {
             DecodedPayload::Logs(payload),
             &resolved,
             KeyAdmission::Ingest,
-            decoded_bytes,
+            Received::unbudgeted(decoded_bytes),
             &ClaimOutcome::default(),
         )
         .await
@@ -19260,7 +20033,7 @@ mod tests {
             DecodedPayload::Logs(payload),
             &resolved,
             KeyAdmission::Ingest,
-            decoded_bytes,
+            Received::unbudgeted(decoded_bytes),
             &ClaimOutcome::default(),
         )
         .await
