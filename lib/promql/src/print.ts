@@ -120,8 +120,8 @@ export const print = (expr: Expr): string => {
 		case "Binary": {
 			let mod = expr.returnBool ? " bool" : ""
 			const m = expr.matching
-			if (m !== undefined && (m.on || m.labels.length > 0))
-				mod += ` ${m.on ? "on" : "ignoring"}${grouping(m.labels)}`
+			// An explicit empty ignoring() is part of the AST; keep it so the output re-parses the same.
+			if (m !== undefined) mod += ` ${m.on ? "on" : "ignoring"}${grouping(m.labels)}`
 			if (m?.card === "many-to-one") mod += ` group_left${grouping(m.include)}`
 			if (m?.card === "one-to-many") mod += ` group_right${grouping(m.include)}`
 			return `${operand(expr.lhs, expr.op, "lhs")} ${expr.op}${mod} ${operand(expr.rhs, expr.op, "rhs")}`
