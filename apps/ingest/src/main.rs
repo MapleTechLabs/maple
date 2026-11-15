@@ -15309,17 +15309,19 @@ mod tests {
                     { "key": "deploy.secret", "value": { "stringValue": "s3cr3t" } },
                 ] },
                 "scopeProfiles": [{ "profiles": [{ "samples": [
-                    { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+                    { "stackIndex": 1, "attributeIndices": [1, 2], "values": ["1"] },
                 ] }] }],
             }],
             "dictionary": {
-                "stringTable": ["", "main", "customer"],
+                "stringTable": ["", "main", "customer", "contact", "eve@example.com"],
                 "functionTable": [{}, { "nameStrindex": 1 }],
                 "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
                 "stackTable": [{}, { "locationIndices": [1] }],
                 "attributeTable": [
                     {},
                     { "keyStrindex": 2, "value": { "stringValue": "bob@example.com" } },
+                    // A value held in the string table is scanned like an inline one.
+                    { "keyStrindex": 3, "value": { "stringValueStrindex": 4 } },
                 ],
             },
         });
@@ -15336,6 +15338,7 @@ mod tests {
         assert_eq!(resource["owner"], "[REDACTED:email]");
         assert!(resource.get("deploy.secret").is_none(), "{resource}");
         assert_eq!(rows[0]["sample_attributes"]["customer"], "[REDACTED:email]");
+        assert_eq!(rows[0]["sample_attributes"]["contact"], "[REDACTED:email]");
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
