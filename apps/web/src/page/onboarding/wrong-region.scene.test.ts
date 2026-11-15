@@ -21,7 +21,6 @@ const organization: ClerkOrganization = {
 		dataSources: false,
 		productAnalytics: false,
 		profiling: false,
-		releases: false,
 		securityAudit: false,
 		statusPages: false,
 	},

@@ -61,7 +61,7 @@ describe("global shortcuts", () => {
 			opened,
 			toPalette(
 				Palette.Message.PressedEnter({
-					visibleFlagged: ["/releases", "/security"],
+					visibleFlagged: ["/cost", "/security"],
 					audience: "operator",
 				}),
 			),

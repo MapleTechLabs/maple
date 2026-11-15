@@ -245,7 +245,6 @@ describe("re-render on change only", () => {
 				dataSources: false,
 				productAnalytics: false,
 				profiling: false,
-				releases: false,
 				securityAudit: false,
 				statusPages: false,
 			},

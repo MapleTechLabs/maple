@@ -1,6 +1,6 @@
 import { createChartScene, type SceneNode } from "@tanstack/charts"
 import { describe, expect, test } from "vitest"
-import { buildFixedMetric } from "./fixed-metric"
+import { apdexAxisFloor, buildFixedMetric } from "./fixed-metric"
 import { Array as Arr, String as Str } from "effect"
 
 const START = Date.UTC(2026, 10, 1, 12)
@@ -87,5 +87,30 @@ describe("latency chart with missing buckets", () => {
 		)
 		expect(Arr.filter(lines(nodes, "p95LatencyMs"), (points) => points > 1)).toEqual([])
 		expect(loneDots).toHaveLength(2)
+	})
+})
+
+describe("apdexAxisFloor", () => {
+	const scores = (values: ReadonlyArray<number | null>) =>
+		Arr.map(values, (apdexScore, index) => ({
+			bucket: new Date(START + index * BUCKET).toISOString(),
+			date: new Date(START + index * BUCKET),
+			apdexScore,
+		}))
+
+	test("a dip to 0.91 zooms the axis to 0.8, not 0", () => {
+		expect(apdexAxisFloor(scores([0.99, 0.91, 0.98]))).toBe(0.8)
+	})
+
+	test("a steady 1 keeps a tenth of room under it", () => {
+		expect(apdexAxisFloor(scores([1, 1, null]))).toBe(0.9)
+	})
+
+	test("a collapse still reaches 0", () => {
+		expect(apdexAxisFloor(scores([0.98, 0.05]))).toBe(0)
+	})
+
+	test("no scores leave the axis at 0", () => {
+		expect(apdexAxisFloor(scores([null, null]))).toBe(0)
 	})
 })

@@ -35,11 +35,9 @@ import { API_THEME_TOKENS } from "./view-api-charts"
 import { dependenciesTab } from "./view-dependencies"
 import { operationsTab } from "./view-operations"
 import { profilesTab } from "./view-profiles"
-import { runsOnLinks } from "./view-footprint"
 import { overviewTab, THEME_TOKENS } from "./view-overview"
 import { hstack } from "@maple/views/ui/stack"
 import { Array as Arr, String as Str } from "effect"
-import { typography } from "@maple/views/ui/typography"
 
 // TODO(unnamed-service): the unnamed-service hint beside the title is not ported.
 
@@ -73,36 +71,6 @@ const createAlert = (h: H, model: Model): Html =>
 		},
 		[icon(h, "BellIcon"), h.span([h.Class("hidden sm:inline")], ["Create alert"])],
 	)
-
-/** The first place the service runs, beside Create alert; the Overview's "Runs on" card lists them all. */
-const runsOn = (h: H, model: Model): Html => {
-	const links = runsOnLinks(model)
-	const first = links[0]
-	if (first === undefined) return null
-	const more = links.length - 1
-	return linkButton(
-		h,
-		{
-			variant: "outline",
-			size: "sm",
-			href: first.href,
-			attributes: [
-				h.AriaLabel(`Runs on ${first.label} ${first.name}`),
-				h.Title(
-					Arr.join(
-						Arr.map(links, (link) => `${link.label}: ${link.name}`),
-						"\n",
-					),
-				),
-			],
-		},
-		[
-			icon(h, first.icon),
-			h.span([h.Class("hidden sm:inline")], [first.label]),
-			...(more > 0 ? [typography(h, { tone: "muted" }, [`+${more}`])] : []),
-		],
-	)
-}
 
 /** The Overview tab's failure card offers Try again, so Reload steps aside; other tabs have no retry. */
 const isTabFailed = (model: Model, inputs: PageViewInputs): boolean =>
@@ -139,13 +107,7 @@ const headerActions = (h: H, model: Model, inputs: PageViewInputs): Html => {
 		toMessage: toSelect,
 		ariaLabel: "Environment",
 		className: "w-full sm:w-auto",
-		toView: (parts) =>
-			hstack(h, { gap: "2", wrap: true }, [
-				...parts,
-				runsOn(h, model),
-				createAlert(h, model),
-				controls,
-			]),
+		toView: (parts) => hstack(h, { gap: "2", wrap: true }, [...parts, createAlert(h, model), controls]),
 	})
 }
 

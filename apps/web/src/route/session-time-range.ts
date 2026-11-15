@@ -22,7 +22,7 @@ const DEFAULT_MAX_RANGE_SECONDS = 32 * 24 * 60 * 60
 /** The routes that carry the middleware, with the ceiling they pass it. */
 const CEILINGS: ReadonlyMap<RouteTag, number> = new Map<RouteTag, number>([
 	...Arr.map(
-		["Services", "Service", "ServiceMap", "Releases", "Release", "AlertRule"] as const,
+		["Services", "Service", "ServiceMap", "AlertRule"] as const,
 		(tag) => [tag, LONG_RANGE_MAX_SECONDS] as const,
 	),
 	...Arr.map(
