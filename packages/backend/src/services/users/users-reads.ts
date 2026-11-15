@@ -144,6 +144,27 @@ const rollupRead = <A, E, R>(read: Effect.Effect<A, E, R>): Effect.Effect<Option
 		Effect.catchIf(isMissingUserActivityHourly, () => Effect.succeed(Option.none<A>())),
 	)
 
+type IdentityRow = Readonly<{ name: string; email: string; nameAt: number; emailAt: number }>
+
+/**
+ * The newest non-empty name or email across the profile's sources, as the directory ranks them; on
+ * a tie the earlier source (replays, then MCP spans, then spans and logs) wins.
+ */
+export const newestIdentity = (
+	rows: ReadonlyArray<IdentityRow | undefined>,
+	field: "name" | "email",
+	at: "nameAt" | "emailAt",
+): string | null => {
+	const carried = Arr.filter(rows, (row): row is IdentityRow => row !== undefined && row[field] !== "")
+	const newest = Arr.reduce(carried, Option.none<IdentityRow>(), (best, row) =>
+		Option.match(best, {
+			onNone: () => Option.some(row),
+			onSome: (kept) => (row[at] > kept[at] ? Option.some(row) : best),
+		}),
+	)
+	return Option.match(newest, { onNone: () => null, onSome: (row) => row[field] })
+}
+
 /** A rollup identity read's one row, `None` on a cluster without migration 0056 or 0065. */
 const identityRead = <A, E, R>(
 	read: Effect.Effect<ReadonlyArray<A>, E, R>,
@@ -1010,14 +1031,8 @@ const profileIn = Effect.fn("UsersReads.profile")(function* (
 		Option.match(activity, { onNone: () => null, onSome: read })
 	const profile: UserProfileItem = {
 		userId: payload.userId,
-		name:
-			nullIfEmpty(replay[0]?.name ?? "") ??
-			nullIfEmpty(mcp[0]?.name ?? "") ??
-			nullIfEmpty(Option.match(identity, { onNone: () => "", onSome: (row) => row.name })),
-		email:
-			nullIfEmpty(replay[0]?.email ?? "") ??
-			nullIfEmpty(mcp[0]?.email ?? "") ??
-			nullIfEmpty(Option.match(identity, { onNone: () => "", onSome: (row) => row.email })),
+		name: newestIdentity([replay[0], mcp[0], Option.getOrUndefined(identity)], "name", "nameAt"),
+		email: newestIdentity([replay[0], mcp[0], Option.getOrUndefined(identity)], "email", "emailAt"),
 		groupId,
 		groupName: profileGroupName,
 		traits: Arr.map(Arr.zip(traitKeys, traitValues), ([key, value]) => ({ key, value })),

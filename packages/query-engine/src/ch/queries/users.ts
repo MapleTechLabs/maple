@@ -1030,6 +1030,8 @@ export function userReplayProfileQuery(scope: UsersScope) {
 			// The latest non-empty values, as the directory reads them; the name from the group's session.
 			name: latestNonEmpty($.userName, $.lastActivity),
 			email: latestNonEmpty($.userEmail, $.lastActivity),
+			nameAt: seenAt($.userName, $.lastActivity),
+			emailAt: seenAt($.userEmail, $.lastActivity),
 			groupId: latestNonEmpty($.groupId, $.lastActivity),
 			groupName: latestPaired($.groupName, $.groupId, $.lastActivity),
 			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
@@ -1152,8 +1154,10 @@ const userMcpSpans = ($: ColumnAccessor<typeof Datasources.traces.columns>, scop
 export function userMcpSummaryQuery(scope: UsersScope) {
 	return from(Datasources.traces)
 		.select(($) => ({
-			name: nonEmpty($.SpanAttributes.get("user.name")),
-			email: nonEmpty($.SpanAttributes.get("user.email")),
+			name: latestNonEmpty($.SpanAttributes.get("user.name"), $.Timestamp),
+			email: latestNonEmpty($.SpanAttributes.get("user.email"), $.Timestamp),
+			nameAt: seenAt($.SpanAttributes.get("user.name"), $.Timestamp),
+			emailAt: seenAt($.SpanAttributes.get("user.email"), $.Timestamp),
 			requests: CH.count(),
 			calls: CH.countIf(mcpMethod($).eq("tools/call")),
 			firstSeen: CH.min_($.Timestamp),

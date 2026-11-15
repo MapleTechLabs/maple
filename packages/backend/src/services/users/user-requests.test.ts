@@ -791,7 +791,10 @@ describe("users named by their spans and logs", () => {
 						},
 					],
 				],
-				["userActivityIdentity", [{ name: "Ada", email: "ada@example.com" }]],
+				[
+					"userActivityIdentity",
+					[{ name: "Ada", email: "ada@example.com", nameAt: "1762000000", emailAt: "1762000000" }],
+				],
 			])
 			const named = yield* readUserProfile(tenant, request).pipe(Effect.provide(warehouse(rows, [])))
 			assert.deepStrictEqual([named.profile?.name, named.profile?.email], ["Ada", "ada@example.com"])
@@ -799,6 +802,41 @@ describe("users named by their spans and logs", () => {
 				Effect.provide(withoutIdentity(rows, [])),
 			)
 			assert.deepStrictEqual([old.profile?.name, old.profile?.email], [null, null])
+		}),
+	)
+
+	it.effect("gives the profile the newest name and email across replays and spans, as the list does", () =>
+		Effect.gen(function* () {
+			const replay = {
+				name: "Ada",
+				email: "ada@old.example",
+				nameAt: "1762000000",
+				emailAt: "1761990000",
+				groupId: "",
+				groupName: "",
+				traitKeys: [],
+				traitValues: [],
+				country: "",
+				sessions: "1",
+				recordedMs: "0",
+				errors: "0",
+				firstSeen: "2026-11-01 08:00:00",
+				lastSeen: "2026-11-01 09:00:00",
+			}
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				["userReplayProfile", [replay]],
+				[
+					"userActivityIdentity",
+					[{ name: "ada", email: "ada@new.example", nameAt: "1761900000", emailAt: "1762000000" }],
+				],
+			])
+			const response = yield* readUserProfile(tenant, request).pipe(Effect.provide(warehouse(rows, [])))
+			// The spans' email is newer than the replay's; the replay's name is newer than the spans'.
+			assert.deepStrictEqual(
+				[response.profile?.name, response.profile?.email],
+				["Ada", "ada@new.example"],
+			)
 		}),
 	)
 })

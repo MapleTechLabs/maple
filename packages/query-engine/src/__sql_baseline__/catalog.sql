@@ -11303,10 +11303,12 @@ SELECT
           AND product_events.UserId = 'user_42'
         FORMAT JSON
 
--- builder:users:userMcpSummaryQuery:default  [2ca96a80]
+-- builder:users:userMcpSummaryQuery:default  [e5fa1097]
 SELECT
-          anyIf(traces.SpanAttributes['user.name'], traces.SpanAttributes['user.name'] != '') AS name,
-          anyIf(traces.SpanAttributes['user.email'], traces.SpanAttributes['user.email'] != '') AS email,
+          argMax(traces.SpanAttributes['user.name'], if(traces.SpanAttributes['user.name'] != '', toFloat64(traces.Timestamp), 0)) AS name,
+          argMax(traces.SpanAttributes['user.email'], if(traces.SpanAttributes['user.email'] != '', toFloat64(traces.Timestamp), 0)) AS email,
+          toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.name'] != '')) AS nameAt,
+          toFloat64(maxIf(toFloat64(traces.Timestamp), traces.SpanAttributes['user.email'] != '')) AS emailAt,
           count() AS requests,
           countIf(traces.SpanAttributes['mcp.method.name'] = 'tools/call') AS calls,
           min(traces.Timestamp) AS firstSeen,
@@ -11321,10 +11323,12 @@ SELECT
           AND (if(traces.SpanAttributes['user.id'] != '', traces.SpanAttributes['user.id'], traces.SpanAttributes['enduser.id']) = 'user_42' AND (traces.SpanAttributes['user.id'] = 'user_42' OR traces.SpanAttributes['enduser.id'] = 'user_42'))
         FORMAT JSON
 
--- builder:users:userReplayProfileQuery:namespaceFiltered  [61711e1c]
+-- builder:users:userReplayProfileQuery:namespaceFiltered  [ce53b2a8]
 SELECT
           argMax(sessions.userName, if(sessions.userName != '', toFloat64(sessions.lastActivity), 0)) AS name,
           argMax(sessions.userEmail, if(sessions.userEmail != '', toFloat64(sessions.lastActivity), 0)) AS email,
+          toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userName != '')) AS nameAt,
+          toFloat64(maxIf(toFloat64(sessions.lastActivity), sessions.userEmail != '')) AS emailAt,
           argMax(sessions.groupId, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupId,
           argMax(sessions.groupName, if(sessions.groupId != '', toFloat64(sessions.lastActivity), 0)) AS groupName,
           argMax(sessions.traitKeys, sessions.lastActivity) AS traitKeys,

@@ -192,13 +192,15 @@ export function userActivitySummaryQuery(opts: UserScopeOpts) {
 
 /**
  * The latest `user.name` and `user.email` the user's spans and logs carried (migration 0065), `''`
- * when none did. Always one row.
+ * when none did, and when (epoch seconds, 0 for never). Always one row.
  */
 export function userActivityIdentityQuery(opts: UserScopeOpts) {
 	return from(Datasources.userActivityHourly)
-		.select(() => ({
+		.select(($) => ({
 			name: CH.rawExpr<string>("argMaxIfMerge(UserName)", T.string),
 			email: CH.rawExpr<string>("argMaxIfMerge(UserEmail)", T.string),
+			nameAt: CH.compileTypedFnCall("toFloat64", T.float64.schema, CH.max_($.UserNameAt)),
+			emailAt: CH.compileTypedFnCall("toFloat64", T.float64.schema, CH.max_($.UserEmailAt)),
 		}))
 		.where(($) => [...activityWindow($, opts), $.UserId.eq(opts.userId)])
 		.format("JSON")
