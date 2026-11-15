@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS, AWS_INFRA_RESOURCE_LIMIT } from "@maple/domain/aws-infra"
+import {
+	AWS_INFRA_KIND_IDS,
+	AWS_INFRA_KINDS,
+	AWS_INFRA_RESOURCE_LIMIT,
+	AWS_METRIC_PREFIX,
+} from "@maple/domain/aws-infra"
 import {
 	awsInfraBucketCount,
 	awsInfraMetricsSQL,
@@ -22,7 +27,7 @@ const metricNames = (sql: string) =>
 
 describe("awsInfraMetricsSQL", () => {
 	it("reads a load balancer's own series, never its per-target-group or per-zone copies", () => {
-		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("loadBalancers"), params)
+		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("loadBalancers", "raw"), params)
 		expect(tenantScope).toBe("single-tenant")
 		// CloudWatch repeats RequestCount per target group and zone: those would count twice.
 		expect(sql).toContain("metrics_sum.Attributes['aws.dimension.load_balancer'] != ''")
@@ -32,14 +37,14 @@ describe("awsInfraMetricsSQL", () => {
 	})
 
 	it("reads an ECS service's series, not its cluster's", () => {
-		const { sql } = compileUnsafe(awsInfraMetricsSQL("ecs"), params)
+		const { sql } = compileUnsafe(awsInfraMetricsSQL("ecs", "raw"), params)
 		expect(sql).toContain("metrics_gauge.Attributes['aws.dimension.service_name'] != ''")
 		expect(sql).toContain("metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''")
 	})
 
 	it("reads every kind's sums from metrics_sum and means from metrics_gauge, none twice", () => {
 		for (const kind of AWS_INFRA_KIND_IDS) {
-			const { sql } = compileUnsafe(awsInfraMetricsSQL(kind), params)
+			const { sql } = compileUnsafe(awsInfraMetricsSQL(kind, "raw"), params)
 			expect(sql, kind).not.toContain("IN ()")
 			const [sums, gauges = ""] = Str.split("FROM metrics_gauge")(sql)
 			const metrics = AWS_INFRA_KINDS[kind].metrics
@@ -49,6 +54,31 @@ describe("awsInfraMetricsSQL", () => {
 			}
 			expect(metricNames(sql).sort(), kind).toEqual(Arr.map(metrics, (metric) => metric.name).sort())
 		}
+	})
+})
+
+describe("awsInfraMetricsSQL tiers", () => {
+	it("reads whole hours from aws_metrics_hourly and only the partial hours from raw points", () => {
+		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("ec2", "hourly"), params)
+		expect(tenantScope).toBe("single-tenant")
+		expect(sql).toContain("FROM aws_metrics_hourly")
+		expect(sql).toContain("aws_metrics_hourly.MetricType = 'sum'")
+		expect(sql).toContain("aws_metrics_hourly.MetricType = 'gauge'")
+		// Every raw branch is limited to the edges, so no hour is read from both tiers.
+		expect(Str.split("FROM metrics_")(sql).length - 1).toBe(2)
+		expect(Str.split("TimeUnix < if(")(sql).length - 1).toBe(2)
+	})
+
+	it("reads raw points only when the cluster has no rollup", () => {
+		const { sql } = compileUnsafe(awsInfraMetricsSQL("ec2", "raw"), params)
+		expect(sql).not.toContain("aws_metrics_hourly")
+		expect(sql).not.toContain("TimeUnix < if(")
+	})
+
+	it("asks the rollup only for metrics its views write", () => {
+		for (const kind of AWS_INFRA_KIND_IDS)
+			for (const metric of AWS_INFRA_KINDS[kind].metrics)
+				expect(Str.startsWith(AWS_METRIC_PREFIX)(metric.name), metric.name).toBe(true)
 	})
 })
 

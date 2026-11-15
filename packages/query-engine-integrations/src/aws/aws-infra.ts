@@ -18,6 +18,7 @@ import {
 } from "@maple/domain/aws-infra"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
+import { edgeCondition, utcInteriorConditions } from "@maple/query-engine/ch/rollup-splice"
 import { Array as Arr, String as Str } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
@@ -34,6 +35,26 @@ const resourceKeys = ($: MetricsAccessor, kind: AwsInfraKindId) =>
 		...Arr.map(AWS_INFRA_RESOURCE_KEYS, (attribute) => $.ResourceAttributes.get(attribute)),
 	)
 
+/** The kind's metric names stored in one table. */
+const metricNames = (metrics: ReadonlyArray<AwsInfraMetric>, table: AwsInfraMetric["table"]) => [
+	...new Set(
+		Arr.map(
+			Arr.filter(metrics, (metric) => metric.table === table),
+			(metric) => metric.name,
+		),
+	),
+]
+
+/** Exactly the kind's dimension set: its identity dimensions present, its excluded ones absent. */
+const dimensionSet = (attribute: (key: string) => CH.Expr<string>, kind: AwsInfraKindId) => [
+	...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
+		attribute(awsDimensionAttribute(dimension)).neq(""),
+	),
+	...Arr.map(AWS_INFRA_KINDS[kind].excluded, (dimension) =>
+		attribute(awsDimensionAttribute(dimension)).eq(""),
+	),
+]
+
 /** The kind's points in the window, from one table, at exactly the kind's dimension set. */
 const kindPoints = (
 	$: MetricsAccessor,
@@ -43,55 +64,95 @@ const kindPoints = (
 ) =>
 	[
 		$.OrgId.eq(orgIdParam),
-		CH.inList($.MetricName, [
-			...new Set(
-				Arr.map(
-					Arr.filter(metrics, (metric) => metric.table === table),
-					(metric) => metric.name,
-				),
-			),
-		]),
+		CH.inList($.MetricName, metricNames(metrics, table)),
 		$.TimeUnix.gte(param.dateTime("startTime")),
 		$.TimeUnix.lte(param.dateTime("endTime")),
-		...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
-			$.Attributes.get(awsDimensionAttribute(dimension)).neq(""),
-		),
-		...Arr.map(AWS_INFRA_KINDS[kind].excluded, (dimension) =>
-			$.Attributes.get(awsDimensionAttribute(dimension)).eq(""),
-		),
+		...dimensionSet((key) => $.Attributes.get(key), kind),
 	] as const
+
+/**
+ * Where `awsInfraMetricsSQL` reads: whole hours from `aws_metrics_hourly` and the partial hours at
+ * either end from raw points, or raw points only, for a cluster without migration 0065.
+ */
+export type AwsMetricsTier = "hourly" | "raw"
+
+/** One table's raw points per resource and metric; `edgesOnly` keeps the hours the rollup leaves out. */
+const rawTotals = (
+	kind: AwsInfraKindId,
+	table: AwsInfraMetric["table"],
+	metrics: ReadonlyArray<AwsInfraMetric>,
+	edgesOnly: boolean,
+) =>
+	from(table === "sum" ? Datasources.metricsSum : Datasources.metricsGauge)
+		.select(($) => ({
+			keys: resourceKeys($, kind),
+			metric: $.MetricName,
+			total: CH.sum($.Value),
+			samples: CH.count(),
+			peak: CH.max_($.Value),
+			lastSeen: CH.max_(CH.toDateTime($.TimeUnix)),
+		}))
+		.where(($) => [
+			...kindPoints($, kind, table, metrics),
+			CH.whenTrue(edgesOnly, () => edgeCondition("TimeUnix")),
+		])
+		.groupBy("keys", "metric")
+
+/** The same per resource and metric from the rollup's whole hours, at the kind's exact dimension set. */
+const hourlyTotals = (
+	kind: AwsInfraKindId,
+	table: AwsInfraMetric["table"],
+	metrics: ReadonlyArray<AwsInfraMetric>,
+) =>
+	from(Datasources.awsMetricsHourly)
+		.select(($) => ({
+			keys: CH.arrayOf(
+				...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
+					$.Attributes.get(awsDimensionAttribute(dimension)),
+				),
+				$.CloudRegion,
+				$.CloudAccountId,
+			),
+			metric: $.MetricName,
+			total: CH.sum($.Total),
+			samples: CH.sum($.Samples),
+			peak: CH.max_($.Peak),
+			lastSeen: CH.max_($.LastSeen),
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.MetricType.eq(table),
+			CH.inList($.MetricName, metricNames(metrics, table)),
+			...utcInteriorConditions($.Hour),
+			...dimensionSet((key) => $.Attributes.get(key), kind),
+		])
+		.groupBy("keys", "metric")
 
 /**
  * Every metric of one kind: one row per resource (`keys`) and metric. `total` sums the window's
  * points and `samples` counts them: a sum reads as `total`, a gauge as the mean `total / samples`.
  * `peak` is the highest point, `lastSeen` the newest.
  */
-export function awsInfraMetricsSQL(kind: AwsInfraKindId) {
+export function awsInfraMetricsSQL(kind: AwsInfraKindId, tier: AwsMetricsTier) {
 	const metrics = AWS_INFRA_KINDS[kind].metrics
-	const point = ($: MetricsAccessor) => ({
-		keys: resourceKeys($, kind),
-		t: $.TimeUnix,
-		metric: $.MetricName,
-		value: $.Value,
-	})
 	return fromUnion(
-		unionAll(
-			from(Datasources.metricsSum)
-				.select(point)
-				.where(($) => kindPoints($, kind, "sum", metrics)),
-			from(Datasources.metricsGauge)
-				.select(point)
-				.where(($) => kindPoints($, kind, "gauge", metrics)),
-		),
+		tier === "hourly"
+			? unionAll(
+					rawTotals(kind, "sum", metrics, true),
+					hourlyTotals(kind, "sum", metrics),
+					rawTotals(kind, "gauge", metrics, true),
+					hourlyTotals(kind, "gauge", metrics),
+				)
+			: unionAll(rawTotals(kind, "sum", metrics, false), rawTotals(kind, "gauge", metrics, false)),
 		"points",
 	)
 		.select(($) => ({
 			keys: $.keys,
 			metric: $.metric,
-			total: CH.sum($.value),
-			samples: CH.count(),
-			peak: CH.max_($.value),
-			lastSeen: CH.max_($.t),
+			total: CH.sum($.total),
+			samples: CH.sum($.samples),
+			peak: CH.max_($.peak),
+			lastSeen: CH.max_($.lastSeen),
 		}))
 		.groupBy("keys", "metric")
 		.orderBy(["keys", "asc"], ["metric", "asc"])
