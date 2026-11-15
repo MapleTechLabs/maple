@@ -12,7 +12,7 @@ import * as CH from "@maple-dev/effect-orm/expr"
 import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgId, orgIdParam, utcSecondsParam } from "../tables"
-import { EXCLUDED_KEY } from "../../promql/labels"
+import { EXCLUDED_KEY, labelValueExpr } from "../../promql/labels"
 import { utcHourFloor } from "./query-helpers"
 
 /** Joins a stored metric's name and unit into the identity a selector row reports. */
@@ -759,46 +759,26 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 }
 
 /**
- * Distinct `job` values in one metric table, built as series labels build them: `service.namespace/`
- * before the service name when a namespace is set. The catalog keeps no namespace, so this reads the
- * table, bounded by org, window and limit.
+ * Distinct `job` or `instance` values in one metric table, built by the same expression as series
+ * labels (a datapoint label first, then the resource: `service.namespace/service`,
+ * `service.instance.id`). No rollup keeps these, so this reads the table, bounded by org, the
+ * millisecond window and the limit.
  */
-export function promqlJobValuesQuery(opts: { readonly table: PromqlMetricTable; readonly limit: number }) {
-	return from(metricTable(opts.table))
-		.select(($) => ({
-			job: sql(
-				T.string,
-			)`multiIf(${$.ResourceAttributes}['service.namespace'] = '', if(${$.ResourceAttributes}['service.name'] = '', ${$.ServiceName}, ${$.ResourceAttributes}['service.name']), concat(${$.ResourceAttributes}['service.namespace'], '/', if(${$.ResourceAttributes}['service.name'] = '', ${$.ServiceName}, ${$.ResourceAttributes}['service.name'])))`,
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(utcSecondsParam("startTime")),
-			$.TimeUnix.lte(utcSecondsParam("endTime")),
-		])
-		.groupBy("job")
-		.orderBy(["job", "asc"])
-		.limit(opts.limit)
-		.format("JSON")
-}
-
-/**
- * Distinct `service.instance.id` values (the `instance` label) in one metric table. No rollup keeps
- * id-like keys, so this reads the table itself, bounded by org, window and limit.
- */
-export function promqlInstanceValuesQuery(opts: {
+export function promqlIdentityValuesQuery(opts: {
 	readonly table: PromqlMetricTable
+	readonly label: "job" | "instance"
 	readonly limit: number
 }) {
 	return from(metricTable(opts.table))
-		.select(($) => ({ instance: sql(T.string)`${$.ResourceAttributes}['service.instance.id']` }))
+		.select(($) => ({ value: labelValueExpr($, opts.label) ?? sql(T.string)`''` }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.TimeUnix.gte(utcSecondsParam("startTime")),
-			$.TimeUnix.lte(utcSecondsParam("endTime")),
-			sql.cond`${$.ResourceAttributes}['service.instance.id'] != ''`,
+			sql.cond`${$.TimeUnix} >= fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
+			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
 		])
-		.groupBy("instance")
-		.orderBy(["instance", "asc"])
+		.groupBy("value")
+		.having(() => [sql.cond`value != ''`])
+		.orderBy(["value", "asc"])
 		.limit(opts.limit)
 		.format("JSON")
 }

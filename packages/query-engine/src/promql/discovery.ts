@@ -41,12 +41,14 @@ export const labelNamesFrom = (
 	resourceKeys: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
 	if (catalog.length === 0) return []
-	// `le` is left out: its values come from bucket bounds, which no rollup lists.
 	const resource = Arr.filter(resourceKeys, (key) => !isExcludedResourceKey(key))
+	// Only explicit histograms expose `_bucket` series, which carry `le`.
+	const hasBuckets = Arr.some(catalog, (metric) => metric.metricType === "histogram")
 	return sortedUnique([
 		"__name__",
 		"job",
 		"instance",
+		...(hasBuckets ? ["le"] : []),
 		...Arr.map([...attributeKeys, ...resource], normalizeLabelName),
 	])
 }

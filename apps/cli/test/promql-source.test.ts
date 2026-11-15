@@ -19,8 +19,7 @@ import {
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
-	promqlInstanceValuesQuery,
-	promqlJobValuesQuery,
+	promqlIdentityValuesQuery,
 	promqlMetadataQuery,
 	promqlMetadataRowSchema,
 	prometheusMetadata,
@@ -338,8 +337,7 @@ const expected = (req: Request, series: ReadonlyArray<ExpectedSeries>) =>
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 const decodeMetadata = decodeJsonEachRow(promqlMetadataRowSchema)
-const decodeInstances = decodeJsonEachRow(Schema.Struct({ instance: Schema.String }))
-const decodeJobs = decodeJsonEachRow(Schema.Struct({ job: Schema.String }))
+const decodeValues = decodeJsonEachRow(Schema.Struct({ value: Schema.String }))
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
 	const compiled = CH.compileUnsafe(catalogQuery(), {
@@ -619,42 +617,50 @@ describeWithChdb("PromQL selector source", () => {
 		expect(select(db, ORG_A, request("ordered_total")).series).toHaveLength(1)
 	})
 
-	test("instance values come from the metric tables, scoped to the org", () => {
-		const instances = (org: string, table: "metrics_sum" | "metrics_gauge") => {
-			const compiled = CH.compileUnsafe(promqlInstanceValuesQuery({ table, limit: 100 }), {
-				orgId: OrgId.make(org),
-				startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
-				endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
-			})
-			return Arr.map(
-				decodeInstances(db.query(normalizeSqlForClickHouseClient(compiled.sql))),
-				(row) => row.instance,
+	test("job and instance values are built like series labels, within the millisecond window", () => {
+		const identity = (
+			org: string,
+			table: "metrics_sum" | "metrics_gauge",
+			label: "job" | "instance",
+			endOffsetMs = HOUR_MS,
+		) =>
+			Arr.map(
+				decodeValues(
+					db.query(
+						normalizeSqlForClickHouseClient(
+							CH.compileUnsafe(promqlIdentityValuesQuery({ table, label, limit: 100 }), {
+								orgId: OrgId.make(org),
+								startMs: BASE_MS - HOUR_MS,
+								endMs: BASE_MS + endOffsetMs,
+							}).sql,
+						),
+					),
+				),
+				(row) => row.value,
 			)
-		}
-		expect(instances(ORG_A, "metrics_sum")).toEqual(["i1"])
-		expect(instances(ORG_A, "metrics_gauge")).toEqual(["i1"])
-		expect(instances("org_promql_none", "metrics_sum")).toEqual([])
-	})
+		expect(identity(ORG_A, "metrics_sum", "instance")).toEqual(["i1"])
+		expect(identity("org_promql_none", "metrics_sum", "instance")).toEqual([])
 
-	test("job values carry the namespace, the way series labels do", () => {
 		insertValues(db, {
 			...gauge,
 			metric: "namespaced.probe",
 			attributes: {},
 			resource: { ...RESOURCE, "service.name": "cart", "service.namespace": "shop" },
 		})
-		const compiled = CH.compileUnsafe(promqlJobValuesQuery({ table: "metrics_gauge", limit: 100 }), {
-			orgId: OrgId.make(ORG_A),
-			startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
-			endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
-		})
-		const jobs = Arr.map(
-			decodeJobs(db.query(normalizeSqlForClickHouseClient(compiled.sql))),
-			(row) => row.job,
-		)
 		const seriesJobs = Arr.map(select(db, ORG_A, request("namespaced_probe")).series, (s) => s.labels.job)
 		expect(seriesJobs).toEqual(["shop/cart"])
-		expect(Arr.contains(jobs, "shop/cart")).toBe(true)
-		expect(Arr.contains(jobs, "cart")).toBe(false)
+		expect(Arr.contains(identity(ORG_A, "metrics_gauge", "job"), "shop/cart")).toBe(true)
+		expect(Arr.contains(identity(ORG_A, "metrics_gauge", "job"), "cart")).toBe(false)
+
+		// Datapoint labels win over the resource, as in series labels; the one sample sits 750ms past
+		// a whole second, so a seconds-floored end would miss it.
+		insertValues(db, {
+			...gauge,
+			metric: "scraped.probe",
+			attributes: { job: "scrape-job", instance: "host:9090" },
+			samples: [[2 * HOUR_MS + 750, 1]],
+		})
+		expect(identity(ORG_A, "metrics_gauge", "job", 2 * HOUR_MS + 750)).toContain("scrape-job")
+		expect(identity(ORG_A, "metrics_gauge", "instance", 2 * HOUR_MS + 750)).toContain("host:9090")
 	})
 })
