@@ -125,9 +125,11 @@ export const validateWidgetRenderability = (input: ValidateWidgetRenderabilityIn
 			)
 		}
 		const expected = meta.rawSqlDisplayType
-		if (expected !== undefined && promql.displayType !== undefined && promql.displayType !== expected) {
+		// An absent displayType shapes rows for a line chart, so it is checked as "line".
+		const rowsFor = promql.displayType ?? "line"
+		if (expected !== undefined && rowsFor !== expected) {
 			warnings.push(
-				`The PromQL \`displayType\` is \`${promql.displayType}\` but a \`${panelType}\` panel draws \`${expected}\` rows; set \`displayType: "${expected}"\`.`,
+				`The PromQL \`displayType\` is \`${promql.displayType ?? "unset (line)"}\` but a \`${panelType}\` panel draws \`${expected}\` rows; set \`displayType: "${expected}"\`.`,
 			)
 		}
 		if (meta.isScalar && transform?.reduceToValue === undefined) {
