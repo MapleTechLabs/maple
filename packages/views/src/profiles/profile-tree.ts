@@ -193,9 +193,10 @@ export const topFunctions = (input: ProfileInput, limit: number): ReadonlyArray<
 }
 
 /** Whether a frame matches a search: its name or its file, ignoring case. */
-export const matchesSearch = (node: Pick<ProfileNode, "name" | "file">, query: string): boolean => {
+export const matchesSearch = (node: Pick<ProfileNode, "id" | "name" | "file">, query: string): boolean => {
 	const needle = Str.toLowerCase(Str.trim(query))
-	if (needle === "") return false
+	// The synthetic root is the whole window, not a frame: "a" or "al" never match it.
+	if (needle === "" || node.id === ROOT_ID) return false
 	const holdsNeedle = Str.includes(needle)
 	return holdsNeedle(Str.toLowerCase(node.name)) || holdsNeedle(Str.toLowerCase(node.file))
 }

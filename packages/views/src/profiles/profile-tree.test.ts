@@ -3,6 +3,7 @@ import { Array as Arr, Option } from "effect"
 import {
 	frameModule,
 	matchedValue,
+	matchesSearch,
 	OTHER_NAME,
 	OUTSIDE_NAME,
 	type ProfileInput,
@@ -163,6 +164,12 @@ describe("matchedValue", () => {
 	it("sums the subtrees of matching frames without counting a nested match twice", () => {
 		expect(matchedValue(profileTree(input), "HANDLE")).toBe(95)
 		expect(matchedValue(profileTree(input), "")).toBe(0)
+	})
+
+	it("never matches the synthetic root, whose name is a part of short queries", () => {
+		// "al" is in the root's name "all" and in no frame: nothing matches.
+		expect(matchedValue(profileTree(input), "al")).toBe(0)
+		expect(matchesSearch(profileTree(input), "al")).toBe(false)
 	})
 })
 
