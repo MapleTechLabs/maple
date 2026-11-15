@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { Array as Arr } from "effect"
 import type { Operation } from "../model-tabs"
 import { operationChanges } from "./derive"
-import { sidesOf } from "./update"
+import { afterSeconds, sidesOf } from "./update"
 
 const op = (spanName: string, spanCount: number, errorRate: number, p95DurationMs: number): Operation => ({
 	spanName,
@@ -84,5 +84,22 @@ describe("sidesOf", () => {
 
 	test("in its first minute the after side still spans one minute", () => {
 		expect(sidesOf(check, DEPLOY + 30_000).after).toEqual({ startMs: DEPLOY, endMs: DEPLOY + MINUTE })
+	})
+})
+
+describe("afterSeconds", () => {
+	const DEPLOY = Date.UTC(2026, 10, 15, 12)
+	const check = { firstSeenMs: DEPLOY + 20_000, windowMinutes: 30 }
+
+	test("90 seconds in, the after side holds 90 seconds of traffic, not one floored minute", () => {
+		expect(afterSeconds(check, DEPLOY + 90_000)).toBe(90)
+	})
+
+	test("a settled deploy holds its full window", () => {
+		expect(afterSeconds(check, DEPLOY + 3 * 60 * 60_000)).toBe(1800)
+	})
+
+	test("just shipped, a few seconds at least", () => {
+		expect(afterSeconds(check, DEPLOY + 1_000)).toBe(5)
 	})
 })
