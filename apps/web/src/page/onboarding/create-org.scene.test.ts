@@ -42,7 +42,6 @@ const member: ClerkOrganization = {
 		cloudCost: false,
 		dataSources: false,
 		productAnalytics: false,
-		releases: false,
 		securityAudit: false,
 		statusPages: false,
 	},

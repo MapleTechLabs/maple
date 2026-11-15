@@ -33,6 +33,19 @@ type Triggers = Readonly<{
 
 const NO_TRIGGERS: Triggers = { label: () => [], dash: () => [] }
 
+/** A commit's tone on the chart: a flagged deploy's marker draws in it, the rest stay quiet. */
+export type MarkerTone = (sha: string) => "crit" | "warn" | undefined
+
+const DASH_TONE = { crit: "border-severity-error opacity-80", warn: "border-severity-warn opacity-80" }
+const LABEL_TONE = { crit: "border-severity-error-a3", warn: "border-severity-warn-a3" }
+
+/** The group's worst tone: one flagged commit among several still marks the group. */
+const groupTone = (group: LabelGroup, toneOf: MarkerTone | undefined): "crit" | "warn" | undefined => {
+	if (toneOf === undefined) return undefined
+	const tones = Arr.map(group.commits, (commit) => toneOf(commit.sha))
+	return tones.includes("crit") ? "crit" : tones.includes("warn") ? "warn" : undefined
+}
+
 const labelTriggerId = (scope: string, groupIndex: number) => `${scope}-marker-${groupIndex}-label`
 const dashTriggerId = (scope: string, groupIndex: number, dashIndex: number) =>
 	`${scope}-marker-${groupIndex}-dash-${dashIndex}`
@@ -47,6 +60,7 @@ const groupChildren = <M>(
 	groupIndex: number,
 	triggers: Triggers,
 	hasCard: boolean,
+	tone: "crit" | "warn" | undefined,
 ): ReadonlyArray<Html> => {
 	const labelTop = plot.y - LABEL_HEIGHT - labelGap
 	const reachesLabel = layout.labeled && part === "all"
@@ -74,7 +88,8 @@ const groupChildren = <M>(
 				h.div([
 					h.Class(
 						cn(
-							"h-full w-0 border-l border-dashed border-muted-foreground opacity-40 transition-opacity duration-100",
+							"h-full w-0 border-l border-dashed transition-opacity duration-100",
+							tone === undefined ? "border-muted-foreground opacity-40" : DASH_TONE[tone],
 							hasCard &&
 								"group-hover/dash:opacity-100 group-data-[popup-open]/dash:opacity-100",
 						),
@@ -98,7 +113,8 @@ const groupChildren = <M>(
 			h.Class(
 				cn(
 					"pointer-events-auto flex cursor-pointer items-center justify-center gap-1 rounded-sm border px-1.5 font-mono text-2xs leading-none backdrop-blur-sm",
-					"border-border-subtle bg-surface-float text-muted-foreground hover:text-popover-foreground active:text-popover-foreground",
+					tone === undefined ? "border-border-subtle" : LABEL_TONE[tone],
+					"bg-surface-float text-muted-foreground hover:text-popover-foreground active:text-popover-foreground",
 					"data-[popup-open]:border-border data-[popup-open]:text-popover-foreground",
 				),
 			),
@@ -133,6 +149,7 @@ export const markersOverlay = <M>(
 	labelGap: number = LABEL_GAP,
 	part: MarkerPart = "all",
 	card?: MarkerOverlayCard<M>,
+	toneOf?: MarkerTone,
 ): Html => {
 	if (layout.groups.length === 0) return null
 	const overlay = (triggers: Triggers, portal: Html) =>
@@ -150,6 +167,7 @@ export const markersOverlay = <M>(
 						index,
 						triggers,
 						card !== undefined,
+						groupTone(group, toneOf),
 					),
 				),
 				...(portal === null ? [] : [portal]),
