@@ -455,7 +455,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-runtimes",
 		title: "Service runtimes",
 		description:
-			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour; ?tab=operations or ?tab=dependencies opens that tab.",
+			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour, with a deploy that raised errors; ?tab=operations or ?tab=dependencies opens that tab, ?deploy=9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28 its deploy drawer.",
 		kind: "lab",
 		session: "none",
 	},

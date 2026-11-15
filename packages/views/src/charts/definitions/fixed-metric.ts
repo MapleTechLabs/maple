@@ -414,7 +414,20 @@ const latencyChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartVal
 	}
 }
 
-/** The apdex chart: the band and its top edge on a `[0, 1]` axis, the in-flight tail dashed. */
+/**
+ * The apdex axis floor: a tenth below the lowest score, rounded down to a tenth. A dip from 0.99
+ * to 0.91 then reads on a 0.8 to 1 axis instead of a sliver at the top; a collapse still shows 0.
+ */
+export const apdexAxisFloor = (rows: ReadonlyArray<TimeseriesRow>): number => {
+	const scores = Arr.filter(
+		Arr.map(rows, (row) => row.apdexScore),
+		(score): score is number => typeof score === "number" && Number.isFinite(score),
+	)
+	if (scores.length === 0) return 0
+	return Math.max(0, Math.floor(Math.round((Math.min(...scores) - 0.1) * 1000) / 100) / 10)
+}
+
+/** The apdex chart: the band and its top edge on an axis zoomed to the scores, the in-flight tail dashed. */
 const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue, number> => {
 	const model = fixedMetricModel(spec.rows, spec.timeZone, spec.nowMs)
 	const focus = tooltipFocusCapture()
@@ -426,12 +439,13 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 	const fillId = gradientId(spec.gradientPrefix, "fill")
 	const fadedFillId = gradientId(spec.gradientPrefix, "fill", "partial")
 	const value = valueOf("apdexScore")
+	const floor = apdexAxisFloor(plotRows)
 	const band = (slice: ReadonlyArray<TimeseriesRow>, fill: GradientId) =>
 		areaY(slice, {
 			id: fill === fillId ? "apdex-area" : "apdex-area-partial",
 			x: at,
 			y: value,
-			y1: () => 0,
+			y1: () => floor,
 			fill: gradientUrl(fill),
 			fillOpacity: 1,
 			curve,
@@ -464,7 +478,7 @@ const apdexChart = (spec: FixedMetricSpec): BuiltChart<TimeseriesRow, ChartValue
 		],
 		scales: {
 			x: xAxisOf(spec, model),
-			y: timeseriesYAxis({ rows: plotRows, visibleKeys: ["apdexScore"], softMin: 0, softMax: 1 }).y,
+			y: timeseriesYAxis({ rows: plotRows, visibleKeys: ["apdexScore"], softMin: floor, softMax: 1 }).y,
 		},
 		focus: "group-x",
 		focusRing: false,
