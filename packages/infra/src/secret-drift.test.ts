@@ -51,15 +51,15 @@ describe("secret drift", () => {
 	it("lets only the environments the catalog names share a prd value", () => {
 		const drift = secretDrift(
 			[
-				snapshot("dev", { TINYBIRD_TOKEN: "admin" }),
-				snapshot("preview", { TINYBIRD_TOKEN: "admin" }),
-				snapshot("prod", { TINYBIRD_TOKEN: "admin" }),
-				snapshot("prod-eu", { TINYBIRD_TOKEN: "eu" }),
+				snapshot("dev", { TINYBIRD_TOKEN: "admin", MAPLE_OTEL_INGEST_KEY: "otel" }),
+				snapshot("preview", { MAPLE_OTEL_INGEST_KEY: "otel" }),
+				snapshot("prod", { TINYBIRD_TOKEN: "admin", MAPLE_OTEL_INGEST_KEY: "otel" }),
+				snapshot("prod-eu", { TINYBIRD_TOKEN: "eu", MAPLE_OTEL_INGEST_KEY: "otel" }),
 			],
 			nothingElseRead,
 		)
 		expect(drift).toEqual([
-			{ kind: "shared", key: "TINYBIRD_TOKEN", environment: "preview", prdEnvironments: ["prod"] },
+			{ kind: "shared", key: "TINYBIRD_TOKEN", environment: "dev", prdEnvironments: ["prod"] },
 		])
 	})
 
