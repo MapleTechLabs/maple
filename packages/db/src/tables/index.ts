@@ -77,6 +77,7 @@ import { CostConnections } from "./cost-connections"
 import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
+import { SavedViews } from "./saved-views"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { SearchConsoleSites } from "./search-console-sites"
 import { ServiceMapWorldEntities } from "./service-map-world"
@@ -168,6 +169,7 @@ export * from "./cost-connections"
 export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./railway"
+export * from "./saved-views"
 export * from "./scrape-targets"
 export * from "./search-console-sites"
 export * from "./security-audit"
@@ -270,6 +272,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
 	RailwayEnvironments,
+	SavedViews,
 	ScrapeTargets,
 	ServiceMapWorldEntities,
 	ScrapeTargetChecks,
