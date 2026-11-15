@@ -29,6 +29,8 @@ const RETENTION_DAYS = {
 	logs: 30,
 	logs_aggregates_hourly: 365,
 	metric_catalog: 90,
+	// As long as the raw metrics it rolls up.
+	aws_metrics_hourly: 90,
 	metrics_exponential_histogram: 90,
 	metrics_gauge: 90,
 	metrics_histogram: 90,
@@ -129,6 +131,8 @@ describe("Tinybird retention matrix", () => {
 			"service_endpoint_details_hourly_mv",
 			"user_activity_hourly_traces_mv",
 			"user_activity_hourly_logs_mv",
+			"aws_metrics_hourly_sum_mv",
+			"aws_metrics_hourly_gauge_mv",
 		]) {
 			const pipe = Option.getOrUndefined(
 				Arr.findFirst(tinybirdProjectManifest.pipes, (candidate) => candidate.name === name),

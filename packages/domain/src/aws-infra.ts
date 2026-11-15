@@ -4,6 +4,9 @@
  * a statistic's mean is a gauge named after the metric, its sum the `.sum` delta counter.
  */
 
+/** Every metric the stream sends starts with it; `aws_metrics_hourly` rolls up exactly these. */
+export const AWS_METRIC_PREFIX = "aws."
+
 export const AWS_INFRA_KIND_IDS = ["ecs", "ec2", "loadBalancers", "rds", "lambda", "sqs"] as const
 export type AwsInfraKindId = (typeof AWS_INFRA_KIND_IDS)[number]
 
