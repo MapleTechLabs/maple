@@ -56,7 +56,6 @@ export type SearchEntry = typeof SearchEntry.Type
 export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 	"/cost",
 	"/product-analytics",
-	"/releases",
 	"/security",
 	"/status-pages",
 	"/users",
@@ -68,7 +67,6 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 const EVERY_FLAG = {
 	cloudCost: true,
 	productAnalytics: true,
-	releases: true,
 	securityAudit: true,
 	statusPages: true,
 }

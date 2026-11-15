@@ -62,7 +62,6 @@ const snapshot: ClerkSnapshot = {
 			cloudCost: false,
 			dataSources: false,
 			productAnalytics: false,
-			releases: false,
 			securityAudit: false,
 			statusPages: false,
 		},
