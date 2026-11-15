@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
+import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
+import type { MapleDb } from "@maple/db/client"
 import { SavedViews, type SavedViewRow } from "@maple/db/tables"
 import {
 	SavedViewForbiddenError,
@@ -9,9 +11,9 @@ import {
 	SavedViewPersistenceError,
 } from "@maple/domain/http"
 import { highestRole, isAtLeast } from "@maple/domain/policy"
-import type { SavedViewState, SavedViewSurface, SavedViewVisibility } from "@maple/domain/saved-views"
+import { SavedViewState, type SavedViewSurface, type SavedViewVisibility } from "@maple/domain/saved-views"
 import { SavedViewId, type OrgId, type UserId } from "@maple/primitives"
-import { Array as Arr, Clock, Context, Effect, Layer, Order, Schema, String as Str } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Order, Schema, String as Str } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { postgresSqlState } from "@maple/backend/platform/postgres-errors"
@@ -77,8 +79,9 @@ export interface SavedViewsServiceApi {
 }
 
 /**
- * One person's views per explorer. The menu lists them all, so the list stays readable. A soft
- * cap, checked before the insert without a lock: two saves racing at the edge may land one over.
+ * One person's views per explorer. The menu lists them all, so the list stays readable, and it
+ * bounds how much of the org's shared list one person can fill. Counted and inserted under a
+ * lock, so concurrent saves cannot pass it.
  */
 export const SAVED_VIEWS_PER_OWNER_LIMIT = 100
 
@@ -96,21 +99,50 @@ const decodeId = Schema.decodeUnknownSync(SavedViewId)
 
 const isOrgAdmin = (caller: SavedViewCaller): boolean => isAtLeast(highestRole(caller.roles), "admin")
 
-const toView = (caller: SavedViewCaller, row: SavedViewRow): SavedView => {
-	const isOwner = row.ownerUserId === caller.userId
-	return {
+/** A row with its state as stored, not yet checked against the schema. */
+type StoredRow = Omit<SavedViewRow, "state"> & { readonly state: unknown }
+
+// The state is read as stored: one row the schema no longer accepts must not fail a whole
+// list, or stand in the way of deleting it.
+const storedColumns = ($: PG.ColumnAccessor<typeof SavedViews.columns>) => ({
+	id: $.id,
+	orgId: $.orgId,
+	ownerUserId: $.ownerUserId,
+	surface: $.surface,
+	name: $.name,
+	state: PG.undecoded($.state),
+	visibility: $.visibility,
+	createdAt: $.createdAt,
+	updatedAt: $.updatedAt,
+})
+
+const decodeState = Schema.decodeUnknownOption(SavedViewState)
+
+const canDelete = (caller: SavedViewCaller, row: StoredRow): boolean =>
+	row.ownerUserId === caller.userId || (row.visibility === "org" && isOrgAdmin(caller))
+
+/** The row as the caller sees it, or none when its stored state can no longer be read. */
+const toView = (caller: SavedViewCaller, row: StoredRow): Option.Option<SavedView> =>
+	Option.map(decodeState(row.state), (state) => ({
 		id: row.id,
 		surface: row.surface,
 		name: row.name,
-		state: row.state,
+		state,
 		visibility: row.visibility,
 		ownerUserId: row.ownerUserId,
-		isOwner,
-		canDelete: isOwner || (row.visibility === "org" && isOrgAdmin(caller)),
+		isOwner: row.ownerUserId === caller.userId,
+		canDelete: canDelete(caller, row),
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
-	}
-}
+	}))
+
+const unreadable = () => new SavedViewPersistenceError({ message: "The view's stored state cannot be read" })
+
+/** Serializes one person's saves in one explorer within their transaction. */
+const lockOwner = (db: MapleDb, caller: SavedViewCaller, surface: SavedViewSurface) =>
+	db.execute(
+		Orm.sql`select pg_advisory_xact_lock(hashtext(${`${caller.orgId}:${caller.userId}:${surface}`}), hashtext('saved_views'))`,
+	)
 
 // Own views first, then shared ones; each group by name, ignoring case.
 const listOrder: Order.Order<SavedView> = Order.combine(
@@ -143,7 +175,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				const rows = yield* dbExecute((db) =>
 					db.run(
 						PG.from(SavedViews)
-							.select()
+							.select(storedColumns)
 							.where(($) => [$.orgId.eq(caller.orgId), $.id.eq(viewId)])
 							.limit(1),
 					),
@@ -168,7 +200,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				const own = yield* dbExecute((db) =>
 					db.run(
 						PG.from(SavedViews)
-							.select()
+							.select(storedColumns)
 							.where(($) => [
 								$.orgId.eq(caller.orgId),
 								$.surface.eq(surface),
@@ -180,7 +212,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				const shared = yield* dbExecute((db) =>
 					db.run(
 						PG.from(SavedViews)
-							.select()
+							.select(storedColumns)
 							.where(($) => [
 								$.orgId.eq(caller.orgId),
 								$.surface.eq(surface),
@@ -192,11 +224,12 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 					),
 				)
 				const rows = [...own, ...shared]
-				yield* Effect.annotateCurrentSpan("result.rowCount", rows.length)
-				return Arr.sort(
-					Arr.map(rows, (row) => toView(caller, row)),
-					listOrder,
-				)
+				const views = Arr.getSomes(Arr.map(rows, (row) => toView(caller, row)))
+				yield* Effect.annotateCurrentSpan({
+					"result.rowCount": rows.length,
+					"maple.saved_view.unreadable": rows.length - views.length,
+				})
+				return Arr.sort(views, listOrder)
 			})
 
 			const create = Effect.fn("SavedViewsService.create")(function* (
@@ -208,47 +241,55 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 					"tenant.userId": caller.userId,
 					"maple.saved_view.surface": input.surface,
 				})
-				const owned = yield* dbExecute((db) =>
-					db.run(
-						PG.from(SavedViews)
-							.select(($) => ({ id: $.id }))
-							.where(($) => [
-								$.orgId.eq(caller.orgId),
-								$.ownerUserId.eq(caller.userId),
-								$.surface.eq(input.surface),
-							])
-							.limit(SAVED_VIEWS_PER_OWNER_LIMIT),
+				const now = yield* Clock.currentTimeMillis
+				const inserted = yield* dbExecuteNamed(input.name)((db) =>
+					db.transaction(
+						Effect.gen(function* () {
+							yield* lockOwner(db, caller, input.surface)
+							const owned = yield* db.run(
+								PG.from(SavedViews)
+									.select(($) => ({ id: $.id }))
+									.where(($) => [
+										$.orgId.eq(caller.orgId),
+										$.ownerUserId.eq(caller.userId),
+										$.surface.eq(input.surface),
+									])
+									.limit(SAVED_VIEWS_PER_OWNER_LIMIT),
+							)
+							if (owned.length >= SAVED_VIEWS_PER_OWNER_LIMIT) return Option.none()
+							const rows = yield* db.run(
+								PG.insertInto(SavedViews)
+									.values({
+										id: decodeId(randomUUID()),
+										orgId: caller.orgId,
+										ownerUserId: caller.userId,
+										surface: input.surface,
+										name: input.name,
+										state: input.state,
+										visibility: input.visibility ?? "private",
+										createdAt: now,
+										updatedAt: now,
+									})
+									.returning(storedColumns),
+							)
+							return Option.some(rows[0])
+						}),
 					),
 				)
-				if (owned.length >= SAVED_VIEWS_PER_OWNER_LIMIT) {
+				if (Option.isNone(inserted)) {
 					return yield* new SavedViewLimitError({
 						message: `You can keep up to ${SAVED_VIEWS_PER_OWNER_LIMIT} views here. Delete one to save another.`,
 						limit: SAVED_VIEWS_PER_OWNER_LIMIT,
 					})
 				}
-				const now = yield* Clock.currentTimeMillis
-				const rows = yield* dbExecuteNamed(input.name)((db) =>
-					db.run(
-						PG.insertInto(SavedViews)
-							.values({
-								id: decodeId(randomUUID()),
-								orgId: caller.orgId,
-								ownerUserId: caller.userId,
-								surface: input.surface,
-								name: input.name,
-								state: input.state,
-								visibility: input.visibility ?? "private",
-								createdAt: now,
-								updatedAt: now,
-							})
-							.returning(),
-					),
-				)
-				const row = rows[0]
+				const row = inserted.value
 				if (row === undefined) {
 					return yield* new SavedViewPersistenceError({ message: "Insert returned no row" })
 				}
-				return toView(caller, row)
+				return yield* Option.match(toView(caller, row), {
+					onNone: unreadable,
+					onSome: Effect.succeed,
+				})
 			})
 
 			const update = Effect.fn("SavedViewsService.update")(function* (
@@ -262,6 +303,13 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 					return yield* new SavedViewForbiddenError({
 						message: "Only the owner can change this view",
 						viewId,
+					})
+				}
+				// Nothing to change: answered as it is, so an empty update cannot reorder the shared list.
+				if (input.name === undefined && input.state === undefined && input.visibility === undefined) {
+					return yield* Option.match(toView(caller, existing), {
+						onNone: unreadable,
+						onSome: Effect.succeed,
 					})
 				}
 				const now = yield* Clock.currentTimeMillis
@@ -282,7 +330,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 								$.id.eq(viewId),
 								$.ownerUserId.eq(caller.userId),
 							])
-							.returning(),
+							.returning(storedColumns),
 					),
 				)
 				const row = rows[0]
@@ -290,7 +338,10 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 				if (row === undefined) {
 					return yield* new SavedViewNotFoundError({ message: "View not found", viewId })
 				}
-				return toView(caller, row)
+				return yield* Option.match(toView(caller, row), {
+					onNone: unreadable,
+					onSome: Effect.succeed,
+				})
 			})
 
 			const remove = Effect.fn("SavedViewsService.remove")(function* (
@@ -299,7 +350,7 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId: caller.orgId, "tenant.userId": caller.userId })
 				const existing = yield* visibleRow(caller, viewId)
-				if (!toView(caller, existing).canDelete) {
+				if (!canDelete(caller, existing)) {
 					return yield* new SavedViewForbiddenError({
 						message: "Only the owner or an org admin can delete this view",
 						viewId,

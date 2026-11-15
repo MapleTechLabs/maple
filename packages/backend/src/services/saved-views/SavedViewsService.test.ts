@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Array as Arr, Effect, Layer, Order, Schema } from "effect"
-import { OrgId, UserId } from "@maple/domain/http"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/testing/test-pglite"
+import { OrgId, SavedViewId, UserId } from "@maple/domain/http"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { SAVED_VIEWS_PER_OWNER_LIMIT, type SavedViewCaller, SavedViewsService } from "./SavedViewsService"
 
 const trackedDbs: TestDb[] = []
@@ -300,5 +300,68 @@ describe("SavedViewsService", () => {
 				])
 			}),
 		),
+	)
+
+	it.effect("holds the per-explorer limit when many saves arrive at once", () =>
+		provide(
+			Effect.gen(function* () {
+				const views = yield* SavedViewsService
+				const outcomes = yield* Effect.forEach(
+					Arr.range(1, SAVED_VIEWS_PER_OWNER_LIMIT + 20),
+					(index) =>
+						Effect.result(
+							views.create(ANA, { surface: "logs", name: `View ${index}`, state: errorState }),
+						),
+					{ concurrency: "unbounded" },
+				)
+				const saved = Arr.filter(outcomes, (outcome) => outcome._tag === "Success")
+				assert.strictEqual(saved.length, SAVED_VIEWS_PER_OWNER_LIMIT)
+				assert.strictEqual((yield* views.list(ANA, "logs")).length, SAVED_VIEWS_PER_OWNER_LIMIT)
+			}),
+		),
+	)
+
+	it.effect("leaves a view untouched by an update that changes nothing", () =>
+		provide(
+			Effect.gen(function* () {
+				const views = yield* SavedViewsService
+				const saved = yield* views.create(ANA, { surface: "logs", name: "Errors", state: errorState })
+				const same = yield* views.update(ANA, saved.id, {})
+				assert.strictEqual(same.updatedAt, saved.updatedAt)
+				assert.strictEqual(same.name, "Errors")
+			}),
+		),
+	)
+
+	it.effect(
+		"lists the readable views beside one whose stored state no longer decodes, and lets it be deleted",
+		() => {
+			const db = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const views = yield* SavedViewsService
+				const mine = yield* views.create(ANA, { surface: "logs", name: "Mine", state: errorState })
+				// A shared row written before the schema's limits: its state is not one the schema accepts.
+				yield* Effect.promise(() =>
+					executeSql(
+						db,
+						`insert into saved_views (id, org_id, owner_user_id, surface, name, state, visibility, created_at, updated_at)
+					 values ($1, $2, $3, 'logs', 'Broken', '{"search": "not params"}'::jsonb, 'org', now(), now())`,
+						["00000000-0000-4000-8000-0000000000ff", ORG, BEN.userId],
+					),
+				)
+				assert.deepStrictEqual(names(yield* views.list(ANA, "logs")), ["Mine"])
+				assert.deepStrictEqual(names(yield* views.list(BEN, "logs")), [])
+				assert.strictEqual(mine.name, "Mine")
+
+				yield* views.remove(
+					ADMIN,
+					Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff"),
+				)
+				const gone = yield* Effect.flip(
+					views.remove(BEN, Schema.decodeSync(SavedViewId)("00000000-0000-4000-8000-0000000000ff")),
+				)
+				assert.strictEqual(gone._tag, "@maple/http/saved-views/SavedViewNotFoundError")
+			}).pipe(Effect.provide(SavedViewsService.layer.pipe(Layer.provide(db.layer))))
+		},
 	)
 })
