@@ -1,5 +1,6 @@
 import type { AtModifier, Expr, LabelMatcher, VectorSelector } from "./ast"
 import { formatDuration } from "./literals"
+import { lookup } from "./lookup"
 
 const IDENTIFIER = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/
 const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
@@ -46,6 +47,46 @@ const selector = (s: VectorSelector, range: string): string => {
 
 const grouping = (labels: ReadonlyArray<string>): string => `(${labels.map(labelName).join(", ")})`
 
+/** Prometheus' binary precedence, loosest first; `^` alone is right-associative. */
+const PRECEDENCE = {
+	or: 1,
+	and: 2,
+	unless: 2,
+	"==": 3,
+	"!=": 3,
+	">": 3,
+	"<": 3,
+	">=": 3,
+	"<=": 3,
+	"+": 4,
+	"-": 4,
+	"*": 5,
+	"/": 5,
+	"%": 5,
+	atan2: 5,
+	"^": 6,
+} satisfies Record<string, number>
+
+const precedence = (op: string): number => lookup(PRECEDENCE, op) ?? 0
+
+/** A binary operand, parenthesized only where precedence or associativity would regroup it. */
+const operand = (child: Expr, parentOp: string, side: "lhs" | "rhs"): string => {
+	const parent = precedence(parentOp)
+	if (child.type === "Binary") {
+		const own = precedence(child.op)
+		const rightAssoc = parentOp === "^"
+		const regroups = own < parent || (own === parent && (rightAssoc ? side === "lhs" : side === "rhs"))
+		return regroups ? `(${print(child)})` : print(child)
+	}
+	// `-a ^ b` is `-(a ^ b)`, so a negated base needs its parentheses.
+	if (child.type === "Unary" && parentOp === "^" && side === "lhs") return `(${print(child)})`
+	return print(child)
+}
+
+/** A subquery body or negated operand that is itself an operator keeps its parentheses. */
+const wrapped = (expr: Expr): string =>
+	expr.type === "Binary" || expr.type === "Unary" ? `(${print(expr)})` : print(expr)
+
 /** Print an expression as PromQL. Parsing the output yields the same AST. */
 export const print = (expr: Expr): string => {
 	switch (expr.type) {
@@ -58,7 +99,7 @@ export const print = (expr: Expr): string => {
 		case "MatrixSelector":
 			return selector(expr.vector, `[${formatDuration(expr.rangeMs)}]`)
 		case "Subquery":
-			return `${print(expr.expr)}[${formatDuration(expr.rangeMs)}:${
+			return `${wrapped(expr.expr)}[${formatDuration(expr.rangeMs)}:${
 				expr.stepMs === undefined ? "" : formatDuration(expr.stepMs)
 			}]${modifiers(expr.offsetMs, expr.at)}`
 		case "Call":
@@ -66,7 +107,7 @@ export const print = (expr: Expr): string => {
 		case "Paren":
 			return `(${print(expr.expr)})`
 		case "Unary":
-			return `${expr.op}${print(expr.expr)}`
+			return `${expr.op}${expr.expr.type === "Binary" ? `(${print(expr.expr)})` : print(expr.expr)}`
 		case "Aggregate": {
 			const args =
 				expr.param === undefined ? print(expr.expr) : `${print(expr.param)}, ${print(expr.expr)}`
@@ -83,7 +124,7 @@ export const print = (expr: Expr): string => {
 				mod += ` ${m.on ? "on" : "ignoring"}${grouping(m.labels)}`
 			if (m?.card === "many-to-one") mod += ` group_left${grouping(m.include)}`
 			if (m?.card === "one-to-many") mod += ` group_right${grouping(m.include)}`
-			return `${print(expr.lhs)} ${expr.op}${mod} ${print(expr.rhs)}`
+			return `${operand(expr.lhs, expr.op, "lhs")} ${expr.op}${mod} ${operand(expr.rhs, expr.op, "rhs")}`
 		}
 	}
 }
