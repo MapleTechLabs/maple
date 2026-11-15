@@ -221,10 +221,6 @@ struct AppConfig {
     /// `INGEST_AUDIT_TRAIL_ENABLED` (default off): keep provider audit events in
     /// the audit trail instead of as logs. See `stores_audit_trail`.
     audit_trail_enabled: bool,
-    /// `INGEST_PROFILES_ENABLED` (default off): accept OTLP profiles. Roll out in two
-    /// steps: ship this build to every task, then turn it on. An older build that
-    /// recovers a profiles WAL frame drops the rest of that segment, every org's.
-    profiles_enabled: bool,
     /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
     ingest_rules_cache_ttl_secs: u64,
     /// Ceiling on the total decompressed rrweb payload a single replay session
@@ -690,12 +686,6 @@ impl AppConfig {
             std::env::var("INGEST_AUDIT_TRAIL_ENABLED").ok(),
             false,
         )?;
-        // Off by default, for the same reason: see `AppConfig::profiles_enabled`.
-        let profiles_enabled = parse_bool(
-            "INGEST_PROFILES_ENABLED",
-            std::env::var("INGEST_PROFILES_ENABLED").ok(),
-            false,
-        )?;
         let ingest_rules_cache_ttl_secs = parse_u64(
             "INGEST_RULES_CACHE_TTL_SECS",
             std::env::var("INGEST_RULES_CACHE_TTL_SECS").ok(),
@@ -860,7 +850,6 @@ impl AppConfig {
             org_routing_cache_ttl_secs,
             ingest_rules_enabled,
             audit_trail_enabled,
-            profiles_enabled,
             ingest_rules_cache_ttl_secs,
             replay_max_session_bytes,
             replay_blob_store,
@@ -5492,9 +5481,6 @@ async fn handle_product_events_inner(
 /// development, and under `/v1/` where the spec moves it at release candidate.
 const PROFILES_ROUTES: [&str; 2] = ["/v1development/profiles", "/v1/profiles"];
 
-/// What both routes answer, with a 404, while `INGEST_PROFILES_ENABLED` is off.
-const PROFILES_DISABLED_MESSAGE: &str = "Profiles ingest is not enabled on this gateway";
-
 fn with_profiles_routes(router: Router<Arc<AppState>>) -> Router<Arc<AppState>> {
     PROFILES_ROUTES.into_iter().fold(router, |router, path| {
         router.route(path, post(handle_profiles))
@@ -5507,10 +5493,6 @@ async fn handle_profiles(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    // Off, the routes answer as if they were not there: nothing is read or written.
-    if !state.config.profiles_enabled {
-        return (StatusCode::NOT_FOUND, PROFILES_DISABLED_MESSAGE).into_response();
-    }
     let start = Instant::now();
     metrics::request_started();
     let _guard = InFlightGuard;
@@ -14099,7 +14081,6 @@ mod tests {
                 org_routing_cache_ttl_secs: 5,
                 ingest_rules_enabled: false,
                 audit_trail_enabled: false,
-                profiles_enabled: false,
                 ingest_rules_cache_ttl_secs: 30,
                 replay_max_session_bytes: 1024 * 1024 * 1024,
                 replay_blob_store: None,
@@ -14814,7 +14795,6 @@ mod tests {
             ..test_tinybird_config(queue_dir.join("profiles"))
         };
         let imports = store_in_fake_tinybird(&mut state, config).await;
-        state.config.profiles_enabled = true;
         (state, imports)
     }
 
@@ -15186,48 +15166,25 @@ mod tests {
         base
     }
 
-    // The switch is what makes a rollback safe: off, no profiles frame is written.
+    // The spec's development path and the path it moves to both take an export.
     #[tokio::test]
-    async fn the_profiles_routes_are_not_found_until_the_switch_is_on() {
-        let queue_dir = unique_main_test_dir("profiles-switch");
-        let key = "maple_sk_test_profiles_switch";
-        let store = private_key_store(key, "org_profiles_switch", false);
-        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
-        state.config.profiles_enabled = false;
-        let off = Arc::new(state);
-        let base = serve_profiles_routes(Arc::clone(&off)).await;
+    async fn both_profiles_routes_take_an_export() {
+        let queue_dir = unique_main_test_dir("profiles-routes");
+        let key = "maple_sk_test_profiles_routes";
+        let store = private_key_store(key, "org_profiles_routes", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let base = serve_profiles_routes(Arc::new(state)).await;
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap();
-        let send = |base: String, route: &'static str| {
-            client
+        for route in PROFILES_ROUTES {
+            let response = client
                 .post(format!("{base}{route}"))
                 .bearer_auth(key)
                 .header(CONTENT_TYPE, "application/json")
                 .body(PROFILES_SDK_EXPORT)
                 .send()
-        };
-
-        for route in PROFILES_ROUTES {
-            let response = send(base.clone(), route)
-                .await
-                .expect("the gateway answers");
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{route}");
-            assert_eq!(response.text().await.unwrap(), PROFILES_DISABLED_MESSAGE);
-        }
-        assert!(no_profiles_are_stored(&mut imports).await);
-        let pipeline = off.telemetry_pipeline.as_ref().expect("a pipeline");
-        assert_eq!(pipeline.wal_backlog_bytes(), 0);
-        assert_eq!(off.decode_memory.reserved_bytes(), 0);
-
-        // The same gateway with the switch on takes the same export on both routes.
-        let on_dir = unique_main_test_dir("profiles-switch-on");
-        let store = private_key_store(key, "org_profiles_switch", false);
-        let (state, mut imports) = profiles_test_state(store, on_dir.clone()).await;
-        let base = serve_profiles_routes(Arc::new(state)).await;
-        for route in PROFILES_ROUTES {
-            let response = send(base.clone(), route)
                 .await
                 .expect("the gateway answers");
             assert_eq!(response.status(), StatusCode::OK, "{route}");
@@ -15235,7 +15192,6 @@ mod tests {
             assert_eq!(rows.len(), PROFILES_SDK_ROWS);
         }
         drop(std::fs::remove_dir_all(&queue_dir));
-        drop(std::fs::remove_dir_all(&on_dir));
     }
 
     /// A protobuf export of `samples` samples on one short stack, each on a link of

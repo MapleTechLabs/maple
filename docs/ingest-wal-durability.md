@@ -39,9 +39,9 @@ one opened. Sealing is an `open` plus a directory fsync. There is no copy on the
 Each frame head carries a signal tag (`signal_tag` in `telemetry.rs`). Tags are permanent and only
 ever added. A binary that does not know a tag stops reading that segment at the frame, which drops
 every later frame in it, whatever org wrote them. So a new tag rolls out in two steps: deploy the
-binary that reads it to every task first, then turn on whatever writes it. Tag 8 is profiles,
-written only once `INGEST_PROFILES_ENABLED` is on; rolling back past that binary while profile
-frames are still queued loses the rest of their segments.
+binary that reads it to every task first, then ship whatever writes it. Tag 8 is profiles, read
+since 2026-11-16 and written from the deploy after that; never roll a gateway back past the build
+that reads a tag while frames carrying it may still be queued.
 
 Syncs are **group commits**. An append writes its frame under the lane's append lock, then waits
 for a sync that started after the write. If no sync is running it leads one: it takes every frame

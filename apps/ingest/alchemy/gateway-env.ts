@@ -27,9 +27,6 @@ export const gatewayTuningEnv: Config.Config<PlainEnv> = Config.all([
 	// Provider audit events go to the audit trail instead of the logs. The gateway defaults to off:
 	// set "true" once `audit_trail_events` exists and every task runs a build that knows the switch.
 	optionalPlain("INGEST_AUDIT_TRAIL_ENABLED"),
-	// OTLP profiles ingest. The gateway defaults to off: set "true" only once every task runs a
-	// build that knows the switch, since an older build drops a WAL segment holding a profiles frame.
-	optionalPlain("INGEST_PROFILES_ENABLED"),
 	optionalPlain("INGEST_MAX_REQUEST_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODED_BODY_BYTES"),
 	optionalPlain("INGEST_MAX_DECODE_HEAP_BYTES"),
