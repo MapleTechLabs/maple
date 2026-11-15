@@ -14,6 +14,7 @@ import {
 } from "./ops"
 import {
 	gridTimes,
+	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type QueryParams,
 	resolveAt,
@@ -530,6 +531,12 @@ class Evaluator {
 
 	/** A pushed subtree's answer as steps; a bare range function drops the metric name. */
 	fromPushed(expr: Expr, data: PushdownData, grid: TimeGrid): R<Steps> {
+		// The source returns one row past the cap, so overflow shows here as it does for selectors.
+		if (data.series.length > this.limits.maxSeries) {
+			return err(
+				`query returns more than ${this.limits.maxSeries} series; narrow the selector or aggregate`,
+			)
+		}
 		const times = gridTimes(grid)
 		const vectors: Sample[][] = times.map(() => [])
 		const keepName = expr.type === "Aggregate" || (expr.type === "Call" && expr.func === "last_over_time")
@@ -672,7 +679,7 @@ export const evaluate = (input: EvaluationInput): R<QueryResult> => {
 		input.limits ?? DEFAULT_LIMITS,
 		input.pushed ?? new Map(),
 	)
-	const instant = params.startMs === params.endMs
+	const instant = isInstant(params)
 	const grid: TimeGrid = instant
 		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }
 		: { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }

@@ -11,6 +11,7 @@ export { bucketSamples, matchesLabels, memorySource, type RawSeries } from "./me
 export type { EvalError } from "./ops"
 export {
 	gridTimes,
+	isInstant,
 	MAX_POINTS_PER_SERIES,
 	planPushdowns,
 	planRequests,

@@ -15,7 +15,11 @@ export interface QueryParams {
 	readonly endMs: number
 	readonly stepMs: number
 	readonly lookbackMs?: number
+	/** Instant (one sample per series) or range (a matrix). Default: instant when start equals end. */
+	readonly instant?: boolean
 }
+
+export const isInstant = (params: QueryParams): boolean => params.instant ?? params.startMs === params.endMs
 
 /** The evaluation timestamps of one (sub)expression: `start, start + step, ..., <= end`. */
 export interface TimeGrid {
