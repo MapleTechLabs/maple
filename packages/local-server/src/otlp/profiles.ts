@@ -2,6 +2,7 @@
 // OTLP profiles (the pprof-shaped `v1development` payload) flattened to `profiles` rows: one row
 // per stack, span link and attribute set per profile, the producer's samples of it summed. The
 // dictionary is resolved here and never stored.
+import { randomBytes } from "node:crypto"
 import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
 import { encodeJson } from "../json"
 import {
@@ -13,61 +14,71 @@ import {
 	traceIdHex,
 } from "./encode"
 
+// The JSON form may spell an unset optional field as `null`, so every optional field admits it.
 type Int64 = string | number
+type Index = number | null
 
-interface ProfileAnyValue extends AnyValue {
-	stringValueStrindex?: number
+interface ProfileAnyValue extends Omit<AnyValue, "arrayValue" | "kvlistValue"> {
+	stringValueStrindex?: Index
+	arrayValue?: { values?: readonly (ProfileAnyValue | null)[] | null } | null
+	kvlistValue?: { values?: readonly ProfileKeyValue[] | null } | null
 }
 interface ProfileKeyValue {
 	key?: string | null
-	keyStrindex?: number
+	keyStrindex?: Index
 	value?: ProfileAnyValue | null
 }
 interface ValueType {
-	typeStrindex?: number
-	unitStrindex?: number
+	typeStrindex?: Index
+	unitStrindex?: Index
 }
 interface Sample {
-	stackIndex?: number
-	attributeIndices?: number[]
-	linkIndex?: number
-	values?: Int64[]
-	timestampsUnixNano?: Int64[]
+	stackIndex?: Index
+	attributeIndices?: number[] | null
+	linkIndex?: Index
+	values?: Int64[] | null
+	timestampsUnixNano?: Int64[] | null
 }
 interface Profile {
-	sampleType?: ValueType
-	samples?: Sample[]
-	timeUnixNano?: Int64
-	durationNano?: Int64
-	periodType?: ValueType
-	period?: Int64
-	profileId?: string
-	attributeIndices?: number[]
+	sampleType?: ValueType | null
+	samples?: Sample[] | null
+	timeUnixNano?: Int64 | null
+	durationNano?: Int64 | null
+	periodType?: ValueType | null
+	period?: Int64 | null
+	profileId?: string | null
+	attributeIndices?: number[] | null
 }
 interface Dictionary {
-	mappingTable?: { filenameStrindex?: number }[]
-	locationTable?: {
-		mappingIndex?: number
-		address?: Int64
-		lines?: { functionIndex?: number; line?: Int64 }[]
-	}[]
-	functionTable?: {
-		nameStrindex?: number
-		systemNameStrindex?: number
-		filenameStrindex?: number
-		startLine?: Int64
-	}[]
-	linkTable?: { traceId?: string; spanId?: string }[]
-	stringTable?: string[]
-	attributeTable?: { keyStrindex?: number; value?: ProfileAnyValue | null }[]
-	stackTable?: { locationIndices?: number[] }[]
+	mappingTable?: { filenameStrindex?: Index }[] | null
+	locationTable?:
+		| {
+				mappingIndex?: Index
+				address?: Int64 | null
+				lines?: { functionIndex?: Index; line?: Int64 | null }[] | null
+		  }[]
+		| null
+	functionTable?:
+		| {
+				nameStrindex?: Index
+				systemNameStrindex?: Index
+				filenameStrindex?: Index
+				startLine?: Int64 | null
+		  }[]
+		| null
+	linkTable?: { traceId?: string | null; spanId?: string | null }[] | null
+	stringTable?: string[] | null
+	attributeTable?: { keyStrindex?: Index; value?: ProfileAnyValue | null }[] | null
+	stackTable?: { locationIndices?: number[] | null }[] | null
 }
 export interface ProfilesRequest {
-	resourceProfiles?: {
-		resource?: { attributes?: ProfileKeyValue[] }
-		scopeProfiles?: { profiles?: Profile[] }[]
-	}[]
-	dictionary?: Dictionary
+	resourceProfiles?:
+		| {
+				resource?: { attributes?: ProfileKeyValue[] | null } | null
+				scopeProfiles?: { profiles?: Profile[] | null }[] | null
+		  }[]
+		| null
+	dictionary?: Dictionary | null
 }
 
 const opt = <S extends Schema.Top>(schema: S) => Schema.optionalKey(Schema.NullOr(schema))
@@ -151,6 +162,21 @@ export const MAX_STACK_DEPTH = 256
 /** A function name or file path longer than this many characters is cut: one row stays bounded. */
 export const MAX_FRAME_TEXT = 1024
 
+/**
+ * The most bytes of rows one request may flatten into. A shared dictionary makes stacks cheap
+ * on the wire, so the depth and text caps bound one row and this bounds the batch.
+ */
+export const MAX_PROFILE_ROWS_BYTES = 64 * 1024 * 1024
+
+/** The request's rows passed the ceiling: nothing of it is stored. The handler answers 413. */
+export class ProfilesTooLarge extends Schema.TaggedError<ProfilesTooLarge>()("@maple/cli/ProfilesTooLarge", {
+	message: Schema.String,
+	maximumBytes: Schema.Number,
+}) {}
+
+/** The id of a profile whose producer sent none: 16 random bytes as lowercase hex. */
+export const randomProfileId = (): string => randomBytes(16).toString("hex")
+
 const clipText = (text: string): string =>
 	text.length <= MAX_FRAME_TEXT ? text : Arr.join(Arr.take(Array.from(text), MAX_FRAME_TEXT), "")
 
@@ -171,10 +197,15 @@ interface ResolvedStack {
 	readonly frames: string[]
 	readonly files: string[]
 	readonly lines: number[]
+	/** The frame names and file paths in bytes: the least a row of this stack can weigh. */
+	readonly textBytes: number
 }
 
-const toBigInt = (value: Int64 | undefined): bigint => {
-	if (value === undefined || value === "") return 0n
+const textBytesOf = (texts: readonly string[]): number =>
+	Arr.reduce(texts, 0, (sum, text) => sum + Buffer.byteLength(text))
+
+const toBigInt = (value: Int64 | null | undefined): bigint => {
+	if (value === undefined || value === null || value === "") return 0n
 	return typeof value === "number" ? BigInt(Math.trunc(value)) : BigInt(value)
 }
 
@@ -192,28 +223,55 @@ class DictionaryReader {
 	readonly #dictionary: Dictionary
 	readonly #stacks = new Map<number, ResolvedStack>()
 
-	constructor(dictionary: Dictionary | undefined) {
+	constructor(dictionary: Dictionary | null | undefined) {
 		this.#dictionary = dictionary ?? {}
 	}
 
-	string(index: number | undefined): string {
+	string(index: Index | undefined): string {
 		return this.#dictionary.stringTable?.[index ?? 0] ?? ""
 	}
 
 	/** Since proto v1.10 a key or a string value may be a string-table index. */
-	attributes(attributes: readonly ProfileKeyValue[] | undefined): Record<string, string> {
+	attributes(attributes: readonly ProfileKeyValue[] | null | undefined): Record<string, string> {
 		const out: Record<string, string> = {}
-		for (const attribute of attributes ?? []) {
-			const key = attribute.key ? attribute.key : this.string(attribute.keyStrindex)
-			out[key] = this.value(attribute.value)
-		}
+		for (const attribute of attributes ?? []) out[this.#key(attribute)] = this.value(attribute.value)
 		return out
 	}
 
+	#key(attribute: ProfileKeyValue): string {
+		return attribute.key ? attribute.key : this.string(attribute.keyStrindex)
+	}
+
 	value(value: ProfileAnyValue | null | undefined): string {
-		if (value?.stringValueStrindex !== undefined && value.stringValue === undefined)
-			return this.string(value.stringValueStrindex)
-		return anyValueString(value)
+		return anyValueString(this.#inline(value))
+	}
+
+	/** The value as if its strings were sent inline: references resolved at every depth. */
+	#inline(value: ProfileAnyValue | null | undefined): AnyValue {
+		if (value === null || value === undefined) return {}
+		const { stringValueStrindex, arrayValue, kvlistValue, ...scalars } = value
+		if (
+			scalars.stringValue === undefined &&
+			stringValueStrindex !== undefined &&
+			stringValueStrindex !== null
+		)
+			return { stringValue: this.string(stringValueStrindex) }
+		if (arrayValue)
+			return {
+				...scalars,
+				arrayValue: { values: Arr.map(arrayValue.values ?? [], (each) => this.#inline(each)) },
+			}
+		if (kvlistValue)
+			return {
+				...scalars,
+				kvlistValue: {
+					values: Arr.map(kvlistValue.values ?? [], (each) => ({
+						key: this.#key(each),
+						value: this.#inline(each.value),
+					})),
+				},
+			}
+		return scalars
 	}
 
 	/** Sample and profile attributes, looked up in the dictionary's attribute table. */
@@ -228,16 +286,16 @@ class DictionaryReader {
 		return out
 	}
 
-	link(index: number | undefined): { traceId: string; spanId: string } {
+	link(index: Index | undefined): { traceId: string; spanId: string } {
 		const link = this.#dictionary.linkTable?.[index ?? 0]
 		return {
-			traceId: traceIdHex(link?.traceId, "link.traceId"),
-			spanId: spanIdHex(link?.spanId, "link.spanId"),
+			traceId: traceIdHex(link?.traceId ?? undefined, "link.traceId"),
+			spanId: spanIdHex(link?.spanId ?? undefined, "link.spanId"),
 		}
 	}
 
 	/** Root first. The wire runs leaf first, and a location's inlined lines run innermost first. */
-	stack(index: number | undefined): ResolvedStack {
+	stack(index: Index | undefined): ResolvedStack {
 		const key = index ?? 0
 		const cached = this.#stacks.get(key)
 		if (cached !== undefined) return cached
@@ -288,9 +346,10 @@ class DictionaryReader {
 		frames.reverse()
 		files.reverse()
 		lines.reverse()
+		const textBytes = textBytesOf(frames) + textBytesOf(files)
 		const resolved = isCut
-			? { frames: ["(truncated)", ...frames], files: ["", ...files], lines: [0, ...lines] }
-			: { frames, files, lines }
+			? { frames: ["(truncated)", ...frames], files: ["", ...files], lines: [0, ...lines], textBytes }
+			: { frames, files, lines, textBytes }
 		this.#stacks.set(key, resolved)
 		return resolved
 	}
@@ -336,11 +395,28 @@ export interface EncodedProfiles {
 	readonly profileCount: number
 }
 
-/** `nowNano` stamps a profile that carries no time of its own. */
-export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
+/**
+ * `nowNano` stamps a profile that carries no time of its own, `newProfileId` names one that
+ * carries no id. Throws `ProfilesTooLarge` once the rows pass `maximumRowBytes`.
+ */
+export function encodeProfiles(
+	req: unknown,
+	nowNano: bigint,
+	newProfileId: () => string = randomProfileId,
+	maximumRowBytes: number = MAX_PROFILE_ROWS_BYTES,
+): EncodedProfiles {
 	const request = (req ?? {}) as ProfilesRequest
 	const reader = new DictionaryReader(request.dictionary)
-	const rows: Record<string, unknown>[] = []
+	const lines: string[] = []
+	// The NDJSON's size, counted as each row is written: the whole is never built to be measured.
+	let rowBytes = 0
+	const checkCeiling = (bytes: number): void => {
+		if (bytes > maximumRowBytes)
+			throw new ProfilesTooLarge({
+				message: `the profiles flatten into more than ${maximumRowBytes} bytes of rows`,
+				maximumBytes: maximumRowBytes,
+			})
+	}
 	let profileCount = 0
 
 	for (const resourceProfiles of request.resourceProfiles ?? []) {
@@ -353,6 +429,9 @@ export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
 				const profileNano = ownNano === 0n ? nowNano : ownNano
 				const profileAttributes = reader.indexedAttributes(profile.attributeIndices ?? [])
 				const groups = new Map<string, Group>()
+				// What this profile's rows weigh at least, so a profile that cannot fit stops
+				// before its stacks are all resolved and held.
+				let heldBytes = 0
 				for (const sample of profile.samples ?? []) {
 					const stack = reader.stack(sample.stackIndex)
 					if (stack.frames.length === 0) continue
@@ -372,6 +451,8 @@ export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
 					const group = groups.get(key)
 					if (group === undefined) {
 						const link = reader.link(sample.linkIndex)
+						heldBytes += stack.textBytes
+						checkCeiling(rowBytes + heldBytes)
 						groups.set(key, {
 							stack,
 							...link,
@@ -390,8 +471,12 @@ export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
 					if (firstNano > 0n && (group.firstNano === 0n || firstNano < group.firstNano))
 						group.firstNano = firstNano
 				}
+				if (groups.size === 0) continue
+				// Rows of one profile share its id, so profiles without one must not share "".
+				const profileId =
+					traceIdHex(profile.profileId ?? undefined, "profile.profileId") || newProfileId()
 				for (const group of groups.values()) {
-					rows.push({
+					const line = encodeJson({
 						timestamp: formatTimestampNano(
 							(group.firstNano === 0n ? profileNano : group.firstNano).toString(),
 						),
@@ -400,7 +485,7 @@ export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
 						environment: environmentOf(resourceAttributes),
 						service_instance_id: resourceAttributes["service.instance.id"] ?? "",
 						resource_attributes: resourceAttributes,
-						profile_id: traceIdHex(profile.profileId, "profile.profileId"),
+						profile_id: profileId,
 						sample_type: terms.type,
 						sample_unit: terms.unit,
 						value: int64Cell(clampInt64(group.value * terms.scale)),
@@ -413,24 +498,18 @@ export function encodeProfiles(req: unknown, nowNano: bigint): EncodedProfiles {
 						span_id: group.spanId,
 						sample_attributes: group.attributes,
 					})
+					rowBytes += Buffer.byteLength(line) + (lines.length === 0 ? 0 : 1)
+					checkCeiling(rowBytes)
+					lines.push(line)
 				}
 			}
 		}
 	}
 
 	const batches =
-		rows.length === 0
+		lines.length === 0
 			? []
-			: [
-					{
-						datasource: "profiles",
-						rowCount: rows.length,
-						ndjson: Arr.join(
-							Arr.map(rows, (row) => encodeJson(row)),
-							"\n",
-						),
-					},
-				]
+			: [{ datasource: "profiles", rowCount: lines.length, ndjson: Arr.join(lines, "\n") }]
 	return { batches, profileCount }
 }
 

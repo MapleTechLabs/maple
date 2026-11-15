@@ -105,16 +105,25 @@ pub struct Flattened {
     pub profile_count: usize,
     /// Rows left out because they would serialize past the row ceiling.
     pub dropped_rows: usize,
+    /// Profiles that lost at least one row to the ceiling: OTLP's `rejected_profiles`.
+    pub rejected_profiles: usize,
+}
+
+/// An id for a profile sent without one: sixteen random bytes.
+pub fn random_profile_id() -> [u8; 16] {
+    uuid::Uuid::new_v4().into_bytes()
 }
 
 /// Flattens `request` into rows. `now_nano` stamps a profile that carries no time
-/// of its own. A row that would pass `max_row_bytes` is dropped and counted.
-/// `reserve` is asked for memory before the rows take it, and refusing ends the
-/// flatten: a small export can name one long stack from a million samples.
+/// of its own, and `new_profile_id` names one that carries no id. A row that would
+/// pass `max_row_bytes` is dropped and counted. `reserve` is asked for memory before
+/// anything takes it, and refusing ends the flatten: a small export can name one
+/// long stack from a million samples, or one attribute that expands as it is read.
 pub fn flatten<'a>(
     request: &'a ExportProfilesServiceRequest,
     stamps: &'a ResourceStamps,
     now_nano: u64,
+    new_profile_id: &mut dyn FnMut() -> [u8; 16],
     max_row_bytes: usize,
     reserve: &mut dyn FnMut(u64) -> bool,
 ) -> Result<Flattened, FlattenError> {
@@ -126,15 +135,19 @@ pub fn flatten<'a>(
             held: 0,
             spent: 0,
         },
+        new_profile_id,
         max_row_bytes,
         rows: Vec::new(),
         dropped_rows: 0,
+        rejected_profiles: 0,
     };
     let mut profile_count = 0;
     for resource_profiles in &request.resource_profiles {
-        let resource = flattener
-            .dictionary
-            .resource(resource_profiles.resource.as_ref(), stamps);
+        let resource = flattener.dictionary.resource(
+            resource_profiles.resource.as_ref(),
+            stamps,
+            &mut flattener.meter,
+        )?;
         for scope_profiles in &resource_profiles.scope_profiles {
             for profile in &scope_profiles.profiles {
                 profile_count += 1;
@@ -146,6 +159,7 @@ pub fn flatten<'a>(
         rows: flattener.rows,
         profile_count,
         dropped_rows: flattener.dropped_rows,
+        rejected_profiles: flattener.rejected_profiles,
     })
 }
 
@@ -170,6 +184,18 @@ fn attributes_len(attributes: &Attributes<'_>) -> usize {
         .map(|(key, value)| json_text_len(key) + json_text_len(value) + 6)
         .sum()
 }
+
+/// What a value costs once read: the bytes its string form takes inside a JSON
+/// string, escaping included, and the heap building it takes. Both are bounds,
+/// worked out from the wire form before anything is built.
+#[derive(Clone, Copy, Default)]
+struct Cost {
+    json_len: usize,
+    heap: usize,
+}
+
+/// A map entry, or a node of a JSON tree, beyond the text it holds.
+const NODE_BYTES: usize = 128;
 
 /// `text` cut to its first `MAX_FRAME_TEXT` characters, with nothing appended.
 fn clip(text: &str) -> &str {
@@ -276,37 +302,148 @@ impl<'a> Dictionary<'a> {
         at(self.strings, index).map_or("", String::as_str)
     }
 
-    /// Since proto v1.10 a string value may be a string-table index.
+    /// A key spelled out, or named by string-table index as collectors send them.
+    fn key(&self, attribute: &'a KeyValue) -> &'a str {
+        if attribute.key.is_empty() {
+            self.string(attribute.key_strindex)
+        } else {
+            attribute.key.as_str()
+        }
+    }
+
+    /// A value's string form. Since proto v1.10 a string may be a string-table index,
+    /// at any depth of an array or a map.
     fn value(&self, value: Option<&'a AnyValue>) -> Cow<'a, str> {
         match value.and_then(|any| any.value.as_ref().map(|inner| (any, inner))) {
             Some((_, any_value::Value::StringValueStrindex(index))) => {
                 Cow::Borrowed(self.string(*index))
             }
             Some((_, any_value::Value::StringValue(text))) => Cow::Borrowed(text.as_str()),
+            Some((any, any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_))) => {
+                // Written into the bound it was charged for, so it never grows past it.
+                let mut text = Vec::with_capacity(self.json_bound(any).0);
+                serde_json::to_writer(&mut text, &self.json(any)).unwrap_or_default();
+                Cow::Owned(String::from_utf8(text).unwrap_or_default())
+            }
             Some((any, _)) => Cow::Owned(any_value_string(any)),
             None => Cow::Borrowed(""),
         }
     }
 
-    /// A resource's attributes with the gateway's stamps applied. A key may be a
-    /// string-table index, which is how collectors send them.
+    /// An array or map as `any_value_json` writes it, with string-table references
+    /// resolved, keys included.
+    fn json(&self, value: &'a AnyValue) -> serde_json::Value {
+        match value.value.as_ref() {
+            Some(any_value::Value::ArrayValue(array)) => {
+                serde_json::Value::Array(array.values.iter().map(|each| self.json(each)).collect())
+            }
+            Some(any_value::Value::KvlistValue(list)) => serde_json::Value::Object(
+                list.values
+                    .iter()
+                    .map(|entry| {
+                        let value = entry
+                            .value
+                            .as_ref()
+                            .map_or(serde_json::Value::from(""), |each| self.json(each));
+                        (self.key(entry).to_owned(), value)
+                    })
+                    .collect(),
+            ),
+            _ => serde_json::Value::String(self.value(Some(value)).into_owned()),
+        }
+    }
+
+    /// Bytes a scalar's string form takes inside a JSON string, at most.
+    fn scalar_len(&self, value: &AnyValue) -> usize {
+        match value.value.as_ref() {
+            Some(any_value::Value::StringValue(text)) => json_text_len(text),
+            Some(any_value::Value::StringValueStrindex(index)) => {
+                json_text_len(self.string(*index))
+            }
+            Some(any_value::Value::BoolValue(_)) => 5,
+            Some(any_value::Value::IntValue(_)) => 20,
+            // `f64` displays every digit: `f64::MAX` is 309 of them.
+            Some(any_value::Value::DoubleValue(_)) => 330,
+            // Readable text as itself, binary as hex: two bytes per byte at most.
+            Some(any_value::Value::BytesValue(bytes)) => 2 * bytes.len(),
+            Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) | None => 0,
+        }
+    }
+
+    /// Bytes `value` takes as JSON text, quotes included, and the nodes of the tree
+    /// it is written from.
+    fn json_bound(&self, value: &AnyValue) -> (usize, usize) {
+        match value.value.as_ref() {
+            Some(any_value::Value::ArrayValue(array)) => {
+                array.values.iter().fold((2, 1), |(len, nodes), each| {
+                    let (each_len, each_nodes) = self.json_bound(each);
+                    (len + each_len + 1, nodes + each_nodes)
+                })
+            }
+            Some(any_value::Value::KvlistValue(list)) => {
+                list.values.iter().fold((2, 1), |(len, nodes), entry| {
+                    let (each_len, each_nodes) = entry
+                        .value
+                        .as_ref()
+                        .map_or((2, 1), |each| self.json_bound(each));
+                    let key = json_text_len(self.key(entry));
+                    (len + key + 4 + each_len, nodes + each_nodes + 1)
+                })
+            }
+            _ => (self.scalar_len(value) + 2, 1),
+        }
+    }
+
+    /// What reading `value` costs, before it is read.
+    fn value_cost(&self, value: Option<&AnyValue>) -> Cost {
+        let Some(any) = value else {
+            return Cost::default();
+        };
+        match any.value.as_ref() {
+            Some(any_value::Value::StringValue(_) | any_value::Value::StringValueStrindex(_))
+            | None => Cost {
+                json_len: self.scalar_len(any),
+                heap: 0,
+            },
+            Some(any_value::Value::ArrayValue(_) | any_value::Value::KvlistValue(_)) => {
+                let (len, nodes) = self.json_bound(any);
+                // The text is escaped again inside the row; building it holds the
+                // tree's strings, its nodes and the text at once.
+                Cost {
+                    json_len: 2 * len,
+                    heap: 2 * len + nodes * NODE_BYTES,
+                }
+            }
+            Some(_) => {
+                let len = self.scalar_len(any);
+                Cost {
+                    json_len: len,
+                    heap: len,
+                }
+            }
+        }
+    }
+
+    /// A resource's attributes with the gateway's stamps applied, each charged to
+    /// `meter` before it is read.
     fn resource(
         &self,
         resource: Option<&'a Resource>,
         stamps: &'a ResourceStamps,
-    ) -> StampedResource<'a> {
+        meter: &mut Meter<'_>,
+    ) -> Result<StampedResource<'a>, FlattenError> {
         let mut attributes = Attributes::new();
         for attribute in resource.map_or(&[][..], |resource| resource.attributes.as_slice()) {
-            let key = if attribute.key.is_empty() {
-                self.string(attribute.key_strindex)
-            } else {
-                attribute.key.as_str()
-            };
-            attributes.insert(Cow::Borrowed(key), self.value(attribute.value.as_ref()));
+            meter.charge(NODE_BYTES + self.value_cost(attribute.value.as_ref()).heap)?;
+            attributes.insert(
+                Cow::Borrowed(self.key(attribute)),
+                self.value(attribute.value.as_ref()),
+            );
         }
         for key in stamps.reserved {
             attributes.remove(*key);
         }
+        meter.charge(NODE_BYTES * (stamps.defaults.len() + stamps.set.len()))?;
         for (key, value) in &stamps.defaults {
             attributes
                 .entry(Cow::Borrowed(key.as_str()))
@@ -328,19 +465,37 @@ impl<'a> Dictionary<'a> {
         ];
         resource.json_len = attributes_len(&resource.attributes)
             + columns.into_iter().map(json_text_len).sum::<usize>();
-        resource
+        Ok(resource)
+    }
+
+    /// The dictionary attributes `indices` name, as `indexed_attributes` reads them.
+    fn indexed_entries(
+        &self,
+        indices: &'a [i32],
+    ) -> impl Iterator<Item = (&'a str, &'a KeyValueAndUnit)> + '_ {
+        indices.iter().filter_map(|index| {
+            let entry = at(self.attributes, *index)?;
+            let key = self.string(entry.key_strindex);
+            (!key.is_empty()).then_some((key, entry))
+        })
+    }
+
+    /// What reading the attributes `indices` name costs, before they are read.
+    fn indexed_cost(&self, indices: &'a [i32]) -> Cost {
+        self.indexed_entries(indices)
+            .fold(Cost::default(), |cost, (key, entry)| {
+                let value = self.value_cost(entry.value.as_ref());
+                Cost {
+                    json_len: cost.json_len + json_text_len(key) + value.json_len + 6,
+                    heap: cost.heap + NODE_BYTES + value.heap,
+                }
+            })
     }
 
     /// Sample and profile attributes, looked up in the dictionary's attribute table.
-    fn indexed_attributes(&self, indices: &[i32], out: &mut Attributes<'a>) {
-        for index in indices {
-            let Some(entry) = at(self.attributes, *index) else {
-                continue;
-            };
-            let key = self.string(entry.key_strindex);
-            if !key.is_empty() {
-                out.insert(Cow::Borrowed(key), self.value(entry.value.as_ref()));
-            }
+    fn indexed_attributes(&self, indices: &'a [i32], out: &mut Attributes<'a>) {
+        for (key, entry) in self.indexed_entries(indices) {
+            out.insert(Cow::Borrowed(key), self.value(entry.value.as_ref()));
         }
     }
 
@@ -626,9 +781,11 @@ struct Flattener<'a, 'r> {
     /// Resolved once per stack index: most samples share a few stacks.
     stacks: HashMap<i32, ResolvedStack<'a>>,
     meter: Meter<'r>,
+    new_profile_id: &'r mut dyn FnMut() -> [u8; 16],
     max_row_bytes: usize,
     rows: Vec<Vec<u8>>,
     dropped_rows: usize,
+    rejected_profiles: usize,
 }
 
 impl<'a> Flattener<'a, '_> {
@@ -719,31 +876,44 @@ impl<'a> Flattener<'a, '_> {
         } else {
             profile.time_unix_nano
         };
-        let profile_id = id_hex(&profile.profile_id, TRACE_ID_BYTES, "profile.profileId")?;
+        let mut profile_id = id_hex(&profile.profile_id, TRACE_ID_BYTES, "profile.profileId")?;
+        // Every row of a profile shares its id, so one sent without gets its own.
+        if profile_id.is_empty() {
+            profile_id = bytes_hex(&(self.new_profile_id)());
+        }
+        let profile_cost = self.dictionary.indexed_cost(&profile.attribute_indices);
+        self.meter.charge(profile_cost.heap)?;
         let mut profile_attributes = Attributes::new();
         self.dictionary
             .indexed_attributes(&profile.attribute_indices, &mut profile_attributes);
+        let profile_attributes_len = attributes_len(&profile_attributes);
         let shared_len = ROW_FIXED_BYTES
             + resource.json_len
             + json_text_len(terms.sample_type)
             + json_text_len(terms.unit);
+        let mut rejected = false;
 
         for group in &groups {
             let Some(stack) = self.stacks.get(&group.stack_index) else {
                 continue;
             };
+            // The most the row can serialize to, escaping included, known before
+            // anything of it is built: a row repeats text the wire held once.
+            let sample_cost = self.dictionary.indexed_cost(group.attribute_indices);
+            let row_len =
+                shared_len + stack.json_len + profile_attributes_len + sample_cost.json_len;
+            if row_len > self.max_row_bytes {
+                self.dropped_rows += 1;
+                rejected = true;
+                continue;
+            }
+            // The row, the copy of it the WAL frame is built from, and the
+            // attributes it is built from.
+            self.meter
+                .charge(2 * row_len + profile_cost.heap + sample_cost.heap)?;
             let mut sample_attributes = profile_attributes.clone();
             self.dictionary
                 .indexed_attributes(group.attribute_indices, &mut sample_attributes);
-            // The most the row can serialize to, escaping included, known before it
-            // is built: a row repeats text the wire held once.
-            let row_len = shared_len + stack.json_len + attributes_len(&sample_attributes);
-            if row_len > self.max_row_bytes {
-                self.dropped_rows += 1;
-                continue;
-            }
-            // The row, and the copy of it the WAL frame is built from.
-            self.meter.charge(2 * row_len)?;
 
             let link = at(self.dictionary.links, group.link_index);
             let id = |pick: fn(&Link) -> &[u8], bytes: usize, field: &'static str| {
@@ -778,6 +948,9 @@ impl<'a> Flattener<'a, '_> {
                 .map_err(|error| FlattenError::Encode(error.to_string()))?;
             debug_assert!(line.len() <= row_len, "a row outgrew its bound");
             self.rows.push(line);
+        }
+        if rejected {
+            self.rejected_profiles += 1;
         }
         Ok(())
     }
@@ -1259,6 +1432,13 @@ mod tests {
     use serde_json::{json, Value};
 
     const NOW_NANO: u64 = 1_763_200_000_000_000_000;
+
+    /// The id a profile sent without one is given in these tests.
+    const GIVEN_PROFILE_ID: [u8; 16] = [0xab; 16];
+
+    fn test_profile_id() -> [u8; 16] {
+        GIVEN_PROFILE_ID
+    }
     const TRACE_ID: &str = "0af7651916cd43dd8448eb211c80319c";
     const SPAN_ID: &str = "b7ad6b7169203331";
 
@@ -1338,12 +1518,19 @@ mod tests {
     }
 
     fn rows_with(request: &ExportProfilesServiceRequest, stamps: &ResourceStamps) -> Vec<Value> {
-        flatten(request, stamps, NOW_NANO, MAX_ROW_BYTES, &mut |_| true)
-            .expect("the fixture flattens")
-            .rows
-            .iter()
-            .map(|row| serde_json::from_slice(row).expect("a row is JSON"))
-            .collect()
+        flatten(
+            request,
+            stamps,
+            NOW_NANO,
+            &mut test_profile_id,
+            MAX_ROW_BYTES,
+            &mut |_| true,
+        )
+        .expect("the fixture flattens")
+        .rows
+        .iter()
+        .map(|row| serde_json::from_slice(row).expect("a row is JSON"))
+        .collect()
     }
 
     fn rows_of(request: &Value) -> Vec<Value> {
@@ -1361,6 +1548,7 @@ mod tests {
             &request,
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             MAX_ROW_BYTES,
             &mut |_| true,
         )
@@ -1410,6 +1598,79 @@ mod tests {
             (&json!("checkout"), &json!("1.4.0"), &json!("prod"))
         );
         assert_eq!(row["resource_attributes"]["service.name"], "checkout");
+    }
+
+    #[test]
+    fn resolves_string_table_indices_inside_lists_and_maps() {
+        let mut request = cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }]));
+        request["resourceProfiles"][0]["resource"]["attributes"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "key": "process.threads",
+                "value": { "arrayValue": { "values": [
+                    { "stringValueStrindex": 8 },
+                    { "kvlistValue": { "values": [
+                        { "keyStrindex": 9, "value": { "stringValueStrindex": 3 } },
+                    ] } },
+                ] } },
+            }));
+        let rows = rows_of(&request);
+        assert_eq!(
+            rows[0]["resource_attributes"]["process.threads"],
+            r#"["checkout",{"thread.name":"main"}]"#
+        );
+    }
+
+    #[test]
+    fn names_a_profile_sent_without_an_id() {
+        let mut request = cpu_request(json!([
+            { "stackIndex": 1, "values": ["1"] },
+            { "stackIndex": 2, "values": ["1"] },
+        ]));
+        let profile = &mut request["resourceProfiles"][0]["scopeProfiles"][0]["profiles"][0];
+        profile.as_object_mut().unwrap().remove("profileId");
+        let rows = rows_of(&request);
+        let given = "ab".repeat(16);
+        assert_eq!(
+            rows.iter()
+                .map(|row| &row["profile_id"])
+                .collect::<Vec<_>>(),
+            vec![&json!(given), &json!(given)]
+        );
+    }
+
+    #[test]
+    fn counts_a_profile_that_lost_a_row_to_the_ceiling_once() {
+        let mut request = cpu_request(json!([
+            { "stackIndex": 1, "values": ["1"] },
+            { "stackIndex": 1, "values": ["1"], "attributeIndices": [1] },
+        ]));
+        request["dictionary"]["attributeTable"][1]["value"]["stringValue"] =
+            json!("x".repeat(4_096));
+        let second = request["resourceProfiles"][0]["scopeProfiles"][0]["profiles"][0].clone();
+        request["resourceProfiles"][0]["scopeProfiles"][0]["profiles"]
+            .as_array_mut()
+            .unwrap()
+            .push(second);
+        let flattened = flatten(
+            &decode(&request),
+            &ResourceStamps::default(),
+            NOW_NANO,
+            &mut test_profile_id,
+            2_048,
+            &mut |_| true,
+        )
+        .expect("the export flattens");
+        assert_eq!(
+            (
+                flattened.rows.len(),
+                flattened.dropped_rows,
+                flattened.rejected_profiles,
+                flattened.profile_count
+            ),
+            (2, 2, 2, 2)
+        );
     }
 
     #[test]
@@ -1639,6 +1900,7 @@ mod tests {
             &decode(&request),
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             MAX_ROW_BYTES,
             &mut |_| true,
         )
@@ -1674,6 +1936,7 @@ mod tests {
             &request,
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             MAX_ROW_BYTES,
             &mut |bytes| {
                 asked += bytes;
@@ -1691,6 +1954,7 @@ mod tests {
             &request,
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             MAX_ROW_BYTES,
             &mut |bytes| {
                 reserved += bytes;
@@ -1741,6 +2005,7 @@ mod tests {
             &request,
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             MAX_ROW_BYTES,
             &mut |bytes| {
                 reserved += bytes;
@@ -1879,6 +2144,7 @@ mod tests {
             &request,
             &ResourceStamps::default(),
             NOW_NANO,
+            &mut test_profile_id,
             2_048,
             &mut |bytes| {
                 reserved += bytes;

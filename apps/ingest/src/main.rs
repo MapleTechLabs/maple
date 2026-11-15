@@ -90,7 +90,9 @@ use opentelemetry_otlp::{
 };
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
-use opentelemetry_proto::tonic::collector::profiles::v1development::ExportProfilesServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::{
+    ExportProfilesPartialSuccess, ExportProfilesServiceRequest, ExportProfilesServiceResponse,
+};
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
@@ -5440,11 +5442,11 @@ async fn handle_profiles(
     let duration = start.elapsed().as_secs_f64();
     let signal = TelemetrySignal::Profiles.as_str();
     match result {
-        Ok(_rows) => {
+        Ok(accepted) => {
             span_handle.record("http.response.status_code", 200u16);
             span_handle.record("otel.status_code", "Ok");
             metrics::request_completed(signal, "ok", "none", duration);
-            profiles_export_response(&headers)
+            profiles_export_response(&headers, accepted)
         }
         Err(error) => {
             let status = error.status.as_u16();
@@ -5462,19 +5464,49 @@ async fn handle_profiles(
     }
 }
 
-/// The empty `ExportProfilesServiceResponse`, in the encoding the request used.
-fn profiles_export_response(headers: &HeaderMap) -> Response {
+/// What an accepted export stored, and what it left out: rows past the row
+/// ceiling, and the profiles they belonged to, which OTLP counts.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ProfilesAccepted {
+    stored_rows: usize,
+    dropped_rows: usize,
+    rejected_profiles: usize,
+}
+
+/// The `ExportProfilesServiceResponse`, in the encoding the request used: empty for
+/// a full success, a partial success when rows were left out.
+fn profiles_export_response(headers: &HeaderMap, accepted: ProfilesAccepted) -> Response {
     let json = headers
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.to_ascii_lowercase().contains("json"));
+    let partial_success = (accepted.rejected_profiles > 0).then(|| ExportProfilesPartialSuccess {
+        rejected_profiles: i64::try_from(accepted.rejected_profiles).unwrap_or(i64::MAX),
+        error_message: format!(
+            "{} profile rows were larger than one export batch and were not stored",
+            accepted.dropped_rows
+        ),
+    });
     if json {
-        (StatusCode::OK, [(CONTENT_TYPE, "application/json")], "{}").into_response()
+        let body = partial_success.map_or_else(
+            || "{}".to_owned(),
+            |partial| {
+                serde_json::json!({
+                    "partialSuccess": {
+                        "rejectedProfiles": partial.rejected_profiles,
+                        "errorMessage": partial.error_message,
+                    }
+                })
+                .to_string()
+            },
+        );
+        (StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response()
     } else {
+        let body = ExportProfilesServiceResponse { partial_success }.encode_to_vec();
         (
             StatusCode::OK,
             [(CONTENT_TYPE, "application/x-protobuf")],
-            Bytes::new(),
+            body,
         )
             .into_response()
     }
@@ -5517,10 +5549,10 @@ async fn handle_profiles_inner(
     state: &AppState,
     headers: &HeaderMap,
     body: Bytes,
-) -> Result<usize, ApiError> {
+) -> Result<ProfilesAccepted, ApiError> {
     let Some(resolved_key) = resolve_replay_key(state, headers, &[SourceSignal::Profiles]).await?
     else {
-        return Ok(0);
+        return Ok(ProfilesAccepted::default());
     };
     let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
@@ -5568,6 +5600,7 @@ async fn handle_profiles_inner(
         rows,
         profile_count,
         dropped_rows,
+        rejected_profiles,
         decoded_bytes,
         memory: _decode_memory,
     } = decode_profiles(
@@ -5602,8 +5635,13 @@ async fn handle_profiles_inner(
             "dropped profile rows larger than one export batch"
         );
     }
+    let accepted = ProfilesAccepted {
+        stored_rows: count,
+        dropped_rows,
+        rejected_profiles,
+    };
     if rows.is_empty() {
-        return Ok(0);
+        return Ok(accepted);
     }
 
     commit_profile_rows(state, pipeline, &org_id, rows, destination).await?;
@@ -5613,7 +5651,7 @@ async fn handle_profiles_inner(
         usage.record(&org_id, signal, decoded_bytes as u64, count as u64);
     }
     state.resolver.note_source_use(&resolved_key, false);
-    Ok(count)
+    Ok(accepted)
 }
 
 /// Commits `rows` as one frame per export batch, not per request: the rows repeat
@@ -5726,6 +5764,8 @@ struct FlattenedProfiles {
     profile_count: usize,
     /// Rows left out for being larger than one export batch.
     dropped_rows: usize,
+    /// Profiles that lost a row that way.
+    rejected_profiles: usize,
     decoded_bytes: usize,
     memory: DecodeReservation,
 }
@@ -5807,6 +5847,7 @@ async fn decode_profiles(
             rows: flattened.rows,
             profile_count: flattened.profile_count,
             dropped_rows: flattened.dropped_rows,
+            rejected_profiles: flattened.rejected_profiles,
             decoded_bytes,
             memory: reservation,
         })
@@ -5861,6 +5902,7 @@ fn flatten_profiles(
         request,
         stamps,
         now_nano,
+        &mut profiles::random_profile_id,
         limits.max_row_bytes,
         &mut reserve,
     )
@@ -14102,6 +14144,7 @@ mod tests {
             Bytes::from_static(PROFILES_SDK_EXPORT),
         )
         .await
+        .map(|accepted| accepted.stored_rows)
     }
 
     /// The next `count` rows the fake Tinybird is sent, which must be profiles.
@@ -14227,6 +14270,7 @@ mod tests {
                 headers.insert(profiles::VERSION_HEADER, HeaderValue::from_static(version));
                 handle_profiles_inner(state, &headers, Bytes::from_static(PROFILES_SDK_EXPORT))
                     .await
+                    .map(|accepted| accepted.stored_rows)
             }
         };
 
@@ -14378,7 +14422,10 @@ mod tests {
             Bytes::from_static(b"{}"),
         )
         .await;
-        assert_eq!(empty.expect("an empty export is not an error"), 0);
+        assert_eq!(
+            empty.expect("an empty export is not an error"),
+            ProfilesAccepted::default()
+        );
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
@@ -14650,6 +14697,45 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    // The sender learns what was left out, in the encoding it sent.
+    #[tokio::test]
+    async fn an_export_that_lost_rows_answers_with_a_partial_success() {
+        let accepted = ProfilesAccepted {
+            stored_rows: 8,
+            dropped_rows: 3,
+            rejected_profiles: 2,
+        };
+        let body = |content_type: &'static str, accepted| async move {
+            let mut headers = HeaderMap::new();
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+            let response = profiles_export_response(&headers, accepted);
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+        };
+
+        let json: serde_json::Value =
+            serde_json::from_slice(&body("application/json", accepted).await).unwrap();
+        assert_eq!(json["partialSuccess"]["rejectedProfiles"], 2);
+        assert!(json["partialSuccess"]["errorMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("3 profile rows"));
+
+        let protobuf =
+            ExportProfilesServiceResponse::decode(body("application/x-protobuf", accepted).await)
+                .unwrap();
+        assert_eq!(protobuf.partial_success.unwrap().rejected_profiles, 2);
+
+        // A full success stays the empty response.
+        let full = ProfilesAccepted {
+            stored_rows: 8,
+            ..Default::default()
+        };
+        assert_eq!(&body("application/json", full).await[..], b"{}");
+        assert!(body("application/x-protobuf", full).await.is_empty());
+    }
+
     // A row larger than one export batch is left out and the rest of the export stored.
     #[tokio::test]
     async fn a_profile_row_larger_than_an_export_batch_is_dropped_not_committed() {
@@ -14666,7 +14752,14 @@ mod tests {
         )
         .await
         .expect("the rows that fit are accepted");
-        assert_eq!(stored, 8);
+        assert_eq!(
+            stored,
+            ProfilesAccepted {
+                stored_rows: 8,
+                dropped_rows: 1,
+                rejected_profiles: 1,
+            }
+        );
         let rows = imported_profile_rows(&mut imports, 8).await;
         assert_eq!(rows.len(), 8);
         for row in &rows {

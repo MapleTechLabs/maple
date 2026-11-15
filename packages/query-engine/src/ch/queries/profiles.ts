@@ -31,7 +31,13 @@ export interface ProfileScopeOpts {
 	readonly spanIds?: ReadonlyArray<string>
 }
 
-export interface ProfileStacksOpts extends ProfileScopeOpts {
+/** A sample type is only comparable within one unit, so a read of its values names both. */
+export interface ProfileTypeOpts extends ProfileScopeOpts {
+	/** Binds `sampleUnit`: producers can report one sample type in different units. */
+	readonly unit?: boolean
+}
+
+export interface ProfileStacksOpts extends ProfileTypeOpts {
 	readonly limit?: number
 }
 
@@ -46,13 +52,24 @@ const scopeConditions = ($: ProfilesAccessor, opts: ProfileScopeOpts) => [
 	CH.whenTrue(!!opts.serviceVersion, () => $.ServiceVersion.eq(param.string("serviceVersion"))),
 	CH.whenTrue(!!opts.span, () => $.SpanId.eq(param.string("spanId"))),
 	CH.whenTrue(!!opts.trace, () => $.TraceId.eq(param.string("traceId"))),
-	CH.whenTrue(opts.spanIds !== undefined, () => CH.inList($.SpanId, opts.spanIds ?? [])),
+	// An empty list names no span, and `IN ()` is not SQL: it matches nothing.
+	CH.whenTrue(opts.spanIds !== undefined, () =>
+		opts.spanIds === undefined || opts.spanIds.length === 0
+			? CH.rawCond("1 = 0")
+			: CH.inList($.SpanId, opts.spanIds),
+	),
+]
+
+const typeConditions = ($: ProfilesAccessor, opts: ProfileTypeOpts) => [
+	...scopeConditions($, opts),
+	$.SampleType.eq(param.string("sampleType")),
+	CH.whenTrue(!!opts.unit, () => $.SampleUnit.eq(param.string("sampleUnit"))),
 ]
 
 /**
  * The heaviest stacks of one sample type in the window, each with its summed value. `totalValue`
  * and `totalStacks` cover every stack in scope, so a reader can size what the cap cut off.
- * Binds `sampleType`.
+ * Binds `sampleType`, and `sampleUnit` with `unit`.
  */
 export function profileStacksQuery(opts: ProfileStacksOpts = {}) {
 	return from(Datasources.profiles)
@@ -67,7 +84,7 @@ export function profileStacksQuery(opts: ProfileStacksOpts = {}) {
 			totalValue: CH.rawExpr("sum(sum(Value)) OVER ()", T.int64),
 			totalStacks: CH.rawExpr("count() OVER ()", T.uint64),
 		}))
-		.where(($) => [...scopeConditions($, opts), $.SampleType.eq(param.string("sampleType"))])
+		.where(($) => typeConditions($, opts))
 		.groupBy("stackHash")
 		.orderBy(["value", "desc"], ["stackHash", "asc"])
 		.limit(opts.limit ?? PROFILE_STACKS_CAP)
@@ -76,7 +93,7 @@ export function profileStacksQuery(opts: ProfileStacksOpts = {}) {
 }
 
 /**
- * The sample types present in scope, heaviest first: what a profile selector offers, and the
+ * The sample types present in scope, one row per type and unit, heaviest first: what a profile selector offers, and the
  * cheap "does this service (or span) have profiles at all" probe. `durationNano` is the summed
  * profile windows, so `value / durationNano` is average cores for a CPU type.
  */
@@ -84,7 +101,7 @@ export function profileSampleTypesQuery(opts: ProfileScopeOpts = {}) {
 	return from(Datasources.profiles)
 		.select(($) => ({
 			sampleType: $.SampleType,
-			sampleUnit: CH.rawExpr("any(SampleUnit)", T.string),
+			sampleUnit: $.SampleUnit,
 			value: CH.sum($.Value),
 			samples: CH.sum($.Samples),
 			profiles: CH.rawExpr("uniqExact(ProfileId)", T.uint64),
@@ -93,20 +110,20 @@ export function profileSampleTypesQuery(opts: ProfileScopeOpts = {}) {
 			durationNano: CH.rawExpr("toUInt64(avg(DurationNano) * uniqExact(ProfileId))", T.uint64),
 		}))
 		.where(($) => scopeConditions($, opts))
-		.groupBy("sampleType")
-		.orderBy(["value", "desc"])
+		.groupBy("sampleType", "sampleUnit")
+		.orderBy(["value", "desc"], ["sampleType", "asc"], ["sampleUnit", "asc"])
 		.format("JSON")
 		.route("ingest")
 }
 
-/** The value of one sample type per bucket. Binds `sampleType` and `bucketSeconds`. */
-export function profileTimeseriesQuery(opts: ProfileScopeOpts = {}) {
+/** The value of one sample type per bucket. Binds `sampleType`, `bucketSeconds`, and `sampleUnit` with `unit`. */
+export function profileTimeseriesQuery(opts: ProfileTypeOpts = {}) {
 	return from(Datasources.profiles)
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
 			value: CH.sum($.Value),
 		}))
-		.where(($) => [...scopeConditions($, opts), $.SampleType.eq(param.string("sampleType"))])
+		.where(($) => typeConditions($, opts))
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
 		.format("JSON")

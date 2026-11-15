@@ -1,35 +1,15 @@
-import { SpanId, TraceId } from "@maple/domain"
-import {
-	DeploymentEnvironment,
-	ProfileSampleTypesRequest,
-	ProfileStacksRequest,
-	ServiceName,
-} from "@maple/domain/http"
-import { Effect, Option, Schema, Array as Arr } from "effect"
-import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
+import { ProfileSampleTypesRequest, ProfileStacksRequest } from "@maple/domain/http"
+import { Effect, Option, Array as Arr } from "effect"
+import { decodeInput, runWarehouseQuery } from "./effect-utils"
 import { MapleInternalHttp } from "./warehouse-services"
 
 // Continuous profiling reads: which sample types a scope has, then the heaviest stacks of one.
 // A scope is a service's window, or the spans of one trace.
 
-const ProfileScopeInputSchema = Schema.Struct({
-	startTime: WarehouseDateTimeString,
-	endTime: WarehouseDateTimeString,
-	serviceName: Schema.optional(ServiceName),
-	deploymentEnv: Schema.optional(DeploymentEnvironment),
-	traceId: Schema.optional(TraceId),
-	/** A span and the spans under it. */
-	spanIds: Schema.optional(Schema.Array(SpanId)),
-})
-
-export type ProfileScopeInput = (typeof ProfileScopeInputSchema)["Encoded"]
-
-const ProfileStacksInputSchema = Schema.Struct({
-	...ProfileScopeInputSchema.fields,
-	sampleType: Schema.String,
-})
-
-export type ProfileStacksInput = (typeof ProfileStacksInputSchema)["Encoded"]
+// The inputs are the API's own requests, so what decodes here is what the API accepts.
+// An optional key is left out, never set to `undefined`.
+export type ProfileScopeInput = typeof ProfileSampleTypesRequest.Encoded
+export type ProfileStacksInput = typeof ProfileStacksRequest.Encoded
 
 /** The stacks of one sample type in a scope, as the flame graph and the top functions read them. */
 export interface Profile {
@@ -57,29 +37,27 @@ export const getProfileSampleTypes = Effect.fn("QueryEngine.getProfileSampleType
 }: {
 	data: ProfileScopeInput
 }) {
-	const input = yield* decodeInput(ProfileScopeInputSchema, data, "getProfileSampleTypes")
+	const payload = yield* decodeInput(ProfileSampleTypesRequest, data, "getProfileSampleTypes")
 	const result = yield* runWarehouseQuery("profileSampleTypes", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.profileSampleTypes({
-				payload: new ProfileSampleTypesRequest(input),
-			})
+			return yield* client.queryEngine.profileSampleTypes({ payload })
 		}),
 	)
 	return { sampleTypes: result.data }
 })
 
-/** The heaviest stacks of one sample type; the API bounds how many and how large. */
+/** The heaviest stacks of one sample type in one unit; the API bounds how many and how large. */
 export const getProfileStacks = Effect.fn("QueryEngine.getProfileStacks")(function* ({
 	data,
 }: {
 	data: ProfileStacksInput
 }) {
-	const input = yield* decodeInput(ProfileStacksInputSchema, data, "getProfileStacks")
+	const payload = yield* decodeInput(ProfileStacksRequest, data, "getProfileStacks")
 	return yield* runWarehouseQuery("profileStacks", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.profileStacks({ payload: new ProfileStacksRequest(input) })
+			return yield* client.queryEngine.profileStacks({ payload })
 		}),
 	)
 })
@@ -88,8 +66,8 @@ export const getProfileStacks = Effect.fn("QueryEngine.getProfileStacks")(functi
 const PREFERRED_SAMPLE_TYPE = "cpu"
 
 /**
- * A scope's profile in two reads: its sample types, then the stacks of one. None when it sent no
- * profiles, which is every service without a profiler.
+ * A scope's profile in two reads: its sample types, then the stacks of one row, in that row's
+ * unit. None when it sent no profiles, which is every service without a profiler.
  */
 export const getProfile = Effect.fn("QueryEngine.getProfile")(function* ({
 	data,
@@ -102,7 +80,7 @@ export const getProfile = Effect.fn("QueryEngine.getProfile")(function* ({
 	)
 	if (Option.isNone(chosen)) return Option.none<Profile>()
 	const { sampleType, sampleUnit, durationNano } = chosen.value
-	const read = yield* getProfileStacks({ data: { ...data, sampleType } })
+	const read = yield* getProfileStacks({ data: { ...data, sampleType, sampleUnit } })
 	return Option.some<Profile>({
 		sampleType,
 		sampleUnit,

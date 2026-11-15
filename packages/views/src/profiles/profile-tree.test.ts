@@ -15,9 +15,29 @@ import {
 const stack = (frames: ReadonlyArray<string>, value: number) => ({
 	frames,
 	files: Arr.map(frames, () => "/app/server.js"),
-	lines: Arr.map(frames, (_, index) => index + 1),
+	// A function starts on one line, wherever it is on the stack.
+	lines: Arr.map(frames, (name) => name.length),
 	value,
 })
+
+/** Two `(anonymous)` callbacks in one file, reached from different callers. */
+const closures: ProfileInput = {
+	stacks: [
+		{
+			frames: ["parse", "(anonymous)"],
+			files: ["/app/server.js", "/app/server.js"],
+			lines: [5, 20],
+			value: 30,
+		},
+		{
+			frames: ["render", "(anonymous)"],
+			files: ["/app/server.js", "/app/server.js"],
+			lines: [6, 80],
+			value: 70,
+		},
+	],
+	totalValue: 100,
+}
 
 const input: ProfileInput = {
 	stacks: [
@@ -72,6 +92,69 @@ describe("topFunctions", () => {
 			["walk", 10, 14],
 			["leaf", 4, 4],
 			["main", 0, 14],
+		])
+	})
+})
+
+describe("same-named functions in one file", () => {
+	it("stay two functions in the top functions, each with its own line", () => {
+		const rows = Arr.filter(topFunctions(closures, 10), (row) => row.name === "(anonymous)")
+		expect(Arr.map(rows, (row) => [row.line, row.self])).toEqual([
+			[80, 70],
+			[20, 30],
+		])
+	})
+
+	it("stay two frames when they share a caller", () => {
+		const root = profileTree({
+			stacks: [
+				{
+					frames: ["main", "(anonymous)"],
+					files: ["/app/a.js", "/app/a.js"],
+					lines: [1, 20],
+					value: 30,
+				},
+				{
+					frames: ["main", "(anonymous)"],
+					files: ["/app/a.js", "/app/a.js"],
+					lines: [1, 80],
+					value: 70,
+				},
+			],
+			totalValue: 100,
+		})
+		const main = child(root, "main")
+		expect(Arr.map(main?.children ?? [], (each) => [each.line, each.total])).toEqual([
+			[80, 70],
+			[20, 30],
+		])
+		expect(new Set(Arr.map(main?.children ?? [], (each) => each.id)).size).toBe(2)
+	})
+
+	it("stay two stacks when own code is folded", () => {
+		const scoped = scopedStacks(
+			{
+				stacks: [
+					{
+						frames: ["(anonymous)", "lib"],
+						files: ["/app/a.js", "/node_modules/x/i.js"],
+						lines: [20, 1],
+						value: 30,
+					},
+					{
+						frames: ["(anonymous)", "lib"],
+						files: ["/app/a.js", "/node_modules/x/i.js"],
+						lines: [80, 1],
+						value: 70,
+					},
+				],
+				totalValue: 100,
+			},
+			"app",
+		)
+		expect(Arr.map(scoped.stacks, (each) => [each.lines, each.value])).toEqual([
+			[[20], 30],
+			[[80], 70],
 		])
 	})
 })
