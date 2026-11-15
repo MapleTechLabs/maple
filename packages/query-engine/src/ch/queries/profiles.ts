@@ -1,0 +1,114 @@
+// Continuous profiling reads over `profiles`: one row per distinct stack per exported profile,
+// frames root first. A flame graph is the stacks of a window folded by `StackHash`; the client
+// builds the tree, so the wire size is bounded by distinct stacks, not samples.
+// Pinned to the managed route: profiles are written through `ingest` only, so an org on its own
+// ClickHouse holds an empty copy of the table.
+
+import * as T from "@maple-dev/effect-orm/clickhouse"
+import * as CH from "@maple-dev/effect-orm/expr"
+import { from, param } from "@maple-dev/effect-orm/clickhouse"
+import * as Datasources from "@maple/domain/tinybird/datasources"
+import { orgIdParam } from "../tables"
+
+/** Most stacks one flame graph reads. The rest of the window is the gap to `totalValue`. */
+export const PROFILE_STACKS_CAP = 2000
+
+export interface ProfileScopeOpts {
+	/** Binds `serviceName`. */
+	readonly service?: boolean
+	/** Binds `environment`. */
+	readonly environment?: boolean
+	/** Binds `serviceVersion`: one release's profile, the two sides of a diff. */
+	readonly serviceVersion?: boolean
+	/** Binds `spanId`: only the samples the producer linked to that span. */
+	readonly span?: boolean
+	/** Binds `traceId`. */
+	readonly trace?: boolean
+	/**
+	 * Only the samples linked to one of these spans, inlined as escaped literals: a span and its
+	 * descendants, since a sample belongs to the innermost span that was running.
+	 */
+	readonly spanIds?: ReadonlyArray<string>
+}
+
+export interface ProfileStacksOpts extends ProfileScopeOpts {
+	readonly limit?: number
+}
+
+type ProfilesAccessor = T.ColumnAccessor<typeof Datasources.profiles.columns>
+
+const scopeConditions = ($: ProfilesAccessor, opts: ProfileScopeOpts) => [
+	$.OrgId.eq(orgIdParam),
+	CH.whenTrue(!!opts.service, () => $.ServiceName.eq(param.string("serviceName"))),
+	$.Timestamp.gte(param.dateTime("startTime")),
+	$.Timestamp.lte(param.dateTime("endTime")),
+	CH.whenTrue(!!opts.environment, () => $.Environment.eq(param.string("environment"))),
+	CH.whenTrue(!!opts.serviceVersion, () => $.ServiceVersion.eq(param.string("serviceVersion"))),
+	CH.whenTrue(!!opts.span, () => $.SpanId.eq(param.string("spanId"))),
+	CH.whenTrue(!!opts.trace, () => $.TraceId.eq(param.string("traceId"))),
+	CH.whenTrue(opts.spanIds !== undefined, () => CH.inList($.SpanId, opts.spanIds ?? [])),
+]
+
+/**
+ * The heaviest stacks of one sample type in the window, each with its summed value. `totalValue`
+ * and `totalStacks` cover every stack in scope, so a reader can size what the cap cut off.
+ * Binds `sampleType`.
+ */
+export function profileStacksQuery(opts: ProfileStacksOpts = {}) {
+	return from(Datasources.profiles)
+		.select(($) => ({
+			// A UInt64 identity: stringified so no client rounds it.
+			stackHash: CH.toString_($.StackHash),
+			frames: CH.rawExpr("any(Frames)", T.array(T.string)),
+			files: CH.rawExpr("any(FrameFiles)", T.array(T.string)),
+			lines: CH.rawExpr("any(FrameLines)", T.array(T.int32)),
+			value: CH.sum($.Value),
+			samples: CH.sum($.Samples),
+			totalValue: CH.rawExpr("sum(sum(Value)) OVER ()", T.int64),
+			totalStacks: CH.rawExpr("count() OVER ()", T.uint64),
+		}))
+		.where(($) => [...scopeConditions($, opts), $.SampleType.eq(param.string("sampleType"))])
+		.groupBy("stackHash")
+		.orderBy(["value", "desc"], ["stackHash", "asc"])
+		.limit(opts.limit ?? PROFILE_STACKS_CAP)
+		.format("JSON")
+		.route("ingest")
+}
+
+/**
+ * The sample types present in scope, heaviest first: what a profile selector offers, and the
+ * cheap "does this service (or span) have profiles at all" probe. `durationNano` is the summed
+ * profile windows, so `value / durationNano` is average cores for a CPU type.
+ */
+export function profileSampleTypesQuery(opts: ProfileScopeOpts = {}) {
+	return from(Datasources.profiles)
+		.select(($) => ({
+			sampleType: $.SampleType,
+			sampleUnit: CH.rawExpr("any(SampleUnit)", T.string),
+			value: CH.sum($.Value),
+			samples: CH.sum($.Samples),
+			profiles: CH.rawExpr("uniqExact(ProfileId)", T.uint64),
+			// The mean window times the profile count: exact while every profile covers the same
+			// window, as a steady exporter's do, and it holds no tuple per row.
+			durationNano: CH.rawExpr("toUInt64(avg(DurationNano) * uniqExact(ProfileId))", T.uint64),
+		}))
+		.where(($) => scopeConditions($, opts))
+		.groupBy("sampleType")
+		.orderBy(["value", "desc"])
+		.format("JSON")
+		.route("ingest")
+}
+
+/** The value of one sample type per bucket. Binds `sampleType` and `bucketSeconds`. */
+export function profileTimeseriesQuery(opts: ProfileScopeOpts = {}) {
+	return from(Datasources.profiles)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			value: CH.sum($.Value),
+		}))
+		.where(($) => [...scopeConditions($, opts), $.SampleType.eq(param.string("sampleType"))])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+		.route("ingest")
+}

@@ -2024,6 +2024,22 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// Purely additive: a new empty table, created by the bootstrap. Profiles only exist once a
+		// producer exports them, so there is nothing to backfill.
+		slug: "profiles",
+		description: "Create profiles, continuous profiling samples",
+		clonedBefore: "additive DDL runs",
+		plan: [["install-profiles", "Install the empty profiles table via the v59 bootstrap"]],
+		dispositions: [
+			{
+				name: "profiles",
+				classification: "authoritative",
+				disposition: "preserve-exact",
+				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

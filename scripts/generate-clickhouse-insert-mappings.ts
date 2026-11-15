@@ -21,6 +21,7 @@ const OTLP_DATASOURCES = [
 	"metrics_gauge",
 	"metrics_histogram",
 	"metrics_exponential_histogram",
+	"profiles",
 ] as const
 
 const INGEST_DATASOURCES = [
