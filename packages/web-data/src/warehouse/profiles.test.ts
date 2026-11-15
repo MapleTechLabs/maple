@@ -108,6 +108,14 @@ describe("getProfile", () => {
 		])
 	})
 
+	test("reads a service that sent no profiles as none, without asking for stacks", async () => {
+		answerWith([])
+		expect(await run(getProfile({ data: SERVICE }))).toEqual(Option.none())
+		expect(Arr.map(await requests(), ({ path }) => path)).toEqual([
+			"/internal/query-engine/profile-sample-types",
+		])
+	})
+
 	test("reads the heavier unit of a sample type two producers report differently", async () => {
 		answerWith([sampleType("cpu", "count", 9_000), sampleType("cpu", "nanoseconds", 4_000)])
 		const profile = await run(getProfile({ data: SERVICE }))
