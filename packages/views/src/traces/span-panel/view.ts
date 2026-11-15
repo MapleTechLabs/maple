@@ -19,7 +19,7 @@ import type { Model } from "./model"
 import type { SpanDetail } from "../trace-source"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
-import { spanLogs, spanProfile, tabsView } from "./view-tabs"
+import { spanLogs, spanProfileTab, tabsView } from "./view-tabs"
 import { TAB_VALUES } from "./update"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { hstack } from "../../ui/stack"
@@ -208,12 +208,16 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const spanAttrs = loadedOr(model, (detail) => detail.spanAttributes, span.spanAttributes)
 	const platform = getCloudPlatform(spanAttrs)
 	const { infraTab } = inputs
-	const profile = Option.getOrNull(AsyncData.getData(model.profile.data))
+	// Shown when the span has samples, and when the read failed: a failure is not "no samples".
+	const hasProfileTab = AsyncData.matchData(model.profile.data, {
+		onEmpty: () => false,
+		onFailure: () => true,
+		onData: (profile) => profile !== null,
+	})
 	const values = Arr.filter(
 		TAB_VALUES,
 		(value) =>
-			(value !== "profile" || profile !== null) &&
-			(value !== "infrastructure" || infraTab !== undefined),
+			(value !== "profile" || hasProfileTab) && (value !== "infrastructure" || infraTab !== undefined),
 	)
 	return sidePanelFrame(h, [
 		panelHeader(h, model),
@@ -244,8 +248,8 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								],
 							),
 						]
-					: value === "profile" && profile !== null
-						? [spanProfile(h, model, profile)]
+					: value === "profile" && hasProfileTab
+						? [spanProfileTab(h, model)]
 						: value === "infrastructure" && infraTab !== undefined
 							? [h.div([h.Class("p-3")], [infraTab()])]
 							: [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)],

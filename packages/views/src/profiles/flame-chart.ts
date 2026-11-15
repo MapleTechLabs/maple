@@ -149,7 +149,10 @@ export const createFlameChart = (
 		| {
 				x: number
 				y: number
+				/** What the drag moves from: an overview press may have jumped the window first. */
 				viewport: FlameViewport
+				/** The view before the press, which a cancelled gesture goes back to. */
+				before: FlameViewport
 				scrollY: number
 				moved: boolean
 				onOverview: boolean
@@ -435,7 +438,7 @@ export const createFlameChart = (
 		const onOverview = event.currentTarget === overview
 		const at = point(event, onOverview ? overview : main)
 		const isTouch = event.pointerType === "touch"
-		drag = { x: at.x, y: at.y, viewport, scrollY, moved: false, onOverview, isTouch }
+		drag = { x: at.x, y: at.y, viewport, before: viewport, scrollY, moved: false, onOverview, isTouch }
 		if (event.currentTarget instanceof Element) event.currentTarget.setPointerCapture(event.pointerId)
 		if (onOverview) {
 			// A press outside the window starts a new one there; inside, it grabs the window.
@@ -492,9 +495,10 @@ export const createFlameChart = (
 		const ended = drag
 		drag = undefined
 		main.style.cursor = ""
-		if (ended === undefined || !ended.moved) return
+		// An overview press moves the window before any drag does.
+		if (ended === undefined || (!ended.moved && !ended.onOverview)) return
 		scrollY = ended.scrollY
-		jumpTo(ended.viewport)
+		jumpTo(ended.before)
 	}
 
 	const onPointerLeave = (): void => {
