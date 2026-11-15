@@ -17,8 +17,10 @@
 )]
 
 use maple_ingest::decode_budget::{json_cost, protobuf_cost, OtlpSignal};
+use maple_ingest::profiles::{flatten, FlattenError, ResourceStamps, MAX_ROW_BYTES};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::ExportProfilesServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{
     any_value, AnyValue, ArrayValue, EntityRef, InstrumentationScope, KeyValue, KeyValueList,
@@ -30,6 +32,7 @@ use opentelemetry_proto::tonic::metrics::v1::{
     ExponentialHistogramDataPoint, Gauge, Histogram, HistogramDataPoint, Metric, NumberDataPoint,
     ResourceMetrics, ScopeMetrics, Sum, Summary, SummaryDataPoint,
 };
+use opentelemetry_proto::tonic::profiles::v1development as profiles;
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use opentelemetry_proto::tonic::trace::v1::{span, ResourceSpans, ScopeSpans, Span, Status};
 use prost::Message;
@@ -284,9 +287,69 @@ fn json_case<T: serde::de::DeserializeOwned>(
     }
 }
 
+/// A real export of the Maple SDK's Node profiler, as OTLP/JSON.
+const SDK_PROFILES: &[u8] = include_bytes!("../src/testdata/profiles-sdk-node.json");
+
+/// Profiles are read by `maple_ingest::profiles::decode_json`, not the derives. It
+/// builds no `Value` tree, so `json_cost` bounds it with room to spare: these
+/// cases hold the estimate to covering the decode, not to staying close to it.
+fn profiles_json_case(case: &'static str, wire: &[u8]) -> Measured {
+    let estimate = json_cost(wire, u64::MAX).unwrap();
+    let (actual, decoded) = peak_during(|| maple_ingest::profiles::decode_json(wire));
+    decoded.unwrap_or_else(|error| panic!("{case} decodes: {error}"));
+    Measured {
+        case,
+        realistic: false,
+        wire: wire.len(),
+        actual,
+        estimate,
+    }
+}
+
+/// A JSON profiles export of one sample whose `field` holds `element`, many times.
+fn json_sample_list(field: &str, element: &str) -> String {
+    let elements = vec![element; 200_000].join(",");
+    format!(
+        "{{\"resourceProfiles\":[{{\"scopeProfiles\":[{{\"profiles\":[{{\"samples\":[{{\
+         \"{field}\":[{elements}]}}]}}]}}]}}]}}"
+    )
+}
+
 fn cases() -> Vec<Measured> {
-    use OtlpSignal::{Logs, Metrics, Traces};
+    use OtlpSignal::{Logs, Metrics, Profiles, Traces};
+    let sdk_profiles = maple_ingest::profiles::decode_json(SDK_PROFILES).unwrap();
     vec![
+        protobuf_case::<ExportProfilesServiceRequest>(
+            "profiles",
+            Profiles,
+            &sdk_profiles.encode_to_vec(),
+        ),
+        protobuf_case::<ExportProfilesServiceRequest>(
+            "empty resource profiles",
+            Profiles,
+            &empty_entries(1, 200_000),
+        ),
+        profiles_json_case("profiles json", SDK_PROFILES),
+        profiles_json_case(
+            "keyed sample values json",
+            json_sample_list("values", "\"1\"").as_bytes(),
+        ),
+        profiles_json_case(
+            "keyed sample timestamps json",
+            json_sample_list("timestampsUnixNano", "1").as_bytes(),
+        ),
+        profiles_json_case(
+            "keyed sample attribute indices json",
+            json_sample_list("attributeIndices", "1").as_bytes(),
+        ),
+        profiles_json_case(
+            "empty samples json",
+            format!(
+                "{{\"resourceProfiles\":[{{\"scopeProfiles\":[{{\"profiles\":[{{\"samples\":[{}{{}}]}}]}}]}}]}}",
+                "{},".repeat(100_000)
+            )
+            .as_bytes(),
+        ),
         protobuf_case::<ExportTraceServiceRequest>(
             "traces",
             Traces,
@@ -647,6 +710,82 @@ fn full_metrics() -> ExportMetricsServiceRequest {
     }
 }
 
+fn full_profiles() -> ExportProfilesServiceRequest {
+    let value_type = || {
+        Some(profiles::ValueType {
+            type_strindex: 0,
+            unit_strindex: 0,
+        })
+    };
+    ExportProfilesServiceRequest {
+        resource_profiles: vec![profiles::ResourceProfiles {
+            resource: Some(full_resource()),
+            scope_profiles: vec![profiles::ScopeProfiles {
+                scope: Some(full_scope()),
+                profiles: vec![profiles::Profile {
+                    sample_type: value_type(),
+                    samples: vec![profiles::Sample {
+                        stack_index: 0,
+                        attribute_indices: vec![0],
+                        link_index: 0,
+                        values: vec![0],
+                        timestamps_unix_nano: vec![0],
+                    }],
+                    time_unix_nano: 0,
+                    duration_nano: 0,
+                    period_type: value_type(),
+                    period: 0,
+                    profile_id: text().into_bytes(),
+                    dropped_attributes_count: 0,
+                    original_payload_format: text(),
+                    original_payload: text().into_bytes(),
+                    attribute_indices: vec![0],
+                }],
+                schema_url: text(),
+            }],
+            schema_url: text(),
+        }],
+        dictionary: Some(profiles::ProfilesDictionary {
+            mapping_table: vec![profiles::Mapping {
+                memory_start: 0,
+                memory_limit: 0,
+                file_offset: 0,
+                filename_strindex: 0,
+                attribute_indices: vec![0],
+            }],
+            location_table: vec![profiles::Location {
+                mapping_index: 0,
+                address: 0,
+                lines: vec![profiles::Line {
+                    function_index: 0,
+                    line: 0,
+                    column: 0,
+                }],
+                attribute_indices: vec![0],
+            }],
+            function_table: vec![profiles::Function {
+                name_strindex: 0,
+                system_name_strindex: 0,
+                filename_strindex: 0,
+                start_line: 0,
+            }],
+            link_table: vec![profiles::Link {
+                trace_id: text().into_bytes(),
+                span_id: text().into_bytes(),
+            }],
+            string_table: vec![text()],
+            attribute_table: vec![profiles::KeyValueAndUnit {
+                key_strindex: 0,
+                value: Some(any_value_list()),
+                unit_strindex: 0,
+            }],
+            stack_table: vec![profiles::Stack {
+                location_indices: vec![0],
+            }],
+        }),
+    }
+}
+
 const MANY: usize = 20_000;
 
 fn many<T: Clone>(item: T) -> Vec<T> {
@@ -977,6 +1116,7 @@ fn every_repeated_field_is_charged() {
             Traces => ExportTraceServiceRequest::decode(&wire[..]).map(drop),
             Logs => ExportLogsServiceRequest::decode(&wire[..]).map(drop),
             Metrics => ExportMetricsServiceRequest::decode(&wire[..]).map(drop),
+            OtlpSignal::Profiles => ExportProfilesServiceRequest::decode(&wire[..]).map(drop),
         });
         decoded.unwrap_or_else(|error| panic!("{case} decodes: {error}"));
         assert!(
@@ -984,6 +1124,320 @@ fn every_repeated_field_is_charged() {
             "{case}: estimate {estimate} below the real peak {actual}"
         );
     }
+}
+
+/// The profiles export's repeated fields, each grown on its own.
+#[test]
+fn every_repeated_profiles_field_is_charged() {
+    type Edit = fn(&mut ExportProfilesServiceRequest);
+    fn profile(request: &mut ExportProfilesServiceRequest) -> &mut profiles::Profile {
+        &mut request.resource_profiles[0].scope_profiles[0].profiles[0]
+    }
+    fn sample(request: &mut ExportProfilesServiceRequest) -> &mut profiles::Sample {
+        &mut profile(request).samples[0]
+    }
+    fn dictionary(request: &mut ExportProfilesServiceRequest) -> &mut profiles::ProfilesDictionary {
+        request.dictionary.as_mut().unwrap()
+    }
+    // Indexes of one byte on the wire, of several, and negative ones of ten.
+    let cases: Vec<(&str, Edit)> = vec![
+        ("resource_profiles", |r| {
+            r.resource_profiles = many(Default::default());
+        }),
+        ("scope_profiles", |r| {
+            r.resource_profiles[0].scope_profiles = many(Default::default());
+        }),
+        ("profiles", |r| {
+            r.resource_profiles[0].scope_profiles[0].profiles = many(Default::default());
+        }),
+        ("resource attributes", |r| {
+            r.resource_profiles[0].resource.as_mut().unwrap().attributes = many(Default::default());
+        }),
+        ("scope attributes", |r| {
+            let scope = r.resource_profiles[0].scope_profiles[0].scope.as_mut();
+            scope.unwrap().attributes = many(Default::default());
+        }),
+        ("samples", |r| {
+            profile(r).samples = many(Default::default());
+        }),
+        ("sample attribute indices", |r| {
+            sample(r).attribute_indices = many(1);
+        }),
+        ("sample values", |r| {
+            sample(r).values = many(1);
+        }),
+        ("sample negative values", |r| {
+            sample(r).values = many(-1);
+        }),
+        ("sample timestamps", |r| {
+            sample(r).timestamps_unix_nano = many(1);
+        }),
+        ("profile attribute indices", |r| {
+            profile(r).attribute_indices = many(300);
+        }),
+        ("mappings", |r| {
+            dictionary(r).mapping_table = many(Default::default());
+        }),
+        ("mapping attribute indices", |r| {
+            dictionary(r).mapping_table[0].attribute_indices = many(-1);
+        }),
+        ("locations", |r| {
+            dictionary(r).location_table = many(Default::default());
+        }),
+        ("location lines", |r| {
+            dictionary(r).location_table[0].lines = many(Default::default());
+        }),
+        ("location attribute indices", |r| {
+            dictionary(r).location_table[0].attribute_indices = many(1);
+        }),
+        ("functions", |r| {
+            dictionary(r).function_table = many(Default::default());
+        }),
+        ("links", |r| {
+            dictionary(r).link_table = many(Default::default());
+        }),
+        ("strings", |r| {
+            dictionary(r).string_table = many(String::new());
+        }),
+        ("attributes", |r| {
+            dictionary(r).attribute_table = many(Default::default());
+        }),
+        ("stacks", |r| {
+            dictionary(r).stack_table = many(Default::default());
+        }),
+        ("stack locations", |r| {
+            dictionary(r).stack_table[0].location_indices = many(70_000);
+        }),
+    ];
+    for (case, edit) in cases {
+        let mut request = full_profiles();
+        edit(&mut request);
+        let wire = request.encode_to_vec();
+        let estimate =
+            usize::try_from(protobuf_cost(OtlpSignal::Profiles, &wire, u64::MAX).unwrap()).unwrap();
+        let (actual, decoded) =
+            peak_during(|| ExportProfilesServiceRequest::decode(&wire[..]).map(drop));
+        decoded.unwrap_or_else(|error| panic!("{case} decodes: {error}"));
+        assert!(
+            estimate >= actual,
+            "{case}: estimate {estimate} below the real peak {actual}"
+        );
+    }
+}
+
+/// One stack built to grow: a location inlining thousands of lines, listed
+/// thousands of times, whose function name and file are control characters that
+/// JSON writes at six bytes each. `samples` rows of it, each on a link of its own.
+fn hostile_profiles(samples: i32) -> ExportProfilesServiceRequest {
+    let control = "\u{1}".repeat(50_000);
+    let line = profiles::Line {
+        function_index: 1,
+        line: 1,
+        column: 0,
+    };
+    ExportProfilesServiceRequest {
+        resource_profiles: vec![profiles::ResourceProfiles {
+            scope_profiles: vec![profiles::ScopeProfiles {
+                profiles: vec![profiles::Profile {
+                    samples: (0..samples)
+                        .map(|link_index| profiles::Sample {
+                            stack_index: 1,
+                            link_index,
+                            values: vec![1],
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        dictionary: Some(profiles::ProfilesDictionary {
+            string_table: vec![String::new(), control],
+            function_table: vec![
+                Default::default(),
+                profiles::Function {
+                    name_strindex: 1,
+                    filename_strindex: 1,
+                    ..Default::default()
+                },
+            ],
+            location_table: vec![
+                Default::default(),
+                profiles::Location {
+                    lines: vec![line; 5_000],
+                    ..Default::default()
+                },
+            ],
+            stack_table: vec![
+                Default::default(),
+                profiles::Stack {
+                    location_indices: vec![1; 5_000],
+                },
+            ],
+            ..Default::default()
+        }),
+    }
+}
+
+/// What flattening `request` allocates at its peak, and what it was granted of
+/// `budget` before that: `(peak, granted, rows or the refusal)`.
+fn flatten_within(
+    request: &ExportProfilesServiceRequest,
+    budget: u64,
+) -> (usize, u64, Result<Vec<Vec<u8>>, FlattenError>) {
+    let stamps = ResourceStamps::default();
+    let mut granted = 0_u64;
+    let (peak, flattened) = peak_during(|| {
+        flatten(
+            request,
+            &stamps,
+            1,
+            &mut || [7; 16],
+            MAX_ROW_BYTES,
+            &mut |bytes| {
+                let fits = granted + bytes <= budget;
+                if fits {
+                    granted += bytes;
+                }
+                fits
+            },
+        )
+    });
+    (peak, granted, flattened.map(|flattened| flattened.rows))
+}
+
+/// The flatten asks for a row's memory before it builds the row, and for all of
+/// it: escaping included. So a refusing budget is never passed, only reached.
+#[test]
+fn a_hostile_profile_never_allocates_past_what_it_was_granted() {
+    const MIB: u64 = 1024 * 1024;
+
+    // One row: the deepest stack of the longest text at its most expensive.
+    let (peak, granted, rows) = flatten_within(&hostile_profiles(1), 8 * MIB);
+    let rows = rows.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0].len() > 3_000_000 && rows[0].len() <= MAX_ROW_BYTES,
+        "a row of {} bytes",
+        rows[0].len()
+    );
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+
+    // Many rows against a budget that holds a few: refused, and still inside it.
+    let (peak, granted, rows) = flatten_within(&hostile_profiles(200), 32 * MIB);
+    assert_eq!(rows, Err(FlattenError::OverBudget));
+    assert!(
+        peak as u64 <= granted && granted <= 32 * MIB,
+        "peak {peak} past the {granted} granted"
+    );
+}
+
+/// One small stack whose resource and sample carry binary attributes, which are
+/// read as hex at twice their wire size: in a list, a map, and on their own.
+fn expanding_profiles(attribute_bytes: usize) -> ExportProfilesServiceRequest {
+    let binary = || AnyValue {
+        value: Some(any_value::Value::BytesValue(vec![1; attribute_bytes])),
+    };
+    let mut request = hostile_profiles(1);
+    let dictionary = request.dictionary.as_mut().unwrap();
+    dictionary.string_table = vec![String::new(), "main".to_owned(), "blob".to_owned()];
+    dictionary.location_table[1].lines.truncate(1);
+    dictionary.stack_table[1].location_indices.truncate(1);
+    dictionary.attribute_table = vec![
+        Default::default(),
+        profiles::KeyValueAndUnit {
+            key_strindex: 2,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::KvlistValue(KeyValueList {
+                    values: vec![KeyValue {
+                        key_strindex: 2,
+                        value: Some(binary()),
+                        ..Default::default()
+                    }],
+                })),
+            }),
+            ..Default::default()
+        },
+    ];
+    let resource_profiles = &mut request.resource_profiles[0];
+    resource_profiles.resource = Some(opentelemetry_proto::tonic::resource::v1::Resource {
+        attributes: vec![
+            KeyValue {
+                key: "blob".to_owned(),
+                value: Some(binary()),
+                ..Default::default()
+            },
+            KeyValue {
+                key: "blobs".to_owned(),
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::ArrayValue(ArrayValue {
+                        values: vec![binary()],
+                    })),
+                }),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
+    resource_profiles.scope_profiles[0].profiles[0].samples[0].attribute_indices = vec![1];
+    request
+}
+
+/// Attributes that grow as they are read are charged before they are read, even
+/// when the row they would go in is past the ceiling and never written.
+#[test]
+fn attributes_that_expand_as_they_are_read_never_allocate_past_what_was_granted() {
+    const MIB: u64 = 1024 * 1024;
+
+    // Small enough for its row to be written.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(64 * 1024), 8 * MIB);
+    assert_eq!(rows.map(|rows| rows.len()), Ok(1));
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+
+    // A resource past the row ceiling once read: the row is dropped, and what was
+    // read on the way stayed inside the grant.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(3 * 1024 * 1024), 64 * MIB);
+    assert_eq!(rows.map(|rows| rows.len()), Ok(0));
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+
+    // A budget that cannot hold the expansion refuses it before it is built.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(3 * 1024 * 1024), 4 * MIB);
+    assert_eq!(rows, Err(FlattenError::OverBudget));
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+}
+
+/// Resource keys named by string-table indices past the table: each reads as no key,
+/// but the flatten still notes where each was named.
+#[test]
+fn resource_keys_named_past_the_string_table_stay_inside_what_was_granted() {
+    const MIB: u64 = 1024 * 1024;
+    let mut request = expanding_profiles(16);
+    request.resource_profiles[0].resource = Some(opentelemetry_proto::tonic::resource::v1::Resource {
+        attributes: (0..200_000)
+            .map(|at| KeyValue {
+                key_strindex: 1_000_000 + at,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+    let (peak, granted, rows) = flatten_within(&request, 2 * MIB);
+    assert_eq!(rows, Err(FlattenError::OverBudget));
+    assert!(peak as u64 <= granted, "peak {peak} past the {granted} granted");
 }
 
 proptest::proptest! {
@@ -1020,6 +1474,7 @@ fn every_text_field_is_charged() {
         (OtlpSignal::Traces, full_traces().encode_to_vec()),
         (OtlpSignal::Logs, full_logs().encode_to_vec()),
         (OtlpSignal::Metrics, full_metrics().encode_to_vec()),
+        (OtlpSignal::Profiles, full_profiles().encode_to_vec()),
     ];
     TEXT_LEN.with(|len| len.set(0));
     for (signal, wire) in cases {
@@ -1028,6 +1483,7 @@ fn every_text_field_is_charged() {
             OtlpSignal::Traces => ExportTraceServiceRequest::decode(&wire[..]).map(drop),
             OtlpSignal::Logs => ExportLogsServiceRequest::decode(&wire[..]).map(drop),
             OtlpSignal::Metrics => ExportMetricsServiceRequest::decode(&wire[..]).map(drop),
+            OtlpSignal::Profiles => ExportProfilesServiceRequest::decode(&wire[..]).map(drop),
         });
         decoded.unwrap();
         assert!(

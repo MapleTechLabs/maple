@@ -63,6 +63,7 @@ use maple_ingest::otel::{
     record_stage_error, rejection_loses_data, resolve_config_internal_span, ResourceConfig,
 };
 use maple_ingest::otlp_json;
+use maple_ingest::profiles;
 use maple_ingest::prometheus_remote_write;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::row_budget::{self, ForwardBody, RowEstimate, ROW_PIECE_BYTES};
@@ -73,8 +74,8 @@ use maple_ingest::session_analytics::{
 use maple_ingest::telemetry::{
     AcceptStats, AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget,
     ClickHouseTargetProvider, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
-    MappingSourceContext, PipelineError, PlannedFailure, RowSource, SamplingPolicy,
-    TelemetryPipeline, TelemetrySignal, TinybirdConfig,
+    MappingSourceContext, PipelineError, PlannedFailure, RowBatchesError, RowSource,
+    SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
@@ -91,6 +92,9 @@ use opentelemetry_otlp::{
 };
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::{
+    ExportProfilesPartialSuccess, ExportProfilesServiceRequest, ExportProfilesServiceResponse,
+};
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
@@ -217,6 +221,10 @@ struct AppConfig {
     /// `INGEST_AUDIT_TRAIL_ENABLED` (default off): keep provider audit events in
     /// the audit trail instead of as logs. See `stores_audit_trail`.
     audit_trail_enabled: bool,
+    /// `INGEST_PROFILES_ENABLED` (default off): accept OTLP profiles. Roll out in two
+    /// steps: ship this build to every task, then turn it on. An older build that
+    /// recovers a profiles WAL frame drops the rest of that segment, every org's.
+    profiles_enabled: bool,
     /// `INGEST_RULES_CACHE_TTL_SECS`: how long an org's compiled rules are reused.
     ingest_rules_cache_ttl_secs: u64,
     /// Ceiling on the total decompressed rrweb payload a single replay session
@@ -252,6 +260,21 @@ struct AppConfig {
     invalid_key_message: &'static str,
     /// `INGEST_BLOCKED_KEYS`: keys refused at origin whatever header spelling carries them.
     blocked_ingest_keys: Arc<HashSet<String>>,
+}
+
+/// Decode memory one request holds at every ceiling at once: its body, the
+/// inflated body and its decode heap, a KiB per part for rounding, and room for
+/// a piece of its rows twice over.
+fn largest_decode_request_bytes(
+    max_request_body_bytes: usize,
+    max_decoded_body_bytes: usize,
+    max_decode_heap_bytes: u64,
+) -> u64 {
+    (max_request_body_bytes as u64)
+        .saturating_add(max_decoded_body_bytes as u64)
+        .saturating_add(max_decode_heap_bytes)
+        .saturating_add(3 * 1024)
+        .saturating_add(2 * ROW_PIECE_BYTES)
 }
 
 /// The default `INGEST_MAX_ROW_EXPANSION`.
@@ -484,6 +507,8 @@ impl AppConfig {
                 .unwrap_or_else(|_| "session_events".to_owned()),
             datasource_product_events: std::env::var("INGEST_TINYBIRD_DATASOURCE_PRODUCT_EVENTS")
                 .unwrap_or_else(|_| "product_events".to_owned()),
+            datasource_profiles: std::env::var("INGEST_TINYBIRD_DATASOURCE_PROFILES")
+                .unwrap_or_else(|_| profiles::DATASOURCE.to_owned()),
         };
         if write_mode.uses_tinybird() {
             tinybird.validate()?;
@@ -522,13 +547,12 @@ impl AppConfig {
             std::env::var("INGEST_MAX_ROW_EXPANSION").ok(),
             DEFAULT_MAX_ROW_EXPANSION,
         )?;
-        // Raised to at least one request at every decode ceiling (a KiB each for rounding)
-        // plus room for a piece of its rows twice over, so one request always gets through.
-        let largest_request = (max_request_body_bytes as u64)
-            .saturating_add(max_decoded_body_bytes as u64)
-            .saturating_add(max_decode_heap_bytes)
-            .saturating_add(3 * 1024)
-            .saturating_add(2 * ROW_PIECE_BYTES);
+        // Raised to at least one request at every ceiling, so one always gets through.
+        let largest_request = largest_decode_request_bytes(
+            max_request_body_bytes,
+            max_decoded_body_bytes,
+            max_decode_heap_bytes,
+        );
         let decode_memory_bytes = parse_u64(
             "INGEST_DECODE_MEMORY_BYTES",
             std::env::var("INGEST_DECODE_MEMORY_BYTES").ok(),
@@ -664,6 +688,12 @@ impl AppConfig {
         let audit_trail_enabled = parse_bool(
             "INGEST_AUDIT_TRAIL_ENABLED",
             std::env::var("INGEST_AUDIT_TRAIL_ENABLED").ok(),
+            false,
+        )?;
+        // Off by default, for the same reason: see `AppConfig::profiles_enabled`.
+        let profiles_enabled = parse_bool(
+            "INGEST_PROFILES_ENABLED",
+            std::env::var("INGEST_PROFILES_ENABLED").ok(),
             false,
         )?;
         let ingest_rules_cache_ttl_secs = parse_u64(
@@ -830,6 +860,7 @@ impl AppConfig {
             org_routing_cache_ttl_secs,
             ingest_rules_enabled,
             audit_trail_enabled,
+            profiles_enabled,
             ingest_rules_cache_ttl_secs,
             replay_max_session_bytes,
             replay_blob_store,
@@ -4136,7 +4167,7 @@ async fn ready(State(state): State<Arc<AppState>>) -> Response {
 
 /// Every HTTP route the gateway serves, before its layers and state.
 fn ingest_routes() -> Router<Arc<AppState>> {
-    Router::new()
+    with_profiles_routes(Router::new())
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/v1/traces", post(handle_traces))
@@ -5455,6 +5486,719 @@ async fn handle_product_events_inner(
     .await?;
     state.resolver.note_source_use(&resolved_key, false);
     Ok(count)
+}
+
+/// The OTLP profiles export: under `/v1development/` while the signal is in
+/// development, and under `/v1/` where the spec moves it at release candidate.
+const PROFILES_ROUTES: [&str; 2] = ["/v1development/profiles", "/v1/profiles"];
+
+/// What both routes answer, with a 404, while `INGEST_PROFILES_ENABLED` is off.
+const PROFILES_DISABLED_MESSAGE: &str = "Profiles ingest is not enabled on this gateway";
+
+fn with_profiles_routes(router: Router<Arc<AppState>>) -> Router<Arc<AppState>> {
+    PROFILES_ROUTES.into_iter().fold(router, |router, path| {
+        router.route(path, post(handle_profiles))
+    })
+}
+
+async fn handle_profiles(
+    State(state): State<Arc<AppState>>,
+    matched_path: MatchedPath,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    // Off, the routes answer as if they were not there: nothing is read or written.
+    if !state.config.profiles_enabled {
+        return (StatusCode::NOT_FOUND, PROFILES_DISABLED_MESSAGE).into_response();
+    }
+    let start = Instant::now();
+    metrics::request_started();
+    let _guard = InFlightGuard;
+    let route = matched_path.as_str();
+    let otel_name = format!("POST {route}");
+    let span = tracing::info_span!(
+        "ingest_profiles",
+        otel.name = %otel_name,
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
+        "maple.ingest.reject_reason" = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = %route,
+        "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
+        "maple.signal" = "profiles",
+        "maple.org_id" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
+        "maple.ingest.payload_format" = tracing::field::Empty,
+        "maple.ingest.content_encoding" = tracing::field::Empty,
+        "maple.ingest.decoded_bytes" = tracing::field::Empty,
+        "maple.ingest.item_count" = tracing::field::Empty,
+        "maple.ingest.native_rows" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
+        "maple.profiles.dropped" = tracing::field::Empty,
+        "maple.sdk" = tracing::field::Empty,
+        "user_agent.original" = tracing::field::Empty,
+    );
+    record_client_identity(&span, &headers);
+    let span_handle = span.clone();
+    let result = handle_profiles_inner(&state, &headers, body)
+        .instrument(span)
+        .await;
+    let duration = start.elapsed().as_secs_f64();
+    let signal = TelemetrySignal::Profiles.as_str();
+    match result {
+        Ok(accepted) => {
+            span_handle.record("http.response.status_code", 200u16);
+            span_handle.record("otel.status_code", "Ok");
+            metrics::request_completed(signal, "ok", "none", duration);
+            profiles_export_response(&headers, accepted)
+        }
+        Err(error) => {
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error.error_kind());
+            metrics::request_completed(signal, "error", error.error_kind(), duration);
+            record_rejection_reason(
+                &span_handle,
+                status,
+                error.error_kind(),
+                error.message.as_str(),
+            );
+            error.into_response()
+        }
+    }
+}
+
+/// What an accepted export stored, and what it left out: rows past the row
+/// ceiling, and the profiles they belonged to, which OTLP counts.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ProfilesAccepted {
+    stored_rows: usize,
+    dropped_rows: usize,
+    rejected_profiles: usize,
+}
+
+/// The `ExportProfilesServiceResponse`, in the encoding the request used: empty for
+/// a full success, a partial success when rows were left out.
+fn profiles_export_response(headers: &HeaderMap, accepted: ProfilesAccepted) -> Response {
+    let json = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("json"));
+    let partial_success = (accepted.rejected_profiles > 0).then(|| ExportProfilesPartialSuccess {
+        rejected_profiles: i64::try_from(accepted.rejected_profiles).unwrap_or(i64::MAX),
+        error_message: format!(
+            "{} profile rows were larger than one export batch and were not stored",
+            accepted.dropped_rows
+        ),
+    });
+    if json {
+        let body = partial_success.map_or_else(
+            || "{}".to_owned(),
+            |partial| {
+                serde_json::json!({
+                    "partialSuccess": {
+                        "rejectedProfiles": partial.rejected_profiles,
+                        "errorMessage": partial.error_message,
+                    }
+                })
+                .to_string()
+            },
+        );
+        (StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response()
+    } else {
+        let body = ExportProfilesServiceResponse { partial_success }.encode_to_vec();
+        (
+            StatusCode::OK,
+            [(CONTENT_TYPE, "application/x-protobuf")],
+            body,
+        )
+            .into_response()
+    }
+}
+
+/// What the gateway stamps on a profile's resource: the same attributes
+/// `enrich_resource_attributes` gives a log's, less a sender's own source claim.
+/// The source's resource overrides, applied to the export before the org's rules run, and
+/// the gateway's own stamps, applied by the flatten after them.
+fn profile_resource_stamps(
+    resolved_key: &ResolvedIngestKey,
+) -> (profiles::ResourceOverrides, profiles::ResourceStamps) {
+    let mut overrides = profiles::ResourceOverrides::default();
+    let mut stamps = profiles::ResourceStamps {
+        reserved: &["org_id", "maple_org_id", SOURCE_ID_ATTRIBUTE],
+        ..Default::default()
+    };
+    let attributes = resolved_key
+        .source
+        .iter()
+        .flat_map(|source| &source.resource_attributes)
+        .filter(|attribute| !sources::is_protected_attribute(&attribute.key));
+    for attribute in attributes {
+        let pair = (attribute.key.clone(), attribute.value.clone());
+        match attribute.mode {
+            OverrideMode::Set => overrides.set.push(pair),
+            OverrideMode::Default => overrides.defaults.push(pair),
+        }
+    }
+    // Last, so the maple_* stamps win over any override.
+    let mut stamp = |key: &str, value: &str| stamps.set.push((key.to_owned(), value.to_owned()));
+    stamp("maple_org_id", &resolved_key.org_id);
+    stamp("maple_ingest_key_type", resolved_key.key_type.as_str());
+    stamp("maple_ingest_source", INGEST_SOURCE);
+    if let Some(source_id) = resolved_key.source_public_id() {
+        stamp(SOURCE_ID_ATTRIBUTE, source_id);
+    }
+    (overrides, stamps)
+}
+
+/// `POST /v1development/profiles`, and `/v1/profiles` where the spec moves it: an
+/// OTLP profiles export, flattened to rows of `profiles` by `maple_ingest::profiles`.
+/// Metered per org but neither gated nor billed: profiles have no plan feature yet.
+async fn handle_profiles_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<ProfilesAccepted, ApiError> {
+    let Some(resolved_key) = resolve_replay_key(state, headers, &[SourceSignal::Profiles]).await?
+    else {
+        return Ok(ProfilesAccepted::default());
+    };
+    let org_id = resolved_key.org_id.clone();
+    Span::current().record("maple.org_id", org_id.as_str());
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved_key.clickhouse_ready,
+    );
+    // Pinned to managed storage, like the audit trail: an org's own ClickHouse is
+    // not required to have the table, so its rows are never sent there.
+    let destination = ExportDestination::Tinybird;
+    Span::current().record("maple.ingest.destination", destination.as_str());
+
+    // A sender on another wire layout would decode into the wrong fields.
+    let version = headers
+        .get(profiles::VERSION_HEADER)
+        .map(|value| value.to_str().unwrap_or_default());
+    if !profiles::is_supported_version(version) {
+        return Err(ApiError::bad_request(
+            "Unsupported OTLP profiles development version; this gateway reads version 1",
+        ));
+    }
+
+    let _org_inflight_permit =
+        state
+            .org_inflight_limiter
+            .try_acquire(&org_id)
+            .ok_or_else(|| {
+                warn!(org_id = %org_id, "Per-org in-flight ingest limit exceeded");
+                ApiError::too_many_requests("Per-org ingest limit exceeded")
+            })?;
+    if body.len() > state.config.max_request_body_bytes {
+        return Err(ApiError::payload_too_large("Request body too large"));
+    }
+    let pipeline =
+        native_rows_pipeline_for(state, destination, "Profile storage is not configured")?;
+
+    let (payload_format, gzip) = profiles_body_encoding(headers)?;
+    let rules = profile_redaction_rules(state, &org_id).await?;
+    Span::current().record("maple.ingest.payload_format", payload_format.label());
+    Span::current().record(
+        "maple.ingest.content_encoding",
+        if gzip { "gzip" } else { "identity" },
+    );
+
+    let FlattenedProfiles {
+        rows,
+        profile_count,
+        dropped_rows,
+        rejected_profiles,
+        decoded_bytes,
+        memory: _decode_memory,
+    } = decode_profiles(
+        state,
+        body,
+        gzip,
+        payload_format,
+        profile_resource_stamps(&resolved_key),
+        rules,
+    )
+    .await
+    .inspect_err(|error| {
+        warn!(
+            org_id = %org_id,
+            format = payload_format.label(),
+            reason = %error.message,
+            "Profiles export refused while decoding"
+        );
+        // A body that does not decode, or would store too much, is an export the org lost.
+        let signal = TelemetrySignal::Profiles.as_str();
+        if error.status == StatusCode::BAD_REQUEST {
+            metrics::org_data_loss(&org_id, signal, "decode");
+        } else if [INGEST_ROW_EXPANSION.error_kind, INGEST_RULES_SCAN_BUDGET.error_kind]
+            .contains(&error.error_kind())
+        {
+            metrics::org_data_loss(&org_id, signal, error.error_kind());
+        }
+    })?;
+    let count = rows.len();
+    Span::current().record("maple.ingest.decoded_bytes", decoded_bytes);
+    Span::current().record("maple.ingest.item_count", profile_count);
+    Span::current().record("maple.ingest.native_rows", count);
+    if dropped_rows > 0 {
+        Span::current().record("maple.profiles.dropped", dropped_rows);
+        warn!(
+            org_id = %org_id,
+            dropped = dropped_rows,
+            "dropped profile rows larger than one export batch"
+        );
+    }
+    let accepted = ProfilesAccepted {
+        stored_rows: count,
+        dropped_rows,
+        rejected_profiles,
+    };
+    if rows.is_empty() {
+        return Ok(accepted);
+    }
+
+    commit_profile_rows(state, pipeline, &org_id, rows, destination).await?;
+    // The usage counters only: nothing is reported to Autumn until profiles are priced.
+    if let Some(usage) = &state.usage_metrics {
+        let signal = TelemetrySignal::Profiles.as_str();
+        usage.record(&org_id, signal, decoded_bytes as u64, count as u64);
+    }
+    state.resolver.note_source_use(&resolved_key, false);
+    Ok(accepted)
+}
+
+/// Commits `rows` as one frame per export batch, not per request: the rows repeat
+/// every stack in full, so an export is many times its wire size. The whole export
+/// is reserved before its first frame, so a full queue refuses it with nothing stored.
+async fn commit_profile_rows(
+    state: &AppState,
+    pipeline: &TelemetryPipeline,
+    org_id: &str,
+    rows: Vec<Vec<u8>>,
+    destination: ExportDestination,
+) -> Result<(), ApiError> {
+    let signal = TelemetrySignal::Profiles;
+    let count = rows.len();
+    let batches = chunk_rows(rows, state.config.tinybird.batch_max_bytes);
+    let datasource = &state.config.tinybird.datasource_profiles;
+    let committed = pipeline
+        .accept_row_batches_to(org_id, datasource, batches, signal, destination)
+        .await;
+    let stored = committed
+        .as_ref()
+        .map_or_else(|refused| refused.committed_rows, |_| count);
+    metrics::native_rows(signal.as_str(), stored as u64);
+    committed.map(drop).map_err(|refused| {
+        warn!(
+            org_id = %org_id,
+            error = %refused.error,
+            committed_rows = refused.committed_rows,
+            "profiles enqueue rejected"
+        );
+        profiles_commit_error(&refused, count)
+    })
+}
+
+/// How a profiles export's body is encoded, and whether it is gzipped. Protobuf
+/// unless the content type says JSON, as on the other OTLP routes.
+fn profiles_body_encoding(headers: &HeaderMap) -> Result<(PayloadFormat, bool), ApiError> {
+    let content_type = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/x-protobuf")
+        .to_ascii_lowercase();
+    let payload_format = detect_payload_format(&content_type)?;
+    let gzip = match headers
+        .get(CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("" | "identity") => false,
+        Some("gzip") => true,
+        Some(_) => {
+            return Err(ApiError::unsupported_media_type(
+                "Unsupported content-encoding",
+            ))
+        }
+    };
+    Ok((payload_format, gzip))
+}
+
+/// A refused commit as the sender is told of it. The pipeline's own text says
+/// nothing was written, which is only so when the first frame was the one refused.
+fn profiles_commit_error(refused: &RowBatchesError, rows: usize) -> ApiError {
+    let error = api_error_from_pipeline(&refused.error);
+    if refused.committed_rows == 0 {
+        return error;
+    }
+    ApiError {
+        message: format!(
+            "Maple stored {} of this export's {rows} profile rows before its ingest queue \
+             refused the rest. Resending the export stores those rows a second time.",
+            refused.committed_rows
+        ),
+        ..error
+    }
+}
+
+/// The most one profile row may serialize to: an export batch less its newline,
+/// so every frame `chunk_rows` makes fits a batch. Never past `MAX_ROW_BYTES`.
+fn profile_row_max_bytes(batch_max_bytes: usize) -> usize {
+    profiles::MAX_ROW_BYTES
+        .min(batch_max_bytes)
+        .saturating_sub(1)
+}
+
+/// `rows` in runs of at most `max_bytes`, in order. A longer row would be a run of
+/// its own, but `profile_row_max_bytes` drops those before they get here.
+fn chunk_rows(rows: Vec<Vec<u8>>, max_bytes: usize) -> Vec<Vec<Vec<u8>>> {
+    let mut chunks: Vec<Vec<Vec<u8>>> = Vec::new();
+    let mut chunk_bytes = 0_usize;
+    for row in rows {
+        let row_bytes = row.len() + 1;
+        match chunks.last_mut() {
+            Some(chunk) if chunk_bytes + row_bytes <= max_bytes => {
+                chunk_bytes += row_bytes;
+                chunk.push(row);
+            }
+            _ => {
+                chunk_bytes = row_bytes;
+                chunks.push(vec![row]);
+            }
+        }
+    }
+    chunks
+}
+
+/// A profiles export as rows, and the decode memory they hold until dropped.
+struct FlattenedProfiles {
+    rows: Vec<Vec<u8>>,
+    profile_count: usize,
+    /// Rows left out for being larger than one export batch.
+    dropped_rows: usize,
+    /// Profiles that lost a row that way.
+    rejected_profiles: usize,
+    decoded_bytes: usize,
+    memory: DecodeReservation,
+}
+
+/// Inflates, decodes and flattens a profiles export on the blocking pool, inside
+/// the decode memory budget like an OTLP body. The flatten reserves too: its rows
+/// repeat per sample what the export's dictionary holds once. The decoded export
+/// and its rows share one decode heap ceiling, so a request under every ceiling
+/// always fits an idle gateway: a 503 here is contention, never the request's size.
+async fn decode_profiles(
+    state: &AppState,
+    body: Bytes,
+    gzip: bool,
+    payload_format: PayloadFormat,
+    (overrides, stamps): (profiles::ResourceOverrides, profiles::ResourceStamps),
+    rules: Option<Arc<rules_gateway::OrgRules>>,
+) -> Result<FlattenedProfiles, ApiError> {
+    let span = Span::current();
+    let mut reservation = state.decode_memory.reservation();
+    let (max_decoded, heap_budget) = (
+        state.config.max_decoded_body_bytes,
+        state.config.max_decode_heap_bytes,
+    );
+    let max_row_bytes = profile_row_max_bytes(state.config.tinybird.batch_max_bytes);
+    let max_row_expansion = state.config.max_row_expansion;
+    tokio::task::spawn_blocking(move || {
+        let busy = profiles_decode_busy;
+        if !reservation.try_add(body.len() as u64) {
+            return Err(busy());
+        }
+        let payload = if gzip {
+            let invalid = || ApiError::bad_request("Invalid gzip body");
+            let declared = decode_budget::gzip_declared_len(&body).ok_or_else(invalid)?;
+            let declared = usize::try_from(declared).unwrap_or(usize::MAX);
+            if declared > max_decoded {
+                return Err(too_large_decoded());
+            }
+            if !reservation.try_add(declared as u64) {
+                return Err(busy());
+            }
+            let inflated = gunzip_declared(&body, declared).map_err(|error| match error {
+                GunzipError::Invalid(_) => invalid(),
+                GunzipError::TooLarge => too_large_decoded(),
+            })?;
+            drop(body);
+            Bytes::from(inflated)
+        } else {
+            body
+        };
+        let estimate = match payload_format {
+            PayloadFormat::Protobuf => {
+                decode_budget::protobuf_cost(OtlpSignal::Profiles, &payload, heap_budget)
+            }
+            PayloadFormat::Json => decode_budget::json_cost(&payload, heap_budget),
+        }
+        .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget))?;
+        if !reservation.try_add(estimate) {
+            return Err(busy());
+        }
+        let mut request = match payload_format {
+            PayloadFormat::Protobuf => ExportProfilesServiceRequest::decode(payload.as_ref())
+                .map_err(|e| invalid_payload("profiles", "protobuf", e))?,
+            PayloadFormat::Json => profiles::decode_json(&payload)
+                .map_err(|e| invalid_payload("profiles", "JSON", e))?,
+        };
+        // What the source's overrides add and the rules inline from the string table: under the
+        // decode heap ceiling with the decoded export, and held with it until the rows are built.
+        let mut grown = ExportGrowth::new(estimate, heap_budget);
+        if !profiles::apply_resource_overrides(&mut request, &overrides, |bytes| {
+            grown.charge(bytes, &mut reservation)
+        }) {
+            return Err(grown.refusal());
+        }
+        if let Some(rules) = &rules {
+            redact_profile_export(&span, rules, &mut request, |bytes| {
+                grown.charge(bytes, &mut reservation)
+            })
+            .map_err(|error| match error {
+                ingest_rules::ProfileRedactError::OverMemoryBudget => grown.refusal(),
+                ingest_rules::ProfileRedactError::ScanBudgetExceeded => ApiError::tagged(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    &INGEST_RULES_SCAN_BUDGET,
+                    "This export needs more ingest rule scanning than one request may use; send smaller exports",
+                ),
+            })?;
+        }
+        // Only the decoded form is left; the buffers went with the payload.
+        let decoded_bytes = payload.len();
+        drop(payload);
+        let decoded_heap = estimate.saturating_add(grown.bytes);
+        reservation.shrink_to(decoded_heap);
+        let limits = ProfileLimits {
+            decoded_heap,
+            heap_ceiling: heap_budget,
+            max_row_bytes,
+            row_expansion: max_row_expansion,
+            max_stored_bytes: (max_row_expansion > 0)
+                .then(|| (decoded_bytes as u64).saturating_mul(max_row_expansion)),
+        };
+        let flattened =
+            flatten_profiles(&request, &stamps, limits, payload_format, &mut reservation)?;
+        drop(request);
+        // The rows, and the copy of them the WAL frame is built from.
+        let row_bytes: usize = flattened.rows.iter().map(Vec::len).sum();
+        if limits
+            .max_stored_bytes
+            .is_some_and(|allowed| row_bytes as u64 > allowed)
+        {
+            return Err(profiles_row_expansion(max_row_expansion));
+        }
+        reservation.shrink_to(2 * row_bytes as u64);
+        Ok(FlattenedProfiles {
+            rows: flattened.rows,
+            profile_count: flattened.profile_count,
+            dropped_rows: flattened.dropped_rows,
+            rejected_profiles: flattened.rejected_profiles,
+            decoded_bytes,
+            memory: reservation,
+        })
+    })
+    .await
+    .unwrap_or_else(|join_error| {
+        error!(error = %join_error, "Profiles decode task failed");
+        Err(ApiError::service_unavailable(
+            "Ingest gateway failed to decode the request",
+        ))
+    })
+}
+
+/// The org's ingest rules when one of them redacts: a profile gets every redact rule (see
+/// `ingest_rules::redact_profiles`). A lookup with nothing to fall back on refuses the export
+/// rather than storing it unredacted, as on the OTLP paths.
+async fn profile_redaction_rules(
+    state: &AppState,
+    org_id: &str,
+) -> Result<Option<Arc<rules_gateway::OrgRules>>, ApiError> {
+    let resolver = &state.ingest_rule_resolver;
+    if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
+        return Ok(None);
+    }
+    let rules = resolver.resolve_rules(org_id).await.map_err(|unavailable| {
+        let message = match unavailable {
+            rules_gateway::RulesUnavailable::Store => "Ingest rules could not be loaded; retry shortly",
+            rules_gateway::RulesUnavailable::RegexBudget => {
+                "This organization's ingest rule regexes are too large to compile together; simplify or remove some"
+            }
+        };
+        ApiError::tagged(StatusCode::SERVICE_UNAVAILABLE, &INGEST_RULES_UNAVAILABLE, message)
+    })?;
+    Ok(rules.compiled.redacts().then_some(rules))
+}
+
+/// Redacts a decoded export with the org's rules, before anything of it is flattened or stored.
+/// `charge` is asked for each copy of string-table text the pass makes.
+fn redact_profile_export(
+    span: &Span,
+    rules: &rules_gateway::OrgRules,
+    request: &mut ExportProfilesServiceRequest,
+    charge: impl FnMut(u64) -> bool,
+) -> Result<(), ingest_rules::ProfileRedactError> {
+    let mut stats = RuleStats::default();
+    ingest_rules::redact_profiles(&rules.compiled, request, &mut stats, charge)?;
+    span.record("maple.ingest.rules.count", rules.compiled.len());
+    span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    Ok(())
+}
+
+fn profiles_decode_busy() -> ApiError {
+    ApiError::tagged(
+        StatusCode::SERVICE_UNAVAILABLE,
+        &INGEST_DECODE_BUSY,
+        "Ingest gateway is busy decoding other requests; retry shortly",
+    )
+}
+
+/// Memory a decoded export grows by before it is flattened: the source's overrides and the text
+/// the org's rules inline. Counted exactly against the decode heap ceiling, and reserved from the
+/// process-wide budget in steps, so many small copies are not each rounded up to a KiB there.
+struct ExportGrowth {
+    estimate: u64,
+    heap_ceiling: u64,
+    bytes: u64,
+    reserved: u64,
+    over_ceiling: bool,
+}
+
+impl ExportGrowth {
+    const STEP: u64 = 64 * 1024;
+
+    const fn new(estimate: u64, heap_ceiling: u64) -> Self {
+        Self {
+            estimate,
+            heap_ceiling,
+            bytes: 0,
+            reserved: 0,
+            over_ceiling: false,
+        }
+    }
+
+    fn charge(&mut self, bytes: u64, reservation: &mut DecodeReservation) -> bool {
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.over_ceiling = self.estimate.saturating_add(self.bytes) > self.heap_ceiling;
+        if self.over_ceiling {
+            return false;
+        }
+        if self.bytes > self.reserved {
+            let ask = (self.bytes - self.reserved).max(Self::STEP);
+            if !reservation.try_add(ask) {
+                return false;
+            }
+            self.reserved = self.reserved.saturating_add(ask);
+        }
+        true
+    }
+
+    /// Past the ceiling no retry fits: 413. Refused by the process-wide budget: the retryable 503.
+    fn refusal(&self) -> ApiError {
+        if self.over_ceiling {
+            over_decode_budget(self.heap_ceiling)
+        } else {
+            profiles_decode_busy()
+        }
+    }
+}
+
+/// Refuses an export whose rows would store more than `INGEST_MAX_ROW_EXPANSION`
+/// times its decoded size: each row repeats a whole stack, so a few KiB of
+/// dictionary could otherwise store hundreds of MiB.
+fn profiles_row_expansion(ceiling: u64) -> ApiError {
+    ApiError::tagged(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        &INGEST_ROW_EXPANSION,
+        format!(
+            "This export would be stored as more than {ceiling} times its size, because every \
+             row repeats its whole stack; send fewer distinct stacks, links or attributes per \
+             export"
+        ),
+    )
+}
+
+/// What bounds one export's flatten: the decode heap its decoded form was
+/// estimated to take, the ceiling that and its rows share, the row ceiling, and
+/// the most its rows may store (`None` when `INGEST_MAX_ROW_EXPANSION` is 0).
+#[derive(Clone, Copy)]
+struct ProfileLimits {
+    decoded_heap: u64,
+    heap_ceiling: u64,
+    max_row_bytes: usize,
+    row_expansion: u64,
+    max_stored_bytes: Option<u64>,
+}
+
+/// The least a profiles flatten may charge before the stored-bytes ceiling stops it
+/// early, so a tiny export is not refused for the meter's step size.
+const PROFILES_MIN_CHARGE_BYTES: u64 = 1024 * 1024;
+
+/// Flattens a decoded export, reserving its rows' memory first against the request's
+/// own ceiling and then the process-wide budget. Past the ceiling is a 413, since
+/// no retry fits it; refused by the process-wide budget is the retryable 503.
+fn flatten_profiles(
+    request: &ExportProfilesServiceRequest,
+    stamps: &profiles::ResourceStamps,
+    limits: ProfileLimits,
+    payload_format: PayloadFormat,
+    reservation: &mut DecodeReservation,
+) -> Result<profiles::Flattened, ApiError> {
+    // In whole KiB, as the reservation counts them.
+    let kib = |bytes: u64| bytes.div_ceil(1024).saturating_mul(1024);
+    let mut heap_bytes = kib(limits.decoded_heap);
+    let mut over_ceiling = false;
+    // The flatten charges each row twice (the row and its frame copy) plus what builds
+    // it, in steps, so it stops once well past the stored-bytes ceiling; the exact
+    // check after it decides.
+    let charge_limit = limits
+        .max_stored_bytes
+        .map(|stored| stored.saturating_mul(4).max(PROFILES_MIN_CHARGE_BYTES));
+    let mut charged = 0u64;
+    let mut over_expansion = false;
+    let mut reserve = |bytes: u64| {
+        charged = charged.saturating_add(bytes);
+        over_expansion = charge_limit.is_some_and(|limit| charged > limit);
+        heap_bytes = heap_bytes.saturating_add(kib(bytes));
+        over_ceiling = heap_bytes > limits.heap_ceiling;
+        !over_expansion && !over_ceiling && reservation.try_add(bytes)
+    };
+    let now_nano = current_time_unix_nano();
+    profiles::flatten(
+        request,
+        stamps,
+        now_nano,
+        &mut profiles::random_profile_id,
+        limits.max_row_bytes,
+        &mut reserve,
+    )
+    .map_err(|error| match error {
+        profiles::FlattenError::OverBudget if over_expansion => {
+            profiles_row_expansion(limits.row_expansion)
+        }
+        profiles::FlattenError::OverBudget if over_ceiling => {
+            over_decode_budget(limits.heap_ceiling)
+        }
+        profiles::FlattenError::OverBudget => profiles_decode_busy(),
+        profiles::FlattenError::InvalidId { .. } => {
+            invalid_payload("profiles", payload_format.label(), error)
+        }
+        profiles::FlattenError::Encode(detail) => ApiError::tagged(
+            StatusCode::SERVICE_UNAVAILABLE,
+            &INGEST_ENCODE_FAILED,
+            "Maple could not encode these profiles for storage.",
+        )
+        .with_detail(detail),
+    })
 }
 
 /// Bounded gunzip of a replay chunk into text. Invalid UTF-8 reads as the
@@ -13238,6 +13982,7 @@ mod tests {
             datasource_session_replay_events: "session_replay_events".to_owned(),
             datasource_session_events: "session_events".to_owned(),
             datasource_product_events: "product_events".to_owned(),
+            datasource_profiles: "profiles".to_owned(),
         }
     }
 
@@ -13354,6 +14099,7 @@ mod tests {
                 org_routing_cache_ttl_secs: 5,
                 ingest_rules_enabled: false,
                 audit_trail_enabled: false,
+                profiles_enabled: false,
                 ingest_rules_cache_ttl_secs: 30,
                 replay_max_session_bytes: 1024 * 1024 * 1024,
                 replay_blob_store: None,
@@ -13940,15 +14686,18 @@ mod tests {
         state: &mut AppState,
         queue_dir: &std::path::Path,
     ) -> TinybirdImports {
-        let imports = store_in_fake_tinybird(state, &queue_dir.join("audit-trail")).await;
+        let imports =
+            store_in_fake_tinybird(state, test_tinybird_config(queue_dir.join("audit-trail")))
+                .await;
         state.config.audit_trail_enabled = true;
         imports
     }
 
-    /// Switches `state` to the native pipeline, writing to a fake Tinybird the test can read.
+    /// Makes `state` a gateway that writes to managed storage: a pipeline on
+    /// `config` whose Tinybird is a fake the test can read.
     async fn store_in_fake_tinybird(
         state: &mut AppState,
-        queue_dir: &std::path::Path,
+        config: TinybirdConfig,
     ) -> TinybirdImports {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -13965,7 +14714,7 @@ mod tests {
             TinybirdConfig {
                 endpoint,
                 token: "token".to_owned(),
-                ..test_tinybird_config(queue_dir.to_path_buf())
+                ..config
             },
             Client::builder()
                 .timeout(Duration::from_secs(5))
@@ -13973,7 +14722,7 @@ mod tests {
                 .unwrap(),
         )
         .await
-        .expect("the native pipeline should start");
+        .expect("the fake Tinybird pipeline should start");
         state.config.write_mode = WriteMode::Tinybird;
         state.telemetry_pipeline = Some(pipeline);
         rx
@@ -14030,6 +14779,991 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(200), imports.recv())
             .await
             .is_err()
+    }
+
+    /// A real export of the Maple SDK's Node profiler: 498 samples, each of them a
+    /// row, since every one is on a span or a stack of its own.
+    const PROFILES_SDK_EXPORT: &[u8] = include_bytes!("testdata/profiles-sdk-node.json");
+    const PROFILES_SDK_ROWS: usize = 498;
+
+    /// A gateway that takes profiles and writes them to a fake Tinybird with room
+    /// for an export's rows.
+    async fn profiles_test_state(
+        store: Arc<FakeKeyStore>,
+        queue_dir: PathBuf,
+    ) -> (AppState, TinybirdImports) {
+        profiles_test_state_with_org_queue(store, queue_dir, 64 * 1024 * 1024).await
+    }
+
+    /// `profiles_test_state` whose pipeline holds `org_queue_max_bytes` per org.
+    async fn profiles_test_state_with_org_queue(
+        store: Arc<FakeKeyStore>,
+        queue_dir: PathBuf,
+        org_queue_max_bytes: u64,
+    ) -> (AppState, TinybirdImports) {
+        let mut state = test_app_state(
+            store,
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+        let config = TinybirdConfig {
+            queue_max_bytes: 64 * 1024 * 1024,
+            org_queue_max_bytes,
+            ..test_tinybird_config(queue_dir.join("profiles"))
+        };
+        let imports = store_in_fake_tinybird(&mut state, config).await;
+        state.config.profiles_enabled = true;
+        (state, imports)
+    }
+
+    fn private_key_store(raw_key: &str, org_id: &str, clickhouse_ready: bool) -> Arc<FakeKeyStore> {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: org_id.to_owned(),
+                self_managed: clickhouse_ready,
+                clickhouse_ready,
+            },
+        );
+        store
+    }
+
+    fn profiles_headers(raw_key: &str, content_type: &'static str) -> HeaderMap {
+        let mut headers = bearer_headers(raw_key);
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+        headers
+    }
+
+    async fn send_sdk_profiles(state: &AppState, raw_key: &str) -> Result<usize, ApiError> {
+        handle_profiles_inner(
+            state,
+            &profiles_headers(raw_key, "application/json"),
+            Bytes::from_static(PROFILES_SDK_EXPORT),
+        )
+        .await
+        .map(|accepted| accepted.stored_rows)
+    }
+
+    /// The next `count` rows the fake Tinybird is sent, which must be profiles.
+    async fn imported_profile_rows(
+        imports: &mut TinybirdImports,
+        count: usize,
+    ) -> Vec<serde_json::Value> {
+        let mut rows = Vec::new();
+        while rows.len() < count {
+            let (datasource, body) = tokio::time::timeout(Duration::from_secs(5), imports.recv())
+                .await
+                .expect("the rows should reach Tinybird")
+                .expect("the Tinybird channel should stay open");
+            assert_eq!(datasource, "profiles");
+            rows.extend(
+                body.lines()
+                    .filter(|line| !line.is_empty())
+                    .map(|line| serde_json::from_str(line).expect("each line is a row")),
+            );
+        }
+        rows
+    }
+
+    async fn no_profiles_are_stored(imports: &mut TinybirdImports) -> bool {
+        tokio::time::timeout(Duration::from_millis(200), imports.recv())
+            .await
+            .is_err()
+    }
+
+    #[tokio::test]
+    async fn a_profiles_export_reaches_the_profiles_datasource_on_either_route() {
+        let queue_dir = unique_main_test_dir("profiles-export");
+        let key = "maple_sk_test_profiles";
+        let store = private_key_store(key, "org_profiles", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let base = serve_profiles_routes(Arc::new(state)).await;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+
+        // OTLP/JSON, as the Maple SDK sends it, on the development path.
+        let response = client
+            .post(format!("{base}/v1development/profiles"))
+            .bearer_auth(key)
+            .header(CONTENT_TYPE, "application/json")
+            .header(profiles::VERSION_HEADER, "1")
+            .body(PROFILES_SDK_EXPORT)
+            .send()
+            .await
+            .expect("the gateway answers");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "{}");
+        let rows = imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await;
+        assert_eq!(rows.len(), PROFILES_SDK_ROWS);
+
+        // The keys are the ones the insert mapping selects, on every row.
+        let mapping = maple_ingest::clickhouse_insert_mappings::mapping_for("profiles")
+            .expect("the profiles mapping");
+        let mut selects: Vec<&str> = mapping
+            .selects
+            .iter()
+            .copied()
+            .filter(|select| *select != maple_ingest::clickhouse_insert_mappings::ORG_PLACEHOLDER)
+            .collect();
+        selects.sort_unstable();
+        for row in &rows {
+            let mut keys: Vec<&str> = row
+                .as_object()
+                .expect("a row is an object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            keys.sort_unstable();
+            assert_eq!(keys, selects);
+            // The managed table reads its `OrgId` from here.
+            assert_eq!(row["resource_attributes"]["maple_org_id"], "org_profiles");
+            assert_eq!(row["service_name"], "checkout-api");
+            assert_eq!(row["sample_type"], "cpu");
+        }
+        let total: i64 = rows.iter().filter_map(|row| row["value"].as_i64()).sum();
+        assert_eq!(total, 1_105_584_000);
+        let first = &rows[0];
+        assert_eq!(first["timestamp"], "2026-11-15 12:30:07.512875000");
+        assert_eq!(
+            first["resource_attributes"]["maple_ingest_key_type"],
+            "private"
+        );
+        assert_eq!(first["frames"].as_array().map(Vec::len), Some(16));
+
+        // The same export as gzipped protobuf, on the path the spec moves to.
+        let request = profiles::decode_json(PROFILES_SDK_EXPORT).expect("the export decodes");
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&request.encode_to_vec()).unwrap();
+        let response = client
+            .post(format!("{base}/v1/profiles"))
+            .bearer_auth(key)
+            .header(CONTENT_TYPE, "application/x-protobuf")
+            .header(CONTENT_ENCODING, "gzip")
+            .body(encoder.finish().unwrap())
+            .send()
+            .await
+            .expect("the gateway answers");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap().len(), 0);
+        assert_eq!(
+            imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await,
+            rows
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_profiles_export_in_another_development_version_is_refused() {
+        let queue_dir = unique_main_test_dir("profiles-version");
+        let key = "maple_sk_test_profiles_version";
+        let store = private_key_store(key, "org_profiles_version", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        let send = |version: &'static str| {
+            let state = &state;
+            async move {
+                let mut headers = profiles_headers(key, "application/json");
+                headers.insert(profiles::VERSION_HEADER, HeaderValue::from_static(version));
+                handle_profiles_inner(state, &headers, Bytes::from_static(PROFILES_SDK_EXPORT))
+                    .await
+                    .map(|accepted| accepted.stored_rows)
+            }
+        };
+
+        let refused = send("2")
+            .await
+            .expect_err("version 2 is another wire layout");
+        assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        assert_eq!(
+            send("1").await.expect("version 1 is read"),
+            PROFILES_SDK_ROWS
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_source_token_sends_profiles_only_when_its_signals_allow_them() {
+        let queue_dir = unique_main_test_dir("profiles-source-signals");
+        let store = Arc::new(FakeKeyStore::default());
+        let token = |allowed: Option<&str>, attributes: &str| {
+            source_row(
+                "org_profiles_token",
+                source_config(allowed, None, attributes),
+            )
+        };
+        let traces_only = "maple_src_profiles_traces_and_logs_only_00000";
+        let profiles_only = "maple_src_profiles_profiles_only_00000000000";
+        let unscoped = "maple_src_profiles_every_signal_000000000000";
+        store.insert_source(traces_only, token(Some(r#"["traces","logs"]"#), "[]"));
+        store.insert_source(
+            profiles_only,
+            token(
+                Some(r#"["profiles"]"#),
+                r#"[{"key":"service.name","value":"billing","mode":"set"},
+                    {"key":"service.version","value":"0.0.0","mode":"default"}]"#,
+            ),
+        );
+        store.insert_source(unscoped, token(None, "[]"));
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+
+        let denied = send_sdk_profiles(&state, traces_only)
+            .await
+            .expect_err("a token for other signals is refused");
+        assert_eq!(denied.status, StatusCode::FORBIDDEN);
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        assert_eq!(
+            send_sdk_profiles(&state, profiles_only)
+                .await
+                .expect("a profiles token is admitted"),
+            PROFILES_SDK_ROWS
+        );
+        let rows = imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await;
+        let attributes = &rows[0]["resource_attributes"];
+        assert_eq!(attributes["maple_org_id"], "org_profiles_token");
+        assert_eq!(attributes["maple_ingest_key_type"], "source");
+        assert_eq!(
+            attributes[SOURCE_ID_ATTRIBUTE],
+            sources::public_source_id(SOURCE_UUID).expect("a source id")
+        );
+        // The token's overrides apply before the row's columns are read.
+        assert_eq!(rows[0]["service_name"], "billing");
+        assert_eq!(rows[0]["service_version"], "1.4.0");
+
+        assert_eq!(
+            send_sdk_profiles(&state, unscoped)
+                .await
+                .expect("an unscoped token sends every signal"),
+            PROFILES_SDK_ROWS
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[tokio::test]
+    async fn a_malformed_profiles_body_is_the_senders_error() {
+        let queue_dir = unique_main_test_dir("profiles-malformed");
+        let key = "maple_sk_test_profiles_malformed";
+        let store = private_key_store(key, "org_profiles_malformed", false);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        // A sample on a link whose trace id is three bytes long.
+        let short_id = br#"{"resourceProfiles":[{"scopeProfiles":[{"profiles":[{"samples":[{"stackIndex":1,"linkIndex":1,"values":["1"]}]}]}]}],"dictionary":{"stringTable":["","main"],"functionTable":[{},{"nameStrindex":1}],"locationTable":[{},{"lines":[{"functionIndex":1}]}],"stackTable":[{},{"locationIndices":[1]}],"linkTable":[{},{"traceId":"abcd"}]}}"#;
+        let cases: [(
+            &'static str,
+            Option<&'static str>,
+            &'static [u8],
+            StatusCode,
+        ); 8] = [
+            (
+                "application/x-protobuf",
+                None,
+                &[0x0f],
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "application/x-protobuf",
+                None,
+                PROFILES_SDK_EXPORT,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "application/json",
+                None,
+                br#"{"resourceProfiles":"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "application/json",
+                None,
+                br#"{"dictionary":{"stringTable":"nope"}}"#,
+                StatusCode::BAD_REQUEST,
+            ),
+            ("application/json", None, short_id, StatusCode::BAD_REQUEST),
+            (
+                "application/json",
+                Some("gzip"),
+                b"not gzip",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "application/json",
+                Some("br"),
+                b"{}",
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (
+                "text/plain",
+                None,
+                b"{}",
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+        ];
+        for (content_type, encoding, body, status) in cases {
+            let mut headers = profiles_headers(key, content_type);
+            if let Some(encoding) = encoding {
+                headers.insert(CONTENT_ENCODING, HeaderValue::from_static(encoding));
+            }
+            let refused = handle_profiles_inner(&state, &headers, Bytes::from_static(body))
+                .await
+                .expect_err("a malformed body is refused");
+            assert_eq!(refused.status, status, "{content_type} {encoding:?}");
+        }
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        // An export with nothing in it is accepted and stores nothing.
+        let empty = handle_profiles_inner(
+            &state,
+            &profiles_headers(key, "application/json"),
+            Bytes::from_static(b"{}"),
+        )
+        .await;
+        assert_eq!(
+            empty.expect("an empty export is not an error"),
+            ProfilesAccepted::default()
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // The `profiles` table is not required on an org's own ClickHouse, so its rows
+    // go to managed storage whatever warehouse the org's other telemetry is in.
+    #[tokio::test]
+    async fn profiles_of_an_org_on_its_own_clickhouse_go_to_managed_storage() {
+        let queue_dir = unique_main_test_dir("profiles-own-clickhouse");
+        let key = "maple_sk_test_profiles_byo";
+        let store = private_key_store(key, "org_profiles_byo", true);
+        let (state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+
+        assert_eq!(
+            send_sdk_profiles(&state, key)
+                .await
+                .expect("the export is accepted"),
+            PROFILES_SDK_ROWS
+        );
+        let rows = imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await;
+        assert_eq!(
+            rows[0]["resource_attributes"]["maple_org_id"],
+            "org_profiles_byo"
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A gateway that only forwards, or only writes to an org's own ClickHouse, has
+    // nowhere to put profiles.
+    #[tokio::test]
+    async fn a_gateway_without_managed_storage_refuses_profiles() {
+        let queue_dir = unique_main_test_dir("profiles-no-managed-storage");
+        let key = "maple_sk_test_profiles_forward";
+        let state = test_app_state(
+            private_key_store(key, "org_profiles_forward", true),
+            queue_dir.clone(),
+            "http://127.0.0.1:1".to_owned(),
+            Duration::from_secs(30),
+        )
+        .await;
+
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("there is no managed storage to write to");
+        assert_eq!(refused.status, StatusCode::SERVICE_UNAVAILABLE);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// Both routes of a gateway on `state`, and the base URL they are served on.
+    async fn serve_profiles_routes(state: Arc<AppState>) -> String {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = with_profiles_routes(Router::new()).with_state(state);
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        base
+    }
+
+    // The switch is what makes a rollback safe: off, no profiles frame is written.
+    #[tokio::test]
+    async fn the_profiles_routes_are_not_found_until_the_switch_is_on() {
+        let queue_dir = unique_main_test_dir("profiles-switch");
+        let key = "maple_sk_test_profiles_switch";
+        let store = private_key_store(key, "org_profiles_switch", false);
+        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        state.config.profiles_enabled = false;
+        let off = Arc::new(state);
+        let base = serve_profiles_routes(Arc::clone(&off)).await;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let send = |base: String, route: &'static str| {
+            client
+                .post(format!("{base}{route}"))
+                .bearer_auth(key)
+                .header(CONTENT_TYPE, "application/json")
+                .body(PROFILES_SDK_EXPORT)
+                .send()
+        };
+
+        for route in PROFILES_ROUTES {
+            let response = send(base.clone(), route)
+                .await
+                .expect("the gateway answers");
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{route}");
+            assert_eq!(response.text().await.unwrap(), PROFILES_DISABLED_MESSAGE);
+        }
+        assert!(no_profiles_are_stored(&mut imports).await);
+        let pipeline = off.telemetry_pipeline.as_ref().expect("a pipeline");
+        assert_eq!(pipeline.wal_backlog_bytes(), 0);
+        assert_eq!(off.decode_memory.reserved_bytes(), 0);
+
+        // The same gateway with the switch on takes the same export on both routes.
+        let on_dir = unique_main_test_dir("profiles-switch-on");
+        let store = private_key_store(key, "org_profiles_switch", false);
+        let (state, mut imports) = profiles_test_state(store, on_dir.clone()).await;
+        let base = serve_profiles_routes(Arc::new(state)).await;
+        for route in PROFILES_ROUTES {
+            let response = send(base.clone(), route)
+                .await
+                .expect("the gateway answers");
+            assert_eq!(response.status(), StatusCode::OK, "{route}");
+            let rows = imported_profile_rows(&mut imports, PROFILES_SDK_ROWS).await;
+            assert_eq!(rows.len(), PROFILES_SDK_ROWS);
+        }
+        drop(std::fs::remove_dir_all(&queue_dir));
+        drop(std::fs::remove_dir_all(&on_dir));
+    }
+
+    /// A protobuf export of `samples` samples on one short stack, each on a link of
+    /// its own and so a row of its own: small on the wire, many times that as rows.
+    fn profiles_export_of_many_rows(samples: i32) -> ExportProfilesServiceRequest {
+        let mut request = profiles::decode_json(
+            br#"{"resourceProfiles":[{"scopeProfiles":[{"profiles":[{}]}]}],"dictionary":{"stringTable":["","main"],"functionTable":[{},{"nameStrindex":1}],"locationTable":[{},{"lines":[{"functionIndex":1}]}],"stackTable":[{},{"locationIndices":[1]}]}}"#,
+        )
+        .expect("the export decodes");
+        let sample = |link_index| opentelemetry_proto::tonic::profiles::v1development::Sample {
+            stack_index: 1,
+            link_index,
+            values: vec![1],
+            ..Default::default()
+        };
+        request.resource_profiles[0].scope_profiles[0].profiles[0].samples =
+            (0..samples).map(sample).collect();
+        request
+    }
+
+    // The decoded export and its rows share the one decode heap ceiling, so the
+    // process-wide memory, sized for one request at every ceiling, always holds them.
+    #[tokio::test]
+    async fn a_profiles_export_that_can_never_fit_is_too_large_and_only_contention_is_busy() {
+        let queue_dir = unique_main_test_dir("profiles-never-fits");
+        let key = "maple_sk_test_profiles_never_fits";
+        let store = private_key_store(key, "org_profiles_never_fits", false);
+        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        // Large enough that its decode outgrows the row-piece room the sizing adds.
+        let body = Bytes::from(profiles_export_of_many_rows(80_000).encode_to_vec());
+        let estimate = decode_budget::protobuf_cost(OtlpSignal::Profiles, &body, u64::MAX)
+            .expect("an unbounded estimate");
+        // Under every ceiling: the body, and a decode that takes half the heap.
+        assert!(body.len() <= state.config.max_request_body_bytes);
+        state.config.max_decoded_body_bytes = state.config.max_request_body_bytes;
+        state.config.max_decode_heap_bytes = 2 * estimate;
+        // Process-wide memory as the config sizes it, with nothing to spare. The body,
+        // the decode and a heap ceiling of rows on top of them would not fit in it.
+        state.decode_memory = DecodeMemory::new(largest_decode_request_bytes(
+            state.config.max_request_body_bytes,
+            state.config.max_decoded_body_bytes,
+            state.config.max_decode_heap_bytes,
+        ));
+        let rows_on_top = body.len() as u64 + estimate + state.config.max_decode_heap_bytes;
+        assert!(rows_on_top > state.decode_memory.total_bytes());
+        let headers = profiles_headers(key, "application/x-protobuf");
+
+        // An idle gateway, twice: the answer never depends on what a retry finds.
+        for _ in 0..2 {
+            let refused = handle_profiles_inner(&state, &headers, body.clone())
+                .await
+                .expect_err("the rows do not fit one request's decode heap");
+            assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+            assert!(!refused.kind.retryable);
+            assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        }
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        // The same gateway with its decode memory held by other requests is busy.
+        let mut others = state.decode_memory.reservation();
+        assert!(others.try_add(state.decode_memory.total_bytes() - 1024));
+        let busy = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("there is no decode memory left");
+        assert_eq!(busy.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(busy.error_kind(), "decode_busy");
+        assert!(busy.kind.retryable);
+        drop(others);
+        assert_eq!(
+            send_sdk_profiles(&state, key)
+                .await
+                .expect("an export that fits is accepted once memory is free"),
+            PROFILES_SDK_ROWS
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    /// An export of `small` one-frame rows, one row of a stack at the depth cap whose
+    /// frames are `name_len` characters each, then five more one-frame rows.
+    fn profiles_export_with_one_large_row(small: usize, name_len: usize) -> Bytes {
+        fn sample(stack: usize, link: usize) -> serde_json::Value {
+            serde_json::json!({ "stackIndex": stack, "linkIndex": link, "values": ["1"] })
+        }
+        let mut samples: Vec<serde_json::Value> = (0..small).map(|link| sample(1, link)).collect();
+        samples.push(sample(2, 0));
+        samples.extend((small..small + 5).map(|link| sample(1, link)));
+        let request = serde_json::json!({
+            "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{ "samples": samples }] }] }],
+            "dictionary": {
+                "stringTable": ["", "main", "x".repeat(name_len)],
+                "functionTable": [{}, { "nameStrindex": 1 }, { "nameStrindex": 2 }],
+                "locationTable": [
+                    {},
+                    { "lines": [{ "functionIndex": 1 }] },
+                    { "lines": [{ "functionIndex": 2 }] },
+                ],
+                "stackTable": [
+                    {},
+                    { "locationIndices": [1] },
+                    { "locationIndices": vec![2; profiles::MAX_STACK_DEPTH] },
+                ],
+            },
+        });
+        Bytes::from(serde_json::to_vec(&request).expect("the export encodes"))
+    }
+
+    // A profile carries the same resource as the org's traces and logs, so every redact rule
+    // runs on it, whatever signals it names and ignoring conditions written for spans.
+    #[tokio::test]
+    async fn a_profiles_export_is_redacted_by_every_redact_rule() {
+        let queue_dir = unique_main_test_dir("profiles-redacted");
+        let key = "maple_sk_test_profiles_redacted";
+        let org = "org_profiles_redacted";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(
+            org,
+            &[
+                serde_json::json!({
+                    "signals": ["logs"],
+                    "conditions": [],
+                    "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                        "scopes": ["attributes", "resource"], "method": "mask" }
+                }),
+                serde_json::json!({
+                    "signals": ["traces"],
+                    "conditions": [{ "field": "name", "op": "eq", "value": "GET /never" }],
+                    "action": { "_tag": "redact", "keys": ["deploy.secret"], "detectors": [],
+                        "patterns": [], "scopes": ["resource"], "method": "remove" }
+                }),
+            ],
+        );
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let state = with_ingest_rules(state, &store);
+        let request = serde_json::json!({
+            "resourceProfiles": [{
+                "resource": { "attributes": [
+                    { "key": "service.name", "value": { "stringValue": "checkout" } },
+                    { "key": "owner", "value": { "stringValue": "jane@example.com" } },
+                    { "key": "deploy.secret", "value": { "stringValue": "s3cr3t" } },
+                ] },
+                "scopeProfiles": [{ "profiles": [{ "samples": [
+                    { "stackIndex": 1, "attributeIndices": [1, 2], "values": ["1"] },
+                ] }] }],
+            }],
+            "dictionary": {
+                "stringTable": ["", "main", "customer", "contact", "eve@example.com"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": [
+                    {},
+                    { "keyStrindex": 2, "value": { "stringValue": "bob@example.com" } },
+                    // A value held in the string table is scanned like an inline one.
+                    { "keyStrindex": 3, "value": { "stringValueStrindex": 4 } },
+                ],
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+
+        let headers = profiles_headers(key, "application/json");
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("the export is accepted");
+        assert_eq!(accepted.stored_rows, 1);
+        let rows = imported_profile_rows(&mut imports, 1).await;
+        let resource = &rows[0]["resource_attributes"];
+        assert_eq!(resource["service.name"], "checkout");
+        assert_eq!(resource["owner"], "[REDACTED:email]");
+        assert!(resource.get("deploy.secret").is_none(), "{resource}");
+        assert_eq!(rows[0]["sample_attributes"]["customer"], "[REDACTED:email]");
+        assert_eq!(rows[0]["sample_attributes"]["contact"], "[REDACTED:email]");
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Many tiny inlined copies are reserved from the process-wide budget in steps, not each
+    // rounded up to a KiB: 40,000 one-byte copies would otherwise ask for about 39 MiB.
+    #[tokio::test]
+    async fn many_tiny_inlined_copies_fit_the_decode_memory_they_use() {
+        const ENTRIES: usize = 20_000;
+        let queue_dir = unique_main_test_dir("profiles-redact-tiny");
+        let key = "maple_sk_test_profiles_redact_tiny";
+        let org = "org_profiles_redact_tiny";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(org, &[mask_emails_rule()]);
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let mut state = with_ingest_rules(state, &store);
+        let mut table = vec![serde_json::json!({})];
+        table.extend(
+            (0..ENTRIES).map(|_| serde_json::json!({ "keyStrindex": 2, "value": { "stringValueStrindex": 3 } })),
+        );
+        let request = serde_json::json!({
+            "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{ "samples": [
+                { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+            ] }] }] }],
+            "dictionary": {
+                "stringTable": ["", "main", "k", "v"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": table,
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        let estimate = decode_budget::json_cost(&body, u64::MAX).expect("an unbounded estimate");
+        // The export, its decode and 16 MiB to spare: room for the copies, not for a KiB each.
+        state.decode_memory = DecodeMemory::new(body.len() as u64 + estimate + 16 * 1024 * 1024);
+        let headers = profiles_headers(key, "application/json");
+
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("an idle gateway holds the copies");
+        assert_eq!(accepted.stored_rows, 1);
+        assert_eq!(imported_profile_rows(&mut imports, 1).await.len(), 1);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A source's overrides land on the resource before the org's rules run, as on traces and
+    // logs, so a rule redacts an override's value too. A key at string-table index 0 reads as
+    // empty in redaction and in the stored row alike, whatever the sender put there.
+    #[tokio::test]
+    async fn profiles_are_redacted_after_the_source_overrides_land() {
+        let queue_dir = unique_main_test_dir("profiles-overrides-redacted");
+        let org = "org_profiles_overrides_redacted";
+        let token = "maple_src_profiles_overrides_redacted_000000";
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_source(
+            token,
+            source_row(
+                org,
+                source_config(
+                    None,
+                    None,
+                    r#"[{"key":"team.secret","value":"s3cr3t","mode":"set"},
+                        {"key":"owner","value":"ops@example.com","mode":"set"},
+                        {"key":"region.secret","value":"eu","mode":"default"}]"#,
+                ),
+            ),
+        );
+        store.set_ingest_rules(
+            org,
+            &[
+                serde_json::json!({
+                    "signals": ["traces"], "conditions": [],
+                    "action": { "_tag": "redact", "keys": ["*.secret", "password"], "detectors": [],
+                        "patterns": [], "scopes": ["resource"], "method": "remove" }
+                }),
+                serde_json::json!({
+                    "signals": ["logs"], "conditions": [],
+                    "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                        "scopes": ["resource"], "method": "mask" }
+                }),
+            ],
+        );
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let state = with_ingest_rules(state, &store);
+        let request = serde_json::json!({
+            "resourceProfiles": [{
+                "resource": { "attributes": [
+                    { "key": "service.name", "value": { "stringValue": "checkout" } },
+                    { "keyStrindex": 0, "value": { "stringValue": "hunter2" } },
+                ] },
+                "scopeProfiles": [{ "profiles": [{ "samples": [
+                    { "stackIndex": 1, "values": ["1"] },
+                ] }] }],
+            }],
+            "dictionary": {
+                "stringTable": ["password", "main"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        let headers = profiles_headers(token, "application/json");
+
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("the export is accepted");
+        assert_eq!(accepted.stored_rows, 1);
+        let rows = imported_profile_rows(&mut imports, 1).await;
+        let resource = rows[0]["resource_attributes"]
+            .as_object()
+            .expect("resource attributes are a map");
+        assert_eq!(resource["service.name"], "checkout");
+        // A `set` override a remove rule names is gone, a `default` one too.
+        assert!(!resource.contains_key("team.secret"), "{resource:?}");
+        assert!(!resource.contains_key("region.secret"), "{resource:?}");
+        // A `set` override a mask rule matches is masked.
+        assert_eq!(resource["owner"], "[REDACTED:email]");
+        // Index 0 is the empty key, never the sender's "password".
+        assert!(!resource.contains_key("password"), "{resource:?}");
+        assert!(resource.values().all(|value| value != "hunter2"), "{resource:?}");
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Inlining one shared string into every entry that names it is the sender's bytes many
+    // times over, so the copies are charged to the decode heap before they are made.
+    #[tokio::test]
+    async fn redacting_a_profiles_export_charges_the_text_it_inlines() {
+        const ENTRIES: usize = 10_000;
+        let queue_dir = unique_main_test_dir("profiles-redact-inline");
+        let key = "maple_sk_test_profiles_redact_inline";
+        let org = "org_profiles_redact_inline";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(org, &[mask_emails_rule()]);
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let mut state = with_ingest_rules(state, &store);
+        state.config.max_decode_heap_bytes = 64 * 1024 * 1024;
+        let mut table = vec![serde_json::json!({})];
+        table.extend(
+            (0..ENTRIES).map(|_| serde_json::json!({ "keyStrindex": 2, "value": { "stringValueStrindex": 3 } })),
+        );
+        let request = serde_json::json!({
+            "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{ "samples": [
+                { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+            ] }] }] }],
+            "dictionary": {
+                "stringTable": ["", "main", "k", "x".repeat(64 * 1024)],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": table,
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        assert!(body.len() <= state.config.max_request_body_bytes);
+        let headers = profiles_headers(key, "application/json");
+
+        let refused = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect_err("the inlined copies are past the decode heap ceiling");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(!refused.kind.retryable);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(no_profiles_are_stored(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // A profiles export is reserved whole before its first frame, as a planned OTLP
+    // request is: one past the org's queue stores nothing, so a resend never doubles rows.
+    #[tokio::test]
+    async fn a_profiles_export_past_the_org_queue_is_refused_before_any_frame() {
+        const SMALL_ROWS: usize = 100;
+        let queue_dir = unique_main_test_dir("profiles-whole-commit");
+        let key = "maple_sk_test_profiles_whole";
+        let store = private_key_store(key, "org_profiles_whole", false);
+        // The org's queue holds half an export batch: the small rows' frame alone
+        // would fit, the export with its large row never does.
+        let (mut state, mut imports) =
+            profiles_test_state_with_org_queue(store, queue_dir.clone(), 100 * 1024).await;
+        state.config.tinybird.batch_max_bytes = 200 * 1024;
+        let headers = profiles_headers(key, "application/json");
+
+        let refused = handle_profiles_inner(
+            &state,
+            &headers,
+            profiles_export_with_one_large_row(SMALL_ROWS, 700),
+        )
+        .await
+        .expect_err("the export is past the org's queue");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(refused.error_kind(), INGEST_ROWS_EXCEED_QUEUE.error_kind);
+        assert!(
+            refused.message.contains("No data was written"),
+            "{}",
+            refused.message
+        );
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        // Nothing stays reserved: an export that fits is stored whole afterwards.
+        let accepted = handle_profiles_inner(
+            &state,
+            &headers,
+            profiles_export_with_one_large_row(SMALL_ROWS, 1),
+        )
+        .await
+        .expect("an export under the org's queue is accepted");
+        assert_eq!(accepted.stored_rows, SMALL_ROWS + 6);
+        assert_eq!(
+            imported_profile_rows(&mut imports, SMALL_ROWS + 6).await.len(),
+            SMALL_ROWS + 6
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Each row repeats a whole stack, so stored bytes are held to
+    // `INGEST_MAX_ROW_EXPANSION` times the decoded export, like the OTLP signals.
+    // The SDK's JSON export stores about 8 to 10 times its size.
+    #[tokio::test]
+    async fn a_profiles_export_past_the_row_expansion_ceiling_is_refused() {
+        let queue_dir = unique_main_test_dir("profiles-row-expansion");
+        let key = "maple_sk_test_profiles_expansion";
+        let store = private_key_store(key, "org_profiles_expansion", false);
+        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+
+        state.config.max_row_expansion = 4;
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("the rows store more than 4 times the export");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(refused.error_kind(), INGEST_ROW_EXPANSION.error_kind);
+        assert!(!refused.kind.retryable);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        // Under the ceiling, and with it off, the same export is stored.
+        for ceiling in [16, 0] {
+            state.config.max_row_expansion = ceiling;
+            assert_eq!(
+                send_sdk_profiles(&state, key)
+                    .await
+                    .expect("the export fits"),
+                PROFILES_SDK_ROWS
+            );
+            assert_eq!(
+                imported_profile_rows(&mut imports, PROFILES_SDK_ROWS)
+                    .await
+                    .len(),
+                PROFILES_SDK_ROWS
+            );
+        }
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // The sender learns what was left out, in the encoding it sent.
+    #[tokio::test]
+    async fn an_export_that_lost_rows_answers_with_a_partial_success() {
+        let accepted = ProfilesAccepted {
+            stored_rows: 8,
+            dropped_rows: 3,
+            rejected_profiles: 2,
+        };
+        let body = |content_type: &'static str, accepted| async move {
+            let mut headers = HeaderMap::new();
+            headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
+            let response = profiles_export_response(&headers, accepted);
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+        };
+
+        let json: serde_json::Value =
+            serde_json::from_slice(&body("application/json", accepted).await).unwrap();
+        assert_eq!(json["partialSuccess"]["rejectedProfiles"], 2);
+        assert!(json["partialSuccess"]["errorMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("3 profile rows"));
+
+        let protobuf =
+            ExportProfilesServiceResponse::decode(body("application/x-protobuf", accepted).await)
+                .unwrap();
+        assert_eq!(protobuf.partial_success.unwrap().rejected_profiles, 2);
+
+        // A full success stays the empty response.
+        let full = ProfilesAccepted {
+            stored_rows: 8,
+            ..Default::default()
+        };
+        assert_eq!(&body("application/json", full).await[..], b"{}");
+        assert!(body("application/x-protobuf", full).await.is_empty());
+    }
+
+    // A row larger than one export batch is left out and the rest of the export stored.
+    #[tokio::test]
+    async fn a_profile_row_larger_than_an_export_batch_is_dropped_not_committed() {
+        let queue_dir = unique_main_test_dir("profiles-row-ceiling");
+        let key = "maple_sk_test_profiles_row_ceiling";
+        let store = private_key_store(key, "org_profiles_row_ceiling", false);
+        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+        state.config.tinybird.batch_max_bytes = 64 * 1024;
+
+        let stored = handle_profiles_inner(
+            &state,
+            &profiles_headers(key, "application/json"),
+            profiles_export_with_one_large_row(3, 700),
+        )
+        .await
+        .expect("the rows that fit are accepted");
+        assert_eq!(
+            stored,
+            ProfilesAccepted {
+                stored_rows: 8,
+                dropped_rows: 1,
+                rejected_profiles: 1,
+            }
+        );
+        let rows = imported_profile_rows(&mut imports, 8).await;
+        assert_eq!(rows.len(), 8);
+        for row in &rows {
+            assert_eq!(row["frames"], serde_json::json!(["main"]));
+        }
+        assert!(no_profiles_are_stored(&mut imports).await);
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    #[test]
+    fn a_profile_row_never_outgrows_an_export_batch() {
+        assert_eq!(
+            profile_row_max_bytes(4 * 1024 * 1024),
+            profiles::MAX_ROW_BYTES - 1
+        );
+        assert_eq!(
+            profile_row_max_bytes(64 * 1024 * 1024),
+            profiles::MAX_ROW_BYTES - 1
+        );
+        assert_eq!(profile_row_max_bytes(1024), 1023);
+    }
+
+    #[test]
+    fn profile_rows_are_committed_in_runs_no_longer_than_an_export_batch() {
+        let row = |len: usize| vec![b'x'; len];
+        let lens = |chunks: Vec<Vec<Vec<u8>>>| -> Vec<Vec<usize>> {
+            chunks
+                .into_iter()
+                .map(|chunk| chunk.iter().map(Vec::len).collect())
+                .collect()
+        };
+        // Each row counts its newline: 4 + 5 fits in 10, a third row does not.
+        assert_eq!(
+            lens(chunk_rows(
+                vec![row(3), row(4), row(3), row(20), row(1)],
+                10
+            )),
+            vec![vec![3, 4], vec![3], vec![20], vec![1]]
+        );
+        assert_eq!(lens(chunk_rows(Vec::new(), 10)), Vec::<Vec<usize>>::new());
     }
 
     #[tokio::test]
@@ -20904,7 +22638,7 @@ mod tests {
                 "http://127.0.0.1:1".to_owned(),
             )
             .await;
-            let mut imports = store_in_fake_tinybird(&mut state, &queue_dir.join("native")).await;
+            let mut imports = store_in_fake_tinybird(&mut state, test_tinybird_config(queue_dir.join("native"))).await;
             let (state, mut autumn) = with_fake_autumn(state).await;
             let url = serve(state).await;
 
@@ -20996,7 +22730,7 @@ mod tests {
                 "http://127.0.0.1:1".to_owned(),
             )
             .await;
-            let mut imports = store_in_fake_tinybird(&mut state, &queue_dir.join("native")).await;
+            let mut imports = store_in_fake_tinybird(&mut state, test_tinybird_config(queue_dir.join("native"))).await;
             let (state, mut autumn) = with_fake_autumn(state).await;
             let url = serve(state).await;
 

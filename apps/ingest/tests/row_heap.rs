@@ -203,6 +203,7 @@ fn pipeline_config(queue_dir: PathBuf) -> TinybirdConfig {
         datasource_session_replay_events: "session_replay_events".to_owned(),
         datasource_session_events: "session_events".to_owned(),
         datasource_product_events: "product_events".to_owned(),
+        datasource_profiles: "profiles".to_owned(),
     }
 }
 

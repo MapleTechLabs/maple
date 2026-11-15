@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use hmac::{Hmac, Mac};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::ExportProfilesServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::LogRecord;
@@ -560,6 +561,13 @@ impl CompiledRules {
     /// Ids of the compiled rules; `RuleStats::per_rule` uses the same indexes.
     pub fn rule_ids(&self) -> &[RuleId] {
         &self.ids
+    }
+
+    /// True when some rule redacts, whatever its signals: `redact_profiles` applies them all.
+    pub fn redacts(&self) -> bool {
+        self.rules
+            .iter()
+            .any(|rule| matches!(rule.action, CompiledAction::Redact(_)))
     }
 
     /// True when some rule reads this signal, so a caller can skip the payload otherwise.
@@ -1822,6 +1830,176 @@ pub mod conformance {
     }
 }
 
+/// Redacts a profiles export in place with every redact rule, whatever signals it names and
+/// ignoring its conditions: those describe spans, logs and metrics, which a profile has none of,
+/// so a profile gets the most redaction any rule asks for rather than none. `resource` scope covers
+/// each resource's attributes, `attributes` scope the dictionary's attribute table (profile and
+/// sample attributes). Keys and string values held as string-table indexes are inlined first so
+/// key rules and detectors see them; a removed table entry keeps its index with an empty key,
+/// which the flatten skips. Every inlined copy is first charged to `charge`, and a refusal stops
+/// the pass with `OverMemoryBudget`.
+#[hotpath::measure]
+pub fn redact_profiles(
+    rules: &CompiledRules,
+    request: &mut ExportProfilesServiceRequest,
+    stats: &mut RuleStats,
+    charge: impl FnMut(u64) -> bool,
+) -> Result<(), ProfileRedactError> {
+    stats.ensure(rules.len());
+    let mut budget = ScanBudget::new(rules.scan_bytes, rules.scan_time);
+    let mut dictionary = request.dictionary.take().unwrap_or_default();
+    let mut inliner = Inliner {
+        strings: &dictionary.string_table,
+        charge,
+    };
+    let mut resources: Vec<&mut Vec<KeyValue>> = request
+        .resource_profiles
+        .iter_mut()
+        .filter_map(|resource_profiles| resource_profiles.resource.as_mut())
+        .map(|resource| &mut resource.attributes)
+        .collect();
+    for attributes in &mut resources {
+        for kv in attributes.iter_mut() {
+            inliner.key_value(kv)?;
+        }
+    }
+    // The table as plain pairs, index for index, so a removal is visible after the pass.
+    let shells = dictionary.attribute_table.len() * size_of::<Option<KeyValue>>();
+    inliner.charge(shells)?;
+    let mut table: Vec<Option<KeyValue>> = Vec::with_capacity(dictionary.attribute_table.len());
+    for entry in &mut dictionary.attribute_table {
+        let mut kv = KeyValue {
+            key: inliner.text(entry.key_strindex)?,
+            value: entry.value.take(),
+            ..KeyValue::default()
+        };
+        if let Some(value) = kv.value.as_mut() {
+            inliner.value(value)?;
+        }
+        table.push(Some(kv));
+    }
+    for (index, rule) in rules.rules.iter().enumerate() {
+        let CompiledAction::Redact(redaction) = &rule.action else {
+            continue;
+        };
+        let mut redactor = Redactor {
+            redaction,
+            salt: rules.hash_salt.as_bytes(),
+            budget: &mut budget,
+            count: 0,
+        };
+        if redaction.scopes & SCOPE_RESOURCE != 0 {
+            for attributes in &mut resources {
+                redactor.redact_attributes(attributes);
+            }
+        }
+        if redaction.scopes & SCOPE_ATTRIBUTES != 0 {
+            for slot in &mut table {
+                if let Some(kv) = slot.as_mut() {
+                    if !redactor.redact_entry(kv, true) {
+                        *slot = None;
+                    }
+                }
+            }
+        }
+        stats.per_rule[index].redacted_values += redactor.count;
+    }
+    drop(resources);
+    for (entry, slot) in dictionary.attribute_table.iter_mut().zip(table) {
+        match slot {
+            Some(kv) => entry.value = kv.value,
+            None => {
+                entry.key_strindex = 0;
+                entry.value = None;
+            }
+        }
+    }
+    request.dictionary = Some(dictionary);
+    stats.refresh_total();
+    if budget.spent() {
+        Err(ProfileRedactError::ScanBudgetExceeded)
+    } else {
+        Ok(())
+    }
+}
+
+/// Why `redact_profiles` refused an export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileRedactError {
+    /// The rules needed more scanning than one payload may use.
+    ScanBudgetExceeded,
+    /// `charge` refused the memory the inlined string-table text needs.
+    OverMemoryBudget,
+}
+
+/// Inlines string-table text into keys and values, charging each copy before it is made: one
+/// shared string may be named by every entry of the export, so the copies are the sender's size
+/// many times over.
+struct Inliner<'a, C> {
+    strings: &'a [String],
+    charge: C,
+}
+
+impl<C: FnMut(u64) -> bool> Inliner<'_, C> {
+    fn charge(&mut self, bytes: usize) -> Result<(), ProfileRedactError> {
+        if (self.charge)(u64::try_from(bytes).unwrap_or(u64::MAX)) {
+            Ok(())
+        } else {
+            Err(ProfileRedactError::OverMemoryBudget)
+        }
+    }
+
+    /// The text at `index` as an owned string; empty when it is out of range, and at index 0,
+    /// which the spec keeps empty and the flatten reads as empty.
+    fn text(&mut self, index: i32) -> Result<String, ProfileRedactError> {
+        let text = usize::try_from(index)
+            .ok()
+            .filter(|index| *index != 0)
+            .and_then(|index| self.strings.get(index))
+            .map_or("", String::as_str);
+        if text.is_empty() {
+            return Ok(String::new());
+        }
+        self.charge(text.len())?;
+        Ok(text.to_owned())
+    }
+
+    /// Moves a key named by string-table index into `key`, and string values held that way
+    /// into inline strings, nested kvlist entries and array items too.
+    fn key_value(&mut self, kv: &mut KeyValue) -> Result<(), ProfileRedactError> {
+        if kv.key.is_empty() && kv.key_strindex != 0 {
+            kv.key = self.text(kv.key_strindex)?;
+            kv.key_strindex = 0;
+        }
+        match kv.value.as_mut() {
+            Some(value) => self.value(value),
+            None => Ok(()),
+        }
+    }
+
+    fn value(&mut self, value: &mut AnyValue) -> Result<(), ProfileRedactError> {
+        match value.value.as_mut() {
+            Some(any_value::Value::ArrayValue(array)) => {
+                for item in &mut array.values {
+                    self.value(item)?;
+                }
+            }
+            Some(any_value::Value::KvlistValue(list)) => {
+                for kv in &mut list.values {
+                    self.key_value(kv)?;
+                }
+            }
+            // Inline, so detectors and patterns scan the text the flatten would store.
+            Some(any_value::Value::StringValueStrindex(index)) => {
+                let index = *index;
+                value.value = Some(any_value::Value::StringValue(self.text(index)?));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2007,6 +2185,46 @@ mod tests {
 
     fn compile(rules: Vec<(RuleId, IngestRuleSpec)>) -> (CompiledRules, Vec<InvalidRule>) {
         CompiledRules::compile(rules, "salt".to_owned()).expect("within the regex budget")
+    }
+
+    /// Every copy of string-table text a profiles pass inlines is charged first, so a refusal
+    /// stops the pass before the copies outgrow what the caller allows.
+    #[test]
+    fn redacting_profiles_charges_each_inlined_copy_first() {
+        use opentelemetry_proto::tonic::profiles::v1development::{KeyValueAndUnit, ProfilesDictionary};
+        const TEXT: usize = 64 * 1024;
+        const LIMIT: u64 = 1024 * 1024;
+        let (rules, _) = compile(vec![(
+            "mask".to_owned(),
+            spec(serde_json::json!({
+                "signals": ["logs"], "conditions": [],
+                "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                    "scopes": ["attributes"], "method": "mask" }
+            })),
+        )]);
+        let shared = KeyValueAndUnit {
+            key_strindex: 1,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValueStrindex(2)),
+            }),
+            ..KeyValueAndUnit::default()
+        };
+        let mut request = ExportProfilesServiceRequest {
+            dictionary: Some(ProfilesDictionary {
+                string_table: vec![String::new(), "k".to_owned(), "x".repeat(TEXT)],
+                attribute_table: vec![shared; 1_000],
+                ..ProfilesDictionary::default()
+            }),
+            ..ExportProfilesServiceRequest::default()
+        };
+        let mut charged = 0u64;
+        let outcome = redact_profiles(&rules, &mut request, &mut RuleStats::default(), |bytes| {
+            charged += bytes;
+            charged <= LIMIT
+        });
+        assert_eq!(outcome, Err(ProfileRedactError::OverMemoryBudget));
+        // Stopped at the first copy past the limit: never the whole 64 MiB.
+        assert!(charged > LIMIT && charged <= LIMIT + TEXT as u64, "{charged}");
     }
 
     fn string_kv(key: &str, value: &str) -> KeyValue {
