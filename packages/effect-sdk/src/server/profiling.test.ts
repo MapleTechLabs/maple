@@ -49,9 +49,13 @@ const makeHarness = (
 		readonly respond?: (attempt: number) => Response
 		/** The inspector refuses `Profiler.start`. */
 		readonly refuseStart?: boolean
+		/** The inspector refuses the nth `Profiler.stop`, counted from 1. */
+		readonly refuseStop?: (stop: number) => boolean
 	} = {},
 ) => {
 	const events: Array<string> = []
+	const params: Array<unknown> = []
+	let stops = 0
 	const requests: Array<Sent> = []
 	const logs: Array<LogLine> = []
 	const profiles = [...(setup.profiles ?? [])]
@@ -63,11 +67,14 @@ const makeHarness = (
 		disconnect() {
 			events.push("disconnect")
 		}
-		post(...[method, , callback]: Parameters<InspectorSession["post"]>) {
+		post(...[method, sent, callback]: Parameters<InspectorSession["post"]>) {
 			events.push(method)
+			if (sent !== undefined) params.push(sent)
 			if (method === "Profiler.start" && setup.refuseStart === true)
 				return callback(new Error("Profiler is already started"), {})
 			if (method !== "Profiler.stop") return callback(null, {})
+			stops += 1
+			if (setup.refuseStop?.(stops) === true) return callback(new Error("Profiler is not started"), {})
 			const profile = profiles.shift() ?? busyProfile
 			callback(null, {
 				// Reading the profile is the first step of decoding it.
@@ -98,6 +105,8 @@ const makeHarness = (
 
 	return {
 		events,
+		/** The params of every inspector command that carried any. */
+		params,
 		requests,
 		logs,
 		/** What happened from the first `Profiler.stop` on, repeated reads of one profile as one. */
@@ -124,6 +133,8 @@ const makeHarness = (
 }
 
 type Harness = ReturnType<typeof makeHarness>
+
+const stopsIn = (harness: Harness) => Arr.filter(harness.events, (event) => event === "Profiler.stop")
 
 const levels = (harness: Harness) => Arr.map(harness.logs, (line) => line.level)
 
@@ -273,6 +284,37 @@ describe("profilerLayer", () => {
 
 			expect(harness.sinceFirstStop()).toEqual(["Profiler.stop", "profile read", POSTED, "disconnect"])
 			expect(harness.requests[0]?.response.bodyUsed).toBe(true)
+		}).pipe(harness.run)
+	})
+
+	it.effect("never restarts the profiler more than once a second or samples at a zero interval", () => {
+		const harness = makeHarness()
+		return Effect.gen(function* () {
+			yield* Layer.build(harness.layer({ profiling: { window: 0, samplingIntervalMicros: 0 } }))
+			expect(harness.params).toContainEqual({ interval: 10_000 })
+
+			yield* TestClock.adjust("999 millis")
+			expect(harness.events).not.toContain("Profiler.stop")
+			yield* TestClock.adjust("1 millis")
+			expect(stopsIn(harness)).toHaveLength(1)
+		}).pipe(harness.run)
+	})
+
+	it.effect("stops the profiler when its loop dies, and exports nothing more at shutdown", () => {
+		const harness = makeHarness({ refuseStop: (stop) => stop === 1 })
+		return Effect.gen(function* () {
+			const scope = yield* Scope.make()
+			yield* Layer.buildWithScope(harness.layer(), scope)
+			yield* TestClock.adjust(WINDOW)
+			yield* harness.logged(1)
+			expect(harness.logs[0]?.message).toContain("stopped")
+			// The swap's stop failed, then the loop stopped the profiler itself.
+			expect(stopsIn(harness)).toHaveLength(2)
+
+			yield* Scope.close(scope, Exit.void)
+			expect(stopsIn(harness)).toHaveLength(2)
+			expect(harness.requests).toEqual([])
+			expect(harness.logs).toHaveLength(1)
 		}).pipe(harness.run)
 	})
 

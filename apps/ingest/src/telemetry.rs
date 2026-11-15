@@ -1361,18 +1361,6 @@ impl TelemetryPipeline {
         destination: ExportDestination,
         plan: &RowPlan,
     ) -> Result<PlanGrant, PipelineError> {
-        let cfg = &self.inner.cfg;
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "routing_key is a hash; commit_frames routes it the same way"
-        )]
-        let shard = (plan.routing_key as usize) % cfg.wal_shards;
-        let lane = lane_index(shard, destination);
-        let wal_lane = self
-            .inner
-            .wal
-            .lane(lane)
-            .map_err(PipelineError::QueueUnavailable)?;
         let frames: usize = plan
             .pieces
             .iter()
@@ -1385,8 +1373,43 @@ impl TelemetryPipeline {
                     .count()
             })
             .sum();
-        let row_bytes = plan.total.row_bytes();
-        let head_bytes = (WAL_V3_HEADER_LEN + org_id.len() + cfg.datasources.longest()) as u64;
+        let reserve = PlanReserve {
+            routing_key: plan.routing_key,
+            frames,
+            row_bytes: plan.total.row_bytes(),
+            longest_datasource: self.inner.cfg.datasources.longest(),
+        };
+        self.reserve_frames(org_id, signal, destination, &reserve)
+    }
+
+    /// Reserves `reserve`'s frames on one lane before the first is written; see
+    /// `reserve_plan`.
+    fn reserve_frames(
+        &self,
+        org_id: &str,
+        signal: TelemetrySignal,
+        destination: ExportDestination,
+        reserve: &PlanReserve,
+    ) -> Result<PlanGrant, PipelineError> {
+        let cfg = &self.inner.cfg;
+        let PlanReserve {
+            routing_key,
+            frames,
+            row_bytes,
+            longest_datasource,
+        } = *reserve;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "routing_key is a hash; commit_frames routes it the same way"
+        )]
+        let shard = (routing_key as usize) % cfg.wal_shards;
+        let lane = lane_index(shard, destination);
+        let wal_lane = self
+            .inner
+            .wal
+            .lane(lane)
+            .map_err(PipelineError::QueueUnavailable)?;
+        let head_bytes = (WAL_V3_HEADER_LEN + org_id.len() + longest_datasource) as u64;
         let wal_bytes = row_bytes.saturating_add((frames as u64).saturating_mul(head_bytes));
         let never_fits = if row_bytes > cfg.org_queue_max_bytes {
             Some(format!(
@@ -1519,7 +1542,21 @@ impl TelemetryPipeline {
             rows: frame_rows.iter().sum(),
             dropped: 0,
         };
-        self.commit_frames(frames, destination, None)
+        // Reserved whole first, like a planned request: a full queue, lane or org cap
+        // refuses the export before any frame is written, so a retry stores nothing twice.
+        let reserve = PlanReserve {
+            routing_key,
+            frames: frames.len(),
+            row_bytes: frames.iter().map(|frame| frame.payload.len() as u64).sum(),
+            longest_datasource: datasource.len(),
+        };
+        let mut grant = self
+            .reserve_frames(org_id, signal, destination, &reserve)
+            .map_err(|error| RowBatchesError {
+                error,
+                committed_rows: 0,
+            })?;
+        self.commit_frames(frames, destination, Some(&mut grant))
             .await
             .map_err(|refused| RowBatchesError {
                 committed_rows: frame_rows.iter().take(refused.frames_committed).sum(),
@@ -1860,6 +1897,17 @@ fn while_caller_waits(deliver: Delivery, lane: Arc<WalLane>) -> (WaitingCaller, 
         }
     });
     (waiting, guarded)
+}
+
+/// What `reserve_frames` reserves: `frames` frames on `routing_key`'s lane holding
+/// `row_bytes` of rows, each headed by a datasource name of at most
+/// `longest_datasource` bytes.
+#[derive(Clone, Copy)]
+struct PlanReserve {
+    routing_key: u64,
+    frames: usize,
+    row_bytes: u64,
+    longest_datasource: usize,
 }
 
 /// What a request reserved for its whole plan before its first piece: the org's
