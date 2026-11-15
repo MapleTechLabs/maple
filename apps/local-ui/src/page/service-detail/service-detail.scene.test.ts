@@ -1,4 +1,5 @@
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import {
 	click,
 	expect as expectView,
@@ -103,6 +104,45 @@ describe("local service detail", () => {
 			expectOutMessage(
 				PageOutMessage.RememberedRange({ range: "30d", hash: "#/services/checkout-api?range=30d" }),
 			),
+		)
+	})
+	test("a window with profile samples and no spans still shows the profile", () => {
+		const base = anchored().model
+		const quiet = pageUpdate(
+			base,
+			Message.SucceededFetchOverview({
+				key: base.overview.key ?? "",
+				overview: null,
+				fetchedAtMs: NOW,
+			}),
+		).model
+		const profiled = pageUpdate(
+			quiet,
+			Message.SucceededFetchProfile({
+				key: quiet.profile.key ?? "",
+				profile: {
+					sampleType: "cpu",
+					sampleUnit: "nanoseconds",
+					totalValue: 9_000_000,
+					totalStacks: 1,
+					durationNano: 60_000_000_000,
+					stacks: [{ frames: ["main"], files: ["/app/main.js"], lines: [1], value: 9_000_000 }],
+				},
+				fetchedAtMs: NOW,
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(profiled),
+			themeResolved(),
+			Mount.resolve(
+				ProfileFlamegraph.MountFlameChart({ chartId: profiled.flamegraph.id, maxRows: 22 }),
+				Message.GotFlamegraphMessage({
+					message: ProfileFlamegraph.Message.ChangedZoom({ isZoomed: false }),
+				}),
+			),
+			expectView(text("No spans from this service in this window")).toExist(),
+			expectView(role("table", { name: "Top functions" })).toExist(),
 		)
 	})
 })

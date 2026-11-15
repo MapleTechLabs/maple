@@ -60,6 +60,18 @@ export const subtreeSpanIds = (span: SpanNodeData): ReadonlyArray<string> => {
 	return ids.slice(0, PROFILE_SPAN_CAP)
 }
 
+/** Whether more spans sit under `span` than one read names, so its profile covers only some. */
+export const subtreeIsCut = (span: SpanNodeData): boolean => {
+	let count = 0
+	let level: ReadonlyArray<SpanNodeData> = [span]
+	while (level.length > 0) {
+		count += level.length
+		if (count > PROFILE_SPAN_CAP) return true
+		level = Arr.flatMap(level, (node) => node.children)
+	}
+	return false
+}
+
 /** A read's key: the span it is for (the panel is mounted per span). */
 export const detailKeyOf = (span: SpanNodeData): string => `span-detail:${span.traceId}:${span.spanId}`
 export const logsKeyOf = (span: SpanNodeData): string => `span-logs:${span.traceId}:${span.spanId}`

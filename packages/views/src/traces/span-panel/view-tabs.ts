@@ -1,3 +1,4 @@
+import { formatNumber } from "@maple/ui/lib/format"
 import { Option, Array as Arr } from "effect"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -20,7 +21,7 @@ import {
 	topFunctionsTable,
 	view as flamegraphView,
 } from "../../profiles/profile-flamegraph-view"
-import { type TAB_VALUES, tabsOver } from "./update"
+import { PROFILE_SPAN_CAP, subtreeIsCut, type TAB_VALUES, tabsOver } from "./update"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
@@ -95,13 +96,18 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, doc
  * The CPU the span and the spans under it used, as a flame graph and the functions that used the
  * most. Shown only when samples are linked to them.
  */
-export const spanProfile = (h: H, model: Pick<Model, "flamegraph">, profile: SpanProfile): Html => {
+export const spanProfile = (h: H, model: Pick<Model, "flamegraph" | "span">, profile: SpanProfile): Html => {
 	const input = { stacks: profile.stacks, totalValue: profile.totalValue }
 	return h.div(
 		[h.Class("space-y-3 p-3")],
 		[
 			typography(h, { size: "xs", tone: "muted", as: "p" }, [
 				`${formatProfileValue(profile.totalValue, profile.sampleUnit)} of ${profile.sampleType} sampled while this span and the spans under it were running.`,
+				...(subtreeIsCut(model.span)
+					? [
+							` It covers the first ${formatNumber(PROFILE_SPAN_CAP)} spans under this one, widest levels first.`,
+						]
+					: []),
 			]),
 			flamegraphView(
 				h,
@@ -118,6 +124,23 @@ export const spanProfile = (h: H, model: Pick<Model, "flamegraph">, profile: Spa
 		],
 	)
 }
+
+/** The Profile tab: the span's profile, or why it could not be read. */
+export const spanProfileTab = (h: H, model: Pick<Model, "flamegraph" | "profile" | "span">): Html =>
+	AsyncData.matchData(model.profile.data, {
+		onEmpty: () => h.div([h.Class("p-3")], [skeleton(h, "h-48 w-full")]),
+		onFailure: (failure) =>
+			errorState(h, {
+				failure,
+				title: "Couldn't load the profile",
+				variant: "inline",
+				className: "px-4",
+			}),
+		onData: (profile) =>
+			profile === null
+				? emptyMessage(h, {}, ["No samples were linked to this span or the spans under it"])
+				: spanProfile(h, model, profile),
+	})
 
 /** The Tabs root: list, then the selected value's panel (Base UI unmounts the others). */
 export const tabsView = (

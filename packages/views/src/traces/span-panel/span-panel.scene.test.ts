@@ -22,7 +22,7 @@ import { TraceSource } from "../trace-source"
 import { FetchSpanDetail, FetchSpanLogs } from "./command"
 import { Message, OutMessage } from "./message"
 import type { Model } from "./model"
-import { init, refresh, tabsOver, update } from "./update"
+import { init, PROFILE_SPAN_CAP, refresh, subtreeIsCut, tabsOver, update } from "./update"
 import { view as panelView } from "./view"
 
 const span: SpanNodeData = {
@@ -185,6 +185,33 @@ describe("span panel tab keys", () => {
 			expectView(tab("Logs")).toHaveAttr("aria-selected", "true"),
 			expectView(text("Read the docs")).toExist(),
 		)
+	})
+
+	test("a failed profile read keeps the Profile tab and says the read failed", () => {
+		const model = loaded()
+		const failed = update(
+			model,
+			Message.CompletedFetchProfile({
+				key: model.profile.key ?? "",
+				result: Result.fail(toLoadFailure(new Error("warehouse unavailable"))),
+			}),
+		).model
+		scene(
+			{ update, view },
+			given(failed),
+			indicatorMeasured(),
+			click(tab("Profile")),
+			expectView(tab("Profile")).toHaveAttr("aria-selected", "true"),
+			expectView(text("Couldn't load the profile")).toExist(),
+		)
+	})
+
+	test("says when the span has more spans under it than the read covers", () => {
+		expect(subtreeIsCut(span)).toBe(false)
+		const leaf: SpanNodeData = { ...span, children: [] }
+		const wide: SpanNodeData = { ...span, children: Arr.makeBy(PROFILE_SPAN_CAP, () => leaf) }
+		expect(subtreeIsCut(wide)).toBe(true)
+		expect(subtreeIsCut({ ...wide, children: wide.children.slice(1) })).toBe(false)
 	})
 
 	test("a highlight left on a tab that went away falls back to the selected tab", () => {
