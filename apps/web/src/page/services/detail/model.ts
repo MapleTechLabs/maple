@@ -24,6 +24,29 @@ export const OverviewData = Schema.Struct({
 })
 export type OverviewData = typeof OverviewData.Type
 
+/** `DeployVerificationRow`: a deploy's first minutes against the minutes before it. */
+export const DeployRow = Schema.Struct({
+	serviceName: Schema.String,
+	environment: Schema.String,
+	commitSha: Schema.String,
+	firstSeen: Schema.String,
+	afterSpans: Schema.Number,
+	afterErrors: Schema.Number,
+	afterP95Ms: Schema.Number,
+	beforeSpans: Schema.Number,
+	beforeErrors: Schema.Number,
+	beforeP95Ms: Schema.Number,
+})
+export type DeployRow = typeof DeployRow.Type
+
+export const ServiceDeploys = Schema.Struct({
+	deploys: Schema.Array(DeployRow),
+	verifyWindowSeconds: Schema.Number,
+	/** The window end this answer was read up to: a refresh in flight must not age its verdicts. */
+	readUntil: Schema.String,
+})
+export type ServiceDeploys = typeof ServiceDeploys.Type
+
 export const RefinementPoint = Schema.Struct({ bucket: Schema.String, throughput: Schema.Number })
 
 /** The `ErrorIssueDocument` fields an issue row reads. */
@@ -32,6 +55,7 @@ export const Issue = Schema.Struct({
 	title: Schema.String,
 	severity: Schema.NullOr(Schema.String),
 	occurrenceCount: Schema.Number,
+	firstSeenAt: Schema.String,
 	lastSeenAt: Schema.String,
 })
 export type Issue = typeof Issue.Type
@@ -80,6 +104,8 @@ export const Model = Schema.Struct({
 	endpointQuery: Schema.String,
 	endpointPeek: EndpointPeek.Model,
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
+	/** The window's deploys with their before and after: the deploy rows, callout and marker tones. */
+	deploys: KeyedSchema(ServiceDeploys, LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
 	/** `uptimeMonitors.list`: the org's monitors; the Uptime card keeps this service's. */
 	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),

@@ -181,7 +181,7 @@
 		"apps/web/src/page/service-map/view-service-infra.ts": 1,
 		"apps/web/src/page/services/detail/endpoint-peek/view.ts": 1,
 		"apps/web/src/page/services/detail/view-dependencies.ts": 1,
-		"apps/web/src/page/services/detail/view-deploys.ts": 7,
+		"apps/web/src/page/services/detail/view-deploys.ts": 5,
 		"apps/web/src/page/services/detail/view-footprint.ts": 3,
 		"apps/web/src/page/services/detail/view-panels.ts": 1,
 		"apps/web/src/page/services/detail/view-uptime.ts": 3,

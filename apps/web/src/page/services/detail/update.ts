@@ -30,6 +30,7 @@ import {
 	FetchApiOverview,
 	FetchCommit,
 	FetchDependencies,
+	FetchDeploys,
 	FetchEndpointSeries,
 	FetchEndpoints,
 	FetchStatusBreakdown,
@@ -58,7 +59,7 @@ import {
 } from "./derive"
 import { stepEnvironmentSelect } from "../../kit/environment-switcher"
 import { initialSort, nextSort, operationTraceSearch, TRACE_DETAIL_LIMIT_SECONDS } from "./derive-tables"
-import { deriveDeploys } from "./derive-panels"
+import { deployChecksOf, railOrder } from "./derive-deploys"
 import { matchesFilter } from "./derive-api"
 import * as EndpointPeek from "./endpoint-peek/model"
 import * as EndpointPeekUpdate from "./endpoint-peek/update"
@@ -178,23 +179,25 @@ const issuesQuery = (model: Model, window: TimeWindow) => {
 	})
 }
 
-/** Every sha the Overview resolves: the marker labels and the resolvable deploy rows on screen. */
-const overviewShas = (model: Model): ReadonlyArray<string> =>
-	Option.match(AsyncData.getData(model.overview.data), {
+/** Every sha the Overview resolves: the marker labels and the deploy rows on screen. */
+const overviewShas = (model: Model): ReadonlyArray<string> => {
+	const markers = Option.match(AsyncData.getData(model.overview.data), {
 		onNone: () => [],
-		onSome: (overview) => {
-			const buckets = Arr.map(overview.points, (point) => point.bucket)
-			const markers = commitMarkers(overview.releases, buckets, model.commits)
-			const deploys = deriveDeploys(overview.releases)
-			const visible = deploys.slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL)
-			return [
-				...new Set([
-					...markerShas(markers),
-					...Arr.flatMap(visible, (deploy) => (isResolvableSha(deploy.sha) ? [deploy.sha] : [])),
-				]),
-			]
-		},
+		onSome: (overview) =>
+			markerShas(
+				commitMarkers(
+					overview.releases,
+					Arr.map(overview.points, (point) => point.bucket),
+					model.commits,
+				),
+			),
 	})
+	const rows = Arr.map(
+		railOrder(deployChecksOf(model)).slice(0, model.isDeploysExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL),
+		(check) => check.sha,
+	)
+	return [...new Set([...markers, ...Arr.filter(rows, isResolvableSha)])]
+}
 
 export const DEPLOYS_RAIL = 8
 export const DEPLOYS_EXPANDED = 50
@@ -219,7 +222,7 @@ const commitsStep =
 				}
 	}
 
-/** Where the service runs, which the header links on every tab. */
+/** Where the service runs: the Overview's footprint card. */
 const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	(model) => {
 		const input = { services: [model.serviceName], ...window }
@@ -245,6 +248,7 @@ const runsOnSteps = (context: PageContext, window: TimeWindow, mode: RequestMode
 
 const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: RequestMode): Steps => [
 	operationsStep(context, window, mode),
+	...runsOnSteps(context, window, mode),
 	(model) => {
 		const query = issuesQuery(model, window)
 		// "Load": Reload re-requests it only when its key moved (an environment's window).
@@ -267,6 +271,16 @@ const overviewTabSteps = (context: PageContext, window: TimeWindow, mode: Reques
 		)
 	},
 	dependenciesStep(context, window, mode),
+	(model) => {
+		const input = detailInput(model, window)
+		return keyed(
+			model.deploys,
+			requestKey(context.orgId, "getServiceDeploys", { data: input }),
+			mode,
+			(deploys) => ({ deploys }),
+			(key) => FetchDeploys({ key, input }),
+		)
+	},
 	(model) => {
 		const input = { ...detailInput(model, window), samplingActive: samplingActive(model) }
 		// The function answers `[]` without a request unless sampling is on over every environment.
@@ -509,7 +523,6 @@ export const sync = (model: Model, context: PageContext, mode: RequestMode): Ret
 	const window = windowOf(model, context, model.nowMs)
 	const requested = runSteps({ ...model, window }, [
 		overviewStep(context, window, mode),
-		...runsOnSteps(context, window, mode),
 		...tabSteps(model, context, window, mode),
 	])
 	return syncPeek(requested, context, mode)
@@ -555,6 +568,7 @@ export const init = (
 		endpointQuery: "",
 		endpointPeek: EndpointPeek.init("service-endpoint-peek"),
 		issues: Keyed.idle(),
+		deploys: Keyed.idle(),
 		usage: Keyed.idle(),
 		uptimeMonitors: Keyed.idle(),
 		canCreateUptimeMonitors: false,
@@ -792,6 +806,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedFetchIssues: ({ key, result }) => ({
 			model: { ...model, issues: Keyed.accept(model.issues, key, result) },
 		}),
+		CompletedFetchDeploys: ({ key, result }) =>
+			sync({ ...model, deploys: Keyed.accept(model.deploys, key, result) }, context, "Load"),
 		CompletedFetchUsage: ({ key, result }) => ({
 			model: { ...model, usage: Keyed.accept(model.usage, key, result) },
 		}),

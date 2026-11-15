@@ -1,7 +1,7 @@
 import { ServiceName } from "@maple/domain/http"
-import { Schema } from "effect"
+import { Array as Arr, Order, Schema } from "effect"
 import type { ServiceRuntime } from "../page/kit/service-runtimes"
-import type { Issue, Usage, Workload } from "../page/services/detail/model"
+import type { Issue, ServiceDeploys, Usage, Workload } from "../page/services/detail/model"
 import type { DependencyBundle, Operation } from "../page/services/detail/model-tabs"
 import { type Commit, type DetailPoint, type Release } from "../page/kit/service-metrics/points"
 
@@ -21,10 +21,15 @@ const start = RUNTIMES_NOW - BUCKETS * MINUTE
 const wobble = (index: number, phase: number) =>
 	Math.sin(index / 4 + phase) * 0.6 + Math.sin(index / 1.7 + phase * 2) * 0.4
 
+/** The bucket 9b2f0d1 was first seen in: from here the error rate holds near 1.4%. */
+const DEPLOY_INDEX = 39
+
 export const RUNTIMES_POINTS: ReadonlyArray<DetailPoint> = Array.from({ length: BUCKETS }, (_, index) => {
 	// The chart divides `throughput` by the bucket seconds: it is the bucket's request count.
 	const throughput = Math.round((42 + wobble(index, 0.3) * 6 + (index > 38 ? 4 : 0)) * 60)
-	const errorRate = index === 41 || index === 42 ? 0.021 : 0.002 + Math.max(0, wobble(index, 1.1)) * 0.002
+	const baseRate = 0.002 + Math.max(0, wobble(index, 1.1)) * 0.002
+	const errorRate =
+		index === 41 || index === 42 ? 0.021 : index >= DEPLOY_INDEX ? baseRate + 0.011 : baseRate
 	const p50 = 18 + wobble(index, 2) * 2
 	return {
 		bucket: iso(start + index * MINUTE),
@@ -42,17 +47,59 @@ export const RUNTIMES_POINTS: ReadonlyArray<DetailPoint> = Array.from({ length: 
 	}
 })
 
+const SHA_OLD = "c41e7a2d9f03b8e61c7a5d2e4f9b0c13a6e8d571"
+const SHA_DEPLOY = "9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28"
+
 /** The build running at the window start, then one Cloud Run revision rolled out at 14:39. */
 export const RUNTIMES_RELEASES: ReadonlyArray<Release> = [
-	{ bucket: iso(start), commitSha: "c41e7a2", count: 95_000, errorCount: 190 },
-	{ bucket: iso(start + 39 * MINUTE), commitSha: "9b2f0d1", count: 58_000, errorCount: 210 },
+	{ bucket: iso(start), commitSha: SHA_OLD, count: 95_000, errorCount: 190 },
+	{ bucket: iso(start + 39 * MINUTE), commitSha: SHA_DEPLOY, count: 58_000, errorCount: 210 },
 ]
+
+const sumOf = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (acc, value) => acc + value)
+
+/** One side of the deploy, read off the chart buckets the way the warehouse sums the minutes. */
+const sideOf = (from: number, to: number) => {
+	const points = RUNTIMES_POINTS.slice(from, to)
+	const p95s = Arr.sort(
+		Arr.map(points, (point) => point.p95LatencyMs),
+		Order.Number,
+	)
+	return {
+		spans: sumOf(Arr.map(points, (point) => point.totalCount)),
+		errors: Math.round(sumOf(Arr.map(points, (point) => point.totalCount * point.errorRate))),
+		p95: p95s[Math.floor(p95s.length * 0.95)] ?? 0,
+	}
+}
+
+const before = sideOf(DEPLOY_INDEX - 30, DEPLOY_INDEX)
+const after = sideOf(DEPLOY_INDEX, BUCKETS)
+
+/** 9b2f0d1, 21 minutes in: errors up from about 0.3% to 1.4%. c41e7a2 predates the window. */
+export const RUNTIMES_DEPLOYS: ServiceDeploys = {
+	deploys: [
+		{
+			serviceName: RUNTIMES_SERVICE,
+			environment: "production",
+			commitSha: SHA_DEPLOY,
+			firstSeen: iso(start + DEPLOY_INDEX * MINUTE),
+			afterSpans: after.spans,
+			afterErrors: after.errors,
+			afterP95Ms: after.p95,
+			beforeSpans: before.spans,
+			beforeErrors: before.errors,
+			beforeP95Ms: before.p95,
+		},
+	],
+	verifyWindowSeconds: 1800,
+	readUntil: iso(RUNTIMES_NOW),
+}
 
 export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([
 	[
-		"c41e7a2",
+		SHA_OLD,
 		{
-			sha: "c41e7a2",
+			sha: SHA_OLD,
 			message: "fleet: batch vehicle position writes",
 			authorName: "Ines Duarte",
 			authorLogin: "ines-d",
@@ -61,9 +108,9 @@ export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([
 		},
 	],
 	[
-		"9b2f0d1",
+		SHA_DEPLOY,
 		{
-			sha: "9b2f0d1",
+			sha: SHA_DEPLOY,
 			message: "routes: cache depot lookups for 30s",
 			authorName: "Kenji Arai",
 			authorLogin: "karai",
@@ -112,15 +159,17 @@ export const RUNTIMES_ISSUES: ReadonlyArray<Issue> = [
 	{
 		id: "iss_fleet_01",
 		title: "pgconn: deadlock detected (SQLSTATE 40P01) in UpsertPositions",
-		severity: "error",
+		severity: "high",
 		occurrenceCount: 64,
-		lastSeenAt: iso(RUNTIMES_NOW - 17 * MINUTE),
+		firstSeenAt: iso(start + 41 * MINUTE),
+		lastSeenAt: iso(RUNTIMES_NOW - 2 * MINUTE),
 	},
 	{
 		id: "iss_fleet_02",
 		title: "context deadline exceeded calling routing.Optimize",
-		severity: "warning",
+		severity: "medium",
 		occurrenceCount: 11,
+		firstSeenAt: iso(RUNTIMES_NOW - 3 * 24 * 60 * MINUTE),
 		lastSeenAt: iso(RUNTIMES_NOW - 44 * MINUTE),
 	},
 ]
