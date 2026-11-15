@@ -223,12 +223,19 @@ const baseName = (path: string): string =>
 		onSome: (at) => Str.slice(at + 1)(path),
 	})
 
+/** Text left to resolve for one attribute value before it passes the row ceiling. */
+interface TextBudget {
+	left: number
+}
+
 class DictionaryReader {
 	readonly #dictionary: Dictionary
 	readonly #stacks = new Map<number, ResolvedStack>()
+	readonly #maximumBytes: number
 
-	constructor(dictionary: Dictionary | null | undefined) {
+	constructor(dictionary: Dictionary | null | undefined, maximumBytes: number) {
 		this.#dictionary = dictionary ?? {}
+		this.#maximumBytes = maximumBytes
 	}
 
 	string(index: Index | undefined): string {
@@ -246,32 +253,52 @@ class DictionaryReader {
 		return attribute.key ? attribute.key : this.string(attribute.keyStrindex)
 	}
 
+	/**
+	 * The value's text. Throws `ProfilesTooLarge` once resolving it passes the row ceiling: an array
+	 * of references to one large entry is a few wire bytes and gigabytes of text, so the total is
+	 * counted as each string is resolved, before anything is serialized.
+	 */
 	value(value: ProfileAnyValue | null | undefined): string {
-		return anyValueString(this.#inline(value))
+		return anyValueString(this.#inline(value, { left: this.#maximumBytes }))
+	}
+
+	/** Counts `text` against `budget`; its length in code units is never more than its bytes. */
+	#spend(budget: TextBudget, text: string): string {
+		budget.left -= text.length
+		if (budget.left < 0)
+			throw new ProfilesTooLarge({
+				message: `an attribute value resolves to more than ${this.#maximumBytes} bytes of text`,
+				maximumBytes: this.#maximumBytes,
+			})
+		return text
 	}
 
 	/** The value as if its strings were sent inline: references resolved at every depth. */
-	#inline(value: ProfileAnyValue | null | undefined): AnyValue {
+	#inline(value: ProfileAnyValue | null | undefined, budget: TextBudget): AnyValue {
 		if (value === null || value === undefined) return {}
 		const { stringValueStrindex, arrayValue, kvlistValue, ...scalars } = value
+		if (scalars.stringValue !== undefined && scalars.stringValue !== null)
+			this.#spend(budget, scalars.stringValue)
 		if (
 			scalars.stringValue === undefined &&
 			stringValueStrindex !== undefined &&
 			stringValueStrindex !== null
 		)
-			return { stringValue: this.string(stringValueStrindex) }
+			return { stringValue: this.#spend(budget, this.string(stringValueStrindex)) }
 		if (arrayValue)
 			return {
 				...scalars,
-				arrayValue: { values: Arr.map(arrayValue.values ?? [], (each) => this.#inline(each)) },
+				arrayValue: {
+					values: Arr.map(arrayValue.values ?? [], (each) => this.#inline(each, budget)),
+				},
 			}
 		if (kvlistValue)
 			return {
 				...scalars,
 				kvlistValue: {
 					values: Arr.map(kvlistValue.values ?? [], (each) => ({
-						key: this.#key(each),
-						value: this.#inline(each.value),
+						key: this.#spend(budget, this.#key(each)),
+						value: this.#inline(each.value, budget),
 					})),
 				},
 			}
@@ -422,7 +449,7 @@ export function encodeProfiles(
 	maximumRowBytes: number = MAX_PROFILE_ROWS_BYTES,
 ): EncodedProfiles {
 	const request = (req ?? {}) as ProfilesRequest
-	const reader = new DictionaryReader(request.dictionary)
+	const reader = new DictionaryReader(request.dictionary, maximumRowBytes)
 	const lines: string[] = []
 	// The NDJSON's size, counted as each row is written: the whole is never built to be measured.
 	let rowBytes = 0
