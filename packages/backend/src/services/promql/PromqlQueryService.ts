@@ -210,7 +210,7 @@ const make = Effect.gen(function* () {
 		input: PromqlQuery,
 	) {
 		yield* Effect.annotateCurrentSpan({
-			"maple.promql.query": input.query,
+			"maple.promql.query_length": input.query.length,
 			"maple.promql.range_ms": input.endMs - input.startMs,
 			"maple.promql.step_ms": input.stepMs,
 		})
