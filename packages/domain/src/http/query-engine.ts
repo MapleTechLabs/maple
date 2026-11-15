@@ -4011,10 +4011,10 @@ export class PromqlExecuteRequest extends Schema.Class<PromqlExecuteRequest>("Pr
 	query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	legendFormat: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
-	minStepSeconds: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
-	maxDataPoints: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
-	displayType: Schema.optional(RawSqlDisplayType),
+	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+	minStepSeconds: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	maxDataPoints: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	displayType: Schema.optionalKey(RawSqlDisplayType),
 }) {}
 
 export class PromqlExecuteResponse extends Schema.Class<PromqlExecuteResponse>("PromqlExecuteResponse")({

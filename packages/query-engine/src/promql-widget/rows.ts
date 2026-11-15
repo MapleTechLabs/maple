@@ -93,17 +93,15 @@ const namedSeries = (result: QueryResult, legendFormat?: string): ReadonlyArray<
 		raw,
 		Order.mapInput(Order.String, (series: { labels: Labels }) => formatPromqlLabels(series.labels)),
 	)
-	const seen = new Map<string, number>()
+	// `bucket` is the row's time column; every name, literal or suffixed, is unique.
+	const taken = new Set<string>(["bucket"])
 	return Arr.map(sorted, (series) => {
 		const base =
 			result.resultType === "scalar" ? "scalar" : formatPromqlLegend(series.labels, legendFormat)
-		const count = (seen.get(base) ?? 0) + 1
-		seen.set(base, count)
-		return {
-			name: count === 1 ? base : `${base} (${count})`,
-			labels: series.labels,
-			points: series.points,
-		}
+		let name = base
+		for (let n = 2; taken.has(name); n++) name = `${base} (${n})`
+		taken.add(name)
+		return { name, labels: series.labels, points: series.points }
 	})
 }
 

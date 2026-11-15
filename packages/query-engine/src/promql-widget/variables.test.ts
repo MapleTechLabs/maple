@@ -108,3 +108,33 @@ describe("a promql widget request through the planner", () => {
 		})
 	})
 })
+
+describe("variables cannot change a query's structure", () => {
+	const hostile = (value: string): VariableValues => ({ v: one(value) })
+
+	it("escapes for the quote a value sits in", () => {
+		expect(interpolatePromqlVariables("up{a='$v'}", hostile("x'} or vector(1) or up{a='"))).toBe(
+			"up{a='x\\'} or vector(1) or up{a=\\''}",
+		)
+		expect(interpolatePromqlVariables('up{a="$v"}', hostile('x"} or vector(1)'))).toBe(
+			'up{a="x\\"} or vector(1)"}',
+		)
+	})
+
+	it("refuses a backtick inside a raw string and an operator outside any string", () => {
+		expect(interpolatePromqlVariables("up{a=`$v`}", hostile("x`} or vector(1) or up{a=`"))).toBe(
+			"up{a=`$v`}",
+		)
+		expect(
+			interpolatePromqlVariables("sum by ($v) (up)", hostile("job) (up) or vector(1) or sum by (job")),
+		).toBe("sum by ($v) (up)")
+		expect(interpolatePromqlVariables("rate(up[$v])", hostile("5m"))).toBe("rate(up[5m])")
+	})
+
+	it("never puts an All alternation outside a string", () => {
+		expect(interpolatePromqlVariables("sum by ($v) (up)", { v: all(["a", "b"]) })).toBe(
+			"sum by ($v) (up)",
+		)
+		expect(interpolatePromqlVariables("up{a=~'$v'}", { v: all(["a", "b'c"]) })).toBe("up{a=~'(a|b\\'c)'}")
+	})
+})

@@ -194,7 +194,7 @@ const redactWidget = (widget: ShareWidgetInput): RedactedWidget => {
 /**
  * Variable names a widget actually references.
  *
- * Scans the widget's stored form for `$name` / `${name}` rather than reading
+ * Scans the widget's stored form for every variable syntax rather than reading
  * any one field, because a variable can land in a where-clause, a route param,
  * a formula or a raw-SQL body, and a list that missed one of those would hide a
  * picker the chart needs. `$__`-prefixed built-ins can't match: variable names
@@ -202,8 +202,10 @@ const redactWidget = (widget: ShareWidgetInput): RedactedWidget => {
  */
 const referencedVariableNames = (widget: ShareWidgetInput): ReadonlySet<string> => {
 	const names = new Set<string>()
-	for (const match of Str.matchAll(/\$\{?([A-Za-z][A-Za-z0-9_]*)\}?/g)(encodeJson(widget ?? null))) {
-		const name = match[1]
+	// `$name`, `${name}`, `${name:format}` and PromQL's `[[name]]`.
+	const refs = /\$\{?([A-Za-z][A-Za-z0-9_]*)|\[\[([A-Za-z][A-Za-z0-9_]*)\]\]/g
+	for (const match of Str.matchAll(refs)(encodeJson(widget ?? null))) {
+		const name = match[1] ?? match[2]
 		if (name !== undefined) names.add(name)
 	}
 	return names

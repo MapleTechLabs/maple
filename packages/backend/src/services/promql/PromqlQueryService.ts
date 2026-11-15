@@ -536,6 +536,10 @@ const make = Effect.gen(function* () {
 	) {
 		const startMs = parseWarehouseDateTime(input.startTime)
 		const endMs = parseWarehouseDateTime(input.endTime)
+		// Checked before alignment, which would turn a reversed window into a valid instant.
+		if (!(endMs >= startMs)) {
+			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
+		}
 		const stepSeconds = promqlStepSeconds({
 			startMs,
 			endMs,

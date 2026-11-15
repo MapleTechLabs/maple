@@ -17,9 +17,66 @@ const REGEX_SPECIALS = /[.*+?^${}()|[\]\\]/g
 export const promqlRegexEscape = (value: string): string =>
 	replaceWith(value, REGEX_SPECIALS, (match) => `\\${match}`)
 
-/** A value escaped for the inside of a double-quoted PromQL string, so it cannot close the literal. */
-export const promqlStringEscape = (value: string): string =>
-	replaceWith(value, /[\\"]/g, (match) => `\\${match}`)
+/** Where in a query a variable sits: PromQL code, or inside a string with that quote. */
+type QuoteContext = "code" | '"' | "'" | "`"
+
+/** A value escaped for the inside of a double- or single-quoted PromQL string. */
+export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>
+	replaceWith(value, quote === '"' ? /[\\"]/g : /[\\']/g, (match) => `\\${match}`)
+
+/** Outside a string a value may only be a plain token: a name, a number or a duration. */
+const SAFE_TOKEN = /^[A-Za-z0-9_.:-]+$/
+
+/**
+ * A value as it may appear in `context`, or undefined when it cannot appear there without
+ * changing the query's structure (a quote in a raw string, an operator in code).
+ */
+const placed = (value: string, context: QuoteContext): string | undefined => {
+	switch (context) {
+		case '"':
+		case "'":
+			return promqlStringEscape(value, context)
+		case "`":
+			return Str.includes("`")(value) ? undefined : value
+		case "code":
+			return SAFE_TOKEN.test(value) ? value : undefined
+	}
+}
+
+/** The query split into code and string-literal runs, quotes kept with the code around them. */
+const quoteRuns = (
+	query: string,
+): ReadonlyArray<{ readonly text: string; readonly context: QuoteContext }> => {
+	const runs: Array<{ text: string; context: QuoteContext }> = []
+	let context: QuoteContext = "code"
+	let current = ""
+	for (let i = 0; i < query.length; i++) {
+		const ch = query[i] ?? ""
+		if (context === "code") {
+			current += ch
+			if (ch === '"' || ch === "'" || ch === "`") {
+				runs.push({ text: current, context })
+				current = ""
+				context = ch
+			}
+			continue
+		}
+		if (ch === "\\" && context !== "`") {
+			current += ch + (query[i + 1] ?? "")
+			i += 1
+			continue
+		}
+		if (ch === context) {
+			runs.push({ text: current, context })
+			current = ch
+			context = "code"
+			continue
+		}
+		current += ch
+	}
+	runs.push({ text: current, context })
+	return runs
+}
 
 /** Every variable name a PromQL query references, in any of the four syntaxes. */
 export const collectPromqlVariableRefs = (query: string): ReadonlyArray<string> =>
@@ -35,33 +92,42 @@ export const collectPromqlVariableRefs = (query: string): ReadonlyArray<string> 
  *
  * A single value goes in as itself; an "All" selection becomes a regex alternation of every
  * option, `(a|b)`, as Grafana writes a multi-value Prometheus variable. `:regex` escapes even a
- * single value. Every value is string-escaped so it cannot leave the literal it sits in. An
- * unknown variable stays literal, so the query fails to parse rather than matching everything.
+ * single value. A value is escaped for the string it sits in, and one that would change the
+ * query's structure (a quote in a raw string, an operator outside a string) is not substituted.
+ * An unknown or refused variable stays literal, so it matches nothing rather than everything.
  */
 export function interpolatePromqlVariables(query: string, values: VariableValues): string {
 	if (!Str.includes("$")(query) && !Str.includes("[[")(query)) return query
-	return replaceWith(
-		query,
-		PROMQL_VAR_REF,
-		(
-			match,
-			braced: string | undefined,
-			format: string | undefined,
-			bracketed: string | undefined,
-			bare: string | undefined,
-		) => {
-			const variable = values[braced ?? bracketed ?? bare ?? ""]
-			if (variable === undefined) return match
-			if (variable.isAll) {
-				const escaped = Arr.map(variable.options, (option) =>
-					promqlStringEscape(promqlRegexEscape(option)),
-				)
-				if (escaped.length === 0) return ".*"
-				return escaped.length === 1 ? (escaped[0] ?? "") : `(${Arr.join(escaped, "|")})`
-			}
-			const value = format === "regex" ? promqlRegexEscape(variable.value) : variable.value
-			return promqlStringEscape(value)
-		},
+	return Arr.join(
+		Arr.map(quoteRuns(query), ({ text, context }) =>
+			replaceWith(
+				text,
+				PROMQL_VAR_REF,
+				(
+					match,
+					braced: string | undefined,
+					format: string | undefined,
+					bracketed: string | undefined,
+					bare: string | undefined,
+				) => {
+					const variable = values[braced ?? bracketed ?? bare ?? ""]
+					if (variable === undefined) return match
+					if (variable.isAll) {
+						if (context === "code") return match
+						const options = Arr.map(variable.options, (option) =>
+							placed(promqlRegexEscape(option), context),
+						)
+						if (options.length === 0) return ".*"
+						if (Arr.some(options, (o) => o === undefined)) return match
+						const escaped = Arr.filter(options, (o): o is string => o !== undefined)
+						return escaped.length === 1 ? (escaped[0] ?? "") : `(${Arr.join(escaped, "|")})`
+					}
+					const value = format === "regex" ? promqlRegexEscape(variable.value) : variable.value
+					return placed(value, context) ?? match
+				},
+			),
+		),
+		"",
 	)
 }
 

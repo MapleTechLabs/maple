@@ -27,6 +27,20 @@ const failureOf = (input: { query: string; startMs: number; endMs: number; stepM
 	}).pipe(Effect.provide(TestLayer))
 
 describe("PromqlQueryService", () => {
+	it.effect("refuses a widget window that ends before it starts", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const error = yield* Effect.flip(
+				service.widget(tenant, {
+					query: "vector(1)",
+					startTime: "2026-01-02 00:00:00",
+					endTime: "2026-01-01 00:00:00",
+				}),
+			)
+			expect(error._tag).toBe("@maple/backend/promql/PromqlBadQueryError")
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
 	it.effect("runs a widget query on a step picked from the window", () =>
 		Effect.gen(function* () {
 			const service = yield* PromqlQueryService

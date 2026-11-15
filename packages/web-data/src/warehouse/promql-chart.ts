@@ -34,10 +34,14 @@ export const getPromqlChart = Effect.fn("QueryEngine.getPromqlChart")(function* 
 					query: input.promql,
 					startTime: input.startTime,
 					endTime: input.endTime,
-					legendFormat: input.legendFormat,
-					minStepSeconds: input.minStepSeconds,
-					maxDataPoints: input.maxDataPoints,
-					displayType: input.displayType,
+					...(input.legendFormat === undefined ? undefined : { legendFormat: input.legendFormat }),
+					...(input.minStepSeconds === undefined
+						? undefined
+						: { minStepSeconds: input.minStepSeconds }),
+					...(input.maxDataPoints === undefined
+						? undefined
+						: { maxDataPoints: input.maxDataPoints }),
+					...(input.displayType === undefined ? undefined : { displayType: input.displayType }),
 				}),
 			})
 		}),

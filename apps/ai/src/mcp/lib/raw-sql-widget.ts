@@ -53,6 +53,11 @@ export function buildRawSqlDataSource(args: {
  */
 export function withScalarReduction(dataSource: WidgetDataSource, isScalar: boolean): WidgetDataSource {
 	if (!isScalar) return dataSource
+	// A PromQL scalar needs its rows newest first, which only a stat display type gives;
+	// without one the rows are a line chart's, oldest first, and `first` reads the oldest.
+	if ("kind" in dataSource && dataSource.kind === "promql" && dataSource.displayType === undefined) {
+		return withScalarReduction({ ...dataSource, displayType: "stat" }, isScalar)
+	}
 	if (dataSourceTransform(dataSource)?.reduceToValue !== undefined) return dataSource
 	const querySet = dataSourceQuerySet(dataSource)
 	// Only the query and PromQL arms: a route source owns its own response shape, and a

@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { dataSourcePromql, dataSourceQuerySet, dataSourceRawSql, dataSourceRouteParams } from "./access"
 import { makePromqlDataSource } from "./construct"
-import { redactForShare } from "./redact"
+import { redactForShare, variablesForWidget } from "./redact"
 import { toWidgetRequest } from "./request"
 import { WidgetDataSourceV3 } from "./v3/data-source"
 
@@ -69,5 +69,19 @@ describe("a shared promql widget", () => {
 			],
 		})
 		expect(shared?.widgets[0]?.dataSource).toEqual({ kind: "promql" })
+	})
+})
+
+describe("variablesForWidget", () => {
+	it("keeps a variable a PromQL widget references only as [[name]]", () => {
+		const service = { name: "service", type: "textbox" as const, defaultValue: "checkout" }
+		const other = { name: "other", type: "textbox" as const }
+		const widget = {
+			id: "w1",
+			visualization: "chart",
+			layout: { x: 0, y: 0, w: 4, h: 4 },
+			dataSource: makePromqlDataSource({ query: 'up{job="[[service]]"}' }),
+		}
+		expect(variablesForWidget([service, other], widget)).toEqual([service])
 	})
 })

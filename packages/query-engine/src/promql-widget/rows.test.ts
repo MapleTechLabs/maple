@@ -53,6 +53,11 @@ describe("promqlRowsForDisplay", () => {
 		expect(rows[0]).toEqual({ bucket: iso(0), up: 1, "up (2)": 1 })
 	})
 
+	it("never lets a legend name take the time column", () => {
+		const rows = promqlRowsForDisplay(matrix, { legendFormat: "bucket" })
+		expect(rows[0]).toEqual({ bucket: iso(0), "bucket (2)": 1, "bucket (3)": 1 })
+	})
+
 	it("gives a stat the first series, newest point first", () => {
 		const rows = promqlRowsForDisplay(matrix, { displayType: "stat" })
 		expect(rows).toEqual([{ bucket: iso(0), value: 1 }])
