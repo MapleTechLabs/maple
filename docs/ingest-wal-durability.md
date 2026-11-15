@@ -36,6 +36,13 @@ Appends go to the active segment and `sync_data` before the request is acknowled
 `INGEST_WAL_SEGMENT_MAX_BYTES` (8 MiB) the segment is **sealed**: the file is closed and the next
 one opened. Sealing is an `open` plus a directory fsync. There is no copy on the append path.
 
+Each frame head carries a signal tag (`signal_tag` in `telemetry.rs`). Tags are permanent and only
+ever added. A binary that does not know a tag stops reading that segment at the frame, which drops
+every later frame in it, whatever org wrote them. So a new tag rolls out in two steps: deploy the
+binary that reads it to every task first, then turn on whatever writes it. Tag 8 is profiles,
+written only once `INGEST_PROFILES_ENABLED` is on; rolling back past that binary while profile
+frames are still queued loses the rest of their segments.
+
 Syncs are **group commits**. An append writes its frame under the lane's append lock, then waits
 for a sync that started after the write. If no sync is running it leads one: it takes every frame
 written since the last sync, releases the lock, calls `sync_data`, and on success hands those frames
@@ -232,7 +239,8 @@ org, in a stable order.
 ### The queue is reserved for the whole request
 
 Before the first piece is built the request reserves everything its pieces will queue
-(`TelemetryPipeline::reserve_plan`): its total row bytes against the org's queue
+(`TelemetryPipeline::reserve_plan`; profiles, whose rows are built whole, reserve the same way
+through `reserve_frames`): its total row bytes against the org's queue
 (`INGEST_ORG_QUEUE_MAX_BYTES`), its rows and frame heads under its WAL lane's cap, and one channel
 slot per frame. The pieces draw on that reservation instead of reserving one at a time, and what
 they do not use is returned when the request ends, however it ends.

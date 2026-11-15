@@ -5725,9 +5725,12 @@ async fn handle_profiles_inner(
             reason = %error.message,
             "Profiles export refused while decoding"
         );
-        // A body that does not decode is an export the org lost.
+        // A body that does not decode, or would store too much, is an export the org lost.
+        let signal = TelemetrySignal::Profiles.as_str();
         if error.status == StatusCode::BAD_REQUEST {
-            metrics::org_data_loss(&org_id, TelemetrySignal::Profiles.as_str(), "decode");
+            metrics::org_data_loss(&org_id, signal, "decode");
+        } else if error.error_kind() == INGEST_ROW_EXPANSION.error_kind {
+            metrics::org_data_loss(&org_id, signal, INGEST_ROW_EXPANSION.error_kind);
         }
     })?;
     let count = rows.len();
@@ -5762,8 +5765,8 @@ async fn handle_profiles_inner(
 }
 
 /// Commits `rows` as one frame per export batch, not per request: the rows repeat
-/// every stack in full, so an export is many times its wire size. The frames go
-/// through one commit, like an OTLP request's: one refused leaves the earlier ones.
+/// every stack in full, so an export is many times its wire size. The whole export
+/// is reserved before its first frame, so a full queue refuses it with nothing stored.
 async fn commit_profile_rows(
     state: &AppState,
     pipeline: &TelemetryPipeline,
@@ -5895,6 +5898,7 @@ async fn decode_profiles(
         state.config.max_decode_heap_bytes,
     );
     let max_row_bytes = profile_row_max_bytes(state.config.tinybird.batch_max_bytes);
+    let max_row_expansion = state.config.max_row_expansion;
     tokio::task::spawn_blocking(move || {
         let busy = profiles_decode_busy;
         if !reservation.try_add(body.len() as u64) {
@@ -5943,12 +5947,21 @@ async fn decode_profiles(
             decoded_heap: estimate,
             heap_ceiling: heap_budget,
             max_row_bytes,
+            row_expansion: max_row_expansion,
+            max_stored_bytes: (max_row_expansion > 0)
+                .then(|| (decoded_bytes as u64).saturating_mul(max_row_expansion)),
         };
         let flattened =
             flatten_profiles(&request, &stamps, limits, payload_format, &mut reservation)?;
         drop(request);
         // The rows, and the copy of them the WAL frame is built from.
         let row_bytes: usize = flattened.rows.iter().map(Vec::len).sum();
+        if limits
+            .max_stored_bytes
+            .is_some_and(|allowed| row_bytes as u64 > allowed)
+        {
+            return Err(profiles_row_expansion(max_row_expansion));
+        }
         reservation.shrink_to(2 * row_bytes as u64);
         Ok(FlattenedProfiles {
             rows: flattened.rows,
@@ -5976,14 +5989,36 @@ fn profiles_decode_busy() -> ApiError {
     )
 }
 
+/// Refuses an export whose rows would store more than `INGEST_MAX_ROW_EXPANSION`
+/// times its decoded size: each row repeats a whole stack, so a few KiB of
+/// dictionary could otherwise store hundreds of MiB.
+fn profiles_row_expansion(ceiling: u64) -> ApiError {
+    ApiError::tagged(
+        StatusCode::PAYLOAD_TOO_LARGE,
+        &INGEST_ROW_EXPANSION,
+        format!(
+            "This export would be stored as more than {ceiling} times its size, because every \
+             row repeats its whole stack; send fewer distinct stacks, links or attributes per \
+             export"
+        ),
+    )
+}
+
 /// What bounds one export's flatten: the decode heap its decoded form was
-/// estimated to take, the ceiling that and its rows share, and the row ceiling.
+/// estimated to take, the ceiling that and its rows share, the row ceiling, and
+/// the most its rows may store (`None` when `INGEST_MAX_ROW_EXPANSION` is 0).
 #[derive(Clone, Copy)]
 struct ProfileLimits {
     decoded_heap: u64,
     heap_ceiling: u64,
     max_row_bytes: usize,
+    row_expansion: u64,
+    max_stored_bytes: Option<u64>,
 }
+
+/// The least a profiles flatten may charge before the stored-bytes ceiling stops it
+/// early, so a tiny export is not refused for the meter's step size.
+const PROFILES_MIN_CHARGE_BYTES: u64 = 1024 * 1024;
 
 /// Flattens a decoded export, reserving its rows' memory first against the request's
 /// own ceiling and then the process-wide budget. Past the ceiling is a 413, since
@@ -5999,10 +6034,20 @@ fn flatten_profiles(
     let kib = |bytes: u64| bytes.div_ceil(1024).saturating_mul(1024);
     let mut heap_bytes = kib(limits.decoded_heap);
     let mut over_ceiling = false;
+    // The flatten charges each row twice (the row and its frame copy) plus what builds
+    // it, in steps, so it stops once well past the stored-bytes ceiling; the exact
+    // check after it decides.
+    let charge_limit = limits
+        .max_stored_bytes
+        .map(|stored| stored.saturating_mul(4).max(PROFILES_MIN_CHARGE_BYTES));
+    let mut charged = 0u64;
+    let mut over_expansion = false;
     let mut reserve = |bytes: u64| {
+        charged = charged.saturating_add(bytes);
+        over_expansion = charge_limit.is_some_and(|limit| charged > limit);
         heap_bytes = heap_bytes.saturating_add(kib(bytes));
         over_ceiling = heap_bytes > limits.heap_ceiling;
-        !over_ceiling && reservation.try_add(bytes)
+        !over_expansion && !over_ceiling && reservation.try_add(bytes)
     };
     let now_nano = current_time_unix_nano();
     profiles::flatten(
@@ -6014,6 +6059,9 @@ fn flatten_profiles(
         &mut reserve,
     )
     .map_err(|error| match error {
+        profiles::FlattenError::OverBudget if over_expansion => {
+            profiles_row_expansion(limits.row_expansion)
+        }
         profiles::FlattenError::OverBudget if over_ceiling => {
             over_decode_budget(limits.heap_ceiling)
         }
@@ -15171,16 +15219,16 @@ mod tests {
         Bytes::from(serde_json::to_vec(&request).expect("the export encodes"))
     }
 
-    // Profiles commit their frames through the one `commit_frames` call an OTLP
-    // request's frames go through: a refusal leaves the frames before it, no more.
+    // A profiles export is reserved whole before its first frame, as a planned OTLP
+    // request is: one past the org's queue stores nothing, so a resend never doubles rows.
     #[tokio::test]
-    async fn a_refused_profiles_commit_leaves_only_the_frames_before_it_and_says_so() {
+    async fn a_profiles_export_past_the_org_queue_is_refused_before_any_frame() {
         const SMALL_ROWS: usize = 100;
-        let queue_dir = unique_main_test_dir("profiles-partial-commit");
-        let key = "maple_sk_test_profiles_partial";
-        let store = private_key_store(key, "org_profiles_partial", false);
-        // The org's queue holds half an export batch: a frame of the small rows
-        // fits, and the frame the large row starts never does, whatever has drained.
+        let queue_dir = unique_main_test_dir("profiles-whole-commit");
+        let key = "maple_sk_test_profiles_whole";
+        let store = private_key_store(key, "org_profiles_whole", false);
+        // The org's queue holds half an export batch: the small rows' frame alone
+        // would fit, the export with its large row never does.
         let (mut state, mut imports) =
             profiles_test_state_with_org_queue(store, queue_dir.clone(), 100 * 1024).await;
         state.config.tinybird.batch_max_bytes = 200 * 1024;
@@ -15192,38 +15240,68 @@ mod tests {
             profiles_export_with_one_large_row(SMALL_ROWS, 700),
         )
         .await
-        .expect_err("the second frame is past the org's queue");
-        assert_eq!(refused.status, StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(refused.error_kind(), "throttle");
-        // The first frame is stored, and the error says so instead of "no data".
-        assert_eq!(
-            refused.message,
-            format!(
-                "Maple stored {SMALL_ROWS} of this export's {} profile rows before its ingest \
-                 queue refused the rest. Resending the export stores those rows a second time.",
-                SMALL_ROWS + 6
-            )
-        );
-        let stored = imported_profile_rows(&mut imports, SMALL_ROWS).await;
-        assert_eq!(stored.len(), SMALL_ROWS);
-        for row in &stored {
-            assert_eq!(row["frames"], serde_json::json!(["main"]));
-        }
-        // Nothing of the refused frame, or of anything after it, is stored.
-        assert!(no_profiles_are_stored(&mut imports).await);
-
-        // Refused at its first frame, an export leaves nothing and the text says that.
-        let refused =
-            handle_profiles_inner(&state, &headers, profiles_export_with_one_large_row(0, 700))
-                .await
-                .expect_err("the only frame is past the org's queue");
-        assert_eq!(refused.status, StatusCode::TOO_MANY_REQUESTS);
+        .expect_err("the export is past the org's queue");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(refused.error_kind(), INGEST_ROWS_EXCEED_QUEUE.error_kind);
         assert!(
             refused.message.contains("No data was written"),
             "{}",
             refused.message
         );
         assert!(no_profiles_are_stored(&mut imports).await);
+
+        // Nothing stays reserved: an export that fits is stored whole afterwards.
+        let accepted = handle_profiles_inner(
+            &state,
+            &headers,
+            profiles_export_with_one_large_row(SMALL_ROWS, 1),
+        )
+        .await
+        .expect("an export under the org's queue is accepted");
+        assert_eq!(accepted.stored_rows, SMALL_ROWS + 6);
+        assert_eq!(
+            imported_profile_rows(&mut imports, SMALL_ROWS + 6).await.len(),
+            SMALL_ROWS + 6
+        );
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Each row repeats a whole stack, so stored bytes are held to
+    // `INGEST_MAX_ROW_EXPANSION` times the decoded export, like the OTLP signals.
+    // The SDK's JSON export stores about 8 to 10 times its size.
+    #[tokio::test]
+    async fn a_profiles_export_past_the_row_expansion_ceiling_is_refused() {
+        let queue_dir = unique_main_test_dir("profiles-row-expansion");
+        let key = "maple_sk_test_profiles_expansion";
+        let store = private_key_store(key, "org_profiles_expansion", false);
+        let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
+
+        state.config.max_row_expansion = 4;
+        let refused = send_sdk_profiles(&state, key)
+            .await
+            .expect_err("the rows store more than 4 times the export");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(refused.error_kind(), INGEST_ROW_EXPANSION.error_kind);
+        assert!(!refused.kind.retryable);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(no_profiles_are_stored(&mut imports).await);
+
+        // Under the ceiling, and with it off, the same export is stored.
+        for ceiling in [16, 0] {
+            state.config.max_row_expansion = ceiling;
+            assert_eq!(
+                send_sdk_profiles(&state, key)
+                    .await
+                    .expect("the export fits"),
+                PROFILES_SDK_ROWS
+            );
+            assert_eq!(
+                imported_profile_rows(&mut imports, PROFILES_SDK_ROWS)
+                    .await
+                    .len(),
+                PROFILES_SDK_ROWS
+            );
+        }
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
