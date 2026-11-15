@@ -345,6 +345,26 @@ describe("profilerLayer", () => {
 		}).pipe(harness.run)
 	})
 
+	it.effect("says once when a window's span log overflowed, then only at debug", () => {
+		const harness = makeHarness()
+		const timeline = makeSpanTimeline()
+		const overflowing: SpanTimeline = {
+			...timeline,
+			drain: () => ({ ...timeline.drain(), overflowed: true }),
+		}
+		return Effect.gen(function* () {
+			yield* Layer.build(harness.layer({ timeline: overflowing }))
+			yield* TestClock.adjust(WINDOW)
+			yield* harness.logged(1)
+			yield* TestClock.adjust(WINDOW)
+			yield* harness.logged(2)
+			expect(levels(harness)).toEqual(["Warn", "Debug"])
+			expect(harness.logs[0]?.message).toContain("not linked to spans")
+			// Overflow costs span links, never the window.
+			expect(harness.requests).toHaveLength(2)
+		}).pipe(harness.run)
+	})
+
 	it.effect("keeps profiling through failed exports, warning once per outage", () => {
 		const statuses = [404, 404, 200, 503]
 		const harness = makeHarness({ respond: (attempt) => answer(statuses[attempt - 1] ?? 200) })
