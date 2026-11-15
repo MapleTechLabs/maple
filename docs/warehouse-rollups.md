@@ -245,9 +245,10 @@ infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_m
 - `--from` defaults to the source's retention before `--until` (30 days for traces and logs, 90
   for metrics); `--pause-seconds` (default 60) spaces the days out. Run it off-peak and watch
   workspace CPU between days.
-- The hour `--until` falls in is deleted and repopulated whole, last: points stamped before the
-  deploy but ingested after it already reached the views, so a populate cut at `--until` would
-  count them twice. `--execute` refuses to run until that hour has been over for 30 minutes.
+- The hour `--until` falls in and the one before it are deleted and repopulated whole, last:
+  points stamped there but ingested after the deploy already reached the views, so a populate
+  cut at `--until` would count them twice. `--execute` waits until those hours have been over
+  for 30 minutes, and refuses once they are older than the source's retention.
 - A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
   failed between its two views is skipped too: delete that day's rows and re-run.
 - Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
