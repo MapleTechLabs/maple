@@ -2202,6 +2202,17 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// Deploy verification: each deploy's first half hour against the half hour before it.
+	{
+		module: "releases",
+		name: "releaseVerificationQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.releaseVerificationQuery({ serviceName: "api" }), {
+				...window,
+				deploysFrom: START_TIME,
+			}),
+	},
 	// Dependency scanner: which commit each service runs, ranked by traffic.
 	{
 		module: "releases",

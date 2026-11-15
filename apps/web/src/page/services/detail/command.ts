@@ -10,6 +10,7 @@ import {
 	getServiceEndpoints,
 	getServiceEndpointsTimeseries,
 } from "@maple/web-data/warehouse/service-endpoints"
+import { getServiceDeploys } from "@maple/web-data/warehouse/service-deploys"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
@@ -92,6 +93,16 @@ export const FetchOverview = Command.define("FetchServiceDetailOverview", {
 				environments: response.environments,
 			})),
 			settleTo((result) => Message.CompletedFetchOverview({ key, result })),
+		),
+})
+
+/** The window's deploys, each judged on its first minutes against the minutes before it. */
+export const FetchDeploys = Command.define("FetchServiceDeploys", {
+	args: { key: Schema.String, input: DetailInput },
+	messages: [Message.CompletedFetchDeploys],
+	execute: ({ key, input }) =>
+		getServiceDeploys({ data: { ...input, environments: input.environments } }).pipe(
+			settleTo((result) => Message.CompletedFetchDeploys({ key, result })),
 		),
 })
 
@@ -199,6 +210,7 @@ export const FetchIssues = Command.define("FetchServiceOpenIssues", {
 					issue.error_label || issue.exception_type || issue.exception_message || "Unknown error",
 				severity: issue.severity,
 				occurrenceCount: issue.occurrence_count,
+				firstSeenAt: issue.first_seen_at,
 				lastSeenAt: issue.last_seen_at,
 			}))
 		}).pipe(settleTo((result) => Message.CompletedFetchIssues({ key, result }))),

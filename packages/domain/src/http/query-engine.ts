@@ -1616,6 +1616,51 @@ const ReleaseTimelinePoint = Schema.Struct({
 })
 export type ReleaseTimelinePoint = Schema.Schema.Type<typeof ReleaseTimelinePoint>
 
+/**
+ * One deploy's first minutes against the same minutes just before it on the
+ * same environment. `before*` is every other version in that span.
+ */
+const DeployVerificationRow = Schema.Struct({
+	serviceName: ServiceName,
+	environment: Schema.String,
+	commitSha: CommitSha,
+	firstSeen: Schema.String,
+	afterSpans: Schema.Number,
+	afterErrors: Schema.Number,
+	afterP95Ms: Schema.Number,
+	beforeSpans: Schema.Number,
+	beforeErrors: Schema.Number,
+	beforeP95Ms: Schema.Number,
+})
+export type DeployVerificationRow = Schema.Schema.Type<typeof DeployVerificationRow>
+
+/** One service's deploys in the window, or with `commitSha` one commit across the services it reached. */
+export class ServiceDeploysRequest extends Schema.Class<ServiceDeploysRequest>("ServiceDeploysRequest")(
+	Schema.Struct({
+		serviceName: Schema.optional(ServiceName),
+		commitSha: Schema.optional(CommitSha),
+		startTime: TinybirdDateTime,
+		endTime: TinybirdDateTime,
+		environments: OptionalDeploymentEnvs,
+	}).check(
+		// Neither would read every service's minutes across the org.
+		Schema.makeFilter(
+			(request: { readonly serviceName?: string; readonly commitSha?: string }) =>
+				request.serviceName !== undefined ||
+				request.commitSha !== undefined ||
+				"a serviceName or a commitSha is required",
+			{ identifier: "ServiceDeploysScoped" },
+		),
+	),
+) {}
+
+export class ServiceDeploysResponse extends Schema.Class<ServiceDeploysResponse>("ServiceDeploysResponse")({
+	/** Versions first seen inside the window, newest first. */
+	deploys: Schema.Array(DeployVerificationRow),
+	/** The width of each side of a verification, in seconds. */
+	verifyWindowSeconds: Schema.Number,
+}) {}
+
 export class ReleasesListRequest extends Schema.Class<ReleasesListRequest>("ReleasesListRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
@@ -4551,6 +4596,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 			success: ServiceDetailOverviewResponse,
 			// Embeds an `execute` sub-query, so it can also surface QueryEngineValidationError.
 			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceDeploys", "/service-deploys", {
+			payload: ServiceDeploysRequest,
+			success: ServiceDeploysResponse,
+			error: queryEngineEndpointErrors,
 		}),
 	)
 	.add(

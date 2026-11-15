@@ -22,7 +22,7 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { Issue, OverviewData, RefinementPoint, ServiceDeploys, Usage, Workload } from "./model"
 import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 /** The reads that can be retried from their error state. */
@@ -51,6 +51,7 @@ export const Message = defineMessageUnion({
 	CompletedFetchEndpointSeries: result(Schema.Array(ApiBucket)),
 	CompletedFetchStatusBreakdown: result(Schema.Array(StatusRow)),
 	CompletedFetchIssues: result(Schema.Array(Issue)),
+	CompletedFetchDeploys: result(ServiceDeploys),
 	CompletedFetchUsage: result(Usage),
 	/** The session's grants come with the list: only `uptime_monitors:manage` is offered a new monitor. */
 	CompletedFetchUptimeMonitors: {

@@ -14,6 +14,7 @@ import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
 import {
 	RUNTIMES_COMMITS,
+	RUNTIMES_DEPLOYS,
 	RUNTIMES_DEPENDENCIES,
 	RUNTIMES_ISSUES,
 	RUNTIMES_NOW,
@@ -83,6 +84,10 @@ const ANSWERS: ReadonlyArray<Answer> = [
 	slot(
 		(model) => model.issues,
 		(key) => PageMessage.CompletedFetchIssues({ key, result: Result.succeed(RUNTIMES_ISSUES) }),
+	),
+	slot(
+		(model) => model.deploys,
+		(key) => PageMessage.CompletedFetchDeploys({ key, result: Result.succeed(RUNTIMES_DEPLOYS) }),
 	),
 	slot(
 		(model) => model.usage,

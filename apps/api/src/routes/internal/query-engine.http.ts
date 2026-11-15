@@ -64,6 +64,7 @@ import {
 	ServiceDbQuerySummaryResponse,
 	ServiceDetailOverviewResponse,
 	ReleasesListResponse,
+	ServiceDeploysResponse,
 	UptimeChecksResponse,
 	UptimePhaseTimingsResponse,
 	ReleaseDetailResponse,
@@ -329,6 +330,19 @@ const toReleaseRow = (row: CH.ReleasesListOutput): ReleaseRow => {
 			spanCount > 0 ? Math.round(((satisfied + tolerating * 0.5) / spanCount) * 10_000) / 10_000 : 0,
 	}
 }
+
+const toDeployVerificationRow = (row: CH.ReleaseVerificationOutput) => ({
+	serviceName: decodeServiceName(row.serviceName),
+	environment: row.environment,
+	commitSha: decodeCommitSha(row.commitSha),
+	firstSeen: DateTime.formatIso(row.firstSeen),
+	afterSpans: row.afterSpans,
+	afterErrors: row.afterErrors,
+	afterP95Ms: row.afterP95Ms,
+	beforeSpans: row.beforeSpans,
+	beforeErrors: row.beforeErrors,
+	beforeP95Ms: row.beforeP95Ms,
+})
 
 const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
 	bucket: DateTime.formatIso(row.bucket),
@@ -1371,6 +1385,16 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								Arr.map(environmentRows, (row) => row.environment),
 								(env) => env !== "",
 							),
+						})
+					}),
+				)
+				.handle("serviceDeploys", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* runQuery(Queries.serviceDeploys, tenant, payload)
+						return new ServiceDeploysResponse({
+							deploys: Arr.map(rows, toDeployVerificationRow),
+							verifyWindowSeconds: CH.DEPLOY_VERIFY_WINDOW_SECONDS,
 						})
 					}),
 				)

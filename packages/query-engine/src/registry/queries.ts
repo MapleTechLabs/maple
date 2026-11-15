@@ -39,6 +39,7 @@ import type {
 	ServiceHealthSnapshotRequest,
 	ServiceOverviewRequest,
 	ReleasesListRequest,
+	ServiceDeploysRequest,
 	UptimeChecksRequest,
 	UptimePhaseTimingsRequest,
 	ReleaseDetailRequest,
@@ -434,6 +435,40 @@ export const uptimeChecks = defineQuery({
 			CH.uptimeChecksQuery(payload),
 			{ orgId, monitorId: payload.monitorId, startTime: payload.startTime, endTime: payload.endTime },
 			{ rowSchema: CH.uptimeChecksRowSchema },
+		),
+})
+
+/**
+ * How far before the window the deploy read starts. A version first seen in it was already running;
+ * a deploy just inside the window still has its minutes before. A service quiet for this whole lead
+ * (a cron, say) has its next version taken for a deploy all the same.
+ */
+const SERVICE_DEPLOYS_LEAD_SECONDS = 2 * CH.DEPLOY_VERIFY_WINDOW_SECONDS
+
+export const serviceDeploys = defineQuery({
+	id: "serviceDeploys",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ServiceDeploysRequest, orgId: OrgId) =>
+		CH.compile(
+			CH.releaseVerificationQuery({
+				serviceName: payload.serviceName,
+				environments: payload.environments,
+				commitSha: payload.commitSha,
+			}),
+			{
+				...windowParams(
+					{
+						startTime: formatWarehouseDateTime(
+							parseWarehouseDateTime(payload.startTime) - SERVICE_DEPLOYS_LEAD_SECONDS * 1000,
+						),
+						endTime: payload.endTime,
+					},
+					orgId,
+				),
+				deploysFrom: payload.startTime,
+			},
+			{ rowSchema: CH.releaseVerificationRowSchema },
 		),
 })
 
