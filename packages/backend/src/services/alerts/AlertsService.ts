@@ -196,6 +196,7 @@ import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
 import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
+import { costBudgetPeriodWindow } from "@maple/domain/cost-budget"
 import { closeLastPeriod, evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
@@ -3480,6 +3481,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Ask the persistence adapter for flap history only when the pure core
 					// has decided that a new incident is otherwise ready to open.
 					if (lifecycle.transition === "opened") {
+						// A budget's incident from an earlier period is no flap of this one's: its
+						// resolve must not mute the new period's trigger.
+						const flapsSince =
+							normalized.costBudget === null
+								? 0
+								: costBudgetPeriodWindow(normalized.costBudget.period, windowEndMs).startMs
 						const priorNotified =
 							(yield* dbExecute((db) =>
 								db.run(
@@ -3490,6 +3497,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.ruleId.eq(row.id),
 											$.groupKey.eq(groupKey),
 											$.status.eq("resolved"),
+											$.firstTriggeredAt.gte(flapsSince),
 											$.lastNotifiedAt.isNotNull(),
 											$.lastNotifiedAt.gte(
 												timestamp - normalized.renotifyIntervalMinutes * 60_000,
