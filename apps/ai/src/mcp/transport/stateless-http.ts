@@ -494,7 +494,9 @@ export const layerStatelessMcpHttp = (options: {
 			)
 
 			return yield* RpcServer.Protocol.make((writeRequest_) => {
-				writeRequest = writeRequest_
+				// effect's `withRun` buffers writes until the server runs and picks buffer or server when the
+				// effect is built: a fiber that yields between build and run would buffer after the drain and hang.
+				writeRequest = (clientId, message) => Effect.suspend(() => writeRequest_(clientId, message))
 				return Effect.succeed({
 					disconnects,
 					send: (targetClientId: number, response: FromServerEncoded) => {
