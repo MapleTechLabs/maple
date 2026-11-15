@@ -7,7 +7,7 @@
 //! has to read the same in both warehouses.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -136,29 +136,48 @@ pub fn apply_resource_overrides(
             (key.len() + value.len() + size_of::<KeyValue>() + size_of::<AnyValue>()) as u64
         })
         .sum();
-    let set_keys: HashSet<&str> = overrides.set.iter().map(|(key, _)| key.as_str()).collect();
+    // Each override key's role: replaced (`set`) and which default it is.
+    let mut roles: HashMap<&str, KeyRole> = HashMap::new();
+    for (index, (key, _)) in overrides.defaults.iter().enumerate() {
+        roles.entry(key.as_str()).or_default().default = Some(index);
+    }
+    for (key, _) in &overrides.set {
+        roles.entry(key.as_str()).or_default().set = true;
+    }
+    // A string-table key's role, worked out once per index for the whole request: a reference
+    // costs a few wire bytes, and its text is hashed only the first time it is named.
+    let mut by_index: HashMap<i32, Option<KeyRole>> = HashMap::new();
+    let mut role_of = |kv: &KeyValue| -> Option<KeyRole> {
+        if !kv.key.is_empty() {
+            return roles.get(kv.key.as_str()).copied();
+        }
+        if kv.key_strindex == 0 {
+            return None;
+        }
+        *by_index.entry(kv.key_strindex).or_insert_with(|| {
+            usize::try_from(kv.key_strindex)
+                .ok()
+                .and_then(|index| strings.get(index))
+                .and_then(|text| roles.get(text.as_str()).copied())
+        })
+    };
     for resource_profiles in &mut request.resource_profiles {
         let resource = resource_profiles.resource.get_or_insert_with(Resource::default);
-        // The pairs added and a borrowed key set, never a copy of a key.
-        let keys_bytes = (resource.attributes.len() * 2 * size_of::<&str>()) as u64;
-        if !charge(added.saturating_add(keys_bytes)) {
+        // The pairs added, and a cached role per attribute's string-table index at most.
+        let lookups = (resource.attributes.len() * size_of::<(i32, Option<KeyRole>)>()) as u64;
+        if !charge(added.saturating_add(lookups)) {
             return false;
         }
-        let missing: Vec<bool> = {
-            let present: HashSet<&str> = resource
-                .attributes
-                .iter()
-                .map(|kv| resolved_key(kv, strings))
-                .collect();
-            overrides
-                .defaults
-                .iter()
-                .map(|(key, _)| !present.contains(key.as_str()) && !set_keys.contains(key.as_str()))
-                .collect()
-        };
-        resource
-            .attributes
-            .retain(|kv| !set_keys.contains(resolved_key(kv, strings)));
+        let mut present = vec![false; overrides.defaults.len()];
+        resource.attributes.retain(|kv| {
+            let Some(role) = role_of(kv) else {
+                return true;
+            };
+            if let Some(index) = role.default {
+                present[index] = true;
+            }
+            !role.set
+        });
         let text = |key: &str, value: &str| KeyValue {
             key: key.to_owned(),
             value: Some(AnyValue {
@@ -166,8 +185,9 @@ pub fn apply_resource_overrides(
             }),
             ..KeyValue::default()
         };
-        for ((key, value), missing) in overrides.defaults.iter().zip(missing) {
-            if missing {
+        for (index, (key, value)) in overrides.defaults.iter().enumerate() {
+            let replaced = roles.get(key.as_str()).is_some_and(|role| role.set);
+            if !present[index] && !replaced {
                 resource.attributes.push(text(key, value));
             }
         }
@@ -178,16 +198,12 @@ pub fn apply_resource_overrides(
     true
 }
 
-/// A resource attribute's key, spelled out or named by string-table index (index 0 is empty).
-fn resolved_key<'a>(kv: &'a KeyValue, strings: &'a [String]) -> &'a str {
-    if !kv.key.is_empty() {
-        return &kv.key;
-    }
-    usize::try_from(kv.key_strindex)
-        .ok()
-        .filter(|index| *index != 0)
-        .and_then(|index| strings.get(index))
-        .map_or("", String::as_str)
+/// What an override does to a key: `set` replaces the sender's value, `default` (the index of
+/// the default naming it) fills it only when the sender left it out.
+#[derive(Clone, Copy, Debug, Default)]
+struct KeyRole {
+    set: bool,
+    default: Option<usize>,
 }
 
 /// The total of per-key JSON lengths.
@@ -2713,6 +2729,46 @@ mod tests {
         assert_eq!(pairs(1), vec![pair("env", "prod"), pair("region", "eu"), pair("team", "payments")]);
         // A refused charge stops before anything is added.
         assert!(!apply_resource_overrides(&mut request, &overrides, |_| false));
+    }
+
+    /// A string-table key is classified once per request, however many attributes and resources
+    /// name it: a reference is a few wire bytes, its text may be a MiB.
+    #[test]
+    fn classifies_a_string_table_key_once_however_often_it_is_named() {
+        let attribute = KeyValue {
+            key_strindex: 1,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue("v".to_owned())),
+            }),
+            ..KeyValue::default()
+        };
+        let resource = ResourceProfiles {
+            resource: Some(Resource {
+                attributes: vec![attribute; 10_000],
+                ..Resource::default()
+            }),
+            ..ResourceProfiles::default()
+        };
+        let mut request = ExportProfilesServiceRequest {
+            resource_profiles: vec![resource; 10],
+            dictionary: Some(ProfilesDictionary {
+                string_table: vec![String::new(), "k".repeat(1024 * 1024)],
+                ..ProfilesDictionary::default()
+            }),
+        };
+        let overrides = ResourceOverrides {
+            set: vec![("team".to_owned(), "payments".to_owned())],
+            defaults: vec![("region".to_owned(), "eu".to_owned())],
+        };
+        let started = std::time::Instant::now();
+        assert!(apply_resource_overrides(&mut request, &overrides, |_| true));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "took {:?}",
+            started.elapsed()
+        );
+        let attributes = &request.resource_profiles[9].resource.as_ref().expect("a resource").attributes;
+        assert_eq!(attributes.len(), 10_002);
     }
 
     /// A real export of the Maple SDK's Node profiler.
