@@ -1,4 +1,5 @@
 import { SavedViewResponse } from "@maple/domain/http"
+import { SavedViewVisibility } from "@maple/domain/saved-views"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
@@ -80,8 +81,16 @@ export const Message = defineMessageUnion({
 	SubmittedForm: {},
 	CompletedCreateView: written,
 	CompletedRenameView: written,
-	/** "Update view" or the share toggle on `viewId`; `action` names which for the failure toast. */
-	CompletedUpdateView: { action: Schema.Literals(["update", "share"]), viewId: Schema.String, ...written },
+	/**
+	 * "Update view" or the share toggle on `viewId`; `action` names which for the failure toast,
+	 * and `sharedBefore` is the visibility a refused toggle goes back to.
+	 */
+	CompletedUpdateView: {
+		action: Schema.Literals(["update", "share"]),
+		viewId: Schema.String,
+		sharedBefore: Schema.NullOr(SavedViewVisibility),
+		...written,
+	},
 	ConfirmedDelete: {},
 	CompletedDeleteView: { viewId: Schema.String, result: Schema.Result(Schema.Void, LoadFailure) },
 })

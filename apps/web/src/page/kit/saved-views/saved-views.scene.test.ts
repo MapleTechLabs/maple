@@ -250,6 +250,7 @@ describe("saved views control", () => {
 			Message.CompletedUpdateView({
 				action: "update",
 				viewId: MINE.id,
+				sharedBefore: null,
 				result: Result.succeed({ ...MINE, state: { search: WARNINGS } }),
 			}),
 			edited,
@@ -423,6 +424,7 @@ describe("saved views control", () => {
 			Message.CompletedUpdateView({
 				action: "share",
 				viewId: MINE.id,
+				sharedBefore: "private",
 				result: Result.fail(toLoadFailure("no")),
 			}),
 			explorer,
@@ -431,6 +433,25 @@ describe("saved views control", () => {
 		expect(refused.outMessage).toMatchObject({ type: "error", title: "Couldn't change sharing" })
 		// The toggle is undone at once, not left for the refresh to correct.
 		expect(activeViewOf(refused.model, explorer)?.view.visibility).toBe("private")
+
+		// A refresh that answered while the write was out already shows the stored value:
+		// the refusal restores what was there before, it does not flip the row again.
+		const refreshed = update(
+			toggled.model,
+			Message.CompletedFetchViews({ revision: toggled.model.revision, result: Result.succeed([MINE]) }),
+			explorer,
+		).model
+		const refusedAfterRefresh = update(
+			refreshed,
+			Message.CompletedUpdateView({
+				action: "share",
+				viewId: MINE.id,
+				sharedBefore: "private",
+				result: Result.fail(toLoadFailure("no")),
+			}),
+			explorer,
+		)
+		expect(activeViewOf(refusedAfterRefresh.model, explorer)?.view.visibility).toBe("private")
 	})
 
 	test("deleting asks first, then removes the view and returns the button to Views", () => {
@@ -494,7 +515,12 @@ describe("saved views control", () => {
 		).model
 		const late = update(
 			deleted,
-			Message.CompletedUpdateView({ action: "update", viewId: MINE.id, result: Result.succeed(MINE) }),
+			Message.CompletedUpdateView({
+				action: "update",
+				viewId: MINE.id,
+				sharedBefore: null,
+				result: Result.succeed(MINE),
+			}),
 			explorer,
 		).model
 		expect(Arr.map(late.views ?? [], (view) => view.name)).toEqual(["Warnings"])
@@ -505,7 +531,12 @@ describe("saved views control", () => {
 		const onOther = pick(loaded([MINE, MINE_TOO], explorer), viewItem(MINE_TOO.id), explorer).model
 		const settled = update(
 			onOther,
-			Message.CompletedUpdateView({ action: "update", viewId: MINE.id, result: Result.succeed(MINE) }),
+			Message.CompletedUpdateView({
+				action: "update",
+				viewId: MINE.id,
+				sharedBefore: null,
+				result: Result.succeed(MINE),
+			}),
 			explorer,
 		).model
 		expect(settled.activeViewId).toBe(MINE_TOO.id)

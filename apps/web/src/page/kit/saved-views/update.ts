@@ -46,13 +46,12 @@ const isListed = (model: Model, viewId: string): boolean =>
 const withWrittenView = (model: Model, view: SavedView): Model =>
 	isListed(model, view.id) ? withView(model, view) : model
 
-/** The share toggle undone on the row it was flipped on, when the write was refused. */
-const withShareUndone = (model: Model, viewId: string): Model => ({
+/** A refused share toggle: its row goes back to what it was, whatever a refresh showed meanwhile. */
+const withShareUndone = (model: Model, viewId: string, sharedBefore: SavedViewVisibility): Model => ({
 	...model,
-	views: Arr.map(model.views ?? [], (view) => {
-		const undone: SavedViewVisibility = view.visibility === "org" ? "private" : "org"
-		return view.id === viewId ? { ...view, visibility: undone } : view
-	}),
+	views: Arr.map(model.views ?? [], (view) =>
+		view.id === viewId ? { ...view, visibility: sharedBefore } : view,
+	),
 })
 
 const withCommands = (step: Return, commands: Commands): Return => ({
@@ -268,15 +267,15 @@ export const update = (model: Model, message: Message, explorer: Explorer): Retu
 		SubmittedForm: () => submitted(model, explorer),
 		CompletedCreateView: ({ result }) => settledForm(model, result, true),
 		CompletedRenameView: ({ result }) => settledForm(model, result, false),
-		CompletedUpdateView: ({ action, viewId, result }) =>
+		CompletedUpdateView: ({ action, viewId, sharedBefore, result }) =>
 			Result.match(result, {
 				// The page's view is left as it is: the person may have picked another while this was out.
 				onSuccess: (view) => ({ model: withWrittenView({ ...model, isWriting: false }, view) }),
 				onFailure: (failure) => ({
 					...forceRefetch(
-						action === "share"
-							? withShareUndone({ ...model, isWriting: false }, viewId)
-							: { ...model, isWriting: false },
+						sharedBefore === null
+							? { ...model, isWriting: false }
+							: withShareUndone({ ...model, isWriting: false }, viewId, sharedBefore),
 						explorer,
 					),
 					outMessage: OutMessage.RequestedToast({

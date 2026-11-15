@@ -64,7 +64,9 @@ export const UpdateViewState = Command.define("UpdateSavedViewState", {
 			client.savedViews.update({ params: { viewId }, payload: new UpdateSavedViewRequest({ state }) }),
 		).pipe(
 			Effect.map(plain),
-			settleTo((result) => Message.CompletedUpdateView({ action: "update", viewId, result })),
+			settleTo((result) =>
+				Message.CompletedUpdateView({ action: "update", viewId, sharedBefore: null, result }),
+			),
 		),
 })
 
@@ -79,7 +81,15 @@ export const SetViewVisibility = Command.define("SetSavedViewVisibility", {
 			}),
 		).pipe(
 			Effect.map(plain),
-			settleTo((result) => Message.CompletedUpdateView({ action: "share", viewId, result })),
+			settleTo((result) =>
+				Message.CompletedUpdateView({
+					action: "share",
+					viewId,
+					// The toggle only ever flips, so what was there before is the other value.
+					sharedBefore: visibility === "org" ? "private" : "org",
+					result,
+				}),
+			),
 		),
 })
 

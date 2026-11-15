@@ -209,6 +209,7 @@ describe("logs saved views", () => {
 				SavedViews.Message.CompletedUpdateView({
 					action: "update",
 					viewId: ERRORS.id,
+					sharedBefore: null,
 					result: Result.fail(toLoadFailure("Saved views could not be changed")),
 				}),
 			),
