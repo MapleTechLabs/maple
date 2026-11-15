@@ -8,6 +8,7 @@ import * as Dialog from "@maple/views/ui/dialog"
 import { AutocompleteLookup, LookupNames } from "../../kit/autocomplete-lookups"
 import { SignalPresences } from "@maple/views/data/signal-presence"
 import { Message as DetailMessage } from "../detail/message"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { TracesFacets, TracesPage, VirtualRow } from "./model"
 
@@ -72,6 +73,7 @@ export const Message = defineMessageUnion({
 	ClickedWidenRange: {},
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotSavedViewsMessage: { message: SavedViews.Message },
 	ClickedPeekRow: { index: Schema.Number },
 	ClickedPeekStep: { step: Schema.Literals([1, -1]) },
 	ClickedOpenTrace: {},

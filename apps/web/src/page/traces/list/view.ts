@@ -6,11 +6,13 @@ import type { PageViewInputs } from "../../contract"
 import { advancedFilterButton, appliedWhereClause } from "../../kit/advanced-filter"
 import { dashboardPage } from "../../kit/dashboard-page"
 import { timeControls } from "../../kit/time-controls"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { traceFilterChips } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
+import { viewsExplorer } from "./saved-views"
 import { filtersRail } from "./view-filters"
 import { tracesTable } from "./view-table"
 import { hstack } from "@maple/views/ui/stack"
@@ -45,6 +47,12 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			width: "full",
 			filters: filtersRail(h, model, inputs.context.pinnedNamespace),
 			actions: hstack(h, { gap: "2", wrap: true }, [
+				SavedViews.control(h, {
+					slotId: "traces-saved-views",
+					model: model.savedViews,
+					explorer: viewsExplorer([model.search]),
+					toMessage: (message) => Message.GotSavedViewsMessage({ message }),
+				}),
 				advancedFilterButton(h, {
 					isActive: whereClause !== "",
 					onClick: Message.ClickedAdvancedFilter(),

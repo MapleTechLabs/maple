@@ -15,6 +15,8 @@ import { listToolbar } from "../../kit/list-toolbar"
 import { presenceOf } from "@maple/views/data/signal-presence"
 import { signalEmptyState } from "../../kit/signal-empty-state"
 import { timeControls } from "../../kit/time-controls"
+import * as SavedViews from "../../kit/saved-views"
+import { browseViewsExplorer } from "../saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { METRIC_TYPE_COLORS } from "@maple/views/ui/metric-type"
 import { toEntries } from "./derive"
@@ -139,6 +141,12 @@ const toTimePicker = (message: TimeRangePicker.Message) => Message.GotTimePicker
 
 const actions = (h: H, model: Model): Html =>
 	hstack(h, { gap: "2", wrap: true }, [
+		SavedViews.control(h, {
+			slotId: "metrics-saved-views",
+			model: model.savedViews,
+			explorer: browseViewsExplorer([model.search]),
+			toMessage: (message) => Message.GotSavedViewsMessage({ message }),
+		}),
 		segmentedSelect<BrowseView, Message>(h, {
 			size: "sm",
 			ariaLabel: "View",

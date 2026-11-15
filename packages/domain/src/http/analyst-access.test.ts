@@ -76,4 +76,9 @@ describe("isOpenToAnalysts", () => {
 		expect(open(v2.mcpConnections, "revoke")).toBe(true)
 		expect(open(MapleApi.groups.authSession, "cliDeviceApprove")).toBe(true)
 	})
+
+	it("lets an analyst save, change and delete their own explorer views", () => {
+		const writes = ["create", "update", "delete"]
+		expect(Arr.filter(writes, (name) => !open(internal.savedViews, name))).toEqual([])
+	})
 })
