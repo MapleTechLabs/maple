@@ -72,7 +72,9 @@ function timeRange(dashboard: UnknownRecord, warnings: string[]) {
 	const time = asRecord(dashboard.time)
 	const from = asString(time?.from)
 	const to = asString(time?.to) ?? "now"
-	if (from === "now/d" && to === "now/d") return { type: "relative" as const, value: "today" }
+	// "Today" (to the end of the day) and "Today so far" (to now) both start at the day boundary.
+	if (from === "now/d" && (to === "now/d" || to === "now"))
+		return { type: "relative" as const, value: "today" }
 	const match = /^now-(\d+)([mhdwM])$/u.exec(from ?? "")
 	const value = match === null ? undefined : `${match[1]}${match[2] === "M" ? "mo" : match[2]}`
 	if (value !== undefined && to === "now" && validateRelativeRange(value, MAX_QUERY_RANGE_SECONDS).ok) {

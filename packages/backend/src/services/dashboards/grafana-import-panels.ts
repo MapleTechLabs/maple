@@ -255,7 +255,14 @@ function convertQueryPanel(args: {
 			// normalizeClickHouseSql already said why.
 			return args.placeholder(normalized.placeholderReason)
 		}
-		const transform = grafanaScalarTransform(panel, visualization, displayType, title, context.warnings)
+		const transform = grafanaScalarTransform(
+			panel,
+			visualization,
+			displayType,
+			title,
+			context.warnings,
+			true,
+		)
 		dataSource = rawSqlDataSource({ visualization, sql: normalized.sql, displayType, transform })
 	} else {
 		// A PromQL widget's heatmap rows keep one value per series, not the time by bucket grid.
@@ -312,6 +319,8 @@ function grafanaScalarTransform(
 	displayType: string,
 	title: string,
 	warnings: string[],
+	/** Raw SQL rows keep the query's own order, so a "last value" reads whichever row comes first. */
+	rowsInQueryOrder = false,
 ) {
 	const transform = scalarTransform(visualization, displayType)
 	if (transform === undefined) return undefined
@@ -323,6 +332,11 @@ function grafanaScalarTransform(
 			`Panel "${title}" reduces with "${calc}", which Maple does not have; it shows the latest value.`,
 		)
 		return transform
+	}
+	if (rowsInQueryOrder && aggregate === "first") {
+		warnings.push(
+			`Panel "${title}" shows its latest value; Maple reads the query's first row, so order the query newest first (ORDER BY time DESC).`,
+		)
 	}
 	return { reduceToValue: { field: "value", aggregate } }
 }

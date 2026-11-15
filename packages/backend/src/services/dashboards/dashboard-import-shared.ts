@@ -77,11 +77,20 @@ function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
 
 const TRAILING_CLAUSE = /GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT|SETTINGS/
 
-/** `fragment` before the outer query's first trailing clause, or at its end. */
-function insertBeforeTrailingClauses(sql: string, fragment: string): string {
-	const at = topLevelIndex(sql, TRAILING_CLAUSE)
-	if (at === undefined) return `${Str.trimEnd(sql)} ${fragment}`
-	return `${Str.trimEnd(Str.slice(0, at)(sql))} ${fragment} ${Str.trimStart(Str.slice(at)(sql))}`
+/**
+ * The outer query with `$__orgFilter` ANDed onto its WHERE (or a WHERE added), before its first
+ * trailing clause. The existing predicate is grouped, so a top-level OR cannot escape the filter,
+ * and a terminal semicolon is dropped so the filter stays inside the statement.
+ */
+function withOrgFilter(sql: string): string {
+	const statement = Str.replace(/;\s*$/, "")(Str.trimEnd(sql))
+	const trailingAt = topLevelIndex(statement, TRAILING_CLAUSE)
+	const head = trailingAt === undefined ? statement : Str.trimEnd(Str.slice(0, trailingAt)(statement))
+	const tail = trailingAt === undefined ? "" : ` ${Str.trimStart(Str.slice(trailingAt)(statement))}`
+	const whereAt = topLevelIndex(head, /WHERE/)
+	if (whereAt === undefined) return `${head} WHERE $__orgFilter${tail}`
+	const predicateAt = whereAt + "WHERE".length
+	return `${Str.slice(0, predicateAt)(head)} (${Str.trim(Str.slice(predicateAt)(head))}) AND $__orgFilter${tail}`
 }
 
 export type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
@@ -95,14 +104,13 @@ export function normalizeClickHouseSql(sql: string, warnings: string[], panelTit
 		return { placeholderReason: "This ClickHouse query needs Maple org scoping before it can run." }
 	}
 
-	const hasWhere = topLevelIndex(sql, /WHERE/) !== undefined
 	const fromAt = topLevelIndex(sql, /FROM/)
 	// The outer query reads a subquery: its rows may have no OrgId column to filter, so the scope
 	// has to be written inside it by hand.
 	const readsSubquery = fromAt !== undefined && /^FROM\s*\(/i.test(Str.slice(fromAt)(sql))
-	if (!Str.includes("$__orgFilter")(sql) && !hasWhere && readsSubquery) {
+	if (!Str.includes("$__orgFilter")(sql) && readsSubquery) {
 		warnings.push(
-			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query reads a subquery with no outer WHERE; add $__orgFilter inside it.`,
+			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query reads a subquery; add $__orgFilter inside it.`,
 		)
 		return {
 			placeholderReason:
@@ -110,9 +118,7 @@ export function normalizeClickHouseSql(sql: string, warnings: string[], panelTit
 		}
 	}
 
-	const normalized = Str.includes("$__orgFilter")(sql)
-		? sql
-		: insertBeforeTrailingClauses(sql, hasWhere ? "AND $__orgFilter" : "WHERE $__orgFilter")
+	const normalized = Str.includes("$__orgFilter")(sql) ? sql : withOrgFilter(sql)
 
 	if (!Str.includes("$__orgFilter")(sql)) {
 		warnings.push(

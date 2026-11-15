@@ -255,7 +255,7 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 			const slow = widgetNamed(converted, "Slow spans")
 			expect(slow.visualization).toBe("table")
 			expect(dataSourceRawSql(slow.dataSource)?.sql).toBe(
-				"SELECT SpanName, count() AS value FROM traces WHERE OrgId = 'x' AND $__timeFilter(Timestamp) AND $__orgFilter GROUP BY SpanName",
+				"SELECT SpanName, count() AS value FROM traces WHERE (OrgId = 'x' AND $__timeFilter(Timestamp)) AND $__orgFilter GROUP BY SpanName",
 			)
 		}),
 	)
@@ -296,6 +296,11 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 						"SELECT count() FROM (SELECT * FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp))",
 					),
 					panel(
+						"Either",
+						"table",
+						"SELECT count() AS value FROM logs WHERE OrgId = 'legacy' OR ServiceName = 'api' AND $__timeFilter(Timestamp);",
+					),
+					panel(
 						"Mean",
 						"stat",
 						"SELECT toStartOfMinute(Timestamp) AS t, count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) GROUP BY t",
@@ -303,19 +308,65 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 					),
 				],
 			})
-			expect(dataSourceRawSql(widgetNamed(converted, "Nested").dataSource)?.sql).toBe(
-				"SELECT n FROM (SELECT count() AS n FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) LIMIT 5) WHERE n > 0 AND $__orgFilter",
-			)
+			// A subquery's rows may carry no OrgId, so any subquery read without $__orgFilter is a placeholder.
+			expect(dataSourceRawSql(widgetNamed(converted, "Nested").dataSource)).toBeNull()
 			expect(dataSourceRawSql(widgetNamed(converted, "Literal").dataSource)?.sql).toBe(
-				"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND Body LIKE '%limit%' AND $__timeFilter(Timestamp) AND $__orgFilter",
+				"SELECT count() AS value FROM logs WHERE (OrgId = 'x' AND Body LIKE '%limit%' AND $__timeFilter(Timestamp)) AND $__orgFilter",
 			)
 			expect(dataSourceRawSql(widgetNamed(converted, "Subquery").dataSource)).toBeNull()
+			// The OR is grouped, so the org filter binds every branch; the semicolon no longer ends the statement early.
+			expect(dataSourceRawSql(widgetNamed(converted, "Either").dataSource)?.sql).toBe(
+				"SELECT count() AS value FROM logs WHERE (OrgId = 'legacy' OR ServiceName = 'api' AND $__timeFilter(Timestamp)) AND $__orgFilter",
+			)
 			expect(converted.warnings).toEqual(
-				expect.arrayContaining([expect.stringContaining("reads a subquery with no outer WHERE")]),
+				expect.arrayContaining([
+					expect.stringContaining("reads a subquery; add $__orgFilter inside it"),
+				]),
 			)
 			expect(widgetNamed(converted, "Mean").dataSource).toMatchObject({
 				transform: { reduceToValue: { field: "value", aggregate: "avg" } },
 			})
+		}),
+	)
+
+	it.effect("maps today so far, and warns where Maple draws a panel differently", () =>
+		Effect.gen(function* () {
+			const ch = { type: "grafana-clickhouse-datasource", uid: "ch" }
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "Differences",
+				schemaVersion: 39,
+				time: { from: "now/d", to: "now" },
+				panels: [
+					{
+						type: "timeseries",
+						title: "Share",
+						datasource: { type: "prometheus", uid: "prom" },
+						gridPos: { x: 0, y: 0, w: 12, h: 6 },
+						fieldConfig: { defaults: { custom: { stacking: { mode: "percent" } } } },
+						targets: [{ refId: "A", expr: "sum by (job) (up)" }],
+					},
+					{
+						type: "stat",
+						title: "Latest",
+						datasource: ch,
+						gridPos: { x: 12, y: 0, w: 6, h: 4 },
+						options: { reduceOptions: { calcs: ["lastNotNull"] } },
+						targets: [
+							{
+								refId: "A",
+								rawSql: "SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
+							},
+						],
+					},
+				],
+			})
+			expect(converted.dashboard.timeRange).toEqual({ type: "relative", value: "today" })
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([
+					expect.stringContaining('Panel "Share" stacked its series as percentages'),
+					expect.stringContaining('Panel "Latest" shows its latest value'),
+				]),
+			)
 		}),
 	)
 

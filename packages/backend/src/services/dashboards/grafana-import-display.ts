@@ -83,11 +83,14 @@ function thresholds(panel: UnknownRecord, title: string, warnings: string[]) {
 export function chartStyle(panel: UnknownRecord): {
 	readonly target: "line" | "bar"
 	readonly stacked: boolean
+	/** Grafana normalized the stack to 100%, which Maple does not draw. */
+	readonly percent: boolean
 } {
 	if (panel.type === "graph") {
 		return {
 			target: panel.bars === true && panel.lines !== true ? "bar" : "line",
 			stacked: panel.stack === true,
+			percent: panel.stack === true && panel.percentage === true,
 		}
 	}
 	const custom = asRecord(fieldDefaults(panel)?.custom)
@@ -95,6 +98,7 @@ export function chartStyle(panel: UnknownRecord): {
 	return {
 		target: custom?.drawStyle === "bars" ? "bar" : "line",
 		stacked: stacking === "normal" || stacking === "percent",
+		percent: stacking === "percent",
 	}
 }
 
@@ -127,7 +131,12 @@ export function grafanaDisplay(args: {
 	switch (target) {
 		case "line":
 		case "bar": {
-			const { stacked } = chartStyle(panel)
+			const { stacked, percent } = chartStyle(panel)
+			if (percent) {
+				warnings.push(
+					`Panel "${title}" stacked its series as percentages of the total; Maple stacks the raw values.`,
+				)
+			}
 			const custom = asRecord(defaults?.custom)
 			return {
 				...base,
