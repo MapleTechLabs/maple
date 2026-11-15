@@ -59,7 +59,16 @@ export type FeatureAcross = Readonly<{
 	/** The projects a flip writes: the unlocked ones whose switch would change. */
 	targets: ReadonlyArray<Project["ref"]>
 	isSaving: boolean
+	/** Why no project can be flipped, when none can and nothing is saving; the row is disabled. */
+	blockedReason: string | null
 }>
+
+/** Why a project without the feature cannot have it, by switch kind. */
+const CANNOT_ENABLE = {
+	metrics: "No project can collect metrics",
+	logs: "Logs already come through a drain",
+	drain: "A drain to Maple is already set up in Supabase",
+} as const satisfies Record<SupabaseSwitchKind, string>
 
 export const featureAcross = (
 	pending: ReadonlyArray<PendingSupabaseSwitch>,
@@ -80,11 +89,17 @@ export const featureAcross = (
 		),
 		(state) => state.project.ref,
 	)
-	return {
-		onCount,
-		total: projects.length,
-		isChecked,
-		targets,
-		isSaving: Arr.some(pending, (entry) => entry.kind === kind),
-	}
+	const isSaving = Arr.some(pending, (entry) => entry.kind === kind)
+	const blocked = Arr.filter(states, (state) => state.values[kind] !== enabled)
+	const blockedReason =
+		targets.length > 0 || isSaving
+			? null
+			: projects.length === 0
+				? "No projects yet"
+				: enabled && Arr.some(blocked, (state) => !state.canEnable[kind])
+					? CANNOT_ENABLE[kind]
+					: Arr.every(blocked, (state) => lifecycleOf(state.project.status)._tag === "Paused")
+						? "Every project is paused"
+						: "Another change is saving"
+	return { onCount, total: projects.length, isChecked, targets, isSaving, blockedReason }
 }
