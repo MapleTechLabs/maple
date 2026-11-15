@@ -121,9 +121,10 @@ export const fetchProfile = (serviceName: string, bounds: TimeBounds, apiBase: s
 		)
 		if (chosen === null) return null
 		const stacks = yield* queryRows(
-			CH.compile(CH.profileStacksQuery({ service: true }), {
+			CH.compile(CH.profileStacksQuery({ service: true, unit: true }), {
 				...params,
 				sampleType: chosen.sampleType,
+				sampleUnit: chosen.sampleUnit,
 			}),
 			apiBase,
 		)

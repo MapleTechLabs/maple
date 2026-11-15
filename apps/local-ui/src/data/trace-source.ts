@@ -138,7 +138,11 @@ const fetchSpanProfile = (request: SpanProfileRequest, apiBase: string) =>
 		)
 		if (Option.isNone(chosen)) return Option.none<SpanProfile>()
 		const stacks = yield* queryRows(
-			CH.compile(CH.profileStacksQuery(scope), { ...params, sampleType: chosen.value.sampleType }),
+			CH.compile(CH.profileStacksQuery({ ...scope, unit: true }), {
+				...params,
+				sampleType: chosen.value.sampleType,
+				sampleUnit: chosen.value.sampleUnit,
+			}),
 			apiBase,
 		)
 		return Option.some<SpanProfile>({
