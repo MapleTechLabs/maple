@@ -298,7 +298,20 @@ const traceAggregations = [
 	"apdex",
 ] as const
 const traceGroupBy = ["service", "span_name", "status_code", "http_method", "attribute"] as const
-const metricTimeseriesAggregations = ["avg", "sum", "min", "max", "count", "rate", "increase"] as const
+const metricTimeseriesAggregations = [
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"rate",
+	"increase",
+	"p50",
+	"p75",
+	"p90",
+	"p95",
+	"p99",
+] as const
 const metricBreakdownAggregations = ["avg", "sum", "count"] as const
 
 const V2TraceTimeseriesParamsBase = Schema.Struct({

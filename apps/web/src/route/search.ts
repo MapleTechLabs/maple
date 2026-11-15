@@ -444,11 +444,25 @@ export const InvestigationSearch = Schema.Struct({
 	action: Schema.optional(Schema.Unknown),
 })
 
+export const MetricSearchAggregation = Schema.Literals([
+	"avg",
+	"sum",
+	"min",
+	"max",
+	"count",
+	"latest",
+	"rate",
+	"increase",
+	"p50",
+	"p75",
+	"p90",
+	"p95",
+	"p99",
+])
+
 export const MetricSearch = Schema.Struct({
 	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
-	agg: Schema.optional(
-		Schema.Literals(["avg", "sum", "min", "max", "count", "latest", "rate", "increase"]),
-	),
+	agg: Schema.optional(MetricSearchAggregation),
 	where: StringParam,
 	groupBy: StringParam,
 	step: StringParam,

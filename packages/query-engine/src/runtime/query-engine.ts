@@ -19,6 +19,7 @@ import {
 	type TimeseriesPoint,
 	type AttributeFilter,
 	MAX_METRICS_GROUP_BY_KEYS,
+	isMetricsPercentile,
 } from "@maple/domain/query-engine"
 import {
 	QueryEngineTimeoutError,
@@ -543,6 +544,14 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 				details: ["Histogram metrics do not support latest; use avg, sum, min, max or count"],
 			})
 		}
+		if (filters.metricType === "exponential_histogram" && isMetricsPercentile(query.metric)) {
+			return yield* new QueryEngineValidationError({
+				message: "Invalid metrics aggregation",
+				details: [
+					"Percentiles are not available for exponential histograms yet; use avg, sum, min, max or count",
+				],
+			})
+		}
 	},
 )
 
@@ -1027,7 +1036,15 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 	return yield* executeCHQuery(
 		warehouse,
 		tenant,
-		CH.metricsTimeseriesQuery({ ...options, metric: query.metric, metricType: filters.metricType }),
+		CH.metricsTimeseriesQuery({
+			...options,
+			metric: query.metric,
+			metricType: filters.metricType,
+			// Histograms diff each sample against the previous one, like counters.
+			lookbackSeconds:
+				range.lookbackSeconds ??
+				(range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined),
+		}),
 		params,
 		contexts.value,
 	)

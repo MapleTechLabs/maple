@@ -229,15 +229,19 @@ them one at a time. Migration `0019_mv_sweep` is the worked example.
 Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
 `packages/domain/src/tinybird/project-manifest.ts`), so their history stays empty until a
 staged backfill. `scripts/backfill-hourly-rollup.ts --rollup <table>` runs it for
-`user_activity_hourly` (migration 0056) and `aws_metrics_hourly` (migration 0066):
+`user_activity_hourly` (migration 0056).
+
+**The prod workspaces refuse it.** Forward workspaces answer the population endpoint with
+"Forward workspaces do not support populating materialized views on-demand" (seen
+2026-11-15), so the script only works on a classic workspace. On prod, let the deploy
+backfill instead: leave the datasource out of `SKIP_BACKFILL`. `aws_metrics_hourly` shipped
+that way, its 90 days of `aws.*` points replayed by its first deploy.
 
 ```bash
 # Dry run: the day chunks, and which already hold rows
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z
 # Populate, a day at a time, oldest first
 infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z --execute
-# The AWS rollup reads 90 days of metrics
-infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_metrics_hourly --until <deploy time> --execute
 ```
 
 - `--until` is when the views went live (the deploy). The views wrote everything after it, so a
@@ -251,7 +255,8 @@ infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_m
   for 30 minutes, and refuses once they are older than the source's retention.
 - A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
   failed between its two views is skipped too: delete that day's rows and re-run.
-- Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
+- Run once per workspace (Infisical `prod` for US, `prod-eu` for EU) after `bun run tinybird:deploy`
+  has promoted the views there; `--until` is when that deploy went live.
 - Try it on a Tinybird branch first: it calls the materialized node population endpoint
   (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day, and the
   datasource delete endpoint for the boundary hour.

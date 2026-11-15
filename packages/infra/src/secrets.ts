@@ -21,18 +21,16 @@ export class IngestPgUrl extends Secret<IngestPgUrl>()("MAPLE_INGEST_PG_URL", {
 
 // Warehouse
 
-// The workspace admin token. dev holds prod's, since branches are created from the parent
-// workspace; a preview deploys on its branch's token (docs/pr-previews.md), never prod's.
+// A preview deploys on its branch's token (docs/pr-previews.md), never prod's. The parent workspace
+// token that creates branches is a GitHub environment secret, so no dev copy of prod's exists.
 export class TinybirdToken extends Secret<TinybirdToken>()("TINYBIRD_TOKEN", {
 	issuer: "tinybird",
 	consumers: ["api", "ai", "alerting", "ingest"],
-	sharesProdValueWith: ["dev"],
 }) {}
 
 export class TinybirdSigningKey extends Secret<TinybirdSigningKey>()("TINYBIRD_SIGNING_KEY", {
 	issuer: "tinybird",
 	consumers: ["api", "ai", "alerting"],
-	sharesProdValueWith: ["dev"],
 }) {}
 
 export class ClickhousePassword extends Secret<ClickhousePassword>()("CLICKHOUSE_PASSWORD", {
