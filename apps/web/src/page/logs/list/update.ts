@@ -364,11 +364,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** The search changed (a filter, the window, a column): re-resolve and re-request. */
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+const routed = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const next = setStreamRows({ ...model, search: route.search }, context)
 	// A moved window re-resolves, unsnapped after a Reload; any other change reads under the kept one.
@@ -750,3 +746,15 @@ const savePreferences = (model: Model): Return => ({
 	model,
 	commands: [SavePreferences({ wrap: model.wrap, density: model.density })],
 })
+
+/** The view the old URL was stays the page's view as the URL moves on. */
+const withRememberedView = (model: Model): Model => {
+	const savedViews = SavedViews.remembered(model.savedViews, viewsExplorer([model.search]))
+	return savedViews === model.savedViews ? model : { ...model, savedViews }
+}
+
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => routed(withRememberedView(model), route, context)

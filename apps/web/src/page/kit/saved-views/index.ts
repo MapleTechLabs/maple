@@ -7,7 +7,7 @@ import { update } from "./update"
 
 // Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`,
 // `/metrics`), with its menu and its save, rename and delete dialogs.
-export { activeViewOf, init, Message, Model, SavedView } from "./model"
+export { activeViewOf, init, Message, Model, remembered, SavedView } from "./model"
 export { type Explorer, memoHref, readSearch, searchParamsOf } from "./state"
 export { control } from "./view"
 
@@ -15,7 +15,7 @@ type Host = { readonly savedViews: Model }
 
 /** The list read an explorer sends on entry, as its own Message. */
 export const loadCommand = <PageMessage>(explorer: Explorer, toMessage: (message: Message) => PageMessage) =>
-	Command.mapMessage(FetchViews({ surface: explorer.surface }), toMessage)
+	Command.mapMessage(FetchViews({ surface: explorer.surface, revision: 0 }), toMessage)
 
 /**
  * A page's step for the control's Message: the control's update, a picked view as a navigation

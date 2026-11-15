@@ -194,11 +194,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 }
 
 /** A filter, the view or the window changed: re-request, re-resolving only a moved window. */
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+const routed = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
 	// The search box resyncs its input on an outside change, never on its own echo.
@@ -393,3 +389,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			SavedViews.pageStep(model, inner, browseViewsExplorer([model.search]), toSavedViews),
 		GotSparklineMessage: () => ({ model }),
 	})
+
+/** The view the old URL was stays the page's view as the URL moves on. */
+const withRememberedView = (model: Model): Model => {
+	const savedViews = SavedViews.remembered(model.savedViews, browseViewsExplorer([model.search]))
+	return savedViews === model.savedViews ? model : { ...model, savedViews }
+}
+
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => routed(withRememberedView(model), route, context)

@@ -252,11 +252,7 @@ export const preload = (route: { readonly search: Search }, context: PageContext
 	return pickCommands(requestAll(model, context, window, "Load"), [FetchFacets.name])
 }
 
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+const routed = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	if (searchHref(listSearchOf(model.search)) === searchHref(listSearchOf(route.search)))
 		return syncPeek({ ...model, search: route.search }, context)
@@ -435,3 +431,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 		},
 	})
+
+/** The view the old URL was stays the page's view as the URL moves on. */
+const withRememberedView = (model: Model): Model => {
+	const savedViews = SavedViews.remembered(model.savedViews, viewsExplorer([model.search]))
+	return savedViews === model.savedViews ? model : { ...model, savedViews }
+}
+
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => routed(withRememberedView(model), route, context)

@@ -61,7 +61,7 @@ export const viewsDriver = <Model>(send: (model: Model, message: Message) => Ste
 	return {
 		/** The list answered with `views`. */
 		listed: (model: Model, views: ReadonlyArray<SavedView>): Model =>
-			send(model, Message.CompletedFetchViews({ result: Result.succeed(views) })).model,
+			send(model, Message.CompletedFetchViews({ revision: 0, result: Result.succeed(views) })).model,
 		/** A view picked from the menu. */
 		open: (model: Model, view: SavedView): Step<Model> => pick(model, viewItem(view.id)),
 		/** "Save view…", the name typed, the dialog submitted. */

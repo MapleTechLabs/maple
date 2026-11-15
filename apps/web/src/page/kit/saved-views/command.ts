@@ -13,14 +13,14 @@ const plain = (view: SavedView): SavedView => ({ ...view })
 
 /** The caller's own views and the ones shared with the org, for one explorer. */
 export const FetchViews = Command.define("FetchSavedViews", {
-	args: { surface: SavedViewSurface },
+	args: { surface: SavedViewSurface, revision: Schema.Number },
 	messages: [Message.CompletedFetchViews],
-	execute: ({ surface }) =>
+	execute: ({ surface, revision }) =>
 		Effect.flatMap(MapleInternalApiClient, (client) =>
 			client.savedViews.list({ query: { surface } }),
 		).pipe(
 			Effect.map((response) => Arr.map(response.views, plain)),
-			settleTo((result) => Message.CompletedFetchViews({ result })),
+			settleTo((result) => Message.CompletedFetchViews({ revision, result })),
 		),
 })
 

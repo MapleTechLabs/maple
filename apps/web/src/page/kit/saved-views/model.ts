@@ -32,6 +32,8 @@ export const Model = Schema.Struct({
 	views: Schema.NullOr(Schema.Array(SavedView)),
 	loadFailure: Schema.NullOr(LoadFailure),
 	isLoading: Schema.Boolean,
+	/** Bumped by every local change to the list: a read sent before it answers with older rows. */
+	revision: Schema.Number,
 	/** The view last opened or saved here: it stays the page's view while its params are edited. */
 	activeViewId: Schema.NullOr(Schema.String),
 	formDialog: Dialog.Model,
@@ -54,6 +56,7 @@ export const init = (id: string): Model => ({
 	views: null,
 	loadFailure: null,
 	isLoading: true,
+	revision: 0,
 	activeViewId: null,
 	formDialog: Dialog.init(`${id}-form`, "dialog"),
 	form: NO_FORM,
@@ -64,7 +67,7 @@ export const init = (id: string): Model => ({
 	isWriting: false,
 })
 
-const fetched = { result: Schema.Result(Schema.Array(SavedView), LoadFailure) }
+const fetched = { revision: Schema.Number, result: Schema.Result(Schema.Array(SavedView), LoadFailure) }
 const written = { result: Schema.Result(SavedView, LoadFailure) }
 
 export const Message = defineMessageUnion({
@@ -111,4 +114,15 @@ export const activeViewOf = (
 			() => Option.map(opened, (view): ActiveView => ({ view, isModified: true })),
 		),
 	)
+}
+
+/**
+ * The view the URL is, remembered before the URL moves on. A page entered on a view's URL (a
+ * reload, a link, another page's menu) then keeps it as its view once a param is edited.
+ */
+export const remembered = (model: Model, explorer: Explorer): Model => {
+	const active = activeViewOf(model, explorer)
+	return active === null || active.isModified || active.view.id === model.activeViewId
+		? model
+		: { ...model, activeViewId: active.view.id }
 }

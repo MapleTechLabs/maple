@@ -76,7 +76,10 @@ export interface SavedViewsServiceApi {
 	) => Effect.Effect<void, SavedViewPersistenceError | SavedViewNotFoundError | SavedViewForbiddenError>
 }
 
-/** One person's views per explorer. The menu lists them all, so the list stays readable. */
+/**
+ * One person's views per explorer. The menu lists them all, so the list stays readable. A soft
+ * cap, checked before the insert without a lock: two saves racing at the edge may land one over.
+ */
 export const SAVED_VIEWS_PER_OWNER_LIMIT = 100
 
 /** The most rows a list read returns: every member's shared views in a large org, bounded. */
@@ -287,11 +290,23 @@ export class SavedViewsService extends Context.Service<SavedViewsService, SavedV
 						viewId,
 					})
 				}
-				yield* dbExecute((db) =>
+				const isOwner = existing.ownerUserId === caller.userId
+				// An admin's delete holds only while the view is still shared: an owner who made it
+				// private in the meantime keeps it.
+				const deleted = yield* dbExecute((db) =>
 					db.run(
-						PG.deleteFrom(SavedViews).where(($) => [$.orgId.eq(caller.orgId), $.id.eq(viewId)]),
+						PG.deleteFrom(SavedViews)
+							.where(($) => [
+								$.orgId.eq(caller.orgId),
+								$.id.eq(viewId),
+								isOwner ? $.ownerUserId.eq(caller.userId) : $.visibility.eq("org"),
+							])
+							.returning(($) => ({ id: $.id })),
 					),
 				)
+				if (deleted.length === 0) {
+					return yield* new SavedViewNotFoundError({ message: "View not found", viewId })
+				}
 			})
 
 			return { list, create, update, remove } satisfies SavedViewsServiceApi

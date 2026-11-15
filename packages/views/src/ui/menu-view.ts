@@ -187,8 +187,14 @@ const trailedLabel = (h: H, entry: MenuItemEntry): ReadonlyArray<Html | string> 
 								entry.meta,
 							]),
 						]),
+				// Decorative: the item already says it is the pick in effect with `aria-current`.
 				...(entry.isCurrent === true
-					? [icon(h, "CheckIcon", { attributes: [h.Attribute("stroke-width", "2")] })]
+					? [
+							h.span(
+								[h.AriaHidden(true), h.Class("shrink-0")],
+								[icon(h, "CheckIcon", { attributes: [h.Attribute("stroke-width", "2")] })],
+							),
+						]
 					: []),
 			]
 

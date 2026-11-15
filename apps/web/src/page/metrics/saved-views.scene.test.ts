@@ -73,7 +73,7 @@ const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.Completed
 
 describe("metrics saved views", () => {
 	test("both metrics pages read the same list on entry", () => {
-		const expected = [{ name: "FetchSavedViews", args: { surface: "metrics" } }]
+		const expected = [{ name: "FetchSavedViews", args: { surface: "metrics", revision: 0 } }]
 		expect(sentNamed(Browse.init({ search: {} }, context).commands, "FetchSavedViews")).toEqual(expected)
 		expect(
 			sentNamed(Detail.init({ metricName: DURATION, search: {} }, context).commands, "FetchSavedViews"),
@@ -103,12 +103,14 @@ describe("metrics saved views", () => {
 			onMetric(DURATION, { agg: "max", groupBy: "http.route", timePreset: "6h" }, []),
 			"Latency by route",
 		)
-		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toMatchObject({
+		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toEqual({
 			surface: "metrics",
+			name: "Latency by route",
 			state: {
 				search: { agg: "max", groupBy: "http.route", timePreset: "6h" },
 				metricName: DURATION,
 			},
+			visibility: "private",
 		})
 	})
 
@@ -180,6 +182,29 @@ describe("metrics saved views", () => {
 				},
 			},
 		])
+	})
+
+	test("a metric view opened from /metrics stays the metric page's view once its query changes", () => {
+		// The metric's page is a new instance: it only has the URL and the list to go by.
+		const arrived = onMetric(DURATION, { agg: "max", groupBy: "http.route", timePreset: "6h" }, [
+			HISTOGRAMS,
+			P99_BY_ROUTE,
+		])
+		const edited = Detail.routeChanged(
+			arrived,
+			{ metricName: DURATION, search: { agg: "avg", groupBy: "http.route", timePreset: "6h" } },
+			context,
+		).model
+		scene(
+			{ update: detailUpdate, view: detailView },
+			given(edited),
+			themeResolved,
+			expectView(role("button", { name: /Latency by route\s*Edited/ })).toExist(),
+		)
+		expect(sentNamed(detailViews.update(edited).commands, "UpdateSavedViewState")[0]?.args).toEqual({
+			viewId: P99_BY_ROUTE.id,
+			state: { search: { agg: "avg", groupBy: "http.route", timePreset: "6h" }, metricName: DURATION },
+		})
 	})
 
 	test("a renamed view shows its new name on /metrics", () => {

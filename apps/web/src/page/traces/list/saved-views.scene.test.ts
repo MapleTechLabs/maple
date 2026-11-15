@@ -60,7 +60,7 @@ const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.Completed
 describe("traces saved views", () => {
 	test("entry reads the saved views of the traces explorer", () => {
 		expect(sentNamed(init({ search: {} }, context).commands, "FetchSavedViews")).toEqual([
-			{ name: "FetchSavedViews", args: { surface: "traces" } },
+			{ name: "FetchSavedViews", args: { surface: "traces", revision: 0 } },
 		])
 	})
 
@@ -90,8 +90,11 @@ describe("traces saved views", () => {
 	test("an open peek sheet is not part of the view it is saved from", () => {
 		const peeking: Search = { ...SLOW_CHECKOUT, peek: "trace0001", peekRow: "3", peekSpan: "span9" }
 		const saved = views.saveAs(entered(peeking, []), "Slow checkout")
-		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toMatchObject({
+		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toEqual({
+			surface: "traces",
+			name: "Slow checkout",
 			state: SLOW.state,
+			visibility: "private",
 		})
 	})
 
@@ -132,9 +135,9 @@ describe("traces saved views", () => {
 			given(edited),
 			expectView(role("button", { name: /Slow checkout\s*Edited/ })).toExist(),
 		)
-		expect(sentNamed(views.update(edited).commands, "UpdateSavedViewState")[0]?.args).toMatchObject({
+		expect(sentNamed(views.update(edited).commands, "UpdateSavedViewState")[0]?.args).toEqual({
 			viewId: SLOW.id,
-			state: { search: { services: ["checkout"], minDurationMs: 1000, timePreset: "6h" } },
+			state: { search: { ...SLOW.state.search, minDurationMs: 1000 } },
 		})
 	})
 

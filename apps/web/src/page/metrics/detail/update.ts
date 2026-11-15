@@ -301,7 +301,7 @@ export const init = (route: Route, context: PageContext): Return => {
 }
 
 /** The query changed in the URL: inputs resync, and a new window re-resolves first. */
-export const routeChanged = (model: Model, route: Route, context: PageContext): Return => {
+const routed = (model: Model, route: Route, context: PageContext): Return => {
 	if (metricHref(model, model.search) === metricHref(model, route.search)) return { model }
 	const next = syncControls({
 		...model,
@@ -546,3 +546,15 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				toSavedViews,
 			),
 	})
+
+/** The view the old URL was stays the page's view as the URL moves on. */
+const withRememberedView = (model: Model): Model => {
+	const savedViews = SavedViews.remembered(
+		model.savedViews,
+		metricViewsExplorer([model.metricName, model.search]),
+	)
+	return savedViews === model.savedViews ? model : { ...model, savedViews }
+}
+
+export const routeChanged = (model: Model, route: Route, context: PageContext): Return =>
+	routed(withRememberedView(model), route, context)

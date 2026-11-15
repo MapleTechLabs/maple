@@ -57,7 +57,7 @@ const dialogMounted = Mount.resolve(Dialog.MountDialog, Dialog.Message.Completed
 describe("logs saved views", () => {
 	test("entry reads the saved views of the logs explorer", () => {
 		expect(sentNamed(init({ search: {} }, context).commands, "FetchSavedViews")).toEqual([
-			{ name: "FetchSavedViews", args: { surface: "logs" } },
+			{ name: "FetchSavedViews", args: { surface: "logs", revision: 0 } },
 		])
 	})
 
@@ -85,7 +85,12 @@ describe("logs saved views", () => {
 			attributeFilters: [{ key: "http.route", value: "/pay" }],
 		}
 		const saved = views.saveAs(entered(search, []), "Pay route")
-		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toMatchObject({ state: { search } })
+		expect(sentNamed(saved.commands, "CreateSavedView")[0]?.args).toEqual({
+			surface: "logs",
+			name: "Pay route",
+			state: { search },
+			visibility: "private",
+		})
 	})
 
 	test("the toolbar names the view this URL is, and picking another goes to its params", () => {
@@ -136,6 +141,39 @@ describe("logs saved views", () => {
 				},
 			},
 		])
+	})
+
+	test("a page entered on a view's URL keeps that view once a filter changes, without picking it", () => {
+		// A reload or a shared link: nothing was opened from the menu.
+		const entry = entered(ERRORS_LAST_HOUR, [ERRORS, WARNINGS])
+		const edited = routeChanged(
+			entry,
+			{ search: { ...ERRORS_LAST_HOUR, timePreset: "6h" } },
+			context,
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(edited),
+			...pageMounts,
+			expectView(role("button", { name: /Checkout errors\s*Edited/ })).toExist(),
+		)
+		expect(sentNamed(views.update(edited).commands, "UpdateSavedViewState")[0]?.args).toEqual({
+			viewId: ERRORS.id,
+			state: { search: { severities: ["ERROR"], services: ["checkout"], timePreset: "6h" } },
+		})
+		// Editing on to another view's params makes that one the page's view.
+		const onWarnings = routeChanged(
+			edited,
+			{ search: { severities: ["WARN"], timePreset: "24h" } },
+			context,
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(onWarnings.model),
+			...pageMounts,
+			expectView(role("button", { name: "Warnings today" })).toExist(),
+			expectView(text("Edited")).not.toExist(),
+		)
 	})
 
 	test("a renamed view shows its new name in the toolbar", () => {

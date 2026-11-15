@@ -64,7 +64,11 @@ const THEIRS = saved("0c", "Checkout", CHECKOUT, {
 })
 
 const loaded = (views: ReadonlyArray<SavedView>, explorer: Explorer): Model =>
-	update(init("views"), Message.CompletedFetchViews({ result: Result.succeed(views) }), explorer).model
+	update(
+		init("views"),
+		Message.CompletedFetchViews({ revision: 0, result: Result.succeed(views) }),
+		explorer,
+	).model
 
 /** The menu, open, with its items addressable by value. */
 const pick = (model: Model, value: string, explorer: Explorer, kind: "Item" | "Checkbox" = "Item") =>
@@ -134,17 +138,39 @@ describe("saved views control", () => {
 		expect(names(opened.commands)).toContain(FetchViews.name)
 		const failed = update(
 			opened.model,
-			Message.CompletedFetchViews({ result: Result.fail(toLoadFailure("list down")) }),
+			Message.CompletedFetchViews({ revision: 0, result: Result.fail(toLoadFailure("list down")) }),
 			explorer,
 		).model
 		expect(Arr.map(failed.views ?? [], (view) => view.name)).toEqual(["Errors"])
+	})
+
+	test("a list read sent before a save does not undo it when it answers late", () => {
+		const explorer = explorerOf(WARNINGS)
+		// The menu's refresh is still out when the new view is saved.
+		const refreshing = update(
+			loaded([MINE], explorer),
+			Message.GotMenuMessage({ message: Menu.Message.ClickedTrigger() }),
+			explorer,
+		).model
+		const created = update(
+			refreshing,
+			Message.CompletedCreateView({ result: Result.succeed(MINE_TOO) }),
+			explorer,
+		).model
+		const late = update(
+			created,
+			Message.CompletedFetchViews({ revision: 0, result: Result.succeed([MINE]) }),
+			explorer,
+		).model
+		expect(Arr.map(late.views ?? [], (view) => view.name)).toEqual(["Errors", "Warnings"])
+		expect(late.isLoading).toBe(false)
 	})
 
 	test("a first load that fails says so and offers to try again", () => {
 		const explorer = explorerOf({})
 		const failed = update(
 			init("views"),
-			Message.CompletedFetchViews({ result: Result.fail(toLoadFailure("list down")) }),
+			Message.CompletedFetchViews({ revision: 0, result: Result.fail(toLoadFailure("list down")) }),
 			explorer,
 		).model
 		scene(

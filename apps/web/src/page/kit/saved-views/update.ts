@@ -35,6 +35,7 @@ const listOrder: Order.Order<SavedView> = Order.combine(
 
 const withView = (model: Model, view: SavedView): Model => ({
 	...model,
+	revision: model.revision + 1,
 	views: Arr.sort([...Arr.filter(model.views ?? [], (other) => other.id !== view.id), view], listOrder),
 })
 
@@ -67,8 +68,14 @@ const refetch = (step: Return, explorer: Explorer): Return =>
 	step.model.isLoading
 		? step
 		: withCommands({ ...step, model: { ...step.model, isLoading: true } }, [
-				FetchViews({ surface: explorer.surface }),
+				FetchViews({ surface: explorer.surface, revision: step.model.revision }),
 			])
+
+/** The list again whatever is out: an earlier read carries an older revision and is dropped. */
+const forceRefetch = (model: Model, explorer: Explorer): Return => ({
+	model: { ...model, isLoading: true },
+	commands: [FetchViews({ surface: explorer.surface, revision: model.revision })],
+})
 
 const openForm = (model: Model, form: Form): Return =>
 	liftFormDialog({ ...model, form }, Dialog.open(model.formDialog))
@@ -221,12 +228,19 @@ export const update = (model: Model, message: Message, explorer: Explorer): Retu
 			liftFormDialog(model, Dialog.update(model.formDialog, inner)),
 		GotDeleteDialogMessage: ({ message: inner }) =>
 			liftDeleteDialog(model, Dialog.update(model.deleteDialog, inner)),
-		CompletedFetchViews: ({ result }) =>
-			Result.match(result, {
-				onSuccess: (views) => ({ model: { ...model, views, loadFailure: null, isLoading: false } }),
-				// A failed refresh keeps the list it had.
-				onFailure: (failure) => ({ model: { ...model, loadFailure: failure, isLoading: false } }),
-			}),
+		CompletedFetchViews: ({ revision, result }) =>
+			// Sent before a save, share or delete here: its rows are older than the list on screen.
+			revision !== model.revision
+				? { model: { ...model, isLoading: false } }
+				: Result.match(result, {
+						onSuccess: (views) => ({
+							model: { ...model, views, loadFailure: null, isLoading: false },
+						}),
+						// A failed refresh keeps the list it had.
+						onFailure: (failure) => ({
+							model: { ...model, loadFailure: failure, isLoading: false },
+						}),
+					}),
 		ChangedName: ({ value }) => ({
 			model: { ...model, form: { ...model.form, name: value, error: null } },
 		}),
@@ -245,7 +259,7 @@ export const update = (model: Model, message: Message, explorer: Explorer): Retu
 					},
 				}),
 				onFailure: (failure) => ({
-					...refetch({ model: { ...model, isWriting: false } }, explorer),
+					...forceRefetch({ ...model, isWriting: false }, explorer),
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
 						title: action === "update" ? "Couldn't update view" : "Couldn't change sharing",
@@ -267,6 +281,7 @@ export const update = (model: Model, message: Message, explorer: Explorer): Retu
 						{
 							...model,
 							isDeleting: false,
+							revision: model.revision + 1,
 							views: Arr.filter(model.views ?? [], (view) => view.id !== viewId),
 							activeViewId: model.activeViewId === viewId ? null : model.activeViewId,
 						},
