@@ -15,6 +15,7 @@ import { OrganizationRegionService } from "@maple/backend/services/org/Organizat
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { RuntimeAdvisoryCatalog } from "@maple/backend/services/security/RuntimeAdvisoryCatalog"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
 
@@ -40,6 +41,7 @@ export const QueryRoutes = Layer.mergeAll(
 		Layer.mergeAll(
 			QueryEngineService.layer,
 			WarehouseQueryService.layer,
+			PromqlQueryService.layer,
 			AuditLogService.layer,
 			OrganizationRegionService.layer,
 			RuntimeReleaseCatalog.layer,

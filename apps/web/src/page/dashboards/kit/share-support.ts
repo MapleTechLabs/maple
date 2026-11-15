@@ -16,7 +16,7 @@ const SUPPORTED_ROUTE_ENDPOINTS = new Set([
 
 /** Prose for the dialog, so the copy and the list cannot disagree. */
 export const SHAREABLE_WIDGET_KINDS =
-	"query-builder charts, raw SQL, markdown, funnels, paths, and the errors, service and logs tiles"
+	"query-builder charts, raw SQL, PromQL, markdown, funnels, paths, and the errors, service and logs tiles"
 
 interface WidgetLike {
 	readonly id: string
@@ -34,7 +34,7 @@ export const isShareSupported = (dataSource: unknown): boolean => {
 	return Option.match(decodeSource(dataSource), {
 		onNone: () => false,
 		onSome: ({ kind, endpoint }) =>
-			kind === "query" || kind === "raw_sql" || kind === "static"
+			kind === "query" || kind === "raw_sql" || kind === "promql" || kind === "static"
 				? true
 				: endpoint !== undefined && SUPPORTED_ROUTE_ENDPOINTS.has(endpoint),
 	})

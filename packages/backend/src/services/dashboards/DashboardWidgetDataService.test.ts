@@ -4,6 +4,7 @@ import { MAX_LIST_RANGE_SECONDS } from "@maple/query-engine"
 import { Effect, Layer, ManagedRuntime, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { DashboardWidgetDataService, type WidgetDataRequest } from "./DashboardWidgetDataService"
 
 const asIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
@@ -55,7 +56,14 @@ const makeHarness = (
 
 	const runtime = ManagedRuntime.make(
 		Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
-			Layer.provide(Layer.mergeAll(queryEngine, warehouse)),
+			Layer.provide(
+				Layer.mergeAll(
+					queryEngine,
+					warehouse,
+					// The real engine: selector-free PromQL evaluates without the warehouse.
+					Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(Layer.provide(warehouse)),
+				),
+			),
 		),
 	)
 	return { runtime, windows, rawSql, queries }
@@ -519,6 +527,86 @@ describe("DashboardWidgetDataService.resolveBatch", () => {
 
 		expect(peak).toBe(4)
 		expect(Arr.map(results, (result) => result.widgetId)).toEqual(ids)
+		await runtime.dispose()
+	})
+})
+
+const decodeRows = Schema.decodeUnknownSync(
+	Schema.Struct({ data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
+)
+
+describe("DashboardWidgetDataService with a promql widget", () => {
+	const HOUR = { startTime: "2026-01-01 00:00:00", endTime: "2026-01-01 01:00:00" }
+	const promqlWidget = (id: string, source: Record<string, unknown>, visualization = "chart") => ({
+		...widget(id, { kind: "promql", ...source }),
+		visualization,
+	})
+	const resolveOne = (
+		dataSource: Record<string, unknown>,
+		variableValues: Record<string, { value: string; isAll: boolean; options: string[] }> = {},
+	) => {
+		const { runtime, windows } = makeHarness(die)
+		const run = runtime.runPromise(
+			DashboardWidgetDataService.use((service) =>
+				service.resolve(
+					ORG,
+					document([promqlWidget("w-promql", dataSource)]),
+					{ widgetId: "w-promql", source: "primary" },
+					HOUR,
+					variableValues,
+				),
+			).pipe(Effect.result),
+		)
+		return { run, runtime, windows }
+	}
+
+	it("fills variables and built-ins and names series by the legend format", async () => {
+		const { run, runtime } = resolveOne(
+			{
+				query: 'label_replace(vector($__interval_ms), "env", "$env", "", "")',
+				legendFormat: "{{env}}",
+				displayType: "line",
+			},
+			{ env: { value: "prod", isAll: false, options: ["prod"] } },
+		)
+		const outcome = await run
+		if (outcome._tag !== "Success") return expect.unreachable("the promql widget resolved")
+		const rows = decodeRows(outcome.success.data).data
+		// One hour at about 200 points is a 30s step: 121 steps from the hour's start.
+		expect(rows).toHaveLength(121)
+		expect(rows[0]).toEqual({ bucket: "2026-01-01T00:00:00.000Z", prod: 30_000 })
+		await runtime.dispose()
+	})
+
+	it("shows the parser's message for a query that does not parse", async () => {
+		const { run, runtime } = resolveOne({ query: "sum(rate(x[5m])" })
+		const outcome = await run
+		if (outcome._tag !== "Failure") return expect.unreachable("a bad query fails")
+		expect(outcome.failure._tag).toBe("@maple/http/errors/ShareWidgetExecutionError")
+		expect(outcome.failure.message).toMatch(/^Invalid PromQL: /)
+		await runtime.dispose()
+	})
+
+	it("is gated on the metrics scope only", async () => {
+		const { runtime } = makeHarness(die)
+		const batch = (canRead: (family: "traces" | "logs" | "metrics") => boolean) =>
+			runtime.runPromise(
+				DashboardWidgetDataService.use((service) =>
+					service.resolveBatch(ORG, document([promqlWidget("w", { query: "vector(1)" }, "stat")]), {
+						requests: [{ widgetId: "w", source: "primary" }],
+						window: HOUR,
+						variableValues: {},
+						canRead,
+					}),
+				),
+			)
+		const metricsOnly = await batch((family) => family === "metrics")
+		expect(metricsOnly.results[0]).toMatchObject({ widgetId: "w", ok: true })
+		const tracesOnly = await batch((family) => family === "traces")
+		expect(tracesOnly.results[0]).toMatchObject({
+			ok: false,
+			message: 'This widget requires the "metrics:read" scope.',
+		})
 		await runtime.dispose()
 	})
 })

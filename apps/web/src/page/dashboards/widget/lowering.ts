@@ -8,6 +8,7 @@ import {
 import {
 	dataSourceEndpoint,
 	dataSourceQuerySet,
+	dataSourcePromql,
 	dataSourceRawSql,
 	dataSourceRouteParams,
 	dataSourceTransform,
@@ -126,7 +127,8 @@ export const toInitialState = (widget: Widget): EditorState => {
 		!isProductFunnel &&
 		(loaded === null || loaded.queries.length === 0)
 	// A SQL widget is not a preset: it switches to the builder like any other query.
-	const isSql = dataSourceRawSql(widget.dataSource) !== null
+	// A Raw SQL or PromQL widget opens the Builder on a fresh query, not a locked stand-in.
+	const isSql = dataSourceRawSql(widget.dataSource) !== null || dataSourcePromql(widget.dataSource) !== null
 	const routeStandIn = isStandIn && querySet === null && !isSql ? routeStandInOf(routeOf(widget)) : null
 	const standInQuery =
 		routeStandIn?.kind === "builder"

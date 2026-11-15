@@ -137,8 +137,8 @@ import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrai
 import { AuditDetectionsService } from "@maple/backend/services/audit-trail/AuditDetectionsService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
-import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
+import { TelemetryReadService } from "@maple/backend/services/warehouse/TelemetryReadService"
 import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { CiAnalyticsService } from "@maple/backend/services/pr-review/CiAnalyticsService"
@@ -251,11 +251,11 @@ export const HttpServicesLive = Layer.mergeAll(
 	AuditDetectionsService.layer,
 	WarehouseQueryService.layer,
 	QueryEngineService.layer,
+	PromqlQueryService.layer,
 	RuntimeReleaseCatalog.layer,
 	RuntimeAdvisoryCatalog.layer,
 	DependencyScanService.layer,
 	TelemetryReadService.layer,
-	PromqlQueryService.layer,
 	DashboardWidgetDataService.layer,
 	AlertDestinationsService.layer,
 	AlertReadModelsService.layer,

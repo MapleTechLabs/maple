@@ -83,8 +83,11 @@ export type WidgetRequestPlan = PlannedWidgetRequest | DisabledWidgetRequest
 /** The empty-range fallback every dashboard tile pins, on both hosts. */
 export const WIDGET_FETCH_STRATEGY = { enableEmptyRangeFallback: false } as const
 
-/** Endpoint whose params carry `maxDataPoints`. Mirrors `QUERY_RESULT_ENDPOINTS.timeseries`. */
-const TIMESERIES_ENDPOINT = "custom_query_builder_timeseries"
+/** Endpoints whose params carry `maxDataPoints`: `QUERY_RESULT_ENDPOINTS.timeseries` and `PROMQL_ENDPOINT`. */
+const MAX_DATA_POINTS_ENDPOINTS: ReadonlySet<string> = new Set([
+	"custom_query_builder_timeseries",
+	"promql_chart",
+])
 
 /** Query-set endpoints: `params.queries` is an array of query-builder drafts. */
 const QUERY_SET_ENDPOINTS = new Set([
@@ -141,7 +144,7 @@ export function planWidgetRequest(input: PlanWidgetRequestInput): WidgetRequestP
 	}
 
 	const { endpoint, params } = input.request
-	const maxDataPoints = endpoint === TIMESERIES_ENDPOINT ? input.maxDataPoints : undefined
+	const maxDataPoints = MAX_DATA_POINTS_ENDPOINTS.has(endpoint) ? input.maxDataPoints : undefined
 
 	// Macros first, then variables — the same order the browser has always used,
 	// so a `$__startTime` inside a variable's value is never re-expanded.

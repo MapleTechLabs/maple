@@ -1,0 +1,110 @@
+import { describe, expect, it } from "vitest"
+import type { VariableValues } from "../dashboard-variables/interpolate"
+import { planWidgetRequest } from "../widget-request"
+import { collectPromqlVariableRefs, interpolatePromqlBuiltins, interpolatePromqlVariables } from "./variables"
+
+const one = (value: string) => ({ value, isAll: false, options: [value] })
+const all = (options: string[]) => ({ value: "$__all", isAll: true, options })
+
+const values: VariableValues = {
+	service: one("checkout"),
+	env: all(["prod", "staging"]),
+	host: one("db-1.internal"),
+}
+
+describe("interpolatePromqlVariables", () => {
+	it.each([
+		['up{job="$service"}', 'up{job="checkout"}'],
+		['up{job="${service}"}', 'up{job="checkout"}'],
+		['up{job="[[service]]"}', 'up{job="checkout"}'],
+	])("fills %s", (query, expected) => {
+		expect(interpolatePromqlVariables(query, values)).toBe(expected)
+	})
+
+	it("regex-escapes a single value only under :regex", () => {
+		expect(interpolatePromqlVariables('up{instance=~"${host:regex}"}', values)).toBe(
+			'up{instance=~"db-1\\\\.internal"}',
+		)
+		expect(interpolatePromqlVariables('up{instance="$host"}', values)).toBe(
+			'up{instance="db-1.internal"}',
+		)
+	})
+
+	it("writes an All selection as a regex alternation", () => {
+		expect(interpolatePromqlVariables('up{env=~"$env"}', values)).toBe('up{env=~"(prod|staging)"}')
+		expect(interpolatePromqlVariables('up{env=~"[[env]]"}', values)).toBe('up{env=~"(prod|staging)"}')
+	})
+
+	it("escapes regex metacharacters and quotes inside each option", () => {
+		const tricky: VariableValues = { path: all(["/a.b", 'x"y']) }
+		expect(interpolatePromqlVariables('hits{path=~"$path"}', tricky)).toBe(
+			'hits{path=~"(/a\\\\.b|x\\"y)"}',
+		)
+	})
+
+	it("keeps a value inside its string literal", () => {
+		const hostile: VariableValues = { service: one('a"} or vector(1) #') }
+		expect(interpolatePromqlVariables('up{job="$service"}', hostile)).toBe(
+			'up{job="a\\"} or vector(1) #"}',
+		)
+	})
+
+	it("matches everything for an All with no options, and leaves unknown names literal", () => {
+		expect(interpolatePromqlVariables('up{env=~"$env"}', { env: all([]) })).toBe('up{env=~".*"}')
+		expect(interpolatePromqlVariables('up{job="$missing"}', values)).toBe('up{job="$missing"}')
+	})
+
+	it("leaves built-ins for the executor", () => {
+		expect(interpolatePromqlVariables("rate(x[$__rate_interval])", values)).toBe(
+			"rate(x[$__rate_interval])",
+		)
+	})
+
+	it("collects every reference syntax", () => {
+		expect(collectPromqlVariableRefs('a{x="$one", y="${two:regex}", z="[[three]]"} $__interval')).toEqual(
+			["one", "two", "three"],
+		)
+	})
+})
+
+describe("interpolatePromqlBuiltins", () => {
+	const hour = { startMs: 0, endMs: 3_600_000 }
+
+	it("fills interval, range and their forms", () => {
+		const query = "x[$__interval] y[${__range}] $__range_s $__range_ms $__interval_ms"
+		expect(interpolatePromqlBuiltins(query, { ...hour, stepMs: 30_000 })).toBe(
+			"x[30s] y[3600s] 3600 3600000 30000",
+		)
+	})
+
+	it("follows Grafana's rate interval rule", () => {
+		// max(4 * 15s, step + 15s): a short step floors at 60s, a long one adds a scrape.
+		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 15_000 })).toBe("[60s]")
+		expect(interpolatePromqlBuiltins("[$__rate_interval]", { ...hour, stepMs: 120_000 })).toBe("[135s]")
+	})
+
+	it("leaves an unknown built-in alone", () => {
+		expect(interpolatePromqlBuiltins("$__intervalx $__foo", { ...hour, stepMs: 15_000 })).toBe(
+			"$__intervalx $__foo",
+		)
+	})
+})
+
+describe("a promql widget request through the planner", () => {
+	it("formats variables as PromQL and carries the tile width", () => {
+		const plan = planWidgetRequest({
+			request: {
+				endpoint: "promql_chart",
+				params: { promql: 'up{env=~"$env"}', legendFormat: "{{job}}" },
+			},
+			dashboardWindow: { startTime: "2026-01-01 00:00:00", endTime: "2026-01-01 01:00:00" },
+			variableValues: values,
+			maxDataPoints: 240,
+		})
+		expect(plan.kind === "request" && plan.params).toMatchObject({
+			promql: 'up{env=~"(prod|staging)"}',
+			legendFormat: "{{job}}",
+			maxDataPoints: 240,
+		})
+	})
+})

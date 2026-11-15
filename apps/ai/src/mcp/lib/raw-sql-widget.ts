@@ -1,7 +1,12 @@
 import { rawSqlIssue } from "@maple/domain/raw-sql"
 import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/http"
 import type { RawSqlDisplayType, WidgetDataSourceSchema } from "@maple/domain/http"
-import { dataSourceQuerySet, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
+import {
+	dataSourcePromql,
+	dataSourceQuerySet,
+	dataSourceTransform,
+	makeRawSqlDataSource,
+} from "@maple/widgets/dashboard"
 
 // MCP-side mirror of the web's raw-SQL widget builder so agents can create
 // raw-SQL widgets without hand-crafting the dataSource JSON. The display type
@@ -50,9 +55,9 @@ export function withScalarReduction(dataSource: WidgetDataSource, isScalar: bool
 	if (!isScalar) return dataSource
 	if (dataSourceTransform(dataSource)?.reduceToValue !== undefined) return dataSource
 	const querySet = dataSourceQuerySet(dataSource)
-	// Only the query arm: a route source owns its own response shape, and a
+	// Only the query and PromQL arms: a route source owns its own response shape, and a
 	// static source has no response at all.
-	if (querySet === null) return dataSource
+	if (querySet === null && dataSourcePromql(dataSource) === null) return dataSource
 
 	const existing = dataSourceTransform(dataSource)
 	return {

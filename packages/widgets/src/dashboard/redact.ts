@@ -18,7 +18,13 @@
  */
 import { Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
 
-import { dataSourceEndpoint, dataSourceQuerySet, dataSourceRawSql, dataSourceTransform } from "./access"
+import {
+	dataSourceEndpoint,
+	dataSourcePromql,
+	dataSourceQuerySet,
+	dataSourceRawSql,
+	dataSourceTransform,
+} from "./access"
 import type { DashboardVariable } from "./shared/variables"
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -34,7 +40,7 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
  * reveals a query.
  */
 export interface RedactedDataSource {
-	readonly kind: "query" | "raw_sql" | "route" | "static"
+	readonly kind: "query" | "raw_sql" | "promql" | "route" | "static"
 	readonly resultShape?: string
 	readonly transform?: unknown
 }
@@ -84,6 +90,9 @@ const redactDataSource = (dataSource: unknown): RedactedDataSource => {
 		// render rows the server already computed.
 		return { kind: "raw_sql", ...transformField }
 	}
+
+	// Drops `query` and `legendFormat`: the query names the org's metrics and labels.
+	if (dataSourcePromql(dataSource) !== null) return { kind: "promql", ...transformField }
 
 	const querySet = dataSourceQuerySet(dataSource)
 	if (querySet !== null) {
