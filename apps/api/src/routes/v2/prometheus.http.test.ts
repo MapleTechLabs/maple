@@ -302,6 +302,9 @@ describe("v2 Prometheus discovery API", () => {
 			status: "success",
 			data: ["__name__", "instance", "job"],
 		})
+		// The earliest end a Date holds: the default hour before it must not step outside the range.
+		const edge = await harness.send(key.secret, "/labels", new URLSearchParams({ end: "-8640000000000" }))
+		expect(edge.status).not.toBe(500)
 		const buildInfo = await harness.send(key.secret, "/status/buildinfo")
 		expect(buildInfo.body).toMatchObject({ data: { version: "3.5.0", vendor: "Maple" } })
 		expect(

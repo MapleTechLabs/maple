@@ -9,7 +9,7 @@ const FLOAT = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
 
 /** The largest epoch ms a JavaScript Date renders. */
-const MAX_DATE_MS = 8.64e15
+export const MAX_DATE_MS = 8.64e15
 
 /** A Prometheus timestamp: Unix seconds with an optional fraction, or RFC3339. Epoch ms. */
 export const parseTime = (name: string, text: string): Effect.Effect<number, PromqlBadQueryError> => {
