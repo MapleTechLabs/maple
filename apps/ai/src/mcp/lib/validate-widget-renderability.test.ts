@@ -300,4 +300,11 @@ describe("a promql data source", () => {
 		)
 		expect(Arr.join(warnings, " ")).toContain('displayType: "table"')
 	})
+
+	it("reads an absent display type as a line chart, so a table without one is warned", () => {
+		const table = validateWidgetRenderability(widget("table", makePromqlDataSource({ query: "up" })))
+		expect(Arr.join(table.warnings, " ")).toContain('displayType: "table"')
+		const line = validateWidgetRenderability(widget("line", makePromqlDataSource({ query: "up" })))
+		expect(line.warnings).toEqual([])
+	})
 })

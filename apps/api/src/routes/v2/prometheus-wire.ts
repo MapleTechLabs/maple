@@ -6,7 +6,39 @@ import { parseDurationMs, type QueryResult } from "@maple/promql"
 import { PromqlBadQueryError } from "@maple/backend/services/promql/PromqlQueryService"
 
 const FLOAT = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
-const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
+const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/
+
+/**
+ * Whether an RFC3339 match names a real calendar date and clock time, as Go's `time.Parse`
+ * checks. JavaScript's Date would roll `24:00` or February 30 into another instant.
+ */
+const isRealTime = (match: RegExpExecArray): boolean => {
+	const [
+		,
+		year = 0,
+		month = 0,
+		day = 0,
+		hour = 0,
+		minute = 0,
+		second = 0,
+		,
+		offsetHour = 0,
+		offsetMinute = 0,
+	] = Arr.map(match, (part) => (part === undefined ? undefined : Number(part)))
+	// Day 0 of the next month is this month's last day.
+	const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+	return (
+		month >= 1 &&
+		month <= 12 &&
+		day >= 1 &&
+		day <= daysInMonth &&
+		hour < 24 &&
+		minute < 60 &&
+		second < 60 &&
+		offsetHour < 24 &&
+		offsetMinute < 60
+	)
+}
 
 /** The largest epoch ms a JavaScript Date renders. */
 export const MAX_DATE_MS = 8.64e15
@@ -16,8 +48,9 @@ export const parseTime = (name: string, text: string): Effect.Effect<number, Pro
 	if (FLOAT.test(text)) {
 		const ms = Math.round(Number(text) * 1000)
 		if (Math.abs(ms) <= MAX_DATE_MS) return Effect.succeed(ms)
-	} else if (RFC3339.test(text)) {
-		const parsed = DateTime.make(text)
+	} else {
+		const match = RFC3339.exec(text)
+		const parsed = match !== null && isRealTime(match) ? DateTime.make(text) : Option.none()
 		if (Option.isSome(parsed)) return Effect.succeed(DateTime.toEpochMillis(parsed.value))
 	}
 	return Effect.fail(

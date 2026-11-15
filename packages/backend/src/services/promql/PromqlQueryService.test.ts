@@ -189,9 +189,12 @@ const selectorRow = (attributes: Record<string, string>) => ({
 const recordingWarehouse = () => {
 	const statements: Array<string> = []
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
-		if (Str.includes("AS job")(sql)) return [{ job: "api" }, { job: "worker" }, { job: "" }]
-		if (Str.includes("AS instance")(sql))
-			return Str.includes("FROM metrics_gauge")(sql) ? [{ instance: "pod-2" }] : [{ instance: "pod-1" }]
+		if (Str.includes("HAVING (value != '')")(sql) && Str.includes("service.namespace")(sql)) {
+			return [{ value: "api" }, { value: "worker" }]
+		}
+		if (Str.includes("HAVING (value != '')")(sql)) {
+			return Str.includes("FROM metrics_gauge")(sql) ? [{ value: "pod-2" }] : [{ value: "pod-1" }]
+		}
 		if (Str.includes("FROM metrics_sum")(sql)) {
 			return [selectorRow({ "http.route": "/checkout" }), selectorRow({ "http.route": "/cart" })]
 		}
@@ -334,7 +337,11 @@ describe("PromqlQueryService discovery", () => {
 			const service = yield* PromqlQueryService
 			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "instance" })
 			expect(values).toEqual(["pod-1", "pod-2"])
-			const reads = Arr.filter(statements, (sql) => Str.includes("AS instance")(sql))
+			const reads = Arr.filter(
+				statements,
+				(sql) =>
+					Str.includes("service.instance.id")(sql) && Str.includes("HAVING (value != '')")(sql),
+			)
 			expect(reads).toHaveLength(4)
 			for (const sql of reads) expect(sql).toMatch(ORG_FILTER)
 			expect(Arr.some(statements, (sql) => Str.includes("attribute_values_hourly")(sql))).toBe(false)
