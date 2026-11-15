@@ -1,4 +1,4 @@
-import { Result } from "effect"
+import { Array as Arr, Result, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildDataset, DATA_END_MS, DATA_START_MS } from "../../scripts/compliance/dataset"
 import { QUERIES } from "../../scripts/compliance/queries"
@@ -287,5 +287,30 @@ describe("second-review regressions", () => {
 			[at(20), Number.NaN],
 		])
 		expect(value("changes(x[1m])", instant(30), src)).toBe(0)
+	})
+})
+
+describe("prototype-named labels and the native-histogram functions", () => {
+	const at = DATA_START_MS + 3600_000
+	const instant = { startMs: at, endMs: at, stepMs: 0 }
+
+	it("reads a label named like an Object member as missing", () => {
+		const joined = flatten(
+			run('label_join(http_requests_total, "joined", "-", "constructor", "code")', instant),
+		)
+		expect(joined.length).toBeGreaterThan(0)
+		expect(Arr.some(joined, ([key]) => Str.includes("function")(key))).toBe(false)
+		expect(
+			flatten(run('sort_by_label(http_requests_total, "toString")', instant)).length,
+		).toBeGreaterThan(0)
+	})
+
+	it("answers histogram_fraction from classic buckets and nothing for float-only functions", () => {
+		const fraction = flatten(
+			run("histogram_fraction(-Inf, +Inf, http_request_duration_seconds_bucket)", instant),
+		)
+		expect(fraction.length).toBeGreaterThan(0)
+		for (const [, , v] of fraction) expect(v).toBe(1)
+		expect(flatten(run("histogram_count(http_request_duration_seconds_bucket)", instant))).toEqual([])
 	})
 })

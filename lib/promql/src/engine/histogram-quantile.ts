@@ -1,6 +1,7 @@
 import { Result } from "effect"
 import { ensureUniqueLabelsets, type EvalError, labelsKey, makeLabels, METRIC_NAME } from "./labels"
 import type { InstantVector, Labels, Sample } from "./types"
+import { lookup } from "../lookup"
 
 const BUCKET_LABEL = "le"
 const SMALL_DELTA_TOLERANCE = 1e-12
@@ -28,6 +29,9 @@ const almostEqual = (a: number, b: number, epsilon: number): boolean => {
 	if (a === 0 || b === 0 || absSum < MIN_NORMAL) return diff < epsilon * MIN_NORMAL
 	return diff / Math.min(absSum, Number.MAX_VALUE) < epsilon
 }
+
+const sortByUpperBound = (input: ReadonlyArray<Bucket>): Bucket[] =>
+	[...input].sort((a, b) => (a.upperBound < b.upperBound ? -1 : a.upperBound > b.upperBound ? 1 : 0))
 
 const coalesce = (buckets: ReadonlyArray<Bucket>): Bucket[] => {
 	const out: Bucket[] = []
@@ -58,9 +62,7 @@ export const bucketQuantile = (q: number, input: ReadonlyArray<Bucket>): number 
 	if (Number.isNaN(q)) return Number.NaN
 	if (q < 0) return -Infinity
 	if (q > 1) return Infinity
-	const sorted = [...input].sort((a, b) =>
-		a.upperBound < b.upperBound ? -1 : a.upperBound > b.upperBound ? 1 : 0,
-	)
+	const sorted = sortByUpperBound(input)
 	if (sorted[sorted.length - 1]?.upperBound !== Infinity) return Number.NaN
 	const buckets = coalesce(sorted)
 	ensureMonotonic(buckets)
@@ -94,14 +96,45 @@ interface MetricWithBuckets {
 	readonly buckets: Bucket[]
 }
 
-export const histogramQuantile = (
-	phi: number,
+/** Prometheus' BucketFraction: the share of observations between `lower` and `upper`. */
+export const bucketFraction = (lower: number, upper: number, input: ReadonlyArray<Bucket>): number => {
+	const sorted = sortByUpperBound(input)
+	if (sorted[sorted.length - 1]?.upperBound !== Infinity) return Number.NaN
+	const buckets = coalesce(sorted)
+	const count = buckets[buckets.length - 1]?.count ?? 0
+	if (count === 0 || Number.isNaN(lower) || Number.isNaN(upper)) return Number.NaN
+	if (lower >= upper) return 0
+	let rank = 0
+	let lowerRank: number | undefined
+	let upperRank: number | undefined
+	for (const [i, b] of buckets.entries()) {
+		const lowerBound = i > 0 ? (buckets[i - 1]?.upperBound ?? -Infinity) : -Infinity
+		const interpolate = (v: number) =>
+			rank + ((b.count - rank) * (v - lowerBound)) / (b.upperBound - lowerBound)
+		if (lowerRank === undefined && lowerBound >= lower) lowerRank = rank
+		if (upperRank === undefined && lowerBound >= upper) upperRank = rank
+		if (lowerRank !== undefined && upperRank !== undefined) break
+		if (lowerRank === undefined && lowerBound < lower && b.upperBound > lower)
+			lowerRank = interpolate(lower)
+		if (upperRank === undefined && lowerBound < upper && b.upperBound > upper)
+			upperRank = interpolate(upper)
+		if (lowerRank !== undefined && upperRank !== undefined) break
+		rank = b.count
+	}
+	const lo = lowerRank === undefined || lowerRank > count ? count : lowerRank
+	const hi = upperRank === undefined || upperRank > count ? count : upperRank
+	return (hi - lo) / count
+}
+
+/** Groups classic `le` buckets by every other label and reduces each group to one sample. */
+export const classicHistogram = (
 	vector: InstantVector,
 	evalTimeMs: number,
+	reduce: (buckets: ReadonlyArray<Bucket>) => number,
 ): Result.Result<InstantVector, EvalError> => {
 	const groups = new Map<string, MetricWithBuckets>()
 	for (const sample of vector) {
-		const upperBound = parseGoFloat(sample.labels[BUCKET_LABEL] ?? "")
+		const upperBound = parseGoFloat(lookup(sample.labels, BUCKET_LABEL) ?? "")
 		if (upperBound === undefined || Number.isNaN(upperBound)) continue
 		const rest = Object.entries(sample.labels).filter(([name]) => name !== BUCKET_LABEL)
 		// Grouped by every label but `le`, metric name included, as in Prometheus' resetHistograms.
@@ -115,8 +148,11 @@ export const histogramQuantile = (
 	}
 	const out: Sample[] = [...groups.values()].map((g) => ({
 		labels: g.labels,
-		value: bucketQuantile(phi, g.buckets),
+		value: reduce(g.buckets),
 		t: evalTimeMs,
 	}))
 	return ensureUniqueLabelsets(out)
 }
+
+export const histogramQuantile = (phi: number, vector: InstantVector, evalTimeMs: number) =>
+	classicHistogram(vector, evalTimeMs, (buckets) => bucketQuantile(phi, buckets))
