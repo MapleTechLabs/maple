@@ -1,3 +1,4 @@
+import { PROFILE_SPAN_IDS_MAX } from "@maple/domain/http"
 import { Option, Record, Array as Arr } from "effect"
 import { AsyncData, Command } from "foldkit"
 import * as ProfileFlamegraph from "../../profiles/profile-flamegraph"
@@ -45,8 +46,8 @@ export const tabsOver = (tabs: Tabs.Model, shown: ReadonlyArray<string>): Tabs.M
 	}
 }
 
-/** Span ids one profile read names: a deeper subtree is cut off, widest levels first. */
-export const PROFILE_SPAN_CAP = 500
+/** Span ids one profile read names, the API's limit: a deeper subtree is cut off, widest levels first. */
+export const PROFILE_SPAN_CAP = PROFILE_SPAN_IDS_MAX
 
 /** The span and its descendants, breadth first: a sample belongs to the innermost running span. */
 export const subtreeSpanIds = (span: SpanNodeData): ReadonlyArray<string> => {
