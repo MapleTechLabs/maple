@@ -58,6 +58,7 @@
 		"./slo": "./src/slo.ts",
 		"./search-console": "./src/search-console.ts",
 		"./cost": "./src/cost.ts",
+		"./cost-budget": "./src/cost-budget.ts",
 		"./url-redaction": "./src/url-redaction.ts",
 		"./mcp-clients": "./src/mcp-clients.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",

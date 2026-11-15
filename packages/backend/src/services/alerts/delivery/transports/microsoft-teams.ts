@@ -6,7 +6,7 @@ import {
 	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatSeverityLabel,
-	formatWindow,
+	formatRuleWindow,
 	severityEmoji,
 	truncate,
 } from "../../alert-formatting"
@@ -60,7 +60,7 @@ const buildTeamsAdaptiveCard = (input: RenderInput<Config>) => {
 					title: "Severity",
 					value: `${severityEmoji(context.severity)} ${formatSeverityLabel(context.severity)}`,
 				},
-				{ title: "Window", value: formatWindow(context.windowMinutes) },
+				{ title: "Window", value: formatRuleWindow(context) },
 				...(group == null ? [] : [{ title: "Group", value: escapeMarkdown(group) }]),
 			]
 	return {

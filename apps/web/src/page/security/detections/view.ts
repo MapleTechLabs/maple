@@ -36,7 +36,9 @@ import {
 	matchText,
 } from "../kit/detection-format"
 import { DETECTION_TEMPLATES, type DetectionTemplate } from "../kit/detection-templates"
-import { BELOW_LAPTOP, LAPTOP_COLUMN, securityLayout } from "../kit/layout"
+import { BELOW_LAPTOP, LAPTOP_COLUMN } from "../../kit/laptop-column"
+import { notifiesNoOne } from "../../kit/notifies-no-one"
+import { securityLayout } from "../kit/layout"
 import { placeholderRows } from "../kit/parts"
 import { detectionById, detectionsOf, notifiesText } from "./derive"
 import { accessOf, Message, type Model } from "./model"
@@ -88,13 +90,7 @@ const matchLine = (h: H, detection: AuditDetection): Html => {
 /** Who is told when it fires. Nobody is a state worth seeing: the incident opens and no one hears. */
 const notifies = (h: H, detection: AuditDetection): Html => {
 	const text = notifiesText(detection)
-	return text === null
-		? hstack(
-				h,
-				{ gap: "1.5", align: "center", className: typographyClass({ size: "xs", tone: "warning" }) },
-				[icon(h, "BellSlashIcon", { size: 14 }), "Notifies no one"],
-			)
-		: typography(h, { size: "xs", tone: "muted" }, [text])
+	return text === null ? notifiesNoOne(h) : typography(h, { size: "xs", tone: "muted" }, [text])
 }
 
 const detectionRow = (h: H, model: Model, detection: AuditDetection): Html => {

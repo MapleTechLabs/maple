@@ -158,7 +158,7 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 
 const isStatusPageRoute = AppRoute.isAnyOf(["StatusPages", "StatusPageNew", "StatusPage", "StatusPageView"])
 
-const isCostRoute = AppRoute.isAnyOf(["Cost"])
+const isCostRoute = AppRoute.isAnyOf(["Cost", "CostBudgets", "CostBudgetNew"])
 
 const isProductAnalyticsRoute = AppRoute.isAnyOf(["ProductAnalytics"])
 

@@ -53,6 +53,8 @@ const SAMPLE_PATHS = [
 	"/alerts/uptime/upm_abc",
 	"/status-pages",
 	"/cost",
+	"/cost/budgets",
+	"/cost/budgets/new",
 	"/status-pages/new",
 	"/status-pages/stp_abc",
 	"/status-pages/stp_abc/view",

@@ -161,7 +161,7 @@ nothing errors. The counts come out wrong on a chart that looks fine.
 `packages/query-engine/src/ch/queries/rollup-splice.ts` owns that boundary:
 `utcInteriorConditions(bucketColumn, grain)` for the rollup branch, `edgeCondition(tsColumn,
 grain)` for the raw branch, defined as its complement. Traces, logs, services,
-service-operations and the service map use them.
+service-operations, the service map and the AWS infra metrics use them.
 
 The service-map family used to hand-roll it, and drifted. `serviceDependencies`
 hand-rolled the boundary correctly. `serviceDbEdges`, `serviceExternalEdges` and the
@@ -227,25 +227,39 @@ them one at a time. Migration `0019_mv_sweep` is the worked example.
 ### Backfilling a rollup deployed with `BACKFILL skip`
 
 Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
-`packages/domain/src/tinybird/project-manifest.ts`), so their first 30 days stay empty until a
-staged backfill. For `user_activity_hourly` (migration 0056):
+`packages/domain/src/tinybird/project-manifest.ts`), so their history stays empty until a
+staged backfill. `scripts/backfill-hourly-rollup.ts --rollup <table>` runs it for
+`user_activity_hourly` (migration 0056).
+
+**The prod workspaces refuse it.** Forward workspaces answer the population endpoint with
+"Forward workspaces do not support populating materialized views on-demand" (seen
+2026-11-15), so the script only works on a classic workspace. On prod, let the deploy
+backfill instead: leave the datasource out of `SKIP_BACKFILL`. `aws_metrics_hourly` shipped
+that way, its 90 days of `aws.*` points replayed by its first deploy.
 
 ```bash
 # Dry run: the day chunks, and which already hold rows
-infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z
+infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z
 # Populate, a day at a time, oldest first
-infisical run --env=prod -- bun scripts/backfill-user-activity-hourly.ts --until 2026-11-06T10:00:00Z --execute
+infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup user_activity_hourly --until 2026-11-06T10:00:00Z --execute
 ```
 
 - `--until` is when the views went live (the deploy). The views wrote everything after it, so a
   later `--until` double counts.
-- `--from` defaults to 30 days before `--until` (raw retention); `--pause-seconds` (default 60)
-  spaces the days out. Run it off-peak and watch workspace CPU between days.
+- `--from` defaults to the source's retention before `--until` (30 days for traces and logs, 90
+  for metrics); `--pause-seconds` (default 60) spaces the days out. Run it off-peak and watch
+  workspace CPU between days.
+- The hour `--until` falls in and the one before it are deleted and repopulated whole, last:
+  points stamped there but ingested after the deploy already reached the views, so a populate
+  cut at `--until` would count them twice. `--execute` waits until those hours have been over
+  for 30 minutes, and refuses once they are older than the source's retention.
 - A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
-  failed between its traces and logs view is skipped too: delete that day's rows and re-run.
-- Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
+  failed between its two views is skipped too: delete that day's rows and re-run.
+- Run once per workspace (Infisical `prod` for US, `prod-eu` for EU) after `bun run tinybird:deploy`
+  has promoted the views there; `--until` is when that deploy went live.
 - Try it on a Tinybird branch first: it calls the materialized node population endpoint
-  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day.
+  (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day, and the
+  datasource delete endpoint for the boundary hour.
 
 ---
 
