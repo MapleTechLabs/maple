@@ -69,6 +69,47 @@ describe("generateDemoRows metrics", () => {
 		}
 	})
 
+	it("exports query durations as a cumulative exponential histogram that lowers its scale partway", () => {
+		for (const service of ["demo-api", "demo-worker"]) {
+			const samples = Arr.filter(
+				rows.metricExponentialHistogramRows,
+				(row) => row.service_name === service,
+			)
+			expect(samples.length).toBeGreaterThan(100)
+			for (const [i, row] of samples.entries()) {
+				const previous = samples[i - 1]
+				expect(row.resource_attributes.maple_org_id).toBe("org_test")
+				expect(row.aggregation_temporality).toBe(2)
+				expect(Arr.reduce(row.positive_bucket_counts, 0, (a, b) => a + b)).toBe(row.count)
+				expect(row.positive_bucket_counts.length).toBeLessThanOrEqual(40)
+				expect(row.count).toBeGreaterThanOrEqual(previous?.count ?? 0)
+				// A running histogram only ever loses resolution.
+				expect(row.scale).toBeLessThanOrEqual(previous?.scale ?? row.scale)
+				// Every recorded value lies inside the buckets the sample declares.
+				if (row.min !== null && row.max !== null) {
+					const width = 2 ** -row.scale
+					expect(row.min).toBeGreaterThan(2 ** (row.positive_offset * width))
+					expect(row.max).toBeLessThanOrEqual(
+						2 ** ((row.positive_offset + row.positive_bucket_counts.length) * width),
+					)
+				}
+			}
+			const half = Math.floor(samples.length / 2)
+			expect(samples[samples.length - 1]?.scale).toBeLessThan(samples[half - 1]?.scale ?? Number.NaN)
+		}
+	})
+
+	it("gives both histograms of one seed the same service instance", () => {
+		const instances = new Set(
+			Arr.map(
+				[...rows.metricHistogramRows, ...rows.metricExponentialHistogramRows],
+				(row) => row.resource_attributes["service.instance.id"],
+			),
+		)
+		expect(instances.size).toBe(1)
+		expect([...instances][0]).toMatch(/^demo-[0-9a-f]+$/)
+	})
+
 	it("stamps timestamps inside the seeded window (ClickHouse DateTime64 format)", () => {
 		const now = Date.now()
 		const windowStart = now - 2 * 3600 * 1000 - 60_000
