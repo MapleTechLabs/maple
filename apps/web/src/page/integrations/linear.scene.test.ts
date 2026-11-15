@@ -45,13 +45,13 @@ const loaded = (): Model => {
 }
 
 describe("linear feature switches", () => {
-	test("turning reopening off saves every switch and keeps it off once the status re-reads", () => {
+	test("turning reopening off saves only that switch and keeps it off once the status re-reads", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded()),
 			expectView(role("switch", { name: "Reopen closed issues" })).toBeChecked(),
 			click(role("switch", { name: "Reopen closed issues" })),
-			Command.expectHas(SaveLinearFeatures({ switches: { ...ALL_ON, reopenIssuesEnabled: false } })),
+			Command.expectHas(SaveLinearFeatures({ flag: "reopenIssuesEnabled", enabled: false })),
 			expectView(role("switch", { name: "Reopen closed issues" })).not.toBeChecked(),
 			expectView(role("switch", { name: "Open issues" })).toBeDisabled(),
 			Command.resolve(SaveLinearFeatures, LinearMessage.CompletedFeatures({ failure: null })),

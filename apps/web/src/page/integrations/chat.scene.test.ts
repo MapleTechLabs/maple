@@ -111,10 +111,7 @@ describe("chat feature switches", () => {
 		const model = loaded(true)
 		const workspace = list(true).data[0]?.workspaces[0]
 		if (workspace === undefined) throw new Error("fixture")
-		const save = SaveChatFeatures({
-			id: workspace.id,
-			switches: { alertsEnabled: true, directMessagesEnabled: true, assistantEnabled: false },
-		})
+		const save = SaveChatFeatures({ id: workspace.id, flag: "assistantEnabled", enabled: false })
 		scene(
 			{ update: pageUpdate, view },
 			given(model),

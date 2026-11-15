@@ -142,7 +142,8 @@ const toggledFeature = (
 	}))
 	return {
 		model: { ...model, features: step.state, featuresWorkspaceId: workspaceId },
-		commands: step.save === null ? [] : [SaveChatFeatures({ id: workspaceId, switches: step.save })],
+		commands:
+			step.save === null ? [] : [SaveChatFeatures({ id: workspaceId, flag, enabled: step.save[flag] })],
 	}
 }
 

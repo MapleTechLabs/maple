@@ -126,21 +126,23 @@ export const DisconnectChatWorkspace = Command.define("DisconnectChatWorkspace",
 		),
 })
 
-/** `updateWorkspace` with the workspace's whole set of switches, so the last toggle wins. */
+const CHAT_FEATURE_KEYS = {
+	alertsEnabled: "alerts_enabled",
+	directMessagesEnabled: "direct_messages_enabled",
+	assistantEnabled: "assistant_enabled",
+} as const
+
+/** `updateWorkspace` with only the toggled switch, so a stale tab never rewrites the others. */
 export const SaveChatFeatures = Command.define("SaveChatWorkspaceFeatures", {
-	args: { id: ChatWorkspaceId, switches: ChatFeatureSwitches },
+	args: { id: ChatWorkspaceId, flag: ChatFeatureFlag, enabled: Schema.Boolean },
 	messages: [ChatMessage.CompletedFeatures],
-	execute: ({ id, switches }) =>
+	execute: ({ id, flag, enabled }) =>
 		settled(
 			Effect.gen(function* () {
 				const client = yield* MapleApiV2Client
 				yield* client.chatIntegration.updateWorkspace({
 					params: { id },
-					payload: {
-						alerts_enabled: switches.alertsEnabled,
-						direct_messages_enabled: switches.directMessagesEnabled,
-						assistant_enabled: switches.assistantEnabled,
-					},
+					payload: { [CHAT_FEATURE_KEYS[flag]]: enabled },
 				})
 			}),
 			(failure) => ChatMessage.CompletedFeatures({ failure }),

@@ -43,15 +43,15 @@ export type LinearCardModel = typeof LinearCardModel.Type
 
 export const initLinearCard = (): LinearCardModel => ({ features: initFeatureSwitches })
 
-/** `linearFeatures`: the whole set of switches, so the last toggle wins. */
+/** `linearFeatures` with only the toggled switch, so a stale tab never rewrites the others. */
 export const SaveLinearFeatures = Command.define("SaveLinearFeatures", {
-	args: { switches: LinearFeatureSwitches },
+	args: { flag: LinearFeatureFlag, enabled: Schema.Boolean },
 	messages: [LinearMessage.CompletedFeatures],
-	execute: ({ switches }) =>
+	execute: ({ flag, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			yield* client.integrations.linearFeatures({
-				payload: new LinearFeatureSettingsRequest({ ...switches }),
+				payload: new LinearFeatureSettingsRequest({ [flag]: enabled }),
 			})
 		}).pipe(
 			Effect.match({

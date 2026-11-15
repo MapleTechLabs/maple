@@ -242,9 +242,7 @@ describe("planetscale feature switches", () => {
 			expectView(role("heading", { name: "Webhooks" })).toExist(),
 			expectView(role("switch", { name: "Events" })).toBeChecked(),
 			click(role("switch", { name: "Events" })),
-			Command.expectHas(
-				SavePlanetscaleFeatures({ switches: { metricsEnabled: true, eventsEnabled: false } }),
-			),
+			Command.expectHas(SavePlanetscaleFeatures({ flag: "eventsEnabled", enabled: false })),
 			expectView(role("switch", { name: "Events" })).not.toBeChecked(),
 			expectView(role("switch", { name: "Branch metrics" })).toBeDisabled(),
 			Command.resolve(SavePlanetscaleFeatures, PlanetscaleMessage.CompletedFeatures({ failure: null })),

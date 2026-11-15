@@ -216,7 +216,7 @@ const toggledFeature = (model: CloudflareCardModel, env: Env, flag: CloudflareFe
 	)
 	return {
 		model: withCard(model, { features: step.state }),
-		commands: step.save === null ? [] : [SaveCloudflareFeatures({ switches: step.save })],
+		commands: step.save === null ? [] : [SaveCloudflareFeatures({ flag, enabled: step.save[flag] })],
 	}
 }
 

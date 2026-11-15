@@ -184,15 +184,15 @@ export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 		),
 })
 
-/** `cloudflareFeatures`: the whole set of switches, so the last toggle wins. */
+/** `cloudflareFeatures` with only the toggled switch, so a stale tab never rewrites the others. */
 export const SaveCloudflareFeatures = Command.define("SaveCloudflareFeatures", {
-	args: { switches: CloudflareFeatureSwitches },
+	args: { flag: CloudflareFeatureFlag, enabled: Schema.Boolean },
 	messages: [CloudflareMessage.CompletedFeatures],
-	execute: ({ switches }) =>
+	execute: ({ flag, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleInternalApiClient
 			yield* client.integrations.cloudflareFeatures({
-				payload: new CloudflareFeatureSettingsRequest({ ...switches }),
+				payload: new CloudflareFeatureSettingsRequest({ [flag]: enabled }),
 			})
 		}).pipe(
 			Effect.match({

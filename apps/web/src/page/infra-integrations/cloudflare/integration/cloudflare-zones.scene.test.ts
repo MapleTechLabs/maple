@@ -1,10 +1,6 @@
 import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
-import {
-	CloudflareFeatureSwitches,
-	CloudflareIntegrationStatus,
-	IntegrationsForbiddenError,
-} from "@maple/domain/http"
+import { CloudflareIntegrationStatus, IntegrationsForbiddenError } from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -186,26 +182,13 @@ describe("cloudflare zone selection", () => {
 })
 
 describe("cloudflare feature switches", () => {
-	const allOn = {
-		httpTrafficEnabled: true,
-		firewallEnabled: true,
-		dnsEnabled: true,
-		workersEnabled: true,
-		queuesEnabled: true,
-		durableObjectsEnabled: true,
-	}
-
 	test("a switch flips at once and saves; a refused save puts it back and says why", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(connected()),
 			expectView(role("switch", { name: "DNS queries" })).toBeChecked(),
 			click(role("switch", { name: "DNS queries" })),
-			Command.expectHas(
-				SaveCloudflareFeatures({
-					switches: new CloudflareFeatureSwitches({ ...allOn, dnsEnabled: false }),
-				}),
-			),
+			Command.expectHas(SaveCloudflareFeatures({ flag: "dnsEnabled", enabled: false })),
 			expectView(role("switch", { name: "DNS queries" })).not.toBeChecked(),
 			expectView(role("switch", { name: "Workers" })).toBeDisabled(),
 			Command.resolve(

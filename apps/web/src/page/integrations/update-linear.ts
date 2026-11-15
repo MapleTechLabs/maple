@@ -24,7 +24,7 @@ const toggledFeature = (model: LinearCardModel, env: Env, flag: typeof LinearFea
 	}))
 	return {
 		model: { ...model, features: step.state },
-		commands: step.save === null ? [] : [SaveLinearFeatures({ switches: step.save })],
+		commands: step.save === null ? [] : [SaveLinearFeatures({ flag, enabled: step.save[flag] })],
 	}
 }
 

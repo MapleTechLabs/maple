@@ -193,17 +193,16 @@ export const SetMetricsToken = Command.define("SetPlanetscaleMetricsToken", {
 		),
 })
 
-/** `updateFeatures`: both switches, so the last toggle wins. */
+/** `updateFeatures` with only the toggled switch, so a stale tab never rewrites the other. */
 export const SavePlanetscaleFeatures = Command.define("SavePlanetscaleFeatures", {
-	args: { switches: PlanetscaleFeatureSwitches },
+	args: { flag: PlanetscaleFeatureFlag, enabled: Schema.Boolean },
 	messages: [PlanetscaleMessage.CompletedFeatures],
-	execute: ({ switches }) =>
+	execute: ({ flag, enabled }) =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiV2Client
-			const payload = yield* Schema.decodeEffect(V2PlanetScaleFeaturesRequest)({
-				metrics_enabled: switches.metricsEnabled,
-				events_enabled: switches.eventsEnabled,
-			})
+			const payload = yield* Schema.decodeEffect(V2PlanetScaleFeaturesRequest)(
+				flag === "metricsEnabled" ? { metrics_enabled: enabled } : { events_enabled: enabled },
+			)
 			yield* client.planetscaleIntegration.updateFeatures({ payload })
 		}).pipe(
 			Effect.match({
