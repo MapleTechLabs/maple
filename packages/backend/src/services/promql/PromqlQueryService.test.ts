@@ -217,6 +217,17 @@ const window = { startMs: T0 - 3_600_000, endMs: T0 }
 const ORG_FILTER = /OrgId = 'org_promql'/
 
 describe("PromqlQueryService discovery", () => {
+	it.effect("refuses more match[] selectors than a query may read", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const matches = Array.from({ length: 21 }, (_, i) => `up{i="${i}"}`)
+			const error = yield* Effect.flip(service.series(tenant, { ...window, matches }))
+			expect(error.message).toMatch(/more than 20 selectors/)
+			expect(statements).toHaveLength(0)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("returns the label sets a match[] selector selects, read through org-scoped queries", () => {
 		const { statements, layer } = recordingWarehouse()
 		return Effect.gen(function* () {
