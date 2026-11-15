@@ -1,4 +1,5 @@
 import { Array as Arr, Schema, String as Str } from "effect"
+import { METRICS_PERCENTILES } from "@maple/domain/query-engine"
 import {
 	DashboardTemplateId,
 	DashboardTemplateParameterKey,
@@ -131,7 +132,8 @@ export function chartDisplayForMetric(aggregation: string): WidgetDisplay {
 	if (
 		["avg_duration", "p50_duration", "p95_duration", "p99_duration", "avg", "max", "min"].includes(
 			aggregation,
-		)
+		) ||
+		aggregation in METRICS_PERCENTILES
 	) {
 		return CHART_DISPLAY_LINE
 	}

@@ -5,7 +5,8 @@ import {
 } from "@maple/query-engine/query-builder"
 import { type MetricsQueryDraftSchema, toQueryBuilderMetricType } from "@maple/query-model"
 import type { MetricRow } from "../shared"
-import { Array as Arr, String as Str, Option } from "effect"
+import { METRICS_PERCENTILES } from "@maple/domain/query-engine"
+import { Array as Arr, Record as Rec, String as Str, Option, Schema } from "effect"
 
 export interface QueryState {
 	readonly type?: QueryBuilderMetricType | undefined
@@ -128,9 +129,26 @@ export const queryLabel = (draft: MetricsQueryDraft): string =>
 export const SERVICE_KEY = "service.name"
 export const BREAKDOWN_LIMIT = 10
 
-/** Breakdown supports plain aggregations; counters fall back to count. */
-export const breakdownAggregation = (aggregation: string): "avg" | "sum" | "count" =>
-	aggregation === "avg" || aggregation === "sum" || aggregation === "count" ? aggregation : "count"
+// The aggregations whose result is in the metric's own unit; count and rate are not.
+const UNIT_PRESERVING = new Set<string>([
+	"avg",
+	"min",
+	"max",
+	"sum",
+	"latest",
+	"increase",
+	...Rec.keys(METRICS_PERCENTILES),
+])
+
+/** Whether a value under this aggregation still reads in the metric's declared unit. */
+export const keepsMetricUnit = (aggregation: string): boolean => UNIT_PRESERVING.has(aggregation)
+
+const BreakdownAggregation = Schema.Literals(["avg", "sum", "count", ...Rec.keys(METRICS_PERCENTILES)])
+const isBreakdownAggregation = Schema.is(BreakdownAggregation)
+
+/** The breakdown ranks by the chart's aggregation where one value per group makes sense, else by count. */
+export const breakdownAggregation = (aggregation: string): typeof BreakdownAggregation.Type =>
+	isBreakdownAggregation(aggregation) ? aggregation : "count"
 
 /** The breakdown's group-by column for the chosen key. */
 export const breakdownGroupBy = (key: string): string => (key === SERVICE_KEY ? SERVICE_KEY : `attr.${key}`)

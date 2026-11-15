@@ -25,6 +25,7 @@ import { generateWidgetId, withAddedWidget } from "../../dashboards/kit/layout"
 import { createPayload } from "../../dashboards/kit/portable"
 import { awaitTxid, mutateDashboard, WriteSync } from "../../dashboards/kit/store"
 import { inferDisplayUnitForQuery } from "../../dashboards/widget/drafts"
+import { keepsMetricUnit } from "./derive"
 import { chartUnitFromOtel } from "@maple/views/lib/otel-units"
 import { typography } from "@maple/views/ui/typography"
 import { hstack } from "@maple/views/ui/stack"
@@ -97,14 +98,10 @@ export const explorerTimeRangeOf = (
 const readablePreset = (preset: string | undefined): string | undefined =>
 	preset !== undefined && resolveRelativeRangeToWarehouse(preset, 0, "UTC") !== null ? preset : undefined
 
-// The metrics aggregations whose result is in the metric's own unit; count and rate are not.
-const UNIT_PRESERVING = new Set(["avg", "min", "max", "sum", "latest", "increase"])
-
 /** The declared OTel unit when the aggregation keeps it and the chart can read it, else the inferred one. */
 const displayUnitOf = (draft: typeof MetricsQueryDraftSchema.Type, declaredUnit: string) =>
-	(UNIT_PRESERVING.has(draft.aggregation)
-		? chartUnitFromOtel(declaredUnit, draft.metricName)
-		: undefined) ?? inferDisplayUnitForQuery(draft)
+	(keepsMetricUnit(draft.aggregation) ? chartUnitFromOtel(declaredUnit, draft.metricName) : undefined) ??
+	inferDisplayUnitForQuery(draft)
 
 /** The chart widget with a fresh query id, never the explorer's own. */
 export const widgetOf = (

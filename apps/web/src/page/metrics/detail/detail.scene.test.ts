@@ -10,6 +10,7 @@ import { behindToastContent } from "../../dashboards/kit/store"
 import * as AddToDashboard from "./add-to-dashboard"
 import { MountWhereCaret } from "./command"
 import { appendWhereFilter } from "./derive"
+import * as Select from "@maple/views/ui/select"
 import { CaretMessage } from "./where-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -192,6 +193,22 @@ describe("metric detail", () => {
 		])
 	})
 
+	test("picking an aggregation puts it in the URL, percentiles and latest included", () => {
+		const pick = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotAggregationSelectMessage({
+					message: Select.Message.SelectedItem({ index: 0, value }),
+				}),
+			).outMessage
+		const urlWith = (value: string) =>
+			PageOutMessage.RequestedNavigation({ url: `/metrics/${NAME}?agg=${value}`, isReplace: true })
+		const histogram = loaded([row("payment-svc")])
+		expect(pick(histogram, "sum")).toEqual(urlWith("sum"))
+		expect(pick(histogram, "p95")).toEqual(urlWith("p95"))
+		expect(pick(loaded([row("payment-svc", "gauge")]), "latest")).toEqual(urlWith("latest"))
+	})
+
 	test("the where clause commits after the debounce, and the step only when it changed", () => {
 		const model = loaded([row("payment-svc")])
 		const typed = pageUpdate(model, Message.ChangedWhereInput({ value: 'http.route = "/a"' })).model
@@ -209,6 +226,41 @@ describe("metric detail", () => {
 		expect(pageUpdate(stepped, Message.CommittedStepInput()).outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: `/metrics/${NAME}?step=%22300%22`, isReplace: true }),
 		)
+	})
+
+	test("a percentile ranks the breakdown by that percentile, and min by count", () => {
+		const shown = (agg: "p95" | "min", title: string) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded([row("payment-svc")], { agg })),
+				themeResolved(),
+				Mount.resolve(
+					MountWhereCaret,
+					Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
+				),
+				expectView(text(`${agg}(${NAME})`)).toExist(),
+				expectView(text(title)).toExist(),
+			)
+		shown("p95", "Top values · p95 per value")
+		shown("min", "Top values · count per value")
+	})
+
+	test("the chart names the metric's unit for a percentile and not for a count", () => {
+		const unitLabel = (agg: "p95" | "count") =>
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded([row("payment-svc")], { agg })),
+				themeResolved(),
+				Mount.resolve(
+					MountWhereCaret,
+					Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
+				),
+				agg === "count"
+					? expectView(text("unit: s")).not.toExist()
+					: expectView(text("unit: s")).toExist(),
+			)
+		unitLabel("p95")
+		unitLabel("count")
 	})
 
 	test("the page shows the query, the breakdown and the catalog summary", () => {
