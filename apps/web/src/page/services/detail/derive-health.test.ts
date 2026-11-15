@@ -20,32 +20,35 @@ const point = (index: number, patch: Partial<DetailPoint> = {}): DetailPoint => 
 	...patch,
 })
 
+/** Past every bucket the tests draw. */
+const END = START + 60 * 60_000
+
 const steady = (count: number) => Array.from({ length: count }, (_, index) => point(index))
 
 describe("deriveHealth", () => {
 	test("requests read per second, not per bucket", () => {
-		expect(deriveHealth(steady(10))?.throughput.now).toBe(10)
+		expect(deriveHealth(steady(10), END)?.throughput.now).toBe(10)
 	})
 
 	test("now is the last complete bucket: the filling one is skipped", () => {
 		const points = [...steady(9), point(9, { partial: true, errorRate: 0.5 })]
-		expect(deriveHealth(points)?.errorRate.now).toBe(0.002)
+		expect(deriveHealth(points, END)?.errorRate.now).toBe(0.002)
 	})
 
 	test("an error rate well above the window's turns critical", () => {
 		const points = [...steady(9), point(9, { errorRate: 0.05 })]
-		expect(deriveHealth(points)?.errorRate.tone).toBe("crit")
+		expect(deriveHealth(points, END)?.errorRate.tone).toBe("crit")
 	})
 
 	test("a p95 a quarter above the window's typical bucket turns to a warning", () => {
 		const points = [...steady(9), point(9, { p95LatencyMs: 90 })]
-		const health = deriveHealth(points)
+		const health = deriveHealth(points, END)
 		expect(health?.p95.window).toBe(40)
 		expect(health?.p95.tone).toBe("warn")
 	})
 
 	test("a steady window reads neutral throughout", () => {
-		const health = deriveHealth(steady(10))
+		const health = deriveHealth(steady(10), END)
 		expect([health?.errorRate.tone, health?.p95.tone, health?.apdex.tone]).toEqual([
 			"neutral",
 			"neutral",
@@ -55,7 +58,7 @@ describe("deriveHealth", () => {
 
 	test("a service that went quiet reads 0/s now, in red, with no other figures", () => {
 		const points = [...steady(9), point(9, { totalCount: 0, throughput: 0 })]
-		const health = deriveHealth(points)
+		const health = deriveHealth(points, END)
 		expect(health?.throughput.now).toBe(0)
 		expect(health?.throughput.tone).toBe("crit")
 		expect(health?.errorRate.now).toBeNull()
@@ -66,10 +69,17 @@ describe("deriveHealth", () => {
 			...steady(5),
 			...Array.from({ length: 5 }, (_, i) => point(5 + i, { totalCount: 0, throughput: 0 })),
 		]
-		expect(deriveHealth(points)?.throughput.window).toBe(5)
+		expect(deriveHealth(points, END)?.throughput.window).toBe(5)
 	})
 
 	test("no traffic at all draws no strip", () => {
-		expect(deriveHealth([point(0, { totalCount: 0, throughput: 0 })])).toBeNull()
+		expect(deriveHealth([point(0, { totalCount: 0, throughput: 0 })], END)).toBeNull()
+	})
+
+	test("a past range ending on a bucket boundary does not read its empty last bucket as an outage", () => {
+		const points = [...steady(9), point(9, { totalCount: 0, throughput: 0 })]
+		const health = deriveHealth(points, START + 9 * 60_000)
+		expect(health?.throughput.now).toBe(10)
+		expect(health?.throughput.tone).toBe("neutral")
 	})
 })

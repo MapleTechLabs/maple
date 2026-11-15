@@ -387,11 +387,24 @@ export const releaseVerificationRowSchema = Schema.Struct({
 
 export type ReleaseVerificationOutput = typeof releaseVerificationRowSchema.Type
 
+/** The services one commit reached in the window: what bounds a commit's verification read. */
+export function commitServicesQuery(commitSha: string) {
+	return serviceOverviewWindows({ commitShas: [commitSha] })
+		.select(($) => ({ serviceName: $.bServiceName }))
+		.groupBy("serviceName")
+		.limit(RELEASES_LIST_CAP)
+		.format("JSON")
+}
+
+export const commitServicesRowSchema = Schema.Struct({ serviceName: Schema.String })
+
 export interface ReleaseVerificationOpts {
 	readonly serviceName?: string
 	readonly environments?: readonly string[]
 	/** One commit across every service it reached. */
 	readonly commitSha?: string
+	/** Bounds the minutes read to these services (the ones a commit reached). */
+	readonly serviceNames?: readonly string[]
 	readonly limit?: number
 }
 
@@ -403,6 +416,8 @@ export interface ReleaseVerificationOpts {
 export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
 	const filters = { serviceName: opts.serviceName, environments: opts.environments }
 	const windowMinutes = DEPLOY_VERIFY_WINDOW_SECONDS / 60
+	const inServices = <A extends { bServiceName: CH.Expr<string> }>($: A) =>
+		opts.serviceNames === undefined ? undefined : CH.inList($.bServiceName, opts.serviceNames)
 
 	const deploys = serviceOverviewWindows(filters)
 		.select(($) => ({
@@ -414,6 +429,7 @@ export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
 		.where(($) => [
 			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
 			CH.when(opts.commitSha, (sha: string) => $.bCommitSha.eq(sha)),
+			inServices($),
 		])
 		.groupBy("serviceName", "environment", "commitSha")
 		.having(($) => [CH.min_($.bFirstSeen).gte(param.dateTime("deploysFrom"))])
@@ -442,7 +458,7 @@ export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
 			mErrors: $.bErrorCount,
 			mQuantiles: $.bDurationQuantiles,
 		}))
-		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS)])
+		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS), inServices($)])
 
 	const after = "minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0"
 	const before = "minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0"
@@ -452,8 +468,9 @@ export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
 			T.float64,
 		)
 
+	// A left join: past the minute rollup's retention a deploy still lists, with nothing to judge.
 	return fromQuery(deployMinutes, "deployMinutes")
-		.innerJoinQuery(minutes, "minutes", (deploy, minute) =>
+		.leftJoinQuery(minutes, "minutes", (deploy, minute) =>
 			deploy.dServiceName
 				.eq(minute.mServiceName)
 				.and(deploy.dEnvironment.eq(minute.mEnvironment))

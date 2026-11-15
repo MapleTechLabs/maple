@@ -10,7 +10,7 @@ import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
 import { Effect, Schema, Array as Arr, String as Str } from "effect"
-import { ServiceDeploysRequest, ServiceName } from "@maple/domain/http"
+import { CommitSha, ServiceDeploysRequest, ServiceName } from "@maple/domain/http"
 import { Queries } from "@maple/query-engine/registry"
 import { baselineWarehouseCapabilities } from "@maple/query-engine/observability"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
@@ -162,5 +162,43 @@ describeWithChdb("release verification", () => {
 		expect(v2.value.beforeSpans).toBe(3_000)
 		// v1 was running before the window: the query leaves it out rather than call it a deploy.
 		expect(Arr.some(rows, (row) => row.commitSha === "v1")).toBe(false)
+	})
+
+	test("a commit's read is bounded to the services it reached, as the API runs it", () => {
+		const request = new ServiceDeploysRequest({
+			commitSha: Schema.decodeSync(CommitSha)("w2"),
+			startTime: seconds(DEPLOY_MS - 10 * MINUTE_MS),
+			endTime: seconds(DEPLOY_MS + 3_600_000),
+		})
+		const services = decodeJsonEachRow(CH.commitServicesRowSchema)(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Effect.runSync(
+						Queries.commitServices.compile(
+							{ ...request, commitSha: Schema.decodeSync(CommitSha)("w2") },
+							OrgId.make(ORG),
+							baselineWarehouseCapabilities(),
+						),
+					).sql,
+				),
+			),
+		)
+		expect(Arr.map(services, (row) => row.serviceName)).toEqual(["web"])
+		const rows = decode(
+			db.query(
+				normalizeSqlForClickHouseClient(
+					Effect.runSync(
+						Queries.serviceDeploys.compile(
+							{ ...request, serviceNames: Arr.map(services, (row) => row.serviceName) },
+							OrgId.make(ORG),
+							baselineWarehouseCapabilities(),
+						),
+					).sql,
+				),
+			),
+		)
+		expect(Arr.map(rows, (row) => [row.serviceName, row.commitSha, row.beforeSpans])).toEqual([
+			["web", "w2", 1_500],
+		])
 	})
 })

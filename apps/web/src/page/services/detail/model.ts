@@ -42,6 +42,8 @@ export type DeployRow = typeof DeployRow.Type
 export const ServiceDeploys = Schema.Struct({
 	deploys: Schema.Array(DeployRow),
 	verifyWindowSeconds: Schema.Number,
+	/** The window end this answer was read up to: a refresh in flight must not age its verdicts. */
+	readUntil: Schema.String,
 })
 export type ServiceDeploys = typeof ServiceDeploys.Type
 

@@ -32,6 +32,16 @@ describe("judge", () => {
 		expect(check.verdict).toBe("clean")
 	})
 
+	test("exactly half a point more, twice as often, counts despite float rounding", () => {
+		// 0.4% → 0.9%: 9/1000 - 4/1000 is a hair under 0.005 in floating point.
+		const check = judge(
+			row("a", 45, { beforeErrors: 4, afterErrors: 9, afterSpans: 1000, beforeSpans: 1000 }),
+			WINDOW,
+			NOW,
+		)
+		expect(check.verdict).toBe("errors-up")
+	})
+
 	test("errors from none at all count as up", () => {
 		const check = judge(row("a", 45, { beforeErrors: 0, afterErrors: 60 }), WINDOW, NOW)
 		expect(check.verdict).toBe("errors-up")
@@ -80,6 +90,7 @@ describe("deployChecks", () => {
 					row("new", 58, { environment: "staging", afterErrors: 300 }),
 				],
 				verifyWindowSeconds: WINDOW,
+				readUntil: "2026-11-15 12:00:00",
 			},
 			NOW,
 		)
@@ -96,6 +107,7 @@ describe("leadDeploy and railOrder", () => {
 		{
 			deploys: [row("fresh", 5), row("bad", 120, { afterErrors: 300 }), row("fine", 200)],
 			verifyWindowSeconds: WINDOW,
+			readUntil: "2026-11-15 12:00:00",
 		},
 		NOW,
 	)
@@ -119,16 +131,24 @@ describe("leadDeploy and railOrder", () => {
 
 describe("deployBefore", () => {
 	const checks = deployChecks(
-		{ deploys: [row("first", 120), row("second", 30)], verifyWindowSeconds: WINDOW },
+		{
+			deploys: [row("first", 120), row("second", 30)],
+			verifyWindowSeconds: WINDOW,
+			readUntil: "2026-11-15 12:00:00",
+		},
 		NOW,
 	)
 
 	test("an issue is attributed to the newest deploy before it first appeared", () => {
-		expect(deployBefore(checks, NOW - 10 * MINUTE)?.sha).toBe("second")
-		expect(deployBefore(checks, NOW - 60 * MINUTE)?.sha).toBe("first")
+		expect(deployBefore(checks, NOW - 10 * MINUTE, NOW)?.sha).toBe("second")
+		expect(deployBefore(checks, NOW - 60 * MINUTE, NOW)?.sha).toBe("first")
+	})
+
+	test("an issue first seen after the window ended came with a deploy the window does not show", () => {
+		expect(deployBefore(checks, NOW + 60 * MINUTE, NOW)).toBeUndefined()
 	})
 
 	test("an issue older than every deploy in the window has none", () => {
-		expect(deployBefore(checks, NOW - 200 * MINUTE)).toBeUndefined()
+		expect(deployBefore(checks, NOW - 200 * MINUTE, NOW)).toBeUndefined()
 	})
 })

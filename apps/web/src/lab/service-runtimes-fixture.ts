@@ -92,6 +92,7 @@ export const RUNTIMES_DEPLOYS: ServiceDeploys = {
 		},
 	],
 	verifyWindowSeconds: 1800,
+	readUntil: iso(RUNTIMES_NOW),
 }
 
 export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([

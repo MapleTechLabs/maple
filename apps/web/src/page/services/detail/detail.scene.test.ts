@@ -81,7 +81,7 @@ const withDeploys = (model: Model, deploys: ReadonlyArray<ReturnType<typeof depl
 		model,
 		Message.CompletedFetchDeploys({
 			key: model.deploys.key ?? "",
-			result: Result.succeed({ deploys, verifyWindowSeconds: 1800 }),
+			result: Result.succeed({ deploys, verifyWindowSeconds: 1800, readUntil: "2026-10-01 12:00:00" }),
 		}),
 	)
 
