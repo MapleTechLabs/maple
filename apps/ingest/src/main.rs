@@ -48,7 +48,10 @@ use maple_ingest::aws::CredentialsProvider as AwsCredentialsProvider;
 use maple_ingest::aws_metric_stream;
 use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
 use maple_ingest::decode_budget::{self, DecodeMemory, DecodeReservation, OtlpSignal};
-use maple_ingest::decompress::{gunzip_bounded, gunzip_declared, gunzip_len_bounded, GunzipError};
+use maple_ingest::decompress::{
+    gunzip_bounded, gunzip_declared, gunzip_len_bounded, snappy_declared_len, unsnap_declared,
+    GunzipError, SnappyError,
+};
 use maple_ingest::gcp_logging;
 use maple_ingest::gcp_push_auth::{GooglePushAuth, PushAuthError};
 use maple_ingest::host_identity;
@@ -60,6 +63,7 @@ use maple_ingest::otel::{
     record_stage_error, rejection_loses_data, resolve_config_internal_span, ResourceConfig,
 };
 use maple_ingest::otlp_json;
+use maple_ingest::prometheus_remote_write;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::row_budget::{self, ForwardBody, RowEstimate, ROW_PIECE_BYTES};
 use maple_ingest::session_analytics::{
@@ -1841,12 +1845,15 @@ enum Ingress {
     VercelLogDrain,
     VercelAiGatewayDrain,
     VercelEventDrain(EventDrain),
+    /// Prometheus remote write 1.0, mapped to OTLP metrics.
+    PrometheusRemoteWrite,
 }
 
 impl Ingress {
     fn signal(self) -> Signal {
         match self {
             Self::Otlp(signal) => signal,
+            Self::PrometheusRemoteWrite => Signal::Metrics,
             Self::VercelLogDrain | Self::VercelEventDrain(_) => Signal::Logs,
             Self::VercelAiGatewayDrain => Signal::Traces,
         }
@@ -1858,6 +1865,7 @@ impl Ingress {
             Self::VercelLogDrain => "/v1/logpush/vercel".to_owned(),
             Self::VercelAiGatewayDrain => "/v1/vercel/ai-gateway".to_owned(),
             Self::VercelEventDrain(drain) => drain.route().to_owned(),
+            Self::PrometheusRemoteWrite => prometheus_remote_write::ROUTE.to_owned(),
         }
     }
 }
@@ -3347,28 +3355,7 @@ async fn main() {
 
     let grpc_state = Arc::clone(&state);
     let request_timeout = config.request_timeout;
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/ready", get(ready))
-        .route("/v1/traces", post(handle_traces))
-        .route("/v1/logs", post(handle_logs))
-        .route("/v1/metrics", post(handle_metrics))
-        .route("/v1/sessionReplays/meta", post(handle_replay_meta))
-        .route("/v1/sessionReplays/blob", post(handle_replay_blob))
-        .route("/v1/sessionEvents", post(handle_session_events))
-        .route("/v1/events", post(handle_product_events))
-        .route(
-            "/v1/logpush/cloudflare/http_requests/{connector_id}",
-            post(handle_cloudflare_logpush_http_requests),
-        )
-        .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
-        .route("/v1/logpush/vercel", post(handle_vercel_logpush))
-        .route("/v1/vercel/ai-gateway", post(handle_vercel_ai_gateway))
-        .route("/v1/vercel/{drain}", post(handle_vercel_event_drain))
-        .route(
-            "/v1/firehose/aws/{connection_id}",
-            post(handle_aws_firehose),
-        )
+    let app = ingest_routes()
         .layer(cors)
         .layer(DefaultBodyLimit::max(config.max_request_body_bytes))
         .with_state(state);
@@ -3716,10 +3703,15 @@ async fn decode_grpc_export(
         payload,
         decoded_bytes,
         memory,
+        prometheus: _,
     } = decode_otlp_body(
         state,
         message,
-        gzip,
+        if gzip {
+            BodyEncoding::Gzip
+        } else {
+            BodyEncoding::Identity
+        },
         Ingress::Otlp(signal),
         PayloadFormat::Protobuf,
     )
@@ -4142,6 +4134,36 @@ async fn ready(State(state): State<Arc<AppState>>) -> Response {
     }
 }
 
+/// Every HTTP route the gateway serves, before its layers and state.
+fn ingest_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/health", get(health))
+        .route("/ready", get(ready))
+        .route("/v1/traces", post(handle_traces))
+        .route("/v1/logs", post(handle_logs))
+        .route("/v1/metrics", post(handle_metrics))
+        .route(
+            prometheus_remote_write::ROUTE,
+            post(handle_prometheus_write),
+        )
+        .route("/v1/sessionReplays/meta", post(handle_replay_meta))
+        .route("/v1/sessionReplays/blob", post(handle_replay_blob))
+        .route("/v1/sessionEvents", post(handle_session_events))
+        .route("/v1/events", post(handle_product_events))
+        .route(
+            "/v1/logpush/cloudflare/http_requests/{connector_id}",
+            post(handle_cloudflare_logpush_http_requests),
+        )
+        .route("/v1/logpush/gcp/{connector_id}", post(handle_gcp_logpush))
+        .route("/v1/logpush/vercel", post(handle_vercel_logpush))
+        .route("/v1/vercel/ai-gateway", post(handle_vercel_ai_gateway))
+        .route("/v1/vercel/{drain}", post(handle_vercel_event_drain))
+        .route(
+            "/v1/firehose/aws/{connection_id}",
+            post(handle_aws_firehose),
+        )
+}
+
 // The request entry points (`handle_*`, `handle_*_inner`, `accept_grpc_decoded`)
 // are deliberately not `#[hotpath::measure]`d: wrapping their futures pushed the
 // fully-inlined request state machine over the 2 MB tokio worker stack
@@ -4171,6 +4193,16 @@ async fn handle_metrics(
     body: Bytes,
 ) -> Response {
     handle_signal(state, headers, body, Ingress::Otlp(Signal::Metrics)).await
+}
+
+/// Prometheus remote write, authenticated by the org's ingest key like OTLP,
+/// which Prometheus sends as a bearer token or as the basic-auth password.
+async fn handle_prometheus_write(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    handle_signal(state, headers, body, Ingress::PrometheusRemoteWrite).await
 }
 
 /// A Vercel log drain, authenticated by the org's ingest key like OTLP.
@@ -5864,6 +5896,9 @@ async fn handle_signal(
             span_handle.record("http.response.status_code", status_code);
             span_handle.record("otel.status_code", "Ok");
             metrics::request_completed(signal.path(), "ok", "none", duration.as_secs_f64());
+            if matches!(ingress, Ingress::PrometheusRemoteWrite) {
+                metrics::prometheus_request("ok", "none");
+            }
             // Usage and billing are emitted together, from one value, behind one
             // guard — they must never drift. `signal.path()` is both the Autumn
             // feature id and the metric's `signal` dimension. A paused key reports 0 bytes.
@@ -5884,6 +5919,9 @@ async fn handle_signal(
             span_handle.record("error.type", error_kind);
             record_rejection_reason(&span_handle, status, error_kind, error.reason().as_str());
             metrics::request_completed(signal.path(), "error", error_kind, duration.as_secs_f64());
+            if matches!(ingress, Ingress::PrometheusRemoteWrite) {
+                metrics::prometheus_request("error", error_kind);
+            }
             error.into_response()
         }
     }
@@ -5993,7 +6031,11 @@ async fn handle_signal_inner(
     ingress: Ingress,
 ) -> Result<(Response, usize, String, usize), (ApiError, &'static str)> {
     let signal = ingress.signal();
-    let ingest_key = extract_ingest_key(headers).ok_or_else(|| {
+    let ingest_key = match ingress {
+        Ingress::PrometheusRemoteWrite => extract_prometheus_ingest_key(headers),
+        _ => extract_ingest_key(headers),
+    }
+    .ok_or_else(|| {
         warn!("Missing ingest key");
         (ApiError::unauthorized("Missing ingest key"), "auth")
     })?;
@@ -6125,6 +6167,19 @@ async fn handle_signal_inner(
         Ingress::VercelLogDrain | Ingress::VercelAiGatewayDrain | Ingress::VercelEventDrain(_) => {
             PayloadFormat::Protobuf
         }
+        Ingress::PrometheusRemoteWrite => {
+            if prometheus_remote_write::is_v2_content_type(&content_type) {
+                warn!(content_type = %content_type, "Prometheus remote write 2.0 refused");
+                return Err((
+                    ApiError::unsupported_media_type(
+                        "Prometheus remote write 2.0 is not supported yet; send version 1.0 \
+                         (prometheus.WriteRequest)",
+                    ),
+                    "unsupported_media",
+                ));
+            }
+            PayloadFormat::Protobuf
+        }
     };
     Span::current().record("maple.ingest.payload_format", payload_format.label());
 
@@ -6149,10 +6204,21 @@ async fn handle_signal_inner(
         }
     }
 
-    let gzip = match content_encoding.as_deref() {
-        None => false,
-        Some("gzip") => true,
-        Some(_) => {
+    // A remote write body is always a snappy block, named in the header or not.
+    let encoding = match (ingress, content_encoding.as_deref()) {
+        (Ingress::PrometheusRemoteWrite, None | Some("snappy")) => BodyEncoding::Snappy,
+        (Ingress::PrometheusRemoteWrite, Some(_)) => {
+            metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
+            return Err((
+                ApiError::unsupported_media_type(
+                    "Unsupported content-encoding (Prometheus remote write is snappy)",
+                ),
+                "decode",
+            ));
+        }
+        (_, None) => BodyEncoding::Identity,
+        (_, Some("gzip")) => BodyEncoding::Gzip,
+        (_, Some(_)) => {
             metrics::org_data_loss(&resolved_key.org_id, signal.path(), "decode");
             return Err((
                 ApiError::unsupported_media_type("Unsupported content-encoding"),
@@ -6165,7 +6231,8 @@ async fn handle_signal_inner(
         payload: mut decoded,
         decoded_bytes,
         memory: decode_memory,
-    } = decode_otlp_body(state, body, gzip, ingress, payload_format)
+        prometheus,
+    } = decode_otlp_body(state, body, encoding, ingress, payload_format)
         .await
         .map_err(|DecodeRefusal { error, stage }| {
             warn!(
@@ -6205,6 +6272,9 @@ async fn handle_signal_inner(
             stamp_drain_source(&mut decoded, vercel_ai_gateway_drain::INGEST_SOURCE);
         }
         Ingress::VercelEventDrain(drain) => stamp_drain_source(&mut decoded, drain.ingest_source()),
+        Ingress::PrometheusRemoteWrite => {
+            stamp_drain_source(&mut decoded, prometheus_remote_write::INGEST_SOURCE);
+        }
         Ingress::Otlp(_) => {
             if let DecodedPayload::Traces(request) = &mut decoded {
                 if vercel_traces::has_runtime_resources(request) {
@@ -6224,11 +6294,29 @@ async fn handle_signal_inner(
     debug!(item_count, "Payload enriched");
     metrics::items_accepted(signal.path(), item_count as u64);
 
+    if let Some(stats) = prometheus {
+        metrics::prometheus_samples(stats.samples_accepted, &stats.dropped());
+        debug!(?stats, "Prometheus remote write mapped to OTLP metrics");
+        if item_count == 0 {
+            // Metadata only, or every sample dropped: success, nothing written or billed.
+            return Ok((
+                StatusCode::OK.into_response(),
+                0,
+                resolved_key.org_id.clone(),
+                0,
+            ));
+        }
+    }
+    // The collector is sent OTLP: gzip stays, a remote write's snappy does not.
+    let forward_encoding = content_encoding
+        .as_deref()
+        .filter(|_| !matches!(ingress, Ingress::PrometheusRemoteWrite));
+
     let response_result = process_decoded_payload(
         state,
         signal,
         payload_format,
-        content_encoding.as_deref(),
+        forward_encoding,
         &mut decoded,
         &resolved_key,
         &mut claims.retained,
@@ -7638,6 +7726,26 @@ fn extract_ingest_key(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// A basic-auth header this long is not a username and an ingest key.
+const MAX_BASIC_AUTH_LEN: usize = 1024;
+
+/// The ingest key of a Prometheus remote write: a bearer token or the
+/// `x-maple-ingest-key` header like OTLP, or the basic-auth password, for a
+/// `remote_write` configured with `basic_auth`. The username is ignored.
+fn extract_prometheus_ingest_key(headers: &HeaderMap) -> Option<String> {
+    if let Some(key) = extract_ingest_key(headers) {
+        return Some(key);
+    }
+    let value = headers.get(AUTHORIZATION)?.to_str().ok()?;
+    if value.len() > MAX_BASIC_AUTH_LEN || !value.get(..6)?.eq_ignore_ascii_case("Basic ") {
+        return None;
+    }
+    let decoded = STANDARD.decode(value[6..].trim()).ok()?;
+    let (_username, password) = std::str::from_utf8(&decoded).ok()?.split_once(':')?;
+    let password = password.trim();
+    (!password.is_empty() && password.len() <= MAX_INGEST_KEY_LEN).then(|| password.to_owned())
+}
+
 #[derive(Clone, Copy)]
 enum PayloadFormat {
     Protobuf,
@@ -7730,6 +7838,27 @@ struct DecodedBody {
     payload: DecodedPayload,
     decoded_bytes: usize,
     memory: DecodeReservation,
+    /// What a Prometheus remote write body held, for that ingress only.
+    prometheus: Option<prometheus_remote_write::Stats>,
+}
+
+/// How a request body is compressed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BodyEncoding {
+    Identity,
+    Gzip,
+    /// A snappy block, as Prometheus remote write sends.
+    Snappy,
+}
+
+impl BodyEncoding {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Identity => "identity",
+            Self::Gzip => "gzip",
+            Self::Snappy => "snappy",
+        }
+    }
 }
 
 static INGEST_DECODE_BUSY: FailureKind = FailureKind {
@@ -7748,7 +7877,7 @@ static INGEST_DECODE_BUSY: FailureKind = FailureKind {
 async fn decode_otlp_body(
     state: &AppState,
     body: Bytes,
-    gzip: bool,
+    encoding: BodyEncoding,
     ingress: Ingress,
     payload_format: PayloadFormat,
 ) -> Result<DecodedBody, DecodeRefusal> {
@@ -7771,18 +7900,25 @@ async fn decode_otlp_body(
                 "Ingest gateway is busy decoding other requests; retry shortly",
             )
         };
-        let encoding = if gzip { "gzip" } else { "identity" };
-        let decode_span = parent.in_scope(|| decode_internal_span(encoding, body.len()));
+        let decode_span = parent.in_scope(|| decode_internal_span(encoding.label(), body.len()));
         let payload = {
             let _guard = decode_span.enter();
             // The body is already buffered; counting it sheds the rest of a burst.
             if !reservation.try_add(body.len() as u64) {
                 return Err(refuse(&decode_span, busy(), "decode_busy"));
             }
-            let payload = if gzip {
-                let invalid = || ApiError::bad_request("Invalid gzip body");
-                let declared = decode_budget::gzip_declared_len(&body)
-                    .ok_or_else(|| refuse(&decode_span, invalid(), "decode"))?;
+            let payload = if encoding == BodyEncoding::Identity {
+                body
+            } else {
+                let invalid =
+                    || ApiError::bad_request(format!("Invalid {} body", encoding.label()));
+                // The size the body declares, checked and reserved before it is inflated.
+                let declared = if encoding == BodyEncoding::Gzip {
+                    decode_budget::gzip_declared_len(&body)
+                } else {
+                    snappy_declared_len(&body)
+                }
+                .ok_or_else(|| refuse(&decode_span, invalid(), "decode"))?;
                 let declared = usize::try_from(declared).unwrap_or(usize::MAX);
                 if declared > max_decoded {
                     return Err(refuse(&decode_span, too_large_decoded(), "payload_too_large"));
@@ -7790,16 +7926,23 @@ async fn decode_otlp_body(
                 if !reservation.try_add(declared as u64) {
                     return Err(refuse(&decode_span, busy(), "decode_busy"));
                 }
-                let inflated = gunzip_declared(&body, declared).map_err(|error| match error {
-                    GunzipError::Invalid(_) => refuse(&decode_span, invalid(), "decode"),
-                    GunzipError::TooLarge => {
-                        refuse(&decode_span, too_large_decoded(), "payload_too_large")
-                    }
-                })?;
+                let inflated = if encoding == BodyEncoding::Gzip {
+                    gunzip_declared(&body, declared).map_err(|error| match error {
+                        GunzipError::Invalid(_) => refuse(&decode_span, invalid(), "decode"),
+                        GunzipError::TooLarge => {
+                            refuse(&decode_span, too_large_decoded(), "payload_too_large")
+                        }
+                    })
+                } else {
+                    unsnap_declared(&body, declared).map_err(|error| match error {
+                        SnappyError::Invalid => refuse(&decode_span, invalid(), "decode"),
+                        SnappyError::TooLarge => {
+                            refuse(&decode_span, too_large_decoded(), "payload_too_large")
+                        }
+                    })
+                }?;
                 drop(body);
                 Bytes::from(inflated)
-            } else {
-                body
             };
             decode_span.record("maple.ingest.decoded_bytes", payload.len());
             payload
@@ -7807,6 +7950,7 @@ async fn decode_otlp_body(
         let parse_span =
             parent.in_scope(|| parse_internal_span(payload_format.label(), signal.path()));
         let _guard = parse_span.enter();
+        let mut retained = None;
         // A drain's body is JSON whatever `payload_format` it is forwarded as.
         let estimate = match ingress {
             Ingress::Otlp(_) => otlp_decode_cost(signal, payload_format, &payload, heap_budget),
@@ -7814,28 +7958,58 @@ async fn decode_otlp_body(
             | Ingress::VercelAiGatewayDrain
             | Ingress::VercelEventDrain(_) => decode_budget::json_cost(&payload, heap_budget)
                 .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget)),
+            Ingress::PrometheusRemoteWrite => {
+                prometheus_remote_write::decode_cost(&payload, heap_budget)
+                    .map(|cost| {
+                        // Less than the peak: the decoded request is gone once mapped.
+                        retained = Some(cost.retained);
+                        cost.peak
+                    })
+                    .map_err(|decode_budget::OverBudget| over_decode_budget(heap_budget))
+            }
         }
         .map_err(|error| refuse(&parse_span, error, "payload_too_large"))?;
         parse_span.record("maple.ingest.decode_heap_estimate", estimate);
         if !reservation.try_add(estimate) {
             return Err(refuse(&parse_span, busy(), "decode_busy"));
         }
+        let mut prometheus = None;
         let decoded = match ingress {
             Ingress::Otlp(_) => decode_otlp_payload(signal, payload_format, &payload),
             Ingress::VercelLogDrain => decode_vercel_logs(&payload),
             Ingress::VercelAiGatewayDrain => decode_vercel_ai_gateway(&payload),
             Ingress::VercelEventDrain(drain) => decode_vercel_event_drain(drain, &payload),
+            Ingress::PrometheusRemoteWrite => {
+                decode_prometheus_remote_write(&payload).map(|(decoded, stats)| {
+                    prometheus = Some(stats);
+                    decoded
+                })
+            }
         }
         .map_err(|error| refuse(&parse_span, error, "enrich"))?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
+        // A remote write is metered as the OTLP it becomes. On the wire a series carries
+        // its labels once and every stored point carries them, so the wire size would
+        // let a series with many samples store far more than it is billed for.
+        let decoded_bytes = match (&decoded, ingress) {
+            (DecodedPayload::Metrics(request), Ingress::PrometheusRemoteWrite) => {
+                request.encoded_len()
+            }
+            _ => payload.len(),
+        };
+        // Everything after decoding is sized for a body of at most `max_decoded` bytes,
+        // so a write may not fan out into more OTLP than an OTLP request may carry.
+        if matches!(ingress, Ingress::PrometheusRemoteWrite) && decoded_bytes > max_decoded {
+            return Err(refuse(&parse_span, too_large_mapped(), "payload_too_large"));
+        }
         // Only the decoded form outlives this closure; the buffers go with it.
-        let decoded_bytes = payload.len();
         drop(payload);
-        reservation.shrink_to(estimate);
+        reservation.shrink_to(retained.unwrap_or(estimate));
         Ok(DecodedBody {
             payload: decoded,
             decoded_bytes,
             memory: reservation,
+            prometheus,
         })
     })
     .await
@@ -7850,6 +8024,13 @@ async fn decode_otlp_body(
 
 fn too_large_decoded() -> ApiError {
     ApiError::payload_too_large("Decompressed request body too large")
+}
+
+fn too_large_mapped() -> ApiError {
+    ApiError::payload_too_large(
+        "This remote write holds more metric data than one request may carry; send fewer \
+         samples per request",
+    )
 }
 
 #[hotpath::measure]
@@ -7890,6 +8071,17 @@ fn decode_otlp_payload(
             Ok(DecodedPayload::Metrics(request))
         }
     }
+}
+
+fn decode_prometheus_remote_write(
+    payload: &[u8],
+) -> Result<(DecodedPayload, prometheus_remote_write::Stats), ApiError> {
+    let (request, stats) = prometheus_remote_write::decode(payload).map_err(|_| {
+        ApiError::bad_request(
+            "Invalid Prometheus remote write payload (expected a prometheus.WriteRequest)",
+        )
+    })?;
+    Ok((DecodedPayload::Metrics(request), stats))
 }
 
 fn decode_vercel_logs(payload: &[u8]) -> Result<DecodedPayload, ApiError> {
@@ -7954,7 +8146,11 @@ fn stamp_drain_source(decoded: &mut DecodedPayload, source: &str) {
             .iter_mut()
             .map(|resource_span| &mut resource_span.resource)
             .collect(),
-        DecodedPayload::Metrics(_) => return,
+        DecodedPayload::Metrics(request) => request
+            .resource_metrics
+            .iter_mut()
+            .map(|resource_metric| &mut resource_metric.resource)
+            .collect(),
     };
     for resource in resources.into_iter().flatten() {
         upsert_string_attribute(&mut resource.attributes, "maple_ingest_source", source);
@@ -13744,6 +13940,16 @@ mod tests {
         state: &mut AppState,
         queue_dir: &std::path::Path,
     ) -> TinybirdImports {
+        let imports = store_in_fake_tinybird(state, &queue_dir.join("audit-trail")).await;
+        state.config.audit_trail_enabled = true;
+        imports
+    }
+
+    /// Switches `state` to the native pipeline, writing to a fake Tinybird the test can read.
+    async fn store_in_fake_tinybird(
+        state: &mut AppState,
+        queue_dir: &std::path::Path,
+    ) -> TinybirdImports {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
@@ -13759,7 +13965,7 @@ mod tests {
             TinybirdConfig {
                 endpoint,
                 token: "token".to_owned(),
-                ..test_tinybird_config(queue_dir.join("audit-trail"))
+                ..test_tinybird_config(queue_dir.to_path_buf())
             },
             Client::builder()
                 .timeout(Duration::from_secs(5))
@@ -13767,9 +13973,8 @@ mod tests {
                 .unwrap(),
         )
         .await
-        .expect("the audit trail pipeline should start");
+        .expect("the native pipeline should start");
         state.config.write_mode = WriteMode::Tinybird;
-        state.config.audit_trail_enabled = true;
         state.telemetry_pipeline = Some(pipeline);
         rx
     }
@@ -20503,5 +20708,806 @@ mod tests {
              ($9, $10, to_timestamp($11::bigint / 1000.0), $12, $13::bigint, $14::bigint, $15::bigint, $16::bigint)"
         ));
         assert!(sql.contains("dropped_bytes = org_ingest_rule_stats.dropped_bytes + EXCLUDED.dropped_bytes"));
+    }
+
+    /// Prometheus remote write, posted over HTTP to the gateway's own routes.
+    mod prometheus_write {
+        use super::*;
+        use maple_ingest::prometheus_remote_write::{
+            Label, MetricMetadata, MetricType, Sample, TimeSeries, WriteRequest, STALE_NAN_BITS,
+        };
+
+        const T0: i64 = 1_700_000_000_000;
+
+        fn series(labels: &[(&str, &str)], samples: &[(f64, i64)]) -> TimeSeries {
+            TimeSeries {
+                labels: labels
+                    .iter()
+                    .map(|(name, value)| Label {
+                        name: (*name).to_owned(),
+                        value: (*value).to_owned(),
+                    })
+                    .collect(),
+                samples: samples
+                    .iter()
+                    .map(|&(value, timestamp)| Sample { value, timestamp })
+                    .collect(),
+                exemplars: Vec::new(),
+                histograms: Vec::new(),
+            }
+        }
+
+        fn snappy(plain: &[u8]) -> Vec<u8> {
+            snap::raw::Encoder::new().compress_vec(plain).unwrap()
+        }
+
+        /// One scrape of an `api` target as Prometheus would write it: a counter, a
+        /// gauge, two buckets of a classic histogram, and what Maple does not store.
+        fn scrape() -> WriteRequest {
+            let target = [("instance", "10.0.0.1:9090"), ("job", "api")];
+            let with = |name: &'static str, extra: &[(&'static str, &'static str)]| {
+                let mut labels = vec![("__name__", name)];
+                labels.extend_from_slice(extra);
+                labels.extend_from_slice(&target);
+                labels
+            };
+            WriteRequest {
+                timeseries: vec![
+                    series(
+                        &with("http_requests_total", &[("code", "200")]),
+                        &[(1027.0, T0)],
+                    ),
+                    series(&with("process_resident_memory_bytes", &[]), &[(5.5e7, T0)]),
+                    series(
+                        &with("rpc_duration_seconds_bucket", &[("le", "0.5")]),
+                        &[(12.0, T0)],
+                    ),
+                    series(
+                        &with("rpc_duration_seconds_bucket", &[("le", "+Inf")]),
+                        &[(20.0, T0)],
+                    ),
+                    series(&with("up", &[]), &[(f64::from_bits(STALE_NAN_BITS), T0)]),
+                    series(&target, &[(1.0, T0)]),
+                ],
+                metadata: vec![MetricMetadata {
+                    kind: MetricType::Gauge.into(),
+                    metric_family_name: "process_resident_memory_bytes".to_owned(),
+                    help: "Resident memory size in bytes.".to_owned(),
+                    unit: "bytes".to_owned(),
+                }],
+            }
+        }
+
+        /// A gateway with one private key, forwarding to `forward_endpoint`.
+        async fn gateway_state(
+            raw_key: &str,
+            org_id: &str,
+            queue_dir: &std::path::Path,
+            forward_endpoint: String,
+        ) -> AppState {
+            let store = Arc::new(FakeKeyStore::default());
+            store.insert_private(
+                raw_key,
+                KeyRow {
+                    org_id: org_id.to_owned(),
+                    self_managed: false,
+                    clickhouse_ready: false,
+                },
+            );
+            test_app_state(
+                store,
+                queue_dir.to_path_buf(),
+                forward_endpoint,
+                Duration::from_secs(30),
+            )
+            .await
+        }
+
+        /// Serves the gateway's routes on a local port; returns the remote write URL.
+        async fn serve(state: AppState) -> String {
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let url = format!(
+                "http://{}{}",
+                listener.local_addr().unwrap(),
+                prometheus_remote_write::ROUTE
+            );
+            let app = ingest_routes().with_state(Arc::new(state));
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            url
+        }
+
+        /// A request with the headers Prometheus sets on a 1.0 remote write.
+        fn remote_write(url: &str, body: Vec<u8>) -> reqwest::RequestBuilder {
+            Client::new()
+                .post(url)
+                .header(CONTENT_ENCODING, "snappy")
+                .header(CONTENT_TYPE, "application/x-protobuf")
+                .header("X-Prometheus-Remote-Write-Version", "0.1.0")
+                .header("User-Agent", "Prometheus/3.5.0")
+                .body(body)
+        }
+
+        /// The response's status and the `code` of its error envelope.
+        async fn outcome(request: reqwest::RequestBuilder) -> (StatusCode, String) {
+            let response = request.send().await.expect("the gateway answers");
+            let status = response.status();
+            let body: serde_json::Value = response.json().await.unwrap_or_default();
+            (
+                status,
+                body["error"]["code"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+        }
+
+        /// A collector for `WriteMode::Forward` that keeps what it is sent at `/v1/metrics`.
+        async fn spawn_metrics_collector() -> (
+            String,
+            tokio::sync::mpsc::UnboundedReceiver<(HeaderMap, Bytes)>,
+        ) {
+            async fn capture(
+                State(tx): State<tokio::sync::mpsc::UnboundedSender<(HeaderMap, Bytes)>>,
+                headers: HeaderMap,
+                body: Bytes,
+            ) -> StatusCode {
+                drop(tx.send((headers, body)));
+                StatusCode::OK
+            }
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .unwrap();
+            let addr = listener.local_addr().unwrap();
+            let app = Router::new()
+                .route("/v1/metrics", post(capture))
+                .with_state(tx);
+            tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            (format!("http://{addr}"), rx)
+        }
+
+        /// Rows the fake Tinybird received, by datasource, until `expected` rows arrived.
+        async fn imported_rows(
+            imports: &mut TinybirdImports,
+            expected: usize,
+        ) -> HashMap<String, Vec<serde_json::Value>> {
+            let mut rows: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+            while rows.values().map(Vec::len).sum::<usize>() < expected {
+                let (datasource, ndjson) =
+                    tokio::time::timeout(Duration::from_secs(5), imports.recv())
+                        .await
+                        .expect("the rows are exported")
+                        .expect("the import channel stays open");
+                rows.entry(datasource).or_default().extend(
+                    ndjson
+                        .lines()
+                        .map(|line| serde_json::from_str(line).expect("a row is JSON")),
+                );
+            }
+            rows
+        }
+
+        #[tokio::test]
+        async fn a_remote_write_is_stored_as_otlp_metric_rows() {
+            let queue_dir = unique_main_test_dir("prometheus-native");
+            let raw_key = "maple_sk_test_prometheus_native";
+            let mut state = gateway_state(
+                raw_key,
+                "org_prometheus",
+                &queue_dir,
+                "http://127.0.0.1:1".to_owned(),
+            )
+            .await;
+            let mut imports = store_in_fake_tinybird(&mut state, &queue_dir.join("native")).await;
+            let (state, mut autumn) = with_fake_autumn(state).await;
+            let url = serve(state).await;
+
+            let plain = scrape().encode_to_vec();
+            let response = remote_write(&url, snappy(&plain))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let rows = imported_rows(&mut imports, 4).await;
+            // (name, value, is_monotonic, aggregation_temporality), then the `le` attribute.
+            let sums: Vec<_> = rows["metrics_sum"]
+                .iter()
+                .map(|row| {
+                    (
+                        row["metric_name"].as_str().unwrap(),
+                        row["value"].as_f64().unwrap(),
+                        row["is_monotonic"].as_bool().unwrap(),
+                        row["aggregation_temporality"].as_i64().unwrap(),
+                        row["metric_attributes"]["le"].as_str(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                sums,
+                vec![
+                    ("http_requests_total", 1027.0, true, 2, None),
+                    ("rpc_duration_seconds_bucket", 12.0, true, 2, Some("0.5")),
+                    ("rpc_duration_seconds_bucket", 20.0, true, 2, Some("+Inf")),
+                ]
+            );
+            let counter = &rows["metrics_sum"][0];
+            assert_eq!(
+                counter["metric_attributes"],
+                serde_json::json!({ "code": "200", "instance": "10.0.0.1:9090", "job": "api" })
+            );
+            assert_eq!(
+                counter["resource_attributes"],
+                serde_json::json!({
+                    "maple_ingest_key_type": "private",
+                    "maple_ingest_source": "prometheus-remote-write",
+                    "maple_org_id": "org_prometheus",
+                    "service.instance.id": "10.0.0.1:9090",
+                    "service.name": "api",
+                })
+            );
+            assert_eq!(counter["service_name"], "api");
+            assert_eq!(counter["scope_name"], "maple-prometheus-remote-write");
+            assert_eq!(counter["timestamp"], "2023-11-14 22:13:20.000000000");
+            assert_eq!(
+                counter["start_timestamp"], "1970-01-01 00:00:00.000000000",
+                "remote write does not say when a series started"
+            );
+            assert_eq!(counter["flags"], 0);
+
+            // The stale `up` sample and the series without a name left no row.
+            assert_eq!(rows["metrics_gauge"].len(), 1);
+            let gauge = &rows["metrics_gauge"][0];
+            assert_eq!(gauge["metric_name"], "process_resident_memory_bytes");
+            assert_eq!(gauge["value"], 5.5e7);
+            assert_eq!(gauge["metric_unit"], "bytes");
+            assert_eq!(
+                gauge["metric_description"],
+                "Resident memory size in bytes."
+            );
+            assert_eq!(rows.len(), 2, "only sums and gauges: {:?}", rows.keys());
+
+            // Metered once, as metrics, on the size of the OTLP request it was mapped to.
+            let (mapped, _) = prometheus_remote_write::decode(&plain).unwrap();
+            let calls = drain_autumn_calls(&mut autumn).await;
+            assert_eq!(
+                tracked(&calls),
+                vec![("metrics", billable_gb(mapped.encoded_len() as u64))],
+                "{calls:?}"
+            );
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn many_samples_of_one_series_are_metered_for_what_they_store() {
+            let queue_dir = unique_main_test_dir("prometheus-metered");
+            let raw_key = "maple_sk_test_prometheus_metered";
+            let mut state = gateway_state(
+                raw_key,
+                "org_prometheus_metered",
+                &queue_dir,
+                "http://127.0.0.1:1".to_owned(),
+            )
+            .await;
+            let mut imports = store_in_fake_tinybird(&mut state, &queue_dir.join("native")).await;
+            let (state, mut autumn) = with_fake_autumn(state).await;
+            let url = serve(state).await;
+
+            // One series with wide labels and 200 samples: the labels cross the wire once
+            // and are stored 200 times.
+            let wide = "x".repeat(200);
+            let names: Vec<String> = (0..8).map(|i| format!("label_{i}")).collect();
+            let mut pairs: Vec<(&str, &str)> = vec![("__name__", "queue_depth"), ("job", "api")];
+            pairs.extend(names.iter().map(|name| (name.as_str(), wide.as_str())));
+            let samples: Vec<(f64, i64)> = (0..200_i32)
+                .map(|i| (f64::from(i), T0 + i64::from(i) * 1000))
+                .collect();
+            let plain = WriteRequest {
+                timeseries: vec![series(&pairs, &samples)],
+                metadata: Vec::new(),
+            }
+            .encode_to_vec();
+
+            let response = remote_write(&url, snappy(&plain))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let rows = imported_rows(&mut imports, 200).await;
+            assert_eq!(rows["metrics_gauge"].len(), 200);
+
+            let calls = drain_autumn_calls(&mut autumn).await;
+            let billed = tracked(&calls);
+            assert_eq!(billed.len(), 1, "{calls:?}");
+            // The wire form is about 5 kB; what is stored, and billed, is over fifty times that.
+            assert!(
+                billed[0].1 > billable_gb(50 * plain.len() as u64),
+                "billed {:?} for {} wire bytes",
+                billed[0].1,
+                plain.len()
+            );
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_remote_write_is_forwarded_to_the_collector_as_otlp() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-forward");
+            let raw_key = "maple_sk_test_prometheus_forward";
+            let state =
+                gateway_state(raw_key, "org_prometheus_forward", &queue_dir, forward_url).await;
+            let url = serve(state).await;
+
+            let response = remote_write(&url, snappy(&scrape().encode_to_vec()))
+                .basic_auth("maple", Some(raw_key))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let (headers, body) = tokio::time::timeout(Duration::from_secs(2), forwarded.recv())
+                .await
+                .expect("the batch is forwarded")
+                .expect("the collector channel stays open");
+            assert_eq!(headers[CONTENT_TYPE], "application/x-protobuf");
+            assert!(
+                !headers.contains_key(CONTENT_ENCODING),
+                "the collector is sent OTLP, not the sender's snappy"
+            );
+            let request = ExportMetricsServiceRequest::decode(body).expect("OTLP metrics");
+            assert_eq!(request.resource_metrics.len(), 1);
+            let resource = string_attributes(
+                &request.resource_metrics[0]
+                    .resource
+                    .as_ref()
+                    .unwrap()
+                    .attributes,
+            );
+            assert_eq!(resource["service.name"], "api");
+            assert_eq!(resource["service.instance.id"], "10.0.0.1:9090");
+            assert_eq!(resource["maple_org_id"], "org_prometheus_forward");
+            assert_eq!(resource["maple_ingest_source"], "prometheus-remote-write");
+            let metrics: Vec<_> = request.resource_metrics[0].scope_metrics[0]
+                .metrics
+                .iter()
+                .map(|metric| {
+                    let kind = match &metric.data {
+                        Some(metric::Data::Sum(sum)) if sum.is_monotonic => "monotonic_sum",
+                        Some(metric::Data::Gauge(_)) => "gauge",
+                        other => panic!("{} became {other:?}", metric.name),
+                    };
+                    (metric.name.as_str(), kind)
+                })
+                .collect();
+            assert_eq!(
+                metrics,
+                vec![
+                    ("http_requests_total", "monotonic_sum"),
+                    ("process_resident_memory_bytes", "gauge"),
+                    ("rpc_duration_seconds_bucket", "monotonic_sum"),
+                ]
+            );
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn the_ingest_key_is_read_from_every_place_prometheus_can_put_it() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-auth");
+            let raw_key = "maple_sk_test_prometheus_auth";
+            let state =
+                gateway_state(raw_key, "org_prometheus_auth", &queue_dir, forward_url).await;
+            let url = serve(state).await;
+            let body = || snappy(&scrape().encode_to_vec());
+            let basic = |credentials: &str| format!("Basic {}", STANDARD.encode(credentials));
+
+            // `authorization.credentials`, `basic_auth.password` under any username, and
+            // the header OTLP senders use.
+            let accepted = [
+                remote_write(&url, body()).bearer_auth(raw_key),
+                remote_write(&url, body()).basic_auth("maple", Some(raw_key)),
+                remote_write(&url, body()).basic_auth("", Some(raw_key)),
+                remote_write(&url, body()).header(
+                    AUTHORIZATION,
+                    format!("basic {}", STANDARD.encode(format!("x:{raw_key}"))),
+                ),
+                remote_write(&url, body()).header("x-maple-ingest-key", raw_key),
+            ];
+            for request in accepted {
+                assert_eq!(outcome(request).await, (StatusCode::OK, String::new()));
+                tokio::time::timeout(Duration::from_secs(2), forwarded.recv())
+                    .await
+                    .expect("an authenticated write is forwarded")
+                    .expect("the collector channel stays open");
+            }
+
+            let refused = [
+                ("no credential", remote_write(&url, body())),
+                (
+                    "an unknown bearer token",
+                    remote_write(&url, body()).bearer_auth("maple_sk_test_unknown"),
+                ),
+                (
+                    "an unknown password",
+                    remote_write(&url, body()).basic_auth("maple", Some("maple_sk_test_unknown")),
+                ),
+                (
+                    "the key as the username",
+                    remote_write(&url, body()).basic_auth(raw_key, None::<&str>),
+                ),
+                (
+                    "an empty password",
+                    remote_write(&url, body()).basic_auth(raw_key, Some("")),
+                ),
+                (
+                    "basic auth that is not base64",
+                    remote_write(&url, body()).header(AUTHORIZATION, "Basic not base64!"),
+                ),
+                (
+                    "basic auth without a colon",
+                    remote_write(&url, body()).header(AUTHORIZATION, basic(raw_key)),
+                ),
+                (
+                    "another scheme",
+                    remote_write(&url, body()).header(AUTHORIZATION, format!("Digest {raw_key}")),
+                ),
+            ];
+            for (case, request) in refused {
+                assert_eq!(
+                    outcome(request).await,
+                    (StatusCode::UNAUTHORIZED, "ingest_unauthorized".to_owned()),
+                    "{case}"
+                );
+            }
+            assert!(
+                forwarded.try_recv().is_err(),
+                "an unauthenticated write stores nothing"
+            );
+
+            // The public test token looks accepted and stores nothing, as on OTLP.
+            assert_eq!(
+                outcome(remote_write(&url, body()).bearer_auth(SENTINEL_TOKEN)).await,
+                (StatusCode::OK, String::new())
+            );
+            assert!(forwarded.try_recv().is_err());
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_source_token_is_held_to_its_signals_and_rate_like_otlp_metrics() {
+            let (forward_url, _forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-source");
+            let store = Arc::new(FakeKeyStore::default());
+            let logs_only = "maple_src_prometheus_logs_only_00000000000000";
+            let limited = "maple_src_prometheus_one_per_second_000000000";
+            store.insert_source(
+                logs_only,
+                source_row(
+                    "org_prometheus_source",
+                    source_config(Some(r#"["logs"]"#), None, "[]"),
+                ),
+            );
+            store.insert_source(
+                limited,
+                source_row(
+                    "org_prometheus_source",
+                    source_config(Some(r#"["metrics"]"#), Some(1), "[]"),
+                ),
+            );
+            let state = test_app_state(
+                store,
+                queue_dir.clone(),
+                forward_url,
+                Duration::from_secs(30),
+            )
+            .await;
+            let url = serve(state).await;
+            let body = || snappy(&scrape().encode_to_vec());
+
+            assert_eq!(
+                outcome(remote_write(&url, body()).bearer_auth(logs_only)).await,
+                (
+                    StatusCode::FORBIDDEN,
+                    "ingest_signal_not_allowed".to_owned()
+                )
+            );
+
+            assert_eq!(
+                outcome(remote_write(&url, body()).bearer_auth(limited)).await,
+                (StatusCode::OK, String::new())
+            );
+            // Prometheus retries a 429 after the delay the gateway names.
+            let throttled = remote_write(&url, body())
+                .bearer_auth(limited)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(throttled.headers()[RETRY_AFTER], "1");
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_body_that_is_not_a_snappy_write_request_is_a_400() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-malformed");
+            let raw_key = "maple_sk_test_prometheus_malformed";
+            let state =
+                gateway_state(raw_key, "org_prometheus_malformed", &queue_dir, forward_url).await;
+            let url = serve(state).await;
+
+            let plain = scrape().encode_to_vec();
+            let valid = snappy(&plain);
+            let mut framed = Vec::new();
+            {
+                let mut encoder = snap::write::FrameEncoder::new(&mut framed);
+                encoder.write_all(&plain).unwrap();
+                encoder.flush().unwrap();
+            }
+            let cases = [
+                ("an empty body", Vec::new()),
+                ("the protobuf uncompressed", plain.clone()),
+                (
+                    "a truncated snappy block",
+                    valid[..valid.len() / 2].to_vec(),
+                ),
+                ("the snappy framed format", framed),
+                ("a gzip body", gzip_bytes(&plain).to_vec()),
+                ("snappy of something else", snappy(b"{\"timeseries\":[]}")),
+                (
+                    "snappy of a truncated request",
+                    snappy(&plain[..plain.len() - 3]),
+                ),
+            ];
+            for (case, body) in cases {
+                assert_eq!(
+                    outcome(remote_write(&url, body).bearer_auth(raw_key)).await,
+                    (StatusCode::BAD_REQUEST, "ingest_bad_request".to_owned()),
+                    "{case}"
+                );
+            }
+            assert!(
+                forwarded.try_recv().is_err(),
+                "a refused body stores nothing"
+            );
+
+            // Without the header the body is still read as snappy.
+            let unlabelled = Client::new().post(&url).bearer_auth(raw_key).body(valid);
+            assert_eq!(outcome(unlabelled).await, (StatusCode::OK, String::new()));
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn version_2_and_other_encodings_are_a_415() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-unsupported");
+            let raw_key = "maple_sk_test_prometheus_unsupported";
+            let state = gateway_state(
+                raw_key,
+                "org_prometheus_unsupported",
+                &queue_dir,
+                forward_url,
+            )
+            .await;
+            let url = serve(state).await;
+            let plain = scrape().encode_to_vec();
+
+            // Each sets its own `Content-Type`: `header` would add a second one.
+            let typed = |content_type: &'static str| {
+                Client::new()
+                    .post(&url)
+                    .bearer_auth(raw_key)
+                    .header(CONTENT_ENCODING, "snappy")
+                    .header(CONTENT_TYPE, content_type)
+                    .body(snappy(&plain))
+            };
+            let v2 = typed("application/x-protobuf;proto=io.prometheus.write.v2.Request")
+                .header("X-Prometheus-Remote-Write-Version", "2.0.0")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(v2.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+            let body: serde_json::Value = v2.json().await.unwrap();
+            assert_eq!(
+                body["error"]["message"],
+                "Prometheus remote write 2.0 is not supported yet; send version 1.0 \
+                 (prometheus.WriteRequest)"
+            );
+
+            // The parameter may be a quoted string.
+            let quoted = typed("application/x-protobuf; proto=\"io.prometheus.write.v2.Request\"");
+            assert_eq!(
+                outcome(quoted).await,
+                (
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "ingest_unsupported_media_type".to_owned()
+                )
+            );
+
+            // The version 1.0 content type, spelled out, is accepted.
+            let v1 = typed("application/x-protobuf;proto=prometheus.WriteRequest");
+            assert_eq!(outcome(v1).await, (StatusCode::OK, String::new()));
+            assert!(forwarded.recv().await.is_some());
+
+            for encoding in ["gzip", "zstd"] {
+                let request = Client::new()
+                    .post(&url)
+                    .bearer_auth(raw_key)
+                    .header(CONTENT_ENCODING, encoding)
+                    .body(gzip_bytes(&plain));
+                assert_eq!(
+                    outcome(request).await,
+                    (
+                        StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                        "ingest_unsupported_media_type".to_owned()
+                    ),
+                    "{encoding}"
+                );
+            }
+            assert!(forwarded.try_recv().is_err());
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_write_that_inflates_or_decodes_past_the_limits_is_a_413() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-too-large");
+            let raw_key = "maple_sk_test_prometheus_too_large";
+            let mut state =
+                gateway_state(raw_key, "org_prometheus_too_large", &queue_dir, forward_url).await;
+            state.config.max_decoded_body_bytes = 64 * 1024;
+            state.config.max_decode_heap_bytes = 4 * 1024 * 1024;
+            let memory = state.decode_memory.clone();
+            let url = serve(state).await;
+            let too_large = (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "ingest_payload_too_large".to_owned(),
+            );
+
+            // Five bytes that declare 4 GiB: refused on the header, nothing inflated.
+            let bomb = vec![0xff, 0xff, 0xff, 0xff, 0x0f];
+            assert_eq!(
+                outcome(remote_write(&url, bomb).bearer_auth(raw_key)).await,
+                too_large
+            );
+            // A real block one byte past the ceiling.
+            let over = snappy(&vec![0_u8; 64 * 1024 + 1]);
+            assert!(over.len() < 8 * 1024, "{} compressed bytes", over.len());
+            assert_eq!(
+                outcome(remote_write(&url, over).bearer_auth(raw_key)).await,
+                too_large
+            );
+
+            // Under the byte ceiling, but one series with 2,000 samples is 2,000 copies
+            // of its labels: over the heap one request may decode into.
+            let samples: Vec<_> = (0..2_000).map(|i| (1.0, T0 + i)).collect();
+            let labels: Vec<(String, String)> = (0..40)
+                .map(|i| (format!("label_{i}"), "v".repeat(32)))
+                .collect();
+            let mut all = vec![("__name__", "wide_total")];
+            all.extend(
+                labels
+                    .iter()
+                    .map(|(name, value)| (name.as_str(), value.as_str())),
+            );
+            let wide = WriteRequest {
+                timeseries: vec![series(&all, &samples)],
+                metadata: Vec::new(),
+            }
+            .encode_to_vec();
+            assert!(wide.len() < 64 * 1024, "{} decoded bytes", wide.len());
+            let refused = remote_write(&url, snappy(&wide))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            let body: serde_json::Value = refused.json().await.unwrap();
+            assert_eq!(
+                body["error"]["message"],
+                "Request decodes past the 4 MiB the gateway allows one request; send smaller batches"
+            );
+
+            // Inside both of those, but 300 samples of one series with 1 kB of labels map
+            // to more OTLP than the 64 kB an OTLP request may carry here.
+            let samples: Vec<_> = (0..300).map(|i| (1.0, T0 + i)).collect();
+            let value = "v".repeat(1024);
+            let fan_out = WriteRequest {
+                timeseries: vec![series(
+                    &[("__name__", "fan_out"), ("payload", value.as_str())],
+                    &samples,
+                )],
+                metadata: Vec::new(),
+            }
+            .encode_to_vec();
+            assert!(fan_out.len() < 8 * 1024, "{} decoded bytes", fan_out.len());
+            let refused = remote_write(&url, snappy(&fan_out))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            let body: serde_json::Value = refused.json().await.unwrap();
+            assert_eq!(
+                body["error"]["message"],
+                "This remote write holds more metric data than one request may carry; send fewer \
+                 samples per request"
+            );
+
+            assert!(
+                forwarded.try_recv().is_err(),
+                "a refused body stores nothing"
+            );
+            assert_eq!(memory.reserved_bytes(), 0, "every reservation was returned");
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn an_org_over_its_plan_limit_is_refused_before_the_body_is_read() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-billing");
+            let raw_key = "maple_sk_test_prometheus_denied";
+            let state = with_autumn_denying(
+                gateway_state(raw_key, "org_prometheus_denied", &queue_dir, forward_url).await,
+                "org_prometheus_denied",
+            )
+            .await;
+            let url = serve(state).await;
+
+            // Not a snappy body: the plan limit answers first, as on OTLP metrics.
+            let request = remote_write(&url, b"not snappy".to_vec()).bearer_auth(raw_key);
+            assert_eq!(
+                outcome(request).await,
+                (
+                    StatusCode::PAYMENT_REQUIRED,
+                    "ingest_plan_limit_reached".to_owned()
+                )
+            );
+            assert!(forwarded.try_recv().is_err());
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn a_write_with_nothing_to_store_is_accepted_and_not_metered() {
+            let (forward_url, mut forwarded) = spawn_metrics_collector().await;
+            let queue_dir = unique_main_test_dir("prometheus-empty");
+            let raw_key = "maple_sk_test_prometheus_empty";
+            let state =
+                gateway_state(raw_key, "org_prometheus_empty", &queue_dir, forward_url).await;
+            let (state, mut autumn) = with_fake_autumn(state).await;
+            let url = serve(state).await;
+
+            // Prometheus sends metadata on its own, in requests without series.
+            let metadata_only = WriteRequest {
+                timeseries: Vec::new(),
+                metadata: scrape().metadata,
+            };
+            let only_stale = WriteRequest {
+                timeseries: vec![series(
+                    &[("__name__", "up"), ("job", "api")],
+                    &[(f64::from_bits(STALE_NAN_BITS), T0)],
+                )],
+                metadata: Vec::new(),
+            };
+            for request in [WriteRequest::default(), metadata_only, only_stale] {
+                let body = snappy(&request.encode_to_vec());
+                assert_eq!(
+                    outcome(remote_write(&url, body).bearer_auth(raw_key)).await,
+                    (StatusCode::OK, String::new())
+                );
+            }
+            assert!(forwarded.try_recv().is_err(), "nothing is forwarded");
+            let calls = drain_autumn_calls(&mut autumn).await;
+            assert!(tracked(&calls).is_empty(), "nothing is metered: {calls:?}");
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
     }
 }

@@ -23,6 +23,7 @@ Every signal reaches Maple through one OTLP gateway. Any OpenTelemetry SDK or Co
 | `POST /v1/traces`           | OTLP `ExportTraceServiceRequest`                                                   |
 | `POST /v1/logs`             | OTLP `ExportLogsServiceRequest`                                                    |
 | `POST /v1/metrics`          | OTLP `ExportMetricsServiceRequest`                                                 |
+| `POST /v1/prometheus/write` | Prometheus [remote write](/docs/integrations/prometheus#remote-write) 1.0          |
 | `POST /v1/events`           | [Product events](/docs/product-events/api)                                         |
 | `POST /v1/sessionReplays/*` | Session replay chunks, sent by the [browser SDK](/docs/session-replay/browser-sdk) |
 | `POST /v1/sessionEvents`    | Session timeline events, sent by the browser SDK                                   |
@@ -73,6 +74,8 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 | anything else                                    | `415`         |
 
 For compression, send `Content-Encoding: gzip`. Omit the header (or send `identity`) for an uncompressed body. **gzip is the only compression supported.** `zstd`, `deflate` and `br` are rejected with `415`, so set your exporter's compression to `gzip` or `none`.
+
+`/v1/prometheus/write` is the exception: its body is always a snappy-compressed `prometheus.WriteRequest`, as the remote write protocol defines. It also reads the ingest key from the basic-auth password, for senders that authenticate that way.
 
 ## Browsers
 
