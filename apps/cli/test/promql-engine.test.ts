@@ -112,6 +112,13 @@ const insertHistogram = (db: Chdb, service: string): void => {
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 
+/** The tenant scope of every compiled read; the warehouse refuses anything but single-tenant. */
+const scopes = new Set<string>()
+const sqlOf = (compiled: { readonly sql: string; readonly tenantScope: string }) => {
+	scopes.add(compiled.tenantScope)
+	return normalizeSqlForClickHouseClient(compiled.sql)
+}
+
 const sqlRun = (db: Chdb, catalog: ReadonlyArray<CatalogMetric>, query: string, params: QueryParams) => {
 	const parsed = parse(query)
 	if (Result.isFailure(parsed)) return Result.fail(parsed.failure.message)
@@ -121,9 +128,7 @@ const sqlRun = (db: Chdb, catalog: ReadonlyArray<CatalogMetric>, query: string, 
 			buildSelectorQueries(request, catalog, { orgId: OrgId.make(ORG), maxSeries: 10_000 }),
 			(plan) => ({
 				plan,
-				rows: decodeRows(
-					db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
-				),
+				rows: decodeRows(db.query(sqlOf(Effect.runSync(plan.compiled)))),
 			}),
 		)
 		data.set(selector, toSelectorData(request, results))
@@ -227,4 +232,8 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 			}
 		})
 	}
+
+	test("every compiled read is single-tenant, as the warehouse requires", () => {
+		expect([...scopes]).toEqual(["single-tenant"])
+	})
 })
