@@ -314,3 +314,25 @@ describe("prototype-named labels and the native-histogram functions", () => {
 		expect(flatten(run("histogram_count(http_request_duration_seconds_bucket)", instant))).toEqual([])
 	})
 })
+
+describe("prototype-named labels in matching and absent", () => {
+	const at = DATA_START_MS + 3600_000
+	const instant = { startMs: at, endMs: at, stepMs: 0 }
+
+	it("does not copy an Object member through group_left", () => {
+		const result = run(
+			"http_requests_total * on(instance) group_left(constructor) group by (instance) (http_requests_total)",
+			instant,
+		)
+		const samples = result.resultType === "vector" ? result.result : []
+		expect(samples.length).toBeGreaterThan(0)
+		expect(Arr.some(samples, (s) => Object.hasOwn(s.labels, "constructor"))).toBe(false)
+	})
+
+	it("keeps an absent() label called __proto__ as a label", () => {
+		const result = run('absent(nonexistent{__proto__="x"})', instant)
+		expect(result.resultType === "vector" && result.result[0]?.labels).toEqual(
+			Object.fromEntries([["__proto__", "x"]]),
+		)
+	})
+})
