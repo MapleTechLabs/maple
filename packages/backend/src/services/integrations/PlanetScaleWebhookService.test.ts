@@ -1,10 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { SupabaseOAuthService } from "@maple/backend/services/auth/SupabaseOAuthService"
-import { ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
+import { Clock, ConfigProvider, Effect, Layer, Schema, Array as Arr, String as Str, Option } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, PlanetScaleFeaturesRequest, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/testing/test-pglite"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "./PlanetScaleConnectionService"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
@@ -93,6 +99,10 @@ const fakePlanetScale = (options: {
 	readonly webhooks?: ReadonlyArray<readonly [string, Array<FakeWebhook>]>
 	/** Databases whose webhook creation PlanetScale refuses (it caps a database at 5). */
 	readonly refuseCreate?: ReadonlyArray<string>
+	/** Databases whose webhook deletion PlanetScale refuses; mutable so a test can lift it. */
+	readonly refuseDelete?: Set<string>
+	/** Runs before a webhook listing is answered, as if someone acted mid-sync. */
+	readonly onList?: (database: string) => Promise<void>
 }) => {
 	const webhooks = new Map(options.webhooks)
 	let nextId = 1
@@ -127,7 +137,10 @@ const fakePlanetScale = (options: {
 			const list = webhooks.get(database) ?? []
 			webhooks.set(database, list)
 			const id = hook[2]
-			if (request.method === "GET") return json({ data: list, next_page: null })
+			if (request.method === "GET") {
+				await options.onList?.(database)
+				return json({ data: list, next_page: null })
+			}
 			if (request.method === "POST") {
 				if (options.refuseCreate?.includes(database)) {
 					return json({ code: "unprocessable", message: "Webhook limit reached" }, 422)
@@ -148,6 +161,9 @@ const fakePlanetScale = (options: {
 				() => -1,
 			)
 			if (request.method === "DELETE") {
+				if (options.refuseDelete?.has(database)) {
+					return json({ code: "internal", message: "Try again later" }, 500)
+				}
 				list.splice(index, 1)
 				return new Response(null, { status: 204 })
 			}
@@ -187,6 +203,20 @@ const connect = (orgId: string) =>
 	})
 
 const connectAndPoll = connect("org_1")
+
+/** Make the next tick's webhook sync due, as if its 15 minutes had passed. */
+const makeSyncDue = (testDb: TestDb) =>
+	Effect.promise(() =>
+		executeSql(
+			testDb,
+			"UPDATE planetscale_poll_state SET last_success_at = NULL WHERE dataset = 'webhooks'",
+		),
+	)
+
+const setEvents = (eventsEnabled: boolean) =>
+	Effect.flatMap(PlanetScaleConnectionService, (service) =>
+		service.setFeatures(asOrgId("org_1"), new PlanetScaleFeaturesRequest({ eventsEnabled })),
+	)
 
 const webhooksStatus = Effect.gen(function* () {
 	const status = yield* (yield* PlanetScaleConnectionService).getStatus(asOrgId("org_1"))
@@ -395,6 +425,171 @@ describe("PlanetScaleWebhookService", () => {
 			assert.deepStrictEqual(store.get("shop"), [])
 			// The old organization's databases are retired, so nothing reconciles them against the new one.
 			assert.deepStrictEqual(yield* (yield* PlanetScaleService).listDatabases(asOrgId("org_1")), [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+	it.effect("hands a failed sync's lease back and records why on its row", () => {
+		const testDb = createTestDb(trackedDbs)
+		fakePlanetScale({ scope: "read_databases write_databases", databases: [{ name: "shop" }] })
+		return Effect.gen(function* () {
+			yield* connectAndPoll
+			yield* Effect.promise(() =>
+				executeSql(testDb, "ALTER TABLE planetscale_databases RENAME TO planetscale_databases_gone"),
+			)
+
+			const failure = yield* Effect.flip((yield* PlanetScaleWebhookService).sync(asOrgId("org_1"), 0))
+			const state = yield* Effect.promise(() =>
+				queryFirstRow<{ lease_until: Date | null; last_error: string | null }>(
+					testDb,
+					`SELECT lease_until, last_error FROM planetscale_poll_state
+					 WHERE org_id = 'org_1' AND dataset = 'webhooks' AND database_id = ''`,
+				),
+			)
+			assert.isNull(state?.lease_until ?? null)
+			assert.strictEqual(state?.last_error, failure.message)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a tick with events off deletes a webhook that is still registered", () => {
+		const testDb = createTestDb(trackedDbs)
+		const store = fakePlanetScale({
+			scope: "read_databases write_databases",
+			databases: [{ name: "shop" }],
+		})
+		return Effect.gen(function* () {
+			yield* connectAndPoll
+			assert.strictEqual(store.get("shop")?.length, 1)
+			// The switch went off while a sync re-registered the webhook.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE planetscale_connections SET events_enabled = false"),
+			)
+			yield* makeSyncDue(testDb)
+
+			yield* (yield* PlanetScaleService).pollAllOrgs
+
+			assert.deepStrictEqual(store.get("shop"), [])
+			assert.strictEqual((yield* webhooksStatus)?.registeredDatabases, 0)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("a sync applies an events switch turned off while it was registering", () => {
+		const testDb = createTestDb(trackedDbs)
+		let flipped = false
+		const store = fakePlanetScale({
+			scope: "read_databases write_databases",
+			databases: [{ name: "shop" }],
+			onList: async () => {
+				if (!flipped || store.get("shop")?.length !== 0) return
+				flipped = false
+				await executeSql(testDb, "UPDATE planetscale_connections SET events_enabled = false")
+			},
+		})
+		return Effect.gen(function* () {
+			yield* connectAndPoll
+			// The webhook went missing, so the next sync registers it; the switch flips mid-listing.
+			store.set("shop", [])
+			flipped = true
+			yield* makeSyncDue(testDb)
+
+			yield* (yield* PlanetScaleService).pollAllOrgs
+
+			assert.deepStrictEqual(store.get("shop"), [])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect(
+		"turning events on while a sync holds the lease registers one webhook, on the next tick",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const store = fakePlanetScale({
+				scope: "read_databases write_databases",
+				databases: [{ name: "shop" }],
+			})
+			return Effect.gen(function* () {
+				yield* connectAndPoll
+				yield* setEvents(false)
+				assert.deepStrictEqual(store.get("shop"), [])
+				// Another sync's lease, relative to the test clock.
+				const now = yield* Clock.currentTimeMillis
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE planetscale_poll_state SET lease_until = to_timestamp($1 / 1000.0) WHERE dataset = 'webhooks'",
+						[now + 3 * 60_000],
+					),
+				)
+
+				yield* setEvents(true)
+				assert.deepStrictEqual(store.get("shop"), [])
+
+				yield* Effect.promise(() =>
+					executeSql(
+						testDb,
+						"UPDATE planetscale_poll_state SET lease_until = NULL WHERE dataset = 'webhooks'",
+					),
+				)
+				yield* (yield* PlanetScaleService).pollAllOrgs
+				assert.strictEqual(store.get("shop")?.length, 1)
+				assert.strictEqual(
+					yield* (yield* PlanetScaleWebhookService).secretFor(asOrgId("org_1"), "shop"),
+					"secret-shop",
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect(
+		"a webhook PlanetScale refused to delete keeps its secret and is deleted by a later tick",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const refuseDelete = new Set(["shop"])
+			const store = fakePlanetScale({
+				scope: "read_databases write_databases",
+				databases: [{ name: "shop" }],
+				refuseDelete,
+			})
+			return Effect.gen(function* () {
+				yield* connectAndPoll
+				yield* setEvents(false)
+
+				assert.strictEqual(store.get("shop")?.length, 1)
+				const webhooks = yield* PlanetScaleWebhookService
+				// Deliveries still verify, so the receiver acknowledges and drops them.
+				assert.strictEqual(yield* webhooks.secretFor(asOrgId("org_1"), "shop"), "secret-shop")
+				assert.include((yield* webhooksStatus)?.lastError ?? "", "Removal pending")
+
+				refuseDelete.clear()
+				yield* makeSyncDue(testDb)
+				yield* (yield* PlanetScaleService).pollAllOrgs
+
+				assert.deepStrictEqual(store.get("shop"), [])
+				assert.strictEqual(yield* webhooks.secretFor(asOrgId("org_1"), "shop"), null)
+				assert.isNull((yield* webhooksStatus)?.lastError ?? null)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
+	it.effect("a grant that cannot delete keeps the webhook's secret so deliveries still verify", () => {
+		const testDb = createTestDb(trackedDbs)
+		const store = fakePlanetScale({
+			scope: "read_databases write_databases",
+			databases: [{ name: "shop" }],
+		})
+		return Effect.gen(function* () {
+			yield* connectAndPoll
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					"UPDATE oauth_connections SET scope = 'read_databases' WHERE provider = 'planetscale'",
+				),
+			)
+			yield* setEvents(false)
+
+			assert.strictEqual(store.get("shop")?.length, 1)
+			assert.strictEqual(
+				yield* (yield* PlanetScaleWebhookService).secretFor(asOrgId("org_1"), "shop"),
+				"secret-shop",
+			)
+			assert.include((yield* webhooksStatus)?.lastError ?? "", "cannot delete webhooks")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

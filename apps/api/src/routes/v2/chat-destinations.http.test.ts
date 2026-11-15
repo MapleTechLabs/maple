@@ -28,6 +28,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import {
 	ChatWorkspaceService,
 	type ChatWorkspaceServiceApi,
+	type ChatWorkspaceUpdate,
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import { ApiV2RateLimiterAllowAllLayer } from "./v2-test-support"
@@ -67,7 +68,10 @@ const testConfig = () =>
 
 const die = () => Effect.die(new Error("not stubbed in this test"))
 
-const chatLayer = (listDestinations: ChatWorkspaceServiceApi["listDestinations"]) =>
+const chatLayer = (
+	listDestinations: ChatWorkspaceServiceApi["listDestinations"],
+	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"],
+) =>
 	Layer.succeed(
 		ChatWorkspaceService,
 		ChatWorkspaceService.of({
@@ -77,7 +81,7 @@ const chatLayer = (listDestinations: ChatWorkspaceServiceApi["listDestinations"]
 			beginLink: die,
 			completeLink: die,
 			unlink: die,
-			updateSettings: die,
+			updateWorkspace,
 			uninstall: die,
 			listDestinations,
 			resolve: die,
@@ -131,6 +135,7 @@ const destinationsLayer = (recorded: Recorded) =>
 const makeHarness = (
 	listDestinations: ChatWorkspaceServiceApi["listDestinations"] = die,
 	recorded: Recorded = {},
+	updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"] = die,
 ) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
@@ -150,7 +155,7 @@ const makeHarness = (
 		Layer.provide(
 			Layer.mergeAll(
 				HttpV2AlertDestinationsLive,
-				HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatLayer(listDestinations))),
+				HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatLayer(listDestinations, updateWorkspace))),
 			),
 		),
 		Layer.provide(V2TransportErrorBoundaryLive),
@@ -335,6 +340,110 @@ describe("v2 chat alert destination mapping", () => {
 		expect(status).toBe(200)
 		expect(recorded.update).toEqual({ type: "chat", channelId: "channel-2" })
 		expect(body.channel_label).toBe("#oncall")
+		await harness.dispose()
+	})
+})
+
+describe("v2 chat workspace update over HTTP", () => {
+	const ORG = Schema.decodeSync(OrgId)("org_chat_dest_e2e")
+	const FOREIGN = Schema.decodeSync(ChatWorkspaceId)("22222222-2222-4222-8222-222222222222")
+	const WORKSPACE_PATH = `/v2/integrations/chat_workspaces/${WORKSPACE_PUBLIC_ID}`
+	const FOREIGN_PATH = `/v2/integrations/chat_workspaces/${Schema.encodeSync(ChatWorkspacePublicId)(FOREIGN)}`
+
+	/** A fake that records each call; the workspace it knows belongs to `ORG`, any other is a 404. */
+	const fake = () => {
+		const calls: Array<ChatWorkspaceUpdate> = []
+		const updateWorkspace: ChatWorkspaceServiceApi["updateWorkspace"] = (orgId, workspaceId, update) =>
+			orgId !== ORG || workspaceId !== WORKSPACE
+				? Effect.fail(new IntegrationsNotFoundError({ message: "No chat workspace with this id" }))
+				: Effect.sync(() => {
+						calls.push(update)
+						return {
+							id: WORKSPACE,
+							connector: TESTCHAT,
+							externalWorkspaceId: "T_ACME",
+							name: "Acme",
+							settings: update.settings ?? {},
+							features: {
+								alertsEnabled: update.features?.alertsEnabled ?? true,
+								directMessagesEnabled: update.features?.directMessagesEnabled ?? true,
+								assistantEnabled: update.features?.assistantEnabled ?? true,
+							},
+							createdAt: Date.parse("2026-09-24T00:00:00.000Z"),
+						}
+					})
+		return { calls, harness: makeHarness(die, {}, updateWorkspace) }
+	}
+
+	it("saves settings and switches in one service call", async () => {
+		const { calls, harness } = fake()
+		const { status, body } = await harness.request(
+			"PATCH",
+			WORKSPACE_PATH,
+			(await harness.adminKey()).secret,
+			{
+				settings: { approver: "moderators" },
+				alerts_enabled: false,
+			},
+		)
+		expect(status).toBe(200)
+		expect(calls).toEqual([{ settings: { approver: "moderators" }, features: { alertsEnabled: false } }])
+		expect(body).toMatchObject({
+			settings: { approver: "moderators" },
+			alerts_enabled: false,
+			direct_messages_enabled: true,
+			assistant_enabled: true,
+		})
+		await harness.dispose()
+	})
+
+	it("saves settings alone, switches alone, and reads on an empty body", async () => {
+		const { calls, harness } = fake()
+		const token = (await harness.adminKey()).secret
+		const settingsOnly = await harness.request("PATCH", WORKSPACE_PATH, token, {
+			settings: { approver: "moderators" },
+		})
+		const switchOnly = await harness.request("PATCH", WORKSPACE_PATH, token, { assistant_enabled: false })
+		const empty = await harness.request("PATCH", WORKSPACE_PATH, token, {})
+		expect([settingsOnly.status, switchOnly.status, empty.status]).toEqual([200, 200, 200])
+		expect(calls).toEqual([
+			{ settings: { approver: "moderators" }, features: {} },
+			{ features: { assistantEnabled: false } },
+			{ features: {} },
+		])
+		expect(empty.body).toMatchObject({ alerts_enabled: true, assistant_enabled: true })
+		await harness.dispose()
+	})
+
+	it("answers 404 for a workspace another org linked", async () => {
+		const { calls, harness } = fake()
+		const { status, body } = await harness.request(
+			"PATCH",
+			FOREIGN_PATH,
+			(await harness.adminKey()).secret,
+			{
+				alerts_enabled: false,
+			},
+		)
+		expect(status).toBe(404)
+		expect(body.error).toMatchObject({ code: "integration_not_found" })
+		expect(calls).toEqual([])
+		await harness.dispose()
+	})
+
+	it("refuses a member without integrations:manage and saves nothing", async () => {
+		const { calls, harness } = fake()
+		const { status, body } = await harness.request(
+			"PATCH",
+			WORKSPACE_PATH,
+			(await harness.memberKey()).secret,
+			{
+				alerts_enabled: false,
+			},
+		)
+		expect(status).toBe(403)
+		expect(body.error).toMatchObject({ type: "permission_error" })
+		expect(calls).toEqual([])
 		await harness.dispose()
 	})
 })

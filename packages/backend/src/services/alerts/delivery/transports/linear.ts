@@ -3,7 +3,11 @@
  * Every id Maple sends derives from the delivery, so a retry finds what its first attempt made.
  */
 import { createHash } from "node:crypto"
-import { type AlertDeliveryFailure, AlertDeliveryTargetMissingError } from "@maple/domain/http"
+import {
+	type AlertDeliveryFailure,
+	AlertDeliveryTargetMissingError,
+	type LinearFeatureSwitches,
+} from "@maple/domain/http"
 import { Clock, Effect, Order, Schema, Array as Arr, String as Str } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import { displayGroup, formatAlertHeadline, formatSeverityLabel, truncate } from "../../alert-formatting"
@@ -330,10 +334,18 @@ const reopen = Effect.fn("LinearTransport.reopen")(function* (
 	return true
 })
 
+/** A delivery a switch turned away: recorded on the attempt, nothing sent to Linear. */
+const switchedOff = (what: string, reference: string | null = null): DispatchResult => ({
+	providerMessage: `Skipped: ${what} is off in the Linear settings`,
+	providerReference: reference,
+	responseCode: null,
+})
+
 const trigger = Effect.fn("LinearTransport.trigger")(function* (
 	port: LinearDeliveryPort,
 	input: Input,
 	nowMs: number,
+	features: LinearFeatureSwitches,
 ) {
 	const { context } = input
 	const threadKey = linearThreadKey(input)
@@ -360,6 +372,7 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 			isClosed(issue) &&
 			(closedAt === null || nowMs - closedAt > LINEAR_REOPEN_WINDOW_MS))
 	if (replace) {
+		if (!features.openIssuesEnabled) return switchedOff("Opening issues")
 		const opened = yield* createIssue(port, input, threadKey, thread?.linearIssueId ?? null)
 		// Delivered after its incident resolved: still on record, and marked resolved so nothing dangles.
 		if (resolved) {
@@ -372,16 +385,25 @@ const trigger = Effect.fn("LinearTransport.trigger")(function* (
 		} satisfies DispatchResult
 	}
 	if (issue !== null && isClosed(issue)) {
+		if (!features.reopenIssuesEnabled && !features.updateCommentsEnabled) {
+			return switchedOff("Reopening and commenting", issue.url)
+		}
 		// A person may have moved it to another team, whose states this destination does not know.
-		const reopened = issue.team.id === input.config.teamId ? yield* reopen(port, input, issue.id) : false
-		yield* comment(port, input, issue.id, linearCommentBody(input, thread))
+		const reopened =
+			features.reopenIssuesEnabled && issue.team.id === input.config.teamId
+				? yield* reopen(port, input, issue.id)
+				: false
+		if (features.updateCommentsEnabled) {
+			yield* comment(port, input, issue.id, linearCommentBody(input, thread))
+		}
 		yield* port.saveThread({ ...thread, incidentId: input.context.incidentId })
 		return {
-			providerMessage: `${reopened ? "Reopened" : "Commented on closed"} Linear issue ${issue.identifier}`,
+			providerMessage: `${reopened ? "Reopened" : features.updateCommentsEnabled ? "Commented on closed" : "Left closed"} Linear issue ${issue.identifier}`,
 			providerReference: issue.url,
 			responseCode: null,
 		} satisfies DispatchResult
 	}
+	if (!features.updateCommentsEnabled) return switchedOff("Commenting on updates", issue.url)
 	yield* comment(port, input, issue.id, linearCommentBody(input, thread))
 	if (thread.incidentId !== input.context.incidentId) {
 		yield* port.saveThread({ ...thread, incidentId: input.context.incidentId })
@@ -469,14 +491,16 @@ export const linearTransport: EffectTransport<Config> = {
 						responseCode: null,
 					} satisfies DispatchResult
 				}
-				case "resolve":
+				case "resolve": {
+					const features = yield* deps.linear.features(input.context.destination.orgId)
+					if (!features.resolveCommentsEnabled) return switchedOff("Commenting when resolved")
 					return yield* resolve(deps.linear, input)
-				case "trigger":
-					return yield* trigger(
-						deps.linear,
-						input,
-						input.context.sentAtMs ?? (yield* Clock.currentTimeMillis),
-					)
+				}
+				case "trigger": {
+					const nowMs = input.context.sentAtMs ?? (yield* Clock.currentTimeMillis)
+					const features = yield* deps.linear.features(input.context.destination.orgId)
+					return yield* trigger(deps.linear, input, nowMs, features)
+				}
 			}
 		},
 		Effect.timeoutOrElse({

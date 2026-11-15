@@ -1,3 +1,4 @@
+import { INTEGRATION_FEATURES, type IntegrationFeatureSpec } from "@maple/domain/integration-features"
 import type { GcpScopeType } from "@maple/primitives"
 import type { GcpCollectLock, GcpDraftEffect } from "../connector-state"
 import { docsUrl } from "../../../kit/docs"
@@ -56,12 +57,13 @@ export const CAPABILITY_IDS: ReadonlyArray<Capability> = ["logs", "metrics"]
 
 type Acting = "stops-now" | "resumes-now"
 
+const [GCP_LOGS, GCP_METRICS] = INTEGRATION_FEATURES.gcp
+
 export const CAPABILITIES = {
 	logs: {
-		title: "Log forwarding",
+		spec: GCP_LOGS,
+		title: GCP_LOGS.title,
 		flag: "logs_enabled",
-		description:
-			"Request and managed-service logs, through a Log Router sink and Pub/Sub. Admin activity goes to the Security audit log.",
 		run: { on: "Log sink and Pub/Sub topic", off: "Removes the log sink" },
 		effects: {
 			"starts-after-script": "Starts once it's set up in Google Cloud",
@@ -80,10 +82,9 @@ export const CAPABILITIES = {
 		},
 	},
 	metrics: {
-		title: "Metrics and resources",
+		spec: GCP_METRICS,
+		title: GCP_METRICS.title,
 		flag: "metrics_enabled",
-		description:
-			"Cloud Run, GKE, Compute Engine, Cloud SQL, Pub/Sub, Load Balancing and Cloud Functions. Read-only, every 5 minutes.",
 		run: { on: "Read-only service account", off: "Removes the service account" },
 		effects: {
 			"starts-after-script": "Starts once it's set up in Google Cloud",
@@ -104,9 +105,10 @@ export const CAPABILITIES = {
 	},
 } as const satisfies {
 	readonly [Key in Capability]: {
+		/** The feature as the catalog describes it; `title` is its name in sentences. */
+		readonly spec: IntegrationFeatureSpec<Key>
 		readonly title: string
 		readonly flag: "logs_enabled" | "metrics_enabled"
-		readonly description: string
 		/** What the script sets up for it, or removes, in the run step's status. */
 		readonly run: { readonly on: string; readonly off: string }
 		readonly effects: { readonly [Effect in GcpDraftEffect]: string }

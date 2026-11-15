@@ -69,6 +69,10 @@ export const scenariosAt = (nowMs: number): ReadonlyArray<{ title: string; conne
 			},
 		},
 		{
+			title: "Metrics switched off, still in Google Cloud",
+			over: { metrics_enabled: false },
+		},
+		{
 			title: "Setup pending",
 			over: {
 				applied_logs_enabled: null,

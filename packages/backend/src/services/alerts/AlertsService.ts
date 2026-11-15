@@ -3151,7 +3151,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								),
 							onSuccess: ({ posted, channelName }) =>
 								finalizeDigest(destinationRow, sendable, claimTime, {
-									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
+									providerMessage:
+										posted.messageId === null
+											? `Skipped: alert notifications are off for this ${posted.connectorName} workspace`
+											: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
 						}),
@@ -3174,7 +3177,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					destinationRow: AlertDestinationRow,
 					claimed: ReadonlyArray<AlertDeliveryEventRow>,
 					claimTime: number,
-					result: { readonly providerMessage: string; readonly providerReference: string },
+					result: { readonly providerMessage: string; readonly providerReference: string | null },
 				) {
 					yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, claimed.length)
 					yield* Effect.forEach(

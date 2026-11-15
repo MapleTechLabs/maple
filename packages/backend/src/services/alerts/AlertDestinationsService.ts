@@ -1165,8 +1165,12 @@ export class AlertDestinationsService extends Context.Service<
 			yield* markDestinationTest(orgId, destinationId, null)
 			return new AlertDestinationTestResponse({
 				success: true,
-				// A Linear test checks the team and opens no issue, so "sent" would be untrue.
-				message: row.type === "linear" ? sent.providerMessage : "Test notification sent",
+				// A Linear test opens no issue, and a chat workspace with alerts off posts nothing:
+				// either way "sent" would be untrue, so the transport's own words are the answer.
+				message:
+					row.type === "linear" || (row.type === "chat" && sent.providerReference === null)
+						? sent.providerMessage
+						: "Test notification sent",
 			})
 		})
 

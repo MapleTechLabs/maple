@@ -304,6 +304,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userActivityServicesQuery", () =>
 		CH.compileUnsafe(CH.userActivityServicesQuery(USER_SCOPE), window),
 	),
+	userActivityFixture("userActivityIdentityQuery", () =>
+		CH.compileUnsafe(CH.userActivityIdentityQuery(USER_SCOPE), window),
+	),
 	userActivityFixture("userActivityTotalsQuery", () =>
 		CH.compileUnsafe(CH.userActivityTotalsQuery({ userIds: ["user_a", "user_b"] }), window),
 	),

@@ -54,6 +54,8 @@ export const SupabaseMessage = defineMessageUnion({
 	},
 	/** A project row's Metrics, Logs or Drain switch (a drain is created or deleted at Supabase). */
 	ToggledSwitch: { ref: SupabaseProjectRef, kind: SupabaseSwitchKind, enabled: Schema.Boolean },
+	/** A Features row: sets that switch on every project that can take the change. */
+	ToggledFeature: { kind: SupabaseSwitchKind },
 	CompletedSwitch: {
 		ref: SupabaseProjectRef,
 		kind: SupabaseSwitchKind,

@@ -37,6 +37,8 @@ export const worstStatus = worstSourceStatus
 const POLLER_STALE_MS = 30 * 60 * 1000
 /** PlanetScale inventory refreshes hourly and deploy requests round-robin 25 databases per tick. */
 const PLANETSCALE_STALE_MS = 3 * 60 * 60 * 1000
+/** The per-database poll-state rows the events switch stops (`PlanetScaleService`). */
+const PLANETSCALE_DEPLOY_REQUESTS_DATASET = "deploy_requests"
 /** Search Console re-imports its head every few hours; two days without a success is no longer a blip. */
 const SEARCH_CONSOLE_STALE_MS = 2 * 24 * 60 * 60 * 1000
 const SCRAPE_MIN_STALE_MS = 10 * 60 * 1000
@@ -135,6 +137,9 @@ export interface IntegrationInventoryInputs {
 	readonly planetscaleConnection: {
 		readonly psOrganization: string
 		readonly detectedPermissions: Readonly<Record<string, boolean>> | null
+		/** The person's switches; a switched-off feature reads as paused, never stale. */
+		readonly metricsEnabled: boolean
+		readonly eventsEnabled: boolean
 		readonly lastInventoryAt: number | null
 		readonly lastInventoryError: string | null
 		readonly createdAt: number
@@ -146,7 +151,9 @@ export interface IntegrationInventoryInputs {
 		readonly region: string | null
 		readonly state: string | null
 	}>
-	readonly planetscalePollStates: ReadonlyArray<PollState & { readonly databaseId: string }>
+	readonly planetscalePollStates: ReadonlyArray<
+		PollState & { readonly databaseId: string; readonly dataset: string }
+	>
 	readonly scrapeTargets: ReadonlyArray<{
 		readonly name: string
 		readonly url: string
@@ -564,7 +571,13 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 		})
 	}
 	const databases = Arr.map(inputs.planetscaleDatabases, (db): IntegrationResource => {
-		const states = Arr.filter(inputs.planetscalePollStates, (s) => s.databaseId === db.databaseId)
+		// Events off stops deploy-request polling, so those rows age without anything being wrong.
+		const states = Arr.filter(
+			inputs.planetscalePollStates,
+			(s) =>
+				s.databaseId === db.databaseId &&
+				(connection.eventsEnabled || s.dataset !== PLANETSCALE_DEPLOY_REQUESTS_DATASET),
+		)
 		const statuses = Arr.map(states, (s) => pollStatus(s, now, PLANETSCALE_STALE_MS))
 		const status = states.length === 0 ? "healthy" : worstStatus(statuses)
 		const failing = Option.getOrUndefined(Arr.findFirst(states, (_, i) => statuses[i] === "failing"))
@@ -593,7 +606,13 @@ const planetscale = (inputs: IntegrationInventoryInputs, now: number): Integrati
 			inputs.scrapeTargets,
 			(t) => t.managedBy != null && Str.startsWith("planetscale:")(t.managedBy) && t.enabled !== false,
 		),
-		(t) => scrapeResource(t, now, "metrics scrape"),
+		(t): IntegrationResource =>
+			connection.metricsEnabled
+				? scrapeResource(t, now, "metrics scrape")
+				: {
+						...scrapeResource({ ...t, enabled: false }, now, "metrics scrape"),
+						note: "Switched off",
+					},
 	)
 	// Only permissions something still depends on; older bindings stored ones that no longer matter.
 	const missing = Arr.map(

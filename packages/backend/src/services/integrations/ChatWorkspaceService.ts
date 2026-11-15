@@ -109,7 +109,21 @@ export interface ChatWorkspaceSummary {
 	readonly externalWorkspaceId: string
 	readonly name: string
 	readonly settings: ChatWorkspaceSettings
+	readonly features: ChatWorkspaceFeatures
 	readonly createdAt: number
+}
+
+/** The workspace's switches, one per feature of `INTEGRATION_FEATURES.chat`; all on when linked. */
+export interface ChatWorkspaceFeatures {
+	readonly alertsEnabled: boolean
+	readonly directMessagesEnabled: boolean
+	readonly assistantEnabled: boolean
+}
+
+/** A workspace edit: the settings when sent, and only the switches it names. */
+export interface ChatWorkspaceUpdate {
+	readonly settings?: ChatWorkspaceSettings
+	readonly features?: Partial<ChatWorkspaceFeatures>
 }
 
 /** One connector as the dashboard sees it: is it usable here, and what is linked. */
@@ -189,10 +203,14 @@ export interface ChatWorkspaceServiceApi {
 		{ readonly unlinked: boolean },
 		IntegrationsNotFoundError | IntegrationsPersistenceError
 	>
-	readonly updateSettings: (
+	/**
+	 * Saves the settings and the switches the update names in one statement; the rest keep their
+	 * value, and an empty update is a read.
+	 */
+	readonly updateWorkspace: (
 		orgId: OrgId,
 		workspaceId: ChatWorkspaceId,
-		settings: ChatWorkspaceSettings,
+		update: ChatWorkspaceUpdate,
 	) => Effect.Effect<
 		ChatWorkspaceSummary,
 		IntegrationsNotFoundError | IntegrationsValidationError | IntegrationsPersistenceError
@@ -311,6 +329,11 @@ const make: Effect.Effect<
 		externalWorkspaceId: row.externalWorkspaceId,
 		name: row.name,
 		settings: row.settings,
+		features: {
+			alertsEnabled: row.alertsEnabled,
+			directMessagesEnabled: row.directMessagesEnabled,
+			assistantEnabled: row.assistantEnabled,
+		},
 		createdAt: row.createdAt,
 	})
 
@@ -599,19 +622,33 @@ const make: Effect.Effect<
 		return row
 	})
 
-	const updateSettings = Effect.fn("ChatWorkspaceService.updateSettings")(function* (
+	const updateWorkspace = Effect.fn("ChatWorkspaceService.updateWorkspace")(function* (
 		orgId: OrgId,
 		workspaceId: ChatWorkspaceId,
-		settings: ChatWorkspaceSettings,
+		update: ChatWorkspaceUpdate,
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const row = yield* loadOwned(orgId, workspaceId)
-		const connector = yield* requireConnector(row.connector)
-		const validated = yield* validateSettings(connector, settings)
+		const connector = update.settings === undefined ? undefined : yield* requireConnector(row.connector)
+		const settings =
+			connector === undefined || update.settings === undefined
+				? undefined
+				: yield* validateSettings(connector, update.settings)
+		const features = update.features ?? {}
+		// Only the columns sent: a concurrent save of another switch keeps its value.
+		const set = {
+			...(settings !== undefined && { settings }),
+			...(features.alertsEnabled !== undefined && { alertsEnabled: features.alertsEnabled }),
+			...(features.directMessagesEnabled !== undefined && {
+				directMessagesEnabled: features.directMessagesEnabled,
+			}),
+			...(features.assistantEnabled !== undefined && { assistantEnabled: features.assistantEnabled }),
+		}
+		if (Rec.isEmptyRecord<string, unknown>(set)) return toSummary(row)
 		const updated = yield* dbExecute((db) =>
 			db.run(
 				PG.update(ChatWorkspaces)
-					.set({ settings: validated })
+					.set(set)
 					.where(($) => [$.id.eq(workspaceId), $.orgId.eq(orgId)])
 					.returning(),
 			),
@@ -725,7 +762,7 @@ const make: Effect.Effect<
 		beginLink,
 		completeLink,
 		unlink,
-		updateSettings,
+		updateWorkspace,
 		uninstall,
 		listDestinations,
 		resolve,

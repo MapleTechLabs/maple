@@ -198,6 +198,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/integration-features",
+		title: "Integration features",
+		description:
+			"The Supabase and GitHub cards with their feature switches, over fixture statuses, no API needed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/vercel",
 		title: "Vercel integration",
 		description:

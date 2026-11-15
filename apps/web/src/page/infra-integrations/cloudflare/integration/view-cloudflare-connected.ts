@@ -27,6 +27,7 @@ import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { workersCard, zoneBoard } from "./view-cloudflare-board"
 import { zonesDialog } from "./view-cloudflare-zones"
+import { cloudflareFeaturePanel } from "./view-cloudflare-features"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { vstack } from "@maple/views/ui/stack"
 import { Array as Arr } from "effect"
@@ -267,6 +268,7 @@ export const cloudflareConnected = (
 							]
 						: []),
 				]),
+		cloudflareFeaturePanel(h, model, status),
 		zonesDialog(h, model),
 	])
 }
