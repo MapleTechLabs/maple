@@ -94,6 +94,8 @@ export const makeSpanTimeline = (
 			},
 		}),
 		setRecording: (next) => {
+			// The span already on the CPU opens the log, as it does across a drain.
+			if (next && !recording && current !== undefined) push(current)
 			recording = next
 		},
 		drain: () => {
