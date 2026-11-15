@@ -229,7 +229,7 @@ describe("span panel tab keys", () => {
 			given(empty),
 			indicatorMeasured(),
 			click(tab("Profile")),
-			expectView(text(/first 500 spans under it/)).toExist(),
+			expectView(text(/first 500 spans of this subtree, this span included/)).toExist(),
 		)
 	})
 
