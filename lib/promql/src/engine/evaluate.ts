@@ -12,7 +12,14 @@ import {
 	vectorScalarBinary,
 	vectorVectorBinary,
 } from "./ops"
-import { gridTimes, type QueryParams, resolveAt, subqueryGrid, type TimeGrid } from "./plan"
+import {
+	gridTimes,
+	MAX_POINTS_PER_SERIES,
+	type QueryParams,
+	resolveAt,
+	subqueryGrid,
+	type TimeGrid,
+} from "./plan"
 import {
 	DEFAULT_LIMITS,
 	type EvalLimits,
@@ -302,6 +309,13 @@ class Evaluator {
 	subqueryArg(node: SubqueryExpr, grid: TimeGrid): R<RangeArg> {
 		return Result.gen(this, function* () {
 			const inner = subqueryGrid(node, grid, this.params)
+			// Checked before the grid exists: `x[1y:1ms]` would allocate billions of timestamps.
+			const points = Math.floor((inner.endMs - inner.startMs) / inner.stepMs) + 1
+			if (points > MAX_POINTS_PER_SERIES) {
+				return yield* err(
+					`subquery resolution too fine: ${points} points per series, at most ${MAX_POINTS_PER_SERIES}; use a larger subquery step`,
+				)
+			}
 			const value = yield* this.eval(node.expr, inner)
 			if (value.kind !== "vector")
 				return yield* err("subquery expression must return an instant vector")

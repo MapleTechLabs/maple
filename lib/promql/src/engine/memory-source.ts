@@ -1,6 +1,6 @@
 import { Option } from "effect"
 import type { LabelMatcher } from "../ast"
-import { anchoredRegex } from "../parser"
+import { anchoredRegex } from "../regex"
 import type { Labels, SampleBucket, SelectorData, SelectorRequest } from "./types"
 
 export interface RawSeries {

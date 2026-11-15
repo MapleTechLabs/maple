@@ -14,7 +14,8 @@
 		"@lezer/common": "1.2.3",
 		"@lezer/lr": "1.4.2",
 		"@prometheus-io/lezer-promql": "0.315.1",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"re2js": "2.9.0"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:tooling",

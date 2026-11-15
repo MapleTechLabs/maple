@@ -161,3 +161,12 @@ describe("parse errors", () => {
 		expect(errorOf("sum(x) offset 5m")).toMatch(/selector or subquery/)
 	})
 })
+
+describe("label regexes follow Prometheus' RE2", () => {
+	it("accepts RE2 syntax JavaScript lacks and rejects what RE2 rejects", () => {
+		expect(errorOf('x{a=~"(?i)get"}')).toBe("parsed")
+		expect(errorOf('x{a=~"[[:alpha:]]+"}')).toBe("parsed")
+		expect(errorOf('x{a=~"(?=x)"}')).toMatch(/invalid regular expression/)
+		expect(errorOf('x{a=~"(a)\\\\1"}')).toMatch(/invalid regular expression/)
+	})
+})
