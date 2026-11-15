@@ -3,7 +3,7 @@
 import type { OrgId } from "@maple/primitives"
 import { compiledQueryOf, type CompiledQueryInput } from "@maple/query-engine/execution"
 import { Array as Arr, Effect, Layer, String as Str } from "effect"
-import { makeLayer } from "@maple/backend/services/alerts/alerts-service-test-support"
+import { makeLayer, type TestOverrides } from "@maple/backend/services/alerts/alerts-service-test-support"
 import { createTestDb, executeSql, type TestDb } from "@maple/backend/testing/test-pglite"
 import { makeWarehouseServiceStub } from "@maple/backend/testing/warehouse-test-support"
 import {
@@ -29,8 +29,15 @@ const uncachedQueryEngine: QueryEngineServiceApi = {
 	cachedDirect: (_tenant, _route, _payload, effect) => effect,
 }
 
-/** The cost statements the warehouse ran and the bodies the webhook endpoint was sent. */
-export const budgetHarness = (trackedDbs: Array<TestDb>, spend: Spend) => {
+/**
+ * The cost statements the warehouse ran and the bodies the webhook endpoint was sent. `clock`
+ * replaces the alert scheduler's clock, for a tick whose reads of it differ.
+ */
+export const budgetHarness = (
+	trackedDbs: Array<TestDb>,
+	spend: Spend,
+	clock: Pick<TestOverrides, "now"> = {},
+) => {
 	const testDb = createTestDb(trackedDbs)
 	const statements: Array<string> = []
 	const bodies: Array<string> = []
@@ -83,7 +90,7 @@ export const budgetHarness = (trackedDbs: Array<TestDb>, spend: Spend) => {
 		testDb,
 		statements,
 		bodies,
-		layer: Layer.mergeAll(makeLayer(testDb, warehouse, { fetch: fetchImpl }), budgets),
+		layer: Layer.mergeAll(makeLayer(testDb, warehouse, { fetch: fetchImpl, ...clock }), budgets),
 	}
 }
 

@@ -187,6 +187,56 @@ describe("AlertsService cost budgets", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	// A tick can start in one period and claim the rule in the next. The check and the incident's
+	// start must then name the same period, or the next period's breach would join an incident
+	// that looks like its own.
+	it.effect("a tick that straddles the period's end judges the period it claims the rule in", () => {
+		const spend: Spend = { days: [{ day: "2026-11-15", cost: 400 }] }
+		// The scheduler's clock: `at` for the tick's two readings of its start (the tick's own,
+		// then the evaluation pass's), `claim` from the claim on.
+		const clock = { at: MID_NOVEMBER, claim: MID_NOVEMBER, startReadings: 0 }
+		const now = Effect.sync(() => {
+			clock.startReadings += 1
+			return clock.startReadings <= 2 ? clock.at : clock.claim
+		})
+		const moveTo = (at: number, claim = at) =>
+			Effect.sync(() => {
+				clock.at = at
+				clock.claim = claim
+				clock.startReadings = 0
+			}).pipe(Effect.andThen(TestClock.setTime(claim)))
+		const { layer, testDb, bodies } = budgetHarness(trackedDbs, spend, { now })
+		return Effect.gen(function* () {
+			yield* moveTo(MID_NOVEMBER)
+			yield* connectCostSource(testDb, orgId)
+			const alerts = yield* alertServices
+			yield* createBudget()
+			yield* alerts.runSchedulerTick()
+
+			// November ends over the amount, and the tick that would see it starts five seconds
+			// before midnight and claims the rule five seconds after.
+			spend.days = [{ day: "2026-11-29", cost: 1100 }]
+			yield* syncCostSource(testDb, at("2026-11-30T23:00:00Z"))
+			yield* moveTo(at("2026-11-30T23:59:55Z"), at("2026-12-01T00:00:05Z"))
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 0)
+
+			// December then goes over on its own.
+			spend.days = [{ day: "2026-12-02", cost: 1300 }]
+			yield* syncCostSource(testDb, at("2026-12-03T09:00:00Z"))
+			yield* moveTo(at("2026-12-03T10:00:00Z"))
+			yield* alerts.runSchedulerTick()
+			const incidents = (yield* alerts.listIncidents(orgId)).incidents
+			assert.lengthOf(incidents, 1)
+			assert.deepInclude(incidents[0], { severity: "critical", status: "open", lastObservedValue: 130 })
+			assert.deepStrictEqual(
+				Arr.map(bodies, (body) => decodeNotification(body).eventType),
+				["trigger"],
+			)
+			assert.match(decodeNotification(bodies[0] ?? "").observed.detail, /^Spent \$1,300\.00 of /u)
+		}).pipe(Effect.provide(layer))
+	})
+
 	// Notifications say what was spent or forecast, of how much and for which period.
 	it.effect("notifies with the money as its detail", () => {
 		const { layer, testDb, bodies } = budgetHarness(trackedDbs, {
