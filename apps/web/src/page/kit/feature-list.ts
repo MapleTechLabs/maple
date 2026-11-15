@@ -1,32 +1,42 @@
 import type { IntegrationFeatureSpec } from "@maple/domain/integration-features"
+import { linkButton } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { dividedList } from "@maple/views/ui/rule"
+import { settingRow } from "@maple/views/ui/setting-row"
 import { Array as Arr } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { switchRow } from "./switch-row"
 
 // An integration's features as one list of switches: the same list when connecting and afterwards.
 
-/** Where a switched-on feature stands, when it is not simply working. */
+/** Where a feature stands, when it is not simply working. A failure only shows while it is on. */
 export type FeatureNote =
 	| Readonly<{ _tag: "Pending"; text: string }>
 	| Readonly<{ _tag: "Failing"; text: string }>
 	| Readonly<{ _tag: "Info"; text: string }>
 
-export type FeatureRow<M> = Readonly<{
+type RowCommon = Readonly<{
 	spec: IntegrationFeatureSpec
-	isChecked: boolean
-	isDisabled?: boolean
-	onToggle: M
 	/** A short tag beside the title (the drain a feature creates). */
 	tag?: string
 	note?: FeatureNote
+	/** Shown under the row: a filter it owns, what saving it does. */
+	children?: ReadonlyArray<Html>
 }>
+
+/** A feature switched here. */
+export type FeatureSwitchRow<M> = RowCommon &
+	Readonly<{ isChecked: boolean; isDisabled?: boolean; onToggle: M }>
+
+/** A feature set elsewhere (per repository, per project): a link to where it is switched. */
+export type FeatureLinkRow = RowCommon & Readonly<{ link: Readonly<{ href: string; label: string }> }>
+
+export type FeatureRow<M> = FeatureSwitchRow<M> | FeatureLinkRow
 
 const NOTE_VARIANT = { Pending: "warn", Failing: "crit", Info: "meta" } as const
 
-const status = <M>(h: HtmlBuilder<M>, row: FeatureRow<M>): Html | undefined => {
-	if (row.note !== undefined && row.isChecked) {
+const status = <M>(h: HtmlBuilder<M>, row: FeatureRow<M>, isChecked: boolean): Html | undefined => {
+	if (row.note !== undefined && (row.note._tag !== "Failing" || isChecked)) {
 		return badge(h, { variant: NOTE_VARIANT[row.note._tag], size: "xs" }, [row.note.text])
 	}
 	return row.tag === undefined
@@ -34,26 +44,60 @@ const status = <M>(h: HtmlBuilder<M>, row: FeatureRow<M>): Html | undefined => {
 		: badge(h, { variant: "outline", size: "xs", mono: true }, [row.tag])
 }
 
+const linkRow = <M>(h: HtmlBuilder<M>, id: string, row: FeatureLinkRow): Html => {
+	const note = status(h, row, true)
+	// The label names no control: a link is named by its own text.
+	return settingRow(
+		h,
+		{
+			ids: { control: `${id}-link`, label: `${id}-label`, description: `${id}-description` },
+			className: "p-3",
+			label: row.spec.title,
+			description: row.spec.summary,
+			...(note !== undefined && { status: note }),
+			control: [
+				linkButton(h, { size: "sm", variant: "outline", href: row.link.href }, [row.link.label]),
+			],
+		},
+		row.children ?? [],
+	)
+}
+
 /** `FeatureList`: an integration's features as switches, one row each, with a note for one that is pending or failing. */
 export const featureList = <M>(
 	h: HtmlBuilder<M>,
-	options: Readonly<{ idPrefix: string; rows: ReadonlyArray<FeatureRow<M>>; className?: string }>,
+	options: Readonly<{
+		idPrefix: string
+		rows: ReadonlyArray<FeatureRow<M>>
+		className?: string
+		/** False inside a panel, where the list runs to its edges. */
+		bordered?: boolean
+	}>,
 ): Html =>
 	dividedList(
 		h,
-		{ as: "div", className: options.className ?? "rounded-lg" },
+		{
+			as: "div",
+			bordered: options.bordered ?? true,
+			className: options.className ?? ((options.bordered ?? true) ? "rounded-lg" : undefined),
+		},
 		Arr.map(options.rows, (row) => {
-			const note = status(h, row)
-			return switchRow(h, {
-				id: `${options.idPrefix}-${row.spec.id}`,
-				className: "p-3",
-				label: row.spec.title,
-				description: row.spec.summary,
-				isChecked: row.isChecked,
-				onToggle: row.onToggle,
-				...(row.isDisabled !== undefined && { isDisabled: row.isDisabled }),
-				...(note !== undefined && { status: note }),
-			})
+			const id = `${options.idPrefix}-${row.spec.id}`
+			if ("link" in row) return linkRow(h, id, row)
+			const note = status(h, row, row.isChecked)
+			return switchRow(
+				h,
+				{
+					id,
+					className: "p-3",
+					label: row.spec.title,
+					description: row.spec.summary,
+					isChecked: row.isChecked,
+					onToggle: row.onToggle,
+					...(row.isDisabled !== undefined && { isDisabled: row.isDisabled }),
+					...(note !== undefined && { status: note }),
+				},
+				row.children ?? [],
+			)
 		}),
 	)
-

@@ -303,6 +303,8 @@ export const Message = defineMessageUnion({
 	/** The scope step's form submit (Continue or Enter). */
 	SubmittedGcpCreate: {},
 	ToggledGcpCollect: { capability: Capability },
+	/** A connection's feature switch: Edit data opens with that change drafted, to save from there. */
+	ToggledGcpFeature: { id: Schema.String, capability: Capability },
 	ClickedGcpLogFilter: {},
 	GotGcpFilterModeMessage: { message: Select.Message },
 	ClickedGcpForwardOutput: {},
