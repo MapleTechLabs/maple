@@ -179,12 +179,11 @@ export const exponentialBuckets = (
 	const fits = (buckets: ExponentialBuckets) =>
 		buckets.positive.counts.length <= maxSize && buckets.negative.counts.length <= maxSize
 	const scales = Arr.makeBy(maxScale - MIN_SCALE + 1, (i) => maxScale - i)
-	return Option.getOrElse(
-		Arr.findFirst(
-			Arr.map(scales, (scale) => at(scale)),
-			fits,
+	return at(
+		Option.getOrElse(
+			Arr.findFirst(scales, (scale) => fits(at(scale))),
+			() => MIN_SCALE,
 		),
-		() => at(MIN_SCALE),
 	)
 }
 
