@@ -107,7 +107,8 @@ const headline = (deploy: DeployCheck): string => {
 /** A deploy flagged before its window is up names the minutes it was judged on, not the full window. */
 const detail = (deploy: DeployCheck, newIssues: number): string => {
 	const window = `${deploy.windowMinutes} minutes`
-	const judged = deploy.minutes < deploy.windowMinutes ? `${deploy.minutes} minutes` : window
+	const judged =
+		deploy.minutes < deploy.windowMinutes ? countLabel(Math.max(1, deploy.minutes), "minute") : window
 	const issues = newIssues === 0 ? "" : ` ${countLabel(newIssues, "open issue")} first seen since.`
 	const figure = verdictFigure(deploy)
 	return figure === undefined
