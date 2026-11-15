@@ -1,22 +1,30 @@
-import { errorRateLevel } from "@maple/ui/lib/error-rate"
-import { countLabel, formatErrorRate, formatNumber, pluralize } from "@maple/ui/lib/format"
+import { PANEL_ROW_CLASS } from "./view-panels"
+import { parseWarehouseDateTime } from "@maple/query-engine"
+import { countLabel, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
-import { TONE_SOFT } from "@maple/ui/lib/tone"
 import { cn } from "@maple/ui/lib/utils"
 import { IssueSeverity } from "@maple/domain/http"
 import { AsyncData } from "foldkit"
 import { Schema, Array as Arr, String as Str, Option } from "effect"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { button } from "@maple/views/ui/button"
-import { badge } from "@maple/views/ui/display"
 import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { listRow } from "@maple/views/ui/list-row"
+import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployEntry, deriveDeploys } from "./derive-panels"
+import {
+	type DeployCheck,
+	deployBefore,
+	deployChecksOf,
+	deployDataEndOf,
+	isOpenDeploy,
+	railOrder,
+} from "./derive-deploys"
+import { verdictBadge, verdictFigure } from "./view-verdict"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
 import { DEPLOYS_EXPANDED, DEPLOYS_RAIL } from "./update"
@@ -40,16 +48,45 @@ const issueSeverityBadge = (h: H, severity: string | null): Html =>
 		"w-[60px] justify-center",
 	)
 
-const issueLine = (h: H, issue: Issue, clock: Clock): Html =>
+/** "new since 9b2f0d1": the window's deploy an issue first appeared after. */
+const newSinceTag = (h: H, deploy: DeployCheck | undefined): ReadonlyArray<Html> =>
+	deploy === undefined
+		? []
+		: [
+				typography(
+					h,
+					{
+						size: "2xs",
+						tone: "subtle",
+						// Phones keep the room for the title.
+						className: "hidden shrink-0 sm:inline",
+						attributes: [h.Title(`First seen after ${deploy.sha} deployed`)],
+					},
+					["new since ", typography(h, { mono: true }, [shortReleaseLabel(deploy.sha)])],
+				),
+			]
+
+const issueLine = (
+	h: H,
+	issue: Issue,
+	clock: Clock,
+	hasSeverity: boolean,
+	deploys: ReadonlyArray<DeployCheck>,
+	dataEndMs: number,
+): Html =>
 	listRow(h, {
 		density: "compact",
-		className: "gap-2.5 rounded-sm px-2 text-sm",
+		className: PANEL_ROW_CLASS,
 		href: `/errors/issues/${issue.id}`,
-		leading: issueSeverityBadge(h, issue.severity),
+		leading: hasSeverity ? issueSeverityBadge(h, issue.severity) : undefined,
 		title: truncatedText(h, { text: issue.title, className: "font-normal" }),
 		trailing: h.span(
 			[h.Class("contents")],
 			[
+				...newSinceTag(
+					h,
+					deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), dataEndMs),
+				),
 				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
 					formatNumber(issue.occurrenceCount),
 					"×",
@@ -79,48 +116,39 @@ const issuesFrame = (h: H, isLimited: boolean, children: ReadonlyArray<Html>): H
 	)
 
 /** Skeleton, the "Couldn't load" line, or up to five issue rows. */
-export const issuesPanel = (h: H, model: Model, clock: Clock, isLimited: boolean): Html =>
+export const issuesPanel = (
+	h: H,
+	model: Model,
+	clock: Clock,
+	isLimited: boolean,
+	deploys: ReadonlyArray<DeployCheck>,
+): Html =>
 	AsyncData.match(model.issues.data, {
 		onIdle: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
 		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
-		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited),
-		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited),
+		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited, deploys, deployDataEndOf(model)),
+		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited, deploys, deployDataEndOf(model)),
 	})
 
-const issuesReady = (h: H, issues: ReadonlyArray<Issue>, clock: Clock, isLimited: boolean): Html =>
-	issuesFrame(h, isLimited, [
+const issuesReady = (
+	h: H,
+	issues: ReadonlyArray<Issue>,
+	clock: Clock,
+	isLimited: boolean,
+	deploys: ReadonlyArray<DeployCheck>,
+	dataEndMs: number,
+): Html => {
+	const hasSeverity = Arr.some(issues, (issue) => issue.severity !== null)
+	return issuesFrame(h, isLimited, [
 		issues.length === 0
 			? emptyMessage(h, {}, ["No open issues for this service"])
 			: h.div(
 					[h.Class("space-y-px p-2")],
-					Arr.map(issues, (issue) => issueLine(h, issue, clock)),
+					Arr.map(issues, (issue) => issueLine(h, issue, clock, hasSeverity, deploys, dataEndMs)),
 				),
 	])
-
-/** The version's window-wide error rate, shown even at ~0%. */
-const errorRateChip = (h: H, deploy: DeployEntry): Html => {
-	if (deploy.spanCount <= 0) return null
-	const ratio = deploy.errorCount / deploy.spanCount
-	const level = errorRateLevel(ratio)
-	return badge(
-		h,
-		{
-			size: "xs",
-			mono: true,
-			className: cn(
-				"cursor-default",
-				level === "neutral" ? "bg-transparent text-foreground-subtle" : TONE_SOFT[level],
-			),
-			attributes: [
-				h.Title(
-					`${formatNumber(deploy.errorCount)} errors of ${formatNumber(deploy.spanCount)} spans while this version served traffic`,
-				),
-			],
-		},
-		[formatErrorRate(ratio)],
-	)
 }
 
 /** Avatar · [line1 + chip / line2]. */
@@ -135,25 +163,41 @@ const rowFrame = (h: H, avatar: Html, line1: Html, chip: Html, line2: ReadonlyAr
 
 const rowMeta = (
 	h: H,
-	deploy: DeployEntry,
+	deploy: DeployCheck,
 	clock: Clock,
 	prefix: ReadonlyArray<Html>,
-): ReadonlyArray<Html> => [
-	...prefix,
-	typography(h, { numeric: true, className: "shrink-0" }, [formatNumber(deploy.spanCount), " spans"]),
-	relativeTime(h, {
-		value: deploy.firstSeen,
-		...clock,
-		variant: "orDate",
-		mono: true,
-		className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
-	}),
-]
+	showEnvironment: boolean,
+): ReadonlyArray<Html> => {
+	const figure = verdictFigure(deploy)
+	return [
+		...prefix,
+		...(showEnvironment && deploy.environment !== ""
+			? [typography(h, { className: "shrink-0" }, [deploy.environment])]
+			: []),
+		...(figure === undefined
+			? []
+			: [typography(h, { mono: true, numeric: true, className: "shrink-0" }, [figure])]),
+		relativeTime(h, {
+			value: deploy.firstSeenMs,
+			...clock,
+			variant: "orDate",
+			mono: true,
+			className: "ml-auto shrink-0 cursor-default text-foreground-subtle",
+		}),
+	]
+}
 
 const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full bg-muted")])
 
-const deploysEmpty = (h: H): Html =>
-	emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
+/** A service that reports versions just shipped nothing new; one that reports none gets the setup hint. */
+const deploysEmpty = (h: H, model: Model): Html => {
+	// Only a settled overview with no versions earns the setup hint; until it answers, stay neutral.
+	const hasNoVersions = AsyncData.getOrElse(
+		AsyncData.map(model.overview.data, (overview) => overview.releases.length === 0),
+		() => false,
+	)
+	if (!hasNoVersions) return emptyMessage(h, {}, ["No new version deployed in this window"])
+	return emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
 		h.span([], ["No deploys detected in this window"]),
 		typography(h, { tone: "subtle" }, [
 			"Deploy tracking needs spans to carry the",
@@ -163,9 +207,10 @@ const deploysEmpty = (h: H): Html =>
 		]),
 		h.span([h.Class("mt-1")], [docsLink(h, "github")]),
 	])
+}
 
 /** One CTA when the first resolvable sha failed as "not connected". */
-const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntry>): ReadonlyArray<Html> => {
+const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployCheck>): ReadonlyArray<Html> => {
 	const commit = Option.match(
 		Arr.findFirst(deploys, (deploy) => isResolvableSha(deploy.sha)),
 		{ onNone: () => undefined, onSome: (first) => model.commits[first.sha] },
@@ -189,40 +234,48 @@ const connectRepoFooter = (h: H, model: Model, deploys: ReadonlyArray<DeployEntr
 		: []
 }
 
-/** Newest first, eight rows until expanded (fifty at most). */
-export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolean): Html => {
-	if (isLoading) {
-		return sectionCard(h, { title: "Recent deploys" }, [
-			skeletonList(h, { rows: 4, className: "p-2", renderRow: () => deploySkeleton(h) }),
-		])
-	}
-	const releases = AsyncData.getOrElse(
-		AsyncData.map(model.overview.data, (data) => data.releases),
-		() => [],
-	)
-	const deploys = deriveDeploys(releases)
+const deploysFrame = (h: H, action: Html | undefined, children: ReadonlyArray<Html>): Html =>
+	sectionCard(h, { title: "Recent deploys", action }, children)
+
+/** Flagged first, then newest; eight rows until expanded (fifty at most). */
+export const deploysPanel = (h: H, model: Model, clock: Clock): Html =>
+	AsyncData.match(model.deploys.data, {
+		onIdle: () => deploysLoading(h),
+		onLoading: () => deploysLoading(h),
+		onFailure: () => deploysFrame(h, undefined, [emptyMessage(h, {}, ["Couldn't load deploys"])]),
+		onStale: () => deploysFrame(h, undefined, [emptyMessage(h, {}, ["Couldn't load deploys"])]),
+		onRefreshing: () => deploysReady(h, model, clock),
+		onSuccess: () => deploysReady(h, model, clock),
+	})
+
+const deploysLoading = (h: H): Html =>
+	deploysFrame(h, undefined, [
+		skeletonList(h, { rows: 4, className: "p-2", renderRow: () => deploySkeleton(h) }),
+	])
+
+const deploysReady = (h: H, model: Model, clock: Clock): Html => {
+	const deploys = railOrder(deployChecksOf(model))
+	const showEnvironment = new Set(Arr.map(deploys, (deploy) => deploy.environment)).size > 1
 	const isExpanded = model.isDeploysExpanded
 	const visible = deploys.slice(0, isExpanded ? DEPLOYS_EXPANDED : DEPLOYS_RAIL)
 	const hiddenCount = deploys.length - visible.length
-	return sectionCard(
+	return deploysFrame(
 		h,
-		{
-			title: "Recent deploys",
-			action:
-				deploys.length === 0
-					? undefined
-					: typography(h, { size: "xs", tone: "subtle" }, [
-							countLabel(deploys.length, "version"),
-							" in this window",
-						]),
-		},
 		deploys.length === 0
-			? [deploysEmpty(h)]
+			? undefined
+			: typography(h, { size: "xs", tone: "subtle" }, [
+					countLabel(deploys.length, "deploy"),
+					" in this window",
+				]),
+		deploys.length === 0
+			? [deploysEmpty(h, model)]
 			: [
 					h.div(
 						[h.Class(cn("space-y-px p-2", isExpanded && "max-h-96 overflow-y-auto"))],
 						[
-							...Arr.map(visible, (deploy) => deployRow(h, model, deploy, clock)),
+							...Arr.map(visible, (deploy) =>
+								deployRow(h, model, deploy, clock, showEnvironment),
+							),
 							...(isExpanded && hiddenCount > 0
 								? [
 										h.div(
@@ -232,7 +285,7 @@ export const deploysPanel = (h: H, model: Model, clock: Clock, isLoading: boolea
 												),
 											],
 											[
-												`…and ${hiddenCount} more ${pluralize(hiddenCount, "version")} in this window`,
+												`…and ${hiddenCount} more ${pluralize(hiddenCount, "deploy")} in this window`,
 											],
 										),
 									]
@@ -286,8 +339,27 @@ const deploySkeleton = (h: H): Html =>
 		]),
 	])
 
-const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html => {
-	const chip = errorRateChip(h, deploy)
+/** A row opens the deploy's drawer; the open one keeps its lane. */
+const deployRow = (h: H, model: Model, deploy: DeployCheck, clock: Clock, showEnvironment: boolean): Html =>
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedDeploy({ sha: deploy.sha, environment: deploy.environment }),
+			selectedLane: isOpenDeploy(model.search, deploy),
+			className: "block w-full rounded-sm text-left hover:bg-surface-sunken active:bg-surface-sunken",
+			attributes: [h.Key(`${deploy.sha}-${deploy.environment}`)],
+		},
+		[deployRowContent(h, model, deploy, clock, showEnvironment)],
+	)
+
+const deployRowContent = (
+	h: H,
+	model: Model,
+	deploy: DeployCheck,
+	clock: Clock,
+	showEnvironment: boolean,
+): Html => {
+	const chip = verdictBadge(h, deploy)
 	if (!isResolvableSha(deploy.sha)) {
 		const label = shortId(deploy.sha, "generic", { length: 24, ellipsis: true })
 		return rowFrame(
@@ -295,7 +367,13 @@ const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html 
 			blankAvatar(h),
 			typography(h, { size: "xs", tone: "foreground", mono: true }, [label]),
 			chip,
-			rowMeta(h, deploy, clock, [h.span([h.Class("shrink-0")], ["deployment reference"])]),
+			rowMeta(
+				h,
+				deploy,
+				clock,
+				[h.span([h.Class("shrink-0")], ["deployment reference"])],
+				showEnvironment,
+			),
 		)
 	}
 	const fallback = () =>
@@ -304,21 +382,27 @@ const deployRow = (h: H, model: Model, deploy: DeployEntry, clock: Clock): Html 
 			blankAvatar(h),
 			commitTrigger(h, "font-mono text-xs text-foreground", shortReleaseLabel(deploy.sha)),
 			chip,
-			rowMeta(h, deploy, clock, [h.span([h.Class("shrink-0")], ["commit unresolved"])]),
+			rowMeta(
+				h,
+				deploy,
+				clock,
+				[h.span([h.Class("shrink-0")], ["commit unresolved"])],
+				showEnvironment,
+			),
 		)
 	return AsyncData.match(model.commits[deploy.sha] ?? AsyncData.Loading(), {
 		onIdle: () => deploySkeleton(h),
 		onLoading: () => deploySkeleton(h),
 		onFailure: fallback,
 		onStale: fallback,
-		onRefreshing: (commit) => resolvedRow(h, deploy, commit, chip, clock),
-		onSuccess: (commit) => resolvedRow(h, deploy, commit, chip, clock),
+		onRefreshing: (commit) => resolvedRow(h, deploy, commit, chip, clock, showEnvironment),
+		onSuccess: (commit) => resolvedRow(h, deploy, commit, chip, clock, showEnvironment),
 	})
 }
 
 const resolvedRow = (
 	h: H,
-	deploy: DeployEntry,
+	deploy: DeployCheck,
 	commit: Readonly<{
 		message: string
 		authorLogin: string | null
@@ -327,6 +411,7 @@ const resolvedRow = (
 	}>,
 	chip: Html,
 	clock: Clock,
+	showEnvironment: boolean,
 ): Html => {
 	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
 	const subject = firstLine(commit.message)
@@ -335,13 +420,19 @@ const resolvedRow = (
 		commitAvatar(h, commit.authorAvatarUrl, author),
 		commitTrigger(h, "text-foreground", subject === "" ? shortReleaseLabel(deploy.sha) : subject),
 		chip,
-		rowMeta(h, deploy, clock, [
-			typography(h, { truncate: true, className: "min-w-0" }, [author]),
-			typography(
-				h,
-				{ mono: true, numeric: true, className: "shrink-0", attributes: [h.Title(deploy.sha)] },
-				[shortId(deploy.sha, "sha")],
-			),
-		]),
+		rowMeta(
+			h,
+			deploy,
+			clock,
+			[
+				typography(h, { truncate: true, className: "min-w-0" }, [author]),
+				typography(
+					h,
+					{ mono: true, numeric: true, className: "shrink-0", attributes: [h.Title(deploy.sha)] },
+					[shortId(deploy.sha, "sha")],
+				),
+			],
+			showEnvironment,
+		),
 	)
 }

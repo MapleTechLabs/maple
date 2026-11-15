@@ -1,27 +1,20 @@
 import { Clock, Effect, Schema, Array as Arr } from "effect"
 import { formatWarehouseDateTime } from "@maple/query-engine"
 import {
-	CommitSha,
 	DeploymentEnvironment,
-	ReleaseDetailRequest,
 	ReleasesListRequest,
 	ServiceName,
 	ServiceNamespace,
 	type ReleaseRow,
-	type ReleaseTimelinePoint,
 } from "@maple/domain/http"
 import { MapleInternalHttp } from "./warehouse-services"
-import { buildServiceDetailPoints, makeAllMetricsTimeseriesRequest, toEnvFilter } from "./custom-charts"
-import type { ServiceDetailTimeSeriesPoint } from "./services"
-import { computeBucketSeconds, quantizeToMinute, toIsoBucket } from "./timeseries-utils"
+import { toEnvFilter } from "./custom-charts"
+import { toIsoBucket } from "./timeseries-utils"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
 const dateTimeString = WarehouseDateTimeString
 
 const DEFAULT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
-
-/** Swimlane resolution: about this many buckets across the window. */
-const TIMELINE_TARGET_POINTS = 96
 
 const defaultWindow = (nowMs: number) => ({
 	startTime: formatWarehouseDateTime(nowMs - DEFAULT_WINDOW_MS),
@@ -33,18 +26,9 @@ export interface Release extends Omit<ReleaseRow, "firstSeen"> {
 	firstSeen: string
 }
 
-export interface ReleaseTimelineBucket extends Omit<ReleaseTimelinePoint, "bucket"> {
-	bucket: string
-}
-
 const toRelease = (row: ReleaseRow): Release => ({
 	...row,
 	firstSeen: toIsoBucket(row.firstSeen),
-})
-
-const toTimelineBucket = (row: ReleaseTimelinePoint): ReleaseTimelineBucket => ({
-	...row,
-	bucket: toIsoBucket(row.bucket),
 })
 
 const GetReleasesInput = Schema.Struct({
@@ -60,12 +44,10 @@ export type GetReleasesInput = (typeof GetReleasesInput)["Encoded"]
 
 export interface ReleasesResult {
 	releases: Release[]
-	timeline: ReleaseTimelineBucket[]
 	truncated: boolean
-	/** The window the rows describe, ISO — the page derives "share of the last bucket" against it. */
+	/** The window the rows describe, ISO. */
 	startTime: string
 	endTime: string
-	bucketSeconds: number
 }
 
 export function getReleases({ data }: { data: GetReleasesInput }) {
@@ -82,12 +64,6 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 	const fallback = defaultWindow(now)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
-	// Whole minutes: the rollup tiers cannot place a row inside a minute, and
-	// the raw fallback would scan the entry-point projection org-wide.
-	const bucketSeconds = Math.max(
-		60,
-		quantizeToMinute(computeBucketSeconds(startTime, endTime, TIMELINE_TARGET_POINTS)),
-	)
 
 	const result = yield* runWarehouseQuery("releasesList", () =>
 		Effect.gen(function* () {
@@ -100,7 +76,6 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 					namespaces: input.namespaces,
 					services: input.services,
 					excludedEnvironments: toEnvFilter(input.excludedEnvironments),
-					bucketSeconds,
 				}),
 			})
 		}),
@@ -108,112 +83,8 @@ const getReleasesEffect = Effect.fn("QueryEngine.getReleases")(function* ({
 
 	return {
 		releases: Arr.map(result.releases, toRelease),
-		timeline: Arr.map(result.timeline, toTimelineBucket),
 		truncated: result.truncated,
 		startTime: toIsoBucket(startTime),
 		endTime: toIsoBucket(endTime),
-		bucketSeconds,
 	} satisfies ReleasesResult
-})
-
-const GetReleaseDetailInput = Schema.Struct({
-	serviceName: ServiceName,
-	commitSha: CommitSha,
-	/** The version this one replaced; the baseline charts fall back to every other version without it. */
-	baselineCommitSha: Schema.optional(CommitSha),
-	startTime: Schema.optional(dateTimeString),
-	endTime: Schema.optional(dateTimeString),
-	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
-})
-
-export type GetReleaseDetailInput = (typeof GetReleaseDetailInput)["Encoded"]
-
-export interface ReleaseErrorFingerprint {
-	fingerprintHash: string
-	count: number
-	firstSeen: string
-}
-
-export interface ReleaseDetailResult {
-	/** Every version of the service in the window, this one included. */
-	versions: Release[]
-	timeline: ReleaseTimelineBucket[]
-	/** Golden signals for this version only. */
-	points: ServiceDetailTimeSeriesPoint[]
-	/** Golden signals for the replaced version, or every other version when it is unknown. */
-	baselinePoints: ServiceDetailTimeSeriesPoint[]
-	errorFingerprints: ReleaseErrorFingerprint[]
-	startTime: string
-	endTime: string
-	bucketSeconds: number
-}
-
-export function getReleaseDetail({ data }: { data: GetReleaseDetailInput }) {
-	return getReleaseDetailEffect({ data })
-}
-
-const getReleaseDetailEffect = Effect.fn("QueryEngine.getReleaseDetail")(function* ({
-	data,
-}: {
-	data: GetReleaseDetailInput
-}) {
-	const input = yield* decodeInput(GetReleaseDetailInput, data, "getReleaseDetail")
-	const nowMs = yield* Clock.currentTimeMillis
-	const fallback = defaultWindow(nowMs)
-	const startTime = input.startTime ?? fallback.startTime
-	const endTime = input.endTime ?? fallback.endTime
-	const bucketSeconds = Math.max(60, quantizeToMinute(computeBucketSeconds(startTime, endTime)))
-	const environments = toEnvFilter(input.environments)
-
-	const common = {
-		startTime,
-		endTime,
-		bucketSeconds,
-		serviceName: input.serviceName,
-		rootSpansOnly: true,
-		environments,
-	}
-
-	const result = yield* runWarehouseQuery("releaseDetail", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleInternalHttp
-			return yield* client.queryEngine.releaseDetail({
-				payload: new ReleaseDetailRequest({
-					serviceName: input.serviceName,
-					commitSha: input.commitSha,
-					startTime,
-					endTime,
-					environments,
-					timeseries: makeAllMetricsTimeseriesRequest({ ...common, commitShas: [input.commitSha] }),
-					baselineTimeseries: makeAllMetricsTimeseriesRequest(
-						input.baselineCommitSha === undefined
-							? { ...common, excludedCommitShas: [input.commitSha] }
-							: { ...common, commitShas: [input.baselineCommitSha] },
-					),
-					bucketSeconds,
-				}),
-			})
-		}),
-	)
-
-	return {
-		versions: Arr.map(result.versions, toRelease),
-		timeline: Arr.map(result.timeline, toTimelineBucket),
-		points: buildServiceDetailPoints(result.timeseries, startTime, endTime, bucketSeconds, nowMs),
-		baselinePoints: buildServiceDetailPoints(
-			result.baselineTimeseries,
-			startTime,
-			endTime,
-			bucketSeconds,
-			nowMs,
-		),
-		errorFingerprints: Arr.map(result.errorFingerprints, (row) => ({
-			fingerprintHash: row.fingerprintHash,
-			count: row.count,
-			firstSeen: toIsoBucket(row.firstSeen),
-		})),
-		startTime: toIsoBucket(startTime),
-		endTime: toIsoBucket(endTime),
-		bucketSeconds,
-	} satisfies ReleaseDetailResult
 })
