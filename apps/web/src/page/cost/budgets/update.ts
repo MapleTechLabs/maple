@@ -146,7 +146,8 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			const settled = { ...model, togglingIds: withoutId(model.togglingIds, id) }
 			return Result.match(result, {
 				// The switch shows what was stored at once. The answer carries no standing, and may
-				// carry what another manager changed since the list was read, so the list is read again.
+				// carry what another manager changed since the list was read, so the list is read
+				// again, past any read sent before this write.
 				onSuccess: (saved): Return =>
 					readList(
 						withRows(settled, (rows) =>
@@ -155,7 +156,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 							),
 						),
 						context,
-						"Refresh",
+						"Supersede",
 					),
 				onFailure: (failure): Return => ({
 					model: settled,

@@ -231,8 +231,13 @@ describe("cost budgets", () => {
 	// the budget since the list was read, so the switch shows the answer and the list is read again.
 	test("the switch shows what the API stored at once, then reads again where the budgets stand", () => {
 		const { progress, ...budget } = named("AWS production")
-		const key = loaded().list.key ?? ""
 		const raised = { ...budget, enabled: false, amount: 8_000 }
+		// The re-read is asked for under its own key, so no earlier read can answer for it.
+		const key =
+			fold(loaded(), [
+				() => Message.ToggledBudget({ id: budget.id }),
+				() => Message.CompletedToggle({ id: budget.id, result: Result.succeed(raised) }),
+			]).list.key ?? ""
 		const reread = {
 			budgets: Arr.map(LIST_OF_FIVE.budgets, (row) =>
 				row.id === budget.id ? { ...raised, progress: { ...progress, percent: 48.9 } } : row,
@@ -260,6 +265,42 @@ describe("cost budgets", () => {
 			expectView(within(table, text("48%"))).toExist(),
 			expectView(within(table, text("65%"))).toBeAbsent(),
 		)
+	})
+
+	// Two switches in quick succession: the first one's re-read was sent before the second write,
+	// so it still has the second budget on. Landing last, it must not flip that switch back.
+	test("a re-read sent before a later write does not undo that write when it lands last", () => {
+		const stored = (name: string) => {
+			const { progress: _, ...budget } = named(name)
+			return { ...budget, enabled: false }
+		}
+		const [first, second] = [stored("AWS production"), stored("Model spend")]
+		const toggled = (model: Model, budget: typeof first): Model =>
+			fold(model, [
+				() => Message.ToggledBudget({ id: budget.id }),
+				() => Message.CompletedToggle({ id: budget.id, result: Result.succeed(budget) }),
+			])
+		const afterFirst = toggled(loaded(), first)
+		const afterSecond = toggled(afterFirst, second)
+		const listWith = (off: ReadonlyArray<string>) => ({
+			budgets: Arr.map(LIST_OF_FIVE.budgets, (row) =>
+				Arr.contains(off, row.id) ? { ...row, enabled: false } : row,
+			),
+		})
+		const answered = (model: Model, key: string | null, off: ReadonlyArray<string>) =>
+			pageUpdate(
+				model,
+				Message.CompletedFetchBudgets({ key: key ?? "", result: Result.succeed(listWith(off)) }),
+			).model
+		const isOn = (model: Model, id: typeof second.id) =>
+			Option.map(budgetById(model, id), (budget) => budget.enabled)
+
+		expect(afterSecond.list.key).not.toBe(afterFirst.list.key)
+		const late = answered(afterSecond, afterFirst.list.key, [first.id])
+		expect(isOn(late, second.id)).toEqual(Option.some(false))
+		const settled = answered(late, afterSecond.list.key, [first.id, second.id])
+		expect(isOn(settled, first.id)).toEqual(Option.some(false))
+		expect(isOn(settled, second.id)).toEqual(Option.some(false))
 	})
 
 	// An account's id means nothing to a reader: the org's sources say what reads it.
