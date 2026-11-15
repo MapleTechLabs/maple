@@ -1532,29 +1532,25 @@ impl TelemetryPipeline {
                     PipelineError::QueueUnavailable(error)
                 })?;
                 let added = (head.len() + frame.payload.len()) as u64;
-                // Room the plan reserved under the lane cap is already counted there.
-                let reserved = grant.as_ref().is_some_and(|grant| grant.wal_bytes >= added);
+                // Room the plan reserved under the lane cap is already counted there,
+                // and moves into the append so a dropped request cannot return it early.
+                let hold = grant.as_deref_mut().map(|grant| grant.hold_frame(added));
+                let reserved = hold.as_ref().is_some_and(|hold| hold.wal_bytes > 0);
                 // The append writes the rows from the frame's own buffer.
                 let payload = frame.payload.clone();
                 let deliver =
-                    queued_delivery(frame, shard, permit, reservation, source_span.clone());
+                    queued_delivery(frame, shard, permit, reservation, source_span.clone(), hold);
                 let appended = self
                     .inner
                     .wal
                     .append_delivering(lane, head, payload, !reserved, deliver)
                     .await;
-                if let Some(grant) = grant.as_mut().filter(|_| reserved) {
-                    grant.release_wal(added);
-                }
                 let appended = appended.map_err(|error| {
                     record_failing_frame(shard, lane, &datasource);
                     PipelineError::QueueUnavailable(error)
                 })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
-                if let Some(grant) = grant.as_ref() {
-                    grant.frames_written.fetch_add(1, Ordering::Relaxed);
-                }
                 batch_frames = batch_frames.max(appended.batch_frames);
                 lock_wait += appended.lock_wait;
                 sync_wait += appended.sync_wait;
@@ -1812,10 +1808,30 @@ struct PlanGrant {
 }
 
 impl PlanGrant {
-    fn release_wal(&mut self, bytes: u64) {
-        let bytes = bytes.min(self.wal_bytes);
-        self.wal_bytes -= bytes;
-        self.wal_lane.release_reserved(bytes);
+    /// Moves one frame's lane room (when the plan still holds it) into a hold that
+    /// lives as long as the frame's append, wherever that ends.
+    fn hold_frame(&mut self, bytes: u64) -> FrameHold {
+        let wal_bytes = if self.wal_bytes >= bytes { bytes } else { 0 };
+        self.wal_bytes -= wal_bytes;
+        FrameHold {
+            frames_written: Arc::clone(&self.frames_written),
+            wal_lane: Arc::clone(&self.wal_lane),
+            wal_bytes,
+        }
+    }
+}
+
+/// A planned frame's share of its grant, carried by the frame's delivery: it counts
+/// the frame when delivered and returns its lane room once the append is done.
+struct FrameHold {
+    frames_written: Arc<AtomicUsize>,
+    wal_lane: Arc<WalLane>,
+    wal_bytes: u64,
+}
+
+impl Drop for FrameHold {
+    fn drop(&mut self) {
+        self.wal_lane.release_reserved(self.wal_bytes);
     }
 }
 
@@ -1925,8 +1941,12 @@ fn queued_delivery(
     permit: mpsc::OwnedPermit<QueuedFrame>,
     reservation: OrgBytesReservation,
     source_span: Option<SpanContext>,
+    hold: Option<FrameHold>,
 ) -> Delivery {
     Box::new(move |segment, start, end| {
+        if let Some(hold) = &hold {
+            hold.frames_written.fetch_add(1, Ordering::Relaxed);
+        }
         let queued_bytes = reservation.bytes;
         reservation.commit();
         permit.send(QueuedFrame {
@@ -4675,6 +4695,12 @@ impl RowBuffer {
         if self.rows == 0 {
             return None;
         }
+        let mut payload = self.payload;
+        // The estimate can far exceed the rows; queued frames are charged their
+        // length, so give back spare room over a quarter before queueing.
+        if payload.capacity() - payload.len() > payload.len() / 4 {
+            payload.shrink_to_fit();
+        }
         Some(EncodedFrame {
             routing_key,
             org_id: org_id.to_owned(),
@@ -4682,7 +4708,7 @@ impl RowBuffer {
             destination: ExportDestination::Tinybird,
             datasource: datasource.to_owned(),
             row_count: self.rows,
-            payload: Bytes::from(self.payload),
+            payload: Bytes::from(payload),
         })
     }
 }
