@@ -49,7 +49,7 @@ const isWordStartMatch = (title: string, query: string): boolean => {
 }
 
 /**
- * `fuse.search(query)` over every entry (flagged rows included), best first. When some titles have
+ * `fuse.search(query)` over the entries the viewer can be shown, best first. When some titles have
  * a word starting with the query, the fuzzy mid-word hits drop out; a typo still falls back to them.
  */
 const rankedIds = (entries: ReadonlyArray<PaletteEntry>, query: string): ReadonlyArray<string> => {
@@ -73,7 +73,8 @@ const computeShownEntries = (
 	const query = Str.trim(model.list.inputValue)
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }
 	const byId = new Map(Arr.map(entries, (entry) => [entry.id, entry] as const))
-	const ranked = Arr.flatMap(rankedIds(all, query), (id) => Arr.fromNullishOr(byId.get(id))).slice(
+	// Ranked among what is shown: a hidden flagged row's better match must not push out the rest.
+	const ranked = Arr.flatMap(rankedIds(entries, query), (id) => Arr.fromNullishOr(byId.get(id))).slice(
 		0,
 		MAX_RESULTS,
 	)

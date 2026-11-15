@@ -202,4 +202,15 @@ describe("command palette", () => {
 		expect(found(["/cost"])).toContain("Cost budgets")
 		expect(found(ALL_FLAGGED)).not.toContain("Cost budgets")
 	})
+
+	// "Cost budgets" is the one title with a word starting "budgets". Hidden, it must not be what
+	// decides that the looser matches drop out.
+	test("a hidden row's better match does not push out what the viewer can open", () => {
+		const model = typed(loadedWith(["budgeting"]), "budgets").model
+		const ids = (visibleFlagged: ReadonlyArray<string>) =>
+			Arr.map(shownEntries(model, context, visibleFlagged).entries, (entry) => entry.id)
+
+		expect(ids(ALL_FLAGGED)).toContain("service:budgeting")
+		expect(ids(["/cost"])).not.toContain("service:budgeting")
+	})
 })
