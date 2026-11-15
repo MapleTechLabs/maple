@@ -123,6 +123,22 @@ describe("getProfile", () => {
 		expect((await requests())[1]?.body).toEqual({ ...SERVICE, sampleType: "cpu", sampleUnit: "count" })
 	})
 
+	test("passes over a sample type the stacks read would refuse", async () => {
+		answerWith([
+			sampleType(Str.repeat(129)("a"), "count", 9_000),
+			sampleType("", "count", 8_000),
+			sampleType("wall", "nanoseconds", 10),
+		])
+		const profile = await run(getProfile({ data: SERVICE }))
+		expect(Option.map(profile, (found) => found.sampleType)).toEqual(Option.some("wall"))
+	})
+
+	test("reads a scope whose every sample type is unreadable as having no profile", async () => {
+		answerWith([sampleType("", "count", 8_000)])
+		expect(await run(getProfile({ data: SERVICE }))).toEqual(Option.none())
+		expect(mocks.fetch).toHaveBeenCalledTimes(1)
+	})
+
 	test("reads a sample type whose producer named no unit", async () => {
 		answerWith([sampleType("unknown", "", 12)])
 		const profile = await run(getProfile({ data: SERVICE }))
