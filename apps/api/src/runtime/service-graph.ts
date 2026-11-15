@@ -124,6 +124,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
+import { SavedViewsService } from "@maple/backend/services/saved-views/SavedViewsService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
@@ -197,6 +198,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	OrganizationService.layer,
 	MobileDevicesService.layer,
 	AgentFeedbackService.layer,
+	SavedViewsService.layer,
 	LiveActivitiesService.layer,
 	PlanetScaleWebhookQueue.layer,
 	CancellationReviewQueue.layer,

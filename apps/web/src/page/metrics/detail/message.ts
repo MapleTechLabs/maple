@@ -11,6 +11,7 @@ import * as Combobox from "@maple/views/ui/combobox"
 import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Select from "@maple/views/ui/select"
 import { MetricRow } from "../shared"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AttributeKeyRow, AutocompleteLookup, BreakdownRow, TimeseriesRows } from "./model"
 import { LookupNames } from "../../kit/autocomplete-lookups"
@@ -59,5 +60,6 @@ export const Message = defineMessageUnion({
 	GotCopyLinkMessage: { message: CopyButton.Message },
 	GotChartMessage: { message: Chart.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
+	GotSavedViewsMessage: { message: SavedViews.Message },
 })
 export type Message = typeof Message.Type

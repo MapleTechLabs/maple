@@ -666,29 +666,8 @@ export function resolveMetricTable(metricType: MetricType) {
 	return { tbl, isHistogram }
 }
 
-/**
- * Build the standard metrics aggregation SELECT expressions.
- * For value tables (sum/gauge): operates on $.Value column.
- * For histogram tables: operates on $.Sum, $.Count, $.Min, $.Max columns.
- */
-export function metricsSelectExprs(
-	$: ColumnAccessor<typeof Datasources.metricsSum.columns>,
-	isHistogram: boolean,
-) {
-	if (isHistogram) {
-		// SAFETY: `isHistogram` selects the histogram table whose accessor includes Count/Sum/Min/Max.
-		const $h = $ as unknown as ColumnAccessor<typeof Datasources.metricsHistogram.columns>
-		return {
-			avgValue: finiteOrZero(CH.sum($h.Sum).div(CH.sum($h.Count))),
-			// Min/Max are Nullable (OTel histograms may omit extrema), and min/max
-			// over an all-NULL bucket return NULL — fall back to 0 like avgValue so
-			// the declared non-null Float64 row contract holds.
-			minValue: CH.ifNull(CH.min_($h.Min), CH.lit(0)),
-			maxValue: CH.ifNull(CH.max_($h.Max), CH.lit(0)),
-			sumValue: CH.sum($h.Sum),
-			dataPointCount: CH.sum($h.Count),
-		}
-	}
+/** The standard aggregates of a value table (sum or gauge) over `$.Value`. */
+export function metricsSelectExprs($: ColumnAccessor<typeof Datasources.metricsSum.columns>) {
 	return {
 		avgValue: finiteOrZero(CH.avg($.Value)),
 		minValue: CH.min_($.Value),
