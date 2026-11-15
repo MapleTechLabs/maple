@@ -195,6 +195,8 @@ import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSou
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
+import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
+import { evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
@@ -634,6 +636,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const uptimeAlerts = yield* UptimeAlertSource
 			const sloAlerts = yield* SloAlertSource
 			const auditTrail = yield* AuditTrailService
+			const costBudgets = yield* CostBudgetSource
 			const anomalyAlerts = yield* AnomalyAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
@@ -1179,6 +1182,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
 						],
 					})
+				}
+				// A cost budget measures its period to date, each tier on spend so far or on the
+				// forecast. No cost yet reads as zero spent: healthy, not missing data.
+				if (rule.signalType === "cost_budget") {
+					const budget = rule.costBudget
+					if (budget === null) return []
+					const [standing] = yield* costBudgets
+						.progress(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), [budget], endMs)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/CloudCostPersistenceError", (error) =>
+								Effect.fail(makePersistenceError(error)),
+							),
+						)
+					return standing === undefined
+						? []
+						: [
+								{
+									evaluation: evaluateCostBudget(budget, rule.thresholds, standing[1]),
+									groupKey: UNGROUPED_GROUP_KEY,
+								},
+							]
 				}
 				const startMs = endMs - rule.windowMinutes * 60_000
 				// An audit detection counts the events that arrived in its window. The count is a
@@ -4167,7 +4191,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
 				// An audit detection is no fault in a service: it has no place in the triage queue,
 				// and a root-cause run over telemetry has nothing to find.
-				const ownsIssue = normalized.signalType !== "anomaly" && normalized.signalType !== "audit"
+				// Neither is a budget that is spent.
+				const ownsIssue =
+					normalized.signalType !== "anomaly" &&
+					normalized.signalType !== "audit" &&
+					normalized.signalType !== "cost_budget"
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
@@ -6335,6 +6363,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,
 				AuditTrailService.layer,
+				CostBudgetSource.layer,
 			),
 		),
 	)

@@ -1,7 +1,7 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/http-api"
 import { Schema, String as Str } from "effect"
 import { AWS_INFRA_KIND_IDS } from "../aws-infra"
-import { CostDimension, CostMetric, CostProvider } from "../cost"
+import { CostCurrency, CostDimension, CostFilters, CostMetric, CostProvider } from "../cost"
 import { GCP_INFRA_SERVICE_IDS, GCP_INFRA_SOURCE_IDS } from "../gcp-infra"
 import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { ATTACK_STAGES } from "../security-telemetry"
@@ -3064,6 +3064,8 @@ export class SearchConsoleLandingPagesResponse extends Schema.Class<SearchConsol
 	data: Schema.Array(SearchConsoleLandingPage),
 }) {}
 
+export { COST_FILTER_MAX_VALUES, COST_FILTER_MAX_VALUE_LENGTH, CostFilters } from "../cost"
+
 // Cloud cost: provider spend synced into the ingest-pinned `cost_daily`, read per whole UTC day.
 // Every endpoint answers `CloudCostDisabledError` for an org outside the `cloudCost` rollout.
 
@@ -3099,27 +3101,6 @@ export class CloudCostPersistenceError extends HttpTaggedError<CloudCostPersiste
 /** The widest window a cost read takes: a little past what `cost_daily` keeps. */
 export const COST_MAX_WINDOW_DAYS = 800
 
-/** Values per dimension a cost read may narrow to; the query inlines them, so both sizes are capped. */
-export const COST_FILTER_MAX_VALUES = 50
-export const COST_FILTER_MAX_VALUE_LENGTH = 300
-
-const CostFilterValues = Schema.Array(
-	Schema.String.check(Schema.isMaxLength(COST_FILTER_MAX_VALUE_LENGTH)),
-).check(Schema.isMaxLength(COST_FILTER_MAX_VALUES))
-
-/** One optional value list per `CostDimension`; an empty or missing list does not narrow. */
-export const CostFilters = Schema.Struct({
-	provider: Schema.optionalKey(CostFilterValues),
-	account: Schema.optionalKey(CostFilterValues),
-	cloud_service: Schema.optionalKey(CostFilterValues),
-	service_category: Schema.optionalKey(CostFilterValues),
-	usage_type: Schema.optionalKey(CostFilterValues),
-	region: Schema.optionalKey(CostFilterValues),
-	resource: Schema.optionalKey(CostFilterValues),
-	service: Schema.optionalKey(CostFilterValues),
-} satisfies Record<CostDimension, Schema.Top>)
-export type CostFilters = typeof CostFilters.Type
-
 /** The years a cost window may name: day arithmetic past 9999 leaves the four-digit year. */
 const COST_WINDOW_MIN_YEAR = 2000
 const COST_WINDOW_MAX_YEAR = 2100
@@ -3145,9 +3126,6 @@ const CostWindowDateTime = TinybirdDateTime.check(
 		)
 	}),
 )
-
-/** An ISO 4217 code as the providers bill it. The query inlines it, so nothing else gets through. */
-const CostCurrency = Schema.String.check(Schema.isPattern(/^[A-Z]{3}$/u))
 
 /** The window is floored to whole UTC days, both ends inclusive. */
 const CostWindowFields = {
@@ -4134,7 +4112,8 @@ const queryEngineEndpointErrors = [
 // The Security Center's telemetry tabs are for engineers and admins, like its findings.
 const securityEndpointErrors = [...queryEngineEndpointErrors, DependencyScanForbiddenError] as const
 
-const costEndpointErrors = [
+/** What any read of the org's cost can answer with. */
+export const costEndpointErrors = [
 	CloudCostDisabledError,
 	CloudCostPersistenceError,
 	// A window wider than `COST_MAX_WINDOW_DAYS`.

@@ -210,7 +210,8 @@ export const signalCarriesDetail = (signalType: string): boolean =>
 	signalType === "uptime" ||
 	signalType === "slo_burn_rate" ||
 	signalType === "anomaly" ||
-	signalType === "audit"
+	signalType === "audit" ||
+	signalType === "cost_budget"
 
 /** An anomaly rule's value is its severity code; what it says is the detector's sentence. */
 const anomalyObserved = (context: Pick<ObservedContext, "value" | "detail">): string =>
@@ -236,7 +237,9 @@ export const formatObservedSummary = (context: ObservedContext): string =>
 		? uptimeObserved(context)
 		: context.signalType === "anomaly"
 			? anomalyObserved(context)
-			: (context.signalType === "slo_burn_rate" || context.signalType === "audit") &&
+			: (context.signalType === "slo_burn_rate" ||
+						context.signalType === "audit" ||
+						context.signalType === "cost_budget") &&
 				  context.detail != null
 				? context.detail
 				: context.value === null

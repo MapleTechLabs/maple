@@ -87,6 +87,9 @@ export const buildSummaryLine = (context: SummaryLineContext, em: (value: string
 	// A detection's check already says how many events arrived and over which window.
 	if (context.signalType === "audit" && context.detail != null && context.eventType !== "test")
 		return em(context.detail)
+	// A budget's check already says what was spent or forecast, of how much, and in which period.
+	if (context.signalType === "cost_budget" && context.detail != null && context.eventType !== "test")
+		return em(context.detail)
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)
