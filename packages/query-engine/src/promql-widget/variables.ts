@@ -58,10 +58,11 @@ const quoteRuns = (
 		const ch = query[i] ?? ""
 		if (context === "code" && ch === "#") {
 			// A comment runs to the end of the line; its quotes open no string.
-			const end = query.indexOf("\n", i)
-			const stop = end === -1 ? query.length : end
-			current += query.slice(i, stop)
-			i = stop - 1
+			while (i < query.length && query[i] !== "\n") {
+				current += query[i] ?? ""
+				i += 1
+			}
+			i -= 1
 			continue
 		}
 		if (context === "code") {
