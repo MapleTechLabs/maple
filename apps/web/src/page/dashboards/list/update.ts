@@ -414,7 +414,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				model,
 				model.importReportDialog,
 				inner,
-				(importReportDialog) => ({ importReportDialog }),
+				// The report was read in the dialog; once it closes, nothing keeps it.
+				(importReportDialog) =>
+					importReportDialog.isOpen
+						? { importReportDialog }
+						: { importReportDialog, importReport: null },
 				wrapImportReport,
 			),
 		ClickedOpenImportedDashboard: () => {

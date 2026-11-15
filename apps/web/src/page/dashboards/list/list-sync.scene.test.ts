@@ -207,6 +207,12 @@ describe("dashboards list write feedback", () => {
 		expect(opened.outMessage).toEqual(
 			PageOutMessage.RequestedNavigation({ url: "/dashboards/dash_grafana", isReplace: false }),
 		)
+		// Closing the report forgets it: the warnings were read in the dialog.
+		const closed = pageUpdate(
+			imported.model,
+			Message.GotImportReportDialogMessage({ message: Dialog.Message.ClickedClose() }),
+		)
+		expect(closed.model.importReport).toBeNull()
 	})
 
 	test("a clean Grafana import opens the dashboard with a toast naming Grafana", () => {
