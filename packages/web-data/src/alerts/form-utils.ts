@@ -144,6 +144,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	slo_burn_rate: "SLO burn rate",
 	anomaly: "Anomaly",
 	audit: "Audit log",
+	cost_budget: "Cost budget",
 } satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
@@ -208,6 +209,9 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 		// An audit detection observes how many matching events arrived in its window.
 		case "audit":
 			return formatNumber(value)
+		// A cost budget observes the percent of its amount that is spent or forecast.
+		case "cost_budget":
+			return `${Math.round(value)}%`
 	}
 }
 

@@ -18,12 +18,13 @@ export const ruleReadFamilies = (
 		case "apdex":
 		case "throughput":
 			return ["traces"]
-		// No query of their own: an anomaly rule reads open incidents, and uptime, SLO and
-		// audit detection rules are refused by the generic rule APIs before anything runs.
+		// No query of their own: an anomaly rule reads open incidents, and uptime, SLO, audit
+		// detection and cost budget rules are refused by the generic rule APIs before anything runs.
 		case "anomaly":
 		case "uptime":
 		case "slo_burn_rate":
 		case "audit":
+		case "cost_budget":
 			return []
 		case "builder_query": {
 			const source = rule.queryBuilderDraft?.dataSource

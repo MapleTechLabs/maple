@@ -7225,7 +7225,8 @@
           "uptime",
           "slo_burn_rate",
           "anomaly",
-          "audit"
+          "audit",
+          "cost_budget"
         ],
         "examples": [
           "error_rate"

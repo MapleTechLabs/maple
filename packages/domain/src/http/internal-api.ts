@@ -16,6 +16,7 @@ import { ErrorsApiGroup } from "./errors"
 import { GithubCostApiGroup } from "./github-cost"
 import { IntegrationsApiGroup } from "./integrations"
 import { OpenRouterCostApiGroup } from "./openrouter-cost"
+import { CostBudgetsApiGroup } from "./cost-budgets"
 import { OpenRouterKeyApiGroup } from "./openrouter-key"
 import { PlanetScaleCostApiGroup } from "./planetscale-cost"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
@@ -75,6 +76,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(GithubCostApiGroup)
 	.add(PlanetScaleCostApiGroup)
 	.add(VercelCostApiGroup)
+	.add(CostBudgetsApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)
 	.add(OrganizationCreationApiGroup)
