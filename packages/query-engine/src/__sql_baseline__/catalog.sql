@@ -11013,6 +11013,20 @@ SELECT
         LIMIT 20
         FORMAT JSON
 
+-- builder:user-activity:userActivityIdentityQuery:default  [5c1b7e69]
+SELECT
+          argMaxIfMerge(UserName) AS name,
+          argMaxIfMerge(UserEmail) AS email,
+          toFloat64(max(user_activity_hourly.UserNameAt)) AS nameAt,
+          toFloat64(max(user_activity_hourly.UserEmailAt)) AS emailAt
+        FROM user_activity_hourly
+        WHERE user_activity_hourly.OrgId = 'org_sql_catalog'
+          AND user_activity_hourly.ServiceNamespace IN ('storefront')
+          AND user_activity_hourly.Hour >= toStartOfHour(toDateTime('2026-01-01 10:30:00'))
+          AND user_activity_hourly.Hour <= toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND user_activity_hourly.UserId = 'user_catalog'
+        FORMAT JSON
+
 -- builder:user-activity:userActivityServicesQuery:default  [eabfc3cc]
 SELECT
           user_activity_hourly.ServiceName AS serviceName,
