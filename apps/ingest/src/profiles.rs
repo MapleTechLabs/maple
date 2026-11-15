@@ -7,7 +7,7 @@
 //! has to read the same in both warehouses.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -95,6 +95,104 @@ pub struct ResourceStamps {
     pub defaults: Vec<(String, String)>,
     /// Set whatever the sender sent.
     pub set: Vec<(String, String)>,
+}
+
+/// A source's resource overrides: `set` replaces whatever the sender sent, `defaults` fill a
+/// key it left out. The gateway's own `maple_*` stamps are not overrides: they stay in
+/// `ResourceStamps`, applied by the flatten where nothing can redact them.
+#[derive(Debug, Default, Clone)]
+pub struct ResourceOverrides {
+    pub defaults: Vec<(String, String)>,
+    pub set: Vec<(String, String)>,
+}
+
+impl ResourceOverrides {
+    pub fn is_empty(&self) -> bool {
+        self.defaults.is_empty() && self.set.is_empty()
+    }
+}
+
+/// Applies `overrides` to every resource of `request` before the org's rules run, so the rules
+/// see an override as they do on traces and logs. Keys named by string-table index count as
+/// their text. Each resource's added pairs and key set are charged to `charge` first; false
+/// when it refuses.
+pub fn apply_resource_overrides(
+    request: &mut ExportProfilesServiceRequest,
+    overrides: &ResourceOverrides,
+    mut charge: impl FnMut(u64) -> bool,
+) -> bool {
+    if overrides.is_empty() {
+        return true;
+    }
+    let strings = request
+        .dictionary
+        .as_ref()
+        .map_or(&[][..], |dictionary| dictionary.string_table.as_slice());
+    let added: u64 = overrides
+        .defaults
+        .iter()
+        .chain(&overrides.set)
+        .map(|(key, value)| {
+            (key.len() + value.len() + size_of::<KeyValue>() + size_of::<AnyValue>()) as u64
+        })
+        .sum();
+    let set_keys: HashSet<&str> = overrides.set.iter().map(|(key, _)| key.as_str()).collect();
+    for resource_profiles in &mut request.resource_profiles {
+        let resource = resource_profiles.resource.get_or_insert_with(Resource::default);
+        // The pairs added and a borrowed key set, never a copy of a key.
+        let keys_bytes = (resource.attributes.len() * 2 * size_of::<&str>()) as u64;
+        if !charge(added.saturating_add(keys_bytes)) {
+            return false;
+        }
+        let missing: Vec<bool> = {
+            let present: HashSet<&str> = resource
+                .attributes
+                .iter()
+                .map(|kv| resolved_key(kv, strings))
+                .collect();
+            overrides
+                .defaults
+                .iter()
+                .map(|(key, _)| !present.contains(key.as_str()) && !set_keys.contains(key.as_str()))
+                .collect()
+        };
+        resource
+            .attributes
+            .retain(|kv| !set_keys.contains(resolved_key(kv, strings)));
+        let text = |key: &str, value: &str| KeyValue {
+            key: key.to_owned(),
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value.to_owned())),
+            }),
+            ..KeyValue::default()
+        };
+        for ((key, value), missing) in overrides.defaults.iter().zip(missing) {
+            if missing {
+                resource.attributes.push(text(key, value));
+            }
+        }
+        for (key, value) in &overrides.set {
+            resource.attributes.push(text(key, value));
+        }
+    }
+    true
+}
+
+/// A resource attribute's key, spelled out or named by string-table index (index 0 is empty).
+fn resolved_key<'a>(kv: &'a KeyValue, strings: &'a [String]) -> &'a str {
+    if !kv.key.is_empty() {
+        return &kv.key;
+    }
+    usize::try_from(kv.key_strindex)
+        .ok()
+        .filter(|index| *index != 0)
+        .and_then(|index| strings.get(index))
+        .map_or("", String::as_str)
+}
+
+/// The total of per-key JSON lengths.
+fn sum_lens(lens: &BTreeMap<i32, usize>) -> usize {
+    lens.values().fold(0, |sum, len| sum.saturating_add(*len))
 }
 
 /// The rows of one export, each one NDJSON line for the `profiles` datasource.
@@ -336,12 +434,20 @@ impl<'a> Dictionary<'a> {
         }
     }
 
+    /// Index 0 is the empty string, as the spec has it, whatever a sender put there: the
+    /// gateway's redaction reads keys and values the same way.
     fn string(&self, index: i32) -> &'a str {
+        if index == 0 {
+            return "";
+        }
         at(self.strings, index).map_or("", String::as_str)
     }
 
     /// `json_text_len` of a string-table entry, looked up rather than scanned.
     fn string_len(&self, index: i32) -> usize {
+        if index == 0 {
+            return json_text_len("");
+        }
         at(self.string_lens, index).copied().unwrap_or(0)
     }
 
@@ -502,9 +608,13 @@ impl<'a> Dictionary<'a> {
                 || last_named.get(&self.key_id(attribute.key_strindex)) == Some(at)
         });
         for (_, attribute) in kept {
+            // An attribute needs a key, as a table entry does: one without is left out.
+            let key = self.key(attribute);
+            if key.is_empty() {
+                continue;
+            }
             let cost = self.value_cost(attribute.value.as_ref());
             meter.charge(2 * NODE_BYTES + cost.heap)?;
-            let key = self.key(attribute);
             lens.insert(key, self.key_len(attribute) + cost.json_len + 6);
             attributes.insert(Cow::Borrowed(key), self.value(attribute.value.as_ref()));
         }
@@ -581,6 +691,12 @@ impl<'a> Dictionary<'a> {
     /// its earlier value, so each key counts once, at its last value. Keys are compared by
     /// the first index holding their text, never by scanning the text again.
     fn indexed_json_len(&self, indices: &[i32]) -> usize {
+        sum_lens(&self.indexed_json_lens(indices))
+    }
+
+    /// Each key's JSON length in the map the attributes `indices` name, by key id, at its
+    /// last value.
+    fn indexed_json_lens(&self, indices: &[i32]) -> BTreeMap<i32, usize> {
         let mut entries: BTreeMap<i32, usize> = BTreeMap::new();
         for index in indices {
             let Some(entry) = at(self.attributes, *index) else {
@@ -590,7 +706,7 @@ impl<'a> Dictionary<'a> {
                 entries.insert(self.key_id(entry.key_strindex), cost.json_len);
             }
         }
-        entries.values().fold(0, |sum, len| sum.saturating_add(*len))
+        entries
     }
 
     /// Sample and profile attributes, looked up in the dictionary's attribute table.
@@ -1000,7 +1116,8 @@ impl<'a> Flattener<'a, '_> {
             .indexed_attributes(&profile.attribute_indices, &mut profile_attributes);
         // Summed from the entries' worked-out lengths, never by rescanning their values; the
         // heap charge above still counts every reference.
-        let profile_attributes_len = self.dictionary.indexed_json_len(&profile.attribute_indices);
+        let profile_lens = self.dictionary.indexed_json_lens(&profile.attribute_indices);
+        let profile_attributes_len = sum_lens(&profile_lens);
         let shared_len = ROW_FIXED_BYTES
             + resource.json_len
             + json_text_len(terms.sample_type)
@@ -1014,8 +1131,17 @@ impl<'a> Flattener<'a, '_> {
             // The most the row can serialize to, escaping included, known before
             // anything of it is built: a row repeats text the wire held once.
             let sample_cost = self.dictionary.indexed_cost(group.attribute_indices);
-            let row_len =
-                shared_len + stack.json_len + profile_attributes_len + sample_cost.json_len;
+            // The merged map: a sample's value replaces the profile's for the same key, so
+            // that key is counted once, at the sample's length.
+            self.meter
+                .charge(group.attribute_indices.len() * MAP_ENTRY_BYTES)?;
+            let sample_lens = self.dictionary.indexed_json_lens(group.attribute_indices);
+            let replaced = sample_lens
+                .keys()
+                .filter_map(|key| profile_lens.get(key))
+                .fold(0_usize, |sum, len| sum.saturating_add(*len));
+            let row_len = shared_len + stack.json_len + profile_attributes_len - replaced
+                + sum_lens(&sample_lens);
             if row_len > self.max_row_bytes {
                 self.dropped_rows += 1;
                 rejected = true;
@@ -2505,6 +2631,88 @@ mod tests {
         assert!(is_supported_version(Some(" 1 ")));
         assert!(!is_supported_version(Some("2")));
         assert!(!is_supported_version(Some("")));
+    }
+
+    /// A sample's attribute replaces the profile's under the same key, so a value both name is
+    /// stored, and sized, once.
+    #[test]
+    fn sizes_an_attribute_the_profile_and_sample_share_once() {
+        let long = "v".repeat(2 * 1024 * 1024 + 100 * 1024);
+        let request = decode_json(
+            serde_json::to_vec(&serde_json::json!({
+                "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{
+                    "attributeIndices": [1],
+                    "samples": [{ "stackIndex": 1, "attributeIndices": [1], "values": ["1"] }],
+                }] }] }],
+                "dictionary": {
+                    "stringTable": ["", "main", "shared"],
+                    "functionTable": [{}, { "nameStrindex": 1 }],
+                    "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                    "stackTable": [{}, { "locationIndices": [1] }],
+                    "attributeTable": [{}, { "keyStrindex": 2, "value": { "stringValue": long } }],
+                },
+            }))
+            .expect("the export encodes")
+            .as_slice(),
+        )
+        .expect("the export decodes");
+        let rows = rows_with(&request, &ResourceStamps::default());
+        assert_eq!(rows.len(), 1, "one copy of the value fits the row ceiling");
+        assert_eq!(rows[0]["sample_attributes"]["shared"].as_str().map(str::len), Some(long.len()));
+    }
+
+    /// Overrides land on every resource as the flatten would apply them: `set` replaces the
+    /// sender's value under its key (a string-table key included), `defaults` fill a missing key.
+    #[test]
+    fn applies_a_sources_overrides_to_each_resource() {
+        let mut request = decode_json(
+            serde_json::to_vec(&serde_json::json!({
+                "resourceProfiles": [
+                    { "resource": { "attributes": [
+                        { "keyStrindex": 1, "value": { "stringValue": "sender" } },
+                        { "key": "env", "value": { "stringValue": "staging" } },
+                    ] } },
+                    {},
+                ],
+                "dictionary": { "stringTable": ["", "team"] },
+            }))
+            .expect("the export encodes")
+            .as_slice(),
+        )
+        .expect("the export decodes");
+        let overrides = ResourceOverrides {
+            set: vec![("team".to_owned(), "payments".to_owned())],
+            defaults: vec![
+                ("env".to_owned(), "prod".to_owned()),
+                ("region".to_owned(), "eu".to_owned()),
+            ],
+        };
+        let mut charged = 0u64;
+        assert!(apply_resource_overrides(&mut request, &overrides, |bytes| {
+            charged += bytes;
+            true
+        }));
+        assert!(charged > 0);
+        let pairs = |index: usize| -> Vec<(String, String)> {
+            let mut pairs: Vec<(String, String)> = request.resource_profiles[index]
+                .resource
+                .as_ref()
+                .expect("a resource")
+                .attributes
+                .iter()
+                .map(|kv| {
+                    let value = kv.value.as_ref().map(any_value_string).unwrap_or_default();
+                    (kv.key.clone(), value)
+                })
+                .collect();
+            pairs.sort();
+            pairs
+        };
+        let pair = |key: &str, value: &str| (key.to_owned(), value.to_owned());
+        assert_eq!(pairs(0), vec![pair("env", "staging"), pair("region", "eu"), pair("team", "payments")]);
+        assert_eq!(pairs(1), vec![pair("env", "prod"), pair("region", "eu"), pair("team", "payments")]);
+        // A refused charge stops before anything is added.
+        assert!(!apply_resource_overrides(&mut request, &overrides, |_| false));
     }
 
     /// A real export of the Maple SDK's Node profiler.
