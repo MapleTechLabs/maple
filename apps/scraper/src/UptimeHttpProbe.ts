@@ -16,6 +16,7 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	type UptimeAssertion,
+	type UptimeCertificate,
 	type UptimeHttpConfig,
 	uptimeHttpRequest,
 } from "@maple/domain/uptime"
@@ -31,7 +32,14 @@ import {
 	succeeded,
 	traceparentOf,
 } from "./UptimeProbe"
-import { addPhases, hasPhases, NO_PHASES, PhaseRecorder, recordPhases } from "./UptimePhases"
+import {
+	addPhases,
+	CertificateRecorder,
+	hasPhases,
+	NO_PHASES,
+	PhaseRecorder,
+	recordPhases,
+} from "./UptimePhases"
 
 export type HttpProbeConfig = Schema.Schema.Type<typeof UptimeHttpConfig>
 
@@ -195,14 +203,24 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
 				Effect.gen(function* () {
 					const phases = yield* Ref.make(NO_PHASES)
+					const certificate = yield* Ref.make<UptimeCertificate | null>(null)
 					const outcome = yield* check(config, trace).pipe(
 						Effect.provideService(PhaseRecorder, (hop) =>
 							Ref.update(phases, (total) => addPhases(total, hop)),
 						),
+						// The first hop's: a redirect to another host does not stand in for the monitored one.
+						Effect.provideService(CertificateRecorder, (seen) =>
+							Ref.update(certificate, (first) => first ?? seen),
+						),
 					)
 					// The phases that completed, a failed check's too (DNS and connect before a TLS error).
 					const timings = yield* Ref.get(phases)
-					return hasPhases(timings) ? { ...outcome, timings } : outcome
+					const presented = yield* Ref.get(certificate)
+					return {
+						...outcome,
+						...(hasPhases(timings) ? { timings } : undefined),
+						...(presented === null ? undefined : { certificate: presented }),
+					}
 				})
 
 			return { probe } satisfies UptimeHttpProbeApi

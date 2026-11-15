@@ -76,6 +76,7 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 					statusCode: outcome.statusCode,
 					error: outcome.error,
 					traceId: trace.traceId,
+					...(outcome.certificate === undefined ? undefined : { certificate: outcome.certificate }),
 				})
 			})
 

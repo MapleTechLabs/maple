@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest"
 import {
 	appendRecentCheck,
 	applyUptimeCheck,
+	describeCertificateExpiry,
 	describeStaleProbe,
 	effectiveAssertions,
 	firstFailedAssertion,
+	isCertificateExpiring,
 	isMapleService,
 	readJsonPath,
 	UPTIME_RECENT_LIMIT,
@@ -226,5 +228,38 @@ describe("describeStaleProbe", () => {
 			"No check result since 2026-10-26 14:03 UTC (12 min ago)",
 		)
 		expect(describeStaleProbe(null, now)).toBe("No check result yet")
+	})
+})
+
+describe("describeCertificateExpiry", () => {
+	const now = Date.UTC(2026, 10, 15, 12)
+	const certificate = (days: number, subject = "api.example.com") => ({
+		expiresAt: now + days * 86_400_000,
+		subject,
+		issuer: "R11",
+	})
+
+	it("says how long is left, or how long ago it ran out", () => {
+		expect([
+			describeCertificateExpiry(certificate(9), now),
+			describeCertificateExpiry(certificate(1), now),
+			describeCertificateExpiry(certificate(0.5), now),
+			describeCertificateExpiry(certificate(-2), now),
+			describeCertificateExpiry(certificate(9, ""), now),
+		]).toEqual([
+			"Certificate for api.example.com expires in 9 days (2026-11-24)",
+			"Certificate for api.example.com expires in 1 day (2026-11-16)",
+			"Certificate for api.example.com expires today (2026-11-16)",
+			"Certificate for api.example.com expired 2 days ago (2026-11-13)",
+			"Certificate expires in 9 days (2026-11-24)",
+		])
+	})
+
+	it("is expiring inside the warning window and after expiry, not before", () => {
+		expect(Arr.map([15, 13.9, -1], (days) => isCertificateExpiring(certificate(days), now))).toEqual([
+			false,
+			true,
+			true,
+		])
 	})
 })

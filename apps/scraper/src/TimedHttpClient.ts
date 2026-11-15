@@ -1,11 +1,22 @@
 import * as http from "node:http"
 import * as https from "node:https"
 import { pipeline, Readable, type Transform } from "node:stream"
+import * as tls from "node:tls"
 import * as zlib from "node:zlib"
-import { Effect, type Layer, Predicate, Array as Arr, Record as Rec, String as Str } from "effect"
+import {
+	DateTime,
+	Effect,
+	type Layer,
+	Option,
+	Predicate,
+	Array as Arr,
+	Record as Rec,
+	String as Str,
+} from "effect"
 import { HttpClient, HttpClientError, type HttpClientRequest, HttpClientResponse } from "effect/http"
 import { DialServerName } from "@maple/safe-fetch"
-import { recordPhases } from "./UptimePhases"
+import type { UptimeCertificate } from "@maple/domain/uptime"
+import { recordCertificate, recordPhases } from "./UptimePhases"
 
 /** Statuses a web `Response` must be built without a body. */
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([101, 204, 205, 304])
@@ -69,6 +80,21 @@ interface HopPhases {
 interface Answer {
 	readonly response: http.IncomingMessage
 	readonly phases: HopPhases
+	readonly certificate: UptimeCertificate | null
+}
+
+/** The leaf certificate of a completed handshake; null when the runtime gives no readable expiry. */
+export const peerCertificate = (socket: tls.TLSSocket): UptimeCertificate | null => {
+	const leaf = socket.getPeerCertificate()
+	// `valid_to` is OpenSSL's `Dec 25 22:56:35 2026 GMT`, zoned, so no host timezone leaks in.
+	const name = (field: unknown): string => (typeof field === "string" ? field : "")
+	return Option.getOrNull(
+		Option.map(DateTime.make(leaf.valid_to), (expires) => ({
+			expiresAt: DateTime.toEpochMillis(expires),
+			subject: name(leaf.subject?.CN),
+			issuer: name(leaf.issuer?.CN),
+		})),
+	)
 }
 
 /** One request on a fresh connection, timing connect, TLS and the wait for the headers off its socket. */
@@ -83,6 +109,7 @@ const exchange = (
 		const startedAt = performance.now()
 		// Socket events land in callbacks, so their times are kept here until the headers arrive.
 		const marks = new Map<"connect" | "tls", number>()
+		let certificate: UptimeCertificate | null = null
 		const options: https.RequestOptions = {
 			method: request.method,
 			headers: { "accept-encoding": ACCEPT_ENCODING, ...request.headers },
@@ -94,7 +121,10 @@ const exchange = (
 		const outgoing = url.protocol === "https:" ? https.request(url, options) : http.request(url, options)
 		outgoing.once("socket", (socket) => {
 			socket.once("connect", () => marks.set("connect", performance.now()))
-			socket.once("secureConnect", () => marks.set("tls", performance.now()))
+			socket.once("secureConnect", () => {
+				marks.set("tls", performance.now())
+				if (socket instanceof tls.TLSSocket) certificate = peerCertificate(socket)
+			})
 		})
 		const connected = (): HopPhases => {
 			const connectAt = marks.get("connect")
@@ -114,7 +144,11 @@ const exchange = (
 		outgoing.once("response", (response) => {
 			const ready = marks.get("tls") ?? marks.get("connect") ?? startedAt
 			resume(
-				Effect.succeed({ response, phases: { ...connected(), ttfbMs: performance.now() - ready } }),
+				Effect.succeed({
+					response,
+					phases: { ...connected(), ttfbMs: performance.now() - ready },
+					certificate,
+				}),
 			)
 		})
 		outgoing.end(body)
@@ -155,8 +189,15 @@ const toWeb = (request: HttpClientRequest.HttpClientRequest, response: http.Inco
 export const timedHttpClient: HttpClient.HttpClient = HttpClient.make((request, url, signal, fiber) =>
 	Effect.gen(function* () {
 		const body = yield* bodyOf(request)
-		const { response, phases } = yield* exchange(request, url, signal, body, fiber.getRef(DialServerName))
+		const { response, phases, certificate } = yield* exchange(
+			request,
+			url,
+			signal,
+			body,
+			fiber.getRef(DialServerName),
+		)
 		yield* recordPhases(phases)
+		if (certificate !== null) yield* recordCertificate(certificate)
 		return yield* toWeb(request, response)
 	}),
 )

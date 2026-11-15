@@ -488,14 +488,25 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 		},
 	)
 
-const toCheckDetail = (report: UptimeCheckReport): UptimeCheckDetail => ({
-	at: report.checkedAt,
-	ok: report.ok,
-	durationMs: report.durationMs,
-	statusCode: report.statusCode,
-	error: report.error,
-	traceId: report.traceId,
-})
+/**
+ * The stored detail of a monitor's newest check. A failed check that read no certificate (an
+ * expired one fails the handshake) keeps the previous one, so its expiry stays in view.
+ */
+export const toCheckDetail = (
+	report: UptimeCheckReport,
+	previous: UptimeCheckDetail | null,
+): UptimeCheckDetail => {
+	const certificate = report.certificate ?? (report.ok ? undefined : previous?.certificate)
+	return {
+		at: report.checkedAt,
+		ok: report.ok,
+		durationMs: report.durationMs,
+		statusCode: report.statusCode,
+		error: report.error,
+		traceId: report.traceId,
+		...(certificate === undefined ? undefined : { certificate }),
+	}
+}
 
 type TestOutcome =
 	| {
@@ -1113,7 +1124,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								consecutiveFailures: folded.snapshot.consecutiveFailures,
 								consecutiveSuccesses: folded.snapshot.consecutiveSuccesses,
 								statusChangedAt: folded.statusChangedAt,
-								lastCheckJson: toCheckDetail(last.value),
+								lastCheckJson: toCheckDetail(last.value, row.lastCheckJson),
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,
 								updatedAt: now,

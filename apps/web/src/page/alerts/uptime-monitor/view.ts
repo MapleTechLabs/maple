@@ -200,7 +200,7 @@ const body = (
 					checksPanel(h, monitor, timeZone),
 				]),
 				vstack(h, { gap: "4" }, [
-					lastCheckPanel(h, monitor),
+					lastCheckPanel(h, monitor, nowMs),
 					setupPanel(h, model, monitor, serviceHrefOf(monitor)),
 				]),
 			],

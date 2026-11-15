@@ -1,12 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Fiber, Layer, Schema, Array as Arr, String as Str } from "effect"
 import { TestClock } from "effect/testing"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { UPTIME_USER_AGENT, UptimeHttpConfig } from "@maple/domain/uptime"
 import { HostResolver } from "@maple/safe-fetch/dns"
 import { hang, type RecordedRequest, stubFetch } from "./testing/stub-fetch"
 import { fixedResolver, httpConfig } from "./testing/uptime"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
+import { recordCertificate } from "./UptimePhases"
 
 const DNS = new Map([
 	["api.example.com", ["93.184.216.34"]],
@@ -326,4 +327,39 @@ describe("UptimeHttpProbe", () => {
 			)
 		}).pipe(Effect.provide(ProbeLive)),
 	)
+
+	it.effect("keeps the configured host's certificate, not a redirect target's", () => {
+		const certificateOf = (host: string) => ({
+			expiresAt: Date.UTC(2027, 0, host === "api.example.com" ? 1 : 2),
+			subject: host,
+			issuer: "Test CA",
+		})
+		// Every hop presents its own host's certificate, as the timed transport reports it.
+		const PresentingLive = UptimeHttpProbe.layer.pipe(
+			Layer.provide(
+				Layer.effect(
+					HttpClient.HttpClient,
+					Effect.map(HttpClient.HttpClient, (client) =>
+						HttpClient.tapRequest(client, (request) =>
+							recordCertificate(certificateOf(request.headers.host ?? "")),
+						),
+					),
+				).pipe(Layer.provide(FetchHttpClient.layer)),
+			),
+			Layer.provide(Layer.succeed(HostResolver, fixedResolver(DNS))),
+		)
+		return Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const outcome = yield* probeWith(recorded, () =>
+				recorded.length === 1
+					? new Response(null, {
+							status: 301,
+							headers: { location: "https://moved.example.org/h" },
+						})
+					: new Response("ok", { status: 200 }),
+			)
+			assert.strictEqual(recorded.length, 2)
+			assert.deepStrictEqual(outcome.certificate, certificateOf("api.example.com"))
+		}).pipe(Effect.provide(PresentingLive))
+	})
 })

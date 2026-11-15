@@ -87,6 +87,34 @@ export const UptimeRecentCheck = Schema.Struct({
 export type UptimeRecentCheck = Schema.Schema.Type<typeof UptimeRecentCheck>
 export const UPTIME_RECENT_LIMIT = 60
 
+/** The TLS certificate an HTTPS check's first hop presented. */
+export const UptimeCertificate = Schema.Struct({
+	/** `notAfter`, epoch ms. */
+	expiresAt: Schema.Number,
+	subject: Schema.String,
+	issuer: Schema.String,
+})
+export type UptimeCertificate = Schema.Schema.Type<typeof UptimeCertificate>
+
+/** How far ahead of its expiry a certificate opens a warning incident. */
+export const UPTIME_CERTIFICATE_WARNING_DAYS = 14
+const DAY_MS = 86_400_000
+
+/** True once the certificate is inside the warning window (or already expired). */
+export const isCertificateExpiring = (certificate: UptimeCertificate, nowMs: number): boolean =>
+	certificate.expiresAt - nowMs < UPTIME_CERTIFICATE_WARNING_DAYS * DAY_MS
+
+/** `Certificate for api.example.com expires in 9 days (2026-11-24)`, or `... expired 2 days ago (...)`. */
+export const describeCertificateExpiry = (certificate: UptimeCertificate, nowMs: number): string => {
+	const date = Str.slice(0, 10)(new Date(certificate.expiresAt).toISOString())
+	const days = Math.floor(Math.abs(certificate.expiresAt - nowMs) / DAY_MS)
+	const span = days === 1 ? "1 day" : `${days} days`
+	const subject = certificate.subject === "" ? "Certificate" : `Certificate for ${certificate.subject}`
+	if (certificate.expiresAt <= nowMs)
+		return `${subject} expired ${days === 0 ? "today" : `${span} ago`} (${date})`
+	return `${subject} expires ${days === 0 ? "today" : `in ${span}`} (${date})`
+}
+
 /** The latest check's detail, kept on the monitor state for the detail page. */
 export const UptimeCheckDetail = Schema.Struct({
 	at: Schema.Number,
@@ -96,6 +124,8 @@ export const UptimeCheckDetail = Schema.Struct({
 	/** One sentence, e.g. `Status 503, expected 2xx`; null when ok. */
 	error: Schema.NullOr(Schema.String),
 	traceId: Schema.NullOr(Schema.String),
+	/** HTTPS checks: the newest certificate seen, kept through failed checks that could not read one. */
+	certificate: Schema.optionalKey(UptimeCertificate),
 })
 export type UptimeCheckDetail = Schema.Schema.Type<typeof UptimeCheckDetail>
 
@@ -121,6 +151,8 @@ export class UptimeCheckReport extends Schema.Class<UptimeCheckReport>("UptimeCh
 	statusCode: Schema.NullOr(Schema.Number),
 	error: Schema.NullOr(Schema.String),
 	traceId: Schema.NullOr(Schema.String),
+	/** HTTPS checks whose handshake completed; absent from scrapers that predate it. */
+	certificate: Schema.optionalKey(UptimeCertificate),
 }) {}
 /** Most reports one `/api/internal/uptime-results` POST may carry; the scraper batches to it. */
 export const UPTIME_CHECK_REPORT_BATCH_MAX = 1_000

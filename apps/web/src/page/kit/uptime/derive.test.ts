@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { checkHealth, formatMs, formatShare } from "./derive"
+import { certificateSummary, checkHealth, formatMs, formatShare } from "./derive"
+import { httpMonitor } from "./test-monitors"
 import { Array as Arr } from "effect"
 
 describe("checkHealth", () => {
@@ -42,5 +43,33 @@ describe("formatMs", () => {
 	it("switches to seconds where milliseconds would round to 1000", () => {
 		expect(formatMs(999.4)).toBe("999 ms")
 		expect(formatMs(999.6)).toBe("1.00 s")
+	})
+})
+
+describe("certificateSummary", () => {
+	const now = Date.UTC(2026, 10, 15, 12)
+	const withCertificate = (days: number | null) => {
+		const monitor = httpMonitor()
+		const last = monitor.state.last_check
+		if (last === null || days === null) return monitor
+		const expires_at = new Date(now + days * 86_400_000).toISOString()
+		return httpMonitor({
+			state: {
+				...monitor.state,
+				last_check: { ...last, certificate: { expires_at, subject: "a", issuer: "b" } },
+			},
+		})
+	}
+
+	it("dates the expiry, warns inside 14 days and turns critical once expired", () => {
+		expect(
+			Arr.map([40, 9, 1, -3, null], (days) => certificateSummary(withCertificate(days), now)),
+		).toEqual([
+			{ text: "Dec 25, 2026 (40 days left)", tone: null },
+			{ text: "Nov 24, 2026 (9 days left)", tone: "warn" },
+			{ text: "Nov 16, 2026 (1 day left)", tone: "warn" },
+			{ text: "Expired Nov 12, 2026", tone: "crit" },
+			null,
+		])
 	})
 })

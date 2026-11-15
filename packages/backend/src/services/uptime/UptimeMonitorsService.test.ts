@@ -245,6 +245,31 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect(
+		"keeps the last certificate through a failed check that read none, and drops it on a success without one",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const certificate = { expiresAt: 9_000_000, subject: "api.example.com", issuer: "R11" }
+				const certificateNow = () =>
+					Effect.map(service.get(ORG, monitor.id), (read) => read.state.lastCheck?.certificate)
+
+				yield* service.recordChecks([
+					new UptimeCheckReport({ ...report(monitor.id, 1_000, true), certificate }),
+				])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// An expired certificate fails the handshake before it can be read.
+				yield* service.recordChecks([report(monitor.id, 2_000, false)])
+				assert.deepStrictEqual(yield* certificateNow(), certificate)
+				// The URL moved to http://: a passing check with no certificate has none.
+				yield* service.recordChecks([report(monitor.id, 3_000, true)])
+				assert.isUndefined(yield* certificateNow())
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
 	it.effect("goes down after failures_to_down failures in a row and recovers on a success", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -581,8 +606,8 @@ describe("UptimeMonitorsService", () => {
 					)
 					const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
 					assert.deepStrictEqual(
-						Option.map(observed, (value) => [value.down, value.detail]),
-						Option.some([true, "The job reported a failure"]),
+						Arr.map(observed, (value) => [value.value, value.detail]),
+						[[1, "The job reported a failure"]],
 					)
 				})
 				yield* program.pipe(
@@ -651,7 +676,10 @@ describe("UptimeMonitorsService", () => {
 				const ruleId = monitor.alertRuleId
 				if (ruleId === null) return assert.fail("A heartbeat monitor owns an alert rule")
 				const observed = yield* alerts.observe(ORG, ruleId, 1_000_000)
-				assert.isTrue(Option.isSome(observed) && !observed.value.down)
+				assert.deepStrictEqual(
+					Arr.map(observed, (value) => value.value),
+					[0],
+				)
 				const after = yield* service.get(ORG, monitor.id)
 				assert.strictEqual(after.state.status, "up")
 				assert.strictEqual(after.state.lastPingAt, 960_000)
@@ -1089,7 +1117,7 @@ describe("UptimeMonitorsService backing alert rule", () => {
 					enabled: true,
 					severity: "critical",
 					comparator: "gte",
-					threshold: 1,
+					threshold: 0.5,
 					consecutive_breaches_required: 1,
 					consecutive_healthy_required: 1,
 					destination_ids_json: [DEST_A],

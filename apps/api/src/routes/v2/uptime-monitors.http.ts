@@ -51,6 +51,17 @@ const toV2UptimeMonitor = (monitor: UptimeMonitorRecord): V2UptimeMonitor => ({
 						duration_ms: monitor.state.lastCheck.durationMs,
 						error: monitor.state.lastCheck.error,
 						trace_id: monitor.state.lastCheck.traceId,
+						...(monitor.state.lastCheck.certificate === undefined
+							? undefined
+							: {
+									certificate: {
+										expires_at: isoTimestamp(
+											monitor.state.lastCheck.certificate.expiresAt,
+										),
+										subject: monitor.state.lastCheck.certificate.subject,
+										issuer: monitor.state.lastCheck.certificate.issuer,
+									},
+								}),
 					},
 		recent: Arr.map(monitor.state.recent, (check) => ({
 			at: isoTimestamp(check.at),

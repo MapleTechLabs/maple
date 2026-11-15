@@ -1,4 +1,5 @@
 import { Context, Effect, Array as Arr, Record as Rec } from "effect"
+import type { UptimeCertificate } from "@maple/domain/uptime"
 
 /** Where an HTTP check spent its time, in ms; null for a phase that never happened (TLS on http://). */
 export interface PhaseTimings {
@@ -44,4 +45,18 @@ export const PhaseRecorder = Context.Reference<(phases: Partial<PhaseTimings>) =
 export const recordPhases = Effect.fnUntraced(function* (phases: Partial<PhaseTimings>) {
 	const record = yield* PhaseRecorder
 	yield* record(phases)
+})
+
+/**
+ * Where the transport reports the certificate a TLS hop presented. The HTTP probe provides one per
+ * check and keeps the first hop's, the configured URL's own host.
+ */
+export const CertificateRecorder = Context.Reference<(certificate: UptimeCertificate) => Effect.Effect<void>>(
+	"@maple/scraper/CertificateRecorder",
+	{ defaultValue: () => () => Effect.void },
+)
+
+export const recordCertificate = Effect.fnUntraced(function* (certificate: UptimeCertificate) {
+	const record = yield* CertificateRecorder
+	yield* record(certificate)
 })

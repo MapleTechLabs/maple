@@ -3,6 +3,7 @@ import type { Tone } from "@maple/ui/lib/tone"
 import { formatSpan } from "../alert-time"
 import { Array as Arr, String as Str } from "effect"
 import { toEpochMs } from "@maple/ui/lib/time-format"
+import { UPTIME_CERTIFICATE_WARNING_DAYS } from "@maple/domain/uptime"
 
 // Pure reads of an uptime monitor shared by the Uptime tab, the monitor page and the service card.
 
@@ -190,5 +191,28 @@ export const summarize = (monitors: ReadonlyArray<UptimeMonitor>): UptimeSummary
 		degraded: count("degraded"),
 		paused: count("paused"),
 		share: uptimeShare(Arr.flatMap(active, (monitor) => monitor.state.recent)),
+	}
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * The certificate line of an HTTPS monitor: `Dec 25, 2026 (40 days left)`, toned `warn` inside the
+ * alert's warning window and `crit` once expired. Null before a check has read a certificate.
+ */
+export const certificateSummary = (
+	monitor: UptimeMonitor,
+	nowMs: number,
+): { readonly text: string; readonly tone: Tone | null } | null => {
+	const certificate = monitor.state.last_check?.certificate
+	if (certificate === undefined) return null
+	const expiresAt = toEpochMs(certificate.expires_at)
+	const date = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" }).format(expiresAt)
+	const days = Math.floor((expiresAt - nowMs) / DAY_MS)
+	if (expiresAt <= nowMs) return { text: `Expired ${date}`, tone: "crit" }
+	const left = days === 0 ? "expires today" : days === 1 ? "1 day left" : `${days} days left`
+	return {
+		text: `${date} (${left})`,
+		tone: expiresAt - nowMs < UPTIME_CERTIFICATE_WARNING_DAYS * DAY_MS ? "warn" : null,
 	}
 }
