@@ -241,6 +241,7 @@ export const ClerkOrganization = Schema.Struct({
 		cloudCost: Schema.Boolean,
 		dataSources: Schema.Boolean,
 		productAnalytics: Schema.Boolean,
+		profiling: Schema.Boolean,
 		securityAudit: Schema.Boolean,
 		statusPages: Schema.Boolean,
 	}),

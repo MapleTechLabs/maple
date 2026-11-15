@@ -468,6 +468,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/service-profiles",
+		title: "Service profiles",
+		description:
+			"The service page's Profiles tab over one hour of checkout-api: the flame chart and the top functions from 31 hand-written stacks; ?state=empty is a service that sent no profiles, ?state=failed a failed read.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/service-map-runtimes",
 		title: "Service map runtimes",
 		description:
