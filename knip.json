@@ -122,6 +122,9 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
+		"lib/promql": {
+			"entry": ["scripts/compliance/run.ts"]
+		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},
