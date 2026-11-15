@@ -342,6 +342,7 @@ export interface HistogramSample {
 	readonly flags?: number
 	/** Instrumentation scope name. */
 	readonly scope?: string
+	readonly scopeVersion?: string
 	readonly temporality?: "delta" | "cumulative"
 }
 
@@ -355,10 +356,10 @@ export const insertCumulativeSamples = (
 	const rows = Arr.map(
 		samples,
 		(s) =>
-			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, ${quote(s.scope ?? "")}, ${s.temporality === "delta" ? 1 : 2})`,
+			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, ${quote(s.scope ?? "")}, ${quote(s.scopeVersion ?? "")}, ${s.temporality === "delta" ? 1 : 2})`,
 	)
 	db.exec(
-		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, ScopeName, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, ScopeName, ScopeVersion, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
 	)
 }
 

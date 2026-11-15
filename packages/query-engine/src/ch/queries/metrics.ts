@@ -316,12 +316,14 @@ function histogramSampleSelect(
 	},
 ) {
 	// One partition per emitting series, fingerprinted like the counter query, plus the
-	// instrumentation scope: two libraries can record the same metric with the same labels.
+	// instrumentation scope: two libraries, or two versions of one, can record the same
+	// metric with the same labels.
 	const onePrecedingFrame = CH.windowSpec({
 		partitionBy: [
 			$.ServiceName,
 			$.MetricName,
 			$.ScopeName,
+			$.ScopeVersion,
 			CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
 			CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
 		],

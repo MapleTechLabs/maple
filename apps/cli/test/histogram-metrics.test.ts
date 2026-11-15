@@ -229,6 +229,28 @@ describeWithChdb("histogram metrics", () => {
 			},
 		])
 		// Two libraries in one service record the same metric with the same labels.
+		// Two versions of one library loaded side by side, recording the same metric.
+		insertCumulativeSamples(
+			db,
+			"org_scope_versions",
+			"http.server.request.duration",
+			Arr.map(
+				[
+					{ tickMs: -10 * SECOND_MS, count: 100, scopeVersion: "1.0.0" },
+					{ tickMs: -5 * SECOND_MS, count: 1000, scopeVersion: "2.0.0" },
+					{ tickMs: 10 * SECOND_MS, count: 110, scopeVersion: "1.0.0" },
+					{ tickMs: 15 * SECOND_MS, count: 1010, scopeVersion: "2.0.0" },
+				],
+				(sample) => ({
+					...sample,
+					startMs: -HISTORY_MS,
+					sum: sample.count * 10,
+					bounds: [50],
+					buckets: [sample.count, 0],
+					scope: "http",
+				}),
+			),
+		)
 		insertCumulativeSamples(db, "org_scopes", "http.server.request.duration", [
 			{
 				tickMs: -10 * SECOND_MS,
@@ -424,6 +446,11 @@ describeWithChdb("histogram metrics", () => {
 	test("two instrumentation scopes with the same labels are two series", () => {
 		expect(valueOf("org_scopes", "count")).toEqual([20])
 		expect(valueOf("org_scopes", "sum")).toEqual([200])
+	})
+
+	test("two versions of one scope with the same labels are two series", () => {
+		expect(valueOf("org_scope_versions", "count")).toEqual([20])
+		expect(valueOf("org_scope_versions", "sum")).toEqual([200])
 	})
 
 	test("a sample that adds no observations does not move a bucket's lower edge", () => {
