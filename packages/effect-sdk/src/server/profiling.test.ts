@@ -51,11 +51,14 @@ const makeHarness = (
 		readonly refuseStart?: boolean
 		/** The inspector refuses the nth `Profiler.stop`, counted from 1. */
 		readonly refuseStop?: (stop: number) => boolean
+		/** The inspector refuses the nth `Profiler.start`, counted from 1. */
+		readonly refuseStartAt?: (start: number) => boolean
 	} = {},
 ) => {
 	const events: Array<string> = []
 	const params: Array<unknown> = []
 	let stops = 0
+	let starts = 0
 	const requests: Array<Sent> = []
 	const logs: Array<LogLine> = []
 	const profiles = [...(setup.profiles ?? [])]
@@ -70,8 +73,11 @@ const makeHarness = (
 		post(...[method, sent, callback]: Parameters<InspectorSession["post"]>) {
 			events.push(method)
 			if (sent !== undefined) params.push(sent)
-			if (method === "Profiler.start" && setup.refuseStart === true)
-				return callback(new Error("Profiler is already started"), {})
+			if (method === "Profiler.start") {
+				starts += 1
+				if (setup.refuseStart === true || setup.refuseStartAt?.(starts) === true)
+					return callback(new Error("Profiler is already started"), {})
+			}
 			if (method !== "Profiler.stop") return callback(null, {})
 			stops += 1
 			if (setup.refuseStop?.(stops) === true) return callback(new Error("Profiler is not started"), {})
@@ -300,21 +306,42 @@ describe("profilerLayer", () => {
 		}).pipe(harness.run)
 	})
 
-	it.effect("stops the profiler when its loop dies, and exports nothing more at shutdown", () => {
+	it.effect("a failed stop costs one window, not the profiler", () => {
 		const harness = makeHarness({ refuseStop: (stop) => stop === 1 })
+		return Effect.gen(function* () {
+			yield* Layer.build(harness.layer())
+			yield* TestClock.adjust(WINDOW)
+			yield* harness.logged(1)
+			expect(harness.logs[0]?.message).toContain("restarting the profiler")
+			// The refused stop, the restart's stop, then a fresh start.
+			expect(stopsIn(harness)).toHaveLength(2)
+			expect(harness.events.at(-1)).toBe("Profiler.start")
+			expect(harness.requests).toEqual([])
+
+			// The next window is read and sent as usual.
+			yield* TestClock.adjust(WINDOW)
+			expect(harness.requests).toHaveLength(1)
+		}).pipe(harness.run)
+	})
+
+	it.effect("stops the profiler when it cannot restart, and exports nothing more at shutdown", () => {
+		const harness = makeHarness({
+			refuseStop: (stop) => stop === 1,
+			refuseStartAt: (start) => start === 2,
+		})
 		return Effect.gen(function* () {
 			const scope = yield* Scope.make()
 			yield* Layer.buildWithScope(harness.layer(), scope)
 			yield* TestClock.adjust(WINDOW)
-			yield* harness.logged(1)
-			expect(harness.logs[0]?.message).toContain("stopped")
-			// The swap's stop failed, then the loop stopped the profiler itself.
-			expect(stopsIn(harness)).toHaveLength(2)
+			yield* harness.logged(2)
+			expect(harness.logs[1]?.message).toContain("stopped")
+			// The swap's stop, the restart's stop, then the loop stopping the profiler itself.
+			expect(stopsIn(harness)).toHaveLength(3)
 
 			yield* Scope.close(scope, Exit.void)
-			expect(stopsIn(harness)).toHaveLength(2)
+			expect(stopsIn(harness)).toHaveLength(3)
 			expect(harness.requests).toEqual([])
-			expect(harness.logs).toHaveLength(1)
+			expect(harness.logs).toHaveLength(2)
 		}).pipe(harness.run)
 	})
 
