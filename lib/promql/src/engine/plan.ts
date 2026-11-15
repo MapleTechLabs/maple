@@ -181,7 +181,7 @@ const pushableInner = (
 export const planPushdowns = (expr: Expr, params: QueryParams): Map<Expr, PushdownCandidate> => {
 	const out = new Map<Expr, PushdownCandidate>()
 	const lookback = params.lookbackMs ?? LOOKBACK_MS
-	const instant = params.startMs === params.endMs || params.stepMs <= 0
+	const instant = isInstant(params) || params.stepMs <= 0
 	const steps = instant ? 1 : Math.floor((params.endMs - params.startMs) / params.stepMs) + 1
 	const offer = (
 		node: Expr,
