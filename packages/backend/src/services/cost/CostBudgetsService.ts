@@ -120,6 +120,16 @@ const claimRuleWrite = Effect.fnUntraced(function* (
 	}
 })
 
+/** The budget as its row holds it; on a write's transaction, what that write stored. */
+const readStored = Effect.fnUntraced(function* (db: MapleDb, orgId: OrgId, id: AlertRuleId) {
+	const rows = yield* db.run(selectBudget(orgId, id))
+	const row = rows[0]
+	if (row === undefined) return yield* notFound(id)
+	const budget = costBudgetFromRow(row)
+	if (Option.isNone(budget)) return yield* unreadable()
+	return budget.value
+})
+
 /** Cost budgets: each one is a hidden `cost_budget` alert rule, written only from here. */
 export class CostBudgetsService extends Context.Service<CostBudgetsService, CostBudgetsServiceApi>()(
 	"@maple/backend/services/cost/CostBudgetsService",
@@ -129,14 +139,7 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 			const source = yield* CostBudgetSource
 			const dbExecute = makeDbExecute(database, "CostBudgetsService", toPersistenceError)
 
-			const selectOne = Effect.fnUntraced(function* (orgId: OrgId, id: AlertRuleId) {
-				const rows = yield* dbExecute((db) => db.run(selectBudget(orgId, id)))
-				const row = rows[0]
-				if (row === undefined) return yield* notFound(id)
-				const budget = costBudgetFromRow(row)
-				if (Option.isNone(budget)) return yield* unreadable()
-				return budget.value
-			})
+			const selectOne = (orgId: OrgId, id: AlertRuleId) => dbExecute((db) => readStored(db, orgId, id))
 
 			const list = Effect.fn("CostBudgetsService.list")(function* (tenant: TenantContext) {
 				yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
@@ -177,7 +180,9 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 					filters: input.filters ?? {},
 					alerts: normalizeAlerts(input.alerts),
 				}
-				yield* dbExecute((db) =>
+				// Read back before commit: a delete that lands right after cannot turn the answer
+				// into a 404 for a budget that was created.
+				return yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							yield* lockOrgAlertRules(db, orgId)
@@ -204,10 +209,10 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 									updatedBy: createdBy,
 								}),
 							)
+							return yield* readStored(db, orgId, id)
 						}),
 					),
-				)
-				return yield* selectOne(orgId, id).pipe(
+				).pipe(
 					Effect.catchTag("@maple/http/errors/CostBudgetNotFoundError", () =>
 						Effect.fail(new CloudCostPersistenceError({ message: "Created budget not found" })),
 					),
@@ -222,7 +227,7 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId, "maple.alert.rule_id": id })
 				const now = yield* Clock.currentTimeMillis
-				yield* dbExecute((db) =>
+				return yield* dbExecute((db) =>
 					db.transaction(
 						Effect.gen(function* () {
 							// Lock, then re-read: the rule is rebuilt from a row no other write changes
@@ -248,7 +253,7 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 										: normalizeAlerts(input.alerts),
 							}
 							// The rule is written only when it changes: alert_rules is synced to browsers.
-							if (sameDefinition(rule, locked)) return
+							if (sameDefinition(rule, locked)) return locked
 							yield* claimRuleWrite(db, orgId, id, rule)
 							// Ends a tick's claim on the old config, as a rule edit does.
 							yield* db.run(PG.deleteFrom(AlertRuleClaims).where(($) => [$.ruleId.eq(id)]))
@@ -257,10 +262,11 @@ export class CostBudgetsService extends Context.Service<CostBudgetsService, Cost
 									.set({ ...costBudgetRuleFields(rule), updatedAt: now, updatedBy })
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(id)]),
 							)
+							// The answer is what this write stored, read before the lock is released.
+							return yield* readStored(db, orgId, id)
 						}),
 					),
 				)
-				return yield* selectOne(orgId, id)
 			})
 
 			const remove = Effect.fn("CostBudgetsService.remove")(function* (orgId: OrgId, id: AlertRuleId) {

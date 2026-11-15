@@ -140,6 +140,44 @@ describe("AlertsService cost budgets", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	// With no check between two periods, the old period's incident would otherwise take the new
+	// period's breach as its own: no new incident, and nobody told the new month is over too.
+	it.effect("an incident from the last period closes before the new period opens its own", () => {
+		const spend: Spend = { days: [{ day: "2026-11-15", cost: 1100 }] }
+		const { layer, testDb } = budgetHarness(trackedDbs, spend)
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(MID_NOVEMBER)
+			yield* connectCostSource(testDb, orgId)
+			const alerts = yield* alertServices
+			yield* createBudget()
+			yield* alerts.runSchedulerTick()
+			const november = (yield* alerts.listIncidents(orgId)).incidents
+			assert.deepInclude(november[0], { severity: "critical", status: "open" })
+
+			// The first check after it is in December, which is already over the amount.
+			spend.days = [{ day: "2026-12-02", cost: 1300 }]
+			yield* TestClock.setTime(at("2026-12-03T10:00:00Z"))
+			yield* syncCostSource(testDb, at("2026-12-03T09:00:00Z"))
+			yield* alerts.runSchedulerTick()
+			const closed = (yield* alerts.listIncidents(orgId)).incidents
+			assert.lengthOf(closed, 1)
+			assert.deepInclude(closed[0], { id: november[0]?.id, status: "resolved" })
+
+			// The next hourly check judges December on its own.
+			yield* TestClock.setTime(at("2026-12-03T11:05:00Z"))
+			yield* alerts.runSchedulerTick()
+			const december = (yield* alerts.listIncidents(orgId)).incidents
+			assert.lengthOf(december, 2)
+			assert.lengthOf(
+				Arr.filter(
+					december,
+					(incident) => incident.status === "open" && incident.id !== november[0]?.id,
+				),
+				1,
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
 	// Notifications say what was spent or forecast, of how much and for which period.
 	it.effect("notifies with the money as its detail", () => {
 		const { layer, testDb, bodies } = budgetHarness(trackedDbs, {

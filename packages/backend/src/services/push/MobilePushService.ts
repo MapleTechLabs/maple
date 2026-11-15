@@ -344,7 +344,10 @@ export const renderIncidentPush = (
 				held === null
 					? event.signalType === "anomaly"
 						? `The anomaly ended${after}.`
-						: `${label} back to ${now}${after}.`
+						: // A budget's value is a bare percent: its check's sentence carries the money.
+							event.signalType === "cost_budget" && event.detail != null
+							? `${event.detail}${after}.`
+							: `${label} back to ${now}${after}.`
 					: `${describeHoldForPush(held.reason)} for ${humanDuration(held.heldForMs)} with no breach observed; resolved${after}.`
 			return {
 				alert: {
