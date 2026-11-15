@@ -43,6 +43,7 @@ const VERB_ICONS = {
 	updated: "PencilIcon",
 	settings_updated: "PencilIcon",
 	zones_updated: "PencilIcon",
+	features_updated: "PencilIcon",
 	role_changed: "ShieldIcon",
 	status_changed: "PencilIcon",
 	catalog_curated: "PencilIcon",

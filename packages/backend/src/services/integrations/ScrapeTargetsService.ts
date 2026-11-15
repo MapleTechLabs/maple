@@ -25,6 +25,7 @@ import {
 import * as Orm from "@maple-dev/effect-orm/database"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
+	PlanetscaleConnections,
 	ScrapeTargetChecks,
 	ScrapeTargets,
 	Sources,
@@ -1170,7 +1171,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				interval?: ScrapeIntervalSeconds,
 			) {
 				const now = yield* Clock.currentTimeMillis
-				const [rows, paused] = yield* dbExecute((db) =>
+				const [rows, metricsOff, paused] = yield* dbExecute((db) =>
 					Effect.all(
 						[
 							db.run(
@@ -1184,6 +1185,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 											? undefined
 											: $.scrapeIntervalSeconds.eq(interval),
 									]),
+							),
+							// PlanetScale targets whose connection has metrics switched off. Few, so read whole.
+							db.run(
+								PG.from(PlanetscaleConnections)
+									.select("scrapeTargetId")
+									.where(($) => [$.metricsEnabled.eq(false), $.scrapeTargetId.isNotNull()]),
 							),
 							// A paused source is not scraped. Paused sources are few, so they are read whole.
 							db.run(
@@ -1200,7 +1207,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					),
 				)
 				const pausedIds = new Set(Arr.map(paused, (source) => source.id))
-				return Arr.filter(rows, (row) => row.sourceId === null || !pausedIds.has(row.sourceId))
+				const switchedOff = new Set(Arr.map(metricsOff, (connection) => connection.scrapeTargetId))
+				return Arr.filter(
+					rows,
+					(row) =>
+						!switchedOff.has(row.id) && (row.sourceId === null || !pausedIds.has(row.sourceId)),
+				)
 			})
 
 			/**

@@ -6,6 +6,7 @@ import {
 	UserId,
 	UsersListRequest,
 	WarehouseConfigError,
+	WarehouseSchemaDriftError,
 	type TenantContext,
 } from "@maple/domain/http"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -705,6 +706,137 @@ describe("a directory page over a large org", () => {
 			)
 			const lists = Arr.filter(ran, (query) => query.context === "usersList")
 			assert.include(lists[0]?.sql ?? "", "> '2026-11-01 23:40:00.000000000'")
+		}),
+	)
+})
+
+const missingIdentity = new WarehouseSchemaDriftError({
+	message: "Code: 47. Unknown expression identifier `UserEmail` in scope SELECT ...",
+	pipeName: "usersList",
+	clickhouseType: "UNKNOWN_IDENTIFIER",
+})
+
+/** A cluster with the rollup but without migration 0065: any SQL reading its identity states fails. */
+const withoutIdentity = (fixture: Fixture, ran: Ran) =>
+	Layer.succeed(
+		WarehouseQueryService,
+		makeWarehouseServiceStub({
+			compiledQuery: (_tenant, input, options) => {
+				const compiled = compiledQueryOf(input)
+				const context = options?.context ?? ""
+				ran.push({ context, sql: compiled.sql })
+				if (Str.includes("(UserEmail)")(compiled.sql)) return Effect.fail(missingIdentity)
+				return compiled.decodeRows(fixture.get(context) ?? []).pipe(Effect.orDie)
+			},
+		}),
+	)
+
+describe("users named by their spans and logs", () => {
+	it.effect("lists the email the rollup kept for a user no replay or MCP span named", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				["usersList", [{ ...listRow("user_42", ""), email: "ada@example.com" }]],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(warehouse(rows, ran)))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => [user.userId, user.email]),
+				[["user_42", "ada@example.com"]],
+			)
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			assert.include(lists[0]?.sql ?? "", "argMaxIfMerge(UserEmail)")
+		}),
+	)
+
+	it.effect("lists users without the rollup's identity on a cluster missing migration 0065", () =>
+		Effect.gen(function* () {
+			const ran: Ran = []
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				["usersList", [listRow("user_42", "")]],
+			])
+			const response = yield* readUsersList(
+				tenant,
+				new UsersListRequest({ startTime: request.startTime, endTime: request.endTime }),
+			).pipe(Effect.provide(withoutIdentity(rows, ran)))
+			assert.deepStrictEqual(
+				Arr.map(response.users, (user) => user.userId),
+				["user_42"],
+			)
+			const lists = Arr.filter(ran, (query) => query.context === "usersList")
+			// The first attempt asked for the identity and was refused.
+			assert.isTrue(Arr.some(ran, (query) => Str.includes("(UserEmail)")(query.sql)))
+			assert.notInclude(lists.at(-1)?.sql ?? "", "(UserEmail)")
+			// The channels survive the retry: only the identity is dropped.
+			assert.include(lists.at(-1)?.sql ?? "", "WebRequestCount")
+		}),
+	)
+
+	it.effect("gives the profile the email the rollup kept, and none on a cluster missing 0065", () =>
+		Effect.gen(function* () {
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				[
+					"userEventsSummary",
+					[
+						{
+							events: "1",
+							distinctEvents: "1",
+							firstSeen: "2026-11-01 08:00:00.000000000",
+							lastSeen: "2026-11-01 09:00:00.000000000",
+						},
+					],
+				],
+				[
+					"userActivityIdentity",
+					[{ name: "Ada", email: "ada@example.com", nameAt: "1762000000", emailAt: "1762000000" }],
+				],
+			])
+			const named = yield* readUserProfile(tenant, request).pipe(Effect.provide(warehouse(rows, [])))
+			assert.deepStrictEqual([named.profile?.name, named.profile?.email], ["Ada", "ada@example.com"])
+			const old = yield* readUserProfile(tenant, request).pipe(
+				Effect.provide(withoutIdentity(rows, [])),
+			)
+			assert.deepStrictEqual([old.profile?.name, old.profile?.email], [null, null])
+		}),
+	)
+
+	it.effect("gives the profile the newest name and email across replays and spans, as the list does", () =>
+		Effect.gen(function* () {
+			const replay = {
+				name: "Ada",
+				email: "ada@old.example",
+				nameAt: "1762000000",
+				emailAt: "1761990000",
+				groupId: "",
+				groupName: "",
+				traitKeys: [],
+				traitValues: [],
+				country: "",
+				sessions: "1",
+				recordedMs: "0",
+				errors: "0",
+				firstSeen: "2026-11-01 08:00:00",
+				lastSeen: "2026-11-01 09:00:00",
+			}
+			const rows = new Map<string, ReadonlyArray<unknown>>([
+				...scopeRows,
+				["userReplayProfile", [replay]],
+				[
+					"userActivityIdentity",
+					[{ name: "ada", email: "ada@new.example", nameAt: "1761900000", emailAt: "1762000000" }],
+				],
+			])
+			const response = yield* readUserProfile(tenant, request).pipe(Effect.provide(warehouse(rows, [])))
+			// The spans' email is newer than the replay's; the replay's name is newer than the spans'.
+			assert.deepStrictEqual(
+				[response.profile?.name, response.profile?.email],
+				["Ada", "ada@new.example"],
+			)
 		}),
 	)
 })

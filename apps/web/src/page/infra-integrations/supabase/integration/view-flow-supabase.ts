@@ -32,6 +32,7 @@ import {
 	SUPABASE_LOGS_NOTE,
 	supabaseProjectNotes,
 	supabaseProjectSwitches,
+	supabaseFeatures,
 } from "./view-supabase"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
@@ -312,7 +313,11 @@ const chooseStep = (h: H, model: Model): Html => {
 		h,
 		[
 			stepCard(h, { title: `Which projects in ${supabaseOrgName(status)} should Maple watch?` }, [
-				muted(h, "Switches are per project and per signal, and save as you flip them."),
+				muted(
+					h,
+					"Switches save as you flip them. A feature below sets every project; the table sets one.",
+				),
+				supabaseFeatures(h, model, status),
 				dataTable(
 					h,
 					{ ariaLabel: "Supabase projects" },

@@ -1488,7 +1488,7 @@ export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
 export const userActivityHourly = defineDatasource("user_activity_hourly", {
 	tenantColumn: "OrgId",
 	description:
-		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen and web/mobile request counts. Populated by materialized views from traces and logs.",
+		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen, web/mobile request counts and the latest user.name and user.email. Populated by materialized views from traces and logs.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
@@ -1518,6 +1518,13 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		ClassifiedRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		WebRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		MobileRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		// The latest non-empty `user.name` / `user.email` (migration 0065, appended last), keyed by
+		// epoch seconds; read with `argMaxIfMerge`. `*At` is that key, so readers rank identities
+		// across sources by when they were carried. Hours written before 0065 hold empty states and 0.
+		UserName: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
+		UserEmail: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
+		UserNameAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
+		UserEmailAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",

@@ -65,6 +65,8 @@ export interface RelayWorkspace {
 	 * asking or clicking, and irrelevant on one that cannot.
 	 */
 	readonly linkedUserId?: UserId
+	/** The workspace's "Answer questions" switch; off, mentions and follow-ups go unanswered. */
+	readonly assistantEnabled: boolean
 }
 
 /**
@@ -318,8 +320,10 @@ const relayMessage = Effect.fn("ChatBotRelay.relayTurn")(function* <R>(
 		}
 		return
 	}
-	const { orgId, linkedUserId } = workspace.value.value
+	const { orgId, linkedUserId, assistantEnabled } = workspace.value.value
 	yield* Effect.annotateCurrentSpan({ orgId })
+	// Switched off on the integration card: the bot stays quiet, and alerts keep posting.
+	if (!assistantEnabled) return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "assistant_off" })
 
 	// See `ChatConnector.identity`: a connector that can name the asker answers only a linked Maple
 	// user, so a bot added to a public channel reads nothing for strangers. Before the conversation

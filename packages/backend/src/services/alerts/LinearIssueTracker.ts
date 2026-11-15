@@ -202,7 +202,19 @@ export class LinearIssueTracker extends Context.Service<LinearIssueTracker, Line
 					)
 				})
 
-			return { request, findThread, saveThread } satisfies LinearDeliveryPort
+			const features: LinearDeliveryPort["features"] = (orgId) =>
+				linearOAuth.getFeatures(orgId).pipe(
+					Effect.mapError(
+						(error) =>
+							new AlertDeliveryError({
+								message: `Linear settings could not be read: ${error.message}`,
+								destinationType: "linear",
+								cause: error,
+							}),
+					),
+				)
+
+			return { request, findThread, saveThread, features } satisfies LinearDeliveryPort
 		}),
 	},
 ) {

@@ -10,11 +10,13 @@ import {
 	unavailableOverview,
 	unavailableStatus,
 } from "./overview"
+import { initLinearCard, type LinearCardModel, type LinearMessage } from "./linear"
 import type { ProviderModule } from "./provider"
+import { statusAnswered, update } from "./update-linear"
 import { linearCard } from "./view-linear"
 
 // Linear's part of `/integrations`: the OAuth grant incidents open issues with. Connect and
-// disconnect are the hub's; the module has no state or messages of its own.
+// disconnect are the hub's; the module owns the feature switches.
 
 /** The hub's status read for Linear. */
 export const LINEAR_STATUS_READ = {
@@ -23,11 +25,12 @@ export const LINEAR_STATUS_READ = {
 		Effect.flatMap(MapleInternalApiClient, (client) => client.integrations.linearStatus()),
 }
 
-export const LINEAR: ProviderModule<LinearIntegrationStatus, null, never> = {
+export const LINEAR: ProviderModule<LinearIntegrationStatus, LinearCardModel, LinearMessage> = {
 	id: "linear",
 	statusRead: LINEAR_STATUS_READ,
-	init: () => null,
-	update: (model) => ({ model }),
+	init: initLinearCard,
+	update,
+	onStatus: statusAnswered,
 	card: (h, model) => [linearCard(h, model)],
 	cardStatus: (slot) =>
 		fold(

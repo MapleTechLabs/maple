@@ -15,6 +15,8 @@ import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platfo
 
 /** The metrics API poller's org-wide row (`databaseId` ""), whose watermark is its last window. */
 export const PLANETSCALE_METRICS_DATASET = "metrics"
+/** Per-database deploy-request backfill rows, whose watermark is the newest update seen. */
+export const PLANETSCALE_DEPLOY_REQUESTS_DATASET = "deploy_requests"
 
 export type UnclaimedReason = "disabled" | "fresh" | "held" | "lease_held"
 
