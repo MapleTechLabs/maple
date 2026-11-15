@@ -55,8 +55,11 @@ import {
 	checkOtlpProfilesJson,
 	encodeProfiles,
 	isSupportedProfilesVersion,
+	MAX_PROFILE_ROWS_BYTES,
 	PROFILES_PATHS,
 	PROFILES_VERSION_HEADER,
+	ProfilesTooLarge,
+	randomProfileId,
 } from "./otlp/profiles"
 import { checkOtlpJson } from "./otlp/json"
 import {
@@ -303,9 +306,9 @@ export const corsHeadersForAllowedOrigin = (
 				"access-control-allow-origin": origin,
 				"access-control-allow-methods": "GET, POST, OPTIONS",
 				// Instrumented dashboards propagate W3C and B3 trace context on
-				// queries and status probes as well as SDK ingest requests.
-				"access-control-allow-headers":
-					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3",
+				// queries and status probes as well as SDK ingest requests. A profiles
+				// export names its wire version in a header of its own.
+				"access-control-allow-headers": `content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3, ${PROFILES_VERSION_HEADER}`,
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -650,7 +653,11 @@ const ingest = (
  * `POST /v1development/profiles`. Its own handler, not a fourth `Signal`: profiles carry no
  * events to project and the ingest rules do not read them, so the path is decode, flatten, insert.
  */
-const ingestProfiles = (inserts: Pick<InsertBatcher, "insert">, req: Request): Effect.Effect<IngestResult> =>
+const ingestProfiles = (
+	inserts: Pick<InsertBatcher, "insert">,
+	req: Request,
+	maximumRowBytes = MAX_PROFILE_ROWS_BYTES,
+): Effect.Effect<IngestResult> =>
 	Effect.gen(function* () {
 		// A sender on another wire layout would decode into the wrong fields: refuse it first.
 		if (!isSupportedProfilesVersion(req.headers.get(PROFILES_VERSION_HEADER)))
@@ -679,11 +686,15 @@ const ingestProfiles = (inserts: Pick<InsertBatcher, "insert">, req: Request): E
 		)
 		const nowMs = yield* Clock.currentTimeMillis
 		const { batches } = yield* Effect.try({
-			try: () => encodeProfiles(decoded, BigInt(nowMs) * 1_000_000n),
-			catch: (error) =>
-				Schema.is(OtlpFieldError)(error)
-					? stopIngest(text(`decode profiles: ${error.message}`, 400), requestBytes)
-					: stopIngest(text(`encode profiles: ${describeThrown(error)}`, 500), requestBytes),
+			try: () => encodeProfiles(decoded, BigInt(nowMs) * 1_000_000n, randomProfileId, maximumRowBytes),
+			catch: (error) => {
+				if (Schema.is(OtlpFieldError)(error))
+					return stopIngest(text(`decode profiles: ${error.message}`, 400), requestBytes)
+				// Too many rows is the request's size, not a fault here: nothing of it is stored.
+				if (Schema.is(ProfilesTooLarge)(error))
+					return stopIngest(text(`encode profiles: ${error.message}`, 413), requestBytes)
+				return stopIngest(text(`encode profiles: ${describeThrown(error)}`, 500), requestBytes)
+			},
 		})
 		const accepted = yield* Effect.uninterruptible(inserts.insert(batches)).pipe(
 			Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
@@ -912,9 +923,12 @@ const ingestSpan = (
 		),
 	)
 
+/** One name for both profiles paths: a span name is a fixed string, the path is `http.route`. */
+const PROFILES_INGEST_SPAN_NAME = "POST /v1development/profiles"
+
 const profilesIngestSpan = (
-	inserts: InsertBatcher,
-	status: ServerStatus,
+	inserts: Pick<InsertBatcher, "insert">,
+	status: Pick<ServerStatus, "lastIngestAtMs">,
 	route: string,
 	req: Request,
 ): Effect.Effect<Response> =>
@@ -929,7 +943,7 @@ const profilesIngestSpan = (
 			})
 			return yield* recordServerResponse(response)
 		}).pipe(
-			Effect.withSpan(`POST ${route}`, {
+			Effect.withSpan(PROFILES_INGEST_SPAN_NAME, {
 				kind: "server",
 				attributes: {
 					"maple.signal": "profiles",
@@ -2192,7 +2206,9 @@ export const __testables = {
 	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
+	ingestProfiles,
 	loginSpan,
+	profilesIngestSpan,
 	readBoundedJson,
 	ReadinessRecovery,
 	recordServerResponse,
