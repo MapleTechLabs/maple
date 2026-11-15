@@ -207,6 +207,8 @@ export const vectorVectorBinary = (
 		if (rs === undefined) continue
 		const [fl, fr] = swap ? [rs.value, ls.value] : [ls.value, rs.value]
 		const result = elemBinop(op, fl, fr)
+		// A filtered-out comparison is not a match, as in Prometheus' VectorBinop.
+		if (!result.keep && !returnBool) continue
 		const value = returnBool ? (result.keep ? 1 : 0) : result.value
 		const labels = resultMetric(ls.labels, rs.labels, op, m, returnBool)
 		if (m.card === "one-to-one") {
@@ -229,7 +231,6 @@ export const vectorVectorBinary = (
 			inserted.add(key)
 			matchedMetrics.set(sig, inserted)
 		}
-		if (!result.keep && !returnBool) continue
 		out.push({ labels, value, t: evalTimeMs })
 	}
 	return ensureUniqueLabelsets(out)

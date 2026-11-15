@@ -149,3 +149,68 @@ describe("query mode", () => {
 		expect(result).toEqual({ resultType: "matrix", result: [{ labels: {}, points: [{ t, v: 2 }] }] })
 	})
 })
+
+describe("review regressions", () => {
+	const t0 = 1_700_000_000_000
+	const at = (s: number) => t0 + s * 1000
+	const source = (
+		series: ReadonlyArray<{
+			labels: Record<string, string>
+			samples: ReadonlyArray<readonly [number, number]>
+		}>,
+	) => memorySource(series)
+	const instant = (s: number) => ({ startMs: at(s), endMs: at(s), stepMs: 0 })
+	const ok = (query: string, params: QueryParams, src: ReturnType<typeof memorySource>) => {
+		const result = runQuery(query, params, src)
+		if (Result.isFailure(result)) throw new Error(`${query}: ${result.failure.message}`)
+		return result.success
+	}
+
+	it("keeps the variance of a large gauge", () => {
+		const src = source([
+			{
+				labels: { __name__: "g" },
+				samples: [
+					[at(10), 1e9],
+					[at(20), 1e9 + 1],
+				],
+			},
+		])
+		expect(flatten(ok("stddev_over_time(g[1m])", instant(30), src))[0]?.[2]).toBe(0.5)
+		expect(flatten(ok("stdvar_over_time(g[1m])", instant(30), src))[0]?.[2]).toBe(0.25)
+	})
+
+	it("returns every raw sample of a parenthesized range selector", () => {
+		const samples = [15, 30, 45, 60].map((s): readonly [number, number] => [at(s), s])
+		const src = source([{ labels: { __name__: "x" }, samples }])
+		expect(flatten(ok("(x[1m])", instant(60), src))).toHaveLength(4)
+	})
+
+	it("drops a filtered comparison before checking for duplicate matches", () => {
+		const src = source([
+			{ labels: { __name__: "a", job: "x", i: "1" }, samples: [[at(10), 0]] },
+			{ labels: { __name__: "a", job: "x", i: "2" }, samples: [[at(10), 2]] },
+			{ labels: { __name__: "b", job: "x" }, samples: [[at(10), 1]] },
+		])
+		expect(flatten(ok("a > on(job) b", instant(20), src))).toHaveLength(1)
+	})
+
+	it("gives a negated series the evaluation time and rejects duplicate label sets", () => {
+		const src = source([
+			{ labels: { __name__: "a", job: "x" }, samples: [[at(15), 1]] },
+			{ labels: { __name__: "b", job: "x" }, samples: [[at(15), 1]] },
+		])
+		expect(flatten(ok("timestamp(-a)", instant(20), src))[0]?.[2]).toBe(at(20) / 1000)
+		const dup = runQuery('-{__name__=~"a|b"}', instant(20), src)
+		expect(Result.isFailure(dup) && dup.failure.message).toMatch(/same labelset/)
+	})
+
+	it("charges raw range samples against the point budget", () => {
+		const samples = [15, 30, 45, 60].map((s): readonly [number, number] => [at(s), s])
+		const result = runQuery("x[1m]", instant(60), source([{ labels: { __name__: "x" }, samples }]), {
+			maxSeries: 10,
+			maxPoints: 2,
+		})
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/too many samples/)
+	})
+})
