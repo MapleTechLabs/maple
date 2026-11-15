@@ -3610,6 +3610,7 @@
                 "type": "string"
               },
               "legend_format": {
+                "maxLength": 500,
                 "type": "string"
               },
               "min_step_seconds": {
