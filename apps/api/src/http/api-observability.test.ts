@@ -32,6 +32,20 @@ describe("ApiObservabilityLive", () => {
 		expect(recorded).not.toContain("abc")
 	})
 
+	it("keeps PromQL text out of the URL a server span records", () => {
+		const recorded = Effect.gen(function* () {
+			const names = yield* UrlParams.CurrentRedactedNames
+			return UrlParams.redactUrl(
+				"https://api.maple.dev/api/v2/prometheus/api/v1/series?match%5B%5D=up%7Buser%3D%22ada%22%7D&query=rate(x%7Bcustomer%3D%22acme%22%7D%5B5m%5D)&step=60",
+				names,
+			)
+		}).pipe(Effect.provide(ApiObservabilityLive), Effect.runSync)
+
+		expect(recorded).not.toContain("ada")
+		expect(recorded).not.toContain("acme")
+		expect(recorded).toContain("step=60")
+	})
+
 	it("still traces ordinary API routes", () => {
 		expect(tracedFor("/api/v2/uptime_monitors")).toBe(true)
 		expect(tracedFor("/hbx")).toBe(true)
