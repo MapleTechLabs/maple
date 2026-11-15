@@ -422,6 +422,27 @@ describe("hostile input", () => {
 		expect(at(1024)).toThrow(ProfilesTooLarge)
 	})
 
+	it("stops on attributes every row repeats before it groups the samples they repeat in", () => {
+		// One attribute-heavy profile, every sample its own group: the rows would repeat 2 MB each.
+		const request = cpuRequest(
+			Arr.makeBy(1_000, (index) => ({ stackIndex: 1, linkIndex: index, values: ["1"] })),
+		)
+		const keys = Arr.makeBy(2_000, (index) => `attribute.${index}`)
+		request.dictionary = {
+			...dictionary,
+			stringTable: [...STRINGS, ...keys],
+			attributeTable: Arr.makeBy(2_000, (index) => ({
+				keyStrindex: STRINGS.length + index,
+				value: { stringValue: Str.repeat(1_000)("x") },
+			})),
+		}
+		Object.assign(request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0] ?? {}, {
+			attributeIndices: Arr.makeBy(2_000, (index) => index),
+		})
+		const refused = () => encodeProfiles(request, NOW_NANO, undefined, 8 * 1024 * 1024)
+		expect(refused).toThrow(ProfilesTooLarge)
+	})
+
 	it("stores values the columns cannot hold as their nearest bound, not as a failed insert", () => {
 		const request = cpuRequest([{ stackIndex: 1, values: ["99999999999999999999"] }])
 		const profile = request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0]

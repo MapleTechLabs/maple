@@ -3,7 +3,7 @@
 // per stack, span link and attribute set per profile, the producer's samples of it summed. The
 // dictionary is resolved here and never stored.
 import { randomBytes } from "node:crypto"
-import { Array as Arr, Option, Result, Schema, String as Str } from "effect"
+import { Array as Arr, Option, Result, Schema, String as Str, Record as Rec } from "effect"
 import { encodeJson } from "../json"
 import {
 	type AnyValue,
@@ -182,7 +182,7 @@ export const randomProfileId = (): string => randomBytes(16).toString("hex")
 const clipText = (text: string): string =>
 	text.length <= MAX_FRAME_TEXT
 		? text
-		: Arr.join(Arr.take(Array.from(text.slice(0, 2 * MAX_FRAME_TEXT)), MAX_FRAME_TEXT), "")
+		: Arr.join(Arr.take(Array.from(Str.slice(0, 2 * MAX_FRAME_TEXT)(text)), MAX_FRAME_TEXT), "")
 
 const INT32_MAX = 2_147_483_647n
 const INT64_MAX = 9_223_372_036_854_775_807n
@@ -363,11 +363,16 @@ interface Group {
 	stack: ResolvedStack
 	traceId: string
 	spanId: string
+	/** The sample's own attributes; the profile's are merged in as the row is written. */
 	attributes: Record<string, string>
 	value: bigint
 	samples: number
 	firstNano: bigint
 }
+
+/** What an attribute map takes in a row at least: its keys and values, before quoting. */
+const attributesWeight = (attributes: Record<string, string>): number =>
+	Arr.reduce(Rec.toEntries(attributes), 0, (sum, [key, value]) => sum + key.length + value.length)
 
 const environmentOf = (attributes: Record<string, string>): string =>
 	attributes["deployment.environment.name"] ?? attributes["deployment.environment"] ?? ""
@@ -425,6 +430,7 @@ export function encodeProfiles(
 
 	for (const resourceProfiles of request.resourceProfiles ?? []) {
 		const resourceAttributes = reader.attributes(resourceProfiles.resource?.attributes)
+		const resourceWeight = attributesWeight(resourceAttributes)
 		for (const scopeProfiles of resourceProfiles.scopeProfiles ?? []) {
 			for (const profile of scopeProfiles.profiles ?? []) {
 				profileCount++
@@ -432,6 +438,8 @@ export function encodeProfiles(
 				const ownNano = toBigInt(profile.timeUnixNano)
 				const profileNano = ownNano === 0n ? nowNano : ownNano
 				const profileAttributes = reader.indexedAttributes(profile.attributeIndices ?? [])
+				// Every row repeats the resource's and the profile's attributes.
+				const sharedWeight = resourceWeight + attributesWeight(profileAttributes)
 				const groups = new Map<string, Group>()
 				// What this profile's rows weigh at least, so a profile that cannot fit stops
 				// before its stacks are all resolved and held.
@@ -455,15 +463,13 @@ export function encodeProfiles(
 					const group = groups.get(key)
 					if (group === undefined) {
 						const link = reader.link(sample.linkIndex)
-						heldBytes += stack.textBytes
+						const attributes = reader.indexedAttributes(attributeIndices)
+						heldBytes += stack.textBytes + sharedWeight + attributesWeight(attributes)
 						checkCeiling(rowBytes + heldBytes)
 						groups.set(key, {
 							stack,
 							...link,
-							attributes: {
-								...profileAttributes,
-								...reader.indexedAttributes(attributeIndices),
-							},
+							attributes,
 							value,
 							samples: Math.max(values.length, timestamps.length, 1),
 							firstNano,
@@ -500,7 +506,7 @@ export function encodeProfiles(
 						frame_lines: group.stack.lines,
 						trace_id: group.traceId,
 						span_id: group.spanId,
-						sample_attributes: group.attributes,
+						sample_attributes: { ...profileAttributes, ...group.attributes },
 					})
 					rowBytes += Buffer.byteLength(line) + (lines.length === 0 ? 0 : 1)
 					checkCeiling(rowBytes)
