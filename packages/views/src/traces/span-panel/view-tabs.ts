@@ -105,7 +105,7 @@ export const spanProfile = (h: H, model: Pick<Model, "flamegraph" | "span">, pro
 				`${formatProfileValue(profile.totalValue, profile.sampleUnit)} of ${profile.sampleType} sampled while this span and the spans under it were running.`,
 				...(subtreeIsCut(model.span)
 					? [
-							` It covers the first ${formatNumber(PROFILE_SPAN_CAP)} spans under this one, widest levels first.`,
+							` It covers the first ${formatNumber(PROFILE_SPAN_CAP)} spans in this subtree, this span included, widest levels first.`,
 						]
 					: []),
 			]),
@@ -140,7 +140,7 @@ export const spanProfileTab = (h: H, model: Pick<Model, "flamegraph" | "profile"
 			profile === null
 				? emptyMessage(h, {}, [
 						subtreeIsCut(model.span)
-							? `No samples on this span or the first ${formatNumber(PROFILE_SPAN_CAP)} spans under it, which is as many as one read covers`
+							? `No samples in the first ${formatNumber(PROFILE_SPAN_CAP)} spans of this subtree, this span included, which is as many as one read covers`
 							: "No samples were linked to this span or the spans under it",
 					])
 				: spanProfile(h, model, profile),
