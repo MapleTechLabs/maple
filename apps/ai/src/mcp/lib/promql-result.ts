@@ -36,9 +36,10 @@ const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
 export const parseStepSeconds = (raw: string): number | undefined => {
 	const text = Str.trim(raw)
 	if (DURATION.test(text)) {
-		return Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
+		const seconds = Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
 			return total + Number(part[1]) * unitSeconds(part[2])
 		})
+		return seconds > 0 ? seconds : undefined
 	}
 	const seconds = Number(text)
 	return text !== "" && Number.isFinite(seconds) && seconds > 0 ? seconds : undefined
@@ -77,7 +78,8 @@ const rawSeries = (result: PromqlResult): ReadonlyArray<RawSeries> => {
 
 const peak = (series: RawSeries): number =>
 	Arr.reduce(series.points, Number.NEGATIVE_INFINITY, (max, p) =>
-		Number.isFinite(p.v) && p.v > max ? p.v : max,
+		// NaN never ranks; +Inf (a division by zero) ranks highest, as the peak it is.
+		!Number.isNaN(p.v) && p.v > max ? p.v : max,
 	)
 
 const byPeakDescending = Order.mapInput(Order.flip(Order.Number), peak)
