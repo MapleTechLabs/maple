@@ -142,6 +142,35 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 					}),
 					true,
 				),
+			/** The Releases pages left for the service page, which judges each deploy where it ran. */
+			Releases: ({ search }) =>
+				redirect(
+					AppRoute.Services({
+						search: {
+							startTime: search.startTime,
+							endTime: search.endTime,
+							timePreset: search.timePreset,
+						},
+					}),
+					true,
+				),
+			/** A release named with its service opens that service's deploy drawer; without one, the services. */
+			Release: ({ commitSha, search }) =>
+				redirect(
+					search.service === undefined
+						? AppRoute.Services({ search: {} })
+						: AppRoute.Service({
+								serviceName: search.service,
+								search: {
+									deploy: commitSha,
+									environments: search.environments,
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset: search.timePreset,
+								},
+							}),
+					true,
+				),
 			RecommendationsIndex: () => redirect(AppRoute.Settings({ search: { tab: "ingestion" } }), true),
 			InfraKubernetes: ({ search }) => redirect(AppRoute.InfraKubernetesPods({ search }), true),
 			ErrorIssues: (issues) => redirect(AppRoute.Errors({ search: errorsSearchOf(issues) }), true),

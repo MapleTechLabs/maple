@@ -5,17 +5,13 @@
 // `CommitSha` and key on it, so every row here is a GROUP BY over the same
 // splice the services list already reads. Nothing scans the raw traces table.
 
-import { type DateTime, Schema } from "effect"
+import { Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
-import { param, from, fromQuery, type CHQuery } from "@maple-dev/effect-orm/clickhouse"
-import type { ColumnDefs } from "@maple-dev/effect-orm/clickhouse"
-import * as Datasources from "@maple/domain/tinybird/datasources"
-import { orgIdParam, utcSecondsParam } from "../tables"
+import { param, fromQuery } from "@maple-dev/effect-orm/clickhouse"
 import { CHNumber } from "../schema"
 import { DateTimeUtcFromWarehouse } from "../../datetime"
-import { serviceOverviewWhereConditions } from "./query-helpers"
-import { serviceOverviewWindows, serviceWindowTiersForBucket } from "./services"
+import { serviceOverviewWindows } from "./services"
 
 /**
  * At most this many (service, environment, commit) rows per request. A fleet
@@ -65,9 +61,7 @@ export type ReleasesListOutput = typeof releasesListRowSchema.Type
  *
  * Every version of a service is a row, not just the latest — a release's
  * impact is "this version against every other version of the same service in
- * the same minutes", and the caller derives that split from these rows. The
- * same query scoped to one service is therefore also the detail page's
- * comparison table.
+ * the same minutes", and the caller derives that split from these rows.
  */
 export function releasesListQuery(opts: ReleasesListOpts = {}) {
 	return serviceOverviewWindows({
@@ -140,135 +134,6 @@ export function runningCommitsQuery() {
 		.groupBy("serviceName", "environment", "commitSha")
 		.orderBy(["spanCount", "desc"])
 		.limit(RUNNING_COMMITS_CAP)
-		.format("JSON")
-}
-
-// The org-wide sibling of `serviceReleasesTimelineQuery`: per bucket, per
-// service, per commit. Feeds the swimlanes and the per-service rollout share
-// (which version carried the last bucket's traffic).
-
-export interface ReleasesTimelineOpts {
-	readonly serviceName?: string
-	readonly serviceNames?: readonly string[]
-	readonly environments?: readonly string[]
-	readonly namespaces?: readonly string[]
-	readonly excludedEnvironments?: readonly string[]
-	readonly excludedNamespaces?: readonly string[]
-	/**
-	 * Needed at build time, not just as a compile parameter: it selects which
-	 * rollup tiers can answer, because a tier coarser than the bucket has no
-	 * position inside it.
-	 */
-	readonly bucketSeconds: number
-}
-
-export interface ReleasesTimelineOutput {
-	readonly bucket: DateTime.Utc
-	readonly serviceName: string
-	readonly commitSha: string
-	readonly count: number
-}
-
-const RELEASES_TIMELINE_CAP = 5000
-
-/** Sub-minute buckets: no rollup tier can place a row inside a minute. */
-function releasesTimelineRawQuery(opts: ReleasesTimelineOpts): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	return from(Datasources.serviceOverviewSpans)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
-			serviceName: $.ServiceName,
-			commitSha: $.CommitSha,
-			count: CH.count(),
-		}))
-		.where(($) => [
-			...serviceOverviewWhereConditions($, {
-				serviceName: opts.serviceName,
-				serviceNames: opts.serviceNames,
-				environments: opts.environments,
-				namespaces: opts.namespaces,
-				excludedEnvironments: opts.excludedEnvironments,
-				excludedNamespaces: opts.excludedNamespaces,
-			}),
-			CH.notInList($.CommitSha, PLACEHOLDER_COMMIT_SHAS),
-		])
-		.groupBy("bucket", "serviceName", "commitSha")
-		.orderBy(["bucket", "asc"])
-		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON")
-}
-
-export function releasesTimelineQuery(
-	opts: ReleasesTimelineOpts,
-): CHQuery<ColumnDefs, ReleasesTimelineOutput> {
-	const tiers = serviceWindowTiersForBucket(opts.bucketSeconds)
-	if (tiers === "raw") return releasesTimelineRawQuery(opts)
-
-	return serviceOverviewWindows(
-		{
-			serviceName: opts.serviceName,
-			environments: opts.environments,
-			namespaces: opts.namespaces,
-			excludedEnvironments: opts.excludedEnvironments,
-			excludedNamespaces: opts.excludedNamespaces,
-		},
-		tiers,
-	)
-		.select(($) => ({
-			bucket: CH.toStartOfInterval($.bBucket, param.int("bucketSeconds")),
-			serviceName: $.bServiceName,
-			commitSha: $.bCommitSha,
-			count: CH.sum($.bSpanCount),
-		}))
-		.where(($) => [
-			CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS),
-			opts.serviceNames !== undefined && opts.serviceNames.length > 0
-				? CH.inList($.bServiceName, opts.serviceNames)
-				: undefined,
-		])
-		.groupBy("bucket", "serviceName", "commitSha")
-		.orderBy(["bucket", "asc"])
-		.limit(RELEASES_TIMELINE_CAP)
-		.format("JSON")
-}
-
-// The bridge from a release to the issues system. Traces key a release on
-// `vcs.ref.head.revision`; error events key on `service.version`, which Maple's
-// SDKs stamp with the same sha. Reads the per-occurrence projection because a
-// release starts at an arbitrary instant and a minute rollup would smear the
-// first occurrences across the deploy boundary.
-
-export interface ReleaseErrorFingerprintsOpts {
-	readonly serviceName: string
-	readonly environments?: readonly string[]
-	readonly limit?: number
-}
-
-export interface ReleaseErrorFingerprintsOutput {
-	readonly fingerprintHash: string
-	readonly count: number
-	readonly firstSeen: DateTime.Utc
-}
-
-export function releaseErrorFingerprintsQuery(opts: ReleaseErrorFingerprintsOpts) {
-	return from(Datasources.errorEventsByTime)
-		.select(($) => ({
-			fingerprintHash: CH.toString_($.FingerprintHash),
-			count: CH.count(),
-			firstSeen: CH.min_($.Timestamp),
-		}))
-		.where(($) => [
-			$.OrgId.eq(orgIdParam),
-			$.ServiceName.eq(opts.serviceName),
-			$.ServiceVersion.eq(param.string("serviceVersion")),
-			$.Timestamp.gte(utcSecondsParam("startTime")),
-			$.Timestamp.lte(utcSecondsParam("endTime")),
-			opts.environments !== undefined && opts.environments.length > 0
-				? CH.inList($.DeploymentEnv, opts.environments)
-				: undefined,
-		])
-		.groupBy("fingerprintHash")
-		.orderBy(["count", "desc"])
-		.limit(opts.limit ?? 50)
 		.format("JSON")
 }
 

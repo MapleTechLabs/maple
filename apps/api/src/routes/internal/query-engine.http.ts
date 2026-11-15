@@ -67,7 +67,6 @@ import {
 	ServiceDeploysResponse,
 	UptimeChecksResponse,
 	UptimePhaseTimingsResponse,
-	ReleaseDetailResponse,
 	type ReleaseRow,
 	ServiceDependenciesBundleResponse,
 	ServiceMapBundleResponse,
@@ -137,7 +136,6 @@ import {
 	CostTimeseriesResponse,
 	CostTotalsResponse,
 	CommitSha,
-	FingerprintHash,
 	SpanName,
 	StatusCode,
 	type TenantContext,
@@ -263,7 +261,6 @@ const toServiceApiBucket = (row: CH.ServiceApiTimeseriesOutput) => ({
 })
 
 const decodeSpanName = Schema.decodeUnknownSync(SpanName)
-const decodeFingerprintHash = Schema.decodeUnknownSync(FingerprintHash)
 const decodeCommitSha = Schema.decodeUnknownSync(CommitSha)
 
 // Warehouse stores span status in Title Case (Ok/Error/Unset). Coerce any
@@ -342,13 +339,6 @@ const toDeployVerificationRow = (row: CH.ReleaseVerificationOutput) => ({
 	beforeSpans: row.beforeSpans,
 	beforeErrors: row.beforeErrors,
 	beforeP95Ms: row.beforeP95Ms,
-})
-
-const toReleaseTimelinePoint = (row: CH.ReleasesTimelineOutput) => ({
-	bucket: DateTime.formatIso(row.bucket),
-	serviceName: decodeServiceName(row.serviceName),
-	commitSha: decodeCommitSha(row.commitSha),
-	count: row.count,
 })
 
 const toServiceWorkloadRow = (row: CH.ServiceWorkloadsOutput) => ({
@@ -1401,19 +1391,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 				.handle("releasesList", ({ payload }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// One Worker invocation for the page: the per-commit rows and the
-						// swimlane timeline share a config resolution and run concurrently.
-						yield* warehouse.warmRoute(tenant)
-						const [rows, timelineRows] = yield* Effect.all(
-							[
-								runQuery(Queries.releasesList, tenant, payload),
-								runQuery(Queries.releasesTimeline, tenant, payload),
-							],
-							{ concurrency: 2 },
-						)
+						const rows = yield* runQuery(Queries.releasesList, tenant, payload)
 						return new ReleasesListResponse({
 							releases: Arr.map(rows, toReleaseRow),
-							timeline: Arr.map(timelineRows, toReleaseTimelinePoint),
 							truncated: rows.length >= CH.RELEASES_LIST_CAP,
 						})
 					}),
@@ -1451,34 +1431,6 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 												transferMs: row.transferMs,
 											}
 										: null,
-							})),
-						})
-					}),
-				)
-				.handle("releaseDetail", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* warehouse.warmRoute(tenant)
-						const [versionRows, timelineRows, timeseries, baselineTimeseries, fingerprintRows] =
-							yield* Effect.all(
-								[
-									runQuery(Queries.releaseVersions, tenant, payload),
-									runQuery(Queries.releaseTimeline, tenant, payload),
-									queryEngine.execute(tenant, payload.timeseries),
-									queryEngine.execute(tenant, payload.baselineTimeseries),
-									runQuery(Queries.releaseErrorFingerprints, tenant, payload),
-								],
-								{ concurrency: 5 },
-							)
-						return new ReleaseDetailResponse({
-							versions: Arr.map(versionRows, toReleaseRow),
-							timeline: Arr.map(timelineRows, toReleaseTimelinePoint),
-							timeseries,
-							baselineTimeseries,
-							errorFingerprints: Arr.map(fingerprintRows, (row) => ({
-								fingerprintHash: decodeFingerprintHash(row.fingerprintHash),
-								count: row.count,
-								firstSeen: DateTime.formatIso(row.firstSeen),
 							})),
 						})
 					}),

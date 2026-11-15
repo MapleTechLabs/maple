@@ -10,7 +10,6 @@ import { formatClock } from "@maple/ui/lib/replay-format"
 
 import type { ListHostsResponse, ListPodsResponse } from "@maple/domain/http"
 import type { Finding } from "../page/infra/overview/summaries"
-import type { ReleaseServiceImpact } from "../page/releases/release-model"
 import type { Log } from "@maple/web-data/warehouse/logs"
 import { domainThresholdToForm, formatSignalValue } from "@maple/web-data/alerts/form-utils"
 import { formatUsage } from "../page/kit/billing/usage"
@@ -263,39 +262,4 @@ export function logs(mode: WorstCaseMode): ReadonlyArray<Log> {
 		row("TRACE2", 2, "\x1b[31mERROR\x1b[0m payment failed", LONG_SERVICE),
 		row("ERROR", 17, `upstream failed: ${LONG_URL} ${Str.repeat(600)("x")}`, "unknown_service:node"),
 	]
-}
-
-/* Releases --------------------------------------------------------------------------------- */
-
-export function releaseImpact(mode: WorstCaseMode): ReleaseServiceImpact {
-	const worst = mode === "worst"
-	return {
-		serviceName: worst ? LONG_SERVICE : "api",
-		environment: "production",
-		commitSha: "8f21c0d9e4b7a6f5c3d2e1f0a9b8c7d6e5f4a3b2",
-		firstSeen: ago(2 * 60 * 60 * 1000),
-		spanCount: worst ? 12_849_302 : 4_200,
-		errorCount: worst ? 514_000 : 21,
-		errorRate: worst ? 0.04 : 0.005,
-		p50LatencyMs: worst ? 0.000001 : 42,
-		p95LatencyMs: worst ? 59_999 : 180,
-		p99LatencyMs: worst ? 259_200_000 : 410,
-		apdexScore: worst ? 0.0000003 : 0.94,
-		baseline: {
-			commitSha: "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-			firstSeen: ago(26 * 60 * 60 * 1000),
-			spanCount: worst ? 51 : 4_000,
-			errorCount: 0,
-			errorRate: worst ? 0 : 0.004,
-			p50LatencyMs: worst ? 0 : 40,
-			p95LatencyMs: worst ? 0 : 170,
-			p99LatencyMs: worst ? 0 : 400,
-			apdexScore: worst ? 1 : 0.95,
-		},
-		errorRatio: worst ? Number.POSITIVE_INFINITY : 1.25,
-		p95Delta: worst ? Number.POSITIVE_INFINITY : 0.06,
-		share: 1,
-		isNewest: true,
-		health: worst ? "regressed" : "healthy",
-	}
 }

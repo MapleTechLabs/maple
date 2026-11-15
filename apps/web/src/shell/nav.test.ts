@@ -5,7 +5,6 @@ import { Array as Arr, Option } from "effect"
 const OFF: NavFlags = {
 	cloudCost: false,
 	productAnalytics: false,
-	releases: false,
 	securityAudit: false,
 	statusPages: false,
 }
@@ -52,7 +51,6 @@ describe("isNavItemActive", () => {
 	test("pages without a row of their own highlight their parent row", () => {
 		expect(activeTitles("/anomalies", OFF)).toEqual(["Alerts"])
 		expect(activeTitles("/security/code/findings", OFF)).toEqual(["Review & CI"])
-		expect(activeTitles("/releases", OFF)).toEqual(["Services"])
 		expect(activeTitles("/status-pages/stp_abc", OFF)).toEqual(["Services"])
 	})
 
@@ -60,13 +58,11 @@ describe("isNavItemActive", () => {
 		const on = {
 			cloudCost: true,
 			productAnalytics: true,
-			releases: true,
 			securityAudit: true,
 			statusPages: true,
 		}
 		expect(activeTitles("/security", on)).toEqual(["Security"])
 		expect(activeTitles("/security/code/runs/run_1", on)).toEqual(["Security"])
-		expect(activeTitles("/releases", on)).toEqual(["Releases"])
 		expect(activeTitles("/status-pages/stp_abc", on)).toEqual(["Status pages"])
 		expect(activeTitles("/cost", on)).toEqual(["Cost"])
 	})
@@ -98,9 +94,8 @@ describe("navGroups for an analyst", () => {
 		])
 	})
 
-	test("adds Status pages, Releases and Cost only for an org in each rollout", () => {
+	test("adds Status pages and Cost only for an org in each rollout", () => {
 		expect(hrefs({ ...OFF, statusPages: true })).toContain("/status-pages")
-		expect(hrefs({ ...OFF, releases: true })).toContain("/releases")
 		expect(hrefs({ ...OFF, cloudCost: true })).toContain("/cost")
 		// Security is an engineer's page, whatever the flag says.
 		expect(hrefs({ ...OFF, securityAudit: true })).not.toContain("/security")

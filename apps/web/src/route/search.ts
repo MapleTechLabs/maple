@@ -706,13 +706,8 @@ export const MetricsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const ReleasesSearch = Schema.Struct({
-	environments: OptionalStringArrayParam,
-	excludedEnvironments: OptionalStringArrayParam,
-	services: OptionalStringArrayParam,
-	impact: Schema.optional(Schema.Literals(["regressed", "watch", "rolling", "healthy"])),
-	...TimeRangeSearchFields,
-})
+/** Retired: `routeRedirect` sends `/releases` to the services, keeping the window. */
+export const ReleasesSearch = Schema.Struct({ ...TimeRangeSearchFields })
 
 export const ReplaysSearch = Schema.Struct({
 	service: StringParam,
