@@ -159,6 +159,8 @@ const selectorRow = (attributes: Record<string, string>) => ({
 const recordingWarehouse = () => {
 	const statements: Array<string> = []
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
+		if (Str.includes("AS instance")(sql))
+			return Str.includes("FROM metrics_gauge")(sql) ? [{ instance: "pod-2" }] : [{ instance: "pod-1" }]
 		if (Str.includes("FROM metrics_sum")(sql)) {
 			return [selectorRow({ "http.route": "/checkout" }), selectorRow({ "http.route": "/cart" })]
 		}
@@ -198,9 +200,6 @@ const recordingWarehouse = () => {
 				{ attributeKey: "http.route", usageCount: 10 },
 				{ attributeKey: "http_route", usageCount: 1 },
 			]
-		}
-		if (Str.includes("FROM attribute_values_hourly")(sql) && Str.includes("service.instance.id")(sql)) {
-			return [{ attributeValue: "pod-1" }]
 		}
 		if (Str.includes("FROM attribute_values_hourly")(sql)) return [{ attributeValue: "/checkout" }]
 		return []
@@ -293,14 +292,16 @@ describe("PromqlQueryService discovery", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("reads instance values from service.instance.id in the resource rollup", () => {
+	it.effect("reads instance values from the metric tables, which no rollup keeps", () => {
 		const { statements, layer } = recordingWarehouse()
 		return Effect.gen(function* () {
 			const service = yield* PromqlQueryService
 			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "instance" })
-			expect(values).toEqual(["pod-1"])
-			const valuesSql = Arr.findFirst(statements, (sql) => Str.includes("attribute_values_hourly")(sql))
-			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeScope = 'resource'/)
+			expect(values).toEqual(["pod-1", "pod-2"])
+			const reads = Arr.filter(statements, (sql) => Str.includes("AS instance")(sql))
+			expect(reads).toHaveLength(4)
+			for (const sql of reads) expect(sql).toMatch(ORG_FILTER)
+			expect(Arr.some(statements, (sql) => Str.includes("attribute_values_hourly")(sql))).toBe(false)
 		}).pipe(Effect.provide(layer))
 	})
 
