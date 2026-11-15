@@ -6,6 +6,7 @@ import type { HtmlBuilder } from "foldkit/html"
 import { defineMessageUnion } from "foldkit/message"
 import { fromString as urlFromString } from "foldkit/url"
 import type { PageContext, PageReturn } from "../../page/contract"
+import { Message as DeployPeekMessage } from "../../page/services/detail/deploy-peek/message"
 import { Message as PageMessage } from "../../page/services/detail/message"
 import { Model as PageModel } from "../../page/services/detail/model"
 import * as DetailUpdate from "../../page/services/detail/update"
@@ -14,6 +15,10 @@ import type { Resources } from "../../platform/resources"
 import { urlToAppRoute } from "../../route"
 import {
 	RUNTIMES_COMMITS,
+	RUNTIMES_DEPLOY_AFTER,
+	RUNTIMES_DEPLOY_BEFORE,
+	RUNTIMES_SHIPPED,
+	RUNTIMES_DEPLOYS,
 	RUNTIMES_DEPENDENCIES,
 	RUNTIMES_ISSUES,
 	RUNTIMES_NOW,
@@ -36,7 +41,7 @@ const CONTEXT: PageContext = {
 	timeZone: "UTC",
 }
 
-const Flags = Schema.Struct({ tab: Schema.NullOr(Schema.String) })
+const Flags = Schema.Struct({ tab: Schema.NullOr(Schema.String), deploy: Schema.NullOr(Schema.String) })
 type Flags = typeof Flags.Type
 
 const Model = Schema.Struct({ page: PageModel })
@@ -83,6 +88,42 @@ const ANSWERS: ReadonlyArray<Answer> = [
 	slot(
 		(model) => model.issues,
 		(key) => PageMessage.CompletedFetchIssues({ key, result: Result.succeed(RUNTIMES_ISSUES) }),
+	),
+	slot(
+		(model) => model.deploys,
+		(key) => PageMessage.CompletedFetchDeploys({ key, result: Result.succeed(RUNTIMES_DEPLOYS) }),
+	),
+	slot(
+		(model) => model.deployPeek.before,
+		(key) =>
+			PageMessage.GotDeployPeekMessage({
+				message: DeployPeekMessage.CompletedFetchOperations({
+					side: "before",
+					key,
+					result: Result.succeed(RUNTIMES_DEPLOY_BEFORE),
+				}),
+			}),
+	),
+	slot(
+		(model) => model.deployPeek.after,
+		(key) =>
+			PageMessage.GotDeployPeekMessage({
+				message: DeployPeekMessage.CompletedFetchOperations({
+					side: "after",
+					key,
+					result: Result.succeed(RUNTIMES_DEPLOY_AFTER),
+				}),
+			}),
+	),
+	slot(
+		(model) => model.deployPeek.shipped,
+		(key) =>
+			PageMessage.GotDeployPeekMessage({
+				message: DeployPeekMessage.CompletedFetchShipped({
+					key,
+					result: Result.succeed(RUNTIMES_SHIPPED),
+				}),
+			}),
 	),
 	slot(
 		(model) => model.usage,
@@ -165,7 +206,10 @@ const follow = (model: PageModel, url: string): PageReturn<PageModel, PageMessag
 
 const init = (flags: Flags): Return => {
 	const started = DetailUpdate.init(
-		{ serviceName: RUNTIMES_SERVICE, search: { timePreset: "1h", tab: flags.tab ?? undefined } },
+		{
+			serviceName: RUNTIMES_SERVICE,
+			search: { timePreset: "1h", tab: flags.tab ?? undefined, deploy: flags.deploy ?? undefined },
+		},
 		CONTEXT,
 	)
 	const clocked = DetailUpdate.update(
@@ -201,7 +245,10 @@ export const lab = defineShellLab("Service runtimes", {
 	Model,
 	Message,
 	Flags,
-	flags: Effect.sync(() => ({ tab: new URLSearchParams(window.location.search).get("tab") })),
+	flags: Effect.sync(() => {
+		const params = new URLSearchParams(window.location.search)
+		return { tab: params.get("tab"), deploy: params.get("deploy") }
+	}),
 	init,
 	update,
 	view,

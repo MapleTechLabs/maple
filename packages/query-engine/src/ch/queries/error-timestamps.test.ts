@@ -15,7 +15,6 @@ import {
 	errorTickIssuesQuery,
 } from "./errors"
 import { anomalyErrorSpikeTimeseriesQuery } from "./anomaly"
-import { releaseErrorFingerprintsQuery } from "./releases"
 
 // Rows reach callers through `decodeRows`. A query whose row schema is not
 // derived passes rows through untouched, and its timestamps would stay strings
@@ -148,12 +147,6 @@ describe("error queries decode timestamps to DateTime.Utc", () => {
 			compiled: compile(anomalyErrorSpikeTimeseriesQuery(), params),
 			row: { bucket: "2024-01-01 10:05:00", count: "3" },
 			fields: { bucket: "2024-01-01T10:05:00.000Z" },
-		},
-		{
-			name: "releaseErrorFingerprintsQuery",
-			compiled: compile(releaseErrorFingerprintsQuery({ serviceName: "api" }), params),
-			row: { fingerprintHash: "42", count: "3", firstSeen: "2024-01-01 10:00:00" },
-			fields: { firstSeen: "2024-01-01T10:00:00.000Z" },
 		},
 	]
 

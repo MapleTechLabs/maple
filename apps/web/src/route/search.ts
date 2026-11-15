@@ -484,6 +484,10 @@ export const ServiceSearch = Schema.Struct({
 	tab: StringParam,
 	/** The API tab's open endpoint drawer, by normalized span name ("GET /users/{id}"). */
 	endpoint: StringParam,
+	/** The Overview's open deploy drawer, by commit sha. */
+	deploy: StringParam,
+	/** The open deploy's environment, when its commit shipped to several. */
+	deployEnv: StringParam,
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
 })
@@ -718,13 +722,8 @@ export const MetricsSearch = Schema.Struct({
 	...TimeRangeSearchFields,
 })
 
-export const ReleasesSearch = Schema.Struct({
-	environments: OptionalStringArrayParam,
-	excludedEnvironments: OptionalStringArrayParam,
-	services: OptionalStringArrayParam,
-	impact: Schema.optional(Schema.Literals(["regressed", "watch", "rolling", "healthy"])),
-	...TimeRangeSearchFields,
-})
+/** Retired: `routeRedirect` sends `/releases` to the services, keeping the window. */
+export const ReleasesSearch = Schema.Struct({ ...TimeRangeSearchFields })
 
 export const ReplaysSearch = Schema.Struct({
 	service: StringParam,
