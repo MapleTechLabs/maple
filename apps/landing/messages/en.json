@@ -956,6 +956,7 @@
 	"intg_hint_mcp_client": "Ask about your telemetry over MCP",
 	"intg_hint_mcp": "Any client that speaks MCP",
 	"intg_hint_alchemy": "Telemetry, alerts and dashboards as code",
+	"intg_hint_iac": "Alerts, dashboards and monitors as code",
 	"intg_otel_title": "Anything that speaks OpenTelemetry",
 	"intg_otel_body": "No list covers every stack. Point any OTLP exporter or collector at Maple and it works, with no proprietary agent.",
 	"intg_otel_link": "Read the quickstart",

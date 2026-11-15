@@ -88,7 +88,7 @@ When the job pings at its end, the grace period has to cover how long the job ru
 
 **Pause** on the monitor page stops the monitor: pings return `404` and no incident opens. **Resume** starts it over from pending, with a full period before the first ping is due.
 
-## Create a monitor from an AI assistant or Terraform
+## Create a monitor from an AI assistant, Terraform or Pulumi
 
 On the [MCP server](/docs/reference/mcp), `create_uptime_monitor` with `kind` set to `heartbeat` creates a monitor. It takes:
 
@@ -98,7 +98,7 @@ On the [MCP server](/docs/reference/mcp), `create_uptime_monitor` with `kind` se
 
 The result includes the ping URL (`monitor.heartbeatUrl`) and a curl line for the job (`pingCommand`).
 
-In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) with `type = "heartbeat"`. Its read-only `heartbeat_url` attribute is the ping URL.
+In Terraform, use [`maple_uptime_monitor`](/docs/iac/terraform-resources#maple_uptime_monitor) with `type = "heartbeat"`. Its read-only `heartbeat_url` attribute is the ping URL. In [Pulumi](/docs/iac/pulumi) it is `maple.UptimeMonitor` and `heartbeatUrl`.
 
 ## Limits
 
