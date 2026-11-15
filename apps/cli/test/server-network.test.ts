@@ -61,6 +61,97 @@ describe("local HTTP server span status", () => {
 	)
 })
 
+describe("profiles ingest", () => {
+	const body = JSON.stringify({
+		resourceProfiles: [
+			{
+				scopeProfiles: [
+					{
+						profiles: [
+							{
+								sampleType: { typeStrindex: 1, unitStrindex: 2 },
+								samples: [
+									{ stackIndex: 1, values: ["5"] },
+									{ stackIndex: 2, values: ["7"] },
+								],
+							},
+						],
+					},
+				],
+			},
+		],
+		dictionary: {
+			stringTable: ["", "cpu", "nanoseconds", "main", "/app/server.js"],
+			functionTable: [{}, { nameStrindex: 3, filenameStrindex: 4, startLine: 1 }],
+			locationTable: [{}, { lines: [{ functionIndex: 1, line: 3 }] }],
+			stackTable: [{}, { locationIndices: [1] }, { locationIndices: [1, 1] }],
+		},
+	})
+	const post = (path: string) =>
+		new Request(`http://127.0.0.1:4318${path}`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body,
+		})
+	const recordingInserts = () => {
+		const rowCounts: Array<number> = []
+		// One NDJSON line per row.
+		const insert = (batches: ReadonlyArray<{ readonly ndjson: string }>) =>
+			Effect.sync(() => {
+				const rows = Arr.reduce(
+					batches,
+					0,
+					(sum, batch) => sum + Str.split("\n")(batch.ndjson).length,
+				)
+				rowCounts.push(rows)
+				return rows
+			})
+		return { rowCounts, inserts: { insert } }
+	}
+
+	it.effect("answers 413 and inserts nothing when the rows pass the ceiling", () =>
+		Effect.gen(function* () {
+			const within = recordingInserts()
+			const accepted = yield* __testables.ingestProfiles(
+				within.inserts,
+				post("/v1development/profiles"),
+			)
+			strictEqual(accepted.response.status, 200)
+			deepStrictEqual(within.rowCounts, [2])
+
+			const over = recordingInserts()
+			const refused = yield* __testables.ingestProfiles(
+				over.inserts,
+				post("/v1development/profiles"),
+				64,
+			)
+			strictEqual(refused.response.status, 413)
+			strictEqual(refused.accepted, 0)
+			deepStrictEqual(over.rowCounts, [])
+		}),
+	)
+
+	it.effect("names the span the same on both paths and keeps the path in http.route", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const status = { lastIngestAtMs: null }
+			yield* Effect.forEach(["/v1development/profiles", "/v1/profiles"], (path) =>
+				__testables
+					.profilesIngestSpan(recordingInserts().inserts, status, path, post(path))
+					.pipe(Effect.withTracer(tracer)),
+			)
+			const servers = Arr.filter(spans, (span) => span.kind === "server")
+			deepStrictEqual(
+				Arr.map(servers, (span) => [span.name, span.attributes.get("http.route")]),
+				[
+					["POST /v1development/profiles", "/v1development/profiles"],
+					["POST /v1development/profiles", "/v1/profiles"],
+				],
+			)
+		}),
+	)
+})
+
 describe("request admission on shutdown", () => {
 	const yieldTurn = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -386,6 +477,8 @@ describe("browser origin policy", () => {
 			"tracestate",
 			"baggage",
 			"b3",
+			// A browser profiler's export names its wire version in this header.
+			"otlp-profiles-development-version",
 		]) {
 			ok(allowedHeaders.has(requested), `preflight must allow ${requested}`)
 		}

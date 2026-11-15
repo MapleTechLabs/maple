@@ -136,7 +136,14 @@ export const sessionCookie = (req: Request, url: URL, value: string): string =>
 export const hasValidSession = (auth: RemoteAuth, req: Request, nowMs: number): boolean =>
 	auth.accessToken !== undefined && sessionValid(auth.accessToken, readCookie(req, SESSION_COOKIE), nowMs)
 
-const OTLP_PATHS = new Set(["/v1/traces", "/v1/logs", "/v1/metrics"])
+const OTLP_PATHS = new Set([
+	"/v1/traces",
+	"/v1/logs",
+	"/v1/metrics",
+	"/v1/profiles",
+	// The profiles export keeps the spec's development path until it reaches RC.
+	"/v1development/profiles",
+])
 /** The only routes an event consumer's token opens. */
 const CONSUMER_PATHS = new Set(["/local/eventing/claims", "/local/eventing/acks"])
 

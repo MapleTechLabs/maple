@@ -51,12 +51,24 @@ import {
 	type LocalEventingRuntimeApi,
 } from "./eventing/runtime"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
+import {
+	checkOtlpProfilesJson,
+	encodeProfiles,
+	isSupportedProfilesVersion,
+	MAX_PROFILE_ROWS_BYTES,
+	PROFILES_PATHS,
+	PROFILES_VERSION_HEADER,
+	ProfilesTooLarge,
+	randomProfileId,
+} from "./otlp/profiles"
 import { checkOtlpJson } from "./otlp/json"
 import {
 	decodeLogsRequest,
 	decodeMetricsRequest,
+	decodeProfilesRequest,
 	decodeTraceRequest,
 	encodeExportResponse,
+	encodeProfilesExportResponse,
 } from "./otlp/proto"
 import {
 	CURRENT_LOCAL_SCHEMA,
@@ -228,6 +240,10 @@ export const makeBrowserOriginPolicy = (options: {
 	})
 }
 
+/** `/v1/*`, and the profiles export, which the spec serves under `/v1development/` until RC. */
+const isIngestPath = (pathname: string): boolean =>
+	Str.startsWith("/v1/")(pathname) || PROFILES_PATHS.has(pathname)
+
 /**
  * Browser access policy. OTLP ingest (`/v1/*`) keeps accepting any loopback
  * page, so browser SDKs in local dev apps can export here. Everything else,
@@ -244,7 +260,7 @@ export const isBrowserOriginAllowed = (
 	// server answers to, so a DNS-rebinding page's plain GET is refused too.
 	if (origin === null)
 		return (
-			Str.startsWith("/v1/")(requestUrl.pathname) ||
+			isIngestPath(requestUrl.pathname) ||
 			requestUrl.pathname === "/health" ||
 			policy.anySameOriginHost ||
 			isLoopbackHostname(requestUrl.hostname) ||
@@ -256,11 +272,7 @@ export const isBrowserOriginAllowed = (
 	if (policy.trustedOrigins.has(originUrl.origin)) return true
 	const loopbackRequest = isLoopbackHostname(requestUrl.hostname)
 	if (loopbackRequest && policy.loopbackDevOrigins.has(originUrl.origin)) return true
-	if (
-		Str.startsWith("/v1/")(requestUrl.pathname) &&
-		loopbackRequest &&
-		isLoopbackHostname(originUrl.hostname)
-	)
+	if (isIngestPath(requestUrl.pathname) && loopbackRequest && isLoopbackHostname(originUrl.hostname))
 		return true
 	// Bun constructs requestUrl from the client's Host header. Keep that behavior:
 	// this comparison is the load-bearing DNS-rebinding check for non-loopback UI traffic.
@@ -269,7 +281,7 @@ export const isBrowserOriginAllowed = (
 	// a loopback name, so loopback aliases of this listener count as same-origin.
 	return (
 		originUrl.host === requestUrl.host &&
-		((policy.anySameOriginHost && !Str.startsWith("/v1/")(requestUrl.pathname)) ||
+		((policy.anySameOriginHost && !isIngestPath(requestUrl.pathname)) ||
 			policy.browserHosts.includes(originUrl.hostname) ||
 			isLoopbackHostname(originUrl.hostname))
 	)
@@ -294,9 +306,9 @@ export const corsHeadersForAllowedOrigin = (
 				"access-control-allow-origin": origin,
 				"access-control-allow-methods": "GET, POST, OPTIONS",
 				// Instrumented dashboards propagate W3C and B3 trace context on
-				// queries and status probes as well as SDK ingest requests.
-				"access-control-allow-headers":
-					"content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3",
+				// queries and status probes as well as SDK ingest requests. A profiles
+				// export names its wire version in a header of its own.
+				"access-control-allow-headers": `content-type, content-encoding, authorization, x-maple-sdk, x-maple-ingest-key, traceparent, tracestate, baggage, b3, ${PROFILES_VERSION_HEADER}`,
 				"access-control-allow-private-network": "true",
 				vary: "Origin",
 			}
@@ -360,6 +372,55 @@ class OtlpDecodeFailed extends Schema.TaggedError<OtlpDecodeFailed>()("@maple/cl
 
 const isBufferTooLarge = Schema.is(Schema.Struct({ code: Schema.Literal("ERR_BUFFER_TOO_LARGE") }))
 
+/** The body as sent, or gunzipped when the content-encoding says gzip. */
+const inflateBody = (
+	raw: Uint8Array,
+	contentEncoding: string | null,
+	maximumBytes: number,
+): Result.Result<Uint8Array, OtlpBodyTooLarge | OtlpDecodeFailed> =>
+	contentEncoding && Str.includes("gzip")(contentEncoding)
+		? Result.try({
+				try: (): Uint8Array => gunzipSync(raw, { maxOutputLength: maximumBytes }),
+				catch: (error) =>
+					isBufferTooLarge(error)
+						? new OtlpBodyTooLarge({
+								message: `decompressed body exceeds ${maximumBytes} bytes`,
+								maximumBytes,
+							})
+						: new OtlpDecodeFailed({ message: describeThrown(error) }),
+			})
+		: Result.succeed(raw)
+
+const parseJsonBody = (bytes: Uint8Array): Result.Result<unknown, OtlpDecodeFailed> =>
+	Result.try({
+		try: (): unknown =>
+			Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(new TextDecoder().decode(bytes)),
+		catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
+	})
+
+/** Decode an OTLP profiles export. Same framing as the other signals; the payload is the
+ *  pprof-shaped `v1development` request. */
+function decodeProfiles(
+	raw: Uint8Array,
+	contentType: string,
+	contentEncoding: string | null,
+	maximumBytes = MAX_DECOMPRESSED_OTLP_BYTES,
+): Result.Result<unknown, OtlpBodyTooLarge | OtlpDecodeFailed> {
+	const inflated = inflateBody(raw, contentEncoding, maximumBytes)
+	if (Result.isFailure(inflated)) return inflated
+	const bytes = inflated.success
+	if (Str.includes("json")(contentType))
+		return parseJsonBody(bytes).pipe(
+			Result.flatMap((body) =>
+				Result.mapError(checkOtlpProfilesJson(body), (message) => new OtlpDecodeFailed({ message })),
+			),
+		)
+	return Result.try({
+		try: (): unknown => decodeProfilesRequest(bytes),
+		catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
+	})
+}
+
 /** Decode an OTLP request body (protobuf by default, JSON when content-type
  *  says so), transparently gunzipping a gzip content-encoding. */
 function decodeOtlp(
@@ -369,30 +430,11 @@ function decodeOtlp(
 	contentEncoding: string | null,
 	maximumBytes = MAX_DECOMPRESSED_OTLP_BYTES,
 ): Result.Result<unknown, OtlpBodyTooLarge | OtlpDecodeFailed> {
-	let bytes = raw
-	if (contentEncoding && Str.includes("gzip")(contentEncoding)) {
-		const inflated = Result.try({
-			try: () => gunzipSync(raw, { maxOutputLength: maximumBytes }),
-			catch: (error) =>
-				isBufferTooLarge(error)
-					? new OtlpBodyTooLarge({
-							message: `decompressed body exceeds ${maximumBytes} bytes`,
-							maximumBytes,
-						})
-					: new OtlpDecodeFailed({ message: describeThrown(error) }),
-		})
-		if (Result.isFailure(inflated)) return inflated
-		bytes = inflated.success
-	}
-	const decodedBytes = bytes
+	const inflated = inflateBody(raw, contentEncoding, maximumBytes)
+	if (Result.isFailure(inflated)) return inflated
+	const decodedBytes = inflated.success
 	if (Str.includes("json")(contentType))
-		return Result.try({
-			try: (): unknown =>
-				Schema.decodeSync(Schema.fromJsonString(Schema.Unknown))(
-					new TextDecoder().decode(decodedBytes),
-				),
-			catch: (error) => new OtlpDecodeFailed({ message: describeThrown(error) }),
-		}).pipe(
+		return parseJsonBody(decodedBytes).pipe(
 			Result.flatMap((body) =>
 				Result.mapError(checkOtlpJson(signal, body), (message) => new OtlpDecodeFailed({ message })),
 			),
@@ -607,6 +649,84 @@ const ingest = (
 		),
 	)
 
+/**
+ * `POST /v1development/profiles`. Its own handler, not a fourth `Signal`: profiles carry no
+ * events to project and the ingest rules do not read them, so the path is decode, flatten, insert.
+ */
+const ingestProfiles = (
+	inserts: Pick<InsertBatcher, "insert">,
+	req: Request,
+	maximumRowBytes = MAX_PROFILE_ROWS_BYTES,
+): Effect.Effect<IngestResult> =>
+	Effect.gen(function* () {
+		// A sender on another wire layout would decode into the wrong fields: refuse it first.
+		if (!isSupportedProfilesVersion(req.headers.get(PROFILES_VERSION_HEADER)))
+			return yield* stopIngest(
+				text("unsupported OTLP profiles development version; this server reads 1", 400),
+				0,
+			)
+		const raw = yield* Effect.tryPromise({
+			try: async () => new Uint8Array(await req.arrayBuffer()),
+			catch: (error) => stopIngest(text(`read profiles body: ${describeThrown(error)}`, 400), 0),
+		})
+		const requestBytes = raw.length
+		const contentType = req.headers.get("content-type") ?? ""
+		const decoded = yield* Effect.fromResult(
+			decodeProfiles(raw, contentType, req.headers.get("content-encoding")),
+		).pipe(
+			Effect.mapError((failure) =>
+				stopIngest(
+					text(
+						`decode profiles: ${failure.message}`,
+						Schema.is(OtlpBodyTooLarge)(failure) ? 413 : 400,
+					),
+					requestBytes,
+				),
+			),
+		)
+		const nowMs = yield* Clock.currentTimeMillis
+		const { batches } = yield* Effect.try({
+			try: () => encodeProfiles(decoded, BigInt(nowMs) * 1_000_000n, randomProfileId, maximumRowBytes),
+			catch: (error) => {
+				if (Schema.is(OtlpFieldError)(error))
+					return stopIngest(text(`decode profiles: ${error.message}`, 400), requestBytes)
+				// Too many rows is the request's size, not a fault here: nothing of it is stored.
+				if (Schema.is(ProfilesTooLarge)(error))
+					return stopIngest(text(`encode profiles: ${error.message}`, 413), requestBytes)
+				return stopIngest(text(`encode profiles: ${describeThrown(error)}`, 500), requestBytes)
+			},
+		})
+		const accepted = yield* Effect.uninterruptible(inserts.insert(batches)).pipe(
+			Effect.catchTag("@maple/cli/LocalInsertError", (error) =>
+				Effect.fail(
+					stopIngest(
+						text(`chDB insert (${error.datasource}): ${describeThrown(error.cause)}`, 500),
+						requestBytes,
+						error.accepted,
+					),
+				),
+			),
+		)
+		const response = Str.includes("json")(contentType)
+			? json({})
+			: new Response(encodeProfilesExportResponse(0, ""), {
+					status: 200,
+					headers: { "content-type": "application/x-protobuf" },
+				})
+		return { response, accepted, requestBytes }
+	}).pipe(
+		Effect.catchTag("@maple/cli/IngestStopped", ({ response, accepted, requestBytes }) =>
+			Effect.succeed({ response, accepted, requestBytes }),
+		),
+		Effect.catchDefect((defect) =>
+			Effect.succeed({
+				response: text(`ingest profiles: ${describeThrown(defect)}`, 500),
+				accepted: 0,
+				requestBytes: 0,
+			}),
+		),
+	)
+
 interface QueryResult {
 	readonly response: Response
 	readonly rowCount: number
@@ -798,6 +918,37 @@ const ingestSpan = (
 					"maple.signal": signal,
 					"http.request.method": "POST",
 					"http.route": `/v1/${signal}`,
+				},
+			}),
+		),
+	)
+
+/** One name for both profiles paths: a span name is a fixed string, the path is `http.route`. */
+const PROFILES_INGEST_SPAN_NAME = "POST /v1development/profiles"
+
+const profilesIngestSpan = (
+	inserts: Pick<InsertBatcher, "insert">,
+	status: Pick<ServerStatus, "lastIngestAtMs">,
+	route: string,
+	req: Request,
+): Effect.Effect<Response> =>
+	recoverResponse(
+		Effect.gen(function* () {
+			const { response, accepted, requestBytes } = yield* ingestProfiles(inserts, req)
+			if (accepted > 0 && response.status < 300) status.lastIngestAtMs = yield* Clock.currentTimeMillis
+			yield* Effect.annotateCurrentSpan({
+				"http.request.body.size": requestBytes,
+				"maple.ingest.item_count": accepted,
+				"http.response.status_code": response.status,
+			})
+			return yield* recordServerResponse(response)
+		}).pipe(
+			Effect.withSpan(PROFILES_INGEST_SPAN_NAME, {
+				kind: "server",
+				attributes: {
+					"maple.signal": "profiles",
+					"http.request.method": "POST",
+					"http.route": route,
 				},
 			}),
 		),
@@ -1648,7 +1799,7 @@ const makeFetch =
 		const { db, options, runSpan, authority, gate, maintenanceToken, consumerToken } = context
 		const url = new URL(req.url)
 		const origin = req.headers.get("origin")
-		const route = Str.startsWith("/v1/")(url.pathname) ? "ingest" : "read"
+		const route = isIngestPath(url.pathname) ? "ingest" : "read"
 		if (!isBrowserOriginAllowed(url, origin, context.policy)) {
 			context.countRejection(route)
 			return origin === null
@@ -1712,6 +1863,16 @@ const makeFetch =
 								signal,
 								req,
 							),
+							"wait",
+						),
+					),
+				)
+			if (PROFILES_PATHS.has(url.pathname))
+				return respond(
+					await runSpan(
+						admitted(
+							gate,
+							profilesIngestSpan(context.inserts, context.status, url.pathname, req),
 							"wait",
 						),
 					),
@@ -2045,7 +2206,9 @@ export const __testables = {
 	handleScopedDelete,
 	handleProjectionActivation,
 	ingest,
+	ingestProfiles,
 	loginSpan,
+	profilesIngestSpan,
 	readBoundedJson,
 	ReadinessRecovery,
 	recordServerResponse,
