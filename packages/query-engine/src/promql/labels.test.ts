@@ -1,5 +1,13 @@
+import { Option, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
-import { formatLe, labelValue, normalizeLabelName, seriesLabels, type StoredSeries } from "./labels"
+import {
+	formatLe,
+	labelValue,
+	matchesAll,
+	normalizeLabelName,
+	seriesLabels,
+	type StoredSeries,
+} from "./labels"
 
 const row = (overrides: Partial<StoredSeries> = {}): StoredSeries => ({
 	promName: "http_server_request_duration_seconds_bucket",
@@ -87,5 +95,19 @@ describe("seriesLabels", () => {
 		expect(labels).not.toHaveProperty("maple_org_id")
 		expect(labels).not.toHaveProperty("telemetry_sdk_name")
 		expect(labels).not.toHaveProperty("process_command_line")
+	})
+})
+
+describe("prototype-named labels", () => {
+	it("reads an attribute called constructor as its own string value", () => {
+		const labels = seriesLabels(row({ attributes: { constructor: "x" } }))
+		expect(Rec.get(labels, "constructor")).toEqual(Option.some("x"))
+		expect(matchesAll(labels, [{ name: "constructor", op: "=", value: "x" }])).toBe(true)
+	})
+
+	it("matches a label named like an Object member as missing", () => {
+		const labels = seriesLabels(row())
+		expect(matchesAll(labels, [{ name: "constructor", op: "=", value: "" }])).toBe(true)
+		expect(matchesAll(labels, [{ name: "toString", op: "!=", value: "" }])).toBe(false)
 	})
 })

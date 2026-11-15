@@ -7,6 +7,7 @@ import {
 	dropMetricName,
 	ensureUniqueLabelsets,
 	labelsKey,
+	makeLabels,
 	type EvalError,
 	bucketFraction,
 	classicHistogram,
@@ -117,17 +118,17 @@ const DATE_FUNCTIONS: ReadonlySet<string> = new Set([
 
 /** Labels for absent(): the selector's equality matchers, unless a name is matched twice. */
 const absentLabels = (matchers: ReadonlyArray<LabelMatcher>): Labels => {
-	const out: Record<string, string> = {}
+	const out = new Map<string, string>()
 	const seen = new Set<string>()
 	const duplicated = new Set<string>()
 	for (const m of matchers) {
 		if (m.name === "__name__") continue
 		if (seen.has(m.name)) duplicated.add(m.name)
 		seen.add(m.name)
-		if (m.op === "=") out[m.name] = m.value
+		if (m.op === "=") out.set(m.name, m.value)
 	}
-	for (const name of duplicated) delete out[name]
-	return out
+	for (const name of duplicated) out.delete(name)
+	return makeLabels(out)
 }
 
 const selectorOf = (expr: Expr): VectorSelector | undefined => {
