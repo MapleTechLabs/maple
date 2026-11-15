@@ -258,7 +258,8 @@ export const linearRegression = (
 	}
 	if (n < 2) return undefined
 	const m = moments(w)
-	if (m.min === m.max) {
+	// Constant only when every value is: a NaN sample leaves min equal to max but the sums NaN.
+	if (m.min === m.max && !Number.isNaN(sumY)) {
 		// A constant series: slope 0, unless it is constantly infinite.
 		return Number.isFinite(m.min)
 			? { slope: 0, intercept: m.min }
@@ -291,7 +292,10 @@ export const quantile = (q: number, values: ReadonlyArray<number>): number => {
 	if (values.length === 0 || Number.isNaN(q)) return Number.NaN
 	if (q < 0) return Number.NEGATIVE_INFINITY
 	if (q > 1) return Number.POSITIVE_INFINITY
-	const sorted = [...values].sort((a, b) => a - b)
+	// NaN first, as Prometheus' quantile sorts it.
+	const sorted = [...values].sort((a, b) =>
+		Number.isNaN(a) ? (Number.isNaN(b) ? 0 : -1) : Number.isNaN(b) ? 1 : a - b,
+	)
 	const n = sorted.length
 	const rank = q * (n - 1)
 	const lower = Math.max(0, Math.floor(rank))
