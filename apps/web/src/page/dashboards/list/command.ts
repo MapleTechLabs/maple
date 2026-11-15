@@ -13,6 +13,7 @@ import {
 import {
 	createPayload,
 	downloadPortable,
+	isGrafanaDashboardJson,
 	isPersesDashboardJson,
 	type PortableDashboard,
 	parsePortable,
@@ -114,7 +115,7 @@ const createFromPortable = (orgId: string, portable: PortableDashboard) =>
 		// Blank, imported or duplicated: every create is one `dashboard_created`.
 		yield* trackProduct("dashboard_created", { widgets: portable.widgets.length })
 		yield* awaitTxid(orgId, created.txid)
-		return { id: created.id, name: created.name, isPerses: false, warnings: [] }
+		return { id: created.id, name: created.name, importedFrom: null, warnings: [], stats: null }
 	})
 
 const toResult = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -202,7 +203,7 @@ export const ExportDashboard = Command.define("ExportDashboard", {
 		),
 })
 
-/** A Perses dashboard goes to `importPerses`, anything else must be portable. */
+/** A Perses or Grafana dashboard goes to its import endpoint, anything else must be portable. */
 export const ImportDashboard = Command.define("ImportDashboard", {
 	args: { orgId: Schema.String, file: FoldkitFile },
 	messages: [Message.CompletedImportDashboard],
@@ -228,8 +229,23 @@ export const ImportDashboard = Command.define("ImportDashboard", {
 						return {
 							id: imported.dashboard.id,
 							name: imported.dashboard.name,
-							isPerses: true,
+							importedFrom: "perses" as const,
 							warnings: imported.warnings,
+							stats: null,
+						}
+					}
+					if (isGrafanaDashboardJson(parsed)) {
+						const client = yield* MapleApiV2Client
+						const imported = yield* client.dashboards.importGrafana({
+							payload: { dashboard: parsed },
+						})
+						yield* awaitTxid(orgId, imported.dashboard.txid)
+						return {
+							id: imported.dashboard.id,
+							name: imported.dashboard.name,
+							importedFrom: "grafana" as const,
+							warnings: imported.warnings,
+							stats: imported.stats,
 						}
 					}
 					const portable = yield* parsePortable(parsed)

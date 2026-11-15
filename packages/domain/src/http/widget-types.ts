@@ -29,6 +29,7 @@ export {
 	WIDGET_VISUALIZATIONS,
 	type WidgetTypeMeta,
 	type WidgetVisualization,
+	widgetTypeByGrafanaType,
 	widgetTypeByPersesKind,
 	widgetTypeByVisualization,
 } from "@maple/widgets"

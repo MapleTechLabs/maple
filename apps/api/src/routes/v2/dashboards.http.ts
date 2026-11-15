@@ -51,6 +51,7 @@ import {
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
 import { convertPersesDashboardToPortable } from "@maple/backend/services/dashboards/perses-dashboard-import"
+import { convertGrafanaDashboardToPortable } from "@maple/backend/services/dashboards/grafana-dashboard-import"
 
 const canReadTelemetry = (scopes: ReadonlyArray<string> | undefined) =>
 	missingReadScopes(scopes, TELEMETRY_READ_FAMILIES).length === 0
@@ -308,6 +309,21 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 		const persistence = yield* DashboardPersistenceService
 		const shares = yield* SharedDashboardService
 		const widgetData = yield* DashboardWidgetDataService
+
+		// An imported board is created like any other, with its source on the audit row.
+		const createImported = Effect.fn("HttpV2Dashboards.createImported")(function* (
+			portable: PortableDashboardDocument,
+			source: "perses_import" | "grafana_import",
+		) {
+			const tenant = yield* CurrentTenant.Context
+			yield* requireRawSqlScopes(tenant.scopes, [], portable.widgets)
+			const stored = yield* persistence.create(tenant.orgId, tenant.userId, portable)
+			yield* recordHttpAudit("dashboard.created", {
+				resourceId: stored.document.id,
+				metadata: { name: stored.document.name, source },
+			})
+			return toV2DashboardMutation(stored)
+		})
 
 		// Share management.
 		//
@@ -613,27 +629,27 @@ export const HttpV2DashboardsLive = HttpApiBuilder.group(MapleApiV2, "dashboards
 					}),
 				)
 				.handle("importPerses", ({ payload }) =>
-					Effect.gen(function* () {
-						const converted = yield* convertPersesDashboardToPortable(payload.dashboard)
-						const tenant = yield* CurrentTenant.Context
-						yield* requireRawSqlScopes(tenant.scopes, [], converted.dashboard.widgets)
-						const stored = yield* persistence.create(
-							tenant.orgId,
-							tenant.userId,
-							converted.dashboard,
-						)
-						const dashboard = stored.document
-						yield* recordHttpAudit("dashboard.created", {
-							resourceId: dashboard.id,
-							metadata: { name: dashboard.name, source: "perses_import" },
-						})
-
-						return {
-							object: "dashboard_import" as const,
-							dashboard: toV2DashboardMutation(stored),
-							warnings: [...converted.warnings],
-						}
-					}),
+					Effect.flatMap(convertPersesDashboardToPortable(payload.dashboard), (converted) =>
+						createImported(converted.dashboard, "perses_import").pipe(
+							Effect.map((dashboard) => ({
+								object: "dashboard_import" as const,
+								dashboard,
+								warnings: [...converted.warnings],
+							})),
+						),
+					),
+				)
+				.handle("importGrafana", ({ payload }) =>
+					Effect.flatMap(convertGrafanaDashboardToPortable(payload.dashboard), (converted) =>
+						createImported(converted.dashboard, "grafana_import").pipe(
+							Effect.map((dashboard) => ({
+								object: "dashboard_import" as const,
+								dashboard,
+								warnings: [...converted.warnings],
+								stats: converted.stats,
+							})),
+						),
+					),
 				)
 				.handle("listVersions", ({ params, query }) =>
 					Effect.gen(function* () {

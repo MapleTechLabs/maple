@@ -6,6 +6,7 @@ import {
 	MCP_VISUALIZATIONS,
 	PANEL_TYPES,
 	rawSqlDisplayTypeFor,
+	widgetTypeByGrafanaType,
 	widgetTypeByPersesKind,
 	widgetTypeByVisualization,
 	WIDGET_VISUALIZATIONS,
@@ -87,6 +88,22 @@ describe("widgetTypeByPersesKind", () => {
 	it("falls back to a line chart", () => {
 		expect(widgetTypeByPersesKind(undefined).panelType).toBe("line")
 		expect(widgetTypeByPersesKind("SomeFuturePlugin").panelType).toBe("line")
+	})
+})
+
+describe("widgetTypeByGrafanaType", () => {
+	it("maps Grafana panel types to the Maple panel that draws them", () => {
+		expect(widgetTypeByGrafanaType("timeseries")?.panelType).toBe("line")
+		expect(widgetTypeByGrafanaType("singlestat")?.panelType).toBe("stat")
+		expect(widgetTypeByGrafanaType("bargauge")?.panelType).toBe("gauge")
+		expect(widgetTypeByGrafanaType("piechart")?.panelType).toBe("pie")
+		expect(widgetTypeByGrafanaType("text")?.panelType).toBe("markdown")
+	})
+
+	it("has no panel for a type Maple cannot draw", () => {
+		expect(widgetTypeByGrafanaType("nodeGraph")).toBeUndefined()
+		expect(widgetTypeByGrafanaType("logs")).toBeUndefined()
+		expect(widgetTypeByGrafanaType(undefined)).toBeUndefined()
 	})
 })
 
