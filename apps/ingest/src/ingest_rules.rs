@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use hmac::{Hmac, Mac};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::profiles::v1development::ExportProfilesServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::LogRecord;
@@ -560,6 +561,13 @@ impl CompiledRules {
     /// Ids of the compiled rules; `RuleStats::per_rule` uses the same indexes.
     pub fn rule_ids(&self) -> &[RuleId] {
         &self.ids
+    }
+
+    /// True when some rule redacts, whatever its signals: `redact_profiles` applies them all.
+    pub fn redacts(&self) -> bool {
+        self.rules
+            .iter()
+            .any(|rule| matches!(rule.action, CompiledAction::Redact(_)))
     }
 
     /// True when some rule reads this signal, so a caller can skip the payload otherwise.
@@ -1819,6 +1827,128 @@ pub mod conformance {
             IngestSignal::Logs => run_logs(&compiled, &case.input),
             IngestSignal::Metrics => run_metrics(&compiled, &case.input),
         }
+    }
+}
+
+
+/// Redacts a profiles export in place with every redact rule, whatever signals it names and
+/// ignoring its conditions: those describe spans, logs and metrics, which a profile has none of,
+/// so a profile gets the most redaction any rule asks for rather than none. `resource` scope covers
+/// each resource's attributes, `attributes` scope the dictionary's attribute table (profile and
+/// sample attributes). Keys named by string-table index are resolved first so key rules see them;
+/// a removed table entry keeps its index with an empty key, which the flatten skips.
+#[hotpath::measure]
+pub fn redact_profiles(
+    rules: &CompiledRules,
+    request: &mut ExportProfilesServiceRequest,
+    stats: &mut RuleStats,
+) -> Result<(), ScanBudgetExceeded> {
+    stats.ensure(rules.len());
+    let mut budget = ScanBudget::new(rules.scan_bytes, rules.scan_time);
+    let mut dictionary = request.dictionary.take().unwrap_or_default();
+    let strings = std::mem::take(&mut dictionary.string_table);
+    let key_of = |index: i32| -> String {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| strings.get(index))
+            .cloned()
+            .unwrap_or_default()
+    };
+    let mut resources: Vec<&mut Vec<KeyValue>> = request
+        .resource_profiles
+        .iter_mut()
+        .filter_map(|resource_profiles| resource_profiles.resource.as_mut())
+        .map(|resource| &mut resource.attributes)
+        .collect();
+    for attributes in &mut resources {
+        attributes.iter_mut().for_each(|kv| resolve_key(kv, &key_of));
+    }
+    // The table as plain pairs, index for index, so a removal is visible after the pass.
+    let mut table: Vec<Option<KeyValue>> = dictionary
+        .attribute_table
+        .iter_mut()
+        .map(|entry| {
+            let mut kv = KeyValue {
+                key: key_of(entry.key_strindex),
+                value: entry.value.take(),
+                ..KeyValue::default()
+            };
+            if let Some(value) = kv.value.as_mut() {
+                resolve_value_keys(value, &key_of);
+            }
+            Some(kv)
+        })
+        .collect();
+    for (index, rule) in rules.rules.iter().enumerate() {
+        let CompiledAction::Redact(redaction) = &rule.action else {
+            continue;
+        };
+        let mut redactor = Redactor {
+            redaction,
+            salt: rules.hash_salt.as_bytes(),
+            budget: &mut budget,
+            count: 0,
+        };
+        if redaction.scopes & SCOPE_RESOURCE != 0 {
+            for attributes in &mut resources {
+                redactor.redact_attributes(attributes);
+            }
+        }
+        if redaction.scopes & SCOPE_ATTRIBUTES != 0 {
+            for slot in &mut table {
+                if let Some(kv) = slot.as_mut() {
+                    if !redactor.redact_entry(kv, true) {
+                        *slot = None;
+                    }
+                }
+            }
+        }
+        stats.per_rule[index].redacted_values += redactor.count;
+    }
+    drop(resources);
+    for (entry, slot) in dictionary.attribute_table.iter_mut().zip(table) {
+        match slot {
+            Some(kv) => entry.value = kv.value,
+            None => {
+                entry.key_strindex = 0;
+                entry.value = None;
+            }
+        }
+    }
+    dictionary.string_table = strings;
+    request.dictionary = Some(dictionary);
+    stats.refresh_total();
+    if budget.spent() {
+        Err(ScanBudgetExceeded)
+    } else {
+        Ok(())
+    }
+}
+
+/// Moves a key named by string-table index into `key`, nested kvlist keys too.
+fn resolve_key(kv: &mut KeyValue, key_of: &impl Fn(i32) -> String) {
+    if kv.key.is_empty() && kv.key_strindex != 0 {
+        kv.key = key_of(kv.key_strindex);
+        kv.key_strindex = 0;
+    }
+    if let Some(value) = kv.value.as_mut() {
+        resolve_value_keys(value, key_of);
+    }
+}
+
+fn resolve_value_keys(value: &mut AnyValue, key_of: &impl Fn(i32) -> String) {
+    match value.value.as_mut() {
+        Some(any_value::Value::ArrayValue(array)) => {
+            for item in &mut array.values {
+                resolve_value_keys(item, key_of);
+            }
+        }
+        Some(any_value::Value::KvlistValue(list)) => {
+            for kv in &mut list.values {
+                resolve_key(kv, key_of);
+            }
+        }
+        _ => {}
     }
 }
 
