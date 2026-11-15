@@ -118,7 +118,8 @@ export interface Point {
 	readonly atMs: number
 	readonly group: string
 	readonly value: number
-	readonly observations: number
+	/** The row's `dataPointCount`. */
+	readonly dataPoints: number
 }
 
 export interface QueryArgs {
@@ -165,7 +166,7 @@ export const queryHistogram = (db: Chdb, args: QueryArgs): ReadonlyArray<Point> 
 			atMs: Date.parse(`${Str.replace(" ", "T")(row.bucket)}Z`) - BASE_MS,
 			group: row.groupName,
 			value: row.value,
-			observations: row.dataPointCount,
+			dataPoints: row.dataPointCount,
 		})),
 		byTimeThenGroup,
 	)
@@ -203,6 +204,8 @@ export interface HistogramSample {
 	readonly sum: number
 	readonly bounds: ReadonlyArray<number>
 	readonly buckets: ReadonlyArray<number>
+	/** OTLP data point flags; 1 marks a point with no recorded value. */
+	readonly flags?: number
 }
 
 /** One cumulative series written sample by sample, for exports the world model cannot produce. */
@@ -215,9 +218,9 @@ export const insertCumulativeSamples = (
 	const rows = Arr.map(
 		samples,
 		(s) =>
-			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], 2)`,
+			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, 2)`,
 	)
 	db.exec(
-		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
 	)
 }

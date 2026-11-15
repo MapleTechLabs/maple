@@ -521,7 +521,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			if (badToken !== undefined) {
 				const percentileNote =
 					params.source === "metrics" && /^p\d+/.test(params.metric ?? "")
-						? " Metric percentiles are not supported: use avg, or source=traces metric=p95_duration for request latency."
+						? " Metric percentiles are p50, p75, p90, p95 and p99, on a histogram metric; for request latency use source=traces metric=p95_duration."
 						: ""
 				return yield* new McpInvalidInputError({
 					message: badToken.message + percentileNote,

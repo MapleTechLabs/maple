@@ -102,6 +102,13 @@ const WORLDS: ReadonlyArray<HistogramSeries> = [
 		temporality: "cumulative",
 		restartsAtMs: [20 * SECOND_MS],
 	}),
+	// One service records min and max, the other does not.
+	series("org_some_extrema", { observations: [at(5, 150), at(6, 180)] }),
+	series("org_some_extrema", {
+		observations: Arr.makeBy(8, (i) => at(10 + i, 3)),
+		service: "worker",
+		recordExtrema: false,
+	}),
 	// A histogram that records only count and sum.
 	series("org_no_buckets", { observations: TEN, bounds: [], recordExtrema: false }),
 ]
@@ -180,6 +187,47 @@ describeWithChdb("histogram metrics", () => {
 			{ tickMs: 0, startMs: -HISTORY_MS, count: 7, sum: 700, temporality: "cumulative" },
 			{ tickMs: 10 * SECOND_MS, startMs: -HISTORY_MS, count: 11, sum: 740, temporality: "cumulative" },
 			{ tickMs: 20 * SECOND_MS, startMs: -HISTORY_MS, count: 17, sum: 830, temporality: "cumulative" },
+		])
+		// A scraped series: the first point starts at its own time, the rest at the first point's.
+		insertCumulativeSamples(db, "org_scraped", "http.server.request.duration", [
+			{ tickMs: 0, startMs: 0, count: 1000, sum: 10_000, bounds: [50], buckets: [1000, 0] },
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: 0,
+				count: 1002,
+				sum: 10_020,
+				bounds: [50],
+				buckets: [1002, 0],
+			},
+			{
+				tickMs: 20 * SECOND_MS,
+				startMs: 0,
+				count: 1005,
+				sum: 10_050,
+				bounds: [50],
+				buckets: [1005, 0],
+			},
+		])
+		// A scrape that failed at 0:10 leaves a point with no recorded value.
+		insertCumulativeSamples(db, "org_stale", "http.server.request.duration", [
+			{ tickMs: 0, startMs: -HISTORY_MS, count: 1000, sum: 10_000, bounds: [50], buckets: [1000, 0] },
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 0,
+				sum: 0,
+				bounds: [],
+				buckets: [],
+				flags: 1,
+			},
+			{
+				tickMs: 20 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 1003,
+				sum: 10_030,
+				bounds: [50],
+				buckets: [1003, 0],
+			},
 		])
 		// One process, counting since long before the range, that switches its buckets at 0:10.
 		insertCumulativeSamples(db, "org_relayout", "http.server.request.duration", [
@@ -280,7 +328,22 @@ describeWithChdb("histogram metrics", () => {
 	test("new bucket bounds without a restart add no buckets for that export", () => {
 		// The export at 0:10 cannot be subtracted from the old layout; 0:20 adds three in (0..20].
 		const points = firstMinute("org_relayout", "p50")
-		expect(Arr.map(points, (p) => [p.observations, p.value])).toEqual([[5, 10]])
+		expect(Arr.map(points, (p) => [p.dataPoints, p.value])).toEqual([[5, 10]])
+	})
+
+	test("a scraped series, whose start is its first point's time, counts increases only", () => {
+		expect(valueOf("org_scraped", "count")).toEqual([5])
+		expect(valueOf("org_scraped", "sum")).toEqual([50])
+	})
+
+	test("a point with no recorded value is not a reset", () => {
+		expect(valueOf("org_stale", "count")).toEqual([3])
+		expect(valueOf("org_stale", "sum")).toEqual([30])
+	})
+
+	test("one series' min and max do not clamp a distribution other series add to", () => {
+		// Eight of ten observations are in (0..10]; the recorded minimum of 150 is one service's.
+		expect(valueOf("org_some_extrema", "p50")).toEqual([6.25])
 	})
 
 	test("an estimate never leaves the recorded min and max", () => {
@@ -298,7 +361,10 @@ describeWithChdb("histogram metrics", () => {
 
 	test("a bucket with no observations has a count of zero and no average or percentile", () => {
 		const range = { fromMs: 2 * MINUTE_MS, toMs: 3 * MINUTE_MS - SECOND_MS }
-		expect(Arr.map(firstMinute("org_idle", "count", range), (p) => p.value)).toEqual([0])
+		// The six exports in the minute still count as data, so an alert can read the zero.
+		expect(Arr.map(firstMinute("org_idle", "count", range), (p) => [p.value, p.dataPoints])).toEqual([
+			[0, 6],
+		])
 		expect(firstMinute("org_idle", "avg", range)).toEqual([])
 		expect(firstMinute("org_idle", "p95", range)).toEqual([])
 	})
@@ -333,7 +399,7 @@ describeWithChdb("histogram metrics", () => {
 			lookbackSeconds: 30,
 		})
 		// Exports at 0:10 to 0:40 carry the eight observations up to 0:32 (the window end is exclusive).
-		expect(Arr.map(points, (p) => [p.observations, p.value])).toEqual([[8, 15]])
+		expect(Arr.map(points, (p) => [p.dataPoints, p.value])).toEqual([[8, 15]])
 	})
 
 	const randomQuery = (org: string, aggregation: QueryArgs["aggregation"], bucketSeconds: number) =>
@@ -359,12 +425,20 @@ describeWithChdb("histogram metrics", () => {
 
 	test("a bucket counts exactly the observations exported in it", () => {
 		for (const bucketSeconds of [60, 300]) {
-			const points = randomQuery("org_random_extrema", "sum", bucketSeconds)
-			expect(points.length).toBeGreaterThan(10)
-			for (const point of points) {
-				const values = observedIn(RANDOM_EXTREMA, point.group, point.atMs, bucketSeconds * SECOND_MS)
-				expect(point.observations).toBe(values.length)
-				expect(point.value).toBe(Arr.reduce(values, 0, (a, b) => a + b))
+			const counts = randomQuery("org_random_extrema", "count", bucketSeconds)
+			const sums = randomQuery("org_random_extrema", "sum", bucketSeconds)
+			expect(counts.length).toBeGreaterThan(10)
+			expect(sums.length).toBe(counts.length)
+			for (const [points, total] of [
+				[counts, (values: ReadonlyArray<number>) => values.length],
+				[sums, (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (a, b) => a + b)],
+			] as const) {
+				for (const point of points) {
+					const width = bucketSeconds * SECOND_MS
+					expect(point.value).toBe(
+						total(observedIn(RANDOM_EXTREMA, point.group, point.atMs, width)),
+					)
+				}
 			}
 		}
 	})

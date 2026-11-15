@@ -20584,7 +20584,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [11ca3d50]
+-- spec:metrics-breakdown:baseline  [b9b75459]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -20618,6 +20618,7 @@ SELECT
           cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
           metrics_histogram.AggregationTemporality AS temporality,
           metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
           lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
           if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 600 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
           metrics_histogram.Count AS sCount,
@@ -20637,14 +20638,16 @@ SELECT
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.TimeUnix < '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
 )
 SELECT
           toDateTime('2026-01-01 10:30:00') AS bucket,
           hist_samples.groupName AS groupName,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
           min(hist_samples.sMin) AS minValue,
           max(hist_samples.sMax) AS maxValue,
+          count() AS samples,
           uniqExact(hist_samples.series) AS seriesCount
         FROM hist_samples
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
@@ -20670,12 +20673,12 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [dabd077e]
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [9a71d6a3]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
           merged.total AS value,
-          toUInt64(merged.observations) AS dataPointCount,
+          merged.samples AS dataPointCount,
           merged.seriesCount AS seriesCount
         FROM (WITH hist_samples AS (
 SELECT
@@ -20684,6 +20687,7 @@ SELECT
           cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
           metrics_histogram.AggregationTemporality AS temporality,
           metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
           lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
           if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
           metrics_histogram.Count AS sCount,
@@ -20702,14 +20706,16 @@ SELECT
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
 )
 SELECT
           toStartOfInterval(hist_samples.TimeUnix, INTERVAL 300 SECOND) AS bucket,
           hist_samples.groupName AS groupName,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
           min(hist_samples.sMin) AS minValue,
           max(hist_samples.sMax) AS maxValue,
+          count() AS samples,
           uniqExact(hist_samples.series) AS seriesCount
         FROM hist_samples
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
@@ -20717,7 +20723,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [87e77630]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [aa4f7cfd]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20731,6 +20737,7 @@ SELECT
           cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
           metrics_histogram.AggregationTemporality AS temporality,
           metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
           lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
           if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
           metrics_histogram.Count AS sCount,
@@ -20749,14 +20756,16 @@ SELECT
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
 )
 SELECT
           toStartOfInterval(hist_samples.TimeUnix, INTERVAL 300 SECOND) AS bucket,
           hist_samples.groupName AS groupName,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
           min(hist_samples.sMin) AS minValue,
           max(hist_samples.sMax) AS maxValue,
+          count() AS samples,
           uniqExact(hist_samples.series) AS seriesCount
         FROM hist_samples
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
@@ -20765,7 +20774,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-several-keys:baseline  [3a9063dc]
+-- spec:metrics-timeseries-grouped-by-several-keys:baseline  [6e03fb51]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20779,6 +20788,7 @@ SELECT
           cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
           metrics_histogram.AggregationTemporality AS temporality,
           metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
           lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
           if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
           metrics_histogram.Count AS sCount,
@@ -20797,14 +20807,16 @@ SELECT
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
 )
 SELECT
           toStartOfInterval(hist_samples.TimeUnix, INTERVAL 300 SECOND) AS bucket,
           hist_samples.groupName AS groupName,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
           min(hist_samples.sMin) AS minValue,
           max(hist_samples.sMax) AS maxValue,
+          count() AS samples,
           uniqExact(hist_samples.series) AS seriesCount
         FROM hist_samples
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
@@ -20877,7 +20889,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [3bc2793f]
+-- spec:metrics-timeseries:baseline  [ea94ac42]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20891,6 +20903,7 @@ SELECT
           cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
           metrics_histogram.AggregationTemporality AS temporality,
           metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
           lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
           if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
           metrics_histogram.Count AS sCount,
@@ -20909,14 +20922,16 @@ SELECT
           AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND
           AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
 )
 SELECT
           toStartOfInterval(hist_samples.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
           hist_samples.groupName AS groupName,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
-          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total,
           min(hist_samples.sMin) AS minValue,
           max(hist_samples.sMax) AS maxValue,
+          count() AS samples,
           uniqExact(hist_samples.series) AS seriesCount
         FROM hist_samples
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'

@@ -10,6 +10,7 @@ import { behindToastContent } from "../../dashboards/kit/store"
 import * as AddToDashboard from "./add-to-dashboard"
 import { MountWhereCaret } from "./command"
 import { appendWhereFilter } from "./derive"
+import * as Select from "@maple/views/ui/select"
 import { CaretMessage } from "./where-editor"
 import { Message } from "./message"
 import type { Model } from "./model"
@@ -190,6 +191,22 @@ describe("metric detail", () => {
 		expect(Arr.map(moved.commands ?? [], ({ name, args }) => [name, args?.["mode"]])).toEqual([
 			["ResolveMetricWindow", "Refresh"],
 		])
+	})
+
+	test("picking an aggregation puts it in the URL, percentiles and latest included", () => {
+		const pick = (model: Model, value: string) =>
+			pageUpdate(
+				model,
+				Message.GotAggregationSelectMessage({
+					message: Select.Message.SelectedItem({ index: 0, value }),
+				}),
+			).outMessage
+		const urlWith = (value: string) =>
+			PageOutMessage.RequestedNavigation({ url: `/metrics/${NAME}?agg=${value}`, isReplace: true })
+		const histogram = loaded([row("payment-svc")])
+		expect(pick(histogram, "sum")).toEqual(urlWith("sum"))
+		expect(pick(histogram, "p95")).toEqual(urlWith("p95"))
+		expect(pick(loaded([row("payment-svc", "gauge")]), "latest")).toEqual(urlWith("latest"))
 	})
 
 	test("the where clause commits after the debounce, and the step only when it changed", () => {

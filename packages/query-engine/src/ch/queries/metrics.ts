@@ -91,7 +91,7 @@ export interface MetricsTimeseriesOutput {
 	readonly bucket: DateTime.Utc
 	readonly groupName: string
 	readonly value: number
-	/** Datapoints behind the value (observations for histograms). */
+	/** Datapoints behind the value: for a histogram its observations, or its samples under count and sum. */
 	readonly dataPointCount: number
 	/** Distinct series (service + attributes + resource) combined into the value. */
 	readonly seriesCount: number
@@ -269,6 +269,7 @@ const histogramSampleColumns = {
 	series: T.uint64,
 	temporality: T.int32,
 	startTime: T.dateTime64,
+	prevStart: T.dateTime64,
 	prevTime: T.dateTime64,
 	fresh: T.uint8,
 	sCount: T.uint64,
@@ -285,15 +286,19 @@ const histogramSampleColumns = {
 
 // A sample counts whole when it carries its own accumulation: delta temporality,
 // a series that began inside the scanned range (`fresh`), or a reset (count
-// dropped, or StartTimeUnix at or past the previous sample). Otherwise it is
-// cumulative and only its increase counts.
+// dropped, or a StartTimeUnix that moved to or past the previous sample). A start
+// equal to the previous sample's own start is the same accumulation, which is how
+// a scraped series reads after its first point. Otherwise only the increase counts.
 const SAMPLE_IS_WHOLE =
-	"(temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix))"
+	"(temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix))"
 const OBSERVATIONS = `if(${SAMPLE_IS_WHOLE}, toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))`
 const OBSERVED_SUM = `if(${SAMPLE_IS_WHOLE}, sSum, sSum - prevSum)`
 // New bounds inside one accumulation leave no bucket to subtract from: that sample adds
 // no buckets. `arrayResize` keeps the zipped arrays the same length in every branch.
 const BUCKET_INCREASE = `multiIf(${SAMPLE_IS_WHOLE}, arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets))))`
+// Recorded extrema bound the merged distribution only when every sample that added
+// observations recorded them; one series' min says nothing about another's values.
+const EXTREMA_COVER_ALL = `countIf((isNull(sMin) OR isNull(sMax)) AND ${OBSERVATIONS} > 0) = 0`
 // OTLP: N bounds describe N + 1 buckets, the last unbounded. Any other shape has no usable buckets.
 const HAS_BUCKETS = "length(buckets) = length(bounds) + 1"
 const BUCKET_UPPER_BOUNDS = `if(${HAS_BUCKETS}, arrayPushBack(bounds, inf), emptyArrayFloat64())`
@@ -302,8 +307,8 @@ const BUCKET_COUNTS = `if(${HAS_BUCKETS}, ${BUCKET_INCREASE}, emptyArrayFloat64(
 /**
  * The q-quantile of one merged histogram: linear interpolation inside the bucket
  * the rank falls in, as Prometheus' `histogram_quantile` does, except that the
- * unbounded last bucket interpolates up to the recorded max. NaN when it cannot
- * be estimated.
+ * unbounded last bucket interpolates up to the recorded max (`bMax`). NaN when
+ * it cannot be estimated.
  *
  * `bKeys` and `bCounts` are the non-empty buckets by ascending upper bound
  * (`sumMap` drops a key whose sum is zero), `bTotal` their sum, and `bBounds`
@@ -322,7 +327,7 @@ function histogramQuantileSql(q: number): string {
 	// Below the lowest bound the bucket starts at zero, unless that bound is itself negative.
 	const lower = `if(empty(${below}), if(${upper} > 0, 0, ${upper}), arrayMax(${below}))`
 	const bounded = `${lower} + (${upper} - ${lower}) * ${fraction}`
-	const unbounded = `if(empty(bBounds), nan, ${lower} + (greatest(ifNull(maxValue, ${lower}), ${lower}) - ${lower}) * ${fraction})`
+	const unbounded = `if(empty(bBounds), nan, ${lower} + (greatest(ifNull(bMax, ${lower}), ${lower}) - ${lower}) * ${fraction})`
 	return `multiIf(bTotal <= 0 OR ${index} = 0, nan, isInfinite(${upper}), ${unbounded}, ${bounded})`
 }
 
@@ -383,6 +388,7 @@ function histogramTimeseriesQuery(
 				series: metricsSeriesKeyExpr($),
 				temporality: $.AggregationTemporality,
 				startTime: $.StartTimeUnix,
+				prevStart: previous($.StartTimeUnix),
 				prevTime: previous($.TimeUnix),
 				fresh: CH.if_(fresh, CH.lit(1), CH.lit(0)),
 				sCount: $.Count,
@@ -397,7 +403,8 @@ function histogramTimeseriesQuery(
 				prevBounds: previous(bounds),
 			}
 		})
-		.where(($) => metricsWhere($, opts, scanStart))
+		// A no-recorded-value point (a failed scrape) carries zeros, which would read as a reset.
+		.where(($) => [...metricsWhere($, opts, scanStart), CH.rawCond("bitAnd(Flags, 1) = 0")])
 
 	const samples = table("hist_samples", { external: true, columns: histogramSampleColumns })
 
@@ -410,6 +417,7 @@ function histogramTimeseriesQuery(
 			total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
 			minValue: CH.min_($.sMin),
 			maxValue: CH.max_($.sMax),
+			samples: CH.count(),
 			seriesCount: CH.uniqExact($.series),
 			...(isMetricsPercentile(metric)
 				? {
@@ -426,6 +434,8 @@ function histogramTimeseriesQuery(
 							`arraySort(groupUniqArrayArray(if(${HAS_BUCKETS}, bounds, emptyArrayFloat64())))`,
 							T.array(T.float64),
 						),
+						bMin: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, min(sMin), NULL)`, T.nullable(T.float64)),
+						bMax: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, max(sMax), NULL)`, T.nullable(T.float64)),
 					}
 				: undefined),
 		}))
@@ -438,7 +448,9 @@ function histogramTimeseriesQuery(
 				bucket: $.bucket,
 				groupName: $.groupName,
 				value: histogramValueExpr($, metric),
-				dataPointCount: CH.toUInt64($.observations),
+				// A count or sum of zero is a reading as long as the series still exports.
+				dataPointCount:
+					metric === "count" || metric === "sum" ? $.samples : CH.toUInt64($.observations),
 				seriesCount: $.seriesCount,
 			}))
 			// An average over no observations is not zero; the bucket has no value.
@@ -452,8 +464,8 @@ function histogramTimeseriesQuery(
 		groupName: $.groupName,
 		observations: $.observations,
 		seriesCount: $.seriesCount,
-		minValue: $.minValue,
-		maxValue: $.maxValue,
+		bMin: $.bMin,
+		bMax: $.bMax,
 		estimate: CH.rawExpr(histogramQuantileSql(METRICS_PERCENTILES[metric]), T.float64),
 	}))
 	const inner = fromQuery(estimated, "estimated")
@@ -462,8 +474,8 @@ function histogramTimeseriesQuery(
 			groupName: $.groupName,
 			// The recorded extrema bound every observation, so they bound the estimate.
 			value: CH.least_(
-				CH.greatest_($.estimate, CH.ifNull($.minValue, $.estimate)),
-				CH.ifNull($.maxValue, $.estimate),
+				CH.greatest_($.estimate, CH.ifNull($.bMin, $.estimate)),
+				CH.ifNull($.bMax, $.estimate),
 			),
 			dataPointCount: CH.toUInt64($.observations),
 			seriesCount: $.seriesCount,
