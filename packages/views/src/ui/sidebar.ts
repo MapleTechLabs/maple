@@ -340,7 +340,7 @@ export type SidebarMenuSubRow = Readonly<{
 /** The marker's offset: the rows and group gaps above the current row, then centred on it. */
 const subMarkerOffset = (rows: ReadonlyArray<SidebarMenuSubRow>, activeIndex: number): string => {
 	const gaps = Arr.filter(rows.slice(1, activeIndex + 1), (row) => row.startsGroup === true).length
-	return `calc(var(--sub-row) * ${activeIndex} + ${gaps * 0.25}rem + (var(--sub-row) - 1rem) / 2)`
+	return `calc(var(--sub-row) * ${activeIndex} + var(--sub-group-gap) * ${gaps} + (var(--sub-row) - var(--sub-marker-h)) / 2)`
 }
 
 /** A section's sub-rows on one hairline, with a marker that slides to the current row. */

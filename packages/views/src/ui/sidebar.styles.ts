@@ -116,19 +116,19 @@ export const sidebarMenuBadgeStyles = [
 ] as const
 
 export const sidebarMenuSubStyles = [
-	// `--sub-row` is the sub button's height, which the marker's offset is counted in.
-	"relative ms-4 flex min-w-0 flex-col ps-3 [--sub-row:--spacing(9)] md:[--sub-row:--spacing(7)]",
+	// What the marker's offset is counted in: the sub button's height, the marker's own and the group gap.
+	"relative ms-4 flex min-w-0 flex-col ps-3 [--sub-row:--spacing(9)] md:[--sub-row:--spacing(7)] [--sub-marker-h:--spacing(4)] [--sub-group-gap:--spacing(1)]",
 	// One unbroken hairline, 1px out so the 2px marker on it centres under the section's icon.
 	"before:absolute before:inset-y-1 before:-left-px before:w-px before:bg-sidebar-border",
 	// The marker: 2px of `sidebar-primary` that slides to the current row.
-	"after:absolute after:top-0 after:-left-px after:h-4 after:w-0.5 after:translate-y-(--sub-marker-y) after:rounded-full after:bg-sidebar-primary after:transition-[translate] after:duration-200 after:ease-move motion-reduce:after:transition-none data-[marker=false]:after:hidden",
+	"after:absolute after:top-0 after:-left-px after:h-(--sub-marker-h) after:w-0.5 after:translate-y-(--sub-marker-y) after:rounded-full after:bg-sidebar-primary after:transition-[translate] after:duration-200 after:ease-move motion-reduce:after:transition-none data-[marker=false]:after:hidden",
 	"group-data-[collapsible=icon]:hidden",
 ] as const
 
 export const sidebarMenuSubItemStyles = "group/menu-sub-item relative"
 
 /** The 4px gap, not a rule, that sets a group of sub-rows apart. */
-export const sidebarMenuSubItemGroupStyles = "mt-1"
+export const sidebarMenuSubItemGroupStyles = "mt-(--sub-group-gap)"
 
 export const sidebarMenuSubButtonStyles = [
 	// 36px in the mobile sheet (below `md`, a touch target), 28px on the desktop rail.
