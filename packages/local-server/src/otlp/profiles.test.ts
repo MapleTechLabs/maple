@@ -1,0 +1,291 @@
+import { describe, expect, it } from "vitest"
+import { Array as Arr, Record as Rec, Result, Schema, String as Str } from "effect"
+import insertMappings from "../schema/local-inserts.json"
+import {
+	checkOtlpProfilesJson,
+	encodeProfiles,
+	isSupportedProfilesVersion,
+	MAX_FRAME_TEXT,
+	MAX_STACK_DEPTH,
+} from "./profiles"
+import { decodeProfilesRequest, encodeProfilesRequest } from "./proto"
+
+const NOW_NANO = 1_763_200_000_000_000_000n
+const TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+const SPAN_ID = "b7ad6b7169203331"
+const b64 = (hex: string): string => Buffer.from(hex, "hex").toString("base64")
+
+const Row = Schema.Struct({
+	timestamp: Schema.String,
+	service_name: Schema.String,
+	service_version: Schema.String,
+	environment: Schema.String,
+	sample_type: Schema.String,
+	sample_unit: Schema.String,
+	value: Schema.Number,
+	samples: Schema.Number,
+	frames: Schema.Array(Schema.String),
+	frame_files: Schema.Array(Schema.String),
+	frame_lines: Schema.Array(Schema.Number),
+	trace_id: Schema.String,
+	span_id: Schema.String,
+	sample_attributes: Schema.Record(Schema.String, Schema.String),
+})
+const decodeRow = Schema.decodeUnknownSync(Schema.fromJsonString(Row))
+
+const rowsOf = (request: unknown) => {
+	const { batches, profileCount } = encodeProfiles(request, NOW_NANO)
+	const rows = Arr.flatMap(batches, (batch) =>
+		Arr.map(Str.split("\n")(batch.ndjson), (line) => decodeRow(line)),
+	)
+	return { rows, batches, profileCount }
+}
+
+// string table: 0 "", then names. Index 0 of every table is the spec's zero entry.
+const STRINGS = [
+	"",
+	"cpu",
+	"nanoseconds",
+	"main",
+	"handleRequest",
+	"parseBody",
+	"/app/server.js",
+	"service.name",
+	"checkout",
+	"thread.name",
+	"samples",
+	"count",
+	"libc.so.6",
+]
+
+const dictionary = {
+	stringTable: STRINGS,
+	functionTable: [
+		{},
+		{ nameStrindex: 3, filenameStrindex: 6, startLine: 1 },
+		{ nameStrindex: 4, filenameStrindex: 6, startLine: 10 },
+		{ nameStrindex: 5, filenameStrindex: 6, startLine: 40 },
+	],
+	mappingTable: [{}, { filenameStrindex: 12 }],
+	locationTable: [
+		{},
+		{ lines: [{ functionIndex: 1, line: 3 }] },
+		{ lines: [{ functionIndex: 2, line: 12 }] },
+		// Inlined: parseBody was inlined into handleRequest, innermost first.
+		{
+			lines: [
+				{ functionIndex: 3, line: 44 },
+				{ functionIndex: 2, line: 15 },
+			],
+		},
+		{ mappingIndex: 1, address: 4660 },
+	],
+	// Leaf first on the wire.
+	stackTable: [
+		{},
+		{ locationIndices: [2, 1] },
+		{ locationIndices: [3, 1] },
+		{ locationIndices: [4, 2, 1] },
+	],
+	linkTable: [{}, { traceId: b64(TRACE_ID), spanId: b64(SPAN_ID) }],
+	attributeTable: [{}, { keyStrindex: 9, value: { stringValue: "worker-1" } }],
+}
+
+const cpuRequest = (samples: ReadonlyArray<unknown>) => ({
+	resourceProfiles: [
+		{
+			resource: {
+				attributes: [
+					// Key and value both interned, as collectors from v0.161 send them.
+					{ keyStrindex: 7, value: { stringValueStrindex: 8 } },
+					{ key: "service.version", value: { stringValue: "1.4.0" } },
+					{ key: "deployment.environment.name", value: { stringValue: "prod" } },
+				],
+			},
+			scopeProfiles: [
+				{
+					profiles: [
+						{
+							sampleType: { typeStrindex: 1, unitStrindex: 2 },
+							timeUnixNano: "1763200000000000000",
+							durationNano: "10000000000",
+							profileId: b64(TRACE_ID),
+							samples,
+						},
+					],
+				},
+			],
+		},
+	],
+	dictionary,
+})
+
+describe("encodeProfiles", () => {
+	it("writes one row per stack with root-first frames and the samples summed", () => {
+		const { rows, profileCount } = rowsOf(
+			cpuRequest([
+				{ stackIndex: 1, values: ["4000000", "6000000"] },
+				{ stackIndex: 1, values: ["5000000"] },
+				{ stackIndex: 2, values: ["1000000"] },
+			]),
+		)
+		expect(profileCount).toBe(1)
+		expect(Arr.map(rows, (row) => [row.frames, row.value, row.samples])).toEqual([
+			[["main", "handleRequest"], 15_000_000, 3],
+			[["main", "handleRequest", "parseBody"], 1_000_000, 1],
+		])
+		expect(rows[0]?.frame_files).toEqual(["/app/server.js", "/app/server.js"])
+		expect(rows[0]?.frame_lines).toEqual([3, 12])
+		expect(rows[0]?.timestamp).toBe("2025-11-15 09:46:40.000000000")
+	})
+
+	it("resolves resource attributes sent as string-table indices", () => {
+		const { rows } = rowsOf(cpuRequest([{ stackIndex: 1, values: ["1"] }]))
+		expect(rows[0]).toMatchObject({
+			service_name: "checkout",
+			service_version: "1.4.0",
+			environment: "prod",
+		})
+	})
+
+	it("keeps a span's samples apart from the rest of the stack and stamps them with its first sample", () => {
+		const { rows } = rowsOf(
+			cpuRequest([
+				{ stackIndex: 1, values: ["2"] },
+				{
+					stackIndex: 1,
+					linkIndex: 1,
+					attributeIndices: [1],
+					values: ["3", "4"],
+					timestampsUnixNano: ["1763200005000000000", "1763200004000000000"],
+				},
+			]),
+		)
+		expect(Arr.map(rows, (row) => [row.span_id, row.trace_id, row.value])).toEqual([
+			["", "", 2],
+			[SPAN_ID, TRACE_ID, 7],
+		])
+		expect(rows[1]?.timestamp).toBe("2025-11-15 09:46:44.000000000")
+		expect(rows[1]?.sample_attributes).toEqual({ "thread.name": "worker-1" })
+	})
+
+	it("stores a sample-counting producer in the period's terms", () => {
+		const request = cpuRequest([{ stackIndex: 1, timestampsUnixNano: ["1", "2", "3"] }])
+		const profile = request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0]
+		Object.assign(profile ?? {}, {
+			sampleType: { typeStrindex: 10, unitStrindex: 11 },
+			periodType: { typeStrindex: 1, unitStrindex: 2 },
+			period: "50000000",
+		})
+		const { rows } = rowsOf(request)
+		expect(rows[0]).toMatchObject({
+			sample_type: "cpu",
+			sample_unit: "nanoseconds",
+			value: 150_000_000,
+			samples: 3,
+		})
+	})
+
+	it("names an unsymbolized frame by its mapping and address", () => {
+		const { rows } = rowsOf(cpuRequest([{ stackIndex: 3, values: ["1"] }]))
+		expect(rows[0]?.frames).toEqual(["main", "handleRequest", "libc.so.6+0x1234"])
+	})
+
+	it("drops a sample whose stack is empty", () => {
+		expect(rowsOf(cpuRequest([{ stackIndex: 0, values: ["9"] }])).rows).toEqual([])
+	})
+
+	it("keeps the leaf side of a stack deeper than the cap", () => {
+		const depth = MAX_STACK_DEPTH + 40
+		const request = cpuRequest([{ stackIndex: 1, values: ["1"] }])
+		request.dictionary = {
+			...dictionary,
+			// Leaf first: location 2 (handleRequest) is the leaf, the rest are `main`.
+			stackTable: [{}, { locationIndices: [2, ...Arr.makeBy(depth - 1, () => 1)] }],
+		}
+		const frames = rowsOf(request).rows[0]?.frames ?? []
+		expect(frames).toHaveLength(MAX_STACK_DEPTH)
+		expect([frames[0], frames.at(-1)]).toEqual(["(truncated)", "handleRequest"])
+	})
+
+	it("reads a protobuf export the same as its JSON form", () => {
+		const request = cpuRequest([
+			{ stackIndex: 2, linkIndex: 1, values: ["5"], timestampsUnixNano: ["1763200001000000000"] },
+		])
+		const viaProto = rowsOf(decodeProfilesRequest(encodeProfilesRequest(request)))
+		expect(viaProto.rows).toEqual(rowsOf(request).rows)
+	})
+
+	it("emits exactly the fields the insert mapping reads", () => {
+		const { batches } = rowsOf(cpuRequest([{ stackIndex: 1, values: ["1"] }]))
+		const line = Str.split("\n")(batches[0]?.ndjson ?? "")[0] ?? "{}"
+		const emitted = Rec.keys(
+			Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(line),
+		)
+		const selects = Arr.filter(
+			insertMappings.datasources.profiles.selects,
+			(name) => name !== insertMappings.orgPlaceholder,
+		)
+		expect([...emitted].sort()).toEqual([...selects].sort())
+	})
+})
+
+describe("checkOtlpProfilesJson", () => {
+	it("refuses a body whose tables have the wrong shape", () => {
+		const result = checkOtlpProfilesJson({ dictionary: { stringTable: "nope" } })
+		expect(Result.isFailure(result) && result.failure).toContain("invalid OTLP/JSON profiles body")
+	})
+})
+
+describe("isSupportedProfilesVersion", () => {
+	it.each([
+		[null, true],
+		["1", true],
+		["2", false],
+	])("header %s -> %s", (header, supported) => {
+		expect(isSupportedProfilesVersion(header)).toBe(supported)
+	})
+})
+
+describe("hostile input", () => {
+	it("never builds a stack whole: a location inlining thousands of lines stays under the cap", () => {
+		const request = cpuRequest([{ stackIndex: 1, values: ["1"] }])
+		const inlined = { lines: Arr.makeBy(5000, () => ({ functionIndex: 1, line: 1 })) }
+		request.dictionary = {
+			...dictionary,
+			locationTable: [{}, inlined],
+			stackTable: [{}, { locationIndices: Arr.makeBy(5000, () => 1) }],
+		}
+		expect(rowsOf(request).rows[0]?.frames).toHaveLength(MAX_STACK_DEPTH)
+	})
+
+	it("cuts a function name or file path that would make one row unbounded", () => {
+		const request = cpuRequest([{ stackIndex: 1, values: ["1"] }])
+		request.dictionary = {
+			...dictionary,
+			stringTable: [...STRINGS.slice(0, 3), Str.repeat(50_000)("x"), ...STRINGS.slice(4)],
+		}
+		const row = rowsOf(request).rows[0]
+		expect(row?.frames[0]).toHaveLength(MAX_FRAME_TEXT)
+	})
+
+	it("stores values the columns cannot hold as their nearest bound, not as a failed insert", () => {
+		const request = cpuRequest([{ stackIndex: 1, values: ["99999999999999999999"] }])
+		const profile = request.resourceProfiles[0]?.scopeProfiles[0]?.profiles[0]
+		Object.assign(profile ?? {}, { durationNano: "-5" })
+		// A line number no Int32 holds, as a JSON sender can write it. On a copy: the fixture is shared.
+		request.dictionary = structuredClone(dictionary)
+		Object.assign(request.dictionary.locationTable[1]?.lines?.[0] ?? {}, {
+			line: "100000000000000000000",
+		})
+		const { batches } = encodeProfiles(request, NOW_NANO)
+		const row = Schema.decodeSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(
+			Str.split("\n")(batches[0]?.ndjson ?? "")[0] ?? "{}",
+		)
+		expect([row["value"], row["duration_nano"], row["frame_lines"]]).toEqual([
+			"9223372036854775807",
+			0,
+			[0, 12],
+		])
+	})
+})

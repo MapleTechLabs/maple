@@ -9,7 +9,7 @@
 		"./*": "./src/*.ts"
 	},
 	"scripts": {
-		"test": "bun test --max-concurrency=1 src/otlp/encode.test.ts test/*.test.ts",
+		"test": "bun test --max-concurrency=1 src/otlp/encode.test.ts src/otlp/profiles.test.ts test/*.test.ts",
 		"typecheck": "tsrs --noEmit"
 	},
 	"dependencies": {
