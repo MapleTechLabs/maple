@@ -319,6 +319,9 @@ class Converter {
 					const rangeNode = yield* required(durations[0], node, "missing subquery range")
 					const rangeMs = yield* this.duration(rangeNode)
 					const stepMs = durations[1] === undefined ? undefined : yield* this.duration(durations[1])
+					if (rangeMs <= 0) return yield* fail(rangeNode, "zero or negative subquery range")
+					if (stepMs !== undefined && stepMs <= 0)
+						return yield* fail(node, "zero or negative subquery step")
 					return {
 						type: "Subquery",
 						expr: yield* this.expr(inner),

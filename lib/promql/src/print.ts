@@ -1,9 +1,45 @@
 import type { AtModifier, Expr, LabelMatcher, VectorSelector } from "./ast"
 import { formatDuration } from "./literals"
+import { FUNCTIONS } from "./functions"
 import { lookup } from "./lookup"
 
 const IDENTIFIER = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/
 const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+/** Names that would read as a keyword, number or function if printed bare: keep them quoted. */
+const RESERVED: ReadonlySet<string> = new Set([
+	...Object.keys(FUNCTIONS),
+	"and",
+	"or",
+	"unless",
+	"atan2",
+	"bool",
+	"by",
+	"without",
+	"on",
+	"ignoring",
+	"group_left",
+	"group_right",
+	"offset",
+	"start",
+	"end",
+	"inf",
+	"nan",
+	"sum",
+	"avg",
+	"min",
+	"max",
+	"count",
+	"group",
+	"stddev",
+	"stdvar",
+	"topk",
+	"bottomk",
+	"quantile",
+	"count_values",
+	"limitk",
+	"limit_ratio",
+])
 
 const quote = (value: string): string => JSON.stringify(value)
 
@@ -33,7 +69,8 @@ const modifiers = (offsetMs: number, at: AtModifier | undefined): string => {
 const matcher = (m: LabelMatcher): string => `${labelName(m.name)}${m.op}${quote(m.value)}`
 
 const selector = (s: VectorSelector, range: string): string => {
-	const nameIsIdentifier = s.name !== undefined && IDENTIFIER.test(s.name)
+	const nameIsIdentifier =
+		s.name !== undefined && IDENTIFIER.test(s.name) && !RESERVED.has(s.name.toLowerCase())
 	const rest = s.matchers.filter(
 		(m) => !(nameIsIdentifier && m.name === "__name__" && m.op === "=" && m.value === s.name),
 	)

@@ -80,37 +80,51 @@ export const unquote = (text: string): string | undefined => {
 	if (quote === "`") return body
 	if (quote !== '"' && quote !== "'") return undefined
 	let out = ""
+	// `\x` and octal escapes are bytes, as in Go: runs of them decode together as UTF-8.
+	let bytes: number[] = []
+	const flush = () => {
+		if (bytes.length > 0) out += new TextDecoder().decode(new Uint8Array(bytes))
+		bytes = []
+	}
 	for (let i = 0; i < body.length; i++) {
 		const ch = body[i] ?? ""
+		const next = body[i + 1] ?? ""
+		if (ch === "\\" && next === "x") {
+			const hex = body.slice(i + 2, i + 4)
+			if (!/^[0-9a-fA-F]{2}$/.test(hex)) return undefined
+			bytes.push(Number.parseInt(hex, 16))
+			i += 3
+			continue
+		}
+		const octal = body.slice(i + 1, i + 4)
+		if (ch === "\\" && /^[0-7]{3}$/.test(octal)) {
+			const byte = Number.parseInt(octal, 8)
+			if (byte > 255) return undefined
+			bytes.push(byte)
+			i += 3
+			continue
+		}
+		flush()
 		if (ch !== "\\") {
 			out += ch
 			continue
 		}
-		const next = body[i + 1] ?? ""
 		const simple = lookup(SIMPLE_ESCAPES, next)
 		if (simple !== undefined) {
 			out += simple
 			i += 1
 			continue
 		}
-		const hexLength = next === "x" ? 2 : next === "u" ? 4 : next === "U" ? 8 : 0
-		if (hexLength > 0) {
-			const hex = body.slice(i + 2, i + 2 + hexLength)
-			if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length !== hexLength) return undefined
-			const codePoint = Number.parseInt(hex, 16)
-			// Above U+10FFFF is not a character; fromCodePoint would throw.
-			if (codePoint > 0x10ffff) return undefined
-			out += String.fromCodePoint(codePoint)
-			i += 1 + hexLength
-			continue
-		}
-		const octal = body.slice(i + 1, i + 4)
-		if (/^[0-7]{3}$/.test(octal)) {
-			out += String.fromCharCode(Number.parseInt(octal, 8))
-			i += 3
-			continue
-		}
-		return undefined
+		const hexLength = next === "u" ? 4 : next === "U" ? 8 : 0
+		if (hexLength === 0) return undefined
+		const hex = body.slice(i + 2, i + 2 + hexLength)
+		if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length !== hexLength) return undefined
+		const codePoint = Number.parseInt(hex, 16)
+		// Above U+10FFFF, or a surrogate, is not a character.
+		if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return undefined
+		out += String.fromCodePoint(codePoint)
+		i += 1 + hexLength
 	}
+	flush()
 	return out
 }
