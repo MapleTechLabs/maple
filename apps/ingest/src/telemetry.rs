@@ -584,6 +584,22 @@ pub struct DatasourceNames {
 }
 
 impl DatasourceNames {
+    /// The longest name, which bounds a WAL frame head.
+    fn longest(&self) -> usize {
+        [
+            &self.traces,
+            &self.logs,
+            &self.metrics_sum,
+            &self.metrics_gauge,
+            &self.metrics_histogram,
+            &self.metrics_exponential_histogram,
+        ]
+        .iter()
+        .map(|name| name.len())
+        .max()
+        .unwrap_or(0)
+    }
+
     /// Canonical datasource names (match the deployed Tinybird datasources and
     /// the embedded chDB schema). Single source of truth for local + tests.
     pub fn defaults() -> Self {
@@ -819,13 +835,18 @@ pub enum PipelineError {
     Throttled(&'static str),
     QueueUnavailable(String),
     Encode(String),
+    /// A request whose rows could never be queued whole: more than the org queue
+    /// cap, its WAL lane's cap or its channel holds. Resending fails the same way.
+    TooLarge(String),
 }
 
 impl std::fmt::Display for PipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Backpressure(message) | Self::Throttled(message) => f.write_str(message),
-            Self::QueueUnavailable(message) | Self::Encode(message) => f.write_str(message),
+            Self::QueueUnavailable(message) | Self::Encode(message) | Self::TooLarge(message) => {
+                f.write_str(message)
+            }
         }
     }
 }
@@ -840,6 +861,7 @@ impl PipelineError {
             Self::Throttled(_) => "throttle",
             Self::QueueUnavailable(_) => "queue_unavailable",
             Self::Encode(_) => "encode",
+            Self::TooLarge(_) => "rows_exceed_queue",
         }
     }
 
@@ -850,7 +872,7 @@ impl PipelineError {
     /// `pipeline_error_fault_split_matches_http_status`.
     pub fn is_server_fault(&self) -> bool {
         match self {
-            Self::Backpressure(_) | Self::Throttled(_) => false,
+            Self::Backpressure(_) | Self::Throttled(_) | Self::TooLarge(_) => false,
             Self::QueueUnavailable(_) | Self::Encode(_) => true,
         }
     }
@@ -900,6 +922,14 @@ impl RowSource<'_> {
             Self::Traces { .. } => "traces",
             Self::Logs(_) => "logs",
             Self::Metrics(_) => "metrics",
+        }
+    }
+
+    const fn signal(&self) -> TelemetrySignal {
+        match self {
+            Self::Traces { .. } => TelemetrySignal::Traces,
+            Self::Logs(_) => TelemetrySignal::Logs,
+            Self::Metrics(_) => TelemetrySignal::Metrics,
         }
     }
 
@@ -1160,6 +1190,8 @@ impl TelemetryPipeline {
         }
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_traces(
         &self,
         org_id: &str,
@@ -1177,6 +1209,8 @@ impl TelemetryPipeline {
         .await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_traces_to(
         &self,
         org_id: &str,
@@ -1193,6 +1227,8 @@ impl TelemetryPipeline {
         self.accept_rows(org_id, source, destination).await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_logs(
         &self,
         org_id: &str,
@@ -1202,6 +1238,8 @@ impl TelemetryPipeline {
             .await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_logs_to(
         &self,
         org_id: &str,
@@ -1212,6 +1250,8 @@ impl TelemetryPipeline {
             .await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_metrics(
         &self,
         org_id: &str,
@@ -1221,6 +1261,8 @@ impl TelemetryPipeline {
             .await
     }
 
+    /// Tests and benches only: skips the request memory budget the gateway admits on.
+    #[doc(hidden)]
     pub async fn accept_metrics_to(
         &self,
         org_id: &str,
@@ -1231,7 +1273,9 @@ impl TelemetryPipeline {
             .await
     }
 
-    /// Every piece of the request, in order, outside any memory budget.
+    /// Every piece of the request, in order, outside the memory budget the gateway
+    /// admits on; for tests and benches only.
+    #[doc(hidden)]
     pub async fn accept_rows(
         &self,
         org_id: &str,
@@ -1241,36 +1285,140 @@ impl TelemetryPipeline {
         let plan = source.plan(org_id, row_budget::ROW_PIECE_BYTES);
         self.accept_planned(org_id, source, destination, &plan)
             .await
+            .map_err(|failure| failure.error)
     }
 
-    /// Every piece of `plan`, each written to the WAL before the next is built.
+    /// Every piece of `plan`, in order, each written to the WAL before the next is
+    /// built. The whole plan's queue room is reserved first, so a full queue, lane or
+    /// org cap refuses the request before anything is written.
     pub async fn accept_planned(
         &self,
         org_id: &str,
         source: RowSource<'_>,
         destination: ExportDestination,
         plan: &RowPlan,
-    ) -> Result<AcceptStats, PipelineError> {
+    ) -> Result<AcceptStats, PlannedFailure> {
+        let mut grant = self
+            .reserve_plan(org_id, source.signal(), destination, plan)
+            .map_err(|error| PlannedFailure {
+                error,
+                pieces_written: 0,
+            })?;
+        let mut progress = PieceProgress::new(source.signal_path(), plan.pieces.len());
         let mut stats = AcceptStats::default();
         for piece in &plan.pieces {
             let piece_stats = self
-                .accept_piece(org_id, source, destination, plan, piece)
-                .await?;
+                .accept_piece(org_id, source, destination, plan, piece, &mut grant)
+                .await
+                .map_err(|error| progress.failed(error))?;
+            progress.written += 1;
             stats.add(&piece_stats);
         }
+        progress.finished();
         Ok(stats)
     }
 
+    /// Reserves everything `plan`'s pieces will queue before the first is built:
+    /// the org's queue bytes, room under the WAL lane cap and a channel slot per
+    /// frame. A plan that could never fit is `TooLarge`; one that does not fit now
+    /// is the retryable error the per-frame check would have given.
+    fn reserve_plan(
+        &self,
+        org_id: &str,
+        signal: TelemetrySignal,
+        destination: ExportDestination,
+        plan: &RowPlan,
+    ) -> Result<PlanGrant, PipelineError> {
+        let cfg = &self.inner.cfg;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "routing_key is a hash; commit_frames routes it the same way"
+        )]
+        let shard = (plan.routing_key as usize) % cfg.wal_shards;
+        let lane = lane_index(shard, destination);
+        let wal_lane = self
+            .inner
+            .wal
+            .lane(lane)
+            .map_err(PipelineError::QueueUnavailable)?;
+        let frames: usize = plan
+            .pieces
+            .iter()
+            .map(|piece| {
+                piece
+                    .estimate
+                    .payload_bytes
+                    .iter()
+                    .filter(|bytes| **bytes > 0)
+                    .count()
+            })
+            .sum();
+        let row_bytes = plan.total.row_bytes();
+        let head_bytes = (WAL_V3_HEADER_LEN + org_id.len() + cfg.datasources.longest()) as u64;
+        let wal_bytes = row_bytes.saturating_add((frames as u64).saturating_mul(head_bytes));
+        let never_fits = if row_bytes > cfg.org_queue_max_bytes {
+            Some(format!(
+                "rows of {row_bytes} bytes exceed the org queue limit of {} bytes",
+                cfg.org_queue_max_bytes
+            ))
+        } else if wal_bytes > wal_lane.max_bytes {
+            Some(format!(
+                "rows of {wal_bytes} bytes exceed the WAL lane limit of {} bytes",
+                wal_lane.max_bytes
+            ))
+        } else if frames > cfg.queue_channel_capacity {
+            Some(format!(
+                "{frames} frames exceed the lane channel capacity of {}",
+                cfg.queue_channel_capacity
+            ))
+        } else {
+            None
+        };
+        if let Some(detail) = never_fits {
+            return Err(PipelineError::TooLarge(detail));
+        }
+
+        self.reserve_org_queue_bytes(org_id, row_bytes)?;
+        let org = OrgBytesReservation {
+            counters: Arc::clone(&self.inner.org_queue_bytes),
+            org_id: org_id.to_owned(),
+            bytes: row_bytes,
+            committed: false,
+        };
+        let mut permits = Vec::with_capacity(frames);
+        for _ in 0..frames {
+            let Ok(permit) = self.inner.lane_senders[lane].clone().try_reserve_owned() else {
+                metrics::backpressure_shed(org_id, destination.as_str(), signal.as_str());
+                return Err(PipelineError::Backpressure("Telemetry queue is full"));
+            };
+            permits.push(permit);
+        }
+        if !wal_lane.try_reserve(wal_bytes) {
+            metrics::wal_shard_full(shard, destination.as_str());
+            return Err(PipelineError::QueueUnavailable(
+                "Telemetry WAL lane is full".to_owned(),
+            ));
+        }
+        Ok(PlanGrant {
+            lane,
+            org,
+            wal_lane,
+            wal_bytes,
+            permits,
+        })
+    }
+
     /// Builds one piece of `plan`'s rows into buffers sized from its estimate and
-    /// commits them. `plan` is `source.plan` of the same org.
+    /// commits them from `grant`. `plan` is `source.plan` of the same org.
     #[hotpath::measure]
-    pub async fn accept_piece(
+    async fn accept_piece(
         &self,
         org_id: &str,
         source: RowSource<'_>,
         destination: ExportDestination,
         plan: &RowPlan,
         piece: &RowPiece,
+        grant: &mut PlanGrant,
     ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = {
             let span = encode_rows_internal_span(source.signal_path());
@@ -1280,7 +1428,7 @@ impl TelemetryPipeline {
             record_encode_stats(&span, &frames, &stats, &piece.estimate);
             (frames, stats)
         };
-        self.commit_frames(frames, destination).await?;
+        self.commit_frames(frames, destination, Some(grant)).await?;
         Ok(stats)
     }
 
@@ -1305,7 +1453,7 @@ impl TelemetryPipeline {
         // The rows are copied into the frame payload above; free them before the
         // WAL append rather than holding both across the await.
         drop(rows);
-        self.commit_frames(frames, destination).await?;
+        self.commit_frames(frames, destination, None).await?;
         Ok(stats)
     }
 
@@ -1314,6 +1462,7 @@ impl TelemetryPipeline {
         &self,
         frames: Vec<EncodedFrame>,
         destination: ExportDestination,
+        mut grant: Option<&mut PlanGrant>,
     ) -> Result<(), PipelineError> {
         if frames.is_empty() {
             return Ok(());
@@ -1348,8 +1497,11 @@ impl TelemetryPipeline {
                 // Route to the destination's own lane so a stalled ClickHouse export
                 // cannot fill the Tinybird channel for the same shard (and vice versa).
                 let lane = lane_index(shard, destination);
+                // A planned request's frames draw on what it reserved up front.
+                let mut grant = grant.as_deref_mut().filter(|grant| grant.lane == lane);
+                let granted = grant.as_mut().and_then(|grant| grant.permits.pop());
                 let sender = self.inner.lane_senders[lane].clone();
-                let Ok(permit) = sender.try_reserve_owned() else {
+                let Some(permit) = granted.or_else(|| sender.try_reserve_owned().ok()) else {
                     metrics::backpressure_shed(
                         &frame.org_id,
                         frame.destination.as_str(),
@@ -1362,22 +1514,20 @@ impl TelemetryPipeline {
                     return Err(PipelineError::Backpressure("Telemetry queue is full"));
                 };
                 let queued_bytes = frame.payload.len() as u64;
-                self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)
-                    .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
                 // The delivery owns the reservation: it commits when the frame
                 // reaches the lane, and dropping it instead (a failed encode, or a
                 // refused or failed append) releases it.
-                let reservation = OrgBytesReservation {
-                    counters: Arc::clone(&self.inner.org_queue_bytes),
-                    org_id: frame.org_id.clone(),
-                    bytes: queued_bytes,
-                    committed: false,
-                };
+                let reservation = self
+                    .frame_org_bytes(&frame, grant.as_deref_mut())
+                    .inspect_err(|_| record_failing_frame(shard, lane, &frame.datasource))?;
                 let datasource = frame.datasource.clone();
                 let head = wal_frame_head(&frame).map_err(|error| {
                     record_failing_frame(shard, lane, &datasource);
                     PipelineError::QueueUnavailable(error)
                 })?;
+                let added = (head.len() + frame.payload.len()) as u64;
+                // Room the plan reserved under the lane cap is already counted there.
+                let reserved = grant.as_ref().is_some_and(|grant| grant.wal_bytes >= added);
                 // The append writes the rows from the frame's own buffer.
                 let payload = frame.payload.clone();
                 let deliver =
@@ -1385,12 +1535,15 @@ impl TelemetryPipeline {
                 let appended = self
                     .inner
                     .wal
-                    .append_delivering(lane, head, payload, true, deliver)
-                    .await
-                    .map_err(|error| {
-                        record_failing_frame(shard, lane, &datasource);
-                        PipelineError::QueueUnavailable(error)
-                    })?;
+                    .append_delivering(lane, head, payload, !reserved, deliver)
+                    .await;
+                if let Some(grant) = grant.as_mut().filter(|_| reserved) {
+                    grant.release_wal(added);
+                }
+                let appended = appended.map_err(|error| {
+                    record_failing_frame(shard, lane, &datasource);
+                    PipelineError::QueueUnavailable(error)
+                })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
                 batch_frames = batch_frames.max(appended.batch_frames);
@@ -1426,6 +1579,25 @@ impl TelemetryPipeline {
             );
         }
         result
+    }
+
+    /// `frame`'s org queue bytes, taken from `grant` where it reserved them.
+    fn frame_org_bytes(
+        &self,
+        frame: &EncodedFrame,
+        grant: Option<&mut PlanGrant>,
+    ) -> Result<OrgBytesReservation, PipelineError> {
+        let bytes = frame.payload.len() as u64;
+        let mut reservation = OrgBytesReservation {
+            counters: Arc::clone(&self.inner.org_queue_bytes),
+            org_id: frame.org_id.clone(),
+            bytes: grant.map_or(0, |grant| grant.org.split(bytes)),
+            committed: false,
+        };
+        // Dropped on a refusal, which returns the granted part too.
+        self.reserve_org_queue_bytes(&frame.org_id, bytes - reservation.bytes)?;
+        reservation.bytes = bytes;
+        Ok(reservation)
     }
 
     fn reserve_org_queue_bytes(&self, org_id: &str, bytes: u64) -> Result<(), PipelineError> {
@@ -1563,6 +1735,9 @@ struct WalLane {
     /// Bytes held by every segment on disk, the exported prefix included. Drives
     /// the lane cap and the `wal_shard_bytes` gauge.
     live_bytes: AtomicU64,
+    /// Bytes requests have reserved for frames not yet appended (`PlanGrant`); the
+    /// cap counts them so a planned request is never refused part way through.
+    reserved_bytes: AtomicU64,
     /// Cumulative bytes handed to export and marked exported since this lane
     /// was opened. Their difference is the backlog, and it stays exact across
     /// rotation and deletion, which nothing derived from file sizes does.
@@ -1612,6 +1787,102 @@ fn while_caller_waits(deliver: Delivery, lane: Arc<WalLane>) -> (WaitingCaller, 
         }
     });
     (waiting, guarded)
+}
+
+/// What a request reserved for its whole plan before its first piece: the org's
+/// queue bytes, room under its WAL lane's cap and a channel slot per frame. Its
+/// pieces draw on it, and dropping it returns what they did not use.
+struct PlanGrant {
+    lane: usize,
+    org: OrgBytesReservation,
+    wal_lane: Arc<WalLane>,
+    wal_bytes: u64,
+    permits: Vec<mpsc::OwnedPermit<QueuedFrame>>,
+}
+
+impl PlanGrant {
+    fn release_wal(&mut self, bytes: u64) {
+        let bytes = bytes.min(self.wal_bytes);
+        self.wal_bytes -= bytes;
+        self.wal_lane.release_reserved(bytes);
+    }
+}
+
+impl Drop for PlanGrant {
+    fn drop(&mut self) {
+        self.wal_lane.release_reserved(self.wal_bytes);
+    }
+}
+
+/// A planned request that failed, and how many of its pieces were already durable
+/// and will be exported. Non-zero means a resend stores those pieces again.
+#[derive(Debug)]
+pub struct PlannedFailure {
+    pub error: PipelineError,
+    pub pieces_written: usize,
+}
+
+impl std::fmt::Display for PlannedFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({} pieces written)", self.error, self.pieces_written)
+    }
+}
+
+impl std::error::Error for PlannedFailure {}
+
+/// Counts a request that stops after some of its pieces were written, including
+/// one dropped mid-way (a request timeout or a closed connection).
+struct PieceProgress {
+    signal: &'static str,
+    pieces: usize,
+    written: usize,
+    done: bool,
+}
+
+impl PieceProgress {
+    const fn new(signal: &'static str, pieces: usize) -> Self {
+        Self {
+            signal,
+            pieces,
+            written: 0,
+            done: false,
+        }
+    }
+
+    fn failed(&mut self, error: PipelineError) -> PlannedFailure {
+        self.done = true;
+        if self.written > 0 {
+            self.record(error.kind());
+        }
+        PlannedFailure {
+            error,
+            pieces_written: self.written,
+        }
+    }
+
+    fn finished(&mut self) {
+        self.done = true;
+    }
+
+    fn record(&self, reason: &str) {
+        warn!(
+            signal = self.signal,
+            pieces = self.pieces,
+            pieces_written = self.written,
+            reason,
+            "Request stopped after some of its pieces were written"
+        );
+        tracing::Span::current().record("maple.ingest.row_pieces_written", self.written);
+        metrics::partial_write(self.signal, reason);
+    }
+}
+
+impl Drop for PieceProgress {
+    fn drop(&mut self) {
+        if !self.done && self.written > 0 {
+            self.record("cancelled");
+        }
+    }
 }
 
 /// Hands a durable frame to its lane's export channel, committing its org
@@ -1817,6 +2088,7 @@ impl WalLane {
             segment_max_bytes,
             active_seq: AtomicU64::new(next_seq),
             live_bytes: AtomicU64::new(on_disk),
+            reserved_bytes: AtomicU64::new(0),
             // Whatever survived the last boot is backlog this lane still owes.
             committed_bytes: AtomicU64::new(on_disk.saturating_sub(cursor.offset)),
             exported_bytes: AtomicU64::new(0),
@@ -1865,6 +2137,7 @@ impl WalLane {
             && self
                 .live_bytes
                 .load(Ordering::Relaxed)
+                .saturating_add(self.reserved_bytes.load(Ordering::Relaxed))
                 .saturating_add(added)
                 > self.max_bytes
         {
@@ -2161,6 +2434,30 @@ impl WalLane {
     /// it, but it never reaches export, so it would never be marked exported.
     fn forget_committed(&self, bytes: u64) {
         self.committed_bytes.fetch_sub(bytes, Ordering::Relaxed);
+    }
+
+    /// Reserves room for `bytes` of frames under the lane cap, or refuses at once.
+    fn try_reserve(&self, bytes: u64) -> bool {
+        let mut reserved = self.reserved_bytes.load(Ordering::Relaxed);
+        loop {
+            let live = self.live_bytes.load(Ordering::Relaxed);
+            if live.saturating_add(reserved).saturating_add(bytes) > self.max_bytes {
+                return false;
+            }
+            match self.reserved_bytes.compare_exchange(
+                reserved,
+                reserved + bytes,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => reserved = observed,
+            }
+        }
+    }
+
+    fn release_reserved(&self, bytes: u64) {
+        self.reserved_bytes.fetch_sub(bytes, Ordering::AcqRel);
     }
 }
 
@@ -3267,6 +3564,14 @@ struct OrgBytesReservation {
 }
 
 impl OrgBytesReservation {
+    /// Moves up to `bytes` of this reservation to the caller, who now owns their
+    /// release; returns how many moved.
+    fn split(&mut self, bytes: u64) -> u64 {
+        let moved = bytes.min(self.bytes);
+        self.bytes -= moved;
+        moved
+    }
+
     /// The frame is on its way to the lane; the export worker owns the release
     /// from here.
     fn commit(mut self) {
@@ -4297,22 +4602,35 @@ impl RowBuffer {
         }
     }
 
-    /// Refuses a row that takes the payload past its estimate: that memory was never
-    /// reserved, so the piece is not written.
+    /// Refuses a row that takes the payload past its estimate before writing past it,
+    /// so the buffer never grows beyond what was reserved and the piece is not written.
     fn push(&mut self, row: &impl Serialize) -> Result<(), PipelineError> {
-        serde_json::to_writer(&mut self.payload, row)
-            .map_err(|error| PipelineError::Encode(error.to_string()))?;
-        self.payload.push(b'\n');
-        self.rows += 1;
-        if self.payload.len() as u64 > self.estimate {
-            error!(
-                estimate = self.estimate,
-                payload_bytes = self.payload.len(),
-                "Encoded rows exceeded the memory reserved for them"
-            );
-            return Err(PipelineError::Encode(ROWS_OVER_ESTIMATE.to_owned()));
+        let before = self.payload.len();
+        let limit = usize::try_from(self.estimate).unwrap_or(usize::MAX);
+        let mut out = BoundedWriter {
+            out: &mut self.payload,
+            limit,
+        };
+        let written = serde_json::to_writer(&mut out, row)
+            .and_then(|()| out.write_all(b"\n").map_err(serde_json::Error::io));
+        match written {
+            Ok(()) => {
+                self.rows += 1;
+                Ok(())
+            }
+            Err(error) => {
+                self.payload.truncate(before);
+                if !error.is_io() {
+                    return Err(PipelineError::Encode(error.to_string()));
+                }
+                error!(
+                    estimate = self.estimate,
+                    payload_bytes = before,
+                    "Encoded rows exceeded the memory reserved for them"
+                );
+                Err(PipelineError::Encode(ROWS_OVER_ESTIMATE.to_owned()))
+            }
         }
-        Ok(())
     }
 
     fn into_frame(
@@ -4334,6 +4652,31 @@ impl RowBuffer {
             row_count: self.rows,
             payload: Bytes::from(self.payload),
         })
+    }
+}
+
+/// Appends to a buffer up to `limit` bytes; a write past it fails whole, so the
+/// buffer never reallocates beyond its reservation.
+struct BoundedWriter<'a> {
+    out: &'a mut Vec<u8>,
+    limit: usize,
+}
+
+impl Write for BoundedWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.write_all(buf).map(|()| buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        if self.out.len().saturating_add(buf.len()) > self.limit {
+            return Err(std::io::Error::other(ROWS_OVER_ESTIMATE));
+        }
+        self.out.extend_from_slice(buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -5506,10 +5849,17 @@ mod tests {
         buffer
             .push(&json!({"a": 1}))
             .expect("within the reservation");
+        let (written, capacity) = (buffer.payload.clone(), buffer.payload.capacity());
         let error = buffer
             .push(&json!({"long": "x".repeat(64)}))
             .expect_err("past the reservation");
         assert!(matches!(error, PipelineError::Encode(ref detail) if detail == ROWS_OVER_ESTIMATE));
+        assert_eq!(buffer.payload.capacity(), capacity, "the buffer never grew");
+        assert_eq!(
+            buffer.payload, written,
+            "the refused row left nothing behind"
+        );
+        assert_eq!(buffer.rows, 1);
     }
 
     /// Pieces cover every item of a request once, in order, and each stays near its
@@ -7416,6 +7766,213 @@ mod tests {
             queued(),
             0,
             "the batch left memory, so it no longer counts against the org"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// A request stored in several pieces of 4 KiB, and its plan.
+    fn many_piece_logs() -> (ExportLogsServiceRequest, RowPlan) {
+        let mut logs = populated_log_request();
+        let records = &mut logs.resource_logs[0].scope_logs[0].log_records;
+        *records = vec![records[0].clone(); 400];
+        let plan = RowSource::Logs(&logs).plan("org_planned", 4 * 1024);
+        assert!(plan.pieces.len() > 5, "several pieces");
+        (logs, plan)
+    }
+
+    fn org_queued(pipeline: &TelemetryPipeline, org_id: &str) -> u64 {
+        pipeline
+            .inner
+            .org_queue_bytes
+            .get(org_id)
+            .map_or(0, |entry| entry.value().load(Ordering::Relaxed))
+    }
+
+    /// The whole plan's queue bytes are taken before its first piece: a request that
+    /// does not fit is refused with nothing written, then stored once when it does.
+    #[tokio::test]
+    async fn a_planned_request_reserves_its_whole_queue_room_before_writing() {
+        let (primary_url, mut primary_rx) = spawn_fake_tinybird().await;
+        let queue_dir = unique_test_dir("planned-reservation");
+        let (logs, plan) = many_piece_logs();
+        let rows = plan.total.row_bytes();
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.queue_channel_capacity = 1_000;
+        cfg.queue_max_bytes = 64 * 1024 * 1024;
+        cfg.org_queue_max_bytes = 2 * rows;
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        let source = RowSource::Logs(&logs);
+        let accept =
+            || pipeline.accept_planned("org_planned", source, ExportDestination::Tinybird, &plan);
+
+        // Room for every piece but the last: per piece, all but one would be written.
+        let held = rows + 1;
+        pipeline
+            .reserve_org_queue_bytes("org_planned", held)
+            .unwrap();
+        let failure = accept()
+            .await
+            .expect_err("the org queue cannot take it whole");
+        assert!(matches!(failure.error, PipelineError::Throttled(_)));
+        assert_eq!(failure.pieces_written, 0);
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            held,
+            "nothing left reserved"
+        );
+
+        // Once the queue drains the same request is stored, once.
+        release_org_queue_bytes(&pipeline.inner.org_queue_bytes, "org_planned", held);
+        let stats = accept().await.expect("fits now");
+        assert_eq!(stats.rows as u64, plan.total.rows);
+        let mut exported = 0;
+        while exported < plan.total.rows {
+            let import = tokio::time::timeout(Duration::from_secs(5), primary_rx.recv())
+                .await
+                .expect("the pieces are exported")
+                .unwrap();
+            exported += import.body.lines().count() as u64;
+        }
+        assert_eq!(exported, plan.total.rows);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), primary_rx.recv())
+                .await
+                .is_err(),
+            "no row exported twice"
+        );
+        for _ in 0..100 {
+            if org_queued(&pipeline, "org_planned") == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "the unused remainder is returned"
+        );
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
+    /// Rows that no queue limit could hold are refused outright, and a full channel or
+    /// WAL lane refuses before the first piece.
+    #[tokio::test]
+    async fn a_planned_request_that_cannot_be_queued_writes_nothing() {
+        let queue_dir = unique_test_dir("planned-refusals");
+        let (logs, plan) = many_piece_logs();
+        let rows = plan.total.row_bytes();
+        let source = RowSource::Logs(&logs);
+        let start = |name: &str, mut cfg: TinybirdConfig| {
+            cfg.queue_dir = cfg.queue_dir.join(name.replace(' ', "-"));
+            async move { TelemetryPipeline::new(cfg, Client::new()).await.unwrap() }
+        };
+        let mut cfg = test_cfg();
+        // Nothing listens, so committed frames stay queued.
+        cfg.endpoint = "http://127.0.0.1:1".to_owned();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.queue_channel_capacity = 1_000;
+        cfg.queue_max_bytes = 64 * 1024 * 1024;
+        cfg.org_queue_max_bytes = 2 * rows;
+
+        for (name, never_fits) in [
+            (
+                "org queue",
+                TinybirdConfig {
+                    org_queue_max_bytes: rows - 1,
+                    ..cfg.clone()
+                },
+            ),
+            (
+                "WAL lane",
+                TinybirdConfig {
+                    queue_max_bytes: 2 * rows,
+                    ..cfg.clone()
+                },
+            ),
+            (
+                "channel",
+                TinybirdConfig {
+                    queue_channel_capacity: plan.pieces.len() - 1,
+                    ..cfg.clone()
+                },
+            ),
+        ] {
+            let pipeline = start(name, never_fits).await;
+            let failure = pipeline
+                .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+                .await
+                .expect_err(name);
+            assert!(
+                matches!(failure.error, PipelineError::TooLarge(_)),
+                "{name}: {failure}"
+            );
+            assert!(!failure.error.is_server_fault(), "{name}");
+            assert_eq!(failure.pieces_written, 0, "{name}");
+            assert_eq!(pipeline.wal_backlog_bytes(), 0, "{name}: nothing written");
+            assert_eq!(org_queued(&pipeline, "org_planned"), 0, "{name}");
+        }
+
+        // A channel with room for all but one frame of it refuses it whole.
+        let pipeline = start(
+            "short channel",
+            TinybirdConfig {
+                queue_channel_capacity: plan.pieces.len() + 1,
+                ..cfg.clone()
+            },
+        )
+        .await;
+        let lane = lane_index(0, ExportDestination::Tinybird);
+        let held: Vec<_> = (0..2)
+            .map(|_| {
+                pipeline.inner.lane_senders[lane]
+                    .clone()
+                    .try_reserve_owned()
+                    .unwrap()
+            })
+            .collect();
+        let failure = pipeline
+            .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+            .await
+            .expect_err("the channel is short one slot");
+        assert!(matches!(failure.error, PipelineError::Backpressure(_)));
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "channel: nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "channel: bytes returned"
+        );
+        drop(held);
+        drop(pipeline);
+
+        // A WAL lane other requests have reserved most of refuses it whole too.
+        let pipeline = start(
+            "reserved lane",
+            TinybirdConfig {
+                queue_max_bytes: 4 * rows,
+                ..cfg.clone()
+            },
+        )
+        .await;
+        let wal_lane = pipeline.inner.wal.lane(lane).unwrap();
+        assert!(wal_lane.try_reserve(wal_lane.max_bytes - rows));
+        let failure = pipeline
+            .accept_planned("org_planned", source, ExportDestination::Tinybird, &plan)
+            .await
+            .expect_err("the lane is reserved");
+        assert!(matches!(failure.error, PipelineError::QueueUnavailable(_)));
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "WAL lane: nothing written");
+        assert_eq!(
+            org_queued(&pipeline, "org_planned"),
+            0,
+            "WAL lane: bytes returned"
         );
 
         drop(std::fs::remove_dir_all(queue_dir));

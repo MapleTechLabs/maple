@@ -232,7 +232,12 @@ fn rustc_version() -> &'static str {
 pub fn rejection_loses_data(error_type: &str) -> bool {
     matches!(
         error_type,
-        "bad_request" | "decode" | "enrich" | "rules_scan_budget" | "row_expansion"
+        "bad_request"
+            | "decode"
+            | "enrich"
+            | "rules_scan_budget"
+            | "row_expansion"
+            | "rows_exceed_queue"
     )
 }
 
@@ -403,6 +408,8 @@ pub fn accept_internal_span(signal_path: &'static str, destination: &'static str
         "maple.ingest.sampled_dropped" = Empty,
         // Pieces the rows were built and written in, one after another.
         "maple.ingest.row_pieces" = Empty,
+        // Set only when the request stopped after some pieces were durable.
+        "maple.ingest.row_pieces_written" = Empty,
     )
 }
 
@@ -574,6 +581,7 @@ mod tests {
                 "maple.ingest.native_rows",
                 "maple.ingest.sampled_dropped",
                 "maple.ingest.row_pieces",
+                "maple.ingest.row_pieces_written",
                 "maple.ingest.destination",
                 "maple.signal",
             ],

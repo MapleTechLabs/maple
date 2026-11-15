@@ -67,10 +67,10 @@ use maple_ingest::session_analytics::{
     BillableSessionStarts,
 };
 use maple_ingest::telemetry::{
-    AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
-    AcceptStats, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
-    MappingSourceContext, PipelineError, RowSource, SamplingPolicy, TelemetryPipeline,
-    TelemetrySignal, TinybirdConfig,
+    AcceptStats, AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget,
+    ClickHouseTargetProvider, DatasourceNames, ExportDestination, HttpClient, MappingOperation,
+    MappingSourceContext, PipelineError, PlannedFailure, RowSource, SamplingPolicy,
+    TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use maple_ingest::usage_metrics::{billable_gb, usage_cardinality_view, UsageMetrics};
 use maple_ingest::vercel_ai_gateway_drain;
@@ -2312,6 +2312,18 @@ static INGEST_QUEUE_UNAVAILABLE: FailureKind = FailureKind {
     retry_after_seconds: Some(5),
 };
 
+/// A batch whose rows are more than the org's queue (or its WAL lane or channel)
+/// could ever hold at once, refused before any of it is written.
+static INGEST_ROWS_EXCEED_QUEUE: FailureKind = FailureKind {
+    tag: "@maple/ingest/RowsExceedQueue",
+    code: "ingest_rows_exceed_queue",
+    title: "Batch is larger than the ingest queue can hold",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "rows_exceed_queue",
+    retry_after_seconds: None,
+};
+
 /// The decoded payload could not be encoded for the warehouse. This is a
 /// gateway bug or an unrepresentable record, not a transient condition —
 /// resending the identical batch fails the same way.
@@ -2633,6 +2645,12 @@ fn api_error_from_pipeline(error: &PipelineError) -> ApiError {
             StatusCode::SERVICE_UNAVAILABLE,
             &INGEST_ENCODE_FAILED,
             "Maple could not encode this batch for storage. Resending the same payload will fail again — contact support with this request's trace id.",
+        )
+        .with_detail(detail.clone()),
+        PipelineError::TooLarge(detail) => ApiError::tagged(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            &INGEST_ROWS_EXCEED_QUEUE,
+            "This batch's stored rows are larger than the ingest queue can hold at once. No data was written; send it in smaller batches.",
         )
         .with_detail(detail.clone()),
     }
@@ -8731,9 +8749,18 @@ fn admit_rows(
             rows_heap / (1024 * 1024)
         ))));
     }
-    // The forward body is bounded by the decode limits, so it takes at most what is left.
-    let forward = stage.forward_bytes.min(room - rows_heap);
-    if !memory.try_add(rows_heap.saturating_add(forward)) {
+    // The forward body is reserved whole. Within the decode limits it always fits an
+    // otherwise idle budget, so this refusal is for a gateway configured too small.
+    let needed = rows_heap.saturating_add(stage.forward_bytes);
+    if needed > room {
+        metrics::org_data_loss(org_id, signal.path(), INGEST_PAYLOAD_TOO_LARGE.error_kind);
+        return Err(refuse(ApiError::payload_too_large(format!(
+            "This batch needs {} MiB to forward and store, more than the gateway allows one \
+             request; send smaller batches",
+            needed / (1024 * 1024)
+        ))));
+    }
+    if !memory.try_add(needed) {
         return Err(refuse(ApiError::tagged(
             StatusCode::SERVICE_UNAVAILABLE,
             &INGEST_DECODE_BUSY,
@@ -8752,6 +8779,7 @@ fn process_error_kind(error: &ApiError) -> &'static str {
         &INGEST_ROW_EXPANSION,
         &INGEST_PAYLOAD_TOO_LARGE,
         &INGEST_DECODE_BUSY,
+        &INGEST_ROWS_EXCEED_QUEUE,
     ];
     if own.iter().any(|failure| failure.error_kind == kind) {
         kind
@@ -8927,8 +8955,8 @@ async fn accept_native_decoded_payload(
 }
 
 /// Plans a request's rows in pieces, admits it on its largest piece, then builds and
-/// commits the pieces in order. A failure after the first piece leaves the earlier
-/// ones written and is answered as an error, so the sender retries the whole batch.
+/// commits the pieces in order from one up-front queue reservation. Only a WAL write
+/// or sync failure, or a dropped request, can stop it after a piece is written.
 async fn accept_row_source(
     state: &AppState,
     signal: Signal,
@@ -8956,17 +8984,31 @@ async fn accept_row_source(
     pipeline
         .accept_planned(org_id, source, destination, &plan)
         .await
-        .map_err(|error| {
-            let api_error = api_error_from_pipeline(&error);
+        .map_err(|failure| {
+            let PlannedFailure {
+                error,
+                pieces_written,
+            } = &failure;
+            let mut api_error = api_error_from_pipeline(error);
             error!(
-                error = %error,
+                error = %failure,
                 signal = signal.path(),
                 org_id,
                 "Native telemetry pipeline rejected payload"
             );
-            if matches!(error, PipelineError::Encode(_)) {
-                // Resending fails the same way, so the batch is lost.
-                metrics::org_data_loss(org_id, signal.path(), error.kind());
+            if *pieces_written > 0 {
+                api_error.message =
+                    partial_write_message(error, *pieces_written, plan.pieces.len());
+            }
+            match error {
+                // Resending fails the same way: the batch is lost, or the unwritten part of it.
+                PipelineError::Encode(_) if *pieces_written > 0 => {
+                    metrics::org_data_loss(org_id, signal.path(), "encode_partial");
+                }
+                PipelineError::Encode(_) | PipelineError::TooLarge(_) => {
+                    metrics::org_data_loss(org_id, signal.path(), error.kind());
+                }
+                _ => {}
             }
             record_stage_error(
                 &Span::current(),
@@ -8976,6 +9018,17 @@ async fn accept_row_source(
             );
             api_error
         })
+}
+
+/// The answer to a request that failed after some of its pieces were durable: those
+/// are exported, so it must not say nothing was written.
+fn partial_write_message(error: &PipelineError, written: usize, pieces: usize) -> String {
+    let stored = format!("{written} of the {pieces} pieces this batch was stored in were written and will be exported.");
+    if matches!(error, PipelineError::Encode(_)) {
+        format!("Maple could not encode the rest of this batch for storage. {stored} Resending fails the same way; contact support with this request's trace id.")
+    } else {
+        format!("Maple could not durably queue the rest of this batch. {stored} Resend it after the suggested delay; the written part is stored again.")
+    }
 }
 
 impl OrgRoutingResolver {
@@ -14477,6 +14530,16 @@ mod tests {
         org_id: &str,
         queue_dir: &std::path::Path,
     ) -> (AppState, TinybirdImports) {
+        native_test_state_capped(raw_key, org_id, queue_dir, 1024 * 1024 * 1024).await
+    }
+
+    /// `native_test_state` with each org's queue capped at `org_queue_max_bytes`.
+    async fn native_test_state_capped(
+        raw_key: &str,
+        org_id: &str,
+        queue_dir: &std::path::Path,
+        org_queue_max_bytes: u64,
+    ) -> (AppState, TinybirdImports) {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_private(
             raw_key,
@@ -14509,7 +14572,9 @@ mod tests {
                 endpoint,
                 token: "token".to_owned(),
                 queue_max_bytes: 1024 * 1024 * 1024,
-                org_queue_max_bytes: 1024 * 1024 * 1024,
+                org_queue_max_bytes,
+                // A request reserves a slot per frame up front, as many as its pieces.
+                queue_channel_capacity: 1_000,
                 batch_max_rows: 100_000,
                 ..test_tinybird_config(queue_dir.join("native"))
             },
@@ -14977,6 +15042,43 @@ mod tests {
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
+    /// A batch whose rows the org's queue could never hold at once is refused before
+    /// its first piece, instead of storing pieces until the cap and failing.
+    #[tokio::test]
+    async fn rows_larger_than_the_org_queue_are_refused_before_any_piece_is_written() {
+        let queue_dir = unique_main_test_dir("rows-exceed-queue");
+        let raw_key = "maple_sk_test_rows_exceed_queue";
+        let mib = 1024 * 1024;
+        let (mut state, mut imports) =
+            native_test_state_capped(raw_key, "org_rows_exceed_queue", &queue_dir, 16 * mib).await;
+        // Expansion is not what this refuses.
+        state.config.max_row_expansion = 0;
+        let pipeline = state.telemetry_pipeline.clone().unwrap();
+        let request = repeated_description(400);
+        let plan = RowSource::Metrics(&request).plan("org_rows_exceed_queue", ROW_PIECE_BYTES);
+        assert!(plan.pieces.len() > 2, "stored in several pieces");
+        assert!(plan.total.row_bytes() > 16 * mib);
+        assert!(
+            plan.largest_piece_heap() < 16 * mib,
+            "any one piece fits the queue"
+        );
+        let counted = metrics::data_loss_count("rows_exceed_queue");
+
+        let (error, error_kind) = send_repeated_description(&state, raw_key, 400)
+            .await
+            .expect_err("larger than the org queue");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.kind.tag, "@maple/ingest/RowsExceedQueue");
+        assert!(!error.kind.retryable);
+        assert_eq!(error_kind, "rows_exceed_queue");
+        assert_eq!(pipeline.wal_backlog_bytes(), 0, "no piece written");
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert_eq!(metrics::data_loss_count("rows_exceed_queue"), counted + 1);
+        assert!(nothing_is_exported(&mut imports).await);
+
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
     #[tokio::test]
     async fn the_row_stage_is_admitted_on_what_it_stores_and_allocates() {
         let queue_dir = unique_main_test_dir("row-admission");
@@ -15046,15 +15148,32 @@ mod tests {
         let error = admit(holding, &mut state.decode_memory.reservation())
             .expect_err("more than the gateway has, with what it already holds");
         assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
-        // A forward body is bounded by the decode limits, so it takes what is left.
+        // The forward body is reserved at its real size: one that could never fit is a
+        // 413, and one that fits only an idle gateway waits as rows do.
         let mut forward_only = state.decode_memory.reservation();
         let whole_budget = RowStage {
             native: false,
             forward_bytes: 2 * total,
             ..stage
         };
-        admit(whole_budget, &mut forward_only).expect("the forward body is never refused");
-        assert_eq!(forward_only.held_bytes(), total - 4 * mib);
+        let error = admit(whole_budget, &mut forward_only).expect_err("larger than the budget");
+        assert_eq!(error.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            forward_only.held_bytes(),
+            0,
+            "nothing reserved for a refusal"
+        );
+        let most_of_it = RowStage {
+            native: false,
+            forward_bytes: total - 8 * mib,
+            ..stage
+        };
+        admit(most_of_it, &mut forward_only).expect("fits an idle gateway");
+        assert_eq!(forward_only.held_bytes(), total - 8 * mib, "reserved whole");
+        let error = admit(most_of_it, &mut state.decode_memory.reservation())
+            .expect_err("the first one holds the memory");
+        assert_eq!(error.kind.tag, "@maple/ingest/DecodeBusy");
+        assert!(error.kind.retryable);
         drop(forward_only);
         let mut others = state.decode_memory.reservation();
         assert!(others.try_add(total - 8 * mib));

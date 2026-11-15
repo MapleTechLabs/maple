@@ -49,6 +49,15 @@ static ORG_DATA_LOSS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static PARTIAL_WRITE_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_partial_write_total")
+        .with_description(
+            "Requests that failed after some of their row pieces were durable, by signal and reason",
+        )
+        .build()
+});
+
 static BACKPRESSURE_SHED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_backpressure_shed_total")
@@ -763,6 +772,18 @@ pub fn gcp_parse_failure() {
 /// forwarding turned off.
 pub fn gcp_disabled_drop() {
     GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
+}
+
+/// A request failed or was dropped after some of its row pieces were written, so
+/// those pieces are exported and a resend stores them again.
+pub fn partial_write(signal: &str, reason: &str) {
+    PARTIAL_WRITE_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("reason", reason.to_owned()),
+        ],
+    );
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real
