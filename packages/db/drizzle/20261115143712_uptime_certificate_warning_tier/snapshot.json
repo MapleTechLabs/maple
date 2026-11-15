@@ -1,9 +1,9 @@
 {
 	"version": "1",
 	"dialect": "postgres",
-	"id": "b5ebb326488e30d2603247895c2de7ecde284a9356da37fd45c2c966696379cf",
+	"id": "91732a07dc1a4ba31a055c65fec57d7dd2e5158c770de9174ade72695009ccc9",
 	"prevIds": [
-		"b5ebb326488e30d2603247895c2de7ecde284a9356da37fd45c2c966696379cf"
+		"91732a07dc1a4ba31a055c65fec57d7dd2e5158c770de9174ade72695009ccc9"
 	],
 	"entities": [
 		{
@@ -993,6 +993,17 @@
 			"primaryKey": {
 				"name": "railway_environments_pkey",
 				"columns": [
+					"id"
+				]
+			}
+		},
+		{
+			"kind": "table",
+			"name": "saved_views",
+			"primaryKey": {
+				"name": "saved_views_org_id_id_pk",
+				"columns": [
+					"org_id",
 					"id"
 				]
 			}
@@ -14815,6 +14826,96 @@
 		},
 		{
 			"kind": "column",
+			"table": "saved_views",
+			"name": "id",
+			"position": 0,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "org_id",
+			"position": 1,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "owner_user_id",
+			"position": 2,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "surface",
+			"position": 3,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "name",
+			"position": 4,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "state",
+			"position": 5,
+			"type": "jsonb",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "visibility",
+			"position": 6,
+			"type": "text",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "created_at",
+			"position": 7,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
+			"table": "saved_views",
+			"name": "updated_at",
+			"position": 8,
+			"type": "timestamp with time zone",
+			"notNull": true,
+			"default": null,
+			"identity": null
+		},
+		{
+			"kind": "column",
 			"table": "scrape_target_checks",
 			"name": "id",
 			"position": 0,
@@ -21916,6 +22017,33 @@
 			"columns": [
 				"\"org_id\"",
 				"\"environment_id\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "saved_views",
+			"name": "saved_views_org_surface_idx",
+			"unique": false,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"surface\"",
+				"\"visibility\""
+			],
+			"where": null
+		},
+		{
+			"kind": "index",
+			"table": "saved_views",
+			"name": "saved_views_owner_surface_name_unq",
+			"unique": true,
+			"method": "btree",
+			"columns": [
+				"\"org_id\"",
+				"\"owner_user_id\"",
+				"\"surface\"",
+				"\"name\""
 			],
 			"where": null
 		},
