@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import {
 	fmtMetricTs,
 	type MetricGaugeRow,
+	type MetricHistogramRow,
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 
@@ -105,6 +106,7 @@ interface DemoTraceBatch {
 export interface DemoRows extends DemoTraceBatch {
 	metricGaugeRows: MetricGaugeRow[]
 	metricSumRows: MetricSumRow[]
+	metricHistogramRows: MetricHistogramRow[]
 }
 
 const SCOPE_NAME = "@maple/demo-instr"
@@ -426,6 +428,64 @@ function generateRuntimeMetrics(
 	return { metricGaugeRows, metricSumRows }
 }
 
+// The OTel HTTP semantic-convention bucket boundaries, in seconds.
+const DURATION_BOUNDS_S = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+
+// Request durations as a cumulative histogram per service, the way an SDK exports
+// them: running totals since the window began, one sample a minute.
+function generateDurationHistograms(
+	rand: Rand,
+	orgId: string,
+	startMs: number,
+	endMs: number,
+): MetricHistogramRow[] {
+	const rows: MetricHistogramRow[] = []
+	// Each seed is its own instance, so a second seed over the same hours is a second
+	// series and not a second running total interleaved into the first.
+	const instanceId = `demo-${Math.floor(rand() * 0xffffffff).toString(16)}`
+	for (const [serviceIdx, service] of METRIC_SERVICES.entries()) {
+		const buckets = Arr.makeBy(DURATION_BOUNDS_S.length + 1, () => 0)
+		let count = 0
+		let sum = 0
+		let min = Number.POSITIVE_INFINITY
+		let max = 0
+		let point = 0
+		for (let tsMs = startMs; tsMs <= endMs; tsMs += METRIC_INTERVAL_MS, point++) {
+			// The worker is slower than the API, and both drift over the hour.
+			const typicalS = (serviceIdx === 0 ? 0.03 : 0.12) * (1 + 0.4 * Math.sin(point / 25 + serviceIdx))
+			const requests = Math.max(0, Math.round(gaussian(rand, 40, 12)))
+			for (let i = 0; i < requests; i++) {
+				const slow = rand() < 0.03 ? 8 : 1
+				const durationS = typicalS * slow * Math.exp(gaussian(rand, 0, 0.7))
+				const bucket = Option.getOrElse(
+					Arr.findFirstIndex(DURATION_BOUNDS_S, (bound) => durationS <= bound),
+					() => DURATION_BOUNDS_S.length,
+				)
+				buckets[bucket] = (buckets[bucket] ?? 0) + 1
+				count += 1
+				sum += durationS
+				min = Math.min(min, durationS)
+				max = Math.max(max, durationS)
+			}
+			const base = makeMetricBase(service, orgId, startMs, tsMs)
+			rows.push({
+				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
+				metric_name: "http.server.request.duration",
+				metric_unit: "s",
+				count,
+				sum,
+				bucket_counts: [...buckets],
+				explicit_bounds: DURATION_BOUNDS_S,
+				min: count === 0 ? null : min,
+				max: count === 0 ? null : max,
+				aggregation_temporality: 2, // cumulative
+			})
+		}
+	}
+	return rows
+}
+
 export function generateDemoRows({
 	orgId,
 	hours,
@@ -456,6 +516,7 @@ export function generateDemoRows({
 	}
 
 	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now)
+	const metricHistogramRows = generateDurationHistograms(rand, orgId, startMs, now)
 
-	return { traceRows, logRows, metricGaugeRows, metricSumRows }
+	return { traceRows, logRows, metricGaugeRows, metricSumRows, metricHistogramRows }
 }
