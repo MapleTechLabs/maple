@@ -98,6 +98,7 @@ const planetscaleServiceLayer = (fakes: PlanetScaleFakes) =>
 			getStatus: psDie,
 			finalizeOrgSelection: psDie,
 			setMetricsToken: psDie,
+			setFeatures: psDie,
 			disconnect: psDie,
 			loadConnection: psDie,
 			loadConnectionById: psDie,
@@ -229,6 +230,8 @@ describe("v2 planetscale integration over HTTP", () => {
 		metricsAuth: "service_token" as const,
 		apiMetrics: null,
 		webhooks: null,
+		metricsEnabled: true,
+		eventsEnabled: true,
 		scrapeTarget: {
 			id: Schema.decodeSync(ScrapeTargetId)("11111111-1111-4111-8111-111111111111"),
 			enabled: true,
@@ -325,6 +328,27 @@ describe("v2 planetscale integration over HTTP", () => {
 			recovery: "reconnect",
 		})
 		expect(JSON.stringify(body)).not.toContain("organization is missing")
+		await harness.dispose()
+	})
+
+	it("switches events off for an admin, passing only the fields sent", async () => {
+		let received: { metricsEnabled?: boolean; eventsEnabled?: boolean } | null = null
+		const harness = makeHarness({
+			connection: {
+				setFeatures: (_orgId, request) => {
+					received = { ...request }
+					return Effect.succeed({ ...connectedStatus, eventsEnabled: false })
+				},
+			},
+		})
+		const key = await harness.bootstrapAdminKey()
+
+		const { status, body } = await harness.request("PATCH", "/v2/integrations/planetscale", key.secret, {
+			body: { events_enabled: false },
+		})
+		expect(status).toBe(200)
+		expect(body).toMatchObject({ metrics_enabled: true, events_enabled: false })
+		expect(received).toEqual({ eventsEnabled: false })
 		await harness.dispose()
 	})
 

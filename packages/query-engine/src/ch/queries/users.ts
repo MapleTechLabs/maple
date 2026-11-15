@@ -39,6 +39,8 @@ export interface UsersScope {
 	readonly activityRollup?: boolean
 	/** Read the rollup's request channel counts (migration 0058); only the directory list asks. */
 	readonly requestChannels?: boolean
+	/** Read the rollup's latest `user.name` / `user.email` (migration 0065). */
+	readonly activityIdentity?: boolean
 }
 
 /** The directory's filters, applied per user after every source is merged. */
@@ -433,6 +435,30 @@ const activityChannels = (
 	}
 }
 
+/** The rollup's latest `user.name` / `user.email` over the grouped rows, `''` when off or never seen. */
+const activityIdentity = (scope: UsersScope, column: "UserName" | "UserEmail") =>
+	scope.activityIdentity === true ? CH.rawExpr<string>(`argMaxIfMerge(${column})`, T.string) : CH.lit("")
+
+/** When the group last carried that identity (epoch seconds, 0 for never): the state's own key. */
+const activityIdentityAt = (
+	scope: UsersScope,
+	column: "UserName" | "UserEmail",
+	$: ColumnAccessor<typeof Datasources.userActivityHourly.columns>,
+) =>
+	scope.activityIdentity === true
+		? CH.compileTypedFnCall(
+				"toFloat64",
+				T.float64.schema,
+				CH.max_(column === "UserName" ? $.UserNameAt : $.UserEmailAt),
+			)
+		: neverSeen()
+
+/** One rollup row's identity, its own state finalized: matches a search before rows merge. */
+const activityRowIdentity = (scope: UsersScope, column: "UserName" | "UserEmail") =>
+	scope.activityIdentity === true
+		? CH.rawExpr<string>(`finalizeAggregation(${column})`, T.string)
+		: CH.lit("")
+
 /**
  * Spans and logs with `user.id` from the rollup: entry-point requests, failed ones as errors, and
  * spans on an MCP server as MCP activity (MCP spans carry the same user id).
@@ -441,8 +467,8 @@ const activityUsers = (scope: UsersScope, candidates?: Candidates) =>
 	from(Datasources.userActivityHourly)
 		.select(($) => ({
 			userId: $.UserId,
-			name: CH.lit(""),
-			email: CH.lit(""),
+			name: activityIdentity(scope, "UserName"),
+			email: activityIdentity(scope, "UserEmail"),
 			groupId: CH.lit(""),
 			namespace: $.ServiceNamespace,
 			// The other sources' times are DateTime64(9); UNION ALL needs one type.
@@ -470,8 +496,8 @@ const activityUsers = (scope: UsersScope, candidates?: Candidates) =>
 			logLines: CH.toUInt64(CH.sum($.LogCount)),
 			...activityChannels($, scope),
 			groupIds: noGroups(),
-			nameAt: neverSeen(),
-			emailAt: neverSeen(),
+			nameAt: activityIdentityAt(scope, "UserName", $),
+			emailAt: activityIdentityAt(scope, "UserEmail", $),
 			groupAt: neverSeen(),
 		}))
 		.where(($) => [
@@ -584,8 +610,8 @@ const activityRows = (scope: UsersScope, window: UserRowsWindow) =>
 	from(Datasources.userActivityHourly)
 		.select(($) => ({
 			userId: $.UserId,
-			name: CH.lit(""),
-			email: CH.lit(""),
+			name: activityRowIdentity(scope, "UserName"),
+			email: activityRowIdentity(scope, "UserEmail"),
 			namespace: $.ServiceNamespace,
 			at: CH.compileTypedFnCall("toDateTime64", T.dateTime64.schema, $.LastSeen, CH.lit(9)),
 			sessions: zero(),
@@ -1004,6 +1030,8 @@ export function userReplayProfileQuery(scope: UsersScope) {
 			// The latest non-empty values, as the directory reads them; the name from the group's session.
 			name: latestNonEmpty($.userName, $.lastActivity),
 			email: latestNonEmpty($.userEmail, $.lastActivity),
+			nameAt: seenAt($.userName, $.lastActivity),
+			emailAt: seenAt($.userEmail, $.lastActivity),
 			groupId: latestNonEmpty($.groupId, $.lastActivity),
 			groupName: latestPaired($.groupName, $.groupId, $.lastActivity),
 			traitKeys: CH.argMax($.traitKeys, $.lastActivity),
@@ -1126,8 +1154,10 @@ const userMcpSpans = ($: ColumnAccessor<typeof Datasources.traces.columns>, scop
 export function userMcpSummaryQuery(scope: UsersScope) {
 	return from(Datasources.traces)
 		.select(($) => ({
-			name: nonEmpty($.SpanAttributes.get("user.name")),
-			email: nonEmpty($.SpanAttributes.get("user.email")),
+			name: latestNonEmpty($.SpanAttributes.get("user.name"), $.Timestamp),
+			email: latestNonEmpty($.SpanAttributes.get("user.email"), $.Timestamp),
+			nameAt: seenAt($.SpanAttributes.get("user.name"), $.Timestamp),
+			emailAt: seenAt($.SpanAttributes.get("user.email"), $.Timestamp),
 			requests: CH.count(),
 			calls: CH.countIf(mcpMethod($).eq("tools/call")),
 			firstSeen: CH.min_($.Timestamp),

@@ -1,4 +1,4 @@
-import { Array as Arr, Function as Fn, Option } from "effect"
+import { Array as Arr, Option } from "effect"
 import { Command as FoldkitCommand } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type * as Keyed from "@maple/views/data/keyed"
@@ -249,9 +249,9 @@ export const LINEAR_PROVIDER = mount({
 	module: LINEAR,
 	statusName: "linear",
 	slot: (statuses) => statuses.linear,
-	get: () => null,
-	set: (model) => model,
-	toHub: Fn.absurd,
+	get: (model) => model.linearCard,
+	set: (model, linearCard) => ({ ...model, linearCard }),
+	toHub: (message) => Message.GotLinearMessage({ message }),
 })
 
 export const CHAT_PROVIDER = mount({

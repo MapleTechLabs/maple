@@ -14,7 +14,7 @@ import {
 	unavailableStatus,
 } from "./overview"
 import type { ProviderModule } from "./provider"
-import { confirmedDisconnect, isDisconnecting, update } from "./update-chat"
+import { confirmedDisconnect, isDisconnecting, statusAnswered, update } from "./update-chat"
 import { chatCard } from "./view-chat-card"
 
 // The chat connectors' part of `/integrations` (Slack and the rest): one module for every
@@ -29,6 +29,7 @@ export const CHAT: ProviderModule<V2ChatConnectorList, ChatCardModel, ChatMessag
 	statusRead: CHAT_STATUS_READ,
 	init: initChatCard,
 	update,
+	onStatus: statusAnswered,
 	onConfirmDisconnect: (model) => confirmedDisconnect(model),
 	isDisconnecting,
 	card: (h, model, timeZone) => [chatCard(h, model, timeZone)],

@@ -702,4 +702,133 @@ describe("supabase card", () => {
 			}),
 		)
 	})
+
+	describe("features across projects", () => {
+		const API_REF = Schema.decodeSync(SupabaseProjectRef)("apiprojectabcdefghij")
+		const project = (ref: string, name: string, overrides: Record<string, unknown> = {}) => ({
+			ref,
+			name,
+			region: "eu-central-1",
+			status: "ACTIVE_HEALTHY",
+			metricsEnabled: false,
+			logDrainEnabled: false,
+			logDrainError: null,
+			logDrainSourceId: null,
+			logDrains: [],
+			logDrainsCheckedAt: null,
+			logsEnabled: false,
+			logsLastPolledAt: null,
+			logsError: null,
+			lastSeenAt: 1_760_000_000_000,
+			...overrides,
+		})
+		const argsOf = (
+			commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined,
+		) => Arr.map(commands ?? [], ({ name, args }) => [name, args])
+
+		test("a feature counts its projects, and switching it on writes each running project without it", () => {
+			const model = withStatus(
+				status({
+					projects: [
+						project(REF, "storefront", { metricsEnabled: true }),
+						project(API_REF, "api"),
+						project(PAUSED_REF, "sandbox", { status: "INACTIVE" }),
+					],
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("switch", { name: "Metrics and Postgres health" })).toHaveAttr(
+					"aria-checked",
+					"false",
+				),
+				expectView(text("1 of 3 projects")).toExist(),
+			)
+			const sent = pageUpdate(model, supabase(SupabaseMessage.ToggledFeature({ kind: "metrics" })))
+			expect(argsOf(sent.commands)).toEqual([
+				["SetSupabaseProjectMetrics", { ref: API_REF, enabled: true }],
+			])
+			scene(
+				{ update: pageUpdate, view },
+				given(sent.model),
+				expectView(role("switch", { name: "Metrics and Postgres health" })).toBeDisabled(),
+				expectView(text("Saving")).toExist(),
+			)
+		})
+
+		test("a feature on everywhere it can be switches off on every project, one write each", () => {
+			const model = withStatus(
+				status({
+					projects: [
+						project(REF, "storefront", { metricsEnabled: true }),
+						project(API_REF, "api", { metricsEnabled: true }),
+					],
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("switch", { name: "Metrics and Postgres health" })).toHaveAttr(
+					"aria-checked",
+					"true",
+				),
+			)
+			const sent = pageUpdate(model, supabase(SupabaseMessage.ToggledFeature({ kind: "metrics" })))
+			expect(argsOf(sent.commands)).toEqual([
+				["SetSupabaseProjectMetrics", { ref: REF, enabled: false }],
+				["SetSupabaseProjectMetrics", { ref: API_REF, enabled: false }],
+			])
+		})
+
+		test("polling skips a project whose logs come through a drain, and a drain skips a hand-made Maple drain", () => {
+			const model = withStatus(
+				status({
+					projects: [
+						project(REF, "storefront", { logDrainEnabled: true }),
+						project(API_REF, "api", {
+							logDrains: [
+								{
+									id: "drain-manual",
+									name: "maple-by-hand",
+									backendType: "otlp",
+									destination: null,
+									toMaple: true,
+									managedByMaple: false,
+								},
+							],
+						}),
+						project(PAUSED_REF, "worker", { status: "ACTIVE_HEALTHY" }),
+					],
+				}),
+			)
+			expect(
+				argsOf(
+					pageUpdate(model, supabase(SupabaseMessage.ToggledFeature({ kind: "logs" }))).commands,
+				),
+			).toEqual([["SetSupabaseProjectLogs", { ref: PAUSED_REF, enabled: true }]])
+			expect(
+				argsOf(
+					pageUpdate(model, supabase(SupabaseMessage.ToggledFeature({ kind: "drain" }))).commands,
+				),
+			).toEqual([["SetSupabaseProjectLogDrain", { ref: PAUSED_REF, enabled: true }]])
+		})
+
+		test("a feature no project can take is disabled and says why", () => {
+			const model = withStatus(
+				status({
+					projects: [
+						project(REF, "storefront", { logDrainEnabled: true }),
+						project(API_REF, "api", { logDrainEnabled: true }),
+					],
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("switch", { name: "Logs, polled" })).toBeDisabled(),
+				expectView(text("Logs already come through a drain")).toExist(),
+			)
+		})
+	})
 })

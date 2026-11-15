@@ -23,6 +23,7 @@ import {
 	GithubSelectInstallationResponse,
 	InfraSurfaceLiteral,
 	IntegrationsForbiddenError,
+	IntegrationsNotConnectedError,
 	IntegrationsUpstreamError,
 	LinearDisconnectResponse,
 	LinearIntegrationStatus,
@@ -30,6 +31,7 @@ import {
 	LinearTeamsListResponse,
 	IntegrationsValidationError,
 	MapleInternalApi,
+	OrgId,
 	RailwayDisconnectResponse,
 	RoleName,
 	SearchConsoleAvailableSitesResponse,
@@ -142,6 +144,24 @@ const requirePermission = (roles: ReadonlyArray<RoleName>, permission: Policy.Pe
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
 		const linear = yield* LinearOAuthService
+		const linearStatus = Effect.fn("HttpIntegrations.linearStatus")(function* (orgId: OrgId) {
+			const status = yield* linear.getStatus(orgId)
+			return status.connected
+				? new LinearIntegrationStatus({
+						connected: true,
+						workspaceName: status.workspaceName,
+						connectedByUserId: status.connectedByUserId,
+						revoked: status.revoked,
+						features: status.features,
+					})
+				: new LinearIntegrationStatus({
+						connected: false,
+						workspaceName: null,
+						connectedByUserId: null,
+						revoked: false,
+						features: yield* linear.getFeatures(orgId),
+					})
+		})
 		const google = yield* GoogleOAuthService
 		const searchConsole = yield* SearchConsoleService
 		const searchConsoleImport = yield* SearchConsoleImportService
@@ -193,20 +213,25 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 				.handle("linearStatus", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const status = yield* linear.getStatus(tenant.orgId)
-						return status.connected
-							? new LinearIntegrationStatus({
-									connected: true,
-									workspaceName: status.workspaceName,
-									connectedByUserId: status.connectedByUserId,
-									revoked: status.revoked,
-								})
-							: new LinearIntegrationStatus({
-									connected: false,
-									workspaceName: null,
-									connectedByUserId: null,
-									revoked: false,
-								})
+						return yield* linearStatus(tenant.orgId)
+					}),
+				)
+				.handle("linearFeatures", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Like Cloudflare's: switches are set on a connected integration only.
+						const current = yield* linear.getStatus(tenant.orgId)
+						if (!current.connected) {
+							return yield* new IntegrationsNotConnectedError({
+								message: "Linear is not connected",
+							})
+						}
+						const features = yield* linear.setFeatures(tenant.orgId, tenant.userId, payload)
+						yield* recordHttpAudit("linear_integration.features_updated", {
+							metadata: { ...features },
+						})
+						return yield* linearStatus(tenant.orgId)
 					}),
 				)
 				.handle("linearStart", ({ payload }) =>
@@ -559,6 +584,21 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 									(zone) => zone.zoneId,
 								),
 							},
+						})
+						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
+					}),
+				)
+				.handle("cloudflareFeatures", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requirePermission(tenant.roles, "integrations:manage")
+						const features = yield* cloudflareAnalytics.setFeatures(
+							tenant.orgId,
+							tenant.userId,
+							payload,
+						)
+						yield* recordHttpAudit("cloudflare_integration.features_updated", {
+							metadata: { ...features },
 						})
 						return yield* cloudflareAnalytics.getIntegrationStatus(tenant.orgId)
 					}),

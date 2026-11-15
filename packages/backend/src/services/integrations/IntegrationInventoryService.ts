@@ -265,6 +265,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 							.select(
 								"psOrganization",
 								"detectedPermissionsJson",
+								"metricsEnabled",
+								"eventsEnabled",
 								"lastInventoryAt",
 								"lastInventoryError",
 								"createdAt",
@@ -279,7 +281,7 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 					),
 					planetscalePollStates: db.run(
 						PG.from(PlanetscalePollState)
-							.select("databaseId", "lastSuccessAt", "lastErrorAt", "lastError")
+							.select("databaseId", "dataset", "lastSuccessAt", "lastErrorAt", "lastError")
 							.where(($) => [$.orgId.eq(orgId), $.enabled.eq(true)]),
 					),
 					scrapeTargets: db.run(
@@ -361,6 +363,8 @@ const make: Effect.Effect<IntegrationInventoryServiceApi, never, Database> = Eff
 						: {
 								psOrganization: planetscale.psOrganization,
 								detectedPermissions: planetscale.detectedPermissionsJson,
+								metricsEnabled: planetscale.metricsEnabled,
+								eventsEnabled: planetscale.eventsEnabled,
 								lastInventoryAt: planetscale.lastInventoryAt,
 								lastInventoryError: planetscale.lastInventoryError,
 								createdAt: planetscale.createdAt,
