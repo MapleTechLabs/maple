@@ -47,6 +47,13 @@ export interface UptimeAlertObservation {
 export { UPTIME_CERTIFICATE_GROUP_KEY }
 
 /**
+ * The monitor's own group: its service, or the ungrouped key. A service saved as the certificate
+ * group's key (now refused, possible before) is ungrouped, so the two groups never share incidents.
+ */
+export const outageGroupKey = (serviceName: string | null): string =>
+	serviceName === null || serviceName === UPTIME_CERTIFICATE_GROUP_KEY ? UNGROUPED_GROUP_KEY : serviceName
+
+/**
  * The certificate group's observation: a warning value inside the expiry window, healthy before it.
  * None when the monitor has seen no certificate (not HTTPS, or no handshake completed yet).
  */
@@ -195,7 +202,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 			}): UptimeAlertObservation => {
 				const down = row.status === "down"
 				return {
-					groupKey: row.serviceName ?? UNGROUPED_GROUP_KEY,
+					groupKey: outageGroupKey(row.serviceName),
 					value: down ? UPTIME_OBSERVED_VALUE.down : UPTIME_OBSERVED_VALUE.healthy,
 					stale: false,
 					detail: down ? (row.lastCheckJson?.error ?? "The check is failing") : null,
@@ -209,7 +216,7 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				row: MonitorRead,
 				nowMs: number,
 			) {
-				const groupKey = row.serviceName ?? UNGROUPED_GROUP_KEY
+				const groupKey = outageGroupKey(row.serviceName)
 				const watch = { ...row, config: row.configJson }
 				// The scraper stopped reporting, or the API refuses its reports: say so, not "up".
 				if (isProbeStale(watch, nowMs)) {
@@ -276,12 +283,8 @@ export class UptimeAlertSource extends Context.Service<UptimeAlertSource, Uptime
 				if (Option.isNone(read)) return []
 				const row = read.value
 				const monitor = yield* observeMonitor(orgId, ruleId, row, nowMs)
-				// The expiry date stays known while checks are stale or failing, so it is always observed;
-				// never under a key the monitor's own group already holds.
-				const certificate = Option.filter(
-					certificateObservation(row.lastCheckJson?.certificate, nowMs),
-					(observed) => !Option.exists(monitor, (own) => own.groupKey === observed.groupKey),
-				)
+				// The expiry date stays known while checks are stale or failing, so it is always observed.
+				const certificate = certificateObservation(row.lastCheckJson?.certificate, nowMs)
 				return Arr.getSomes([monitor, certificate])
 			})
 

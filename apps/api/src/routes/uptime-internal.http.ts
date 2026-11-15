@@ -77,6 +77,7 @@ export const UptimeInternalRouter = HttpRouter.use((router) =>
 							intervalSeconds: intervalSeconds.value,
 							config: row.config,
 							ingestKey: keys.publicKey,
+							revision: row.revision,
 						}),
 					])
 				})

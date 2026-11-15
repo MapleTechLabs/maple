@@ -469,33 +469,44 @@ describe("AlertsService uptime rules", () => {
 		},
 	)
 
-	it.effect("a monitor whose service shares the certificate group's key keeps its outage open", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
-			const alerts = yield* alertServices
-			const orgId = asOrgId("org_uptime_cert_collision")
-			yield* seedUptimeMonitor(testDb, {
-				orgId,
-				name: "Checkout health",
-				serviceName: UPTIME_CERTIFICATE_GROUP_KEY,
-				destinationIds: [],
-				config: httpMonitorConfig,
-				status: "down",
-				error: "Status 503, expected 2xx",
-				certificate: certificateIn(90),
-			})
-			const incidents = () =>
-				Effect.map(alerts.listIncidents(orgId), ({ incidents }) =>
-					Arr.map(incidents, (incident) => `${incident.severity}:${incident.status}`),
-				)
-			yield* alerts.runSchedulerTick()
-			assert.deepStrictEqual(yield* incidents(), ["critical:open"])
-			yield* TestClock.adjust(Duration.minutes(1))
-			yield* alerts.runSchedulerTick()
-			assert.deepStrictEqual(yield* incidents(), ["critical:open"])
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
-	})
+	it.effect(
+		"a monitor stored with the certificate group's key as its service keeps the two incidents apart",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+				const alerts = yield* alertServices
+				const orgId = asOrgId("org_uptime_cert_collision")
+				// Saved before the name was reserved.
+				yield* seedUptimeMonitor(testDb, {
+					orgId,
+					name: "Checkout health",
+					serviceName: UPTIME_CERTIFICATE_GROUP_KEY,
+					destinationIds: [],
+					config: httpMonitorConfig,
+					status: "down",
+					error: "Status 503, expected 2xx",
+					certificate: certificateIn(5),
+				})
+				const incidents = () =>
+					Effect.map(alerts.listIncidents(orgId), ({ incidents }) =>
+						Arr.sort(
+							Arr.map(
+								incidents,
+								(incident) => `${incident.groupKey}:${incident.severity}:${incident.status}`,
+							),
+							Order.String,
+						),
+					)
+				const expected = ["__tls_certificate__:warning:open", "__total__:critical:open"]
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* incidents(), expected)
+				yield* TestClock.adjust(Duration.minutes(1))
+				yield* alerts.runSchedulerTick()
+				assert.deepStrictEqual(yield* incidents(), expected)
+			}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub({}))))
+		},
+	)
 
 	it.effect("a monitor created before backing rules gets one, once, and then fires", () => {
 		const testDb = createTestDb(trackedDbs)

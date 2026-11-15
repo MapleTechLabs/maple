@@ -343,6 +343,47 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect(
+		"ignores the certificate of a check the scraper ran from a target cached before the edit",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createHttp("API")
+				const [before] = yield* service.listProbeTargets
+				const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+				yield* TestClock.setTime(10_000)
+				yield* service.update(ORG, monitor.id, {
+					config: httpConfig("https://new.example.com/health"),
+					updatedBy: USER,
+				})
+				const [after] = yield* service.listProbeTargets
+				assert.isAbove(after?.revision ?? 0, before?.revision ?? 0)
+				// Started after the edit, but against the target the scraper had cached.
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 20_000, true),
+						certificate: old,
+						targetRevision: before?.revision ?? 0,
+					}),
+				])
+				const stale = yield* service.get(ORG, monitor.id)
+				assert.strictEqual(stale.state.lastCheck?.at, 20_000)
+				assert.isUndefined(stale.state.lastCheck?.certificate)
+				const renewed = { ...old, subject: "new.example.com" }
+				yield* service.recordChecks([
+					new UptimeCheckReport({
+						...report(monitor.id, 30_000, true),
+						certificate: renewed,
+						targetRevision: after?.revision ?? 0,
+					}),
+				])
+				const current = yield* service.get(ORG, monitor.id)
+				assert.deepStrictEqual(current.state.lastCheck?.certificate, renewed)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		},
+	)
+
 	it.effect("forgets the certificate when an origin change also resumes the monitor", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

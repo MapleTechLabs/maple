@@ -159,6 +159,8 @@ export interface UptimeProbeTargetRow {
 	readonly serviceName: string | null
 	readonly intervalSeconds: number
 	readonly config: UptimeProbeConfig
+	/** When the settings last changed; reports echo it (see `probedCurrentTarget`). */
+	readonly revision: number
 }
 
 export interface UptimeHttpTestResult {
@@ -513,6 +515,16 @@ export const certificateOrigin = (config: UptimeMonitorConfig): string | null =>
 		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
 	})
 }
+
+/**
+ * Whether a report's check ran against the monitor's current settings: by the revision it echoes,
+ * else (a scraper that predates it) by starting after the last edit. A check that started after
+ * the edit can still run a target the scraper cached before it, which only the revision tells.
+ */
+const probedCurrentTarget = (report: UptimeCheckReport, configUpdatedAt: number): boolean =>
+	report.targetRevision === undefined
+		? report.checkedAt >= configUpdatedAt
+		: report.targetRevision === configUpdatedAt
 
 /**
  * `detail` with the certificate `previous` held: a check that started before the monitor's last
@@ -1085,6 +1097,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								headersCiphertext: $.headersCiphertext,
 								headersIv: $.headersIv,
 								headersTag: $.headersTag,
+								updatedAt: $.updatedAt,
 							}))
 							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
 					),
@@ -1105,6 +1118,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											serviceName: row.serviceName,
 											intervalSeconds: row.intervalSeconds,
 											config,
+											revision: row.updatedAt,
 										},
 									],
 						),
@@ -1180,9 +1194,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								statusChangedAt: folded.statusChangedAt,
 								// Folded in order, so a renewal earlier in a retried batch is not lost to a later failure.
 								lastCheckJson: Arr.reduce(fresh, row.lastCheckJson, (previous, report) =>
-									report.checkedAt < row.configUpdatedAt
-										? keepCertificate(toCheckDetail(report, previous), previous)
-										: toCheckDetail(report, previous),
+									probedCurrentTarget(report, row.configUpdatedAt)
+										? toCheckDetail(report, previous)
+										: keepCertificate(toCheckDetail(report, previous), previous),
 								),
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,

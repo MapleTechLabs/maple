@@ -152,6 +152,11 @@ export class UptimeProbeTarget extends Schema.Class<UptimeProbeTarget>("UptimePr
 	config: Schema.Union([UptimeHttpConfig, UptimeTcpConfig, UptimeDnsConfig]),
 	/** The org's public ingest key: check spans go into the org's own traces. */
 	ingestKey: Schema.String,
+	/**
+	 * When the monitor's settings last changed (epoch ms). A report echoes it, so the API can tell a
+	 * check that probed an earlier target; absent from APIs that predate it.
+	 */
+	revision: Schema.optionalKey(Schema.Number),
 }) {}
 export const UptimeProbeTargetList = Schema.Array(UptimeProbeTarget)
 
@@ -165,6 +170,8 @@ export class UptimeCheckReport extends Schema.Class<UptimeCheckReport>("UptimeCh
 	traceId: Schema.NullOr(Schema.String),
 	/** HTTPS checks whose handshake completed; absent from scrapers that predate it. */
 	certificate: Schema.optionalKey(UptimeCertificate),
+	/** The target's `revision` the check ran against. */
+	targetRevision: Schema.optionalKey(Schema.Number),
 }) {}
 /** Most reports one `/api/internal/uptime-results` POST may carry; the scraper batches to it. */
 export const UPTIME_CHECK_REPORT_BATCH_MAX = 1_000
