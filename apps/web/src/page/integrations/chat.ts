@@ -17,11 +17,11 @@ export const ChatFeatureSwitches = Schema.Struct({
 export type ChatFeatureSwitches = typeof ChatFeatureSwitches.Type
 export const ChatFeatureFlag = Schema.Literals(["alertsEnabled", "directMessagesEnabled", "assistantEnabled"])
 
-/** The workspace's switches as saved; an older API that sends none has every one on. */
+/** The workspace's switches as saved. */
 export const savedChatFeatures = (workspace: V2ChatWorkspace): ChatFeatureSwitches => ({
-	alertsEnabled: workspace.alerts_enabled ?? true,
-	directMessagesEnabled: workspace.direct_messages_enabled ?? true,
-	assistantEnabled: workspace.assistant_enabled ?? true,
+	alertsEnabled: workspace.alerts_enabled,
+	directMessagesEnabled: workspace.direct_messages_enabled,
+	assistantEnabled: workspace.assistant_enabled,
 })
 
 /** The chat module's own messages; the hub carries them in `GotChatMessage`. */

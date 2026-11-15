@@ -42,6 +42,9 @@ const list = (withWorkspace: boolean) =>
 								external_workspace_id: "T1",
 								name: "Acme Shop",
 								settings: {},
+								alerts_enabled: true,
+								direct_messages_enabled: true,
+								assistant_enabled: true,
 								created_at: "2026-09-10T12:00:00.000Z",
 							},
 						]

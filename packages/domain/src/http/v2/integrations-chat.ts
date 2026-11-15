@@ -72,27 +72,21 @@ export const V2ChatWorkspace = Schema.Struct({
 		examples: ["Acme Engineering"],
 	}),
 	settings: settingsField,
-	alerts_enabled: Schema.optionalKey(
-		Schema.Boolean.annotate({
-			description:
-				"Whether alerts post to the channels alert destinations pick in this workspace. Off, those deliveries are recorded as skipped.",
-			examples: [true],
-		}),
-	),
-	direct_messages_enabled: Schema.optionalKey(
-		Schema.Boolean.annotate({
-			description:
-				"Whether escalation policies page people by direct message through this workspace. The email page goes out either way.",
-			examples: [true],
-		}),
-	),
-	assistant_enabled: Schema.optionalKey(
-		Schema.Boolean.annotate({
-			description:
-				"Whether the Maple bot answers mentions and follows up in its own threads here. Off, it stays quiet.",
-			examples: [true],
-		}),
-	),
+	alerts_enabled: Schema.Boolean.annotate({
+		description:
+			"Whether alerts post to the channels alert destinations pick in this workspace. Off, those deliveries are recorded as skipped.",
+		examples: [true],
+	}),
+	direct_messages_enabled: Schema.Boolean.annotate({
+		description:
+			"Whether escalation policies page people by direct message through this workspace. The email page goes out either way.",
+		examples: [true],
+	}),
+	assistant_enabled: Schema.Boolean.annotate({
+		description:
+			"Whether the Maple bot answers mentions and follows up in its own threads here. Off, it stays quiet.",
+		examples: [true],
+	}),
 	created_at: Timestamp.annotate({ description: "When the workspace was linked to this organization." }),
 }).annotate({
 	identifier: "ChatWorkspace",

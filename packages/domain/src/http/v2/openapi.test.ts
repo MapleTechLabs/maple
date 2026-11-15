@@ -569,6 +569,13 @@ describe("MapleApiV2 OpenAPI", () => {
 		expect(operation("post", "/v2/alerts/destinations").responses["200"]).toBeDefined()
 	})
 
+	it("publishes a chat workspace's switches as always sent, and optional on update", () => {
+		const switches = ["alerts_enabled", "direct_messages_enabled", "assistant_enabled"]
+		expect(schemas["ChatWorkspace"].required).toEqual(expect.arrayContaining(switches))
+		const update: ReadonlyArray<string> = schemas["ChatWorkspaceUpdateParams"].required ?? []
+		expect(Arr.intersection(update, switches)).toEqual([])
+	})
+
 	it("gives every error response an exhaustive literal-tag union", () => {
 		for (const [path, item] of Rec.toEntries(spec.paths ?? {})) {
 			// @effect-diagnostics-next-line preferEffectRecord:off -- not a record type; Rec.toEntries would need a cast
