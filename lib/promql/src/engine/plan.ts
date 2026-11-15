@@ -33,6 +33,7 @@ const MIN_BUCKET_MS = 1000
 /** Functions that need every sample value, which buckets cannot provide. */
 const RAW_FUNCTIONS: ReadonlySet<string> = new Set([
 	"quantile_over_time",
+	"mad_over_time",
 	"stddev_over_time",
 	"stdvar_over_time",
 	"holt_winters",
