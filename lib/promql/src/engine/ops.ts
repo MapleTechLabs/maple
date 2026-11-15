@@ -1,5 +1,5 @@
 export type { EvalError } from "./labels"
-export { dropMetricName, ensureUniqueLabelsets } from "./labels"
+export { compareLabels, dropMetricName, ensureUniqueLabelsets, labelsKey } from "./labels"
 export { aggregate } from "./aggregate"
 export { scalarBinary, vectorScalarBinary, vectorVectorBinary } from "./binary"
 export { instantFunction } from "./instant-functions"

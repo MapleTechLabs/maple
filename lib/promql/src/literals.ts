@@ -97,7 +97,10 @@ export const unquote = (text: string): string | undefined => {
 		if (hexLength > 0) {
 			const hex = body.slice(i + 2, i + 2 + hexLength)
 			if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length !== hexLength) return undefined
-			out += String.fromCodePoint(Number.parseInt(hex, 16))
+			const codePoint = Number.parseInt(hex, 16)
+			// Above U+10FFFF is not a character; fromCodePoint would throw.
+			if (codePoint > 0x10ffff) return undefined
+			out += String.fromCodePoint(codePoint)
 			i += 1 + hexLength
 			continue
 		}
