@@ -22,7 +22,7 @@ import {
 	linkedCursorOverlay,
 } from "@maple/views/charts/linked-cursor"
 import type { MarkerCard } from "./marker-card"
-import { markersOverlay } from "./markers-view"
+import { type MarkerTone, markersOverlay } from "./markers-view"
 import { chartFrameClass } from "@maple/views/ui/chart-frame"
 
 // The four golden-signal cards in a grid: a service's Overview tab and a release's service section feed it.
@@ -161,6 +161,8 @@ export type GridInput<M> = Readonly<{
 	markers: ReturnType<typeof commitMarkers>
 	/** The page's marker hover card; without it the markers draw idle. */
 	markerCard?: MarkerCard<M>
+	/** A commit's verdict tone: a flagged deploy's marker draws in it. */
+	markerTone?: MarkerTone
 	toChartMessage: (chartId: string, message: Chart.Message) => M
 	/** `h.OnMount(MountLinkedZoom(...))`, lifted to the page's Message. */
 	linkedCursorMount: Parameters<HtmlBuilder<M>["OnMount"]>[0]
@@ -189,6 +191,7 @@ const chartBody = <M>(
 							input.markerCard === undefined
 								? undefined
 								: { ...input.markerCard, scope: `markers-${chart.id}` },
+							input.markerTone,
 						),
 				})
 	return h.div(
