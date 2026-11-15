@@ -18,6 +18,7 @@ import {
 	type HistogramSeries,
 	increaseAt,
 	insertCumulativeSamples,
+	insertGaugeReadings,
 	insertHistograms,
 	MINUTE_MS,
 	type Observation,
@@ -288,6 +289,21 @@ describeWithChdb("histogram metrics", () => {
 				scope: "idle",
 			},
 		])
+		// Two gauge series in one minute: readings 1 to 50, and a flat 10.
+		insertGaugeReadings(
+			db,
+			"org_gauge",
+			"queue.depth",
+			"api",
+			Arr.makeBy(50, (i) => i + 1),
+		)
+		insertGaugeReadings(
+			db,
+			"org_gauge",
+			"queue.depth",
+			"worker",
+			Arr.makeBy(50, () => 10),
+		)
 		// One process, counting since long before the range, that switches its buckets at 0:10.
 		insertCumulativeSamples(db, "org_relayout", "http.server.request.duration", [
 			{ tickMs: 0, startMs: -HISTORY_MS, count: 5, sum: 50, bounds: [50], buckets: [5, 0] },
@@ -412,6 +428,17 @@ describeWithChdb("histogram metrics", () => {
 
 	test("a sample that adds no observations does not move a bucket's lower edge", () => {
 		expect(valueOf("org_empty_layout", "p50")).toEqual([50])
+	})
+
+	test("a percentile on a gauge is the quantile of each series' readings, averaged over the series", () => {
+		const read = (aggregation: QueryArgs["aggregation"]) =>
+			Arr.map(
+				firstMinute("org_gauge", aggregation, { metric: "queue.depth", metricType: "gauge" }),
+				(p) => p.value,
+			)
+		// Readings 1 to 50 have a median of 25.5; the flat series reads 10; their average is 17.75.
+		expect(read("p50")).toEqual([17.75])
+		expect(read("p95")[0]).toBeCloseTo((47.55 + 10) / 2, 9)
 	})
 
 	test("an estimate never leaves the recorded min and max", () => {

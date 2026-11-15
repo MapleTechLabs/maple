@@ -282,6 +282,24 @@ export const queryHistogram = (db: Chdb, args: QueryArgs): ReadonlyArray<Point> 
 	)
 }
 
+/** One gauge series: a reading per second from the start of the range. */
+export const insertGaugeReadings = (
+	db: Chdb,
+	org: string,
+	metric: string,
+	service: string,
+	values: ReadonlyArray<number>,
+): void => {
+	const rows = Arr.map(
+		values,
+		(value, i) =>
+			`(${quote(org)}, ${quote(service)}, ${quote(metric)}, ${quote(chTimestamp(i * SECOND_MS))}, ${value})`,
+	)
+	db.exec(
+		`INSERT INTO metrics_gauge (OrgId, ServiceName, MetricName, TimeUnix, Value) VALUES ${Arr.join(rows, ", ")}`,
+	)
+}
+
 export interface ExponentialSample {
 	readonly tickMs: number
 	readonly startMs: number

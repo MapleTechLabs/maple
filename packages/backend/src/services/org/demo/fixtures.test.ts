@@ -110,6 +110,14 @@ describe("generateDemoRows metrics", () => {
 		expect([...instances][0]).toMatch(/^demo-[0-9a-f]+$/)
 	})
 
+	it("stays finite when the random source draws zero", () => {
+		const zeros = generateDemoRows({ orgId: "org_test", hours: 1, ratePerHour: 2, random: () => 0 })
+		for (const row of zeros.metricHistogramRows) {
+			expect(Number.isFinite(row.sum)).toBe(true)
+			expect(Number.isFinite(row.count)).toBe(true)
+		}
+	})
+
 	it("stamps timestamps inside the seeded window (ClickHouse DateTime64 format)", () => {
 		const now = Date.now()
 		const windowStart = now - 2 * 3600 * 1000 - 60_000

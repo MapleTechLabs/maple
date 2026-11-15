@@ -124,7 +124,8 @@ function pick<T>(rand: Rand, arr: Arr.NonEmptyReadonlyArray<T>): T {
 }
 
 function gaussian(rand: Rand, mean: number, stddev: number): number {
-	const u1 = rand()
+	// `rand` draws from [0, 1); flipped to (0, 1] so the logarithm never sees zero.
+	const u1 = 1 - rand()
 	const u2 = rand()
 	const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
 	return mean + z * stddev
