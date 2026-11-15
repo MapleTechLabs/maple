@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto"
 import { Array as Arr, Option } from "effect"
 import {
 	fmtMetricTs,
+	type MetricExponentialHistogramRow,
 	type MetricGaugeRow,
 	type MetricHistogramRow,
 	type MetricSumRow,
@@ -107,6 +108,7 @@ export interface DemoRows extends DemoTraceBatch {
 	metricGaugeRows: MetricGaugeRow[]
 	metricSumRows: MetricSumRow[]
 	metricHistogramRows: MetricHistogramRow[]
+	metricExponentialHistogramRows: MetricExponentialHistogramRow[]
 }
 
 const SCOPE_NAME = "@maple/demo-instr"
@@ -487,6 +489,90 @@ function generateDurationHistograms(
 	return rows
 }
 
+// A base-2 exponential histogram as an SDK holds it: it starts at this scale and
+// halves its resolution whenever the values outgrow its bucket budget.
+const EXPONENTIAL_START_SCALE = 3
+const EXPONENTIAL_MAX_BUCKETS = 40
+
+/** The bucket a positive value falls in: bucket i covers (base^i, base^(i+1)], base = 2^(2^-scale). */
+const exponentialBucketIndex = (value: number, scale: number) => Math.ceil(Math.log2(value) * 2 ** scale) - 1
+
+// Database query durations as a cumulative exponential histogram per service. Slow
+// queries turn up halfway through the window: they stretch the value range, so the
+// histogram lowers its scale mid-series, the way a long-lived process does.
+function generateQueryDurationHistograms(
+	rand: Rand,
+	orgId: string,
+	startMs: number,
+	endMs: number,
+	instanceId: string,
+): MetricExponentialHistogramRow[] {
+	const rows: MetricExponentialHistogramRow[] = []
+	for (const [serviceIdx, service] of METRIC_SERVICES.entries()) {
+		let scale = EXPONENTIAL_START_SCALE
+		let buckets = new Map<number, number>()
+		let lowest = 0
+		let highest = 0
+		let count = 0
+		let sum = 0
+		let min = Number.POSITIVE_INFINITY
+		let max = 0
+		let point = 0
+		for (let tsMs = startMs; tsMs <= endMs; tsMs += METRIC_INTERVAL_MS, point++) {
+			const typicalS =
+				(serviceIdx === 0 ? 0.004 : 0.015) * (1 + 0.3 * Math.sin(point / 30 + serviceIdx))
+			const slowShare = tsMs - startMs > (endMs - startMs) / 2 ? 0.02 : 0
+			const queries = Math.max(0, Math.round(gaussian(rand, 60, 15)))
+			for (let i = 0; i < queries; i++) {
+				const durationS = typicalS * (rand() < slowShare ? 100 : 1) * Math.exp(gaussian(rand, 0, 0.5))
+				let index = exponentialBucketIndex(durationS, scale)
+				// One scale lower, buckets 2k and 2k + 1 become bucket k.
+				while (
+					count > 0 &&
+					Math.max(highest, index) - Math.min(lowest, index) >= EXPONENTIAL_MAX_BUCKETS
+				) {
+					const halved = new Map<number, number>()
+					for (const [bucket, held] of buckets) {
+						halved.set(bucket >> 1, (halved.get(bucket >> 1) ?? 0) + held)
+					}
+					buckets = halved
+					scale -= 1
+					lowest >>= 1
+					highest >>= 1
+					index = exponentialBucketIndex(durationS, scale)
+				}
+				buckets.set(index, (buckets.get(index) ?? 0) + 1)
+				lowest = count === 0 ? index : Math.min(lowest, index)
+				highest = count === 0 ? index : Math.max(highest, index)
+				count += 1
+				sum += durationS
+				min = Math.min(min, durationS)
+				max = Math.max(max, durationS)
+			}
+			const base = makeMetricBase(service, orgId, startMs, tsMs)
+			rows.push({
+				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
+				metric_name: "db.client.operation.duration",
+				metric_unit: "s",
+				count,
+				sum,
+				scale,
+				zero_count: 0,
+				positive_offset: lowest,
+				positive_bucket_counts:
+					count === 0 ? [] : Arr.makeBy(highest - lowest + 1, (i) => buckets.get(lowest + i) ?? 0),
+				negative_offset: 0,
+				negative_bucket_counts: [],
+				min: count === 0 ? null : min,
+				max: count === 0 ? null : max,
+				aggregation_temporality: 2, // cumulative
+			})
+		}
+	}
+	return rows
+}
+
 export function generateDemoRows({
 	orgId,
 	hours,
@@ -521,6 +607,20 @@ export function generateDemoRows({
 	const instanceId = `demo-${Math.floor(rand() * 0xffffffff).toString(16)}`
 	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now, instanceId)
 	const metricHistogramRows = generateDurationHistograms(rand, orgId, startMs, now, instanceId)
+	const metricExponentialHistogramRows = generateQueryDurationHistograms(
+		rand,
+		orgId,
+		startMs,
+		now,
+		instanceId,
+	)
 
-	return { traceRows, logRows, metricGaugeRows, metricSumRows, metricHistogramRows }
+	return {
+		traceRows,
+		logRows,
+		metricGaugeRows,
+		metricSumRows,
+		metricHistogramRows,
+		metricExponentialHistogramRows,
+	}
 }

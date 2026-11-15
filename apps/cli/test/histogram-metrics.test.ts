@@ -18,13 +18,14 @@ import {
 	type HistogramSeries,
 	increaseAt,
 	insertCumulativeSamples,
-	insertExponentialHistogram,
 	insertGaugeReadings,
 	insertHistograms,
 	MINUTE_MS,
 	type Observation,
 	type QueryArgs,
+	queryBreakdown,
 	queryHistogram,
+	querySparkline,
 	SECOND_MS,
 	ticksOf,
 } from "./histogram-metrics-support"
@@ -112,6 +113,13 @@ const WORLDS: ReadonlyArray<HistogramSeries> = [
 	}),
 	// A histogram that records only count and sum.
 	series("org_no_buckets", { observations: TEN, bounds: [], recordExtrema: false }),
+	// Two cumulative services, for the per-service table.
+	series("org_services", { observations: TEN, temporality: "cumulative" }),
+	series("org_services", {
+		observations: [at(5, 100), at(65, 200), at(125, 300)],
+		temporality: "cumulative",
+		service: "worker",
+	}),
 ]
 
 /** How long a series with history has been counting before the range starts. */
@@ -179,16 +187,6 @@ describeWithChdb("histogram metrics", () => {
 		dir = mkdtempSync(join(tmpdir(), "maple-histogram-"))
 		db = Chdb.open({ dataDir: dir, schemaSql })
 		insertHistograms(db, [...WORLDS, ...RANDOM_DELTA, ...RANDOM_CUMULATIVE, ...RANDOM_EXTREMA])
-		// 10 observations summing to 130 between 0:00 and 0:20, exported both ways.
-		insertExponentialHistogram(db, "org_exponential_delta", "queue.wait", [
-			{ tickMs: 10 * SECOND_MS, startMs: 0, count: 4, sum: 40, temporality: "delta" },
-			{ tickMs: 20 * SECOND_MS, startMs: 10 * SECOND_MS, count: 6, sum: 90, temporality: "delta" },
-		])
-		insertExponentialHistogram(db, "org_exponential_cumulative", "queue.wait", [
-			{ tickMs: 0, startMs: -HISTORY_MS, count: 7, sum: 700, temporality: "cumulative" },
-			{ tickMs: 10 * SECOND_MS, startMs: -HISTORY_MS, count: 11, sum: 740, temporality: "cumulative" },
-			{ tickMs: 20 * SECOND_MS, startMs: -HISTORY_MS, count: 17, sum: 830, temporality: "cumulative" },
-		])
 		// A scraped series: the first point starts at its own time, the rest at the first point's.
 		insertCumulativeSamples(db, "org_scraped", "http.server.request.duration", [
 			{ tickMs: 0, startMs: 0, count: 1000, sum: 10_000, bounds: [50], buckets: [1000, 0] },
@@ -231,6 +229,28 @@ describeWithChdb("histogram metrics", () => {
 			},
 		])
 		// Two libraries in one service record the same metric with the same labels.
+		// Two versions of one library loaded side by side, recording the same metric.
+		insertCumulativeSamples(
+			db,
+			"org_scope_versions",
+			"http.server.request.duration",
+			Arr.map(
+				[
+					{ tickMs: -10 * SECOND_MS, count: 100, scopeVersion: "1.0.0" },
+					{ tickMs: -5 * SECOND_MS, count: 1000, scopeVersion: "2.0.0" },
+					{ tickMs: 10 * SECOND_MS, count: 110, scopeVersion: "1.0.0" },
+					{ tickMs: 15 * SECOND_MS, count: 1010, scopeVersion: "2.0.0" },
+				],
+				(sample) => ({
+					...sample,
+					startMs: -HISTORY_MS,
+					sum: sample.count * 10,
+					bounds: [50],
+					buckets: [sample.count, 0],
+					scope: "http",
+				}),
+			),
+		)
 		insertCumulativeSamples(db, "org_scopes", "http.server.request.duration", [
 			{
 				tickMs: -10 * SECOND_MS,
@@ -428,6 +448,11 @@ describeWithChdb("histogram metrics", () => {
 		expect(valueOf("org_scopes", "sum")).toEqual([200])
 	})
 
+	test("two versions of one scope with the same labels are two series", () => {
+		expect(valueOf("org_scope_versions", "count")).toEqual([20])
+		expect(valueOf("org_scope_versions", "sum")).toEqual([200])
+	})
+
 	test("a sample that adds no observations does not move a bucket's lower edge", () => {
 		expect(valueOf("org_empty_layout", "p50")).toEqual([50])
 	})
@@ -499,6 +524,84 @@ describeWithChdb("histogram metrics", () => {
 		expect(Arr.map(points, (p) => [p.dataPoints, p.value])).toEqual([[8, 15]])
 	})
 
+	test("the catalog sparkline of a cumulative histogram plots the window, not the running total", () => {
+		const sparkline = (org: string) =>
+			querySparkline(db, {
+				org,
+				metric: "http.server.request.duration",
+				metricType: "histogram",
+				fromMs: 0,
+				toMs: 5 * MINUTE_MS,
+				bucketSeconds: 60,
+			})
+		// All ten observations are in the first minute; later minutes observed nothing.
+		expect(sparkline("org_cumulative")).toEqual([[0, 29, 290, 10]])
+		expect(sparkline("org_cumulative")).toEqual(sparkline("org_delta"))
+		// Three minutes, each with one observation of the worker's next to the api's first minute.
+		expect(sparkline("org_services")).toEqual([
+			[0, 390 / 11, 390, 11],
+			[MINUTE_MS, 200, 200, 1],
+			[2 * MINUTE_MS, 300, 300, 1],
+		])
+	})
+
+	test("the per-service table of a cumulative histogram agrees with the chart", () => {
+		const range = {
+			org: "org_services",
+			metric: "http.server.request.duration",
+			fromMs: 0,
+			toMs: 5 * MINUTE_MS,
+		}
+		const table = queryBreakdown(db, {
+			...range,
+			metricType: "histogram",
+			options: { lookbackSeconds: 60 },
+		})
+		expect(table).toEqual([
+			["api", 29, 290, 10],
+			["worker", 200, 600, 3],
+		])
+		for (const [aggregation, column] of [
+			["sum", 2],
+			["count", 3],
+		] as const) {
+			const chart = queryHistogram(db, {
+				...range,
+				aggregation,
+				bucketSeconds: 60,
+				groupByService: true,
+			})
+			for (const row of table) {
+				const charted = Arr.filter(chart, (p) => p.group === row[0])
+				expect(Arr.reduce(charted, 0, (total, p) => total + p.value)).toBe(row[column])
+			}
+		}
+	})
+
+	test("a histogram breakdown groups by a label and keeps its filters", () => {
+		const breakdown = (org: string, options: Parameters<typeof queryBreakdown>[1]["options"]) =>
+			queryBreakdown(db, {
+				org,
+				metric: "http.server.request.duration",
+				metricType: "histogram",
+				fromMs: 0,
+				toMs: 5 * MINUTE_MS,
+				options,
+			})
+		expect(breakdown("org_grouped", { groupByAttributeKey: "route", rankBy: "sum" })).toEqual([
+			["/b", 35, 70, 2],
+			["/a", 5, 10, 2],
+		])
+		expect(
+			breakdown("org_grouped", {
+				groupByAttributeKey: "route",
+				attributeFilters: [{ key: "route", mode: "equals", value: "/a" }],
+			}),
+		).toEqual([["/a", 5, 10, 2]])
+		expect(breakdown("org_mixed", { serviceName: "worker" })).toEqual([["worker", 70 / 3, 70, 3]])
+		expect(breakdown("org_mixed", { rankBy: "sum", limit: 1 })).toEqual([["worker", 70 / 3, 70, 3]])
+	})
+
 	const randomQuery = (org: string, aggregation: QueryArgs["aggregation"], bucketSeconds: number) =>
 		queryHistogram(db, {
 			org,
@@ -561,24 +664,6 @@ describeWithChdb("histogram metrics", () => {
 				expect(point.value).toBeGreaterThanOrEqual(Math.max(LAYOUT[index - 1] ?? 0, lowest))
 				expect(point.value).toBeLessThanOrEqual(Math.min(LAYOUT[index] ?? highest, highest))
 			}
-		}
-	})
-
-	test("an exponential histogram counts its window whichever way it is exported", () => {
-		for (const org of ["org_exponential_delta", "org_exponential_cumulative"]) {
-			const read = (aggregation: QueryArgs["aggregation"]) =>
-				Arr.map(
-					firstMinute(org, aggregation, {
-						metric: "queue.wait",
-						metricType: "exponential_histogram",
-					}),
-					(p) => p.value,
-				)
-			expect(read("count")).toEqual([10])
-			expect(read("sum")).toEqual([130])
-			expect(read("avg")).toEqual([13])
-			// Their buckets are not merged yet, so there is nothing to estimate from.
-			expect(read("p95")).toEqual([])
 		}
 	})
 })

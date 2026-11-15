@@ -8,7 +8,7 @@ detail (#5). `minSeverity` is still backend-only (#4). GenAI data has a dedicate
 Tracks OpenTelemetry-standard capabilities Maple does **not** yet surface for filtering and
 visualization. Maple ingests all three OTel signals and stores a near-complete span/log/metric model
 in ClickHouse/Tinybird. Much of the stored data (span events, span links, span kind, trace state, log
-attributes, metric exemplars, exponential histograms) is never exposed in the product.
+attributes, metric exemplars) is never exposed in the product.
 
 **Framing:** most high-value gaps need _zero_ ingestion work. The columns are already populated and
 only need query-engine and UI plumbing. Tier 3 items require changes to the Rust ingest encoder
@@ -59,7 +59,7 @@ data exists:
 
 - [ ] **9. Exemplar → trace links on charts.** _M, metric visuals_
       `exemplars_trace_id/span_id/value/timestamp` are stored per metric point and never read. Overlay exemplar dots on latency/line charts that deep-link to the trace. This is the standard OTel bridge from metrics to traces.
-- [ ] **10. Exponential-histogram heatmap.** _M–L, metric visuals_. ⏸ **DEPRIORITIZED: 0 exp-histogram rows in prod.** Revisit once data exists. Explicit-bucket histograms (#11) have 36.8M rows and are the better first target.
+- [ ] **10. Exponential-histogram heatmap.** _M–L, metric visuals_. ⏸ **DEPRIORITIZED: 0 exp-histogram rows in prod.** Revisit once data exists. Their count, sum, average and percentiles already chart like an explicit histogram's (`histogramTimeseriesQuery`); only the heatmap is open. Explicit-bucket histograms (#11) have 36.8M rows and are the better first target.
 - [ ] **11. Explicit-bucket histogram distribution view.** _M, metric visuals_
       The histogram datasource has bounds and bucket counts. The chart registry has a generic histogram/heatmap, but nothing is wired to OTel histogram buckets.
 - [ ] **12. trace_state / sampling filter.** _S, trace filtering_

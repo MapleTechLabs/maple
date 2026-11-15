@@ -188,15 +188,10 @@ const METRICS_AGGREGATIONS_GAUGE_LIKE = [
 	{ label: "count", value: "count" },
 ]
 
-// Histograms merge buckets across series; there is no single last sample to read.
-const METRICS_AGGREGATIONS_BUCKETLESS_HISTOGRAM = Arr.filter(
-	METRICS_AGGREGATIONS_GAUGE_LIKE,
-	({ value }) => value !== "latest",
-)
-
-// Percentiles are estimated from explicit buckets. `avg` stays first: it is the default.
+// Histograms merge buckets across series, so there is no single last sample to read, and
+// percentiles are estimated from the merged buckets. `avg` stays first: it is the default.
 const METRICS_AGGREGATIONS_HISTOGRAM = [
-	...METRICS_AGGREGATIONS_BUCKETLESS_HISTOGRAM,
+	...Arr.filter(METRICS_AGGREGATIONS_GAUGE_LIKE, ({ value }) => value !== "latest"),
 	...METRICS_AGGREGATIONS_PERCENTILES,
 ]
 
@@ -212,9 +207,9 @@ export function getMetricsAggregations(
 	if (metricType === "sum" && isMonotonic !== false) {
 		return METRICS_AGGREGATIONS_MONOTONIC_SUM
 	}
-	if (metricType === "histogram") return METRICS_AGGREGATIONS_HISTOGRAM
-	// Exponential buckets are not merged yet, so there is nothing to estimate a percentile from.
-	if (metricType === "exponential_histogram") return METRICS_AGGREGATIONS_BUCKETLESS_HISTOGRAM
+	if (metricType === "histogram" || metricType === "exponential_histogram") {
+		return METRICS_AGGREGATIONS_HISTOGRAM
+	}
 	return METRICS_AGGREGATIONS_GAUGE_LIKE
 }
 
@@ -1693,15 +1688,6 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		Arr.reduce(clauses, emptyMetrics, (acc, clause) => applyMetricsClause(acc, clause, warnings)),
 		(acc, group) => applyOrGroup(acc, group, applyMetricsClause, emptyMetrics, "Metrics", warnings),
 	)
-
-	// Checked on the type the filters settle on: a `metric.type` clause can change it.
-	if (metricsFilters.metricType === "exponential_histogram" && query.aggregation in METRICS_PERCENTILES) {
-		return {
-			query: null,
-			warnings,
-			error: "Percentiles are not available for exponential histograms yet; use avg, sum, min, max or count",
-		}
-	}
 
 	const resolvedGroupBy = query.addOns?.groupBy
 		? resolveGroupBy("metrics", query.groupBy ?? [])

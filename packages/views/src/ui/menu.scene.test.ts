@@ -168,4 +168,31 @@ describe("dropdown menu scene", () => {
 			opened: opened.model.submenu?.value,
 		}).toEqual({ commands: ["FocusMenuItem", WaitSubmenuDelay.name], stale: null, opened: "dashboards" })
 	})
+
+	test("an item names whose it is and marks the pick in effect, and still closes the menu when picked", () => {
+		const picks: ReadonlyArray<MenuEntry> = [
+			{ _tag: "Item", value: "errors", label: "Checkout errors", isCurrent: true },
+			{ _tag: "Item", value: "slow", label: "Slow traces", meta: "Ben Okafor" },
+		]
+		const picksView = withViewInputs(view, {
+			entries: picks,
+			toView: ({ trigger, withTrigger }) =>
+				ih.main([], withTrigger(ih.button([...trigger], ["Row actions"]))),
+		})
+		scene(
+			{ update, view: picksView() },
+			...opened(),
+			expect(item("Checkout errors")).toHaveAttr("aria-current", "true"),
+			expect(item("Slow traces")).not.toHaveAttr("aria-current", "true"),
+			expect(role("menuitem", { name: /Slow traces\s*Ben Okafor/ })).toExist(),
+		)
+		const picked = update(
+			init(ID, { isOpen: true }),
+			Message.ClickedItem({ index: 0, item: { kind: "Item", value: "errors" } }),
+		)
+		assert({ isOpen: picked.model.isOpen, outMessage: picked.outMessage }).toEqual({
+			isOpen: false,
+			outMessage: OutMessage.SelectedItem({ value: "errors" }),
+		})
+	})
 })
