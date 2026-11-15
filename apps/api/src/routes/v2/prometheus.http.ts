@@ -14,6 +14,7 @@ import {
 	errorBody,
 	errorStatus,
 	type PrometheusErrorType,
+	MAX_DATE_MS,
 	parseStep,
 	parseTime,
 	successBody,
@@ -104,7 +105,9 @@ const discoveryWindow = (params: Params, defaultMs: number) =>
 		const now = yield* Clock.currentTimeMillis
 		const endMs = params.end === undefined ? now : yield* parseTime("end", params.end)
 		const startMs =
-			params.start === undefined ? endMs - defaultMs : yield* parseTime("start", params.start)
+			params.start === undefined
+				? Math.max(endMs - defaultMs, -MAX_DATE_MS)
+				: yield* parseTime("start", params.start)
 		return { startMs, endMs }
 	})
 
