@@ -129,11 +129,15 @@ const aggregateNext = (output: Output): NextCall | undefined =>
 					query: `sum by (job) (${output.query})`,
 					start_time: output.timeRange.start,
 					end_time: output.timeRange.end,
-					...(output.instant ? { instant: true } : { step: `${output.stepSeconds}s` }),
+					...(output.instant ? { instant: true } : { step: stepText(output.stepSeconds) }),
 				},
 				"fewer series: one per service",
 			)
 		: undefined
+
+/** A step the tool's own `step` parameter accepts: whole seconds, or ms below a second. */
+const stepText = (seconds: number): string =>
+	Number.isInteger(seconds) ? `${seconds}s` : `${Math.round(seconds * 1000)}ms`
 
 export const renderPromqlOutput = (output: Output): ToolDoc => {
 	const empty = output.resultType !== "string" && output.series.length === 0
