@@ -182,7 +182,7 @@ const footer = <M>(h: HtmlBuilder<M>, stacks: number, isCompact: boolean): Html 
 					: [
 							hint(h, "W A S D", "navigate"),
 							hint(h, "Double-click", "zoom to frame"),
-							hint(h, "Esc", "reset"),
+							hint(h, "Esc", "zoom out, then deselect"),
 						]),
 			]),
 			typography(h, { numeric: true }, [`${formatNumber(stacks)} stacks`]),
@@ -305,7 +305,7 @@ export const view = <M>(
 					// inside is the canvas, named by the chart.
 					h.Role("application"),
 					h.AriaLabel(
-						"Flame chart navigation. Arrow keys move between frames, Enter zooms to the selected frame, W and S zoom, A and D pan, Escape resets.",
+						"Flame chart navigation. Arrow keys move between frames, Enter zooms to the selected frame, W and S zoom, A and D pan, Escape resets the zoom and then clears the selection.",
 					),
 					h.OnMount(
 						Mount.mapMessage(
