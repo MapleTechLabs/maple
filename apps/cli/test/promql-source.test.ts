@@ -8,7 +8,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Array as Arr, Effect, Order, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Effect, Order, Record as Rec, Schema, String as Str } from "effect"
 import schemaSql from "@maple/local-server/schema/local-schema.sql" with { type: "text" }
 import { Chdb } from "@maple/local-server/chdb"
 import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
@@ -19,6 +19,7 @@ import {
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
+	promqlInstanceValuesQuery,
 	promqlSelectorRowSchema,
 	toSelectorData,
 	type CatalogMetric,
@@ -332,6 +333,7 @@ const expected = (req: Request, series: ReadonlyArray<ExpectedSeries>) =>
 
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
+const decodeInstances = decodeJsonEachRow(Schema.Struct({ instance: Schema.String }))
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
 	const compiled = CH.compileUnsafe(catalogQuery(), {
@@ -592,5 +594,22 @@ describeWithChdb("PromQL selector source", () => {
 			),
 		)
 		expect(select(db, ORG_A, request("ordered_total")).series).toHaveLength(1)
+	})
+
+	test("instance values come from the metric tables, scoped to the org", () => {
+		const instances = (org: string, table: "metrics_sum" | "metrics_gauge") => {
+			const compiled = CH.compileUnsafe(promqlInstanceValuesQuery({ table, limit: 100 }), {
+				orgId: OrgId.make(org),
+				startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
+				endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
+			})
+			return Arr.map(
+				decodeInstances(db.query(normalizeSqlForClickHouseClient(compiled.sql))),
+				(row) => row.instance,
+			)
+		}
+		expect(instances(ORG_A, "metrics_sum")).toEqual(["i1"])
+		expect(instances(ORG_A, "metrics_gauge")).toEqual(["i1"])
+		expect(instances("org_promql_none", "metrics_sum")).toEqual([])
 	})
 })

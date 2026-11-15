@@ -44,6 +44,7 @@ import {
 	matchesValue,
 	prometheusMetadata,
 	promqlAttributeValuesQuery,
+	promqlInstanceValuesQuery,
 	resourceKeysForLabel,
 	promqlMetadataQuery,
 	promqlServiceNamesQuery,
@@ -164,6 +165,13 @@ export const DISCOVERY_LIMIT = 10_000
 const ATTRIBUTE_KEY_LIMIT = 1_000
 
 type AttributeScope = "metric" | "resource"
+
+const PROMQL_METRIC_TABLES = [
+	"metrics_sum",
+	"metrics_gauge",
+	"metrics_histogram",
+	"metrics_exponential_histogram",
+] as const
 const LABEL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
 const validateWindow = (window: DiscoveryWindow): Effect.Effect<DiscoveryWindow, PromqlBadQueryError> =>
@@ -482,6 +490,27 @@ const make = Effect.gen(function* () {
 		return Arr.flatten(values)
 	})
 
+	/** `instance` values: one bounded read per metric table, since no rollup keeps id-like keys. */
+	const instanceValues = Effect.fn("PromqlQueryService.instanceValues")(function* (
+		tenant: TenantContext,
+		window: DiscoveryWindow,
+	) {
+		const perTable = yield* Effect.forEach(
+			PROMQL_METRIC_TABLES,
+			(table) =>
+				warehouse.compiledQuery(
+					tenant,
+					CH.compile(
+						promqlInstanceValuesQuery({ table, limit: DISCOVERY_LIMIT }),
+						windowParams(tenant, window),
+					),
+					{ profile: "discovery", context: "promqlInstances" },
+				),
+			{ concurrency: "unbounded" },
+		)
+		return Arr.flatMap(perTable, (rows) => Arr.map(rows, (row) => row.instance))
+	})
+
 	const serviceNames = Effect.fn("PromqlQueryService.serviceNames")(function* (
 		tenant: TenantContext,
 		window: DiscoveryWindow,
@@ -521,6 +550,10 @@ const make = Effect.gen(function* () {
 			case "job":
 				return yield* Effect.map(serviceNames(tenant, window), (names) =>
 					limited(sortedUnique(names), input.limit),
+				)
+			case "instance":
+				return yield* Effect.map(instanceValues(tenant, window), (values) =>
+					limited(sortedUnique(values), input.limit),
 				)
 			default:
 				return yield* Effect.map(attributeValues(tenant, window, input.name), (values) =>

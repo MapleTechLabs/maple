@@ -24,14 +24,12 @@ export const canonicalPromNames = (catalog: ReadonlyArray<CatalogMetric>): Reado
 export const keysForLabel = (keys: ReadonlyArray<string>, name: string): ReadonlyArray<string> =>
 	Arr.filter(keys, (key) => normalizeLabelName(key) === name)
 
-/** The raw resource keys whose label name is `name`; `instance` reads `service.instance.id`. */
+/** The raw resource keys, minus the excluded ones, whose label name is `name`. */
 export const resourceKeysForLabel = (keys: ReadonlyArray<string>, name: string): ReadonlyArray<string> =>
-	name === "instance"
-		? ["service.instance.id"]
-		: keysForLabel(
-				Arr.filter(keys, (key) => !isExcludedResourceKey(key)),
-				name,
-			)
+	keysForLabel(
+		Arr.filter(keys, (key) => !isExcludedResourceKey(key)),
+		name,
+	)
 
 /**
  * Label names when no series selector narrows them: identity labels plus datapoint and resource
