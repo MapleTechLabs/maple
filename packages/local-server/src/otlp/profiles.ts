@@ -374,6 +374,13 @@ interface Group {
 const attributesWeight = (attributes: Record<string, string>): number =>
 	Arr.reduce(Rec.toEntries(attributes), 0, (sum, [key, value]) => sum + key.length + value.length)
 
+/** What a sample's own attributes add to a row: a key it shares with the profile replaces that entry. */
+const ownAttributesWeight = (own: Record<string, string>, profile: Record<string, string>): number =>
+	Arr.reduce(Rec.toEntries(own), 0, (sum, [key, value]) => {
+		const replaced = profile[key]
+		return sum + key.length + value.length - (replaced === undefined ? 0 : key.length + replaced.length)
+	})
+
 const environmentOf = (attributes: Record<string, string>): string =>
 	attributes["deployment.environment.name"] ?? attributes["deployment.environment"] ?? ""
 
@@ -464,7 +471,10 @@ export function encodeProfiles(
 					if (group === undefined) {
 						const link = reader.link(sample.linkIndex)
 						const attributes = reader.indexedAttributes(attributeIndices)
-						heldBytes += stack.textBytes + sharedWeight + attributesWeight(attributes)
+						heldBytes +=
+							stack.textBytes +
+							sharedWeight +
+							ownAttributesWeight(attributes, profileAttributes)
 						checkCeiling(rowBytes + heldBytes)
 						groups.set(key, {
 							stack,
