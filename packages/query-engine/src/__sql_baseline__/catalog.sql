@@ -5696,7 +5696,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- builder:releases:releaseVerificationQuery:default  [0e63fe25]
+-- builder:releases:releaseVerificationQuery:default  [ade9545e]
 SELECT
           deployMinutes.dServiceName AS serviceName,
           deployMinutes.dEnvironment AS environment,
@@ -5824,8 +5824,7 @@ SELECT
           AND service_overview_minutely.Minute >= if(toDateTime('2026-01-01 10:30:00') = toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')), toStartOfMinute(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 MINUTE)
           AND service_overview_minutely.Minute < toStartOfMinute(toDateTime('2026-01-03 14:15:00'))
         GROUP BY bBucket, bServiceName, bServiceNamespace, bEnvironment, bCommitSha
-) AS service_windows
-        WHERE service_windows.bCommitSha NOT IN ('', 'unknown', 'N/A')) AS minutes ON ((deployMinutes.dServiceName = minutes.mServiceName AND deployMinutes.dEnvironment = minutes.mEnvironment) AND deployMinutes.dBucket = minutes.mBucket)
+) AS service_windows) AS minutes ON ((deployMinutes.dServiceName = minutes.mServiceName AND deployMinutes.dEnvironment = minutes.mEnvironment) AND deployMinutes.dBucket = minutes.mBucket)
         GROUP BY serviceName, environment, commitSha
         ORDER BY firstSeen DESC
         LIMIT 500
