@@ -23,7 +23,7 @@ const vectorMath = sig([V], V)
 const overTime = sig([M], V)
 const dateFn = sig([V], V, 1)
 
-/** The stable PromQL function set (Prometheus 3), by name. */
+/** The PromQL functions Maple evaluates (Prometheus 3.5), by name; `info()` is left out. */
 export const FUNCTIONS = {
 	abs: vectorMath,
 	absent: vectorMath,
