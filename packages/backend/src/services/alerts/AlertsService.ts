@@ -196,7 +196,7 @@ import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
 import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
-import { evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
+import { closeLastPeriod, evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
@@ -5714,8 +5714,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							? Arr.filter(results, (r) => !HashSet.has(excludeSet, r.groupKey))
 							: results
 
-						yield* Effect.forEach(eligible, ({ evaluation, groupKey }) =>
+						yield* Effect.forEach(eligible, ({ evaluation: observed, groupKey }) =>
 							Effect.gen(function* () {
+								// A budget's incident belongs to the period it opened in.
+								const evaluation =
+									normalized.costBudget === null
+										? observed
+										: closeLastPeriod(
+												normalized.costBudget,
+												observed,
+												prefetch.openIncidentFor(row.orgId, row.id, groupKey)
+													?.firstTriggeredAt ?? null,
+												tickWindowEndMs,
+											)
 								yield* recordEvaluationStatus(evaluation)
 								yield* processEvaluation(
 									row,

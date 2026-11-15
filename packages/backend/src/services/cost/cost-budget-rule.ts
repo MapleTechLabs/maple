@@ -8,6 +8,7 @@ import {
 	type CostBudgetTier,
 	StoredCostBudget,
 	costBudgetObserved,
+	costBudgetPeriodWindow,
 	costBudgetReachedTier,
 	costBudgetTierStatus,
 } from "@maple/domain/cost-budget"
@@ -198,3 +199,25 @@ export const evaluateCostBudget = (
 		reason: costBudgetReason(budget, progress, basis),
 	}
 }
+
+/**
+ * A breach seen while an incident from an earlier period is still open (no check ran in between).
+ * That incident is about a period that is over: this check reads as recovered and closes it, and
+ * the next one judges the new period and opens its own incident, with its own notification.
+ */
+export const closeLastPeriod = <Evaluation extends AlertEvaluation>(
+	budget: StoredCostBudget,
+	evaluation: Evaluation,
+	incidentOpenedAtMs: number | null,
+	nowMs: number,
+): Evaluation =>
+	incidentOpenedAtMs === null ||
+	evaluation.status !== "breached" ||
+	incidentOpenedAtMs >= costBudgetPeriodWindow(budget.period, nowMs).startMs
+		? evaluation
+		: {
+				...evaluation,
+				status: "healthy",
+				levels: Arr.map(evaluation.levels ?? [], (level) => ({ ...level, status: "clear" as const })),
+				reason: `A new ${budget.period} started. ${evaluation.reason}`,
+			}
