@@ -163,7 +163,8 @@ const T0 = Date.UTC(2026, 6, 15, 12)
 
 const selectorRow = (attributes: Record<string, string>) => ({
 	series: JSON.stringify(attributes),
-	metricName: "http.requests",
+	// A selector row names its metric with the stored unit after U+001F; this one has none.
+	metricName: "http.requests\u001f",
 	serviceName: "api",
 	attributes,
 	resourceAttributes: { "service.name": "api" },
