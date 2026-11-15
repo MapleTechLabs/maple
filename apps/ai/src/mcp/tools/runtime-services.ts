@@ -39,6 +39,7 @@ import { IntegrationInventoryService } from "@maple/backend/services/integration
 import { SourcesService } from "@maple/backend/services/org/SourcesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
 import { RuntimeReleaseCatalog } from "@maple/backend/services/security/RuntimeReleaseCatalog"
@@ -82,6 +83,7 @@ export const McpRuntimeServicesLive = Layer.mergeAll(
 	InvestigationService.layer,
 	IssueFixVerificationService.layer,
 	QueryEngineService.layer,
+	PromqlQueryService.layer,
 	RailwayMetricsService.layer,
 	RecommendationIssueService.layer,
 	RepoSandboxService.layer,

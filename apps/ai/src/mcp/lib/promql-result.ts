@@ -1,0 +1,111 @@
+// Turns a PromQL evaluation into query_promql's output: steps, capped series, encoded values.
+import { Array as Arr, Option, Order, String as Str, type Context, type Effect } from "effect"
+import type { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
+import type { PromqlSampleValue, PromqlSeries, QueryPromqlOutput } from "@maple/domain/mcp-outputs"
+
+export type PromqlResult = Effect.Success<
+	ReturnType<Context.Service.Shape<typeof PromqlQueryService>["query"]>
+>
+
+export const MAX_SERIES = 20
+export const MAX_POINTS = 200
+
+const unitSeconds = (unit: string | undefined): number => {
+	switch (unit) {
+		case "ms":
+			return 0.001
+		case "m":
+			return 60
+		case "h":
+			return 3600
+		case "d":
+			return 86_400
+		case "w":
+			return 604_800
+		case "y":
+			return 31_536_000
+		default:
+			return 1
+	}
+}
+
+const DURATION = /^(?:\d+(?:ms|s|m|h|d|w|y))+$/
+const DURATION_PART = /(\d+)(ms|s|m|h|d|w|y)/g
+
+/** A Prometheus duration (`1m`, `1h30m`) or float seconds, in seconds; undefined when neither. */
+export const parseStepSeconds = (raw: string): number | undefined => {
+	const text = Str.trim(raw)
+	if (DURATION.test(text)) {
+		return Arr.reduce(Arr.fromIterable(Str.matchAll(DURATION_PART)(text)), 0, (total, part) => {
+			return total + Number(part[1]) * unitSeconds(part[2])
+		})
+	}
+	const seconds = Number(text)
+	return text !== "" && Number.isFinite(seconds) && seconds > 0 ? seconds : undefined
+}
+
+const NICE_STEPS = [15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10_800, 21_600, 43_200, 86_400]
+
+/** The smallest round step that keeps a range at no more than 120 points. */
+export const defaultStepSeconds = (rangeSeconds: number): number =>
+	Option.getOrElse(
+		Arr.findFirst(NICE_STEPS, (step) => rangeSeconds / step <= 120),
+		() => Math.ceil(rangeSeconds / 120),
+	)
+
+/** Prometheus' spelling of a non-finite sample, so the output survives JSON. */
+export const encodeSample = (value: number): typeof PromqlSampleValue.Type =>
+	Number.isFinite(value) ? value : Number.isNaN(value) ? "NaN" : value > 0 ? "+Inf" : "-Inf"
+
+interface RawSeries {
+	readonly labels: Readonly<Record<string, string>>
+	readonly points: ReadonlyArray<{ readonly t: number; readonly v: number }>
+}
+
+const rawSeries = (result: PromqlResult): ReadonlyArray<RawSeries> => {
+	switch (result.resultType) {
+		case "matrix":
+			return result.result
+		case "vector":
+			return Arr.map(result.result, (s) => ({ labels: s.labels, points: [{ t: s.t, v: s.value }] }))
+		case "scalar":
+			return [{ labels: {}, points: [result.result] }]
+		case "string":
+			return []
+	}
+}
+
+const peak = (series: RawSeries): number =>
+	Arr.reduce(series.points, Number.NEGATIVE_INFINITY, (max, p) =>
+		Number.isFinite(p.v) && p.v > max ? p.v : max,
+	)
+
+const byPeakDescending = Order.mapInput(Order.flip(Order.Number), peak)
+
+/** Over {@link MAX_SERIES}, the series with the highest peaks; each keeps its last {@link MAX_POINTS} points. */
+export const capSeries = (result: PromqlResult): ReadonlyArray<typeof PromqlSeries.Type> => {
+	const all = rawSeries(result)
+	const kept = all.length > MAX_SERIES ? Arr.take(Arr.sort(all, byPeakDescending), MAX_SERIES) : all
+	return Arr.map(kept, (series) => ({
+		labels: series.labels,
+		points: Arr.map(Arr.takeRight(series.points, MAX_POINTS), (p) => ({ t: p.t, v: encodeSample(p.v) })),
+		totalPoints: series.points.length,
+	}))
+}
+
+export const toOutput = (input: {
+	readonly query: string
+	readonly instant: boolean
+	readonly timeRange: { readonly start: string; readonly end: string }
+	readonly stepSeconds: number
+	readonly result: PromqlResult
+}): typeof QueryPromqlOutput.Type => ({
+	query: input.query,
+	resultType: input.result.resultType,
+	instant: input.instant,
+	timeRange: input.timeRange,
+	stepSeconds: input.stepSeconds,
+	series: capSeries(input.result),
+	totalSeries: rawSeries(input.result).length,
+	...(input.result.resultType === "string" ? { stringValue: input.result.result.v } : undefined),
+})

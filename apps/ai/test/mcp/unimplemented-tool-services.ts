@@ -43,6 +43,7 @@ import { StatusPagesService } from "@maple/backend/services/status-pages/StatusP
 import { StatusPageSnapshotBuilder } from "@maple/backend/services/status-pages/StatusPageSnapshotBuilder"
 import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { SecurityAuditStore } from "@maple/backend/services/security-audit/SecurityAuditStore"
 import { DependencyScanReader } from "@maple/backend/services/dependency-scan/DependencyScanService"
@@ -93,6 +94,7 @@ export const unimplementedMcpToolServices = Layer.mergeAll(
 	Layer.mock(OrganizationFeatureFlagsService)({}),
 	Layer.mock(RepoSandboxService)({}),
 	Layer.mock(QueryEngineService)({}),
+	Layer.mock(PromqlQueryService)({}),
 	SecurityAuditStore.layer,
 	Layer.mock(DependencyScanReader)({}),
 	Layer.mock(RuntimeReleaseCatalog)({}),

@@ -109,6 +109,7 @@ import { registerListDashboardsTool } from "./list-dashboards"
 import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
 import { registerQueryDataTool } from "./query-data"
+import { registerQueryPromqlTool } from "./query-promql"
 import { registerRunSqlTool } from "./run-sql"
 import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
@@ -465,6 +466,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerErrorDetailTool(registrar)
 	registerListMetricsTool(registrar)
 	registerQueryDataTool(registrar)
+	registerQueryPromqlTool(registrar)
 	registerRunSqlTool(registrar)
 	registerServiceMapTool(registrar)
 	registerListAlertRulesTool(registrar)

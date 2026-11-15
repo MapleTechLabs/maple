@@ -86,6 +86,7 @@ import {
 	UpdateDashboardWidgetOutput,
 } from "./dashboards"
 import { ErrorDetailOutput, FindErrorsOutput } from "./errors"
+import { QueryPromqlOutput } from "./promql"
 import { GetInvestigationOutput } from "./investigations"
 import {
 	ClaimErrorIssueOutput,
@@ -265,6 +266,7 @@ export const McpToolOutputs = {
 	propose_fix: ProposeFixOutput,
 	query_data: QueryDataOutput,
 	query_funnel: QueryFunnelOutput,
+	query_promql: QueryPromqlOutput,
 	read_source_file: ReadSourceFileOutput,
 	register_agent: RegisterAgentOutput,
 	release_error_issue: ReleaseErrorIssueOutput,
