@@ -56,6 +56,15 @@ Those benchmarks measure WAL-acked native accepts for representative log and
 trace OTLP batches. CI runs them on every PR via `--output-format=bencher`
 and embeds the result in the PR comment.
 
+`row_encode_bench` measures the stage between decoding and the WAL append with no
+disk in it: `row_encode` is the row estimate plus the encoding it sizes, for 2,000
+spans, 2,000 log records and 4,000 metric data points shaped like real telemetry,
+and `row_estimate` is the estimate alone.
+
+```sh
+cargo bench --bench row_encode_bench -- --sample-size 30 --warm-up-time 2 --measurement-time 5
+```
+
 ## Profiling with hotpath
 
 The crate carries opt-in [hotpath](https://hotpath.rs) instrumentation: the
