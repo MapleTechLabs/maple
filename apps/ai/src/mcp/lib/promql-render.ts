@@ -19,8 +19,9 @@ export const formatSample = (value: typeof PromqlSampleValue.Type): string => {
 	return abs >= 1000 ? formatNumber(Math.round(value * 100) / 100) : String(Number(value.toPrecision(4)))
 }
 
-/** `MM-DD HH:MM`, UTC. */
-const formatTime = (ms: number): string => Str.replace("T", " ")(Str.slice(5, 16)(new Date(ms).toISOString()))
+/** `MM-DD HH:MM:SS`, UTC, with milliseconds when a step is finer than a second. */
+const formatTime = (ms: number): string =>
+	Str.replace("T", " ")(Str.slice(5, ms % 1000 === 0 ? 19 : 23)(new Date(ms).toISOString()))
 
 /** `name{k="v", ...}`, the way Prometheus prints a series. */
 export const seriesName = (labels: Series["labels"]): string => {
@@ -36,20 +37,29 @@ export const seriesName = (labels: Series["labels"]): string => {
 	return rest.length === 0 && name !== "" ? name : `${name}{${inner}}`
 }
 
-const finiteValues = (series: Series): ReadonlyArray<number> =>
-	Arr.filter(
-		Arr.map(series.points, (p) => p.v),
-		(v): v is number => typeof v === "number",
+/** Every value but NaN, infinities included: a `1 / 0` point is the series' max. */
+const orderedValues = (series: Series): ReadonlyArray<number> =>
+	Arr.flatMap(series.points, ({ v }) =>
+		typeof v === "number" ? [v] : v === "+Inf" ? [Infinity] : v === "-Inf" ? [-Infinity] : [],
 	)
 
+const formatStat = (value: number): string =>
+	Number.isNaN(value)
+		? "NaN"
+		: value === Infinity
+			? "+Inf"
+			: value === -Infinity
+				? "-Inf"
+				: formatSample(value)
+
 const stats = (series: Series) => {
-	const values = finiteValues(series)
+	const values = orderedValues(series)
 	if (values.length === 0) return { min: "-", avg: "-", max: "-" }
 	const sum = Arr.reduce(values, 0, (a, b) => a + b)
 	return {
-		min: formatSample(Math.min(...values)),
-		avg: formatSample(sum / values.length),
-		max: formatSample(Math.max(...values)),
+		min: formatStat(Math.min(...values)),
+		avg: formatStat(sum / values.length),
+		max: formatStat(Math.max(...values)),
 	}
 }
 
