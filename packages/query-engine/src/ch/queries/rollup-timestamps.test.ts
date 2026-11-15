@@ -5,7 +5,7 @@ import { OrgId } from "@maple/domain"
 import { anomalyLogVolumeQuery, anomalyTraceSignalTimeseriesQuery } from "./anomaly"
 import { serviceLivenessQuery } from "./liveness"
 import { listMetricsQuery } from "./metrics"
-import { releasesListQuery, releasesTimelineQuery, serviceDeploymentsQuery } from "./releases"
+import { releasesListQuery, serviceDeploymentsQuery } from "./releases"
 import {
 	routeUsageQuery,
 	serviceOperationsTimeseriesQuery,
@@ -124,12 +124,6 @@ describe("rollup timestamps decode to DateTime.Utc", () => {
 			const list = yield* decodeTimes(yield* compile(releasesListQuery(), params), ["firstSeen"])
 			assert.isDefined(list)
 			expect(iso(list.firstSeen)).toBe(ISO)
-			const timeline = yield* decodeTimes(
-				yield* compile(releasesTimelineQuery({ bucketSeconds: 3600 }), params),
-				["bucket"],
-			)
-			assert.isDefined(timeline)
-			expect(iso(timeline.bucket)).toBe(ISO)
 			const deployments = yield* decodeTimes(
 				yield* compile(serviceDeploymentsQuery({ minutePrecision: true }), params),
 				["firstSeen", "lastSeen"],

@@ -106,7 +106,8 @@ export const THREAD_SHOTS: ReadonlyArray<Shot> = [
 		// The breach count reads the server's clock, which the pinned page clock can't move.
 		setup: (page) => hideByText(page, ["No breaches in this window"]),
 	},
-	{ id: "11-releases", route: "/releases", range: lastMinutes(24 * 60) },
+	// Deploys are judged on the service page now that the Releases pages are gone.
+	{ id: "11-service-deploys", route: "/services/payment-svc", range: lastMinutes(24 * 60) },
 	{
 		id: "12-dashboard-templates",
 		route: "/dashboards/templates",
