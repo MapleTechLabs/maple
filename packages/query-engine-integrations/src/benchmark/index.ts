@@ -1122,12 +1122,14 @@ export const integrationFixtures: ReadonlyArray<BuilderFixture> = [
 		label: "default",
 		compile: () => compileUnsafe(CH.awsInfraPresenceSQL(), window),
 	},
-	...Arr.map(AWS_INFRA_KIND_IDS, (kind): BuilderFixture => ({
-		module: "aws-infra",
-		name: "awsInfraMetricsSQL",
-		label: kind,
-		compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind), window),
-	})),
+	...Arr.flatMap(AWS_INFRA_KIND_IDS, (kind) =>
+		Arr.map(["hourly", "raw"] as const, (tier): BuilderFixture => ({
+			module: "aws-infra",
+			name: "awsInfraMetricsSQL",
+			label: tier === "hourly" ? kind : `${kind}-raw`,
+			compile: () => compileUnsafe(CH.awsInfraMetricsSQL(kind, tier), window),
+		})),
+	),
 	...Arr.map(AWS_INFRA_KIND_IDS, (kind): BuilderFixture => ({
 		module: "aws-infra",
 		name: "awsInfraSparklinesSQL",

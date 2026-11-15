@@ -150,6 +150,7 @@ import { isAiContentFormat } from "@maple/domain/ai-traffic"
 import { DateTime, Duration, Effect, Option, Order, Schema, Array as Arr } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
+	isMissingAwsMetricsHourly,
 	isMissingProductEvents,
 	isMissingServiceEndpointDetails,
 	isMissingServiceMapDbEdgesMinutely,
@@ -211,6 +212,11 @@ import { makeServeRows, serveData } from "./serve-rows"
 const withProductEventsFallback = makeRollupFallback(
 	isMissingProductEvents,
 	"product_events is absent on this cluster; reading raw session_events. Apply ClickHouse schema to restore the fast path.",
+)
+
+const withAwsMetricsHourlyFallback = makeRollupFallback(
+	isMissingAwsMetricsHourly,
+	"aws_metrics_hourly is absent on this cluster; reading raw AWS metric points. Apply ClickHouse schema to restore the fast path.",
 )
 
 const withDbEdgesMinutelyFallback = makeRollupFallback(
@@ -743,7 +749,15 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 						})
 					}),
 				)
-				.handle("awsInfraMetrics", serve.rows(Queries.awsInfraMetrics, AwsInfraMetricsResponse))
+				.handle(
+					"awsInfraMetrics",
+					serve.fallbackRows(
+						withAwsMetricsHourlyFallback,
+						Queries.awsInfraMetrics,
+						Queries.awsInfraMetricsRaw,
+						AwsInfraMetricsResponse,
+					),
+				)
 				.handle(
 					"awsInfraSparklines",
 					serve.rows(Queries.awsInfraSparklines, AwsInfraSparklinesResponse),
