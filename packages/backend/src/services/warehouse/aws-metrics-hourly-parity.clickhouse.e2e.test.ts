@@ -31,11 +31,11 @@ const ORG_ID = OrgId.make("org_aws_metrics_hourly_parity")
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
-const chDateTime = (epochMs: number): string =>
-	Str.slice(0, 19)(Str.replace("T", " ")(new Date(epochMs).toISOString()))
 /** Midnight three days back: inside the 90-day TTL, so no seeded row is dropped on insert. */
 const BASE_MS = Math.floor((Date.now() - 3 * DAY_MS) / DAY_MS) * DAY_MS
-const at = (offsetMs: number): string => chDateTime(BASE_MS + offsetMs)
+/** A query bound, to the millisecond. */
+const at = (offsetMs: number): string =>
+	Str.slice(0, 23)(Str.replace("T", " ")(new Date(BASE_MS + offsetMs).toISOString()))
 
 interface Series {
 	readonly table: "metrics_sum" | "metrics_gauge"
@@ -142,6 +142,7 @@ const WINDOWS: ReadonlyArray<{ readonly label: string; readonly start: number; r
 	{ label: "inside one hour", start: 5 * HOUR_MS + 10 * MINUTE_MS, end: 5 * HOUR_MS + 50 * MINUTE_MS },
 	{ label: "starting on a point", start: 2 * HOUR_MS + 20 * MINUTE_MS, end: 5 * HOUR_MS + 20 * MINUTE_MS },
 	{ label: "the whole day and beyond", start: -2 * HOUR_MS, end: 26 * HOUR_MS },
+	{ label: "starting half a second past an hour's point", start: 3 * HOUR_MS + 500, end: 6 * HOUR_MS },
 ]
 
 const read = (kind: AwsInfraKindId, tier: Integrations.AwsMetricsTier, start: number, end: number) =>

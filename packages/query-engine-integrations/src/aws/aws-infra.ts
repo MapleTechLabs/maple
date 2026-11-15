@@ -18,7 +18,7 @@ import {
 } from "@maple/domain/aws-infra"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgIdParam, utcSecondsParam } from "@maple/query-engine/ch/tables"
-import { edgeCondition, utcInteriorConditions } from "@maple/query-engine/ch/rollup-splice"
+import { edgeCondition, hourGrain, utcInteriorConditions } from "@maple/query-engine/ch/rollup-splice"
 import { Array as Arr, String as Str } from "effect"
 
 /** Both metrics tables declare the columns read here alike. */
@@ -76,14 +76,16 @@ const kindPoints = (
 	[
 		$.OrgId.eq(orgIdParam),
 		CH.inList($.MetricName, metricNames(metrics, table)),
-		$.TimeUnix.gte(param.dateTime("startTime")),
+		// The start floored to the second, as the splice floors it: with the exact bound, a start
+		// just past an hour would drop that hour's first points from raw but keep them in the rollup.
+		CH.rawCond(`TimeUnix >= ${hourGrain.startDt}`),
 		$.TimeUnix.lte(param.dateTime("endTime")),
 		...dimensionSet((key) => $.Attributes.get(key), kind),
 	] as const
 
 /**
  * Where `awsInfraMetricsSQL` reads: whole hours from `aws_metrics_hourly` and the partial hours at
- * either end from raw points, or raw points only, for a cluster without migration 0065.
+ * either end from raw points, or raw points only, for a cluster without migration 0066.
  */
 export type AwsMetricsTier = "hourly" | "raw"
 

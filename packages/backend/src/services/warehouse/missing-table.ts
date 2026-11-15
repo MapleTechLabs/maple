@@ -51,7 +51,7 @@ export const isMissingAiCrawlerRequests = isMissingWarehouseTable(Datasources.ai
 /** `ci_runs` / `ci_jobs` ship in migration 0047; the CI reads have no raw fallback. */
 export const isMissingCiTables = isMissingWarehouseTable(Datasources.ciRuns, Datasources.ciJobs)
 
-/** `aws_metrics_hourly` ships in migration 0065; the AWS infra reads then take raw points only. */
+/** `aws_metrics_hourly` ships in migration 0066; the AWS infra reads then take raw points only. */
 export const isMissingAwsMetricsHourly = isMissingWarehouseTable(Datasources.awsMetricsHourly)
 
 export const isMissingServiceOperationsRollup = isMissingWarehouseTable(

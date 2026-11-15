@@ -689,7 +689,7 @@ const awsInfraMetrics = defineQuery({
 		CH.compile(Integrations.awsInfraMetricsSQL(payload.kind, "hourly"), windowParams(payload, orgId)),
 })
 
-/** `awsInfraMetrics` on a cluster without `aws_metrics_hourly` (migration 0065). */
+/** `awsInfraMetrics` on a cluster without `aws_metrics_hourly` (migration 0066). */
 const awsInfraMetricsRaw = defineQuery({
 	id: "awsInfraMetricsRaw",
 	profile: "aggregation",
