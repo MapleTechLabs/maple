@@ -11,11 +11,8 @@ export const evalError = (message: string): EvalError => ({ message })
 
 /** Builds a label set, dropping empty values the way Prometheus' labels.Builder does. */
 export const makeLabels = (entries: Iterable<readonly [string, string]>): Labels => {
-	const out: Record<string, string> = {}
-	for (const [name, value] of entries) {
-		if (value !== "") out[name] = value
-	}
-	return out
+	// fromEntries defines own properties, so a label called __proto__ stays a label.
+	return Object.fromEntries(Array.from(entries).filter(([, value]) => value !== ""))
 }
 
 export const dropMetricName = (labels: Labels): Labels => {

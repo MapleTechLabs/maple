@@ -11,7 +11,7 @@ export interface RawSeries {
 
 export const matchesLabels = (matchers: ReadonlyArray<LabelMatcher>, labels: Labels): boolean =>
 	matchers.every((m) => {
-		const value = labels[m.name] ?? ""
+		const value = Object.hasOwn(labels, m.name) ? (labels[m.name] ?? "") : ""
 		switch (m.op) {
 			case "=":
 				return value === m.value
@@ -66,7 +66,7 @@ export const bucketSamples = (
 			const prev = current.lastV
 			current.increase += v < prev ? v : v - prev
 			if (v < prev) current.resets += 1
-			if (v !== prev) current.changes += 1
+			if (v !== prev && !(Number.isNaN(v) && Number.isNaN(prev))) current.changes += 1
 			current.prevT = current.lastT
 			current.prevV = prev
 			current.lastT = t

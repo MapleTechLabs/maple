@@ -357,6 +357,7 @@ class Evaluator {
 			series: SeriesData,
 			index: number,
 			evalMs: number,
+			stepMs: number,
 		) => number | undefined,
 	): R<Steps> {
 		const times = gridTimes(grid)
@@ -367,7 +368,7 @@ class Evaluator {
 			const to = evalMs - arg.offsetMs
 			const out: Sample[] = []
 			for (const series of arg.series) {
-				const value = f(windowOf(series.buckets, to - arg.rangeMs, to), series, index, evalMs)
+				const value = f(windowOf(series.buckets, to - arg.rangeMs, to), series, index, evalMs, t)
 				if (value === undefined) continue
 				pending += 1
 				if (!this.fits(pending)) return this.tooMany()
@@ -380,13 +381,26 @@ class Evaluator {
 		return this.steps(times, vectors)
 	}
 
+	/** A range function, its input buckets charged to the budget while it reads them. */
 	rangeFunction(call: Call, grid: TimeGrid): R<Steps> {
+		return Result.gen(this, function* () {
+			const rangeIndex = call.func === "quantile_over_time" ? 1 : 0
+			const rangeExpr = call.args[rangeIndex]
+			if (rangeExpr === undefined) return yield* err(`missing range argument to ${call.func}`)
+			const arg = yield* this.rangeArg(rangeExpr, grid)
+			let input = 0
+			for (const series of arg.series) input += series.buckets.length
+			if (!this.fits(input)) return yield* this.tooMany()
+			this.points += input
+			const result = this.rangeFunctionOver(call, grid, arg, rangeIndex)
+			this.points -= input
+			return yield* result
+		})
+	}
+
+	rangeFunctionOver(call: Call, grid: TimeGrid, arg: RangeArg, rangeIndex: number): R<Steps> {
 		const func = call.func
 		return Result.gen(this, function* () {
-			const rangeIndex = func === "quantile_over_time" ? 1 : 0
-			const rangeExpr = call.args[rangeIndex]
-			if (rangeExpr === undefined) return yield* err(`missing range argument to ${func}`)
-			const arg = yield* this.rangeArg(rangeExpr, grid)
 			const scalarArgs: Value[] = []
 			for (const [index, a] of call.args.entries()) {
 				if (index !== rangeIndex) scalarArgs.push(yield* this.eval(a, grid))
@@ -417,8 +431,9 @@ class Evaluator {
 							: linearRegression(w, arg.timeOriginMs, first.firstT)?.slope
 					})
 				case "predict_linear":
-					return yield* this.overWindows(arg, grid, false, (w, _s, step, evalMs) => {
-						const fit = linearRegression(w, arg.timeOriginMs, evalMs)
+					// `@` pins the input window; the prediction is still made at the step's time.
+					return yield* this.overWindows(arg, grid, false, (w, _s, step, _evalMs, stepMs) => {
+						const fit = linearRegression(w, arg.timeOriginMs, stepMs)
 						return fit === undefined ? undefined : fit.slope * param(0, step) + fit.intercept
 					})
 				case "quantile_over_time":
@@ -427,10 +442,19 @@ class Evaluator {
 						return values.length === 0 ? undefined : quantile(param(0, step), values)
 					})
 				case "holt_winters":
-				case "double_exponential_smoothing":
+				case "double_exponential_smoothing": {
+					for (const [step] of gridTimes(grid).entries()) {
+						const sf = param(0, step)
+						const tf = param(1, step)
+						if (!(sf > 0 && sf < 1))
+							return yield* err(`invalid smoothing factor. Expected: 0 < sf < 1, got: ${sf}`)
+						if (!(tf > 0 && tf < 1))
+							return yield* err(`invalid trend factor. Expected: 0 < tf < 1, got: ${tf}`)
+					}
 					return yield* this.overWindows(arg, grid, false, (w, _s, step) =>
 						doubleExponentialSmoothing(windowValues(w), param(0, step), param(1, step)),
 					)
+				}
 				case "absent_over_time":
 					return yield* this.absentOverTime(arg, grid)
 				default:
