@@ -97,7 +97,7 @@ const validate = (query: PromqlQuery): Effect.Effect<Expr, PromqlBadQueryError> 
 		if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
 			return yield* new PromqlBadQueryError({ message: "end timestamp must not be before start time" })
 		}
-		if (endMs > startMs) {
+		if (endMs > startMs || query.instant === false) {
 			if (!(stepMs > 0)) {
 				return yield* new PromqlBadQueryError({
 					message:
@@ -384,20 +384,24 @@ const make = Effect.gen(function* () {
 	const sortedUnique = (values: ReadonlyArray<string>) =>
 		Arr.take(Arr.sort(Arr.dedupe(values), Order.String), DISCOVERY_LIMIT)
 
+	/** The caller's `limit` counts distinct names or values, so it applies after deduplication. */
+	const limited = (values: ReadonlyArray<string>, limit: number | undefined) =>
+		Arr.take(values, Math.min(limit ?? DISCOVERY_LIMIT, DISCOVERY_LIMIT))
+
 	const labelNames = Effect.fn("PromqlQueryService.labelNames")(function* (
 		tenant: TenantContext,
 		input: DiscoveryQuery,
 	) {
 		const window = yield* validateWindow(input)
 		if (input.matches.length > 0) {
-			const found = yield* series(tenant, input)
-			return sortedUnique(Arr.flatMap(found, (labels) => Rec.keys(labels)))
+			const found = yield* series(tenant, { ...input, limit: undefined })
+			return limited(sortedUnique(Arr.flatMap(found, (labels) => Rec.keys(labels))), input.limit)
 		}
 		const [catalog, keys] = yield* Effect.all(
 			[readCatalog(tenant, window), attributeKeys(tenant, window)],
 			{ concurrency: 2 },
 		)
-		return Arr.take(labelNamesFrom(catalog, keys), DISCOVERY_LIMIT)
+		return limited(labelNamesFrom(catalog, keys), input.limit)
 	})
 
 	const attributeValues = Effect.fn("PromqlQueryService.attributeValues")(function* (
@@ -444,20 +448,27 @@ const make = Effect.gen(function* () {
 		const window = yield* validateWindow(input)
 		yield* Effect.annotateCurrentSpan({ "maple.promql.label": input.name })
 		if (input.matches.length > 0) {
-			const found = yield* series(tenant, input)
-			return sortedUnique(
-				Arr.flatMap(found, (labels) => Option.toArray(Option.fromNullishOr(labels[input.name]))),
+			const found = yield* series(tenant, { ...input, limit: undefined })
+			return limited(
+				sortedUnique(
+					Arr.flatMap(found, (labels) => Option.toArray(Option.fromNullishOr(labels[input.name]))),
+				),
+				input.limit,
 			)
 		}
 		switch (input.name) {
 			case "__name__":
 				return yield* Effect.map(readCatalog(tenant, window), (catalog) =>
-					sortedUnique(canonicalPromNames(catalog)),
+					limited(sortedUnique(canonicalPromNames(catalog)), input.limit),
 				)
 			case "job":
-				return yield* Effect.map(serviceNames(tenant, window), sortedUnique)
+				return yield* Effect.map(serviceNames(tenant, window), (names) =>
+					limited(sortedUnique(names), input.limit),
+				)
 			default:
-				return yield* Effect.map(attributeValues(tenant, window, input.name), sortedUnique)
+				return yield* Effect.map(attributeValues(tenant, window, input.name), (values) =>
+					limited(sortedUnique(values), input.limit),
+				)
 		}
 	})
 
