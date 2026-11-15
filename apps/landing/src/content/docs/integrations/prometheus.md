@@ -49,7 +49,7 @@ remote_write:
           retry_on_http_429: true
 ```
 
-Use the ingest host of your organization's [region](/docs/reference/regions). Basic auth works too: put the key in `basic_auth.password`, with any username. `retry_on_http_429` makes Prometheus retry a batch Maple rate limits instead of dropping it.
+Use the ingest host of your organization's [region](/docs/reference/regions). To keep the key out of the config file, use `credentials_file` instead of `credentials`. Basic auth works too: put the key in `basic_auth.password` (or `password_file`), with any username. `retry_on_http_429` makes Prometheus retry a batch Maple rate limits instead of dropping it.
 
 - Maple accepts remote write 1.0, the Prometheus default. A sender configured for remote write 2.0 gets `415`.
 - Remote write 1.0 does not send a metric's type with its samples, so Maple reads it from the name. A series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum. Everything else becomes a gauge.

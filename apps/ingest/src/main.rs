@@ -7924,8 +7924,16 @@ async fn decode_otlp_body(
         }
         .map_err(|error| refuse(&parse_span, error, "enrich"))?;
         parse_span.record("maple.ingest.item_count", decoded.item_count());
+        // A remote write is metered as the OTLP it becomes. On the wire a series carries
+        // its labels once and every stored point carries them, so the wire size would
+        // let a series with many samples store far more than it is billed for.
+        let decoded_bytes = match (&decoded, ingress) {
+            (DecodedPayload::Metrics(request), Ingress::PrometheusRemoteWrite) => {
+                request.encoded_len()
+            }
+            _ => payload.len(),
+        };
         // Only the decoded form outlives this closure; the buffers go with it.
-        let decoded_bytes = payload.len();
         drop(payload);
         reservation.shrink_to(retained.unwrap_or(estimate));
         Ok(DecodedBody {
@@ -19861,12 +19869,65 @@ mod tests {
             );
             assert_eq!(rows.len(), 2, "only sums and gauges: {:?}", rows.keys());
 
-            // Metered once, as metrics, on the uncompressed bytes Prometheus sent.
+            // Metered once, as metrics, on the size of the OTLP request it was mapped to.
+            let (mapped, _) = prometheus_remote_write::decode(&plain).unwrap();
             let calls = drain_autumn_calls(&mut autumn).await;
             assert_eq!(
                 tracked(&calls),
-                vec![("metrics", billable_gb(plain.len() as u64))],
+                vec![("metrics", billable_gb(mapped.encoded_len() as u64))],
                 "{calls:?}"
+            );
+            drop(std::fs::remove_dir_all(&queue_dir));
+        }
+
+        #[tokio::test]
+        async fn many_samples_of_one_series_are_metered_for_what_they_store() {
+            let queue_dir = unique_main_test_dir("prometheus-metered");
+            let raw_key = "maple_sk_test_prometheus_metered";
+            let mut state = gateway_state(
+                raw_key,
+                "org_prometheus_metered",
+                &queue_dir,
+                "http://127.0.0.1:1".to_owned(),
+            )
+            .await;
+            let mut imports = store_in_fake_tinybird(&mut state, &queue_dir.join("native")).await;
+            let (state, mut autumn) = with_fake_autumn(state).await;
+            let url = serve(state).await;
+
+            // One series with wide labels and 200 samples: the labels cross the wire once
+            // and are stored 200 times.
+            let wide = "x".repeat(200);
+            let names: Vec<String> = (0..8).map(|i| format!("label_{i}")).collect();
+            let mut pairs: Vec<(&str, &str)> = vec![("__name__", "queue_depth"), ("job", "api")];
+            pairs.extend(names.iter().map(|name| (name.as_str(), wide.as_str())));
+            let samples: Vec<(f64, i64)> = (0..200_i32)
+                .map(|i| (f64::from(i), T0 + i64::from(i) * 1000))
+                .collect();
+            let plain = WriteRequest {
+                timeseries: vec![series(&pairs, &samples)],
+                metadata: Vec::new(),
+            }
+            .encode_to_vec();
+
+            let response = remote_write(&url, snappy(&plain))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let rows = imported_rows(&mut imports, 200).await;
+            assert_eq!(rows["metrics_gauge"].len(), 200);
+
+            let calls = drain_autumn_calls(&mut autumn).await;
+            let billed = tracked(&calls);
+            assert_eq!(billed.len(), 1, "{calls:?}");
+            // The wire form is about 5 kB; what is stored, and billed, is over fifty times that.
+            assert!(
+                billed[0].1 > billable_gb(50 * plain.len() as u64),
+                "billed {:?} for {} wire bytes",
+                billed[0].1,
+                plain.len()
             );
             drop(std::fs::remove_dir_all(&queue_dir));
         }
