@@ -26,7 +26,7 @@ export type DeployScope = Readonly<{
 	dataEndMs: number
 }>
 
-const OPERATIONS_LIMIT = 50
+export const OPERATIONS_LIMIT = 50
 
 export const OperationsInput = Schema.Struct({
 	serviceName: Schema.String,

@@ -25,8 +25,9 @@ const RANK = {
 	steady: 5,
 } as const satisfies Record<Change, number>
 
-const changeOf = (before: Operation | undefined, after: Operation): Change => {
-	if (before === undefined) return "new"
+const changeOf = (before: Operation | undefined, after: Operation, isBeforeComplete: boolean): Change => {
+	// Missing from a capped before list only means it ranked below the cap: no baseline, not new.
+	if (before === undefined) return isBeforeComplete ? "new" : "few-before"
 	// It ran before, too rarely to compare: not something the deploy introduced.
 	if (before.spanCount < MIN_OPERATION_SPANS) return "few-before"
 	if (isErrorRateUp(before.errorRate, after.errorRate)) return "errors-up"
@@ -43,13 +44,21 @@ const changeOf = (before: Operation | undefined, after: Operation): Change => {
 export const operationChanges = (
 	before: ReadonlyArray<Operation>,
 	after: ReadonlyArray<Operation>,
+	/** The before read's row cap: a full list may have cut off quieter operations. */
+	beforeLimit: number,
 ): ReadonlyArray<OperationChange> => {
+	const isBeforeComplete = before.length < beforeLimit
 	const beforeByName = new Map(Arr.map(before, (op) => [op.spanName, op] as const))
 	const changes = Arr.map(
 		Arr.filter(after, (op) => op.spanCount >= MIN_OPERATION_SPANS),
 		(op): OperationChange => {
 			const prior = beforeByName.get(op.spanName)
-			return { spanName: op.spanName, change: changeOf(prior, op), before: prior, after: op }
+			return {
+				spanName: op.spanName,
+				change: changeOf(prior, op, isBeforeComplete),
+				before: prior,
+				after: op,
+			}
 		},
 	)
 	return Arr.sort(

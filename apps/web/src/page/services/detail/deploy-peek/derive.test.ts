@@ -33,7 +33,7 @@ describe("operationChanges", () => {
 		op("GET /rare", 5, 1, 900),
 		op("GET /rarely", 400, 0, 31),
 	]
-	const changes = operationChanges(before, after)
+	const changes = operationChanges(before, after, 50)
 
 	test("worst change first: errors up, new, too few before to compare, faster, steady", () => {
 		expect(Arr.map(changes, (change) => [change.spanName, change.change])).toEqual([
@@ -51,8 +51,14 @@ describe("operationChanges", () => {
 		expect(names).not.toContain("GET /retired")
 	})
 
+	test("missing from a before list cut at its cap is no baseline, not new", () => {
+		const capped = Arr.map(Arr.range(1, 3), (index) => op(`GET /busy${index}`, 1000, 0, 20))
+		const [change] = operationChanges(capped, [op("GET /quiet-before", 200, 0, 20)], 3)
+		expect(change?.change).toBe("few-before")
+	})
+
 	test("a p95 a quarter higher and 10ms more reads slower", () => {
-		const [change] = operationChanges([op("GET /x", 100, 0, 40)], [op("GET /x", 100, 0, 60)])
+		const [change] = operationChanges([op("GET /x", 100, 0, 40)], [op("GET /x", 100, 0, 60)], 50)
 		expect(change?.change).toBe("slower")
 	})
 })

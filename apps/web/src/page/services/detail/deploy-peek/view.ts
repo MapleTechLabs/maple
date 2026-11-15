@@ -31,7 +31,7 @@ import { verdictBadge } from "../view-verdict"
 import { type OperationChange, operationChanges } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { sidesOf } from "./update"
+import { OPERATIONS_LIMIT, sidesOf } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -188,7 +188,7 @@ const operationsSection = (h: H, model: Model, check: DeployCheck): Html => {
 					onRetry: Message.ClickedRetry(),
 				}),
 			onData: ([before, after]) => {
-				const changes = operationChanges(before, after)
+				const changes = operationChanges(before, after, OPERATIONS_LIMIT)
 				return changes.length === 0
 					? emptyMessage(h, {}, ["Too little traffic after the deploy to compare operations"])
 					: vstack(h, { gap: "1" }, [
