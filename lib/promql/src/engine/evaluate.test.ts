@@ -42,7 +42,9 @@ const mismatch = (
 		const equal =
 			(Number.isNaN(v) && Number.isNaN(w)) ||
 			v === w ||
-			Math.abs(v - w) <= 1e-9 * Math.max(1, Math.abs(v), Math.abs(w))
+			(Number.isFinite(v) &&
+				Number.isFinite(w) &&
+				Math.abs(v - w) <= 1e-9 * Math.max(1, Math.abs(v), Math.abs(w)))
 		if (!equal) return `${k}@${t}: ${v} vs ${w}`
 	}
 	return undefined
@@ -221,5 +223,69 @@ describe("review regressions", () => {
 			maxPoints: 2,
 		})
 		expect(Result.isFailure(result) && result.failure.message).toMatch(/too many samples/)
+	})
+})
+
+describe("second-review regressions", () => {
+	const t0 = 1_700_000_000_000
+	const at = (s: number) => t0 + s * 1000
+	const instant = (s: number) => ({ startMs: at(s), endMs: at(s), stepMs: 0 })
+	const one = (labels: Record<string, string>, samples: ReadonlyArray<readonly [number, number]>) =>
+		memorySource([{ labels: { __name__: "x", ...labels }, samples }])
+	const value = (query: string, params: QueryParams, src: ReturnType<typeof memorySource>) => {
+		const result = runQuery(query, params, src)
+		if (Result.isFailure(result)) throw new Error(result.failure.message)
+		return flatten(result.success)[0]?.[2]
+	}
+
+	it("charges a range function's raw input against the budget", () => {
+		const src = one(
+			{},
+			[15, 30, 45, 60].map((s): readonly [number, number] => [at(s), s]),
+		)
+		const result = runQuery("quantile_over_time(0.5, x[1m])", instant(60), src, {
+			maxSeries: 10,
+			maxPoints: 2,
+		})
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/too many samples/)
+	})
+
+	it("predicts at the step's time even when @ pins the window", () => {
+		const src = one({}, [
+			[at(10), 10],
+			[at(20), 20],
+		])
+		expect(value("predict_linear(x[20s] @ " + at(20) / 1000 + ", 0)", instant(30), src)).toBeCloseTo(30)
+	})
+
+	it("sorts NaN first for quantile_over_time", () => {
+		const src = one({}, [
+			[at(10), 1],
+			[at(20), Number.NaN],
+			[at(30), 2],
+		])
+		expect(value("quantile_over_time(0.75, x[1m])", instant(40), src)).toBe(1.5)
+	})
+
+	it("refuses an invalid smoothing factor instead of returning nothing", () => {
+		const src = one({}, [
+			[at(10), 1],
+			[at(20), 2],
+		])
+		const result = runQuery("double_exponential_smoothing(x[1m], 0, 0.5)", instant(30), src)
+		expect(Result.isFailure(result) && result.failure.message).toMatch(/smoothing factor/)
+	})
+
+	it("treats an inherited property name as a missing label", () => {
+		const src = one({}, [[at(10), 1]])
+		expect(value('x{toString=""}', instant(20), src)).toBe(1)
+	})
+
+	it("does not count consecutive NaNs as a change", () => {
+		const src = one({}, [
+			[at(10), Number.NaN],
+			[at(20), Number.NaN],
+		])
+		expect(value("changes(x[1m])", instant(30), src)).toBe(0)
 	})
 })
