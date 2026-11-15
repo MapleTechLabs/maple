@@ -14,6 +14,7 @@ import {
 } from "./ops"
 import {
 	gridTimes,
+	isInstant,
 	MAX_POINTS_PER_SERIES,
 	type QueryParams,
 	resolveAt,
@@ -639,7 +640,7 @@ class Evaluator {
 export const evaluate = (input: EvaluationInput): R<QueryResult> => {
 	const { expr, params } = input
 	const evaluator = new Evaluator(params, input.data, input.limits ?? DEFAULT_LIMITS)
-	const instant = params.startMs === params.endMs
+	const instant = isInstant(params)
 	const grid: TimeGrid = instant
 		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }
 		: { startMs: params.startMs, endMs: params.endMs, stepMs: params.stepMs }
