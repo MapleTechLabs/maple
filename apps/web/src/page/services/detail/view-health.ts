@@ -10,7 +10,7 @@ import { firstLine, isResolvableSha } from "../../kit/commit-card"
 import { shortId } from "@maple/ui/lib/ids"
 import { countLabel } from "@maple/ui/lib/format"
 import { deriveHealth, type Signal } from "./derive-health"
-import { type DeployCheck, dataEndOf, deployBefore, leadDeploy } from "./derive-deploys"
+import { type DeployCheck, dataEndOf, deployBefore, deployDataEndOf, leadDeploy } from "./derive-deploys"
 import type { Issue, Model } from "./model"
 import type { Message } from "./message"
 import { mergedPoints } from "./view-charts"
@@ -124,7 +124,8 @@ export const deployCallout = (h: H, model: Model, deploys: ReadonlyArray<DeployC
 	const newIssues = Arr.filter(
 		issues,
 		(issue) =>
-			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), dataEndOf(model)) === deploy,
+			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), deployDataEndOf(model)) ===
+			deploy,
 	).length
 	return alert(h, { variant: ALERT_VARIANT[deploy.verdict], role: "status" }, [
 		icon(h, deploy.verdict === "verifying" ? "ClockIcon" : "CircleWarningIcon"),

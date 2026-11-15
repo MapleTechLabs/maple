@@ -97,12 +97,22 @@ export const dataEndOf = (model: Model): number => {
 	return model.window === null ? nowMs : Math.min(nowMs, parseWarehouseDateTime(model.window.endTime))
 }
 
+/**
+ * Where the deploys answer on screen was read up to. While a range change refreshes, it is the old
+ * answer's end, not the new window's: the issue tags and the verdicts must agree on it.
+ */
+export const deployDataEndOf = (model: Model): number =>
+	AsyncData.getOrElse(
+		AsyncData.map(model.deploys.data, (deploys) =>
+			Math.min(model.nowMs ?? 0, parseWarehouseDateTime(deploys.readUntil)),
+		),
+		() => dataEndOf(model),
+	)
+
 /** The window's deploys judged on their first minutes; empty until they load. */
 export const deployChecksOf = (model: Model): ReadonlyArray<DeployCheck> =>
 	AsyncData.getOrElse(
-		AsyncData.map(model.deploys.data, (deploys) =>
-			deployChecks(deploys, Math.min(model.nowMs ?? 0, parseWarehouseDateTime(deploys.readUntil))),
-		),
+		AsyncData.map(model.deploys.data, (deploys) => deployChecks(deploys, deployDataEndOf(model))),
 		() => [],
 	)
 

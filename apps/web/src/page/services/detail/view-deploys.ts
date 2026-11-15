@@ -14,7 +14,7 @@ import { listRow } from "@maple/views/ui/list-row"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployCheck, dataEndOf, deployBefore, deployChecksOf, railOrder } from "./derive-deploys"
+import { type DeployCheck, deployBefore, deployChecksOf, deployDataEndOf, railOrder } from "./derive-deploys"
 import { verdictBadge, verdictFigure } from "./view-verdict"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
@@ -119,8 +119,8 @@ export const issuesPanel = (
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
 		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
-		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited, deploys, dataEndOf(model)),
-		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited, deploys, dataEndOf(model)),
+		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited, deploys, deployDataEndOf(model)),
+		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited, deploys, deployDataEndOf(model)),
 	})
 
 const issuesReady = (
@@ -182,11 +182,12 @@ const blankAvatar = (h: H): Html => h.span([h.Class("block size-5 rounded-full b
 
 /** A service that reports versions just shipped nothing new; one that reports none gets the setup hint. */
 const deploysEmpty = (h: H, model: Model): Html => {
-	const hasVersions = AsyncData.getOrElse(
-		AsyncData.map(model.overview.data, (overview) => overview.releases.length > 0),
+	// Only a settled overview with no versions earns the setup hint; until it answers, stay neutral.
+	const hasNoVersions = AsyncData.getOrElse(
+		AsyncData.map(model.overview.data, (overview) => overview.releases.length === 0),
 		() => false,
 	)
-	if (hasVersions) return emptyMessage(h, {}, ["No new version deployed in this window"])
+	if (!hasNoVersions) return emptyMessage(h, {}, ["No new version deployed in this window"])
 	return emptyMessage(h, { className: "flex flex-col items-center gap-1" }, [
 		h.span([], ["No deploys detected in this window"]),
 		typography(h, { tone: "subtle" }, [
