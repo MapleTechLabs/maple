@@ -230,7 +230,10 @@ fn rustc_version() -> &'static str {
 /// happened and can batch smaller — rather than a healthy exporter shipping into
 /// a void.
 pub fn rejection_loses_data(error_type: &str) -> bool {
-    matches!(error_type, "bad_request" | "decode" | "enrich" | "rules_scan_budget")
+    matches!(
+        error_type,
+        "bad_request" | "decode" | "enrich" | "rules_scan_budget" | "row_expansion"
+    )
 }
 
 /// Record a failed stage on `span`.
@@ -398,6 +401,8 @@ pub fn accept_internal_span(signal_path: &'static str, destination: &'static str
         "maple.ingest.destination" = destination,
         "maple.ingest.native_rows" = Empty,
         "maple.ingest.sampled_dropped" = Empty,
+        // Pieces the rows were built and written in, one after another.
+        "maple.ingest.row_pieces" = Empty,
     )
 }
 
@@ -418,8 +423,8 @@ pub fn encode_rows_internal_span(signal_path: &'static str) -> Span {
         // Encoded NDJSON size. Compare against `ingest.decode`'s
         // `maple.ingest.decoded_bytes` to spot encode amplification.
         "maple.ingest.payload_bytes" = Empty,
-        // What the rows were estimated at before they were built: the memory
-        // reserved for them, and never below `payload_bytes`.
+        // What this piece's rows were estimated at before they were built: the
+        // memory reserved for them, and never below `payload_bytes`.
         "maple.ingest.row_bytes_estimate" = Empty,
     )
 }
@@ -535,6 +540,7 @@ mod tests {
         assert!(rejection_loses_data("decode"));
         assert!(rejection_loses_data("enrich"));
         assert!(rejection_loses_data("bad_request"));
+        assert!(rejection_loses_data("row_expansion"));
 
         // Caller-fault stages stay Ok so they cannot flood the error dashboards.
         assert!(!rejection_loses_data("auth"));
@@ -567,6 +573,7 @@ mod tests {
             &[
                 "maple.ingest.native_rows",
                 "maple.ingest.sampled_dropped",
+                "maple.ingest.row_pieces",
                 "maple.ingest.destination",
                 "maple.signal",
             ],

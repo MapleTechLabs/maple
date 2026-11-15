@@ -11,6 +11,7 @@
 //! local dev) bind to the default no-op meter, so every function here is a
 //! cheap no-op until the OTLP pipeline is wired up.
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
@@ -586,7 +587,21 @@ pub fn org_throttled(org_id: &str, reason: &'static str) {
 /// at *total* loss — was averaged away. Labeling is affordable here precisely
 /// because this counter only moves when something is broken; a healthy fleet
 /// emits no series at all.
+/// `ingest_org_data_loss_total` by `error_kind` since start, readable in-process so
+/// tests can see a refusal was counted.
+static DATA_LOSS_BY_KIND: LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
+    LazyLock::new(Default::default);
+
+pub fn data_loss_count(error_kind: &str) -> u64 {
+    DATA_LOSS_BY_KIND
+        .lock()
+        .map_or(0, |counts| counts.get(error_kind).copied().unwrap_or(0))
+}
+
 pub fn org_data_loss(org_id: &str, signal: &str, error_kind: &str) {
+    if let Ok(mut counts) = DATA_LOSS_BY_KIND.lock() {
+        *counts.entry(error_kind.to_owned()).or_default() += 1;
+    }
     ORG_DATA_LOSS_TOTAL.add(
         1,
         &[

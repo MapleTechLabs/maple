@@ -2,7 +2,7 @@
 //! A row repeats its resource, scope and metric strings, so the rows are not bounded
 //! by the request's size. Mirrors `telemetry`'s encoders: never below what they write.
 
-use crate::telemetry::{self, AttributeMappingRule, MappingSourceContext, RowKind, SamplingPolicy};
+use crate::telemetry::{self, AttributeMappingRule, RowKind, SamplingPolicy};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
@@ -293,70 +293,175 @@ fn scope_cost(scope: Option<&InstrumentationScope>, schema_url: &str) -> Attribu
 struct Mappings {
     /// The target keys and their punctuation.
     keys: Cost,
-    from_span: u64,
-    from_resource: u64,
+    rules: u64,
 }
 
 impl Mappings {
     fn of(rules: &[AttributeMappingRule]) -> Self {
-        let mut mappings = Self {
-            keys: Cost::default(),
-            from_span: 0,
-            from_resource: 0,
-        };
+        let mut keys = Cost::default();
         for rule in rules {
-            mappings.keys.json += text_json(&rule.target_key) + 6;
-            mappings.keys.work += MAP_ENTRY + rule.target_key.len() as u64;
-            match rule.source_context {
-                MappingSourceContext::Span => mappings.from_span += 1,
-                MappingSourceContext::Resource => mappings.from_resource += 1,
-            }
+            keys.json += text_json(&rule.target_key) + 6;
+            keys.work += MAP_ENTRY + rule.target_key.len() as u64;
         }
-        mappings
+        Self {
+            keys,
+            rules: rules.len() as u64,
+        }
     }
 
-    /// The most the rules add to a span: each copies one value, at most the longest.
+    /// The most the rules add to a span. Each inserts at most one value, and a value
+    /// copied by one rule can be copied again by the next, so any may copy the longest.
     fn cost(&self, span: Cost, resource: Cost) -> Cost {
+        let json = span.json.max(resource.json).max(SAMPLE_RATE_JSON);
+        let work = span.work.max(resource.work).max(MAP_ENTRY + TIMESTAMP);
         Cost {
-            json: self.keys.json + self.from_span * span.json + self.from_resource * resource.json,
-            work: self.keys.work + self.from_span * span.work + self.from_resource * resource.work,
+            json: self
+                .keys
+                .json
+                .saturating_add(self.rules.saturating_mul(json)),
+            work: self
+                .keys
+                .work
+                .saturating_add(self.rules.saturating_mul(work)),
         }
     }
 }
 
-struct Tally {
+/// Row bytes one piece of a request is built and written in, unless a single row is larger.
+pub const ROW_PIECE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Items `start..end` of a request, numbered across it in order (spans, log records or
+/// stored data points), and what building their rows allocates.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RowPiece {
+    pub start: usize,
+    pub end: usize,
+    pub estimate: RowEstimate,
+}
+
+/// A request's rows, split into pieces that are each built, reserved and written alone.
+#[derive(Clone, Debug, Default)]
+pub struct RowPlan {
+    /// All of the request's rows; its working memory is the largest piece's.
+    pub total: RowEstimate,
+    /// Never empty, so a request whose every span is sampled out still counts them.
+    pub pieces: Vec<RowPiece>,
+    /// The shard key every piece is written under: the one the whole request had.
+    pub routing_key: u64,
+}
+
+impl RowPlan {
+    /// The most any one piece holds at once.
+    pub fn largest_piece_heap(&self) -> u64 {
+        self.pieces
+            .iter()
+            .map(|piece| piece.estimate.heap_bytes())
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+/// The piece being filled.
+#[derive(Default)]
+struct Open {
+    start: usize,
     estimate: RowEstimate,
     resource_work: u64,
     scope_work: u64,
     row_work: u64,
 }
 
+struct Tally {
+    piece_bytes: u64,
+    total: RowEstimate,
+    pieces: Vec<RowPiece>,
+    open: Open,
+    /// The next item's number.
+    index: usize,
+    resource_work: u64,
+    scope_work: u64,
+}
+
 impl Tally {
-    fn new() -> Self {
+    fn new(piece_bytes: u64) -> Self {
         Self {
-            estimate: RowEstimate::default(),
+            piece_bytes: piece_bytes.max(1),
+            total: RowEstimate::default(),
+            pieces: Vec::new(),
+            open: Open::default(),
+            index: 0,
             resource_work: 0,
             scope_work: 0,
-            row_work: 0,
         }
+    }
+
+    /// Entering a resource or a scope: its map is built by every piece that reaches it.
+    fn resource(&mut self, work: u64) {
+        self.resource_work = work;
+    }
+
+    fn scope(&mut self, work: u64) {
+        self.scope_work = work;
+    }
+
+    /// The open piece builds the current resource's and scope's maps.
+    fn touch(&mut self) {
+        self.open.resource_work = self.open.resource_work.max(self.resource_work);
+        self.open.scope_work = self.open.scope_work.max(self.scope_work);
+    }
+
+    /// An item that stores no row, a span sampled out.
+    fn skip(&mut self) {
+        self.touch();
+        self.index += 1;
     }
 
     /// One row of `kind`: its `json` on top of the empty row, built in `work`.
     fn row(&mut self, kind: RowKind, json: u64, work: u64) {
-        let slot = &mut self.estimate.payload_bytes[kind.slot()];
-        *slot = slot.saturating_add(telemetry::empty_row_len(kind).saturating_add(json));
-        self.estimate.rows += 1;
-        self.row_work = self.row_work.max(work);
+        let len = telemetry::empty_row_len(kind).saturating_add(json);
+        if self.open.estimate.rows > 0
+            && self.open.estimate.row_bytes().saturating_add(len) > self.piece_bytes
+        {
+            self.close();
+        }
+        self.touch();
+        for estimate in [&mut self.open.estimate, &mut self.total] {
+            let slot = &mut estimate.payload_bytes[kind.slot()];
+            *slot = slot.saturating_add(len);
+            estimate.rows += 1;
+        }
+        self.open.row_work = self.open.row_work.max(work);
+        self.index += 1;
     }
 
-    fn finish(mut self) -> RowEstimate {
+    /// Ends the open piece before the current item.
+    fn close(&mut self) {
+        let open = std::mem::take(&mut self.open);
+        let mut estimate = open.estimate;
         // One resource's map, one scope's and one row are alive at a time.
-        self.estimate.work_bytes = self
+        estimate.work_bytes = open
             .resource_work
-            .saturating_add(self.scope_work)
-            .saturating_add(self.row_work)
+            .saturating_add(open.scope_work)
+            .saturating_add(open.row_work)
             .saturating_add(ROW_BASE);
-        self.estimate
+        self.total.work_bytes = self.total.work_bytes.max(estimate.work_bytes);
+        self.pieces.push(RowPiece {
+            start: open.start,
+            end: self.index,
+            estimate,
+        });
+        self.open.start = self.index;
+    }
+
+    fn finish(mut self, routing_key: u64) -> RowPlan {
+        if self.pieces.is_empty() || self.open.start < self.index {
+            self.close();
+        }
+        RowPlan {
+            total: self.total,
+            pieces: self.pieces,
+            routing_key,
+        }
     }
 }
 
@@ -368,18 +473,30 @@ pub fn trace_rows(
     policy: &SamplingPolicy,
     mappings: &[AttributeMappingRule],
 ) -> RowEstimate {
+    trace_plan(org_id, request, policy, mappings, u64::MAX).total
+}
+
+/// `trace_rows`, split into pieces of about `piece_bytes` of rows each.
+pub fn trace_plan(
+    org_id: &str,
+    request: &ExportTraceServiceRequest,
+    policy: &SamplingPolicy,
+    mappings: &[AttributeMappingRule],
+    piece_bytes: u64,
+) -> RowPlan {
     let sampling = policy.samples();
     let mappings = Mappings::of(mappings);
-    let mut tally = Tally::new();
+    let mut tally = Tally::new(piece_bytes);
     for resource_spans in &request.resource_spans {
         let resource = resource_cost(resource_spans.resource.as_ref(), &resource_spans.schema_url);
-        tally.resource_work = tally.resource_work.max(resource.work);
+        tally.resource(resource.work);
         for scope_spans in &resource_spans.scope_spans {
             let scope = scope_cost(scope_spans.scope.as_ref(), &scope_spans.schema_url);
-            tally.scope_work = tally.scope_work.max(scope.work);
+            tally.scope(scope.work);
             let shared = resource.json + scope.json;
             for span in &scope_spans.spans {
                 if sampling && !telemetry::keeps_span(org_id, span, policy) {
+                    tally.skip();
                     continue;
                 }
                 let attributes = attributes_cost(&span.attributes);
@@ -419,18 +536,23 @@ pub fn trace_rows(
             }
         }
     }
-    tally.finish()
+    tally.finish(telemetry::trace_routing_key(org_id, request))
 }
 
 /// The rows `request` encodes to: one per log record.
 pub fn log_rows(request: &ExportLogsServiceRequest) -> RowEstimate {
-    let mut tally = Tally::new();
+    log_plan("", request, u64::MAX).total
+}
+
+/// `log_rows`, split into pieces of about `piece_bytes` of rows each.
+pub fn log_plan(org_id: &str, request: &ExportLogsServiceRequest, piece_bytes: u64) -> RowPlan {
+    let mut tally = Tally::new(piece_bytes);
     for resource_logs in &request.resource_logs {
         let resource = resource_cost(resource_logs.resource.as_ref(), &resource_logs.schema_url);
-        tally.resource_work = tally.resource_work.max(resource.work);
+        tally.resource(resource.work);
         for scope_logs in &resource_logs.scope_logs {
             let scope = scope_cost(scope_logs.scope.as_ref(), &scope_logs.schema_url);
-            tally.scope_work = tally.scope_work.max(scope.work);
+            tally.scope(scope.work);
             let shared = resource.json + scope.json;
             for log in &scope_logs.log_records {
                 let attributes = attributes_cost(&log.attributes);
@@ -454,7 +576,7 @@ pub fn log_rows(request: &ExportLogsServiceRequest) -> RowEstimate {
             }
         }
     }
-    tally.finish()
+    tally.finish(telemetry::log_routing_key(org_id, request))
 }
 
 /// Decimal digits of `value`.
@@ -482,16 +604,25 @@ fn exemplars_cost(exemplars: &[Exemplar]) -> Cost {
 /// The rows `request` encodes to: one per data point, each repeating its metric's
 /// name, description and unit. Summaries are not stored.
 pub fn metric_rows(request: &ExportMetricsServiceRequest) -> RowEstimate {
-    let mut tally = Tally::new();
+    metric_plan("", request, u64::MAX).total
+}
+
+/// `metric_rows`, split into pieces of about `piece_bytes` of rows each.
+pub fn metric_plan(
+    org_id: &str,
+    request: &ExportMetricsServiceRequest,
+    piece_bytes: u64,
+) -> RowPlan {
+    let mut tally = Tally::new(piece_bytes);
     for resource_metrics in &request.resource_metrics {
         let resource = resource_cost(
             resource_metrics.resource.as_ref(),
             &resource_metrics.schema_url,
         );
-        tally.resource_work = tally.resource_work.max(resource.work);
+        tally.resource(resource.work);
         for scope_metrics in &resource_metrics.scope_metrics {
             let scope = scope_cost(scope_metrics.scope.as_ref(), &scope_metrics.schema_url);
-            tally.scope_work = tally.scope_work.max(scope.work);
+            tally.scope(scope.work);
             for metric in &scope_metrics.metrics {
                 let shared = resource.json
                     + scope.json
@@ -554,7 +685,7 @@ pub fn metric_rows(request: &ExportMetricsServiceRequest) -> RowEstimate {
             }
         }
     }
-    tally.finish()
+    tally.finish(telemetry::metric_routing_key(org_id, request))
 }
 
 /// The compressor's own tables and window, whatever it is given.

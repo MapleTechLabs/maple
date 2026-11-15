@@ -11,17 +11,18 @@
     clippy::panic,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_possible_wrap,
     clippy::too_many_lines,
     reason = "test fixtures: small known sizes, and one table of cases per signal"
 )]
 
 use bytes::Bytes;
-use maple_ingest::row_budget::{log_rows, metric_rows, trace_rows, ForwardBody, RowEstimate};
+use maple_ingest::row_budget::{
+    log_rows, metric_rows, trace_rows, ForwardBody, RowEstimate, RowPlan, ROW_PIECE_BYTES,
+};
 use maple_ingest::telemetry::{
-    encode_log_rows, encode_metric_rows, encode_trace_rows, AttributeMappingRule,
+    encode_log_rows, encode_metric_rows, encode_pieces, encode_trace_rows, AttributeMappingRule,
     ClickHouseBreakerConfig, DatasourceNames, ExportDestination, MappingOperation,
-    MappingSourceContext, SamplingPolicy, TelemetryPipeline, TinybirdConfig,
+    MappingSourceContext, RowSource, SamplingPolicy, TelemetryPipeline, TinybirdConfig,
 };
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -43,8 +44,12 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::time::Duration;
 
+#[path = "support/random.rs"]
+mod random;
 #[path = "support/shapes.rs"]
 mod shapes;
+
+use random::Rng;
 
 use shapes::string_attr;
 
@@ -82,6 +87,12 @@ fn peak_during<T>(run: impl FnOnce() -> T) -> (usize, T) {
     (PEAK.with(Cell::get) - base, out)
 }
 
+static UNSAMPLED: SamplingPolicy = SamplingPolicy {
+    trace_sample_ratio: 1.0,
+    always_keep_error_spans: false,
+    always_keep_slow_spans_ms: None,
+};
+
 /// A request of any signal, so one table covers all three.
 #[derive(Clone)]
 enum Request {
@@ -105,6 +116,22 @@ impl Request {
             Self::Logs(request) => log_rows(request),
             Self::Metrics(request) => metric_rows(request),
         }
+    }
+
+    fn source(&self) -> RowSource<'_> {
+        match self {
+            Self::Traces(request) => RowSource::Traces {
+                request,
+                policy: &UNSAMPLED,
+                mappings: &[],
+            },
+            Self::Logs(request) => RowSource::Logs(request),
+            Self::Metrics(request) => RowSource::Metrics(request),
+        }
+    }
+
+    fn plan(&self) -> RowPlan {
+        self.source().plan("org", ROW_PIECE_BYTES)
     }
 
     /// The bytes of rows the encoder writes for this request.
@@ -180,8 +207,9 @@ fn pipeline_config(queue_dir: PathBuf) -> TinybirdConfig {
 }
 
 /// Peak bytes the request path allocates accepting `request` into a real pipeline:
-/// its rows, their frames and the WAL commit, on this thread.
-fn native_peak(case: &str, request: &Request, rows: &RowEstimate) -> usize {
+/// its rows, their frames and the WAL commit, on this thread. A committed piece's
+/// rows stay in its lane's queue, which has its own per-org bound, so they count too.
+fn native_peak(case: &str, request: &Request, plan: &RowPlan) -> usize {
     let queue_dir = unique_dir(&case.replace(' ', "-"));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -195,35 +223,10 @@ fn native_peak(case: &str, request: &Request, rows: &RowEstimate) -> usize {
         .unwrap();
     let destination = ExportDestination::Tinybird;
     let (peak, accepted) = peak_during(|| {
-        runtime.block_on(async {
-            match request {
-                Request::Traces(request) => {
-                    pipeline
-                        .accept_traces_sized(
-                            "org",
-                            request,
-                            &SamplingPolicy::default(),
-                            &[],
-                            destination,
-                            rows,
-                        )
-                        .await
-                }
-                Request::Logs(request) => {
-                    pipeline
-                        .accept_logs_sized("org", request, destination, rows)
-                        .await
-                }
-                Request::Metrics(request) => {
-                    pipeline
-                        .accept_metrics_sized("org", request, destination, rows)
-                        .await
-                }
-            }
-        })
+        runtime.block_on(pipeline.accept_planned("org", request.source(), destination, plan))
     });
     let accepted = accepted.unwrap_or_else(|error| panic!("{case} is accepted: {error}"));
-    assert_eq!(accepted.rows as u64, rows.rows, "{case}: rows counted");
+    assert_eq!(accepted.rows as u64, plan.total.rows, "{case}: rows counted");
     drop(pipeline);
     drop(runtime);
     drop(std::fs::remove_dir_all(&queue_dir));
@@ -639,10 +642,14 @@ fn native_accept_stays_within_what_the_rows_were_estimated_at() {
         request,
     } in cases()
     {
-        let rows = request.rows();
+        let plan = request.plan();
+        let rows = plan.total;
+        assert_eq!(request.rows(), rows, "{name}: one estimate, however it is split");
         let written = request.row_bytes();
-        let peak = native_peak(name, &request, &rows);
-        let reserved = rows.heap_bytes() as usize;
+        let peak = native_peak(name, &request, &plan);
+        let reserved = plan.largest_piece_heap() as usize;
+        // Pieces already committed wait in the queue while the next is built.
+        let queued = if plan.pieces.len() > 1 { written } else { 0 };
         eprintln!(
             "{name:>40}: wire {:>9} B, rows {written:>10} B ({:>7.1}x wire), estimate {:>10} B, \
              peak {peak:>10} B, reserved {reserved:>10} B ({:.2}x peak)",
@@ -657,7 +664,7 @@ fn native_accept_stays_within_what_the_rows_were_estimated_at() {
             rows.row_bytes()
         );
         assert!(
-            peak <= reserved,
+            peak <= reserved + queued,
             "{name}: reserved {reserved} below the real peak {peak}"
         );
         assert!(
@@ -670,6 +677,104 @@ fn native_accept_stays_within_what_the_rows_were_estimated_at() {
             "{name}: reserved {reserved} over 1.3x the real peak {peak}"
         );
     }
+}
+
+/// Peak bytes encoding `source` allocates when each piece is handed off before the
+/// next is built, as the WAL append does, and the bytes of rows written in all.
+fn piece_peak(source: RowSource<'_>, plan: &RowPlan) -> (usize, usize) {
+    let mut written = 0;
+    let (peak, encoded) = peak_during(|| {
+        encode_pieces("org", source, plan, |frames| {
+            written += frames.iter().map(|(_, payload)| payload.len()).sum::<usize>();
+        })
+    });
+    encoded.unwrap();
+    (peak, written)
+}
+
+/// However many rows a request expands to, building them holds one piece at a time:
+/// the peak stays within the largest piece's reservation, far below the rows.
+#[test]
+fn rows_are_built_in_bounded_memory_whatever_the_request_expands_to() {
+    let jvm_points = 200_000;
+    let cases = [
+        // A long resource attribute repeated on every one of 2,000 points.
+        (
+            "high expansion",
+            Request::Metrics(metrics_of(vec![gauge(
+                "m",
+                "d".repeat(LONG),
+                vec![NumberDataPoint::default(); 2_000],
+            )])),
+        ),
+        // An ordinary batch the size of the largest ones seen, from a JVM service.
+        (
+            "large ordinary batch",
+            Request::Metrics(shapes::metrics_from(shapes::jvm_resource(), jvm_points)),
+        ),
+    ];
+    for (name, request) in cases {
+        let plan = request.plan();
+        let (peak, written) = piece_peak(request.source(), &plan);
+        let reserved = plan.largest_piece_heap() as usize;
+        eprintln!(
+            "{name:>22}: wire {:>10} B, rows {written:>11} B in {:>3} pieces, peak {peak:>10} B, \
+             reserved {reserved:>10} B",
+            request.wire_len(),
+            plan.pieces.len(),
+        );
+        assert!(written as u64 <= plan.total.row_bytes(), "{name}: rows within the estimate");
+        assert!(plan.pieces.len() > 4, "{name}: split into pieces");
+        assert!(peak <= reserved, "{name}: reserved {reserved} below the peak {peak}");
+        assert!(
+            reserved <= 2 * ROW_PIECE_BYTES as usize,
+            "{name}: one piece reserves {reserved}, about one piece of rows"
+        );
+        assert!(peak * 4 < written, "{name}: peak {peak} against {written} bytes of rows");
+    }
+}
+
+/// Mapping rules that copy a value one to the next copy the longest value each time,
+/// and the estimate holds for that: the rows and the peak stay within it.
+#[test]
+fn chained_attribute_mappings_stay_within_their_estimate() {
+    let long = 4 * 1024;
+    let mut rules = vec![AttributeMappingRule {
+        source_context: MappingSourceContext::Resource,
+        source_key: "process.command_line".to_owned(),
+        target_key: "m0".to_owned(),
+        operation: MappingOperation::Copy,
+    }];
+    rules.extend((1..64).map(|step| AttributeMappingRule {
+        source_context: MappingSourceContext::Span,
+        source_key: format!("m{}", step - 1),
+        target_key: format!("m{step}"),
+        operation: MappingOperation::Copy,
+    }));
+    let request = spans_under(
+        vec![string_attr("process.command_line", &"c".repeat(long))],
+        None,
+        vec![Span::default(); 200],
+    );
+    let policy = SamplingPolicy::default();
+    let source = RowSource::Traces {
+        request: &request,
+        policy: &policy,
+        mappings: &rules,
+    };
+    let plan = source.plan("org", ROW_PIECE_BYTES);
+    let (peak, written) = piece_peak(source, &plan);
+    let reserved = plan.largest_piece_heap() as usize;
+    eprintln!(
+        "chained mappings: rows {written} B ({} B estimated) in {} pieces, peak {peak} B, \
+         reserved {reserved} B",
+        plan.total.row_bytes(),
+        plan.pieces.len(),
+    );
+    // Every span carries 64 copies of the long value.
+    assert!(written > 200 * 64 * long, "the chain copied the value on: {written}");
+    assert!(written as u64 <= plan.total.row_bytes(), "rows within the estimate");
+    assert!(peak <= reserved, "reserved {reserved} below the peak {peak}");
 }
 
 /// Building the body a request is forwarded as never allocates past what is
@@ -708,365 +813,6 @@ fn forward_body_stays_within_what_was_reserved() {
                 );
             }
         }
-    }
-}
-
-/// A small deterministic generator: the cases a seed makes are reproducible.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    fn below(&mut self, bound: usize) -> usize {
-        (self.next() % bound.max(1) as u64) as usize
-    }
-
-    fn chance(&mut self, one_in: usize) -> bool {
-        self.below(one_in) == 0
-    }
-
-    /// Text with the characters JSON escapes and some that take several bytes.
-    fn text(&mut self, max: usize) -> String {
-        const ALPHABET: [char; 12] = [
-            'a', 'k', '.', ' ', '"', '\\', '\n', '\t', '\u{1}', '\u{7f}', 'é', '😀',
-        ];
-        let len = self.below(max + 1);
-        (0..len)
-            .map(|_| ALPHABET[self.below(ALPHABET.len())])
-            .collect()
-    }
-
-    fn bytes(&mut self, max: usize) -> Vec<u8> {
-        let len = self.below(max + 1);
-        // Zeroed ids are written empty, and some bytes are text.
-        match self.below(3) {
-            0 => vec![0; len],
-            1 => self.text(len).into_bytes(),
-            _ => (0..len).map(|_| self.next() as u8).collect(),
-        }
-    }
-
-    fn number(&mut self) -> u64 {
-        match self.below(4) {
-            0 => 0,
-            1 => u64::MAX,
-            2 => self.next() % 1_000,
-            _ => self.next(),
-        }
-    }
-
-    fn float(&mut self) -> f64 {
-        match self.below(7) {
-            0 => 0.0,
-            1 => f64::NAN,
-            2 => f64::INFINITY,
-            3 => -1.797_693_134_862_315_7e308,
-            4 => 5e-324,
-            5 => self.below(1_000) as f64 / 8.0,
-            _ => f64::from_bits(self.next()),
-        }
-    }
-
-    fn any(&mut self, depth: usize) -> Option<AnyValue> {
-        let value = match self.below(if depth == 0 { 7 } else { 9 }) {
-            0 => return None,
-            1 => return Some(AnyValue::default()),
-            2 => any_value::Value::StringValue(self.text(24)),
-            3 => any_value::Value::BoolValue(self.chance(2)),
-            4 => any_value::Value::IntValue(self.number() as i64),
-            5 => any_value::Value::DoubleValue(self.float()),
-            6 => any_value::Value::BytesValue(self.bytes(12)),
-            7 => any_value::Value::ArrayValue(ArrayValue {
-                values: (0..self.below(4))
-                    .map(|_| self.any(depth - 1).unwrap_or_default())
-                    .collect(),
-            }),
-            _ => any_value::Value::KvlistValue(KeyValueList {
-                values: self.attributes(depth - 1),
-            }),
-        };
-        Some(AnyValue { value: Some(value) })
-    }
-
-    fn attributes(&mut self, depth: usize) -> Vec<KeyValue> {
-        const KEYS: [&str; 6] = [
-            "service.name",
-            "SampleRate",
-            "a",
-            "b\"",
-            "",
-            "long.key.name",
-        ];
-        (0..self.below(5))
-            .map(|_| KeyValue {
-                key: if self.chance(3) {
-                    self.text(8)
-                } else {
-                    KEYS[self.below(KEYS.len())].to_owned()
-                },
-                value: self.any(depth),
-                ..Default::default()
-            })
-            .collect()
-    }
-
-    fn resource(&mut self) -> Option<Resource> {
-        (!self.chance(5)).then(|| Resource {
-            attributes: self.attributes(2),
-            ..Default::default()
-        })
-    }
-
-    fn scope(&mut self) -> Option<InstrumentationScope> {
-        (!self.chance(5)).then(|| InstrumentationScope {
-            name: self.text(12),
-            version: self.text(6),
-            attributes: self.attributes(2),
-            ..Default::default()
-        })
-    }
-
-    fn span(&mut self) -> Span {
-        let start = self.number();
-        Span {
-            trace_id: self.bytes(20),
-            span_id: self.bytes(10),
-            parent_span_id: self.bytes(10),
-            trace_state: if self.chance(4) {
-                "th:8".to_owned()
-            } else {
-                self.text(8)
-            },
-            name: self.text(20),
-            kind: self.below(8) as i32 - 1,
-            start_time_unix_nano: start,
-            end_time_unix_nano: start.wrapping_add(self.number()),
-            attributes: self.attributes(2),
-            events: (0..self.below(3))
-                .map(|_| span::Event {
-                    time_unix_nano: self.number(),
-                    name: self.text(10),
-                    attributes: self.attributes(1),
-                    ..Default::default()
-                })
-                .collect(),
-            links: (0..self.below(3))
-                .map(|_| span::Link {
-                    trace_id: self.bytes(20),
-                    span_id: self.bytes(10),
-                    trace_state: self.text(8),
-                    attributes: self.attributes(1),
-                    ..Default::default()
-                })
-                .collect(),
-            status: (!self.chance(3)).then(|| Status {
-                message: self.text(16),
-                code: self.below(4) as i32,
-            }),
-            ..Default::default()
-        }
-    }
-
-    fn traces(&mut self) -> ExportTraceServiceRequest {
-        ExportTraceServiceRequest {
-            resource_spans: (0..self.below(4))
-                .map(|_| ResourceSpans {
-                    resource: self.resource(),
-                    scope_spans: (0..self.below(3))
-                        .map(|_| ScopeSpans {
-                            scope: self.scope(),
-                            spans: (0..self.below(5)).map(|_| self.span()).collect(),
-                            schema_url: self.text(10),
-                        })
-                        .collect(),
-                    schema_url: self.text(10),
-                })
-                .collect(),
-        }
-    }
-
-    fn logs(&mut self) -> ExportLogsServiceRequest {
-        ExportLogsServiceRequest {
-            resource_logs: (0..self.below(4))
-                .map(|_| ResourceLogs {
-                    resource: self.resource(),
-                    scope_logs: (0..self.below(3))
-                        .map(|_| ScopeLogs {
-                            scope: self.scope(),
-                            log_records: (0..self.below(5))
-                                .map(|_| LogRecord {
-                                    time_unix_nano: self.number(),
-                                    observed_time_unix_nano: self.number(),
-                                    severity_number: self.number() as i32,
-                                    severity_text: self.text(6),
-                                    body: self.any(2),
-                                    attributes: self.attributes(2),
-                                    flags: self.number() as u32,
-                                    trace_id: self.bytes(20),
-                                    span_id: self.bytes(10),
-                                    ..Default::default()
-                                })
-                                .collect(),
-                            schema_url: self.text(10),
-                        })
-                        .collect(),
-                    schema_url: self.text(10),
-                })
-                .collect(),
-        }
-    }
-
-    fn exemplars(&mut self) -> Vec<Exemplar> {
-        use opentelemetry_proto::tonic::metrics::v1::exemplar::Value;
-        (0..self.below(3))
-            .map(|_| Exemplar {
-                filtered_attributes: self.attributes(1),
-                time_unix_nano: self.number(),
-                span_id: self.bytes(10),
-                trace_id: self.bytes(20),
-                value: match self.below(3) {
-                    0 => None,
-                    1 => Some(Value::AsInt(self.number() as i64)),
-                    _ => Some(Value::AsDouble(self.float())),
-                },
-            })
-            .collect()
-    }
-
-    fn number_point(&mut self) -> NumberDataPoint {
-        NumberDataPoint {
-            attributes: self.attributes(1),
-            start_time_unix_nano: self.number(),
-            time_unix_nano: self.number(),
-            exemplars: self.exemplars(),
-            flags: self.number() as u32,
-            value: match self.below(3) {
-                0 => None,
-                1 => Some(number_data_point::Value::AsInt(self.number() as i64)),
-                _ => Some(number_data_point::Value::AsDouble(self.float())),
-            },
-        }
-    }
-
-    fn buckets(&mut self) -> Option<Buckets> {
-        (!self.chance(3)).then(|| Buckets {
-            offset: self.number() as i32,
-            bucket_counts: (0..self.below(6)).map(|_| self.number()).collect(),
-        })
-    }
-
-    fn metric(&mut self) -> Metric {
-        let temporality = self.number() as i32;
-        let data = match self.below(6) {
-            0 => None,
-            1 => Some(metric::Data::Gauge(Gauge {
-                data_points: (0..self.below(4)).map(|_| self.number_point()).collect(),
-            })),
-            2 => Some(metric::Data::Sum(Sum {
-                data_points: (0..self.below(4)).map(|_| self.number_point()).collect(),
-                aggregation_temporality: temporality,
-                is_monotonic: self.chance(2),
-            })),
-            3 => Some(metric::Data::Histogram(Histogram {
-                data_points: (0..self.below(4))
-                    .map(|_| HistogramDataPoint {
-                        attributes: self.attributes(1),
-                        start_time_unix_nano: self.number(),
-                        time_unix_nano: self.number(),
-                        count: self.number(),
-                        sum: self.chance(2).then(|| self.float()),
-                        bucket_counts: (0..self.below(6)).map(|_| self.number()).collect(),
-                        explicit_bounds: (0..self.below(6)).map(|_| self.float()).collect(),
-                        exemplars: self.exemplars(),
-                        flags: self.number() as u32,
-                        min: self.chance(2).then(|| self.float()),
-                        max: self.chance(2).then(|| self.float()),
-                    })
-                    .collect(),
-                aggregation_temporality: temporality,
-            })),
-            4 => Some(metric::Data::ExponentialHistogram(ExponentialHistogram {
-                data_points: (0..self.below(4))
-                    .map(|_| ExponentialHistogramDataPoint {
-                        attributes: self.attributes(1),
-                        start_time_unix_nano: self.number(),
-                        time_unix_nano: self.number(),
-                        count: self.number(),
-                        sum: self.chance(2).then(|| self.float()),
-                        scale: self.number() as i32,
-                        zero_count: self.number(),
-                        positive: self.buckets(),
-                        negative: self.buckets(),
-                        flags: self.number() as u32,
-                        exemplars: self.exemplars(),
-                        min: self.chance(2).then(|| self.float()),
-                        max: self.chance(2).then(|| self.float()),
-                        zero_threshold: self.float(),
-                    })
-                    .collect(),
-                aggregation_temporality: temporality,
-            })),
-            _ => Some(metric::Data::Summary(
-                opentelemetry_proto::tonic::metrics::v1::Summary::default(),
-            )),
-        };
-        Metric {
-            name: self.text(16),
-            description: self.text(40),
-            unit: self.text(4),
-            data,
-            ..Default::default()
-        }
-    }
-
-    fn metrics(&mut self) -> ExportMetricsServiceRequest {
-        ExportMetricsServiceRequest {
-            resource_metrics: (0..self.below(4))
-                .map(|_| ResourceMetrics {
-                    resource: self.resource(),
-                    scope_metrics: (0..self.below(3))
-                        .map(|_| ScopeMetrics {
-                            scope: self.scope(),
-                            metrics: (0..self.below(4)).map(|_| self.metric()).collect(),
-                            schema_url: self.text(10),
-                        })
-                        .collect(),
-                    schema_url: self.text(10),
-                })
-                .collect(),
-        }
-    }
-
-    fn policy(&mut self) -> SamplingPolicy {
-        SamplingPolicy {
-            trace_sample_ratio: [1.0, 0.5, 0.01, f64::NAN][self.below(4)],
-            always_keep_error_spans: self.chance(2),
-            always_keep_slow_spans_ms: self.chance(3).then_some(5),
-        }
-    }
-
-    fn mappings(&mut self) -> Vec<AttributeMappingRule> {
-        (0..self.below(4))
-            .map(|_| AttributeMappingRule {
-                source_context: if self.chance(2) {
-                    MappingSourceContext::Span
-                } else {
-                    MappingSourceContext::Resource
-                },
-                source_key: ["a", "service.name", "b\"", "missing"][self.below(4)].to_owned(),
-                target_key: self.text(12),
-                operation: if self.chance(2) {
-                    MappingOperation::Move
-                } else {
-                    MappingOperation::Copy
-                },
-            })
-            .collect()
     }
 }
 

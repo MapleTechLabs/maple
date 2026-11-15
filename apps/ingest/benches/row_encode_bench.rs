@@ -7,17 +7,14 @@
 )]
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use maple_ingest::row_budget::{log_rows, metric_rows, trace_rows};
+use maple_ingest::row_budget::{log_rows, metric_rows, trace_rows, ROW_PIECE_BYTES};
 use maple_ingest::telemetry::{
-    encode_log_rows, encode_metric_rows, encode_trace_rows, SamplingPolicy,
+    encode_frames, encode_log_rows, encode_metric_rows, encode_trace_rows, RowSource,
+    SamplingPolicy,
 };
 use prost::Message;
 
 #[path = "../tests/support/shapes.rs"]
-#[expect(
-    dead_code,
-    reason = "the shapes are shared with tests that use the rest"
-)]
 mod shapes;
 
 fn bench_row_encode(c: &mut Criterion) {
@@ -60,6 +57,31 @@ fn bench_row_encode(c: &mut Criterion) {
     group.bench_function("metrics_4000_points", |b| {
         b.iter(|| black_box(metric_rows(black_box(&metrics))));
     });
+    group.finish();
+
+    // A JVM service's batch, whose rows are many pieces: built in pieces, as the
+    // gateway does, against the same rows built whole.
+    let jvm = shapes::metrics_from(shapes::jvm_resource(), 20_000);
+    let mut group = c.benchmark_group("row_encode_pieces");
+    group.sample_size(20);
+    group.throughput(Throughput::Bytes(jvm.encoded_len() as u64));
+    for (name, piece_bytes) in [
+        ("jvm_metrics_in_pieces", ROW_PIECE_BYTES),
+        ("jvm_metrics_whole", u64::MAX),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter(|| {
+                black_box(
+                    encode_frames(
+                        "org_bench",
+                        RowSource::Metrics(black_box(&jvm)),
+                        piece_bytes,
+                    )
+                    .expect("encode metrics"),
+                )
+            });
+        });
+    }
     group.finish();
 }
 
