@@ -189,6 +189,7 @@ const selectorRow = (attributes: Record<string, string>) => ({
 const recordingWarehouse = () => {
 	const statements: Array<string> = []
 	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
+		if (Str.includes("AS job")(sql)) return [{ job: "api" }, { job: "worker" }, { job: "" }]
 		if (Str.includes("AS instance")(sql))
 			return Str.includes("FROM metrics_gauge")(sql) ? [{ instance: "pod-2" }] : [{ instance: "pod-1" }]
 		if (Str.includes("FROM metrics_sum")(sql)) {
@@ -212,7 +213,6 @@ const recordingWarehouse = () => {
 				},
 			]
 		}
-		if (Str.includes("AS serviceName")(sql)) return [{ serviceName: "api" }, { serviceName: "worker" }]
 		if (Str.includes("FROM metric_catalog")(sql)) {
 			return [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }]
 		}
@@ -354,7 +354,7 @@ describe("PromqlQueryService discovery", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("lists metric names and jobs from the catalog", () => {
+	it.effect("lists metric names from the catalog and jobs from the metric tables", () => {
 		const { layer } = recordingWarehouse()
 		return Effect.gen(function* () {
 			const service = yield* PromqlQueryService
