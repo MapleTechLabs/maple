@@ -1,9 +1,8 @@
-import { legend, releaseImpact } from "../worst-case-fixture"
+import { legend } from "../worst-case-fixture"
 import { verdict } from "../worst-case-docs"
 import type { Html } from "foldkit/html"
 import { verdictCard } from "../../page/investigations/detail/view-verdict"
 import { queryBuilderLegend } from "../query-builder-legend"
-import { releaseComparison } from "../../page/releases/detail/view-comparison"
 import { Message, type Model } from "./model"
 import * as TraceBox from "./trace-box"
 import * as TraceBoxView from "./trace-box-view"
@@ -63,16 +62,3 @@ export const verdictSection = (h: H, model: Model): Html =>
 	wcSection(h, "wc-verdict", "Investigation VerdictCard", [
 		h.div([h.Class("max-w-3xl")], [verdictCard(h, verdict(model.mode), model.nowMs)]),
 	])
-
-export const releaseNarrow = (h: H, model: Model): Html =>
-	narrow(
-		h,
-		[
-			releaseComparison(h, releaseImpact(model.mode), {
-				model: model.releaseOverlays,
-				toParent: (message) => Message.GotReleaseOverlaysMessage({ message }),
-				clock: { nowMs: model.nowMs, timeZone: model.timeZone },
-			}),
-		],
-		420,
-	)

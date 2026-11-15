@@ -47,48 +47,31 @@ const USAGE_STATS: ReadonlyArray<{
 	{ key: "dataSize", label: "Stored", format: formatStorageBytes },
 ]
 
-/** Nothing while loading, on error or with no data. */
-export const usagePanel = (h: H, model: Model, envFilterActive: boolean): Html => {
+/** The window's ingest as four figures; nothing while loading, on error or with no data. */
+const usageBody = (h: H, model: Model): Html => {
 	const usage = AsyncData.getOrElse(model.usage.data, () => null)
 	if (usage === null) return null
 	const { totals, previous } = usage
 	if (totals.logs === 0 && totals.traces === 0 && totals.metrics === 0 && totals.dataSize === 0) return null
-	return sectionCard(
-		h,
-		{
-			title: "Ingest this window",
-			action: envFilterActive ? allEnvironments(h) : undefined,
-			className: refreshingClass(AsyncData.isRefreshing(model.usage.data)),
-		},
-		[
-			h.div(
-				[h.Class("grid grid-cols-2 gap-px sm:grid-cols-4")],
-				Arr.map(USAGE_STATS, (stat) =>
-					vstack(h, { gap: "0.5", className: "px-4 py-3", attributes: [h.Key(stat.key)] }, [
-						eyebrow(h, {}, [stat.label]),
-						typography(
-							h,
-							{
-								size: "lg",
-								tone: "foreground",
-								weight: "semibold",
-								mono: true,
-								numeric: true,
-								className: "leading-tight",
-							},
-							[stat.format(totals[stat.key])],
-						),
-						delta(h, {
-							current: totals[stat.key],
-							previous: previous?.[stat.key],
-							suffix: "vs prev",
-							flatThreshold: 0.005,
-							className: typographyClass({ size: "3xs", tone: "muted" }),
-						}),
-					]),
+	return h.div(
+		[h.Class("grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4")],
+		Arr.map(USAGE_STATS, (stat) =>
+			vstack(h, { gap: "0.5", attributes: [h.Key(stat.key)] }, [
+				typography(h, { size: "2xs", tone: "muted" }, [stat.label]),
+				typography(
+					h,
+					{ size: "sm", tone: "foreground", weight: "medium", mono: true, numeric: true },
+					[stat.format(totals[stat.key])],
 				),
-			),
-		],
+				delta(h, {
+					current: totals[stat.key],
+					previous: previous?.[stat.key],
+					suffix: "vs prev",
+					flatThreshold: 0.005,
+					className: typographyClass({ size: "3xs", tone: "muted" }),
+				}),
+			]),
+		),
 	)
 }
 
@@ -176,61 +159,34 @@ const runsOnRow = (
 				]),
 	])
 
-/** Every place the service runs, platform resources first: the header links the first. */
-export const runsOnLinks = (model: Model): ReadonlyArray<RuntimeLink> => {
-	const time = pickTimeSearch(model.search)
-	return [
-		...Arr.map(
-			AsyncData.getOrElse(model.runtimes.data, () => []),
-			(runtime) => runtimeLink(runtime, time),
-		),
-		...Arr.map(
-			AsyncData.getOrElse(model.workloads.data, () => []),
-			(workload) => workloadLink(workload, time),
-		),
-	]
-}
-
 /** Where the service runs: its platform resources, then its Kubernetes workloads. Nothing while empty. */
-export const runsOnPanel = (h: H, model: Model, envFilterActive: boolean): Html => {
+const runsOnBody = (h: H, model: Model): Html => {
 	const runtimes = AsyncData.getOrElse(model.runtimes.data, () => [])
 	const workloads = AsyncData.getOrElse(model.workloads.data, () => [])
 	if (runtimes.length === 0 && workloads.length === 0) return null
 	const time = pickTimeSearch(model.search)
-	return sectionCard(
-		h,
-		{
-			title: "Runs on",
-			action: envFilterActive ? allEnvironments(h) : undefined,
-			className: refreshingClass(
-				AsyncData.isRefreshing(model.runtimes.data) || AsyncData.isRefreshing(model.workloads.data),
-			),
-		},
-		[
-			dividedList(h, { as: "ul", bordered: false }, [
-				...Arr.map(runtimes, (runtime) => {
-					const link = runtimeLink(runtime, time)
-					return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
-				}),
-				...Arr.map(workloads, (workload) => {
-					const link = workloadLink(workload, time)
-					const meters = [
-						...(workload.avgCpuLimitUtilization === null
-							? []
-							: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
-						...(workload.avgMemoryLimitUtilization === null
-							? []
-							: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
-					]
-					return h.keyed("li")(
-						link.key,
-						[],
-						[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
-					)
-				}),
-			]),
-		],
-	)
+	return dividedList(h, { as: "ul", bordered: false, className: "-mx-4" }, [
+		...Arr.map(runtimes, (runtime) => {
+			const link = runtimeLink(runtime, time)
+			return h.keyed("li")(link.key, [], [runsOnRow(h, link, { meters: [] })])
+		}),
+		...Arr.map(workloads, (workload) => {
+			const link = workloadLink(workload, time)
+			const meters = [
+				...(workload.avgCpuLimitUtilization === null
+					? []
+					: [meterRow(h, "CPU", workload.avgCpuLimitUtilization)]),
+				...(workload.avgMemoryLimitUtilization === null
+					? []
+					: [meterRow(h, "MEM", workload.avgMemoryLimitUtilization)]),
+			]
+			return h.keyed("li")(
+				link.key,
+				[],
+				[runsOnRow(h, link, { count: countLabel(workload.podCount, "pod"), meters })],
+			)
+		}),
+	])
 }
 
 const KIND_ICON = new Map<DependencyKind, IconName>([
@@ -264,37 +220,69 @@ const stripChip = (h: H, target: StripTarget, onClick: Message): Html =>
 			)
 
 /** The busiest downstream targets as one row of chips; quiet while empty. */
-export const dependencyStrip = (h: H, model: Model): Html => {
+const talksToBody = (h: H, model: Model): Html => {
 	const targets = AsyncData.getOrElse(AsyncData.map(model.dependencies.data, stripTargets), () => [])
 	if (targets.length === 0) return null
 	const visible = targets.slice(0, STRIP_LIMIT)
 	const hiddenCount = targets.length - visible.length
-	const isWaiting = AsyncData.isRefreshing(model.dependencies.data)
 	const onViewAll = Message.ClickedTab({ tab: "dependencies" })
-	return h.div(
+	return hstack(h, { wrap: true, className: "gap-x-2 gap-y-1.5" }, [
+		...Arr.map(visible, (target) => stripChip(h, target, onViewAll)),
+		...(hiddenCount > 0
+			? [
+					button(
+						h,
+						{
+							variant: "dashed",
+							size: "xs",
+							// Sized like the chips it follows, not like a toolbar button.
+							className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
+							attributes: [h.OnClick(onViewAll)],
+						},
+						[`+${hiddenCount} more`],
+					),
+				]
+			: []),
+	])
+}
+
+const footprintSection = (h: H, title: string, action: Html | undefined, body: Html): Html =>
+	body === null
+		? null
+		: vstack(h, { gap: "2.5", className: "px-4 py-3", attributes: [h.Key(title)] }, [
+				hstack(h, { gap: "2", justify: "between" }, [
+					eyebrow(h, {}, [title]),
+					...(action === undefined ? [] : [action]),
+				]),
+				body,
+			])
+
+/**
+ * Where the service runs, what it calls and what it sends: one quiet card under the triage
+ * panels, since none of it says whether the service is healthy. Nothing while all three are empty.
+ */
+export const footprintPanel = (h: H, model: Model, envFilterActive: boolean): Html => {
+	const scope = envFilterActive ? allEnvironments(h) : undefined
+	const sections = Arr.filter(
 		[
-			h.Class(cn("flex flex-wrap items-center gap-x-2 gap-y-1.5", refreshingClass(isWaiting))),
-			...(isWaiting ? [h.AriaBusy(true)] : []),
+			footprintSection(h, "Runs on", scope, runsOnBody(h, model)),
+			footprintSection(
+				h,
+				"Talks to",
+				viewAllButton(h, Message.ClickedTab({ tab: "dependencies" })),
+				talksToBody(h, model),
+			),
+			footprintSection(h, "Ingest this window", scope, usageBody(h, model)),
 		],
-		[
-			eyebrow(h, {}, ["Talks to"]),
-			...Arr.map(visible, (target) => stripChip(h, target, onViewAll)),
-			...(hiddenCount > 0
-				? [
-						button(
-							h,
-							{
-								variant: "dashed",
-								size: "xs",
-								// Sized like the chips it follows, not like a toolbar button.
-								className: "h-auto py-0.5 text-xs font-normal sm:h-auto",
-								attributes: [h.OnClick(onViewAll)],
-							},
-							[`+${hiddenCount} more`],
-						),
-					]
-				: []),
-			viewAllButton(h, onViewAll),
-		],
+		(section) => section !== null,
 	)
+	if (sections.length === 0) return null
+	const isWaiting =
+		AsyncData.isRefreshing(model.usage.data) ||
+		AsyncData.isRefreshing(model.dependencies.data) ||
+		AsyncData.isRefreshing(model.runtimes.data) ||
+		AsyncData.isRefreshing(model.workloads.data)
+	return sectionCard(h, { title: "Footprint", className: refreshingClass(isWaiting) }, [
+		dividedList(h, { as: "div", bordered: false }, sections),
+	])
 }
