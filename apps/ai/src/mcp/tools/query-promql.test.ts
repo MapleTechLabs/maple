@@ -125,7 +125,7 @@ describe("query_promql", () => {
 			expect(text).toContain('| {http_route="/checkout", job="api"} | 3 | 2 | 4 | 6 | 6 |')
 			expect(text).toContain('| {http_route="/checkout", job="web"} | 3 | 0.5 | 0.75 | 1 | 0.5 |')
 			expect(text).toContain(
-				'{http_route="/checkout", job="web"}: 11-15 10:59 1, 11-15 10:59 NaN, 11-15 11:00 0.5',
+				'{http_route="/checkout", job="web"}: 11-15 10:59:00 1, 11-15 10:59:30 NaN, 11-15 11:00:00 0.5',
 			)
 		}),
 	)
@@ -281,6 +281,21 @@ describe("query_promql empty results", () => {
 			)
 			expect(text).toContain("move end_time")
 			expect(text).not.toContain("Widen start_time")
+		}),
+	)
+})
+
+describe("query_promql statistics", () => {
+	it.effect("counts infinite points in the statistics and shows seconds in sampled times", () =>
+		Effect.gen(function* () {
+			const { text } = yield* run({ query: QUERY, ...WINDOW, step: "15s" }, () =>
+				Effect.succeed({
+					resultType: "matrix" as const,
+					result: [series("svc", [1, Number.POSITIVE_INFINITY])],
+				}),
+			)
+			expect(text).toContain("| +Inf |")
+			expect(text).toMatch(/\d{2}:\d{2}:\d{2}/)
 		}),
 	)
 })
