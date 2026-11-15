@@ -87,6 +87,9 @@ describeWithChdb("release verification", () => {
 			// a lifetime comparison would see nothing either, but neither must the window.
 			...minutes("web", "w1", -60, 0, 50, 1),
 			...minutes("web", "w2", 0, 10, 50, 1),
+			// cron: no version reported before, then its first tagged build.
+			...minutes("cron", "unknown", -40, 0, 60, 0),
+			...minutes("cron", "c1", 0, 20, 60, 0),
 			// The window ends 30 minutes in: v2's minutes past it do not count.
 		])
 	})
@@ -200,5 +203,12 @@ describeWithChdb("release verification", () => {
 		expect(Arr.map(rows, (row) => [row.serviceName, row.commitSha, row.beforeSpans])).toEqual([
 			["web", "w2", 1_500],
 		])
+	})
+
+	test("traffic that reported no version still counts as the before of the first tagged build", () => {
+		const cron = Arr.findFirst(run(), (row) => row.commitSha === "c1")
+		if (cron._tag !== "Some") throw new Error("c1 missing")
+		expect(cron.value.beforeSpans).toBe(1_800)
+		expect(Arr.some(run(), (row) => row.commitSha === "unknown")).toBe(false)
 	})
 })

@@ -25,6 +25,8 @@ export type Health = Readonly<{
 const APDEX_DROP = 0.05
 /** The share of buckets with traffic that makes a service steady enough for an empty one to alarm. */
 const STEADY_SHARE = 0.9
+/** Buckets of history before an empty run can read as an outage. */
+const MIN_STEADY_HISTORY = 5
 
 const sum = (values: ReadonlyArray<number>) => Arr.reduce(values, 0, (acc, value) => acc + value)
 
@@ -72,9 +74,11 @@ export const deriveHealth = (points: ReadonlyArray<DetailPoint>, endMs: number):
 	const latest = Arr.last(complete)
 	const lastServed = Arr.last(served)
 	if (latest._tag === "None" || lastServed._tag === "None") return null
-	// An empty bucket is an outage only for a service busy in nearly every bucket before it; a
-	// sparse one (a few requests a minute) has empty minutes all the time, so it reads its last busy one.
-	const isSteady = served.length >= STEADY_SHARE * (complete.length - 1)
+	// An empty bucket is an outage only for a service busy in nearly every bucket before the empty
+	// run it ends; a sparse one (a few requests a minute) has empty minutes all the time, so it
+	// reads its last busy one. Too short a history proves nothing either way.
+	const history = Arr.filter(complete, (point) => point.bucket <= lastServed.value.bucket)
+	const isSteady = history.length >= MIN_STEADY_HISTORY && served.length >= STEADY_SHARE * history.length
 	const isSilent = latest.value.totalCount === 0 && isSteady
 	const now = isSilent ? latest.value : lastServed.value
 	const bucketSeconds = bucketSecondsOf(points)
