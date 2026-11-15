@@ -55,6 +55,31 @@ const DEFAULT_MAX_ROWS = 22
 const HINT_KBD = "h-4 font-mono text-4xs"
 
 /** A profile value in its unit: CPU or wall time, bytes, or a plain count. */
+/** What `profileSummary` reads of a profile. */
+export interface ProfileTotals {
+	readonly sampleType: string
+	readonly sampleUnit: string
+	readonly totalValue: number
+	readonly totalStacks: number
+	readonly durationNano: number
+	/** The stacks read, which a capped read leaves short of `totalStacks`. */
+	readonly stacks: ReadonlyArray<unknown>
+}
+
+/** The profile's total and stack count. Only CPU time reads as time on CPU and average cores. */
+export const profileSummary = (profile: ProfileTotals): string => {
+	const stacks =
+		profile.stacks.length < profile.totalStacks
+			? `heaviest ${formatNumber(profile.stacks.length)} of ${formatNumber(profile.totalStacks)} distinct stacks`
+			: `${formatNumber(profile.totalStacks)} distinct stacks`
+	const value = formatProfileValue(profile.totalValue, profile.sampleUnit)
+	if (profile.sampleType !== "cpu") return `${value}, ${stacks}`
+	if (profile.sampleUnit !== "nanoseconds" || profile.durationNano === 0)
+		return `${value} on CPU, ${stacks}`
+	const cores = profile.totalValue / profile.durationNano
+	return `${value} on CPU, ${cores.toFixed(2)} cores on average, ${stacks}`
+}
+
 export const formatProfileValue = (value: number, unit: string): string => {
 	if (unit === "nanoseconds") return formatDuration(value / 1_000_000)
 	if (unit === "bytes") return formatBytes(value)
