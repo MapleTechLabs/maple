@@ -6,7 +6,7 @@ import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { Option, Record, Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
-import { accept, idle, acceptCached } from "@maple/views/data/keyed"
+import { accept, idle, acceptCached, baseKey } from "@maple/views/data/keyed"
 import { hrefFor, queryOf } from "../../route"
 import { type PageContext, PageOutMessage, withParams } from "../contract"
 import { ReadClock, ReadRefreshClock } from "./command"
@@ -44,7 +44,20 @@ export const init = (
 })
 
 /** A search change (the range) re-keys every query on the new window. */
-export const locationChanged = (model: Model, context: PageContext): UpdateReturn => load(model, context)
+export const locationChanged = (model: Model, context: PageContext): UpdateReturn =>
+	followProfile(model, load(model, context))
+
+/**
+ * A profile read for another window or service opens on its whole flame graph: the zoom, the
+ * selection and the search were the last profile's. A refresh of the same window keeps them.
+ */
+const followProfile = (before: Model, step: UpdateReturn): UpdateReturn => {
+	const was = before.profile.key
+	const now = step.model.profile.key
+	return was === null || now === null || baseKey(was) === baseKey(now)
+		? step
+		: { ...step, model: { ...step.model, flamegraph: ProfileFlamegraph.reset(step.model.flamegraph) } }
+}
 
 /** The refresh spinner stops once nothing the refresh started is still loading. */
 const settleRefresh = (model: Model): Model => {
@@ -90,6 +103,9 @@ const retry = (model: Model, context: PageContext, slot: SlotName): UpdateReturn
 const ALL_SLOTS: ReadonlyArray<SlotName> = ["overview", "operations", "timeseries", "golden", "profile"]
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
+	followProfile(model, updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
 		CompletedReadClock: ({ nowMs }) =>
 			load({ ...model, nowMs, maybeAnchorMs: Option.some(snapToMinute(nowMs)) }, context),
