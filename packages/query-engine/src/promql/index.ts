@@ -10,6 +10,7 @@ export {
 	type PromqlMetadataRow,
 	promqlMetadataRowSchema,
 	promqlAttributeValuesQuery,
+	promqlInstanceValuesQuery,
 	promqlMetadataQuery,
 	promqlServiceNamesQuery,
 	type PromqlSelectorRow,

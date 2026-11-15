@@ -772,6 +772,28 @@ export function promqlServiceNamesQuery(opts: { readonly limit: number }) {
 }
 
 /**
+ * Distinct `service.instance.id` values (the `instance` label) in one metric table. No rollup keeps
+ * id-like keys, so this reads the table itself, bounded by org, window and limit.
+ */
+export function promqlInstanceValuesQuery(opts: {
+	readonly table: PromqlMetricTable
+	readonly limit: number
+}) {
+	return from(metricTable(opts.table))
+		.select(($) => ({ instance: sql(T.string)`${$.ResourceAttributes}['service.instance.id']` }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.TimeUnix.gte(utcSecondsParam("startTime")),
+			$.TimeUnix.lte(utcSecondsParam("endTime")),
+			sql.cond`${$.ResourceAttributes}['service.instance.id'] != ''`,
+		])
+		.groupBy("instance")
+		.orderBy(["instance", "asc"])
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+/**
  * Metric data-point attribute values for the raw keys a label name normalizes from, read from the
  * hourly rollup (fed by `metrics_sum` only) so a bare label-values call never scans metric tables.
  */
