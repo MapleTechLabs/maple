@@ -25,8 +25,9 @@ const isRealTime = (match: RegExpExecArray): boolean => {
 		offsetHour = 0,
 		offsetMinute = 0,
 	] = Arr.map(match, (part) => (part === undefined ? undefined : Number(part)))
-	// Day 0 of the next month is this month's last day.
-	const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+	// Arithmetic, not Date.UTC, which reads years 0 to 99 as 1900 to 1999.
+	const isLeap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+	const daysInMonth = month === 2 ? (isLeap ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31
 	return (
 		month >= 1 &&
 		month <= 12 &&
