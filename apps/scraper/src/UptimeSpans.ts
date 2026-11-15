@@ -147,22 +147,24 @@ export const certificateAttributes = (certificate: ProbeOutcome["certificate"]):
 					: { "tls.server.issuer": `CN=${certificate.issuer}` }),
 			}
 
-/** `url.full` without the query or fragment, which may carry credentials. */
-const safeUrl = (raw: string): Record<string, string | number> =>
-	Option.match(parseUrl(raw), {
-		onNone: () => ({ "url.full": Str.split(/[?#]/u)(raw)[0] ?? "" }),
+/** A step's configured URL without its query or fragment, braces of `{{name}}` kept readable. */
+const stepTarget = (template: string): Record<string, string | number> =>
+	Option.match(parseUrl(template), {
+		onNone: () => ({ "url.full": Str.split(/[?#]/u)(template)[0] ?? "" }),
 		onSome: (url) => ({
-			"url.full": `${url.origin}${url.pathname}`,
+			"url.full": readableBraces(`${url.origin}${url.pathname}`),
 			"server.address": url.hostname,
 			"server.port": Number(url.port || (url.protocol === "https:" ? 443 : 80)),
 		}),
 	})
 
+/** The URL parser escapes `{{name}}` in a path; a span shows it as written. */
+const readableBraces = (text: string): string => Str.replaceAll("%7D", "}")(Str.replaceAll("%7B", "{")(text))
+
 /** A multi-step check's step as a CLIENT child of the check span, ids equal to its `traceparent`. */
 export const toStepSpan = (check: UptimeCheckSpan, step: UptimeStepRun, index: number): OtlpSpan => {
 	const { outcome } = step
-	const path =
-		step.url === null ? Option.none<string>() : Option.map(parseUrl(step.url), (url) => url.pathname)
+	const path = Option.map(parseUrl(step.url), (url) => readableBraces(url.pathname))
 	return {
 		traceId: check.trace.traceId,
 		spanId: step.spanId,
@@ -175,7 +177,7 @@ export const toStepSpan = (check: UptimeCheckSpan, step: UptimeStepRun, index: n
 		startTimeUnixNano: toUnixNano(step.startedAtMs),
 		endTimeUnixNano: toUnixNano(step.endedAtMs),
 		attributes: keyValues({
-			...(step.url === null ? undefined : safeUrl(step.url)),
+			...stepTarget(step.url),
 			"http.request.method": step.method,
 			"maple.uptime.step.name": step.name,
 			"maple.uptime.step.index": index + 1,

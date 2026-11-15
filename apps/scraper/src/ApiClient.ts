@@ -1,16 +1,11 @@
-import { Context, Duration, Effect, Layer, Redacted, Schema, String as Str } from "effect"
+import { Context, Duration, Effect, Layer, Redacted, Schema, String as Str, Array as Arr } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import {
 	InternalScrapeTargetList,
 	type InternalScrapeTarget,
 	type ScrapeResultReport,
 } from "@maple/domain/http"
-import {
-	UptimeCheckReportList,
-	UptimeProbeTargetList,
-	type UptimeCheckReport,
-	type UptimeProbeTarget,
-} from "@maple/domain/uptime"
+import { UptimeCheckReportList, UptimeProbeTarget, type UptimeCheckReport } from "@maple/domain/uptime"
 import { ScraperEnv } from "./Env"
 import { executeAttempt, isTransientStatus, TRANSIENT_RETRY } from "./retry"
 
@@ -47,6 +42,8 @@ const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))
  * be dropped: the reporter's buffer is bounded and its shutdown flush is timed.
  */
 const isRefusal = (status: number | null): boolean => status === 429 || status === 503
+
+const decodeUptimeTarget = Schema.decodeUnknownEffect(UptimeProbeTarget)
 
 export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@maple/scraper/ApiClient", {
 	make: Effect.gen(function* () {
@@ -140,7 +137,23 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientApi>()("@mapl
 			Effect.withSpan("ApiClient.listTargets"),
 		)
 
-		const listUptimeTargets = getList("uptime-targets", UptimeProbeTargetList).pipe(
+		// Decoded one by one: a monitor this build cannot run yet (a kind the API shipped first) is
+		// skipped, not a failed refresh that would freeze every other monitor's config.
+		const listUptimeTargets = getList("uptime-targets", Schema.Array(Schema.Unknown)).pipe(
+			Effect.flatMap((rows) =>
+				Effect.forEach(rows, (row) =>
+					decodeUptimeTarget(row).pipe(
+						Effect.map((target) => [target]),
+						Effect.catchTag("SchemaError", (error) =>
+							Effect.logWarning("Skipping an uptime monitor this scraper cannot run").pipe(
+								Effect.annotateLogs({ cause: error.message }),
+								Effect.as([]),
+							),
+						),
+					),
+				),
+			),
+			Effect.map((nested) => Arr.flatten(nested)),
 			Effect.withSpan("ApiClient.listUptimeTargets"),
 		)
 

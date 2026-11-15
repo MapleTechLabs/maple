@@ -13,6 +13,7 @@ import {
 import {
 	effectiveAssertions,
 	extractVariables,
+	headersProblem,
 	interpolate,
 	type UptimeMultiStepConfig,
 	type UptimeStep,
@@ -73,12 +74,13 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 				variables: Readonly<Record<string, string>>,
 				trace: CheckTraceContext,
 				remainingMs: number,
+				runTimeoutMs: number,
 			) =>
 				Effect.gen(function* () {
 					const spanId = yield* newSpanId
 					const startedAtMs = yield* Clock.currentTimeMillis
 					const filled = interpolateStep(step, variables)
-					const finish = (url: string | null, outcome: ProbeOutcome, extracted = {}) =>
+					const finish = (outcome: ProbeOutcome, extracted = {}) =>
 						Effect.map(Clock.currentTimeMillis, (endedAtMs) => ({
 							run: {
 								name: step.name,
@@ -93,10 +95,12 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 						}))
 					if (Result.isFailure(filled))
 						return yield* finish(
-							null,
 							failed(0, "assertion", `Variable {{${filled.failure}}} has no value`),
 						)
 					const { url, headers, body } = filled.success
+					// A value read from a response may hold what no header can carry; the step fails, the run goes on reporting.
+					const unsendable = headersProblem(headers)
+					if (unsendable !== null) return yield* finish(failed(0, "assertion", unsendable))
 					const contentType = contentTypeOf(headers)
 					const { outcome, observation } = yield* http.request(
 						{
@@ -122,11 +126,16 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 							timeoutMs: remainingMs,
 						},
 					)
-					if (!outcome.ok || observation === null) return yield* finish(url, outcome)
+					// A step's time limit is what is left of the run's, so its timeout is the run's.
+					if (outcome.errorType === "timeout")
+						return yield* finish({
+							...outcome,
+							error: `The run took longer than ${formatSeconds(runTimeoutMs)}`,
+						})
+					if (!outcome.ok || observation === null) return yield* finish(outcome)
 					const extracted = extractVariables(step.extract, observation)
 					return Result.isFailure(extracted)
 						? yield* finish(
-								url,
 								failed(
 									outcome.durationMs,
 									"assertion",
@@ -134,7 +143,7 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 									outcome.statusCode,
 								),
 							)
-						: yield* finish(url, outcome, extracted.success)
+						: yield* finish(outcome, extracted.success)
 				})
 
 			const probe = (config: UptimeMultiStepConfig, trace: CheckTraceContext) =>
@@ -154,7 +163,7 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 									const run: UptimeStepRun = {
 										name: step.name,
 										method: step.method,
-										url: null,
+										url: step.url,
 										spanId: yield* newSpanId,
 										startedAtMs: now,
 										endedAtMs: now,
@@ -171,6 +180,7 @@ export class UptimeMultiStepProbe extends Context.Service<UptimeMultiStepProbe, 
 									acc.variables,
 									trace,
 									remainingMs,
+									config.timeoutMs,
 								)
 								return {
 									variables: { ...acc.variables, ...extracted },

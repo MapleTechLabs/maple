@@ -35,8 +35,11 @@ export interface ProbeOutcome {
 export interface UptimeStepRun {
 	readonly name: string
 	readonly method: string
-	/** The URL it requested, interpolated; null when a variable it needed was missing. */
-	readonly url: string | null
+	/**
+	 * The step's URL as configured, `{{name}}` kept: values read from responses (tokens, ids) never
+	 * reach a span name or attribute.
+	 */
+	readonly url: string
 	readonly spanId: string
 	readonly startedAtMs: number
 	readonly endedAtMs: number

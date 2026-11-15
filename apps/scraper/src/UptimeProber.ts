@@ -5,7 +5,7 @@ import { uptimeChecksTotal } from "./Metrics"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
 import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
-import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
+import { type CheckTraceContext, failed, type ProbeOutcome } from "./UptimeProbe"
 import { UptimeSpanExporter } from "./UptimeSpanExporter"
 import { UptimeTcpProbe } from "./UptimeTcpProbe"
 
@@ -51,7 +51,20 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 				const kind = target.config._tag
 				const trace = yield* newTraceContext
 				const startedAtMs = yield* Clock.currentTimeMillis
-				const outcome: ProbeOutcome = yield* runProbe(target.config, trace)
+				// A probe that dies (a bug, a runtime refusing a request) is a failed check, never a stopped loop.
+				const outcome: ProbeOutcome = yield* runProbe(target.config, trace).pipe(
+					Effect.catchDefect((defect) =>
+						Effect.as(
+							Effect.logWarning("Uptime check failed unexpectedly").pipe(
+								Effect.annotateLogs({
+									"maple.uptime.monitor_id": target.id,
+									error: String(defect),
+								}),
+							),
+							failed(0, "transport", "The check could not run"),
+						),
+					),
+				)
 				const endedAtMs = yield* Clock.currentTimeMillis
 
 				yield* Effect.annotateCurrentSpan({

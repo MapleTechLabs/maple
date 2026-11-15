@@ -36,6 +36,7 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	heartbeatDeadline,
+	headersProblem,
 	multiStepConfigProblem,
 	variablesIn,
 	uptimeHttpRequest,
@@ -265,12 +266,15 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 	if (config._tag !== kind)
 		return yield* invalid(`config.type '${config._tag}' does not match kind '${kind}'`)
 	switch (config._tag) {
-		case "http":
+		case "http": {
 			if (config.body !== undefined && config.method !== "POST") {
 				return yield* invalid("A request body needs the POST method")
 			}
+			const headerIssue = headersProblem(config.headers)
+			if (headerIssue !== null) return yield* invalid(headerIssue)
 			yield* validateUrl(config.url)
 			break
+		}
 		case "tcp":
 			yield* validateHost(config.host)
 			break
@@ -278,7 +282,21 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 			yield* validateHost(config.hostname)
 			break
 		case "multistep": {
-			const problem = multiStepConfigProblem(config)
+			const problem =
+				multiStepConfigProblem(config) ??
+				Option.getOrNull(
+					Arr.findFirst(
+						Arr.map(config.steps, (step, index) => {
+							// A {{name}} is checked once filled in; the literal around it must already be sendable.
+							const literal = Rec.map(step.headers, (value) =>
+								Str.replace(/\{\{[^}]*\}\}/gu, "")(value),
+							)
+							const issue = headersProblem(literal)
+							return issue === null ? null : `Step ${index + 1} (${step.name}): ${issue}`
+						}),
+						(issue): issue is string => issue !== null,
+					),
+				)
 			if (problem !== null) return yield* invalid(problem)
 			// A URL built from a variable is checked when it is sent; the scraper refuses private hosts then.
 			yield* Effect.forEach(
@@ -355,14 +373,22 @@ const keepRedactedIn = (
 const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
 	if (next._tag === "multistep") {
 		const storedSteps = current._tag === "multistep" ? current.steps : []
-		// Step by step, by position: a stored value goes only to the step it was entered for.
+		// A stored value goes back only to the step it was entered for: the same name at the same
+		// literal origin, wherever the step now sits. A host built from a variable keeps nothing.
 		return Effect.map(
-			Effect.forEach(next.steps, (step, index) =>
-				Effect.map(keepRedactedIn(storedSteps[index]?.headers ?? {}, step.headers), (headers) => ({
+			Effect.forEach(next.steps, (step) => {
+				const origin = originOf(step.url)
+				const stored = Str.includes("{{")(origin)
+					? undefined
+					: Arr.findFirst(
+							storedSteps,
+							(candidate) => candidate.name === step.name && originOf(candidate.url) === origin,
+						).pipe(Option.getOrUndefined)
+				return Effect.map(keepRedactedIn(stored?.headers ?? {}, step.headers), (headers) => ({
 					...step,
 					headers,
-				})),
-			),
+				}))
+			}),
 			(steps) => ({ ...next, steps }),
 		)
 	}
@@ -396,18 +422,10 @@ const keepsRedacted = (headers: Readonly<Record<string, string>>) =>
 	Arr.some(Rec.values(headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
 
 const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) =>
-	(current._tag === "http" &&
-		next._tag === "http" &&
-		originOf(next.url) !== originOf(current.url) &&
-		keepsRedacted(next.headers)) ||
-	(current._tag === "multistep" &&
-		next._tag === "multistep" &&
-		Arr.some(
-			next.steps,
-			(step, index) =>
-				keepsRedacted(step.headers) &&
-				originOf(step.url) !== originOf(current.steps[index]?.url ?? ""),
-		))
+	current._tag === "http" &&
+	next._tag === "http" &&
+	originOf(next.url) !== originOf(current.url) &&
+	keepsRedacted(next.headers)
 		? Effect.fail(
 				invalid(
 					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",

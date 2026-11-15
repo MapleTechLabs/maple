@@ -1466,6 +1466,72 @@ describe("UptimeMonitorsService backing alert rule", () => {
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 
+		it.effect("keeps hidden header values with their own step when steps are reordered", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const twoKeys: UptimeMonitorConfig = {
+					_tag: "multistep",
+					timeoutMs: 30_000,
+					steps: [
+						step("Admin", "https://status.example.com/admin", {
+							headers: { "X-Api-Key": "admin-key" },
+						}),
+						step("Public", "https://status.example.com/public", {
+							headers: { "X-Api-Key": "public-key" },
+						}),
+					],
+				}
+				const monitor = yield* createMultiStep(twoKeys)
+				yield* service.update(ORG, monitor.id, {
+					config: {
+						_tag: "multistep",
+						timeoutMs: 30_000,
+						steps: [
+							step("Public", "https://status.example.com/public", {
+								headers: { "X-Api-Key": "[redacted]" },
+							}),
+							step("Admin", "https://status.example.com/admin", {
+								headers: { "X-Api-Key": "[redacted]" },
+							}),
+						],
+					},
+					updatedBy: USER,
+				})
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep"
+						? Arr.map(target.config.steps, (s) => [s.name, s.headers["X-Api-Key"]])
+						: null,
+					[
+						["Public", "public-key"],
+						["Admin", "admin-key"],
+					],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("refuses a header value no HTTP request can carry", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const error = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({
+							steps: [
+								step("A", "https://status.example.com/a", {
+									headers: { "X-Note": "line\nbreak" },
+								}),
+							],
+						}),
+					),
+				)
+				assert.strictEqual(
+					error.message,
+					"Step 1 (A): Header X-Note has a character an HTTP header cannot carry (a line break, a control or non-Latin-1 character)",
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
 		it.effect("keeps a step's hidden header value on edit only for the same step and origin", () => {
 			const testDb = createTestDb(trackedDbs)
 			return Effect.gen(function* () {
@@ -1503,7 +1569,10 @@ describe("UptimeMonitorsService backing alert rule", () => {
 						updatedBy: USER,
 					}),
 				)
-				assert.include(moved.message, "different origin")
+				assert.strictEqual(
+					moved.message,
+					"Header X-Api-Key has no stored value to keep; send its real value",
+				)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		})
 	})

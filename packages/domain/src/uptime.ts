@@ -566,3 +566,23 @@ export const extractVariables = (
 		}),
 	)
 }
+
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/u
+// Tab, visible ASCII and Latin-1: what an HTTP/1.1 client sends; CR, LF and other controls are not.
+const HEADER_VALUE = /^[\t\u0020-\u007e\u0080-\u00ff]*$/u
+
+/** Why a header cannot be sent, or null: an invalid name, or a value with a control or non-Latin-1 character. */
+export const headerProblem = (name: string, value: string): string | null =>
+	!HEADER_NAME.test(name)
+		? `Header name '${name}' is not a valid HTTP header name`
+		: HEADER_VALUE.test(value)
+			? null
+			: `Header ${name} has a character an HTTP header cannot carry (a line break, a control or non-Latin-1 character)`
+
+/** The first header in `headers` that cannot be sent, as a sentence, or null. */
+export const headersProblem = (headers: Readonly<Record<string, string>>): string | null =>
+	Option.getOrNull(
+		Arr.findFirst(Rec.toEntries(headers), ([name, value]) => headerProblem(name, value) !== null).pipe(
+			Option.map(([name, value]) => headerProblem(name, value) ?? ""),
+		),
+	)

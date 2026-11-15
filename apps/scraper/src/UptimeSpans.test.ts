@@ -148,7 +148,7 @@ describe("toOtlpSpan", () => {
 					{
 						name: "Orders",
 						method: "GET",
-						url: "https://api.example.com/orders",
+						url: "https://api.example.com/orders/{{order_id}}",
 						spanId: "2222222222222222",
 						startedAtMs: 1_761_436_800_040,
 						endedAtMs: 1_761_436_800_090,
@@ -162,7 +162,8 @@ describe("toOtlpSpan", () => {
 			[root?.parentSpanId, login?.parentSpanId, orders?.parentSpanId],
 			[undefined, TRACE.spanId, TRACE.spanId],
 		)
-		assert.deepStrictEqual([login?.name, orders?.name], ["POST /login", "GET /orders"])
+		// The configured URL, not the one filled in from a response.
+		assert.deepStrictEqual([login?.name, orders?.name], ["POST /login", "GET /orders/{{order_id}}"])
 		assert.deepStrictEqual(attrs(login?.attributes ?? [])["url.full"], {
 			stringValue: "https://api.example.com/login",
 		})

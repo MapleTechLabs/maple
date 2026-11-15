@@ -179,4 +179,24 @@ describe("UptimeMultiStepProbe", () => {
 			assert.strictEqual(recorded.length, 1)
 		}).pipe(Effect.provide(ProbeLive)),
 	)
+
+	it.effect("fails the step a response value would break the header of, without sending it", () =>
+		Effect.gen(function* () {
+			const recorded: Array<RecordedRequest> = []
+			const outcome = yield* run(
+				LOGIN_THEN_ORDERS,
+				recorded,
+				() =>
+					new Response('{"session":{"token":"a\\r\\nX-Injected: 1"}}', {
+						status: 200,
+						headers: { "x-region": "eu" },
+					}),
+			)
+			assert.strictEqual(
+				outcome.error,
+				"Step 2 (List orders): Header authorization has a character an HTTP header cannot carry (a line break, a control or non-Latin-1 character)",
+			)
+			assert.strictEqual(recorded.length, 1)
+		}).pipe(Effect.provide(ProbeLive)),
+	)
 })
