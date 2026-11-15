@@ -301,6 +301,11 @@ describe("cost budgets", () => {
 		const settled = answered(late, afterSecond.list.key, [first.id, second.id])
 		expect(isOn(settled, first.id)).toEqual(Option.some(false))
 		expect(isOn(settled, second.id)).toEqual(Option.some(false))
+		// The other order: the newer read answers first, and the older one cannot overwrite it.
+		const newerFirst = answered(afterSecond, afterSecond.list.key, [first.id, second.id])
+		const overtaken = answered(newerFirst, afterFirst.list.key, [first.id])
+		expect(isOn(overtaken, second.id)).toEqual(Option.some(false))
+		expect(overtaken.list).toBe(newerFirst.list)
 	})
 
 	// An account's id means nothing to a reader: the org's sources say what reads it.
