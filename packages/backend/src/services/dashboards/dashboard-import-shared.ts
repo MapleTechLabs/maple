@@ -65,6 +65,11 @@ function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
 		else if (ch === "-" && sql[i + 1] === "-") {
 			// A line comment runs to the newline; its quotes and parentheses do not count.
 			while (i < sql.length && sql[i] !== "\n") i += 1
+		} else if (ch === "/" && sql[i + 1] === "*") {
+			// A block comment runs to its close; a clause named inside it is not the query's.
+			i += 2
+			while (i < sql.length && !(sql[i] === "*" && sql[i + 1] === "/")) i += 1
+			i += 1
 		} else if (ch === "(") depth += 1
 		else if (ch === ")") depth -= 1
 		else if (depth === 0) {
@@ -75,7 +80,8 @@ function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
 	return undefined
 }
 
-const TRAILING_CLAUSE = /GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT|SETTINGS/
+// Every clause ClickHouse allows after WHERE; the org filter goes before the first of them.
+const TRAILING_CLAUSE = /GROUP\s+BY|HAVING|WINDOW|QUALIFY|ORDER\s+BY|LIMIT|OFFSET|FORMAT|SETTINGS/
 
 /**
  * The outer query with `$__orgFilter` ANDed onto its WHERE (or a WHERE added), before its first
