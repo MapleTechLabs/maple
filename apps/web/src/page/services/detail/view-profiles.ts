@@ -1,8 +1,7 @@
-import { formatNumber } from "@maple/ui/lib/format"
 import { refreshingClass } from "@maple/ui/lib/refreshing"
 import { cn } from "@maple/ui/lib/utils"
 import {
-	formatProfileValue,
+	profileSummary,
 	topFunctionsTable,
 	view as flamegraphView,
 } from "@maple/views/profiles/profile-flamegraph-view"
@@ -43,20 +42,6 @@ export const PROFILE_CHART_ROWS = 22
 export const PROFILING_SNIPPET = `import { Maple } from "@maple-dev/effect-sdk/server"
 
 Maple.layer({ serviceName: "my-service", profiling: true })`
-
-/** The profile's total and stack count. Only CPU time reads as time on CPU and average cores. */
-export const profileSummary = (profile: Profile): string => {
-	const stacks =
-		profile.truncated && profile.stacks.length < profile.totalStacks
-			? `heaviest ${formatNumber(profile.stacks.length)} of ${formatNumber(profile.totalStacks)} distinct stacks`
-			: `${formatNumber(profile.totalStacks)} distinct stacks`
-	const value = formatProfileValue(profile.totalValue, profile.sampleUnit)
-	if (profile.sampleType !== "cpu") return `${value}, ${stacks}`
-	if (profile.sampleUnit !== "nanoseconds" || profile.durationNano === 0)
-		return `${value} on CPU, ${stacks}`
-	const cores = profile.totalValue / profile.durationNano
-	return `${value} on CPU, ${cores.toFixed(2)} cores on average, ${stacks}`
-}
 
 const loadingState = (h: H): Html =>
 	vstack(h, { gap: "3", attributes: [h.AriaBusy(true), h.AriaLabel("Loading the profile")] }, [
