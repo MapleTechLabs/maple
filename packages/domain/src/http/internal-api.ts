@@ -42,7 +42,7 @@ import { ApiSchemaErrors, ApiUnexpectedErrors } from "./api-boundary"
  * What belongs here is transport whose request and response shapes are allowed
  * to change with the UI — raw SQL, generic query documents, dashboard-builder
  * facet discovery, infrastructure drill-downs — plus the dashboard-only product
- * workflows (checkout and billing controls, digest subscriptions, demo seeding,
+ * workflows (checkout and billing controls, digest subscriptions, saved explorer views, demo seeding,
  * AI-triage settings, the error-issue workflow, integration and code-review
  * settings, organization setup, BYO ClickHouse configuration) that were never
  * public API and lived under `/api` until the v1 API was retired. Nothing here is a stable
