@@ -20,6 +20,7 @@ import {
 	catalogQuery,
 	promqlCatalogRowSchema,
 	promqlInstanceValuesQuery,
+	promqlJobValuesQuery,
 	promqlMetadataQuery,
 	promqlMetadataRowSchema,
 	prometheusMetadata,
@@ -338,6 +339,7 @@ const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 const decodeMetadata = decodeJsonEachRow(promqlMetadataRowSchema)
 const decodeInstances = decodeJsonEachRow(Schema.Struct({ instance: Schema.String }))
+const decodeJobs = decodeJsonEachRow(Schema.Struct({ job: Schema.String }))
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
 	const compiled = CH.compileUnsafe(catalogQuery(), {
@@ -632,5 +634,27 @@ describeWithChdb("PromQL selector source", () => {
 		expect(instances(ORG_A, "metrics_sum")).toEqual(["i1"])
 		expect(instances(ORG_A, "metrics_gauge")).toEqual(["i1"])
 		expect(instances("org_promql_none", "metrics_sum")).toEqual([])
+	})
+
+	test("job values carry the namespace, the way series labels do", () => {
+		insertValues(db, {
+			...gauge,
+			metric: "namespaced.probe",
+			attributes: {},
+			resource: { ...RESOURCE, "service.name": "cart", "service.namespace": "shop" },
+		})
+		const compiled = CH.compileUnsafe(promqlJobValuesQuery({ table: "metrics_gauge", limit: 100 }), {
+			orgId: OrgId.make(ORG_A),
+			startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
+			endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
+		})
+		const jobs = Arr.map(
+			decodeJobs(db.query(normalizeSqlForClickHouseClient(compiled.sql))),
+			(row) => row.job,
+		)
+		const seriesJobs = Arr.map(select(db, ORG_A, request("namespaced_probe")).series, (s) => s.labels.job)
+		expect(seriesJobs).toEqual(["shop/cart"])
+		expect(Arr.contains(jobs, "shop/cart")).toBe(true)
+		expect(Arr.contains(jobs, "cart")).toBe(false)
 	})
 })

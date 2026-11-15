@@ -45,16 +45,14 @@ const testConfig = () =>
 const catalogWarehouse = makeWarehouseServiceStub({
 	compiledQuery: (_tenant, compiled) => {
 		const query = compiledQueryOf(compiled)
-		const catalog =
-			Str.includes("FROM metric_catalog")(query.sql) && !Str.includes("AS serviceName")(query.sql)
+		const catalog = Str.includes("FROM metric_catalog")(query.sql)
 		return query.decodeRows(
 			catalog ? [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }] : [],
 		)
 	},
 	compiledQueryBounded: (_tenant, compiled) => {
 		const query = compiledQueryOf(compiled)
-		const catalog =
-			Str.includes("FROM metric_catalog")(query.sql) && !Str.includes("AS serviceName")(query.sql)
+		const catalog = Str.includes("FROM metric_catalog")(query.sql)
 		// The bounded read's error union has no decode failure; the fixture rows always decode.
 		return query
 			.decodeRows(
