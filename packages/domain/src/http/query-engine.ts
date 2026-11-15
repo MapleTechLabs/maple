@@ -7,7 +7,7 @@ import { ADVISORY_SEVERITIES } from "../runtime-advisories"
 import { ATTACK_STAGES } from "../security-telemetry"
 import { SERVICE_RUNTIME_KIND_IDS } from "../service-runtimes"
 import { MAX_RAW_SQL_LENGTH } from "../raw-sql"
-import { MAX_PROMQL_QUERY_LENGTH } from "../promql"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "../promql"
 import { RawSqlDisplayType } from "@maple/widgets"
 import {
 	CommitSha,
@@ -4014,7 +4014,7 @@ export class PromqlExecuteRequest extends Schema.Class<PromqlExecuteRequest>("Pr
 	query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
 	minStepSeconds: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	maxDataPoints: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	displayType: Schema.optionalKey(RawSqlDisplayType),

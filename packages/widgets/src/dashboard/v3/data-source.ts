@@ -1,3 +1,4 @@
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
 import { QUERY_RESULT_KINDS, QuerySetSchema } from "@maple/query-model"
 import { Schema } from "effect"
 import { UnknownRecord, WidgetDataSourceTransformV2 } from "../shared/transform"
@@ -91,8 +92,8 @@ export const RawSqlWidgetDataSource = Schema.Struct({
  */
 export const PromqlWidgetDataSource = Schema.Struct({
 	kind: Schema.Literal("promql"),
-	query: Schema.String,
-	legendFormat: Schema.optionalKey(Schema.String),
+	query: Schema.String.check(Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
+	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
 	minStepSeconds: Schema.optionalKey(Schema.Number),
 	displayType: Schema.optionalKey(Schema.String),
 	...transformField,

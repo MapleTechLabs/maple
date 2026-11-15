@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import { PromqlExecuteRequest, RawSqlDisplayType } from "@maple/domain/http"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
 import { MapleInternalHttp } from "./warehouse-services"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effect-utils"
 
@@ -8,12 +9,13 @@ import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "./effec
 // way the share API does, so a board and its share link draw the same series.
 
 const GetPromqlChartInputSchema = Schema.Struct({
-	promql: Schema.String,
+	// The request class's own bounds, so a bad input is a typed input error before it is built.
+	promql: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
-	legendFormat: Schema.optional(Schema.String),
-	minStepSeconds: Schema.optional(Schema.Number),
-	maxDataPoints: Schema.optional(Schema.Number),
+	legendFormat: Schema.optional(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
+	minStepSeconds: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+	maxDataPoints: Schema.optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	displayType: Schema.optional(RawSqlDisplayType),
 })
 
