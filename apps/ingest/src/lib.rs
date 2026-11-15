@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod otel;
 pub mod otlp_json;
 pub mod outbound;
+pub mod profiles;
 pub mod r2;
 pub mod session_analytics;
 pub mod telemetry;
