@@ -3,7 +3,7 @@
 import { Cause, Duration, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { type Headers, HttpClient, HttpClientRequest } from "effect/http"
 import { OtlpResource } from "effect/observability"
-import type { SpanTimeline } from "../shared/span-timeline.js"
+import { SPAN_EVENT_CAPACITY, type SpanTimeline } from "../shared/span-timeline.js"
 import { encodeCpuProfile } from "./cpu-profile.js"
 
 export interface ProfilingOptions {
@@ -295,8 +295,20 @@ export const profilerLayer = (
 				)
 
 			// A window that cannot be read is dropped; the profiler is already on the next one.
+			// Samples after a full span log lose their span link: said once at warning level, then at
+			// debug for each later window, so a busy service is told without a warning a minute.
+			const overflowWarned = yield* Ref.make(false)
+			const reportOverflow = (stopped: Stopped) =>
+				stopped.spanEvents?.overflowed === true
+					? Effect.flatMap(Ref.getAndSet(overflowWarned, true), (warned) =>
+							(warned ? Effect.logDebug : Effect.logWarning)(
+								`[MapleProfiler] more than ${SPAN_EVENT_CAPACITY} span switches in one window; later samples in it are not linked to spans`,
+							),
+						)
+					: Effect.void
 			const exportWindow = (stopped: Stopped) =>
 				Effect.gen(function* () {
+					yield* reportOverflow(stopped)
 					const body = yield* encode(stopped)
 					if (body !== undefined) yield* send(body)
 				}).pipe(
