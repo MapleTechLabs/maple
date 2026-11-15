@@ -27,6 +27,7 @@ import * as AiView from "./ai/view"
 import * as BillingView from "./billing/view"
 import * as MembersView from "./members/view"
 import * as GeneralView from "./general/view"
+import * as DomainsView from "./domains/view"
 import * as DataPlatformView from "./data-platform/view"
 import * as DataSourcesView from "./data-sources/view"
 import * as AuditLogView from "./audit-log/view"
@@ -184,6 +185,16 @@ const tabContent = (h: H, model: Model, inputs: PageViewInputs): ReadonlyArray<H
 					},
 				}),
 			]
+		case "Domains":
+			return [
+				h.submodel({
+					slotId: "settings-domains",
+					model: tab.model,
+					view: DomainsView.view,
+					toParentMessage: (message) => Message.GotDomainsMessage({ message }),
+					viewInputs: {},
+				}),
+			]
 		case "Billing":
 			return [
 				h.submodel({
@@ -306,6 +317,8 @@ const tabDescription = (model: Model): string | undefined => {
 			return KeysView.description
 		case "Members":
 			return MembersView.description
+		case "Domains":
+			return DomainsView.description
 		case "AuditLog":
 			return AuditLogView.description
 		case "SetupHealth":
@@ -334,6 +347,14 @@ const tabActions = (h: H, model: Model): Html | undefined => {
 				model: tab.model,
 				view: MembersView.headerActions,
 				toParentMessage: (message) => Message.GotMembersMessage({ message }),
+				viewInputs: {},
+			})
+		case "Domains":
+			return h.submodel({
+				slotId: "settings-domains-actions",
+				model: tab.model,
+				view: DomainsView.headerActions,
+				toParentMessage: (message) => Message.GotDomainsMessage({ message }),
 				viewInputs: {},
 			})
 		case "DataSources":
