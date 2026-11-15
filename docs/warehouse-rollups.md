@@ -251,7 +251,8 @@ infisical run --env=prod -- bun scripts/backfill-hourly-rollup.ts --rollup aws_m
   for 30 minutes, and refuses once they are older than the source's retention.
 - A day whose whole hours already hold rows is skipped, so a stopped run resumes. A day that
   failed between its two views is skipped too: delete that day's rows and re-run.
-- Run once per workspace (US primary, prod-eu, the legacy mirror) with TINYBIRD_HOST/TOKEN set.
+- Run once per workspace (Infisical `prod` for US, `prod-eu` for EU) after `bun run tinybird:deploy`
+  has promoted the views there; `--until` is when that deploy went live.
 - Try it on a Tinybird branch first: it calls the materialized node population endpoint
   (`/v0/pipes/<pipe>/nodes/<node>/population`) with a `populate_condition` per day, and the
   datasource delete endpoint for the boundary hour.
