@@ -52,6 +52,8 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 	saveThread: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	features: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 }
 
 const DESTINATION_ID = Schema.decodeSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")

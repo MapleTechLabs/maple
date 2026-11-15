@@ -1960,6 +1960,38 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			},
 		],
 	},
+	{
+		// The latest user.name and user.email as argMaxIf states; both views are recreated to write
+		// them. Existing hours hold empty states and are not backfilled, so their users stay unnamed.
+		slug: "user-activity-identity",
+		description: "Add the latest user name and email to user_activity_hourly and recreate its views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("user_activity_hourly", [
+				["UserName", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
+				["UserEmail", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
+				["UserNameAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
+				["UserEmailAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
+			]),
+			dropViews("user_activity_hourly_traces_mv", "user_activity_hourly_logs_mv"),
+		],
+		plan: [
+			[
+				"add-user-activity-identity",
+				"Add the latest user name and email to user_activity_hourly and recreate its two views so new hours carry them",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The identity columns are added as empty aggregate states; existing rows keep every value and read an empty name and email, carried at 0.",
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]
 

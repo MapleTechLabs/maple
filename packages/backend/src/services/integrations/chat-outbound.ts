@@ -56,6 +56,9 @@ export interface OwnedChatWorkspace {
 	readonly name: string
 	/** The connector's per-workspace secret, or `undefined` for a connector that stored none. */
 	readonly credentials: string | undefined
+	/** The workspace's switches: alert posts to channels, and pages by direct message. */
+	readonly alertsEnabled: boolean
+	readonly directMessagesEnabled: boolean
 }
 
 /**
@@ -102,6 +105,8 @@ export const loadOwnedChatWorkspace = Effect.fn("ChatOutbound.loadOwnedChatWorks
 		externalWorkspaceId: row.externalWorkspaceId,
 		name: row.name,
 		credentials,
+		alertsEnabled: row.alertsEnabled,
+		directMessagesEnabled: row.directMessagesEnabled,
 	})
 })
 

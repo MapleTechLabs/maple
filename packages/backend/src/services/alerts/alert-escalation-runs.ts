@@ -311,7 +311,8 @@ export interface StepRecipients {
 /**
  * Who a step pages at `nowMs`: its user targets, plus whoever each schedule target has on call.
  * Each person gets an email row and one row per chat account they linked in the org, on a
- * connector in `directMessageConnectors` with a workspace linked in the org.
+ * connector in `directMessageConnectors` with a workspace linked in the org that has direct
+ * messages on.
  */
 export const loadStepRecipients = (
 	db: MapleDb,
@@ -382,7 +383,7 @@ export const loadStepRecipients = (
 				db.run(
 					PG.from(ChatWorkspaces)
 						.select("connector")
-						.where(($) => [$.orgId.eq(orgId)]),
+						.where(($) => [$.orgId.eq(orgId), $.directMessagesEnabled.eq(true)]),
 				),
 			],
 			{ concurrency: "unbounded" },

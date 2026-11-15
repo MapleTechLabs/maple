@@ -33,6 +33,7 @@ import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
+import { cloudflareFeatureChoice } from "./view-cloudflare-features"
 import { Array as Arr } from "effect"
 
 // Cloudflare in the connect flow: approve Maple on Cloudflare's consent screen, then watch the
@@ -362,5 +363,26 @@ const liveStep = (h: H, model: Model): Html => {
 	)
 }
 
+/** Choose data: the feature switches, saved as they flip. */
+const chooseStep = (h: H, model: Model): Html => {
+	const status = cloudflareStatusOf(model)
+	const error = model.cloudflareCard.features.error
+	return flowColumns(
+		h,
+		[
+			stepCard(h, { icon: "ChartBarIcon", title: "Choose what to collect", note: "Change any time" }, [
+				typography(h, { size: "sm", tone: "muted", as: "p" }, [
+					"Each feature is its own stream. Turning one off stops it and keeps what was already collected.",
+				]),
+				...(status === null || !status.connected
+					? [typography(h, { size: "sm", tone: "muted", as: "p" }, ["Authorize Cloudflare first."])]
+					: [cloudflareFeatureChoice(h, model, status)]),
+			]),
+			...(error === null ? [] : [statusRow(h, { tone: "error", text: `Couldn't save: ${error}` })]),
+		],
+		readsRail(h),
+	)
+}
+
 export const cloudflareFlowView = (h: H, model: Model, stage: FlowStage): Html =>
-	stage === "live" ? liveStep(h, model) : connectStep(h, model)
+	stage === "live" ? liveStep(h, model) : stage === "choose" ? chooseStep(h, model) : connectStep(h, model)

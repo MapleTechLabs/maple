@@ -296,6 +296,13 @@ export const toggledCollect = (model: Model, capability: Capability): Return => 
 	}
 }
 
+/** A connection's switch: its data step opens with the flip drafted, so saving goes the usual way. */
+export const toggledFeature = (model: Model, id: string, capability: Capability): Return =>
+	chain(model, [
+		(next) => openConfigure(next, { _tag: "Connection", id, stage: "choose" }),
+		(next) => toggledCollect(next, capability),
+	])
+
 /** A filter changed after the setup was read (the flow's Back): the script is asked for again. */
 const withFilter = (
 	model: Model,

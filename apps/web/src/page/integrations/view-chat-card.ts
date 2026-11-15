@@ -16,6 +16,7 @@ import { ChatMessage, connectorStatusOf } from "./chat"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { chatCardLoading, identityRow, monoGlyph } from "./view-chat"
+import { chatFeaturePanel } from "./view-chat-features"
 import { disconnectConfirm } from "./view-disconnect"
 import { entryBrand } from "./view-entry"
 import { connectedIntegrationCard } from "./view-integration-card"
@@ -83,7 +84,7 @@ export const chatCard = (h: H, model: Model, timeZone: string): Html => {
 	)
 	const confirmName = Option.map(confirmWorkspace, (workspace) => workspace.name)
 	return vstack(h, { gap: "4" }, [
-		...Arr.map(workspaces, (workspace) =>
+		...Arr.flatMap(workspaces, (workspace) => [
 			connectedIntegrationCard(h, model, {
 				integration: null,
 				brand,
@@ -129,7 +130,8 @@ export const chatCard = (h: H, model: Model, timeZone: string): Html => {
 					],
 				),
 			}),
-		),
+			chatFeaturePanel(h, model, workspace),
+		]),
 		...(status?.supports_identity === true
 			? [identityRow(h, model, manifest.name, status.identity)]
 			: []),

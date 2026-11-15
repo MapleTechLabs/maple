@@ -1114,6 +1114,8 @@ describe("integration checks", () => {
 		const planetscaleConnection = {
 			psOrganization: "acme",
 			detectedPermissions: { readDatabases: true, readOrganization: true },
+			metricsEnabled: true,
+			eventsEnabled: true,
 			lastInventoryAt: NOW - 30 * 60_000,
 			lastInventoryError: null,
 			createdAt: NOW - 30 * 24 * HOUR,
@@ -1125,7 +1127,13 @@ describe("integration checks", () => {
 			region: "us-east",
 			state: "ready",
 		}
-		const neverPolled = { databaseId: "db-1", lastSuccessAt: null, lastErrorAt: null, lastError: null }
+		const neverPolled = {
+			databaseId: "db-1",
+			dataset: "deploy_requests",
+			lastSuccessAt: null,
+			lastErrorAt: null,
+			lastError: null,
+		}
 
 		it("CFG-INTEG-05 says a database never polled, instead of quoting its metadata as an error", () => {
 			const report = runSetupAudit(

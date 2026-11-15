@@ -10,7 +10,13 @@ import {
 	String as Str,
 	Option,
 } from "effect"
-import { CreateScrapeTargetRequest, OrgId, PlanetScaleMetricsTokenRequest, UserId } from "@maple/domain/http"
+import {
+	CreateScrapeTargetRequest,
+	OrgId,
+	PlanetScaleFeaturesRequest,
+	PlanetScaleMetricsTokenRequest,
+	UserId,
+} from "@maple/domain/http"
 import { FetchHttpClient } from "effect/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
@@ -811,6 +817,128 @@ describe("PlanetScaleConnectionService", () => {
 			const list = yield* scrapeTargetsService.list(orgId)
 			assert.strictEqual(list.targets.length, 0)
 			assert.deepStrictEqual(yield* integrationSources(testDb), [])
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
+	it.effect("events off deletes Maple's webhooks at PlanetScale and keeps the switch", () => {
+		const testDb = createTestDb(trackedDbs)
+		const calls: Array<{ url: string; authorization: string | null }> = []
+		const stub = stubPlanetScaleApi({ calls })
+
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const orgId = asOrgId("org_1")
+			yield* storeGrant(orgId)
+			yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			yield* Effect.promise(async () => {
+				await executeSql(
+					testDb,
+					"UPDATE oauth_connections SET scope = 'write_databases' WHERE org_id = $1",
+					[orgId],
+				)
+				await executeSql(
+					testDb,
+					`INSERT INTO planetscale_databases (id, org_id, database_id, name, webhook_id, created_at, updated_at)
+					 VALUES ('psdb-1', $1, 'db_1', 'shop', 'wh_1', now(), now())`,
+					[orgId],
+				)
+			})
+
+			const status = yield* service.setFeatures(
+				orgId,
+				new PlanetScaleFeaturesRequest({ eventsEnabled: false }),
+			)
+			assert.isFalse(status.eventsEnabled)
+			assert.isTrue(status.metricsEnabled)
+			assert.isTrue(Arr.some(calls, (call) => Str.includes("/databases/shop/webhooks/wh_1")(call.url)))
+			const database = yield* Effect.promise(() =>
+				queryFirstRow<{ webhook_id: string | null }>(
+					testDb,
+					"SELECT webhook_id FROM planetscale_databases WHERE id = 'psdb-1'",
+				),
+			)
+			assert.isNull(database?.webhook_id)
+			assert.isFalse((yield* service.getStatus(orgId)).eventsEnabled)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
+	it.effect("metrics off takes the managed target out of the scraper's list until it is on again", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubPlanetScaleApi()
+
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const scrapeTargets = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			yield* storeGrant(orgId)
+			const bound = yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			const targetId = bound.scrapeTarget?.id ?? ""
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE scrape_targets SET enabled = true WHERE id = $1", [targetId]),
+			)
+			const scraped = scrapeTargets
+				.listAllEnabled()
+				.pipe(Effect.map((rows) => Arr.some(rows, (row) => row.id === targetId)))
+			assert.isTrue(yield* scraped)
+
+			const off = yield* service.setFeatures(
+				orgId,
+				new PlanetScaleFeaturesRequest({ metricsEnabled: false }),
+			)
+			assert.isFalse(off.metricsEnabled)
+			assert.isTrue(off.eventsEnabled)
+			assert.isFalse(yield* scraped)
+
+			yield* service.setFeatures(orgId, new PlanetScaleFeaturesRequest({ metricsEnabled: true }))
+			assert.isTrue(yield* scraped)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
+	it.effect("two switches saved at once both stick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubPlanetScaleApi()
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const orgId = asOrgId("org_1")
+			yield* storeGrant(orgId)
+			yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			yield* Effect.all(
+				[
+					service.setFeatures(orgId, new PlanetScaleFeaturesRequest({ metricsEnabled: false })),
+					service.setFeatures(orgId, new PlanetScaleFeaturesRequest({ eventsEnabled: false })),
+				],
+				{ concurrency: "unbounded" },
+			)
+			const status = yield* service.getStatus(orgId)
+			assert.isFalse(status.metricsEnabled)
+			assert.isFalse(status.eventsEnabled)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
+	it.effect("setFeatures refuses an org with no PlanetScale connection", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubPlanetScaleApi()
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const error = yield* Effect.flip(
+				service.setFeatures(
+					asOrgId("org_1"),
+					new PlanetScaleFeaturesRequest({ metricsEnabled: false }),
+				),
+			)
+			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
