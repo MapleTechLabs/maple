@@ -201,11 +201,12 @@ allocate before allocating it, and the reservation is returned when the request 
 
 1. The body as received, and the size its gzip trailer declares.
 2. The decoded request, estimated from the wire bytes.
-3. The rows, built a piece at a time, or the body forwarded to a collector.
+3. The rows, built a piece at a time, and the body forwarded to a collector at its full size.
 
 A request that could never fit, even alone, is a 413. One that does not fit right now is a 503
 `@maple/ingest/DecodeBusy` with `Retry-After`. Both are decided before a row is built, so a
-refused request writes nothing.
+refused request writes nothing. A forward body only fails to fit an idle budget when the gateway
+is configured below the decode limits, so that 413 is a configuration problem, not a batch one.
 
 ### Rows are built in pieces
 
@@ -221,21 +222,49 @@ reservation while the pieces are built and appended one after another: build a p
 sized from its estimate, append its frames to the WAL, then build the next. What a request holds
 at once is one piece, whatever it expands to, and requests no longer wait on each other's whole
 rows. Every piece goes to the shard the whole request always went to, so its frames stay in order
-on one lane. A row that would take its buffer past the estimate fails the piece instead of growing
-it, so a wrong estimate is an error, never memory nothing reserved. Under attribute mappings the
+on one lane. A row that would take its buffer past the estimate is refused before any of it is
+written, through a writer bounded by the buffer's reserved size, so the buffer never reallocates
+and a wrong estimate is an error, never memory nothing reserved. Under attribute mappings the
 estimate assumes every rule copies the longest value either side holds, since a copied value can
 be copied again by a later rule, and the gateway applies at most 64 rules with 16 KiB of keys per
 org, in a stable order.
 
-Committed pieces wait in their lane's queue until exported. That memory is bounded per org by
-`INGEST_ORG_QUEUE_MAX_BYTES` and per lane by the channel capacity, as frames always were, not by
-this budget.
+### The queue is reserved for the whole request
 
-A request is still acknowledged only once every piece is durable. If a piece fails (a full lane, a
-throttled org, a failed sync), the request is answered with that error and the sender retries the
-whole batch, while the pieces already appended stay in the WAL and are exported. That is the
-at-least-once duplicate the WAL already allows; it is how a metrics request that wrote one
-datasource's frame before another's failed has always behaved.
+Before the first piece is built the request reserves everything its pieces will queue
+(`TelemetryPipeline::reserve_plan`): its total row bytes against the org's queue
+(`INGEST_ORG_QUEUE_MAX_BYTES`), its rows and frame heads under its WAL lane's cap, and one channel
+slot per frame. The pieces draw on that reservation instead of reserving one at a time, and what
+they do not use is returned when the request ends, however it ends.
+
+- Rows that no reservation could ever hold (more than the org queue cap, the WAL lane's cap, or
+  more frames than the lane channel has slots) are a 413 `@maple/ingest/RowsExceedQueue`. Resending
+  fails the same way, so it counts in `ingest_org_data_loss_total` as `rows_exceed_queue` and marks
+  the span `Error`.
+- Room that is not free right now is the error the per-frame checks always gave: 429
+  `@maple/ingest/OrgQueueThrottled` for the org queue, 429 for a full channel, 503
+  `@maple/ingest/QueueUnavailable` for a full WAL lane. Nothing is written, so the resend is clean.
+
+Committed pieces wait in their lane's channel, payload in memory, until exported. Per request that
+is at most its org reservation, and per process the rows in flight are bounded by the decode budget
+(one piece per request being built) plus every org's queued bytes, each up to
+`INGEST_ORG_QUEUE_MAX_BYTES`; there is no single process-wide cap on the second term beyond the WAL
+cap (`INGEST_QUEUE_MAX_BYTES`), which counts the same frames on disk.
+
+A request is acknowledged only once every piece is durable. With the room reserved up front, a
+piece can still fail after earlier pieces were written in only these ways:
+
+- The WAL write or its sync fails (disk I/O), or the lane's writer is gone.
+- The request is dropped between pieces: the 30 s request timeout, or the client disconnecting.
+  The piece being appended when it drops is not exported, but earlier ones are.
+- The process dies between pieces; replay exports the pieces already in the WAL.
+- A piece's rows exceed their estimate (a gateway bug, never seen in the equality tests).
+
+The written pieces are exported, and a resend stores them again: the at-least-once duplicate the
+WAL already allows. The answer says so instead of claiming nothing was written, the span records
+`maple.ingest.row_pieces_written`, and `ingest_partial_write_total` counts it by signal and reason
+(`cancelled` for a dropped request). An encode failure after a written piece stays non-retryable and
+counts in `ingest_org_data_loss_total` as `encode_partial`, since only the unwritten part is lost.
 
 `ingest.encode_rows` (one per piece) records the estimate (`maple.ingest.row_bytes_estimate`)
 beside what was written (`maple.ingest.payload_bytes`), and `ingest.accept` records
@@ -246,7 +275,8 @@ beside what was written (`maple.ingest.payload_bytes`), and `ingest.accept` reco
 Usage is metered on the decoded bytes, not on the rows. `INGEST_MAX_ROW_EXPANSION` bounds how far
 apart the two can be: a request whose rows come to more than that many times its metered bytes is
 a 413 `@maple/ingest/RowExpansion`, decided from the whole request before its first piece, so
-nothing is written. It is the only refusal the row stage makes for size. It counts in
+nothing is written. Besides it, the row stage refuses for size only rows larger than the queue can
+hold (`rows_exceed_queue`, above). It counts in
 `ingest_org_data_loss_total` as `row_expansion` and marks the span `Error` (`rejection_loses_data`).
 Real telemetry stores 3 to 13 times its decoded size, and up to 200 times when a long resource
 attribute such as a JVM command line sits on every row of small items. The only other refusal is a
@@ -260,6 +290,8 @@ telemetry comes near; it is a 413 counted as `payload_too_large`.
 | `INGEST_MAX_DECODE_HEAP_BYTES`  | 768 MiB | One request's decoded form                               |
 | `INGEST_MAX_ROW_EXPANSION`      | 512     | Rows as a multiple of the metered bytes; 0 turns it off  |
 | `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | Shared by all requests; at least one request plus 16 MiB |
+| `INGEST_ORG_QUEUE_MAX_BYTES`    | 1 GiB   | Most rows one request may store; reserved up front       |
+| `INGEST_QUEUE_CHANNEL_CAPACITY` | 100,000 | Most frames one request may store (one per datasource and piece) |
 
 Frames waiting in a lane's channel are not in this budget: they are bounded per org by
 `INGEST_ORG_QUEUE_MAX_BYTES` and per lane by the channel capacity.
@@ -278,6 +310,7 @@ Frames waiting in a lane's channel are not in this budget: they are bounded per 
 | `ingest_wal_commit_bytes`               | Per-append size; the `ingest.wal_commit` span carries the latency  |
 | `ingest_wal_sync_batch_frames`          | Frames per group-commit sync; its count is the fsync count         |
 | `ingest_wal_sync_wait_duration_seconds` | Write to covering sync, per append                                 |
+| `ingest_partial_write_total`            | Requests that failed after some row pieces were durable            |
 
 `queue_full` means the object store cannot keep up with segment rotation, and those segments stay
 local-only. Sustained non-zero is the signal that the durability tier is not actually covering the
