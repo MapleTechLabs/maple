@@ -29,12 +29,12 @@ const project = (ref: string, name: string, over: Readonly<Record<string, unknow
 	logsEnabled: false,
 	logsLastPolledAt: null,
 	logsError: null,
-	lastSeenAt: null,
+	lastSeenAt: 1_760_000_000_000,
 	...over,
 })
 
 const supabaseStatus = (nowMs: number) =>
-	Schema.decodeUnknownSync(SupabaseIntegrationStatus)({
+	Schema.decodeSync(SupabaseIntegrationStatus)({
 		configured: true,
 		connected: true,
 		organization: { id: "org-1", slug: "acme", name: "Acme" },
@@ -64,8 +64,8 @@ const repo = (index: number, name: string, prReviewEnabled: boolean) => ({
 	fullName: `acme-shop/${name}`,
 	htmlUrl: `https://github.com/acme-shop/${name}`,
 	isPrivate: true,
-	status: "active",
-	syncStatus: "ready",
+	status: "active" as const,
+	syncStatus: "ready" as const,
 	lastSyncedAt: 1,
 	lastSyncError: null,
 	trackedBranch: "main",
@@ -73,7 +73,7 @@ const repo = (index: number, name: string, prReviewEnabled: boolean) => ({
 	prReviewEnabled,
 })
 
-const githubStatus = Schema.decodeUnknownSync(GithubIntegrationStatus)({
+const githubStatus = Schema.decodeSync(GithubIntegrationStatus)({
 	connected: true,
 	state: "connected",
 	accountLogin: "acme-shop",
@@ -118,24 +118,48 @@ export const update = (model: Model, message: Message): Return =>
 		}),
 	})
 
-const cardsView = Submodel.defineView<IntegrationsModel, IntegrationsMessage, Readonly<{ timeZone: string }>>(
-	(hub, inputs, h) =>
-		dashboardPage(h, {}, [
-			h.div(
-				[h.Class("mx-auto flex w-full max-w-5xl flex-col gap-10 p-4 font-display")],
-				[
-					h.section([h.Id("supabase")], [supabaseCard(h, hub, inputs.timeZone)]),
-					h.section([h.Id("github")], githubCard(h, hub, inputs.timeZone)),
-				],
-			),
-		]),
-)
+const supabaseView = Submodel.defineView<
+	IntegrationsModel,
+	IntegrationsMessage,
+	Readonly<{ timeZone: string }>
+>((hub, inputs, h) => supabaseCard(h, hub, inputs.timeZone))
 
+const githubView = Submodel.defineView<
+	IntegrationsModel,
+	IntegrationsMessage,
+	Readonly<{ timeZone: string }>
+>((hub, inputs, h) => h.div([], githubCard(h, hub, inputs.timeZone)))
+
+/** Each card in its own slot: both render the page's disconnect dialog. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
-	h.submodel({
-		slotId: "integration-features-lab",
-		model: model.hub,
-		view: cardsView,
-		viewInputs: { timeZone: model.timeZone },
-		toParentMessage: (message) => Message.GotHubMessage({ message }),
-	})
+	dashboardPage(h, {}, [
+		h.div(
+			[h.Class("mx-auto flex w-full max-w-5xl flex-col gap-10 p-4 font-display")],
+			[
+				h.section(
+					[h.Id("supabase")],
+					[
+						h.submodel({
+							slotId: "integration-features-supabase",
+							model: model.hub,
+							view: supabaseView,
+							viewInputs: { timeZone: model.timeZone },
+							toParentMessage: (message) => Message.GotHubMessage({ message }),
+						}),
+					],
+				),
+				h.section(
+					[h.Id("github")],
+					[
+						h.submodel({
+							slotId: "integration-features-github",
+							model: model.hub,
+							view: githubView,
+							viewInputs: { timeZone: model.timeZone },
+							toParentMessage: (message) => Message.GotHubMessage({ message }),
+						}),
+					],
+				),
+			],
+		),
+	])
