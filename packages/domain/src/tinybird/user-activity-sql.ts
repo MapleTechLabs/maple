@@ -19,3 +19,15 @@ export const WEB_REQUEST_SQL = `(ResourceAttributes['maple.sdk.type'] IN ('brows
 
 /** A native mobile app (and not a browser): its SDK, or Android's and Apple's HTTP stack user agents. */
 export const MOBILE_REQUEST_SQL = `(NOT ${WEB_REQUEST_SQL} AND (ResourceAttributes['telemetry.sdk.language'] IN ('swift', 'kotlin') OR ResourceAttributes['os.name'] IN ('iOS', 'iPadOS', 'Android') OR match(${SPAN_USER_AGENT_SQL}, '^(Dalvik|okhttp)/| CFNetwork/')))`
+
+/**
+ * The latest non-empty `user.name` / `user.email` an hour's spans or logs carried, as an
+ * `argMaxIf` state keyed by epoch seconds, so merged hours keep the newest one.
+ */
+const latestIdentityState = (attributes: string, key: string, at: string): string =>
+	`argMaxIfState(${attributes}['${key}'], toUInt32(toUnixTimestamp(${at})), ${attributes}['${key}'] != '')`
+
+export const SPAN_USER_NAME_STATE_SQL = latestIdentityState("SpanAttributes", "user.name", "Timestamp")
+export const SPAN_USER_EMAIL_STATE_SQL = latestIdentityState("SpanAttributes", "user.email", "Timestamp")
+export const LOG_USER_NAME_STATE_SQL = latestIdentityState("LogAttributes", "user.name", "TimestampTime")
+export const LOG_USER_EMAIL_STATE_SQL = latestIdentityState("LogAttributes", "user.email", "TimestampTime")

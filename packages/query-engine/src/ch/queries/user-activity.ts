@@ -190,6 +190,20 @@ export function userActivitySummaryQuery(opts: UserScopeOpts) {
 		.format("JSON")
 }
 
+/**
+ * The latest `user.name` and `user.email` the user's spans and logs carried (migration 0065), `''`
+ * when none did. Always one row.
+ */
+export function userActivityIdentityQuery(opts: UserScopeOpts) {
+	return from(Datasources.userActivityHourly)
+		.select(() => ({
+			name: CH.rawExpr<string>("argMaxIfMerge(UserName)", T.string),
+			email: CH.rawExpr<string>("argMaxIfMerge(UserEmail)", T.string),
+		}))
+		.where(($) => [...activityWindow($, opts), $.UserId.eq(opts.userId)])
+		.format("JSON")
+}
+
 export interface UserActivityServiceOutput {
 	readonly serviceName: string
 	readonly serviceNamespace: string
