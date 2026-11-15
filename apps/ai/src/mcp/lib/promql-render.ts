@@ -25,7 +25,7 @@ const formatTime = (ms: number): string =>
 
 /** A label value as Prometheus quotes it: backslash, double quote and newline escaped. */
 const escapeLabelValue = (value: string): string =>
-	pipe(value, Str.replace(/\\/g, "\\\\"), Str.replace(/"/g, '\\"'), Str.replace(/\n/g, "\\n"))
+	pipe(value, Str.replace(/[\\"]/g, "\\$&"), Str.replace(/\n/g, "\\n"))
 
 /** `name{k="v", ...}`, the way Prometheus prints a series. */
 export const seriesName = (labels: Series["labels"]): string => {
