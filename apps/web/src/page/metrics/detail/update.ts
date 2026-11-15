@@ -539,8 +539,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 				inner,
 				metricViewsExplorer([model.metricName, model.search]),
 				toSavedViews,
+				draftsFromView,
 			),
 	})
+
+// A picked view replaces the where and step drafts, and a debounce still pending from the
+// old where draft must not put it back over the view's filter.
+const draftsFromView = (model: Model, search: SavedViews.ViewSearch): Model => ({
+	...model,
+	whereInput: typeof search["where"] === "string" ? search["where"] : "",
+	stepInput: typeof search["step"] === "string" ? search["step"] : "",
+	whereGeneration: model.whereGeneration + 1,
+})
 
 /** The view the old URL was stays the page's view as the URL moves on. */
 const withRememberedView = (model: Model): Model => {

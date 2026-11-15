@@ -249,6 +249,7 @@ describe("saved views control", () => {
 			updating,
 			Message.CompletedUpdateView({
 				action: "update",
+				viewId: MINE.id,
 				result: Result.succeed({ ...MINE, state: { search: WARNINGS } }),
 			}),
 			edited,
@@ -419,11 +420,17 @@ describe("saved views control", () => {
 
 		const refused = update(
 			toggled.model,
-			Message.CompletedUpdateView({ action: "share", result: Result.fail(toLoadFailure("no")) }),
+			Message.CompletedUpdateView({
+				action: "share",
+				viewId: MINE.id,
+				result: Result.fail(toLoadFailure("no")),
+			}),
 			explorer,
 		)
 		expect(names(refused.commands)).toEqual([FetchViews.name])
 		expect(refused.outMessage).toMatchObject({ type: "error", title: "Couldn't change sharing" })
+		// The toggle is undone at once, not left for the refresh to correct.
+		expect(activeViewOf(refused.model, explorer)?.view.visibility).toBe("private")
 	})
 
 	test("deleting asks first, then removes the view and returns the button to Views", () => {
@@ -475,5 +482,32 @@ describe("saved views control", () => {
 		expect(refused.deleteDialog.isOpen).toBe(true)
 		expect(refused.deleteError).not.toBeNull()
 		expect(Arr.map(refused.views ?? [], (view) => view.name)).toEqual(["Errors"])
+	})
+
+	test("an update answered after its view was deleted does not bring the view back", () => {
+		const explorer = explorerOf(ERRORS)
+		const start = loaded([MINE, MINE_TOO], explorer)
+		const deleted = update(
+			start,
+			Message.CompletedDeleteView({ viewId: MINE.id, result: Result.succeed(undefined) }),
+			explorer,
+		).model
+		const late = update(
+			deleted,
+			Message.CompletedUpdateView({ action: "update", viewId: MINE.id, result: Result.succeed(MINE) }),
+			explorer,
+		).model
+		expect(Arr.map(late.views ?? [], (view) => view.name)).toEqual(["Warnings"])
+	})
+
+	test("an update that completes leaves the view the person picked meanwhile", () => {
+		const explorer = explorerOf(WARNINGS)
+		const onOther = pick(loaded([MINE, MINE_TOO], explorer), viewItem(MINE_TOO.id), explorer).model
+		const settled = update(
+			onOther,
+			Message.CompletedUpdateView({ action: "update", viewId: MINE.id, result: Result.succeed(MINE) }),
+			explorer,
+		).model
+		expect(settled.activeViewId).toBe(MINE_TOO.id)
 	})
 })

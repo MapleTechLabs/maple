@@ -80,8 +80,8 @@ export const Message = defineMessageUnion({
 	SubmittedForm: {},
 	CompletedCreateView: written,
 	CompletedRenameView: written,
-	/** "Update view" or the share toggle; `action` names which for the failure toast. */
-	CompletedUpdateView: { action: Schema.Literals(["update", "share"]), ...written },
+	/** "Update view" or the share toggle on `viewId`; `action` names which for the failure toast. */
+	CompletedUpdateView: { action: Schema.Literals(["update", "share"]), viewId: Schema.String, ...written },
 	ConfirmedDelete: {},
 	CompletedDeleteView: { viewId: Schema.String, result: Schema.Result(Schema.Void, LoadFailure) },
 })

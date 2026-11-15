@@ -64,7 +64,7 @@ export const UpdateViewState = Command.define("UpdateSavedViewState", {
 			client.savedViews.update({ params: { viewId }, payload: new UpdateSavedViewRequest({ state }) }),
 		).pipe(
 			Effect.map(plain),
-			settleTo((result) => Message.CompletedUpdateView({ action: "update", result })),
+			settleTo((result) => Message.CompletedUpdateView({ action: "update", viewId, result })),
 		),
 })
 
@@ -79,7 +79,7 @@ export const SetViewVisibility = Command.define("SetSavedViewVisibility", {
 			}),
 		).pipe(
 			Effect.map(plain),
-			settleTo((result) => Message.CompletedUpdateView({ action: "share", result })),
+			settleTo((result) => Message.CompletedUpdateView({ action: "share", viewId, result })),
 		),
 })
 

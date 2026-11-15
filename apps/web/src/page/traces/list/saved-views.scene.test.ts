@@ -162,4 +162,21 @@ describe("traces saved views", () => {
 			expectView(role("button", { name: "Views" })).toExist(),
 		)
 	})
+
+	test("opening a view replaces the duration draft and drops its pending commit", () => {
+		const SLOW = savedView("traces", "0c", "Slow requests", {
+			search: { minDurationMs: 500, timePreset: "1h" },
+		})
+		const typed = pageUpdate(
+			entered({ minDurationMs: 500, timePreset: "1h" }, [SLOW]),
+			Message.ChangedDurationDraft({ min: "2s", max: "" }),
+		).model
+		const opened = views.open(typed, SLOW)
+		expect(opened.model.durationDraft.min).not.toBe("2s")
+		// The commit the old draft scheduled fires after the view opened: it must not navigate.
+		expect(
+			pageUpdate(opened.model, Message.ElapsedDurationDebounce({ version: typed.durationDraftVersion }))
+				.outMessage,
+		).toBeUndefined()
+	})
 })

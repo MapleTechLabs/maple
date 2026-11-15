@@ -417,7 +417,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			})
 		},
 		GotSavedViewsMessage: ({ message: inner }) =>
-			SavedViews.pageStep(model, inner, viewsExplorer([model.search]), toSavedViews),
+			SavedViews.pageStep(model, inner, viewsExplorer([model.search]), toSavedViews, draftFromView),
 		GotTimePickerMessage: ({ message: inner }) => {
 			return pickerStep(
 				model,
@@ -431,6 +431,19 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			)
 		},
 	})
+
+const durationOf = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined)
+
+// A picked view replaces the duration draft, and a commit still pending from the old draft
+// must not put it back over the view's bounds.
+const draftFromView = (model: Model, search: SavedViews.ViewSearch): Model => ({
+	...model,
+	durationDraft: durationDraftOf({
+		minDurationMs: durationOf(search["minDurationMs"]),
+		maxDurationMs: durationOf(search["maxDurationMs"]),
+	}),
+	durationDraftVersion: model.durationDraftVersion + 1,
+})
 
 /** The view the old URL was stays the page's view as the URL moves on. */
 const withRememberedView = (model: Model): Model => {

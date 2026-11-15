@@ -1,4 +1,4 @@
-import { SAVED_VIEW_NAME_MAX_LENGTH } from "@maple/domain/saved-views"
+import { SAVED_VIEW_NAME_MAX_LENGTH, type SavedViewVisibility } from "@maple/domain/saved-views"
 import * as Dialog from "@maple/views/ui/dialog"
 import * as Menu from "@maple/views/ui/menu"
 import { Array as Arr, Option, Order, Result, String as Str } from "effect"
@@ -37,6 +37,22 @@ const withView = (model: Model, view: SavedView): Model => ({
 	...model,
 	revision: model.revision + 1,
 	views: Arr.sort([...Arr.filter(model.views ?? [], (other) => other.id !== view.id), view], listOrder),
+})
+
+const isListed = (model: Model, viewId: string): boolean =>
+	Arr.some(model.views ?? [], (view) => view.id === viewId)
+
+// A write's answer for a view deleted while it was out must not put the view back.
+const withWrittenView = (model: Model, view: SavedView): Model =>
+	isListed(model, view.id) ? withView(model, view) : model
+
+/** The share toggle undone on the row it was flipped on, when the write was refused. */
+const withShareUndone = (model: Model, viewId: string): Model => ({
+	...model,
+	views: Arr.map(model.views ?? [], (view) => {
+		const undone: SavedViewVisibility = view.visibility === "org" ? "private" : "org"
+		return view.id === viewId ? { ...view, visibility: undone } : view
+	}),
 })
 
 const withCommands = (step: Return, commands: Commands): Return => ({
@@ -199,7 +215,9 @@ const settledForm = (
 ): Return =>
 	Result.match(result, {
 		onSuccess: (view) => {
-			const next = withView({ ...model, form: { ...model.form, isPending: false, error: null } }, view)
+			const settled = { ...model, form: { ...model.form, isPending: false, error: null } }
+			// A new view is added; a renamed one only while it is still listed.
+			const next = isNowActive ? withView(settled, view) : withWrittenView(settled, view)
 			return liftFormDialog(
 				isNowActive ? { ...next, activeViewId: view.id } : next,
 				Dialog.close(model.formDialog),
@@ -250,16 +268,17 @@ export const update = (model: Model, message: Message, explorer: Explorer): Retu
 		SubmittedForm: () => submitted(model, explorer),
 		CompletedCreateView: ({ result }) => settledForm(model, result, true),
 		CompletedRenameView: ({ result }) => settledForm(model, result, false),
-		CompletedUpdateView: ({ action, result }) =>
+		CompletedUpdateView: ({ action, viewId, result }) =>
 			Result.match(result, {
-				onSuccess: (view) => ({
-					model: {
-						...withView({ ...model, isWriting: false }, view),
-						...(action === "update" ? { activeViewId: view.id } : undefined),
-					},
-				}),
+				// The page's view is left as it is: the person may have picked another while this was out.
+				onSuccess: (view) => ({ model: withWrittenView({ ...model, isWriting: false }, view) }),
 				onFailure: (failure) => ({
-					...forceRefetch({ ...model, isWriting: false }, explorer),
+					...forceRefetch(
+						action === "share"
+							? withShareUndone({ ...model, isWriting: false }, viewId)
+							: { ...model, isWriting: false },
+						explorer,
+					),
 					outMessage: OutMessage.RequestedToast({
 						type: "error",
 						title: action === "update" ? "Couldn't update view" : "Couldn't change sharing",

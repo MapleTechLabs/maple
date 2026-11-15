@@ -253,4 +253,21 @@ describe("metrics saved views", () => {
 			).outMessage,
 		).toBeUndefined()
 	})
+
+	test("on a metric's page, opening a view replaces the where draft and drops its pending debounce", () => {
+		const query = { agg: "max", groupBy: "http.route", timePreset: "6h" } as const
+		const typed = detailUpdate(
+			onMetric(DURATION, query, [P99_BY_ROUTE]),
+			DetailMessage.ChangedWhereInput({ value: 'http.route = "/cart"' }),
+		).model
+		const opened = detailViews.open(typed, P99_BY_ROUTE)
+		expect(opened.model.whereInput).toBe("")
+		// The debounce the draft started fires after the view opened: it must not navigate.
+		expect(
+			detailUpdate(
+				opened.model,
+				DetailMessage.CompletedWhereDebounce({ generation: typed.whereGeneration }),
+			).outMessage,
+		).toBeUndefined()
+	})
 })
