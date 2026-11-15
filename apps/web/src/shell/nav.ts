@@ -225,7 +225,6 @@ export type NavAudience = typeof NavAudience.Type
 export type NavFlags = Readonly<{
 	cloudCost: boolean
 	productAnalytics: boolean
-	releases: boolean
 	securityAudit: boolean
 	statusPages: boolean
 }>
@@ -251,9 +250,6 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
 			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
@@ -267,14 +263,8 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			{
 				...servicesItem,
-				alsoActive: [
-					...(flags.releases ? [] : ["/releases"]),
-					...(flags.statusPages ? [] : ["/status-pages"]),
-				],
+				alsoActive: flags.statusPages ? [] : ["/status-pages"],
 			},
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
 			infrastructureItem,
 			...(flags.cloudCost ? [costItem] : []),
 		],

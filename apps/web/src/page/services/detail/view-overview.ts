@@ -8,20 +8,76 @@ import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricsGrid } from "./view-charts"
+import {
+	type DeployCheck,
+	dataEndOf,
+	deployBefore,
+	deployChecksOf,
+	deployDataEndOf,
+	isSameDeploy,
+} from "./derive-deploys"
+import * as DeployPeekView from "./deploy-peek/view"
+import { deployPeekOf } from "./update"
+import { Array as Arr } from "effect"
 import { deploysPanel, issuesPanel } from "./view-deploys"
-import { dependencyStrip, runsOnPanel, usagePanel } from "./view-footprint"
+import { footprintPanel } from "./view-footprint"
+import { deployCallout, healthStrip } from "./view-health"
 import { SPARKLINE_TOKEN, topOperationsPanel } from "./view-panels"
 import { uptimePanel } from "./view-uptime"
 import { vstack } from "@maple/views/ui/stack"
 import { grid } from "@maple/views/ui/grid"
 import { CHART_TOKENS } from "../../kit/service-metrics/grid"
 
-// The Overview tab: the chart grid, then the quiet panels and the "Talks to" strip.
+// The Overview tab, in triage order: the deploy that needs a look, the signals now, the charts,
+// what broke and what shipped, the busiest operations, then where the service runs.
 
 type H = HtmlBuilder<Message>
 
 /** Every colour the tab's canvases read off the theme. */
 export const THEME_TOKENS = [...CHART_TOKENS, SPARKLINE_TOKEN]
+
+/** The deploy drawer over the Overview; it gives the open deploy the issues the tags give it. */
+const deployDrawer = (
+	h: H,
+	model: Model,
+	context: PageContext,
+	deploys: ReadonlyArray<DeployCheck>,
+): Html => {
+	const check = deployPeekOf(model)
+	const issues = AsyncData.getOrElse(model.issues.data, () => [])
+	return h.submodel({
+		slotId: "deploy-peek",
+		model: model.deployPeek,
+		view: DeployPeekView.view,
+		viewInputs: {
+			check,
+			serviceName: model.serviceName,
+			commit: check === null ? undefined : model.commits[check.sha],
+			issues:
+				check === null
+					? []
+					: Arr.filter(issues, (issue) =>
+							isSameDeploy(
+								deployBefore(
+									deploys,
+									parseWarehouseDateTime(issue.firstSeenAt),
+									deployDataEndOf(model),
+								),
+								check,
+							),
+						),
+			dataEndMs: dataEndOf(model),
+			nowMs: model.nowMs ?? 0,
+			timeZone: context.timeZone,
+			timeSearch: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+			},
+		},
+		toParentMessage: (message) => Message.GotDeployPeekMessage({ message }),
+	})
+}
 
 export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 	const overview = model.overview.data
@@ -43,7 +99,12 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 		parseWarehouseDateTime(window.endTime) - parseWarehouseDateTime(window.startTime) >
 			ISSUES_DETAIL_LIMIT_MS
 	const clock = { nowMs, timeZone: context.timeZone }
+	const deploys = deployChecksOf(model)
+	const uptime = uptimePanel(h, model)
+	const footprint = footprintPanel(h, model, envFilterActive)
 	return vstack(h, { gap: "3" }, [
+		deployCallout(h, model, deploys),
+		healthStrip(h, model, isDetailLoading),
 		metricsGrid(
 			h,
 			model,
@@ -57,14 +118,12 @@ export const overviewTab = (h: H, model: Model, context: PageContext): Html => {
 			},
 			context.timeZone,
 		),
-		topOperationsPanel(h, model, model.themeColors),
 		grid(h, { lg: 2, gap: "3" }, [
-			issuesPanel(h, model, clock, isLimited),
-			deploysPanel(h, model, clock, isDetailLoading),
-			usagePanel(h, model, envFilterActive),
-			uptimePanel(h, model),
-			runsOnPanel(h, model, envFilterActive),
+			issuesPanel(h, model, clock, isLimited, deploys),
+			deploysPanel(h, model, clock),
 		]),
-		dependencyStrip(h, model),
+		topOperationsPanel(h, model, model.themeColors),
+		uptime === null ? footprint : grid(h, { lg: 2, gap: "3" }, [uptime, footprint]),
+		deployDrawer(h, model, context, deploys),
 	])
 }
