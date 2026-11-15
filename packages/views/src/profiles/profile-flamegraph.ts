@@ -34,6 +34,17 @@ export const init = (id: string): Model => ({
 	resetToken: 0,
 })
 
+/**
+ * The view for a new profile in the same place (another range or service): back to the whole
+ * profile, with no selection or search. The scope is the reader's choice and stays.
+ */
+export const reset = (model: Model): Model => ({
+	...model,
+	selectedNodeId: Option.none(),
+	search: "",
+	resetToken: model.resetToken + 1,
+})
+
 export const Message = defineMessageUnion({
 	SelectedFrame: { nodeId: Schema.NullOr(Schema.String) },
 	ChangedZoom: { isZoomed: Schema.Boolean },
