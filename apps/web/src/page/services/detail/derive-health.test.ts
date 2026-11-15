@@ -82,4 +82,17 @@ describe("deriveHealth", () => {
 		expect(health?.throughput.now).toBe(10)
 		expect(health?.throughput.tone).toBe("neutral")
 	})
+
+	test("a sparse service's empty latest bucket is no outage: it reads its last busy bucket", () => {
+		// Traffic in every third minute, a few requests a minute, then an empty latest minute.
+		const points = Array.from({ length: 12 }, (_, index) =>
+			index % 3 === 0
+				? point(index, { throughput: 180, totalCount: 180 })
+				: point(index, { totalCount: 0, throughput: 0 }),
+		)
+		const health = deriveHealth(points, END)
+		expect(health?.throughput.now).toBe(3)
+		expect(health?.throughput.tone).toBe("neutral")
+		expect(health?.errorRate.now).toBe(0.002)
+	})
 })
