@@ -1,24 +1,41 @@
 #!/usr/bin/env bun
-// Backfills `user_activity_hourly` on a managed Tinybird workspace (deployed with `BACKFILL skip`):
-// both views repopulated a day at a time, oldest first, paused between days. Dry run unless
+// Backfills an hourly rollup deployed with `BACKFILL skip` on a managed Tinybird workspace: each of
+// its views repopulated a day at a time, oldest first, paused between days. Dry run unless
 // `--execute`; runbook in docs/warehouse-rollups.md.
 import { setTimeout as sleep } from "node:timers/promises"
 import { Array as Arr, Schema, String as Str } from "effect"
 
-const TARGET = "user_activity_hourly"
-/** The two views and the source time column their populate condition filters on. */
-const VIEWS = [
-	{
-		pipe: "user_activity_hourly_traces_mv",
-		node: "user_activity_hourly_traces_mv_node",
-		column: "Timestamp",
+/** Each rollup's views, the source time column their populate condition filters on, and the source's retention. */
+const ROLLUPS = {
+	user_activity_hourly: {
+		sourceDays: 30,
+		views: [
+			{
+				pipe: "user_activity_hourly_traces_mv",
+				node: "user_activity_hourly_traces_mv_node",
+				column: "Timestamp",
+			},
+			{
+				pipe: "user_activity_hourly_logs_mv",
+				node: "user_activity_hourly_logs_mv_node",
+				column: "TimestampTime",
+			},
+		],
 	},
-	{
-		pipe: "user_activity_hourly_logs_mv",
-		node: "user_activity_hourly_logs_mv_node",
-		column: "TimestampTime",
+	aws_metrics_hourly: {
+		sourceDays: 90,
+		views: [
+			{ pipe: "aws_metrics_hourly_sum_mv", node: "aws_metrics_hourly_sum_mv_node", column: "TimeUnix" },
+			{
+				pipe: "aws_metrics_hourly_gauge_mv",
+				node: "aws_metrics_hourly_gauge_mv_node",
+				column: "TimeUnix",
+			},
+		],
 	},
-] as const
+} as const
+
+type View = (typeof ROLLUPS)[keyof typeof ROLLUPS]["views"][number]
 
 const DAY_MS = 86_400_000
 const HOUR_MS = 3_600_000
@@ -49,6 +66,13 @@ const chTime = (ms: number) =>
 
 const host = Str.replace(/\/$/, "")(process.env.TINYBIRD_HOST?.trim() || fail("Missing env TINYBIRD_HOST"))
 const token = process.env.TINYBIRD_TOKEN?.trim() || fail("Missing env TINYBIRD_TOKEN")
+
+const isRollup = (name: string): name is keyof typeof ROLLUPS => Object.hasOwn(ROLLUPS, name)
+const rollupArg = arg("--rollup") ?? ""
+const TARGET = isRollup(rollupArg)
+	? rollupArg
+	: fail(`--rollup must be one of: ${Arr.join(Object.keys(ROLLUPS), ", ")}`)
+const { sourceDays, views: VIEWS } = ROLLUPS[TARGET]
 
 const SqlCount = Schema.Struct({
 	data: Schema.Array(Schema.Struct({ n: Schema.Union([Schema.Number, Schema.String]) })),
@@ -94,7 +118,7 @@ const waitForJob = async (jobUrl: string, label: string) => {
 }
 
 /** Repopulates one view over [startMs, endMs) of its source, appending to the target. */
-const populate = async (view: (typeof VIEWS)[number], startMs: number, endMs: number) => {
+const populate = async (view: View, startMs: number, endMs: number) => {
 	const condition = `${view.column} >= ${chTime(startMs)} AND ${view.column} < ${chTime(endMs)}`
 	const { job } = await tinybird(PopulateJob, `/v0/pipes/${view.pipe}/nodes/${view.node}/population`, {
 		method: "POST",
@@ -110,8 +134,10 @@ const until = parseInstant(
 const untilMs = until.getTime()
 const fromMs =
 	Math.floor(
-		parseInstant("--from", arg("--from") ?? new Date(untilMs - 30 * DAY_MS).toISOString()).getTime() /
-			DAY_MS,
+		parseInstant(
+			"--from",
+			arg("--from") ?? new Date(untilMs - sourceDays * DAY_MS).toISOString(),
+		).getTime() / DAY_MS,
 	) * DAY_MS
 if (fromMs >= untilMs) fail("--from must be before --until")
 const pauseMs = Number(arg("--pause-seconds") ?? "60") * 1000

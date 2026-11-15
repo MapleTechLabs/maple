@@ -1930,6 +1930,50 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 export type MetricCatalogRow = InferRow<typeof metricCatalog>
 
 /**
+ * The CloudWatch stream's `aws.*` points per series and hour, from `metrics_sum` and
+ * `metrics_gauge`, with region and account lifted out of `ResourceAttributes`. The AWS infra
+ * reads take whole hours from here instead of scanning raw points and their resource maps.
+ * Cardinality: AWS series (metric x dimension set x resource) x hours, no fan-out.
+ */
+export const awsMetricsHourly = defineDatasource("aws_metrics_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly per AWS metric series (metric, table, service, point attributes, cloud.region, cloud.account.id): sum, count, max and newest point of the CloudWatch metric stream's aws.* metrics. Populated by materialized views from metrics_sum and metrics_gauge.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		// `sum` or `gauge`: the raw table the series came from.
+		MetricType: t.string().lowCardinality(),
+		MetricName: t.string().lowCardinality(),
+		Hour: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		Attributes: t.map(t.string().lowCardinality(), t.string()),
+		CloudRegion: t.string().lowCardinality(),
+		CloudAccountId: t.string().lowCardinality(),
+		Total: t.simpleAggregateFunction("sum", t.float64()),
+		Samples: t.simpleAggregateFunction("sum", t.uint64()),
+		Peak: t.simpleAggregateFunction("max", t.float64()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"MetricType",
+			"MetricName",
+			"Hour",
+			"ServiceName",
+			"Attributes",
+			"CloudRegion",
+			"CloudAccountId",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type AwsMetricsHourlyRow = InferRow<typeof awsMetricsHourly>
+
+/**
  * Pre-aggregated attribute keys with hourly usage counts.
  * Fed by MVs from traces (span + resource), logs, and metrics tables.
  */
