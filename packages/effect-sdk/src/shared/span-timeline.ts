@@ -4,6 +4,9 @@
 // JavaScript runs one thing at a time, and Effect asks the tracer before it evaluates each step of
 // a fiber. So noting the fiber's span whenever it differs from the last one seen yields an exact,
 // ordered record of span switches, with no native addon and no async hooks.
+//
+// Limitation: only Effect evaluation is observed, so CPU time in a promise continuation (the code
+// after an `await` inside `Effect.promise`) is not attributed to the enclosing span.
 import type { Fiber, Tracer } from "effect"
 
 const EVALUATE = "~effect/Effect/evaluate"

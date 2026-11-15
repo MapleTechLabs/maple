@@ -72,7 +72,7 @@ interface InspectorReply {
 }
 
 /** The part of `node:inspector`'s `Session` this drives. */
-interface InspectorSession {
+export interface InspectorSession {
 	connect(): void
 	disconnect(): void
 	post(
@@ -82,32 +82,48 @@ interface InspectorSession {
 	): void
 }
 
-interface InspectorModule {
+export interface InspectorModule {
 	readonly Session: new () => InspectorSession
 }
 
 /** The one builtin this module loads, typed so `getBuiltinModule` never surfaces an untyped value. */
-type LoadBuiltin = (id: "node:inspector") => InspectorModule | undefined
+export type LoadBuiltin = (id: "node:inspector") => InspectorModule | undefined
 
 const failed = (message: string) => (cause: unknown) => new ProfilerFailed({ message, cause })
 
 /**
  * No static `node:inspector` import: this module shares a dependency graph with builds for
  * runtimes where that specifier breaks. `process.getBuiltinModule` (Node 20.16 and later, Bun)
- * loads it lazily; a runtime without it (Cloudflare Workers) fails here, before anything starts.
+ * loads it lazily; a runtime without it (Cloudflare Workers) has no loader at all.
  */
-const openSession = Effect.try({
-	try: (): InspectorSession => {
-		const loadBuiltin = (globalThis as { process?: { getBuiltinModule?: LoadBuiltin } }).process
-			?.getBuiltinModule
-		const inspector = typeof loadBuiltin === "function" ? loadBuiltin("node:inspector") : undefined
-		if (inspector === undefined) throw new Error("node:inspector is not available on this runtime")
-		const session = new inspector.Session()
-		session.connect()
-		return session
-	},
-	catch: failed("could not open an inspector session"),
-})
+const runtimeLoadBuiltin = (): LoadBuiltin | undefined => {
+	const loadBuiltin = (globalThis as { process?: { getBuiltinModule?: LoadBuiltin } }).process
+		?.getBuiltinModule
+	return typeof loadBuiltin === "function" ? loadBuiltin : undefined
+}
+
+/** Fails before anything starts on a runtime with no inspector, or one that refuses a session. */
+const openSession = (loadBuiltin: LoadBuiltin | undefined) =>
+	Effect.gen(function* () {
+		const inspector = yield* Effect.try({
+			try: () => loadBuiltin?.("node:inspector"),
+			catch: failed("could not load node:inspector"),
+		})
+		if (inspector === undefined) {
+			return yield* new ProfilerFailed({
+				message: "node:inspector is not available on this runtime",
+				cause: undefined,
+			})
+		}
+		return yield* Effect.try({
+			try: (): InspectorSession => {
+				const session = new inspector.Session()
+				session.connect()
+				return session
+			},
+			catch: failed("could not open an inspector session"),
+		})
+	})
 
 const post = (session: InspectorSession, method: string, params: InspectorParams = {}) =>
 	Effect.callback<InspectorReply | undefined, ProfilerFailed>((resume) => {
@@ -128,6 +144,35 @@ interface WindowStart {
 	readonly startedAtEpochMs: number
 }
 
+/** The status or cause as text: an error object could print the request, headers included. */
+const describeFailure = (error: unknown, depth = 0): string => {
+	if (!(error instanceof Error)) return String(error)
+	return error.cause === undefined || depth >= 2
+		? error.message
+		: `${error.message}: ${describeFailure(error.cause, depth + 1)}`
+}
+
+/** One warning per outage: failures after the first stay at debug until an export succeeds. */
+const makeOutageLog = () => {
+	let failures = 0
+	return {
+		failed: (what: string, error: unknown) =>
+			Effect.suspend(() => {
+				failures += 1
+				const line = `[MapleProfiler] ${what}: ${describeFailure(error)}`
+				return failures === 1
+					? Effect.logWarning(`${line}. Further failures stay quiet until an export succeeds.`)
+					: Effect.logDebug(`${line} (${failures} in a row)`)
+			}),
+		succeeded: Effect.suspend(() => {
+			if (failures === 0) return Effect.void
+			const attempts = failures === 1 ? "1 failed export" : `${failures} failed exports`
+			failures = 0
+			return Effect.logInfo(`[MapleProfiler] profile export recovered after ${attempts}`)
+		}),
+	}
+}
+
 const hexPair = Str.padStart(2, "0")
 
 const randomHex = (bytes: number): string =>
@@ -144,27 +189,41 @@ export interface ProfilerLayerOptions {
 	/** Shared with the tracer when span linking is on. */
 	readonly timeline?: SpanTimeline | undefined
 	readonly shutdownTimeout?: Duration.Input | undefined
+	/** Loads `node:inspector`. Default: the runtime's `process.getBuiltinModule`, when it has one. */
+	readonly loadBuiltin?: LoadBuiltin | undefined
 }
 
 /**
  * Starts the CPU profiler and exports one profile per window until the layer's scope closes,
  * when the last partial window is sent. Never fails the app: a runtime that cannot profile logs
- * one warning and runs without it, and a failed export is dropped.
+ * one warning and runs without it, and a failed export is dropped, with one warning per outage.
  */
 export const profilerLayer = (
 	options: ProfilerLayerOptions,
 ): Layer.Layer<never, never, HttpClient.HttpClient> =>
 	Layer.effectDiscard(
 		Effect.gen(function* () {
-			const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk)
+			const client = (yield* HttpClient.HttpClient).pipe(
+				// Read the body whatever the status: an unread one holds its connection until GC.
+				HttpClient.tap((response) => Effect.ignore(response.arrayBuffer)),
+				HttpClient.tapError((error) =>
+					error.response ? Effect.ignore(error.response.arrayBuffer) : Effect.void,
+				),
+				HttpClient.filterStatusOk,
+				HttpClient.transformResponse(
+					Effect.provideService(HttpClient.TracerPropagationEnabled, false),
+				),
+			)
+			const outage = makeOutageLog()
 			const resource = yield* OtlpResource.fromConfig(options.resource)
 			const window = options.profiling.window ?? DEFAULT_PROFILE_WINDOW
 			const samplingIntervalMicros =
 				options.profiling.samplingIntervalMicros ?? DEFAULT_SAMPLING_INTERVAL_MICROS
 			const url = HttpClientRequest.appendUrl(HttpClientRequest.get(options.baseUrl), PROFILES_PATH).url
 
-			const session = yield* Effect.acquireRelease(openSession, (opened) =>
-				Effect.sync(() => opened.disconnect()),
+			const session = yield* Effect.acquireRelease(
+				openSession(options.loadBuiltin ?? runtimeLoadBuiltin()),
+				(opened) => Effect.sync(() => opened.disconnect()),
 			)
 			yield* post(session, "Profiler.enable")
 			yield* post(session, "Profiler.setSamplingInterval", { interval: samplingIntervalMicros })
@@ -190,12 +249,23 @@ export const profilerLayer = (
 						),
 					)
 					.pipe(
-						Effect.asVoid,
-						Effect.timeout(EXPORT_TIMEOUT),
+						// Around the whole exchange: the client reads the body before it returns.
+						Effect.timeoutOrElse({
+							duration: EXPORT_TIMEOUT,
+							orElse: () =>
+								Effect.fail(
+									failed("the collector did not answer in time")(
+										`no complete response within ${Duration.format(EXPORT_TIMEOUT)}`,
+									),
+								),
+						}),
 						// The export is not the app's work: it must not show up as spans of its own.
 						Effect.withTracerEnabled(false),
 						// A dropped profile is one window of one signal: never worth a retry storm.
-						Effect.catch((error) => Effect.logDebug("[MapleProfiler] export failed", error)),
+						Effect.matchEffect({
+							onFailure: (error) => outage.failed("profile export failed", error),
+							onSuccess: () => outage.succeeded,
+						}),
 					)
 
 			/** Stops the profiler and takes the window's span switches: all that must happen before a restart. */
@@ -225,7 +295,7 @@ export const profilerLayer = (
 				Effect.gen(function* () {
 					const body = yield* encode(stopped)
 					if (body !== undefined) yield* send(body)
-				}).pipe(Effect.catch((error) => Effect.logDebug("[MapleProfiler] window dropped", error)))
+				}).pipe(Effect.catch((error) => outage.failed("profile window dropped", error)))
 
 			options.timeline?.setRecording(true)
 			const first = yield* start
@@ -259,7 +329,7 @@ export const profilerLayer = (
 					yield* exportWindow(stopped)
 				}).pipe(
 					Effect.timeout(options.shutdownTimeout ?? Duration.seconds(3)),
-					Effect.catch((error) => Effect.logDebug("[MapleProfiler] final export skipped", error)),
+					Effect.catch((error) => outage.failed("final profile export skipped", error)),
 				),
 			)
 
