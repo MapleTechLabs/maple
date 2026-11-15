@@ -294,6 +294,19 @@ describe("service detail", () => {
 		)
 	})
 
+	test('a fresh deploy too quiet to compare says so, not "no change"', () => {
+		const quiet = { ...deploy("v3.0.0", 10), afterSpans: 12, afterErrors: 0 }
+		const loaded = withDeploys(entered(), [quiet]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text(/Too little traffic to compare yet/)).toExist(),
+			expectView(text(/No change so far/)).not.toExist(),
+		)
+	})
+
 	test("settled clean deploys raise no callout", () => {
 		const loaded = withDeploys(entered(), [deploy("v1.9.0", 300)]).model
 		scene(
