@@ -37,6 +37,11 @@ describe("Prometheus wire format", () => {
 				expect((yield* Effect.flip(parseTime("time", text))).message).toMatch(/cannot parse/)
 			}
 			expect(yield* parseTime("time", "2028-02-29T23:59:59Z")).toBe(Date.UTC(2028, 1, 29, 23, 59, 59))
+			// Year 0000 is a leap year; Date.UTC would read it as 1900.
+			expect(Number.isFinite(yield* parseTime("time", "0000-02-29T00:00:00Z"))).toBe(true)
+			expect((yield* Effect.flip(parseTime("time", "1900-02-29T00:00:00Z"))).message).toMatch(
+				/cannot parse/,
+			)
 		}),
 	)
 })
