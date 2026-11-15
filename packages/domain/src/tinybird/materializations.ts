@@ -1883,7 +1883,7 @@ export const metricCatalogGaugeMv = defineMaterializedView("metric_catalog_gauge
 // One row per AWS series and hour, in `aws_metrics_hourly`'s column order. The filter is the
 // prefix every `AWS_INFRA_KINDS` metric carries, so no AWS infra read misses its rollup.
 // Read by `awsInfraMetricsSQL`.
-const awsMetricsHourlySql = (table: "metrics_sum" | "metrics_gauge", metricType: "sum" | "gauge") => `
+const awsMetricsHourlySql = (metricType: "sum" | "gauge") => `
         SELECT
           OrgId,
           '${metricType}' AS MetricType,
@@ -1897,7 +1897,7 @@ const awsMetricsHourlySql = (table: "metrics_sum" | "metrics_gauge", metricType:
           count() AS Samples,
           max(Value) AS Peak,
           max(toDateTime(TimeUnix)) AS LastSeen
-        FROM ${table}
+        FROM metrics_${metricType}
         WHERE startsWith(MetricName, '${AWS_METRIC_PREFIX}')
         GROUP BY OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId
       `
@@ -1906,19 +1906,18 @@ export const awsMetricsHourlySumMv = defineMaterializedView("aws_metrics_hourly_
 	description:
 		"Rolls up the AWS metric stream's aws.* sum points hourly per series into aws_metrics_hourly.",
 	datasource: awsMetricsHourly,
-	nodes: [node({ name: "aws_metrics_hourly_sum_mv_node", sql: awsMetricsHourlySql("metrics_sum", "sum") })],
+	// The target is backfilled by hand (`BACKFILL skip`): a rebuild would leave it empty.
+	deploymentMethod: "alter",
+	nodes: [node({ name: "aws_metrics_hourly_sum_mv_node", sql: awsMetricsHourlySql("sum") })],
 })
 
 export const awsMetricsHourlyGaugeMv = defineMaterializedView("aws_metrics_hourly_gauge_mv", {
 	description:
 		"Rolls up the AWS metric stream's aws.* gauge points hourly per series into aws_metrics_hourly.",
 	datasource: awsMetricsHourly,
-	nodes: [
-		node({
-			name: "aws_metrics_hourly_gauge_mv_node",
-			sql: awsMetricsHourlySql("metrics_gauge", "gauge"),
-		}),
-	],
+	// The target is backfilled by hand (`BACKFILL skip`): a rebuild would leave it empty.
+	deploymentMethod: "alter",
+	nodes: [node({ name: "aws_metrics_hourly_gauge_mv_node", sql: awsMetricsHourlySql("gauge") })],
 })
 
 export const metricCatalogHistogramMv = defineMaterializedView("metric_catalog_histogram_mv", {
