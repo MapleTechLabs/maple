@@ -1,5 +1,6 @@
 import { formatWarehouseDateTime, resolveThroughput } from "@maple/query-engine"
 import {
+	METRICS_PERCENTILES,
 	QueryEngineExecuteRequest,
 	type MetricsMetric,
 	type QueryEngineExecuteResponse,
@@ -291,6 +292,7 @@ const metricsMetrics = new Set<MetricsMetric>([
 	"latest",
 	"rate",
 	"increase",
+	...Rec.keys(METRICS_PERCENTILES),
 ])
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 

@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto"
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import {
 	fmtMetricTs,
+	type MetricExponentialHistogramRow,
 	type MetricGaugeRow,
+	type MetricHistogramRow,
 	type MetricSumRow,
 } from "@maple/backend/services/warehouse/metric-rows"
 
@@ -105,6 +107,8 @@ interface DemoTraceBatch {
 export interface DemoRows extends DemoTraceBatch {
 	metricGaugeRows: MetricGaugeRow[]
 	metricSumRows: MetricSumRow[]
+	metricHistogramRows: MetricHistogramRow[]
+	metricExponentialHistogramRows: MetricExponentialHistogramRow[]
 }
 
 const SCOPE_NAME = "@maple/demo-instr"
@@ -120,7 +124,8 @@ function pick<T>(rand: Rand, arr: Arr.NonEmptyReadonlyArray<T>): T {
 }
 
 function gaussian(rand: Rand, mean: number, stddev: number): number {
-	const u1 = rand()
+	// `rand` draws from [0, 1); flipped to (0, 1] so the logarithm never sees zero.
+	const u1 = 1 - rand()
 	const u2 = rand()
 	const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)
 	return mean + z * stddev
@@ -369,6 +374,7 @@ function generateRuntimeMetrics(
 	orgId: string,
 	startMs: number,
 	endMs: number,
+	instanceId: string,
 ): { metricGaugeRows: MetricGaugeRow[]; metricSumRows: MetricSumRow[] } {
 	const metricGaugeRows: MetricGaugeRow[] = []
 	const metricSumRows: MetricSumRow[] = []
@@ -414,6 +420,7 @@ function generateRuntimeMetrics(
 			gcCount += Math.max(0, Math.round(gaussian(rand, 4, 2)))
 			metricSumRows.push({
 				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
 				metric_name: "process.runtime.nodejs.gc.count",
 				metric_unit: "{collections}",
 				value: gcCount,
@@ -424,6 +431,146 @@ function generateRuntimeMetrics(
 	}
 
 	return { metricGaugeRows, metricSumRows }
+}
+
+// The OTel HTTP semantic-convention bucket boundaries, in seconds.
+const DURATION_BOUNDS_S = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10]
+
+// Request durations as a cumulative histogram per service, the way an SDK exports
+// them: running totals since the window began, one sample a minute.
+function generateDurationHistograms(
+	rand: Rand,
+	orgId: string,
+	startMs: number,
+	endMs: number,
+	instanceId: string,
+): MetricHistogramRow[] {
+	const rows: MetricHistogramRow[] = []
+	for (const [serviceIdx, service] of METRIC_SERVICES.entries()) {
+		const buckets = Arr.makeBy(DURATION_BOUNDS_S.length + 1, () => 0)
+		let count = 0
+		let sum = 0
+		let min = Number.POSITIVE_INFINITY
+		let max = 0
+		let point = 0
+		for (let tsMs = startMs; tsMs <= endMs; tsMs += METRIC_INTERVAL_MS, point++) {
+			// The worker is slower than the API, and both drift over the hour.
+			const typicalS = (serviceIdx === 0 ? 0.03 : 0.12) * (1 + 0.4 * Math.sin(point / 25 + serviceIdx))
+			const requests = Math.max(0, Math.round(gaussian(rand, 40, 12)))
+			for (let i = 0; i < requests; i++) {
+				const slow = rand() < 0.03 ? 8 : 1
+				const durationS = typicalS * slow * Math.exp(gaussian(rand, 0, 0.7))
+				const bucket = Option.getOrElse(
+					Arr.findFirstIndex(DURATION_BOUNDS_S, (bound) => durationS <= bound),
+					() => DURATION_BOUNDS_S.length,
+				)
+				buckets[bucket] = (buckets[bucket] ?? 0) + 1
+				count += 1
+				sum += durationS
+				min = Math.min(min, durationS)
+				max = Math.max(max, durationS)
+			}
+			const base = makeMetricBase(service, orgId, startMs, tsMs)
+			rows.push({
+				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
+				metric_name: "http.server.request.duration",
+				metric_unit: "s",
+				count,
+				sum,
+				bucket_counts: [...buckets],
+				explicit_bounds: DURATION_BOUNDS_S,
+				min: count === 0 ? null : min,
+				max: count === 0 ? null : max,
+				aggregation_temporality: 2, // cumulative
+			})
+		}
+	}
+	return rows
+}
+
+// A base-2 exponential histogram as an SDK holds it: it starts at this scale and
+// halves its resolution whenever the values outgrow its bucket budget.
+const EXPONENTIAL_START_SCALE = 3
+const EXPONENTIAL_MAX_BUCKETS = 40
+
+/** The bucket a positive value falls in: bucket i covers (base^i, base^(i+1)], base = 2^(2^-scale). */
+const exponentialBucketIndex = (value: number, scale: number) => Math.ceil(Math.log2(value) * 2 ** scale) - 1
+
+// Database query durations as a cumulative exponential histogram per service. Slow
+// queries turn up halfway through the window: they stretch the value range, so the
+// histogram lowers its scale mid-series, the way a long-lived process does.
+function generateQueryDurationHistograms(
+	rand: Rand,
+	orgId: string,
+	startMs: number,
+	endMs: number,
+	instanceId: string,
+): MetricExponentialHistogramRow[] {
+	const rows: MetricExponentialHistogramRow[] = []
+	for (const [serviceIdx, service] of METRIC_SERVICES.entries()) {
+		let scale = EXPONENTIAL_START_SCALE
+		let buckets = new Map<number, number>()
+		let lowest = 0
+		let highest = 0
+		let count = 0
+		let sum = 0
+		let min = Number.POSITIVE_INFINITY
+		let max = 0
+		let point = 0
+		for (let tsMs = startMs; tsMs <= endMs; tsMs += METRIC_INTERVAL_MS, point++) {
+			const typicalS =
+				(serviceIdx === 0 ? 0.004 : 0.015) * (1 + 0.3 * Math.sin(point / 30 + serviceIdx))
+			const slowShare = tsMs - startMs > (endMs - startMs) / 2 ? 0.02 : 0
+			const queries = Math.max(0, Math.round(gaussian(rand, 60, 15)))
+			for (let i = 0; i < queries; i++) {
+				const durationS = typicalS * (rand() < slowShare ? 100 : 1) * Math.exp(gaussian(rand, 0, 0.5))
+				let index = exponentialBucketIndex(durationS, scale)
+				// One scale lower, buckets 2k and 2k + 1 become bucket k.
+				while (
+					count > 0 &&
+					Math.max(highest, index) - Math.min(lowest, index) >= EXPONENTIAL_MAX_BUCKETS
+				) {
+					const halved = new Map<number, number>()
+					for (const [bucket, held] of buckets) {
+						halved.set(bucket >> 1, (halved.get(bucket >> 1) ?? 0) + held)
+					}
+					buckets = halved
+					scale -= 1
+					lowest >>= 1
+					highest >>= 1
+					index = exponentialBucketIndex(durationS, scale)
+				}
+				buckets.set(index, (buckets.get(index) ?? 0) + 1)
+				lowest = count === 0 ? index : Math.min(lowest, index)
+				highest = count === 0 ? index : Math.max(highest, index)
+				count += 1
+				sum += durationS
+				min = Math.min(min, durationS)
+				max = Math.max(max, durationS)
+			}
+			const base = makeMetricBase(service, orgId, startMs, tsMs)
+			rows.push({
+				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
+				metric_name: "db.client.operation.duration",
+				metric_unit: "s",
+				count,
+				sum,
+				scale,
+				zero_count: 0,
+				positive_offset: lowest,
+				positive_bucket_counts:
+					count === 0 ? [] : Arr.makeBy(highest - lowest + 1, (i) => buckets.get(lowest + i) ?? 0),
+				negative_offset: 0,
+				negative_bucket_counts: [],
+				min: count === 0 ? null : min,
+				max: count === 0 ? null : max,
+				aggregation_temporality: 2, // cumulative
+			})
+		}
+	}
+	return rows
 }
 
 export function generateDemoRows({
@@ -455,7 +602,25 @@ export function generateDemoRows({
 		logRows.push(...result.logRows)
 	}
 
-	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now)
+	// Each seed is its own instance, so the running totals of a second seed over the same
+	// hours are a second series and not interleaved into the first.
+	const instanceId = `demo-${Math.floor(rand() * 0xffffffff).toString(16)}`
+	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now, instanceId)
+	const metricHistogramRows = generateDurationHistograms(rand, orgId, startMs, now, instanceId)
+	const metricExponentialHistogramRows = generateQueryDurationHistograms(
+		rand,
+		orgId,
+		startMs,
+		now,
+		instanceId,
+	)
 
-	return { traceRows, logRows, metricGaugeRows, metricSumRows }
+	return {
+		traceRows,
+		logRows,
+		metricGaugeRows,
+		metricSumRows,
+		metricHistogramRows,
+		metricExponentialHistogramRows,
+	}
 }

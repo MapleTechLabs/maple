@@ -50,6 +50,8 @@ const unusedLinear: EffectTransportDeps["linear"] = {
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 	saveThread: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
+	features: () =>
+		Effect.fail(new AlertDeliveryError({ message: "unexpected Linear call", destinationType: "linear" })),
 }
 
 const baseContext: TemplateRenderContext = {

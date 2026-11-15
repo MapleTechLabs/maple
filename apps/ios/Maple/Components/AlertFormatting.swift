@@ -58,6 +58,8 @@ struct SignalDisplay: Codable {
 		case .anomaly: self.init(label: "Anomaly", unit: .anomalySeverity)
 		// An audit log detection's hidden rule: the value is how many matching events arrived.
 		case .audit: self.init(label: "Audit log", unit: .count)
+		// A cost budget's hidden rule: the value is the percent of the amount spent or forecast.
+		case .costBudget: self.init(label: "Cost budget", unit: .plain)
 		}
 	}
 

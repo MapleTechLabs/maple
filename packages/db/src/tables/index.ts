@@ -21,6 +21,7 @@ import { ChatIdentities } from "./chat-identities"
 import { ChatWorkspaces } from "./chat-workspaces"
 import { CliDeviceAuthorizations } from "./cli-device-authorizations"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
+import { CloudflareFeatureSettings } from "./cloudflare-feature-settings"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
 import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
@@ -50,6 +51,7 @@ import { CostSources } from "./cost-sources"
 import { GcpConnectors } from "./gcp-connectors"
 import { GcpResources } from "./gcp-resources"
 import { Investigations } from "./investigations"
+import { LinearFeatureSettings } from "./linear-feature-settings"
 import { LiveActivities } from "./live-activities"
 import { McpOAuthClients, McpOAuthAuthorizations, McpOAuthRefreshTokens } from "./mcp-oauth"
 import { MobileDevices } from "./mobile-devices"
@@ -75,6 +77,7 @@ import { CostConnections } from "./cost-connections"
 import { OpenRouterCostConnections } from "./openrouter-cost-connections"
 import { OrgOpenRouterKeys } from "./openrouter-keys"
 import { RailwayConnections, RailwayEnvironments } from "./railway"
+import { SavedViews } from "./saved-views"
 import { ScrapeTargets, ScrapeTargetChecks } from "./scrape-targets"
 import { SearchConsoleSites } from "./search-console-sites"
 import { ServiceMapWorldEntities } from "./service-map-world"
@@ -131,6 +134,7 @@ export * from "./cli-device-authorizations"
 export * from "./cloudflare-analytics-state"
 export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
+export * from "./cloudflare-feature-settings"
 export * from "./cloudflare-zone-settings"
 export * from "./dashboard-shares"
 export * from "./dashboards"
@@ -146,6 +150,7 @@ export * from "./cost-sources"
 export * from "./gcp-connectors"
 export * from "./gcp-resources"
 export * from "./investigations"
+export * from "./linear-feature-settings"
 export * from "./live-activities"
 export * from "./mcp-oauth"
 export * from "./mobile-devices"
@@ -164,6 +169,7 @@ export * from "./cost-connections"
 export * from "./openrouter-cost-connections"
 export * from "./openrouter-keys"
 export * from "./railway"
+export * from "./saved-views"
 export * from "./scrape-targets"
 export * from "./search-console-sites"
 export * from "./security-audit"
@@ -200,6 +206,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareAnalyticsState,
+	CloudflareFeatureSettings,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
 	CloudflareZoneSettings,
@@ -233,6 +240,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	AwsConnections,
 	CostSources,
 	Investigations,
+	LinearFeatureSettings,
 	LiveActivities,
 	McpOAuthClients,
 	McpOAuthAuthorizations,
@@ -264,6 +272,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	PlanetscaleIssueReceipts,
 	RailwayConnections,
 	RailwayEnvironments,
+	SavedViews,
 	ScrapeTargets,
 	ServiceMapWorldEntities,
 	ScrapeTargetChecks,

@@ -383,6 +383,48 @@ describe("PlanetScaleWebhookRouter", () => {
 		}).pipe(Effect.provide(testDb.layer))
 	})
 
+	it.effect("acknowledges and drops a verified delivery while events are switched off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const jobs: PlanetScaleWebhookJob[] = []
+		return Effect.gen(function* () {
+			const database = yield* Database
+			yield* seedConnection(testDb)
+			yield* database.execute((db) =>
+				db.run(
+					PG.update(PlanetscaleConnections)
+						.set({ eventsEnabled: false })
+						.where(($) => [$.id.eq(CONNECTION_ID)]),
+				),
+			)
+			const body = JSON.stringify({
+				timestamp: 1_698_252_879,
+				event: "branch.anomaly",
+				organization: "acme",
+				database: "shop",
+			})
+			const signature = createHmac("sha256", SECRET).update(body, "utf8").digest("hex")
+			const { handler, dispose } = HttpRouter.toWebHandler(
+				makeRouterLayer(testDb, (job) => Effect.sync(() => jobs.push(job))),
+				{ disableLogger: true },
+			)
+
+			yield* Effect.gen(function* () {
+				const response = yield* Effect.promise(() =>
+					handler(
+						new Request(`http://api.localhost${WEBHOOK_PATH}`, {
+							method: "POST",
+							headers: { "x-planetscale-signature": signature },
+							body,
+						}),
+						Context.make(Database, database),
+					),
+				)
+				assert.strictEqual(response.status, 200)
+				assert.strictEqual(jobs.length, 0)
+			}).pipe(Effect.ensuring(Effect.promise(dispose)))
+		}).pipe(Effect.provide(testDb.layer))
+	})
+
 	it.effect("returns 503 when durable enqueueing fails", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

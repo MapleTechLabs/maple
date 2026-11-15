@@ -38,6 +38,7 @@ import { AlertMaintenanceWindowsService } from "./AlertMaintenanceWindowsService
 import { AlertRulesService, type AlertRulesServiceApi } from "./AlertRulesService"
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
+import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
 import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSource"
 import { AnomalyAlertSource } from "@maple/backend/services/alerts/anomaly/AnomalyAlertSource"
 import { BucketCacheService } from "@maple/query-engine/caching"
@@ -363,8 +364,14 @@ export const makeLayer = (
 				Layer.provide(Layer.mergeAll(databaseLive, warehouseLive)),
 			),
 		),
+		// One `provide` for both: the pipe above is at its twenty-argument limit.
 		Layer.provide(
-			Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provide(warehouseLive)),
+			Layer.mergeAll(
+				Layer.effect(AuditTrailService, AuditTrailService.make).pipe(Layer.provide(warehouseLive)),
+				Layer.effect(CostBudgetSource, CostBudgetSource.make).pipe(
+					Layer.provide(Layer.mergeAll(databaseLive, warehouseLive, queryEngineLive)),
+				),
+			),
 		),
 		Layer.provide(chatSessions === undefined ? Layer.empty : Layer.succeed(ChatSessions, chatSessions)),
 	)

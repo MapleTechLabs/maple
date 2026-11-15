@@ -212,6 +212,31 @@ describe("ChatAlertPoster", () => {
 		}).pipe(Effect.provide(makeLayer(failing, [])))
 	})
 
+	it.effect("posts nothing while the workspace has alert notifications off, and posts once on", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const posted: Array<Posted> = []
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			const setAlerts = (on: boolean) =>
+				Effect.promise(() =>
+					executeSql(testDb, "update chat_workspaces set alerts_enabled = $1 where id = $2", [
+						on,
+						WORKSPACE,
+					]),
+				)
+			yield* Effect.gen(function* () {
+				yield* setAlerts(false)
+				const skipped = yield* post()
+				assert.isNull(skipped.messageId)
+				assert.lengthOf(posted, 0)
+				yield* setAlerts(true)
+				const sent = yield* post()
+				assert.strictEqual(sent.messageId, "message-1")
+				assert.lengthOf(posted, 1)
+			}).pipe(Effect.provide(makeLayer(testDb, posted)))
+		}),
+	)
+
 	it.effect("keeps a deployment's missing connector config retryable, and posts nothing", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)

@@ -764,6 +764,31 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 		},
 	},
 	{
+		label: "metrics-timeseries-histogram-percentile",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "p95",
+			bucketSeconds: 300,
+			groupBy: ["service"],
+			filters: METRICS_FILTERS,
+		},
+	},
+	{
+		label: "metrics-timeseries-exponential-histogram-percentile",
+		query: {
+			kind: "timeseries",
+			source: "metrics",
+			metric: "p95",
+			bucketSeconds: 300,
+			groupBy: ["service"],
+			filters: {
+				metricName: metric("db.client.operation.duration"),
+				metricType: "exponential_histogram",
+			},
+		},
+	},
+	{
 		label: "metrics-timeseries-rate",
 		query: {
 			kind: "timeseries",
@@ -885,6 +910,16 @@ export const querySpecFixtures: ReadonlyArray<QuerySpecFixture> = [
 			source: "metrics",
 			metricType: "sum",
 			metricNames: [metric("http.server.requests"), metric("rpc.server.duration")],
+			bucketSeconds: 3600,
+		},
+	},
+	{
+		label: "metrics-sparklines-histogram",
+		query: {
+			kind: "sparklines",
+			source: "metrics",
+			metricType: "histogram",
+			metricNames: [metric("http.server.request.duration")],
 			bucketSeconds: 3600,
 		},
 	},

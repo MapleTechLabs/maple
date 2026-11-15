@@ -141,6 +141,29 @@ describe("routes", () => {
 		expect(parse("/alerts/nope")._tag).toBe("NotFound")
 	})
 
+	test("the retired Releases pages send old links to the services and a release to its deploy drawer", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(redirectOf("/releases?timePreset=7d&impact=regressed")).toEqual(
+			Option.some("/services?timePreset=7d"),
+		)
+		expect(
+			redirectOf(
+				"/releases/abc123?service=checkout&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		).toEqual(
+			Option.some(
+				"/services/checkout?deploy=abc123&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		)
+		// A release link with no window opens on the week the Releases page read by default.
+		expect(redirectOf("/releases/abc123?service=checkout")).toEqual(
+			Option.some("/services/checkout?deploy=abc123&timePreset=7d"),
+		)
+		// Without a service there is no page to open the deploy on: the services, in the same window.
+		expect(redirectOf("/releases/abc123?timePreset=24h")).toEqual(Option.some("/services?timePreset=24h"))
+		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
+	})
+
 	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
 		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
 		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
@@ -262,8 +285,23 @@ describe("routes", () => {
 		}
 	})
 
+	test("the budgets list and the budget editor have their own paths under /cost", () => {
+		expect(parse("/cost/budgets")._tag).toBe("CostBudgets")
+		const prefilled = parse(hrefOf(AppRoute.CostBudgetNew({ search: { provider: ["aws"] } })))
+		expect(prefilled).toMatchObject({ _tag: "CostBudgetNew", search: { provider: ["aws"] } })
+		expect(parse("/cost/budgets/new?budgetId=abc")).toMatchObject({
+			_tag: "CostBudgetNew",
+			search: { budgetId: "abc" },
+		})
+	})
+
 	test("an org outside the cloudCost rollout is sent home from /cost, filters and all", () => {
-		for (const path of ["/cost", "/cost?groupBy=region&region=%5B%22eu-west-1%22%5D"]) {
+		for (const path of [
+			"/cost",
+			"/cost?groupBy=region&region=%5B%22eu-west-1%22%5D",
+			"/cost/budgets",
+			"/cost/budgets/new",
+		]) {
 			expect(
 				flaggedRouteRedirect(parse(path), {
 					statusPages: true,

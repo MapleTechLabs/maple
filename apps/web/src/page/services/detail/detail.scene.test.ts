@@ -35,7 +35,8 @@ import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
 import type { Endpoint, Operation } from "./model-tabs"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { FetchDeployOperations, FetchShipped } from "./deploy-peek/update"
+import { contextChanged, deployPeekOf, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -56,13 +57,34 @@ const entered = (search: Model["search"] = {}): Model => {
 	return pageUpdate(start, Message.CompletedResolveClock({ nowMs: NOW, mode: "Load" })).model
 }
 
-const overviewData = (releases: OverviewData["releases"] = []): OverviewData => ({
+const overviewData = (): OverviewData => ({
 	points: [],
-	releases,
+	releases: [],
 	environments: ["production"],
 })
 
-const release = (commitSha: string, bucket: string) => ({ bucket, commitSha, count: 10, errorCount: 0 })
+/** A deploy `minutesAgo` before NOW: 1% errors before it, `afterRate` in its first half hour. */
+const deploy = (commitSha: string, minutesAgo: number, afterRate = 0.01) => ({
+	serviceName: "payment-svc",
+	environment: "production",
+	commitSha,
+	firstSeen: new Date(NOW - minutesAgo * 60_000).toISOString(),
+	afterSpans: 1000,
+	afterErrors: Math.round(1000 * afterRate),
+	afterP95Ms: 80,
+	beforeSpans: 1000,
+	beforeErrors: 10,
+	beforeP95Ms: 80,
+})
+
+const withDeploys = (model: Model, deploys: ReadonlyArray<ReturnType<typeof deploy>>) =>
+	pageUpdate(
+		model,
+		Message.CompletedFetchDeploys({
+			key: model.deploys.key ?? "",
+			result: Result.succeed({ deploys, verifyWindowSeconds: 1800, readUntil: "2026-10-01 12:00:00" }),
+		}),
+	)
 
 const operation = (spanName: string, errorRate: number): Operation => ({
 	spanName,
@@ -144,24 +166,157 @@ describe("service detail", () => {
 		expect(late.model.overview).toEqual(second.overview)
 	})
 
-	test("a loaded overview resolves each deploy's commit once", () => {
-		const model = entered()
-		const loaded = pageUpdate(
-			model,
-			Message.CompletedFetchOverview({
-				key: model.overview.key ?? "",
-				result: Result.succeed(
-					overviewData([
-						release(SHA, "2026-10-01T10:00:00.000Z"),
-						release("v1.2.3", "2026-10-01T02:00:00.000Z"),
-					]),
-				),
-			}),
-		)
+	test("loaded deploys resolve each commit once; a deployment reference is not looked up", () => {
+		const loaded = withDeploys(entered(), [deploy(SHA, 120), deploy("v1.2.3", 600)])
 		expect(names(loaded.commands)).toEqual([FetchCommit.name])
 		expect(AsyncData.isLoading(loaded.model.commits[SHA] ?? AsyncData.Idle())).toBe(true)
 		const again = pageUpdate(loaded.model, Message.ClickedToggleDeploys())
 		expect(names(again.commands)).toEqual([])
+	})
+
+	test("a deploy whose errors went up leads the page and tags the issue that arrived with it", () => {
+		const model = entered()
+		const issued = pageUpdate(
+			model,
+			Message.CompletedFetchIssues({
+				key: model.issues.key ?? "",
+				result: Result.succeed([
+					{
+						id: "iss_1",
+						title: "deadlock detected",
+						severity: "high",
+						occurrenceCount: 12,
+						firstSeenAt: new Date(NOW - 50 * 60_000).toISOString(),
+						lastSeenAt: new Date(NOW - 60_000).toISOString(),
+					},
+				]),
+			}),
+		).model
+		const loaded = withDeploys(issued, [deploy("v2.0.0", 60, 0.05), deploy("v1.9.0", 300)]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("Errors up since this deploy")).toExist(),
+			expectView(text(/errors 1(\.0)?% → 5(\.0)?% in its first 30 minutes/)).toExist(),
+			expectView(text("Errors up")).toExist(),
+			expectView(text("v2.0.0", { exact: false })).toExist(),
+			// The issue first seen 50 minutes ago arrived with v2.0.0, deployed an hour ago.
+			expectView(text(/new since/)).toExist(),
+		)
+	})
+
+	test("an issue older than every deploy in the window carries no tag", () => {
+		const model = entered()
+		const issued = pageUpdate(
+			model,
+			Message.CompletedFetchIssues({
+				key: model.issues.key ?? "",
+				result: Result.succeed([
+					{
+						id: "iss_old",
+						title: "an old timeout",
+						severity: "medium",
+						occurrenceCount: 3,
+						firstSeenAt: new Date(NOW - 3 * 24 * 60 * 60_000).toISOString(),
+						lastSeenAt: new Date(NOW - 60_000).toISOString(),
+					},
+				]),
+			}),
+		).model
+		const loaded = withDeploys(issued, [deploy("v2.0.0", 60, 0.05)]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("an old timeout")).toExist(),
+			expectView(text(/new since/)).not.toExist(),
+		)
+	})
+
+	test("a deploy row opens its drawer by URL; the drawer reads both sides and the commit's other deploys", () => {
+		const loaded = withDeploys(entered(), [deploy("v2.0.0", 60, 0.05)]).model
+		expect(
+			pageUpdate(loaded, Message.ClickedDeploy({ sha: "v2.0.0", environment: "production" }))
+				.outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?deploy=v2.0.0&deployEnv=production",
+				isReplace: false,
+			}),
+		)
+		const opened = routeChanged(loaded, route({ deploy: "v2.0.0" }), context)
+		expect(opened.model.deployPeek.dialog.isOpen).toBe(true)
+		expect(names(opened.commands)).toEqual(
+			expect.arrayContaining([FetchDeployOperations.name, FetchShipped.name]),
+		)
+		expect(
+			Arr.filter(names(opened.commands), (name) => name === FetchDeployOperations.name),
+		).toHaveLength(2)
+	})
+
+	test("a commit in two environments opens the environment its row named", () => {
+		const loaded = withDeploys(entered(), [
+			{ ...deploy("v2.0.0", 30, 0.05), environment: "staging" },
+			deploy("v2.0.0", 60),
+		]).model
+		const opened = routeChanged(loaded, route({ deploy: "v2.0.0", deployEnv: "production" }), context)
+		expect(deployPeekOf(opened.model)?.environment).toBe("production")
+	})
+
+	test("a deploy the window no longer holds leaves the URL", () => {
+		const model = entered({ deploy: "gone" })
+		const loaded = withDeploys(model, [deploy("v2.0.0", 60)])
+		expect(loaded.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc", isReplace: true }),
+		)
+		expect(loaded.model.deployPeek.dialog.isOpen).toBe(false)
+	})
+
+	test("switching tab closes the deploy drawer", () => {
+		const model = entered({ deploy: "v2.0.0" })
+		expect(pageUpdate(model, Message.ClickedTab({ tab: "api" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=api", isReplace: true }),
+		)
+	})
+
+	test("no deploys before the overview answers: a neutral line, not the setup hint", () => {
+		const loaded = withDeploys(entered(), []).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("No new version deployed in this window")).toExist(),
+			expectView(text(/Deploy tracking needs spans/)).not.toExist(),
+		)
+	})
+
+	test('a fresh deploy too quiet to compare says so, not "no change"', () => {
+		const quiet = { ...deploy("v3.0.0", 10), afterSpans: 12, afterErrors: 0 }
+		const loaded = withDeploys(entered(), [quiet]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text(/Too little traffic to compare yet/)).toExist(),
+			expectView(text(/No change so far/)).not.toExist(),
+		)
+	})
+
+	test("settled clean deploys raise no callout", () => {
+		const loaded = withDeploys(entered(), [deploy("v1.9.0", 300)]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("Clean")).toExist(),
+			expectView(role("status")).not.toExist(),
+		)
 	})
 
 	test("a tab click replaces the URL; the API tab then reads its endpoints, KPIs and status codes", () => {
@@ -419,23 +574,14 @@ describe("service detail view", () => {
 	})
 
 	test("more than eight deploys list eight until Show all", () => {
-		const model = entered()
-		const releases = Array.from({ length: 10 }, (_, index) =>
-			release(`v1.0.${index}`, `2026-10-01T0${index}:00:00.000Z`),
-		)
-		const loaded = pageUpdate(
-			model,
-			Message.CompletedFetchOverview({
-				key: model.overview.key ?? "",
-				result: Result.succeed(overviewData(releases)),
-			}),
-		).model
+		const deploys = Array.from({ length: 10 }, (_, index) => deploy(`v1.0.${index}`, 600 - index * 60))
+		const loaded = withDeploys(entered(), deploys).model
 		scene(
 			{ update: pageUpdate, view },
 			given(loaded),
 			themeResolved(),
 			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
-			expectView(text("10 versions")).toExist(),
+			expectView(text("10 deploys", { exact: false })).toExist(),
 			expectView(text("v1.0.1")).not.toExist(),
 			click(role("button", { name: "Show all 10 deploys" })),
 			expectView(text("v1.0.1")).toExist(),
@@ -513,25 +659,12 @@ describe("where the service runs", () => {
 		)
 	})
 
-	test("the header links the first place it runs", () => {
-		scene(
-			{ update: pageUpdate, view },
-			given(withRuntimes([CLOUD_RUN])),
-			...settled,
-			expectView(role("link", { name: "Runs on Cloud Run service payment-svc" })).toHaveAttr(
-				"href",
-				RUN_HREF,
-			),
-		)
-	})
-
-	test("a service on no platform shows neither the card nor the header link", () => {
+	test("a service on no platform has no Runs on section", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withRuntimes([])),
 			...settled,
 			expectView(text("Runs on")).not.toExist(),
-			expectView(role("link", { name: /^Runs on/ })).not.toExist(),
 		)
 	})
 })

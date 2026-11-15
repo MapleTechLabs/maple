@@ -1,3 +1,5 @@
+import { INTEGRATION_FEATURES, type IntegrationFeatureId } from "@maple/domain/integration-features"
+import { featureList } from "../../../kit/feature-list"
 import { VercelDiscoverRequest, type VercelIntegrationStatus, type VercelTeam } from "@maple/domain/http"
 import { countLabel } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
@@ -21,7 +23,6 @@ import { dividedList } from "@maple/views/ui/rule"
 import { searchInput } from "@maple/views/ui/search-input"
 import { segmentedSelect } from "@maple/views/ui/segmented-select"
 import { hstack, vstack } from "@maple/views/ui/stack"
-import { switchControl } from "@maple/views/ui/switch"
 import { typography } from "@maple/views/ui/typography"
 import { Message } from "../../../integrations/message"
 import { VercelMessage } from "./vercel"
@@ -316,48 +317,21 @@ const teamStage = (
 
 // SETTINGS
 
-const SIGNALS = [
-	{
-		flag: "logsEnabled",
-		title: "Logs",
-		drain: "Maple logs",
-		description: "Requests, functions, edge middleware and builds, with status, path and cache result.",
-	},
-	{
-		flag: "tracesEnabled",
-		title: "Traces",
-		drain: "Maple traces",
-		description: "Deployment traces from Vercel and @vercel/otel.",
-	},
-	{
-		flag: "aiGatewayEnabled",
-		title: "AI Gateway",
-		drain: "Maple AI Gateway",
-		description:
-			"Model usage and cost from Vercel AI Gateway: every request with its model, tokens and cost.",
-	},
-	{
-		flag: "speedInsightsEnabled",
-		title: "Speed Insights",
-		drain: "Maple Speed Insights",
-		description:
-			"Core Web Vitals (LCP, INP, CLS, FCP, TTFB) from real visits. Needs Speed Insights Plus on the project.",
-	},
-	{
-		flag: "webAnalyticsEnabled",
-		title: "Web Analytics",
-		drain: "Maple Web Analytics",
-		description:
-			"Page views and custom events. Needs Web Analytics on the project; Vercel bills each event.",
-	},
-	{
-		flag: "auditLogEnabled",
-		title: "Audit log",
-		drain: "Maple audit log",
-		description:
-			"Who changed what on the team, whatever projects you pick. Shown in the Security audit log to org admins. Enterprise plan only.",
-	},
-] as const
+/** The drain each feature creates on the team, named as Vercel lists it. */
+const DRAIN_NAME = {
+	logs: "Maple logs",
+	traces: "Maple traces",
+	aiGateway: "Maple AI Gateway",
+	speedInsights: "Maple Speed Insights",
+	webAnalytics: "Maple Web Analytics",
+	auditLog: "Maple audit log",
+} as const satisfies Record<IntegrationFeatureId<"vercel">, string>
+
+const SIGNALS = Arr.map(INTEGRATION_FEATURES.vercel, (spec) => ({
+	spec,
+	flag: `${spec.id}Enabled` as const,
+	drain: DRAIN_NAME[spec.id],
+}))
 
 const projectList = (
 	h: H,
@@ -455,44 +429,15 @@ const settingsFields = (
 			[h.Class("flex flex-col gap-2")],
 			[
 				h.legend([h.Class(cn(TITLE, "mb-2"))], ["What should Vercel send?"]),
-				dividedList(
-					h,
-					{ as: "div", className: "rounded-lg" },
-					Arr.map(SIGNALS, (signal) =>
-						hstack(
-							h,
-							{ align: "start", gap: "4", className: "p-3", attributes: [h.Key(signal.flag)] },
-							[
-								vstack(h, { gap: "0.5", shrink: true, grow: true }, [
-									label(
-										h,
-										{
-											className: "flex text-sm sm:text-sm",
-											attributes: [
-												h.Id(`vercel-${signal.flag}-label`),
-												h.For(`vercel-${signal.flag}-input`),
-											],
-										},
-										[
-											signal.title,
-											badge(h, { variant: "outline", size: "xs", mono: true }, [
-												signal.drain,
-											]),
-										],
-									),
-									h.p([h.Class(SMALL)], [signal.description]),
-								]),
-								...switchControl(h, {
-									id: `vercel-${signal.flag}`,
-									inputId: `vercel-${signal.flag}-input`,
-									isChecked: draft[signal.flag],
-									labelledBy: `vercel-${signal.flag}-label`,
-									onToggle: toHub(VercelMessage.ToggledSignal({ signal: signal.flag })),
-								}),
-							],
-						),
-					),
-				),
+				featureList(h, {
+					idPrefix: "vercel",
+					rows: Arr.map(SIGNALS, (signal) => ({
+						spec: signal.spec,
+						tag: signal.drain,
+						isChecked: draft[signal.flag],
+						onToggle: toHub(VercelMessage.ToggledSignal({ signal: signal.flag })),
+					})),
+				}),
 			],
 		),
 		vstack(h, { gap: "2" }, [

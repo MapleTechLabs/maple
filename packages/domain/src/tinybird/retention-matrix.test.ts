@@ -29,6 +29,8 @@ const RETENTION_DAYS = {
 	logs: 30,
 	logs_aggregates_hourly: 365,
 	metric_catalog: 90,
+	// As long as the raw metrics it rolls up.
+	aws_metrics_hourly: 90,
 	metrics_exponential_histogram: 90,
 	metrics_gauge: 90,
 	metrics_histogram: 90,

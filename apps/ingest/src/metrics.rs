@@ -11,6 +11,7 @@
 //! local dev) bind to the default no-op meter, so every function here is a
 //! cheap no-op until the OTLP pipeline is wired up.
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
@@ -44,6 +45,15 @@ static ORG_DATA_LOSS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .u64_counter("ingest_org_data_loss_total")
         .with_description(
             "Requests rejected in a way that loses the sender's telemetry, by org and signal",
+        )
+        .build()
+});
+
+static PARTIAL_WRITE_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_partial_write_total")
+        .with_description(
+            "Requests that failed after part of their rows were durable, by signal and reason",
         )
         .build()
 });
@@ -609,7 +619,21 @@ pub fn org_throttled(org_id: &str, reason: &'static str) {
 /// at *total* loss — was averaged away. Labeling is affordable here precisely
 /// because this counter only moves when something is broken; a healthy fleet
 /// emits no series at all.
+/// `ingest_org_data_loss_total` by `error_kind` since start, readable in-process so
+/// tests can see a refusal was counted.
+static DATA_LOSS_BY_KIND: LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
+    LazyLock::new(Default::default);
+
+pub fn data_loss_count(error_kind: &str) -> u64 {
+    DATA_LOSS_BY_KIND
+        .lock()
+        .map_or(0, |counts| counts.get(error_kind).copied().unwrap_or(0))
+}
+
 pub fn org_data_loss(org_id: &str, signal: &str, error_kind: &str) {
+    if let Ok(mut counts) = DATA_LOSS_BY_KIND.lock() {
+        *counts.entry(error_kind.to_owned()).or_default() += 1;
+    }
     ORG_DATA_LOSS_TOTAL.add(
         1,
         &[
@@ -795,6 +819,31 @@ pub fn gcp_parse_failure() {
 /// forwarding turned off.
 pub fn gcp_disabled_drop() {
     GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
+}
+
+static PARTIAL_WRITE_BY_REASON: LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
+    LazyLock::new(Default::default);
+
+/// Partial writes counted for `reason` in this process, for tests.
+pub fn partial_write_count(reason: &str) -> u64 {
+    PARTIAL_WRITE_BY_REASON
+        .lock()
+        .map_or(0, |counts| counts.get(reason).copied().unwrap_or(0))
+}
+
+/// A request failed or was dropped after part of its rows were written, so that
+/// part is exported and a resend stores it again.
+pub fn partial_write(signal: &str, reason: &str) {
+    if let Ok(mut counts) = PARTIAL_WRITE_BY_REASON.lock() {
+        *counts.entry(reason.to_owned()).or_default() += 1;
+    }
+    PARTIAL_WRITE_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("reason", reason.to_owned()),
+        ],
+    );
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real

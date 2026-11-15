@@ -85,11 +85,11 @@ import * as MetricsBrowse from "./metrics/browse"
 import * as Analytics from "./analytics"
 import * as ProductAnalytics from "./product-analytics"
 import * as Cost from "./cost"
+import * as CostBudgetNew from "./cost/budget-form"
+import * as CostBudgets from "./cost/budgets"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
-import * as ReleaseDetail from "./releases/detail"
-import * as ReleasesList from "./releases/list"
 import * as ServiceDetail from "./services/detail"
 import * as ServiceMap from "./service-map"
 import * as ReplayDetail from "./replays/detail"
@@ -191,8 +191,6 @@ export const pages = [
 	Integrations.page,
 	Recommendation.page,
 	AnomalyDetail.page,
-	ReleasesList.page,
-	ReleaseDetail.page,
 	InvestigationsList.page,
 	InvestigationDetail.page,
 	Settings.page,
@@ -211,6 +209,8 @@ export const pages = [
 	Analytics.page,
 	ProductAnalytics.page,
 	Cost.page,
+	CostBudgets.page,
+	CostBudgetNew.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

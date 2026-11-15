@@ -86,6 +86,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/domains",
+		title: "Verified domains",
+		description:
+			"The settings domains tab as an admin: verified and unverified domains, none yet, and the add and verify dialogs (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/members",
 		title: "Members",
 		description:
@@ -186,6 +194,22 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		title: "Cost",
 		description:
 			"The cost page over synthetic cost: populated, filtered, every source status, the on-ramp, the first-sync wait, an empty window, failing and loading (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/cost-budgets",
+		title: "Cost budgets",
+		description:
+			"The Budgets list and the budget editor over fixture budgets: on track, over, off, empty, failing, a viewer's read-only list, the delete dialog and each state of the form (`?state=`).",
+		kind: "lab",
+		session: "none",
+	},
+	{
+		path: "/lab/integration-features",
+		title: "Integration features",
+		description:
+			"The Supabase and GitHub cards with their feature switches, over fixture statuses, no API needed.",
 		kind: "lab",
 		session: "none",
 	},
@@ -439,7 +463,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		path: "/lab/service-runtimes",
 		title: "Service runtimes",
 		description:
-			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour; ?tab=operations or ?tab=dependencies opens that tab.",
+			"The service page for fleet-api, a Google Cloud Run service with no Kubernetes workloads, over one hour, with a deploy that raised errors; ?tab=operations or ?tab=dependencies opens that tab, ?deploy=9b2f0d1e47c6a3b90f2d8e15c4a7b6d3e09f1c28 its deploy drawer.",
 		kind: "lab",
 		session: "none",
 	},

@@ -1488,7 +1488,7 @@ export type ServiceRuntimesHourlyRow = InferRow<typeof serviceRuntimesHourly>
 export const userActivityHourly = defineDatasource("user_activity_hourly", {
 	tenantColumn: "OrgId",
 	description:
-		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen and web/mobile request counts. Populated by materialized views from traces and logs.",
+		"Hourly per end user (user.id, else enduser.id), service and service.namespace: span, request and error counts, distinct traces and sessions, request latency t-digest, top routes, log counts, first/last seen, web/mobile request counts and the latest user.name and user.email. Populated by materialized views from traces and logs.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality().brand(OrgId),
@@ -1518,6 +1518,13 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		ClassifiedRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		WebRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		MobileRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
+		// The latest non-empty `user.name` / `user.email` (migration 0065, appended last), keyed by
+		// epoch seconds; read with `argMaxIfMerge`. `*At` is that key, so readers rank identities
+		// across sources by when they were carried. Hours written before 0065 hold empty states and 0.
+		UserName: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
+		UserEmail: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
+		UserNameAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
+		UserEmailAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
@@ -1928,6 +1935,50 @@ export const metricCatalog = defineDatasource("metric_catalog", {
 })
 
 export type MetricCatalogRow = InferRow<typeof metricCatalog>
+
+/**
+ * The CloudWatch stream's `aws.*` points per series and hour, from `metrics_sum` and
+ * `metrics_gauge`, with region and account lifted out of `ResourceAttributes`. The AWS infra
+ * reads take whole hours from here instead of scanning raw points and their resource maps.
+ * Cardinality: AWS series (metric x dimension set x resource) x hours, no fan-out.
+ */
+export const awsMetricsHourly = defineDatasource("aws_metrics_hourly", {
+	tenantColumn: "OrgId",
+	description:
+		"Hourly per AWS metric series (metric, table, service, point attributes, cloud.region, cloud.account.id): sum, count, max and newest point of the CloudWatch metric stream's aws.* metrics. Populated by materialized views from metrics_sum and metrics_gauge.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality().brand(OrgId),
+		// `sum` or `gauge`: the raw table the series came from.
+		MetricType: t.string().lowCardinality(),
+		MetricName: t.string().lowCardinality(),
+		Hour: utcDateTime(),
+		ServiceName: t.string().lowCardinality(),
+		Attributes: t.map(t.string().lowCardinality(), t.string()),
+		CloudRegion: t.string().lowCardinality(),
+		CloudAccountId: t.string().lowCardinality(),
+		Total: t.simpleAggregateFunction("sum", t.float64()),
+		Samples: t.simpleAggregateFunction("sum", t.uint64()),
+		Peak: t.simpleAggregateFunction("max", t.float64()),
+		LastSeen: t.simpleAggregateFunction("max", utcDateTime()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"MetricType",
+			"MetricName",
+			"Hour",
+			"ServiceName",
+			"Attributes",
+			"CloudRegion",
+			"CloudAccountId",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type AwsMetricsHourlyRow = InferRow<typeof awsMetricsHourly>
 
 /**
  * Pre-aggregated attribute keys with hourly usage counts.

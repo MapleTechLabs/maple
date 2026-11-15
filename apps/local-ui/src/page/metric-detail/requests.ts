@@ -7,4 +7,4 @@ const Window = { key: Schema.String, startTime: Schema.String, endTime: Schema.S
 
 export const EntryRequest = Schema.Struct({ ...Window, metricName: Schema.String })
 export const TimeseriesRequest = Schema.Struct({ ...Window, entry: MetricEntry, bucketSeconds: Schema.Number })
-export const BreakdownRequest = Schema.Struct({ ...Window, entry: MetricEntry })
+export const BreakdownRequest = Schema.Struct({ ...Window, entry: MetricEntry, bucketSeconds: Schema.Number })

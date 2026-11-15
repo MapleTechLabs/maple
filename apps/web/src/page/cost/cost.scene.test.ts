@@ -1,7 +1,7 @@
+import { CostFilters } from "@maple/domain/cost"
 import { OrgId } from "@maple/domain"
 import {
 	CostBreakdownResponse,
-	CostFilters,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,
@@ -1646,6 +1646,33 @@ describe("cost page", () => {
 		)
 	})
 
+	test("a new grouping drops the old one's rows while it loads, and a filter keeps them", () => {
+		const planetScale = source({
+			id: PLANETSCALE_SOURCE,
+			provider: "planetscale",
+			connectionRef: "0190f2b3-0000-7000-8000-00000000a065",
+			accountId: "acme",
+			requestsThisMonth: 0,
+		})
+		const byRegion = answered(entered({ groupBy: "region" }, [source(), planetScale]).model)
+		// Under Service, a region's lowercase key would read as a PlanetScale database.
+		scene(
+			{ update: pageUpdate, view },
+			given(routeChanged(byRegion, { search: { groupBy: "cloud_service" } }, context).model),
+			resolveTheme,
+			expectView(role("columnheader", { name: "Service" })).toExist(),
+			expectView(role("link", { name: "north-1" })).not.toExist(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(
+				routeChanged(byRegion, { search: { groupBy: "region", provider: ["aws"] } }, context).model,
+			),
+			resolveTheme,
+			expectView(role("link", { name: "north-1" })).toExist(),
+		)
+	})
+
 	test("removing one provider's source leaves the other's on the page", () => {
 		const openRouter = source({
 			id: OPENROUTER_SOURCE,
@@ -2120,6 +2147,34 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(role("button", { name: "Add source" })).toExist(),
 			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+		)
+	})
+
+	// A budget is an alert rule: the link is for who manages alerts, and carries what is on screen.
+	test("Set budget opens the budget editor on the page's filters, for who manages alerts", () => {
+		const seenBy = (model: Model, roles: ReadonlyArray<string>) =>
+			pageUpdate(model, Message.CompletedReadGrants({ grants: Policy.grantsOf(roles) })).model
+
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget" })).toHaveAttr("href", "/cost/budgets/new"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({ provider: ["aws"], region: ["eu-west-1"] }), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget for this view" })).toHaveAttr(
+				"href",
+				"/cost/budgets/new?provider=%5B%22aws%22%5D&region=%5B%22eu-west-1%22%5D",
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:member"])),
+			resolveTheme,
+			expectView(role("link", { name: /^Set budget/u })).not.toExist(),
 		)
 	})
 

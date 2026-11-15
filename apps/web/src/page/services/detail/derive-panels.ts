@@ -1,46 +1,7 @@
 import type { DependencyBundle } from "./model-tabs"
 import { Array as Arr, Order } from "effect"
-import { type Release } from "../../kit/service-metrics/points"
 
-// Pure halves of the Overview panels (recent deploys, dependency strip).
-
-export type DeployEntry = Readonly<{
-	sha: string
-	/** First bucket the commit was seen in. */
-	firstSeen: string
-	spanCount: number
-	errorCount: number
-}>
-
-/** `deriveDeploys`: one entry per commit, newest first-seen first. */
-export const deriveDeploys = (releases: ReadonlyArray<Release>): ReadonlyArray<DeployEntry> => {
-	const bySha = Arr.reduce(releases, new Map<string, DeployEntry>(), (acc, point) => {
-		const existing = acc.get(point.commitSha)
-		acc.set(
-			point.commitSha,
-			existing === undefined
-				? {
-						sha: point.commitSha,
-						firstSeen: point.bucket,
-						spanCount: point.count,
-						errorCount: point.errorCount,
-					}
-				: {
-						...existing,
-						spanCount: existing.spanCount + point.count,
-						errorCount: existing.errorCount + point.errorCount,
-						firstSeen: point.bucket < existing.firstSeen ? point.bucket : existing.firstSeen,
-					},
-		)
-		return acc
-	})
-	return Arr.sort(
-		[...bySha.values()],
-		Order.flip(
-			Order.mapInput(Order.String, (deploy: { readonly firstSeen: string }) => deploy.firstSeen),
-		),
-	)
-}
+// Pure halves of the Overview panels (the dependency strip).
 
 export type DependencyKind = "service" | "database" | "http" | "messaging" | "rpc"
 

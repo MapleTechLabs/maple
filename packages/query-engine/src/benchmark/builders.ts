@@ -304,6 +304,9 @@ const userActivityFixtures: ReadonlyArray<BuilderFixture> = [
 	userActivityFixture("userActivityServicesQuery", () =>
 		CH.compileUnsafe(CH.userActivityServicesQuery(USER_SCOPE), window),
 	),
+	userActivityFixture("userActivityIdentityQuery", () =>
+		CH.compileUnsafe(CH.userActivityIdentityQuery(USER_SCOPE), window),
+	),
 	userActivityFixture("userActivityTotalsQuery", () =>
 		CH.compileUnsafe(CH.userActivityTotalsQuery({ userIds: ["user_a", "user_b"] }), window),
 	),
@@ -2179,9 +2182,8 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 
-	// Releases page — routes/internal/query-engine.http.ts `releasesList` and
-	// `releaseDetail`. Same splice as the services list, grouped one level
-	// finer (per commit), plus the error-events bridge keyed on the version.
+	// routes/internal/query-engine.http.ts `releasesList`. Same splice as the
+	// services list, grouped one level finer (per commit).
 	{
 		module: "releases",
 		name: "releasesListQuery",
@@ -2202,52 +2204,30 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// The services one commit reached: bounds a commit's deploy verification read.
+	{
+		module: "releases",
+		name: "commitServicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.commitServicesQuery("abc123"), window),
+	},
+	// Deploy verification: each deploy's first half hour against the half hour before it.
+	{
+		module: "releases",
+		name: "releaseVerificationQuery",
+		label: "default",
+		compile: () =>
+			CH.compileUnsafe(CH.releaseVerificationQuery({ serviceName: "api" }), {
+				...window,
+				deploysFrom: START_TIME,
+			}),
+	},
 	// Dependency scanner: which commit each service runs, ranked by traffic.
 	{
 		module: "releases",
 		name: "runningCommitsQuery",
 		label: "default",
 		compile: () => CH.compileUnsafe(CH.runningCommitsQuery(), window),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "minutely",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ environments: ["production"], bucketSeconds: 300 }), {
-				...window,
-				bucketSeconds: 300,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "hourly",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ serviceName: "api", bucketSeconds: 3600 }), {
-				...window,
-				bucketSeconds: 3600,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releasesTimelineQuery",
-		label: "raw",
-		compile: () =>
-			CH.compileUnsafe(CH.releasesTimelineQuery({ serviceName: "api", bucketSeconds: 30 }), {
-				...window,
-				bucketSeconds: 30,
-			}),
-	},
-	{
-		module: "releases",
-		name: "releaseErrorFingerprintsQuery",
-		label: "default",
-		compile: () =>
-			CH.compileUnsafe(
-				CH.releaseErrorFingerprintsQuery({ serviceName: "api", environments: ["production"] }),
-				{ ...window, serviceVersion: "0af7651916cd43dd8448eb211c80319c0af76519" },
-			),
 	},
 
 	// MCP `service_deployments`, `route_usage` and `ingest_freshness`.

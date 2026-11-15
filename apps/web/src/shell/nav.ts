@@ -110,6 +110,18 @@ const infrastructureItem: NavItem = {
 	],
 }
 
+const costItem: NavItem = {
+	title: "Cost",
+	href: "/cost",
+	icon: "CircleDollarIcon",
+	badge: "Beta",
+	subItems: [
+		// Not "Explorer": the palette finds the Explore pages by that word.
+		{ title: "Spend", href: "/cost", icon: "ChartBarHorizontalIcon", paletteTitle: "Cost" },
+		{ title: "Budgets", href: "/cost/budgets", icon: "GaugeIcon", paletteTitle: "Cost budgets" },
+	],
+}
+
 const servicesItem: NavItem = {
 	title: "Services",
 	href: "/services",
@@ -213,7 +225,6 @@ export type NavAudience = typeof NavAudience.Type
 export type NavFlags = Readonly<{
 	cloudCost: boolean
 	productAnalytics: boolean
-	releases: boolean
 	securityAudit: boolean
 	statusPages: boolean
 }>
@@ -239,12 +250,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			{ title: "Users", href: "/users", icon: "UsersIcon" },
 			{ title: "Replays", href: "/replays", icon: "PlayRotateClockwiseIcon" },
 			{ title: "Dashboards", href: "/dashboards", icon: "GridSquareCirclePlusIcon" },
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
-			...(flags.cloudCost
-				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
-				: []),
+			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
 ]
@@ -257,18 +263,10 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 		items: [
 			{
 				...servicesItem,
-				alsoActive: [
-					...(flags.releases ? [] : ["/releases"]),
-					...(flags.statusPages ? [] : ["/status-pages"]),
-				],
+				alsoActive: flags.statusPages ? [] : ["/status-pages"],
 			},
-			...(flags.releases
-				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
-				: []),
 			infrastructureItem,
-			...(flags.cloudCost
-				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
-				: []),
+			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
 	{

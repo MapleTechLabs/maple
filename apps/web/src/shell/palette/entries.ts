@@ -36,8 +36,8 @@ export type PaletteEntry = Readonly<{
 	shortcut?: string
 	/** A provider only advertised while browsing when it is new (`catalogEntry(id).isNew`). */
 	isAdvertised?: boolean
-	/** Releases is a flagged row: searchable only while the org's flag is on. */
-	isFlagged?: boolean
+	/** The flagged nav row it sits under (Releases, Cost and its Budgets): listed only while the org's flag shows that row. */
+	flaggedBy?: string
 }>
 
 /** What the entries are built from: the palette's own services read and the shell's state. */
@@ -56,7 +56,6 @@ export type SearchEntry = typeof SearchEntry.Type
 export const FLAGGED_HREFS: ReadonlySet<string> = new Set([
 	"/cost",
 	"/product-analytics",
-	"/releases",
 	"/security",
 	"/status-pages",
 	"/users",
@@ -68,7 +67,6 @@ const href = (url: string): Target => ({ _tag: "Href", href: url })
 const EVERY_FLAG = {
 	cloudCost: true,
 	productAnalytics: true,
-	releases: true,
 	securityAudit: true,
 	statusPages: true,
 }
@@ -77,19 +75,27 @@ const EVERY_FLAG = {
 const navRowsOf = (groups: ReadonlyArray<NavGroup>) =>
 	Arr.flatMap(groups, (group) =>
 		Arr.flatMap(group.items, (item) => [
-			{ id: `nav:${item.title}`, title: item.title, href: item.href, icon: item.icon },
+			{
+				id: `nav:${item.title}`,
+				title: item.title,
+				href: item.href,
+				icon: item.icon,
+				section: item.href,
+			},
 			...Arr.flatMap(item.subItems ?? [], (sub) => [
 				{
 					id: `nav:${item.title}:${sub.title}`,
 					title: sub.paletteTitle ?? sub.title,
 					href: sub.href,
 					icon: sub.icon ?? item.icon,
+					section: item.href,
 				},
 				...Arr.map(sub.views ?? [], (view) => ({
 					id: `nav:${item.title}:${sub.title}:${view.title}`,
 					title: view.paletteTitle ?? `${sub.title} ${view.title}`,
 					href: view.href,
 					icon: view.paletteIcon ?? sub.icon ?? item.icon,
+					section: item.href,
 				})),
 			]),
 		]),
@@ -131,15 +137,18 @@ const navigationEntries = (): ReadonlyArray<PaletteEntry> => {
 			Arr.filter(rows, (row) => row.href === target),
 			(row) => row.title,
 		)
-	return Arr.map(unique, (row) => ({
-		id: row.id,
-		title: row.title,
-		group: "Navigation",
-		keywords: `go to ${Arr.join(titlesByHref(row.href), " ")}`,
-		glyph: icon(row.icon),
-		target: href(row.href),
-		isFlagged: FLAGGED_HREFS.has(row.href),
-	}))
+	return Arr.map(unique, (row) => {
+		const entry: PaletteEntry = {
+			id: row.id,
+			title: row.title,
+			group: "Navigation",
+			keywords: `go to ${Arr.join(titlesByHref(row.href), " ")}`,
+			glyph: icon(row.icon),
+			target: href(row.href),
+		}
+		// A child of a flagged section is behind the same flag as the section's own row.
+		return FLAGGED_HREFS.has(row.section) ? { ...entry, flaggedBy: row.section } : entry
+	})
 }
 
 const footerEntries: ReadonlyArray<PaletteEntry> = [

@@ -15,6 +15,7 @@ pub mod otlp_json;
 pub mod outbound;
 pub mod prometheus_remote_write;
 pub mod r2;
+pub mod row_budget;
 pub mod session_analytics;
 pub mod telemetry;
 pub mod usage_metrics;

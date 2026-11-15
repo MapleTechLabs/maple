@@ -13,6 +13,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import * as LogDetail from "@maple/views/logs/log-sheet"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { AdvancedFilter } from "./advanced-model"
 
@@ -91,6 +92,8 @@ export const Model = Schema.Struct({
 	filterSections: FilterSections.Model,
 	timePicker: TimeRangePicker.Model,
 	refreshMenu: Menu.Model,
+	/** The header's Views control: the saved views of `/logs` and the one this URL is. */
+	savedViews: SavedViews.Model,
 	/** The toolbar's three tooltips, one Tooltip shared by its triggers. */
 	toolbarTooltip: Tooltip.Model,
 	columnsPopover: Popover.Model,

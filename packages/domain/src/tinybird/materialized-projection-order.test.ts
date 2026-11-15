@@ -120,6 +120,8 @@ describe("materialized projection order", () => {
 			["service_runtimes_hourly", "service_runtimes_hourly_mv"],
 			["user_activity_hourly", "user_activity_hourly_traces_mv"],
 			["user_activity_hourly", "user_activity_hourly_logs_mv"],
+			["aws_metrics_hourly", "aws_metrics_hourly_sum_mv"],
+			["aws_metrics_hourly", "aws_metrics_hourly_gauge_mv"],
 			["ci_runs", "ci_runs_mv"],
 			["ci_jobs", "ci_jobs_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],

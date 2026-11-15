@@ -51,6 +51,9 @@ export const isMissingAiCrawlerRequests = isMissingWarehouseTable(Datasources.ai
 /** `ci_runs` / `ci_jobs` ship in migration 0047; the CI reads have no raw fallback. */
 export const isMissingCiTables = isMissingWarehouseTable(Datasources.ciRuns, Datasources.ciJobs)
 
+/** `aws_metrics_hourly` ships in migration 0066; the AWS infra reads then take raw points only. */
+export const isMissingAwsMetricsHourly = isMissingWarehouseTable(Datasources.awsMetricsHourly)
+
 export const isMissingServiceOperationsRollup = isMissingWarehouseTable(
 	Datasources.serviceOperationsMinutely,
 	Datasources.serviceOperationsHourly,
@@ -84,6 +87,10 @@ export const isMissingServiceApiColumns = namesDriftedColumn(MIGRATION_0048_COLU
 export const isMissingUserActivityChannels = namesDriftedColumn(
 	/\b(?:ClassifiedRequestCount|WebRequestCount|MobileRequestCount)\b/,
 )
+
+/** `user_activity_hourly` predates its `UserName` / `UserEmail` states (migration 0065): schema drift
+ * naming one of them. The users pages then name users from replays and MCP spans only. */
+export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|Email)(?:At)?\b/)
 
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */

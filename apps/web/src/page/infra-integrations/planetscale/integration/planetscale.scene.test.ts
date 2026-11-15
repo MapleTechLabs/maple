@@ -1,12 +1,13 @@
 import { OrgId } from "@maple/domain"
 import { V2PlanetScaleIntegration } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { PageOutMessage, type PageContext } from "../../../contract"
 import { Message } from "../../../integrations/message"
-import { PlanetscaleMessage } from "./planetscale"
+import { PlanetscaleMessage, SavePlanetscaleFeatures } from "./planetscale"
 import type { Model } from "../../../integrations/model"
+import { ReadClock, STATUS_READS } from "../../../integrations/command"
 import { init, update } from "../../../integrations/update"
 import { view as pageView } from "../../../integrations/view"
 
@@ -195,6 +196,73 @@ describe("planetscale card", () => {
 			given(connected({ last_polled_at: null, last_error: "PlanetScale returned 403" })),
 			expectView(text("Needs attention")).toExist(),
 			expectView(text("The last poll failed: PlanetScale returned 403")).toExist(),
+		)
+	})
+})
+
+describe("planetscale feature switches", () => {
+	const connected = Schema.decodeSync(V2PlanetScaleIntegration)({
+		object: "planetscale_integration",
+		connected: true,
+		pending_org_selection: false,
+		organization: "acme",
+		connected_by_user_id: null,
+		detected_permissions: { readDatabases: true },
+		metrics_auth: "api",
+		api_metrics: { last_polled_at: null, last_error: null },
+		scrape_target: null,
+		webhooks: { state: "active", registered_databases: 2, databases: 2, last_error: null },
+		metrics_enabled: true,
+		events_enabled: true,
+		last_inventory_at: null,
+		last_inventory_error: null,
+		revoked_at: null,
+		expires_at: null,
+	})
+
+	test("turning events off saves both switches and hides the webhook health while it is off", () => {
+		const model = init({ search: { integration: "planetscale" } }, context).model
+		const loaded = pageUpdate(
+			model,
+			Message.CompletedLoadPlanetscale({
+				key: model.statuses.planetscale.key ?? "",
+				result: Result.succeed(connected),
+			}),
+		).model
+		const off = pageUpdate(
+			loaded,
+			Message.CompletedLoadPlanetscale({
+				key: loaded.statuses.planetscale.key ?? "",
+				result: Result.succeed({ ...connected, events_enabled: false }),
+			}),
+		).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			expectView(role("heading", { name: "Webhooks" })).toExist(),
+			expectView(role("switch", { name: "Events" })).toBeChecked(),
+			click(role("switch", { name: "Events" })),
+			Command.expectHas(SavePlanetscaleFeatures({ flag: "eventsEnabled", enabled: false })),
+			expectView(role("switch", { name: "Events" })).not.toBeChecked(),
+			expectView(role("switch", { name: "Branch metrics" })).toBeDisabled(),
+			Command.resolve(SavePlanetscaleFeatures, PlanetscaleMessage.CompletedFeatures({ failure: null })),
+			// Saved: the switch keeps its new value until the re-read status lands.
+			expectView(role("switch", { name: "Events" })).not.toBeChecked(),
+			Command.resolve(
+				STATUS_READS.planetscale,
+				Message.CompletedLoadPlanetscale({
+					key: "",
+					result: Result.succeed({ ...connected, events_enabled: false }),
+				}),
+			),
+			Command.resolve(ReadClock, Message.CompletedReadClock({ nowMs: 0 })),
+			expectView(role("switch", { name: "Events" })).not.toBeChecked(),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(off),
+			expectView(role("switch", { name: "Events" })).not.toBeChecked(),
+			expectView(role("heading", { name: "Webhooks" })).not.toExist(),
 		)
 	})
 })

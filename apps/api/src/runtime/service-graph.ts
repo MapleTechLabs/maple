@@ -90,6 +90,7 @@ import { CloudflareCostConnectionService } from "@maple/backend/services/cost/Cl
 import { OpenAiCostConnectionService } from "@maple/backend/services/cost/OpenAiCostConnectionService"
 import { GithubCostSourceService } from "@maple/backend/services/cost/GithubCostSourceService"
 import { OpenRouterCostConnectionService } from "@maple/backend/services/cost/OpenRouterCostConnectionService"
+import { CostBudgetsService } from "@maple/backend/services/cost/CostBudgetsService"
 import { PlanetScaleCostSourceService } from "@maple/backend/services/cost/PlanetScaleCostSourceService"
 import { VercelCostSourceService } from "@maple/backend/services/cost/VercelCostSourceService"
 import { OrgOpenRouterKeyService } from "@maple/backend/services/org/OrgOpenRouterKeyService"
@@ -123,6 +124,7 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { AgentFeedbackService } from "@maple/backend/services/feedback/AgentFeedbackService"
+import { SavedViewsService } from "@maple/backend/services/saved-views/SavedViewsService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
 import { SessionReplayReadService } from "@maple/backend/services/session-replays/SessionReplayReadService"
@@ -196,6 +198,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	OrganizationService.layer,
 	MobileDevicesService.layer,
 	AgentFeedbackService.layer,
+	SavedViewsService.layer,
 	LiveActivitiesService.layer,
 	PlanetScaleWebhookQueue.layer,
 	CancellationReviewQueue.layer,
@@ -242,6 +245,7 @@ export const HttpServicesLive = Layer.mergeAll(
 	GithubCostSourceService.layer,
 	PlanetScaleCostSourceService.layer,
 	VercelCostSourceService.layer,
+	CostBudgetsService.layer,
 	ServiceMapWorldService.layer,
 	AuditLogService.layer,
 	AuditTrailService.layer,

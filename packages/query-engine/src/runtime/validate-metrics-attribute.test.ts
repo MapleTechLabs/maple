@@ -40,6 +40,22 @@ describe("validateMetricsAttributeFilters", () => {
 		}),
 	)
 
+	it.effect("accepts a percentile on either kind of histogram", () =>
+		Effect.forEach(["histogram", "exponential_histogram"] as const, (metricType) =>
+			Effect.gen(function* () {
+				const range = yield* validateEvaluate(
+					makeRequest({
+						kind: "timeseries",
+						source: "metrics",
+						metric: "p95",
+						filters: { ...baseFilters, metricType },
+					}),
+				)
+				assert.strictEqual(range.rangeSeconds, 3600)
+			}),
+		),
+	)
+
 	it.effect("accepts groupBy=attribute when groupByAttributeKey is present", () =>
 		Effect.gen(function* () {
 			const range = yield* validateEvaluate(

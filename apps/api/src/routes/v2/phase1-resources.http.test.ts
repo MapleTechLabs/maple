@@ -2040,6 +2040,8 @@ describe("v2 users wire mapping over HTTP", () => {
 			{
 				name: "Ada Replay",
 				email: "ada.replay@acme.test",
+				nameAt: 1_762_000_000,
+				emailAt: 1_762_000_000,
 				groupId: "grp_replay",
 				groupName: "Replay Group",
 				sessions: 29,
@@ -2067,6 +2069,8 @@ describe("v2 users wire mapping over HTTP", () => {
 				calls: 59,
 				name: "",
 				email: "",
+				nameAt: 0,
+				emailAt: 0,
 				firstSeen: "2026-11-01 04:00:00",
 				lastSeen: "2026-11-01 12:00:00",
 			},

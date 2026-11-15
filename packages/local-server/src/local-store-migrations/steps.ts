@@ -106,6 +106,13 @@ const USER_ACTIVITY_HOURLY_BACKFILL = [
 	"INSERT INTO user_activity_hourly (OrgId, ServiceNamespace, UserId, Hour, ServiceName, SpanCount, ErrorSpanCount, RequestCount, FailedRequestCount, TraceIds, SessionIds, RequestDurationQuantiles, TopRoutes, LogCount, WarnLogCount, ErrorLogCount, FirstSeen, LastSeen) SELECT OrgId, ResourceAttributes['service.namespace'] AS ServiceNamespace, if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) AS UserId, toStartOfHour(TimestampTime) AS Hour, ServiceName, toUInt64(0) AS SpanCount, toUInt64(0) AS ErrorSpanCount, toUInt64(0) AS RequestCount, toUInt64(0) AS FailedRequestCount, uniqIfState(TraceId, toUInt8(0)) AS TraceIds, uniqIfState(LogAttributes['session.id'], LogAttributes['session.id'] != '') AS SessionIds, quantilesTDigestIfState(0.5, 0.95)(toUInt64(0), toUInt8(0)) AS RequestDurationQuantiles, approx_top_kState(10)('') AS TopRoutes, count() AS LogCount, countIf(SeverityNumber >= 13 AND SeverityNumber < 17) AS WarnLogCount, countIf(SeverityNumber >= 17) AS ErrorLogCount, min(TimestampTime) AS FirstSeen, max(TimestampTime) AS LastSeen FROM logs WHERE if(LogAttributes['user.id'] != '', LogAttributes['user.id'], LogAttributes['enduser.id']) != '' GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName",
 ] as const
 
+/** Rebuilds the AWS series rollup from every retained aws.* point; the truncate makes a resumed step converge. */
+const AWS_METRICS_HOURLY_BACKFILL = [
+	"TRUNCATE TABLE IF EXISTS aws_metrics_hourly",
+	"INSERT INTO aws_metrics_hourly (OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId, Total, Samples, Peak, LastSeen) SELECT OrgId, 'sum' AS MetricType, MetricName, toStartOfHour(toDateTime(TimeUnix)) AS Hour, ServiceName, Attributes, ResourceAttributes['cloud.region'] AS CloudRegion, ResourceAttributes['cloud.account.id'] AS CloudAccountId, sum(Value) AS Total, count() AS Samples, max(Value) AS Peak, max(toDateTime(TimeUnix)) AS LastSeen FROM metrics_sum WHERE startsWith(MetricName, 'aws.') GROUP BY OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId",
+	"INSERT INTO aws_metrics_hourly (OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId, Total, Samples, Peak, LastSeen) SELECT OrgId, 'gauge' AS MetricType, MetricName, toStartOfHour(toDateTime(TimeUnix)) AS Hour, ServiceName, Attributes, ResourceAttributes['cloud.region'] AS CloudRegion, ResourceAttributes['cloud.account.id'] AS CloudAccountId, sum(Value) AS Total, count() AS Samples, max(Value) AS Peak, max(toDateTime(TimeUnix)) AS LastSeen FROM metrics_gauge WHERE startsWith(MetricName, 'aws.') GROUP BY OrgId, MetricType, MetricName, Hour, ServiceName, Attributes, CloudRegion, CloudAccountId",
+] as const
+
 /** The six HTTP measures v39 adds to both service-operations rollups. */
 const SERVICE_OPERATIONS_HTTP_COLUMNS = [
 	["HttpClassifiedSpanCount", "SimpleAggregateFunction(sum, UInt64)"],
@@ -1957,6 +1964,63 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				classification: "authoritative",
 				disposition: "preserve-exact",
 				guarantee: "Created empty; no existing table is read or rewritten.",
+			},
+		],
+	},
+	{
+		// The latest user.name and user.email as argMaxIf states; both views are recreated to write
+		// them. Existing hours hold empty states and are not backfilled, so their users stay unnamed.
+		slug: "user-activity-identity",
+		description: "Add the latest user name and email to user_activity_hourly and recreate its views",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [
+			addColumns("user_activity_hourly", [
+				["UserName", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
+				["UserEmail", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
+				["UserNameAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
+				["UserEmailAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
+			]),
+			dropViews("user_activity_hourly_traces_mv", "user_activity_hourly_logs_mv"),
+		],
+		plan: [
+			[
+				"add-user-activity-identity",
+				"Add the latest user name and email to user_activity_hourly and recreate its two views so new hours carry them",
+			],
+		],
+		dispositions: [
+			TRACES_UNDER_REPLACED_VIEWS,
+			{
+				name: "user_activity_hourly",
+				classification: "derived",
+				disposition: "preserve-exact",
+				guarantee:
+					"The identity columns are added as empty aggregate states; existing rows keep every value and read an empty name and email, carried at 0.",
+			},
+		],
+	},
+	{
+		slug: "aws-metrics-hourly",
+		description: "Create aws_metrics_hourly and its sum and gauge views for the AWS infra pages",
+		clonedBefore: "any DDL runs",
+		beforeBootstrap: [],
+		afterBootstrap: [backfill(...AWS_METRICS_HOURLY_BACKFILL)],
+		plan: [
+			[
+				"create-aws-metrics-hourly",
+				"Create aws_metrics_hourly and its two views via the v58 bootstrap and backfill it from retained aws.* sum and gauge points",
+			],
+		],
+		dispositions: [
+			{
+				name: "aws_metrics_hourly",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"Rebuilt from every aws.* point metrics_sum and metrics_gauge retain, then filled forward by its views.",
+				preservationInterval: "source retention horizon",
+				sourceRetentionDays: 90,
+				targetRetentionDays: 90,
 			},
 		],
 	},

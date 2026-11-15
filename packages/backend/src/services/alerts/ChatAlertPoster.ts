@@ -21,6 +21,7 @@ import {
 	chatOutboundTransport,
 	loadOwnedChatWorkspace,
 	missingOutboundConfig,
+	type OwnedChatWorkspace,
 } from "@maple/backend/services/integrations/chat-outbound"
 import { makePersistenceError } from "./alert-persistence"
 import { AlertRuntime } from "./AlertRuntime"
@@ -142,6 +143,7 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 				transport: ChatOutboundTransport,
 				externalWorkspaceId: string,
 			) => Effect.Effect<ChatTarget, ChatOutboundError>,
+			isOn: (workspace: OwnedChatWorkspace) => boolean,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: request.orgId,
@@ -181,6 +183,11 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 			}
 			const { connector, externalWorkspaceId } = workspace.value
 			yield* Effect.annotateCurrentSpan({ "maple.chat.connector": connector.id })
+			// Switched off on the integration card: delivered as a skip, so no destination is disabled.
+			if (!isOn(workspace.value)) {
+				yield* Effect.annotateCurrentSpan("maple.delivery.switched_off", true)
+				return { connectorName: connector.manifest.name, messageId: null } satisfies ChatAlertPosted
+			}
 			// A deployment gap, not the org's: retryable, so no destination is disabled for it.
 			const missing = missingOutboundConfig(workspace.value, outboundConfig)
 			if (missing.length > 0) {
@@ -251,16 +258,22 @@ const make: Effect.Effect<ChatAlertPosterApi, never, Database | Env | HttpClient
 			)
 
 		const post: ChatAlertPosterApi["post"] = Effect.fn("AlertDelivery.chat")(function* (request) {
-			return yield* deliver(request, (_transport, externalWorkspaceId) =>
-				Effect.succeed({ workspaceId: externalWorkspaceId, channelId: request.channelId }),
+			return yield* deliver(
+				request,
+				(_transport, externalWorkspaceId) =>
+					Effect.succeed({ workspaceId: externalWorkspaceId, channelId: request.channelId }),
+				(workspace) => workspace.alertsEnabled,
 			)
 		}, tagFailure)
 
 		const postDirect: ChatAlertPosterApi["postDirect"] = Effect.fn("AlertDelivery.chatDirect")(function* (
 			request,
 		) {
-			return yield* deliver(request, (transport, externalWorkspaceId) =>
-				transport.directMessage(externalWorkspaceId, request.externalUserId),
+			return yield* deliver(
+				request,
+				(transport, externalWorkspaceId) =>
+					transport.directMessage(externalWorkspaceId, request.externalUserId),
+				(workspace) => workspace.directMessagesEnabled,
 			)
 		}, tagFailure)
 

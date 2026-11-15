@@ -12,14 +12,20 @@ import {
 	isAwaitingFirstMetrics,
 	parsePatternList,
 	type PlanetscaleCardModel,
+	type PlanetscaleFeatureFlag,
 	PlanetscaleMessage,
+	SavePlanetscaleFeatures,
+	savedPlanetscaleFeatures,
 	SelectOrganization,
 	SetMetricsToken,
 } from "./planetscale"
+import { successOf } from "../../kit/success-of"
+import { completedSwitches, settledSwitches, toggledSwitches } from "../../../integrations/feature-switches"
 
 // The PlanetScale card's state changes, as the PlanetScale module's update.
 
 type Env = ProviderEnv<V2PlanetScaleIntegration>
+type FeatureFlag = typeof PlanetscaleFeatureFlag.Type
 type Return = ProviderReturn<PlanetscaleCardModel, PlanetscaleMessage>
 
 const withCard = (
@@ -112,8 +118,14 @@ const ensurePicker = (model: PlanetscaleCardModel, env: Env): Return => {
 }
 
 /** The status read answered: the watch window, then the shown card's picker. */
-export const statusAnswered = (model: PlanetscaleCardModel, env: Env): Return => {
-	const loaded = loadedStatus(model, env)
+export const statusAnswered = (
+	model: PlanetscaleCardModel,
+	env: Env,
+	answer: Readonly<{ isCurrent: boolean }>,
+): Return => {
+	// Only the current answer settles the switches: a superseded read predates the save.
+	const settled = answer.isCurrent ? withCard(model, { features: settledSwitches(model.features) }) : model
+	const loaded = loadedStatus(settled, env)
 	if (!env.isShown) return loaded
 	const picker = ensurePicker(loaded.model, env)
 	return {
@@ -249,6 +261,19 @@ const completedToken = (model: PlanetscaleCardModel, failure: LoadFailure | null
 				requests: REFRESH_AFTER_WRITE,
 			}
 
+/** A switch flips on screen at once and saves; a second toggle waits for the first save. */
+const toggledFeature = (model: PlanetscaleCardModel, env: Env, flag: FeatureFlag): Return => {
+	const saved = savedPlanetscaleFeatures(successOf(env.status.data))
+	const step = toggledSwitches(model.features, saved, (switches) => ({
+		...switches,
+		[flag]: !switches[flag],
+	}))
+	return {
+		model: withCard(model, { features: step.state }),
+		commands: step.save === null ? [] : [SavePlanetscaleFeatures({ flag, enabled: step.save[flag] })],
+	}
+}
+
 export const update = (model: PlanetscaleCardModel, message: PlanetscaleMessage, env: Env): Return =>
 	PlanetscaleMessage.match<Return>(message, {
 		CompletedFetchOrganizations: ({ key, result }) => ({
@@ -274,4 +299,9 @@ export const update = (model: PlanetscaleCardModel, message: PlanetscaleMessage,
 		}),
 		TickedWatch: () => refreshWatch(model),
 		ClickedCheckAgain: () => refreshWatch(withCard(model, { watchStartedAt: null })),
+		ToggledFeature: ({ flag }) => toggledFeature(model, env, flag),
+		CompletedFeatures: ({ failure }) => ({
+			model: withCard(model, { features: completedSwitches(model.features, failure?.message ?? null) }),
+			requests: [HubRequest.readStatus("Supersede")],
+		}),
 	})

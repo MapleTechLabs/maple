@@ -22,7 +22,8 @@ const typed = (model: Model, value: string) =>
 const loadedWith = (serviceNames: ReadonlyArray<string>) =>
 	update(open().model, Message.SucceededLoadServices({ serviceNames }), context).model
 
-const ALL_FLAGGED = ["/releases", "/security"]
+/** Every flagged row but Cost, whose children the section tests hide. */
+const ALL_FLAGGED = ["/security"]
 
 describe("command palette", () => {
 	test("the input's own update shows the ranked results, with no browse list in between", () => {
@@ -106,7 +107,7 @@ describe("command palette", () => {
 		const model = typed(open().model, "logs").model
 		const pressed = update(
 			model,
-			Message.PressedEnter({ visibleFlagged: ["/releases", "/security"], audience: "operator" }),
+			Message.PressedEnter({ visibleFlagged: ALL_FLAGGED, audience: "operator" }),
 			context,
 		)
 		expect(pressed.outMessage).toEqual(OutMessage.Navigated({ href: "/logs" }))
@@ -155,7 +156,7 @@ describe("command palette", () => {
 		const model = loadedWith(["storefront"])
 		const shown = (query: string) =>
 			Arr.map(
-				shownEntries(typed(model, query).model, context, ["/releases", "/cost"], "analyst").entries,
+				shownEntries(typed(model, query).model, context, ["/cost"], "analyst").entries,
 				(entry) => entry.title,
 			)
 		expect(shown("analytics")).toContain("Web analytics")
@@ -188,8 +189,29 @@ describe("command palette", () => {
 	test("a flagged-off row is not shown", () => {
 		const titles = (visibleFlagged: ReadonlyArray<string>) =>
 			Arr.map(shownEntries(open().model, context, visibleFlagged).entries, (entry) => entry.title)
-		expect(titles(ALL_FLAGGED)).toEqual(expect.arrayContaining(["Releases", "Security"]))
-		expect(titles(["/security"])).not.toContain("Releases")
-		expect(titles(["/releases"])).not.toContain("Security")
+		expect(titles(["/cost", "/security"])).toEqual(expect.arrayContaining(["Cost", "Security"]))
+		expect(titles(["/security"])).not.toContain("Cost")
+		expect(titles(["/cost"])).not.toContain("Security")
+	})
+
+	test("a flagged-off section takes its children with it", () => {
+		const found = (visibleFlagged: ReadonlyArray<string>) =>
+			Arr.map(
+				shownEntries(typed(open().model, "budgets").model, context, visibleFlagged).entries,
+				(entry) => entry.title,
+			)
+		expect(found(["/cost"])).toContain("Cost budgets")
+		expect(found(ALL_FLAGGED)).not.toContain("Cost budgets")
+	})
+
+	// "Cost budgets" is the one title with a word starting "budgets". Hidden, it must not be what
+	// decides that the looser matches drop out.
+	test("a hidden row's better match does not push out what the viewer can open", () => {
+		const model = typed(loadedWith(["budgeting"]), "budgets").model
+		const ids = (visibleFlagged: ReadonlyArray<string>) =>
+			Arr.map(shownEntries(model, context, visibleFlagged).entries, (entry) => entry.id)
+
+		expect(ids(ALL_FLAGGED)).toContain("service:budgeting")
+		expect(ids(["/cost"])).not.toContain("service:budgeting")
 	})
 })

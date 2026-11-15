@@ -66,11 +66,13 @@ rather than copying rows into a preview.
 - **Branches share compute with production.** That is why teardown on PR close is mandatory and
   branches are scoped to the open-PR set. Do not leave stray branches around.
 - Requires a Tinybird plan that supports branches.
-- The Infisical `dev` environment's `TINYBIRD_HOST` / `TINYBIRD_TOKEN` must be the **parent
-  workspace admin** host and token. Only `preview-tinybird` (the branch workflow) and
-  `maintenance` (the sweep) read them; the preview deploy's own Infisical environment must not
-  carry them. `PREVIEW_HANDOFF_KEY` (any long random string) must be the same in `dev` and in
-  the preview deploy's environment.
+- The **parent workspace admin** host and token live on the GitHub environments of the only two
+  jobs that use them, `preview-tinybird` (the branch workflow) and `maintenance` (the sweep): the
+  variable `TINYBIRD_PARENT_HOST` and the secret `TINYBIRD_PARENT_TOKEN`, both environments
+  deploying from `main` only. No Infisical environment holds production's token or signing key,
+  `dev` included; the secret catalog does not let `dev` share them, so `secrets:drift` flags a
+  copy. `PREVIEW_HANDOFF_KEY` (any long random string) must be the same in `dev` and in the
+  preview deploy's environment.
 
 ## Doing it manually
 

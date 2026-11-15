@@ -2169,34 +2169,118 @@ FORMAT JSON
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.instance_id'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND aws_metrics_hourly.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.instance_id'] != ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.instance_id'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.instance_id'] != ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:ec2-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.instance_id'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.instance_id'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2207,36 +2291,124 @@ SELECT
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.service_name'], aws_metrics_hourly.Attributes['aws.dimension.cluster_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND 1 = 0
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.service_name'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.cluster_name'] != ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.service_name'], aws_metrics_hourly.Attributes['aws.dimension.cluster_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.service_name'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.cluster_name'] != ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 5000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:ecs-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.service_name'], metrics_sum.Attributes['aws.dimension.cluster_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.service_name'], metrics_gauge.Attributes['aws.dimension.cluster_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2247,38 +2419,130 @@ SELECT
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.resource'] = ''
           AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.function_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND aws_metrics_hourly.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.function_name'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.resource'] = ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.executed_version'] = ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.lambda.duration')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
           AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.function_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.lambda.duration')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.function_name'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.resource'] = ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.executed_version'] = ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:lambda-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.function_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_sum.Attributes['aws.dimension.resource'] = ''
+          AND metrics_sum.Attributes['aws.dimension.executed_version'] = ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.function_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.lambda.duration')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.executed_version'] = ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2289,38 +2553,130 @@ SELECT
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
           AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.load_balancer'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND aws_metrics_hourly.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.load_balancer'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.target_group'] = ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.availability_zone'] = ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
           AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.load_balancer'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.application_elb.target_response_time')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.load_balancer'] != ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.target_group'] = ''
+          AND aws_metrics_hourly.Attributes['aws.dimension.availability_zone'] = ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:loadBalancers-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.load_balancer'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_sum.Attributes['aws.dimension.availability_zone'] = ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.load_balancer'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
+          AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
+          AND metrics_gauge.Attributes['aws.dimension.availability_zone'] = ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2331,34 +2687,118 @@ SELECT
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.db_instance_identifier'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND 1 = 0
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.db_instance_identifier'] != ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.db_instance_identifier'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.db_instance_identifier'] != ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 10000
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:rds-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.db_instance_identifier'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND 1 = 0
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.db_instance_identifier'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2369,34 +2809,118 @@ SELECT
 SELECT
           points.keys AS keys,
           points.metric AS metric,
-          sum(points.value) AS total,
-          count() AS samples,
-          max(points.value) AS peak,
-          max(points.t) AS lastSeen
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
         FROM (
 SELECT
           [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_sum.TimeUnix AS t,
           metrics_sum.MetricName AS metric,
-          metrics_sum.Value AS value
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.queue_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'sum'
+          AND aws_metrics_hourly.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.queue_name'] != ''
+        GROUP BY keys, metric
 UNION ALL
 SELECT
           [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
-          metrics_gauge.TimeUnix AS t,
           metrics_gauge.MetricName AS metric,
-          metrics_gauge.Value AS value
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+          AND (TimeUnix < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR TimeUnix >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [aws_metrics_hourly.Attributes['aws.dimension.queue_name'], aws_metrics_hourly.CloudRegion, aws_metrics_hourly.CloudAccountId] AS keys,
+          aws_metrics_hourly.MetricName AS metric,
+          sum(aws_metrics_hourly.Total) AS total,
+          sum(aws_metrics_hourly.Samples) AS samples,
+          max(aws_metrics_hourly.Peak) AS peak,
+          max(aws_metrics_hourly.LastSeen) AS lastSeen
+        FROM aws_metrics_hourly
+        WHERE aws_metrics_hourly.OrgId = 'org_sql_catalog'
+          AND aws_metrics_hourly.MetricType = 'gauge'
+          AND aws_metrics_hourly.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND aws_metrics_hourly.Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND aws_metrics_hourly.Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+          AND aws_metrics_hourly.Attributes['aws.dimension.queue_name'] != ''
+        GROUP BY keys, metric
+) AS points
+        GROUP BY keys, metric
+        ORDER BY keys ASC, metric ASC
+        LIMIT 7500
+        FORMAT JSON
+
+-- builder:aws-infra:awsInfraMetricsSQL:sqs-raw
+SELECT
+          points.keys AS keys,
+          points.metric AS metric,
+          sum(points.total) AS total,
+          sum(points.samples) AS samples,
+          max(points.peak) AS peak,
+          max(points.lastSeen) AS lastSeen
+        FROM (
+SELECT
+          [metrics_sum.Attributes['aws.dimension.queue_name'], metrics_sum.ResourceAttributes['cloud.region'], metrics_sum.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_sum.MetricName AS metric,
+          sum(metrics_sum.Value) AS total,
+          count() AS samples,
+          max(metrics_sum.Value) AS peak,
+          max(toDateTime(metrics_sum.TimeUnix)) AS lastSeen
+        FROM metrics_sum
+        WHERE metrics_sum.OrgId = 'org_sql_catalog'
+          AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
+        GROUP BY keys, metric
+UNION ALL
+SELECT
+          [metrics_gauge.Attributes['aws.dimension.queue_name'], metrics_gauge.ResourceAttributes['cloud.region'], metrics_gauge.ResourceAttributes['cloud.account.id']] AS keys,
+          metrics_gauge.MetricName AS metric,
+          sum(metrics_gauge.Value) AS total,
+          count() AS samples,
+          max(metrics_gauge.Value) AS peak,
+          max(toDateTime(metrics_gauge.TimeUnix)) AS lastSeen
+        FROM metrics_gauge
+        WHERE metrics_gauge.OrgId = 'org_sql_catalog'
+          AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
+          AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
+        GROUP BY keys, metric
 ) AS points
         GROUP BY keys, metric
         ORDER BY keys ASC, metric ASC
@@ -2430,7 +2954,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
 UNION ALL
@@ -2442,7 +2966,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
 ) AS points
@@ -2467,7 +2991,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
@@ -2480,7 +3004,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
@@ -2506,7 +3030,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.resource'] = ''
@@ -2520,7 +3044,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
@@ -2547,7 +3071,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
@@ -2561,7 +3085,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
@@ -2588,7 +3112,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
 UNION ALL
@@ -2600,7 +3124,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
 ) AS points
@@ -2625,7 +3149,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
 UNION ALL
@@ -2637,7 +3161,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
 ) AS points
@@ -2660,7 +3184,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.ec2.network_in.sum', 'aws.ec2.network_out.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.instance_id'] != ''
           AND metrics_sum.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
@@ -2674,7 +3198,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ec2.cpu_utilization', 'aws.ec2.status_check_failed')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.instance_id'] != ''
           AND metrics_gauge.Attributes['aws.dimension.instance_id'] = 'acme-instance_id'
@@ -2700,7 +3224,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.service_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.cluster_name'] != ''
@@ -2716,7 +3240,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.ecs.cpu_utilization', 'aws.ecs.memory_utilization')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.service_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.cluster_name'] != ''
@@ -2744,7 +3268,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.lambda.invocations.sum', 'aws.lambda.errors.sum', 'aws.lambda.throttles.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.function_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.resource'] = ''
@@ -2760,7 +3284,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.lambda.duration')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.function_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.resource'] = ''
@@ -2788,7 +3312,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.application_elb.request_count.sum', 'aws.application_elb.http_code_target_5xx_count.sum', 'aws.application_elb.http_code_elb_5xx_count.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_sum.Attributes['aws.dimension.target_group'] = ''
@@ -2804,7 +3328,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.application_elb.target_response_time')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.load_balancer'] != ''
           AND metrics_gauge.Attributes['aws.dimension.target_group'] = ''
@@ -2832,7 +3356,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND 1 = 0
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] != ''
           AND metrics_sum.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
@@ -2846,7 +3370,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.rds.cpu_utilization', 'aws.rds.database_connections', 'aws.rds.free_storage_space', 'aws.rds.freeable_memory')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] != ''
           AND metrics_gauge.Attributes['aws.dimension.db_instance_identifier'] = 'acme-db_instance_identifier'
@@ -2872,7 +3396,7 @@ SELECT
         FROM metrics_sum
         WHERE metrics_sum.OrgId = 'org_sql_catalog'
           AND metrics_sum.MetricName IN ('aws.sqs.number_of_messages_sent.sum')
-          AND metrics_sum.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_sum.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_sum.Attributes['aws.dimension.queue_name'] != ''
           AND metrics_sum.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'
@@ -2886,7 +3410,7 @@ SELECT
         FROM metrics_gauge
         WHERE metrics_gauge.OrgId = 'org_sql_catalog'
           AND metrics_gauge.MetricName IN ('aws.sqs.approximate_number_of_messages_visible', 'aws.sqs.approximate_age_of_oldest_message')
-          AND metrics_gauge.TimeUnix >= '2026-01-01 10:30:00'
+          AND TimeUnix >= toDateTime('2026-01-01 10:30:00')
           AND metrics_gauge.TimeUnix <= '2026-01-03 14:15:00'
           AND metrics_gauge.Attributes['aws.dimension.queue_name'] != ''
           AND metrics_gauge.Attributes['aws.dimension.queue_name'] = 'acme-queue_name'

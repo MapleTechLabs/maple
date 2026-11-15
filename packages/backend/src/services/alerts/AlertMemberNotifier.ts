@@ -113,7 +113,11 @@ const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
 /** What one attempt came to; `retryable` only matters for a failure. */
 type Attempt =
 	| { readonly status: "sent" }
+	| { readonly status: "skipped"; readonly message: string }
 	| { readonly status: "failed"; readonly message: string; readonly retryable: boolean }
+
+/** Every workspace that might reach the member has direct-message paging off: settled, not failed. */
+const PAGING_OFF: Attempt = { status: "skipped", message: "Direct-message paging is off for this workspace" }
 
 const failure = (message: string, retryable: boolean): Attempt => ({ status: "failed", message, retryable })
 
@@ -317,34 +321,51 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					if (externalUserId === undefined || Option.isNone(connector)) {
 						return failure(FailureMessages.noChatAccount, false)
 					}
-					const workspaces = yield* dbExecute((db) =>
+					const linked = yield* dbExecute((db) =>
 						db.run(
 							PG.from(ChatWorkspaces)
-								.select("id", "createdAt")
+								.select("id", "createdAt", "directMessagesEnabled")
 								.where(($) => [$.orgId.eq(row.orgId), $.connector.eq(connector.value)])
 								.orderBy(["createdAt", "asc"], ["id", "asc"]),
 						),
 					)
+					const workspaces = Arr.filter(linked, (workspace) => workspace.directMessagesEnabled)
 					const blocks = buildChatAlertBlocks(input)
-					const tryFrom = (ids: ReadonlyArray<ChatWorkspaceId>): Effect.Effect<Attempt> =>
+					// `reached`: some workspace on the switch answered, so a miss is not the switch's doing.
+					const tryFrom = (
+						ids: ReadonlyArray<ChatWorkspaceId>,
+						reached: boolean,
+					): Effect.Effect<Attempt> =>
 						Arr.match(ids, {
 							onEmpty: () =>
-								Effect.succeed(failure(FailureMessages.noWorkspaceKnowsUser, false)),
+								Effect.succeed(
+									!reached && linked.length > 0
+										? PAGING_OFF
+										: failure(FailureMessages.noWorkspaceKnowsUser, false),
+								),
 							onNonEmpty: ([workspaceId, ...rest]) =>
 								chat
 									.postDirect({ orgId: row.orgId, workspaceId, externalUserId, blocks })
 									.pipe(
-										Effect.as<Attempt>({ status: "sent" }),
+										// Null: the workspace was switched off since it was read.
+										Effect.flatMap((posted): Effect.Effect<Attempt> =>
+											posted.messageId === null
+												? tryFrom(rest, reached)
+												: Effect.succeed({ status: "sent" }),
+										),
 										Effect.catch((error: AlertDeliveryFailure) =>
 											error._tag ===
 											"@maple/http/errors/AlertDeliveryTargetMissingError"
-												? tryFrom(rest)
+												? tryFrom(rest, true)
 												: Effect.succeed(chatFailure(error)),
 										),
 									),
 						})
 					yield* Effect.annotateCurrentSpan("maple.escalation.chat_workspaces", workspaces.length)
-					return yield* tryFrom(Arr.map(workspaces, (workspace) => workspace.id))
+					return yield* tryFrom(
+						Arr.map(workspaces, (workspace) => workspace.id),
+						false,
+					)
 				}).pipe(
 					Effect.catchTag("@maple/http/errors/AlertPersistenceError", () =>
 						Effect.succeed(failure(FailureMessages.chatFailed, true)),
@@ -410,6 +431,15 @@ export class AlertMemberNotifier extends Context.Service<AlertMemberNotifier, Al
 					yield* settle(row, claimedAt, { status: "sent", attemptedAt, errorMessage: null })
 					yield* annotateStatus("sent")
 					return "sent" as const
+				}
+				if (attempt.status === "skipped") {
+					yield* settle(row, claimedAt, {
+						status: "skipped",
+						attemptedAt,
+						errorMessage: attempt.message,
+					})
+					yield* annotateStatus("skipped")
+					return "skipped" as const
 				}
 				const retry = canRetryAlertDelivery(attemptNumber, attempt.retryable)
 				const jitter = yield* Random.nextIntBetween(0, 1_000)

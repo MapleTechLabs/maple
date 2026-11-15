@@ -16,6 +16,7 @@ import { HttpCloudflareCostLive } from "@/routes/internal/cloudflare-cost.http"
 import { HttpOpenAiCostLive } from "@/routes/internal/openai-cost.http"
 import { HttpGithubCostLive } from "@/routes/internal/github-cost.http"
 import { HttpOpenRouterCostLive } from "@/routes/internal/openrouter-cost.http"
+import { HttpCostBudgetsLive } from "@/routes/internal/cost-budgets.http"
 import { HttpOpenRouterKeyLive } from "@/routes/internal/openrouter-key.http"
 import { HttpPlanetScaleCostLive } from "@/routes/internal/planetscale-cost.http"
 import { HttpServiceMapWorldLive } from "@/routes/internal/service-map-world.http"
@@ -30,6 +31,7 @@ import { HttpDemoLive } from "@/routes/internal/demo.http"
 import { AwsOidcRouter } from "@/routes/aws-oidc.http"
 import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
+import { HttpSavedViewsLive } from "@/routes/internal/saved-views.http"
 import { HttpCodeReviewLive } from "@/routes/internal/code-review.http"
 import { HttpAuditTrailLive } from "@/routes/internal/audit-trail.http"
 import { HttpDependencyScanLive } from "@/routes/internal/dependency-scan.http"
@@ -176,12 +178,14 @@ const ApiInternalRoutes = HttpApiBuilder.layer(MapleInternalApi).pipe(
 			HttpAuditTrailLive,
 			HttpDependencyScanLive,
 			HttpDigestLive,
+			HttpSavedViewsLive,
 			HttpCloudflareCostLive,
 			HttpAnthropicCostLive,
 			HttpOpenAiCostLive,
 			HttpGithubCostLive,
 			HttpPlanetScaleCostLive,
 			HttpOpenRouterCostLive,
+			HttpCostBudgetsLive,
 			HttpOpenRouterKeyLive,
 			HttpServiceMapWorldLive,
 			HttpVercelCostLive,

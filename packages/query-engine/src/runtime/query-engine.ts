@@ -1027,7 +1027,15 @@ const executeMetricsTimeseriesRows = Effect.fnUntraced(function* <T extends Quer
 	return yield* executeCHQuery(
 		warehouse,
 		tenant,
-		CH.metricsTimeseriesQuery({ ...options, metric: query.metric, metricType: filters.metricType }),
+		CH.metricsTimeseriesQuery({
+			...options,
+			metric: query.metric,
+			metricType: filters.metricType,
+			// Histograms diff each sample against the previous one, like counters.
+			lookbackSeconds:
+				range.lookbackSeconds ??
+				(range.wholeRange ? wholeRangeCounterLookbackSeconds(range) : undefined),
+		}),
 		params,
 		contexts.value,
 	)

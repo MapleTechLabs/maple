@@ -49,8 +49,8 @@ jobs:
             contents: read
             id-token: write # Infisical OIDC machine-identity auth
             pull-requests: read # the live preview caps
-        # Deploys from main only, and carries the one Infisical identity that may read the
-        # parent workspace credentials.
+        # Deploys from main only. Holds the parent workspace token as an environment secret, so
+        # no Infisical environment (dev included) carries production's admin token.
         environment: preview-tinybird
         env:
             PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -100,26 +100,6 @@ jobs:
                   install_args: bun
 
             # By name, so nothing else from the environment reaches this job.
-            - name: Load the parent workspace host
-              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
-              with:
-                  method: "oidc"
-                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  env-slug: dev
-                  export-type: "env"
-                  secret-name: TINYBIRD_HOST
-
-            - name: Load the parent workspace token
-              uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
-              with:
-                  method: "oidc"
-                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  env-slug: dev
-                  export-type: "env"
-                  secret-name: TINYBIRD_TOKEN
-
             - name: Load the handoff key
               if: ${{ env.TEARDOWN != 'true' }}
               uses: Infisical/secrets-action@d2e351f16c6ca20d17c85e6c992e04bdeb64e87d # v1.0.18
@@ -134,6 +114,9 @@ jobs:
             - name: Create or refresh the branch
               id: create
               if: ${{ env.TEARDOWN != 'true' && steps.caps.outputs.over != 'true' }}
+              env:
+                  TINYBIRD_HOST: ${{ vars.TINYBIRD_PARENT_HOST }}
+                  TINYBIRD_TOKEN: ${{ secrets.TINYBIRD_PARENT_TOKEN }}
               run: |
                   bun scripts/tinybird-pr-branch.ts create "$PR_NUMBER" "$RUNNER_TEMP/tinybird-branch.sealed"
                   echo "artifact=tinybird-branch-${PR_NUMBER}-${HEAD_SHA}-${EVENT_STAMP//[^0-9]/}" >> "$GITHUB_OUTPUT"
@@ -153,4 +136,7 @@ jobs:
             # Branches share compute with production, so removal is not optional.
             - name: Remove the branch
               if: ${{ env.TEARDOWN == 'true' }}
+              env:
+                  TINYBIRD_HOST: ${{ vars.TINYBIRD_PARENT_HOST }}
+                  TINYBIRD_TOKEN: ${{ secrets.TINYBIRD_PARENT_TOKEN }}
               run: bun scripts/tinybird-pr-branch.ts down "$PR_NUMBER"

@@ -230,6 +230,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/expand-chevron.ts` `expandChevron`: The chevron at the start of a row that opens in place: right when closed, down when open.
 - `apps/web/src/page/kit/expand-table-footer.ts` `expandTableFooter`: The foot of a capped table card: "Expand table" on the left and the row count on the right, one click target that opens the whole table in a dialog.
 - `apps/web/src/page/kit/facets.ts` `toggledValue`, `onlyValue`, `excludedValue`, `editFacet`, `facetChipsOf`, `facetChips`: The include/exclude arithmetic of a tri-state facet filter, as applied to a page's URL search: an empty list leaves the URL, and a value is never both included and excluded.
+- `apps/web/src/page/kit/feature-list.ts` `featureList`, `featurePanel`: An integration's features as one list of switches: the same list when connecting and afterwards.
 - `apps/web/src/page/kit/form-section.ts` `formSection`, `formScrollArea`, `formCard`, `formActionBar`, `managersOnlyPage`: One row of a form card, what it sets on the left (a title and an optional hint) and its controls on the right; the two stack in a card under 36rem wide (a phone, or a form besid...
 - `apps/web/src/page/kit/funnel-steps.ts` `applyStepEdit`, `applyAnchorEdit`, `stepControlId`, `stepEditOf`, `stepComboUpdate`, `stepFilterLine`, `stepBuilder`: The funnel step builder: an ordered list of steps, each an event name, a page path or (first step only) a session dimension.
 - `apps/web/src/page/kit/grid-list-row.ts` `gridListRow`: One `<li>` of a bordered grid list (the alerts inbox, rules and resolved lists), padded, tinted on hover and press, positioned so a stretched row link covers it.
@@ -257,6 +258,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
+- `apps/web/src/page/kit/notifies-no-one.ts` `notifiesNoOne`: A list row's warning that a rule has no destination: its incidents open, and nobody is told.
 - `apps/web/src/page/kit/onboard-skill.ts` `onboardSkillPrompt`, `agentSetupPrompt`: Installs the whole skills folder: maple-onboard reads its per-language companion skills.
 - `apps/web/src/page/kit/own-services.ts` `isOwnService`: The service onboarding's "Send test trace" reports as.
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.
@@ -292,6 +294,12 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
+- `apps/web/src/page/kit/saved-views/index.ts` `loadCommand`, `pageStep`: Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`, `/metrics`), with its menu and its save, rename and delete dialogs.
+- `apps/web/src/page/kit/saved-views/model.ts` `activeViewOf`, `remembered`: The Views control an explorer embeds (`/logs`, `/traces`, `/metrics`): its menu, the views it lists, and the save, rename and delete dialogs.
+- `apps/web/src/page/kit/saved-views/state.ts` `searchParamsOf`, `readSearch`, `memoHref`: What a saved view stores and how it is read back: the explorer's URL search params, and nothing that is not in the URL.
+- `apps/web/src/page/kit/saved-views/test-views.ts` `savedView`, `sentNamed`, `navigationOf`, `viewsDriver`: Saved views for the explorers' scene tests, and the steps a person takes with the Views control, sent through the page's own update.
+- `apps/web/src/page/kit/saved-views/update.ts` `viewItem` (stateful: Model, init, update): The Views control's steps: what a menu pick does, the save and rename form, and the writes they send.
+- `apps/web/src/page/kit/saved-views/view.ts` `view`, `control`: The Views control as drawn: the toolbar button, its menu, and the save, rename and delete dialogs.
 - `apps/web/src/page/kit/sdk-snippets.ts` `sdkSnippets`, `register`, `fillSnippet`: The snippet's text with the endpoint and key filled in.
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the eyebrow label.
 - `apps/web/src/page/kit/sentence-card.ts` `sentenceCardHeadingId`, `sentenceCardSummaryId`, `sentenceCard`, `sentenceChain`, `sentenceRow`, `sentencePhrase`, `sentenceClause`, `sentenceSection`: Sentence cards: a form that reads top to bottom as one sentence ("When ...
