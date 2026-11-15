@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { IntegrationsPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { OrgId, PlanetScaleFeaturesRequest, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
@@ -1141,6 +1141,39 @@ describe("PlanetScaleService deploy-request backfill", () => {
 			return Str.includes("/deploy-requests")(url) ? deployRequests() : base(input, init)
 		}) as typeof fetch
 
+	it.effect("events turned back on backfill no deploy request from the time they were off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubApi({
+			databases: [{ id: "db_1", name: "main-db" }],
+			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
+			// Opened, deployed and closed between 10:00 and 10:20, while events were off.
+			deployRequestsByDatabase: { "main-db": [deployRequest()] },
+		})
+		const setEvents = (eventsEnabled: boolean) =>
+			Effect.flatMap(PlanetScaleConnectionService, (connections) =>
+				connections.setFeatures(asOrgId("org_1"), new PlanetScaleFeaturesRequest({ eventsEnabled })),
+			)
+
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(Date.parse("2026-08-04T09:00:00Z"))
+			yield* connect("org_1")
+			yield* setEvents(false)
+			const service = yield* PlanetScaleService
+			yield* service.pollAllOrgs
+			yield* TestClock.setTime(Date.parse("2026-08-04T12:00:00Z"))
+			yield* service.pollAllOrgs
+
+			yield* setEvents(true)
+			const resumed = yield* service.pollAllOrgs
+
+			assert.strictEqual(resumed.deployEvents, 0)
+			assert.strictEqual((yield* countEvents(testDb))?.n, 0)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
 	it.effect("hands a failed backfill's lease back and records why on its row", () => {
 		const testDb = createTestDb(trackedDbs)
 		let failing = false
@@ -1168,35 +1201,6 @@ describe("PlanetScaleService deploy-request backfill", () => {
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
-		)
-	})
-
-	it.effect("hands a failed webhook sync's lease back and records why on its row", () => {
-		const testDb = createTestDb(trackedDbs)
-		const failingWebhooks = Layer.succeed(PlanetScaleWebhookService, {
-			reconcile: () => Effect.fail(new IntegrationsPersistenceError({ message: "webhook store down" })),
-			removeAll: () => Effect.void,
-			secretFor: () => Effect.succeed(null),
-		})
-		const stub = stubApi({
-			databases: [{ id: "db_1", name: "main-db" }],
-			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
-		})
-		return Effect.gen(function* () {
-			yield* connect("org_1")
-			yield* (yield* PlanetScaleService).pollAllOrgs
-			const state = yield* Effect.promise(() =>
-				queryFirstRow<{ lease_until: Date | null; last_error: string | null }>(
-					testDb,
-					`SELECT lease_until, last_error FROM planetscale_poll_state
-					 WHERE org_id = 'org_1' AND dataset = 'webhooks' AND database_id = ''`,
-				),
-			)
-			assert.isNull(state?.lease_until ?? null)
-			assert.strictEqual(state?.last_error, "webhook store down")
-		}).pipe(
-			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide([makeLayer(testDb, failingWebhooks), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 

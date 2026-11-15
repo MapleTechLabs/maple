@@ -1581,6 +1581,64 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
 		})
 
+		it.effect("a feature turned back on resumes from now instead of reading the hours it was off", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			const graphqlQueries: string[] = []
+			const workersQueried = () => Arr.some(graphqlQueries, Str.includes("workersInvocationsAdaptive("))
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				yield* service.pollOrg(ORG)
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+				)
+				yield* TestClock.adjust("12 hours")
+				yield* service.pollOrg(ORG)
+
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ workersEnabled: true }),
+				)
+				graphqlQueries.length = 0
+				yield* service.pollOrg(ORG)
+				assert.isFalse(workersQueried())
+
+				// Its first window after the switch is the one that opened at it.
+				yield* TestClock.adjust("20 minutes")
+				yield* service.pollOrg(ORG)
+				assert.isTrue(workersQueried())
+			}).pipe(Effect.provide(makeLayer(testDb, captured, { graphqlQueries })))
+		})
+
+		it.effect(
+			"with Workers off, discovery lists zones but no Worker scripts or Hyperdrive configs",
+			() => {
+				const testDb = createTestDb(trackedDbs)
+				const captured: CapturedIngest[] = []
+				const requestUrls: string[] = []
+				return Effect.gen(function* () {
+					yield* TestClock.setTime(T0)
+					yield* seedConnection()
+					const service = yield* CloudflareAnalyticsService
+					yield* service.setFeatures(
+						ORG,
+						ADMIN,
+						new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+					)
+					yield* service.pollOrg(ORG)
+
+					assert.isTrue(Arr.some(requestUrls, Str.includes("/zones")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/workers/scripts")))
+					assert.isFalse(Arr.some(requestUrls, Str.includes("/hyperdrive/configs")))
+				}).pipe(Effect.provide(makeLayer(testDb, captured, { requestUrls })))
+			},
+		)
+
 		it.effect("with every feature off the org is skipped without a call to Cloudflare", () => {
 			const testDb = createTestDb(trackedDbs)
 			const captured: CapturedIngest[] = []

@@ -291,7 +291,9 @@ export const supabaseFeatures = (h: H, model: Model, status: SupabaseIntegration
 					? { _tag: "Pending", text: "Saving" }
 					: {
 							_tag: "Info",
-							text: `${across.onCount} of ${countLabel(across.total, "project")}`,
+							text:
+								across.blockedReason ??
+								`${across.onCount} of ${countLabel(across.total, "project")}`,
 						},
 			}
 		}),

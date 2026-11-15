@@ -2456,57 +2456,60 @@ export class CloudflareAnalyticsService extends Context.Service<
 						now,
 						zonesResult.success.truncated,
 					)
-					// Script enumeration rides the same discovery TTL. It filters deleted scripts out of
-					// the workers dataset; a failure (typically a pre-workers-scripts.read grant) degrades
-					// open — emit everything rather than wedge the org, and keep the last known set.
-					const scriptsResult = yield* Effect.result(
-						listWorkerScripts(accessToken, accountId, apiBaseUrl),
-					)
-					if (Result.isFailure(scriptsResult)) {
-						yield* Effect.logWarning("cloudflare-analytics script enumeration failed", {
-							orgId,
-							errorTag: scriptsResult.failure._tag,
-							error: scriptsResult.failure.message,
-						})
-					} else if (scriptsResult.success.truncated) {
-						// More live scripts exist than the enumeration cap. An incomplete
-						// membership set would silently drop valid Worker metrics, so
-						// degrade open: no filter, and clear the persisted set so later
-						// ticks don't filter on a stale one either.
-						yield* Effect.logWarning("cloudflare-analytics script enumeration truncated", {
-							orgId,
-							scriptCount: scriptsResult.success.items.length,
-						})
-						liveScripts = null
-						yield* updateRows([anchor.id], { liveScriptsJson: null, updatedAt: now })
-					} else {
-						liveScripts = new Set(scriptsResult.success.items)
-						yield* updateRows([anchor.id], {
-							liveScriptsJson: encodeJsonSync(scriptsResult.success.items),
-							updatedAt: now,
-						})
-					}
-					// Hyperdrive config inventory rides the same discovery TTL. It only feeds the
-					// service map's "what sits behind Hyperdrive" resolution, so a failure (typically
-					// a pre-hyperdrive-scope grant surfacing as IntegrationsRevokedError) degrades
-					// open — log and keep the last-known rows, never disable the org's analytics.
-					const hyperdriveResult = yield* Effect.result(
-						listAccountHyperdriveConfigs(accessToken, accountId, apiBaseUrl),
-					)
-					if (Result.isFailure(hyperdriveResult)) {
-						yield* Effect.logWarning("cloudflare-analytics hyperdrive discovery failed", {
-							orgId,
-							errorTag: hyperdriveResult.failure._tag,
-							error: hyperdriveResult.failure.message,
-						})
-					} else {
-						yield* reconcileHyperdriveConfigs(
-							orgId,
-							accountId,
-							hyperdriveResult.success.items,
-							now,
-							hyperdriveResult.success.truncated,
+					// Workers off: no Worker or Hyperdrive listing either, only zone discovery.
+					if (!disabled.has(WORKERS_DATASET)) {
+						// Script enumeration rides the same discovery TTL. It filters deleted scripts out of
+						// the workers dataset; a failure (typically a pre-workers-scripts.read grant) degrades
+						// open: emit everything rather than wedge the org, and keep the last known set.
+						const scriptsResult = yield* Effect.result(
+							listWorkerScripts(accessToken, accountId, apiBaseUrl),
 						)
+						if (Result.isFailure(scriptsResult)) {
+							yield* Effect.logWarning("cloudflare-analytics script enumeration failed", {
+								orgId,
+								errorTag: scriptsResult.failure._tag,
+								error: scriptsResult.failure.message,
+							})
+						} else if (scriptsResult.success.truncated) {
+							// More live scripts exist than the enumeration cap. An incomplete
+							// membership set would silently drop valid Worker metrics, so
+							// degrade open: no filter, and clear the persisted set so later
+							// ticks don't filter on a stale one either.
+							yield* Effect.logWarning("cloudflare-analytics script enumeration truncated", {
+								orgId,
+								scriptCount: scriptsResult.success.items.length,
+							})
+							liveScripts = null
+							yield* updateRows([anchor.id], { liveScriptsJson: null, updatedAt: now })
+						} else {
+							liveScripts = new Set(scriptsResult.success.items)
+							yield* updateRows([anchor.id], {
+								liveScriptsJson: encodeJsonSync(scriptsResult.success.items),
+								updatedAt: now,
+							})
+						}
+						// Hyperdrive config inventory rides the same discovery TTL. It only feeds the
+						// service map's "what sits behind Hyperdrive" resolution, so a failure (typically
+						// a pre-hyperdrive-scope grant surfacing as IntegrationsRevokedError) degrades
+						// open: log and keep the last-known rows, never disable the org's analytics.
+						const hyperdriveResult = yield* Effect.result(
+							listAccountHyperdriveConfigs(accessToken, accountId, apiBaseUrl),
+						)
+						if (Result.isFailure(hyperdriveResult)) {
+							yield* Effect.logWarning("cloudflare-analytics hyperdrive discovery failed", {
+								orgId,
+								errorTag: hyperdriveResult.failure._tag,
+								error: hyperdriveResult.failure.message,
+							})
+						} else {
+							yield* reconcileHyperdriveConfigs(
+								orgId,
+								accountId,
+								hyperdriveResult.success.items,
+								now,
+								hyperdriveResult.success.truncated,
+							)
+						}
 					}
 				} else {
 					rows = yield* loadStateRows(orgId, accountId)
@@ -3683,16 +3686,46 @@ export class CloudflareAnalyticsService extends Context.Service<
 			const current = yield* loadFeatures(orgId)
 			const next = new CloudflareFeatureSwitches({ ...current, ...update })
 			const now = yield* Clock.currentTimeMillis
+			const stillOff = disabledDatasets(next)
+			const resumed = Arr.filter([...disabledDatasets(current)], (dataset) => !stillOff.has(dataset))
+			const [firstResumed, ...restResumed] = resumed
+			// A feature turned back on starts from now: neither its head nor its backfill reads the off window.
+			const horizon = floorToBucket(now - SAFETY_LAG_MS)
+			const backfillDone = floorToBucket(now - SAFETY_LAG_MS - BACKFILL_MS)
 			yield* dbExecute((db) =>
-				db.run(
-					PG.insertInto(CloudflareFeatureSettings)
-						.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
-						.onConflictDoUpdate({
-							target: ["orgId"],
-							set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
-						}),
+				db.transaction(
+					Effect.gen(function* () {
+						yield* db.run(
+							PG.insertInto(CloudflareFeatureSettings)
+								.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
+								.onConflictDoUpdate({
+									target: ["orgId"],
+									set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
+								}),
+						)
+						if (firstResumed === undefined) return
+						yield* db.run(
+							PG.update(CloudflareAnalyticsState)
+								.set({ watermarkAt: horizon, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.dataset.in_(firstResumed, ...restResumed),
+									PG.or($.watermarkAt.isNull(), $.watermarkAt.lt(horizon)),
+								]),
+						)
+						yield* db.run(
+							PG.update(CloudflareAnalyticsState)
+								.set({ backfillAt: backfillDone, updatedAt: now })
+								.where(($) => [
+									$.orgId.eq(orgId),
+									$.dataset.in_(firstResumed, ...restResumed),
+									$.backfillAt.isNull(),
+								]),
+						)
+					}),
 				),
 			)
+			yield* Effect.annotateCurrentSpan("maple.cloudflare.resumed_datasets", resumed.length)
 			return next
 		})
 

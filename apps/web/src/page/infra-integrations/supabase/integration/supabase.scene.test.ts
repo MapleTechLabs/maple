@@ -813,5 +813,22 @@ describe("supabase card", () => {
 				),
 			).toEqual([["SetSupabaseProjectLogDrain", { ref: PAUSED_REF, enabled: true }]])
 		})
+
+		test("a feature no project can take is disabled and says why", () => {
+			const model = withStatus(
+				status({
+					projects: [
+						project(REF, "storefront", { logDrainEnabled: true }),
+						project(API_REF, "api", { logDrainEnabled: true }),
+					],
+				}),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(model),
+				expectView(role("switch", { name: "Logs, polled" })).toBeDisabled(),
+				expectView(text("Logs already come through a drain")).toExist(),
+			)
+		})
 	})
 })
