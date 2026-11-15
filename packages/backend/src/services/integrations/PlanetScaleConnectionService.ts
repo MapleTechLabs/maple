@@ -818,16 +818,15 @@ export class PlanetScaleConnectionService extends Context.Service<
 				"maple.planetscale.metrics_enabled": next.metricsEnabled,
 				"maple.planetscale.events_enabled": next.eventsEnabled,
 			})
-			// The webhooks follow the events switch; the 15-minute sync retries a registration that fails here.
-			if (connection.eventsEnabled && !next.eventsEnabled) yield* webhooks.removeAll(next)
-			if (!connection.eventsEnabled && next.eventsEnabled) {
+			// The webhooks follow the stored switch under the sync's lease; a held lease leaves it to the next tick.
+			if (connection.eventsEnabled !== next.eventsEnabled) {
 				yield* webhooks
-					.reconcile(next)
+					.sync(orgId, 0)
 					.pipe(
 						Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
-							Effect.logWarning(
-								"PlanetScale webhook registration after turning events on failed",
-							).pipe(Effect.annotateLogs({ orgId, error: error.message })),
+							Effect.logWarning("PlanetScale webhook sync after an events switch failed").pipe(
+								Effect.annotateLogs({ orgId, error: error.message }),
+							),
 						),
 					)
 			}

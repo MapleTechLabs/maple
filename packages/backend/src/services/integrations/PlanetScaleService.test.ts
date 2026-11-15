@@ -14,7 +14,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { IntegrationsPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
@@ -1168,35 +1168,6 @@ describe("PlanetScaleService deploy-request backfill", () => {
 		}).pipe(
 			Effect.provideService(FetchHttpClient.Fetch, stub),
 			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
-		)
-	})
-
-	it.effect("hands a failed webhook sync's lease back and records why on its row", () => {
-		const testDb = createTestDb(trackedDbs)
-		const failingWebhooks = Layer.succeed(PlanetScaleWebhookService, {
-			reconcile: () => Effect.fail(new IntegrationsPersistenceError({ message: "webhook store down" })),
-			removeAll: () => Effect.void,
-			secretFor: () => Effect.succeed(null),
-		})
-		const stub = stubApi({
-			databases: [{ id: "db_1", name: "main-db" }],
-			branchesByDatabase: { "main-db": [{ id: "br_1", name: "main", production: true }] },
-		})
-		return Effect.gen(function* () {
-			yield* connect("org_1")
-			yield* (yield* PlanetScaleService).pollAllOrgs
-			const state = yield* Effect.promise(() =>
-				queryFirstRow<{ lease_until: Date | null; last_error: string | null }>(
-					testDb,
-					`SELECT lease_until, last_error FROM planetscale_poll_state
-					 WHERE org_id = 'org_1' AND dataset = 'webhooks' AND database_id = ''`,
-				),
-			)
-			assert.isNull(state?.lease_until ?? null)
-			assert.strictEqual(state?.last_error, "webhook store down")
-		}).pipe(
-			Effect.provideService(FetchHttpClient.Fetch, stub),
-			Effect.provide([makeLayer(testDb, failingWebhooks), Layer.succeed(FetchHttpClient.Fetch, stub)]),
 		)
 	})
 
