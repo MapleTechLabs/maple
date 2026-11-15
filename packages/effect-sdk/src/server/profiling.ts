@@ -1,6 +1,6 @@
 // Continuous CPU profiling for Node and Bun, with no native addon: the runtime's own sampling
 // profiler through `node:inspector`, exported as OTLP profiles every window.
-import { Duration, Effect, Layer, Ref, Schema, Array as Arr, String as Str } from "effect"
+import { Cause, Duration, Effect, Layer, Option, Ref, Schema, Array as Arr, String as Str } from "effect"
 import { type Headers, HttpClient, HttpClientRequest } from "effect/http"
 import { OtlpResource } from "effect/observability"
 import type { SpanTimeline } from "../shared/span-timeline.js"
@@ -8,14 +8,15 @@ import { encodeCpuProfile } from "./cpu-profile.js"
 
 export interface ProfilingOptions {
 	/**
-	 * How often a profile is exported. Default 60 seconds. Each export restarts the profiler,
+	 * How often a profile is exported. Default 60 seconds, at least 1 second. Each export restarts the profiler,
 	 * which pauses the event loop for a few milliseconds to tens of milliseconds on Node (longer
 	 * with more loaded code), so a shorter window trades smoothness for fresher profiles.
 	 */
 	readonly window?: Duration.Input | undefined
 	/**
 	 * Microseconds between samples. Default 10000 (100 Hz), what most continuous profilers run
-	 * at; a shorter interval resolves shorter spans and costs more CPU.
+	 * at; a shorter interval resolves shorter spans and costs more CPU. At least 100; a value that
+	 * is not a positive number uses the default.
 	 */
 	readonly samplingIntervalMicros?: number | undefined
 	/**
@@ -26,6 +27,10 @@ export interface ProfilingOptions {
 }
 
 export const DEFAULT_PROFILE_WINDOW = Duration.seconds(60)
+/** Each window restarts the profiler, which pauses the event loop: never back to back. */
+const MIN_PROFILE_WINDOW = Duration.seconds(1)
+/** Below this V8 samples so often the profiler itself is the workload. */
+const MIN_SAMPLING_INTERVAL_MICROS = 100
 /** A collector that accepts the request and never answers must not hold the next window up. */
 const EXPORT_TIMEOUT = Duration.seconds(10)
 export const DEFAULT_SAMPLING_INTERVAL_MICROS = 10_000
@@ -216,9 +221,8 @@ export const profilerLayer = (
 			)
 			const outage = makeOutageLog()
 			const resource = yield* OtlpResource.fromConfig(options.resource)
-			const window = options.profiling.window ?? DEFAULT_PROFILE_WINDOW
-			const samplingIntervalMicros =
-				options.profiling.samplingIntervalMicros ?? DEFAULT_SAMPLING_INTERVAL_MICROS
+			const window = profileWindowOf(options.profiling.window)
+			const samplingIntervalMicros = samplingIntervalOf(options.profiling.samplingIntervalMicros)
 			const url = HttpClientRequest.appendUrl(HttpClientRequest.get(options.baseUrl), PROFILES_PATH).url
 
 			const session = yield* Effect.acquireRelease(
@@ -295,7 +299,12 @@ export const profilerLayer = (
 				Effect.gen(function* () {
 					const body = yield* encode(stopped)
 					if (body !== undefined) yield* send(body)
-				}).pipe(Effect.catch((error) => outage.failed("profile window dropped", error)))
+				}).pipe(
+					// A defect in the encode drops the window too, never the loop.
+					Effect.catchCause((cause) =>
+						outage.failed("profile window dropped", Cause.squash(cause)),
+					),
+				)
 
 			options.timeline?.setRecording(true)
 			// A profiler that never started leaves nothing recording.
@@ -303,6 +312,8 @@ export const profilerLayer = (
 				Effect.onError(() => Effect.sync(() => options.timeline?.setRecording(false))),
 			)
 			const current = yield* Ref.make(first)
+			// Off once the loop has died: the profiler is stopped then, with nothing left to export.
+			const running = yield* Ref.make(true)
 
 			// Stop, restart at once, and only then decode, encode and send: the gap between two
 			// windows is the two inspector calls.
@@ -327,6 +338,7 @@ export const profilerLayer = (
 			yield* Effect.addFinalizer(() =>
 				Effect.gen(function* () {
 					options.timeline?.setRecording(false)
+					if (!(yield* Ref.get(running))) return
 					const ended = yield* Ref.get(current)
 					const stopped = yield* stop(ended)
 					yield* exportWindow(stopped)
@@ -339,10 +351,14 @@ export const profilerLayer = (
 			yield* Effect.sleep(window).pipe(
 				Effect.andThen(rotate),
 				Effect.forever,
-				Effect.catch((error) =>
-					Effect.logWarning("[MapleProfiler] stopped", error).pipe(
-						Effect.andThen(Effect.sync(() => options.timeline?.setRecording(false))),
-					),
+				// A loop that dies must not leave V8 sampling, and holding every sample, until exit.
+				Effect.catchCause((cause) =>
+					Effect.gen(function* () {
+						options.timeline?.setRecording(false)
+						yield* Ref.set(running, false)
+						yield* Effect.ignore(post(session, "Profiler.stop"))
+						yield* Effect.logWarning("[MapleProfiler] stopped", Cause.squash(cause))
+					}),
 				),
 				Effect.forkScoped,
 			)
@@ -355,3 +371,18 @@ export const profilerLayer = (
 			),
 		),
 	)
+
+/** `window`, or the default when it is not a duration, and never under `MIN_PROFILE_WINDOW`. */
+const profileWindowOf = (window: Duration.Input | undefined): Duration.Duration =>
+	Duration.max(
+		window === undefined
+			? DEFAULT_PROFILE_WINDOW
+			: Option.getOrElse(Duration.fromInput(window), () => DEFAULT_PROFILE_WINDOW),
+		MIN_PROFILE_WINDOW,
+	)
+
+/** Whole microseconds, at least `MIN_SAMPLING_INTERVAL_MICROS`; the default when not a positive number. */
+const samplingIntervalOf = (micros: number | undefined): number =>
+	micros === undefined || !Number.isFinite(micros) || micros <= 0
+		? DEFAULT_SAMPLING_INTERVAL_MICROS
+		: Math.max(MIN_SAMPLING_INTERVAL_MICROS, Math.round(micros))
