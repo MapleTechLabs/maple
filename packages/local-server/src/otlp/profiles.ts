@@ -177,8 +177,12 @@ export class ProfilesTooLarge extends Schema.TaggedError<ProfilesTooLarge>()("@m
 /** The id of a profile whose producer sent none: 16 random bytes as lowercase hex. */
 export const randomProfileId = (): string => randomBytes(16).toString("hex")
 
+// A character is at most two code units, so the first `2 * MAX_FRAME_TEXT` hold every
+// character kept, and a long text is never split whole into characters.
 const clipText = (text: string): string =>
-	text.length <= MAX_FRAME_TEXT ? text : Arr.join(Arr.take(Array.from(text), MAX_FRAME_TEXT), "")
+	text.length <= MAX_FRAME_TEXT
+		? text
+		: Arr.join(Arr.take(Array.from(text.slice(0, 2 * MAX_FRAME_TEXT)), MAX_FRAME_TEXT), "")
 
 const INT32_MAX = 2_147_483_647n
 const INT64_MAX = 9_223_372_036_854_775_807n
