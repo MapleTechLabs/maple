@@ -13,6 +13,7 @@ import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgId, orgIdParam, utcSecondsParam } from "../tables"
 import { EXCLUDED_KEY } from "../../promql/labels"
+import { utcHourFloor } from "./query-helpers"
 
 /** Joins a stored metric's name and unit into the identity a selector row reports. */
 export const METRIC_UNIT_SEPARATOR = "\u001f"
@@ -362,7 +363,7 @@ export function promqlCatalogQuery(opts: { readonly limit: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("metricName", "metricType", "unit")
@@ -746,7 +747,7 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
 		.groupBy("metricName", "metricType")
@@ -760,7 +761,7 @@ export function promqlServiceNamesQuery(opts: { readonly limit: number }) {
 		.select(($) => ({ serviceName: $.ServiceName }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.ServiceName.neq(""),
 		])
@@ -782,7 +783,7 @@ export function promqlAttributeValuesQuery(opts: {
 		.select(($) => ({ attributeValue: $.AttributeValue }))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.gte(utcHourFloor("startTime")),
 			$.Hour.lte(utcSecondsParam("endTime")),
 			$.AttributeScope.eq("metric"),
 			CH.inList($.AttributeKey, opts.keys),
