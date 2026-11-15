@@ -101,11 +101,21 @@ pub enum MetricType {
     StateSet = 7,
 }
 
-/// `true` for a `Content-Type` that names the remote write 2.0 message.
+/// The message a remote write 2.0 sender names in its `Content-Type`.
+const V2_MESSAGE: &str = "io.prometheus.write.v2.Request";
+
+/// `true` for a `Content-Type` whose `proto` parameter names the remote write
+/// 2.0 message, quoted or not.
 pub fn is_v2_content_type(content_type: &str) -> bool {
-    content_type
-        .to_ascii_lowercase()
-        .contains("proto=io.prometheus.write.v2.request")
+    content_type.split(';').skip(1).any(|parameter| {
+        parameter.split_once('=').is_some_and(|(name, value)| {
+            name.trim().eq_ignore_ascii_case("proto")
+                && value
+                    .trim()
+                    .trim_matches('"')
+                    .eq_ignore_ascii_case(V2_MESSAGE)
+        })
+    })
 }
 
 /// What a request carried that was stored, and what was not and why.
@@ -798,6 +808,11 @@ mod tests {
         // The quantile series, and a sum that falls on a negative observation.
         assert_eq!(kind_of("gc_seconds", summary()), "gauge");
         assert_eq!(kind_of("gc_seconds_sum", summary()), "sum");
+        // A gauge histogram's series can all fall: its count and sum are `_gcount` and `_gsum`.
+        let gauge_histogram = || vec![family(MetricType::GaugeHistogram, "queue_age", "", "")];
+        for name in ["queue_age_bucket", "queue_age_gcount", "queue_age_gsum"] {
+            assert_eq!(kind_of(name, gauge_histogram()), "gauge", "{name}");
+        }
     }
 
     #[test]
@@ -1061,6 +1076,17 @@ mod tests {
         assert!(is_v2_content_type(
             "application/x-protobuf; proto=io.prometheus.write.v2.request"
         ));
+        // A parameter value may be a quoted string, and other parameters may sit beside it.
+        assert!(is_v2_content_type(
+            "application/x-protobuf;proto=\"io.prometheus.write.v2.Request\""
+        ));
+        assert!(is_v2_content_type(
+            "application/x-protobuf; charset=utf-8; PROTO = \"io.prometheus.write.v2.Request\""
+        ));
+        assert!(!is_v2_content_type(
+            "application/x-protobuf;proto=\"prometheus.WriteRequest\""
+        ));
+        assert!(!is_v2_content_type("io.prometheus.write.v2.Request"));
         assert!(!is_v2_content_type("application/x-protobuf"));
         assert!(!is_v2_content_type(
             "application/x-protobuf;proto=prometheus.WriteRequest"

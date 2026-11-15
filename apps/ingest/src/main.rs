@@ -20156,6 +20156,16 @@ mod tests {
                  (prometheus.WriteRequest)"
             );
 
+            // The parameter may be a quoted string.
+            let quoted = typed("application/x-protobuf; proto=\"io.prometheus.write.v2.Request\"");
+            assert_eq!(
+                outcome(quoted).await,
+                (
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "ingest_unsupported_media_type".to_owned()
+                )
+            );
+
             // The version 1.0 content type, spelled out, is accepted.
             let v1 = typed("application/x-protobuf;proto=prometheus.WriteRequest");
             assert_eq!(outcome(v1).await, (StatusCode::OK, String::new()));
