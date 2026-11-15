@@ -80,13 +80,21 @@ export const fetchMetricTimeseries = (
 		}))
 	})
 
-/** The per-service table. */
-export const fetchMetricBreakdown = (entry: MetricEntry, bounds: TimeBounds, apiBase: string) => {
+/**
+ * The per-service table. A histogram's rows are what the range observed, read with the
+ * chart's bucket as lookback so both count the same samples.
+ */
+export const fetchMetricBreakdown = (
+	entry: MetricEntry,
+	bounds: TimeBounds,
+	bucketSeconds: number,
+	apiBase: string,
+) => {
 	const metricType = entry.metricType
 	if (!isMetricType(metricType)) return Effect.succeed<ReadonlyArray<BreakdownRow>>([])
 	return Effect.map(
 		queryRows(
-			CH.compile(CH.metricsBreakdownQuery({ metricType, limit: 20 }), {
+			CH.compile(CH.metricsBreakdownQuery({ metricType, limit: 20, lookbackSeconds: bucketSeconds }), {
 				...localParams(bounds),
 				metricName: entry.metricName,
 			}),

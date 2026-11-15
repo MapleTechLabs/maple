@@ -1,5 +1,6 @@
 import { Effect, Array as Arr, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
+import { unsplicedTwoTierQueries } from "@maple/query-engine/benchmark"
 import {
 	collectIntegrationQueryCatalog,
 	EXEMPT_INTEGRATION_BUILDERS,
@@ -17,6 +18,11 @@ import {
 // and is pinned byte-for-byte.
 describe("integration sql catalog", () => {
 	const entries = Effect.runSync(collectIntegrationQueryCatalog)
+
+	// No allowlist, as in the core catalog: see `unsplicedTwoTierQueries`.
+	it("splices every two-tier query through the shared boundary", () => {
+		expect(unsplicedTwoTierQueries(entries)).toEqual([])
+	})
 
 	it("compiles every fixture", () => {
 		expect(entries.length).toBeGreaterThan(0)
