@@ -693,18 +693,23 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 		expect(result.query).toMatchObject({ source: "metrics", metric: "p95" })
 	})
 
-	it("a percentile on an exponential histogram is rejected until its buckets merge", () => {
+	it("a percentile on an exponential histogram builds a metrics percentile query", () => {
 		const result = buildTimeseriesQuerySpec({
 			...tracesDraft(),
 			dataSource: "metrics",
 			aggregation: "p95",
-			metricName: "http.server.duration",
+			metricName: "db.client.operation.duration",
 			metricType: "exponential_histogram",
 		})
-		expect(result.error).toContain("exponential histograms")
+		expect(result.error).toBeNull()
+		expect(result.query).toMatchObject({
+			source: "metrics",
+			metric: "p95",
+			filters: { metricType: "exponential_histogram" },
+		})
 	})
 
-	it("the percentile check reads the metric type the where clause settles on", () => {
+	it("a percentile is built for the histogram type the where clause settles on", () => {
 		const draft = (metricType: "histogram" | "exponential_histogram", clauseType: string) =>
 			buildTimeseriesQuerySpec({
 				...tracesDraft(),
@@ -714,13 +719,22 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 				metricType,
 				whereClause: `metric.type = ${clauseType}`,
 			})
-		expect(draft("histogram", "exponential_histogram").error).toContain("exponential histograms")
-		expect(draft("exponential_histogram", "histogram").error).toBeNull()
+		expect(draft("histogram", "exponential_histogram").query).toMatchObject({
+			metric: "p95",
+			filters: { metricType: "exponential_histogram" },
+		})
+		expect(draft("exponential_histogram", "histogram").query).toMatchObject({
+			metric: "p95",
+			filters: { metricType: "histogram" },
+		})
 	})
 
-	it("histograms offer percentiles and exponential histograms offer none", () => {
-		expect(Arr.map(getMetricsAggregations("histogram"), (o) => o.value)).toContain("p95")
-		expect(Arr.map(getMetricsAggregations("exponential_histogram"), (o) => o.value)).not.toContain("p95")
+	it("both kinds of histogram offer percentiles and neither offers latest", () => {
+		for (const metricType of ["histogram", "exponential_histogram"] as const) {
+			const offered = Arr.map(getMetricsAggregations(metricType), (o) => o.value)
+			expect(offered).toEqual(expect.arrayContaining(["avg", "p50", "p75", "p90", "p95", "p99"]))
+			expect(offered).not.toContain("latest")
+		}
 	})
 })
 

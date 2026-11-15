@@ -263,26 +263,19 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 
 // Histogram timeseries
 
+// What a histogram reader takes from `hist_samples` by name. The sample's counters and
+// bucket arrays are in the CTE too, read by the SQL constants below.
 const histogramSampleColumns = {
 	TimeUnix: T.dateTime64,
 	groupName: T.string,
 	series: T.uint64,
-	temporality: T.int32,
-	startTime: T.dateTime64,
-	prevStart: T.dateTime64,
-	prevTime: T.dateTime64,
-	fresh: T.uint8,
-	sCount: T.uint64,
-	prevCount: T.uint64,
-	sSum: T.float64,
-	prevSum: T.float64,
 	sMin: T.nullable(T.float64),
 	sMax: T.nullable(T.float64),
-	buckets: T.array(T.uint64),
-	prevBuckets: T.array(T.uint64),
-	bounds: T.array(T.float64),
-	prevBounds: T.array(T.float64),
 }
+const histogramSamples = table("hist_samples", { external: true, columns: histogramSampleColumns })
+
+// A no-recorded-value point (a failed scrape) carries zeros, which would read as a reset.
+const HAS_RECORDED_VALUE = CH.rawCond("bitAnd(Flags, 1) = 0")
 
 // A sample counts whole when it carries its own accumulation: delta temporality,
 // a series that began inside the scanned range (`fresh`), or a reset (count
@@ -298,11 +291,111 @@ const OBSERVED_SUM = `if(${SAMPLE_IS_WHOLE}, sSum, sSum - prevSum)`
 const BUCKET_INCREASE = `multiIf(${SAMPLE_IS_WHOLE}, arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets))))`
 // Recorded extrema bound the merged distribution only when every sample that added
 // observations recorded them; one series' min says nothing about another's values.
-const EXTREMA_COVER_ALL = `countIf((isNull(sMin) OR isNull(sMax)) AND ${OBSERVATIONS} > 0) = 0`
+const lacksExtrema = (observations: string) => `(isNull(sMin) OR isNull(sMax)) AND ${observations} > 0`
+const EXTREMA_COVER_ALL = `countIf(${lacksExtrema(OBSERVATIONS)}) = 0`
 // OTLP: N bounds describe N + 1 buckets, the last unbounded. Any other shape has no usable buckets.
 const HAS_BUCKETS = "length(buckets) = length(bounds) + 1"
 const BUCKET_UPPER_BOUNDS = `if(${HAS_BUCKETS}, arrayPushBack(bounds, inf), emptyArrayFloat64())`
 const BUCKET_COUNTS = `if(${HAS_BUCKETS}, ${BUCKET_INCREASE}, emptyArrayFloat64())`
+
+/** Which bucket columns a reader needs. They are most of a row, so only a percentile reads them. */
+type HistogramBuckets = "none" | "explicit" | "exponential"
+
+/**
+ * One histogram sample next to the previous sample of its series, which is what
+ * `SAMPLE_IS_WHOLE` reads. Every histogram reader selects through this, so the chart,
+ * the sparkline and the breakdown tell series apart and find resets the same way.
+ */
+function histogramSampleSelect(
+	$: ColumnAccessor<typeof Datasources.metricsHistogram.columns>,
+	spec: {
+		readonly groupName: CH.Expr<string>
+		/** Where the scan starts: the range start less the lookback. */
+		readonly scanStart: CH.Expr<DateTime.Utc>
+		readonly buckets: HistogramBuckets
+	},
+) {
+	// One partition per emitting series, fingerprinted like the counter query, plus the
+	// instrumentation scope: two libraries can record the same metric with the same labels.
+	const onePrecedingFrame = CH.windowSpec({
+		partitionBy: [
+			$.ServiceName,
+			$.MetricName,
+			$.ScopeName,
+			CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
+			CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
+		],
+		orderBy: [[$.TimeUnix, "asc"]],
+		frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+	})
+	const previous = <A>(value: CH.Expr<A>) => CH.over(CH.lagInFrame(value, 1, value), onePrecedingFrame)
+	// A series' first scanned sample that also began in the scanned range has no
+	// earlier sample to subtract; without this a process that exports once is lost.
+	const fresh = CH.over(CH.count(), onePrecedingFrame)
+		.eq(1)
+		.and($.StartTimeUnix.gte(spec.scanStart))
+		.and($.StartTimeUnix.lt($.TimeUnix))
+	const withPrevious = <A>(name: string, type: Parameters<typeof CH.dynamicColumn<A>>[1]) => {
+		const value = CH.dynamicColumn<A>(name, type)
+		return [value, previous(value)] as const
+	}
+	const bucketColumns = (): Record<string, CH.Expr<unknown>> => {
+		if (spec.buckets === "explicit") {
+			return {
+				buckets: $.BucketCounts,
+				prevBuckets: previous($.BucketCounts),
+				bounds: $.ExplicitBounds,
+				prevBounds: previous($.ExplicitBounds),
+			}
+		}
+		if (spec.buckets === "exponential") {
+			const [scale, prevScale] = withPrevious<number>("Scale", T.int32)
+			const [zeroCount, prevZero] = withPrevious<number>("ZeroCount", T.uint64)
+			const [posOffset, prevPosOffset] = withPrevious<number>("PositiveOffset", T.int32)
+			const [pos, prevPos] = withPrevious<ReadonlyArray<number>>(
+				"PositiveBucketCounts",
+				T.array(T.uint64),
+			)
+			const [negOffset, prevNegOffset] = withPrevious<number>("NegativeOffset", T.int32)
+			const [neg, prevNeg] = withPrevious<ReadonlyArray<number>>(
+				"NegativeBucketCounts",
+				T.array(T.uint64),
+			)
+			return {
+				scale,
+				prevScale,
+				zeroCount,
+				prevZero,
+				posOffset,
+				prevPosOffset,
+				pos,
+				prevPos,
+				negOffset,
+				prevNegOffset,
+				neg,
+				prevNeg,
+			}
+		}
+		return {}
+	}
+	return {
+		TimeUnix: $.TimeUnix,
+		groupName: spec.groupName,
+		series: metricsSeriesKeyExpr($),
+		temporality: $.AggregationTemporality,
+		startTime: $.StartTimeUnix,
+		prevStart: previous($.StartTimeUnix),
+		prevTime: previous($.TimeUnix),
+		fresh: CH.if_(fresh, CH.lit(1), CH.lit(0)),
+		sCount: $.Count,
+		prevCount: previous($.Count),
+		sSum: $.Sum,
+		prevSum: previous($.Sum),
+		sMin: $.Min,
+		sMax: $.Max,
+		...bucketColumns(),
+	}
+}
 
 /**
  * The q-quantile of one merged histogram: linear interpolation inside the bucket
@@ -332,6 +425,95 @@ function histogramQuantileSql(q: number): string {
 	return `multiIf(bTotal <= 0 OR ${index} = 0, nan, isInfinite(${upper}), ${unbounded}, ${bounded})`
 }
 
+// Exponential histograms
+//
+// Bucket `i` of a range covers (base^i, base^(i+1)] with base = 2^(2^-scale); the arrays
+// are dense from `offset`. One scale lower, bucket `i` is part of bucket `i >> 1`.
+
+// Two samples of one series further apart than this are not one distribution growing,
+// and padding one to the other would only cost memory: such a sample adds no buckets.
+const EXPONENTIAL_MAX_SPAN = 8192
+// Scales are -10..20 on the wire; the cap keeps a nonsense scale from shifting out of range.
+const scaleShift = (from: string, to: string) => `least(greatest(${from} - ${to}, 0), 62)`
+const asFloats = (counts: string) => `arrayMap(c -> toFloat64(c), ${counts})`
+
+/**
+ * `counts`, dense from `offset`, summed into the buckets `shift` scales lower: a running
+ * total cut where a coarser bucket ends. The lambda takes scalars only; one that captured
+ * an array would copy it per element.
+ */
+const downscaledSql = (counts: string, offset: string, shift: string) =>
+	`if(${shift} = 0, ${asFloats(counts)}, arrayPopFront(arrayDifference(arrayPushFront(arrayFilter((c, i, r) -> r = 1 OR bitAnd(toInt64(${offset}) + i, bitShiftLeft(toInt64(1), ${shift}) - 1) = 0, arrayCumSum(${asFloats(counts)}), arrayEnumerate(${counts}), arrayReverse(arrayEnumerate(${counts}))), toFloat64(0)))))`
+
+/**
+ * What one sample adds to one range of its series, as the select aliases `<range>Off`
+ * and `<range>Inc`: both samples at `bScale`, laid on one bucket index, the previous
+ * subtracted and a negative difference read as zero.
+ */
+function exponentialRangeIncrease(range: "pos" | "neg") {
+	const previous = range === "pos" ? "prevPos" : "prevNeg"
+	const cur = `${range}Cur`
+	const prev = `${range}Prev`
+	const low = `${range}Low`
+	const span = `${range}Span`
+	// Sizes stay under the cap in every branch, whichever of them ClickHouse evaluates.
+	const aligned = (counts: string) =>
+		`arrayResize(arrayConcat(arrayWithConstant(least(${counts}Off - ${low}, ${EXPONENTIAL_MAX_SPAN}), toFloat64(0)), ${counts}), least(${span}, ${EXPONENTIAL_MAX_SPAN}))`
+	return {
+		[cur]: CH.rawExpr(downscaledSql(range, `${range}Offset`, "curShift"), T.array(T.float64)),
+		[`${cur}Off`]: CH.rawExpr(`bitShiftRight(toInt64(${range}Offset), curShift)`, T.int64),
+		[prev]: CH.rawExpr(
+			`if(whole, emptyArrayFloat64(), ${downscaledSql(previous, `${previous}Offset`, "prevShift")})`,
+			T.array(T.float64),
+		),
+		[`${prev}Off`]: CH.rawExpr(`bitShiftRight(toInt64(${previous}Offset), prevShift)`, T.int64),
+		[low]: CH.rawExpr(`least(${cur}Off, ${prev}Off)`, T.int64),
+		[span]: CH.rawExpr(
+			`greatest(${cur}Off + toInt64(length(${cur})), ${prev}Off + toInt64(length(${prev}))) - ${low}`,
+			T.int64,
+		),
+		[`${range}Inc`]: CH.rawExpr(
+			`multiIf(empty(${prev}), ${cur}, empty(${cur}) OR ${span} > ${EXPONENTIAL_MAX_SPAN}, emptyArrayFloat64(), arrayMap((c, p) -> greatest(c - p, 0), ${aligned(cur)}, ${aligned(prev)}))`,
+			T.array(T.float64),
+		),
+		[`${range}Off`]: CH.rawExpr(`if(empty(${prev}), ${cur}Off, ${low})`, T.int64),
+	}
+}
+
+/** The merged buckets of one scale, re-indexed at the group's lowest scale. */
+const atLowScale = (keys: string) =>
+	`arrayMap(k -> bitShiftRight(k, ${scaleShift("bScale", "lowScale")}), ${keys})`
+
+/**
+ * The q-quantile of one merged exponential histogram, walked in value order (`wCounts`,
+ * `wKeys`, `wSigns`). Inside a bucket it interpolates on the logarithm, as Prometheus'
+ * `histogram_quantile` does for native histograms. The zero bucket reads as 0.
+ */
+function exponentialQuantileSql(q: number): string {
+	const rank = `(${q} * bTotal)`
+	const cumulative = "arrayCumSum(wCounts)"
+	const index = `arrayFirstIndex(c -> c >= ${rank}, ${cumulative})`
+	const at = `greatest(${index}, 1)`
+	const inBucket = `wCounts[${at}]`
+	const before = `(${cumulative}[${at}] - ${inBucket})`
+	const fraction = `if(${inBucket} > 0, (${rank} - ${before}) / ${inBucket}, 0)`
+	// Bucket k spans 2^(k / 2^scale) to 2^((k + 1) / 2^scale); a negative one is walked from its far edge.
+	const positive = `exp2((wKeys[${at}] + ${fraction}) * exp2(-bLow))`
+	const negative = `-exp2((wKeys[${at}] + 1 - ${fraction}) * exp2(-bLow))`
+	return `multiIf(bTotal <= 0 OR ${index} = 0, nan, wSigns[${at}] = 0, toFloat64(0), wSigns[${at}] > 0, ${positive}, ${negative})`
+}
+
+/** One group's bucket with a percentile estimate and the recorded extrema that bound it. */
+interface HistogramEstimate {
+	readonly bucket: DateTime.Utc
+	readonly groupName: string
+	readonly observations: number
+	readonly seriesCount: number
+	readonly bMin: number | null
+	readonly bMax: number | null
+	readonly estimate: number
+}
+
 /**
  * Histograms merge their observations across series: every sample is reduced
  * to what it observed since the previous sample of its series, and those
@@ -340,16 +522,19 @@ function histogramQuantileSql(q: number): string {
  * estimated from the merged buckets. `min` and `max` read the recorded extrema,
  * which a cumulative series reports since its start.
  *
- * Exponential histograms take the same path for count, sum and avg; their
- * buckets are not merged, so a percentile on one has no rows.
+ * Exponential histograms take the same path. Their buckets merge at the lowest
+ * scale a contributing sample has: a finer bucket lies inside exactly one coarser one.
  */
 function histogramTimeseriesQuery(
 	opts: MetricsTimeseriesOpts,
 	metric: MetricsValueAggregation,
 ): CHQuery<ColumnDefs, MetricsTimeseriesOutput> {
 	const { tbl } = resolveMetricTable(opts.metricType)
-	// Bucket arrays are only read for a percentile, and only explicit buckets merge.
-	const readsBuckets = opts.metricType === "histogram" && isMetricsPercentile(metric)
+	const buckets: HistogramBuckets = !isMetricsPercentile(metric)
+		? "none"
+		: opts.metricType === "exponential_histogram"
+			? "exponential"
+			: "explicit"
 
 	const scanStart = CH.intervalSub(
 		param.dateTime("startTime"),
@@ -357,95 +542,26 @@ function histogramTimeseriesQuery(
 	)
 
 	const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
-		.select(($) => {
-			// One partition per emitting series, fingerprinted like the counter query, plus the
-			// instrumentation scope: two libraries can record the same metric with the same labels.
-			const onePrecedingFrame = CH.windowSpec({
-				partitionBy: [
-					$.ServiceName,
-					$.MetricName,
-					$.ScopeName,
-					CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
-					CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
-				],
-				orderBy: [[$.TimeUnix, "asc"]],
-				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
-			})
-			const previous = <A>(value: CH.Expr<A>) =>
-				CH.over(CH.lagInFrame(value, 1, value), onePrecedingFrame)
-			// A series' first scanned sample that also began in the scanned range has no
-			// earlier sample to subtract; without this a process that exports once is lost.
-			const fresh = CH.over(CH.count(), onePrecedingFrame)
-				.eq(1)
-				.and($.StartTimeUnix.gte(scanStart))
-				.and($.StartTimeUnix.lt($.TimeUnix))
-			const buckets = readsBuckets
-				? $.BucketCounts
-				: CH.rawExpr("emptyArrayUInt64()", T.array(T.uint64))
-			const bounds = readsBuckets
-				? $.ExplicitBounds
-				: CH.rawExpr("emptyArrayFloat64()", T.array(T.float64))
-			return {
-				TimeUnix: $.TimeUnix,
-				groupName: metricsGroupNameExpr($, opts),
-				series: metricsSeriesKeyExpr($),
-				temporality: $.AggregationTemporality,
-				startTime: $.StartTimeUnix,
-				prevStart: previous($.StartTimeUnix),
-				prevTime: previous($.TimeUnix),
-				fresh: CH.if_(fresh, CH.lit(1), CH.lit(0)),
-				sCount: $.Count,
-				prevCount: previous($.Count),
-				sSum: $.Sum,
-				prevSum: previous($.Sum),
-				sMin: $.Min,
-				sMax: $.Max,
-				buckets,
-				prevBuckets: previous(buckets),
-				bounds,
-				prevBounds: previous(bounds),
-			}
-		})
-		// A no-recorded-value point (a failed scrape) carries zeros, which would read as a reset.
-		.where(($) => [...metricsWhere($, opts, scanStart), CH.rawCond("bitAnd(Flags, 1) = 0")])
-
-	const samples = table("hist_samples", { external: true, columns: histogramSampleColumns })
-
-	const merged = from(samples)
-		.withCTE("hist_samples", samplesQuery)
-		.select(($) => ({
-			bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
-			groupName: $.groupName,
-			observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
-			total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
-			minValue: CH.min_($.sMin),
-			maxValue: CH.max_($.sMax),
-			samples: CH.count(),
-			seriesCount: CH.uniqExact($.series),
-			...(isMetricsPercentile(metric)
-				? {
-						bKeys: CH.rawExpr(
-							`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 1)`,
-							T.array(T.float64),
-						),
-						bCounts: CH.rawExpr(
-							`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 2)`,
-							T.array(T.float64),
-						),
-						bTotal: CH.sum(CH.rawExpr(`arraySum(${BUCKET_COUNTS})`, T.float64)),
-						bBounds: CH.rawExpr(
-							`arraySort(groupUniqArrayArray(if(arraySum(${BUCKET_COUNTS}) > 0, bounds, emptyArrayFloat64())))`,
-							T.array(T.float64),
-						),
-						bMin: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, min(sMin), NULL)`, T.nullable(T.float64)),
-						bMax: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, max(sMax), NULL)`, T.nullable(T.float64)),
-					}
-				: undefined),
-		}))
-		.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
-		.groupBy("bucket", "groupName")
+		.select(($) =>
+			histogramSampleSelect($, { groupName: metricsGroupNameExpr($, opts), scanStart, buckets }),
+		)
+		.where(($) => [...metricsWhere($, opts, scanStart), HAS_RECORDED_VALUE])
+	const samples = from(histogramSamples).withCTE("hist_samples", samplesQuery)
 
 	if (!isMetricsPercentile(metric)) {
+		const merged = samples
+			.select(($) => ({
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+				groupName: $.groupName,
+				observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
+				total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
+				minValue: CH.min_($.sMin),
+				maxValue: CH.max_($.sMax),
+				samples: CH.count(),
+				seriesCount: CH.uniqExact($.series),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+			.groupBy("bucket", "groupName")
 		const inner = fromQuery(merged, "merged")
 			.select(($) => ({
 				bucket: $.bucket,
@@ -462,15 +578,168 @@ function histogramTimeseriesQuery(
 		return finalizeTimeseries(inner, metricsTimeseriesColumns, "value", opts)
 	}
 
-	const estimated = fromQuery(merged, "merged").select(($) => ({
-		bucket: $.bucket,
-		groupName: $.groupName,
-		observations: $.observations,
-		seriesCount: $.seriesCount,
-		bMin: $.bMin,
-		bMax: $.bMax,
-		estimate: CH.rawExpr(histogramQuantileSql(METRICS_PERCENTILES[metric]), T.float64),
-	}))
+	const q = METRICS_PERCENTILES[metric]
+
+	const explicitEstimates = () => {
+		const merged = samples
+			.select(($) => ({
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+				groupName: $.groupName,
+				observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
+				seriesCount: CH.uniqExact($.series),
+				bKeys: CH.rawExpr(
+					`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 1)`,
+					T.array(T.float64),
+				),
+				bCounts: CH.rawExpr(
+					`tupleElement(sumMap(${BUCKET_UPPER_BOUNDS}, ${BUCKET_COUNTS}), 2)`,
+					T.array(T.float64),
+				),
+				bTotal: CH.sum(CH.rawExpr(`arraySum(${BUCKET_COUNTS})`, T.float64)),
+				bBounds: CH.rawExpr(
+					`arraySort(groupUniqArrayArray(if(arraySum(${BUCKET_COUNTS}) > 0, bounds, emptyArrayFloat64())))`,
+					T.array(T.float64),
+				),
+				bMin: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, min(sMin), NULL)`, T.nullable(T.float64)),
+				bMax: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, max(sMax), NULL)`, T.nullable(T.float64)),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+			.groupBy("bucket", "groupName")
+		return fromQuery(merged, "merged").select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			observations: $.observations,
+			seriesCount: $.seriesCount,
+			bMin: $.bMin,
+			bMax: $.bMax,
+			estimate: CH.rawExpr(histogramQuantileSql(q), T.float64),
+		}))
+	}
+
+	const exponentialEstimates = () => {
+		// What each sample adds, at `bScale`: its own scale, or the previous sample's when
+		// that one is coarser and has buckets to subtract.
+		const increases = samples
+			.select(($) => ({
+				TimeUnix: $.TimeUnix,
+				groupName: $.groupName,
+				series: $.series,
+				sMin: $.sMin,
+				sMax: $.sMax,
+				sObservations: CH.rawExpr(OBSERVATIONS, T.float64),
+				whole: CH.rawExpr(SAMPLE_IS_WHOLE, T.uint8),
+				bScale: CH.rawExpr(
+					"if(whole OR (empty(prevPos) AND empty(prevNeg)), scale, least(scale, prevScale))",
+					T.int32,
+				),
+				curShift: CH.rawExpr(scaleShift("scale", "bScale"), T.int64),
+				prevShift: CH.rawExpr(scaleShift("prevScale", "bScale"), T.int64),
+				zeroInc: CH.rawExpr(
+					"if(whole, toFloat64(zeroCount), greatest(toFloat64(zeroCount) - toFloat64(prevZero), 0))",
+					T.float64,
+				),
+				...exponentialRangeIncrease("pos"),
+				...exponentialRangeIncrease("neg"),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+
+		// Samples of one scale add up by bucket index; `sumMap` takes the index as its key.
+		const sumByIndex = (range: "pos" | "neg", element: 1 | 2) =>
+			`tupleElement(sumMap(range(${range}Off, ${range}Off + toInt64(length(${range}Inc))), ${range}Inc), ${element})`
+		const byScale = fromQuery(increases, "exp_increases")
+			.select(($) => ({
+				bucket: timeseriesBucket($.TimeUnix, opts.wholeRange),
+				groupName: $.groupName,
+				bScale: $.bScale,
+				gObservations: CH.sum($.sObservations),
+				gSeries: CH.groupUniqArray($.series),
+				gUncovered: CH.countIf(CH.rawCond(lacksExtrema("sObservations"))),
+				gMin: CH.min_($.sMin),
+				gMax: CH.max_($.sMax),
+				gZero: CH.sum($.zeroInc),
+				gPosKeys: CH.rawExpr(sumByIndex("pos", 1), T.array(T.int64)),
+				gPosCounts: CH.rawExpr(sumByIndex("pos", 2), T.array(T.float64)),
+				gNegKeys: CH.rawExpr(sumByIndex("neg", 1), T.array(T.int64)),
+				gNegCounts: CH.rawExpr(sumByIndex("neg", 2), T.array(T.float64)),
+			}))
+			.groupBy("bucket", "groupName", "bScale")
+
+		// A scale whose samples added no buckets does not get to coarsen the others.
+		const rescaled = fromQuery(byScale, "by_scale").select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			bScale: $.bScale,
+			gObservations: $.gObservations,
+			gSeries: $.gSeries,
+			gUncovered: $.gUncovered,
+			gMin: $.gMin,
+			gMax: $.gMax,
+			gZero: $.gZero,
+			gPosKeys: $.gPosKeys,
+			gPosCounts: $.gPosCounts,
+			gNegKeys: $.gNegKeys,
+			gNegCounts: $.gNegCounts,
+			lowScale: CH.rawExpr(
+				"minIf(bScale, arraySum(gPosCounts) + arraySum(gNegCounts) > 0) OVER (PARTITION BY bucket, groupName)",
+				T.int32,
+			),
+		}))
+
+		const mergedAtLowScale = (range: "Pos" | "Neg", element: 1 | 2) =>
+			`tupleElement(sumMap(${atLowScale(`g${range}Keys`)}, g${range}Counts), ${element})`
+		const merged = fromQuery(rescaled, "rescaled")
+			.select(($) => ({
+				bucket: $.bucket,
+				groupName: $.groupName,
+				observations: CH.sum($.gObservations),
+				seriesCount: CH.rawExpr("length(groupUniqArrayArray(gSeries))", T.uint64),
+				bMin: CH.rawExpr("if(sum(gUncovered) = 0, min(gMin), NULL)", T.nullable(T.float64)),
+				bMax: CH.rawExpr("if(sum(gUncovered) = 0, max(gMax), NULL)", T.nullable(T.float64)),
+				bLow: CH.any_($.lowScale),
+				bZero: CH.sum($.gZero),
+				bTotal: CH.sum(CH.rawExpr("arraySum(gPosCounts) + arraySum(gNegCounts) + gZero", T.float64)),
+				posKeys: CH.rawExpr(mergedAtLowScale("Pos", 1), T.array(T.int64)),
+				posCounts: CH.rawExpr(mergedAtLowScale("Pos", 2), T.array(T.float64)),
+				negKeys: CH.rawExpr(mergedAtLowScale("Neg", 1), T.array(T.int64)),
+				negCounts: CH.rawExpr(mergedAtLowScale("Neg", 2), T.array(T.float64)),
+			}))
+			.groupBy("bucket", "groupName")
+
+		// The walk a percentile takes, in ascending value order.
+		const walk = fromQuery(merged, "merged").select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			observations: $.observations,
+			seriesCount: $.seriesCount,
+			bMin: $.bMin,
+			bMax: $.bMax,
+			bLow: $.bLow,
+			bTotal: $.bTotal,
+			wCounts: CH.rawExpr(
+				"arrayConcat(arrayReverse(negCounts), [bZero], posCounts)",
+				T.array(T.float64),
+			),
+			wKeys: CH.rawExpr("arrayConcat(arrayReverse(negKeys), [toInt64(0)], posKeys)", T.array(T.int64)),
+			wSigns: CH.rawExpr(
+				"arrayConcat(arrayWithConstant(length(negKeys), toInt32(-1)), [toInt32(0)], arrayWithConstant(length(posKeys), toInt32(1)))",
+				T.array(T.int32),
+			),
+		}))
+		return fromQuery(walk, "walk").select(($) => ({
+			bucket: $.bucket,
+			groupName: $.groupName,
+			observations: $.observations,
+			seriesCount: $.seriesCount,
+			bMin: $.bMin,
+			bMax: $.bMax,
+			estimate: CH.rawExpr(exponentialQuantileSql(q), T.float64),
+		}))
+	}
+
+	const estimated: CHQuery<ColumnDefs, HistogramEstimate, Record<string, ColumnDefs>> = buckets ===
+	"exponential"
+		? exponentialEstimates()
+		: explicitEstimates()
 	const inner = fromQuery(estimated, "estimated")
 		.select(($) => ({
 			bucket: $.bucket,
@@ -890,6 +1159,7 @@ export interface MetricsSparklinesOpts {
 	metricNames: ReadonlyArray<string>
 }
 
+/** One metric's bucket. A histogram's values are what the bucket observed; it has no row for a bucket that observed nothing. */
 export interface MetricsSparklinesOutput {
 	readonly bucket: DateTime.Utc
 	readonly metricName: string
@@ -898,12 +1168,48 @@ export interface MetricsSparklinesOutput {
 	readonly dataPointCount: number
 }
 
-export function metricsSparklinesQuery(opts: MetricsSparklinesOpts) {
+export function metricsSparklinesQuery(
+	opts: MetricsSparklinesOpts,
+): CHQuery<ColumnDefs, MetricsSparklinesOutput> {
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
+
+	if (isHistogram) {
+		const scanStart = CH.intervalSub(param.dateTime("startTime"), param.int("bucketSeconds"))
+		const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
+			.select(($) => histogramSampleSelect($, { groupName: $.MetricName, scanStart, buckets: "none" }))
+			.where(($) => [
+				$.MetricName.in_(...opts.metricNames),
+				$.OrgId.eq(orgIdParam),
+				$.TimeUnix.gte(scanStart),
+				$.TimeUnix.lte(param.dateTime("endTime")),
+				HAS_RECORDED_VALUE,
+			])
+		const merged = from(histogramSamples)
+			.withCTE("hist_samples", samplesQuery)
+			.select(($) => ({
+				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
+				metricName: $.groupName,
+				observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
+				total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+			.groupBy("bucket", "metricName")
+		return fromQuery(merged, "merged")
+			.select(($) => ({
+				bucket: $.bucket,
+				metricName: $.metricName,
+				avgValue: finiteOrZero($.total.div($.observations)),
+				sumValue: $.total,
+				dataPointCount: CH.toUInt64($.observations),
+			}))
+			.where(($) => [$.observations.gt(0)])
+			.orderBy(["bucket", "asc"])
+			.format("JSON")
+	}
 
 	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => {
-			const exprs = metricsSelectExprs($, isHistogram)
+			const exprs = metricsSelectExprs($)
 			return {
 				bucket: CH.toStartOfInterval($.TimeUnix, param.int("bucketSeconds")),
 				metricName: $.MetricName,
@@ -936,7 +1242,15 @@ export interface MetricsBreakdownOpts {
 	/** Aggregate that ranks groups before `limit` applies. Default: count. */
 	rankBy?: "avg" | "sum" | "min" | "max" | "count"
 	limit?: number
+	/**
+	 * Histograms only: how far before startTime to read each series' previous sample.
+	 * Pass the chart's bucket width to read exactly the samples the chart reads.
+	 */
+	lookbackSeconds?: number
 }
+
+// Previous-sample lookback of a histogram breakdown; 10 minutes covers common export intervals.
+const BREAKDOWN_LOOKBACK_SECONDS = 600
 
 const BREAKDOWN_RANK_COLUMN = {
 	avg: "avgValue",
@@ -946,6 +1260,7 @@ const BREAKDOWN_RANK_COLUMN = {
 	count: "count",
 } as const
 
+/** One group over the range. A histogram's values are what the range observed; a group that observed nothing has no row. */
 export interface MetricsBreakdownOutput {
 	readonly name: string
 	readonly avgValue: number
@@ -955,23 +1270,83 @@ export interface MetricsBreakdownOutput {
 	readonly count: number
 }
 
-export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
+export function metricsBreakdownQuery(
+	opts: MetricsBreakdownOpts,
+): CHQuery<ColumnDefs, MetricsBreakdownOutput> {
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 	const limit = opts.limit ?? 10
 	const groupKey = opts.groupByAttributeKey
 	const resourceGroupKey = opts.groupByResourceAttributeKey
+	const rankColumn = BREAKDOWN_RANK_COLUMN[opts.rankBy ?? "count"]
+
+	// Break down by a resource attribute or metric label value when requested, otherwise by service.
+	const nameOf = ($: Pick<MetricsRow, "ServiceName" | "Attributes" | "ResourceAttributes">) =>
+		resourceGroupKey
+			? $.ResourceAttributes.get(resourceGroupKey)
+			: groupKey
+				? $.Attributes.get(groupKey)
+				: $.ServiceName
+	const rowFilters = (
+		$: Pick<MetricsRow, "MetricName" | "OrgId" | "ServiceName" | "Attributes" | "ResourceAttributes">,
+	) => [
+		$.MetricName.eq(param.string("metricName")),
+		$.OrgId.eq(orgIdParam),
+		// Drop datapoints missing the label so an empty bucket doesn't dominate.
+		CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
+		CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
+		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+		opts.environments !== undefined && opts.environments.length > 0
+			? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
+			: undefined,
+		...datapointFilterConditions(opts.attributeFilters),
+		...resourceFilterConditions(opts.resourceAttributeFilters),
+	]
+
+	if (isHistogram) {
+		const scanStart = CH.intervalSub(
+			param.dateTime("startTime"),
+			opts.lookbackSeconds ?? BREAKDOWN_LOOKBACK_SECONDS,
+		)
+		const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
+			.select(($) => histogramSampleSelect($, { groupName: nameOf($), scanStart, buckets: "none" }))
+			.where(($) => [
+				...rowFilters($),
+				$.TimeUnix.gte(scanStart),
+				$.TimeUnix.lte(param.dateTime("endTime")),
+				HAS_RECORDED_VALUE,
+			])
+		const merged = from(histogramSamples)
+			.withCTE("hist_samples", samplesQuery)
+			.select(($) => ({
+				name: $.groupName,
+				observations: CH.sum(CH.rawExpr(OBSERVATIONS, T.float64)),
+				total: CH.sum(CH.rawExpr(OBSERVED_SUM, T.float64)),
+				// Min and Max are Nullable: a histogram may record no extrema.
+				minValue: CH.ifNull(CH.min_($.sMin), CH.lit(0)),
+				maxValue: CH.ifNull(CH.max_($.sMax), CH.lit(0)),
+			}))
+			.where(($) => [$.TimeUnix.gte(param.dateTime("startTime"))])
+			.groupBy("name")
+		return fromQuery(merged, "merged")
+			.select(($) => ({
+				name: $.name,
+				avgValue: finiteOrZero($.total.div($.observations)),
+				minValue: $.minValue,
+				maxValue: $.maxValue,
+				sumValue: $.total,
+				count: CH.toUInt64($.observations),
+			}))
+			.where(($) => [$.observations.gt(0)])
+			.orderBy([rankColumn, "desc"])
+			.limit(limit)
+			.format("JSON")
+	}
 
 	return from(tbl as typeof Datasources.metricsSum)
 		.select(($) => {
-			const exprs = metricsSelectExprs($, isHistogram)
+			const exprs = metricsSelectExprs($)
 			return {
-				// Break down by a resource attribute or metric label value when
-				// requested, otherwise by service.
-				name: resourceGroupKey
-					? $.ResourceAttributes.get(resourceGroupKey)
-					: groupKey
-						? $.Attributes.get(groupKey)
-						: $.ServiceName,
+				name: nameOf($),
 				avgValue: exprs.avgValue,
 				minValue: exprs.minValue,
 				maxValue: exprs.maxValue,
@@ -980,22 +1355,12 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			}
 		})
 		.where(($) => [
-			$.MetricName.eq(param.string("metricName")),
-			$.OrgId.eq(orgIdParam),
+			...rowFilters($),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
-			// Drop datapoints missing the label so an empty bucket doesn't dominate.
-			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
-			CH.when(resourceGroupKey, (k: string) => $.ResourceAttributes.get(k).neq("")),
-			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			opts.environments !== undefined && opts.environments.length > 0
-				? CH.inList(deploymentEnvExpr($.ResourceAttributes), opts.environments)
-				: undefined,
-			...datapointFilterConditions(opts.attributeFilters),
-			...resourceFilterConditions(opts.resourceAttributeFilters),
 		])
 		.groupBy("name")
-		.orderBy([BREAKDOWN_RANK_COLUMN[opts.rankBy ?? "count"], "desc"])
+		.orderBy([rankColumn, "desc"])
 		.limit(limit)
 		.format("JSON")
 }

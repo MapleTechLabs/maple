@@ -20584,7 +20584,7 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- spec:metrics-breakdown:baseline  [72118514]
+-- spec:metrics-breakdown:baseline  [51c33f56]
 SELECT
           bucket AS bucket,
           groupName AS groupName,
@@ -20626,11 +20626,7 @@ SELECT
           metrics_histogram.Sum AS sSum,
           lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
           metrics_histogram.Min AS sMin,
-          metrics_histogram.Max AS sMax,
-          emptyArrayUInt64() AS buckets,
-          lagInFrame(emptyArrayUInt64(), 1, emptyArrayUInt64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
-          emptyArrayFloat64() AS bounds,
-          lagInFrame(emptyArrayFloat64(), 1, emptyArrayFloat64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+          metrics_histogram.Max AS sMax
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
@@ -20657,6 +20653,48 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
+-- spec:metrics-sparklines-histogram:baseline  [88686f84]
+SELECT
+          merged.bucket AS bucket,
+          merged.metricName AS metricName,
+          ifNull(ifNotFinite(merged.total / merged.observations, 0), 0) AS avgValue,
+          merged.total AS sumValue,
+          toUInt64(merged.observations) AS dataPointCount
+        FROM (WITH hist_samples AS (
+SELECT
+          metrics_histogram.TimeUnix AS TimeUnix,
+          metrics_histogram.MetricName AS groupName,
+          cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
+          metrics_histogram.AggregationTemporality AS temporality,
+          metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
+          lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
+          if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
+          metrics_histogram.Count AS sCount,
+          lagInFrame(metrics_histogram.Count, 1, metrics_histogram.Count) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevCount,
+          metrics_histogram.Sum AS sSum,
+          lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
+          metrics_histogram.Min AS sMin,
+          metrics_histogram.Max AS sMax
+        FROM metrics_histogram
+        WHERE metrics_histogram.MetricName IN ('http.server.request.duration')
+          AND metrics_histogram.OrgId = 'org_sql_catalog'
+          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 3600 SECOND
+          AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND bitAnd(Flags, 1) = 0
+)
+SELECT
+          toStartOfInterval(hist_samples.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
+          hist_samples.groupName AS metricName,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), sSum, sSum - prevSum)) AS total
+        FROM hist_samples
+        WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
+        GROUP BY bucket, metricName) AS merged
+        WHERE merged.observations > 0
+        ORDER BY bucket ASC
+        FORMAT JSON
+
 -- spec:metrics-sparklines:baseline  [f220d493]
 SELECT
           toStartOfInterval(metrics_sum.TimeUnix, INTERVAL 3600 SECOND) AS bucket,
@@ -20673,7 +20711,148 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-attribute:baseline  [25fedc4a]
+-- spec:metrics-timeseries-exponential-histogram-percentile:baseline  [e11527f8]
+SELECT
+          estimated.bucket AS bucket,
+          estimated.groupName AS groupName,
+          least(greatest(estimated.estimate, ifNull(estimated.bMin, estimated.estimate)), ifNull(estimated.bMax, estimated.estimate)) AS value,
+          toUInt64(estimated.observations) AS dataPointCount,
+          estimated.seriesCount AS seriesCount
+        FROM (SELECT
+          walk.bucket AS bucket,
+          walk.groupName AS groupName,
+          walk.observations AS observations,
+          walk.seriesCount AS seriesCount,
+          walk.bMin AS bMin,
+          walk.bMax AS bMax,
+          multiIf(bTotal <= 0 OR arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)) = 0, nan, wSigns[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] = 0, toFloat64(0), wSigns[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] > 0, exp2((wKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] + if(wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] > 0, ((0.95 * bTotal) - (arrayCumSum(wCounts)[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] - wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)])) / wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)], 0)) * exp2(-bLow)), -exp2((wKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] + 1 - if(wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] > 0, ((0.95 * bTotal) - (arrayCumSum(wCounts)[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)] - wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)])) / wCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(wCounts)), 1)], 0)) * exp2(-bLow))) AS estimate
+        FROM (SELECT
+          merged.bucket AS bucket,
+          merged.groupName AS groupName,
+          merged.observations AS observations,
+          merged.seriesCount AS seriesCount,
+          merged.bMin AS bMin,
+          merged.bMax AS bMax,
+          merged.bLow AS bLow,
+          merged.bTotal AS bTotal,
+          arrayConcat(arrayReverse(negCounts), [bZero], posCounts) AS wCounts,
+          arrayConcat(arrayReverse(negKeys), [toInt64(0)], posKeys) AS wKeys,
+          arrayConcat(arrayWithConstant(length(negKeys), toInt32(-1)), [toInt32(0)], arrayWithConstant(length(posKeys), toInt32(1))) AS wSigns
+        FROM (SELECT
+          rescaled.bucket AS bucket,
+          rescaled.groupName AS groupName,
+          sum(rescaled.gObservations) AS observations,
+          length(groupUniqArrayArray(gSeries)) AS seriesCount,
+          if(sum(gUncovered) = 0, min(gMin), NULL) AS bMin,
+          if(sum(gUncovered) = 0, max(gMax), NULL) AS bMax,
+          any(rescaled.lowScale) AS bLow,
+          sum(rescaled.gZero) AS bZero,
+          sum(arraySum(gPosCounts) + arraySum(gNegCounts) + gZero) AS bTotal,
+          tupleElement(sumMap(arrayMap(k -> bitShiftRight(k, least(greatest(bScale - lowScale, 0), 62)), gPosKeys), gPosCounts), 1) AS posKeys,
+          tupleElement(sumMap(arrayMap(k -> bitShiftRight(k, least(greatest(bScale - lowScale, 0), 62)), gPosKeys), gPosCounts), 2) AS posCounts,
+          tupleElement(sumMap(arrayMap(k -> bitShiftRight(k, least(greatest(bScale - lowScale, 0), 62)), gNegKeys), gNegCounts), 1) AS negKeys,
+          tupleElement(sumMap(arrayMap(k -> bitShiftRight(k, least(greatest(bScale - lowScale, 0), 62)), gNegKeys), gNegCounts), 2) AS negCounts
+        FROM (SELECT
+          by_scale.bucket AS bucket,
+          by_scale.groupName AS groupName,
+          by_scale.bScale AS bScale,
+          by_scale.gObservations AS gObservations,
+          by_scale.gSeries AS gSeries,
+          by_scale.gUncovered AS gUncovered,
+          by_scale.gMin AS gMin,
+          by_scale.gMax AS gMax,
+          by_scale.gZero AS gZero,
+          by_scale.gPosKeys AS gPosKeys,
+          by_scale.gPosCounts AS gPosCounts,
+          by_scale.gNegKeys AS gNegKeys,
+          by_scale.gNegCounts AS gNegCounts,
+          minIf(bScale, arraySum(gPosCounts) + arraySum(gNegCounts) > 0) OVER (PARTITION BY bucket, groupName) AS lowScale
+        FROM (SELECT
+          toStartOfInterval(exp_increases.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          exp_increases.groupName AS groupName,
+          exp_increases.bScale AS bScale,
+          sum(exp_increases.sObservations) AS gObservations,
+          groupUniqArray(exp_increases.series) AS gSeries,
+          countIf((isNull(sMin) OR isNull(sMax)) AND sObservations > 0) AS gUncovered,
+          min(exp_increases.sMin) AS gMin,
+          max(exp_increases.sMax) AS gMax,
+          sum(exp_increases.zeroInc) AS gZero,
+          tupleElement(sumMap(range(posOff, posOff + toInt64(length(posInc))), posInc), 1) AS gPosKeys,
+          tupleElement(sumMap(range(posOff, posOff + toInt64(length(posInc))), posInc), 2) AS gPosCounts,
+          tupleElement(sumMap(range(negOff, negOff + toInt64(length(negInc))), negInc), 1) AS gNegKeys,
+          tupleElement(sumMap(range(negOff, negOff + toInt64(length(negInc))), negInc), 2) AS gNegCounts
+        FROM (WITH hist_samples AS (
+SELECT
+          metrics_exponential_histogram.TimeUnix AS TimeUnix,
+          metrics_exponential_histogram.ServiceName AS groupName,
+          cityHash64(metrics_exponential_histogram.ServiceName, mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes), mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) AS series,
+          metrics_exponential_histogram.AggregationTemporality AS temporality,
+          metrics_exponential_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_exponential_histogram.StartTimeUnix, 1, metrics_exponential_histogram.StartTimeUnix) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
+          lagInFrame(metrics_exponential_histogram.TimeUnix, 1, metrics_exponential_histogram.TimeUnix) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
+          if(((count() OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_exponential_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND) AND metrics_exponential_histogram.StartTimeUnix < metrics_exponential_histogram.TimeUnix), 1, 0) AS fresh,
+          metrics_exponential_histogram.Count AS sCount,
+          lagInFrame(metrics_exponential_histogram.Count, 1, metrics_exponential_histogram.Count) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevCount,
+          metrics_exponential_histogram.Sum AS sSum,
+          lagInFrame(metrics_exponential_histogram.Sum, 1, metrics_exponential_histogram.Sum) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
+          metrics_exponential_histogram.Min AS sMin,
+          metrics_exponential_histogram.Max AS sMax,
+          Scale AS scale,
+          lagInFrame(Scale, 1, Scale) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevScale,
+          ZeroCount AS zeroCount,
+          lagInFrame(ZeroCount, 1, ZeroCount) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevZero,
+          PositiveOffset AS posOffset,
+          lagInFrame(PositiveOffset, 1, PositiveOffset) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevPosOffset,
+          PositiveBucketCounts AS pos,
+          lagInFrame(PositiveBucketCounts, 1, PositiveBucketCounts) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevPos,
+          NegativeOffset AS negOffset,
+          lagInFrame(NegativeOffset, 1, NegativeOffset) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevNegOffset,
+          NegativeBucketCounts AS neg,
+          lagInFrame(NegativeBucketCounts, 1, NegativeBucketCounts) OVER (PARTITION BY metrics_exponential_histogram.ServiceName, metrics_exponential_histogram.MetricName, metrics_exponential_histogram.ScopeName, cityHash64(mapKeys(metrics_exponential_histogram.Attributes), mapValues(metrics_exponential_histogram.Attributes)), cityHash64(mapKeys(metrics_exponential_histogram.ResourceAttributes), mapValues(metrics_exponential_histogram.ResourceAttributes)) ORDER BY metrics_exponential_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevNeg
+        FROM metrics_exponential_histogram
+        WHERE metrics_exponential_histogram.MetricName = 'db.client.operation.duration'
+          AND metrics_exponential_histogram.OrgId = 'org_sql_catalog'
+          AND metrics_exponential_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
+          AND metrics_exponential_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND bitAnd(Flags, 1) = 0
+)
+SELECT
+          hist_samples.TimeUnix AS TimeUnix,
+          hist_samples.groupName AS groupName,
+          hist_samples.series AS series,
+          hist_samples.sMin AS sMin,
+          hist_samples.sMax AS sMax,
+          if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount)) AS sObservations,
+          (temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)) AS whole,
+          if(whole OR (empty(prevPos) AND empty(prevNeg)), scale, least(scale, prevScale)) AS bScale,
+          least(greatest(scale - bScale, 0), 62) AS curShift,
+          least(greatest(prevScale - bScale, 0), 62) AS prevShift,
+          if(whole, toFloat64(zeroCount), greatest(toFloat64(zeroCount) - toFloat64(prevZero), 0)) AS zeroInc,
+          if(curShift = 0, arrayMap(c -> toFloat64(c), pos), arrayPopFront(arrayDifference(arrayPushFront(arrayFilter((c, i, r) -> r = 1 OR bitAnd(toInt64(posOffset) + i, bitShiftLeft(toInt64(1), curShift) - 1) = 0, arrayCumSum(arrayMap(c -> toFloat64(c), pos)), arrayEnumerate(pos), arrayReverse(arrayEnumerate(pos))), toFloat64(0))))) AS posCur,
+          bitShiftRight(toInt64(posOffset), curShift) AS posCurOff,
+          if(whole, emptyArrayFloat64(), if(prevShift = 0, arrayMap(c -> toFloat64(c), prevPos), arrayPopFront(arrayDifference(arrayPushFront(arrayFilter((c, i, r) -> r = 1 OR bitAnd(toInt64(prevPosOffset) + i, bitShiftLeft(toInt64(1), prevShift) - 1) = 0, arrayCumSum(arrayMap(c -> toFloat64(c), prevPos)), arrayEnumerate(prevPos), arrayReverse(arrayEnumerate(prevPos))), toFloat64(0)))))) AS posPrev,
+          bitShiftRight(toInt64(prevPosOffset), prevShift) AS posPrevOff,
+          least(posCurOff, posPrevOff) AS posLow,
+          greatest(posCurOff + toInt64(length(posCur)), posPrevOff + toInt64(length(posPrev))) - posLow AS posSpan,
+          multiIf(empty(posPrev), posCur, empty(posCur) OR posSpan > 8192, emptyArrayFloat64(), arrayMap((c, p) -> greatest(c - p, 0), arrayResize(arrayConcat(arrayWithConstant(least(posCurOff - posLow, 8192), toFloat64(0)), posCur), least(posSpan, 8192)), arrayResize(arrayConcat(arrayWithConstant(least(posPrevOff - posLow, 8192), toFloat64(0)), posPrev), least(posSpan, 8192)))) AS posInc,
+          if(empty(posPrev), posCurOff, posLow) AS posOff,
+          if(curShift = 0, arrayMap(c -> toFloat64(c), neg), arrayPopFront(arrayDifference(arrayPushFront(arrayFilter((c, i, r) -> r = 1 OR bitAnd(toInt64(negOffset) + i, bitShiftLeft(toInt64(1), curShift) - 1) = 0, arrayCumSum(arrayMap(c -> toFloat64(c), neg)), arrayEnumerate(neg), arrayReverse(arrayEnumerate(neg))), toFloat64(0))))) AS negCur,
+          bitShiftRight(toInt64(negOffset), curShift) AS negCurOff,
+          if(whole, emptyArrayFloat64(), if(prevShift = 0, arrayMap(c -> toFloat64(c), prevNeg), arrayPopFront(arrayDifference(arrayPushFront(arrayFilter((c, i, r) -> r = 1 OR bitAnd(toInt64(prevNegOffset) + i, bitShiftLeft(toInt64(1), prevShift) - 1) = 0, arrayCumSum(arrayMap(c -> toFloat64(c), prevNeg)), arrayEnumerate(prevNeg), arrayReverse(arrayEnumerate(prevNeg))), toFloat64(0)))))) AS negPrev,
+          bitShiftRight(toInt64(prevNegOffset), prevShift) AS negPrevOff,
+          least(negCurOff, negPrevOff) AS negLow,
+          greatest(negCurOff + toInt64(length(negCur)), negPrevOff + toInt64(length(negPrev))) - negLow AS negSpan,
+          multiIf(empty(negPrev), negCur, empty(negCur) OR negSpan > 8192, emptyArrayFloat64(), arrayMap((c, p) -> greatest(c - p, 0), arrayResize(arrayConcat(arrayWithConstant(least(negCurOff - negLow, 8192), toFloat64(0)), negCur), least(negSpan, 8192)), arrayResize(arrayConcat(arrayWithConstant(least(negPrevOff - negLow, 8192), toFloat64(0)), negPrev), least(negSpan, 8192)))) AS negInc,
+          if(empty(negPrev), negCurOff, negLow) AS negOff
+        FROM hist_samples
+        WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00') AS exp_increases
+        GROUP BY bucket, groupName, bScale) AS by_scale) AS rescaled
+        GROUP BY bucket, groupName) AS merged) AS walk) AS estimated
+        WHERE isFinite(estimate)
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- spec:metrics-timeseries-grouped-by-attribute:baseline  [3424abc4]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20695,11 +20874,7 @@ SELECT
           metrics_histogram.Sum AS sSum,
           lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
           metrics_histogram.Min AS sMin,
-          metrics_histogram.Max AS sMax,
-          emptyArrayUInt64() AS buckets,
-          lagInFrame(emptyArrayUInt64(), 1, emptyArrayUInt64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
-          emptyArrayFloat64() AS bounds,
-          lagInFrame(emptyArrayFloat64(), 1, emptyArrayFloat64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+          metrics_histogram.Max AS sMax
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
@@ -20723,7 +20898,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-resource:baseline  [56259202]
+-- spec:metrics-timeseries-grouped-by-resource:baseline  [63a2edc6]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20745,11 +20920,7 @@ SELECT
           metrics_histogram.Sum AS sSum,
           lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
           metrics_histogram.Min AS sMin,
-          metrics_histogram.Max AS sMax,
-          emptyArrayUInt64() AS buckets,
-          lagInFrame(emptyArrayUInt64(), 1, emptyArrayUInt64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
-          emptyArrayFloat64() AS bounds,
-          lagInFrame(emptyArrayFloat64(), 1, emptyArrayFloat64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+          metrics_histogram.Max AS sMax
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
@@ -20774,7 +20945,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries-grouped-by-several-keys:baseline  [b9cf9e06]
+-- spec:metrics-timeseries-grouped-by-several-keys:baseline  [14a5aa1a]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20796,11 +20967,7 @@ SELECT
           metrics_histogram.Sum AS sSum,
           lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
           metrics_histogram.Min AS sMin,
-          metrics_histogram.Max AS sMax,
-          emptyArrayUInt64() AS buckets,
-          lagInFrame(emptyArrayUInt64(), 1, emptyArrayUInt64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
-          emptyArrayFloat64() AS bounds,
-          lagInFrame(emptyArrayFloat64(), 1, emptyArrayFloat64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+          metrics_histogram.Max AS sMax
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
@@ -20822,6 +20989,67 @@ SELECT
         WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
         GROUP BY bucket, groupName) AS merged
         WHERE merged.observations > 0
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- spec:metrics-timeseries-histogram-percentile:baseline  [24279971]
+SELECT
+          estimated.bucket AS bucket,
+          estimated.groupName AS groupName,
+          least(greatest(estimated.estimate, ifNull(estimated.bMin, estimated.estimate)), ifNull(estimated.bMax, estimated.estimate)) AS value,
+          toUInt64(estimated.observations) AS dataPointCount,
+          estimated.seriesCount AS seriesCount
+        FROM (SELECT
+          merged.bucket AS bucket,
+          merged.groupName AS groupName,
+          merged.observations AS observations,
+          merged.seriesCount AS seriesCount,
+          merged.bMin AS bMin,
+          merged.bMax AS bMax,
+          multiIf(bTotal <= 0 OR arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)) = 0, nan, isInfinite(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), if(empty(bBounds), nan, if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds))) + (greatest(ifNull(bMax, if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)))), if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)))) - if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)))) * if(bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, ((0.95 * bTotal) - (arrayCumSum(bCounts)[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] - bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)])) / bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], 0)), if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds))) + (bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] - if(empty(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)), if(bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, 0, bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)]), arrayMax(arrayFilter(b -> b < bKeys[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], bBounds)))) * if(bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] > 0, ((0.95 * bTotal) - (arrayCumSum(bCounts)[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)] - bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)])) / bCounts[greatest(arrayFirstIndex(c -> c >= (0.95 * bTotal), arrayCumSum(bCounts)), 1)], 0)) AS estimate
+        FROM (WITH hist_samples AS (
+SELECT
+          metrics_histogram.TimeUnix AS TimeUnix,
+          metrics_histogram.ServiceName AS groupName,
+          cityHash64(metrics_histogram.ServiceName, mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes), mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) AS series,
+          metrics_histogram.AggregationTemporality AS temporality,
+          metrics_histogram.StartTimeUnix AS startTime,
+          lagInFrame(metrics_histogram.StartTimeUnix, 1, metrics_histogram.StartTimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevStart,
+          lagInFrame(metrics_histogram.TimeUnix, 1, metrics_histogram.TimeUnix) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevTime,
+          if(((count() OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) = 1 AND metrics_histogram.StartTimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND) AND metrics_histogram.StartTimeUnix < metrics_histogram.TimeUnix), 1, 0) AS fresh,
+          metrics_histogram.Count AS sCount,
+          lagInFrame(metrics_histogram.Count, 1, metrics_histogram.Count) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevCount,
+          metrics_histogram.Sum AS sSum,
+          lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
+          metrics_histogram.Min AS sMin,
+          metrics_histogram.Max AS sMax,
+          metrics_histogram.BucketCounts AS buckets,
+          lagInFrame(metrics_histogram.BucketCounts, 1, metrics_histogram.BucketCounts) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
+          metrics_histogram.ExplicitBounds AS bounds,
+          lagInFrame(metrics_histogram.ExplicitBounds, 1, metrics_histogram.ExplicitBounds) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+        FROM metrics_histogram
+        WHERE metrics_histogram.MetricName = 'http.server.request.duration'
+          AND metrics_histogram.OrgId = 'org_sql_catalog'
+          AND metrics_histogram.TimeUnix >= '2026-01-01 10:30:00' - INTERVAL 300 SECOND
+          AND metrics_histogram.TimeUnix <= '2026-01-03 14:15:00'
+          AND metrics_histogram.ServiceName = 'api'
+          AND bitAnd(Flags, 1) = 0
+)
+SELECT
+          toStartOfInterval(hist_samples.TimeUnix, INTERVAL 300 SECOND) AS bucket,
+          hist_samples.groupName AS groupName,
+          sum(if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))) AS observations,
+          uniqExact(hist_samples.series) AS seriesCount,
+          tupleElement(sumMap(if(length(buckets) = length(bounds) + 1, arrayPushBack(bounds, inf), emptyArrayFloat64()), if(length(buckets) = length(bounds) + 1, multiIf((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets)))), emptyArrayFloat64())), 1) AS bKeys,
+          tupleElement(sumMap(if(length(buckets) = length(bounds) + 1, arrayPushBack(bounds, inf), emptyArrayFloat64()), if(length(buckets) = length(bounds) + 1, multiIf((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets)))), emptyArrayFloat64())), 2) AS bCounts,
+          sum(arraySum(if(length(buckets) = length(bounds) + 1, multiIf((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets)))), emptyArrayFloat64()))) AS bTotal,
+          arraySort(groupUniqArrayArray(if(arraySum(if(length(buckets) = length(bounds) + 1, multiIf((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets)))), emptyArrayFloat64())) > 0, bounds, emptyArrayFloat64()))) AS bBounds,
+          if(countIf((isNull(sMin) OR isNull(sMax)) AND if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount)) > 0) = 0, min(sMin), NULL) AS bMin,
+          if(countIf((isNull(sMin) OR isNull(sMax)) AND if((temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime > prevStart AND startTime < TimeUnix)), toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount)) > 0) = 0, max(sMax), NULL) AS bMax
+        FROM hist_samples
+        WHERE hist_samples.TimeUnix >= '2026-01-01 10:30:00'
+        GROUP BY bucket, groupName) AS merged) AS estimated
+        WHERE isFinite(estimate)
         ORDER BY bucket ASC
         FORMAT JSON
 
@@ -20889,7 +21117,7 @@ SELECT
         ORDER BY bucket ASC
         FORMAT JSON
 
--- spec:metrics-timeseries:baseline  [76969933]
+-- spec:metrics-timeseries:baseline  [f6cf8365]
 SELECT
           merged.bucket AS bucket,
           merged.groupName AS groupName,
@@ -20911,11 +21139,7 @@ SELECT
           metrics_histogram.Sum AS sSum,
           lagInFrame(metrics_histogram.Sum, 1, metrics_histogram.Sum) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevSum,
           metrics_histogram.Min AS sMin,
-          metrics_histogram.Max AS sMax,
-          emptyArrayUInt64() AS buckets,
-          lagInFrame(emptyArrayUInt64(), 1, emptyArrayUInt64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBuckets,
-          emptyArrayFloat64() AS bounds,
-          lagInFrame(emptyArrayFloat64(), 1, emptyArrayFloat64()) OVER (PARTITION BY metrics_histogram.ServiceName, metrics_histogram.MetricName, metrics_histogram.ScopeName, cityHash64(mapKeys(metrics_histogram.Attributes), mapValues(metrics_histogram.Attributes)), cityHash64(mapKeys(metrics_histogram.ResourceAttributes), mapValues(metrics_histogram.ResourceAttributes)) ORDER BY metrics_histogram.TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS prevBounds
+          metrics_histogram.Max AS sMax
         FROM metrics_histogram
         WHERE metrics_histogram.MetricName = 'http.server.request.duration'
           AND metrics_histogram.OrgId = 'org_sql_catalog'
