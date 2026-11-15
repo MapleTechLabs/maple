@@ -319,6 +319,71 @@ describe("UptimeMonitorsService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("ignores the certificate of a check that started before the target changed", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const old = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 1_000, true), certificate: old }),
+			])
+			yield* TestClock.setTime(10_000)
+			yield* service.update(ORG, monitor.id, {
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			// Started at 5 s against the old host, delivered after the edit.
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 5_000, true), certificate: old }),
+			])
+			const read = yield* service.get(ORG, monitor.id)
+			assert.strictEqual(read.state.lastCheck?.at, 5_000)
+			assert.isUndefined(read.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("forgets the certificate when an origin change also resumes the monitor", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const monitor = yield* createHttp("API")
+			const certificate = { expiresAt: 9_000_000, subject: "status.example.com", issuer: "R11" }
+			yield* service.recordChecks([
+				new UptimeCheckReport({ ...report(monitor.id, 1_000, true), certificate }),
+			])
+			yield* service.update(ORG, monitor.id, { enabled: false, updatedBy: USER })
+			const resumed = yield* service.update(ORG, monitor.id, {
+				enabled: true,
+				config: httpConfig("https://new.example.com/health"),
+				updatedBy: USER,
+			})
+			assert.isUndefined(resumed.state.lastCheck?.certificate)
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("refuses an alert group key as a service name", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* UptimeMonitorsService
+			const created = yield* Effect.flip(
+				service.create(ORG, {
+					name: "API",
+					kind: "http",
+					config: httpConfig(),
+					serviceName: "__tls_certificate__",
+					createdBy: USER,
+				}),
+			)
+			assert.strictEqual(created.message, "'__tls_certificate__' is reserved and cannot name a service")
+			const monitor = yield* createHttp("API")
+			const updated = yield* Effect.flip(
+				service.update(ORG, monitor.id, { serviceName: "__total__", updatedBy: USER }),
+			)
+			assert.strictEqual(updated.message, "'__total__' is reserved and cannot name a service")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("goes down after failures_to_down failures in a row and recovers on a success", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {

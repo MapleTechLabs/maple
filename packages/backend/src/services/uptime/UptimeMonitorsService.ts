@@ -16,6 +16,7 @@ import {
 import {
 	UptimeMonitorLimitReachedError,
 	UptimeMonitorNotFoundError,
+	UNGROUPED_GROUP_KEY,
 	UptimeMonitorPersistenceError,
 	UptimeMonitorValidationError,
 } from "@maple/domain/http"
@@ -36,6 +37,7 @@ import {
 	firstFailedAssertion,
 	heartbeatDeadline,
 	uptimeHttpRequest,
+	UPTIME_CERTIFICATE_GROUP_KEY,
 	UPTIME_REDACTED_HEADER_VALUE,
 	UptimeCheckDetail,
 	UptimeMonitorConfig,
@@ -286,6 +288,17 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 	return config
 })
 
+/** The alert groups a monitor's rule reserves: a service of that name would share its incidents. */
+const RESERVED_SERVICE_NAMES: ReadonlySet<string> = new Set([
+	UNGROUPED_GROUP_KEY,
+	UPTIME_CERTIFICATE_GROUP_KEY,
+])
+
+const validateServiceName = (serviceName: string | null) =>
+	serviceName !== null && RESERVED_SERVICE_NAMES.has(serviceName)
+		? Effect.fail(invalid(`'${serviceName}' is reserved and cannot name a service`))
+		: Effect.succeed(serviceName)
+
 const validateName = (name: string) => {
 	const trimmed = Str.trim(name)
 	return trimmed.length === 0 ? Effect.fail(invalid("Name is required")) : Effect.succeed(trimmed)
@@ -422,6 +435,7 @@ const selectCheckStates = () =>
 			lastCheckJson: PG.undecoded($.s.lastCheckJson),
 			recentJson: PG.undecoded($.s.recentJson),
 			stateUpdatedAt: $.s.updatedAt,
+			configUpdatedAt: $.updatedAt,
 		}))
 
 const StoredCheckState = Schema.Struct({
@@ -445,6 +459,8 @@ interface CheckStateRow {
 	readonly lastCheckJson: UptimeCheckDetail | null
 	readonly recentJson: ReadonlyArray<UptimeRecentCheck>
 	readonly stateUpdatedAt: number
+	/** When the monitor's settings last changed: a check that started before probed the old target. */
+	readonly configUpdatedAt: number
 }
 
 interface FoldedChecks {
@@ -496,6 +512,18 @@ export const certificateOrigin = (config: UptimeMonitorConfig): string | null =>
 		onNone: () => null,
 		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
 	})
+}
+
+/**
+ * `detail` with the certificate `previous` held: a check that started before the monitor's last
+ * edit probed the old target, so it neither sets nor clears the certificate.
+ */
+const keepCertificate = (
+	detail: UptimeCheckDetail,
+	previous: UptimeCheckDetail | null,
+): UptimeCheckDetail => {
+	const { certificate: _ignored, ...rest } = detail
+	return previous?.certificate === undefined ? rest : { ...rest, certificate: previous.certificate }
 }
 
 /** Drops the stored certificate from a monitor's last check, keeping the rest of it. */
@@ -760,7 +788,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 				const stored = yield* sealHeaders(orgId, id, config)
 				const ruleId = AlertRuleId.make(randomUUID())
 				const enabled = input.enabled !== false
-				const serviceName = input.serviceName ?? null
+				const serviceName = yield* validateServiceName(input.serviceName ?? null)
 				const destinationIds = Arr.dedupe(input.destinationIds ?? [])
 				const payer = yield* dbExecute((db) =>
 					db.transaction(
@@ -848,6 +876,7 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 						`A ${current.kind} monitor cannot become ${input.config._tag}; create a new monitor instead`,
 					)
 				}
+				if (input.serviceName !== undefined) yield* validateServiceName(input.serviceName)
 				if (input.config !== undefined)
 					yield* refuseRedactedHeadersForNewOrigin(current.config, input.config)
 				const keptConfig =
@@ -963,6 +992,14 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 									})
 									.where(($) => [$.orgId.eq(orgId), $.id.eq(monitorId)]),
 							)
+							// A certificate belongs to the host that presented it: a new target forgets it,
+							// whether or not the same edit pauses or resumes the monitor.
+							if (
+								config !== undefined &&
+								certificateOrigin(config) !== certificateOrigin(locked.config)
+							) {
+								yield* forgetCertificate(db, orgId, monitorId)
+							}
 							// Pause parks the state; resume starts over from `pending`.
 							if (Option.isNone(enabledChange)) {
 								// New settings drop check batches computed from the old ones (they fence on it).
@@ -972,13 +1009,6 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 											.set({ updatedAt: now })
 											.where(($) => [$.orgId.eq(orgId), $.monitorId.eq(monitorId)]),
 									)
-								}
-								// A certificate belongs to the host that presented it: a new target forgets it.
-								if (
-									config !== undefined &&
-									certificateOrigin(config) !== certificateOrigin(locked.config)
-								) {
-									yield* forgetCertificate(db, orgId, monitorId)
 								}
 								return
 							}
@@ -1150,7 +1180,9 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								statusChangedAt: folded.statusChangedAt,
 								// Folded in order, so a renewal earlier in a retried batch is not lost to a later failure.
 								lastCheckJson: Arr.reduce(fresh, row.lastCheckJson, (previous, report) =>
-									toCheckDetail(report, previous),
+									report.checkedAt < row.configUpdatedAt
+										? keepCertificate(toCheckDetail(report, previous), previous)
+										: toCheckDetail(report, previous),
 								),
 								recentJson: folded.recent,
 								readUpdatedAt: row.stateUpdatedAt,
