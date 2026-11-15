@@ -62,6 +62,8 @@ const stringMap = T.map(T.string, T.string)
 const metricTable = (name: PromqlMetricTable) =>
 	table(name, {
 		external: true,
+		// Without it the OrgId filter does not count and the warehouse refuses every read as untenanted.
+		tenantColumn: "OrgId",
 		columns: {
 			OrgId: orgId,
 			MetricName: T.string,
