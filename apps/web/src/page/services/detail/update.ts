@@ -695,7 +695,10 @@ export const routeChanged = (
 	if (searchHref(model.serviceName, model.search) === searchHref(route.serviceName, route.search))
 		return { model }
 	const next = { ...model, search: route.search }
-	return isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load")
+	return followProfile(
+		model,
+		isWindowChange(model.search, route.search) ? resolveClock(next) : sync(next, context, "Load"),
+	)
 }
 
 /** The window re-resolves against now on a window or zone change. */
@@ -821,7 +824,22 @@ const retrying = (model: Model, target: RetryTarget): Model => {
 	}
 }
 
+/**
+ * A profile read for another window, environment or release opens on its whole flame graph: the
+ * zoom, the selection and the search were the last profile's. A refresh of the same read keeps them.
+ */
+const followProfile = (before: Model, step: Return): Return => {
+	const was = before.profile.key
+	const now = step.model.profile.key
+	return was === null || now === null || Keyed.baseKey(was) === Keyed.baseKey(now)
+		? step
+		: { ...step, model: { ...step.model, flamegraph: ProfileFlamegraph.reset(step.model.flamegraph) } }
+}
+
 export const update = (model: Model, message: Message, context: PageContext): Return =>
+	followProfile(model, updateMessage(model, message, context))
+
+const updateMessage = (model: Model, message: Message, context: PageContext): Return =>
 	Message.match<Return>(message, {
 		CompletedResolveClock: ({ nowMs, mode }) => sync({ ...model, nowMs }, context, mode),
 		CompletedFetchOverview: ({ key, result }) =>

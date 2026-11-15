@@ -20,7 +20,7 @@ import type { PageContext } from "../../contract"
 import { FetchOperations, FetchProfile, ProfileInput } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceProfile } from "./model"
-import { init, update } from "./update"
+import { init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 import { PROFILE_CHART_ROWS } from "./view-profiles"
 
@@ -77,6 +77,33 @@ const profile: NonNullable<ServiceProfile> = {
 }
 
 describe("service detail, Profiles tab", () => {
+	test("another environment opens the profile whole; the same read keeps the view", () => {
+		const page = pageFor(inRollout)
+		const searched = page.pageUpdate(
+			page.answered(Result.succeed(profile)),
+			Message.GotFlamegraphMessage({
+				message: ProfileFlamegraph.Message.ChangedSearch({ value: "rank" }),
+			}),
+		).model
+		expect(searched.flamegraph.search).toBe("rank")
+
+		const unchanged = routeChanged(
+			searched,
+			{ serviceName: "checkout-api", search: searched.search },
+			inRollout,
+		).model
+		expect(unchanged.flamegraph.search).toBe("rank")
+
+		const elsewhere = routeChanged(
+			searched,
+			{ serviceName: "checkout-api", search: { ...searched.search, environments: ["staging"] } },
+			inRollout,
+		).model
+		expect(elsewhere.profile.key).not.toBe(searched.profile.key)
+		expect(elsewhere.flamegraph.search).toBe("")
+		expect(elsewhere.flamegraph.resetToken).toBe(searched.flamegraph.resetToken + 1)
+	})
+
 	test("an org outside the rollout has no Profiles tab, and its URL reads as Overview", () => {
 		const page = pageFor(outside)
 		const opened = page.entered({ tab: "profiles" })
