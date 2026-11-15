@@ -1,4 +1,6 @@
 import {
+	CloudflareFeatureSettingsRequest,
+	CloudflareFeatureSwitches,
 	CloudflareUsageResponse,
 	CloudflareZoneSettingsRequest,
 	CloudflareZoneWatchSetting,
@@ -15,6 +17,28 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure, toLoadFailure, settleTo } from "@maple/views/data/load-failure"
 import { MapleInternalApiClient } from "../../../../platform/api-clients"
 import { IntegrationStatuses } from "../../../../data/integration-statuses"
+import { FeatureSwitchesModel, initFeatureSwitches } from "../../../integrations/feature-switches"
+
+/** One of the `INTEGRATION_FEATURES.cloudflare` switches, as stored. */
+export const CloudflareFeatureFlag = Schema.Literals([
+	"httpTrafficEnabled",
+	"firewallEnabled",
+	"dnsEnabled",
+	"workersEnabled",
+	"queuesEnabled",
+	"durableObjectsEnabled",
+])
+export type CloudflareFeatureFlag = typeof CloudflareFeatureFlag.Type
+
+/** Every feature on: what an older API that sends no switches means. */
+export const ALL_CLOUDFLARE_FEATURES = new CloudflareFeatureSwitches({
+	httpTrafficEnabled: true,
+	firewallEnabled: true,
+	dnsEnabled: true,
+	workersEnabled: true,
+	queuesEnabled: true,
+	durableObjectsEnabled: true,
+})
 
 export const ZoneSortKey = Schema.Literals(["name", "status", "requests"])
 export type ZoneSortKey = typeof ZoneSortKey.Type
@@ -38,6 +62,8 @@ export const CloudflareMessage = defineMessageUnion({
 	ChangedManagedZoneSearch: { value: Schema.String },
 	SubmittedZoneSettings: {},
 	CompletedZones: { failure: Schema.NullOr(LoadFailure) },
+	ToggledFeature: { flag: CloudflareFeatureFlag },
+	CompletedFeatures: { failure: Schema.NullOr(LoadFailure) },
 	...ChartRuntimeMessages,
 	GotSparklineMessage: { message: Chart.Message },
 })
@@ -73,6 +99,7 @@ export const initCloudflareCard = () => ({
 	zoneDraftSearch: "",
 	isSavingZones: false,
 	zoneSaveError: null,
+	features: initFeatureSwitches,
 })
 
 export const CloudflareCardModel = Schema.Struct({
@@ -93,6 +120,8 @@ export const CloudflareCardModel = Schema.Struct({
 	zoneDraftSearch: Schema.String,
 	isSavingZones: Schema.Boolean,
 	zoneSaveError: Schema.NullOr(Schema.String),
+	/** The feature switches: each toggle saves at once. */
+	features: FeatureSwitchesModel(CloudflareFeatureSwitches),
 })
 export type CloudflareCardModel = typeof CloudflareCardModel.Type
 
@@ -151,6 +180,24 @@ export const SaveCloudflareZones = Command.define("SaveCloudflareZones", {
 			Effect.match({
 				onFailure: (error) => CloudflareMessage.CompletedZones({ failure: toLoadFailure(error) }),
 				onSuccess: () => CloudflareMessage.CompletedZones({ failure: null }),
+			}),
+		),
+})
+
+/** `cloudflareFeatures` with only the toggled switch, so a stale tab never rewrites the others. */
+export const SaveCloudflareFeatures = Command.define("SaveCloudflareFeatures", {
+	args: { flag: CloudflareFeatureFlag, enabled: Schema.Boolean },
+	messages: [CloudflareMessage.CompletedFeatures],
+	execute: ({ flag, enabled }) =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalApiClient
+			yield* client.integrations.cloudflareFeatures({
+				payload: new CloudflareFeatureSettingsRequest({ [flag]: enabled }),
+			})
+		}).pipe(
+			Effect.match({
+				onFailure: (error) => CloudflareMessage.CompletedFeatures({ failure: toLoadFailure(error) }),
+				onSuccess: () => CloudflareMessage.CompletedFeatures({ failure: null }),
 			}),
 		),
 })

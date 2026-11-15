@@ -4,10 +4,25 @@ import {
 	IntegrationsRevokedError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
+	LinearFeatureSwitches,
+	type LinearFeatureSettingsRequest,
 	OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
+import * as PG from "@maple-dev/effect-orm/postgres"
+import { LinearFeatureSettings } from "@maple/db/tables"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { LinearOAuthClientSecret } from "@maple/infra/secrets"
@@ -29,6 +44,22 @@ const REVOKE_URL = "https://api.linear.app/oauth/revoke"
 const SCOPES = "read,write"
 
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
+
+/** Every feature on: an org that never changed a switch. */
+const switchesOf = (row: PG.SelectRowOf<typeof LinearFeatureSettings>) =>
+	new LinearFeatureSwitches({
+		openIssuesEnabled: row.openIssuesEnabled,
+		updateCommentsEnabled: row.updateCommentsEnabled,
+		reopenIssuesEnabled: row.reopenIssuesEnabled,
+		resolveCommentsEnabled: row.resolveCommentsEnabled,
+	})
+
+export const ALL_LINEAR_FEATURES = new LinearFeatureSwitches({
+	openIssuesEnabled: true,
+	updateCommentsEnabled: true,
+	reopenIssuesEnabled: true,
+	resolveCommentsEnabled: true,
+})
 
 const ViewerSchema = Schema.Struct({
 	organization: Schema.Struct({ id: Schema.String, name: Schema.String }),
@@ -103,9 +134,18 @@ export interface LinearOAuthServiceApi {
 				readonly workspaceName: string | null
 				readonly connectedByUserId: UserId
 				readonly revoked: boolean
+				readonly features: LinearFeatureSwitches
 		  },
 		IntegrationsPersistenceError
 	>
+	/** The org's switches; every feature is on until someone changes one. */
+	readonly getFeatures: (orgId: OrgId) => Effect.Effect<LinearFeatureSwitches, IntegrationsPersistenceError>
+	/** Saves the switches the update names; the others keep their value. */
+	readonly setFeatures: (
+		orgId: OrgId,
+		userId: UserId,
+		update: LinearFeatureSettingsRequest,
+	) => Effect.Effect<LinearFeatureSwitches, IntegrationsPersistenceError>
 	/**
 	 * Run `use` with the org's Linear token. A token Linear rejects is refreshed
 	 * once and retried; a rejected fresh token marks the connection revoked.
@@ -202,6 +242,64 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				return { orgId, returnTo: stateRow.returnTo ?? null }
 			})
 
+			const getFeatures = Effect.fn("LinearOAuthService.getFeatures")(function* (orgId: OrgId) {
+				const rows = yield* oauth.dbExecute((db) =>
+					db.run(
+						PG.from(LinearFeatureSettings)
+							.select()
+							.where(($) => [$.orgId.eq(orgId)])
+							.limit(1),
+					),
+				)
+				const row = rows[0]
+				return row === undefined ? ALL_LINEAR_FEATURES : switchesOf(row)
+			})
+
+			const setFeatures = Effect.fn("LinearOAuthService.setFeatures")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				update: LinearFeatureSettingsRequest,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				// Only the switches sent: a concurrent save of another one keeps its value.
+				const set = {
+					...(update.openIssuesEnabled !== undefined && {
+						openIssuesEnabled: update.openIssuesEnabled,
+					}),
+					...(update.updateCommentsEnabled !== undefined && {
+						updateCommentsEnabled: update.updateCommentsEnabled,
+					}),
+					...(update.reopenIssuesEnabled !== undefined && {
+						reopenIssuesEnabled: update.reopenIssuesEnabled,
+					}),
+					...(update.resolveCommentsEnabled !== undefined && {
+						resolveCommentsEnabled: update.resolveCommentsEnabled,
+					}),
+				}
+				if (Rec.isEmptyRecord<string, unknown>(set)) return yield* getFeatures(orgId)
+				const now = yield* Clock.currentTimeMillis
+				const rows = yield* oauth.dbExecute((db) =>
+					db.run(
+						PG.insertInto(LinearFeatureSettings)
+							.values({
+								orgId,
+								...ALL_LINEAR_FEATURES,
+								...set,
+								createdAt: now,
+								updatedAt: now,
+								updatedBy: userId,
+							})
+							.onConflictDoUpdate({
+								target: ["orgId"],
+								set: () => ({ ...set, updatedAt: now, updatedBy: userId }),
+							})
+							.returning(),
+					),
+				)
+				const row = rows[0]
+				return row === undefined ? yield* getFeatures(orgId) : switchesOf(row)
+			})
+
 			const getStatus = Effect.fn("LinearOAuthService.getStatus")(function* (orgId: OrgId) {
 				const row = yield* oauth.loadConnection(orgId)
 				if (row === null) return { connected: false } as const
@@ -210,6 +308,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					workspaceName: row.externalAccountName,
 					connectedByUserId: row.connectedByUserId,
 					revoked: row.revokedAt !== null,
+					features: yield* getFeatures(orgId),
 				} as const
 			})
 
@@ -285,6 +384,8 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				startConnect,
 				completeConnect,
 				getStatus,
+				getFeatures,
+				setFeatures,
 				withAccessToken,
 				listTeams,
 				getTeam,

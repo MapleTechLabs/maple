@@ -571,7 +571,7 @@ describe("ChatWorkspaceService", () => {
 			)
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
-				yield* chat.updateSettings(ORG, id, { approver: "moderators" })
+				yield* chat.updateWorkspace(ORG, id, { settings: { approver: "moderators" } })
 				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
 				yield* chat.completeInstall(
 					TEST_CONNECTOR,
@@ -598,17 +598,104 @@ describe("ChatWorkspaceService", () => {
 			)
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
-				const saved = yield* chat.updateSettings(ORG, id, { approver: "moderators" })
+				const saved = yield* chat.updateWorkspace(ORG, id, { settings: { approver: "moderators" } })
 				assert.deepStrictEqual(saved.settings, { approver: "moderators" })
 				// Read back through the path the bot uses, not just the write's return.
 				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-2")
 				assert.deepStrictEqual(Option.getOrUndefined(resolved)?.settings, { approver: "moderators" })
 				// Blank values are dropped before the connector sees them, so an
 				// emptied text field reads as "unset" for every connector.
-				const cleared = yield* chat.updateSettings(ORG, id, { approver: "   " })
+				const cleared = yield* chat.updateWorkspace(ORG, id, { settings: { approver: "   " } })
 				assert.deepStrictEqual(cleared.settings, {})
-				const failure = yield* chat.updateSettings(ORG, id, { approver: "ADMINS" }).pipe(Effect.flip)
+				const failure = yield* chat
+					.updateWorkspace(ORG, id, { settings: { approver: "ADMINS" } })
+					.pipe(Effect.flip)
 				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsValidationError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("saves feature switches one at a time and hands the bot its answer switch", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"77777777-7777-4777-8777-777777777777",
+				ORG,
+				"workspace-11",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const before = (yield* chat.list(ORG))[0]?.workspaces[0]
+				assert.deepStrictEqual(before?.features, {
+					alertsEnabled: true,
+					directMessagesEnabled: true,
+					assistantEnabled: true,
+				})
+				const saved = yield* chat.updateWorkspace(ORG, id, { features: { assistantEnabled: false } })
+				assert.deepStrictEqual(saved.features, {
+					alertsEnabled: true,
+					directMessagesEnabled: true,
+					assistantEnabled: false,
+				})
+				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-11")
+				assert.isFalse(Option.getOrUndefined(resolved)?.assistantEnabled)
+				const other = yield* chat
+					.updateWorkspace(OTHER_ORG, id, { features: { alertsEnabled: false } })
+					.pipe(Effect.flip)
+				assert.strictEqual(other._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("two switches saved at once both stick, and an empty update writes nothing", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"78787878-7878-4878-8878-787878787878",
+				ORG,
+				"workspace-12",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				yield* Effect.all(
+					[
+						chat.updateWorkspace(ORG, id, { features: { alertsEnabled: false } }),
+						chat.updateWorkspace(ORG, id, { features: { assistantEnabled: false } }),
+					],
+					{ concurrency: "unbounded" },
+				)
+				const read = yield* chat.updateWorkspace(ORG, id, { features: {} })
+				assert.deepStrictEqual(read.features, {
+					alertsEnabled: false,
+					directMessagesEnabled: true,
+					assistantEnabled: false,
+				})
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("a refused setting saves none of the switches sent with it", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"79797979-7979-4979-8979-797979797979",
+				ORG,
+				"workspace-13",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const failure = yield* chat
+					.updateWorkspace(ORG, id, {
+						settings: { approver: "ADMINS" },
+						features: { alertsEnabled: false },
+					})
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsValidationError")
+				const read = yield* chat.updateWorkspace(ORG, id, {})
+				assert.isTrue(read.features.alertsEnabled)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		}),
 	)
@@ -624,7 +711,9 @@ describe("ChatWorkspaceService", () => {
 			)
 			yield* Effect.gen(function* () {
 				const chat = yield* ChatWorkspaceService
-				const settingsFailure = yield* chat.updateSettings(OTHER_ORG, id, {}).pipe(Effect.flip)
+				const settingsFailure = yield* chat
+					.updateWorkspace(OTHER_ORG, id, { settings: {} })
+					.pipe(Effect.flip)
 				assert.strictEqual(settingsFailure._tag, "@maple/http/errors/IntegrationsNotFoundError")
 				const uninstallFailure = yield* chat.uninstall(OTHER_ORG, id).pipe(Effect.flip)
 				assert.strictEqual(uninstallFailure._tag, "@maple/http/errors/IntegrationsNotFoundError")

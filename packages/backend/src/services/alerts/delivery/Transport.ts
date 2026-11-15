@@ -23,6 +23,7 @@ import type {
 	AlertDestinationId,
 	AlertDestinationType,
 	ChatWorkspaceId,
+	LinearFeatureSwitches,
 	OrgId,
 } from "@maple/domain/http"
 import type { Effect, Result, Schema } from "effect"
@@ -148,7 +149,8 @@ export interface ChatAlertPost {
 /** What the connector answered: who posted it, and the message it made. */
 export interface ChatAlertPosted {
 	readonly connectorName: string
-	readonly messageId: string
+	/** Null when the workspace has alert notifications switched off: nothing was posted. */
+	readonly messageId: string | null
 }
 
 /** The Linear issue an alert thread keeps (`alert_linear_issues`). */
@@ -193,6 +195,8 @@ export interface LinearDeliveryPort {
 		threadKey: string,
 	) => Effect.Effect<LinearThread | null, AlertDeliveryFailure>
 	readonly saveThread: (thread: LinearThread) => Effect.Effect<void, AlertDeliveryFailure>
+	/** The org's Linear switches (`INTEGRATION_FEATURES.linear`); all on until changed. */
+	readonly features: (orgId: OrgId) => Effect.Effect<LinearFeatureSwitches, AlertDeliveryFailure>
 }
 
 export interface EffectTransportDeps {

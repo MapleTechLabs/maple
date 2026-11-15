@@ -9,7 +9,7 @@ import {
 	V2CallbackHostUnavailable,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, Effect, Record as Rec } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import * as Policy from "@maple/domain/policy"
 import { Env } from "@maple/backend/platform/Env"
@@ -31,6 +31,9 @@ const toWorkspace = (workspace: ChatWorkspaceSummary): V2ChatWorkspace => ({
 	external_workspace_id: workspace.externalWorkspaceId,
 	name: workspace.name,
 	settings: workspace.settings,
+	alerts_enabled: workspace.features.alertsEnabled,
+	direct_messages_enabled: workspace.features.directMessagesEnabled,
+	assistant_enabled: workspace.features.assistantEnabled,
 	created_at: isoTimestamp(workspace.createdAt),
 })
 
@@ -194,15 +197,34 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						const workspace = yield* chat.updateSettings(
-							tenant.orgId,
-							params.id,
-							payload.settings,
-						)
-						yield* recordHttpAudit("chat_integration.settings_updated", {
-							resourceId: workspace.id,
-							metadata: { connector: workspace.connector },
+						const features = {
+							...(payload.alerts_enabled !== undefined && {
+								alertsEnabled: payload.alerts_enabled,
+							}),
+							...(payload.direct_messages_enabled !== undefined && {
+								directMessagesEnabled: payload.direct_messages_enabled,
+							}),
+							...(payload.assistant_enabled !== undefined && {
+								assistantEnabled: payload.assistant_enabled,
+							}),
+						}
+						// One statement for both: a refused setting leaves the switches unsaved too.
+						const workspace = yield* chat.updateWorkspace(tenant.orgId, params.id, {
+							...(payload.settings !== undefined && { settings: payload.settings }),
+							features,
 						})
+						if (payload.settings !== undefined) {
+							yield* recordHttpAudit("chat_integration.settings_updated", {
+								resourceId: workspace.id,
+								metadata: { connector: workspace.connector },
+							})
+						}
+						if (!Rec.isEmptyRecord<string, unknown>(features)) {
+							yield* recordHttpAudit("chat_integration.features_updated", {
+								resourceId: workspace.id,
+								metadata: { connector: workspace.connector, ...workspace.features },
+							})
+						}
 						return toWorkspace(workspace)
 					}),
 				)

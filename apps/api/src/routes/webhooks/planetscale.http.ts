@@ -133,6 +133,16 @@ export const PlanetScaleWebhookRouter = HttpRouter.use((router) =>
 			}
 			const payload = payloadResult.value
 
+			// Events switched off: acknowledged so PlanetScale stops retrying, and dropped.
+			if (!connection.eventsEnabled) {
+				yield* Effect.annotateCurrentSpan({
+					"http.response.status_code": 200,
+					"maple.planetscale.webhook.outcome": "dropped",
+					"maple.planetscale.webhook.reason": "events_off",
+				})
+				return textResponse("ok", 200)
+			}
+
 			const classified = classifyPlanetScaleEvent(payload.event)
 			yield* Effect.annotateCurrentSpan({
 				"maple.planetscale.webhook.event": payload.event,

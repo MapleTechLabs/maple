@@ -13,6 +13,7 @@
 		"./billing": "./src/billing.ts",
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
 		"./clerk-js-url": "./src/clerk-js-url.ts",
+		"./integration-features": "./src/integration-features.ts",
 		"./cloud-platform": "./src/cloud-platform.ts",
 		"./format": "./src/format.ts",
 		"./aws": "./src/aws.ts",
