@@ -69,6 +69,17 @@ describe("generateDemoRows metrics", () => {
 		}
 	})
 
+	it("gives the running totals of one seed an instance of their own", () => {
+		const instances = new Set(
+			Arr.map(
+				[...rows.metricSumRows, ...rows.metricHistogramRows],
+				(row) => row.resource_attributes["service.instance.id"],
+			),
+		)
+		expect(instances.size).toBe(1)
+		expect([...instances][0]).toMatch(/^demo-[0-9a-f]+$/)
+	})
+
 	it("stamps timestamps inside the seeded window (ClickHouse DateTime64 format)", () => {
 		const now = Date.now()
 		const windowStart = now - 2 * 3600 * 1000 - 60_000
