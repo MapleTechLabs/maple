@@ -1,3 +1,4 @@
+import { lookup } from "../lookup"
 import { Option } from "effect"
 import type { LabelMatcher } from "../ast"
 import { anchoredRegex } from "../regex"
@@ -11,7 +12,7 @@ export interface RawSeries {
 
 export const matchesLabels = (matchers: ReadonlyArray<LabelMatcher>, labels: Labels): boolean =>
 	matchers.every((m) => {
-		const value = Object.hasOwn(labels, m.name) ? (labels[m.name] ?? "") : ""
+		const value = lookup(labels, m.name) ?? ""
 		switch (m.op) {
 			case "=":
 				return value === m.value

@@ -116,8 +116,8 @@ export const natsortLess = (a: string, b: string): boolean => {
 const sortByLabel = (vector: InstantVector, names: ReadonlyArray<string>, desc: boolean): InstantVector =>
 	[...vector].sort((a, b) => {
 		for (const name of names) {
-			const va = a.labels[name] ?? ""
-			const vb = b.labels[name] ?? ""
+			const va = lookup(a.labels, name) ?? ""
+			const vb = lookup(b.labels, name) ?? ""
 			if (va === vb) continue
 			return natsortLess(va, vb) === desc ? 1 : -1
 		}
@@ -178,7 +178,7 @@ const labelReplace = (vector: InstantVector, params: ReadonlyArray<number | stri
 			return yield* Result.fail(evalError(`invalid destination label name in label_replace(): ${dst}`))
 		}
 		const out = vector.map((s): Sample => {
-			const match = regex.value.exec(s.labels[src] ?? "")
+			const match = regex.value.exec(lookup(s.labels, src) ?? "")
 			const labels =
 				match === undefined ? s.labels : setLabel(s.labels, dst, expandTemplate(repl, match))
 			return { labels, value: s.value, t: evalTimeMs }
@@ -202,7 +202,7 @@ const labelJoin = (vector: InstantVector, params: ReadonlyArray<number | string>
 			return yield* Result.fail(evalError(`invalid destination label name in label_join(): ${dst}`))
 		}
 		const out = vector.map((s): Sample => {
-			const joined = srcs.map((src) => s.labels[src] ?? "").join(sep)
+			const joined = srcs.map((src) => lookup(s.labels, src) ?? "").join(sep)
 			return { labels: setLabel(s.labels, dst, joined), value: s.value, t: evalTimeMs }
 		})
 		return yield* ensureUniqueLabelsets(out)

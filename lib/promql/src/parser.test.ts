@@ -208,6 +208,11 @@ describe("second-review parser regressions", () => {
 		expect(ok('x{v="\\xef\\xbb\\xbfabc"}')).toMatchObject({ matchers: [{}, { value: "\uFEFFabc" }] })
 	})
 
+	it("parses the native-histogram functions and mad_over_time", () => {
+		expect(errorOf("histogram_fraction(0, 0.2, x)")).toBe("parsed")
+		expect(errorOf("mad_over_time(x[5m])")).toBe("parsed")
+	})
+
 	it("refuses a zero subquery step", () => {
 		expect(errorOf("max_over_time(up[5m:0s])")).toMatch(/subquery step/)
 	})

@@ -3,4 +3,4 @@ export { compareLabels, dropMetricName, ensureUniqueLabelsets, labelsKey } from 
 export { aggregate } from "./aggregate"
 export { scalarBinary, vectorScalarBinary, vectorVectorBinary } from "./binary"
 export { instantFunction } from "./instant-functions"
-export { histogramQuantile } from "./histogram-quantile"
+export { bucketFraction, classicHistogram, histogramQuantile } from "./histogram-quantile"
