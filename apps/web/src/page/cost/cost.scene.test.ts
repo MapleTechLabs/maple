@@ -50,6 +50,7 @@ import {
 } from "./derive"
 import { Message } from "./message"
 import { type Model, type Search, sourcesOf } from "./model"
+import { budgetFormHref } from "./kit/budget-format"
 import { contextChanged, GITHUB_PERMISSION_MISSING_CODE, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
@@ -2120,6 +2121,34 @@ describe("cost page", () => {
 			resolveTheme,
 			expectView(role("button", { name: "Add source" })).toExist(),
 			expectView(role("button", { name: "Replace OpenRouter key" })).toExist(),
+		)
+	})
+
+	// A budget is an alert rule: the link is for who manages alerts, and carries what is on screen.
+	test("Set budget opens the budget editor on the page's filters, for who manages alerts", () => {
+		const seenBy = (model: Model, roles: ReadonlyArray<string>) =>
+			pageUpdate(model, Message.CompletedReadGrants({ grants: Policy.grantsOf(roles) })).model
+
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget" })).toHaveAttr("href", "/cost/budgets/new"),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({ provider: ["aws"], region: ["eu-west-1"] }), ["org:engineer"])),
+			resolveTheme,
+			expectView(role("link", { name: "Set budget for this view" })).toHaveAttr(
+				"href",
+				budgetFormHref({ provider: ["aws"], region: ["eu-west-1"] }),
+			),
+		)
+		scene(
+			{ update: pageUpdate, view },
+			given(seenBy(populated({}), ["org:member"])),
+			resolveTheme,
+			expectView(role("link", { name: /^Set budget/u })).not.toExist(),
 		)
 	})
 

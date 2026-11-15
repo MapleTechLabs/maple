@@ -196,6 +196,14 @@ that only shows then is not alerted on, because a check reads the current period
   the team or organization the org has connected, all three of which the page can remove again.
   The pasted-credential step is one form described by data (`credential-sources.ts`).
   Recommendations (list and detail with the evidence chart) come with phase 2.
+- Web: `/cost/budgets` lists the org's budgets in one table: what each covers, what is spent of
+  its amount, the forecast, its alerts and where it stands (on track, warning, critical, off).
+  `/cost/budgets/new` is the editor, also for an existing one (`?budgetId=`): name, the slice of
+  spend picked from each dimension's largest values of the last 30 days, amount, currency and
+  period, and the warning and critical alerts with their destinations. Set budget on the Cost
+  page opens it on the page's filters. Everyone reads the list; the editor, the switch and
+  delete are for `alerts:manage`. A budget's incident page links back to the list. In the
+  sidebar, Cost has two rows: Spend and Budgets.
 - API: four internal endpoints in the query-engine group (`cost-totals`, `cost-timeseries`,
   `cost-breakdown`, `cost-sources`), `PUT` / `DELETE` on `/internal/cost/openrouter` and
   `/internal/cost/cloudflare`, `/internal/cost/anthropic` and `/internal/cost/openai` for the
