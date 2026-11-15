@@ -8,6 +8,8 @@ import {
 	ensureUniqueLabelsets,
 	labelsKey,
 	type EvalError,
+	bucketFraction,
+	classicHistogram,
 	histogramQuantile,
 	instantFunction,
 	scalarBinary,
@@ -441,6 +443,16 @@ class Evaluator {
 						const values = windowValues(w)
 						return values.length === 0 ? undefined : quantile(param(0, step), values)
 					})
+				case "mad_over_time":
+					return yield* this.overWindows(arg, grid, false, (w) => {
+						const values = windowValues(w)
+						if (values.length === 0) return undefined
+						const median = quantile(0.5, values)
+						return quantile(
+							0.5,
+							values.map((v) => Math.abs(v - median)),
+						)
+					})
 				case "holt_winters":
 				case "double_exponential_smoothing": {
 					for (const [step] of gridTimes(grid).entries()) {
@@ -530,6 +542,33 @@ class Evaluator {
 					const labels = absentLabels(selector?.matchers ?? [])
 					return yield* this.perStep(v, (vec, _i, t) =>
 						Result.succeed(vec.length === 0 ? [{ labels, value: 1, t }] : []),
+					)
+				}
+				// The rest of the native-histogram functions skip float samples, and every stored sample is a float.
+				case "histogram_avg":
+				case "histogram_count":
+				case "histogram_stddev":
+				case "histogram_stdvar":
+				case "histogram_sum": {
+					for (const arg of call.args.slice(0, -1)) yield* this.eval(arg, grid)
+					return yield* this.perStep(yield* this.vectorArg(call.args.at(-1), grid), () =>
+						Result.succeed([]),
+					)
+				}
+				case "histogram_fraction": {
+					const lower = yield* this.eval(
+						first ?? { type: "NumberLiteral", value: Number.NaN },
+						grid,
+					)
+					const upper = yield* this.eval(
+						call.args[1] ?? { type: "NumberLiteral", value: Number.NaN },
+						grid,
+					)
+					const v = yield* this.vectorArg(call.args[2], grid)
+					return yield* this.perStep(v, (vec, i, t) =>
+						classicHistogram(vec, t, (buckets) =>
+							bucketFraction(this.scalarAt(lower, i), this.scalarAt(upper, i), buckets),
+						),
 					)
 				}
 				case "histogram_quantile": {
