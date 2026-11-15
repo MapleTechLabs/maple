@@ -44,6 +44,12 @@ export const ChatWorkspaces = PG.table("chat_workspaces", {
 		credentialsCiphertext: PG.column(PG.nullable(PG.text), { name: "credentials_ciphertext" }),
 		credentialsIv: PG.column(PG.nullable(PG.text), { name: "credentials_iv" }),
 		credentialsTag: PG.column(PG.nullable(PG.text), { name: "credentials_tag" }),
+		/** The person's switches (`INTEGRATION_FEATURES.chat`): alert posts to channels. */
+		alertsEnabled: PG.column(PG.bool, { name: "alerts_enabled", default: true }),
+		/** Escalation pages by direct message; the email page goes out either way. */
+		directMessagesEnabled: PG.column(PG.bool, { name: "direct_messages_enabled", default: true }),
+		/** The bot answering mentions and following up in its own threads. */
+		assistantEnabled: PG.column(PG.bool, { name: "assistant_enabled", default: true }),
 		createdAt: PG.column(PG.timestamptzMillis, { name: "created_at" }),
 	},
 	primaryKey: ["id"],

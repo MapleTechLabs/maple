@@ -52,6 +52,7 @@ const PRESET_SIGNALS: Record<string, SignalDisplay> = {
 	slo_burn_rate: { label: "SLO burn rate", unit: "burn" },
 	anomaly: { label: "Anomaly", unit: "severity" },
 	audit: { label: "Audit log", unit: "count" },
+	cost_budget: { label: "Cost budget", unit: "plain" },
 } satisfies Record<string, SignalDisplay>
 
 /**

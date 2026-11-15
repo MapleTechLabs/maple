@@ -608,6 +608,53 @@ describe("AlertsService chat digests", () => {
 	)
 })
 
+describe("AlertsService chat destination test", () => {
+	it.effect("says a test was skipped when the workspace has alert notifications off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const poster = Layer.succeed(ChatAlertPoster, {
+			post: () => Effect.succeed({ connectorName: "Test Chat", messageId: null }),
+			postDirect: () => Effect.die("no person is paged here"),
+			findChannel: () =>
+				Effect.succeed({
+					connector: Schema.decodeSync(ChatConnectorId)("testchat"),
+					workspaceName: "Acme",
+					channelName: "incidents",
+				}),
+		})
+		return Effect.gen(function* () {
+			const alerts = yield* alertServices
+			const orgId = asOrgId("org_chat_test")
+			const userId = asUserId("user_chat_test")
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new ChatAlertDestinationConfig({
+					type: "chat",
+					name: "Incidents",
+					workspaceId: Schema.decodeSync(ChatWorkspaceId)("45454545-4545-4545-8545-454545454545"),
+					channelId: "channel-1",
+				}),
+			)
+			const tested = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
+			assert.strictEqual(
+				tested.message,
+				"Skipped: alert notifications are off for this Test Chat workspace",
+			)
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+					undefined,
+					undefined,
+					poster,
+				),
+			),
+		)
+	})
+})
+
 describe("alert incident open uniqueness", () => {
 	const insertOpenIncident = (testDb: TestDb, id: string, status = "open") =>
 		executeSql(

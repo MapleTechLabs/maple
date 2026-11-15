@@ -80,7 +80,12 @@ describe("cloudflare connect flow", () => {
 			expectView(role("button", { name: "Authorize again" })).toExist(),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
+			expectView(role("switch", { name: "HTTP traffic" })).toBeChecked(),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Acme (done)" })).toExist(),
+			expectView(role("listitem", { name: "6 of 6 features (done)" })).toExist(),
 			expectView(role("listitem", { current: "step", name: "Go live" })).toExist(),
 			expectView(text("Access works")).toExist(),
 			expectView(text("Zones found: 2")).toExist(),
@@ -92,6 +97,8 @@ describe("cloudflare connect flow", () => {
 		scene(
 			{ update: pageUpdate, view },
 			given(withStatus(status({ analyticsCapable: false }))),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Go live: needs attention" })).toExist(),
@@ -106,9 +113,31 @@ describe("cloudflare connect flow", () => {
 			given(withStatus(status({ zones: [zone("acme.com", NOW - 60_000)] }))),
 			click(role("button", { name: "Continue" })),
 			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
 			expectView(role("listitem", { name: "Live (done)" })).toExist(),
 			expectView(text("Cloudflare is live")).toExist(),
 			expectView(text("Backfilled the last 24 hours")).toExist(),
+		)
+	})
+
+	test("with every feature switched off, Choose data keeps Continue locked", () => {
+		const off = {
+			httpTrafficEnabled: false,
+			firewallEnabled: false,
+			dnsEnabled: false,
+			workersEnabled: false,
+			queuesEnabled: false,
+			durableObjectsEnabled: false,
+		}
+		scene(
+			{ update: pageUpdate, view },
+			given(withStatus(status({ features: off }))),
+			click(role("button", { name: "Continue" })),
+			Command.resolve(ScrollToTop, Message.CompletedScrollToTop()),
+			expectView(role("listitem", { current: "step", name: "Choose data" })).toExist(),
+			expectView(text("Turn on at least one feature.")).toExist(),
+			expectView(role("button", { name: "Continue" })).toBeDisabled(),
 		)
 	})
 })

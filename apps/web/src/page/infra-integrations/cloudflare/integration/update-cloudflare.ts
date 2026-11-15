@@ -1,4 +1,4 @@
-import type { CloudflareIntegrationStatus } from "@maple/domain/http"
+import { CloudflareFeatureSwitches, type CloudflareIntegrationStatus } from "@maple/domain/http"
 import { Option, Array as Arr, String as Str } from "effect"
 import { AsyncData, Command } from "foldkit"
 import { ChartRuntime, LoadChartRuntime } from "@maple/views/charts/chart-runtime"
@@ -10,8 +10,11 @@ import { requestKey } from "@maple/views/data/request-key"
 import { HubRequest, type ProviderEnv, type ProviderReturn } from "../../../integrations/provider"
 import { ingestPhaseOf } from "../ingest"
 import {
+	ALL_CLOUDFLARE_FEATURES,
 	type CloudflareCardModel,
+	type CloudflareFeatureFlag,
 	CloudflareMessage,
+	SaveCloudflareFeatures,
 	LoadCloudflareUsage,
 	PrimeCloudflare,
 	SaveCloudflareZones,
@@ -20,6 +23,7 @@ import {
 } from "./cloudflare"
 import { changedZoneChoices, zoneChoicesOf } from "./cloudflare-derive"
 import { successOf } from "../../kit/success-of"
+import { completedSwitches, settledSwitches, toggledSwitches } from "../../../integrations/feature-switches"
 
 // The Cloudflare card's state changes, as the Cloudflare module's update.
 
@@ -198,6 +202,38 @@ const completedZoneSettings = (model: CloudflareCardModel, env: Env, failure: Lo
 	)
 }
 
+/** The switches as saved: every feature on until the status says otherwise. */
+export const savedCloudflareFeatures = (status: CloudflareIntegrationStatus | null) =>
+	status?.features ?? ALL_CLOUDFLARE_FEATURES
+
+/** A switch flips on screen at once and saves; a second toggle waits for the first save. */
+const toggledFeature = (model: CloudflareCardModel, env: Env, flag: CloudflareFeatureFlag): Return => {
+	const saved = savedCloudflareFeatures(successOf(env.status.data))
+	const step = toggledSwitches(
+		model.features,
+		saved,
+		(switches) => new CloudflareFeatureSwitches({ ...switches, [flag]: !switches[flag] }),
+	)
+	return {
+		model: withCard(model, { features: step.state }),
+		commands: step.save === null ? [] : [SaveCloudflareFeatures({ flag, enabled: step.save[flag] })],
+	}
+}
+
+/** Both outcomes re-read the status; a failure puts the switch back and says why. */
+const completedFeatures = (model: CloudflareCardModel, failure: LoadFailure | null): Return => ({
+	model: withCard(model, { features: completedSwitches(model.features, failure?.message ?? null) }),
+	requests: [HubRequest.readStatus("Supersede")],
+})
+
+/** The current status landed: a settled save hands the switches back to it. */
+export const statusAnswered = (
+	model: CloudflareCardModel,
+	_env: Env,
+	answer: Readonly<{ isCurrent: boolean }>,
+): Return =>
+	answer.isCurrent ? { model: withCard(model, { features: settledSwitches(model.features) }) } : { model }
+
 export const update = (model: CloudflareCardModel, message: CloudflareMessage, env: Env): Return =>
 	CloudflareMessage.match<Return>(message, {
 		CompletedLoadUsage: ({ key, result }) => ({
@@ -227,6 +263,8 @@ export const update = (model: CloudflareCardModel, message: CloudflareMessage, e
 		ChangedManagedZoneSearch: ({ value }) => ({ model: withCard(model, { zoneDraftSearch: value }) }),
 		SubmittedZoneSettings: () => submittedZoneSettings(model, env),
 		CompletedZones: ({ failure }) => completedZoneSettings(model, env, failure),
+		ToggledFeature: ({ flag }) => toggledFeature(model, env, flag),
+		CompletedFeatures: ({ failure }) => completedFeatures(model, failure),
 		CompletedLoadChartRuntime: () => ({ model: withCard(model, { chartRuntime: ChartRuntime.Ready() }) }),
 		FailedLoadChartRuntime: ({ reason }) => ({
 			model: withCard(model, { chartRuntime: ChartRuntime.Failed({ reason }) }),

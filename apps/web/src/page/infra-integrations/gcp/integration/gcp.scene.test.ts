@@ -1,6 +1,7 @@
 import { OrgId } from "@maple/domain"
 import { encodePublicId, PublicIdPrefixes, V2GcpIntegration } from "@maple/domain/http/v2"
 import { Effect, Result, Schema, Array as Arr } from "effect"
+import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test, vi } from "vitest"
 import * as Menu from "@maple/views/ui/menu"
 import { toLoadFailure } from "@maple/views/data/load-failure"
@@ -9,6 +10,7 @@ import { ReadRemoved, WriteRemoved } from "./gcp"
 import { Message } from "../../../integrations/message"
 import type { Model } from "../../../integrations/model"
 import { init, update } from "../../../integrations/update"
+import { view as pageView } from "../../../integrations/view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
 const context: PageContext = { orgId, pinnedNamespace: null, timeZone: "UTC" }
@@ -18,7 +20,9 @@ const names = (commands: ReadonlyArray<{ readonly name: string }> | undefined) =
 
 const publicId = encodePublicId(PublicIdPrefixes.gcpConnector, "00000000-0000-4000-8000-000000000402")
 
-const status = (applied: boolean | null) =>
+const view = withViewInputs(pageView, { context })()
+
+const status = (applied: boolean | null, over: Readonly<Record<string, unknown>> = {}) =>
 	Schema.decodeSync(V2GcpIntegration)({
 		object: "gcp_integration",
 		metrics_available: true,
@@ -41,14 +45,16 @@ const status = (applied: boolean | null) =>
 				last_metrics_error: null,
 				discovered_project_count: 1,
 				last_resources_error: null,
+				...over,
 			},
 		],
 	})
 
-const loaded = (applied: boolean | null): Model => {
+const loaded = (applied: boolean | null, over: Readonly<Record<string, unknown>> = {}): Model => {
 	const start = init({ search: { integration: "gcp" } }, context).model
 	const key = start.statuses.gcp.key ?? ""
-	return pageUpdate(start, Message.CompletedLoadGcp({ key, result: Result.succeed(status(applied)) })).model
+	return pageUpdate(start, Message.CompletedLoadGcp({ key, result: Result.succeed(status(applied, over)) }))
+		.model
 }
 
 const connectorId = (model: Model) => {
@@ -124,5 +130,55 @@ describe("google cloud card", () => {
 		vi.unstubAllGlobals()
 		expect(read).toEqual(Message.CompletedReadGcpRemoved({ removed: [] }))
 		expect(written).toEqual(Message.CompletedWriteGcpRemoved())
+	})
+
+	describe("a connection's feature switches", () => {
+		test("a switch opens Edit data with the flip drafted, and saving sends only that capability", () => {
+			const model = loaded(true)
+			const id = connectorId(model)
+			if (id === undefined) throw new Error("no connector")
+			const opened = pageUpdate(model, Message.ToggledGcpFeature({ id, capability: "metrics" }))
+			expect(opened.model.gcpCard.configure?.target).toEqual({
+				_tag: "Connection",
+				id,
+				stage: "choose",
+			})
+			expect(opened.model.gcpCard.configure?.chooseFlags).toEqual({
+				logs_enabled: true,
+				metrics_enabled: false,
+			})
+			// Metrics set up in Google Cloud stop at once in Maple, so the save asks first.
+			const asked = pageUpdate(opened.model, Message.ClickedGcpChooseApply())
+			const saved = pageUpdate(asked.model, Message.ConfirmedGcpSave())
+			expect(Arr.map(saved.commands ?? [], ({ name, args }) => [name, args])).toEqual([
+				["UpdateGcpConnector", expect.objectContaining({ id, payload: { metrics_enabled: false } })],
+			])
+		})
+
+		test("the last capability on cannot be switched off", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded(true, { metrics_enabled: false, applied_metrics_enabled: false })),
+				expectView(role("switch", { name: "Log forwarding" })).toBeDisabled(),
+				expectView(role("switch", { name: "Metrics and resources" })).toBeEnabled(),
+			)
+		})
+
+		test("a capability switched off but still set up in Google Cloud shows it is pending", () => {
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded(true, { metrics_enabled: false })),
+				expectView(role("switch", { name: "Metrics and resources" })).toHaveAttr(
+					"aria-checked",
+					"false",
+				),
+				expectView(text("Still in Google Cloud")).toExist(),
+			)
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded(true, { metrics_enabled: false, applied_metrics_enabled: false })),
+				expectView(text("Still in Google Cloud")).not.toExist(),
+			)
+		})
 	})
 })

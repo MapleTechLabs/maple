@@ -195,6 +195,9 @@ import { UptimeAlertSource } from "@maple/backend/services/uptime/UptimeAlertSou
 import { SloAlertSource } from "@maple/backend/services/slos/SloAlertSource"
 import { AuditTrailService } from "@maple/backend/services/audit-trail/AuditTrailService"
 import { auditCountReason } from "@maple/backend/services/audit-trail/audit-detection-rule"
+import { CostBudgetSource } from "@maple/backend/services/cost/CostBudgetSource"
+import { costBudgetPeriodWindow } from "@maple/domain/cost-budget"
+import { closeLastPeriod, evaluateCostBudget } from "@maple/backend/services/cost/cost-budget-rule"
 import { AnomalyAlertSource, type AnomalyAlertObservation } from "./anomaly/AnomalyAlertSource"
 import { evaluateSloBurn } from "@maple/backend/services/slos/slo-alert-rule"
 import {
@@ -634,6 +637,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const uptimeAlerts = yield* UptimeAlertSource
 			const sloAlerts = yield* SloAlertSource
 			const auditTrail = yield* AuditTrailService
+			const costBudgets = yield* CostBudgetSource
 			const anomalyAlerts = yield* AnomalyAlertSource
 			const httpClient = yield* HttpClient.HttpClient
 			const email = yield* EmailService
@@ -1179,6 +1183,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							{ evaluation: evaluateSloBurn(windows), groupKey: UNGROUPED_GROUP_KEY },
 						],
 					})
+				}
+				// A cost budget measures its period to date, each tier on spend so far or on the
+				// forecast. No cost yet reads as zero spent: healthy, not missing data.
+				if (rule.signalType === "cost_budget") {
+					const budget = rule.costBudget
+					if (budget === null) return []
+					const [standing] = yield* costBudgets
+						.progress(systemTenant(orgId, ALERTING_SYSTEM_USER_ID), [budget], endMs)
+						.pipe(
+							Effect.catchTag("@maple/http/errors/CloudCostPersistenceError", (error) =>
+								Effect.fail(makePersistenceError(error)),
+							),
+						)
+					return standing === undefined
+						? []
+						: [
+								{
+									evaluation: evaluateCostBudget(budget, rule.thresholds, standing[1]),
+									groupKey: UNGROUPED_GROUP_KEY,
+								},
+							]
 				}
 				const startMs = endMs - rule.windowMinutes * 60_000
 				// An audit detection counts the events that arrived in its window. The count is a
@@ -3126,7 +3151,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 								),
 							onSuccess: ({ posted, channelName }) =>
 								finalizeDigest(destinationRow, sendable, claimTime, {
-									providerMessage: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
+									providerMessage:
+										posted.messageId === null
+											? `Skipped: alert notifications are off for this ${posted.connectorName} workspace`
+											: `Delivered to ${posted.connectorName} #${channelName} in a digest of ${sendable.length}`,
 									providerReference: posted.messageId,
 								}),
 						}),
@@ -3149,7 +3177,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					destinationRow: AlertDestinationRow,
 					claimed: ReadonlyArray<AlertDeliveryEventRow>,
 					claimTime: number,
-					result: { readonly providerMessage: string; readonly providerReference: string },
+					result: { readonly providerMessage: string; readonly providerReference: string | null },
 				) {
 					yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, claimed.length)
 					yield* Effect.forEach(
@@ -3456,6 +3484,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					// Ask the persistence adapter for flap history only when the pure core
 					// has decided that a new incident is otherwise ready to open.
 					if (lifecycle.transition === "opened") {
+						// A budget's incident from an earlier period is no flap of this one's: its
+						// resolve must not mute the new period's trigger.
+						const flapsSince =
+							normalized.costBudget === null
+								? 0
+								: costBudgetPeriodWindow(normalized.costBudget.period, timestamp).startMs
 						const priorNotified =
 							(yield* dbExecute((db) =>
 								db.run(
@@ -3466,6 +3500,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 											$.ruleId.eq(row.id),
 											$.groupKey.eq(groupKey),
 											$.status.eq("resolved"),
+											$.firstTriggeredAt.gte(flapsSince),
 											$.lastNotifiedAt.isNotNull(),
 											$.lastNotifiedAt.gte(
 												timestamp - normalized.renotifyIntervalMinutes * 60_000,
@@ -4167,7 +4202,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				// An anomaly incident already has its issue and AI triage; the alert must not add a second.
 				// An audit detection is no fault in a service: it has no place in the triage queue,
 				// and a root-cause run over telemetry has nothing to find.
-				const ownsIssue = normalized.signalType !== "anomaly" && normalized.signalType !== "audit"
+				// Neither is a budget that is spent.
+				const ownsIssue =
+					normalized.signalType !== "anomaly" &&
+					normalized.signalType !== "audit" &&
+					normalized.signalType !== "cost_budget"
 				if (ownsIssue && outcome.transition === "escalated" && outcome.severity === "critical") {
 					yield* escalateAlertIssue({
 						orgId: row.orgId,
@@ -5576,9 +5615,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
-				const evaluateBeforeDeadline = (row: StoredAlertRuleRow, rule: NormalizedRule) =>
+				// A budget has no rolling window to snap. It is judged at its claim's own time, which
+				// is what its incident's `firstTriggeredAt` records: the two name the same period.
+				const evaluateBeforeDeadline = (
+					row: StoredAlertRuleRow,
+					rule: NormalizedRule,
+					claimedAt: number,
+				) =>
 					Effect.flatMap(now, (startedAt) =>
-						evaluateRule(row.orgId, rule, tickWindowEndMs).pipe(
+						evaluateRule(
+							row.orgId,
+							rule,
+							rule.costBudget === null ? tickWindowEndMs : claimedAt,
+						).pipe(
 							Effect.timeoutOrElse({
 								duration: Duration.millis(
 									Math.max(0, Math.min(lane.evalTimeoutMs(row), deadline - startedAt)),
@@ -5620,7 +5669,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							const serviceRules = yield* perServiceRules(normalized)
 							yield* Effect.forEach(serviceRules, ({ groupKey, rule }) =>
 								Effect.gen(function* () {
-									const observations = yield* evaluateBeforeDeadline(row, rule)
+									const observations = yield* evaluateBeforeDeadline(row, rule, timestamp)
 									// A service with no rows at all used to be dropped here,
 									// which left its open incident frozen for as long as it
 									// stayed quiet. An empty window is an observation too,
@@ -5672,7 +5721,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// UNGROUPED_GROUP_KEY entry (with a no-data fallback) when the
 						// compiled plan is ungrouped. So both shapes flow through the
 						// same loop with no key translation here.
-						const results = yield* evaluateBeforeDeadline(row, normalized)
+						const results = yield* evaluateBeforeDeadline(row, normalized, timestamp)
 						// An uptime rule has no plan; it is keyed by its monitor's service when linked.
 						// An anomaly rule is always keyed by anomaly incident.
 						const grouped =
@@ -5686,8 +5735,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							? Arr.filter(results, (r) => !HashSet.has(excludeSet, r.groupKey))
 							: results
 
-						yield* Effect.forEach(eligible, ({ evaluation, groupKey }) =>
+						yield* Effect.forEach(eligible, ({ evaluation: observed, groupKey }) =>
 							Effect.gen(function* () {
+								// A budget's incident belongs to the period it opened in.
+								const evaluation =
+									normalized.costBudget === null
+										? observed
+										: closeLastPeriod(
+												normalized.costBudget,
+												observed,
+												prefetch.openIncidentFor(row.orgId, row.id, groupKey)
+													?.firstTriggeredAt ?? null,
+												timestamp,
+											)
 								yield* recordEvaluationStatus(evaluation)
 								yield* processEvaluation(
 									row,
@@ -6335,6 +6395,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				SloAlertSource.layer,
 				AnomalyAlertSource.layer,
 				AuditTrailService.layer,
+				CostBudgetSource.layer,
 			),
 		),
 	)

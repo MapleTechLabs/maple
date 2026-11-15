@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db/tables"
-import { AlertDeliveryError, AlertDestinationId, OrgId } from "@maple/domain/http"
+import { AlertDeliveryError, AlertDestinationId, LinearFeatureSwitches, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema, Array as Arr, DateTime, Option } from "effect"
 import type { DispatchContext } from "../context"
@@ -96,6 +96,8 @@ const fakeLinear = (
 		taken?: ReadonlyArray<string>
 		/** Ids another delivery creates first: the create answers "already exists" and the issue is there. */
 		raced?: ReadonlyArray<string>
+		/** Switches turned off in the org's Linear settings. */
+		off?: Partial<Record<keyof LinearFeatureSwitches, false>>
 	} = {},
 ) => {
 	const issues = new Map(Arr.map(seed.issues ?? [], (issue) => [issue.id, issue]))
@@ -160,6 +162,16 @@ const fakeLinear = (
 			}),
 		findThread: (_orgId, _destinationId, threadKey) => Effect.succeed(threads.get(threadKey) ?? null),
 		saveThread: (thread) => Effect.sync(() => void threads.set(thread.threadKey, thread)),
+		features: () =>
+			Effect.succeed(
+				new LinearFeatureSwitches({
+					openIssuesEnabled: true,
+					updateCommentsEnabled: true,
+					reopenIssuesEnabled: true,
+					resolveCommentsEnabled: true,
+					...seed.off,
+				}),
+			),
 	}
 	const send = (input: RenderInput<SecretConfigOf<"linear">>) =>
 		linearTransport.send(input, {
@@ -461,6 +473,83 @@ describe("linear transport and issues people move", () => {
 			yield* linear.send(inputFor({ incidentId: "inc_2" }))
 			assert.notInclude(names(linear.calls), "MapleIssueCreate")
 			assert.include(String(inputOf(linear.calls, "MapleComment").body), "Fired again")
+		}),
+	)
+})
+
+describe("linear transport with features switched off", () => {
+	it.effect("opens no issue when opening issues is off", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({ off: { openIssuesEnabled: false } })
+			const result = yield* linear.send(inputFor())
+			assert.notInclude(names(linear.calls), "MapleIssueCreate")
+			assert.notInclude(names(linear.calls), "MapleIssueLink")
+			assert.strictEqual(
+				result.providerMessage,
+				"Skipped: Opening issues is off in the Linear settings",
+			)
+			assert.strictEqual(linear.threads.size, 0)
+		}),
+	)
+
+	it.effect("leaves the open issue alone when update comments are off", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({
+				issues: [issue()],
+				threads: [openThread()],
+				off: { updateCommentsEnabled: false },
+			})
+			const result = yield* linear.send(inputFor({ incidentId: "inc_2" }))
+			assert.deepStrictEqual(names(linear.calls), ["MapleIssue"])
+			assert.strictEqual(result.providerReference, "https://linear.app/acme/issue/ENG-7")
+		}),
+	)
+
+	it.effect("comments on a recently closed issue without reopening it when reopening is off", () =>
+		Effect.gen(function* () {
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - 2 * HOUR))
+			const linear = fakeLinear({
+				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
+				threads: [openThread()],
+				off: { reopenIssuesEnabled: false },
+			})
+			const result = yield* linear.send(inputFor({ incidentId: "inc_2" }))
+			assert.notInclude(names(linear.calls), "MapleIssueReopen")
+			assert.include(String(inputOf(linear.calls, "MapleComment").body), "Fired again")
+			assert.strictEqual(result.providerMessage, "Commented on closed Linear issue ENG-7")
+		}),
+	)
+
+	it.effect("reopens without commenting when only update comments are off", () =>
+		Effect.gen(function* () {
+			const closedAt = DateTime.formatIso(DateTime.makeUnsafe(NOW - 2 * HOUR))
+			const linear = fakeLinear({
+				issues: [issue({ state: { type: "completed" }, completedAt: closedAt })],
+				threads: [openThread()],
+				off: { updateCommentsEnabled: false },
+			})
+			const result = yield* linear.send(inputFor({ incidentId: "inc_2" }))
+			assert.include(names(linear.calls), "MapleIssueReopen")
+			assert.notInclude(names(linear.calls), "MapleComment")
+			assert.strictEqual(result.providerMessage, "Reopened Linear issue ENG-7")
+		}),
+	)
+
+	it.effect("sends nothing on resolve when resolve comments are off", () =>
+		Effect.gen(function* () {
+			const linear = fakeLinear({
+				issues: [issue()],
+				threads: [openThread()],
+				off: { resolveCommentsEnabled: false },
+			})
+			const result = yield* linear.send(
+				inputFor({ eventType: "resolve", incidentStatus: "resolved", value: 0.01 }),
+			)
+			assert.lengthOf(linear.calls, 0)
+			assert.strictEqual(
+				result.providerMessage,
+				"Skipped: Commenting when resolved is off in the Linear settings",
+			)
 		}),
 	)
 })

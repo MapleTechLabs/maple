@@ -25,6 +25,8 @@ export interface ChatWorkspaceResolution {
 	readonly orgId: OrgId
 	readonly workspaceId: ChatWorkspaceId
 	readonly settings: ChatWorkspaceSettings
+	/** Whether the bot answers here; off, the workspace stays linked for alerts. */
+	readonly assistantEnabled: boolean
 	/**
 	 * The connector's own per-workspace secret, decrypted, or `undefined` for a connector that
 	 * stored none. The host puts it in `ConnectorCredentials` under `WORKSPACE_CREDENTIALS`; it is
@@ -76,6 +78,7 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 			orgId: row.orgId,
 			workspaceId: row.id,
 			settings: row.settings,
+			assistantEnabled: row.assistantEnabled,
 			credentials: undefined,
 		})
 	}
@@ -95,6 +98,7 @@ export const resolveChatWorkspace = Effect.fn("ChatWorkspaceRows.resolveChatWork
 		orgId: row.orgId,
 		workspaceId: row.id,
 		settings: row.settings,
+		assistantEnabled: row.assistantEnabled,
 		credentials,
 	})
 })

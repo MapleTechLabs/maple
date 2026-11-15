@@ -616,6 +616,21 @@ export const CostSearch = Schema.Struct({
 	account: OptionalStringArrayParam,
 })
 
+/**
+ * `/cost/budgets/new`: `budgetId` edits that budget. The rest prefill a new one with the slice of
+ * spend the Cost page was filtered to, one value list per dimension.
+ */
+export const CostBudgetNewSearch = Schema.Struct({
+	budgetId: StringParam,
+	cloud_service: OptionalStringArrayParam,
+	provider: OptionalStringArrayParam,
+	service_category: OptionalStringArrayParam,
+	region: OptionalStringArrayParam,
+	resource: OptionalStringArrayParam,
+	account: OptionalStringArrayParam,
+})
+export type CostBudgetNewSearch = typeof CostBudgetNewSearch.Type
+
 export const DashboardsSearch = Schema.Struct({
 	q: StringParam,
 	scope: Schema.optional(Schema.Literals(["all", "favorites"])),

@@ -28,6 +28,7 @@ import { CloudflareCardModel } from "../infra-integrations/cloudflare/integratio
 import { GithubCardModel } from "./github"
 import { PrometheusCardModel } from "./prometheus"
 import { RailwayCardModel } from "../infra-integrations/railway/integration/railway"
+import { LinearCardModel } from "./linear"
 import { PlanetscaleCardModel } from "../infra-integrations/planetscale/integration/planetscale"
 import { GcpCardModel } from "../infra-integrations/gcp/integration/gcp"
 import { AwsCardModel } from "../infra-integrations/aws/integration/aws"
@@ -76,6 +77,7 @@ export const Model = Schema.Struct({
 	/** The page's disconnect confirmation and its in-flight flag (one integration shows at a time). */
 	disconnect: Schema.Struct({ dialog: Dialog.Model, isPending: Schema.Boolean }),
 	chatCard: ChatCardModel,
+	linearCard: LinearCardModel,
 	githubCard: GithubCardModel,
 	cloudflareCard: CloudflareCardModel,
 	prometheusCard: PrometheusCardModel,

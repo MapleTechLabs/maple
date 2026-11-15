@@ -299,6 +299,7 @@ export class PlanetScaleMetricsService extends Context.Service<
 				Effect.annotateCurrentSpan("maple.planetscale.skip_reason", reason).pipe(
 					Effect.as<OrgOutcome>({ _tag: "Skipped" }),
 				)
+			if (!connection.metricsEnabled) return yield* skip("metrics_off")
 			const grant = yield* psOAuth.grantStatus(connection.orgId)
 			if (grant.revokedAt !== null) return yield* skip("grant_revoked")
 			const target = yield* managedTarget(connection)

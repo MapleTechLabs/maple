@@ -128,6 +128,8 @@ export type SegmentedSelectConfig<T extends string, M> = Readonly<{
 	size?: "xs" | "sm" | "default" | "lg"
 	ariaLabel?: string
 	className?: string
+	/** Every option shown and none selectable, while the form the choice belongs to saves. */
+	isDisabled?: boolean
 }>
 
 const XS_ITEM = "text-2xs sm:text-2xs"
@@ -152,11 +154,12 @@ export const segmentedSelect = <T extends string, M>(
 		],
 		Arr.map(config.options, (option) => {
 			const isSelected = option.value === config.value
+			const isDisabled = (config.isDisabled ?? false) || (option.isDisabled ?? false)
 			return togglePrimitive(
 				h,
 				{
 					isPressed: isSelected,
-					isDisabled: option.isDisabled,
+					isDisabled,
 					onClick: config.onChange(option.value),
 					className: cn(
 						toggleVariants({
@@ -173,9 +176,9 @@ export const segmentedSelect = <T extends string, M>(
 					),
 					slot: "toggle",
 					// Stateless, so no arrow-key roving: every enabled option is its own tab stop.
-					tabIndex: (option.isDisabled ?? false) ? -1 : 0,
+					tabIndex: isDisabled ? -1 : 0,
 					attributes: [
-						h.AriaDisabled(option.isDisabled ?? false),
+						h.AriaDisabled(isDisabled),
 						h.AriaLabel(option.ariaLabel ?? option.label),
 						h.DataAttribute("size", groupSize),
 						h.DataAttribute("variant", "segment"),

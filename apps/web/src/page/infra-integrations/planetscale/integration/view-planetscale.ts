@@ -19,6 +19,7 @@ import { disconnectDialog } from "../../../integrations/view-disconnect"
 import { connectedIntegrationCard, integrationStatusCard } from "../../../integrations/view-integration-card"
 import { inventoryCountsOf } from "./flow-planetscale"
 import { metricsHealth, toHub } from "./view-planetscale-parts"
+import { planetscaleFeaturePanel } from "./view-planetscale-features"
 import { pickerDialog } from "./view-planetscale-picker"
 import { typography } from "@maple/views/ui/typography"
 import { hstack, vstack } from "@maple/views/ui/stack"
@@ -199,7 +200,9 @@ const connectedView = (h: H, model: Model, status: V2PlanetScaleIntegration, tim
 						...(isWatchExpired(model.planetscaleCard, model.nowMs) ? [watchExpired(h)] : []),
 					]),
 		]),
-		...(webhooks === null ? [] : [webhookStatus(h, model, webhooks)]),
+		// With events off Maple has removed its webhooks, so their health says nothing.
+		...(webhooks === null || status.events_enabled === false ? [] : [webhookStatus(h, model, webhooks)]),
+		planetscaleFeaturePanel(h, model, status),
 		pickerDialog(h, model),
 	])
 }

@@ -193,7 +193,10 @@ const lookupWorkspace = (
 				// Nothing to link with, or nobody asked: one query.
 				if (externalUserId === undefined || connector.identity === undefined) {
 					return Option.some<ResolvedWorkspace>({
-						relay: { orgId: workspace.value.orgId },
+						relay: {
+							orgId: workspace.value.orgId,
+							assistantEnabled: workspace.value.assistantEnabled,
+						},
 						credentials,
 					})
 				}
@@ -206,6 +209,7 @@ const lookupWorkspace = (
 				return Option.some<ResolvedWorkspace>({
 					relay: {
 						orgId: workspace.value.orgId,
+						assistantEnabled: workspace.value.assistantEnabled,
 						...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
 					},
 					credentials,

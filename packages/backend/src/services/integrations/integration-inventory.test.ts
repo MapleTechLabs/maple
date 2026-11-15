@@ -301,6 +301,8 @@ describe("buildIntegrationInventory", () => {
 					planetscaleConnection: {
 						psOrganization: "acme",
 						detectedPermissions,
+						metricsEnabled: true,
+						eventsEnabled: true,
 						lastInventoryAt: NOW - MINUTE,
 						lastInventoryError: null,
 						createdAt: NOW - 24 * 60 * MINUTE,
@@ -327,6 +329,8 @@ describe("buildIntegrationInventory", () => {
 			planetscaleConnection: {
 				psOrganization: "acme",
 				detectedPermissions: null,
+				metricsEnabled: true,
+				eventsEnabled: true,
 				lastInventoryAt: NOW - MINUTE,
 				lastInventoryError: null,
 				createdAt: NOW,
@@ -341,6 +345,58 @@ describe("buildIntegrationInventory", () => {
 		expect(Arr.map(planetscale?.resources ?? [], (r) => r.name)).toEqual(["planetscale"])
 		expect(prometheus?.status).toBe("failing")
 		expect(Arr.map(prometheus?.resources ?? [], (r) => r.name)).toEqual(["node-exporter"])
+	})
+
+	it("reads a switched-off PlanetScale feature as paused, not stale", () => {
+		const connection = {
+			psOrganization: "acme",
+			detectedPermissions: null,
+			metricsEnabled: true,
+			eventsEnabled: true,
+			lastInventoryAt: NOW - MINUTE,
+			lastInventoryError: null,
+			createdAt: NOW - 24 * 60 * MINUTE,
+		}
+		const longAgo = NOW - 24 * 60 * MINUTE
+		const inputsWith = (switches: { metricsEnabled: boolean; eventsEnabled: boolean }) => ({
+			planetscaleConnection: { ...connection, ...switches },
+			planetscaleDatabases: [
+				{ databaseId: "db_1", name: "shop", kind: "mysql", region: null, state: "ready" },
+			],
+			// Deploy-request polling stopped a day ago; the managed target last scraped then too.
+			planetscalePollStates: [
+				{
+					databaseId: "db_1",
+					dataset: "deploy_requests",
+					lastSuccessAt: longAgo,
+					lastErrorAt: null,
+					lastError: null,
+				},
+			],
+			scrapeTargets: [
+				{
+					name: "planetscale",
+					url: "https://api.planetscale.com/metrics",
+					serviceName: null,
+					managedBy: "planetscale:conn_1",
+					scrapeIntervalSeconds: 60,
+					lastScrapeAt: longAgo,
+					lastScrapeError: null,
+					enabled: true,
+				},
+			],
+		})
+		const on = providerOf(inputsWith({ metricsEnabled: true, eventsEnabled: true }), "planetscale")
+		expect(on?.status).toBe("stale")
+
+		const off = providerOf(inputsWith({ metricsEnabled: false, eventsEnabled: false }), "planetscale")
+		// Paused is a choice, not a fault: nothing reads stale or failing.
+		expect(off?.status).toBe("paused")
+		const resources = off?.resources ?? []
+		expect(Arr.map(resources, (r) => [r.name, r.status, r.note])).toEqual([
+			["planetscale", "paused", "Switched off"],
+			["shop", "healthy", "mysql, ready"],
+		])
 	})
 
 	it("never shows a scrape URL's userinfo or query, where tokens live", () => {

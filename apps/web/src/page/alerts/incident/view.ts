@@ -30,6 +30,7 @@ import type * as Chart from "@maple/views/charts/chart"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
+import { budgetsHref } from "../../cost/kit/budget-format"
 import { button, linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -372,35 +373,41 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 																	: null,
 															label: "Open audit log",
 														})
-													: rule === null
-														? typography(
-																h,
-																{ size: "sm", tone: "muted", as: "p" },
-																[
-																	"The rule behind this incident was deleted, so its signal cannot be replayed.",
-																],
-															)
-														: ruleChart(h, {
-																chartId: inputs.chartId,
-																chart: inputs.chart,
-																toChartMessage: inputs.toChartMessage,
-																colors: inputs.colors,
-																timeZone: inputs.timeZone,
-																preview: inputs.preview,
-																checks: inputs.checks,
-																incidents: [incident],
-																threshold: incident.threshold,
-																thresholdUpper: incident.thresholdUpper,
-																comparator: incident.comparator,
-																signalType: incident.signalType,
-																window: {
-																	min: inputs.range.start,
-																	max: inputs.range.end,
-																},
-																source: "preview",
-																isLoading: inputs.isPreviewLoading,
-																error: inputs.previewError,
-															}),
+													: incident.signalType === "cost_budget"
+														? sourceNote(h, {
+																text: "This incident follows a cost budget: it opened when the spend, or its forecast for the period, reached a percent of the budget's amount, and resolves once it is back under: a new period starts, the forecast eases, or the budget is raised. The budgets page shows where each one stands.",
+																href: budgetsHref(),
+																label: "Open budgets",
+															})
+														: rule === null
+															? typography(
+																	h,
+																	{ size: "sm", tone: "muted", as: "p" },
+																	[
+																		"The rule behind this incident was deleted, so its signal cannot be replayed.",
+																	],
+																)
+															: ruleChart(h, {
+																	chartId: inputs.chartId,
+																	chart: inputs.chart,
+																	toChartMessage: inputs.toChartMessage,
+																	colors: inputs.colors,
+																	timeZone: inputs.timeZone,
+																	preview: inputs.preview,
+																	checks: inputs.checks,
+																	incidents: [incident],
+																	threshold: incident.threshold,
+																	thresholdUpper: incident.thresholdUpper,
+																	comparator: incident.comparator,
+																	signalType: incident.signalType,
+																	window: {
+																		min: inputs.range.start,
+																		max: inputs.range.end,
+																	},
+																	source: "preview",
+																	isLoading: inputs.isPreviewLoading,
+																	error: inputs.previewError,
+																}),
 								],
 							),
 					incidentTimeline(h, {

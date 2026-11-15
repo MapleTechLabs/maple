@@ -110,6 +110,18 @@ const infrastructureItem: NavItem = {
 	],
 }
 
+const costItem: NavItem = {
+	title: "Cost",
+	href: "/cost",
+	icon: "CircleDollarIcon",
+	badge: "Beta",
+	subItems: [
+		// Not "Explorer": the palette finds the Explore pages by that word.
+		{ title: "Spend", href: "/cost", icon: "ChartBarHorizontalIcon", paletteTitle: "Cost" },
+		{ title: "Budgets", href: "/cost/budgets", icon: "GaugeIcon", paletteTitle: "Cost budgets" },
+	],
+}
+
 const servicesItem: NavItem = {
 	title: "Services",
 	href: "/services",
@@ -242,9 +254,7 @@ const analystNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 			...(flags.releases
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
-			...(flags.cloudCost
-				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
-				: []),
+			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
 ]
@@ -266,9 +276,7 @@ const operatorNavGroups = (flags: NavFlags): ReadonlyArray<NavGroup> => [
 				? [{ title: "Releases", href: "/releases", icon: "RocketIcon" } as const]
 				: []),
 			infrastructureItem,
-			...(flags.cloudCost
-				? [{ title: "Cost", href: "/cost", icon: "CircleDollarIcon", badge: "Beta" } as const]
-				: []),
+			...(flags.cloudCost ? [costItem] : []),
 		],
 	},
 	{

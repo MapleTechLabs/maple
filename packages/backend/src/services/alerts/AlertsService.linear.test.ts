@@ -18,7 +18,7 @@ import {
 	tracesRow,
 	alertServices,
 } from "./alerts-service-test-support"
-import { LinearAlertDestinationConfig } from "@maple/domain/http"
+import { LinearAlertDestinationConfig, LinearFeatureSettingsRequest } from "@maple/domain/http"
 
 const GraphqlRequest = Schema.fromJsonString(
 	Schema.Struct({
@@ -298,6 +298,63 @@ describe("AlertsService with a Linear destination", () => {
 				Arr.filter(linear.operations, (operation) => operation.name === "MapleIssueCreate"),
 				1,
 			)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: linear.fetch })))
+	})
+
+	it.effect("opens no issue and sends no comment when the org switched both off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const linear = linearServer()
+		const state = { tracesAggregateRows: [breaching] }
+		const orgId = asOrgId("org_linear_off")
+		const userId = asUserId("user_linear")
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
+			yield* connectLinear(testDb, linear.fetch, orgId)
+			yield* LinearOAuthService.use((service) =>
+				service.setFeatures(
+					orgId,
+					userId,
+					new LinearFeatureSettingsRequest({
+						openIssuesEnabled: false,
+						resolveCommentsEnabled: false,
+					}),
+				),
+			).pipe(Effect.provide(linearLayers(testDb, linear.fetch)))
+			const alerts = yield* alertServices
+			const destination = yield* alerts.createDestination(
+				orgId,
+				userId,
+				adminRoles,
+				new LinearAlertDestinationConfig({
+					type: "linear",
+					name: "Engineering triage",
+					teamId: "team_1",
+				}),
+			)
+			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			assert.lengthOf((yield* alerts.listIncidents(orgId)).incidents, 1)
+
+			state.tracesAggregateRows = [healthy]
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+			yield* TestClock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			const sent = Arr.map(linear.operations, (operation) => operation.name)
+			assert.notInclude(sent, "MapleIssueCreate")
+			assert.notInclude(sent, "MapleComment")
+			const threads = yield* Effect.promise(() =>
+				queryFirstRow<{ count: number }>(
+					testDb,
+					"SELECT count(*)::int AS count FROM alert_linear_issues WHERE org_id = $1",
+					[orgId],
+				),
+			)
+			assert.strictEqual(threads?.count, 0)
 		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: linear.fetch })))
 	})
 

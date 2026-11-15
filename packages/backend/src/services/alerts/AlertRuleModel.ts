@@ -42,6 +42,7 @@ import {
 	type ManagedSignalType,
 } from "@maple/domain/http"
 import { AuditDetectionFilters } from "@maple/domain/audit-trail"
+import { StoredCostBudget } from "@maple/domain/cost-budget"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { AlertRules, type AlertRuleRow } from "@maple/db/tables"
 import { DateTime, Array as Arr, Effect, Match, Result, Schema, String as Str } from "effect"
@@ -59,6 +60,7 @@ type StoredJsonColumn =
 	| "destinationIdsJson"
 	| "thresholdsJson"
 	| "auditFiltersJson"
+	| "costBudgetJson"
 
 /**
  * An `alert_rules` row with its schema-typed jsonb columns read as `unknown`. The model
@@ -80,6 +82,8 @@ export const selectStoredAlertRules = () =>
 		thresholdsJson: PG.undecoded($.thresholdsJson),
 		// Undecoded so one detection with filters this build cannot read fails alone.
 		auditFiltersJson: PG.undecoded($.auditFiltersJson),
+		// Undecoded for the same reason: one budget this build cannot read fails alone.
+		costBudgetJson: PG.undecoded($.costBudgetJson),
 	}))
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
@@ -113,6 +117,8 @@ export interface NormalizedRule {
 	readonly auditFilters: AuditDetectionFilters
 	/** Audit detections only: events that arrived before this do not count; null counts the whole window. */
 	readonly auditCountFrom: number | null
+	/** Cost budgets only: what the rule measures; null on every other rule. */
+	readonly costBudget: StoredCostBudget | null
 	readonly tags: ReadonlyArray<string>
 	readonly groupBy: AlertGroupBy | null
 	readonly signalType: AlertSignalType
@@ -257,12 +263,17 @@ export const managedRuleMessage = (signalType: ManagedSignalType): string =>
 			() =>
 				"audit rules belong to an audit log detection; create, edit or delete the detection in the Security hub instead",
 		),
+		Match.when(
+			"cost_budget",
+			() =>
+				"cost_budget rules belong to a cost budget; create, edit or delete the budget on the Cost page instead",
+		),
 		Match.exhaustive,
 	)
 
 /**
- * The stored plan of every queryless rule (`uptime`, `slo_burn_rate`, `audit`, `anomaly`): the
- * evaluator reads the owning resource or the anomaly detector's incidents instead.
+ * The stored plan of every queryless rule (`uptime`, `slo_burn_rate`, `audit`, `cost_budget`,
+ * `anomaly`): the evaluator reads the owning resource or the anomaly detector's incidents instead.
  */
 export const MANAGED_RULE_PLAN = new CompiledAlertQueryPlan({
 	kind: "spec",
@@ -673,6 +684,12 @@ const decodeStoredAuditFilters = (row: StoredAlertRuleRow) =>
 		? Effect.succeed<AuditDetectionFilters>({})
 		: decodeStoredRuleComponent(row.id, "audit_filters", AuditDetectionFilters, row.auditFiltersJson)
 
+/** A cost budget's amount, period and slice. Another kind of rule has none. */
+const decodeStoredCostBudget = (row: StoredAlertRuleRow) =>
+	row.signalType !== "cost_budget"
+		? Effect.succeed(null)
+		: decodeStoredRuleComponent(row.id, "cost_budget", StoredCostBudget, row.costBudgetJson)
+
 export const decodeStoredAlertRuleDestinationIds = (
 	ruleId: AlertRuleId,
 	value: unknown,
@@ -832,6 +849,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 		const thresholds = yield* decodeStoredAlertRuleThresholds(row, destinationIds)
 		const legacy = alertThresholdLegacyFields(thresholds)
 		const auditFilters = yield* decodeStoredAuditFilters(row)
+		const costBudget = yield* decodeStoredCostBudget(row)
 		return {
 			id: decoded.id,
 			name: row.name,
@@ -846,6 +864,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			anomalySignals: row.anomalySignalsJson ?? [],
 			auditFilters,
 			auditCountFrom: row.auditCountFrom,
+			costBudget,
 			tags: stored.tags,
 			groupBy: decoded.groupBy,
 			signalType: decoded.signalType,
@@ -1072,6 +1091,7 @@ export const makeAlertRuleNormalizer = (runtime: AlertRuntimeApi) => {
 			anomalySignals,
 			auditFilters: {},
 			auditCountFrom: null,
+			costBudget: null,
 			tags,
 			groupBy,
 			signalType: request.signalType,
