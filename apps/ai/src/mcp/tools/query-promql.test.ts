@@ -271,6 +271,17 @@ describe("query_promql rendering", () => {
 			expect(text).not.toContain("a\\\\\\|b")
 		}),
 	)
+
+	it.effect("quotes label values, so a value holding a quote is not another label", () =>
+		Effect.gen(function* () {
+			const { text } = yield* run({ query: QUERY, ...WINDOW, step: "1m" }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: [series('a", y="b', [1])] }),
+			)
+			// The table cell escapes the backslash again; the ambiguous unquoted form never appears.
+			expect(text).toContain('job="a\\\\", y=\\\\"b"')
+			expect(text).not.toContain('job="a", y="b"')
+		}),
+	)
 })
 
 describe("query_promql empty results", () => {

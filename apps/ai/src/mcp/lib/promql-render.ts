@@ -1,5 +1,5 @@
 // query_promql's model-facing text: per series its labels, summary stats and a few points.
-import { Array as Arr, Option, Order, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Order, pipe, Record as Rec, String as Str } from "effect"
 import type { PromqlSampleValue, PromqlSeries, QueryPromqlOutput } from "@maple/domain/mcp-outputs"
 import { formatNumber, tableCell, truncate } from "./format"
 import { doc, type DocBlock, type NextCall, type ToolDoc } from "./tool-doc"
@@ -23,6 +23,10 @@ export const formatSample = (value: typeof PromqlSampleValue.Type): string => {
 const formatTime = (ms: number): string =>
 	Str.replace("T", " ")(Str.slice(5, ms % 1000 === 0 ? 19 : 23)(new Date(ms).toISOString()))
 
+/** A label value as Prometheus quotes it: backslash, double quote and newline escaped. */
+const escapeLabelValue = (value: string): string =>
+	pipe(value, Str.replace(/\\/g, "\\\\"), Str.replace(/"/g, '\\"'), Str.replace(/\n/g, "\\n"))
+
 /** `name{k="v", ...}`, the way Prometheus prints a series. */
 export const seriesName = (labels: Series["labels"]): string => {
 	const name = labels.__name__ ?? ""
@@ -31,7 +35,7 @@ export const seriesName = (labels: Series["labels"]): string => {
 		Order.mapInput(Order.String, ([key]: readonly [string, string]) => key),
 	)
 	const inner = Arr.join(
-		Arr.map(rest, ([key, value]) => `${key}="${value}"`),
+		Arr.map(rest, ([key, value]) => `${key}="${escapeLabelValue(value)}"`),
 		", ",
 	)
 	return rest.length === 0 && name !== "" ? name : `${name}{${inner}}`
