@@ -8988,7 +8988,9 @@ async fn accept_row_source(
             let PlannedFailure {
                 error,
                 pieces_written,
+                ..
             } = &failure;
+            let stored_any = failure.stored_any();
             let mut api_error = api_error_from_pipeline(error);
             error!(
                 error = %failure,
@@ -8996,13 +8998,13 @@ async fn accept_row_source(
                 org_id,
                 "Native telemetry pipeline rejected payload"
             );
-            if *pieces_written > 0 {
+            if stored_any {
                 api_error.message =
                     partial_write_message(error, *pieces_written, plan.pieces.len());
             }
             match error {
                 // Resending fails the same way: the batch is lost, or the unwritten part of it.
-                PipelineError::Encode(_) if *pieces_written > 0 => {
+                PipelineError::Encode(_) if stored_any => {
                     metrics::org_data_loss(org_id, signal.path(), "encode_partial");
                 }
                 PipelineError::Encode(_) | PipelineError::TooLarge(_) => {
@@ -9023,7 +9025,11 @@ async fn accept_row_source(
 /// The answer to a request that failed after some of its pieces were durable: those
 /// are exported, so it must not say nothing was written.
 fn partial_write_message(error: &PipelineError, written: usize, pieces: usize) -> String {
-    let stored = format!("{written} of the {pieces} pieces this batch was stored in were written and will be exported.");
+    let stored = if written == 0 {
+        format!("Part of the first of the {pieces} pieces this batch was stored in was written and will be exported.")
+    } else {
+        format!("At least {written} of the {pieces} pieces this batch was stored in were written and will be exported.")
+    };
     if matches!(error, PipelineError::Encode(_)) {
         format!("Maple could not encode the rest of this batch for storage. {stored} Resending fails the same way; contact support with this request's trace id.")
     } else {

@@ -53,7 +53,7 @@ static PARTIAL_WRITE_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_partial_write_total")
         .with_description(
-            "Requests that failed after some of their row pieces were durable, by signal and reason",
+            "Requests that failed after part of their rows were durable, by signal and reason",
         )
         .build()
 });
@@ -774,9 +774,22 @@ pub fn gcp_disabled_drop() {
     GCP_DISABLED_DROPS_TOTAL.add(1, &[]);
 }
 
-/// A request failed or was dropped after some of its row pieces were written, so
-/// those pieces are exported and a resend stores them again.
+static PARTIAL_WRITE_BY_REASON: LazyLock<std::sync::Mutex<HashMap<String, u64>>> =
+    LazyLock::new(Default::default);
+
+/// Partial writes counted for `reason` in this process, for tests.
+pub fn partial_write_count(reason: &str) -> u64 {
+    PARTIAL_WRITE_BY_REASON
+        .lock()
+        .map_or(0, |counts| counts.get(reason).copied().unwrap_or(0))
+}
+
+/// A request failed or was dropped after part of its rows were written, so that
+/// part is exported and a resend stores it again.
 pub fn partial_write(signal: &str, reason: &str) {
+    if let Ok(mut counts) = PARTIAL_WRITE_BY_REASON.lock() {
+        *counts.entry(reason.to_owned()).or_default() += 1;
+    }
     PARTIAL_WRITE_TOTAL.add(
         1,
         &[

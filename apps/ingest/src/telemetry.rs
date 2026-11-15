@@ -4,7 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -1303,8 +1303,13 @@ impl TelemetryPipeline {
             .map_err(|error| PlannedFailure {
                 error,
                 pieces_written: 0,
+                frames_written: 0,
             })?;
-        let mut progress = PieceProgress::new(source.signal_path(), plan.pieces.len());
+        let mut progress = PieceProgress::new(
+            source.signal_path(),
+            plan.pieces.len(),
+            Arc::clone(&grant.frames_written),
+        );
         let mut stats = AcceptStats::default();
         for piece in &plan.pieces {
             let piece_stats = self
@@ -1405,6 +1410,7 @@ impl TelemetryPipeline {
             wal_lane,
             wal_bytes,
             permits,
+            frames_written: Arc::new(AtomicUsize::new(0)),
         })
     }
 
@@ -1546,6 +1552,9 @@ impl TelemetryPipeline {
                 })?;
                 committed_bytes += queued_bytes;
                 frames_committed += 1;
+                if let Some(grant) = grant.as_ref() {
+                    grant.frames_written.fetch_add(1, Ordering::Relaxed);
+                }
                 batch_frames = batch_frames.max(appended.batch_frames);
                 lock_wait += appended.lock_wait;
                 sync_wait += appended.sync_wait;
@@ -1798,6 +1807,8 @@ struct PlanGrant {
     wal_lane: Arc<WalLane>,
     wal_bytes: u64,
     permits: Vec<mpsc::OwnedPermit<QueuedFrame>>,
+    /// Frames of the plan already durable, shared with its `PieceProgress`.
+    frames_written: Arc<AtomicUsize>,
 }
 
 impl PlanGrant {
@@ -1814,49 +1825,69 @@ impl Drop for PlanGrant {
     }
 }
 
-/// A planned request that failed, and how many of its pieces were already durable
-/// and will be exported. Non-zero means a resend stores those pieces again.
+/// A planned request that failed, and how much of it was already durable and will
+/// be exported. Any frame written means a resend stores that part again.
 #[derive(Debug)]
 pub struct PlannedFailure {
     pub error: PipelineError,
     pub pieces_written: usize,
+    /// Frames written, counting those of a piece that failed part way.
+    pub frames_written: usize,
+}
+
+impl PlannedFailure {
+    pub const fn stored_any(&self) -> bool {
+        self.frames_written > 0
+    }
 }
 
 impl std::fmt::Display for PlannedFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ({} pieces written)", self.error, self.pieces_written)
+        write!(
+            f,
+            "{} ({} pieces, {} frames written)",
+            self.error, self.pieces_written, self.frames_written
+        )
     }
 }
 
 impl std::error::Error for PlannedFailure {}
 
-/// Counts a request that stops after some of its pieces were written, including
+/// Counts a request that stops after any of its frames were written, including
 /// one dropped mid-way (a request timeout or a closed connection).
 struct PieceProgress {
     signal: &'static str,
     pieces: usize,
     written: usize,
+    frames: Arc<AtomicUsize>,
     done: bool,
 }
 
 impl PieceProgress {
-    const fn new(signal: &'static str, pieces: usize) -> Self {
+    const fn new(signal: &'static str, pieces: usize, frames: Arc<AtomicUsize>) -> Self {
         Self {
             signal,
             pieces,
             written: 0,
+            frames,
             done: false,
         }
     }
 
+    fn frames_written(&self) -> usize {
+        self.frames.load(Ordering::Relaxed)
+    }
+
     fn failed(&mut self, error: PipelineError) -> PlannedFailure {
         self.done = true;
-        if self.written > 0 {
+        let frames_written = self.frames_written();
+        if frames_written > 0 {
             self.record(error.kind());
         }
         PlannedFailure {
             error,
             pieces_written: self.written,
+            frames_written,
         }
     }
 
@@ -1869,8 +1900,9 @@ impl PieceProgress {
             signal = self.signal,
             pieces = self.pieces,
             pieces_written = self.written,
+            frames_written = self.frames_written(),
             reason,
-            "Request stopped after some of its pieces were written"
+            "Request stopped after part of it was written"
         );
         tracing::Span::current().record("maple.ingest.row_pieces_written", self.written);
         metrics::partial_write(self.signal, reason);
@@ -1879,7 +1911,7 @@ impl PieceProgress {
 
 impl Drop for PieceProgress {
     fn drop(&mut self) {
-        if !self.done && self.written > 0 {
+        if !self.done && self.frames_written() > 0 {
             self.record("cancelled");
         }
     }
@@ -7789,6 +7821,61 @@ mod tests {
             .map_or(0, |entry| entry.value().load(Ordering::Relaxed))
     }
 
+    /// A one-piece metrics request writes one frame per datasource; dropped after the
+    /// first of them, it is counted as a partial write though no whole piece was.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_request_dropped_inside_its_first_piece_is_counted() {
+        let (primary_url, _primary_rx) = spawn_fake_tinybird().await;
+        let queue_dir = unique_test_dir("planned-cancel");
+        let metrics = one_of_each_metric_request();
+        let plan = RowSource::Metrics(&metrics).plan("org_cancel", crate::row_budget::ROW_PIECE_BYTES);
+        assert_eq!(plan.pieces.len(), 1, "one piece");
+        let mut cfg = test_cfg();
+        cfg.endpoint = primary_url;
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.queue_channel_capacity = 1_000;
+        let pipeline = TelemetryPipeline::new(cfg, Client::new()).await.unwrap();
+        let source = RowSource::Metrics(&metrics);
+
+        let before = metrics::partial_write_count("cancelled");
+        let mut accept = Box::pin(pipeline.accept_planned(
+            "org_cancel",
+            source,
+            ExportDestination::Tinybird,
+            &plan,
+        ));
+        let mut poll_once = async || {
+            std::future::poll_fn(|cx| {
+                std::task::Poll::Ready(std::future::Future::poll(accept.as_mut(), cx).is_ready())
+            })
+            .await
+        };
+        // Frames are appended one after another, so once a second has reached disk
+        // the first is written; drop the request there, before its last frame.
+        let mut seen = 0;
+        let mut landed = 0;
+        while landed < 2 {
+            assert!(!poll_once().await, "dropped before its last frame");
+            let backlog = pipeline.wal_backlog_bytes();
+            if backlog > seen {
+                landed += 1;
+            }
+            seen = backlog;
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        drop(poll_once);
+        assert_eq!(
+            metrics::partial_write_count("cancelled"),
+            before,
+            "not counted while the request runs"
+        );
+        drop(accept);
+        assert_eq!(metrics::partial_write_count("cancelled"), before + 1);
+
+        drop(std::fs::remove_dir_all(queue_dir));
+    }
+
     /// The whole plan's queue bytes are taken before its first piece: a request that
     /// does not fit is refused with nothing written, then stored once when it does.
     #[tokio::test]
@@ -7820,6 +7907,7 @@ mod tests {
             .expect_err("the org queue cannot take it whole");
         assert!(matches!(failure.error, PipelineError::Throttled(_)));
         assert_eq!(failure.pieces_written, 0);
+        assert_eq!(failure.frames_written, 0);
         assert_eq!(pipeline.wal_backlog_bytes(), 0, "nothing written");
         assert_eq!(
             org_queued(&pipeline, "org_planned"),
@@ -7916,6 +8004,7 @@ mod tests {
             );
             assert!(!failure.error.is_server_fault(), "{name}");
             assert_eq!(failure.pieces_written, 0, "{name}");
+            assert_eq!(failure.frames_written, 0, "{name}");
             assert_eq!(pipeline.wal_backlog_bytes(), 0, "{name}: nothing written");
             assert_eq!(org_queued(&pipeline, "org_planned"), 0, "{name}");
         }

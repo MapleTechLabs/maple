@@ -240,7 +240,9 @@ they do not use is returned when the request ends, however it ends.
 - Rows that no reservation could ever hold (more than the org queue cap, the WAL lane's cap, or
   more frames than the lane channel has slots) are a 413 `@maple/ingest/RowsExceedQueue`. Resending
   fails the same way, so it counts in `ingest_org_data_loss_total` as `rows_exceed_queue` and marks
-  the span `Error`.
+  the span `Error`. The WAL lane cap is `INGEST_QUEUE_MAX_BYTES / (shards x 2)`, so on a small
+  host (a preview's 512 MiB lanes, or a self-hosted gateway with many CPUs) it is below the org
+  cap and is the real per-request limit. Row bytes are an estimate a few percent over the actual.
 - Room that is not free right now is the error the per-frame checks always gave: 429
   `@maple/ingest/OrgQueueThrottled` for the org queue, 429 for a full channel, 503
   `@maple/ingest/QueueUnavailable` for a full WAL lane. Nothing is written, so the resend is clean.
@@ -251,19 +253,27 @@ is at most its org reservation, and per process the rows in flight are bounded b
 `INGEST_ORG_QUEUE_MAX_BYTES`; there is no single process-wide cap on the second term beyond the WAL
 cap (`INGEST_QUEUE_MAX_BYTES`), which counts the same frames on disk.
 
-A request is acknowledged only once every piece is durable. With the room reserved up front, a
-piece can still fail after earlier pieces were written in only these ways:
+The whole plan counts against its lane's cap from the start, so other requests on that lane can
+get a 503 until its pieces are written. That lasts as long as building and syncing the pieces
+(the body is already decoded, so a client cannot slow it), at most the 30 s request timeout. The
+cap check runs outside the lane's append lock, so a racing append can pass the cap by one frame.
+
+A request is acknowledged only once every piece is durable. With the room reserved up front, it
+can still fail after part of it was written in only these ways. A piece holds up to four frames
+(one per metrics datasource), so "part" can be a frame of the first piece:
 
 - The WAL write or its sync fails (disk I/O), or the lane's writer is gone.
-- The request is dropped between pieces: the 30 s request timeout, or the client disconnecting.
-  The piece being appended when it drops is not exported, but earlier ones are.
-- The process dies between pieces; replay exports the pieces already in the WAL.
+- The request is dropped mid-way: the 30 s request timeout, or the client disconnecting. Frames
+  already appended are exported. The frame being appended when it drops reaches disk without being
+  queued, so it is exported only if the process restarts before the export cursor passes it.
+- The process dies mid-way; replay exports the frames already in the WAL.
 - A piece's rows exceed their estimate (a gateway bug, never seen in the equality tests).
 
-The written pieces are exported, and a resend stores them again: the at-least-once duplicate the
+The written frames are exported, and a resend stores them again: the at-least-once duplicate the
 WAL already allows. The answer says so instead of claiming nothing was written, the span records
-`maple.ingest.row_pieces_written`, and `ingest_partial_write_total` counts it by signal and reason
-(`cancelled` for a dropped request). An encode failure after a written piece stays non-retryable and
+`maple.ingest.row_pieces_written` (whole pieces), and `ingest_partial_write_total` counts any
+request with at least one frame written, by signal and reason
+(`cancelled` for a dropped request). An encode failure after a written frame stays non-retryable and
 counts in `ingest_org_data_loss_total` as `encode_partial`, since only the unwritten part is lost.
 
 `ingest.encode_rows` (one per piece) records the estimate (`maple.ingest.row_bytes_estimate`)
@@ -310,7 +320,7 @@ Frames waiting in a lane's channel are not in this budget: they are bounded per 
 | `ingest_wal_commit_bytes`               | Per-append size; the `ingest.wal_commit` span carries the latency  |
 | `ingest_wal_sync_batch_frames`          | Frames per group-commit sync; its count is the fsync count         |
 | `ingest_wal_sync_wait_duration_seconds` | Write to covering sync, per append                                 |
-| `ingest_partial_write_total`            | Requests that failed after some row pieces were durable            |
+| `ingest_partial_write_total`            | Requests that failed after part of their rows were durable         |
 
 `queue_full` means the object store cannot keep up with segment rotation, and those segments stay
 local-only. Sustained non-zero is the signal that the durability tier is not actually covering the
