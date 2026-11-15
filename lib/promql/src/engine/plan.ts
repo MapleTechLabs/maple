@@ -41,6 +41,8 @@ const MIN_BUCKET_MS = 1000
 /** Functions that need every sample value, which buckets cannot provide. */
 const RAW_FUNCTIONS: ReadonlySet<string> = new Set([
 	"quantile_over_time",
+	"stddev_over_time",
+	"stdvar_over_time",
 	"holt_winters",
 	"double_exponential_smoothing",
 ])
@@ -64,12 +66,15 @@ const pinned = (grid: TimeGrid, at: number | undefined): TimeGrid =>
 /** The inner grid of a subquery: absolute multiples of its step, covering every outer window. */
 export const subqueryGrid = (sub: SubqueryExpr, grid: TimeGrid, params: QueryParams): TimeGrid => {
 	const outer = pinned(grid, resolveAt(sub.at, params))
-	const stepMs = sub.stepMs ?? (params.stepMs > 0 ? params.stepMs : DEFAULT_SUBQUERY_STEP_MS)
+	// Prometheus' default is the evaluation interval, never the query step.
+	const stepMs = sub.stepMs ?? DEFAULT_SUBQUERY_STEP_MS
 	const earliest = outer.startMs - sub.offsetMs - sub.rangeMs
 	// Windows are left-open, so a point exactly on `earliest` is excluded.
 	const startMs = (Math.floor(earliest / stepMs) + 1) * stepMs
 	return { startMs, endMs: outer.endMs - sub.offsetMs, stepMs }
 }
+
+const unparen = (expr: Expr): Expr => (expr.type === "Paren" ? unparen(expr.expr) : expr)
 
 /** Every selector of the query with the request that feeds it. */
 export type RequestPlan = Map<VectorSelector, SelectorRequest>
@@ -139,8 +144,8 @@ export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 			}
 		}
 	}
-	// A bare range selector returns its raw samples.
-	walk(expr, top, expr.type === "MatrixSelector")
+	// A bare range selector returns its raw samples, parenthesized or not.
+	walk(expr, top, unparen(expr).type === "MatrixSelector")
 	return plan
 }
 
@@ -155,8 +160,6 @@ const isPushdownFunction = (func: string): func is PushdownFunction =>
 
 const isPushdownAggregation = (op: string): op is PushdownAggregation =>
 	PUSHDOWN_AGGREGATIONS.some((a) => a === op)
-
-const unparen = (expr: Expr): Expr => (expr.type === "Paren" ? unparen(expr.expr) : expr)
 
 /** `func(selector[range])`, or a bare selector read as its lookback (`last`). */
 const pushableInner = (

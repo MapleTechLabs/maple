@@ -15,6 +15,7 @@ import { Array as Arr, Order } from "effect"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/primitives"
 import {
+	METRIC_UNIT_SEPARATOR,
 	type PromqlCatalogRow,
 	type PromqlSelectorRow,
 	type PromqlPushdownRow,
@@ -53,7 +54,7 @@ const compileSelector = (
 	group: {
 		readonly table: MetricTable
 		readonly component: MetricComponent
-		readonly metricNames: ReadonlyArray<string>
+		readonly targets: ReadonlyArray<PromNameTarget>
 	},
 	options: SelectorPlanOptions,
 ) => {
@@ -62,7 +63,7 @@ const compileSelector = (
 		promqlSelectorQuery({
 			table: group.table,
 			component: group.component,
-			metricNames: group.metricNames,
+			targets: group.targets,
 			widthMs: request.widthMs,
 			needsValues: request.needsValues,
 			limit: options.maxSeries + 1,
@@ -77,6 +78,10 @@ const compileSelector = (
 		},
 	)
 }
+
+/** The identity a selector row reports for a target: its stored name and unit. */
+const targetKey = (target: Pick<PromNameTarget, "metricName" | "unit">): string =>
+	`${target.metricName}${METRIC_UNIT_SEPARATOR}${target.unit}`
 
 const nameMatchersOf = (request: SelectorRequest): ReadonlyArray<LabelMatcher> =>
 	Arr.filter(request.matchers, (m) => m.name === "__name__")
@@ -110,12 +115,12 @@ export const buildSelectorQueries = (
 	options: SelectorPlanOptions,
 ): ReadonlyArray<SelectorPlan> =>
 	Arr.map(groupTargets(resolveSelectorName(nameMatchersOf(request), catalog)), (group) => {
-		const promNames = new Map(Arr.map(group.targets, (t) => [t.metricName, t.promName] as const))
+		const promNames = new Map(Arr.map(group.targets, (t) => [targetKey(t), t.promName] as const))
 		return {
 			table: group.table,
 			component: group.component,
 			promNames,
-			compiled: compileSelector(request, { ...group, metricNames: [...promNames.keys()] }, options),
+			compiled: compileSelector(request, group, options),
 		}
 	})
 
@@ -235,7 +240,7 @@ const compilePushdown = (
 	const opts: PromqlPushdownOpts = {
 		table: target.table,
 		component: target.component,
-		metricNames: [target.metricName],
+		targets: [target],
 		widthMs: request.widthMs,
 		func: request.func,
 		rangeMs: request.rangeMs,

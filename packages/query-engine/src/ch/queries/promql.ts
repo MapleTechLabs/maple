@@ -5,7 +5,7 @@
 // accumulated into counters); previous sample per series; per (series, bucket) statistics;
 // one row per series with the bucket statistics as parallel arrays.
 
-import { Schema } from "effect"
+import { Array as Arr, Schema } from "effect"
 import * as T from "@maple-dev/effect-orm/clickhouse"
 import { from, fromQuery, param, sql, table } from "@maple-dev/effect-orm/clickhouse"
 import * as CH from "@maple-dev/effect-orm/expr"
@@ -13,6 +13,9 @@ import { CHNumber } from "../schema"
 import * as Datasources from "@maple/domain/tinybird/datasources"
 import { orgId, orgIdParam, utcSecondsParam } from "../tables"
 import { EXCLUDED_KEY } from "../../promql/labels"
+
+/** Joins a stored metric's name and unit into the identity a selector row reports. */
+export const METRIC_UNIT_SEPARATOR = "\u001f"
 
 export type PromqlMetricTable =
 	| "metrics_sum"
@@ -32,8 +35,8 @@ export interface PromqlLabelColumns {
 export interface PromqlSelectorOpts {
 	readonly table: PromqlMetricTable
 	readonly component: PromqlComponent
-	/** Stored OTel metric names; one query reads them all. */
-	readonly metricNames: ReadonlyArray<string>
+	/** Stored (OTel name, unit) pairs; one query reads them all. */
+	readonly targets: ReadonlyArray<{ readonly metricName: string; readonly unit: string }>
 	/** 0: one bucket per sample. */
 	readonly widthMs: number
 	/** Also return each bucket's values in time order (raw mode). */
@@ -61,6 +64,7 @@ const metricTable = (name: PromqlMetricTable) =>
 		columns: {
 			OrgId: orgId,
 			MetricName: T.string,
+			MetricUnit: T.string,
 			ServiceName: T.string,
 			Attributes: stringMap,
 			ResourceAttributes: stringMap,
@@ -104,7 +108,8 @@ const finiteSampleCond = (component: PromqlComponent) => {
 const scanQuery = (opts: PromqlSelectorOpts) =>
 	from(metricTable(opts.table))
 		.select(($) => ({
-			MetricName: $.MetricName,
+			// Name and unit together: one name in two units is two metrics (`_seconds`, `_milliseconds`).
+			MetricName: sql(T.string)`concat(${$.MetricName}, ${METRIC_UNIT_SEPARATOR}, ${$.MetricUnit})`,
 			ServiceName: $.ServiceName,
 			Attributes: $.Attributes,
 			ResourceAttributes: $.ResourceAttributes,
@@ -114,7 +119,11 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.MetricName.in_(...opts.metricNames),
+			$.MetricName.in_(...Arr.dedupe(Arr.map(opts.targets, (t) => t.metricName))),
+			sql.cond`(${$.MetricName}, ${$.MetricUnit}) IN (${sql.join(
+				Arr.map(opts.targets, (t) => sql`(${t.metricName}, ${t.unit})`),
+				", ",
+			)})`,
 			sql.cond`${$.TimeUnix} > fromUnixTimestamp64Milli(toInt64(${param.int("startMs")}))`,
 			sql.cond`${$.TimeUnix} <= fromUnixTimestamp64Milli(toInt64(${param.int("endMs")}))`,
 			// A no-recorded-value point (a failed scrape) is not a sample.
@@ -124,7 +133,8 @@ const scanQuery = (opts: PromqlSelectorOpts) =>
 		])
 
 /**
- * The series key: everything the series' labels are built from, and nothing else. A resource
+ * The series key: everything the series' labels are built from, maps sorted so attribute order
+ * does not matter, and nothing else. A resource
  * key the labels drop (service.version, telemetry.sdk.*) must not split a series, or a deploy
  * turns one counter into two with the same labels.
  */
@@ -132,7 +142,7 @@ const keyedQuery = (opts: PromqlSelectorOpts) =>
 	fromQuery(scanQuery(opts), "scan").select(($) => ({
 		sk: sql(
 			T.uint64,
-		)`cityHash64(${$.MetricName}, ${$.ServiceName}, mapKeys(${$.Attributes}), mapValues(${$.Attributes}), mapKeys(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})), mapValues(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes})), ${$.ResourceAttributes}['service.name'], ${$.ResourceAttributes}['service.namespace'], ${$.ResourceAttributes}['service.instance.id'], ${$.pair}[1])`,
+		)`cityHash64(${$.MetricName}, ${$.ServiceName}, mapKeys(mapSort(${$.Attributes})), mapValues(mapSort(${$.Attributes})), mapKeys(mapSort(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes}))), mapValues(mapSort(mapFilter((_k, _v) -> NOT ${EXCLUDED_KEY}, ${$.ResourceAttributes}))), ${$.ResourceAttributes}['service.name'], ${$.ResourceAttributes}['service.namespace'], ${$.ResourceAttributes}['service.instance.id'], ${$.pair}[1])`,
 		MetricName: $.MetricName,
 		ServiceName: $.ServiceName,
 		Attributes: $.Attributes,
@@ -347,7 +357,7 @@ export function promqlCatalogQuery(opts: { readonly limit: number }) {
 		.select(($) => ({
 			metricName: $.MetricName,
 			metricType: $.MetricType,
-			unit: CH.any_($.MetricUnit),
+			unit: $.MetricUnit,
 			isMonotonic: sql(T.uint8)`max(${$.IsMonotonic})`,
 		}))
 		.where(($) => [
@@ -355,7 +365,7 @@ export function promqlCatalogQuery(opts: { readonly limit: number }) {
 			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
 			$.Hour.lte(utcSecondsParam("endTime")),
 		])
-		.groupBy("metricName", "metricType")
+		.groupBy("metricName", "metricType", "unit")
 		.limit(opts.limit)
 		.format("JSON")
 }
@@ -389,8 +399,6 @@ export type PromqlPushdownFunction =
 	| "max_over_time"
 	| "last_over_time"
 	| "present_over_time"
-	| "stddev_over_time"
-	| "stdvar_over_time"
 	| "last"
 
 export interface PromqlPushdownOpts extends Omit<PromqlSelectorOpts, "needsValues" | "limit"> {
@@ -584,7 +592,6 @@ const instantPair = (opts: PromqlPushdownOpts, $: WindowRow) => {
 /** The function's value for one (series, step) window, and whether it has one. */
 const windowValue = (opts: PromqlPushdownOpts, $: WindowRow) => {
 	const any = sql(T.uint8)`${$.n} >= 1`
-	const variance = sql(T.float64)`greatest(0, ${$.sumSquares} / ${$.n} - pow(${$.sum} / ${$.n}, 2))`
 	switch (opts.func) {
 		case "rate":
 		case "increase":
@@ -612,10 +619,6 @@ const windowValue = (opts: PromqlPushdownOpts, $: WindowRow) => {
 			return { value: $.lastV, valid: any }
 		case "present_over_time":
 			return { value: sql(T.float64)`1`, valid: any }
-		case "stddev_over_time":
-			return { value: sql(T.float64)`sqrt(${variance})`, valid: any }
-		case "stdvar_over_time":
-			return { value: variance, valid: any }
 	}
 }
 
