@@ -422,6 +422,35 @@ describe("hostile input", () => {
 		expect(at(1024)).toThrow(ProfilesTooLarge)
 	})
 
+	it("refuses an attribute whose references resolve past the ceiling before serializing it", () => {
+		// 10,000 references to one 1 MiB entry: a few wire bytes each, about 10 GB once resolved.
+		const big = Str.repeat(1024 * 1024)("x")
+		const request = {
+			resourceProfiles: [
+				{
+					resource: {
+						attributes: [
+							{
+								key: "tags",
+								value: {
+									arrayValue: {
+										values: Arr.makeBy(10_000, () => ({ stringValueStrindex: 1 })),
+									},
+								},
+							},
+						],
+					},
+					scopeProfiles: [{ profiles: [{ samples: [{ stackIndex: 1, values: ["1"] }] }] }],
+				},
+			],
+			dictionary: { stringTable: ["", big] },
+		}
+		const started = performance.now()
+		expect(() => encodeProfiles(request, NOW_NANO)).toThrow(ProfilesTooLarge)
+		// Stopped while resolving, long before 10 GB of text could be built.
+		expect(performance.now() - started).toBeLessThan(2_000)
+	})
+
 	it("stops on attributes every row repeats before it groups the samples they repeat in", () => {
 		// One attribute-heavy profile, every sample its own group: the rows would repeat 2 MB each.
 		const samples = Arr.makeBy(1_000, (index) => ({ stackIndex: 1, linkIndex: index, values: ["1"] }))
