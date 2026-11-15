@@ -11,7 +11,7 @@ export type LegacySettingsTab = (typeof legacySettingsTabValues)[number]
 export const settingsTabLabels = {
 	general: "General",
 	members: "Members",
-	domains: "Domains",
+	domains: "Verified domains",
 	billing: "Billing & usage",
 	"audit-log": "Audit log",
 	keys: "Keys",

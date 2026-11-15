@@ -188,7 +188,7 @@ const noDomains = (h: H): Html =>
 	])
 
 const domainsSection = (h: H, model: Model): Html =>
-	settingsSection(h, { id: "settings-domains", title: "Domains", isLead: true, padded: false }, [
+	settingsSection(h, { id: "settings-domains", title: "Verified domains", isLead: true, padded: false }, [
 		AsyncData.matchDataSplitEmpty(model.domains, {
 			onIdle: () =>
 				domainsTable(

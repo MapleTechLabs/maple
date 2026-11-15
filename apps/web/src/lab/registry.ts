@@ -87,7 +87,7 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 	},
 	{
 		path: "/lab/domains",
-		title: "Domains",
+		title: "Verified domains",
 		description:
 			"The settings domains tab as an admin: verified and unverified domains, none yet, and the add and verify dialogs (`?state=`).",
 		kind: "lab",

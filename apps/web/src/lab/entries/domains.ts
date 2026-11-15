@@ -3,7 +3,7 @@ import { breadcrumbs, Flags, flags, init, Message, Model, update, view } from ".
 
 // `/lab/domains`: the settings domains tab over fixtures, its dialogs open on demand (`?state=`).
 
-export const lab = defineShellLab("Domains", {
+export const lab = defineShellLab("Verified domains", {
 	Model,
 	Message,
 	Flags,

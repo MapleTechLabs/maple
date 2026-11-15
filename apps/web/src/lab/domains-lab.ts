@@ -117,7 +117,7 @@ export const update = (model: Model, message: Message): Return =>
 		},
 	})
 
-export const breadcrumbs = [{ label: "Lab", href: "/lab" }, { label: "Domains" }] as const
+export const breadcrumbs = [{ label: "Lab", href: "/lab" }, { label: "Verified domains" }] as const
 
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	h.div(
