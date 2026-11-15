@@ -132,7 +132,7 @@ describe("metrics saved views", () => {
 	})
 
 	test("a metric's page names its view, and the same query on another metric is not that view", () => {
-		const query = { agg: "max", groupBy: "http.route", timePreset: "6h" } as const
+		const query: Detail.Search = { agg: "max", groupBy: "http.route", timePreset: "6h" }
 		scene(
 			{ update: detailUpdate, view: detailView },
 			given(onMetric(DURATION, query, [HISTOGRAMS, P99_BY_ROUTE])),

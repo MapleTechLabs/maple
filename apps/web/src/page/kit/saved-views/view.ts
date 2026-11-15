@@ -52,10 +52,11 @@ const group = (
 const saveEntries = (active: ActiveView | null, isWriting: boolean): ReadonlyArray<Entry> => {
 	if (active === null) return [{ _tag: "Item", value: ITEM.save, label: "Save view…" }]
 	if (!active.isModified) return []
+	const update: ReadonlyArray<Entry> = active.view.isOwner
+		? [{ _tag: "Item", value: ITEM.update, label: "Update view", isDisabled: isWriting }]
+		: []
 	return [
-		...(active.view.isOwner
-			? [{ _tag: "Item", value: ITEM.update, label: "Update view", isDisabled: isWriting } as const]
-			: []),
+		...update,
 		{ _tag: "Item", value: ITEM.saveAsNew, label: "Save as new…" },
 		{ _tag: "Item", value: ITEM.discard, label: "Discard changes" },
 	]
@@ -65,22 +66,21 @@ const saveEntries = (active: ActiveView | null, isWriting: boolean): ReadonlyArr
 const manageEntries = (active: ActiveView | null): ReadonlyArray<Entry> => {
 	if (active === null) return []
 	const { view } = active
-	return [
-		...(view.isOwner
-			? [
-					{ _tag: "Item", value: ITEM.rename, label: "Rename…" } as const,
-					{
-						_tag: "Checkbox",
-						value: ITEM.share,
-						label: "Share with organization",
-						isChecked: view.visibility === "org",
-					} as const,
-				]
-			: []),
-		...(view.canDelete
-			? [{ _tag: "Item", value: ITEM.delete, label: "Delete…", variant: "destructive" } as const]
-			: []),
-	]
+	const owned: ReadonlyArray<Entry> = view.isOwner
+		? [
+				{ _tag: "Item", value: ITEM.rename, label: "Rename…" },
+				{
+					_tag: "Checkbox",
+					value: ITEM.share,
+					label: "Share with organization",
+					isChecked: view.visibility === "org",
+				},
+			]
+		: []
+	const removal: ReadonlyArray<Entry> = view.canDelete
+		? [{ _tag: "Item", value: ITEM.delete, label: "Delete…", variant: "destructive" }]
+		: []
+	return [...owned, ...removal]
 }
 
 const note = (h: H, text: string): Entry => ({

@@ -423,7 +423,7 @@ describe("saved views control", () => {
 
 	test("deleting asks first, then removes the view and returns the button to Views", () => {
 		const explorer = explorerOf(ERRORS)
-		const shared = { ...MINE, visibility: "org" as const }
+		const shared: SavedView = { ...MINE, visibility: "org" }
 		const asking = pick(loaded([shared, MINE_TOO], explorer), ITEM.delete, explorer).model
 		scene(
 			sceneOf(explorer),
