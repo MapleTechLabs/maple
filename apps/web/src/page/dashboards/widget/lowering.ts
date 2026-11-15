@@ -75,7 +75,7 @@ const toStatAggregate = (value: unknown): EditorState["statAggregate"] =>
 /** The table's row limit input caps at this many rows. */
 export const ROW_LIMIT_MAX = 1000
 
-const parseRowLimit = (raw: string): number | undefined => {
+export const parseRowLimit = (raw: string): number | undefined => {
 	const parsed = parsePositiveNumber(raw)
 	return parsed === undefined ? undefined : Math.min(parsed, ROW_LIMIT_MAX)
 }

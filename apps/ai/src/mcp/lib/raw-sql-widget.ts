@@ -53,9 +53,14 @@ export function buildRawSqlDataSource(args: {
  */
 export function withScalarReduction(dataSource: WidgetDataSource, isScalar: boolean): WidgetDataSource {
 	if (!isScalar) return dataSource
-	// A PromQL scalar needs its rows newest first, which only a stat display type gives;
-	// without one the rows are a line chart's, oldest first, and `first` reads the oldest.
-	if ("kind" in dataSource && dataSource.kind === "promql" && dataSource.displayType === undefined) {
+	// A PromQL scalar needs its rows newest first, which only a stat or gauge display type gives;
+	// any other (absent, or a line chart's) is oldest first, and `first` would read the oldest.
+	if (
+		"kind" in dataSource &&
+		dataSource.kind === "promql" &&
+		dataSource.displayType !== "stat" &&
+		dataSource.displayType !== "gauge"
+	) {
 		return withScalarReduction({ ...dataSource, displayType: "stat" }, isScalar)
 	}
 	if (dataSourceTransform(dataSource)?.reduceToValue !== undefined) return dataSource

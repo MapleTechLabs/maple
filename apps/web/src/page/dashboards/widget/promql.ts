@@ -2,7 +2,7 @@ import { rawSqlDisplayTypeFor, widgetTypeByVisualization } from "@maple/domain/h
 import { dataSourcePromql, dataSourceTransform, makePromqlDataSource } from "@maple/widgets/dashboard"
 import { Record as Rec, Schema, String as Str } from "effect"
 import type { EditorState } from "./editor-state"
-import type { Widget } from "./lowering"
+import { parseRowLimit, type Widget } from "./lowering"
 
 // The PromQL draft, the staged copy the preview runs, and the `promql` data source Apply writes.
 
@@ -49,15 +49,20 @@ export const isRunnablePromql = (promql: PromqlState): boolean => Str.trim(promq
 export const promqlDataSourceOf = (
 	widget: Widget,
 	draft: PromqlDraft,
-	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate">,
+	state: Pick<EditorState, "visualization" | "chartId" | "statAggregate" | "tableLimit">,
 ): Widget["dataSource"] => {
 	const stored =
 		dataSourcePromql(widget.dataSource) === null ? undefined : dataSourceTransform(widget.dataSource)
 	const { reduceToValue: _previous, ...kept } = stored ?? {}
 	const isScalar = widgetTypeByVisualization(state.visualization)?.isScalar === true
+	// A table writes the Row limit picked in the editor; clearing it removes the stored one.
+	const isTable = rawSqlDisplayTypeFor(state.visualization, state.chartId) === "table"
+	const { limit: _limit, ...unlimited } = kept
+	const rowLimit = parseRowLimit(state.tableLimit)
+	const limited = !isTable ? kept : rowLimit === undefined ? unlimited : { ...unlimited, limit: rowLimit }
 	const transform = isScalar
-		? { ...kept, reduceToValue: { field: "value", aggregate: state.statAggregate } }
-		: kept
+		? { ...limited, reduceToValue: { field: "value", aggregate: state.statAggregate } }
+		: limited
 	const legendFormat = Str.trim(draft.legendFormat)
 	return makePromqlDataSource({
 		query: draft.query,
