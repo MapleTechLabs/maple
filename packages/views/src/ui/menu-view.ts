@@ -31,6 +31,7 @@ import {
 } from "./menu"
 import { icon, type IconName } from "./icon"
 import * as Tooltip from "./tooltip"
+import { typography } from "./typography"
 import { popupId, portalId, triggerId } from "./overlay/popup-state"
 import type { Align, Side } from "./overlay/position"
 import { focusGuard, isMounted, SR_ONLY_STYLE, stateAttributes } from "./overlay/transition"
@@ -50,6 +51,13 @@ export type MenuItemEntry = Readonly<{
 	className?: string
 	/** The item's own children (an avatar, a badge), in place of `icon`, `label` and `shortcut`. */
 	content?: ReadonlyArray<Html | string>
+	/** A trailing muted note that says whose or what the item is (a shared view's owner). */
+	meta?: string
+	/**
+	 * The pick in effect, marked with a trailing check. Unlike a radio item it closes the menu when
+	 * picked, for a list whose items navigate.
+	 */
+	isCurrent?: boolean
 	/**
 	 * A tooltip on a wrapper `div` around the item (`<TooltipTrigger render={<div />}>`): a disabled
 	 * item swallows pointer events, so the wrapper takes the hover.
@@ -166,10 +174,34 @@ const SUBMENU_KEYS = new Set([...ROOT_KEYS, "ArrowLeft"])
 const shortcutOf = (h: H, entry: MenuItemEntry): ReadonlyArray<Html> =>
 	entry.shortcut === undefined ? [] : [menuShortcut(h, [entry.shortcut])]
 
+/** A label that gives way to what trails it: a long name truncates, the note and the check stay. */
+const trailedLabel = (h: H, entry: MenuItemEntry): ReadonlyArray<Html | string> =>
+	entry.meta === undefined && entry.isCurrent !== true
+		? [entry.label]
+		: [
+				typography(h, { truncate: true, className: "min-w-0 flex-1" }, [entry.label]),
+				...(entry.meta === undefined
+					? []
+					: [
+							typography(h, { tone: "muted", truncate: true, className: "max-w-32" }, [
+								entry.meta,
+							]),
+						]),
+				// Decorative: the item already says it is the pick in effect with `aria-current`.
+				...(entry.isCurrent === true
+					? [
+							h.span(
+								[h.AriaHidden(true), h.Class("shrink-0")],
+								[icon(h, "CheckIcon", { attributes: [h.Attribute("stroke-width", "2")] })],
+							),
+						]
+					: []),
+			]
+
 const itemContent = (h: H, entry: MenuItemEntry): ReadonlyArray<Html | string> =>
 	entry.content ?? [
 		...(entry.icon === undefined ? [] : [icon(h, entry.icon)]),
-		entry.label,
+		...trailedLabel(h, entry),
 		...shortcutOf(h, entry),
 	]
 
@@ -227,6 +259,7 @@ const renderEntry = (h: H, model: Model, entry: MenuEntry, index: number): Html 
 					variant: entry.variant,
 					isDisabled: entry.isDisabled,
 					className: entry.className,
+					...(entry.isCurrent === true ? { attributes: [h.AriaCurrent("true")] } : undefined),
 				},
 				itemContent(h, entry),
 			)

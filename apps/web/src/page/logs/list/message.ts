@@ -13,6 +13,7 @@ import * as Tooltip from "@maple/views/ui/tooltip"
 import * as LogDetail from "@maple/views/logs/log-sheet"
 import * as InfraCorrelation from "../../kit/infra-correlation"
 import { SignalPresences } from "@maple/views/data/signal-presence"
+import * as SavedViews from "../../kit/saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import * as Dialog from "@maple/views/ui/dialog"
 import { LookupNames } from "../../kit/autocomplete-lookups"
@@ -68,6 +69,7 @@ export const Message = defineMessageUnion({
 	GotFilterSectionsMessage: { message: FilterSections.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotRefreshMenuMessage: { message: Menu.Message },
+	GotSavedViewsMessage: { message: SavedViews.Message },
 	GotToolbarTooltipMessage: { message: Tooltip.Message },
 	GotColumnsPopoverMessage: { message: Popover.Message },
 	GotSearchHelpMessage: { message: Popover.Message },

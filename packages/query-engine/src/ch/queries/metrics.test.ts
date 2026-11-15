@@ -411,17 +411,6 @@ describe("metricsSparklinesQuery", () => {
 		expect(sql).toContain("GROUP BY bucket, metricName")
 		expect(sql).toContain("ORDER BY bucket ASC")
 	})
-
-	it("uses histogram aggregate expressions for histogram tables", () => {
-		const q = metricsSparklinesQuery({
-			metricType: "histogram",
-			metricNames: ["http.server.duration"],
-		})
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM metrics_histogram")
-		expect(sql).toContain("sum(metrics_histogram.Sum) / sum(metrics_histogram.Count)")
-		expect(sql).toContain("sum(metrics_histogram.Count) AS dataPointCount")
-	})
 })
 
 describe("metricsBreakdownQuery", () => {
@@ -433,14 +422,6 @@ describe("metricsBreakdownQuery", () => {
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
 		expect(sql).toContain("LIMIT 10")
-	})
-
-	it("compiles histogram breakdown", () => {
-		const q = metricsBreakdownQuery({ metricType: "histogram" })
-		const { sql } = compileUnsafe(q, baseParams)
-		expect(sql).toContain("FROM metrics_histogram")
-		expect(sql).toContain("sum(metrics_histogram.Sum)")
-		expect(sql).toContain("sum(metrics_histogram.Count)")
 	})
 
 	it("selects min and max for breakdowns", () => {

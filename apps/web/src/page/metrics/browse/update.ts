@@ -15,6 +15,8 @@ import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
+import * as SavedViews from "../../kit/saved-views"
+import { browseViewsExplorer } from "../saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { PresetValue } from "../../kit/time-controls"
 import { type MetricRow, SPARKLINE_METRIC_TYPES } from "../shared"
@@ -151,6 +153,8 @@ const isSameQuery = (a: Search, b: Search) => (a.q ?? "") === (b.q ?? "") && a.t
 
 const typeSelectValue = (search: Search) => search.type ?? "all"
 
+const toSavedViews = (message: SavedViews.Message) => Message.GotSavedViewsMessage({ message })
+
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -172,6 +176,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		presence: SignalPresenceData.Loading(),
 		timePicker: TimeRangePicker.init("metrics-time-range"),
+		savedViews: SavedViews.init("metrics-views"),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -183,16 +188,13 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			LoadChartRuntime(),
+			SavedViews.loadCommand(browseViewsExplorer([model.search]), toSavedViews),
 		],
 	}
 }
 
 /** A filter, the view or the window changed: re-request, re-resolving only a moved window. */
-export const routeChanged = (
-	model: Model,
-	route: { readonly search: Search },
-	context: PageContext,
-): Return => {
+const routed = (model: Model, route: { readonly search: Search }, context: PageContext): Return => {
 	if (searchHref(model.search) === searchHref(route.search)) return { model }
 	const query = route.search.q ?? ""
 	// The search box resyncs its input on an outside change, never on its own echo.
@@ -383,5 +385,37 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotTypeSelectMessage: ({ message: inner }) => liftTypeSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => liftTimePicker(model, inner),
+		GotSavedViewsMessage: ({ message: inner }) =>
+			SavedViews.pageStep(
+				model,
+				inner,
+				browseViewsExplorer([model.search]),
+				toSavedViews,
+				draftFromView,
+			),
 		GotSparklineMessage: () => ({ model }),
 	})
+
+// A picked view replaces the search box's draft, and a debounce still pending from the old
+// draft must not put it back over the view's query.
+const draftFromView = (model: Model, search: SavedViews.ViewSearch): Model => {
+	const query = typeof search["q"] === "string" ? search["q"] : ""
+	return {
+		...model,
+		searchInput: query,
+		lastSentQuery: query,
+		searchGeneration: model.searchGeneration + 1,
+	}
+}
+
+/** The view the old URL was stays the page's view as the URL moves on. */
+const withRememberedView = (model: Model): Model => {
+	const savedViews = SavedViews.remembered(model.savedViews, browseViewsExplorer([model.search]))
+	return savedViews === model.savedViews ? model : { ...model, savedViews }
+}
+
+export const routeChanged = (
+	model: Model,
+	route: { readonly search: Search },
+	context: PageContext,
+): Return => routed(withRememberedView(model), route, context)

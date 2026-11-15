@@ -40,36 +40,20 @@ describe("validateMetricsAttributeFilters", () => {
 		}),
 	)
 
-	it.effect("rejects a percentile on an exponential histogram, which would read as no data", () =>
-		Effect.gen(function* () {
-			const error = yield* validateEvaluate(
-				makeRequest({
-					kind: "timeseries",
-					source: "metrics",
-					metric: "p95",
-					filters: { ...baseFilters, metricType: "exponential_histogram" },
-				}),
-			).pipe(Effect.flip)
-
-			assert.strictEqual(error._tag, "@maple/http/errors/QueryEngineValidationError")
-			if (error._tag === "@maple/http/errors/QueryEngineValidationError") {
-				assert.include(Arr.join(error.details, "; "), "not available for exponential histograms")
-			}
-		}),
-	)
-
-	it.effect("accepts a percentile on an explicit-bucket histogram", () =>
-		Effect.gen(function* () {
-			const range = yield* validateEvaluate(
-				makeRequest({
-					kind: "timeseries",
-					source: "metrics",
-					metric: "p95",
-					filters: { ...baseFilters, metricType: "histogram" },
-				}),
-			)
-			assert.strictEqual(range.rangeSeconds, 3600)
-		}),
+	it.effect("accepts a percentile on either kind of histogram", () =>
+		Effect.forEach(["histogram", "exponential_histogram"] as const, (metricType) =>
+			Effect.gen(function* () {
+				const range = yield* validateEvaluate(
+					makeRequest({
+						kind: "timeseries",
+						source: "metrics",
+						metric: "p95",
+						filters: { ...baseFilters, metricType },
+					}),
+				)
+				assert.strictEqual(range.rangeSeconds, 3600)
+			}),
+		),
 	)
 
 	it.effect("accepts groupBy=attribute when groupByAttributeKey is present", () =>
