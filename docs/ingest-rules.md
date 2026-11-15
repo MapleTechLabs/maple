@@ -124,6 +124,13 @@ Within one rule, a value replaced by a key match is final: that rule's detectors
 not scan it. Later rules see the replacement like any other value. A later detector
 can still match text inside a replacement, so never write a detector that matches `[REDACTED`.
 
+**Profiles** (`ingest_rules::redact_profiles`) are not a rule signal. A profile carries the same
+resource as the service's traces and logs, so every redact rule runs on it, whatever its signals,
+and its conditions are ignored, since they describe spans, logs and metrics. A profile gets the
+most redaction any rule asks for. `resource` covers each resource's attributes and `attributes`
+the dictionary's attribute table (profile and sample attributes). Drop rules never apply to
+profiles, and a profile's redactions are not counted in the rule stats.
+
 ### Detectors
 
 Each detector is a regex built from ASCII classes and bounded quantifiers only, so the Rust and JS

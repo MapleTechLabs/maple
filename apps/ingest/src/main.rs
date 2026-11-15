@@ -5537,6 +5537,8 @@ async fn handle_profiles(
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
         "maple.ingest.native_rows" = tracing::field::Empty,
+        "maple.ingest.rules.count" = tracing::field::Empty,
+        "maple.ingest.rules.redacted_values" = tracing::field::Empty,
         "maple.profiles.dropped" = tracing::field::Empty,
         "maple.sdk" = tracing::field::Empty,
         "user_agent.original" = tracing::field::Empty,
@@ -5697,6 +5699,7 @@ async fn handle_profiles_inner(
         native_rows_pipeline_for(state, destination, "Profile storage is not configured")?;
 
     let (payload_format, gzip) = profiles_body_encoding(headers)?;
+    let rules = profile_redaction_rules(state, &org_id).await?;
     Span::current().record("maple.ingest.payload_format", payload_format.label());
     Span::current().record(
         "maple.ingest.content_encoding",
@@ -5716,6 +5719,7 @@ async fn handle_profiles_inner(
         gzip,
         payload_format,
         profile_resource_stamps(&resolved_key),
+        rules,
     )
     .await
     .inspect_err(|error| {
@@ -5729,8 +5733,10 @@ async fn handle_profiles_inner(
         let signal = TelemetrySignal::Profiles.as_str();
         if error.status == StatusCode::BAD_REQUEST {
             metrics::org_data_loss(&org_id, signal, "decode");
-        } else if error.error_kind() == INGEST_ROW_EXPANSION.error_kind {
-            metrics::org_data_loss(&org_id, signal, INGEST_ROW_EXPANSION.error_kind);
+        } else if [INGEST_ROW_EXPANSION.error_kind, INGEST_RULES_SCAN_BUDGET.error_kind]
+            .contains(&error.error_kind())
+        {
+            metrics::org_data_loss(&org_id, signal, error.error_kind());
         }
     })?;
     let count = rows.len();
@@ -5891,7 +5897,9 @@ async fn decode_profiles(
     gzip: bool,
     payload_format: PayloadFormat,
     stamps: profiles::ResourceStamps,
+    rules: Option<Arc<rules_gateway::OrgRules>>,
 ) -> Result<FlattenedProfiles, ApiError> {
+    let span = Span::current();
     let mut reservation = state.decode_memory.reservation();
     let (max_decoded, heap_budget) = (
         state.config.max_decoded_body_bytes,
@@ -5933,12 +5941,15 @@ async fn decode_profiles(
         if !reservation.try_add(estimate) {
             return Err(busy());
         }
-        let request = match payload_format {
+        let mut request = match payload_format {
             PayloadFormat::Protobuf => ExportProfilesServiceRequest::decode(payload.as_ref())
                 .map_err(|e| invalid_payload("profiles", "protobuf", e))?,
             PayloadFormat::Json => profiles::decode_json(&payload)
                 .map_err(|e| invalid_payload("profiles", "JSON", e))?,
         };
+        if let Some(rules) = &rules {
+            redact_profile_export(&span, rules, &mut request)?;
+        }
         // Only the decoded form is left; the buffers went with the payload.
         let decoded_bytes = payload.len();
         drop(payload);
@@ -5979,6 +5990,50 @@ async fn decode_profiles(
             "Ingest gateway failed to decode the request",
         ))
     })
+}
+
+/// The org's ingest rules when one of them redacts: a profile gets every redact rule (see
+/// `ingest_rules::redact_profiles`). A lookup with nothing to fall back on refuses the export
+/// rather than storing it unredacted, as on the OTLP paths.
+async fn profile_redaction_rules(
+    state: &AppState,
+    org_id: &str,
+) -> Result<Option<Arc<rules_gateway::OrgRules>>, ApiError> {
+    let resolver = &state.ingest_rule_resolver;
+    if !resolver.enabled() || org_id == SENTINEL_ORG_ID {
+        return Ok(None);
+    }
+    let rules = resolver.resolve_rules(org_id).await.map_err(|unavailable| {
+        let message = match unavailable {
+            rules_gateway::RulesUnavailable::Store => "Ingest rules could not be loaded; retry shortly",
+            rules_gateway::RulesUnavailable::RegexBudget => {
+                "This organization's ingest rule regexes are too large to compile together; simplify or remove some"
+            }
+        };
+        ApiError::tagged(StatusCode::SERVICE_UNAVAILABLE, &INGEST_RULES_UNAVAILABLE, message)
+    })?;
+    Ok(rules.compiled.redacts().then_some(rules))
+}
+
+/// Redacts a decoded export with the org's rules, before anything of it is flattened or stored.
+fn redact_profile_export(
+    span: &Span,
+    rules: &rules_gateway::OrgRules,
+    request: &mut ExportProfilesServiceRequest,
+) -> Result<(), ApiError> {
+    let mut stats = RuleStats::default();
+    ingest_rules::redact_profiles(&rules.compiled, request, &mut stats).map_err(
+        |ingest_rules::ScanBudgetExceeded| {
+            ApiError::tagged(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                &INGEST_RULES_SCAN_BUDGET,
+                "This export needs more ingest rule scanning than one request may use; send smaller exports",
+            )
+        },
+    )?;
+    span.record("maple.ingest.rules.count", rules.compiled.len());
+    span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
+    Ok(())
 }
 
 fn profiles_decode_busy() -> ApiError {
@@ -15217,6 +15272,71 @@ mod tests {
             },
         });
         Bytes::from(serde_json::to_vec(&request).expect("the export encodes"))
+    }
+
+    // A profile carries the same resource as the org's traces and logs, so every redact rule
+    // runs on it, whatever signals it names and ignoring conditions written for spans.
+    #[tokio::test]
+    async fn a_profiles_export_is_redacted_by_every_redact_rule() {
+        let queue_dir = unique_main_test_dir("profiles-redacted");
+        let key = "maple_sk_test_profiles_redacted";
+        let org = "org_profiles_redacted";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(
+            org,
+            &[
+                serde_json::json!({
+                    "signals": ["logs"],
+                    "conditions": [],
+                    "action": { "_tag": "redact", "keys": [], "detectors": ["email"], "patterns": [],
+                        "scopes": ["attributes", "resource"], "method": "mask" }
+                }),
+                serde_json::json!({
+                    "signals": ["traces"],
+                    "conditions": [{ "field": "name", "op": "eq", "value": "GET /never" }],
+                    "action": { "_tag": "redact", "keys": ["deploy.secret"], "detectors": [],
+                        "patterns": [], "scopes": ["resource"], "method": "remove" }
+                }),
+            ],
+        );
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let state = with_ingest_rules(state, &store);
+        let request = serde_json::json!({
+            "resourceProfiles": [{
+                "resource": { "attributes": [
+                    { "key": "service.name", "value": { "stringValue": "checkout" } },
+                    { "key": "owner", "value": { "stringValue": "jane@example.com" } },
+                    { "key": "deploy.secret", "value": { "stringValue": "s3cr3t" } },
+                ] },
+                "scopeProfiles": [{ "profiles": [{ "samples": [
+                    { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+                ] }] }],
+            }],
+            "dictionary": {
+                "stringTable": ["", "main", "customer"],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": [
+                    {},
+                    { "keyStrindex": 2, "value": { "stringValue": "bob@example.com" } },
+                ],
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+
+        let headers = profiles_headers(key, "application/json");
+        let accepted = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect("the export is accepted");
+        assert_eq!(accepted.stored_rows, 1);
+        let rows = imported_profile_rows(&mut imports, 1).await;
+        let resource = &rows[0]["resource_attributes"];
+        assert_eq!(resource["service.name"], "checkout");
+        assert_eq!(resource["owner"], "[REDACTED:email]");
+        assert!(resource.get("deploy.secret").is_none(), "{resource}");
+        assert_eq!(rows[0]["sample_attributes"]["customer"], "[REDACTED:email]");
+        drop(std::fs::remove_dir_all(&queue_dir));
     }
 
     // A profiles export is reserved whole before its first frame, as a planned OTLP
