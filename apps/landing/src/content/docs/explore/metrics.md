@@ -38,12 +38,12 @@ The metric page has a chart, a breakdown panel, and a side panel of metadata.
 
 Query controls above the chart:
 
-| Control       | What it does                                                                                                                                                          |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Aggregate** | How data points combine per time bucket. Monotonic sums offer `rate` (the default), `increase`, and `sum`. Other types offer `avg`, `sum`, `min`, `max`, and `count`. |
-| **Where**     | A filter on attributes, with autocomplete. For example `http.route = "/api/users"`.                                                                                   |
-| **Group by**  | **Everything (no breakdown)**, `service.name`, or any data point attribute as `attr.<key>`.                                                                           |
-| **Every**     | The bucket size in seconds. **Auto** picks one from the time range.                                                                                                   |
+| Control       | What it does                                                                                                                                                                                                                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Aggregate** | How data points combine per time bucket. Monotonic sums offer `rate` (the default), `increase`, and `sum`. Other types offer `avg`, `sum`, `min`, `max`, and `count`. Histograms and exponential histograms also offer the percentiles `p50`, `p75`, `p90`, `p95`, and `p99`, estimated from their buckets. |
+| **Where**     | A filter on attributes, with autocomplete. For example `http.route = "/api/users"`.                                                                                                                                                                                                                         |
+| **Group by**  | **Everything (no breakdown)**, `service.name`, or any data point attribute as `attr.<key>`.                                                                                                                                                                                                                 |
+| **Every**     | The bucket size in seconds. **Auto** picks one from the time range.                                                                                                                                                                                                                                         |
 
 The chart header shows the query, such as `rate(http.server.requests) by service.name`, and the metric's unit.
 
