@@ -1420,6 +1420,26 @@ fn attributes_that_expand_as_they_are_read_never_allocate_past_what_was_granted(
     );
 }
 
+/// Resource keys named by string-table indices past the table: each reads as no key,
+/// but the flatten still notes where each was named.
+#[test]
+fn resource_keys_named_past_the_string_table_stay_inside_what_was_granted() {
+    const MIB: u64 = 1024 * 1024;
+    let mut request = expanding_profiles(16);
+    request.resource_profiles[0].resource = Some(opentelemetry_proto::tonic::resource::v1::Resource {
+        attributes: (0..200_000)
+            .map(|at| KeyValue {
+                key_strindex: 1_000_000 + at,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+    let (peak, granted, rows) = flatten_within(&request, 2 * MIB);
+    assert_eq!(rows, Err(FlattenError::OverBudget));
+    assert!(peak as u64 <= granted, "peak {peak} past the {granted} granted");
+}
+
 proptest::proptest! {
     #![proptest_config(proptest::prelude::ProptestConfig::with_cases(512))]
 
