@@ -328,12 +328,30 @@ export const profilerLayer = (
 					return stopped
 				}),
 			)
-			const rotate = Effect.gen(function* () {
-				const stopped = yield* swap
-				// Let the app run before the encode takes its turn.
-				yield* Effect.yieldNow
-				yield* exportWindow(stopped)
-			})
+			// A failed stop or start (a debugger attach, another session driving the profiler) costs
+			// the window, not the feature: stop whatever is left and start afresh. Only a restart
+			// that also fails ends the loop.
+			const restart = (error: ProfilerFailed) =>
+				Effect.uninterruptible(
+					Effect.gen(function* () {
+						yield* Effect.logWarning(
+							"[MapleProfiler] window dropped, restarting the profiler",
+							error,
+						)
+						options.timeline?.drain()
+						yield* Effect.ignore(post(session, "Profiler.stop"))
+						const next = yield* start
+						yield* Ref.set(current, next)
+					}),
+				)
+			const rotate = swap.pipe(
+				Effect.matchEffect({
+					onFailure: restart,
+					onSuccess: (stopped) =>
+						// Let the app run before the encode takes its turn.
+						Effect.andThen(Effect.yieldNow, exportWindow(stopped)),
+				}),
+			)
 
 			yield* Effect.addFinalizer(() =>
 				Effect.gen(function* () {
