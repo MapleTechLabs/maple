@@ -23,6 +23,7 @@ import {
 	GithubSelectInstallationResponse,
 	InfraSurfaceLiteral,
 	IntegrationsForbiddenError,
+	IntegrationsNotConnectedError,
 	IntegrationsUpstreamError,
 	LinearDisconnectResponse,
 	LinearIntegrationStatus,
@@ -219,6 +220,13 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleInternalApi, "inte
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requirePermission(tenant.roles, "integrations:manage")
+						// Like Cloudflare's: switches are set on a connected integration only.
+						const current = yield* linear.getStatus(tenant.orgId)
+						if (!current.connected) {
+							return yield* new IntegrationsNotConnectedError({
+								message: "Linear is not connected",
+							})
+						}
 						const features = yield* linear.setFeatures(tenant.orgId, tenant.userId, payload)
 						yield* recordHttpAudit("linear_integration.features_updated", {
 							metadata: { ...features },

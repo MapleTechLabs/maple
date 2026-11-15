@@ -1732,7 +1732,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.patch("linearFeatures", "/linear/features", {
 			payload: LinearFeatureSettingsRequest,
 			success: LinearIntegrationStatus,
-			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+			error: [IntegrationsForbiddenError, IntegrationsNotConnectedError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(
