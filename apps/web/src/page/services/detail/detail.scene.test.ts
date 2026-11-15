@@ -201,6 +201,37 @@ describe("service detail", () => {
 			expectView(text(/errors 1(\.0)?% → 5(\.0)?% in its first 30 minutes/)).toExist(),
 			expectView(text("Errors up")).toExist(),
 			expectView(text("v2.0.0", { exact: false })).toExist(),
+			// The issue first seen 50 minutes ago arrived with v2.0.0, deployed an hour ago.
+			expectView(text(/new since/)).toExist(),
+		)
+	})
+
+	test("an issue older than every deploy in the window carries no tag", () => {
+		const model = entered()
+		const issued = pageUpdate(
+			model,
+			Message.CompletedFetchIssues({
+				key: model.issues.key ?? "",
+				result: Result.succeed([
+					{
+						id: "iss_old",
+						title: "an old timeout",
+						severity: "medium",
+						occurrenceCount: 3,
+						firstSeenAt: new Date(NOW - 3 * 24 * 60 * 60_000).toISOString(),
+						lastSeenAt: new Date(NOW - 60_000).toISOString(),
+					},
+				]),
+			}),
+		).model
+		const loaded = withDeploys(issued, [deploy("v2.0.0", 60, 0.05)]).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("an old timeout")).toExist(),
+			expectView(text(/new since/)).not.toExist(),
 		)
 	})
 
