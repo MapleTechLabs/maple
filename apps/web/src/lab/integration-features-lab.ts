@@ -1,4 +1,9 @@
-import { GithubIntegrationStatus, SupabaseIntegrationStatus } from "@maple/domain/http"
+import {
+	GithubIntegrationStatus,
+	LinearIntegrationStatus,
+	SupabaseIntegrationStatus,
+} from "@maple/domain/http"
+import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { Schema } from "effect"
 import { AsyncData, Submodel, type Update } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
@@ -7,12 +12,14 @@ import { Message as IntegrationsMessage } from "../page/integrations/message"
 import { Model as IntegrationsModel } from "../page/integrations/model"
 import * as Integrations from "../page/integrations/update"
 import { githubCard } from "../page/integrations/view-github"
+import { chatCard } from "../page/integrations/view-chat-card"
+import { linearCard } from "../page/integrations/view-linear"
 import { supabaseCard } from "../page/infra-integrations/supabase/integration/view-supabase"
 import { dashboardPage } from "../page/kit/dashboard-page"
 import type { Resources } from "../platform/resources"
 import { type GcpLabFlags, LAB_CONTEXT } from "./gcp-host"
 
-// `/lab/integration-features`: the Supabase and GitHub cards with their feature switches, over
+// `/lab/integration-features`: the Supabase, GitHub, Linear and Slack cards with their switches, over
 // fixture statuses. Flips update the page's model; no request is sent.
 
 const project = (ref: string, name: string, over: Readonly<Record<string, unknown>>) => ({
@@ -84,6 +91,47 @@ const githubStatus = Schema.decodeSync(GithubIntegrationStatus)({
 	repositories: [repo(1, "shop", true), repo(2, "api", false), repo(3, "docs", false)],
 })
 
+const linearStatus = Schema.decodeSync(LinearIntegrationStatus)({
+	connected: true,
+	workspaceName: "Acme",
+	connectedByUserId: null,
+	revoked: false,
+	features: {
+		openIssuesEnabled: true,
+		updateCommentsEnabled: true,
+		reopenIssuesEnabled: false,
+		resolveCommentsEnabled: true,
+	},
+})
+
+const chatStatus = (nowMs: number) =>
+	Schema.decodeSync(V2ChatConnectorList)({
+		object: "chat_connector_list",
+		data: [
+			{
+				id: "slack",
+				object: "chat_connector",
+				name: "Slack",
+				available: true,
+				supports_identity: false,
+				workspaces: [
+					{
+						id: "chatw_YoxMqYdzUJ1tH4BqCWxPH3",
+						object: "chat_workspace",
+						connector: "slack",
+						external_workspace_id: "T1",
+						name: "Acme Shop",
+						settings: {},
+						alerts_enabled: true,
+						direct_messages_enabled: true,
+						assistant_enabled: false,
+						created_at: new Date(nowMs - 3 * 86_400_000).toISOString(),
+					},
+				],
+			},
+		],
+	})
+
 export const Model = Schema.Struct({ timeZone: Schema.String, hub: IntegrationsModel })
 export type Model = typeof Model.Type
 
@@ -104,6 +152,8 @@ export const init = (flags: GcpLabFlags): Return => {
 					...hub.statuses,
 					supabase: { key: null, data: AsyncData.Success({ data: supabaseStatus(flags.nowMs) }) },
 					github: { key: null, data: AsyncData.Success({ data: githubStatus }) },
+					linear: { key: null, data: AsyncData.Success({ data: linearStatus }) },
+					chat: { key: null, data: AsyncData.Success({ data: chatStatus(flags.nowMs) }) },
 				},
 			},
 		},
@@ -130,6 +180,16 @@ const githubView = Submodel.defineView<
 	Readonly<{ timeZone: string }>
 >((hub, inputs, h) => h.div([], githubCard(h, hub, inputs.timeZone)))
 
+const linearView = Submodel.defineView<IntegrationsModel, IntegrationsMessage, Readonly<{}>>(
+	(hub, _inputs, h) => linearCard(h, hub),
+)
+
+/** The card reads the page's integration, so the slot shows it the Slack page. */
+const chatView = Submodel.defineView<IntegrationsModel, IntegrationsMessage, Readonly<{ timeZone: string }>>(
+	(hub, inputs, h) =>
+		chatCard(h, { ...hub, search: { ...hub.search, integration: "chat-slack" } }, inputs.timeZone),
+)
+
 /** Each card in its own slot: both render the page's disconnect dialog. */
 export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 	dashboardPage(h, {}, [
@@ -155,6 +215,30 @@ export const view = (model: Model, h: HtmlBuilder<Message>): Html =>
 							slotId: "integration-features-github",
 							model: model.hub,
 							view: githubView,
+							viewInputs: { timeZone: model.timeZone },
+							toParentMessage: (message) => Message.GotHubMessage({ message }),
+						}),
+					],
+				),
+				h.section(
+					[h.Id("linear")],
+					[
+						h.submodel({
+							slotId: "integration-features-linear",
+							model: model.hub,
+							view: linearView,
+							viewInputs: {},
+							toParentMessage: (message) => Message.GotHubMessage({ message }),
+						}),
+					],
+				),
+				h.section(
+					[h.Id("chat")],
+					[
+						h.submodel({
+							slotId: "integration-features-chat",
+							model: model.hub,
+							view: chatView,
 							viewInputs: { timeZone: model.timeZone },
 							toParentMessage: (message) => Message.GotHubMessage({ message }),
 						}),

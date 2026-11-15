@@ -270,7 +270,7 @@ const toggledFeature = (model: PlanetscaleCardModel, env: Env, flag: FeatureFlag
 	}))
 	return {
 		model: withCard(model, { features: step.state }),
-		commands: step.save === null ? [] : [SavePlanetscaleFeatures({ switches: step.save })],
+		commands: step.save === null ? [] : [SavePlanetscaleFeatures({ flag, enabled: step.save[flag] })],
 	}
 }
 

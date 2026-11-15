@@ -23,7 +23,10 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
 
 /** What the card reads: no destination, so a direct message to a person renders the same card. */
 export interface ChatAlertCardInput {
-	readonly context: Omit<DispatchContext, "deliveryKey" | "destination" | "publicConfig" | "secretConfig"> & {
+	readonly context: Omit<
+		DispatchContext,
+		"deliveryKey" | "destination" | "publicConfig" | "secretConfig"
+	> & {
 		readonly incidentAcknowledgedBy?: string | null
 	}
 	readonly templated: RenderInput<Config>["templated"]
@@ -127,7 +130,10 @@ export const chatTransport: EffectTransport<Config> = {
 			})
 			.pipe(
 				Effect.map((posted) => ({
-					providerMessage: `Delivered to ${posted.connectorName} #${input.config.channelName}`,
+					providerMessage:
+						posted.messageId === null
+							? `Skipped: alert notifications are off for this ${posted.connectorName} workspace`
+							: `Delivered to ${posted.connectorName} #${input.config.channelName}`,
 					providerReference: posted.messageId,
 					responseCode: null,
 				})),

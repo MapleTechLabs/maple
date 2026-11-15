@@ -163,6 +163,16 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import type { MapleDbError } from "@maple/db/client"
 import { systemTenant } from "@maple/backend/services/auth/system-tenant"
 
+const featureSwitchesOf = (row: PG.SelectRowOf<typeof CloudflareFeatureSettings>) =>
+	new CloudflareFeatureSwitches({
+		httpTrafficEnabled: row.httpTrafficEnabled,
+		firewallEnabled: row.firewallEnabled,
+		dnsEnabled: row.dnsEnabled,
+		workersEnabled: row.workersEnabled,
+		queuesEnabled: row.queuesEnabled,
+		durableObjectsEnabled: row.durableObjectsEnabled,
+	})
+
 /** The poller mirrors its writes onto the rows it loaded, so it holds them mutable. */
 type CloudflareAnalyticsStateRow = { -readonly [K in keyof StoredStateRow]: StoredStateRow[K] }
 type StateRowSet = PG.UpdateSetOf<typeof CloudflareAnalyticsState>
@@ -1438,16 +1448,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 			).pipe(
 				Effect.map((rows) => {
 					const row = rows[0]
-					return row === undefined
-						? ALL_CLOUDFLARE_FEATURES
-						: new CloudflareFeatureSwitches({
-								httpTrafficEnabled: row.httpTrafficEnabled,
-								firewallEnabled: row.firewallEnabled,
-								dnsEnabled: row.dnsEnabled,
-								workersEnabled: row.workersEnabled,
-								queuesEnabled: row.queuesEnabled,
-								durableObjectsEnabled: row.durableObjectsEnabled,
-							})
+					return row === undefined ? ALL_CLOUDFLARE_FEATURES : featureSwitchesOf(row)
 				}),
 			)
 
@@ -3683,27 +3684,56 @@ export class CloudflareAnalyticsService extends Context.Service<
 			if (!(yield* oauth.getStatus(orgId)).connected) {
 				return yield* new IntegrationsNotConnectedError({ message: "Cloudflare is not connected" })
 			}
+			// Only the switches sent: a concurrent save of another one keeps its value.
+			const set = {
+				...(update.httpTrafficEnabled !== undefined && {
+					httpTrafficEnabled: update.httpTrafficEnabled,
+				}),
+				...(update.firewallEnabled !== undefined && { firewallEnabled: update.firewallEnabled }),
+				...(update.dnsEnabled !== undefined && { dnsEnabled: update.dnsEnabled }),
+				...(update.workersEnabled !== undefined && { workersEnabled: update.workersEnabled }),
+				...(update.queuesEnabled !== undefined && { queuesEnabled: update.queuesEnabled }),
+				...(update.durableObjectsEnabled !== undefined && {
+					durableObjectsEnabled: update.durableObjectsEnabled,
+				}),
+			}
 			const current = yield* loadFeatures(orgId)
-			const next = new CloudflareFeatureSwitches({ ...current, ...update })
+			if (Rec.isEmptyRecord<string, unknown>(set)) return current
 			const now = yield* Clock.currentTimeMillis
-			const stillOff = disabledDatasets(next)
-			const resumed = Arr.filter([...disabledDatasets(current)], (dataset) => !stillOff.has(dataset))
-			const [firstResumed, ...restResumed] = resumed
 			// A feature turned back on starts from now: neither its head nor its backfill reads the off window.
 			const horizon = floorToBucket(now - SAFETY_LAG_MS)
 			const backfillDone = floorToBucket(now - SAFETY_LAG_MS - BACKFILL_MS)
-			yield* dbExecute((db) =>
+			const { next, resumed } = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(
+						const rows = yield* db.run(
 							PG.insertInto(CloudflareFeatureSettings)
-								.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
+								.values({
+									orgId,
+									...ALL_CLOUDFLARE_FEATURES,
+									...set,
+									createdAt: now,
+									updatedAt: now,
+									updatedBy: userId,
+								})
 								.onConflictDoUpdate({
 									target: ["orgId"],
-									set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
-								}),
+									set: () => ({ ...set, updatedAt: now, updatedBy: userId }),
+								})
+								.returning(),
 						)
-						if (firstResumed === undefined) return
+						const stored = rows[0]
+						const next =
+							stored === undefined
+								? new CloudflareFeatureSwitches({ ...current, ...set })
+								: featureSwitchesOf(stored)
+						const stillOff = disabledDatasets(next)
+						const resumed = Arr.filter(
+							[...disabledDatasets(current)],
+							(dataset) => !stillOff.has(dataset),
+						)
+						const [firstResumed, ...restResumed] = resumed
+						if (firstResumed === undefined) return { next, resumed }
 						yield* db.run(
 							PG.update(CloudflareAnalyticsState)
 								.set({ watermarkAt: horizon, updatedAt: now })
@@ -3722,6 +3752,7 @@ export class CloudflareAnalyticsService extends Context.Service<
 									$.backfillAt.isNull(),
 								]),
 						)
+						return { next, resumed }
 					}),
 				),
 			)

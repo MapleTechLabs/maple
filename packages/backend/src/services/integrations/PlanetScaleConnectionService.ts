@@ -31,7 +31,18 @@ import {
 	type PlanetScaleConnectionRow,
 	type ScrapeTargetRow,
 } from "@maple/db/tables"
-import { Clock, Context, Duration, Effect, Layer, Option, Schema, String as Str, Array as Arr } from "effect"
+import {
+	Clock,
+	Context,
+	Duration,
+	Effect,
+	Layer,
+	Option,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { openSecret, sealSecret, secretKeyringFromEnv } from "@maple/backend/platform/SecretBox"
 import { planetScaleWebhookSecretSlot } from "@maple/backend/platform/secret-slots"
@@ -831,27 +842,31 @@ export class PlanetScaleConnectionService extends Context.Service<
 			if (connection === null) {
 				return yield* new IntegrationsNotConnectedError({ message: "PlanetScale is not connected" })
 			}
-			const now = yield* Clock.currentTimeMillis
-			const next: PlanetScaleConnectionRow = {
-				...connection,
-				metricsEnabled: request.metricsEnabled ?? connection.metricsEnabled,
-				eventsEnabled: request.eventsEnabled ?? connection.eventsEnabled,
-				updatedAt: now,
+			// Only the switches sent: a concurrent save of the other one keeps its value.
+			const set = {
+				...(request.metricsEnabled !== undefined && { metricsEnabled: request.metricsEnabled }),
+				...(request.eventsEnabled !== undefined && { eventsEnabled: request.eventsEnabled }),
 			}
-			const eventsResumed = !connection.eventsEnabled && next.eventsEnabled
-			yield* dbExecute((db) =>
+			if (Rec.isEmptyRecord<string, unknown>(set)) return yield* statusForConnection(orgId, connection)
+			const now = yield* Clock.currentTimeMillis
+			const next = yield* dbExecute((db) =>
 				db.transaction(
 					Effect.gen(function* () {
-						yield* db.run(
+						const rows = yield* db.run(
 							PG.update(PlanetscaleConnections)
-								.set({
-									metricsEnabled: next.metricsEnabled,
-									eventsEnabled: next.eventsEnabled,
-									updatedAt: now,
-								})
-								.where(($) => [$.orgId.eq(orgId), $.id.eq(connection.id)]),
+								.set({ ...set, updatedAt: now })
+								.where(($) => [$.orgId.eq(orgId), $.id.eq(connection.id)])
+								.returning(),
 						)
-						if (eventsResumed) yield* resumeDeployRequestsAt(db, orgId, now)
+						const stored: PlanetScaleConnectionRow = rows[0] ?? {
+							...connection,
+							...set,
+							updatedAt: now,
+						}
+						if (!connection.eventsEnabled && stored.eventsEnabled) {
+							yield* resumeDeployRequestsAt(db, orgId, now)
+						}
+						return stored
 					}),
 				),
 			)

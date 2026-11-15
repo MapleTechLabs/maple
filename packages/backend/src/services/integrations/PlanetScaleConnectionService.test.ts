@@ -903,6 +903,30 @@ describe("PlanetScaleConnectionService", () => {
 		)
 	})
 
+	it.effect("two switches saved at once both stick", () => {
+		const testDb = createTestDb(trackedDbs)
+		const stub = stubPlanetScaleApi()
+		return Effect.gen(function* () {
+			const service = yield* PlanetScaleConnectionService
+			const orgId = asOrgId("org_1")
+			yield* storeGrant(orgId)
+			yield* service.finalizeOrgSelection(orgId, { organization: "acme" })
+			yield* Effect.all(
+				[
+					service.setFeatures(orgId, new PlanetScaleFeaturesRequest({ metricsEnabled: false })),
+					service.setFeatures(orgId, new PlanetScaleFeaturesRequest({ eventsEnabled: false })),
+				],
+				{ concurrency: "unbounded" },
+			)
+			const status = yield* service.getStatus(orgId)
+			assert.isFalse(status.metricsEnabled)
+			assert.isFalse(status.eventsEnabled)
+		}).pipe(
+			Effect.provideService(FetchHttpClient.Fetch, stub),
+			Effect.provide([makeLayer(testDb), Layer.succeed(FetchHttpClient.Fetch, stub)]),
+		)
+	})
+
 	it.effect("setFeatures refuses an org with no PlanetScale connection", () => {
 		const testDb = createTestDb(trackedDbs)
 		const stub = stubPlanetScaleApi()

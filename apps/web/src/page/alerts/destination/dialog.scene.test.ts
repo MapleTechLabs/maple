@@ -52,6 +52,9 @@ const workspaceWire = (n: number, name: string) => ({
 	external_workspace_id: `T0${n}`,
 	name,
 	settings: {},
+	alerts_enabled: true,
+	direct_messages_enabled: true,
+	assistant_enabled: true,
 	created_at: "2026-09-01T00:00:00.000Z",
 })
 const slack = (workspaces: ReadonlyArray<ReturnType<typeof workspaceWire>>) =>

@@ -1,11 +1,12 @@
 import { OrgId } from "@maple/domain"
 import { V2ChatConnectorList } from "@maple/domain/http/v2"
 import { Result, Schema, Array as Arr } from "effect"
-import { expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
+import { click, Command, expect as expectView, given, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { PageOutMessage, type PageContext } from "../contract"
-import { ChatMessage } from "./chat"
+import { STATUS_READS } from "./command"
+import { ChatMessage, SaveChatFeatures } from "./chat"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { init, update } from "./update"
@@ -41,6 +42,9 @@ const list = (withWorkspace: boolean) =>
 								external_workspace_id: "T1",
 								name: "Acme Shop",
 								settings: {},
+								alerts_enabled: true,
+								direct_messages_enabled: true,
+								assistant_enabled: true,
 								created_at: "2026-09-10T12:00:00.000Z",
 							},
 						]
@@ -102,5 +106,33 @@ describe("chat card", () => {
 			}),
 		)
 		expect(names(done.commands)).toContain("LoadIntegrationsChatConnectors")
+	})
+})
+
+describe("chat feature switches", () => {
+	test("turning answers off saves the workspace's switches; a failed save puts it back", () => {
+		const model = loaded(true)
+		const workspace = list(true).data[0]?.workspaces[0]
+		if (workspace === undefined) throw new Error("fixture")
+		const save = SaveChatFeatures({ id: workspace.id, flag: "assistantEnabled", enabled: false })
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(role("switch", { name: "Answer questions" })).toBeChecked(),
+			click(role("switch", { name: "Answer questions" })),
+			Command.expectHas(save),
+			expectView(role("switch", { name: "Answer questions" })).not.toBeChecked(),
+			expectView(role("switch", { name: "Alert notifications" })).toBeDisabled(),
+			Command.resolve(
+				SaveChatFeatures,
+				ChatMessage.CompletedFeatures({ failure: toLoadFailure("Workspace not found") }),
+			),
+			expectView(role("switch", { name: "Answer questions" })).toBeChecked(),
+			expectView(text("Couldn't save that change")).toExist(),
+			Command.resolve(
+				STATUS_READS.chat,
+				Message.CompletedLoadChat({ key: "", result: Result.succeed(list(true)) }),
+			),
+		)
 	})
 })

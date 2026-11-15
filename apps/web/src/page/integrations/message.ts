@@ -62,6 +62,7 @@ import {
 	RemovedConnector,
 } from "../infra-integrations/gcp/integration/gcp-schema"
 import { VercelMessage } from "../infra-integrations/vercel/integration/vercel"
+import { LinearMessage } from "./linear"
 import { PlanetscaleMessage } from "../infra-integrations/planetscale/integration/planetscale"
 import { CloudflareMessage } from "../infra-integrations/cloudflare/integration/cloudflare"
 import {
@@ -215,6 +216,7 @@ export const Message = defineMessageUnion({
 	GotSupabaseMessage: { message: SupabaseMessage },
 	GotSearchConsoleMessage: { message: SearchConsoleMessage },
 	GotChatMessage: { message: ChatMessage },
+	GotLinearMessage: { message: LinearMessage },
 	GotVercelMessage: { message: VercelMessage },
 	GotPlanetscaleMessage: { message: PlanetscaleMessage },
 	GotCloudflareMessage: { message: CloudflareMessage },

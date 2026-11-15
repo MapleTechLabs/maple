@@ -235,6 +235,7 @@ export const UNPURGED_ORG_SCOPED_TABLES = [
 	"Investigations",
 	"IssueEscalationPolicies",
 	"IssueEscalations",
+	"LinearFeatureSettings",
 	"OrgClickHouseSchemaApplyRuns",
 	"OrgIngestAttributeMappings",
 	"OrgIngestSamplingPolicies",

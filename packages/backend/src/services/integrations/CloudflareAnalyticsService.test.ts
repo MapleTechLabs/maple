@@ -1554,6 +1554,41 @@ describe("CloudflareAnalyticsService", () => {
 			}).pipe(Effect.provide(makeLayer(testDb, captured, { otlpCalls, graphqlQueries })))
 		})
 
+		it.effect("two switches saved at once both stick", () => {
+			const testDb = createTestDb(trackedDbs)
+			const captured: CapturedIngest[] = []
+			return Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection()
+				const service = yield* CloudflareAnalyticsService
+				// The first save inserts the row; the concurrent pair then race on the update path.
+				yield* service.setFeatures(
+					ORG,
+					ADMIN,
+					new CloudflareFeatureSettingsRequest({ dnsEnabled: true }),
+				)
+				yield* Effect.all(
+					[
+						service.setFeatures(
+							ORG,
+							ADMIN,
+							new CloudflareFeatureSettingsRequest({ dnsEnabled: false }),
+						),
+						service.setFeatures(
+							ORG,
+							ADMIN,
+							new CloudflareFeatureSettingsRequest({ workersEnabled: false }),
+						),
+					],
+					{ concurrency: "unbounded" },
+				)
+				const status = yield* service.getIntegrationStatus(ORG)
+				assert.strictEqual(status.features?.dnsEnabled, false)
+				assert.strictEqual(status.features?.workersEnabled, false)
+				assert.strictEqual(status.features?.httpTrafficEnabled, true)
+			}).pipe(Effect.provide(makeLayer(testDb, captured)))
+		})
+
 		it.effect("turning a feature back on keeps the other switches and polls it again", () => {
 			const testDb = createTestDb(trackedDbs)
 			const captured: CapturedIngest[] = []
