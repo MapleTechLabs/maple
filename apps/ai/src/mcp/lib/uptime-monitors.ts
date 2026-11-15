@@ -331,7 +331,7 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 		}
 		case "multistep":
 			return yield* invalid(
-				"A multi-step check's steps are set from the dashboard or the REST API (POST /v2/uptime_monitors).",
+				"A multi-step check's steps are set through the REST API: POST /v2/uptime_monitors to create one, PATCH /v2/uptime_monitors/{id} to change them.",
 				"kind",
 			)
 		case "heartbeat": {
@@ -402,7 +402,7 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 			}).pipe(Effect.map((config) => (fields.clear_expected === true ? omitExpected(config) : config)))
 		case "multistep":
 			return yield* invalid(
-				"A multi-step check's steps are edited from the dashboard or the REST API; only its name, interval, service and destinations change here.",
+				"A multi-step check's steps change through the REST API (PATCH /v2/uptime_monitors/{id}); only its name, interval, service and destinations change here.",
 				"url",
 			)
 		case "heartbeat": {
