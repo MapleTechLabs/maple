@@ -49,7 +49,8 @@ const newSinceTag = (h: H, deploy: DeployCheck | undefined): ReadonlyArray<Html>
 					{
 						size: "2xs",
 						tone: "subtle",
-						className: "shrink-0",
+						// Phones keep the room for the title.
+						className: "hidden shrink-0 sm:inline",
 						attributes: [h.Title(`First seen after ${deploy.sha} deployed`)],
 					},
 					["new since ", typography(h, { mono: true }, [shortReleaseLabel(deploy.sha)])],
