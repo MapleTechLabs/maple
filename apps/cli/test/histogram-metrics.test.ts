@@ -17,6 +17,7 @@ import { seeded } from "./funnel-scenarios-support"
 import {
 	type HistogramSeries,
 	increaseAt,
+	insertCumulativeSamples,
 	insertExponentialHistogram,
 	insertHistograms,
 	MINUTE_MS,
@@ -85,9 +86,28 @@ const WORLDS: ReadonlyArray<HistogramSeries> = [
 	series("org_idle", { observations: [at(5, 12)], temporality: "cumulative" }),
 	series("org_grouped", { observations: [at(5, 4), at(6, 6)], attributes: { route: "/a" } }),
 	series("org_grouped", { observations: [at(5, 30), at(6, 40)], attributes: { route: "/b" } }),
+	// Started on the hour: its first export, at 0:10, is the first sample there is.
+	series("org_fresh", { observations: TEN, temporality: "cumulative", firstTickMs: 10 * SECOND_MS }),
+	// A job that lives for thirty seconds and exports once.
+	series("org_once", {
+		observations: [at(5, 12), at(6, 18)],
+		temporality: "cumulative",
+		intervalMs: 30 * SECOND_MS,
+		firstTickMs: 30 * SECOND_MS,
+		lastTickMs: 30 * SECOND_MS,
+	}),
+	// Restarts at 0:20, the instant of an export, and the new process counts past the old total.
+	series("org_restart_on_export", {
+		observations: [at(5, 5), at(15, 15), at(21, 15), at(22, 15), at(23, 30)],
+		temporality: "cumulative",
+		restartsAtMs: [20 * SECOND_MS],
+	}),
 	// A histogram that records only count and sum.
 	series("org_no_buckets", { observations: TEN, bounds: [], recordExtrema: false }),
 ]
+
+/** How long a series with history has been counting before the range starts. */
+const HISTORY_MS = 10 * MINUTE_MS
 
 const LAYOUT = [5, 10, 25, 50, 100, 250, 500, 1000]
 const RANDOM_FROM_MS = 5 * MINUTE_MS
@@ -157,9 +177,29 @@ describeWithChdb("histogram metrics", () => {
 			{ tickMs: 20 * SECOND_MS, startMs: 10 * SECOND_MS, count: 6, sum: 90, temporality: "delta" },
 		])
 		insertExponentialHistogram(db, "org_exponential_cumulative", "queue.wait", [
-			{ tickMs: 0, startMs: -MINUTE_MS, count: 7, sum: 700, temporality: "cumulative" },
-			{ tickMs: 10 * SECOND_MS, startMs: -MINUTE_MS, count: 11, sum: 740, temporality: "cumulative" },
-			{ tickMs: 20 * SECOND_MS, startMs: -MINUTE_MS, count: 17, sum: 830, temporality: "cumulative" },
+			{ tickMs: 0, startMs: -HISTORY_MS, count: 7, sum: 700, temporality: "cumulative" },
+			{ tickMs: 10 * SECOND_MS, startMs: -HISTORY_MS, count: 11, sum: 740, temporality: "cumulative" },
+			{ tickMs: 20 * SECOND_MS, startMs: -HISTORY_MS, count: 17, sum: 830, temporality: "cumulative" },
+		])
+		// One process, counting since long before the range, that switches its buckets at 0:10.
+		insertCumulativeSamples(db, "org_relayout", "http.server.request.duration", [
+			{ tickMs: 0, startMs: -HISTORY_MS, count: 5, sum: 50, bounds: [50], buckets: [5, 0] },
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 7,
+				sum: 70,
+				bounds: [20],
+				buckets: [6, 1],
+			},
+			{
+				tickMs: 20 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 10,
+				sum: 100,
+				bounds: [20],
+				buckets: [9, 1],
+			},
 		])
 	})
 	afterAll(() => {
@@ -215,6 +255,32 @@ describeWithChdb("histogram metrics", () => {
 		// 8 of the 10 observations were exported: the two at 0:21 and 0:22 died with the process.
 		expect(valueOf("org_restart", "count")).toEqual([8])
 		expect(valueOf("org_restart", "sum")).toEqual([260])
+	})
+
+	test("a series that starts inside the range counts from its first export", () => {
+		for (const aggregation of ["count", "sum", "avg", "p50", "p75"] as const) {
+			expect(valueOf("org_fresh", aggregation)).toEqual(valueOf("org_delta", aggregation))
+		}
+		expect(valueOf("org_once", "count")).toEqual([2])
+		expect(valueOf("org_once", "sum")).toEqual([30])
+	})
+
+	test("a series older than the range does not add the total it arrived with", () => {
+		// It arrives with 5 observations summing to 50; the range adds 5 more summing to 50.
+		expect(valueOf("org_relayout", "count")).toEqual([5])
+		expect(valueOf("org_relayout", "sum")).toEqual([50])
+	})
+
+	test("a restart at the instant of an export still starts from zero", () => {
+		// The old process exported 2; the new one has 3 by 0:30, which is not an increase of 1.
+		expect(valueOf("org_restart_on_export", "count")).toEqual([5])
+		expect(valueOf("org_restart_on_export", "sum")).toEqual([80])
+	})
+
+	test("new bucket bounds without a restart add no buckets for that export", () => {
+		// The export at 0:10 cannot be subtracted from the old layout; 0:20 adds three in (0..20].
+		const points = firstMinute("org_relayout", "p50")
+		expect(Arr.map(points, (p) => [p.observations, p.value])).toEqual([[5, 10]])
 	})
 
 	test("an estimate never leaves the recorded min and max", () => {

@@ -195,3 +195,29 @@ export const insertExponentialHistogram = (
 		`INSERT INTO metrics_exponential_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, Scale, ZeroCount, PositiveOffset, PositiveBucketCounts, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
 	)
 }
+
+export interface HistogramSample {
+	readonly tickMs: number
+	readonly startMs: number
+	readonly count: number
+	readonly sum: number
+	readonly bounds: ReadonlyArray<number>
+	readonly buckets: ReadonlyArray<number>
+}
+
+/** One cumulative series written sample by sample, for exports the world model cannot produce. */
+export const insertCumulativeSamples = (
+	db: Chdb,
+	org: string,
+	metric: string,
+	samples: ReadonlyArray<HistogramSample>,
+): void => {
+	const rows = Arr.map(
+		samples,
+		(s) =>
+			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], 2)`,
+	)
+	db.exec(
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+	)
+}

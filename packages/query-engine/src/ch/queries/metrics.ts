@@ -270,6 +270,7 @@ const histogramSampleColumns = {
 	temporality: T.int32,
 	startTime: T.dateTime64,
 	prevTime: T.dateTime64,
+	fresh: T.uint8,
 	sCount: T.uint64,
 	prevCount: T.uint64,
 	sSum: T.float64,
@@ -282,15 +283,17 @@ const histogramSampleColumns = {
 	prevBounds: T.array(T.float64),
 }
 
-// A sample counts whole when it carries its own interval: delta temporality, a
-// reset (count dropped, or StartTimeUnix moved past the previous sample) or new
-// bucket bounds. Otherwise it is cumulative and only its increase counts.
+// A sample counts whole when it carries its own accumulation: delta temporality,
+// a series that began inside the scanned range (`fresh`), or a reset (count
+// dropped, or StartTimeUnix at or past the previous sample). Otherwise it is
+// cumulative and only its increase counts.
 const SAMPLE_IS_WHOLE =
-	"(temporality = 1 OR sCount < prevCount OR (startTime > prevTime AND startTime < TimeUnix) OR bounds != prevBounds)"
+	"(temporality = 1 OR fresh = 1 OR sCount < prevCount OR (startTime >= prevTime AND startTime < TimeUnix))"
 const OBSERVATIONS = `if(${SAMPLE_IS_WHOLE}, toFloat64(sCount), toFloat64(sCount) - toFloat64(prevCount))`
 const OBSERVED_SUM = `if(${SAMPLE_IS_WHOLE}, sSum, sSum - prevSum)`
-// `arrayResize` keeps the zipped arrays the same length whichever branch is evaluated.
-const BUCKET_INCREASE = `if(${SAMPLE_IS_WHOLE}, arrayMap(c -> toFloat64(c), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets))))`
+// New bounds inside one accumulation leave no bucket to subtract from: that sample adds
+// no buckets. `arrayResize` keeps the zipped arrays the same length in every branch.
+const BUCKET_INCREASE = `multiIf(${SAMPLE_IS_WHOLE}, arrayMap(c -> toFloat64(c), buckets), bounds != prevBounds, arrayMap(c -> toFloat64(0), buckets), arrayMap((c, p) -> greatest(toFloat64(c) - toFloat64(p), 0), buckets, arrayResize(prevBuckets, length(buckets))))`
 // OTLP: N bounds describe N + 1 buckets, the last unbounded. Any other shape has no usable buckets.
 const HAS_BUCKETS = "length(buckets) = length(bounds) + 1"
 const BUCKET_UPPER_BOUNDS = `if(${HAS_BUCKETS}, arrayPushBack(bounds, inf), emptyArrayFloat64())`
@@ -342,6 +345,11 @@ function histogramTimeseriesQuery(
 	// Bucket arrays are only read for a percentile, and only explicit buckets merge.
 	const readsBuckets = opts.metricType === "histogram" && isMetricsPercentile(metric)
 
+	const scanStart = CH.intervalSub(
+		param.dateTime("startTime"),
+		opts.lookbackSeconds ?? param.int("bucketSeconds"),
+	)
+
 	const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
 		.select(($) => {
 			// One partition per emitting series, fingerprinted like the counter query.
@@ -357,6 +365,12 @@ function histogramTimeseriesQuery(
 			})
 			const previous = <A>(value: CH.Expr<A>) =>
 				CH.over(CH.lagInFrame(value, 1, value), onePrecedingFrame)
+			// A series' first scanned sample that also began in the scanned range has no
+			// earlier sample to subtract; without this a process that exports once is lost.
+			const fresh = CH.over(CH.count(), onePrecedingFrame)
+				.eq(1)
+				.and($.StartTimeUnix.gte(scanStart))
+				.and($.StartTimeUnix.lt($.TimeUnix))
 			const buckets = readsBuckets
 				? $.BucketCounts
 				: CH.rawExpr("emptyArrayUInt64()", T.array(T.uint64))
@@ -370,6 +384,7 @@ function histogramTimeseriesQuery(
 				temporality: $.AggregationTemporality,
 				startTime: $.StartTimeUnix,
 				prevTime: previous($.TimeUnix),
+				fresh: CH.if_(fresh, CH.lit(1), CH.lit(0)),
 				sCount: $.Count,
 				prevCount: previous($.Count),
 				sSum: $.Sum,
@@ -382,16 +397,7 @@ function histogramTimeseriesQuery(
 				prevBounds: previous(bounds),
 			}
 		})
-		.where(($) =>
-			metricsWhere(
-				$,
-				opts,
-				CH.intervalSub(
-					param.dateTime("startTime"),
-					opts.lookbackSeconds ?? param.int("bucketSeconds"),
-				),
-			),
-		)
+		.where(($) => metricsWhere($, opts, scanStart))
 
 	const samples = table("hist_samples", { external: true, columns: histogramSampleColumns })
 
