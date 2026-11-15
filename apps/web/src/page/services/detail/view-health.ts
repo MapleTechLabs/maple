@@ -11,7 +11,14 @@ import { firstLine, isResolvableSha } from "../../kit/commit-card"
 import { shortId } from "@maple/ui/lib/ids"
 import { countLabel } from "@maple/ui/lib/format"
 import { deriveHealth, type Signal } from "./derive-health"
-import { type DeployCheck, dataEndOf, deployBefore, isSameDeploy, leadDeploy } from "./derive-deploys"
+import {
+	type DeployCheck,
+	dataEndOf,
+	deployBefore,
+	deployDataEndOf,
+	isSameDeploy,
+	leadDeploy,
+} from "./derive-deploys"
 import type { Issue, Model } from "./model"
 import { Message } from "./message"
 import { mergedPoints } from "./view-charts"
@@ -124,7 +131,7 @@ export const deployCallout = (h: H, model: Model, deploys: ReadonlyArray<DeployC
 	// The issue tags' rule: an issue belongs to the newest deploy before it first appeared.
 	const newIssues = Arr.filter(issues, (issue) =>
 		isSameDeploy(
-			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), dataEndOf(model)),
+			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), deployDataEndOf(model)),
 			deploy,
 		),
 	).length

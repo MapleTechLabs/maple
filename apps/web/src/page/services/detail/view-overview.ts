@@ -8,7 +8,14 @@ import { environmentsOf, ISSUES_DETAIL_LIMIT_MS } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
 import { metricsGrid } from "./view-charts"
-import { type DeployCheck, dataEndOf, deployBefore, deployChecksOf, isSameDeploy } from "./derive-deploys"
+import {
+	type DeployCheck,
+	dataEndOf,
+	deployBefore,
+	deployChecksOf,
+	deployDataEndOf,
+	isSameDeploy,
+} from "./derive-deploys"
 import * as DeployPeekView from "./deploy-peek/view"
 import { deployPeekOf } from "./update"
 import { Array as Arr } from "effect"
@@ -54,7 +61,7 @@ const deployDrawer = (
 								deployBefore(
 									deploys,
 									parseWarehouseDateTime(issue.firstSeenAt),
-									dataEndOf(model),
+									deployDataEndOf(model),
 								),
 								check,
 							),

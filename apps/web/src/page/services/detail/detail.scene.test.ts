@@ -282,6 +282,18 @@ describe("service detail", () => {
 		)
 	})
 
+	test("no deploys before the overview answers: a neutral line, not the setup hint", () => {
+		const loaded = withDeploys(entered(), []).model
+		scene(
+			{ update: pageUpdate, view },
+			given(loaded),
+			themeResolved(),
+			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
+			expectView(text("No new version deployed in this window")).toExist(),
+			expectView(text(/Deploy tracking needs spans/)).not.toExist(),
+		)
+	})
+
 	test("settled clean deploys raise no callout", () => {
 		const loaded = withDeploys(entered(), [deploy("v1.9.0", 300)]).model
 		scene(
