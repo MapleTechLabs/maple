@@ -117,6 +117,7 @@ A successful request returns `200`: the batch is accepted and durably queued. Ch
 | `429`  | `ingest_key_rate_limited`       | `@maple/ingest/IngestKeyRateLimited`   | The source token is over its requests-per-second limit                                                    | Yes, after 1 s                           |
 | `429`  | `ingest_rate_limited`           | `@maple/ingest/RateLimited`            | More than 1,000 requests in flight for your organization                                                  | Yes, after 1 s                           |
 | `413`  | `ingest_payload_too_large`      | `@maple/ingest/PayloadTooLarge`        | Body over 20 MiB compressed, or over 160 MiB once decompressed                                            | No. Send smaller batches                 |
+| `413`  | `ingest_row_expansion`          | `@maple/ingest/RowExpansion`           | The stored rows would be more than 512 times the decompressed batch (see [Batching](#batching))           | No. Shorten shared attributes            |
 | `415`  | `ingest_unsupported_media_type` | `@maple/ingest/UnsupportedMediaType`   | Unknown `Content-Type` or `Content-Encoding`                                                              | No. Fix the exporter config              |
 | `400`  | `ingest_bad_request`            | `@maple/ingest/BadRequest`             | Invalid gzip, a body that is not valid OTLP, or a malformed product event, session event or replay header | No                                       |
 | `400`  | `ingest_replay_body_not_gzip`   | `@maple/ingest/ReplayBodyNotGzip`      | A session replay chunk that is not a gzip stream                                                          | No                                       |
@@ -127,6 +128,7 @@ A successful request returns `200`: the batch is accepted and durably queued. Ch
 | `503`  | `ingest_queue_unavailable`      | `@maple/ingest/QueueUnavailable`       | The batch could not be written to the durable queue. Nothing was written                                  | Yes, after 5 s                           |
 | `503`  | `ingest_collector_unavailable`  | `@maple/ingest/CollectorUnavailable`   | An upstream collector failed or its response could not be read                                            | Yes, after 5 s                           |
 | `503`  | `ingest_request_timeout`        | `@maple/ingest/RequestTimeout`         | The request took longer than 30 seconds                                                                   | Yes, after 5 s                           |
+| `503`  | `ingest_decode_busy`            | `@maple/ingest/DecodeBusy`             | The gateway is busy with other requests. Nothing was written                                              | Yes, after 1 s                           |
 | `503`  | `ingest_encode_failed`          | `@maple/ingest/PayloadEncodeFailed`    | The batch could not be encoded for storage. Resending the same batch fails the same way                   | No. Contact support                      |
 | `500`  | `ingest_internal_error`         | `@maple/ingest/InternalError`          | Unexpected gateway error                                                                                  | No. Contact support                      |
 
@@ -135,6 +137,8 @@ OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff,
 ## Batching
 
 A request is limited by its compressed size (20 MiB), not its span or record count. The default batch sizes of the OpenTelemetry SDKs (512 spans or log records per export) and of the Collector's `batch` processor (8,192 items) stay far below that. If you raise them and a batch reaches the limit, the gateway answers `413` and the exporter drops the whole batch.
+
+Every stored row carries its resource and scope attributes, so a batch is stored as several times its decompressed size: 3 to 13 times for typical telemetry, and up to about 200 times when a long resource attribute, such as a JVM command line, sits on many small items. Size is no reason to refuse a batch, since the gateway builds and stores the rows in pieces. Only a batch whose rows would come to more than 512 times its decompressed size is refused, with `413 ingest_row_expansion`, and nothing from it is stored. If you see it, shorten the shared attributes or send fewer items per resource. A self-hosted gateway sets this ratio with `INGEST_MAX_ROW_EXPANSION` (default `512`, `0` turns it off).
 
 ## Related
 

@@ -201,24 +201,57 @@ allocate before allocating it, and the reservation is returned when the request 
 
 1. The body as received, and the size its gzip trailer declares.
 2. The decoded request, estimated from the wire bytes.
-3. The rows, estimated from the decoded request (`apps/ingest/src/row_budget.rs`), or the body
-   forwarded to a collector. A row repeats its resource, scope and metric strings, so this is
-   not bounded by the size of the request: it is counted row by row, shared strings included.
+3. The rows, built a piece at a time, or the body forwarded to a collector.
 
 A request that could never fit, even alone, is a 413. One that does not fit right now is a 503
 `@maple/ingest/DecodeBusy` with `Retry-After`. Both are decided before a row is built, so a
 refused request writes nothing.
 
-The rows are written straight into the buffer their WAL frame carries, sized once from the
-estimate, and the append writes that buffer after the frame header instead of copying it. A
-request's rows are therefore held once. `ingest.encode_rows` records the estimate
-(`maple.ingest.row_bytes_estimate`) beside what was written (`maple.ingest.payload_bytes`).
+### Rows are built in pieces
+
+A row repeats its resource, scope and metric strings, so a request's rows are not bounded by its
+size: an ordinary 40 MB metrics batch from a JVM service stores about 2 GB of rows. The rows are
+therefore never held whole. `row_budget` walks the decoded request once and splits its items
+(spans, log records or stored data points, numbered in order) into pieces of about
+`ROW_PIECE_BYTES` (8 MiB) of rows each, a single larger row being its own piece. Each piece's
+estimate counts its rows with every shared string, and the resource and scope maps it builds.
+
+The request reserves its largest piece once, before anything is written, and holds that
+reservation while the pieces are built and appended one after another: build a piece into buffers
+sized from its estimate, append its frames to the WAL, then build the next. What a request holds
+at once is one piece, whatever it expands to, and requests no longer wait on each other's whole
+rows. Every piece goes to the shard the whole request always went to, so its frames stay in order
+on one lane. A row that would take its buffer past the estimate fails the piece instead of growing
+it, so a wrong estimate is an error, never memory nothing reserved. Under attribute mappings the
+estimate assumes every rule copies the longest value either side holds, since a copied value can
+be copied again by a later rule, and the gateway applies at most 64 rules with 16 KiB of keys per
+org, in a stable order.
+
+Committed pieces wait in their lane's queue until exported. That memory is bounded per org by
+`INGEST_ORG_QUEUE_MAX_BYTES` and per lane by the channel capacity, as frames always were, not by
+this budget.
+
+A request is still acknowledged only once every piece is durable. If a piece fails (a full lane, a
+throttled org, a failed sync), the request is answered with that error and the sender retries the
+whole batch, while the pieces already appended stay in the WAL and are exported. That is the
+at-least-once duplicate the WAL already allows; it is how a metrics request that wrote one
+datasource's frame before another's failed has always behaved.
+
+`ingest.encode_rows` (one per piece) records the estimate (`maple.ingest.row_bytes_estimate`)
+beside what was written (`maple.ingest.payload_bytes`), and `ingest.accept` records
+`maple.ingest.row_pieces`.
+
+### Row expansion
 
 Usage is metered on the decoded bytes, not on the rows. `INGEST_MAX_ROW_EXPANSION` bounds how far
 apart the two can be: a request whose rows come to more than that many times its metered bytes is
-a 413 `@maple/ingest/RowExpansion`, counted in `ingest_org_data_loss_total` as `row_expansion`.
+a 413 `@maple/ingest/RowExpansion`, decided from the whole request before its first piece, so
+nothing is written. It is the only refusal the row stage makes for size. It counts in
+`ingest_org_data_loss_total` as `row_expansion` and marks the span `Error` (`rejection_loses_data`).
 Real telemetry stores 3 to 13 times its decoded size, and up to 200 times when a long resource
-attribute such as a JVM command line sits on every row of small items.
+attribute such as a JVM command line sits on every row of small items. The only other refusal is a
+single item whose own row cannot fit the whole budget beside its decoded request, which no
+telemetry comes near; it is a 413 counted as `payload_too_large`.
 
 | Variable                        | Default | Notes                                                    |
 | ------------------------------- | ------- | -------------------------------------------------------- |
@@ -226,7 +259,7 @@ attribute such as a JVM command line sits on every row of small items.
 | `INGEST_MAX_DECODED_BODY_BYTES` | 8x body | Body after gzip                                          |
 | `INGEST_MAX_DECODE_HEAP_BYTES`  | 768 MiB | One request's decoded form                               |
 | `INGEST_MAX_ROW_EXPANSION`      | 512     | Rows as a multiple of the metered bytes; 0 turns it off  |
-| `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | The budget all requests share, for every stage above     |
+| `INGEST_DECODE_MEMORY_BYTES`    | 1 GiB   | Shared by all requests; at least one request plus 16 MiB |
 
 Frames waiting in a lane's channel are not in this budget: they are bounded per org by
 `INGEST_ORG_QUEUE_MAX_BYTES` and per lane by the channel capacity.
