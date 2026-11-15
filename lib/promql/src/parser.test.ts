@@ -170,3 +170,30 @@ describe("label regexes follow Prometheus' RE2", () => {
 		expect(errorOf('x{a=~"(a)\\\\1"}')).toMatch(/invalid regular expression/)
 	})
 })
+
+describe("print keeps meaning", () => {
+	const v = (name: string): Expr => ({
+		type: "VectorSelector",
+		name,
+		matchers: [{ name: "__name__", op: "=", value: name }],
+		offsetMs: 0,
+		at: undefined,
+	})
+	const bin = (op: "+" | "-" | "*", lhs: Expr, rhs: Expr): Expr => ({
+		type: "Binary",
+		op,
+		lhs,
+		rhs,
+		returnBool: false,
+		matching: undefined,
+	})
+
+	it("parenthesizes nested operators so precedence cannot regroup them", () => {
+		expect(print(bin("*", bin("+", v("a"), v("b")), v("c")))).toBe("(a + b) * c")
+		expect(print(bin("-", v("a"), bin("-", v("b"), v("c"))))).toBe("a - (b - c)")
+	})
+
+	it("fails cleanly on an escape past U+10FFFF", () => {
+		expect(errorOf('x{a="\\U00110000"}')).toMatch(/invalid string literal/)
+	})
+})
