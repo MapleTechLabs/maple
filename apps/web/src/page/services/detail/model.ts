@@ -7,11 +7,13 @@ import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import { TimeWindow } from "../../../data/time-range"
 import { ServiceSearch } from "../../../route/search"
+import { ServiceDeploys } from "./model-deploys"
 import * as Select from "@maple/views/ui/select"
 import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { SortState } from "../../kit/table-sort"
 import { ENDPOINT_FILTERS } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/model"
 import * as EndpointPeek from "./endpoint-peek/model"
 import { ApiBucket, ApiOverview, DependencyBundle, Endpoint, Operation, StatusRow } from "./model-tabs"
 import { CommitData, DetailPoint, Release } from "../../kit/service-metrics/points"
@@ -32,6 +34,7 @@ export const Issue = Schema.Struct({
 	title: Schema.String,
 	severity: Schema.NullOr(Schema.String),
 	occurrenceCount: Schema.Number,
+	firstSeenAt: Schema.String,
 	lastSeenAt: Schema.String,
 })
 export type Issue = typeof Issue.Type
@@ -79,7 +82,11 @@ export const Model = Schema.Struct({
 	endpointFilter: Schema.Literals(ENDPOINT_FILTERS),
 	endpointQuery: Schema.String,
 	endpointPeek: EndpointPeek.Model,
+	/** The Overview's deploy drawer (`?deploy=`). */
+	deployPeek: DeployPeek.Model,
 	issues: KeyedSchema(Schema.Array(Issue), LoadFailure),
+	/** The window's deploys with their before and after: the deploy rows, callout and marker tones. */
+	deploys: KeyedSchema(ServiceDeploys, LoadFailure),
 	usage: KeyedSchema(Usage, LoadFailure),
 	/** `uptimeMonitors.list`: the org's monitors; the Uptime card keeps this service's. */
 	uptimeMonitors: KeyedSchema(Schema.Array(V2UptimeMonitor), LoadFailure),

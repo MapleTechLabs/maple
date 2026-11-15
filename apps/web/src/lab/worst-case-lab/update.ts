@@ -3,7 +3,6 @@ import { Clock, Effect, Option, Schema, Array as Arr } from "effect"
 import { Command, type Update } from "foldkit"
 import { replaceUrl } from "foldkit/navigation"
 import * as AlertsHub from "../../page/alerts/hub/update"
-import * as ReleaseOverlays from "../../page/releases/overlays"
 import type { PageContext } from "../../page/contract"
 import { nextSort } from "../../page/kit/table-sort"
 import type { Resources } from "../../platform/resources"
@@ -86,7 +85,6 @@ export const init = (flags: Flags): Return => {
 			attributes: AttributesPanel.init("wc-attributes"),
 			openTools: [],
 			toasts: initLabToasts(),
-			releaseOverlays: ReleaseOverlays.init("wc-release"),
 		},
 		commands,
 	}
@@ -196,13 +194,4 @@ export const update = (model: Model, message: Message): Return =>
 		},
 		ToggledTool: ({ id }) => ({ model: { ...model, openTools: toggled(model.openTools, id) } }),
 		GotToastMessage: ({ message: inner }) => foldToasts(model, inner),
-		GotReleaseOverlaysMessage: ({ message: inner }) => {
-			const next = ReleaseOverlays.update(model.releaseOverlays, inner, LAB_CONTEXT.orgId)
-			return {
-				model: { ...model, releaseOverlays: next.model },
-				commands: Command.mapMessages(next.commands ?? [], (child) =>
-					Message.GotReleaseOverlaysMessage({ message: child }),
-				),
-			}
-		},
 	})

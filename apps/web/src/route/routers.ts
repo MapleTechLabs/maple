@@ -284,6 +284,7 @@ const routers = {
 		slash(segment("recommendationKey")),
 		Route.mapTo(AppRoute.Recommendation),
 	),
+	// Retired with the Releases pages; `routeRedirect` sends both on.
 	Release: pipe(
 		path("releases"),
 		slash(segment("commitSha")),
