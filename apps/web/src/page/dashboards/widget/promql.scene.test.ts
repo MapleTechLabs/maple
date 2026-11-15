@@ -165,6 +165,34 @@ describe("widget editor over a PromQL widget", () => {
 		})
 	})
 
+	test("a table's Row limit is saved on Apply and read back when the widget reopens", () => {
+		const tableWidget = {
+			id: "jobs",
+			visualization: "table",
+			dataSource: { kind: "promql", query: "up", displayType: "table", transform: { limit: 50 } },
+			display: { title: "Jobs" },
+			layout: { x: 0, y: 0, w: 6, h: 4 },
+		}
+		const openWith = (widget: unknown) =>
+			runAll(init({ dashboardId: "dash_promql", widgetId: "jobs", search: {} }, context).model, [
+				Message.CompletedReadClock({ nowMs: Date.parse("2026-10-01T12:00:00Z") }),
+				Message.UpdatedDashboard({
+					orgId,
+					maybeDocument: Option.some(
+						Schema.decodeUnknownSync(DashboardDocument)({ ...document, widgets: [widget] }),
+					),
+				}),
+			])
+		const opened = openWith(tableWidget)
+		expect(opened.model.state?.tableLimit).toBe("50")
+		const edited = runAll(opened.model, [Message.ChangedTableLimit({ value: "10" })])
+		const saved = pageUpdate(edited.model, Message.ClickedApply()).commands ?? []
+		const save = Arr.findFirst(saved, ({ name }) => name === SaveWidget.name)
+		const widget = Option.getOrNull(Option.flatMap(save, ({ args }) => decodeSave(args)))?.widget
+		expect(widget?.dataSource).toMatchObject({ kind: "promql", transform: { limit: 10 } })
+		expect(openWith(widget).model.state?.tableLimit).toBe("10")
+	})
+
 	test("an empty query blocks Run preview and Apply", () => {
 		const empty = pageUpdate(opened().model, Message.ChangedPromql({ value: "  " })).model
 		expect(pageUpdate(empty, Message.ClickedRunPreview()).commands ?? []).toEqual([])
