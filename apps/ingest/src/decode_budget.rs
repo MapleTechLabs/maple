@@ -23,9 +23,10 @@ use std::mem::size_of;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// The process-wide budget for request bodies being decoded: their raw bytes, the
-/// inflated bytes and the decoded form, reserved before each is allocated. A
-/// reservation that does not fit fails at once, so the caller can shed the request.
+/// The process-wide budget for requests being decoded and stored: their raw bytes,
+/// the inflated bytes, the decoded form and the rows or forward body built from it,
+/// reserved before each is allocated. A reservation that does not fit fails at once,
+/// so the caller can shed the request.
 #[derive(Clone, Debug)]
 pub struct DecodeMemory {
     kibibytes: Arc<Semaphore>,
@@ -95,6 +96,13 @@ impl DecodeReservation {
         }
         self.memory.report();
         true
+    }
+
+    /// Bytes this reservation holds.
+    pub fn held_bytes(&self) -> u64 {
+        self.held
+            .as_ref()
+            .map_or(0, |held| held.num_permits() as u64 * DecodeMemory::UNIT)
     }
 
     /// Gives back all but `keep` bytes (rounded up to whole KiB) of what is held.
@@ -369,14 +377,14 @@ impl From<Stop> for OverBudget {
     }
 }
 
-enum Stop {
+pub(crate) enum Stop {
     OverBudget,
     /// Not valid protobuf: left for the decoder to reject.
     Malformed,
 }
 
 /// Heap bytes behind a string or byte field of `len` bytes.
-const fn heap_len(len: usize) -> u64 {
+pub(crate) const fn heap_len(len: usize) -> u64 {
     if len == 0 {
         0
     } else {
@@ -632,12 +640,12 @@ impl Msg {
     }
 }
 
-const WIRE_VARINT: u64 = 0;
-const WIRE_FIXED64: u64 = 1;
-const WIRE_LEN: u64 = 2;
-const WIRE_START_GROUP: u64 = 3;
+pub(crate) const WIRE_VARINT: u64 = 0;
+pub(crate) const WIRE_FIXED64: u64 = 1;
+pub(crate) const WIRE_LEN: u64 = 2;
+pub(crate) const WIRE_START_GROUP: u64 = 3;
 const WIRE_END_GROUP: u64 = 4;
-const WIRE_FIXED32: u64 = 5;
+pub(crate) const WIRE_FIXED32: u64 = 5;
 
 fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), Stop> {
     if depth > MAX_DEPTH {
@@ -701,7 +709,7 @@ fn walk(msg: Msg, mut buf: &[u8], depth: u32, meter: &mut Meter) -> Result<(), S
 }
 
 /// Skips an unknown group up to its end marker, as the decoder does.
-fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
+pub(crate) fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
     if depth > MAX_DEPTH {
         return Err(Stop::Malformed);
     }
@@ -725,7 +733,7 @@ fn skip_group(tag: u64, buf: &mut &[u8], depth: u32) -> Result<(), Stop> {
     }
 }
 
-fn varint(buf: &mut &[u8]) -> Result<u64, Stop> {
+pub(crate) fn varint(buf: &mut &[u8]) -> Result<u64, Stop> {
     let mut value = 0_u64;
     for (i, byte) in buf.iter().copied().enumerate().take(10) {
         value |= u64::from(byte & 0x7f) << (7 * i);

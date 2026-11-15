@@ -23,6 +23,7 @@ Every signal reaches Maple through one OTLP gateway. Any OpenTelemetry SDK or Co
 | `POST /v1/traces`           | OTLP `ExportTraceServiceRequest`                                                   |
 | `POST /v1/logs`             | OTLP `ExportLogsServiceRequest`                                                    |
 | `POST /v1/metrics`          | OTLP `ExportMetricsServiceRequest`                                                 |
+| `POST /v1/prometheus/write` | Prometheus [remote write](/docs/integrations/prometheus#remote-write) 1.0          |
 | `POST /v1/events`           | [Product events](/docs/product-events/api)                                         |
 | `POST /v1/sessionReplays/*` | Session replay chunks, sent by the [browser SDK](/docs/session-replay/browser-sdk) |
 | `POST /v1/sessionEvents`    | Session timeline events, sent by the browser SDK                                   |
@@ -74,6 +75,8 @@ The literal key `MAPLE_TEST` is accepted and returns `200`, but the data is disc
 
 For compression, send `Content-Encoding: gzip`. Omit the header (or send `identity`) for an uncompressed body. **gzip is the only compression supported.** `zstd`, `deflate` and `br` are rejected with `415`, so set your exporter's compression to `gzip` or `none`.
 
+`/v1/prometheus/write` is the exception: its body is always a snappy-compressed `prometheus.WriteRequest`, as the remote write protocol defines. It also reads the ingest key from the basic-auth password, for senders that authenticate that way.
+
 ## Browsers
 
 The gateway answers CORS preflights from any origin, so a browser can export directly. Allowed request headers are `Authorization`, `Content-Type`, `Content-Encoding`, `x-maple-ingest-key` and the `x-maple-*` headers the browser SDK sends. No response headers are exposed to scripts, so browser code cannot read `Retry-After`; back off on a fixed schedule instead.
@@ -117,6 +120,8 @@ A successful request returns `200`: the batch is accepted and durably queued. Ch
 | `429`  | `ingest_key_rate_limited`       | `@maple/ingest/IngestKeyRateLimited`   | The source token is over its requests-per-second limit                                                    | Yes, after 1 s                           |
 | `429`  | `ingest_rate_limited`           | `@maple/ingest/RateLimited`            | More than 1,000 requests in flight for your organization                                                  | Yes, after 1 s                           |
 | `413`  | `ingest_payload_too_large`      | `@maple/ingest/PayloadTooLarge`        | Body over 20 MiB compressed, or over 160 MiB once decompressed                                            | No. Send smaller batches                 |
+| `413`  | `ingest_row_expansion`          | `@maple/ingest/RowExpansion`           | The stored rows would be more than 512 times the decompressed batch (see [Batching](#batching))           | No. Shorten shared attributes            |
+| `413`  | `ingest_rows_exceed_queue`      | `@maple/ingest/RowsExceedQueue`        | The stored rows would be more than your organization's ingest queue holds (1 GiB)                         | No. Send smaller batches                 |
 | `415`  | `ingest_unsupported_media_type` | `@maple/ingest/UnsupportedMediaType`   | Unknown `Content-Type` or `Content-Encoding`                                                              | No. Fix the exporter config              |
 | `400`  | `ingest_bad_request`            | `@maple/ingest/BadRequest`             | Invalid gzip, a body that is not valid OTLP, or a malformed product event, session event or replay header | No                                       |
 | `400`  | `ingest_replay_body_not_gzip`   | `@maple/ingest/ReplayBodyNotGzip`      | A session replay chunk that is not a gzip stream                                                          | No                                       |
@@ -124,9 +129,10 @@ A successful request returns `200`: the batch is accepted and durably queued. Ch
 | `429`  | `ingest_queue_throttled`        | `@maple/ingest/OrgQueueThrottled`      | Your organization's ingest queue is full. Nothing was written                                             | Yes, after 1 s                           |
 | `429`  | `ingest_export_lane_full`       | `@maple/ingest/ExportLaneBackpressure` | The write path for your organization is backed up. Nothing was written                                    | Yes, after 2 s                           |
 | `503`  | `ingest_unavailable`            | `@maple/ingest/ServiceUnavailable`     | Key lookup or another dependency is temporarily unavailable                                               | Yes, after 5 s                           |
-| `503`  | `ingest_queue_unavailable`      | `@maple/ingest/QueueUnavailable`       | The batch could not be written to the durable queue. Nothing was written                                  | Yes, after 5 s                           |
+| `503`  | `ingest_queue_unavailable`      | `@maple/ingest/QueueUnavailable`       | The batch could not be written to the durable queue (see [Batching](#batching) for large batches)         | Yes, after 5 s                           |
 | `503`  | `ingest_collector_unavailable`  | `@maple/ingest/CollectorUnavailable`   | An upstream collector failed or its response could not be read                                            | Yes, after 5 s                           |
 | `503`  | `ingest_request_timeout`        | `@maple/ingest/RequestTimeout`         | The request took longer than 30 seconds                                                                   | Yes, after 5 s                           |
+| `503`  | `ingest_decode_busy`            | `@maple/ingest/DecodeBusy`             | The gateway is busy with other requests. Nothing was written                                              | Yes, after 1 s                           |
 | `503`  | `ingest_encode_failed`          | `@maple/ingest/PayloadEncodeFailed`    | The batch could not be encoded for storage. Resending the same batch fails the same way                   | No. Contact support                      |
 | `500`  | `ingest_internal_error`         | `@maple/ingest/InternalError`          | Unexpected gateway error                                                                                  | No. Contact support                      |
 
@@ -135,6 +141,10 @@ OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff,
 ## Batching
 
 A request is limited by its compressed size (20 MiB), not its span or record count. The default batch sizes of the OpenTelemetry SDKs (512 spans or log records per export) and of the Collector's `batch` processor (8,192 items) stay far below that. If you raise them and a batch reaches the limit, the gateway answers `413` and the exporter drops the whole batch.
+
+Every stored row carries its resource and scope attributes, so a batch is stored as several times its decompressed size: 3 to 13 times for typical telemetry, and up to about 200 times when a long resource attribute, such as a JVM command line, sits on many small items. The gateway builds and stores the rows in pieces, so a large batch needs no more memory than a small one. Two limits still apply to the rows, and both are checked before anything is stored. A batch whose rows would come to more than 512 times its decompressed size is refused with `413 ingest_row_expansion`; shorten the shared attributes or send fewer items per resource. A self-hosted gateway sets this ratio with `INGEST_MAX_ROW_EXPANSION` (default `512`, `0` turns it off). A batch whose rows are more than your organization's ingest queue holds (1 GiB, `INGEST_ORG_QUEUE_MAX_BYTES` when self-hosted) is refused with `413 ingest_rows_exceed_queue`; send smaller batches. A self-hosted gateway also refuses rows larger than one write-ahead log lane, `INGEST_QUEUE_MAX_BYTES` divided by twice the shard count, which can be the lower limit on a host with many CPUs.
+
+The queue room for a batch's rows is reserved before its first piece is stored, so `429` and `ingest_decode_busy` mean nothing was written. A batch stored in several pieces can still fail part way through if the durable queue fails a write or the request times out. The error then says how many pieces were already stored; those are kept, so resending the batch stores them a second time.
 
 ## Related
 

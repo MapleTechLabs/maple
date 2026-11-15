@@ -1,6 +1,6 @@
 //! The only place request bodies are decompressed. Every reader stops once its
 //! output passes a caller-chosen ceiling, so a small body cannot inflate without
-//! bound. `clippy.toml` disallows the raw `flate2` decoders everywhere else.
+//! bound. `clippy.toml` disallows the raw `flate2` and `snap` decoders everywhere else.
 
 use std::io::Read;
 
@@ -73,6 +73,42 @@ pub fn gunzip_len_bounded(body: &[u8], max_decoded: usize) -> Result<u64, Gunzip
     Ok(len)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnappyError {
+    /// Not a valid snappy block: bad header, corrupt data, or the framed format.
+    Invalid,
+    /// The block declares more output than `declared`.
+    TooLarge,
+}
+
+/// The uncompressed size a snappy block declares in its header, or `None` when the
+/// body has no valid header. The decoder verifies it, so the caller can check it
+/// against a ceiling and reserve the memory before anything is allocated.
+pub fn snappy_declared_len(body: &[u8]) -> Option<u64> {
+    if body.is_empty() {
+        return None;
+    }
+    let declared = snap::raw::decompress_len(body).ok()?;
+    Some(declared as u64)
+}
+
+/// Decompresses a snappy block (not the framed format) that declares at most
+/// `declared` bytes. A block that does not decode to exactly its header's length
+/// is `Invalid`, so the output never passes what the caller reserved.
+#[expect(
+    clippy::disallowed_types,
+    reason = "bounded by `declared`, which the caller has checked against its ceiling"
+)]
+pub fn unsnap_declared(body: &[u8], declared: usize) -> Result<Vec<u8>, SnappyError> {
+    let header = snappy_declared_len(body).ok_or(SnappyError::Invalid)?;
+    if header > declared as u64 {
+        return Err(SnappyError::TooLarge);
+    }
+    snap::raw::Decoder::new()
+        .decompress_vec(body)
+        .map_err(|_| SnappyError::Invalid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +147,57 @@ mod tests {
             gunzip_declared(&trailing, 1000),
             Err(GunzipError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn unsnap_declared_takes_a_block_of_its_declared_size() {
+        let plain = b"prometheus remote write ".repeat(64);
+        let body = snap::raw::Encoder::new().compress_vec(&plain).unwrap();
+        assert_eq!(snappy_declared_len(&body), Some(plain.len() as u64));
+        assert_eq!(unsnap_declared(&body, plain.len()).unwrap(), plain);
+        assert_eq!(
+            unsnap_declared(&body, plain.len() - 1),
+            Err(SnappyError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn a_snappy_header_larger_than_its_data_is_refused_without_the_allocation() {
+        // Declares 4 GiB - 1 in five header bytes and carries no data.
+        let bomb = [0xff, 0xff, 0xff, 0xff, 0x0f];
+        assert_eq!(snappy_declared_len(&bomb), Some(u64::from(u32::MAX)));
+        assert_eq!(unsnap_declared(&bomb, 1024), Err(SnappyError::TooLarge));
+        // Within the ceiling the same lie is caught by the decoder.
+        let short = [0x40, 0x00, b'a'];
+        assert_eq!(snappy_declared_len(&short), Some(64));
+        assert_eq!(unsnap_declared(&short, 64), Err(SnappyError::Invalid));
+    }
+
+    #[test]
+    fn truncated_empty_and_framed_snappy_are_invalid() {
+        let plain = b"0123456789abcdef".repeat(32);
+        let body = snap::raw::Encoder::new().compress_vec(&plain).unwrap();
+        assert_eq!(
+            unsnap_declared(&body[..body.len() / 2], plain.len()),
+            Err(SnappyError::Invalid)
+        );
+        assert_eq!(snappy_declared_len(&[]), None);
+        assert_eq!(unsnap_declared(&[], 1024), Err(SnappyError::Invalid));
+        // A header that never ends is not a length.
+        assert_eq!(snappy_declared_len(&[0xff; 8]), None);
+
+        let mut framed = Vec::new();
+        {
+            use std::io::Write;
+            let mut encoder = snap::write::FrameEncoder::new(&mut framed);
+            encoder.write_all(&plain).unwrap();
+            encoder.flush().unwrap();
+        }
+        assert!(framed.starts_with(b"\xff\x06\x00\x00sNaPpY"));
+        assert_eq!(
+            unsnap_declared(&framed, 1024 * 1024),
+            Err(SnappyError::Invalid)
+        );
     }
 
     #[test]

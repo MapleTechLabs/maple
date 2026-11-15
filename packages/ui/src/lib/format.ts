@@ -404,10 +404,21 @@ const UNIT_FORMATS = {
 } satisfies Record<(typeof WIDGET_UNITS)[number]["token"], (num: number) => string>
 
 // Spend per bucket is often a fraction of a cent, which two decimals print as "$0.00".
-const formatUsd = (num: number): string =>
+const formatCurrencyAmount = (num: number, currency: string): string =>
 	num !== 0 && Math.abs(num) < 0.01
-		? num.toLocaleString("en-US", { style: "currency", currency: "USD", maximumSignificantDigits: 2 })
-		: formatCurrency(num, "usd")
+		? num.toLocaleString("en-US", { style: "currency", currency, maximumSignificantDigits: 2 })
+		: formatCurrency(num, currency)
+
+/** The ISO code of a money unit: `"usd"` or `"currency:EUR"`; undefined for any other unit. */
+const currencyOfUnit = (unit: string | undefined): string | undefined => {
+	if (unit === "usd") return "USD"
+	const match = unit === undefined ? null : /^currency:([A-Z]{3})$/u.exec(unit)
+	return match?.[1]
+}
+
+/** A money unit for `formatValueByUnit` and chart ticks: `currencyUnit("EUR")` is `"currency:EUR"`. */
+export const currencyUnit = (currency: string): string | undefined =>
+	/^[A-Za-z]{3}$/u.test(currency) ? `currency:${Str.toUpperCase(currency)}` : undefined
 
 const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
 	Rec.has<string, (num: number) => string>(UNIT_FORMATS, unit)
@@ -416,12 +427,14 @@ const isUnitToken = (unit: string): unit is keyof typeof UNIT_FORMATS =>
  * Format a numeric value according to a unit type. Used by chart Y-axis ticks, tooltips,
  * and stat widgets; an uncatalogued unit (a stored `"GB"`) renders as a plain number.
  */
-export const formatValueByUnit = (num: number, unit?: string): string =>
-	unit === "usd"
-		? formatUsd(num)
+export const formatValueByUnit = (num: number, unit?: string): string => {
+	const currency = currencyOfUnit(unit)
+	return currency !== undefined
+		? formatCurrencyAmount(num, currency)
 		: unit !== undefined && isUnitToken(unit)
 			? UNIT_FORMATS[unit](num)
 			: formatNumber(num)
+}
 
 const DURATION_TO_MS = new Map([
 	["duration_ms", 1],
@@ -531,6 +544,18 @@ export function axisTickFormatter(
 				: value === 0
 					? "0"
 					: `${((value * toMs) / axisUnit.ms).toFixed(decimals)}${axisUnit.suffix}`
+	}
+	const currency = currencyOfUnit(unit)
+	if (currency !== undefined) {
+		// Ticks a whole unit apart read "$10", not "$10.00"; finer steps show both cent digits.
+		const decimals = stepDecimals(step, 2) > 0 ? 2 : 0
+		const format = new Intl.NumberFormat("en-US", {
+			style: "currency",
+			currency,
+			minimumFractionDigits: decimals,
+			maximumFractionDigits: decimals,
+		})
+		return (value) => (!Number.isFinite(value) ? EMPTY_VALUE : value === 0 ? "0" : format.format(value))
 	}
 	if (unit === "percent" || unit === "percent_100") {
 		const scale = unit === "percent" ? 100 : 1
