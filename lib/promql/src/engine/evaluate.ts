@@ -244,6 +244,15 @@ class Evaluator {
 		return Result.succeed(ordered)
 	}
 
+	/** Whether `pending` more samples still fit, checked while a vector is being built. */
+	fits(pending: number): boolean {
+		return this.points + pending <= this.limits.maxPoints
+	}
+
+	tooMany(): R<never> {
+		return err(`query processing would load too many samples (more than ${this.limits.maxPoints})`)
+	}
+
 	count(vectors: ReadonlyArray<InstantVector>): R<void> {
 		for (const vector of vectors) this.points += vector.length
 		return this.points > this.limits.maxPoints
@@ -274,15 +283,20 @@ class Evaluator {
 			const data = yield* this.selectorData(selector)
 			const times = gridTimes(grid)
 			const at = resolveAt(selector.at, this.params)
-			const vectors = times.map((t) => {
+			const vectors: Sample[][] = []
+			let pending = 0
+			for (const t of times) {
 				const ref = (at ?? t) - selector.offsetMs
 				const out: Sample[] = []
 				for (const series of data.series) {
 					const last = lastSample(windowOf(series.buckets, ref - this.lookbackMs, ref))
-					if (last !== undefined) out.push({ labels: series.labels, value: last.v, t: last.t })
+					if (last === undefined) continue
+					pending += 1
+					if (!this.fits(pending)) return yield* this.tooMany()
+					out.push({ labels: series.labels, value: last.v, t: last.t })
 				}
-				return out
-			})
+				vectors.push(out)
+			}
 			return yield* this.steps(times, vectors)
 		})
 	}
@@ -353,6 +367,7 @@ class Evaluator {
 	): R<Steps> {
 		const times = gridTimes(grid)
 		const vectors: InstantVector[] = []
+		let pending = 0
 		for (const [index, t] of times.entries()) {
 			const evalMs = arg.at ?? t
 			const to = evalMs - arg.offsetMs
@@ -360,6 +375,8 @@ class Evaluator {
 			for (const series of arg.series) {
 				const value = f(windowOf(series.buckets, to - arg.rangeMs, to), series, index, evalMs)
 				if (value === undefined) continue
+				pending += 1
+				if (!this.fits(pending)) return this.tooMany()
 				out.push({ labels: keepName ? series.labels : dropMetricName(series.labels), value, t })
 			}
 			const unique = checkUnique(out)
@@ -546,9 +563,10 @@ class Evaluator {
 					if (expr.op === "+") return inner
 					if (inner.kind === "scalar") return { ...inner, values: inner.values.map((v) => -v) }
 					if (inner.kind === "string") return yield* err("unary minus on a string")
-					return yield* this.perStep(inner, (vec) =>
-						Result.succeed(
-							vec.map((s) => ({ ...s, labels: dropMetricName(s.labels), value: -s.value })),
+					// A computed value: the evaluation time, and no duplicate label sets once names drop.
+					return yield* this.perStep(inner, (vec, _i, t) =>
+						ensureUniqueLabelsets(
+							vec.map((s) => ({ labels: dropMetricName(s.labels), value: -s.value, t })),
 						),
 					)
 				}
@@ -618,20 +636,24 @@ class Evaluator {
 
 	/** A bare range selector or subquery in an instant query: its raw points. */
 	rawMatrix(expr: Expr, grid: TimeGrid): R<RangeSeries[]> {
-		return Result.map(this.rangeArg(expr, grid), (arg) => {
+		return Result.flatMap(this.rangeArg(expr, grid), (arg) => {
 			const evalMs = arg.at ?? grid.startMs
 			const to = evalMs - arg.offsetMs
 			const out: RangeSeries[] = []
+			let pending = 0
 			for (const series of arg.series) {
 				const w = windowOf(series.buckets, to - arg.rangeMs, to)
 				const points: Point[] = []
 				for (let i = w.from; i < w.to; i++) {
 					const b = series.buckets[i]
-					if (b !== undefined) points.push({ t: b.lastT, v: b.lastV })
+					if (b === undefined) continue
+					pending += 1
+					if (!this.fits(pending)) return this.tooMany()
+					points.push({ t: b.lastT, v: b.lastV })
 				}
 				if (points.length > 0) out.push({ labels: series.labels, points })
 			}
-			return out
+			return Result.succeed(out)
 		})
 	}
 }

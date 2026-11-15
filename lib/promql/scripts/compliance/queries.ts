@@ -75,4 +75,5 @@ export const QUERIES: ReadonlyArray<string> = [
 	// subqueries
 	"max_over_time(rate(http_requests_total[5m])[30m:1m])",
 	"avg_over_time(sum(node_memory_free_bytes)[10m:30s])",
+	"max_over_time(rate(http_requests_total[5m])[30m:])",
 ]
