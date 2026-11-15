@@ -15093,7 +15093,8 @@ mod tests {
         let key = "maple_sk_test_profiles_never_fits";
         let store = private_key_store(key, "org_profiles_never_fits", false);
         let (mut state, mut imports) = profiles_test_state(store, queue_dir.clone()).await;
-        let body = Bytes::from(profiles_export_of_many_rows(60_000).encode_to_vec());
+        // Large enough that its decode outgrows the row-piece room the sizing adds.
+        let body = Bytes::from(profiles_export_of_many_rows(80_000).encode_to_vec());
         let estimate = decode_budget::protobuf_cost(OtlpSignal::Profiles, &body, u64::MAX)
             .expect("an unbounded estimate");
         // Under every ceiling: the body, and a decode that takes half the heap.
