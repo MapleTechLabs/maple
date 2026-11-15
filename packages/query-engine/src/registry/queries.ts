@@ -42,7 +42,6 @@ import type {
 	ServiceDeploysRequest,
 	UptimeChecksRequest,
 	UptimePhaseTimingsRequest,
-	ReleaseDetailRequest,
 	WorkloadDetailSummaryRequest,
 	WebAnalyticsSummaryRequest,
 	WebAnalyticsLiveRequest,
@@ -386,9 +385,7 @@ export const workloadDetailSummary = defineQuery({
 		CH.compile(CH.workloadDetailSummaryQuery(payload), windowParams(payload, orgId)),
 })
 
-// Releases page. The list and the timeline share one payload so the bundle
-// handler forwards it to both; the detail reuses the list query scoped to one
-// service, which is the comparison table.
+// Releases across the org, one row per (service, environment, commit).
 export const releasesList = defineQuery({
 	id: "releasesList",
 	profile: "list",
@@ -482,64 +479,6 @@ export const serviceDeploys = defineQuery({
 			},
 			{ rowSchema: CH.releaseVerificationRowSchema },
 		),
-})
-
-export const releasesTimeline = defineQuery({
-	id: "releasesTimeline",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleasesListRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.releasesTimelineQuery({
-				environments: payload.environments,
-				namespaces: payload.namespaces,
-				serviceNames: payload.services,
-				excludedEnvironments: payload.excludedEnvironments,
-				bucketSeconds: payload.bucketSeconds,
-			}),
-			{
-				...windowParams(payload, orgId),
-				bucketSeconds: payload.bucketSeconds,
-			},
-		),
-})
-
-export const releaseVersions = defineQuery({
-	id: "releaseVersions",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(
-			CH.releasesListQuery({
-				serviceName: payload.serviceName,
-				environments: payload.environments,
-				limit: 100,
-			}),
-			windowParams(payload, orgId),
-			{ rowSchema: CH.releasesListRowSchema },
-		),
-})
-
-export const releaseTimeline = defineQuery({
-	id: "releaseTimeline",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(CH.releasesTimelineQuery(payload), {
-			...windowParams(payload, orgId),
-			bucketSeconds: payload.bucketSeconds,
-		}),
-})
-
-export const releaseErrorFingerprints = defineQuery({
-	id: "releaseErrorFingerprints",
-	profile: "list",
-	cache: timeRangeCache,
-	compile: (payload: ReleaseDetailRequest, orgId: OrgId) =>
-		CH.compile(CH.releaseErrorFingerprintsQuery(payload), {
-			...windowParams(payload, orgId),
-			serviceVersion: payload.commitSha,
-		}),
 })
 
 // Bundle subqueries keep distinct ids and minimal payloads to preserve standalone cache keys.
