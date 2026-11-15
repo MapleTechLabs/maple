@@ -24,6 +24,9 @@ describe("Prometheus wire format", () => {
 			expect(invalid.message).toBe(
 				'invalid parameter "start": cannot parse "2026-07-15" to a valid timestamp',
 			)
+			// Past what a Date renders (nanoseconds sent as seconds): a 400, not a 500 downstream.
+			const huge = yield* Effect.flip(parseTime("time", "1752580800123456789"))
+			expect(huge.message).toMatch(/cannot parse/)
 		}),
 	)
 })
