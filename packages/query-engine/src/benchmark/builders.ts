@@ -2204,6 +2204,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				window,
 			),
 	},
+	// The services one commit reached: bounds a commit's deploy verification read.
+	{
+		module: "releases",
+		name: "commitServicesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.commitServicesQuery("abc123"), window),
+	},
 	// Deploy verification: each deploy's first half hour against the half hour before it.
 	{
 		module: "releases",

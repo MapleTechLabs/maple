@@ -16,7 +16,14 @@ import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployCheck, deployBefore, deployChecksOf, railOrder } from "./derive-deploys"
+import {
+	type DeployCheck,
+	dataEndOf,
+	deployBefore,
+	deployChecksOf,
+	isOpenDeploy,
+	railOrder,
+} from "./derive-deploys"
 import { verdictBadge, verdictFigure } from "./view-verdict"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
@@ -65,6 +72,7 @@ const issueLine = (
 	clock: Clock,
 	hasSeverity: boolean,
 	deploys: ReadonlyArray<DeployCheck>,
+	dataEndMs: number,
 ): Html =>
 	listRow(h, {
 		density: "compact",
@@ -75,7 +83,10 @@ const issueLine = (
 		trailing: h.span(
 			[h.Class("contents")],
 			[
-				...newSinceTag(h, deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt))),
+				...newSinceTag(
+					h,
+					deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), dataEndMs),
+				),
 				typography(h, { size: "xs", tone: "muted", mono: true, numeric: true }, [
 					formatNumber(issue.occurrenceCount),
 					"×",
@@ -117,8 +128,8 @@ export const issuesPanel = (
 		onLoading: () => issuesFrame(h, false, [skeletonList(h, { rows: 4, className: "p-2" })]),
 		onFailure: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
 		onStale: () => issuesFrame(h, false, [emptyMessage(h, {}, ["Couldn't load issues"])]),
-		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited, deploys),
-		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited, deploys),
+		onRefreshing: (issues) => issuesReady(h, issues, clock, isLimited, deploys, dataEndOf(model)),
+		onSuccess: (issues) => issuesReady(h, issues, clock, isLimited, deploys, dataEndOf(model)),
 	})
 
 const issuesReady = (
@@ -127,6 +138,7 @@ const issuesReady = (
 	clock: Clock,
 	isLimited: boolean,
 	deploys: ReadonlyArray<DeployCheck>,
+	dataEndMs: number,
 ): Html => {
 	const hasSeverity = Arr.some(issues, (issue) => issue.severity !== null)
 	return issuesFrame(h, isLimited, [
@@ -134,7 +146,7 @@ const issuesReady = (
 			? emptyMessage(h, {}, ["No open issues for this service"])
 			: h.div(
 					[h.Class("space-y-px p-2")],
-					Arr.map(issues, (issue) => issueLine(h, issue, clock, hasSeverity, deploys)),
+					Arr.map(issues, (issue) => issueLine(h, issue, clock, hasSeverity, deploys, dataEndMs)),
 				),
 	])
 }
@@ -331,8 +343,8 @@ const deployRow = (h: H, model: Model, deploy: DeployCheck, clock: Clock, showEn
 	pressable(
 		h,
 		{
-			onClick: Message.ClickedDeploy({ sha: deploy.sha }),
-			selectedLane: model.search.deploy === deploy.sha,
+			onClick: Message.ClickedDeploy({ sha: deploy.sha, environment: deploy.environment }),
+			selectedLane: isOpenDeploy(model.search, deploy),
 			className: "block w-full rounded-sm text-left hover:bg-surface-sunken active:bg-surface-sunken",
 			attributes: [h.Key(`${deploy.sha}-${deploy.environment}`)],
 		},

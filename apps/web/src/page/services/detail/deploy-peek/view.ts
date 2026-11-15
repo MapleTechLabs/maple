@@ -1,6 +1,6 @@
 import { PANEL_ROW_CLASS } from "../view-panels"
-import { formatWarehouseDateTime } from "@maple/query-engine"
-import { formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { formatErrorRate, formatLatency, formatNumber, formatPercent, formatRate } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -25,6 +25,7 @@ import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import { type DeployCheck, deployChecks, isErrorRateUp, isP95Up } from "../derive-deploys"
 import type { Issue } from "../model"
+import type { Operation } from "../model-tabs"
 import type { CommitData } from "../../../kit/service-metrics/points"
 import { verdictBadge } from "../view-verdict"
 import { type OperationChange, operationChanges } from "./derive"
@@ -45,6 +46,8 @@ export type ViewInputs = Readonly<{
 	dataEndMs: number
 	nowMs: number
 	timeZone: string
+	/** The page's window, carried onto the links to the commit's other deploys. */
+	timeSearch: Readonly<{ startTime?: string; endTime?: string; timePreset?: string }>
 }>
 
 const shaLabel = (sha: string) => (isResolvableSha(sha) ? shortId(sha, "sha") : sha)
@@ -152,7 +155,21 @@ const operationRow = (h: H, change: OperationChange): Html =>
 		]),
 	})
 
-const operationsSection = (h: H, model: Model): Html => {
+/**
+ * The operations rollup has no commit, so its after side is every version serving then. Past a
+ * tenth of the requests from other versions (a rollout), the section says its figures include them.
+ */
+const sharedNote = (h: H, check: DeployCheck, after: ReadonlyArray<Operation>): Html => {
+	const total = Arr.reduce(after, 0, (sum, op) => sum + op.spanCount)
+	const others = total <= 0 ? 0 : Math.max(0, 1 - check.after.spans / total)
+	return others < 0.1
+		? null
+		: typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+				`Other versions served ${formatPercent(others)} of the requests after this deploy; these figures include them.`,
+			])
+}
+
+const operationsSection = (h: H, model: Model, check: DeployCheck): Html => {
 	const heading = sectionHeading(h, { title: "Operations it moved" })
 	const both = AsyncData.all([model.before.data, model.after.data])
 	return vstack(h, { gap: "2" }, [
@@ -169,11 +186,16 @@ const operationsSection = (h: H, model: Model): Html => {
 				const changes = operationChanges(before, after)
 				return changes.length === 0
 					? emptyMessage(h, {}, ["Too little traffic after the deploy to compare operations"])
-					: vstack(
-							h,
-							{ gap: "0" },
-							Arr.map(changes.slice(0, OPERATIONS_SHOWN), (change) => operationRow(h, change)),
-						)
+					: vstack(h, { gap: "1" }, [
+							sharedNote(h, check, after),
+							vstack(
+								h,
+								{ gap: "0" },
+								Arr.map(changes.slice(0, OPERATIONS_SHOWN), (change) =>
+									operationRow(h, change),
+								),
+							),
+						])
 			},
 		}),
 	])
@@ -205,10 +227,19 @@ const issuesSection = (h: H, issues: ReadonlyArray<Issue>): Html =>
 
 /** The commit's other deploys: other environments of this service, then other services. */
 const shippedSection = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Html => {
+	if (AsyncData.isFailure(model.shipped.data))
+		return vstack(h, { gap: "2" }, [
+			sectionHeading(h, { title: "Also shipped to" }),
+			errorState(h, {
+				failure: model.shipped.data.error,
+				title: "Couldn't look up the commit's other deploys",
+				onRetry: Message.ClickedRetry(),
+			}),
+		])
 	const others = AsyncData.getOrElse(
 		AsyncData.map(model.shipped.data, (shipped) =>
 			Arr.filter(
-				deployChecks(shipped, inputs.dataEndMs),
+				deployChecks(shipped, Math.min(inputs.dataEndMs, parseWarehouseDateTime(shipped.readUntil))),
 				(other) =>
 					!(other.serviceName === inputs.serviceName && other.environment === check.environment),
 			),
@@ -228,8 +259,11 @@ const shippedSection = (h: H, model: Model, check: DeployCheck, inputs: ViewInpu
 					href: hrefOf(
 						AppRoute.Service({
 							serviceName: other.serviceName,
+							// The same window, so the deploy is still in it when the page lands.
 							search: {
+								...inputs.timeSearch,
 								deploy: other.sha,
+								deployEnv: other.environment === "" ? undefined : other.environment,
 								environments: other.environment === "" ? undefined : [other.environment],
 							},
 						}),
@@ -284,7 +318,7 @@ const content = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Re
 		model.dialog.id,
 		[
 			comparison(h, check),
-			operationsSection(h, model),
+			operationsSection(h, model, check),
 			issuesSection(h, inputs.issues),
 			shippedSection(h, model, check, inputs),
 		],

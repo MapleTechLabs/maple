@@ -51,13 +51,22 @@ const deployDrawer = (
 					? []
 					: Arr.filter(issues, (issue) =>
 							isSameDeploy(
-								deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt)),
+								deployBefore(
+									deploys,
+									parseWarehouseDateTime(issue.firstSeenAt),
+									dataEndOf(model),
+								),
 								check,
 							),
 						),
 			dataEndMs: dataEndOf(model),
 			nowMs: model.nowMs ?? 0,
 			timeZone: context.timeZone,
+			timeSearch: {
+				startTime: model.search.startTime,
+				endTime: model.search.endTime,
+				timePreset: model.search.timePreset,
+			},
 		},
 		toParentMessage: (message) => Message.GotDeployPeekMessage({ message }),
 	})

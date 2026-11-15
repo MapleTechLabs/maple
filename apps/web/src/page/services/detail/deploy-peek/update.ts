@@ -60,6 +60,7 @@ export const FetchShipped = Command.define("FetchServiceDeployShipped", {
 	messages: [Message.CompletedFetchShipped],
 	execute: ({ key, input }) =>
 		getServiceDeploys({ data: input }).pipe(
+			Effect.map((response) => ({ ...response, readUntil: input.endTime })),
 			settleTo((result) => Message.CompletedFetchShipped({ key, result })),
 		),
 })
