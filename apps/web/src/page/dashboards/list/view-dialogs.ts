@@ -24,11 +24,26 @@ export const deleteDialog = (h: H, model: Model): Html =>
 		onConfirm: Message.ClickedConfirmDelete(),
 	})
 
+/** The report's summary line; a dashboard with no panels says so instead of "0 of 0". */
+export const importReportSummary = (report: {
+	readonly panels: number
+	readonly converted: number
+}): string => {
+	if (report.panels === 0) return "The dashboard has no panels to convert."
+	const notes = report.panels - report.converted
+	const noteText =
+		notes === 1
+			? " 1 panel Maple cannot run yet became a note that keeps its original queries."
+			: notes > 1
+				? ` ${countLabel(notes, "panel")} Maple cannot run yet became notes that keep the original queries.`
+				: ""
+	return `${report.converted} of ${countLabel(report.panels, "panel")} converted.${noteText}`
+}
+
 /** After a Grafana import: how many panels converted, and every warning, before opening it. */
 export const importReportDialog = (h: H, model: Model): Html => {
 	const report = model.importReport
 	if (report === null) return h.empty
-	const notes = report.panels - report.converted
 	return confirmDialog(h, {
 		slotId: model.importReportDialog.id,
 		model: model.importReportDialog,
@@ -36,7 +51,7 @@ export const importReportDialog = (h: H, model: Model): Html => {
 		tone: "default",
 		hasIcon: false,
 		title: ["Imported “", displayName(report.name), "”"],
-		description: `${report.converted} of ${countLabel(report.panels, "panel")} converted.${notes === 1 ? " 1 panel Maple cannot run yet became a note that keeps its original queries." : notes > 1 ? ` ${countLabel(notes, "panel")} Maple cannot run yet became notes that keep the original queries.` : ""}`,
+		description: importReportSummary(report),
 		children:
 			report.warnings.length === 0
 				? []
