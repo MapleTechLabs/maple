@@ -227,8 +227,17 @@ describe("cost budgets", () => {
 		)
 	})
 
-	test("the switch saves on toggle and shows what the API stored, keeping where the budget stands", () => {
-		const { progress: _, ...budget } = named("AWS production")
+	// The save answers with the stored budget and no standing. Another manager may have changed
+	// the budget since the list was read, so the switch shows the answer and the list is read again.
+	test("the switch shows what the API stored at once, then reads again where the budgets stand", () => {
+		const { progress, ...budget } = named("AWS production")
+		const key = loaded().list.key ?? ""
+		const raised = { ...budget, enabled: false, amount: 8_000 }
+		const reread = {
+			budgets: Arr.map(LIST_OF_FIVE.budgets, (row) =>
+				row.id === budget.id ? { ...raised, progress: { ...progress, percent: 48.9 } } : row,
+			),
+		}
 
 		scene(
 			{ update: pageUpdate, view },
@@ -236,16 +245,20 @@ describe("cost budgets", () => {
 			click(role("switch", { name: "Turn off AWS production" })),
 			Command.resolve(
 				SaveBudgetEnabled({ id: budget.id, enabled: false }),
-				Message.CompletedToggle({
-					id: budget.id,
-					result: Result.succeed({ ...budget, enabled: false }),
-				}),
+				Message.CompletedToggle({ id: budget.id, result: Result.succeed(raised) }),
 			),
 			expectView(role("switch", { name: "Turn on AWS production" })).toHaveAttr(
 				"aria-checked",
 				"false",
 			),
-			expectView(within(table, text("$3,912.07 of $6,000.00"))).toExist(),
+			expectView(within(table, text("$3,912.07 of $8,000.00"))).toExist(),
+			expectView(within(table, text("65%"))).toExist(),
+			Command.resolve(
+				FetchBudgets({ key }),
+				Message.CompletedFetchBudgets({ key, result: Result.succeed(reread) }),
+			),
+			expectView(within(table, text("48%"))).toExist(),
+			expectView(within(table, text("65%"))).toBeAbsent(),
 		)
 	})
 

@@ -44,13 +44,16 @@ const FORM_WIDTH = "max-w-3xl"
 const hiddenLabel = (h: H, id: string, text: string): Html =>
 	label(h, { className: "sr-only", attributes: [h.For(id)] }, [text])
 
-const nameSection = (h: H, form: Form): Html =>
+// Every control waits for a save that is out: its answer replaces the form, so an edit made
+// meanwhile would be dropped without a word.
+const nameSection = (h: H, model: Model): Html =>
 	formSection(h, { title: "Name", hint: "Its incidents carry it" }, [
 		hiddenLabel(h, "budget-name", "Name"),
 		input(h, {
 			id: "budget-name",
+			isDisabled: model.isSaving,
 			attributes: [
-				h.Value(form.name),
+				h.Value(model.form.name),
 				h.Placeholder("AWS production"),
 				h.OnInput((value) => Message.ChangedText({ field: "name", value })),
 			],
@@ -140,6 +143,7 @@ const amountSection = (h: H, model: Model): Html => {
 				inputGroup(h, {}, [
 					inputGroupInput(h, {
 						id: "budget-amount",
+						isDisabled: model.isSaving,
 						attributes: [
 							h.Value(form.amount),
 							h.Placeholder("1000"),
@@ -165,6 +169,7 @@ const amountSection = (h: H, model: Model): Html => {
 							{
 								value: form.currency,
 								className: "w-24",
+								isDisabled: model.isSaving,
 								attributes: [
 									h.Id("budget-currency"),
 									h.OnChange((currency) => Message.PickedCurrency({ currency })),
@@ -180,6 +185,7 @@ const amountSection = (h: H, model: Model): Html => {
 				ariaLabel: "Period",
 				size: "sm",
 				className: "w-fit",
+				isDisabled: model.isSaving,
 				value: form.period,
 				onChange: (period) => Message.PickedPeriod({ period }),
 				options: Arr.map(CostBudgetPeriod.literals, (period) => ({
@@ -222,6 +228,7 @@ const alertSection = (h: H, model: Model, severity: AlertSeverity): Html => {
 				id: `budget-${severity}-on`,
 				inputId: `budget-${severity}-on-input`,
 				isChecked: alert.isOn,
+				isDisabled: model.isSaving,
 				labelledBy: `budget-${severity}-on-label`,
 				onToggle: Message.ToggledAlert({ severity }),
 			}),
@@ -238,6 +245,7 @@ const alertSection = (h: H, model: Model, severity: AlertSeverity): Html => {
 							inputGroup(h, {}, [
 								inputGroupInput(h, {
 									id: percentId,
+									isDisabled: model.isSaving,
 									attributes: [
 										h.Value(alert.percent),
 										h.Attribute("inputmode", "decimal"),
@@ -252,6 +260,7 @@ const alertSection = (h: H, model: Model, severity: AlertSeverity): Html => {
 							ariaLabel: `${name} alert watches`,
 							size: "sm",
 							className: "w-fit",
+							isDisabled: model.isSaving,
 							value: alert.basis,
 							onChange: (basis) => Message.PickedBasis({ severity, basis }),
 							options: [
@@ -276,13 +285,14 @@ const alertSection = (h: H, model: Model, severity: AlertSeverity): Html => {
 	])
 }
 
-const enabledSection = (h: H, form: Form): Html =>
+const enabledSection = (h: H, model: Model): Html =>
 	formSection(h, { title: "Enabled", isCompact: true }, [
 		hstack(h, { gap: "2" }, [
 			...switchControl(h, {
 				id: "budget-enabled",
 				inputId: "budget-enabled-input",
-				isChecked: form.enabled,
+				isChecked: model.form.enabled,
+				isDisabled: model.isSaving,
 				labelledBy: "budget-enabled-label",
 				onToggle: Message.ToggledEnabled(),
 			}),
@@ -369,11 +379,11 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 			formCard(
 				h,
 				[
-					nameSection(h, model.form),
+					nameSection(h, model),
 					scopeSection(h, model),
 					amountSection(h, model),
 					...Arr.map(SEVERITIES, (severity) => alertSection(h, model, severity)),
-					enabledSection(h, model.form),
+					enabledSection(h, model),
 				],
 				FORM_WIDTH,
 			),

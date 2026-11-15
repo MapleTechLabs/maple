@@ -145,14 +145,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		CompletedToggle: ({ id, result }) => {
 			const settled = { ...model, togglingIds: withoutId(model.togglingIds, id) }
 			return Result.match(result, {
-				// The save answers without the budget's standing, which a switch does not change.
-				onSuccess: (saved): Return => ({
-					model: withRows(settled, (rows) =>
-						Arr.map(rows, (row) =>
-							row.id === saved.id ? { ...saved, progress: row.progress } : row,
+				// The switch shows what was stored at once. The answer carries no standing, and may
+				// carry what another manager changed since the list was read, so the list is read again.
+				onSuccess: (saved): Return =>
+					readList(
+						withRows(settled, (rows) =>
+							Arr.map(rows, (row) =>
+								row.id === saved.id ? { ...saved, progress: row.progress } : row,
+							),
 						),
+						context,
+						"Refresh",
 					),
-				}),
 				onFailure: (failure): Return => ({
 					model: settled,
 					outMessage: errorToast("Couldn't update the budget", failure),

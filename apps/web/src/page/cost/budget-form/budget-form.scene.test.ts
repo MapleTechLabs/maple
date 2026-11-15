@@ -199,6 +199,18 @@ describe("cost budget editor", () => {
 		])
 		// A second press while the save is out sends nothing.
 		expect(pageUpdate(saving.model, Message.ClickedSave()).commands ?? []).toEqual([])
+		// Nor can the form change under it: the save's answer would replace what was typed.
+		scene(
+			{ update: pageUpdate, view },
+			given(saving.model),
+			expectView(role("textbox", { name: "Name" })).toBeDisabled(),
+			expectView(role("textbox", { name: "Amount" })).toBeDisabled(),
+			expectView(role("button", { name: "Yearly" })).toBeDisabled(),
+			expectView(role("switch", { name: "Open a warning incident" })).toHaveAttr(
+				"aria-disabled",
+				"true",
+			),
+		)
 	})
 
 	test("a budget needs an alert, and an alert that is on needs a percent the API takes", () => {
