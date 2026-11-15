@@ -1,6 +1,6 @@
 import { PANEL_ROW_CLASS } from "../view-panels"
 import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
-import { formatErrorRate, formatLatency, formatNumber, formatPercent, formatRate } from "@maple/ui/lib/format"
+import { formatErrorRate, formatLatency, formatNumber, formatRate } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
 import { Array as Arr } from "effect"
 import { AsyncData, Submodel } from "foldkit"
@@ -25,7 +25,6 @@ import { sheetDetailHeader } from "../../../kit/sheet-detail-header"
 import { statRail, statRailItem } from "../../../kit/stat-rail"
 import { type DeployCheck, deployChecks, isErrorRateUp, isP95Up } from "../derive-deploys"
 import type { Issue } from "../model"
-import type { Operation } from "../model-tabs"
 import type { CommitData } from "../../../kit/service-metrics/points"
 import { verdictBadge } from "../view-verdict"
 import { type OperationChange, operationChanges } from "./derive"
@@ -158,25 +157,15 @@ const operationRow = (h: H, change: OperationChange): Html =>
 	})
 
 /**
- * The operations rollup has no commit, so its after side is every version serving then. Past a
- * tenth of the requests from other versions (a rollout), the section says its figures include them.
+ * The operations rollup has no commit, so its after side is every version serving then; and it
+ * counts every span, not only the entry spans the comparison counts, so no share can be read off it.
  */
-const sharedNote = (h: H, check: DeployCheck, after: ReadonlyArray<Operation>): Html => {
-	// A full list was cut at its cap, so its sum undercounts the traffic: say so without a share.
-	if (after.length >= OPERATIONS_LIMIT)
-		return typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-			"These figures count every version serving after this deploy, not only this one.",
-		])
-	const total = Arr.reduce(after, 0, (sum, op) => sum + op.spanCount)
-	const others = total <= 0 ? 0 : Math.max(0, 1 - check.after.spans / total)
-	return others < 0.1
-		? null
-		: typography(h, { size: "2xs", tone: "muted", as: "p" }, [
-				`Other versions served ${formatPercent(others)} of the requests after this deploy; these figures include them.`,
-			])
-}
+const sharedNote = (h: H): Html =>
+	typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+		"These count every version serving after the deploy, not only this one.",
+	])
 
-const operationsSection = (h: H, model: Model, check: DeployCheck): Html => {
+const operationsSection = (h: H, model: Model): Html => {
 	const heading = sectionHeading(h, { title: "Operations it moved" })
 	const both = AsyncData.all([model.before.data, model.after.data])
 	return vstack(h, { gap: "2" }, [
@@ -194,7 +183,7 @@ const operationsSection = (h: H, model: Model, check: DeployCheck): Html => {
 				return changes.length === 0
 					? emptyMessage(h, {}, ["Too little traffic after the deploy to compare operations"])
 					: vstack(h, { gap: "1" }, [
-							sharedNote(h, check, after),
+							sharedNote(h),
 							vstack(
 								h,
 								{ gap: "0" },
@@ -325,7 +314,7 @@ const content = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Re
 		model.dialog.id,
 		[
 			comparison(h, check, inputs.dataEndMs),
-			operationsSection(h, model, check),
+			operationsSection(h, model),
 			issuesSection(h, inputs.issues),
 			shippedSection(h, model, check, inputs),
 		],
