@@ -5947,15 +5947,37 @@ async fn decode_profiles(
             PayloadFormat::Json => profiles::decode_json(&payload)
                 .map_err(|e| invalid_payload("profiles", "JSON", e))?,
         };
+        // Text the rules inline from the string table: under the decode heap ceiling with the
+        // decoded export, and held with it until the rows are built.
+        let mut inlined = 0u64;
         if let Some(rules) = &rules {
-            redact_profile_export(&span, rules, &mut request)?;
+            let mut over_ceiling = false;
+            let charge = |bytes: u64| {
+                inlined = inlined.saturating_add(bytes);
+                over_ceiling = estimate.saturating_add(inlined) > heap_budget;
+                !over_ceiling && reservation.try_add(bytes)
+            };
+            redact_profile_export(&span, rules, &mut request, charge).map_err(|error| {
+                match error {
+                    ingest_rules::ProfileRedactError::OverMemoryBudget if over_ceiling => {
+                        over_decode_budget(heap_budget)
+                    }
+                    ingest_rules::ProfileRedactError::OverMemoryBudget => profiles_decode_busy(),
+                    ingest_rules::ProfileRedactError::ScanBudgetExceeded => ApiError::tagged(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        &INGEST_RULES_SCAN_BUDGET,
+                        "This export needs more ingest rule scanning than one request may use; send smaller exports",
+                    ),
+                }
+            })?;
         }
         // Only the decoded form is left; the buffers went with the payload.
         let decoded_bytes = payload.len();
         drop(payload);
-        reservation.shrink_to(estimate);
+        let decoded_heap = estimate.saturating_add(inlined);
+        reservation.shrink_to(decoded_heap);
         let limits = ProfileLimits {
-            decoded_heap: estimate,
+            decoded_heap,
             heap_ceiling: heap_budget,
             max_row_bytes,
             row_expansion: max_row_expansion,
@@ -6016,21 +6038,15 @@ async fn profile_redaction_rules(
 }
 
 /// Redacts a decoded export with the org's rules, before anything of it is flattened or stored.
+/// `charge` is asked for each copy of string-table text the pass makes.
 fn redact_profile_export(
     span: &Span,
     rules: &rules_gateway::OrgRules,
     request: &mut ExportProfilesServiceRequest,
-) -> Result<(), ApiError> {
+    charge: impl FnMut(u64) -> bool,
+) -> Result<(), ingest_rules::ProfileRedactError> {
     let mut stats = RuleStats::default();
-    ingest_rules::redact_profiles(&rules.compiled, request, &mut stats).map_err(
-        |ingest_rules::ScanBudgetExceeded| {
-            ApiError::tagged(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                &INGEST_RULES_SCAN_BUDGET,
-                "This export needs more ingest rule scanning than one request may use; send smaller exports",
-            )
-        },
-    )?;
+    ingest_rules::redact_profiles(&rules.compiled, request, &mut stats, charge)?;
     span.record("maple.ingest.rules.count", rules.compiled.len());
     span.record("maple.ingest.rules.redacted_values", stats.total.redacted_values);
     Ok(())
@@ -15339,6 +15355,49 @@ mod tests {
         assert!(resource.get("deploy.secret").is_none(), "{resource}");
         assert_eq!(rows[0]["sample_attributes"]["customer"], "[REDACTED:email]");
         assert_eq!(rows[0]["sample_attributes"]["contact"], "[REDACTED:email]");
+        drop(std::fs::remove_dir_all(&queue_dir));
+    }
+
+    // Inlining one shared string into every entry that names it is the sender's bytes many
+    // times over, so the copies are charged to the decode heap before they are made.
+    #[tokio::test]
+    async fn redacting_a_profiles_export_charges_the_text_it_inlines() {
+        const ENTRIES: usize = 10_000;
+        let queue_dir = unique_main_test_dir("profiles-redact-inline");
+        let key = "maple_sk_test_profiles_redact_inline";
+        let org = "org_profiles_redact_inline";
+        let store = private_key_store(key, org, false);
+        store.set_ingest_rules(org, &[mask_emails_rule()]);
+        let (state, mut imports) = profiles_test_state(Arc::clone(&store), queue_dir.clone()).await;
+        let mut state = with_ingest_rules(state, &store);
+        state.config.max_decode_heap_bytes = 64 * 1024 * 1024;
+        let mut table = vec![serde_json::json!({})];
+        table.extend(
+            (0..ENTRIES).map(|_| serde_json::json!({ "keyStrindex": 2, "value": { "stringValueStrindex": 3 } })),
+        );
+        let request = serde_json::json!({
+            "resourceProfiles": [{ "scopeProfiles": [{ "profiles": [{ "samples": [
+                { "stackIndex": 1, "attributeIndices": [1], "values": ["1"] },
+            ] }] }] }],
+            "dictionary": {
+                "stringTable": ["", "main", "k", "x".repeat(64 * 1024)],
+                "functionTable": [{}, { "nameStrindex": 1 }],
+                "locationTable": [{}, { "lines": [{ "functionIndex": 1 }] }],
+                "stackTable": [{}, { "locationIndices": [1] }],
+                "attributeTable": table,
+            },
+        });
+        let body = Bytes::from(serde_json::to_vec(&request).expect("the export encodes"));
+        assert!(body.len() <= state.config.max_request_body_bytes);
+        let headers = profiles_headers(key, "application/json");
+
+        let refused = handle_profiles_inner(&state, &headers, body)
+            .await
+            .expect_err("the inlined copies are past the decode heap ceiling");
+        assert_eq!(refused.status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(!refused.kind.retryable);
+        assert_eq!(state.decode_memory.reserved_bytes(), 0);
+        assert!(no_profiles_are_stored(&mut imports).await);
         drop(std::fs::remove_dir_all(&queue_dir));
     }
 
