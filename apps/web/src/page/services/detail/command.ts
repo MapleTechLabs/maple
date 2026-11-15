@@ -186,8 +186,13 @@ export const FetchDependencies = Command.define("FetchServiceDependenciesBundle"
 		),
 })
 
-/** The Profiles tab reads one environment at most, like the Dependencies tab. */
-export const ProfileInput = DependenciesInput
+/** The Profiles tab reads one environment at most; `deploymentEnv` is left out for every environment. */
+export const ProfileInput = Schema.Struct({
+	serviceName: Schema.String,
+	startTime: Schema.String,
+	endTime: Schema.String,
+	deploymentEnv: Schema.optionalKey(Schema.String),
+})
 export type ProfileInput = typeof ProfileInput.Type
 
 /** `getProfile`: the service's sample types, then the heaviest stacks of one; null without profiles. */

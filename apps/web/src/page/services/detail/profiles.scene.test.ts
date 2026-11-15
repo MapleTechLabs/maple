@@ -3,11 +3,11 @@ import { LinkedCursorMessage, MountLinkedZoom } from "@maple/views/charts/linked
 import { ResolveThemeColors, ThemeMessage } from "@maple/views/charts/theme-colors"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
-import { Result, Schema, Array as Arr } from "effect"
+import { Option, Result, Schema, Array as Arr } from "effect"
 import { expect as expectView, given, Mount, role, scene, text, withViewInputs } from "foldkit/scene"
 import { describe, expect, test } from "vitest"
 import type { PageContext } from "../../contract"
-import { FetchOperations, FetchProfile } from "./command"
+import { FetchOperations, FetchProfile, ProfileInput } from "./command"
 import { Message } from "./message"
 import type { Model, ServiceProfile } from "./model"
 import { init, update } from "./update"
@@ -95,6 +95,33 @@ describe("service detail, Profiles tab", () => {
 			themeResolved(),
 			expectView(role("link", { name: "Profiles" })).toHaveAttr("aria-current", "page"),
 		)
+	})
+
+	test("the read names an environment only when exactly one is selected", () => {
+		const page = pageFor(inRollout)
+		// The command's input decodes only with its unset keys left out, as the API's request does.
+		const decodeArgs = Schema.decodeUnknownOption(Schema.Struct({ input: ProfileInput }))
+		const inputOf = (search: Model["search"]) =>
+			Arr.findFirst(page.entered(search).commands ?? [], ({ name }) => name === FetchProfile.name).pipe(
+				Option.flatMap(({ args }) => decodeArgs(args)),
+				Option.map(({ input }) => input),
+			)
+		const everyEnvironment = Option.some({
+			serviceName: "checkout-api",
+			startTime: expect.any(String),
+			endTime: expect.any(String),
+		})
+		// Strict: a `deploymentEnv` key holding `undefined` is not the same input.
+		expect(inputOf({ tab: "profiles" })).toStrictEqual(everyEnvironment)
+		expect(inputOf({ tab: "profiles", environments: ["production", "staging"] })).toStrictEqual(
+			everyEnvironment,
+		)
+		expect(
+			Option.map(
+				inputOf({ tab: "profiles", environments: ["production"] }),
+				(input) => input.deploymentEnv,
+			),
+		).toEqual(Option.some("production"))
 	})
 
 	test("a service without profiles is told how to turn profiling on", () => {

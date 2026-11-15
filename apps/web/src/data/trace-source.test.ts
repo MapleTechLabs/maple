@@ -96,7 +96,10 @@ describe("the span profile read", () => {
 		}
 		expect(await requests()).toEqual([
 			{ path: "/internal/query-engine/profile-sample-types", body: scope },
-			{ path: "/internal/query-engine/profile-stacks", body: { ...scope, sampleType: "cpu" } },
+			{
+				path: "/internal/query-engine/profile-stacks",
+				body: { ...scope, sampleType: "cpu", sampleUnit: "nanoseconds" },
+			},
 		])
 	})
 

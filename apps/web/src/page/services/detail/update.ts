@@ -165,11 +165,13 @@ const dependenciesStep =
 const profileStep =
 	(context: PageContext, window: TimeWindow, mode: RequestMode) =>
 	(model: Model): Step => {
+		const deploymentEnv = singleDeploymentEnv(environmentsOf(model.search))
 		const input = {
 			serviceName: model.serviceName,
 			startTime: window.startTime,
 			endTime: window.endTime,
-			deploymentEnv: singleDeploymentEnv(environmentsOf(model.search)),
+			// The request's optional keys are left out, never `undefined`.
+			...(deploymentEnv !== undefined && { deploymentEnv }),
 		}
 		return keyed(
 			model.profile,
