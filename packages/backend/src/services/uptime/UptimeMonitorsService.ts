@@ -517,14 +517,13 @@ export const certificateOrigin = (config: UptimeMonitorConfig): string | null =>
 }
 
 /**
- * Whether a report's check ran against the monitor's current settings: by the revision it echoes,
- * else (a scraper that predates it) by starting after the last edit. A check that started after
- * the edit can still run a target the scraper cached before it, which only the revision tells.
+ * Whether a report's check ran against the monitor's current settings, by the revision it echoes.
+ * A start time cannot tell: a check that starts after an edit can still run a target the scraper
+ * cached before it. A report without a revision (a target from an API that predates it) is not
+ * trusted with a certificate.
  */
 const probedCurrentTarget = (report: UptimeCheckReport, configUpdatedAt: number): boolean =>
-	report.targetRevision === undefined
-		? report.checkedAt >= configUpdatedAt
-		: report.targetRevision === configUpdatedAt
+	report.targetRevision === configUpdatedAt
 
 /**
  * `detail` with the certificate `previous` held: a check that started before the monitor's last
