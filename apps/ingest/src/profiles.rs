@@ -220,6 +220,9 @@ struct Cost {
 /// A map entry, or a node of a JSON tree, beyond the text it holds.
 const NODE_BYTES: usize = 128;
 
+/// One entry of a hash map from a small key to a small value, growth included.
+const MAP_ENTRY_BYTES: usize = 64;
+
 /// `text` cut to its first `MAX_FRAME_TEXT` characters, with nothing appended.
 fn clip(text: &str) -> &str {
     // Characters are never more than bytes, so short text is not scanned.
@@ -486,6 +489,8 @@ impl<'a> Dictionary<'a> {
         let listed = resource.map_or(&[][..], |resource| resource.attributes.as_slice());
         // A key named by string-table index counts at its last naming only, so the maps below
         // compare each such key's text once however often it repeats.
+        // Charged before it is built: its size is the sender's.
+        meter.charge(listed.len() * MAP_ENTRY_BYTES)?;
         let mut last_named: HashMap<i32, usize> = HashMap::new();
         for (at, attribute) in listed.iter().enumerate() {
             if attribute.key.is_empty() {
