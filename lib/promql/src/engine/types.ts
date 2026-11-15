@@ -126,8 +126,6 @@ export const PUSHDOWN_FUNCTIONS = [
 	"max_over_time",
 	"last_over_time",
 	"present_over_time",
-	"stddev_over_time",
-	"stdvar_over_time",
 	"last",
 ] as const
 export type PushdownFunction = (typeof PUSHDOWN_FUNCTIONS)[number]

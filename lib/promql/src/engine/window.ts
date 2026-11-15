@@ -1,3 +1,4 @@
+import { kahanInc } from "./aggregate"
 import type { SampleBucket } from "./types"
 
 /** Index of the first bucket whose `end` is greater than `t` (buckets sorted by `end`). */
@@ -171,9 +172,23 @@ const moments = (w: Window): Moments => {
 	return { count, sum, sumSquares, min, max }
 }
 
-const variance = (m: Moments): number => {
-	const mean = m.sum / m.count
-	return Math.max(0, m.sumSquares / m.count - mean * mean)
+/**
+ * Prometheus' stdvar_over_time: Welford with Kahan sums over the raw values. Moments
+ * (sum of squares minus squared mean) cancel catastrophically on large gauges.
+ */
+const stdvar = (values: ReadonlyArray<number>): number => {
+	let count = 0
+	let mean = 0
+	let cMean = 0
+	let aux = 0
+	let cAux = 0
+	for (const v of values) {
+		count += 1
+		const delta = v - (mean + cMean)
+		;[mean, cMean] = kahanInc(delta / count, mean, cMean)
+		;[aux, cAux] = kahanInc(delta * (v - (mean + cMean)), aux, cAux)
+	}
+	return (aux + cAux) / count
 }
 
 export type OverTimeFunction =
@@ -205,9 +220,9 @@ export const overTime = (func: OverTimeFunction, w: Window): number | undefined 
 		case "max_over_time":
 			return m.max
 		case "stddev_over_time":
-			return Math.sqrt(variance(m))
+			return Math.sqrt(stdvar(windowValues(w)))
 		case "stdvar_over_time":
-			return variance(m)
+			return stdvar(windowValues(w))
 	}
 }
 
