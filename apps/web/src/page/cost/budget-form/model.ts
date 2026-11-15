@@ -1,3 +1,4 @@
+import { CostDimension } from "@maple/domain/cost"
 import { CostBudgetBasis, CostBudgetPeriod } from "@maple/domain/cost-budget"
 import { AlertDestinationId, AlertRuleId, AlertSeverity, CostBudget } from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
@@ -7,9 +8,9 @@ import { defineMessageUnion } from "foldkit/message"
 import { KeyedSchema } from "@maple/views/data/keyed"
 import { LoadFailure } from "@maple/views/data/load-failure"
 import * as Menu from "@maple/views/ui/menu"
-import { COST_GROUP_BYS, CostBudgetNewSearch } from "../../../route/search"
+import { CostBudgetNewSearch } from "../../../route/search"
 import { LiveRows, LoadOutcome } from "../../kit/load-schemas"
-import { SessionGrants } from "../../kit/session-grants"
+import { canManageAlerts, SessionGrants } from "../../kit/session-grants"
 import { CostFacets } from "../message"
 import { Form, TextField } from "./form"
 
@@ -25,8 +26,6 @@ export const FormOptions = Schema.Struct({
 })
 export type FormOptions = typeof FormOptions.Type
 
-const Dimension = Schema.Literals(COST_GROUP_BYS)
-
 export const Model = Schema.Struct({
 	search: CostBudgetNewSearch,
 	/** The budget being edited; `null` creates. */
@@ -35,8 +34,10 @@ export const Model = Schema.Struct({
 	isMissing: Schema.Boolean,
 	/** The edited budget's read; the form fills from it once. */
 	existing: KeyedSchema(CostBudget, LoadFailure),
-	/** Null until read, and when the read failed: the form then offers what it already holds. */
+	/** Null until read, and when the read failed. */
 	options: Schema.NullOr(FormOptions),
+	/** The options read's failure: the form then offers what it holds, and to read again. */
+	optionsFailure: Schema.NullOr(LoadFailure),
 	form: Form,
 	isSaving: Schema.Boolean,
 	/** The last save's failure, shown above the action bar in the server's words. */
@@ -51,26 +52,30 @@ export const Model = Schema.Struct({
 export type Model = typeof Model.Type
 
 /**
- * What the session says: `denied` only when it answered and the permission is missing. A session
- * that answered with nothing failed to read, so the form is shown and the API gets the last word.
+ * What the session says. An analyst holds no permission at all, so an answer without
+ * `alerts:manage` is a refusal, as it is in the SLO and uptime editors.
  */
 export const accessOf = (model: Pick<Model, "grants" | "isGrantsRead">): "unknown" | "ask" | "denied" =>
-	!model.isGrantsRead
-		? "unknown"
-		: model.grants.length === 0 || Policy.has(model.grants, "alerts:manage")
-			? "ask"
-			: "denied"
+	!model.isGrantsRead ? "unknown" : canManageAlerts(model) ? "ask" : "denied"
+
+/**
+ * A new budget waits for the options: until they answer its currency is a guess, and a budget in
+ * a currency the org is not billed in measures nothing.
+ */
+export const isAwaitingOptions = (model: Pick<Model, "editingId" | "options" | "optionsFailure">): boolean =>
+	model.editingId === null && model.options === null && model.optionsFailure === null
 
 export const Message = defineMessageUnion({
 	CompletedReadGrants: SessionGrants,
 	CompletedFetchExisting: { key: Schema.String, result: LoadOutcome(CostBudget) },
 	CompletedFetchOptions: { result: LoadOutcome(FormOptions) },
 	ClickedRetry: {},
+	ClickedRetryOptions: {},
 	UpdatedDestinations: { orgId: Schema.String, rows: Schema.Array(AlertDestinationRowSchema) },
 	ChangedText: { field: TextField, value: Schema.String },
 	PickedCurrency: { currency: Schema.String },
 	PickedPeriod: { period: CostBudgetPeriod },
-	RemovedScope: { dimension: Dimension, value: Schema.String },
+	RemovedScope: { dimension: CostDimension, value: Schema.String },
 	GotScopeMenuMessage: { message: Menu.Message },
 	ToggledAlert: { severity: AlertSeverity },
 	ChangedPercent: { severity: AlertSeverity, value: Schema.String },

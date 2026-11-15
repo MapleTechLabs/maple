@@ -68,9 +68,7 @@ const computeShownEntries = (
 	const all = entriesFor(entriesOf(model, context), audience)
 	const entries = Arr.filter(
 		all,
-		(entry) =>
-			entry.isFlagged !== true ||
-			(entry.target._tag === "Href" && visibleFlagged.includes(entry.target.href)),
+		(entry) => entry.flaggedBy === undefined || visibleFlagged.includes(entry.flaggedBy),
 	)
 	const query = Str.trim(model.list.inputValue)
 	if (query === "") return { entries: browseEntries(entries), isSearch: false }

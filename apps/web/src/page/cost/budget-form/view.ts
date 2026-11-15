@@ -4,7 +4,7 @@ import { Array as Arr, Option } from "effect"
 import { AsyncData, Submodel } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { failureMessage } from "@maple/views/data/load-failure"
-import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button, linkButton } from "@maple/views/ui/button"
 import { errorState } from "@maple/views/ui/error-state"
 import { icon } from "@maple/views/ui/icon"
@@ -35,7 +35,7 @@ import { DIMENSIONS, formatMoney, keyLabel } from "../derive"
 import { ALL_SPEND, budgetsHref, isForbidden, PERIODS, scopeEntries } from "../kit/budget-format"
 import { amountOf, currencyChoices, filtersOf, formIssues, percentOf, scopeItemValue } from "./derive"
 import { type AlertForm, type Form, SCOPE_DIMENSIONS, SEVERITIES } from "./form"
-import { accessOf, Message, type Model } from "./model"
+import { accessOf, isAwaitingOptions, Message, type Model } from "./model"
 
 type H = HtmlBuilder<Message>
 
@@ -101,6 +101,25 @@ const scopeSection = (h: H, model: Model): Html =>
 		}),
 		typography(h, { size: "xs", tone: "muted", as: "p" }, [
 			"Values of one kind add up (two providers cover both). Different kinds narrow each other (a provider and a region cover that provider in that region). The menu lists the largest of the last 30 days.",
+		]),
+	])
+
+/** The options read failed: what the form could not fill from the org's spend, and a way to ask again. */
+const optionsNotice = (h: H, model: Model): Html =>
+	alert(h, { variant: "warn", size: "sm", className: `mb-3 ${FORM_WIDTH}` }, [
+		icon(h, "CircleWarningIcon"),
+		alertTitle(h, ["Couldn't read the org's spend"]),
+		alertDescription(h, [
+			model.editingId === null
+				? `The currency is a guess (${model.form.currency}), and the filter menu is empty. A budget in a currency the org is not billed in measures nothing.`
+				: "The filter menu is empty. The budget itself is as stored.",
+		]),
+		alertAction(h, [
+			button(
+				h,
+				{ size: "sm", variant: "outline", attributes: [h.OnClick(Message.ClickedRetryOptions())] },
+				["Try again"],
+			),
 		]),
 	])
 
@@ -274,7 +293,11 @@ const enabledSection = (h: H, form: Form): Html =>
 	])
 
 const actionBar = (h: H, model: Model): Html => {
-	const issues = formIssues(model.form)
+	const issues = [
+		...formIssues(model.form),
+		// A new budget's currency comes from the org's spend: until that answers it is a guess.
+		...(isAwaitingOptions(model) ? ["Wait for the org's currencies to load."] : []),
+	]
 	return formActionBar(h, {
 		issues,
 		widthClass: FORM_WIDTH,
@@ -342,6 +365,7 @@ export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, 
 	if (isEdit && Option.isNone(AsyncData.getData(model.existing.data))) return loading
 	return dashboardPage(h, { ...header, fill: true }, [
 		formScrollArea(h, [
+			...(model.optionsFailure === null ? [] : [optionsNotice(h, model)]),
 			formCard(
 				h,
 				[

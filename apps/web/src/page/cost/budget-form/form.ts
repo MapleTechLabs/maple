@@ -1,4 +1,4 @@
-import { CostMetric } from "@maple/domain/cost"
+import { CostDimension, CostMetric } from "@maple/domain/cost"
 import { CostBudgetBasis, CostBudgetPeriod } from "@maple/domain/cost-budget"
 import { AlertDestinationId, AlertSeverity } from "@maple/domain/http"
 import { Schema } from "effect"
@@ -19,6 +19,16 @@ export const AlertForm = Schema.Struct({
 })
 export type AlertForm = typeof AlertForm.Type
 
+/**
+ * One value per dimension a budget can be narrowed by. The form offers the Cost page's six; the
+ * API also takes the other two, which an edit shows and keeps.
+ */
+export const perScope = <A>(of: (dimension: CostDimension) => A): Readonly<Record<CostDimension, A>> => ({
+	...perDimension(of),
+	usage_type: of("usage_type"),
+	service: of("service"),
+})
+
 export const Form = Schema.Struct({
 	name: Schema.String,
 	/** As typed: an amount only once it is a positive number. */
@@ -28,7 +38,7 @@ export const Form = Schema.Struct({
 	/** Not offered: a new budget measures billed cost, an edited one keeps what it has. */
 	metric: CostMetric,
 	/** The slice of spend, one value list per dimension; all empty covers all spend. */
-	scope: Schema.Struct(perDimension(() => Schema.Array(Schema.String))),
+	scope: Schema.Struct(perScope(() => Schema.Array(Schema.String))),
 	alerts: Schema.Struct({ warning: AlertForm, critical: AlertForm }),
 	enabled: Schema.Boolean,
 })
@@ -46,7 +56,7 @@ export const emptyForm = (fields: Partial<Form> = {}): Form => ({
 	currency: "USD",
 	period: "month",
 	metric: "billed",
-	scope: perDimension(() => []),
+	scope: perScope(() => []),
 	alerts: {
 		warning: { isOn: true, percent: "100", basis: "forecast", destinationIds: [] },
 		critical: { isOn: true, percent: "100", basis: "actual", destinationIds: [] },

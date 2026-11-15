@@ -32,6 +32,7 @@ export const LabState = Schema.Literals([
 	"form-prefilled",
 	"form-edit",
 	"form-invalid",
+	"form-options-failed",
 	"form-denied",
 ])
 export type LabState = typeof LabState.Type
@@ -68,7 +69,7 @@ const CONTEXT: PageContext = {
 	timeZone: "Europe/Berlin",
 }
 /** Mid November: fifteen complete days of the month have passed. */
-export const NOW = Date.UTC(2026, 10, 16, 10, 0)
+const NOW = Date.UTC(2026, 10, 16, 10, 0)
 const ENGINEER = Policy.grantsOf(["org:engineer"])
 const MEMBER = Policy.grantsOf(["org:member"])
 
@@ -91,9 +92,9 @@ const fold = <PageModel, PageMessage>(
 	}>,
 	messages: ReadonlyArray<(model: PageModel) => PageMessage>,
 ): Step<PageModel, PageMessage> =>
-	Arr.reduce(
+	Arr.reduce<(model: PageModel) => PageMessage, Step<PageModel, PageMessage>>(
 		messages,
-		{ model: start, commands: [] } as Step<PageModel, PageMessage>,
+		{ model: start, commands: [] },
 		(current, toMessage) => {
 			const next = step(current.model, toMessage(current.model))
 			return { model: next.model, commands: [...current.commands, ...keepLocal(next.commands)] }
@@ -152,7 +153,17 @@ const formFor = (state: LabState): Step<FormPage.Model, FormPage.Message> => {
 				grants: state === "form-denied" ? MEMBER : ENGINEER,
 			}),
 		() => FormPage.Message.UpdatedDestinations({ orgId: ORG, rows: [...budgetDestinationsOf(ORG, NOW)] }),
-		() => FormPage.Message.CompletedFetchOptions({ result: Result.succeed(budgetFormOptions) }),
+		() =>
+			FormPage.Message.CompletedFetchOptions({
+				result:
+					state === "form-options-failed"
+						? Result.fail(
+								toLoadFailure(
+									new CloudCostPersistenceError({ message: "Cost could not be read" }),
+								),
+							)
+						: Result.succeed(budgetFormOptions),
+			}),
 		...(state === "form-edit" && edited !== undefined
 			? [
 					(model: FormPage.Model) =>

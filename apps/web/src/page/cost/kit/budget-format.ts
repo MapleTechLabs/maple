@@ -1,4 +1,4 @@
-import type { CostFilters } from "@maple/domain/cost"
+import type { CostDimension, CostFilters } from "@maple/domain/cost"
 import {
 	type CostBudgetBasis,
 	type CostBudgetPeriod,
@@ -10,7 +10,7 @@ import type { LoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option } from "effect"
 import { AppRoute, hrefOf } from "../../../route"
 import { COST_GROUP_BYS, type CostBudgetNewSearch } from "../../../route/search"
-import { type CostGroupBy, DIMENSIONS, formatDay, formatMoney, keyLabel } from "../derive"
+import { DIMENSIONS, formatDay, formatMoney, keyLabel } from "../derive"
 
 // A budget in words: what it covers, how much per period, where it stands and when it alerts. The
 // list, the editor and the incident page all say it the same way.
@@ -23,31 +23,48 @@ export const PERIODS = {
 	year: { label: "Yearly", noun: "year" },
 } as const satisfies Record<CostBudgetPeriod, Readonly<{ label: string; noun: string }>>
 
+/** Every dimension a budget can be narrowed by: the Cost page's, then the two only the API sets. */
+export const BUDGET_DIMENSIONS: ReadonlyArray<CostDimension> = [...COST_GROUP_BYS, "usage_type", "service"]
+
+const dimensionLabel = (dimension: CostDimension): string =>
+	dimension === "usage_type"
+		? "Usage type"
+		: dimension === "service"
+			? "Telemetry service"
+			: DIMENSIONS[dimension].label
+
+const valueLabel = (
+	dimension: CostDimension,
+	value: string,
+	sources: ReadonlyArray<CostSourceSummary>,
+): string =>
+	dimension === "usage_type" || dimension === "service" ? value : keyLabel(dimension, value, sources)
+
 /** One value of a budget's slice, as a chip or a line names it. */
-export type ScopeEntry = Readonly<{ dimension: CostGroupBy; value: string; label: string }>
+type ScopeEntry = Readonly<{ dimension: CostDimension; value: string; label: string }>
 
 /** Every value a budget is narrowed to, in the Cost page's dimension order; none covers all spend. */
 export const scopeEntries = (
 	filters: CostFilters,
 	sources: ReadonlyArray<CostSourceSummary> = [],
 ): ReadonlyArray<ScopeEntry> =>
-	Arr.flatMap(COST_GROUP_BYS, (dimension) =>
+	Arr.flatMap(BUDGET_DIMENSIONS, (dimension) =>
 		Arr.map(filters[dimension] ?? [], (value) => ({
 			dimension,
 			value,
-			label: `${DIMENSIONS[dimension].label}: ${keyLabel(dimension, value, sources)}`,
+			label: `${dimensionLabel(dimension)}: ${valueLabel(dimension, value, sources)}`,
 		})),
 	)
 
 /** "Provider: AWS, Vercel · Region: us-east-1", or "All spend": a dimension is named once. */
 export const scopeText = (filters: CostFilters): string => {
-	const dimensions = Arr.flatMap(COST_GROUP_BYS, (dimension) => {
+	const dimensions = Arr.flatMap(BUDGET_DIMENSIONS, (dimension) => {
 		const values = filters[dimension] ?? []
 		return values.length === 0
 			? []
 			: [
-					`${DIMENSIONS[dimension].label}: ${Arr.join(
-						Arr.map(values, (value) => keyLabel(dimension, value)),
+					`${dimensionLabel(dimension)}: ${Arr.join(
+						Arr.map(values, (value) => valueLabel(dimension, value, [])),
 						", ",
 					)}`,
 				]
@@ -89,8 +106,9 @@ export const reachedSeverity = (
 		onSome: (alert) => alert.severity,
 	})
 
-/** The API refused a write: the viewer does not hold `alerts:manage`. */
-export const isForbidden = (failure: LoadFailure): boolean => failure.code === "cost_budget_forbidden"
+/** The API refused a write: the viewer does not hold `alerts:manage`, or is an analyst. */
+export const isForbidden = (failure: LoadFailure): boolean =>
+	failure.code === "cost_budget_forbidden" || failure.code === "limited_role"
 
 export const budgetsHref = (): string => hrefOf(AppRoute.CostBudgets())
 

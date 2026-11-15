@@ -1,4 +1,4 @@
-import type { CostFilters } from "@maple/domain/cost"
+import { COST_FILTER_MAX_VALUE_LENGTH, COST_FILTER_MAX_VALUES, CostFilters } from "@maple/domain/cost"
 import {
 	type AlertSeverity,
 	type CostBudget,
@@ -8,7 +8,8 @@ import {
 import { Array as Arr, Option, Record as Rec, Schema, String as Str } from "effect"
 import { COST_GROUP_BYS, type CostBudgetNewSearch } from "../../../route/search"
 import { type CostGroupBy, perDimension } from "../derive"
-import { type AlertForm, emptyForm, type Form, SEVERITIES } from "./form"
+import { BUDGET_DIMENSIONS } from "../kit/budget-format"
+import { type AlertForm, emptyForm, type Form, perScope, SEVERITIES } from "./form"
 import type { FormOptions } from "./model"
 
 // The request schema is the one source of the bounds: a field is valid when the API would take it.
@@ -16,6 +17,7 @@ const fields = CostBudgetCreateRequest.fields
 const isName = Schema.is(fields.name)
 const isAmount = Schema.is(fields.amount)
 const isCurrency = Schema.is(fields.currency)
+const isFilters = Schema.is(CostFilters)
 const isPercent = Schema.is(CostBudgetAlert.fields.percent)
 const isDestinationIds = Schema.is(CostBudgetAlert.fields.destinationIds)
 
@@ -34,7 +36,7 @@ export const percentOf = (alert: AlertForm): Option.Option<number> => numberOf(a
 /** The slice of spend as a read and the API carry it: only the dimensions that name a value. */
 export const filtersOf = (form: Form): CostFilters =>
 	Rec.fromEntries(
-		Arr.flatMap(COST_GROUP_BYS, (dimension) => {
+		Arr.flatMap(BUDGET_DIMENSIONS, (dimension) => {
 			const values = form.scope[dimension]
 			return values.length === 0 ? [] : [[dimension, values] as const]
 		}),
@@ -47,6 +49,14 @@ const alertsOn = (form: Form): ReadonlyArray<readonly [AlertSeverity, AlertForm]
 		([, alert]) => alert.isOn,
 	)
 
+/** Zero and nothing typed ask for an amount; a number the API caps says so. */
+const amountIssues = (form: Form): ReadonlyArray<string> =>
+	Option.isSome(amountOf(form))
+		? []
+		: Option.isSome(numberOf(form.amount, (value) => value > 0))
+			? ["Keep the amount to a trillion or less."]
+			: ["Set an amount above zero."]
+
 /** What still blocks saving, one sentence each. The bounds are the request schema's. */
 export const formIssues = (form: Form): ReadonlyArray<string> => {
 	const name = Str.trim(form.name)
@@ -54,7 +64,13 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 	return [
 		...(name === "" ? ["Name the budget."] : []),
 		...(name !== "" && !isName(name) ? ["Keep the name to 120 characters."] : []),
-		...(Option.isNone(amountOf(form)) ? ["Set an amount above zero."] : []),
+		...amountIssues(form),
+		// A link can prefill more than the API takes.
+		...(isFilters(filtersOf(form))
+			? []
+			: [
+					`Keep each filter to ${COST_FILTER_MAX_VALUES} values of at most ${COST_FILTER_MAX_VALUE_LENGTH} characters.`,
+				]),
 		...(isCurrency(form.currency) ? [] : ["Pick a currency."]),
 		...(on.length === 0 ? ["Turn on at least one alert."] : []),
 		...Arr.flatMap(on, ([severity, alert]) => [
@@ -109,14 +125,14 @@ export const formFromBudget = (budget: CostBudget): Form => ({
 	currency: budget.currency,
 	period: budget.period,
 	metric: budget.metric,
-	scope: perDimension((dimension) => budget.filters[dimension] ?? []),
+	scope: perScope((dimension) => budget.filters[dimension] ?? []),
 	alerts: { warning: alertFormOf(budget, "warning"), critical: alertFormOf(budget, "critical") },
 	enabled: budget.enabled,
 })
 
 /** The form a link prefills: a new budget over the slice of spend the Cost page was filtered to. */
 export const formFromSearch = (search: CostBudgetNewSearch): Form =>
-	emptyForm({ scope: perDimension((dimension) => search[dimension] ?? []) })
+	emptyForm({ scope: { ...perScope(() => []), ...perDimension((dimension) => search[dimension] ?? []) } })
 
 /** The currencies the form offers: the org's, then the form's own when the org is not billed in it. */
 export const currencyChoices = (form: Form, options: FormOptions | null): ReadonlyArray<string> =>

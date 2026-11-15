@@ -9,20 +9,20 @@ import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { pickedDestination } from "../../kit/destination-picker"
-import { slotStep } from "../../kit/keyed-step"
+import { chain, slotStep } from "../../kit/keyed-step"
 import { acceptGrants } from "../../kit/session-grants"
 import { budgetsHref } from "../kit/budget-format"
 import { FetchBudgetFormOptions, FetchExistingBudget, ReadBudgetFormGrants, SaveBudget } from "./command"
 import { formFromBudget, formFromSearch, formIssues, scopeItemOf, wirePayload } from "./derive"
 import type { AlertForm, Form } from "./form"
-import { Message, type Model } from "./model"
+import { isAwaitingOptions, Message, type Model } from "./model"
 
 type Return = PageReturn<Model, Message>
 
 type CostBudgetNewRoute = Extract<AppRoute, { readonly _tag: "CostBudgetNew" }>
 
-export const SCOPE_MENU_ID = "cost-budget-scope"
-export const DESTINATION_MENU_IDS = {
+const SCOPE_MENU_ID = "cost-budget-scope"
+const DESTINATION_MENU_IDS = {
 	warning: "cost-budget-destinations-warning",
 	critical: "cost-budget-destinations-critical",
 } as const satisfies Record<AlertSeverity, string>
@@ -58,6 +58,7 @@ export const enter = (route: CostBudgetNewRoute, context: PageContext, sessionDe
 		isMissing: named !== undefined && editingId === null,
 		existing: Keyed.idle(),
 		options: null,
+		optionsFailure: null,
 		form: formFromSearch(route.search),
 		isSaving: false,
 		saveFailure: null,
@@ -70,15 +71,16 @@ export const enter = (route: CostBudgetNewRoute, context: PageContext, sessionDe
 		grants: sessionDecides ? [] : Policy.allPermissions,
 		isGrantsRead: !sessionDecides,
 	}
-	const read = readExisting(model, context, "Load")
-	return {
-		...read,
-		commands: [
-			...(sessionDecides ? [ReadBudgetFormGrants({ orgId: context.orgId })] : []),
-			FetchBudgetFormOptions(),
-			...(read.commands ?? []),
-		],
-	}
+	return chain<Model, Message>(
+		{
+			model,
+			commands: [
+				...(sessionDecides ? [ReadBudgetFormGrants({ orgId: context.orgId })] : []),
+				FetchBudgetFormOptions(),
+			],
+		},
+		(entered) => readExisting(entered, context, "Load"),
+	)
 }
 
 export const init = (route: CostBudgetNewRoute, context: PageContext): Return =>
@@ -138,7 +140,7 @@ const updateDestinationMenu = (model: Model, severity: AlertSeverity, message: M
 }
 
 const save = (model: Model): Return =>
-	model.isSaving || model.isMissing || formIssues(model.form).length > 0
+	model.isSaving || model.isMissing || isAwaitingOptions(model) || formIssues(model.form).length > 0
 		? { model }
 		: Option.match(wirePayload(model.form), {
 				onNone: (): Return => ({ model }),
@@ -172,16 +174,21 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 					model: {
 						...model,
 						options,
+						optionsFailure: null,
 						form:
 							model.editingId === null && options.currency !== ""
 								? { ...model.form, currency: options.currency }
 								: model.form,
 					},
 				}),
-				// The form still works on what it holds: nothing to pick from, nothing lost.
-				onFailure: (): Return => ({ model }),
+				// The form still works on what it holds, and says the currency is not the org's.
+				onFailure: (optionsFailure): Return => ({ model: { ...model, optionsFailure } }),
 			}),
 		ClickedRetry: () => readExisting(model, context, "Refresh"),
+		ClickedRetryOptions: () => ({
+			model: { ...model, optionsFailure: null },
+			commands: [FetchBudgetFormOptions()],
+		}),
 		UpdatedDestinations: ({ orgId, rows }) =>
 			orgId === context.orgId ? { model: { ...model, destinations: rows } } : { model },
 		ChangedText: ({ field, value }) => withForm(model, { [field]: value }),

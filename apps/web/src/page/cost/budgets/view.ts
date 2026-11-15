@@ -22,6 +22,8 @@ import { typography, typographyClass } from "@maple/views/ui/typography"
 import { ALERT_SEVERITY_LABEL, alertStatusBadge, severityBadge } from "../../alerts/shared/badges"
 import type { PageViewInputs } from "../../contract"
 import { dashboardPage } from "../../kit/dashboard-page"
+import { BELOW_LAPTOP, LAPTOP_COLUMN } from "../../kit/laptop-column"
+import { notifiesNoOne } from "../../kit/notifies-no-one"
 import { canManageAlerts } from "../../kit/session-grants"
 import {
 	alertText,
@@ -39,10 +41,10 @@ import { DELETE_DIALOG_ID } from "./update"
 
 type H = HtmlBuilder<Message>
 
-// Below `lg` the Forecast and Alerts columns ride under the name; on a phone the spend and the
-// state do too, so nothing sits past the panel's edge.
-const WIDE_COLUMN = "hidden lg:table-cell"
-const BELOW_WIDE = "lg:hidden"
+// Below a laptop's width the Forecast and Alerts columns ride under the name; on a phone the spend
+// and the state do too, so nothing sits past the panel's edge.
+const WIDE_COLUMN = LAPTOP_COLUMN
+const BELOW_WIDE = BELOW_LAPTOP
 const ROOMY_COLUMN = "hidden sm:table-cell"
 const ON_PHONE = "sm:hidden"
 
@@ -60,7 +62,8 @@ const stateBadge = (h: H, budget: CostBudgetStatus): Html => {
 const spendMeter = (h: H, budget: CostBudgetStatus): Html => {
 	const severity = budget.enabled ? reachedSeverity(budget, budget.progress) : null
 	return meter(h, {
-		value: Math.max(0, budget.progress.spent),
+		// Capped at the amount: a meter's value never passes its max, and the label says the percent.
+		value: Math.min(Math.max(0, budget.progress.spent), budget.amount),
 		max: budget.amount,
 		label: `${budget.name}: ${percentText(budget.progress.percent)} of the budget spent`,
 		...(severity === null ? undefined : { tone: severity === "critical" ? "crit" : "warn" }),
@@ -97,19 +100,7 @@ const alerts = (h: H, budget: CostBudgetStatus): Html =>
 				`${ALERT_SEVERITY_LABEL[alert.severity]} at ${alertText(alert)}`,
 			]),
 		),
-		...(notifiesSomeone(budget)
-			? []
-			: [
-					hstack(
-						h,
-						{
-							gap: "1.5",
-							align: "center",
-							className: typographyClass({ size: "xs", tone: "warning" }),
-						},
-						[icon(h, "BellSlashIcon", { size: 14 }), "Notifies no one"],
-					),
-				]),
+		...(notifiesSomeone(budget) ? [] : [notifiesNoOne(h)]),
 	])
 
 const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
@@ -248,7 +239,7 @@ const onRamp = (h: H, model: Model): Html =>
 				: model.isGrantsRead
 					? [
 							typography(h, { size: "xs", tone: "muted", as: "p" }, [
-								"Org admins and engineers can create budgets.",
+								"Org admins and engineers can create budgets",
 							]),
 						]
 					: []),
@@ -276,7 +267,7 @@ const listBody = (h: H, model: Model): ReadonlyArray<Html> =>
 					[budgetsTable(h, model, budgets, canManageAlerts(model))],
 				),
 				typography(h, { size: "xs", tone: "muted", as: "p" }, [
-					"Spend follows the cost sync, a few times a day, and periods are calendar periods in UTC. A budget's incidents are in Alerts.",
+					"Spend follows the cost sync, about once a day, and periods are calendar periods in UTC. A budget's incidents are in Alerts.",
 				]),
 			]
 		},

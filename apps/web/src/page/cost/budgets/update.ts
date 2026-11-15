@@ -9,7 +9,7 @@ import { Command as FoldkitCommand } from "foldkit"
 import { isClerkAuthEnabled } from "../../../platform/auth-mode"
 import type { AppRoute } from "../../../route"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
-import { slotStep } from "../../kit/keyed-step"
+import { chain, slotStep } from "../../kit/keyed-step"
 import { acceptGrants } from "../../kit/session-grants"
 import { budgetFormHref } from "../kit/budget-format"
 import { DeleteBudget, FetchBudgets, ReadBudgetsGrants, SaveBudgetEnabled } from "./command"
@@ -49,14 +49,10 @@ export const enter = (context: PageContext, sessionDecides: boolean): Return => 
 		deletingId: null,
 		deleteDialog: Dialog.init(DELETE_DIALOG_ID, "alert-dialog"),
 	}
-	const read = readList(model, context, "Load")
-	return {
-		...read,
-		commands: [
-			...(sessionDecides ? [ReadBudgetsGrants({ orgId: context.orgId })] : []),
-			...(read.commands ?? []),
-		],
-	}
+	return chain<Model, Message>(
+		{ model, commands: sessionDecides ? [ReadBudgetsGrants({ orgId: context.orgId })] : [] },
+		(entered) => readList(entered, context, "Load"),
+	)
 }
 
 export const init = (_route: CostBudgetsRoute, context: PageContext): Return =>

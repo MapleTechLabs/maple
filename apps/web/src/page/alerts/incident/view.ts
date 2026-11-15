@@ -30,6 +30,7 @@ import type * as Chart from "@maple/views/charts/chart"
 import { isChartRuntimeReady } from "@maple/views/charts/chart-runtime"
 import { ResolveThemeColors, type ThemeColors } from "@maple/views/charts/theme-colors"
 import { AppRoute, hrefOf } from "../../../route"
+import { budgetsHref } from "../../cost/kit/budget-format"
 import { button, linkButton } from "@maple/views/ui/button"
 import { eyebrow } from "@maple/views/ui/eyebrow"
 import { icon } from "@maple/views/ui/icon"
@@ -293,9 +294,6 @@ export type IncidentBodyInputs<M> = Readonly<{
 	anomaly?: AnomalyEvidenceInputs<M> | null
 }>
 
-/** Where a cost budget's incident points: the budgets and where each stands. */
-const budgetsHref = () => hrefOf(AppRoute.CostBudgets())
-
 /** Where an audit detection's events are listed; only org admins can open it. */
 const auditLogHref = () => hrefOf(AppRoute.SecurityAuditLog({ search: {} }))
 
@@ -377,7 +375,7 @@ export const incidentBody = <M>(h: HtmlBuilder<M>, inputs: IncidentBodyInputs<M>
 														})
 													: incident.signalType === "cost_budget"
 														? sourceNote(h, {
-																text: "This incident follows a cost budget: it opened when the spend, or its forecast for the period, reached a percent of the budget's amount, and resolves when a new period starts or the budget is raised. The budgets page shows where each one stands.",
+																text: "This incident follows a cost budget: it opened when the spend, or its forecast for the period, reached a percent of the budget's amount, and resolves once it is back under: a new period starts, the forecast eases, or the budget is raised. The budgets page shows where each one stands.",
 																href: budgetsHref(),
 																label: "Open budgets",
 															})

@@ -30,11 +30,11 @@ export const page = definePage(
 		update,
 		view,
 		subscriptions,
-		breadcrumbs: (route) => [
+		breadcrumbs: (model) => [
 			{ label: "Cost", href: "/cost" },
 			{ label: "Budgets", href: "/cost/budgets" },
 			{
-				label: route.search.budgetId === undefined ? "New budget" : "Edit budget",
+				label: model.search.budgetId === undefined ? "New budget" : "Edit budget",
 				isPageHeading: true,
 			},
 		],

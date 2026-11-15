@@ -257,6 +257,7 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/mcp-client-config.ts` `isMcpClient`, `mcpClientConfig`, `claudeCodeCommand`, `cursorInstallUrl`, `vscodeInstallUrl`: The `mcpServers` entry each client reads.
 - `apps/web/src/page/kit/message-response.ts` `glyph`, `messageResponse`: Lightweight markdown laid out with Streamdown's element classes.
 - `apps/web/src/page/kit/nav-shell.ts` `navShell`: A page's own nav rail of titled sections (settings, security, alerts).
+- `apps/web/src/page/kit/notifies-no-one.ts` `notifiesNoOne`: A list row's warning that a rule has no destination: its incidents open, and nobody is told.
 - `apps/web/src/page/kit/onboard-skill.ts` `onboardSkillPrompt`, `agentSetupPrompt`: Installs the whole skills folder: maple-onboard reads its per-language companion skills.
 - `apps/web/src/page/kit/own-services.ts` `isOwnService`: The service onboarding's "Send test trace" reports as.
 - `apps/web/src/page/kit/page-rail-sheet.ts` `pageRailSheet`: A page's filter or context rail below `lg`, in a side sheet with an sr-only header.

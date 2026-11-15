@@ -20,7 +20,7 @@ const ruleId = Schema.decodeSync(AlertRuleId)
 const destinationId = Schema.decodeSync(AlertDestinationId)
 
 export const FINANCE_CHANNEL_ID = destinationId("0199c001-0000-7000-8000-000000000001")
-export const PLATFORM_ON_CALL_ID = destinationId("0199c001-0000-7000-8000-000000000002")
+const PLATFORM_ON_CALL_ID = destinationId("0199c001-0000-7000-8000-000000000002")
 
 /** The org's alert destinations, as the live sync delivers them. */
 export const budgetDestinationsOf = (orgId: string, nowMs: number): ReadonlyArray<AlertDestinationRow> =>

@@ -1,5 +1,12 @@
 import { OrgId } from "@maple/domain"
-import { CostBudgetInvalidError, CostBudgetNotFoundError, type CostBudget } from "@maple/domain/http"
+import {
+	CloudCostPersistenceError,
+	type CostBudget,
+	CostBudgetForbiddenError,
+	CostBudgetInvalidError,
+	CostBudgetNotFoundError,
+	LimitedRoleError,
+} from "@maple/domain/http"
 import * as Policy from "@maple/domain/policy"
 import { toLoadFailure } from "@maple/views/data/load-failure"
 import { Array as Arr, Option, Result, Schema } from "effect"
@@ -49,22 +56,32 @@ const typed = (field: "name" | "amount", value: string) => () => Message.Changed
 const fresh = (search: CostBudgetNewSearch = {}): Model =>
 	fold(init(search).model, [grantsRead(ENGINEER), destinations, options])
 
-const EDITED: CostBudget = (() => {
-	const { progress: _, ...budget } = Option.getOrThrow(Arr.get(budgetsOf(NOW).budgets, 1))
+/** One of the fixture's budgets as `get` answers it: without where it stands. */
+const stored = (index: number): CostBudget => {
+	const { progress: _, ...budget } = Option.getOrThrow(Arr.get(budgetsOf(NOW).budgets, index))
 	return budget
-})()
+}
+
+const EDITED = stored(1)
 
 const existing = (result: Result.Result<CostBudget, ReturnType<typeof toLoadFailure>>) => (model: Model) =>
 	Message.CompletedFetchExisting({ key: model.existing.key ?? "", result })
 
-/** The editor on the fixture's "AWS production", once it was read. */
-const editing = (): Model =>
-	fold(init({ budgetId: EDITED.id }).model, [
+/** The editor on a budget, once it was read; the fixture's "AWS production" unless told. */
+const editing = (budget: CostBudget = EDITED): Model =>
+	fold(init({ budgetId: budget.id }).model, [
 		grantsRead(ENGINEER),
 		destinations,
 		options,
-		existing(Result.succeed(EDITED)),
+		existing(Result.succeed(budget)),
 	])
+
+const optionsFailed = () =>
+	Message.CompletedFetchOptions({
+		result: Result.fail(
+			toLoadFailure(new CloudCostPersistenceError({ message: "Cost could not be read" })),
+		),
+	})
 
 const create = role("button", { name: "Create budget" })
 
@@ -210,6 +227,106 @@ describe("cost budget editor", () => {
 			"Set an amount above zero.",
 		])
 		expect(formIssues(fold(fresh(), [typed("name", "x"), typed("amount", "49.50")]).form)).toEqual([])
+		// Above the API's cap the amount is a number: the form says what is wrong with it.
+		expect(
+			formIssues(fold(fresh(), [typed("name", "x"), typed("amount", "2000000000000")]).form),
+		).toEqual(["Keep the amount to a trillion or less."])
+	})
+
+	test("a link that prefills more values than the API takes is refused before it is asked", () => {
+		const provider = Arr.makeBy(51, (index) => `provider-${index}`)
+		const model = fold(fresh({ provider }), [typed("name", "x"), typed("amount", "1")])
+
+		expect(formIssues(model.form)).toEqual(["Keep each filter to 50 values of at most 300 characters."])
+		expect(pageUpdate(model, Message.ClickedSave()).commands ?? []).toEqual([])
+	})
+
+	// Until the currencies answer a new budget would be created in a guess.
+	test("a new budget waits for the org's currencies, and an edit does not", () => {
+		const waiting = fold(init().model, [grantsRead(ENGINEER), typed("name", "x"), typed("amount", "1")])
+
+		expect(pageUpdate(waiting, Message.ClickedSave()).commands ?? []).toEqual([])
+		scene(
+			{ update: pageUpdate, view },
+			given(waiting),
+			expectView(text("Wait for the org's currencies to load.")).toExist(),
+			expectView(create).toBeDisabled(),
+		)
+		expect(names(pageUpdate(fold(waiting, [options]), Message.ClickedSave()).commands)).toContain(
+			SaveBudget.name,
+		)
+		const edit = fold(init({ budgetId: EDITED.id }).model, [
+			grantsRead(ENGINEER),
+			existing(Result.succeed(EDITED)),
+		])
+		expect(names(pageUpdate(edit, Message.ClickedSave()).commands)).toContain(SaveBudget.name)
+	})
+
+	test("a failed options read says so, reads again on request, and stops holding the form", () => {
+		const failed = fold(init().model, [
+			grantsRead(ENGINEER),
+			typed("name", "x"),
+			typed("amount", "1"),
+			optionsFailed,
+		])
+
+		scene(
+			{ update: pageUpdate, view },
+			given(failed),
+			expectView(text("Couldn't read the org's spend")).toExist(),
+			expectView(text(/The currency is a guess \(USD\)/u)).toExist(),
+			expectView(create).toBeEnabled(),
+		)
+		const retried = pageUpdate(failed, Message.ClickedRetryOptions())
+		expect(names(retried.commands)).toContain("FetchCostBudgetFormOptions")
+		scene(
+			{ update: pageUpdate, view },
+			given(fold(retried.model, [options])),
+			expectView(text("Couldn't read the org's spend")).toBeAbsent(),
+			expectView(create).toBeEnabled(),
+		)
+	})
+
+	test("an edit saves the budget's own currency, metric and switch, not a new budget's", () => {
+		const savedFrom = (budget: CostBudget) => pageUpdate(editing(budget), Message.ClickedSave()).commands
+
+		expect(savedFrom({ ...stored(3), metric: "effective" })).toMatchObject([
+			{ args: { payload: { currency: "EUR", metric: "effective", enabled: true, period: "quarter" } } },
+		])
+		expect(savedFrom(stored(4))).toMatchObject([
+			{ args: { payload: { currency: "USD", metric: "billed", enabled: false, period: "year" } } },
+		])
+	})
+
+	// The API takes two dimensions the form's menu does not offer.
+	test("an edit shows and keeps the filters only the API can set", () => {
+		const narrowed = {
+			...EDITED,
+			filters: { ...EDITED.filters, usage_type: ["BoxUsage"], service: ["checkout"] },
+		} satisfies CostBudget
+		const model = editing(narrowed)
+
+		expect(Option.getOrThrow(wirePayload(model.form)).filters).toEqual(narrowed.filters)
+		scene(
+			{ update: pageUpdate, view },
+			given(model),
+			expectView(text("Usage type: BoxUsage")).toExist(),
+			expectView(role("button", { name: "Remove Telemetry service: checkout" })).toExist(),
+		)
+	})
+
+	test("an answer to another read of the budget is dropped", () => {
+		const model = fold(init({ budgetId: EDITED.id }).model, [grantsRead(ENGINEER)])
+		const stale = pageUpdate(
+			model,
+			Message.CompletedFetchExisting({
+				key: "another read",
+				result: Result.succeed({ ...EDITED, name: "Someone else's" }),
+			}),
+		)
+
+		expect(stale.model.form.name).toBe("")
+		expect(stale.model.existing).toBe(model.existing)
 	})
 
 	test("an edit fills the form from the budget and saves it under its id", () => {
@@ -289,6 +406,37 @@ describe("cost budget editor", () => {
 			given(fold(init().model, [grantsRead(MEMBER)])),
 			expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
 			expectView(create).toBeAbsent(),
+		)
+	})
+
+	// An analyst holds no permission at all: an empty answer is a refusal, not a failed read.
+	test("an analyst is refused like a member", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(fold(init().model, [grantsRead(Policy.grantsOf(["org:analyst"]))])),
+			expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
+			expectView(create).toBeAbsent(),
+		)
+	})
+
+	test("a write the API refuses for the viewer's role replaces the form", () => {
+		const filled = fold(fresh(), [typed("name", "x"), typed("amount", "1"), () => Message.ClickedSave()])
+		const refusals = [
+			new CostBudgetForbiddenError({ message: "Managing alerts needs the engineer role" }),
+			new LimitedRoleError({ message: "Analysts cannot change the organization" }),
+		]
+
+		Arr.forEach(refusals, (refusal) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(
+					fold(filled, [
+						() => Message.CompletedSave({ result: Result.fail(toLoadFailure(refusal)) }),
+					]),
+				),
+				expectView(text("Only org admins and engineers can create or change budgets")).toExist(),
+				expectView(create).toBeAbsent(),
+			),
 		)
 	})
 
