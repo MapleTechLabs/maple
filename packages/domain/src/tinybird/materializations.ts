@@ -135,10 +135,18 @@ import {
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
 import {
+	LOG_USER_EMAIL_AT_SQL,
+	LOG_USER_EMAIL_STATE_SQL,
+	LOG_USER_NAME_AT_SQL,
 	LOG_USER_ID_SQL,
+	LOG_USER_NAME_STATE_SQL,
 	MOBILE_REQUEST_SQL,
 	SERVICE_NAMESPACE_SQL,
+	SPAN_USER_EMAIL_AT_SQL,
+	SPAN_USER_EMAIL_STATE_SQL,
+	SPAN_USER_NAME_AT_SQL,
 	SPAN_USER_ID_SQL,
+	SPAN_USER_NAME_STATE_SQL,
 	WEB_REQUEST_SQL,
 } from "./user-activity-sql"
 import { Array as Arr } from "effect"
@@ -1474,7 +1482,7 @@ export const serviceRuntimesHourlyMv = defineMaterializedView("service_runtimes_
 // Read by `userActivitySlicesQuery`, `userActivitySummaryQuery` and `userActivityTotalsQuery`.
 export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_hourly_traces_mv", {
 	description:
-		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency, top routes and web/mobile requests.",
+		"Rolls up spans that carry user.id (else enduser.id) hourly per user, service and service.namespace: spans, requests, errors, traces, sessions, request latency, top routes, web/mobile requests and the latest user.name and user.email.",
 	datasource: userActivityHourly,
 	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
 	deploymentMethod: "alter",
@@ -1503,7 +1511,11 @@ export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_
           max(toDateTime(Timestamp)) AS LastSeen,
           countIf(IsEntryPoint = 1) AS ClassifiedRequestCount,
           countIf(IsEntryPoint = 1 AND ${WEB_REQUEST_SQL}) AS WebRequestCount,
-          countIf(IsEntryPoint = 1 AND ${MOBILE_REQUEST_SQL}) AS MobileRequestCount
+          countIf(IsEntryPoint = 1 AND ${MOBILE_REQUEST_SQL}) AS MobileRequestCount,
+          ${SPAN_USER_NAME_STATE_SQL} AS UserName,
+          ${SPAN_USER_EMAIL_STATE_SQL} AS UserEmail,
+          ${SPAN_USER_NAME_AT_SQL} AS UserNameAt,
+          ${SPAN_USER_EMAIL_AT_SQL} AS UserEmailAt
         FROM traces
         WHERE ${SPAN_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
@@ -1514,7 +1526,7 @@ export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_
 
 export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_hourly_logs_mv", {
 	description:
-		"Rolls up logs that carry user.id (else enduser.id) hourly per user, service and service.namespace: log, warning and error log counts and sessions.",
+		"Rolls up logs that carry user.id (else enduser.id) hourly per user, service and service.namespace: log, warning and error log counts, sessions and the latest user.name and user.email.",
 	datasource: userActivityHourly,
 	// A 90-day rollup over 30-day `traces`/`logs`: a rebuild would drop days 31-90.
 	deploymentMethod: "alter",
@@ -1543,7 +1555,11 @@ export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_ho
           max(TimestampTime) AS LastSeen,
           toUInt64(0) AS ClassifiedRequestCount,
           toUInt64(0) AS WebRequestCount,
-          toUInt64(0) AS MobileRequestCount
+          toUInt64(0) AS MobileRequestCount,
+          ${LOG_USER_NAME_STATE_SQL} AS UserName,
+          ${LOG_USER_EMAIL_STATE_SQL} AS UserEmail,
+          ${LOG_USER_NAME_AT_SQL} AS UserNameAt,
+          ${LOG_USER_EMAIL_AT_SQL} AS UserEmailAt
         FROM logs
         WHERE ${LOG_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName

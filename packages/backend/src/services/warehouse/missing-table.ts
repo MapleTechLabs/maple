@@ -88,6 +88,10 @@ export const isMissingUserActivityChannels = namesDriftedColumn(
 	/\b(?:ClassifiedRequestCount|WebRequestCount|MobileRequestCount)\b/,
 )
 
+/** `user_activity_hourly` predates its `UserName` / `UserEmail` states (migration 0065): schema drift
+ * naming one of them. The users pages then name users from replays and MCP spans only. */
+export const isMissingUserActivityIdentity = namesDriftedColumn(/\bUser(?:Name|Email)(?:At)?\b/)
+
 /** `error_events.UserId` (migration 0057) is missing: schema drift naming `UserId` only, so every
  * other drift still surfaces. User issues and affected users then answer unattributed. */
 export const isMissingErrorEventsUserId = namesDriftedColumn(/\bUserId\b/)
