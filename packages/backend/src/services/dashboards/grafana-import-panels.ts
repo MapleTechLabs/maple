@@ -325,18 +325,20 @@ function grafanaScalarTransform(
 	const transform = scalarTransform(visualization, displayType)
 	if (transform === undefined) return undefined
 	const calc = asString(asArray(asRecord(asRecord(panel.options)?.reduceOptions)?.calcs)[0])
-	if (calc === undefined) return transform
-	const aggregate = GRAFANA_CALCS.get(calc)
-	if (aggregate === undefined) {
+	const mapped = calc === undefined ? undefined : GRAFANA_CALCS.get(calc)
+	// What a missing or unsupported calc falls back to: the first row, which is the latest only when
+	// rows come newest first (always for PromQL, only when the query orders them so for raw SQL).
+	const shown = rowsInQueryOrder ? "the value of the query's first row" : "the latest value"
+	if (calc !== undefined && mapped === undefined) {
 		warnings.push(
-			`Panel "${title}" reduces with "${calc}", which Maple does not have; it shows the latest value.`,
+			`Panel "${title}" reduces with "${calc}", which Maple does not have; it shows ${shown}.`,
 		)
-		return transform
 	}
+	const aggregate = mapped ?? "first"
 	if (rowsInQueryOrder && aggregate === "first") {
 		warnings.push(
-			`Panel "${title}" shows its latest value; Maple reads the query's first row, so order the query newest first (ORDER BY time DESC).`,
+			`Panel "${title}" reads the query's first row as its value; order the query newest first (ORDER BY time DESC) to show the latest.`,
 		)
 	}
-	return { reduceToValue: { field: "value", aggregate } }
+	return mapped === undefined ? transform : { reduceToValue: { field: "value", aggregate } }
 }

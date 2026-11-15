@@ -403,6 +403,31 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 					},
 					{
 						type: "stat",
+						title: "Default",
+						datasource: ch,
+						gridPos: { x: 0, y: 6, w: 6, h: 4 },
+						targets: [
+							{
+								refId: "A",
+								rawSql: "SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
+							},
+						],
+					},
+					{
+						type: "stat",
+						title: "Spread",
+						datasource: ch,
+						gridPos: { x: 6, y: 6, w: 6, h: 4 },
+						options: { reduceOptions: { calcs: ["range"] } },
+						targets: [
+							{
+								refId: "A",
+								rawSql: "SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
+							},
+						],
+					},
+					{
+						type: "stat",
 						title: "Latest",
 						datasource: ch,
 						gridPos: { x: 12, y: 0, w: 6, h: 4 },
@@ -420,7 +445,13 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 			expect(converted.warnings).toEqual(
 				expect.arrayContaining([
 					expect.stringContaining('Panel "Share" stacked its series as percentages'),
-					expect.stringContaining('Panel "Latest" shows its latest value'),
+					expect.stringContaining(`Panel "Latest" reads the query's first row`),
+					// No calc and an unsupported calc fall back to the first row too, and say so.
+					expect.stringContaining(`Panel "Default" reads the query's first row`),
+					expect.stringContaining(
+						`Panel "Spread" reduces with "range", which Maple does not have; it shows the value of the query's first row`,
+					),
+					expect.stringContaining(`Panel "Spread" reads the query's first row`),
 				]),
 			)
 		}),
