@@ -86,6 +86,30 @@ describe("auditResourceDisplay", () => {
 		expect(
 			auditResourceDisplay(
 				entry({
+					action: "mcp_tool.called",
+					resource_type: "mcp_tool",
+					metadata: {
+						tool: "sandbox_grep",
+						tool_title: "Search Repository Checkout",
+						surface: "chat",
+						agent: "pr-review",
+					},
+				}),
+			)?.text,
+		).toBe("Maple code review · Search Repository Checkout")
+		// Rows written before the agent was recorded still say Maple ran them, not MCP.
+		expect(
+			auditResourceDisplay(
+				entry({
+					action: "mcp_tool.called",
+					resource_type: "mcp_tool",
+					metadata: { tool: "sandbox_grep", surface: "chat" },
+				}),
+			)?.text,
+		).toBe("Maple agent · sandbox_grep")
+		expect(
+			auditResourceDisplay(
+				entry({
 					action: "ingest_key.rolled",
 					resource_type: "ingest_key",
 					metadata: { key_type: "private" },

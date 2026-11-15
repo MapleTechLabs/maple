@@ -50,7 +50,7 @@ import { settingsSection } from "../../kit/settings-section"
 import { Message, type Model } from "./model"
 import { ACTION_ICON, ACTOR_ICONS, auditActionIcon, OUTCOME_ICONS, SOURCE_ICONS } from "./icons"
 import { ANY, ANYONE, entryRowId } from "./update"
-import { auditDetail, memberName, resourceHref } from "./view-detail"
+import { auditActorName, auditDetail, memberName, resourceHref } from "./view-detail"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack } from "@maple/views/ui/stack"
 import { Array as Arr, DateTime, String as Str, Option, Order, Record as Rec } from "effect"
@@ -142,7 +142,7 @@ const abbreviateId = (id: string): string => {
 
 /** The name frozen on the entry, else the member's current name, else a short id. */
 const actorDisplayName = (model: Model, entry: V2AuditLogEntry): string | null =>
-	entry.actor_name ??
+	auditActorName(entry.actor_name) ??
 	memberName(model, entry.actor_id) ??
 	(entry.actor_id === null ? null : abbreviateId(entry.actor_id))
 

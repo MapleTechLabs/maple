@@ -253,7 +253,7 @@ export const AuditResourceLabels = {
 	aws_connection: "AWS connection",
 	ingest_key: "Ingest key",
 	mcp_connection: "MCP connection",
-	mcp_tool: "MCP tool",
+	mcp_tool: "Tool",
 	investigation: "Investigation",
 	onboarding_reward: "Onboarding reward",
 	planetscale_integration: "PlanetScale integration",
@@ -377,7 +377,7 @@ export const AuditActionLabels = {
 	"source.rolled": "Rolled source token",
 	"source.deleted": "Deleted source",
 	"mcp_connection.revoked": "Revoked MCP connection",
-	"mcp_tool.called": "Called MCP tool",
+	"mcp_tool.called": "Called tool",
 	"investigation.created": "Started investigation",
 	"investigation.restarted": "Restarted investigation",
 	"investigation.status_changed": "Changed investigation status",
@@ -474,3 +474,53 @@ export const auditActionLabel = (action: string): string | null =>
 /** Label for a `resource_type` read off a row; null for one this build does not know. */
 export const auditResourceLabel = (type: string): string | null =>
 	isAuditResourceType(type) ? AuditResourceLabels[type] : null
+
+/**
+ * Who called a tool, as the `mcp_tool` Resource column names it. A public MCP call is the
+ * customer's own client; every other surface is one of Maple's agents using the same tools.
+ */
+const MAPLE_AGENT_LABELS = new Map<string, string>([
+	["default", "Maple chat"],
+	["investigate", "Maple investigation"],
+	["pr-review", "Maple code review"],
+	["pr-reply", "Maple code review"],
+])
+
+/** "Maple code review" for a `ChatMode`; null for a value this build does not know. */
+export const mapleAgentLabel = (agent: string): string | null => MAPLE_AGENT_LABELS.get(agent) ?? null
+
+export const auditToolCallerLabel = (surface: string | null, agent: string | null): string => {
+	if (surface === null || surface === "mcp") return "MCP tool"
+	if (surface === "bot") return "Maple chat bot"
+	return (agent !== null ? mapleAgentLabel(agent) : null) ?? "Maple agent"
+}
+
+const SURFACE_LABELS = new Map<string, string>([
+	["mcp", "MCP client"],
+	["chat", "Maple agent"],
+	["bot", "Maple chat bot"],
+	["workflow", "Maple agent"],
+	["rpc", "Maple internal"],
+])
+
+const SQL_CONTEXT_LABELS = new Map<string, string>([
+	["mcp.run_sql", "run_sql tool"],
+	["rawSql", "Dashboard or SQL editor"],
+])
+
+/**
+ * A metadata value as the audit detail shows it: the internal codes Maple writes (`surface`,
+ * `agent`, a SQL `context`) in words, or null to show the value as recorded.
+ */
+export const auditMetadataValueLabel = (key: string, value: string): string | null => {
+	switch (key) {
+		case "surface":
+			return SURFACE_LABELS.get(value) ?? null
+		case "agent":
+			return mapleAgentLabel(value)
+		case "context":
+			return SQL_CONTEXT_LABELS.get(value) ?? null
+		default:
+			return null
+	}
+}

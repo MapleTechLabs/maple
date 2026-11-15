@@ -1,4 +1,4 @@
-import { auditResourceLabel } from "@maple/domain/audit-actions"
+import { auditResourceLabel, auditToolCallerLabel } from "@maple/domain/audit-actions"
 import { decodePublicId, PublicIdPrefixes, type V2AuditLogEntry } from "@maple/domain/http/v2"
 import { Option, String as Str } from "effect"
 
@@ -123,6 +123,15 @@ export function auditResourceDisplay(entry: AuditEntryResource): AuditResourceDi
 	if (method !== null && path !== null) return { text: `${method} ${path}`, link: null }
 	if (entry.resource_type === null) {
 		return id === null ? null : { text: shortPublicId(id), link: null }
+	}
+	// A tool call names who made it (a customer's MCP client or one of Maple's agents) and the tool's title.
+	if (entry.resource_type === "mcp_tool") {
+		const caller = auditToolCallerLabel(
+			stringField(entry.metadata, "surface"),
+			stringField(entry.metadata, "agent"),
+		)
+		const tool = stringField(entry.metadata, "tool_title") ?? stringField(entry.metadata, "tool")
+		return { text: tool === null ? caller : `${caller} · ${tool}`, link: null }
 	}
 	const typeLabel = auditResourceLabel(entry.resource_type) ?? entry.resource_type
 	const name = resourceName(entry, id)

@@ -1,4 +1,5 @@
-import { auditActionLabel, auditResourceLabel } from "@maple/domain/audit-actions"
+import { auditActionLabel, auditMetadataValueLabel, auditResourceLabel } from "@maple/domain/audit-actions"
+import { internalAgentLabel } from "@maple/domain/system-agents"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -145,7 +146,10 @@ const metadataList = (h: H, metadata: Readonly<Record<string, unknown>>): Readon
 			h,
 			{ layout: "grid" },
 			Arr.map(keys, (key) => {
-				const block = metadataBlock(metadata[key])
+				const raw = metadata[key]
+				const named = typeof raw === "string" ? auditMetadataValueLabel(key, raw) : null
+				if (named !== null) return field(h, { label: metadataLabel(key) }, [h.span([], [named])])
+				const block = metadataBlock(raw)
 				return field(h, { label: metadataLabel(key) }, [
 					block !== null
 						? jsonBlock(h, block)
@@ -208,8 +212,10 @@ const METADATA_LABELS = {
 	path: "Path",
 	status: "HTTP status",
 	body: "Request body",
-	tool: "Tool",
-	surface: "Surface",
+	tool: "Tool ID",
+	tool_title: "Tool",
+	agent: "Maple agent",
+	surface: "Called from",
 	is_error: "Failed",
 	params: "Parameters",
 	sql: "SQL",
@@ -233,6 +239,10 @@ const isLabelledKey = (key: string): key is keyof typeof METADATA_LABELS =>
 
 const metadataLabel = (key: string): string =>
 	isLabelledKey(key) ? METADATA_LABELS[key] : Str.capitalize(Str.replaceAll("_", " ")(key))
+
+/** The name frozen on an entry, with Maple's own agent names (`chat-connector-slack`) in words. */
+export const auditActorName = (name: string | null): string | null =>
+	name === null ? null : (internalAgentLabel(name) ?? name)
 
 /** The audit log ending at one entry, with that entry open. */
 export const entryHref = (entry: V2AuditLogEntry): string =>
@@ -310,7 +320,7 @@ export const auditDetail = (
 	const actionText = auditActionLabel(entry.action)
 	const changes = entry.changes
 	const metadata = entry.metadata
-	const actorName = entry.actor_name ?? memberName(model, entry.actor_id)
+	const actorName = auditActorName(entry.actor_name) ?? memberName(model, entry.actor_id)
 	const affectedName = memberName(model, entry.affected_user)
 	return h.div(
 		[h.Class("border-border-subtle space-y-4 border-t px-4 py-3 @md:pl-11")],

@@ -247,9 +247,11 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				)
 				// Every tool call is a read of (or change to) org data; the entry
 				// carries the tool, its parameters, and whether it failed in-band.
+				const registry = yield* loadRegistry
 				yield* recordMcpToolAudit({
 					tenant,
 					name,
+					title: registry.mapleToolTitle(name),
 					input,
 					surface,
 					isError: result.isError === true,
