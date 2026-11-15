@@ -10,6 +10,8 @@ import type {
 	ServiceDependenciesRequest,
 	ServiceWorkloadsRequest,
 	ServiceRuntimesRequest,
+	ProfileSampleTypesRequest,
+	ProfileStacksRequest,
 	ServiceUsageRequest,
 	ErrorDetailTracesRequest,
 	ErrorRateByServiceRequest,
@@ -607,6 +609,45 @@ export const serviceRuntimes = defineQuery({
 	cache: timeRangeCache,
 	compile: (payload: ServiceRuntimesRequest, orgId: OrgId) =>
 		CH.serviceRuntimesSQL({ services: payload.services }, windowParams(payload, orgId)),
+})
+
+/** A profile read's scope as the queries bind it: a service's window or the spans of one trace. */
+const profileScope = (payload: ProfileSampleTypesRequest): CH.ProfileScopeOpts => ({
+	service: payload.serviceName !== undefined,
+	environment: payload.deploymentEnv !== undefined,
+	trace: payload.traceId !== undefined,
+	...(payload.spanIds !== undefined && { spanIds: payload.spanIds }),
+})
+
+const profileParams = (payload: ProfileSampleTypesRequest, orgId: OrgId) => ({
+	...windowParams(payload, orgId),
+	...(payload.serviceName !== undefined && { serviceName: payload.serviceName }),
+	...(payload.deploymentEnv !== undefined && { environment: payload.deploymentEnv }),
+	...(payload.traceId !== undefined && { traceId: payload.traceId }),
+})
+
+/** The sample types a service or a trace's spans sent, heaviest first; empty without profiles. */
+export const profileSampleTypes = defineQuery({
+	id: "profileSampleTypes",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProfileSampleTypesRequest, orgId: OrgId) =>
+		CH.compile(CH.profileSampleTypesQuery(profileScope(payload)), profileParams(payload, orgId)),
+})
+
+/** The heaviest stacks of one sample type, at most `limit` (`CH.PROFILE_STACKS_CAP` by default). */
+export const profileStacks = defineQuery({
+	id: "profileStacks",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: ProfileStacksRequest & { readonly limit?: number }, orgId: OrgId) =>
+		CH.compile(
+			CH.profileStacksQuery({
+				...profileScope(payload),
+				...(payload.limit !== undefined && { limit: payload.limit }),
+			}),
+			{ ...profileParams(payload, orgId), sampleType: payload.sampleType },
+		),
 })
 
 export const servicePlatforms = defineQuery({
