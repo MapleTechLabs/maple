@@ -7933,6 +7933,11 @@ async fn decode_otlp_body(
             }
             _ => payload.len(),
         };
+        // Everything after decoding is sized for a body of at most `max_decoded` bytes,
+        // so a write may not fan out into more OTLP than an OTLP request may carry.
+        if matches!(ingress, Ingress::PrometheusRemoteWrite) && decoded_bytes > max_decoded {
+            return Err(refuse(&parse_span, too_large_mapped(), "payload_too_large"));
+        }
         // Only the decoded form outlives this closure; the buffers go with it.
         drop(payload);
         reservation.shrink_to(retained.unwrap_or(estimate));
@@ -7955,6 +7960,13 @@ async fn decode_otlp_body(
 
 fn too_large_decoded() -> ApiError {
     ApiError::payload_too_large("Decompressed request body too large")
+}
+
+fn too_large_mapped() -> ApiError {
+    ApiError::payload_too_large(
+        "This remote write holds more metric data than one request may carry; send fewer \
+         samples per request",
+    )
 }
 
 #[hotpath::measure]
@@ -20309,6 +20321,32 @@ mod tests {
             assert_eq!(
                 body["error"]["message"],
                 "Request decodes past the 4 MiB the gateway allows one request; send smaller batches"
+            );
+
+            // Inside both of those, but 300 samples of one series with 1 kB of labels map
+            // to more OTLP than the 64 kB an OTLP request may carry here.
+            let samples: Vec<_> = (0..300).map(|i| (1.0, T0 + i)).collect();
+            let value = "v".repeat(1024);
+            let fan_out = WriteRequest {
+                timeseries: vec![series(
+                    &[("__name__", "fan_out"), ("payload", value.as_str())],
+                    &samples,
+                )],
+                metadata: Vec::new(),
+            }
+            .encode_to_vec();
+            assert!(fan_out.len() < 8 * 1024, "{} decoded bytes", fan_out.len());
+            let refused = remote_write(&url, snappy(&fan_out))
+                .bearer_auth(raw_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
+            let body: serde_json::Value = refused.json().await.unwrap();
+            assert_eq!(
+                body["error"]["message"],
+                "This remote write holds more metric data than one request may carry; send fewer \
+                 samples per request"
             );
 
             assert!(
