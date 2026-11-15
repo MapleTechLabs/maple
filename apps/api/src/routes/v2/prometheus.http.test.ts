@@ -326,6 +326,19 @@ describe("v2 Prometheus discovery API", () => {
 			status: "success",
 			data: [],
 		})
+		// The same parameter on a GET's query string: one value, and every repeated value.
+		const one = new URLSearchParams([["match[]", "http_requests_total"]])
+		expect((await harness.send(key.secret, `/series?${one}`)).body).toEqual({
+			status: "success",
+			data: [],
+		})
+		const many = new URLSearchParams(Array.from({ length: 21 }, (_, i) => ["match[]", `up{i="${i}"}`]))
+		const capped = await harness.send(key.secret, `/series?${many}`)
+		expect(capped.body).toEqual({
+			status: "error",
+			errorType: "bad_data",
+			error: "match[] reads more than 20 selectors",
+		})
 		const missing = await harness.send(key.secret, "/series")
 		expect(missing.status).toBe(400)
 		expect(missing.body).toEqual({
