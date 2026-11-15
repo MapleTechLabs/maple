@@ -142,9 +142,7 @@ const sqlRun = (
 	for (const [node, candidate] of pushdown ? planPushdowns(parsed.success, params) : []) {
 		const plan = buildPushdownQuery(candidate.request, catalog, options)
 		if (plan === undefined) continue
-		const rows = decodePushdown(
-			db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
-		)
+		const rows = decodePushdown(db.query(sqlOf(Effect.runSync(plan.compiled))))
 		pushed.set(node, toPushdownData(candidate.request, plan, rows))
 		skipped.add(candidate.selector)
 		pushedCount += 1
