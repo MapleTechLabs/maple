@@ -107,4 +107,29 @@ export const errorBody = (type: PrometheusErrorType, error: string) => ({
 	error,
 })
 
-export const successBody = <A>(data: A) => ({ status: "success" as const, data })
+export const successBody = <A>(data: A, warnings: ReadonlyArray<string> = []) =>
+	warnings.length === 0
+		? { status: "success" as const, data }
+		: { status: "success" as const, data, warnings }
+
+/** Prometheus' `limit` on a query: at most that many series, with a warning when some were cut. */
+export const limitQueryResult = (
+	result: QueryResult,
+	limit: number | undefined,
+): { readonly result: QueryResult; readonly warnings: ReadonlyArray<string> } => {
+	if (limit === undefined) return { result, warnings: [] }
+	const cut = [`results truncated due to limit`]
+	switch (result.resultType) {
+		case "matrix":
+			return result.result.length > limit
+				? { result: { ...result, result: Arr.take(result.result, limit) }, warnings: cut }
+				: { result, warnings: [] }
+		case "vector":
+			return result.result.length > limit
+				? { result: { ...result, result: Arr.take(result.result, limit) }, warnings: cut }
+				: { result, warnings: [] }
+		case "scalar":
+		case "string":
+			return { result, warnings: [] }
+	}
+}

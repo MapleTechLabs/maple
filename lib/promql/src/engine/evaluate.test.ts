@@ -2,17 +2,13 @@ import { Result } from "effect"
 import { describe, expect, it } from "vitest"
 import { buildDataset, DATA_END_MS, DATA_START_MS } from "../../scripts/compliance/dataset"
 import { QUERIES } from "../../scripts/compliance/queries"
-import { memorySource, type QueryResult, runQuery, type SelectorRequest } from "./index"
+import { memorySource, type QueryParams, type QueryResult, runQuery, type SelectorRequest } from "./index"
 
 const dataset = buildDataset()
 const bucketed = memorySource(dataset)
 const raw = (request: SelectorRequest) => bucketed({ ...request, widthMs: 0, needsValues: true })
 
-const run = (
-	query: string,
-	params: { startMs: number; endMs: number; stepMs: number },
-	source = bucketed,
-) => {
+const run = (query: string, params: QueryParams, source = bucketed) => {
 	const result = runQuery(query, params, source)
 	if (Result.isFailure(result)) throw new Error(`${query}: ${result.failure.message}`)
 	return result.success
@@ -143,5 +139,13 @@ describe("resolution limits", () => {
 		)
 		expect(Result.isFailure(result) && result.failure.message).toMatch(/subquery resolution too fine/)
 		expect(reads).toBe(0)
+	})
+})
+
+describe("query mode", () => {
+	it("returns a one-point matrix for a range query whose start equals its end", () => {
+		const t = DATA_START_MS + 3600_000
+		const result = run("vector(2)", { startMs: t, endMs: t, stepMs: 30_000, instant: false })
+		expect(result).toEqual({ resultType: "matrix", result: [{ labels: {}, points: [{ t, v: 2 }] }] })
 	})
 })

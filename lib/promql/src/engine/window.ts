@@ -92,6 +92,8 @@ export const extrapolatedRate = (
 	if (count < 2) return undefined
 	let result = isCounter ? pairTotals(w).increase : last.lastV - first.firstV
 	const sampledInterval = (last.lastT - first.firstT) / 1000
+	// Prometheus' storage never holds two samples at one timestamp; ours can, so no result.
+	if (sampledInterval <= 0) return undefined
 	const averageBetween = sampledInterval / (count - 1)
 	const threshold = averageBetween * 1.1
 	let toStart = (first.firstT - w.fromMs) / 1000

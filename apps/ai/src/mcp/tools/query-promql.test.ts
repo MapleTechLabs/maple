@@ -12,7 +12,7 @@ import {
 } from "@maple/backend/services/promql/PromqlQueryService"
 import { CurrentMcpTenant } from "../tenant"
 import { renderToolDoc } from "../lib/tool-doc"
-import { defaultStepSeconds, parseStepSeconds, type PromqlResult } from "../lib/promql-result"
+import { capSeries, defaultStepSeconds, parseStepSeconds, type PromqlResult } from "../lib/promql-result"
 import { registerQueryPromqlTool } from "./query-promql"
 import type { McpToolError, McpToolRegistrar } from "./types"
 import type { McpToolRequirements } from "./runtime-services"
@@ -228,6 +228,7 @@ describe("query_promql steps", () => {
 		expect(parseStepSeconds("1h30m")).toBe(5400)
 		expect(parseStepSeconds("15")).toBe(15)
 		expect(parseStepSeconds("0")).toBeUndefined()
+		expect(parseStepSeconds("0s")).toBeUndefined()
 		expect(parseStepSeconds("1 minute")).toBeUndefined()
 	})
 
@@ -235,5 +236,17 @@ describe("query_promql steps", () => {
 		expect(defaultStepSeconds(3600)).toBe(30)
 		expect(defaultStepSeconds(6 * 3600)).toBe(300)
 		expect(defaultStepSeconds(7 * 86_400)).toBe(7200)
+	})
+
+	it("keeps an infinite series when capping, the way a peak ranks", () => {
+		const series = (i: number, v: number) => ({ labels: { id: String(i) }, points: [{ t: 0, v }] })
+		const result: PromqlResult = {
+			resultType: "matrix",
+			result: [
+				series(0, Number.POSITIVE_INFINITY),
+				...Array.from({ length: 25 }, (_, i) => series(i + 1, i)),
+			],
+		}
+		expect(capSeries(result).some((s) => s.labels.id === "0")).toBe(true)
 	})
 })

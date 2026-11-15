@@ -279,6 +279,8 @@ export const buildPushdownQuery = (
 	if (targets.length !== 1 || target === undefined) return undefined
 	const labelMatchers = Arr.filter(request.matchers, (m) => m.name !== "__name__")
 	if (Arr.some(labelMatchers, (m) => m.name === "le")) return undefined
+	// Grouping reads `le` from the bucket bound; an `le` attribute on other data is not supported.
+	if (request.aggregation?.by.includes("le") === true && target.component !== "bucket") return undefined
 	if (request.widthMs <= 0 || request.rangeMs % request.widthMs !== 0) return undefined
 	if (request.steps > 1 && request.stepMs % request.widthMs !== 0) return undefined
 	const byLabels = Arr.filter(request.aggregation?.by ?? [], (name) => name !== "le" && name !== "__name__")
@@ -315,7 +317,10 @@ export const toPushdownData = (
 				if (value !== "") labels[name] = value
 			})
 			if (by.includes("le") && plan.component === "bucket") labels.le = formatLe(parseLe(row.le))
-			if (by.includes("__name__")) labels.__name__ = plan.promName
+			// Every pushed function but last_over_time drops the name before aggregating.
+			if (by.includes("__name__") && (request.func === "last" || request.func === "last_over_time")) {
+				labels.__name__ = plan.promName
+			}
 			return { labels, steps: row.steps, values: row.values }
 		}),
 	}

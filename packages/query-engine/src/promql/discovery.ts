@@ -30,13 +30,8 @@ export const labelNamesFrom = (
 	attributeKeys: ReadonlyArray<string>,
 ): ReadonlyArray<string> => {
 	if (catalog.length === 0) return []
-	const histogram = Arr.some(catalog, (metric) => metric.metricType === "histogram")
-	return sortedUnique([
-		"__name__",
-		"job",
-		...(histogram ? ["le"] : []),
-		...Arr.map(attributeKeys, normalizeLabelName),
-	])
+	// `le` is left out: its values come from bucket bounds, which no rollup lists.
+	return sortedUnique(["__name__", "job", ...Arr.map(attributeKeys, normalizeLabelName)])
 }
 
 export interface PrometheusMetadata {

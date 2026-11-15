@@ -167,6 +167,37 @@ describe("v2 Prometheus query API", () => {
 		await harness.dispose()
 	})
 
+	it("answers a one-point matrix for a range whose start equals its end", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const range = await harness.send(
+			key.secret,
+			`/query_range?query=vector(2)&start=${T}&end=${T}&step=30s`,
+		)
+		expect(range.body).toEqual({
+			status: "success",
+			data: { resultType: "matrix", result: [{ metric: {}, values: [[T, "2"]] }] },
+		})
+		await harness.dispose()
+	})
+
+	it("applies limit to a query's series and says so in warnings", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey(["metrics:read"])
+		const two = encodeURIComponent(
+			'label_replace(vector(1), "a", "x", "", "") or label_replace(vector(2), "a", "y", "", "")',
+		)
+		const limited = await harness.send(key.secret, `/query?query=${two}&time=${T}&limit=1`)
+		expect(limited.body).toEqual({
+			status: "success",
+			data: { resultType: "vector", result: [{ metric: { a: "x" }, value: [T, "1"] }] },
+			warnings: ["results truncated due to limit"],
+		})
+		const unlimited = await harness.send(key.secret, `/query?query=${two}&time=${T}&limit=0`)
+		expect(unlimited.body).toMatchObject({ data: { result: [{}, {}] } })
+		await harness.dispose()
+	})
+
 	it("answers a range query POSTed as a form with RFC3339 bounds and a duration step", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey(["metrics:read"])

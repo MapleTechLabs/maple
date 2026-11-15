@@ -10,6 +10,7 @@ import { MapleApiV2, type PrometheusParams } from "@maple/domain/http/v2"
 import { PromqlBadQueryError, PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import {
 	encodeQueryResult,
+	limitQueryResult,
 	errorBody,
 	errorStatus,
 	type PrometheusErrorType,
@@ -54,25 +55,37 @@ const errorResponse = (type: PrometheusErrorType, message: string) =>
 		HttpServerResponse.jsonUnsafe(errorBody(type, message), { status: errorStatus(type) }),
 	)
 
+/** A query error as Prometheus' error envelope; warehouse failures never leak their diagnostics. */
+const toErrorResponse = <E extends { readonly _tag: string; readonly message: string }>(error: E) => {
+	switch (error._tag) {
+		case "@maple/backend/promql/PromqlBadQueryError":
+			return errorResponse("bad_data", error.message)
+		case "@maple/backend/promql/PromqlExecutionError":
+			return errorResponse("execution", error.message)
+		default:
+			return Effect.andThen(
+				Effect.logWarning("Prometheus API warehouse read failed", error),
+				errorResponse("unavailable", "the metric store is unavailable, try again"),
+			)
+	}
+}
+
 /** Success as `{status:"success",data}`; query errors as Prometheus' error envelope. */
 const respond = <A, E extends { readonly _tag: string; readonly message: string }, R>(
 	effect: Effect.Effect<A, E, R>,
 ) =>
 	effect.pipe(
 		Effect.map((data) => HttpServerResponse.jsonUnsafe(successBody(data))),
-		Effect.catch((error) => {
-			switch (error._tag) {
-				case "@maple/backend/promql/PromqlBadQueryError":
-					return errorResponse("bad_data", error.message)
-				case "@maple/backend/promql/PromqlExecutionError":
-					return errorResponse("execution", error.message)
-				default:
-					return Effect.andThen(
-						Effect.logWarning("Prometheus API warehouse read failed", error),
-						errorResponse("unavailable", "the metric store is unavailable, try again"),
-					)
-			}
-		}),
+		Effect.catch(toErrorResponse),
+	)
+
+/** A query answer with Prometheus' `warnings` beside `data`. */
+const respondWithWarnings = <A, E extends { readonly _tag: string; readonly message: string }, R>(
+	effect: Effect.Effect<{ readonly data: A; readonly warnings: ReadonlyArray<string> }, E, R>,
+) =>
+	effect.pipe(
+		Effect.map(({ data, warnings }) => HttpServerResponse.jsonUnsafe(successBody(data, warnings))),
+		Effect.catch(toErrorResponse),
 	)
 
 const parseLimit = (text: string | undefined) => {
@@ -103,17 +116,20 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 			const tenant = yield* CurrentTenant.Context
 			const now = yield* Clock.currentTimeMillis
 			const timeMs = params.time === undefined ? now : yield* parseTime("time", params.time)
-			const result = yield* promql.query(tenant, {
+			const limit = yield* parseLimit(params.limit)
+			const answer = yield* promql.query(tenant, {
 				query: params.query ?? "",
 				startMs: timeMs,
 				endMs: timeMs,
 				stepMs: 0,
+				instant: true,
 			})
 			yield* Effect.annotateCurrentSpan({
-				"maple.promql.result_type": result.resultType,
-				"maple.promql.result_series": seriesCount(result),
+				"maple.promql.result_type": answer.resultType,
+				"maple.promql.result_series": seriesCount(answer),
 			})
-			return encodeQueryResult(result)
+			const { result, warnings } = limitQueryResult(answer, limit)
+			return { data: encodeQueryResult(result), warnings }
 		})
 
 		const rangeQuery = Effect.fn("PrometheusApi.queryRange")(function* (params: Params) {
@@ -121,17 +137,21 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 			const startMs = yield* parseTime("start", params.start ?? "")
 			const endMs = yield* parseTime("end", params.end ?? "")
 			const stepMs = yield* parseStep(params.step ?? "")
-			const result = yield* promql.query(tenant, {
+			const limit = yield* parseLimit(params.limit)
+			// Range mode even when start equals end: Prometheus answers a one-point matrix.
+			const answer = yield* promql.query(tenant, {
 				query: params.query ?? "",
 				startMs,
 				endMs,
 				stepMs,
+				instant: false,
 			})
 			yield* Effect.annotateCurrentSpan({
-				"maple.promql.result_type": result.resultType,
-				"maple.promql.result_series": seriesCount(result),
+				"maple.promql.result_type": answer.resultType,
+				"maple.promql.result_series": seriesCount(answer),
 			})
-			return encodeQueryResult(result)
+			const { result, warnings } = limitQueryResult(answer, limit)
+			return { data: encodeQueryResult(result), warnings }
 		})
 
 		const discovery = (params: Params) =>
@@ -170,10 +190,14 @@ export const HttpV2PrometheusLive = HttpApiBuilder.group(MapleApiV2, "prometheus
 		})
 
 		return handlers
-			.handle("query", ({ query }) => respond(instantQuery(query)))
-			.handle("queryPost", ({ query, payload }) => respond(instantQuery(merged(query, payload))))
-			.handle("queryRange", ({ query }) => respond(rangeQuery(query)))
-			.handle("queryRangePost", ({ query, payload }) => respond(rangeQuery(merged(query, payload))))
+			.handle("query", ({ query }) => respondWithWarnings(instantQuery(query)))
+			.handle("queryPost", ({ query, payload }) =>
+				respondWithWarnings(instantQuery(merged(query, payload))),
+			)
+			.handle("queryRange", ({ query }) => respondWithWarnings(rangeQuery(query)))
+			.handle("queryRangePost", ({ query, payload }) =>
+				respondWithWarnings(rangeQuery(merged(query, payload))),
+			)
 			.handle("series", ({ query }) => respond(series(query)))
 			.handle("seriesPost", ({ query, payload }) => respond(series(merged(query, payload))))
 			.handle("labels", ({ query }) => respond(labels(query)))
