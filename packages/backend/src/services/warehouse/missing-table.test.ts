@@ -3,6 +3,7 @@ import { WarehouseConfigError, WarehouseQueryError, WarehouseSchemaDriftError } 
 import {
 	isMissingErrorEventsUserId,
 	isMissingServiceApiColumns,
+	isMissingAwsMetricsHourly,
 	isMissingServiceEndpointDetails,
 	isMissingServiceMapDbEdgesMinutely,
 	isMissingUserActivityHourly,
@@ -54,6 +55,19 @@ describe("migration 0048 degrade detectors", () => {
 		expect(isMissingServiceMapDbEdgesMinutely(missing("service_map_db_edges_minutely"))).toBe(true)
 		// The raw retry reads the hourly rollup too, so its absence must surface, not retry.
 		expect(isMissingServiceMapDbEdgesMinutely(missing("service_map_db_edges_hourly"))).toBe(false)
+	})
+
+	it("reads raw AWS points only when the AWS rollup itself is missing", () => {
+		const missing = (table: string) =>
+			new WarehouseConfigError({
+				message: `Could not find table: ${table}`,
+				pipeName: "awsInfraMetrics",
+				clickhouseType: "UNKNOWN_TABLE",
+			})
+		expect(isMissingAwsMetricsHourly(missing("aws_metrics_hourly"))).toBe(true)
+		// The raw retry reads metrics_sum too, so its absence must surface, not retry.
+		expect(isMissingAwsMetricsHourly(missing("metrics_sum"))).toBe(false)
+		expect(isMissingAwsMetricsHourly(drift("aws_metrics_hourly"))).toBe(false)
 	})
 
 	it("degrades the users pages only when the user activity rollup itself is missing", () => {

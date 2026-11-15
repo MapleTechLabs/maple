@@ -147,6 +147,9 @@ export type AwsConnectionId = Schema.Schema.Type<typeof AwsConnectionId>
 export const CostSourceId = MapleUuidId("@maple/CostSourceId", "Cost Source ID")
 export type CostSourceId = Schema.Schema.Type<typeof CostSourceId>
 
+export const SavedViewId = MapleUuidId("@maple/SavedViewId", "Saved View ID")
+export type SavedViewId = Schema.Schema.Type<typeof SavedViewId>
+
 // Twelve digits, as AWS prints it. It is interpolated into role ARNs and setup scripts.
 export const AwsAccountId = Schema.String.check(Schema.isPattern(/^[0-9]{12}$/u)).pipe(
 	Schema.brand("@maple/AwsAccountId"),
