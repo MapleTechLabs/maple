@@ -260,3 +260,15 @@ describe("query_promql steps", () => {
 		expect(capSeries(result).some((s) => s.labels.id === "0")).toBe(true)
 	})
 })
+
+describe("query_promql rendering", () => {
+	it.effect("escapes a | in a label once in the table", () =>
+		Effect.gen(function* () {
+			const { text } = yield* run({ query: QUERY, ...WINDOW, step: "1m" }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: [series("a|b", [1])] }),
+			)
+			expect(text).toContain("a\\|b")
+			expect(text).not.toContain("a\\\\\\|b")
+		}),
+	)
+})
