@@ -376,6 +376,12 @@ const make = Effect.gen(function* () {
 		if (input.matches.length === 0) {
 			return yield* new PromqlBadQueryError({ message: "no match[] parameter provided" })
 		}
+		// Each match[] is at least one warehouse read, like a selector in a query.
+		if (input.matches.length > MAX_SELECTORS) {
+			return yield* new PromqlBadQueryError({
+				message: `match[] reads more than ${MAX_SELECTORS} selectors`,
+			})
+		}
 		const selectors = yield* Effect.forEach(input.matches, parseMatch)
 		const catalog = yield* readCatalog(tenant, window)
 		const read = yield* Effect.forEach(
