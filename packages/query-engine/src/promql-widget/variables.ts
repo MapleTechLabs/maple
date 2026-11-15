@@ -3,7 +3,7 @@
 // Dashboard variables (`$var`, `${var}`, `${var:regex}`, `[[var]]`) are filled by the
 // widget planner; the built-ins (`$__interval`, `$__rate_interval`, `$__range`, ...) need
 // the step, so the executor fills them once it has picked one.
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import { replaceWith } from "@maple/strings"
 import type { VariableValues } from "../dashboard-variables/interpolate"
 
@@ -20,9 +20,11 @@ export const promqlRegexEscape = (value: string): string =>
 /** Where in a query a variable sits: PromQL code, or inside a string with that quote. */
 type QuoteContext = "code" | '"' | "'" | "`"
 
-/** A value escaped for the inside of a double- or single-quoted PromQL string. */
+/** A value escaped for the inside of a double- or single-quoted PromQL string (no raw newline). */
 export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>
-	replaceWith(value, quote === '"' ? /[\\"]/g : /[\\']/g, (match) => `\\${match}`)
+	replaceWith(value, quote === '"' ? /[\\"\n]/g : /[\\'\n]/g, (match) =>
+		match === "\n" ? "\\n" : `\\${match}`,
+	)
 
 /**
  * Outside a string a value may only be one whole token: a name, an unsigned number or a duration.
@@ -123,7 +125,8 @@ export function interpolatePromqlVariables(query: string, values: VariableValues
 					bracketed: string | undefined,
 					bare: string | undefined,
 				) => {
-					const variable = values[braced ?? bracketed ?? bare ?? ""]
+					// An own key only, so `$constructor` stays literal instead of reading Object's.
+					const variable = Option.getOrUndefined(Rec.get(values, braced ?? bracketed ?? bare ?? ""))
 					if (variable === undefined) return match
 					if (variable.isAll) {
 						if (context === "code") return match
@@ -181,10 +184,18 @@ export function interpolatePromqlBuiltins(query: string, context: PromqlBuiltinC
 		["range_s", String(Math.round(rangeMs / 1000))],
 		["range_ms", String(Math.round(rangeMs))],
 	])
-	return replaceWith(
-		query,
-		BUILTIN_REF,
-		(match, braced: string | undefined, bare: string | undefined) =>
-			values.get(braced ?? bare ?? "") ?? match,
+	// Built-ins sit in code (a range, a step); a string holds a dashboard value, which stays literal.
+	return Arr.join(
+		Arr.map(quoteRuns(query), ({ text, context }) =>
+			context !== "code"
+				? text
+				: replaceWith(
+						text,
+						BUILTIN_REF,
+						(match, braced: string | undefined, bare: string | undefined) =>
+							values.get(braced ?? bare ?? "") ?? match,
+					),
+		),
+		"",
 	)
 }

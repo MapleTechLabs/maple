@@ -70,6 +70,16 @@ describe("interpolatePromqlVariables", () => {
 describe("interpolatePromqlBuiltins", () => {
 	const hour = { startMs: 0, endMs: 3_600_000 }
 
+	it("leaves a built-in inside a string literal, where a dashboard value put it", () => {
+		expect(
+			interpolatePromqlBuiltins('rate(x{a="$__interval"}[$__interval])', {
+				startMs: 0,
+				endMs: 3_600_000,
+				stepMs: 30_000,
+			}),
+		).toBe('rate(x{a="$__interval"}[30s])')
+	})
+
 	it("fills interval, range and their forms", () => {
 		const query = "x[$__interval] y[${__range}] $__range_s $__range_ms $__interval_ms"
 		expect(interpolatePromqlBuiltins(query, { ...hour, stepMs: 30_000 })).toBe(
@@ -143,6 +153,17 @@ describe("variables cannot change a query's structure", () => {
 		expect(interpolatePromqlVariables(query, { v: one('a"} or vector(1) #') })).toBe(
 			'# John\'s panel\nup{job="a\\"} or vector(1) #"}',
 		)
+	})
+
+	it("escapes a newline in a quoted value, single or All", () => {
+		expect(interpolatePromqlVariables('up{a="$v"}', { v: one("x\ny") })).toBe('up{a="x\\ny"}')
+		expect(interpolatePromqlVariables("up{a=~'$v'}", { v: all(["x\ny", "z"]) })).toBe(
+			"up{a=~'(x\\ny|z)'}",
+		)
+	})
+
+	it("leaves a name like an Object member literal", () => {
+		expect(interpolatePromqlVariables('up{job="$constructor"}', {})).toBe('up{job="$constructor"}')
 	})
 
 	it("places only whole tokens outside strings", () => {

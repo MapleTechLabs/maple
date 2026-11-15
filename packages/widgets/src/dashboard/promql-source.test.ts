@@ -31,6 +31,11 @@ describe("makePromqlDataSource", () => {
 		expect(tooLong({ query: Str.repeat(MAX_PROMQL_QUERY_LENGTH + 1)("u") })).toBe(true)
 		expect(tooLong({ legendFormat: Str.repeat(MAX_PROMQL_LEGEND_LENGTH + 1)("l") })).toBe(true)
 		expect(tooLong({})).toBe(false)
+		const step = (minStepSeconds: number) =>
+			Result.isFailure(
+				Schema.decodeResult(WidgetDataSourceV3)({ kind: "promql", ...full, minStepSeconds }),
+			)
+		expect([step(0), step(-5), step(30)]).toEqual([true, true, false])
 	})
 
 	it("writes no keys for unset options", () => {

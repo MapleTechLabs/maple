@@ -94,7 +94,7 @@ export const PromqlWidgetDataSource = Schema.Struct({
 	kind: Schema.Literal("promql"),
 	query: Schema.String.check(Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
 	legendFormat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
-	minStepSeconds: Schema.optionalKey(Schema.Number),
+	minStepSeconds: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	displayType: Schema.optionalKey(Schema.String),
 	...transformField,
 }).annotate({
