@@ -1882,7 +1882,7 @@ export const metricCatalogGaugeMv = defineMaterializedView("metric_catalog_gauge
 
 // One row per AWS series and hour, in `aws_metrics_hourly`'s column order. The filter is the
 // prefix every `AWS_INFRA_KINDS` metric carries, so no AWS infra read misses its rollup.
-// Read by `awsInfraMetricsSQL` and `awsInfraSparklinesSQL`.
+// Read by `awsInfraMetricsSQL`.
 const awsMetricsHourlySql = (table: "metrics_sum" | "metrics_gauge", metricType: "sum" | "gauge") => `
         SELECT
           OrgId,
