@@ -205,6 +205,15 @@ describe("review regressions", () => {
 		expect(Result.isFailure(dup) && dup.failure.message).toMatch(/same labelset/)
 	})
 
+	it("budgets live samples, freeing a stage once the next one has consumed it", () => {
+		const src = source(
+			["a", "b", "c"].map((id) => ({ labels: { __name__: "x", id }, samples: [[at(10), 1]] as const })),
+		)
+		// Three samples live per stage, six while a stage turns into the next.
+		const result = runQuery("-(-x)", instant(20), src, { maxSeries: 10, maxPoints: 6 })
+		expect(Result.isSuccess(result)).toBe(true)
+	})
+
 	it("charges raw range samples against the point budget", () => {
 		const samples = [15, 30, 45, 60].map((s): readonly [number, number] => [at(s), s])
 		const result = runQuery("x[1m]", instant(60), source([{ labels: { __name__: "x" }, samples }]), {
