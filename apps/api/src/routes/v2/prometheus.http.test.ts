@@ -47,7 +47,17 @@ const catalogWarehouse = makeWarehouseServiceStub({
 		const query = compiledQueryOf(compiled)
 		const catalog = Str.includes("FROM metric_catalog")(query.sql)
 		return query.decodeRows(
-			catalog ? [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }] : [],
+			catalog
+				? [
+						{
+							metricName: "http.requests",
+							metricType: "sum",
+							unit: "",
+							isMonotonic: 1,
+							description: "Requests",
+						},
+					]
+				: [],
 		)
 	},
 	compiledQueryBounded: (_tenant, compiled) => {
@@ -56,7 +66,17 @@ const catalogWarehouse = makeWarehouseServiceStub({
 		// The bounded read's error union has no decode failure; the fixture rows always decode.
 		return query
 			.decodeRows(
-				catalog ? [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }] : [],
+				catalog
+					? [
+							{
+								metricName: "http.requests",
+								metricType: "sum",
+								unit: "",
+								isMonotonic: 1,
+								description: "Requests",
+							},
+						]
+					: [],
 			)
 			.pipe(Effect.orDie)
 	},
@@ -303,6 +323,11 @@ describe("v2 Prometheus discovery API", () => {
 		// The earliest end a Date holds: the default hour before it must not step outside the range.
 		const edge = await harness.send(key.secret, "/labels", new URLSearchParams({ end: "-8640000000000" }))
 		expect(edge.status).not.toBe(500)
+		// Metadata is keyed by the Prometheus family name, with the OTel description as help.
+		expect((await harness.send(key.secret, `/metadata?${window}`)).body).toEqual({
+			status: "success",
+			data: { http_requests_total: [{ type: "counter", help: "Requests", unit: "" }] },
+		})
 		const buildInfo = await harness.send(key.secret, "/status/buildinfo")
 		expect(buildInfo.body).toMatchObject({ data: { version: "3.5.0", vendor: "Maple" } })
 		expect(
