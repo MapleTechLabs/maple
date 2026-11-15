@@ -158,7 +158,13 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 			Release: ({ commitSha, search }) =>
 				redirect(
 					search.service === undefined
-						? AppRoute.Services({ search: {} })
+						? AppRoute.Services({
+								search: {
+									startTime: search.startTime,
+									endTime: search.endTime,
+									timePreset: search.timePreset,
+								},
+							})
 						: AppRoute.Service({
 								serviceName: search.service,
 								search: {

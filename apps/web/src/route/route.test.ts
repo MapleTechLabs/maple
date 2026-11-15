@@ -141,6 +141,25 @@ describe("routes", () => {
 		expect(parse("/alerts/nope")._tag).toBe("NotFound")
 	})
 
+	test("the retired Releases pages send old links to the services and a release to its deploy drawer", () => {
+		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
+		expect(redirectOf("/releases?timePreset=7d&impact=regressed")).toEqual(
+			Option.some("/services?timePreset=7d"),
+		)
+		expect(
+			redirectOf(
+				"/releases/abc123?service=checkout&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		).toEqual(
+			Option.some(
+				"/services/checkout?deploy=abc123&environments=%5B%22production%22%5D&timePreset=24h",
+			),
+		)
+		// Without a service there is no page to open the deploy on: the services, in the same window.
+		expect(redirectOf("/releases/abc123?timePreset=24h")).toEqual(Option.some("/services?timePreset=24h"))
+		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
+	})
+
 	test("an old `?tab=` link replaces itself with its section's path and keeps its other params", () => {
 		const redirectOf = (url: string) => Option.map(routeRedirect(parse(url)), (to) => to.url)
 		expect(redirectOf("/alerts?tab=rules&status=firing")).toEqual(
