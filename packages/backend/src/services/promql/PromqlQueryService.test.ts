@@ -238,12 +238,18 @@ const recordingWarehouse = () => {
 		compiledQuery: (_tenant, compiled) => {
 			const query = compiledQueryOf(compiled)
 			statements.push(query.sql)
+			// The real executor refuses any read that is not single-tenant; so does this stub.
+			if (query.tenantScope !== "single-tenant")
+				return Effect.die(`refused ${query.tenantScope} read: ${query.sql}`)
 			return query.decodeRows(rowsFor(query.sql))
 		},
 		// Selector reads are size-bounded; record them the same way.
 		compiledQueryBounded: (_tenant, compiled) => {
 			const query = compiledQueryOf(compiled)
 			statements.push(query.sql)
+			// The real executor refuses any read that is not single-tenant; so does this stub.
+			if (query.tenantScope !== "single-tenant")
+				return Effect.die(`refused ${query.tenantScope} read: ${query.sql}`)
 			return query.decodeRows(rowsFor(query.sql))
 		},
 	})
