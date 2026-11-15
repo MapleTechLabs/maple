@@ -22,17 +22,6 @@ const ROLLUPS = {
 			},
 		],
 	},
-	aws_metrics_hourly: {
-		sourceDays: 90,
-		views: [
-			{ pipe: "aws_metrics_hourly_sum_mv", node: "aws_metrics_hourly_sum_mv_node", column: "TimeUnix" },
-			{
-				pipe: "aws_metrics_hourly_gauge_mv",
-				node: "aws_metrics_hourly_gauge_mv_node",
-				column: "TimeUnix",
-			},
-		],
-	},
 } as const
 
 type View = (typeof ROLLUPS)[keyof typeof ROLLUPS]["views"][number]

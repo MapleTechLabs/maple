@@ -1922,8 +1922,8 @@ export const awsMetricsHourlySumMv = defineMaterializedView("aws_metrics_hourly_
 	description:
 		"Rolls up the AWS metric stream's aws.* sum points hourly per series into aws_metrics_hourly.",
 	datasource: awsMetricsHourly,
-	// The target is backfilled by hand (`BACKFILL skip`): a rebuild would leave it empty.
-	deploymentMethod: "alter",
+	// Tinybird refuses `alter` on a view's first deploy. Once it exists, set `deploymentMethod: "alter"`
+	// before changing it: the target is backfilled by hand (`BACKFILL skip`), so a rebuild empties it.
 	nodes: [node({ name: "aws_metrics_hourly_sum_mv_node", sql: awsMetricsHourlySql("sum") })],
 })
 
@@ -1931,8 +1931,8 @@ export const awsMetricsHourlyGaugeMv = defineMaterializedView("aws_metrics_hourl
 	description:
 		"Rolls up the AWS metric stream's aws.* gauge points hourly per series into aws_metrics_hourly.",
 	datasource: awsMetricsHourly,
-	// The target is backfilled by hand (`BACKFILL skip`): a rebuild would leave it empty.
-	deploymentMethod: "alter",
+	// Tinybird refuses `alter` on a view's first deploy. Once it exists, set `deploymentMethod: "alter"`
+	// before changing it: the target is backfilled by hand (`BACKFILL skip`), so a rebuild empties it.
 	nodes: [node({ name: "aws_metrics_hourly_gauge_mv_node", sql: awsMetricsHourlySql("gauge") })],
 })
 

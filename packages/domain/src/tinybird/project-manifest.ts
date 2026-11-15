@@ -39,8 +39,6 @@ const SKIP_BACKFILL: ReadonlySet<string> = new Set([
 	Datasources.serviceRuntimesHourly._name,
 	// Backfilled by hand in day-sized chunks instead: a replay of 30 days of traces and logs is a CPU burst.
 	Datasources.userActivityHourly._name,
-	// Same: a replay of 90 days of metrics_sum and metrics_gauge to keep 0.6% of the rows.
-	Datasources.awsMetricsHourly._name,
 ])
 
 const withBackfillSkip = (datasource: GeneratedResource): GeneratedResource =>
