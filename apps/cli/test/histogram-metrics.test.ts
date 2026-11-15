@@ -229,6 +229,67 @@ describeWithChdb("histogram metrics", () => {
 				buckets: [1003, 0],
 			},
 		])
+		// Two libraries in one service record the same metric with the same labels.
+		insertCumulativeSamples(db, "org_scopes", "http.server.request.duration", [
+			{
+				tickMs: -10 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 100,
+				sum: 1000,
+				bounds: [50],
+				buckets: [100, 0],
+				scope: "a",
+			},
+			{
+				tickMs: -5 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 1000,
+				sum: 10_000,
+				bounds: [50],
+				buckets: [1000, 0],
+				scope: "b",
+			},
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 110,
+				sum: 1100,
+				bounds: [50],
+				buckets: [110, 0],
+				scope: "a",
+			},
+			{
+				tickMs: 15 * SECOND_MS,
+				startMs: -HISTORY_MS,
+				count: 1010,
+				sum: 10_100,
+				bounds: [50],
+				buckets: [1010, 0],
+				scope: "b",
+			},
+		])
+		// A sample with a finer layout and no observations, next to one that has them.
+		insertCumulativeSamples(db, "org_empty_layout", "http.server.request.duration", [
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: 0,
+				count: 100,
+				sum: 5000,
+				bounds: [100],
+				buckets: [100, 0],
+				temporality: "delta",
+			},
+			{
+				tickMs: 10 * SECOND_MS,
+				startMs: 0,
+				count: 0,
+				sum: 0,
+				bounds: [99, 100],
+				buckets: [0, 0, 0],
+				temporality: "delta",
+				scope: "idle",
+			},
+		])
 		// One process, counting since long before the range, that switches its buckets at 0:10.
 		insertCumulativeSamples(db, "org_relayout", "http.server.request.duration", [
 			{ tickMs: 0, startMs: -HISTORY_MS, count: 5, sum: 50, bounds: [50], buckets: [5, 0] },
@@ -344,6 +405,15 @@ describeWithChdb("histogram metrics", () => {
 	test("one series' min and max do not clamp a distribution other series add to", () => {
 		// Eight of ten observations are in (0..10]; the recorded minimum of 150 is one service's.
 		expect(valueOf("org_some_extrema", "p50")).toEqual([6.25])
+	})
+
+	test("two instrumentation scopes with the same labels are two series", () => {
+		expect(valueOf("org_scopes", "count")).toEqual([20])
+		expect(valueOf("org_scopes", "sum")).toEqual([200])
+	})
+
+	test("a sample that adds no observations does not move a bucket's lower edge", () => {
+		expect(valueOf("org_empty_layout", "p50")).toEqual([50])
 	})
 
 	test("an estimate never leaves the recorded min and max", () => {

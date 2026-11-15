@@ -206,9 +206,12 @@ export interface HistogramSample {
 	readonly buckets: ReadonlyArray<number>
 	/** OTLP data point flags; 1 marks a point with no recorded value. */
 	readonly flags?: number
+	/** Instrumentation scope name. */
+	readonly scope?: string
+	readonly temporality?: "delta" | "cumulative"
 }
 
-/** One cumulative series written sample by sample, for exports the world model cannot produce. */
+/** One series written sample by sample (cumulative unless a sample says otherwise). */
 export const insertCumulativeSamples = (
 	db: Chdb,
 	org: string,
@@ -218,9 +221,9 @@ export const insertCumulativeSamples = (
 	const rows = Arr.map(
 		samples,
 		(s) =>
-			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, 2)`,
+			`(${quote(org)}, 'api', ${quote(metric)}, ${quote(chTimestamp(s.startMs))}, ${quote(chTimestamp(s.tickMs))}, ${s.count}, ${s.sum}, [${numbers(s.buckets)}], [${numbers(s.bounds)}], ${s.flags ?? 0}, ${quote(s.scope ?? "")}, ${s.temporality === "delta" ? 1 : 2})`,
 	)
 	db.exec(
-		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
+		`INSERT INTO metrics_histogram (OrgId, ServiceName, MetricName, StartTimeUnix, TimeUnix, Count, Sum, BucketCounts, ExplicitBounds, Flags, ScopeName, AggregationTemporality) VALUES ${Arr.join(rows, ", ")}`,
 	)
 }

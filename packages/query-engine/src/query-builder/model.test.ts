@@ -704,6 +704,20 @@ describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
 		expect(result.error).toContain("exponential histograms")
 	})
 
+	it("the percentile check reads the metric type the where clause settles on", () => {
+		const draft = (metricType: "histogram" | "exponential_histogram", clauseType: string) =>
+			buildTimeseriesQuerySpec({
+				...tracesDraft(),
+				dataSource: "metrics",
+				aggregation: "p95",
+				metricName: "http.server.duration",
+				metricType,
+				whereClause: `metric.type = ${clauseType}`,
+			})
+		expect(draft("histogram", "exponential_histogram").error).toContain("exponential histograms")
+		expect(draft("exponential_histogram", "histogram").error).toBeNull()
+	})
+
 	it("histograms offer percentiles and exponential histograms offer none", () => {
 		expect(Arr.map(getMetricsAggregations("histogram"), (o) => o.value)).toContain("p95")
 		expect(Arr.map(getMetricsAggregations("exponential_histogram"), (o) => o.value)).not.toContain("p95")

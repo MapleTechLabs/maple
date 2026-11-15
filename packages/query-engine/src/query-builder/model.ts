@@ -1682,14 +1682,6 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 	}
 
-	if (query.metricType === "exponential_histogram" && query.aggregation in METRICS_PERCENTILES) {
-		return {
-			query: null,
-			warnings,
-			error: "Percentiles are not available for exponential histograms yet; use avg, sum, min, max or count",
-		}
-	}
-
 	const emptyMetrics: MetricsFilterAccumulator = {
 		metricName: query.metricName,
 		metricType: query.metricType ?? "gauge",
@@ -1701,6 +1693,15 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		Arr.reduce(clauses, emptyMetrics, (acc, clause) => applyMetricsClause(acc, clause, warnings)),
 		(acc, group) => applyOrGroup(acc, group, applyMetricsClause, emptyMetrics, "Metrics", warnings),
 	)
+
+	// Checked on the type the filters settle on: a `metric.type` clause can change it.
+	if (metricsFilters.metricType === "exponential_histogram" && query.aggregation in METRICS_PERCENTILES) {
+		return {
+			query: null,
+			warnings,
+			error: "Percentiles are not available for exponential histograms yet; use avg, sum, min, max or count",
+		}
+	}
 
 	const resolvedGroupBy = query.addOns?.groupBy
 		? resolveGroupBy("metrics", query.groupBy ?? [])

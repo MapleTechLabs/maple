@@ -312,7 +312,8 @@ const BUCKET_COUNTS = `if(${HAS_BUCKETS}, ${BUCKET_INCREASE}, emptyArrayFloat64(
  *
  * `bKeys` and `bCounts` are the non-empty buckets by ascending upper bound
  * (`sumMap` drops a key whose sum is zero), `bTotal` their sum, and `bBounds`
- * every finite bound, which is where a bucket's lower edge comes from.
+ * every finite bound of the samples that added observations, which is where a
+ * bucket's lower edge comes from.
  */
 function histogramQuantileSql(q: number): string {
 	const rank = `(${q} * bTotal)`
@@ -357,11 +358,13 @@ function histogramTimeseriesQuery(
 
 	const samplesQuery = from(tbl as typeof Datasources.metricsHistogram)
 		.select(($) => {
-			// One partition per emitting series, fingerprinted like the counter query.
+			// One partition per emitting series, fingerprinted like the counter query, plus the
+			// instrumentation scope: two libraries can record the same metric with the same labels.
 			const onePrecedingFrame = CH.windowSpec({
 				partitionBy: [
 					$.ServiceName,
 					$.MetricName,
+					$.ScopeName,
 					CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
 					CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
 				],
@@ -431,7 +434,7 @@ function histogramTimeseriesQuery(
 						),
 						bTotal: CH.sum(CH.rawExpr(`arraySum(${BUCKET_COUNTS})`, T.float64)),
 						bBounds: CH.rawExpr(
-							`arraySort(groupUniqArrayArray(if(${HAS_BUCKETS}, bounds, emptyArrayFloat64())))`,
+							`arraySort(groupUniqArrayArray(if(arraySum(${BUCKET_COUNTS}) > 0, bounds, emptyArrayFloat64())))`,
 							T.array(T.float64),
 						),
 						bMin: CH.rawExpr(`if(${EXTREMA_COVER_ALL}, min(sMin), NULL)`, T.nullable(T.float64)),
