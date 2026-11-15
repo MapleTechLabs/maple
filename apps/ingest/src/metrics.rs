@@ -139,6 +139,29 @@ static GCP_DISABLED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+static PROMETHEUS_REQUESTS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_prometheus_requests_total")
+        .with_description("Prometheus remote write requests processed, by outcome")
+        .build()
+});
+
+static PROMETHEUS_SAMPLES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_prometheus_samples_total")
+        .with_description("Prometheus remote write samples accepted as metric data points")
+        .build()
+});
+
+static PROMETHEUS_SAMPLES_DROPPED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_prometheus_samples_dropped_total")
+        .with_description(
+            "Prometheus remote write samples, native histograms and exemplars not stored, by reason",
+        )
+        .build()
+});
+
 static SOURCE_PAUSED_DROPS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_source_paused_drops_total")
@@ -727,6 +750,30 @@ pub fn cloudflare_parse_failure(dataset: &str) {
 /// Log records parsed from a Cloudflare Logpush batch.
 pub fn cloudflare_records(dataset: &str, count: u64) {
     CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_owned())]);
+}
+
+/// A Prometheus remote write request completed (`status` is `ok` or `error`).
+pub fn prometheus_request(status: &'static str, error_kind: &str) {
+    PROMETHEUS_REQUESTS_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("status", status),
+            KeyValue::new("error_kind", error_kind.to_owned()),
+        ],
+    );
+}
+
+/// What one Prometheus remote write request carried: the samples that became
+/// data points, and what was not stored by `reason`.
+pub fn prometheus_samples(accepted: u64, dropped: &[(&'static str, u64)]) {
+    if accepted > 0 {
+        PROMETHEUS_SAMPLES_TOTAL.add(accepted, &[]);
+    }
+    for (reason, count) in dropped {
+        if *count > 0 {
+            PROMETHEUS_SAMPLES_DROPPED_TOTAL.add(*count, &[KeyValue::new("reason", *reason)]);
+        }
+    }
 }
 
 /// A Cloud Logging entry pushed by GCP Pub/Sub was accepted.

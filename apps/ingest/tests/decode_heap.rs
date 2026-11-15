@@ -1036,3 +1036,153 @@ fn every_text_field_is_charged() {
         );
     }
 }
+
+mod prometheus {
+    use super::{peak_during, LIVE};
+    use maple_ingest::prometheus_remote_write::{
+        decode, decode_cost, Label, MetricMetadata, MetricType, Sample, Skipped, TimeSeries,
+        WriteRequest,
+    };
+    use prost::Message;
+    use std::cell::Cell;
+
+    fn label(name: &str, value: &str) -> Label {
+        Label {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        }
+    }
+
+    /// `series` series of `samples` samples, each with `labels` labels besides
+    /// its name, `job` and `instance`, spread over `targets` targets.
+    fn request(series: usize, samples: usize, labels: usize, targets: usize) -> WriteRequest {
+        let timeseries = (0..series)
+            .map(|i| {
+                let mut all = vec![
+                    label("__name__", &format!("http_requests_{}_total", i % 200)),
+                    label("instance", &format!("10.0.{}.1:9090", i % targets)),
+                    label("job", "api"),
+                ];
+                all.extend(
+                    (0..labels).map(|l| label(&format!("label_{l}"), &format!("value-{i}-{l}"))),
+                );
+                TimeSeries {
+                    labels: all,
+                    samples: (0..samples)
+                        .zip(1_700_000_000_000_i64..)
+                        .map(|(s, timestamp)| Sample {
+                            value: s as f64,
+                            timestamp,
+                        })
+                        .collect(),
+                    exemplars: vec![Skipped {}; 2],
+                    histograms: Vec::new(),
+                }
+            })
+            .collect();
+        WriteRequest {
+            timeseries,
+            metadata: Vec::new(),
+        }
+    }
+
+    struct Measured {
+        /// Estimated and real peak while decoding and mapping.
+        peak: (usize, usize),
+        /// Estimated and real bytes the mapped request holds afterwards.
+        retained: (usize, usize),
+    }
+
+    fn measure(wire: &[u8]) -> Measured {
+        let cost = decode_cost(wire, u64::MAX).unwrap();
+        let base = LIVE.with(Cell::get);
+        let (peak, decoded) = peak_during(|| decode(wire));
+        let retained = LIVE.with(Cell::get) - base;
+        decoded.unwrap();
+        Measured {
+            peak: (usize::try_from(cost.peak).unwrap(), peak),
+            retained: (usize::try_from(cost.retained).unwrap(), retained),
+        }
+    }
+
+    #[test]
+    fn the_estimate_bounds_decoding_and_mapping_a_remote_write() {
+        let help = "h".repeat(4 * 1024);
+        let mut described = request(2_000, 1, 8, 2_000);
+        described.metadata = (0..200)
+            .map(|i| MetricMetadata {
+                kind: MetricType::Counter.into(),
+                metric_family_name: format!("http_requests_{i}_total"),
+                help: help.clone(),
+                unit: "requests".to_owned(),
+            })
+            .collect();
+        // (case, request, a shape a real sender produces)
+        let cases = [
+            ("one sample per series", request(2_000, 1, 8, 50), true),
+            ("a backfill of one series", request(1, 20_000, 8, 1), true),
+            ("a few samples per series", request(500, 10, 12, 20), true),
+            ("a target per series", request(2_000, 1, 2, 2_000), false),
+            ("many labels", request(50, 4, 400, 5), false),
+            ("help text on every metric", described, false),
+            ("no labels at all", request(5_000, 1, 0, 1), false),
+        ];
+        for (case, request, realistic) in cases {
+            let wire = request.encode_to_vec();
+            let Measured {
+                peak: (estimate, actual),
+                retained: (kept_estimate, kept),
+            } = measure(&wire);
+            eprintln!(
+                "{case:>26}: wire {:>8} B, peak {actual:>9} B ({:>5.1}x wire), estimate {estimate:>9} B ({:.2}x), retained {kept:>9} B, estimate {kept_estimate:>9} B ({:.2}x)",
+                wire.len(),
+                actual as f64 / wire.len() as f64,
+                estimate as f64 / actual as f64,
+                kept_estimate as f64 / kept as f64,
+            );
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+            assert!(
+                kept_estimate >= kept,
+                "{case}: retained estimate {kept_estimate} below the real {kept}"
+            );
+            // Loose on purpose: every series is costed as a metric and a resource of its own.
+            assert!(
+                !realistic || (estimate <= actual * 4 && kept_estimate <= kept * 3),
+                "{case}: estimates {estimate} and {kept_estimate} overshoot {actual} and {kept}"
+            );
+        }
+    }
+
+    /// A body of nothing but empty series and empty labels is the cheapest way
+    /// to make the decoder allocate; the estimate still covers it.
+    #[test]
+    fn the_estimate_bounds_a_body_of_empty_messages() {
+        let empty_series = [0x0a, 0x00].repeat(100_000);
+        let empty_labels = [0x0a, 0x00].repeat(60_000);
+        let mut one_series = vec![0x0a, 0x80 | (empty_labels.len() & 0x7f) as u8];
+        one_series.push(((empty_labels.len() >> 7) & 0x7f) as u8 | 0x80);
+        one_series.push((empty_labels.len() >> 14) as u8);
+        one_series.extend(&empty_labels);
+        for (case, wire) in [("empty series", empty_series), ("empty labels", one_series)] {
+            let Measured {
+                peak: (estimate, actual),
+                retained: (kept_estimate, kept),
+            } = measure(&wire);
+            eprintln!(
+                "{case}: wire {} B, peak {actual} B, estimate {estimate} B",
+                wire.len()
+            );
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+            assert!(
+                kept_estimate >= kept,
+                "{case}: retained estimate {kept_estimate} below the real {kept}"
+            );
+        }
+    }
+}
