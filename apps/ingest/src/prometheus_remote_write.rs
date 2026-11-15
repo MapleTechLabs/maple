@@ -521,9 +521,17 @@ impl Cost {
             match field(&mut buf)? {
                 (1, Some(series)) => self.series(series)?,
                 (3, Some(metadata)) => {
-                    let text = text_len(metadata, &[2, 4, 5])?;
+                    // A malformed entry is charged its whole length: the decoder holds no
+                    // more of it than that before it fails.
+                    let (text, stop) = match text_len(metadata, &[2, 4, 5]) {
+                        Ok(text) => (text, None),
+                        Err(stop) => (heap_len(metadata.len()), Some(stop)),
+                    };
                     self.widest_metadata = self.widest_metadata.max(text);
                     self.charge(0, LIST_GROWTH * size_of::<MetricMetadata>() as u64 + text)?;
+                    if let Some(stop) = stop {
+                        return Err(stop);
+                    }
                 }
                 _ => {}
             }
@@ -532,17 +540,30 @@ impl Cost {
     }
 
     /// One series decoded, and every sample of it as a data point holding its own
-    /// copy of the labels.
+    /// copy of the labels. A series that turns malformed partway is still charged for
+    /// what it held up to there: the decoder builds that much before it fails.
     fn series(&mut self, mut buf: &[u8]) -> Result<(), Stop> {
         let (mut labels, mut text, mut samples) = (0_u64, 0_u64, 0_u64);
+        let mut stop = None;
         while !buf.is_empty() {
-            match field(&mut buf)? {
-                (1, Some(label)) => {
+            match field(&mut buf) {
+                Ok((1, Some(label))) => {
                     labels += 1;
-                    text = text.saturating_add(text_len(label, &[1, 2])?);
+                    match text_len(label, &[1, 2]) {
+                        Ok(len) => text = text.saturating_add(len),
+                        Err(malformed) => {
+                            text = text.saturating_add(heap_len(label.len()));
+                            stop = Some(malformed);
+                            break;
+                        }
+                    }
                 }
-                (2, Some(_)) => samples += 1,
-                _ => {}
+                Ok((2, Some(_))) => samples += 1,
+                Ok(_) => {}
+                Err(malformed) => {
+                    stop = Some(malformed);
+                    break;
+                }
             }
         }
         let point = size_of::<NumberDataPoint>() as u64;
@@ -560,7 +581,8 @@ impl Cost {
             .saturating_add(attributes)
             .saturating_add(samples.saturating_mul((LIST_GROWTH - LIST_CAPACITY) * point));
         self.series += 1;
-        self.charge(retained, transient)
+        self.charge(retained, transient)?;
+        stop.map_or(Ok(()), Err)
     }
 }
 

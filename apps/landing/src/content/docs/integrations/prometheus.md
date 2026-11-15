@@ -52,7 +52,8 @@ remote_write:
 Use the ingest host of your organization's [region](/docs/reference/regions). To keep the key out of the config file, use `credentials_file` instead of `credentials`. Basic auth works too: put the key in `basic_auth.password` (or `password_file`), with any username. `retry_on_http_429` makes Prometheus retry a batch Maple rate limits instead of dropping it.
 
 - Maple accepts remote write 1.0, the Prometheus default. A sender configured for remote write 2.0 gets `415`.
-- Remote write 1.0 does not send a metric's type with its samples, so Maple reads it from the name. A series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum. Everything else becomes a gauge.
+- Remote write 1.0 does not send a metric's type with its samples. When a request also carries metadata for the metric, that type is used: a counter becomes a cumulative monotonic sum, a gauge a gauge, and a summary's `_sum` a sum that may decrease. Prometheus usually sends metadata in requests of its own, so in practice Maple reads the type from the name: a series ending in `_total`, `_count`, `_sum` or `_bucket` becomes a cumulative monotonic sum, and everything else a gauge.
+- A remote write counts toward your metrics usage as the metric data points it is stored as, the same as those points sent over OTLP. Each stored point carries its series' labels, so usage follows the samples and their labels, not the size of the compressed request.
 - Classic histograms keep their `_bucket`, `_count` and `_sum` series, with `le` as an attribute. They are not merged into OTLP histograms.
 - `job` sets `service.name` and `instance` sets `service.instance.id` on the resource. Both stay on every data point with the series' other labels, as they do for scraped metrics.
 - Staleness markers, samples that are not finite numbers, exemplars and native histograms are not stored.

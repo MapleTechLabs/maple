@@ -1185,4 +1185,45 @@ mod prometheus {
             );
         }
     }
+    /// Field `tag` holding `body`, length-delimited.
+    fn framed(tag: u8, body: &[u8]) -> Vec<u8> {
+        let mut out = vec![(tag << 3) | 2];
+        prost::encoding::encode_varint(body.len() as u64, &mut out);
+        out.extend_from_slice(body);
+        out
+    }
+
+    /// The decoder builds everything before a malformed byte and only then fails, so
+    /// the estimate has to cover that prefix: a request the decoder will refuse must
+    /// not be decoded under a reservation that ignores what it holds on the way.
+    #[test]
+    fn the_estimate_bounds_what_a_malformed_body_allocates_before_it_fails() {
+        let empty_labels = [0x0a, 0x00].repeat(60_000);
+        // A series of empty labels that ends in a tag of zero.
+        let bad_tail = framed(1, &[empty_labels.as_slice(), &[0x00]].concat());
+        // The same labels, then a label whose own body is cut short.
+        let bad_label = framed(1, &[empty_labels.as_slice(), &[0x0a, 0x02, 0x0a, 0x7f]].concat());
+        // Good series, then a byte that is not a field.
+        let good = request(2_000, 1, 8, 50).encode_to_vec();
+        let bad_after_good = [good.as_slice(), &[0x00]].concat();
+        // Metadata with a long help text and then a tag of zero.
+        let help = [&[0x22, 0x80, 0x40][..], &[b'h'; 8 * 1024]].concat();
+        let bad_metadata = framed(3, &[help.as_slice(), &[0x00]].concat());
+        for (case, wire) in [
+            ("a series ending in a bad tag", bad_tail),
+            ("a series ending in a cut label", bad_label),
+            ("a bad byte after good series", bad_after_good),
+            ("metadata ending in a bad tag", bad_metadata),
+        ] {
+            let cost = decode_cost(&wire, u64::MAX).unwrap();
+            let (actual, decoded) = peak_during(|| decode(&wire));
+            assert!(decoded.is_err(), "{case}: the decoder accepted it");
+            let estimate = usize::try_from(cost.peak).unwrap();
+            eprintln!("{case}: wire {} B, peak {actual} B, estimate {estimate} B", wire.len());
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+        }
+    }
 }
