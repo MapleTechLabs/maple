@@ -458,7 +458,9 @@ export function releaseVerificationQuery(opts: ReleaseVerificationOpts = {}) {
 			mErrors: $.bErrorCount,
 			mQuantiles: $.bDurationQuantiles,
 		}))
-		.where(($) => [CH.notInList($.bCommitSha, PLACEHOLDER_COMMIT_SHAS), inServices($)])
+		// Placeholder shas stay: a version that reported none is still the traffic before a deploy.
+		// The after side only ever counts the deployed commit.
+		.where(($) => [inServices($)])
 
 	const after = "minutes.mCommitSha = deployMinutes.dCommitSha AND deployMinutes.dOffset >= 0"
 	const before = "minutes.mCommitSha != deployMinutes.dCommitSha AND deployMinutes.dOffset < 0"

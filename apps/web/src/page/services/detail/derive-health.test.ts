@@ -95,4 +95,19 @@ describe("deriveHealth", () => {
 		expect(health?.throughput.tone).toBe("neutral")
 		expect(health?.errorRate.now).toBe(0.002)
 	})
+
+	test("a steady service silent for several buckets still reads as an outage", () => {
+		const points = [
+			...steady(9),
+			...Array.from({ length: 3 }, (_, index) => point(9 + index, { totalCount: 0, throughput: 0 })),
+		]
+		const health = deriveHealth(points, END)
+		expect(health?.throughput.now).toBe(0)
+		expect(health?.throughput.tone).toBe("crit")
+	})
+
+	test("one busy bucket then silence is too little history to call an outage", () => {
+		const points = [point(0), point(1, { totalCount: 0, throughput: 0 })]
+		expect(deriveHealth(points, END)?.throughput.tone).toBe("neutral")
+	})
 })
