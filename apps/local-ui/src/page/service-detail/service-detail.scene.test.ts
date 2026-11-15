@@ -69,7 +69,10 @@ describe("local service detail", () => {
 		).model
 		expect(searched.profile.key).not.toBeNull()
 
-		const refreshed = pageUpdate(searched, Message.ClickedRefresh()).model
+		// The refresh reads the clock, then reloads the same window.
+		const refreshing = pageUpdate(searched, Message.ClickedRefresh()).model
+		const refreshed = pageUpdate(refreshing, Message.CompletedReadRefreshClock({ nowMs: NOW })).model
+		expect(refreshed.profile.key).not.toBeNull()
 		expect(refreshed.flamegraph.search).toBe("parse")
 		expect(refreshed.flamegraph.resetToken).toBe(0)
 
