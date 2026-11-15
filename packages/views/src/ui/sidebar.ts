@@ -23,6 +23,7 @@ import {
 	sidebarMenuSubButtonIconCollapsibleStyles,
 	sidebarMenuSubButtonMdStyles,
 	sidebarMenuSubButtonStyles,
+	sidebarMenuSubItemGroupStyles,
 	sidebarMenuSubItemStyles,
 	sidebarMenuSubStyles,
 	sidebarMobileHeaderStyles,
@@ -41,7 +42,7 @@ import { button } from "./button"
 import { icon } from "./icon"
 import { scrollArea } from "./scroll-area"
 import { leftSheet } from "./sheet"
-import { String as Str } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 
 // The app sidebar: desktop and mobile frames, header, footer, groups and menu parts.
 
@@ -328,33 +329,55 @@ export const sidebarMenuBadge = <Message>(
 		children,
 	)
 
+export type SidebarMenuSubRow = Readonly<{
+	/** The current page's row: the marker sits beside it. */
+	isActive: boolean
+	/** Set apart from the row above by a 4px gap. */
+	startsGroup?: boolean
+	children: Children
+}>
+
+/** The marker's offset: the rows and group gaps above the current row, then centred on it. */
+const subMarkerOffset = (rows: ReadonlyArray<SidebarMenuSubRow>, activeIndex: number): string => {
+	const gaps = Arr.filter(rows.slice(1, activeIndex + 1), (row) => row.startsGroup === true).length
+	return `calc(var(--sub-row) * ${activeIndex} + var(--sub-group-gap) * ${gaps} + (var(--sub-row) - var(--sub-marker-h)) / 2)`
+}
+
+/** A section's sub-rows on one hairline, with a marker that slides to the current row. */
 export const sidebarMenuSub = <Message>(
 	h: HtmlBuilder<Message>,
 	className: string | undefined,
-	children: Children,
-): Html =>
-	h.ul(
+	rows: ReadonlyArray<SidebarMenuSubRow>,
+): Html => {
+	const activeIndex = Arr.findFirstIndex(rows, (row) => row.isActive)
+	return h.ul(
 		[
 			h.Class(cn(...sidebarMenuSubStyles, className)),
 			h.DataAttribute("sidebar", "menu-sub"),
 			h.DataAttribute("slot", "sidebar-menu-sub"),
+			h.DataAttribute("marker", String(Option.isSome(activeIndex))),
+			...Option.match(activeIndex, {
+				onNone: () => [],
+				onSome: (index) => [h.Style({ "--sub-marker-y": subMarkerOffset(rows, index) })],
+			}),
 		],
-		children,
+		Arr.map(rows, (row, index) =>
+			h.li(
+				[
+					h.Class(
+						cn(
+							sidebarMenuSubItemStyles,
+							row.startsGroup === true && index > 0 && sidebarMenuSubItemGroupStyles,
+						),
+					),
+					h.DataAttribute("sidebar", "menu-sub-item"),
+					h.DataAttribute("slot", "sidebar-menu-sub-item"),
+				],
+				row.children,
+			),
+		),
 	)
-
-export const sidebarMenuSubItem = <Message>(
-	h: HtmlBuilder<Message>,
-	className: string | undefined,
-	children: Children,
-): Html =>
-	h.li(
-		[
-			h.Class(cn(sidebarMenuSubItemStyles, className)),
-			h.DataAttribute("sidebar", "menu-sub-item"),
-			h.DataAttribute("slot", "sidebar-menu-sub-item"),
-		],
-		children,
-	)
+}
 
 /** TanStack `<Link>`'s active test (`resolveIsActive`, default options): the path or a descendant. */
 export const isLinkActive = (currentPath: string, href: string): boolean =>

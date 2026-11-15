@@ -229,7 +229,7 @@ them one at a time. Migration `0019_mv_sweep` is the worked example.
 Managed Tinybird deploys some rollups without replaying raw history (`SKIP_BACKFILL` in
 `packages/domain/src/tinybird/project-manifest.ts`), so their history stays empty until a
 staged backfill. `scripts/backfill-hourly-rollup.ts --rollup <table>` runs it for
-`user_activity_hourly` (migration 0056) and `aws_metrics_hourly` (migration 0065):
+`user_activity_hourly` (migration 0056) and `aws_metrics_hourly` (migration 0066):
 
 ```bash
 # Dry run: the day chunks, and which already hold rows

@@ -1,6 +1,6 @@
 import type { BackfillSpec } from "../backfill"
 
-// Migration 0065: `aws_metrics_hourly`, the CloudWatch stream's `aws.*` points per series and hour,
+// Migration 0066: `aws_metrics_hourly`, the CloudWatch stream's `aws.*` points per series and hour,
 // backfilled over the raw tables' 90 days in day chunks before its views exist (the 0048 order).
 // Frozen v65 DDL: never re-derive it from a later snapshot.
 const AWS_METRICS_HOURLY_COLUMNS = [
@@ -43,8 +43,8 @@ const gaugeBackfill: BackfillSpec = {
 	groupBy: AWS_METRICS_HOURLY_GROUP_BY,
 }
 
-export const migration_0065_aws_metrics_hourly = {
-	version: 65,
+export const migration_0066_aws_metrics_hourly = {
+	version: 66,
 	description:
 		"Create aws_metrics_hourly and its views from metrics_sum and metrics_gauge: hourly AWS series for the infra pages",
 	requiredForIngest: false,
