@@ -1,8 +1,8 @@
+import { CostFilters } from "@maple/domain/cost"
 import {
 	AnthropicCostKeyRequest,
 	CloudflareCostTokenRequest,
 	CostBreakdownSortBy,
-	CostFilters,
 	OpenAiCostKeyRequest,
 	OpenRouterKeyUpdateRequest,
 	PlanetScaleCostAddRequest,

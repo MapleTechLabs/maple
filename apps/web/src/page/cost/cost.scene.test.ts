@@ -1,7 +1,7 @@
+import { CostFilters } from "@maple/domain/cost"
 import { OrgId } from "@maple/domain"
 import {
 	CostBreakdownResponse,
-	CostFilters,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,

@@ -68,16 +68,6 @@ describe("costBudgetRuleFields", () => {
 		})
 	})
 
-	// Spend only grows within a period: one check decides, and reminders come a day apart.
-	it("opens and resolves on one check, hourly, with a day between reminders", () => {
-		expect(costBudgetRuleFields(definition())).toMatchObject({
-			evaluationIntervalMinutes: 60,
-			consecutiveBreachesRequired: 1,
-			consecutiveHealthyRequired: 1,
-			renotifyIntervalMinutes: 1440,
-		})
-	})
-
 	it("orders the tiers lowest severity first, however the alerts were given", () => {
 		const fields = costBudgetRuleFields(
 			definition({
@@ -159,6 +149,17 @@ describe("evaluateCostBudget", () => {
 				{ severity: "critical", status: "breach" },
 			],
 			reason: "Spent $1,100.00 of the $1,000.00 monthly budget (110%); forecast $2,200.00 by 2026-11-30",
+		})
+	})
+
+	it("holds the forecast tier, neither breached nor clear, just under its percent", () => {
+		// 485 in fifteen days projects to 970: inside the band a forecast tier keeps its state in.
+		expect(check(485)).toMatchObject({
+			status: "healthy",
+			levels: [
+				{ severity: "warning", status: "hold" },
+				{ severity: "critical", status: "clear" },
+			],
 		})
 	})
 

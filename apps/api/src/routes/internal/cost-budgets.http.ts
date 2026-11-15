@@ -34,15 +34,16 @@ export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costB
 		})
 
 		// A budget is an alert rule: the role that manages alerts writes it.
-		const asAlertsManager = Effect.gen(function* () {
-			const tenant = yield* inRollout
-			yield* Policy.check(
-				tenant.roles,
-				"alerts:manage",
-				(denial) => new CostBudgetForbiddenError({ message: denial.message }),
+		const managing = (tenant: CurrentTenant.TenantSchema) =>
+			Effect.as(
+				Policy.check(
+					tenant.roles,
+					"alerts:manage",
+					(denial) => new CostBudgetForbiddenError({ message: denial.message }),
+				),
+				tenant,
 			)
-			return tenant
-		})
+		const asAlertsManager = Effect.flatMap(inRollout, managing)
 
 		return handlers
 			.handle("list", () =>
@@ -83,7 +84,9 @@ export const HttpCostBudgetsLive = HttpApiBuilder.group(MapleInternalApi, "costB
 			)
 			.handle("remove", ({ params }) =>
 				Effect.gen(function* () {
-					const tenant = yield* asAlertsManager
+					// Not behind the rollout: an org that left it must still be able to stop a
+					// budget, which goes on being checked against the cost it has stored.
+					const tenant = yield* Effect.flatMap(CurrentTenant.Context, managing)
 					const id = yield* budgets.remove(tenant.orgId, params.id)
 					yield* recordHttpAudit("alert_rule.deleted", {
 						resourceId: id,

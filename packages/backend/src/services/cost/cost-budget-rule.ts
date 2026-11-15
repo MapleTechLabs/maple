@@ -9,7 +9,7 @@ import {
 	StoredCostBudget,
 	costBudgetObserved,
 	costBudgetReachedTier,
-	costBudgetTierReached,
+	costBudgetTierStatus,
 } from "@maple/domain/cost-budget"
 import {
 	AlertThresholds,
@@ -36,10 +36,9 @@ const thresholdsOf = (alerts: Arr.NonEmptyReadonlyArray<CostBudgetAlert>): Alert
 	)
 
 /**
- * The `alert_rules` columns of a budget's rule: a tier per alert, checked hourly because cost
- * is synced a few times a day. One check at a tier opens and one below it resolves: spend only
- * grows within a period, so there is nothing to smooth, and a day between reminders keeps a
- * budget that stays over from notifying every half hour.
+ * The `alert_rules` columns of a budget's rule: a tier per alert, checked hourly (cost is synced
+ * about once a day). One check decides: the period to date is already a sum, and a forecast
+ * tier has its own band. A day between reminders keeps a spent budget from notifying all day.
  */
 export const costBudgetRuleFields = (input: CostBudgetDefinition) => {
 	const thresholds = thresholdsOf(input.alerts)
@@ -72,7 +71,7 @@ export const costBudgetRuleFields = (input: CostBudgetDefinition) => {
 		threshold: legacy.threshold,
 		thresholdUpper: null,
 		thresholdsJson: thresholds,
-		// The rule has no rolling window: a check reads the budget's period to date.
+		// A placeholder: a check reads the period to date, and notifications name the period instead.
 		windowMinutes: 1440,
 		evaluationIntervalMinutes: 60,
 		slowedIntervalMinutes: null,
@@ -194,7 +193,7 @@ export const evaluateCostBudget = (
 		derivedFromNoData: false,
 		levels: Arr.map(tiers, (tier) => ({
 			severity: tier.severity,
-			status: costBudgetTierReached(progress, tier) ? ("breach" as const) : ("clear" as const),
+			status: costBudgetTierStatus(progress, tier),
 		})),
 		reason: costBudgetReason(budget, progress, basis),
 	}

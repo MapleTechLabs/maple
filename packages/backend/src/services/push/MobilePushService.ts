@@ -330,6 +330,11 @@ export const renderIncidentPush = (
 		}
 	}
 
+	// A budget has no rolling window: its check's own sentence says what was spent, of how much.
+	const breachBody =
+		event.signalType === "cost_budget" && event.detail != null
+			? `${event.detail}.`
+			: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`
 	switch (event.eventType) {
 		case "resolve": {
 			const now = formatSignalMetric(event.value, event.signalDisplay)
@@ -366,7 +371,7 @@ export const renderIncidentPush = (
 						),
 						" · ",
 					),
-					body: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`,
+					body: breachBody,
 				},
 				interruptionLevel: "active",
 				priority: 10,
@@ -379,7 +384,7 @@ export const renderIncidentPush = (
 				alert: {
 					title: `${severity} · ${rule}`,
 					subtitle: service ?? undefined,
-					body: `${label} ${observed} over ${formatWindow(event.windowMinutes)}.`,
+					body: breachBody,
 				},
 				interruptionLevel: event.severity === "critical" ? "time-sensitive" : "active",
 				priority: 10,

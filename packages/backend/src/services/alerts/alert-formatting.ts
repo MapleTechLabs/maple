@@ -162,6 +162,15 @@ export const formatWindow = (minutes: number): string => {
 	return hours % 1 === 0 ? `${hours}h` : `${minutes}m`
 }
 
+/**
+ * A rule's window as a notification names it. A cost budget has no rolling one: its check
+ * reads the period to date, which its detail names.
+ */
+export const formatRuleWindow = (rule: {
+	readonly signalType: string
+	readonly windowMinutes: number
+}): string => (rule.signalType === "cost_budget" ? "budget period" : formatWindow(rule.windowMinutes))
+
 export const severityEmoji = (severity: AlertSeverity): string =>
 	Match.value(severity).pipe(
 		Match.when("critical", () => "\u{1F534}"),

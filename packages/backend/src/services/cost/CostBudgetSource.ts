@@ -37,10 +37,9 @@ const toPersistenceError = makePersistenceErrorMapper(CloudCostPersistenceError,
 const PROGRESS_CONCURRENCY = 5
 
 /**
- * What a budget has spent: its own service, with only the database and the warehouse, so the
- * alert evaluator reads spend without taking on the rest of the Cost page's reads. It does not
- * ask whether the org is still in the `cloudCost` rollout: an org that left stops syncing, and
- * its budgets go on reading what is stored.
+ * What a budget has spent, for the alert evaluator and the budgets API: only the database and
+ * the warehouse. It does not ask whether the org is still in the `cloudCost` rollout: an org
+ * that left stops syncing, and its budgets go on reading what is stored.
  */
 export class CostBudgetSource extends Context.Service<CostBudgetSource, CostBudgetSourceApi>()(
 	"@maple/backend/services/cost/CostBudgetSource",
