@@ -66,10 +66,20 @@ function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
 			// A line comment runs to the newline; its quotes and parentheses do not count.
 			while (i < sql.length && sql[i] !== "\n") i += 1
 		} else if (ch === "/" && sql[i + 1] === "*") {
-			// A block comment runs to its close; a clause named inside it is not the query's.
+			// A block comment runs to its matching close (ClickHouse nests them); a clause named inside it
+			// is not the query's.
+			let comments = 1
 			i += 2
-			while (i < sql.length && !(sql[i] === "*" && sql[i + 1] === "/")) i += 1
-			i += 1
+			while (i < sql.length && comments > 0) {
+				if (sql[i] === "/" && sql[i + 1] === "*") {
+					comments += 1
+					i += 2
+				} else if (sql[i] === "*" && sql[i + 1] === "/") {
+					comments -= 1
+					i += 2
+				} else i += 1
+			}
+			i -= 1
 		} else if (ch === "(") depth += 1
 		else if (ch === ")") depth -= 1
 		else if (depth === 0) {

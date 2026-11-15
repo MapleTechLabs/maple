@@ -326,6 +326,11 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 						"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) /* LIMIT */",
 					),
 					panel(
+						"Nested comment",
+						"table",
+						"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) /* outer /* inner */ LIMIT */",
+					),
+					panel(
 						"Union",
 						"table",
 						"SELECT count() FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) UNION ALL SELECT count() FROM traces WHERE OrgId = 'x' AND $__timeFilter(Timestamp)",
@@ -346,6 +351,9 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 			expect(dataSourceRawSql(widgetNamed(converted, "Subquery").dataSource)).toBeNull()
 			// Each SELECT of a UNION needs its own scope, so the importer leaves it to the author.
 			expect(dataSourceRawSql(widgetNamed(converted, "Union").dataSource)).toBeNull()
+			expect(dataSourceRawSql(widgetNamed(converted, "Nested comment").dataSource)?.sql).toBe(
+				"SELECT count() AS value FROM logs WHERE (OrgId = 'x' AND $__timeFilter(Timestamp) /* outer /* inner */ LIMIT */) AND $__orgFilter",
+			)
 			expect(dataSourceRawSql(widgetNamed(converted, "Having").dataSource)?.sql).toBe(
 				"SELECT count() AS value FROM logs WHERE (OrgId = 'x' AND $__timeFilter(Timestamp)) AND $__orgFilter HAVING count() > 0",
 			)
