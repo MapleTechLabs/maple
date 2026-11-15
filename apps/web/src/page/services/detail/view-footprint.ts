@@ -280,7 +280,8 @@ export const footprintPanel = (h: H, model: Model, envFilterActive: boolean): Ht
 	const isWaiting =
 		AsyncData.isRefreshing(model.usage.data) ||
 		AsyncData.isRefreshing(model.dependencies.data) ||
-		AsyncData.isRefreshing(model.runtimes.data)
+		AsyncData.isRefreshing(model.runtimes.data) ||
+		AsyncData.isRefreshing(model.workloads.data)
 	return sectionCard(h, { title: "Footprint", className: refreshingClass(isWaiting) }, [
 		dividedList(h, { as: "div", bordered: false }, sections),
 	])

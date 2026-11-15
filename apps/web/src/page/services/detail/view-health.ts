@@ -10,7 +10,14 @@ import { firstLine, isResolvableSha } from "../../kit/commit-card"
 import { shortId } from "@maple/ui/lib/ids"
 import { countLabel } from "@maple/ui/lib/format"
 import { deriveHealth, type Signal } from "./derive-health"
-import { type DeployCheck, dataEndOf, deployBefore, deployDataEndOf, leadDeploy } from "./derive-deploys"
+import {
+	type DeployCheck,
+	dataEndOf,
+	deployBefore,
+	deployDataEndOf,
+	isComparable,
+	leadDeploy,
+} from "./derive-deploys"
 import type { Issue, Model } from "./model"
 import type { Message } from "./message"
 import { mergedPoints } from "./view-charts"
@@ -111,7 +118,9 @@ const detail = (deploy: DeployCheck, newIssues: number): string => {
 	const issues = newIssues === 0 ? "" : ` ${countLabel(newIssues, "open issue")} first seen since.`
 	const figure = verdictFigure(deploy)
 	return figure === undefined
-		? `No change so far against the ${window} before it.${issues}`
+		? isComparable(deploy)
+			? `No change so far against the ${window} before it.${issues}`
+			: `Too little traffic to compare yet.${issues}`
 		: `${figure} in its first ${judged}, against the ${window} before it.${issues}`
 }
 
