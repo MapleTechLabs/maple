@@ -57,9 +57,9 @@ interface Building {
 const lastSix = Str.slice(-6)
 
 // FNV-1a over the parent id and the frame, so an id names a path without carrying it.
-const pathId = (parentId: string, name: string, file: string): string => {
+const pathId = (parentId: string, key: string): string => {
 	let hash = 0x811c9dc5
-	const text = `${parentId}\u0000${name}\u0000${file}`
+	const text = `${parentId}\u0000${key}`
 	for (let index = 0; index < text.length; index++) {
 		hash ^= codeUnitAt(text, index)
 		hash = Math.imul(hash, 0x01000193)
@@ -89,6 +89,9 @@ const trees = new WeakMap<
 	{ readonly totalValue: number; readonly tree: ProfileNode }
 >()
 
+/** A function's identity: same-named closures in one file are told apart by the line they start on. */
+const frameKey = (name: string, file: string, line: number): string => `${name}\u0000${file}\u0000${line}`
+
 /** The stacks folded into one tree under a synthetic root that holds the whole window. */
 export const profileTree = (input: ProfileInput): ProfileNode => {
 	const cached = trees.get(input.stacks)
@@ -109,14 +112,15 @@ export const profileTree = (input: ProfileInput): ProfileNode => {
 		let node = root
 		Arr.forEach(stack.frames, (name, index) => {
 			const file = stack.files[index] ?? ""
-			const key = `${name}\u0000${file}`
+			const line = stack.lines[index] ?? 0
+			const key = frameKey(name, file, line)
 			let child = node.children.get(key)
 			if (child === undefined) {
 				child = {
-					id: pathId(node.id, name, file),
+					id: pathId(node.id, key),
 					name,
 					file,
-					line: stack.lines[index] ?? 0,
+					line,
 					depth: node.depth + 1,
 					total: 0,
 					self: 0,
@@ -132,7 +136,7 @@ export const profileTree = (input: ProfileInput): ProfileNode => {
 	const other = input.totalValue - root.total
 	if (other > 0) {
 		root.children.set(OTHER_NAME, {
-			id: pathId(ROOT_ID, OTHER_NAME, ""),
+			id: pathId(ROOT_ID, frameKey(OTHER_NAME, "", 0)),
 			name: OTHER_NAME,
 			file: "",
 			line: 0,
@@ -173,8 +177,9 @@ export const topFunctions = (input: ProfileInput, limit: number): ReadonlyArray<
 		const leaf = stack.frames.length - 1
 		Arr.forEach(stack.frames, (name, index) => {
 			const file = stack.files[index] ?? ""
-			const key = `${name}\u0000${file}`
-			const row = totals.get(key) ?? { name, file, line: stack.lines[index] ?? 0, self: 0, total: 0 }
+			const line = stack.lines[index] ?? 0
+			const key = frameKey(name, file, line)
+			const row = totals.get(key) ?? { name, file, line, self: 0, total: 0 }
 			totals.set(key, row)
 			if (index === leaf) row.self += stack.value
 			// Recursion puts a function on a stack more than once; its time is counted once.
@@ -255,7 +260,7 @@ export const scopedStacks = (input: ProfileInput, scope: FrameScope): ProfileInp
 		)
 		const frames = kept.length === 0 ? [{ name: OUTSIDE_NAME, file: "", line: 0 }] : kept
 		const key = Arr.join(
-			Arr.map(frames, (frame) => `${frame.name}\u0000${frame.file}`),
+			Arr.map(frames, (frame) => frameKey(frame.name, frame.file, frame.line)),
 			"\u0001",
 		)
 		const row = merged.get(key)
