@@ -1,7 +1,7 @@
 // Grafana `templating.list` to Maple dashboard variables. Pure.
 import type { DashboardVariable } from "@maple/domain/http"
 import { replaceWith } from "@maple/strings"
-import { Array as Arr, String as Str } from "effect"
+import { Array as Arr, Order, String as Str } from "effect"
 import { asArray, asRecord, asString, type UnknownRecord } from "./dashboard-import-shared"
 
 export interface GrafanaVariableConversion {
@@ -72,7 +72,8 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 	const match = LABEL_VALUES.exec(query)
 	if (match === null) return undefined
 	const [, selector, label = ""] = match
-	if (label === "job") return { kind: "facet", facet: "service" }
+	// Without a metric there is nothing to read job from but the service list.
+	if (label === "job" && selector === undefined) return { kind: "facet", facet: "service" }
 	if (selector === undefined) return undefined
 	const [metricPart, matchers] = Str.split(selector, "{")
 	const metric = Str.trim(metricPart)
@@ -82,21 +83,15 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 			`Variable "${name}" lists every ${label} of ${metric}; the label filters in "${selector}" were not imported.`,
 		)
 	}
-	return label === "instance"
-		? {
-				kind: "metric",
-				metricType: guessMetricType(metric),
-				metricNames: [metric],
-				scope: "resource",
-				attributeKey: "service.instance.id",
-			}
-		: {
-				kind: "metric",
-				metricType: guessMetricType(metric),
-				metricNames: [metric],
-				scope: "metric",
-				attributeKey: label,
-			}
+	// Scraped Prometheus data, what these dashboards read, carries job and instance as datapoint
+	// labels on the metric itself, like every other label.
+	return {
+		kind: "metric",
+		metricType: guessMetricType(metric),
+		metricNames: [metric],
+		scope: "metric",
+		attributeKey: label,
+	}
 }
 
 /** The plugin type a datasource reference names: `{ type }`, or a `${NAME}` input or `$name` datasource variable. */
@@ -189,6 +184,14 @@ export function convertGrafanaVariables(
 	}
 
 	const taken = new Set<string>()
+	// Valid names are claimed first, so a sanitized name never takes one a later variable owns.
+	const reserved = new Set(
+		Arr.flatMap(list, ({ record, name }) => {
+			const type = asString(record.type)
+			const skipped = type === "datasource" || type === "interval" || type === "adhoc"
+			return !skipped && VALID_NAME.test(name) ? [name] : []
+		}),
+	)
 	const renames = new Map<string, string>()
 	const variables: DashboardVariable[] = []
 	for (const { record, name } of list) {
@@ -202,7 +205,10 @@ export function convertGrafanaVariables(
 			warnings.push(`Ad hoc filter variable "${name}" was not imported.`)
 			continue
 		}
-		const maple = VALID_NAME.test(name) && !taken.has(name) ? name : mapleName(name, taken)
+		const maple =
+			VALID_NAME.test(name) && !taken.has(name)
+				? name
+				: mapleName(name, new Set([...taken, ...reserved]))
 		taken.add(maple)
 		if (maple !== name) {
 			renames.set(name, maple)
@@ -216,12 +222,19 @@ export function convertGrafanaVariables(
 
 const escapeRegex = (value: string) => Str.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")(value)
 
-const referencePattern = (name: string) => {
-	const escaped = escapeRegex(name)
-	return new RegExp(
-		`\\$\\{${escaped}(:[A-Za-z]+)?\\}|\\[\\[${escaped}\\]\\]|\\$${escaped}(?![A-Za-z0-9_])`,
-		"gu",
+/** Every reference to any of `names`, in all three syntaxes, longest name first. */
+const referencesPattern = (names: ReadonlyArray<string>) => {
+	const alt = Arr.join(
+		Arr.map(
+			Arr.sort(
+				names,
+				Order.mapInput(Order.Number, (n: string) => -n.length),
+			),
+			escapeRegex,
+		),
+		"|",
 	)
+	return new RegExp(`\\$\\{(${alt})(:[A-Za-z]+)?\\}|\\[\\[(${alt})\\]\\]|\\$(${alt})(?![A-Za-z0-9_])`, "gu")
 }
 
 const renamedReference = (match: string, to: string, format: string | undefined) => {
@@ -232,14 +245,23 @@ const renamedReference = (match: string, to: string, format: string | undefined)
 
 /** A query with renamed variables renamed and interval variables replaced by `$__interval`. */
 export function rewriteVariableRefs(query: string, conversion: GrafanaVariableConversion): string {
-	let out = query
-	for (const name of conversion.intervalNames) {
-		out = Str.replace(referencePattern(name), "$$__interval")(out)
-	}
-	for (const [from, to] of conversion.renames) {
-		out = replaceWith(out, referencePattern(from), (match: string, format: string | undefined) =>
-			renamedReference(match, to, format),
-		)
-	}
-	return out
+	const names = [...conversion.intervalNames, ...conversion.renames.keys()]
+	if (names.length === 0) return query
+	// One pass over the original: a rename's output is never renamed again.
+	return replaceWith(
+		query,
+		referencesPattern(names),
+		(
+			match: string,
+			braced: string | undefined,
+			format: string | undefined,
+			bracketed: string | undefined,
+			bare: string | undefined,
+		) => {
+			const name = braced ?? bracketed ?? bare ?? ""
+			if (conversion.intervalNames.has(name)) return "$__interval"
+			const to = conversion.renames.get(name)
+			return to === undefined ? match : renamedReference(match, to, format)
+		},
+	)
 }

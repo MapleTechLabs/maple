@@ -249,9 +249,16 @@ function convertQueryPanel(args: {
 		}
 		dataSource = rawSqlDataSource({ visualization, sql: normalized.sql, displayType })
 	} else {
+		// A PromQL widget's heatmap rows keep one value per series, not the time by bucket grid.
+		if (target === "heatmap") {
+			return args.placeholder(
+				"This heatmap needs its buckets over time, which Maple's PromQL widgets do not draw yet.",
+				`Heatmap "${title}" was imported as a placeholder: Maple's PromQL widgets cannot draw buckets over time yet.`,
+			)
+		}
 		const legendFormat = asString(first.legendFormat)
 		const minStepSeconds = intervalSeconds(first.interval) ?? intervalSeconds(panel.interval)
-		const transform = scalarTransform(visualization, displayType)
+		const transform = promqlScalarTransform(panel, visualization, displayType, title, context.warnings)
 		dataSource = makePromqlDataSource({
 			query: rewriteVariableRefs(query.expr, context.variables),
 			...(legendFormat === undefined || legendFormat === "__auto" ? undefined : { legendFormat }),
@@ -276,4 +283,37 @@ function convertQueryPanel(args: {
 			layout: args.layout,
 		},
 	}
+}
+
+/** Grafana's `reduceOptions.calcs` to Maple's reducers, over rows a PromQL stat gets newest first. */
+const GRAFANA_CALCS = new Map<string, "first" | "avg" | "max" | "min" | "sum" | "count">([
+	["lastNotNull", "first"],
+	["last", "first"],
+	["mean", "avg"],
+	["max", "max"],
+	["min", "min"],
+	["sum", "sum"],
+	["count", "count"],
+])
+
+/** A scalar panel's reducer: Grafana's own calculation where Maple has it, else the latest value. */
+function promqlScalarTransform(
+	panel: UnknownRecord,
+	visualization: string,
+	displayType: string,
+	title: string,
+	warnings: string[],
+) {
+	const transform = scalarTransform(visualization, displayType)
+	if (transform === undefined) return undefined
+	const calc = asString(asArray(asRecord(asRecord(panel.options)?.reduceOptions)?.calcs)[0])
+	if (calc === undefined) return transform
+	const aggregate = GRAFANA_CALCS.get(calc)
+	if (aggregate === undefined) {
+		warnings.push(
+			`Panel "${title}" reduces with "${calc}", which Maple does not have; it shows the latest value.`,
+		)
+		return transform
+	}
+	return { reduceToValue: { field: "value", aggregate } }
 }

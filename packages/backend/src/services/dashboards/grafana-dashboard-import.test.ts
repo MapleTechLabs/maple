@@ -169,7 +169,14 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 				{
 					name: "job",
 					type: "query",
-					source: { kind: "facet", facet: "service" },
+					// Scraped data carries job and instance as labels on the metric.
+					source: {
+						kind: "metric",
+						metricType: "gauge",
+						metricNames: ["node_uname_info"],
+						scope: "metric",
+						attributeKey: "job",
+					},
 					defaultValue: "node",
 				},
 				{
@@ -181,8 +188,8 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 						kind: "metric",
 						metricType: "gauge",
 						metricNames: ["node_uname_info"],
-						scope: "resource",
-						attributeKey: "service.instance.id",
+						scope: "metric",
+						attributeKey: "instance",
 					},
 				},
 				{
@@ -316,4 +323,69 @@ describe("isGrafanaDashboardJson", () => {
 		expect(isGrafanaDashboardJson({ name: "Maple", widgets: [], timeRange: {} })).toBe(false)
 		expect(isGrafanaDashboardJson({ panels: [] })).toBe(false)
 	})
+})
+
+describe("review regressions", () => {
+	const prom = { type: "prometheus", uid: "p" }
+	const panel = (extra: Record<string, unknown>) => ({
+		id: 1,
+		title: "Panel",
+		gridPos: { x: 0, y: 0, w: 12, h: 8 },
+		datasource: prom,
+		targets: [{ refId: "A", expr: "up", datasource: prom }],
+		...extra,
+	})
+	const board = (panels: ReadonlyArray<unknown>, variables: ReadonlyArray<unknown> = []) => ({
+		title: "Board",
+		schemaVersion: 39,
+		panels,
+		templating: { list: variables },
+	})
+
+	it.effect("keeps Grafana's stat calculation and warns on one Maple lacks", () =>
+		Effect.gen(function* () {
+			const { dashboard, warnings } = yield* convertGrafanaDashboardToPortable(
+				board([
+					panel({ type: "stat", options: { reduceOptions: { calcs: ["max"] } } }),
+					panel({ id: 2, type: "stat", options: { reduceOptions: { calcs: ["range"] } } }),
+				]),
+			)
+			const transforms = Arr.map(
+				dashboard.widgets,
+				(w) => dataSourceTransform(w.dataSource)?.reduceToValue?.aggregate,
+			)
+			expect(transforms).toEqual(["max", "first"])
+			expect(warnings.some((w) => w.includes('"range"'))).toBe(true)
+		}),
+	)
+
+	it.effect("imports a PromQL heatmap as a placeholder", () =>
+		Effect.gen(function* () {
+			const { dashboard, warnings } = yield* convertGrafanaDashboardToPortable(
+				board([panel({ type: "heatmap" })]),
+			)
+			expect(dataSourcePromql(dashboard.widgets[0]?.dataSource)).toBeNull()
+			expect(warnings.some((w) => w.includes("buckets over time"))).toBe(true)
+		}),
+	)
+
+	it.effect("never lets one rename capture another variable's references", () =>
+		Effect.gen(function* () {
+			const query = 'up{a="${host-name}", b="$host_name"}'
+			const { dashboard } = yield* convertGrafanaDashboardToPortable(
+				board(
+					[panel({ type: "timeseries", targets: [{ refId: "A", expr: query, datasource: prom }] })],
+					[
+						{ name: "host-name", type: "textbox", query: "web-1" },
+						{ name: "host_name", type: "textbox", query: "web-2" },
+					],
+				),
+			)
+			const names = Arr.map(dashboard.variables ?? [], (v) => v.name)
+			expect(names).toEqual(["host_name_2", "host_name"])
+			expect(dataSourcePromql(dashboard.widgets[0]?.dataSource)?.query).toBe(
+				'up{a="${host_name_2}", b="$host_name"}',
+			)
+		}),
+	)
 })
