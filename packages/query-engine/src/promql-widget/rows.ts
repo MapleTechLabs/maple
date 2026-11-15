@@ -155,6 +155,10 @@ export function promqlRowsForDisplay(
 	}
 	return Arr.flatMap(series, (one) => {
 		const value = lastValue(one)
-		return value === null ? [] : [{ ...one.labels, name: one.name, value }]
+		// `name` and `value` are the row's own columns; a label of either name keeps its value as `label_<name>`.
+		const labels = Rec.mapKeys(one.labels, (key) =>
+			key === "name" || key === "value" ? `label_${key}` : key,
+		)
+		return value === null ? [] : [{ ...labels, name: one.name, value }]
 	})
 }

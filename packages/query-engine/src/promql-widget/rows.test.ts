@@ -71,6 +71,16 @@ describe("promqlRowsForDisplay", () => {
 		])
 	})
 
+	it("keeps a series label called name or value beside the row's own columns", () => {
+		const sshd = {
+			resultType: "vector" as const,
+			result: [{ labels: { __name__: "unit", name: "sshd", value: "x" }, value: 1, t: 0 }],
+		}
+		expect(promqlRowsForDisplay(sshd, { displayType: "table", legendFormat: "{{name}}" })).toEqual([
+			{ __name__: "unit", label_name: "sshd", label_value: "x", name: "sshd", value: 1 },
+		])
+	})
+
 	it("gives a table one row per series with its labels and last value", () => {
 		expect(promqlRowsForDisplay(matrix, { displayType: "table", legendFormat: "{{job}}" })).toEqual([
 			{ __name__: "up", job: "web", instance: "b", name: "web", value: 0 },
