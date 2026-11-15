@@ -2,7 +2,15 @@ import { Schema } from "effect"
 import { defineMessageUnion } from "foldkit/message"
 import { LoadFailure } from "../../data/load-failure"
 import * as Tabs from "../../ui/tabs"
-import { LogEntry, SpanDetail, SpanDetailRequest, SpanLogsRequest } from "../trace-source"
+import * as ProfileFlamegraph from "../../profiles/profile-flamegraph"
+import {
+	LogEntry,
+	SpanDetail,
+	SpanDetailRequest,
+	SpanLogsRequest,
+	SpanProfile,
+	SpanProfileRequest,
+} from "../trace-source"
 
 const result = <A extends Schema.Top>(schema: A) => ({
 	key: Schema.String,
@@ -22,12 +30,17 @@ export type DetailFetch = typeof DetailFetch.Type
 export const LogsFetch = Schema.Struct({ key: Schema.String, request: SpanLogsRequest })
 export type LogsFetch = typeof LogsFetch.Type
 
+export const ProfileFetch = Schema.Struct({ key: Schema.String, request: SpanProfileRequest })
+export type ProfileFetch = typeof ProfileFetch.Type
+
 export const AttributeScope = Schema.Literals(["span", "resource"])
 export type AttributeScope = typeof AttributeScope.Type
 
 export const Message = defineMessageUnion({
 	CompletedFetchDetail: result(SpanDetail),
 	CompletedFetchLogs: result(Schema.Array(LogEntry)),
+	CompletedFetchProfile: result(Schema.NullOr(SpanProfile)),
+	GotFlamegraphMessage: { message: ProfileFlamegraph.Message },
 	/** The source's cache answered first; `fetch` revalidates it unless fresh. */
 	FoundCachedDetail: { fetch: DetailFetch, detail: SpanDetail, isFresh: Schema.Boolean },
 	FoundCachedLogs: { fetch: LogsFetch, logs: Schema.Array(LogEntry), isFresh: Schema.Boolean },
@@ -46,7 +59,8 @@ export const Message = defineMessageUnion({
 		value: Schema.String,
 		isExclude: Schema.Boolean,
 	},
-	GotTabsMessage: { message: Tabs.Message },
+	/** `shown` is the tabs on screen when the message was made: its indexes count against those. */
+	GotTabsMessage: { message: Tabs.Message, shown: Schema.Array(Schema.String) },
 })
 export type Message = typeof Message.Type
 

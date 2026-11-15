@@ -14,8 +14,13 @@ import { docsLink } from "@maple/views/ui/docs-link"
 import { LOG_LIMIT } from "./command"
 import { Message } from "./message"
 import type { Model } from "./model"
-import type { LogEntry } from "../trace-source"
-import { TAB_VALUES } from "./update"
+import type { LogEntry, SpanProfile } from "../trace-source"
+import {
+	formatProfileValue,
+	topFunctionsTable,
+	view as flamegraphView,
+} from "../../profiles/profile-flamegraph-view"
+import { type TAB_VALUES, tabsOver } from "./update"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
 
@@ -28,6 +33,7 @@ type TabValue = (typeof TAB_VALUES)[number]
 const TAB_LABELS = {
 	details: { icon: "CircleInfoIcon", text: " Details" },
 	logs: { icon: "FileIcon", text: " Logs" },
+	profile: { icon: "FireIcon", text: " Profile" },
 	infrastructure: { icon: "ServerIcon", text: " Infrastructure" },
 } as const satisfies Record<TabValue, { icon: IconName; text: string }>
 
@@ -85,6 +91,34 @@ export const spanLogs = (h: H, model: Pick<Model, "logs">, timeZone: string, doc
 					),
 	})
 
+/**
+ * The CPU the span and the spans under it used, as a flame graph and the functions that used the
+ * most. Shown only when samples are linked to them.
+ */
+export const spanProfile = (h: H, model: Pick<Model, "flamegraph">, profile: SpanProfile): Html => {
+	const input = { stacks: profile.stacks, totalValue: profile.totalValue }
+	return h.div(
+		[h.Class("space-y-3 p-3")],
+		[
+			typography(h, { size: "xs", tone: "muted", as: "p" }, [
+				`${formatProfileValue(profile.totalValue, profile.sampleUnit)} of ${profile.sampleType} sampled while this span and the spans under it were running.`,
+			]),
+			flamegraphView(
+				h,
+				model.flamegraph,
+				{ input, unit: profile.sampleUnit, maxRows: 14, isCompact: true },
+				(message) => Message.GotFlamegraphMessage({ message }),
+			),
+			topFunctionsTable(h, input, {
+				unit: profile.sampleUnit,
+				limit: 8,
+				compact: true,
+				scope: model.flamegraph.scope,
+			}),
+		],
+	)
+}
+
 /** The Tabs root: list, then the selected value's panel (Base UI unmounts the others). */
 export const tabsView = (
 	h: H,
@@ -99,7 +133,7 @@ export const tabsView = (
 		)
 	return h.submodel({
 		slotId: `span-panel-tabs-${model.tabs.idBase}`,
-		model: { ...model.tabs, values },
+		model: tabsOver(model.tabs, values),
 		view: TabsView.view,
 		viewInputs: {
 			variant: "underline",
@@ -124,6 +158,7 @@ export const tabsView = (
 			panel: (value) => panel(shownOf(value)),
 			hasPanel: () => true,
 		},
-		toParentMessage: (message) => Message.GotTabsMessage({ message }),
+		// The update needs the shown tabs to read the message's indexes.
+		toParentMessage: (message) => Message.GotTabsMessage({ message, shown: values }),
 	})
 }

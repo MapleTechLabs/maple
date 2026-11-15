@@ -2,6 +2,7 @@ import { chartEnvHandlers } from "@maple/views/charts/chart-env"
 import type { Resources } from "../../platform/resources"
 import { snapToMinute, WIDEST_RANGE } from "../../lib/time"
 import * as Chart from "@maple/views/charts/chart"
+import * as ProfileFlamegraph from "@maple/views/profiles/profile-flamegraph"
 import { LoadChartRuntime } from "@maple/views/charts/chart-runtime"
 import { Option, Record, Result, Array as Arr } from "effect"
 import { AsyncData, Command, type Update } from "foldkit"
@@ -31,6 +32,8 @@ export const init = (
 		operations: idle(),
 		timeseries: idle(),
 		golden: idle(),
+		profile: idle(),
+		flamegraph: ProfileFlamegraph.init("service-profile"),
 		overviewUpdatedAtMs: 0,
 		isRefreshing: false,
 		chartRuntime: { _tag: "Loading" },
@@ -47,8 +50,9 @@ export const locationChanged = (model: Model, context: PageContext): UpdateRetur
 const settleRefresh = (model: Model): Model => {
 	const isLoading = (data: AsyncData.AsyncData<unknown, unknown>) =>
 		AsyncData.isLoading(data) || AsyncData.isRefreshing(data)
-	const busy = Arr.some([model.overview, model.operations, model.timeseries, model.golden], (slot) =>
-		isLoading(slot.data),
+	const busy = Arr.some(
+		[model.overview, model.operations, model.timeseries, model.golden, model.profile],
+		(slot) => isLoading(slot.data),
 	)
 	return model.isRefreshing && !busy ? { ...model, isRefreshing: false } : model
 }
@@ -83,7 +87,7 @@ const back = (model: Model, context: PageContext): UpdateReturn => {
 const retry = (model: Model, context: PageContext, slot: SlotName): UpdateReturn =>
 	load(model, context, [slot])
 
-const ALL_SLOTS: ReadonlyArray<SlotName> = ["overview", "operations", "timeseries", "golden"]
+const ALL_SLOTS: ReadonlyArray<SlotName> = ["overview", "operations", "timeseries", "golden", "profile"]
 
 export const update = (model: Model, message: Message, context: PageContext): UpdateReturn =>
 	Message.match<UpdateReturn>(message, {
@@ -164,6 +168,26 @@ export const update = (model: Model, message: Message, context: PageContext): Up
 				: { model },
 		FailedFetchGoldenSignals: ({ key, failure }) =>
 			settle({ ...model, golden: accept(model.golden, key, Result.fail(failure)) }, context),
+		SucceededFetchProfile: ({ key, profile, fetchedAtMs }) =>
+			settle(
+				{ ...model, profile: accept(model.profile, key, Result.succeed(profile), fetchedAtMs) },
+				context,
+			),
+		FailedFetchProfile: ({ key, failure }) =>
+			settle({ ...model, profile: accept(model.profile, key, Result.fail(failure)) }, context),
+		FoundCachedProfile: ({ key, cached }) =>
+			model.profile.key === key
+				? settleCached(
+						{ ...model, profile: acceptCached(model.profile, key, cached, cached.isFresh) },
+						context,
+						"profile",
+						cached.isFresh,
+					)
+				: { model },
+		ClickedRetryProfile: () => retry(model, context, "profile"),
+		GotFlamegraphMessage: ({ message: child }) => ({
+			model: { ...model, flamegraph: ProfileFlamegraph.update(model.flamegraph, child).model },
+		}),
 		ClickedRetryOverview: () => retry(model, context, "overview"),
 		ClickedRetryOperations: () => retry(model, context, "operations"),
 		ClickedRetryGoldenSignals: () => retry(model, context, "golden"),

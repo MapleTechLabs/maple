@@ -20,6 +20,7 @@ import { Message } from "./message"
 import type { Model } from "./model"
 import { GOLDEN_TOKENS, goldenSignals } from "./view-golden"
 import { topOperations } from "./view-operations"
+import { serviceProfile } from "./view-profile"
 import { detailHeader, statCards } from "./view-parts"
 import { vstack } from "@maple/views/ui/stack"
 import { loadingFill } from "../kit/page-body"
@@ -101,7 +102,10 @@ const loaded = (
 						],
 					),
 				]
-	return h.div([h.Class("space-y-6 p-4")], [statCards(h, stats), ...charts, topOperations(h, model, range)])
+	return h.div(
+		[h.Class("space-y-6 p-4")],
+		[statCards(h, stats), ...charts, topOperations(h, model, range), ...serviceProfile(h, model)],
+	)
 }
 
 const content = (h: HtmlBuilder<Message>, model: Model, inputs: PageViewInputs): Html => {

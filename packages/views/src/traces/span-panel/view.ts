@@ -19,7 +19,8 @@ import type { Model } from "./model"
 import type { SpanDetail } from "../trace-source"
 import { getCloudPlatform } from "./platform"
 import { cacheSummary, panelHeader, platformSummary, summaryStats } from "./view-header"
-import { spanLogs, tabsView } from "./view-tabs"
+import { spanLogs, spanProfile, tabsView } from "./view-tabs"
+import { TAB_VALUES } from "./update"
 import { sidePanelFrame } from "../../ui/side-panel"
 import { hstack } from "../../ui/stack"
 import { typography } from "../../ui/typography"
@@ -207,10 +208,13 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 	const spanAttrs = loadedOr(model, (detail) => detail.spanAttributes, span.spanAttributes)
 	const platform = getCloudPlatform(spanAttrs)
 	const { infraTab } = inputs
-	const values =
-		infraTab === undefined
-			? (["details", "logs"] as const)
-			: (["details", "logs", "infrastructure"] as const)
+	const profile = Option.getOrNull(AsyncData.getData(model.profile.data))
+	const values = Arr.filter(
+		TAB_VALUES,
+		(value) =>
+			(value !== "profile" || profile !== null) &&
+			(value !== "infrastructure" || infraTab !== undefined),
+	)
 	return sidePanelFrame(h, [
 		panelHeader(h, model),
 		scrollArea(h, { className: "min-h-0 flex-1", idPrefix: "span-panel-scroll" }, [
@@ -240,9 +244,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>((model, inpu
 								],
 							),
 						]
-					: value === "logs" || infraTab === undefined
-						? [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)]
-						: [h.div([h.Class("p-3")], [infraTab()])],
+					: value === "profile" && profile !== null
+						? [spanProfile(h, model, profile)]
+						: value === "infrastructure" && infraTab !== undefined
+							? [h.div([h.Class("p-3")], [infraTab()])]
+							: [spanLogs(h, model, inputs.timeZone, inputs.logsDocsHref)],
 			),
 		]),
 	])
