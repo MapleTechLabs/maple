@@ -24,8 +24,12 @@ type QuoteContext = "code" | '"' | "'" | "`"
 export const promqlStringEscape = (value: string, quote: '"' | "'" = '"'): string =>
 	replaceWith(value, quote === '"' ? /[\\"]/g : /[\\']/g, (match) => `\\${match}`)
 
-/** Outside a string a value may only be a plain token: a name, a number or a duration. */
-const SAFE_TOKEN = /^[A-Za-z0-9_.:-]+$/
+/**
+ * Outside a string a value may only be one whole token: a name, an unsigned number or a duration.
+ * Anything that could tokenize as two (`1-2`, `a b`) is refused.
+ */
+const SAFE_TOKEN =
+	/^(?:[A-Za-z_:][A-Za-z0-9_:]*|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|(?:\d+(?:ms|s|m|h|d|w|y))+)$/
 
 /**
  * A value as it may appear in `context`, or undefined when it cannot appear there without
@@ -52,6 +56,14 @@ const quoteRuns = (
 	let current = ""
 	for (let i = 0; i < query.length; i++) {
 		const ch = query[i] ?? ""
+		if (context === "code" && ch === "#") {
+			// A comment runs to the end of the line; its quotes open no string.
+			const end = query.indexOf("\n", i)
+			const stop = end === -1 ? query.length : end
+			current += query.slice(i, stop)
+			i = stop - 1
+			continue
+		}
 		if (context === "code") {
 			current += ch
 			if (ch === '"' || ch === "'" || ch === "`") {

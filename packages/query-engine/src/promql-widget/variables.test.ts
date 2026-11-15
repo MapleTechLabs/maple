@@ -137,4 +137,20 @@ describe("variables cannot change a query's structure", () => {
 		)
 		expect(interpolatePromqlVariables("up{a=~'$v'}", { v: all(["a", "b'c"]) })).toBe("up{a=~'(a|b\\'c)'}")
 	})
+
+	it("reads a quote inside a # comment as comment text, not a string", () => {
+		const query = '# John\'s panel\nup{job="$v"}'
+		expect(interpolatePromqlVariables(query, { v: one('a"} or vector(1) #') })).toBe(
+			'# John\'s panel\nup{job="a\\"} or vector(1) #"}',
+		)
+	})
+
+	it("places only whole tokens outside strings", () => {
+		expect(interpolatePromqlVariables("up * $v", { v: one("1-2") })).toBe("up * $v")
+		expect(interpolatePromqlVariables("up * $v", { v: one("1.5e3") })).toBe("up * 1.5e3")
+		expect(interpolatePromqlVariables("rate(x[$v])", { v: one("1m30s") })).toBe("rate(x[1m30s])")
+		expect(interpolatePromqlVariables("sum by ($v) (up)", { v: one("host_name") })).toBe(
+			"sum by (host_name) (up)",
+		)
+	})
 })
