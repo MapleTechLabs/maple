@@ -16,7 +16,7 @@ import { LocalLog, logKey, normalizeLog } from "../lib/log-shape"
 import { boundsForRange, parseClickHouseDateTime, toClickHouseDateTime, WIDEST_RANGE } from "../lib/time"
 import { cachedAs, readCached, recordCached } from "./cached"
 import type { QueryKey } from "./cache-store"
-import { localParams, queryFirstRow, queryRows } from "./local-query"
+import { localParams, queryFirstRow, queryRows, queryRowsIfTableExists } from "./local-query"
 import { LocalQueryCache } from "./query-cache"
 
 // The trace views' reads over `/local/query`. Every answer is recorded in the result cache, which
@@ -129,7 +129,10 @@ const fetchSpanProfile = (request: SpanProfileRequest, apiBase: string) =>
 			endTime: toClickHouseDateTime(startMs + Math.max(0, request.durationMs) + PROFILE_PAD_MS),
 		}
 		const scope = { trace: true, spanIds: request.spanIds }
-		const types = yield* queryRows(CH.compile(CH.profileSampleTypesQuery(scope), params), apiBase)
+		const types = yield* queryRowsIfTableExists(
+			CH.compile(CH.profileSampleTypesQuery(scope), params),
+			apiBase,
+		)
 		const chosen = Arr.findFirst(types, (row) => row.sampleType === PREFERRED_SAMPLE_TYPE).pipe(
 			Option.orElse(() => Arr.head(types)),
 		)

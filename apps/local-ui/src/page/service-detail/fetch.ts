@@ -1,7 +1,7 @@
 import { CH } from "@maple/query-engine"
 import { parseClickHouseDateTime, type TimeBounds } from "../../lib/time"
 import { DateTime, Effect, Option, Array as Arr } from "effect"
-import { localParams, queryRows } from "../../data/local-query"
+import { localParams, queryRows, queryRowsIfTableExists } from "../../data/local-query"
 import { toCatalogEntry } from "../services/fetch"
 import type { GoldenSignalRow, OperationRow, Overview, SeriesPoint, ServiceProfile } from "./model"
 
@@ -111,7 +111,7 @@ const PREFERRED_SAMPLE_TYPE = "cpu"
 export const fetchProfile = (serviceName: string, bounds: TimeBounds, apiBase: string) =>
 	Effect.gen(function* () {
 		const params = { ...localParams(bounds), serviceName }
-		const types = yield* queryRows(
+		const types = yield* queryRowsIfTableExists(
 			CH.compile(CH.profileSampleTypesQuery({ service: true }), params),
 			apiBase,
 		)
