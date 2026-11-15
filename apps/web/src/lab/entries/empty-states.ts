@@ -18,10 +18,6 @@ import { pagingFooter } from "../../page/errors/hub/view-list"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { init as initRecommendations } from "../../page/recommendations/update"
 import { view as recommendationsView } from "../../page/recommendations/view"
-import * as ReleasesMessage from "../../page/releases/list/message"
-import * as Releases from "../../page/releases/list/model"
-import { init as initReleases, update as updateReleases } from "../../page/releases/list/update"
-import { view as releasesView } from "../../page/releases/list/view"
 import { AppRoute } from "../../route"
 import { defineLabWithFlags } from "../define"
 
@@ -33,9 +29,6 @@ export const ITEMS = [
 	"errors-quiet",
 	"errors-load-more",
 	"errors-load-more-failed",
-	"releases-first-run",
-	"releases-quiet",
-	"releases-filtered",
 	"session-rest-failed",
 	"recommendations-loading",
 	"not-found",
@@ -87,37 +80,6 @@ const errorsFooterView = Submodel.defineView<
 	{ paging: "more" | "failed" }
 >((_model, inputs, h) => h.div([], pagingFooter(h, inputs.paging)))
 
-const WINDOW = { startTime: "2026-11-01 00:00:00", endTime: "2026-11-01 06:00:00" }
-
-const releasesModel = (
-	nowMs: number,
-	presence: Presence,
-	search: Releases.Model["search"],
-): Releases.Model => {
-	const entered = initReleases({ search }, context).model
-	const resolved = updateReleases(
-		entered,
-		ReleasesMessage.Message.CompletedResolveWindow({ window: WINDOW, nowMs, mode: "Load" }),
-		context,
-	).model
-	const loaded = updateReleases(
-		resolved,
-		ReleasesMessage.Message.CompletedFetchReleases({
-			key: resolved.releases.key ?? "",
-			result: Result.succeed({
-				releases: [],
-				timeline: [],
-				truncated: false,
-				startTime: WINDOW.startTime,
-				endTime: WINDOW.endTime,
-				bucketSeconds: 3600,
-			}),
-		}),
-		context,
-	).model
-	return { ...loaded, presence: presenceOf(presence) }
-}
-
 const FAILED_PROGRESS = {
 	phase: "failed",
 	agentSpansComplete: false,
@@ -161,20 +123,6 @@ const itemView = (model: Model, h: HtmlBuilder<Message>): Html => {
 				view: errorsFooterView,
 				toParentMessage: ignore,
 				viewInputs: { paging: model.item === "errors-load-more" ? "more" : "failed" },
-			})
-		case "releases-first-run":
-		case "releases-quiet":
-		case "releases-filtered":
-			return h.submodel({
-				slotId: "lab-releases",
-				model: releasesModel(
-					nowMs,
-					model.item === "releases-first-run" ? "absent" : "present",
-					model.item === "releases-filtered" ? { environments: ["staging"] } : {},
-				),
-				view: releasesView,
-				toParentMessage: ignore,
-				viewInputs: { context },
 			})
 		case "session-rest-failed":
 			return h.submodel({
