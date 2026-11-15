@@ -21,7 +21,8 @@
 		"./ch/tables": "./src/ch/tables.ts",
 		"./ch/schema": "./src/ch/schema.ts",
 		"./ch/format": "./src/ch/queries/format.ts",
-		"./ch/query-helpers": "./src/ch/queries/query-helpers.ts"
+		"./ch/query-helpers": "./src/ch/queries/query-helpers.ts",
+		"./ch/rollup-splice": "./src/ch/queries/rollup-splice.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
