@@ -133,12 +133,16 @@ import {
 } from "./gen-ai-columns"
 import { NORMALIZED_SPAN_NAME_SQL } from "./span-display-name"
 import {
+	LOG_USER_EMAIL_AT_SQL,
 	LOG_USER_EMAIL_STATE_SQL,
+	LOG_USER_NAME_AT_SQL,
 	LOG_USER_ID_SQL,
 	LOG_USER_NAME_STATE_SQL,
 	MOBILE_REQUEST_SQL,
 	SERVICE_NAMESPACE_SQL,
+	SPAN_USER_EMAIL_AT_SQL,
 	SPAN_USER_EMAIL_STATE_SQL,
+	SPAN_USER_NAME_AT_SQL,
 	SPAN_USER_ID_SQL,
 	SPAN_USER_NAME_STATE_SQL,
 	WEB_REQUEST_SQL,
@@ -1507,7 +1511,9 @@ export const userActivityHourlyTracesMv = defineMaterializedView("user_activity_
           countIf(IsEntryPoint = 1 AND ${WEB_REQUEST_SQL}) AS WebRequestCount,
           countIf(IsEntryPoint = 1 AND ${MOBILE_REQUEST_SQL}) AS MobileRequestCount,
           ${SPAN_USER_NAME_STATE_SQL} AS UserName,
-          ${SPAN_USER_EMAIL_STATE_SQL} AS UserEmail
+          ${SPAN_USER_EMAIL_STATE_SQL} AS UserEmail,
+          ${SPAN_USER_NAME_AT_SQL} AS UserNameAt,
+          ${SPAN_USER_EMAIL_AT_SQL} AS UserEmailAt
         FROM traces
         WHERE ${SPAN_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName
@@ -1549,7 +1555,9 @@ export const userActivityHourlyLogsMv = defineMaterializedView("user_activity_ho
           toUInt64(0) AS WebRequestCount,
           toUInt64(0) AS MobileRequestCount,
           ${LOG_USER_NAME_STATE_SQL} AS UserName,
-          ${LOG_USER_EMAIL_STATE_SQL} AS UserEmail
+          ${LOG_USER_EMAIL_STATE_SQL} AS UserEmail,
+          ${LOG_USER_NAME_AT_SQL} AS UserNameAt,
+          ${LOG_USER_EMAIL_AT_SQL} AS UserEmailAt
         FROM logs
         WHERE ${LOG_USER_ID_SQL} != ''
         GROUP BY OrgId, ServiceNamespace, UserId, Hour, ServiceName

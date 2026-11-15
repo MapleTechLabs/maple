@@ -1970,6 +1970,8 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 			addColumns("user_activity_hourly", [
 				["UserName", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
 				["UserEmail", "AggregateFunction(argMaxIf, String, UInt32, UInt8)"],
+				["UserNameAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
+				["UserEmailAt", "SimpleAggregateFunction(max, UInt32) DEFAULT 0"],
 			]),
 			dropViews("user_activity_hourly_traces_mv", "user_activity_hourly_logs_mv"),
 		],
@@ -1986,7 +1988,7 @@ const STEP_ROWS: ReadonlyArray<StepRow> = [
 				classification: "derived",
 				disposition: "preserve-exact",
 				guarantee:
-					"The identity columns are added as empty aggregate states; existing rows keep every value and read an empty name and email.",
+					"The identity columns are added as empty aggregate states; existing rows keep every value and read an empty name and email, carried at 0.",
 			},
 		],
 	},

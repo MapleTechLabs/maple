@@ -1519,9 +1519,12 @@ export const userActivityHourly = defineDatasource("user_activity_hourly", {
 		WebRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		MobileRequestCount: t.simpleAggregateFunction("sum", t.uint64()).default(0),
 		// The latest non-empty `user.name` / `user.email` (migration 0065, appended last), keyed by
-		// epoch seconds; read with `argMaxIfMerge`. Hours written before 0065 hold empty states.
+		// epoch seconds; read with `argMaxIfMerge`. `*At` is that key, so readers rank identities
+		// across sources by when they were carried. Hours written before 0065 hold empty states and 0.
 		UserName: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
 		UserEmail: t.aggregateFunction("argMaxIf", t.string(), t.uint32(), t.uint8()),
+		UserNameAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
+		UserEmailAt: t.simpleAggregateFunction("max", t.uint32()).default(0),
 	},
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",

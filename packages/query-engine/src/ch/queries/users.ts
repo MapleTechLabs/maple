@@ -439,10 +439,7 @@ const activityChannels = (
 const activityIdentity = (scope: UsersScope, column: "UserName" | "UserEmail") =>
 	scope.activityIdentity === true ? CH.rawExpr<string>(`argMaxIfMerge(${column})`, T.string) : CH.lit("")
 
-/**
- * When the group last carried an identity: its last hour's end of activity. The state keeps no time,
- * so this is the newest activity, a bound the true time never exceeds.
- */
+/** When the group last carried that identity (epoch seconds, 0 for never): the state's own key. */
 const activityIdentityAt = (
 	scope: UsersScope,
 	column: "UserName" | "UserEmail",
@@ -452,7 +449,7 @@ const activityIdentityAt = (
 		? CH.compileTypedFnCall(
 				"toFloat64",
 				T.float64.schema,
-				CH.if_(activityIdentity(scope, column).neq(""), epochSeconds(CH.max_($.LastSeen)), CH.lit(0)),
+				CH.max_(column === "UserName" ? $.UserNameAt : $.UserEmailAt),
 			)
 		: neverSeen()
 

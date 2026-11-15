@@ -39,8 +39,8 @@ const mapOf = (entries: Readonly<Record<string, string>>) =>
 		", ",
 	)})`
 
-const span = (i: number, hour: number, attributes: Readonly<Record<string, string>>) =>
-	`(${quote(ORG_ID)}, ${quote(at(hour))}, ${quote(`t${i}`)}, ${quote(`s${i}`)}, '', 'GET /x', 'Server', 'api', 1000000, 'Ok', 1, '', ${mapOf(attributes)}, map())`
+const span = (i: number, hour: number, attributes: Readonly<Record<string, string>>, namespace?: string) =>
+	`(${quote(ORG_ID)}, ${quote(at(hour))}, ${quote(`t${i}`)}, ${quote(`s${i}`)}, '', 'GET /x', 'Server', 'api', 1000000, 'Ok', 1, '', ${mapOf(attributes)}, ${namespace === undefined ? "map()" : mapOf({ "service.namespace": namespace })})`
 
 const ListRow = Schema.Struct({ userId: Schema.String, name: Schema.String, email: Schema.String })
 const decodeList = decodeJsonEachRow(ListRow)
@@ -64,6 +64,11 @@ describeWithChdb("users identity from spans and logs", () => {
 					span(3, 3, { "enduser.id": "ben", "user.email": "ben@example.com" }),
 					// cat never sends an identity.
 					span(4, 4, { "user.id": "cat" }),
+					// eve's old email in one namespace, her new one in another, then unnamed activity
+					// in the first: the newest email wins, not the namespace with the newest activity.
+					span(5, 9, { "user.id": "eve", "user.email": "eve@old.example" }, "api"),
+					span(6, 10, { "user.id": "eve", "user.email": "eve@new.example" }, "web"),
+					span(7, 11, { "user.id": "eve" }, "api"),
 				],
 				", ",
 			)}`,
@@ -94,17 +99,19 @@ describeWithChdb("users identity from spans and logs", () => {
 		expect(users.get("ben")).toEqual({ userId: "ben", name: "", email: "ben@example.com" })
 		expect(users.get("cat")).toEqual({ userId: "cat", name: "", email: "" })
 		expect(users.get("dan")).toEqual({ userId: "dan", name: "", email: "dan@example.com" })
+		expect(users.get("eve")).toEqual({ userId: "eve", name: "", email: "eve@new.example" })
 	})
 
 	test("finds a user by an email only their spans carried", () => {
 		expect([...list({ search: "ben@example" }).keys()]).toEqual(["ben"])
+		expect([...list({ search: "eve@new" }).keys()]).toEqual(["eve"])
 	})
 
 	test("finds a user by an email only their spans carried, with the candidate bound", () => {
 		const rows = decodeList(
 			run(
 				CH.compileUnsafe(
-					CH.usersListQuery(scope, { search: "new.example" }, 200, { matching: true }),
+					CH.usersListQuery(scope, { search: "ada@new" }, 200, { matching: true }),
 					params,
 				).sql,
 			),
