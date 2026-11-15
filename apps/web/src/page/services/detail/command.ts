@@ -11,11 +11,12 @@ import {
 	getServiceEndpointsTimeseries,
 } from "@maple/web-data/warehouse/service-endpoints"
 import { getServiceOperations } from "@maple/web-data/warehouse/service-operations"
+import { getProfile } from "@maple/web-data/warehouse/profiles"
 import { getServiceUsage } from "@maple/web-data/warehouse/service-usage"
 import { getServiceRuntimes, getServiceWorkloads } from "@maple/web-data/warehouse/service-infra"
 import { getServiceDependenciesBundle } from "@maple/web-data/warehouse/service-map"
 import { V2ErrorIssueListQuery } from "@maple/domain/http/v2"
-import { Clock, Effect, Predicate, Schema, Array as Arr } from "effect"
+import { Clock, Effect, Option, Predicate, Schema, Array as Arr } from "effect"
 import { Command } from "foldkit"
 import { settleTo } from "@maple/views/data/load-failure"
 import { readCommitDetail } from "../../kit/commit-card"
@@ -182,6 +183,21 @@ export const FetchDependencies = Command.define("FetchServiceDependenciesBundle"
 	execute: ({ key, input }) =>
 		getServiceDependenciesBundle({ data: input }).pipe(
 			settleTo((result) => Message.CompletedFetchDependencies({ key, result })),
+		),
+})
+
+/** The Profiles tab reads one environment at most, like the Dependencies tab. */
+export const ProfileInput = DependenciesInput
+export type ProfileInput = typeof ProfileInput.Type
+
+/** `getProfile`: the service's sample types, then the heaviest stacks of one; null without profiles. */
+export const FetchProfile = Command.define("FetchServiceProfile", {
+	args: { key: Schema.String, input: ProfileInput },
+	messages: [Message.CompletedFetchProfile],
+	execute: ({ key, input }) =>
+		getProfile({ data: input }).pipe(
+			Effect.map(Option.getOrNull),
+			settleTo((result) => Message.CompletedFetchProfile({ key, result })),
 		),
 })
 
