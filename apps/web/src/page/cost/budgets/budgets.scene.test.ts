@@ -298,6 +298,13 @@ describe("cost budgets", () => {
 			[],
 		)
 		expect(budgetById(pressed.model, budget.id)).toEqual(Option.some(budget))
+		// Leaving for the editor would drop the save's answer, so Edit waits with the switch.
+		scene(
+			{ update: pageUpdate, view },
+			given(pressed.model),
+			expectView(role("button", { name: "Edit AWS production" })).toBeDisabled(),
+			expectView(role("button", { name: "Edit Model spend" })).toBeEnabled(),
+		)
 	})
 
 	test("a toggle the API refuses leaves the budget as it was and says why", () => {

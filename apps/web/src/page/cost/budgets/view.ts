@@ -120,7 +120,12 @@ const rowActions = (h: H, model: Model, budget: CostBudgetStatus): Html => {
 		}),
 		iconButton(
 			h,
-			{ label: `Edit ${budget.name}`, attributes: [h.OnClick(Message.ClickedEdit({ id: budget.id }))] },
+			{
+				label: `Edit ${budget.name}`,
+				// Leaving the page would drop the answer of a write still out.
+				isDisabled: isBusy,
+				attributes: [h.OnClick(Message.ClickedEdit({ id: budget.id }))],
+			},
 			[icon(h, "PencilIcon")],
 		),
 		iconButton(

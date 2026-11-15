@@ -23,7 +23,8 @@ const isDestinationIds = Schema.is(CostBudgetAlert.fields.destinationIds)
 
 const numberOf = (raw: string, isValid: (value: number) => boolean): Option.Option<number> => {
 	const text = Str.trim(raw)
-	const value = /^\d+(\.\d+)?$/u.test(text) ? Number(text) : Number.NaN
+	// As a decimal keypad types it: "1000", "49.50", ".5", and "1." on the way to "1.5".
+	const value = /^(?:\d+(?:\.\d*)?|\.\d+)$/u.test(text) ? Number(text) : Number.NaN
 	return isValid(value) ? Option.some(value) : Option.none()
 }
 
@@ -49,13 +50,16 @@ const alertsOn = (form: Form): ReadonlyArray<readonly [AlertSeverity, AlertForm]
 		([, alert]) => alert.isOn,
 	)
 
-/** Zero and nothing typed ask for an amount; a number the API caps says so. */
-const amountIssues = (form: Form): ReadonlyArray<string> =>
-	Option.isSome(amountOf(form))
-		? []
-		: Option.isSome(numberOf(form.amount, (value) => value > 0))
-			? ["Keep the amount to a trillion or less."]
-			: ["Set an amount above zero."]
+/** What is wrong with the amount as typed: missing or zero, over the API's cap, or not a number. */
+const amountIssues = (form: Form): ReadonlyArray<string> => {
+	if (Option.isSome(amountOf(form))) return []
+	if (Option.isSome(numberOf(form.amount, (value) => value > 0))) {
+		return ["Keep the amount to a trillion or less."]
+	}
+	return Str.trim(form.amount) === "" || Option.isSome(numberOf(form.amount, (value) => value === 0))
+		? ["Set an amount above zero."]
+		: ["Write the amount as a plain number, like 1000 or 49.50."]
+}
 
 /** What still blocks saving, one sentence each. The bounds are the request schema's. */
 export const formIssues = (form: Form): ReadonlyArray<string> => {

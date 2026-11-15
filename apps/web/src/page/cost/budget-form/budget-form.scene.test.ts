@@ -220,13 +220,17 @@ describe("cost budget editor", () => {
 	})
 
 	test("an amount that is not a positive number is refused before the API is asked", () => {
-		const amounts = Arr.map(["", "0", "-20", "12,000", "abc"], (amount) =>
-			formIssues(fold(fresh(), [typed("name", "x"), typed("amount", amount)]).form),
-		)
-		expect(Arr.dedupe(Arr.map(amounts, (issues) => Arr.join(issues, " ")))).toEqual([
-			"Set an amount above zero.",
+		const issuesOf = (amount: string) =>
+			formIssues(fold(fresh(), [typed("name", "x"), typed("amount", amount)]).form)
+		const saidOf = (amounts: ReadonlyArray<string>) =>
+			Arr.dedupe(Arr.map(amounts, (amount) => Arr.join(issuesOf(amount), " ")))
+
+		expect(saidOf(["", "0", "0.00"])).toEqual(["Set an amount above zero."])
+		expect(saidOf(["-20", "12,000", "abc"])).toEqual([
+			"Write the amount as a plain number, like 1000 or 49.50.",
 		])
-		expect(formIssues(fold(fresh(), [typed("name", "x"), typed("amount", "49.50")]).form)).toEqual([])
+		// As a decimal keypad types it, a leading or trailing point included.
+		expect(saidOf(["49.50", ".5", "1."])).toEqual([""])
 		// Above the API's cap the amount is a number: the form says what is wrong with it.
 		expect(
 			formIssues(fold(fresh(), [typed("name", "x"), typed("amount", "2000000000000")]).form),
