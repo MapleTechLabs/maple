@@ -264,6 +264,11 @@ class Evaluator {
 			: Result.succeed(undefined)
 	}
 
+	/** A consumed stage's samples are no longer live; the budget is on live samples, like Prometheus'. */
+	release(value: Steps): void {
+		for (const vector of value.vectors) this.points -= vector.length
+	}
+
 	steps(times: ReadonlyArray<number>, vectors: InstantVector[]): R<Steps> {
 		return Result.map(this.count(vectors), () => ({ kind: "vector" as const, times, vectors }))
 	}
@@ -279,7 +284,10 @@ class Evaluator {
 			if (Result.isFailure(next)) return Result.fail(next.failure)
 			out.push(next.success)
 		}
-		return this.steps(value.times, out)
+		// Input and output are both live while the output is built; the input is freed after.
+		const result = this.steps(value.times, out)
+		this.release(value)
+		return result
 	}
 
 	instantSelector(selector: VectorSelector, grid: TimeGrid): R<Steps> {
@@ -338,6 +346,7 @@ class Evaluator {
 			const value = yield* this.eval(node.expr, inner)
 			if (value.kind !== "vector")
 				return yield* err("subquery expression must return an instant vector")
+			this.release(value)
 			const series = transpose(value).map((s) => ({
 				labels: s.labels,
 				buckets: pointsToBuckets(s.points, inner.startMs),
@@ -501,6 +510,7 @@ class Evaluator {
 				}
 				case "scalar": {
 					const v = yield* this.vectorArg(first, grid)
+					this.release(v)
 					return {
 						kind: "scalar",
 						times: v.times,
@@ -636,7 +646,7 @@ class Evaluator {
 						}
 					}
 					if (lhs.kind === "vector" && rhs.kind === "vector") {
-						return yield* this.perStep(lhs, (vec, i, t) =>
+						const result = yield* this.perStep(lhs, (vec, i, t) =>
 							vectorVectorBinary(
 								expr.op,
 								vec,
@@ -646,6 +656,8 @@ class Evaluator {
 								t,
 							),
 						)
+						this.release(rhs)
+						return result
 					}
 					const vector = lhs.kind === "vector" ? lhs : rhs.kind === "vector" ? rhs : undefined
 					const scalar = lhs.kind === "scalar" ? lhs : rhs.kind === "scalar" ? rhs : undefined
