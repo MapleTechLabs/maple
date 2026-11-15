@@ -730,3 +730,72 @@ export const promqlPushdownRowSchema = Schema.Struct({
 	values: numbers,
 })
 export type PromqlPushdownRow = typeof promqlPushdownRowSchema.Type
+
+/** Type, unit and description of every stored metric in the window, for `/api/v1/metadata`. */
+export function promqlMetadataQuery(opts: { readonly limit: number }) {
+	return from(Datasources.metricCatalog)
+		.select(($) => ({
+			metricName: $.MetricName,
+			metricType: $.MetricType,
+			unit: CH.any_($.MetricUnit),
+			description: CH.any_($.MetricDescription),
+			isMonotonic: sql(T.uint8)`max(${$.IsMonotonic})`,
+		}))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.lte(utcSecondsParam("endTime")),
+		])
+		.groupBy("metricName", "metricType")
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+/** Services that sent metrics in the window: the `job` values a bare label-values call lists. */
+export function promqlServiceNamesQuery(opts: { readonly limit: number }) {
+	return from(Datasources.metricCatalog)
+		.select(($) => ({ serviceName: $.ServiceName }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.lte(utcSecondsParam("endTime")),
+			$.ServiceName.neq(""),
+		])
+		.groupBy("serviceName")
+		.orderBy(["serviceName", "asc"])
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+/**
+ * Metric data-point attribute values for the raw keys a label name normalizes from, read from the
+ * hourly rollup (fed by `metrics_sum` only) so a bare label-values call never scans metric tables.
+ */
+export function promqlAttributeValuesQuery(opts: {
+	readonly keys: ReadonlyArray<string>
+	readonly limit: number
+}) {
+	return from(Datasources.attributeValuesHourly)
+		.select(($) => ({ attributeValue: $.AttributeValue }))
+		.where(($) => [
+			$.OrgId.eq(orgIdParam),
+			$.Hour.gte(CH.toStartOfInterval(CH.toDateTime(utcSecondsParam("startTime")), 3600)),
+			$.Hour.lte(utcSecondsParam("endTime")),
+			$.AttributeScope.eq("metric"),
+			CH.inList($.AttributeKey, opts.keys),
+			$.AttributeValue.neq(""),
+		])
+		.groupBy("attributeValue")
+		.orderBy(["attributeValue", "asc"])
+		.limit(opts.limit)
+		.format("JSON")
+}
+
+export const promqlMetadataRowSchema = Schema.Struct({
+	metricName: Schema.String,
+	metricType: Schema.String,
+	unit: Schema.String,
+	description: Schema.String,
+	isMonotonic: CHNumber,
+})
+export type PromqlMetadataRow = typeof promqlMetadataRowSchema.Type

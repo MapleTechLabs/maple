@@ -106,6 +106,12 @@ const READ_ONLY_POST_PATHS = new Set([
 	"/v2/logs/breakdown",
 	"/v2/metrics/timeseries",
 	"/v2/metrics/breakdown",
+	// The Prometheus query API; Grafana POSTs its reads as forms.
+	"/v2/metrics/prometheus/api/v1/query",
+	"/v2/metrics/prometheus/api/v1/query_range",
+	"/v2/metrics/prometheus/api/v1/series",
+	"/v2/metrics/prometheus/api/v1/labels",
+	"/v2/metrics/prometheus/api/v1/query_exemplars",
 	// Live proxies to PlanetScale, POST because the window + filters make a long
 	// key that belongs in a body — reads, not writes.
 	"/v2/integrations/planetscale/query_insights",

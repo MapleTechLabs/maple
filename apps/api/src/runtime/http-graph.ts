@@ -102,6 +102,7 @@ import {
 	HttpV2TracesLive,
 } from "@/routes/v2/telemetry.http"
 import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
+import { HttpV2PrometheusLive } from "@/routes/v2/prometheus.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
 import { HttpV2DeviceCredentialsLive, HttpV2DeviceTokensLive } from "@/routes/v2/device-credentials.http"
 import { DeviceCredentialsService } from "@maple/backend/services/auth/DeviceCredentialsService"
@@ -249,6 +250,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2TracesLive,
 			HttpV2LogsLive,
 			HttpV2MetricsLive,
+			HttpV2PrometheusLive,
 			HttpV2ServicesLive,
 			HttpV2ServiceMapLive,
 			HttpV2EnvironmentsLive,

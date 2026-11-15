@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Option, Schema, Array as Arr, Record as Rec, String as Str } from "effect"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 import type { TenantContext } from "@maple/domain/http"
 import { OrgId, UserId } from "@maple/primitives"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
@@ -125,5 +126,179 @@ describe("PromqlQueryService", () => {
 			const error = yield* errorWith(rows, "m_1")
 			expect(error.message).toMatch(/more than 50000 metrics/)
 		}),
+	)
+})
+
+const T0 = Date.UTC(2026, 6, 15, 12)
+
+const selectorRow = (attributes: Record<string, string>) => ({
+	series: JSON.stringify(attributes),
+	metricName: "http.requests",
+	serviceName: "api",
+	attributes,
+	resourceAttributes: { "service.name": "api" },
+	le: "0",
+	...Rec.fromEntries(
+		Arr.map(
+			["firstT", "firstV", "lastT", "lastV", "prevT", "prevV", "count", "sum", "min", "max"],
+			(field) => [field, [1]] as const,
+		),
+	),
+	...Rec.fromEntries(
+		Arr.map(
+			["sumSquares", "increase", "resets", "changes", "sumT", "sumTT", "sumTV"],
+			(field) => [field, [0]] as const,
+		),
+	),
+	end: [T0],
+	values: [[]],
+})
+
+/** Answers each warehouse read by the table it reads, recording the SQL that ran. */
+const recordingWarehouse = () => {
+	const statements: Array<string> = []
+	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
+		if (Str.includes("FROM metrics_sum")(sql)) {
+			return [selectorRow({ "http.route": "/checkout" }), selectorRow({ "http.route": "/cart" })]
+		}
+		if (Str.includes("MetricDescription")(sql)) {
+			return [
+				{
+					metricName: "http.requests",
+					metricType: "sum",
+					unit: "1",
+					description: "Requests",
+					isMonotonic: 1,
+				},
+				{
+					metricName: "http.duration",
+					metricType: "histogram",
+					unit: "s",
+					description: "Latency",
+					isMonotonic: 0,
+				},
+			]
+		}
+		if (Str.includes("AS serviceName")(sql)) return [{ serviceName: "api" }, { serviceName: "worker" }]
+		if (Str.includes("FROM metric_catalog")(sql)) {
+			return [{ metricName: "http.requests", metricType: "sum", unit: "", isMonotonic: 1 }]
+		}
+		if (Str.includes("FROM attribute_keys_hourly")(sql)) {
+			return [
+				{ attributeKey: "http.route", usageCount: 10 },
+				{ attributeKey: "http_route", usageCount: 1 },
+			]
+		}
+		if (Str.includes("FROM attribute_values_hourly")(sql)) return [{ attributeValue: "/checkout" }]
+		return []
+	}
+	const warehouse = makeWarehouseServiceStub({
+		compiledQuery: (_tenant, compiled) => {
+			const query = compiledQueryOf(compiled)
+			statements.push(query.sql)
+			return query.decodeRows(rowsFor(query.sql))
+		},
+		// Selector reads are size-bounded; record them the same way.
+		compiledQueryBounded: (_tenant, compiled) => {
+			const query = compiledQueryOf(compiled)
+			statements.push(query.sql)
+			return query.decodeRows(rowsFor(query.sql))
+		},
+	})
+	const layer = Layer.effect(PromqlQueryService, PromqlQueryService.make).pipe(
+		Layer.provide(Layer.succeed(WarehouseQueryService, warehouse)),
+	)
+	return { statements, layer }
+}
+
+const window = { startMs: T0 - 3_600_000, endMs: T0 }
+
+const ORG_FILTER = /OrgId = 'org_promql'/
+
+describe("PromqlQueryService discovery", () => {
+	it.effect("returns the label sets a match[] selector selects, read through org-scoped queries", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const series = yield* service.series(tenant, {
+				...window,
+				matches: ['http_requests_total{http_route=~"/c.*"}'],
+			})
+			expect(series).toEqual([
+				{ __name__: "http_requests_total", http_route: "/checkout", job: "api" },
+				{ __name__: "http_requests_total", http_route: "/cart", job: "api" },
+			])
+			expect(statements.length).toBe(2)
+			for (const sql of statements) expect(sql).toMatch(ORG_FILTER)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses a match[] that is not a selector or matches everything", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const notSelector = yield* Effect.flip(
+				service.series(tenant, { ...window, matches: ["sum(up)"] }),
+			)
+			expect(notSelector.message).toMatch(/not a series selector/)
+			const empty = yield* Effect.flip(service.series(tenant, { ...window, matches: ['{job=~".*"}'] }))
+			expect(empty.message).toMatch(/at least one non-empty matcher/)
+		}).pipe(Effect.provide(TestLayer)),
+	)
+
+	it.effect("lists label names from the catalog and the attribute rollup without a selector", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const names = yield* service.labelNames(tenant, { ...window, matches: [] })
+			expect(names).toEqual(["__name__", "http_route", "job"])
+			expect(Arr.some(statements, (sql) => Str.includes("metrics_sum")(sql))).toBe(false)
+			for (const sql of statements) expect(sql).toMatch(ORG_FILTER)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("reads label values from the rollup for every raw key the label normalizes from", () => {
+		const { statements, layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const values = yield* service.labelValues(tenant, { ...window, matches: [], name: "http_route" })
+			expect(values).toEqual(["/checkout"])
+			const valuesSql = Arr.findFirst(statements, (sql) => Str.includes("attribute_values_hourly")(sql))
+			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeKey IN \('http\.route', 'http_route'\)/)
+			expect(Option.getOrThrow(valuesSql)).toMatch(ORG_FILTER)
+			expect(Option.getOrThrow(valuesSql)).toMatch(/AttributeScope = 'metric'/)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("lists metric names and jobs from the catalog", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const names = yield* service.labelValues(tenant, { ...window, matches: [], name: "__name__" })
+			expect(names).toEqual(["http_requests_total"])
+			const jobs = yield* service.labelValues(tenant, { ...window, matches: [], name: "job" })
+			expect(jobs).toEqual(["api", "worker"])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("answers metadata keyed by metric family", () => {
+		const { layer } = recordingWarehouse()
+		return Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const metadata = yield* service.metadata(tenant, window)
+			expect(Rec.fromEntries(metadata)).toEqual({
+				http_duration_seconds: [{ type: "histogram", help: "Latency", unit: "seconds" }],
+				http_requests_total: [{ type: "counter", help: "Requests", unit: "" }],
+			})
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("refuses an invalid label name", () =>
+		Effect.gen(function* () {
+			const service = yield* PromqlQueryService
+			const error = yield* Effect.flip(
+				service.labelValues(tenant, { ...window, matches: [], name: "bad-name" }),
+			)
+			expect(error.message).toMatch(/invalid label name/)
+		}).pipe(Effect.provide(TestLayer)),
 	)
 })

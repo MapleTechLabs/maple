@@ -14124,6 +14124,10 @@
       "name": "Metrics"
     },
     {
+      "description": "The Prometheus HTTP query API over Maple metrics, for Grafana and other Prometheus clients.",
+      "name": "Prometheus"
+    },
+    {
       "description": "Observed service health summaries.",
       "name": "Services"
     },
