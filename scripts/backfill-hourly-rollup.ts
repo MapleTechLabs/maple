@@ -42,6 +42,8 @@ const HOUR_MS = 3_600_000
 const POLL_MS = 5_000
 /** How long after an hour ends its source can still receive points stamped in it. */
 const LATE_POINTS_MS = 30 * 60 * 1_000
+/** The deploy hour and the one before it: late points can be stamped in either. */
+const REBUILT_HOURS = 2
 const JOB_TIMEOUT_MS = 60 * 60 * 1_000
 
 const fail = (message: string): never => {
@@ -130,11 +132,13 @@ const populate = async (view: View, startMs: number, endMs: number) => {
 	await waitForJob(job.job_url, `Populate job ${job.id} on ${view.pipe}`)
 }
 
-/** Deletes the target's rows for one hour, written by the views, so the hour can be rebuilt whole from its source. */
-const deleteHour = async (hourMs: number) => {
+/** Deletes the target's rows for [startMs, endMs), written by the views, so those hours can be rebuilt whole from the source. */
+const deleteHours = async (startMs: number, endMs: number) => {
 	const { job_url } = await tinybird(DeleteJob, `/v0/datasources/${target}/delete`, {
 		method: "POST",
-		body: new URLSearchParams({ delete_condition: `Hour = ${chTime(hourMs)}` }),
+		body: new URLSearchParams({
+			delete_condition: `Hour >= ${chTime(startMs)} AND Hour < ${chTime(endMs)}`,
+		}),
 	})
 	await waitForJob(job_url, `Delete job on ${target}`)
 }
@@ -157,11 +161,13 @@ if (!Number.isFinite(pauseMs) || pauseMs < 0) fail("--pause-seconds must be a no
 const execute = process.argv.includes("--execute")
 
 /**
- * Whole hours before the one `--until` falls in, in day-sized chunks, oldest first. That hour is
- * rebuilt last and whole: its late points reached the views after the deploy, and a populate cut at
- * `--until` would count them twice.
+ * The hour `--until` falls in and the one before it are rebuilt last and whole: points stamped in
+ * them but ingested after the deploy reached the views, so a populate cut at `--until` would count
+ * them twice, and their rows would make the day's chunk look already stored. Every hour before
+ * them is backfilled in day-sized chunks, oldest first.
  */
-const boundaryMs = Math.floor(untilMs / HOUR_MS) * HOUR_MS
+const rebuildEndMs = Math.floor(untilMs / HOUR_MS) * HOUR_MS + HOUR_MS
+const boundaryMs = rebuildEndMs - REBUILT_HOURS * HOUR_MS
 const chunks = Arr.filter(
 	Arr.map(Arr.range(0, Math.ceil((boundaryMs - fromMs) / DAY_MS) - 1), (day) => ({
 		startMs: fromMs + day * DAY_MS,
@@ -169,16 +175,22 @@ const chunks = Arr.filter(
 	})),
 	(chunk) => chunk.endMs > chunk.startMs,
 )
-/** Late points keep arriving after their hour ends; rebuild the boundary hour only once they have. */
-const boundaryReadyMs = boundaryMs + HOUR_MS + LATE_POINTS_MS
+/** Late points keep arriving after their hour ends; rebuild those hours only once they have. */
+const boundaryReadyMs = rebuildEndMs + LATE_POINTS_MS
+/** The source no longer holds hours older than its retention: deleting them would lose them for good. */
+const sourceHoldsBoundary = Date.now() - boundaryMs < (sourceDays - 1) * DAY_MS
 
 console.log(`Workspace ${host}`)
 console.log(
-	`${target}: ${chunks.length} day(s) ${new Date(fromMs).toISOString()} → ${new Date(boundaryMs).toISOString()}, then the hour from ${new Date(boundaryMs).toISOString()} rebuilt, ${pauseMs / 1000}s apart (${execute ? "EXECUTE" : "dry run"})\n`,
+	`${target}: ${chunks.length} day(s) ${new Date(fromMs).toISOString()} → ${new Date(boundaryMs).toISOString()}, then ${new Date(boundaryMs).toISOString()} → ${new Date(rebuildEndMs).toISOString()} rebuilt, ${pauseMs / 1000}s apart (${execute ? "EXECUTE" : "dry run"})\n`,
 )
 if (execute && Date.now() < boundaryReadyMs)
 	fail(
-		`The hour --until falls in is still receiving points: run after ${new Date(boundaryReadyMs).toISOString()}`,
+		`The hours around --until are still receiving points: run after ${new Date(boundaryReadyMs).toISOString()}`,
+	)
+if (!sourceHoldsBoundary)
+	fail(
+		`${target}'s source keeps ${sourceDays} days: the hours around --until can no longer be rebuilt from it, so nothing is deleted`,
 	)
 
 const viewNames = Arr.join(
@@ -203,11 +215,11 @@ for (const chunk of chunks) {
 	await sleep(pauseMs)
 }
 
-const boundaryLabel = `${new Date(boundaryMs).toISOString()} → ${new Date(boundaryMs + HOUR_MS).toISOString()}`
+const boundaryLabel = `${new Date(boundaryMs).toISOString()} → ${new Date(rebuildEndMs).toISOString()}`
 if (execute) {
 	process.stdout.write(`${boundaryLabel}  rebuilding… `)
-	await deleteHour(boundaryMs)
-	for (const view of views) await populate(view, boundaryMs, boundaryMs + HOUR_MS)
+	await deleteHours(boundaryMs, rebuildEndMs)
+	for (const view of views) await populate(view, boundaryMs, rebuildEndMs)
 	console.log("done")
 } else console.log(`${boundaryLabel}  would delete and repopulate from ${viewNames}`)
 
