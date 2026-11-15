@@ -39,6 +39,7 @@ import {
 	WarehouseServiceStubLayer,
 } from "./v2-test-support"
 import { DashboardWidgetDataService } from "@maple/backend/services/dashboards/DashboardWidgetDataService"
+import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2SharePublicLive } from "./share.http"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -152,7 +153,12 @@ const makeHarness = () => {
 			Layer.mergeAll(
 				// Real widget evaluation over the inert warehouse and query engine below.
 				HttpV2DashboardsLive.pipe(
-					Layer.provide(Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make)),
+					Layer.provide(
+						Layer.effect(DashboardWidgetDataService, DashboardWidgetDataService.make).pipe(
+							// Over the inert warehouse below, not the real one `PromqlQueryService.layer` brings.
+							Layer.provide(Layer.effect(PromqlQueryService, PromqlQueryService.make)),
+						),
+					),
 				),
 				SharePublicLive,
 			),
