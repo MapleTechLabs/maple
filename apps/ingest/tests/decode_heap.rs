@@ -1290,13 +1290,20 @@ fn flatten_within(
     let stamps = ResourceStamps::default();
     let mut granted = 0_u64;
     let (peak, flattened) = peak_during(|| {
-        flatten(request, &stamps, 1, MAX_ROW_BYTES, &mut |bytes| {
-            let fits = granted + bytes <= budget;
-            if fits {
-                granted += bytes;
-            }
-            fits
-        })
+        flatten(
+            request,
+            &stamps,
+            1,
+            &mut || [7; 16],
+            MAX_ROW_BYTES,
+            &mut |bytes| {
+                let fits = granted + bytes <= budget;
+                if fits {
+                    granted += bytes;
+                }
+                fits
+            },
+        )
     });
     (peak, granted, flattened.map(|flattened| flattened.rows))
 }
@@ -1326,6 +1333,89 @@ fn a_hostile_profile_never_allocates_past_what_it_was_granted() {
     assert_eq!(rows, Err(FlattenError::OverBudget));
     assert!(
         peak as u64 <= granted && granted <= 32 * MIB,
+        "peak {peak} past the {granted} granted"
+    );
+}
+
+/// One small stack whose resource and sample carry binary attributes, which are
+/// read as hex at twice their wire size: in a list, a map, and on their own.
+fn expanding_profiles(attribute_bytes: usize) -> ExportProfilesServiceRequest {
+    let binary = || AnyValue {
+        value: Some(any_value::Value::BytesValue(vec![1; attribute_bytes])),
+    };
+    let mut request = hostile_profiles(1);
+    let dictionary = request.dictionary.as_mut().unwrap();
+    dictionary.string_table = vec![String::new(), "main".to_owned(), "blob".to_owned()];
+    dictionary.location_table[1].lines.truncate(1);
+    dictionary.stack_table[1].location_indices.truncate(1);
+    dictionary.attribute_table = vec![
+        Default::default(),
+        profiles::KeyValueAndUnit {
+            key_strindex: 2,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::KvlistValue(KeyValueList {
+                    values: vec![KeyValue {
+                        key_strindex: 2,
+                        value: Some(binary()),
+                        ..Default::default()
+                    }],
+                })),
+            }),
+            ..Default::default()
+        },
+    ];
+    let resource_profiles = &mut request.resource_profiles[0];
+    resource_profiles.resource = Some(opentelemetry_proto::tonic::resource::v1::Resource {
+        attributes: vec![
+            KeyValue {
+                key: "blob".to_owned(),
+                value: Some(binary()),
+                ..Default::default()
+            },
+            KeyValue {
+                key: "blobs".to_owned(),
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::ArrayValue(ArrayValue {
+                        values: vec![binary()],
+                    })),
+                }),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    });
+    resource_profiles.scope_profiles[0].profiles[0].samples[0].attribute_indices = vec![1];
+    request
+}
+
+/// Attributes that grow as they are read are charged before they are read, even
+/// when the row they would go in is past the ceiling and never written.
+#[test]
+fn attributes_that_expand_as_they_are_read_never_allocate_past_what_was_granted() {
+    const MIB: u64 = 1024 * 1024;
+
+    // Small enough for its row to be written.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(64 * 1024), 8 * MIB);
+    assert_eq!(rows.map(|rows| rows.len()), Ok(1));
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+
+    // A resource past the row ceiling once read: the row is dropped, and what was
+    // read on the way stayed inside the grant.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(3 * 1024 * 1024), 64 * MIB);
+    assert_eq!(rows.map(|rows| rows.len()), Ok(0));
+    assert!(
+        peak as u64 <= granted,
+        "peak {peak} past the {granted} granted"
+    );
+
+    // A budget that cannot hold the expansion refuses it before it is built.
+    let (peak, granted, rows) = flatten_within(&expanding_profiles(3 * 1024 * 1024), 4 * MIB);
+    assert_eq!(rows, Err(FlattenError::OverBudget));
+    assert!(
+        peak as u64 <= granted,
         "peak {peak} past the {granted} granted"
     );
 }
