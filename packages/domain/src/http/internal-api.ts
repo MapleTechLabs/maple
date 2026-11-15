@@ -25,6 +25,7 @@ import {
 	OrganizationsApiGroup,
 } from "./organizations"
 import { QueryEngineApiGroup } from "./query-engine"
+import { SavedViewsApiGroup } from "./saved-views"
 import { ServiceMapWorldApiGroup } from "./service-map-world"
 import { SessionReplaysInternalApiGroup } from "./session-replay"
 import { UsersInternalApiGroup } from "./users"
@@ -80,6 +81,7 @@ export class MapleInternalApi extends HttpApi.make("MapleInternalApi")
 	.add(OrganizationCreationApiGroup)
 	.add(OrganizationRegionApiGroup)
 	.add(QueryEngineApiGroup)
+	.add(SavedViewsApiGroup)
 	.add(ServiceMapWorldApiGroup)
 	.add(SessionReplaysInternalApiGroup)
 	.add(UsersInternalApiGroup)
