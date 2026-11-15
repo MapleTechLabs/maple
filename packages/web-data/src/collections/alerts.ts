@@ -72,6 +72,7 @@ export const AlertRuleRowSchema = Schema.Struct({
 	environments_json: Schema.NullOr(Schema.Unknown),
 	anomaly_signals_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	audit_filters_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
+	cost_budget_json: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
 	tags_json: Schema.NullOr(Schema.Unknown),
 	signal_type: Schema.String,
 	comparator: Schema.String,

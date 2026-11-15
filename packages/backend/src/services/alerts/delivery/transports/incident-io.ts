@@ -5,7 +5,7 @@ import {
 	formatAlertHeadline,
 	formatEventTypeLabel,
 	formatSeverityLabel,
-	formatWindow,
+	formatRuleWindow,
 	hasSignalHeadline,
 	truncate,
 } from "../../alert-formatting"
@@ -46,7 +46,7 @@ const defaultDescription = (context: DispatchContext, linkUrl: string, chatUrl: 
 		[
 			buildSummaryLine(context, (value) => `**${value}**`),
 			"",
-			`**Severity:** ${formatSeverityLabel(context.severity)} · **Window:** ${formatWindow(context.windowMinutes)}${group == null ? "" : ` · **Group:** ${group}`}`,
+			`**Severity:** ${formatSeverityLabel(context.severity)} · **Window:** ${formatRuleWindow(context)}${group == null ? "" : ` · **Group:** ${group}`}`,
 			...(context.sparkline ? ["", context.sparkline] : []),
 			"",
 			`[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,

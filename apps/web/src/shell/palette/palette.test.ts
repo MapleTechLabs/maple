@@ -192,4 +192,25 @@ describe("command palette", () => {
 		expect(titles(["/security"])).not.toContain("Releases")
 		expect(titles(["/releases"])).not.toContain("Security")
 	})
+
+	test("a flagged-off section takes its children with it", () => {
+		const found = (visibleFlagged: ReadonlyArray<string>) =>
+			Arr.map(
+				shownEntries(typed(open().model, "budgets").model, context, visibleFlagged).entries,
+				(entry) => entry.title,
+			)
+		expect(found(["/cost"])).toContain("Cost budgets")
+		expect(found(ALL_FLAGGED)).not.toContain("Cost budgets")
+	})
+
+	// "Cost budgets" is the one title with a word starting "budgets". Hidden, it must not be what
+	// decides that the looser matches drop out.
+	test("a hidden row's better match does not push out what the viewer can open", () => {
+		const model = typed(loadedWith(["budgeting"]), "budgets").model
+		const ids = (visibleFlagged: ReadonlyArray<string>) =>
+			Arr.map(shownEntries(model, context, visibleFlagged).entries, (entry) => entry.id)
+
+		expect(ids(ALL_FLAGGED)).toContain("service:budgeting")
+		expect(ids(["/cost"])).not.toContain("service:budgeting")
+	})
 })

@@ -240,6 +240,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/integrations/aws/connections/{id}",
 			"PATCH /v2/integrations/chat_workspaces/{id}",
 			"PATCH /v2/integrations/gcp/connectors/{id}",
+			"PATCH /v2/integrations/planetscale",
 			"PATCH /v2/scrape_targets/{id}",
 			"PATCH /v2/slos/{id}",
 			"PATCH /v2/sources/{id}",
@@ -566,6 +567,13 @@ describe("MapleApiV2 OpenAPI", () => {
 		).not.toThrow()
 		expect(mutation.properties.txid.$ref).toBe("#/components/schemas/_maple_PostgresTransactionId")
 		expect(operation("post", "/v2/alerts/destinations").responses["200"]).toBeDefined()
+	})
+
+	it("publishes a chat workspace's switches as always sent, and optional on update", () => {
+		const switches = ["alerts_enabled", "direct_messages_enabled", "assistant_enabled"]
+		expect(schemas["ChatWorkspace"].required).toEqual(expect.arrayContaining(switches))
+		const update: ReadonlyArray<string> = schemas["ChatWorkspaceUpdateParams"].required ?? []
+		expect(Arr.intersection(update, switches)).toEqual([])
 	})
 
 	it("gives every error response an exhaustive literal-tag union", () => {

@@ -8,7 +8,7 @@ import { ResolveThemeColors } from "@maple/views/charts/theme-colors"
 import { failureKey } from "@maple/views/data/load-failure"
 import type * as Keyed from "@maple/views/data/keyed"
 import type { LoadFailure } from "@maple/views/data/load-failure"
-import { button } from "@maple/views/ui/button"
+import { button, linkButton } from "@maple/views/ui/button"
 import {
 	empty,
 	emptyContent,
@@ -32,11 +32,12 @@ import type { PageViewInputs } from "../contract"
 import { dashboardPage } from "../kit/dashboard-page"
 import { pageTime } from "../kit/page-time"
 import { DAY_RANGE_PRESET_VALUES } from "../kit/time-controls"
-import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel } from "./derive"
+import { activeFilters, DIMENSIONS, groupByOf, hasSynced, keyLabel, perDimension } from "./derive"
+import { budgetFormHref } from "./kit/budget-format"
 import { Message } from "./message"
 import { LONG_RANGE_MAX_SECONDS } from "../../route/session-time-range"
 import { keyMark } from "./marks"
-import { canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
+import { canManageBudgets, canManageSources, cannotManageSources, sourcesOf, type Model } from "./model"
 import { DEFAULT_PRESET } from "./update"
 import { addSourceDialog, removeSourceDialog } from "./view-add-source"
 import { dailyChart } from "./view-chart"
@@ -310,24 +311,50 @@ const timeActions = (h: H, model: Model): Html | undefined =>
 				})
 			: undefined
 
+/** The filters of the page as a budget's slice: the budget editor opens on what is on screen. */
+const budgetSearch = (model: Model) => perDimension((dimension) => model.search[dimension])
+
 /**
  * The header's right side. Once a source exists, Add source sits here too: the Sources panel is
- * below the chart and table, out of sight. With none, the on-ramp in the body offers it.
+ * below the chart and table, out of sight. With none, the on-ramp in the body offers it. Set
+ * budget is for who manages alerts, once there is cost to budget.
  */
 const headerActions = (h: H, model: Model): Html | undefined => {
 	const time = timeActions(h, model)
-	if (!canManageSources(model) || sourcesOf(model).length === 0) return time
-	const add = button(
-		h,
-		{
-			variant: "outline",
-			size: "sm",
-			isDisabled: model.sourceWrite !== "Idle",
-			attributes: [h.OnClick(Message.ClickedAddSource())],
-		},
-		[icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }), "Add source"],
-	)
-	return time === undefined ? add : hstack(h, { gap: "2", wrap: true }, [add, time])
+	const hasFilters = activeFilters(model.search).length > 0
+	const buttons = [
+		...(canManageBudgets(model) && showsData(model)
+			? [
+					linkButton(
+						h,
+						{ variant: "outline", size: "sm", href: budgetFormHref(budgetSearch(model)) },
+						[
+							icon(h, "GaugeIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+							hasFilters ? "Set budget for this view" : "Set budget",
+						],
+					),
+				]
+			: []),
+		...(canManageSources(model) && sourcesOf(model).length > 0
+			? [
+					button(
+						h,
+						{
+							variant: "outline",
+							size: "sm",
+							isDisabled: model.sourceWrite !== "Idle",
+							attributes: [h.OnClick(Message.ClickedAddSource())],
+						},
+						[
+							icon(h, "PlusIcon", { attributes: [h.DataAttribute("icon", "inline-start")] }),
+							"Add source",
+						],
+					),
+				]
+			: []),
+	]
+	if (buttons.length === 0) return time
+	return hstack(h, { gap: "2", wrap: true }, time === undefined ? buttons : [...buttons, time])
 }
 
 export const view = Submodel.defineView<Model, Message, PageViewInputs>((model, inputs, h) =>

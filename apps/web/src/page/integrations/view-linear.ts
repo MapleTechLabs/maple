@@ -15,8 +15,9 @@ import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { connectedIntegrationCard, integrationStatusCard } from "./view-integration-card"
 import { typography } from "@maple/views/ui/typography"
-import { hstack } from "@maple/views/ui/stack"
+import { hstack, vstack } from "@maple/views/ui/stack"
 import { providerBrand } from "../kit/providers"
+import { linearFeaturePanel } from "./view-linear-features"
 
 type H = HtmlBuilder<Message>
 
@@ -67,7 +68,14 @@ const notConnected = (h: H, model: Model): Html =>
 
 const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html => {
 	const busy = model.connect.isStarting || model.disconnect.isPending
-	return connectedIntegrationCard(h, model, {
+	return vstack(h, { gap: "4" }, [
+		connectedCard(h, model, status, busy),
+		linearFeaturePanel(h, model, status),
+	])
+}
+
+const connectedCard = (h: H, model: Model, status: LinearIntegrationStatus, busy: boolean): Html =>
+	connectedIntegrationCard(h, model, {
 		integration: "linear",
 		brand: BRAND,
 		title: "Linear",
@@ -78,7 +86,7 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 		summary: [
 			status.revoked
 				? "Linear rejected Maple's access, so incidents no longer open or update issues. Reconnect to resume."
-				: "Maple opens one Linear issue per alert rule, then comments as it fires again, changes severity or resolves. Create a Linear destination to pick the team.",
+				: "Maple opens one Linear issue per alert rule, then comments as it fires again, changes severity or resolves. Choose which of these it does below. Create a Linear destination to pick the team.",
 		],
 		summaryLayout: "tight",
 		body:
@@ -129,7 +137,6 @@ const connected = (h: H, model: Model, status: LinearIntegrationStatus): Html =>
 				])
 			: typography(h, { size: "2xs", tone: "muted", as: "p" }, [ADMIN_ONLY]),
 	})
-}
 
 const byState = (h: H, model: Model, data: LinearIntegrationStatus): Html =>
 	data.connected ? connected(h, model, data) : notConnected(h, model)

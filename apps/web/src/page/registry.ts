@@ -85,6 +85,8 @@ import * as MetricsBrowse from "./metrics/browse"
 import * as Analytics from "./analytics"
 import * as ProductAnalytics from "./product-analytics"
 import * as Cost from "./cost"
+import * as CostBudgetNew from "./cost/budget-form"
+import * as CostBudgets from "./cost/budgets"
 import * as MetricDetail from "./metrics/detail"
 import * as Overview from "./overview"
 import * as Recommendation from "./recommendations"
@@ -211,6 +213,8 @@ export const pages = [
 	Analytics.page,
 	ProductAnalytics.page,
 	Cost.page,
+	CostBudgets.page,
+	CostBudgetNew.page,
 ]
 
 /** Public routes a page renders bare, outside the shell (`/share/$token`). */

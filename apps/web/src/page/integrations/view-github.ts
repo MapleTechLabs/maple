@@ -8,10 +8,10 @@ import { icon } from "@maple/views/ui/icon"
 import { item, itemActions, itemContent, itemDescription, itemMedia } from "@maple/views/ui/item"
 import { panel } from "@maple/views/ui/panel"
 import { refreshButton } from "@maple/views/ui/refresh-button"
-import { settingRow } from "@maple/views/ui/setting-row"
 import { skeleton, skeletonBlock } from "@maple/views/ui/skeleton"
 import { statusDot } from "@maple/views/ui/status-dot"
-import { switchControl } from "@maple/views/ui/switch"
+import { INTEGRATION_FEATURES } from "@maple/domain/integration-features"
+import { featureList } from "../kit/feature-list"
 import { integrationIconPlate } from "../kit/integration-empty"
 import { integrationNotice } from "./kit/notice"
 import { Message } from "./message"
@@ -136,39 +136,35 @@ export const githubInstallationPicker = (h: H, model: Model): ReadonlyArray<Html
 	]
 }
 
-const ciTracesRow = (h: H, model: Model): Html => {
-	const isChecked = ciTracesShown(model)
-	return settingRow(h, {
-		ids: {
-			control: "github-ci-traces-input",
-			label: "github-ci-traces-label",
-			description: "github-ci-traces-description",
-		},
-		framed: true,
-		className: "bg-card px-4 py-3",
-		label: "CI traces and logs",
-		description: [
-			"Each finished GitHub Actions run becomes a trace under the",
-			" ",
-			typography(h, { tone: "foreground", mono: true }, ["github-actions"]),
-			" service, with a span per job and step. Each job's log lines become logs on the step that wrote them, up to 5 MB per job. Counts toward your usage.",
+/** CI traces switch here; PR review is per repository, so its row counts them and links there. */
+const githubFeatures = (h: H, model: Model, status: GithubIntegrationStatus): Html => {
+	const [ciTraces, prReview] = INTEGRATION_FEATURES.github
+	const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
+	const reviewed = Arr.filter(active, (repo) => repo.prReviewEnabled).length
+	return featureList(h, {
+		idPrefix: "github",
+		className: "bg-card",
+		rows: [
+			{
+				spec: ciTraces,
+				isChecked: ciTracesShown(model),
+				isDisabled: model.githubCard.isSavingCiTraces,
+				onToggle: Message.ToggledCiTraces(),
+			},
+			{
+				spec: prReview,
+				link: { href: hrefOf(AppRoute.CodeReviewSettings()), label: "Choose repositories" },
+				note: {
+					_tag: "Info",
+					text: `${reviewed} of ${countLabel(active.length, "repository", "repositories")}`,
+				},
+			},
 		],
-		filled: isChecked,
-		control: switchControl(h, {
-			id: "github-ci-traces",
-			inputId: "github-ci-traces-input",
-			isChecked,
-			isFilled: isChecked,
-			labelledBy: "github-ci-traces-label",
-			describedBy: "github-ci-traces-description",
-			onToggle: Message.ToggledCiTraces(),
-		}),
 	})
 }
 
 const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, timeZone: string): Html => {
 	const busy = model.connect.isStarting || model.disconnect.isPending
-	const active = Arr.filter(status.repositories, (repo) => repo.status === "active")
 	const login = status.accountLogin
 	return h.div(
 		[h.Class("space-y-4")],
@@ -245,31 +241,7 @@ const connectedView = (h: H, model: Model, status: GithubIntegrationStatus, time
 					"gap-1.5",
 				),
 			]),
-			ciTracesRow(h, model),
-			settingRow(h, {
-				ids: {
-					control: "github-pr-review-control",
-					label: "github-pr-review-label",
-					description: "github-pr-review-description",
-				},
-				framed: true,
-				className: "bg-card px-4 py-3",
-				label: "Pull request reviews",
-				description: [
-					String(Arr.filter(active, (repo) => repo.prReviewEnabled).length),
-					" of ",
-					String(active.length),
-					" ",
-					"repositories reviewed. Rules, models and analytics live on the Review & CI page.",
-				],
-				control: [
-					linkButton(
-						h,
-						{ size: "sm", variant: "outline", href: hrefOf(AppRoute.CodeReviewSettings()) },
-						["Open code review"],
-					),
-				],
-			}),
+			githubFeatures(h, model, status),
 			...repositoriesPanels(h, model, status, timeZone),
 		],
 	)

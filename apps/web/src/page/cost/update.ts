@@ -448,7 +448,12 @@ export const routeChanged = (
 ): Return => {
 	const search = wholeDaySearch(route.search)
 	if (searchHref(model.search) === searchHref(search)) return { model }
-	const next = { ...model, search }
+	// Rows and series of another grouping are keys of another dimension: shown under the new one
+	// they would take its labels and logos, so the table and chart wait on a skeleton instead.
+	const next: Model =
+		groupByOf(model.search) === groupByOf(search)
+			? { ...model, search }
+			: { ...model, search, breakdown: Keyed.idle(), timeseries: Keyed.idle() }
 	return routeWindowStep(model.search, search, {
 		resolve: (): Return => ({
 			model: next,

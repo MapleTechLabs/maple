@@ -35,6 +35,7 @@ import {
 	CHAT_PROVIDER,
 	CLOUDFLARE_PROVIDER,
 	everyProvider,
+	LINEAR_PROVIDER,
 	PLANETSCALE_PROVIDER,
 	PROVIDER_MODULES,
 	providerModuleOf,
@@ -159,6 +160,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		connect: initConnect(),
 		disconnect: { dialog: Dialog.init("integration-disconnect", "alert-dialog"), isPending: false },
 		chatCard: CHAT_PROVIDER.initial(),
+		linearCard: LINEAR_PROVIDER.initial(),
 		githubCard: initGithubCard(),
 		cloudflareCard: CLOUDFLARE_PROVIDER.initial(),
 		prometheusCard: initPrometheusCard(),
@@ -265,7 +267,18 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotRailwayMessage: ({ message: child }) => RAILWAY_PROVIDER.update(model, child, context),
 		GotSupabaseMessage: ({ message: child }) => SUPABASE_PROVIDER.update(model, child, context),
 		CompletedLoadLinear: ({ key, result }) =>
-			accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }),
+			LINEAR_PROVIDER.onStatus(
+				accepted(model, { ...s, linear: Keyed.accept(s.linear, key, result) }).model,
+				context,
+				{ isCurrent: s.linear.key === key, previous: s.linear },
+			),
+		GotLinearMessage: ({ message: child }) => LINEAR_PROVIDER.update(model, child, context),
+		CompletedLoadChat: ({ key, result }) =>
+			CHAT_PROVIDER.onStatus(
+				accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }).model,
+				context,
+				{ isCurrent: s.chat.key === key, previous: s.chat },
+			),
 		CompletedLoadGithub: ({ key, result }) =>
 			accepted(model, { ...s, github: Keyed.accept(s.github, key, result) }),
 		CompletedLoadSearchConsole: ({ key, result }) =>
@@ -280,8 +293,6 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotVercelMessage: ({ message: child }) => VERCEL_PROVIDER.update(model, child, context),
 		GotPlanetscaleMessage: ({ message: child }) => PLANETSCALE_PROVIDER.update(model, child, context),
 		GotCloudflareMessage: ({ message: child }) => CLOUDFLARE_PROVIDER.update(model, child, context),
-		CompletedLoadChat: ({ key, result }) =>
-			accepted(model, { ...s, chat: Keyed.accept(s.chat, key, result) }),
 		CompletedLoadScrapeTargets: ({ key, result }) =>
 			accepted(model, { ...s, scrapeTargets: Keyed.accept(s.scrapeTargets, key, result) }),
 		CompletedLoadCustomer: ({ key, result }) => ({
@@ -420,6 +431,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 		GotGcpScopeFieldMessage: ({ field, message: child }) => Configure.gotScopeField(model, field, child),
 		SubmittedGcpCreate: () => Configure.submittedCreate(model),
 		ToggledGcpCollect: ({ capability }) => Configure.toggledCollect(model, capability),
+		ToggledGcpFeature: ({ id, capability }) => Configure.toggledFeature(model, id, capability),
 		ClickedGcpLogFilter: () => Configure.clickedLogFilter(model),
 		GotGcpFilterModeMessage: ({ message: child }) => Configure.gotFilterMode(model, context, child),
 		ClickedGcpForwardOutput: () => Configure.clickedForwardOutput(model, context),

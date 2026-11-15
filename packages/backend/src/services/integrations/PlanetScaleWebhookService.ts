@@ -7,11 +7,17 @@
  * Registration needs the `write_databases` grant; without it nothing is called and the card asks
  * for a reauthorization.
  */
-import { IntegrationsPersistenceError, type OrgId, PlanetScaleWebhookStatus } from "@maple/domain/http"
+import {
+	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
+	type OrgId,
+	PlanetScaleWebhookStatus,
+} from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import {
 	PlanetscaleConnections,
 	PlanetscaleDatabases,
+	PlanetscalePollState,
 	type PlanetScaleConnectionRow,
 	type PlanetScaleDatabaseRow,
 } from "@maple/db/tables"
@@ -35,16 +41,28 @@ import { planetScaleDatabaseWebhookSecretSlot } from "@maple/backend/platform/se
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { isolatePollFailure } from "./poll-fleet"
 import { Env } from "@maple/backend/platform/Env"
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { collectPages, decodeConsumed, runPlanetScale, type SdkError } from "./planetscale/api"
 import { PLANETSCALE_WEBHOOK_EVENTS } from "./planetscale/webhook-events"
+import { makePlanetScalePollState, pollStateResult } from "./planetscale/poll-state"
+import { withLease } from "./poller"
 
 /** PlanetScale caps a database at 5 webhooks; one page always holds them all. */
 const WEBHOOK_PAGE_SIZE = 25
 const DATABASE_CONCURRENCY = 2
 const WEBHOOK_PATH = "/api/integrations/planetscale/webhook/"
+/** The org-wide poll-state row (`databaseId` "") whose lease every webhook sync runs under. */
+export const PLANETSCALE_WEBHOOKS_DATASET = "webhooks"
+/** Passes one sync makes while the events switch keeps changing under it. */
+const CONVERGE_PASSES = 3
+/** A database's `webhookError` while Maple's webhook waits to be deleted at PlanetScale. */
+const REMOVAL_PENDING_PREFIX = "Removal pending: "
+const REMOVAL_NEEDS_GRANT =
+	"the grant cannot delete webhooks; reconnect PlanetScale with write access, or delete it in PlanetScale"
+
+const isNotFound = (error: unknown): boolean =>
+	Schema.is(IntegrationsUpstreamError)(error) && error.status === 404
 
 /** Deploy requests and keyspaces are Vitess concepts; Postgres databases never send them. */
 const eventsFor = (kind: string): ReadonlyArray<string> =>
@@ -118,8 +136,16 @@ export interface PlanetScaleWebhookServiceApi {
 	readonly reconcile: (
 		connection: PlanetScaleConnectionRow,
 	) => Effect.Effect<PlanetScaleWebhookReconcileResult, IntegrationsPersistenceError>
-	/** Delete the webhooks Maple registered for a connection that is going away. Best effort. */
-	readonly removeAll: (connection: PlanetScaleConnectionRow) => Effect.Effect<void>
+	/**
+	 * Delete the webhooks Maple registered. One that cannot be deleted keeps its id and secret,
+	 * marked pending, so deliveries still verify. Returns how many are still pending.
+	 */
+	readonly removeAll: (connection: PlanetScaleConnectionRow) => Effect.Effect<number>
+	/**
+	 * Bring the webhooks in line with the stored events switch, under the org's webhooks lease.
+	 * False when the row was not claimed (fresh within `freshMs`, or another sync holds it).
+	 */
+	readonly sync: (orgId: OrgId, freshMs: number) => Effect.Effect<boolean, IntegrationsPersistenceError>
 	/** The signing secret of the webhook Maple registered on `databaseName`, or null. */
 	readonly secretFor: (
 		orgId: OrgId,
@@ -151,6 +177,24 @@ export class PlanetScaleWebhookService extends Context.Service<
 		)
 		const webhookBase = `${Str.replace(/\/$/, "")(env.MAPLE_API_BASE_URL)}${WEBHOOK_PATH}`
 		const webhookUrl = (connection: PlanetScaleConnectionRow) => `${webhookBase}${connection.id}`
+		const { pollStateLease, unclaimedReason } = makePlanetScalePollState(
+			database,
+			"PlanetScaleWebhookService",
+		)
+
+		/** Clear the row's last success so the next tick's sync claims it whatever the TTL. */
+		const markSyncDue = (orgId: OrgId, now: number) =>
+			dbExecute((db) =>
+				db.run(
+					PG.update(PlanetscalePollState)
+						.set({ lastSuccessAt: null, updatedAt: now })
+						.where(($) => [
+							$.orgId.eq(orgId),
+							$.dataset.eq(PLANETSCALE_WEBHOOKS_DATASET),
+							$.databaseId.eq(""),
+						]),
+				),
+			)
 
 		const callApi = <A, E extends SdkError>(
 			connection: PlanetScaleConnectionRow,
@@ -430,27 +474,41 @@ export class PlanetScaleWebhookService extends Context.Service<
 			return { skipped: null, registered, failed }
 		})
 
+		/** Leave the webhook and its secret in place, marked for removal, so a later sync retries. */
+		const markRemovalPending = (row: PlanetScaleDatabaseRow, reason: string) => {
+			const error = Str.slice(0, 500)(`${REMOVAL_PENDING_PREFIX}${reason}`)
+			return row.webhookError === error ? Effect.void : updateDatabase(row, { webhookError: error })
+		}
+
 		const removeAll = Effect.fn("PlanetScaleWebhookService.removeAll")(
 			function* (connection: PlanetScaleConnectionRow) {
 				yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
-				const rows = yield* liveDatabases(connection.orgId)
+				const live = yield* liveDatabases(connection.orgId)
+				const rows = Arr.filter(live, (row) => row.webhookId !== null)
+				if (rows.length === 0) return 0
 				const grant = yield* psOAuth.grantStatus(connection.orgId)
 				const canDelete = grant.revokedAt === null && grantsWebhookManagement(grant.scopes)
-				yield* Effect.forEach(
-					Arr.filter(rows, (row) => row.webhookId !== null),
+				const removed = yield* Effect.forEach(
+					rows,
 					(row) =>
 						Effect.gen(function* () {
-							if (canDelete && row.webhookId !== null) {
-								yield* callApi(
-									connection,
-									`deleting the webhook of ${connection.psOrganization}/${row.name}`,
-									PlanetScale.deleteWebhook({
-										organization: connection.psOrganization,
-										database: row.name,
-										id: row.webhookId,
-									}),
-								)
+							// The secret stays so deliveries still verify and are dropped with a 200.
+							if (!canDelete || row.webhookId === null) {
+								yield* markRemovalPending(row, REMOVAL_NEEDS_GRANT)
+								return false
 							}
+							yield* callApi(
+								connection,
+								`deleting the webhook of ${connection.psOrganization}/${row.name}`,
+								PlanetScale.deleteWebhook({
+									organization: connection.psOrganization,
+									database: row.name,
+									id: row.webhookId,
+								}),
+							).pipe(
+								// Already gone at PlanetScale: the state we wanted.
+								Effect.catchIf(isNotFound, () => Effect.void),
+							)
 							yield* updateDatabase(row, {
 								webhookId: null,
 								webhookSecretCiphertext: null,
@@ -458,23 +516,111 @@ export class PlanetScaleWebhookService extends Context.Service<
 								webhookSecretTag: null,
 								webhookError: null,
 							})
+							return true
 						}).pipe(
-							// The connection is going away regardless; a webhook left behind only 404s.
-							isolatePollFailure(
-								"PlanetScale webhook removal failed",
-								{ orgId: connection.orgId, database: row.name },
-								undefined,
+							Effect.catchCause((cause) =>
+								Cause.hasInterruptsOnly(cause)
+									? Effect.interrupt
+									: Effect.logWarning("PlanetScale webhook removal failed").pipe(
+											Effect.annotateLogs({
+												orgId: connection.orgId,
+												database: row.name,
+												error: summarizeCause(cause),
+											}),
+											Effect.andThen(
+												markRemovalPending(row, summarizeCause(cause)).pipe(
+													Effect.ignore({ log: "Warn" }),
+												),
+											),
+											Effect.as(false),
+										),
 							),
 						),
-					{ concurrency: DATABASE_CONCURRENCY, discard: true },
+					{ concurrency: DATABASE_CONCURRENCY },
 				)
+				const pending = Arr.filter(removed, (done) => !done).length
+				yield* Effect.annotateCurrentSpan("maple.planetscale.webhook.removal_pending", pending)
+				return pending
 			},
 			Effect.catchTag("@maple/http/errors/IntegrationsPersistenceError", (error) =>
 				Effect.logWarning("PlanetScale webhook removal could not read the inventory").pipe(
 					Effect.annotateLogs({ error: error.message }),
+					Effect.as(1),
 				),
 			),
 		)
+
+		const loadConnectionRow = (orgId: OrgId) =>
+			dbExecute((db) =>
+				db.run(
+					PG.from(PlanetscaleConnections)
+						.select()
+						.where(($) => [$.orgId.eq(orgId)])
+						.limit(1),
+				),
+			).pipe(Effect.map((rows) => rows[0] ?? null))
+
+		/** One pass toward the stored events switch; the error is what the poll-state row records. */
+		const convergeOnce = Effect.fnUntraced(function* (connection: PlanetScaleConnectionRow) {
+			if (!connection.eventsEnabled) {
+				const pending = yield* removeAll(connection)
+				return pending > 0 ? `${pending} database webhook(s) still to remove` : null
+			}
+			const result = yield* reconcile(connection)
+			// A skip (no write access yet) is not a success: the next tick checks the grant again.
+			return result.skipped !== null
+				? `Webhook sync skipped: ${result.skipped}`
+				: result.failed > 0
+					? `${result.failed} database webhook(s) failed to register`
+					: null
+		})
+
+		const sync = Effect.fn("PlanetScaleWebhookService.sync")(function* (orgId: OrgId, freshMs: number) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			const now = yield* Clock.currentTimeMillis
+			const outcome = yield* withLease(
+				pollStateLease(orgId, PLANETSCALE_WEBHOOKS_DATASET, "", freshMs),
+				now,
+				(lease) => {
+					// The switch is read inside the lease and again after each pass, so a flip made
+					// while a pass ran is applied before the lease is let go.
+					const pass = (
+						applied: boolean | null,
+						attempts: number,
+					): Effect.Effect<boolean, IntegrationsPersistenceError> =>
+						Effect.gen(function* () {
+							const connection = yield* loadConnectionRow(orgId)
+							if (
+								connection === null ||
+								connection.eventsEnabled === applied ||
+								attempts === 0
+							) {
+								return connection?.eventsEnabled ?? false
+							}
+							const error = yield* convergeOnce(connection)
+							const finishedAt = yield* Clock.currentTimeMillis
+							yield* lease.write(pollStateResult(finishedAt, error))
+							return yield* pass(connection.eventsEnabled, attempts - 1)
+						})
+					return pass(null, CONVERGE_PASSES).pipe(
+						Effect.tapError((error) =>
+							lease
+								.write(pollStateResult(lease.now, error.message))
+								.pipe(Effect.ignore({ log: "Warn" })),
+						),
+					)
+				},
+			)
+			if (Option.isNone(outcome)) {
+				const reason = yield* unclaimedReason(orgId, PLANETSCALE_WEBHOOKS_DATASET, "", freshMs, now)
+				yield* Effect.annotateCurrentSpan({ "maple.planetscale.skip_reason": reason })
+				// Another sync holds the lease: make the next tick due, so it applies the switch.
+				if (reason === "lease_held") yield* markSyncDue(orgId, now)
+				return false
+			}
+			yield* Effect.annotateCurrentSpan("maple.planetscale.events_enabled", outcome.value)
+			return true
+		})
 
 		const secretFor = Effect.fn("PlanetScaleWebhookService.secretFor")(function* (
 			orgId: OrgId,
@@ -497,7 +643,7 @@ export class PlanetScaleWebhookService extends Context.Service<
 			return row === undefined ? null : yield* storedSecret(row)
 		})
 
-		return { reconcile, removeAll, secretFor } satisfies PlanetScaleWebhookServiceApi
+		return { reconcile, removeAll, sync, secretFor } satisfies PlanetScaleWebhookServiceApi
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(

@@ -183,6 +183,31 @@ describe("renderIncidentPush", () => {
 		expect(resolved.alert.body).toBe("The anomaly ended after 12m.")
 	})
 
+	// A budget's value is a bare percent; the money is in its check's sentence.
+	it("puts a cost budget's own sentence in the body, opening and resolving", () => {
+		const budget = {
+			signalType: "cost_budget" as const,
+			signalDisplay: { label: "Cost budget", unit: "plain" as const },
+			comparator: "gte" as const,
+			threshold: 100,
+			value: 110,
+			detail: "Spent $1,100.00 of the $1,000.00 monthly budget (110%)",
+		}
+		expect(renderIncidentPush(event(budget)).alert.body).toBe(
+			"Spent $1,100.00 of the $1,000.00 monthly budget (110%).",
+		)
+		const resolved = renderIncidentPush(
+			event({
+				...budget,
+				eventType: "resolve",
+				value: 0,
+				detail: "Spent $0.00 of the $1,000.00 monthly budget (0%)",
+				openForMs: 20 * 86_400_000,
+			}),
+		)
+		expect(resolved.alert.body).toBe("Spent $0.00 of the $1,000.00 monthly budget (0%) after 20d 0h.")
+	})
+
 	it("keeps warnings out of Focus, and resolutions quiet and silent", () => {
 		expect(renderIncidentPush(event({ severity: "warning" })).interruptionLevel).toBe("active")
 		const resolved = renderIncidentPush(

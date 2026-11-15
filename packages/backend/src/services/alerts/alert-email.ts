@@ -8,7 +8,7 @@ import {
 	formatEventTypeLabel,
 	formatObservedSummary,
 	formatSignalLabel,
-	formatWindow,
+	formatRuleWindow,
 	alertAccentColor,
 	type TemplateRenderContext,
 } from "./alert-formatting"
@@ -41,7 +41,7 @@ export const buildAlertEmailContent = (
 				signalLabel: formatSignalLabel(context),
 				group: displayGroup(context) ?? "all",
 				observedSummary: formatObservedSummary(context),
-				window: formatWindow(context.windowMinutes),
+				window: formatRuleWindow(context),
 				accentColor: alertAccentColor(context.eventType, context.severity),
 				linkUrl,
 			})
