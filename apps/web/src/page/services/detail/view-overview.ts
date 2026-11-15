@@ -51,7 +51,11 @@ const deployDrawer = (
 					? []
 					: Arr.filter(issues, (issue) =>
 							isSameDeploy(
-								deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt)),
+								deployBefore(
+									deploys,
+									parseWarehouseDateTime(issue.firstSeenAt),
+									dataEndOf(model),
+								),
 								check,
 							),
 						),

@@ -4,13 +4,14 @@ import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
 import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { button } from "@maple/views/ui/button"
+import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
 import { firstLine, isResolvableSha } from "../../kit/commit-card"
 import { shortId } from "@maple/ui/lib/ids"
 import { countLabel } from "@maple/ui/lib/format"
 import { deriveHealth, type Signal } from "./derive-health"
-import { type DeployCheck, deployBefore, isSameDeploy, leadDeploy } from "./derive-deploys"
+import { type DeployCheck, dataEndOf, deployBefore, isSameDeploy, leadDeploy } from "./derive-deploys"
 import type { Issue, Model } from "./model"
 import { Message } from "./message"
 import { mergedPoints } from "./view-charts"
@@ -29,7 +30,7 @@ const caption = (signal: Signal, format: (value: number) => string, noun: string
 /** Requests, error rate, p95 and Apdex in the latest complete bucket; their window value beneath. */
 export const healthStrip = (h: H, model: Model, isLoading: boolean): Html => {
 	if (isLoading) return statRailLoading(h, 4, 4, "w-full overflow-hidden")
-	const health = deriveHealth(mergedPoints(model))
+	const health = deriveHealth(mergedPoints(model), dataEndOf(model))
 	if (health === null) return null
 	const now = (signal: Signal, format: (value: number) => string) =>
 		signal.now === null ? "—" : format(signal.now)
@@ -38,6 +39,7 @@ export const healthStrip = (h: H, model: Model, isLoading: boolean): Html => {
 			eyebrow: "Requests",
 			eyebrowTooltip: "The latest complete bucket, and the average over the window beneath it.",
 			value: now(health.throughput, formatRate),
+			tone: health.throughput.tone,
 			hint: "/s",
 			subline: caption(health.throughput, (value) => `${formatRate(value)}/s`, "avg"),
 			spark: health.throughput.values,
@@ -74,7 +76,7 @@ const ALERT_VARIANT = {
 	unjudged: "default",
 } as const
 
-/** "9b2f0d1 Batch card authorisations…": the short sha, then the subject once it resolved. */
+/** "9b2f0d1 Batch card authorisations… production": the short sha, the subject once resolved, the environment. */
 const deployName = (h: H, model: Model, deploy: DeployCheck): Html => {
 	const sha = isResolvableSha(deploy.sha) ? shortId(deploy.sha, "sha") : deploy.sha
 	const commit = model.commits[deploy.sha]
@@ -82,6 +84,9 @@ const deployName = (h: H, model: Model, deploy: DeployCheck): Html => {
 	return hstack(h, { gap: "2", className: "min-w-0" }, [
 		typography(h, { size: "xs", mono: true, tone: "foreground", className: "shrink-0" }, [sha]),
 		...(subject === "" ? [] : [typography(h, { tone: "foreground", truncate: true }, [subject])]),
+		...(deploy.environment === ""
+			? []
+			: [badge(h, { size: "xs", variant: "meta", className: "shrink-0" }, [deploy.environment])]),
 	])
 }
 
@@ -99,13 +104,15 @@ const headline = (deploy: DeployCheck): string => {
 	}
 }
 
+/** A deploy flagged before its window is up names the minutes it was judged on, not the full window. */
 const detail = (deploy: DeployCheck, newIssues: number): string => {
 	const window = `${deploy.windowMinutes} minutes`
+	const judged = deploy.minutes < deploy.windowMinutes ? `${deploy.minutes} minutes` : window
 	const issues = newIssues === 0 ? "" : ` ${countLabel(newIssues, "open issue")} first seen since.`
 	const figure = verdictFigure(deploy)
 	return figure === undefined
 		? `No change so far against the ${window} before it.${issues}`
-		: `${figure} in its first ${window}, against the ${window} before it.${issues}`
+		: `${figure} in its first ${judged}, against the ${window} before it.${issues}`
 }
 
 /** The newest flagged deploy, else the one still verifying; nothing when every deploy is settled. */
@@ -115,7 +122,10 @@ export const deployCallout = (h: H, model: Model, deploys: ReadonlyArray<DeployC
 	const issues: ReadonlyArray<Issue> = AsyncData.getOrElse(model.issues.data, () => [])
 	// The issue tags' rule: an issue belongs to the newest deploy before it first appeared.
 	const newIssues = Arr.filter(issues, (issue) =>
-		isSameDeploy(deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt)), deploy),
+		isSameDeploy(
+			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), dataEndOf(model)),
+			deploy,
+		),
 	).length
 	return alert(h, { variant: ALERT_VARIANT[deploy.verdict], role: "status" }, [
 		icon(h, deploy.verdict === "verifying" ? "ClockIcon" : "CircleWarningIcon"),

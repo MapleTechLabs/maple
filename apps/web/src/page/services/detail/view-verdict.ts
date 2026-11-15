@@ -18,7 +18,8 @@ const VERDICT_HINT = {
 	slower: "p95 latency up a quarter or more in its first minutes against the minutes before it.",
 	verifying: "Still inside its first minutes: the verdict lands when they are up.",
 	clean: "No change worth flagging between its first minutes and the minutes before it.",
-	unjudged: "Too little traffic on one side of the deploy to compare.",
+	unjudged:
+		"Too little traffic on one side of the deploy to compare, or its minutes have aged out of the rollup.",
 } as const satisfies Record<Verdict, string>
 
 const verdictLabel = (check: DeployCheck): string => {
@@ -32,7 +33,7 @@ const verdictLabel = (check: DeployCheck): string => {
 		case "clean":
 			return "Clean"
 		case "unjudged":
-			return "Low traffic"
+			return "Not judged"
 	}
 }
 

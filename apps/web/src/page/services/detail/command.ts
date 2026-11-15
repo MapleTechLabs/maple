@@ -102,6 +102,7 @@ export const FetchDeploys = Command.define("FetchServiceDeploys", {
 	messages: [Message.CompletedFetchDeploys],
 	execute: ({ key, input }) =>
 		getServiceDeploys({ data: { ...input, environments: input.environments } }).pipe(
+			Effect.map((response) => ({ ...response, readUntil: input.endTime })),
 			settleTo((result) => Message.CompletedFetchDeploys({ key, result })),
 		),
 })

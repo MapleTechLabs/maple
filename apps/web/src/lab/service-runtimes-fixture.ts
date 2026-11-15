@@ -94,6 +94,7 @@ export const RUNTIMES_DEPLOYS: ServiceDeploys = {
 		},
 	],
 	verifyWindowSeconds: 1800,
+	readUntil: iso(RUNTIMES_NOW),
 }
 
 /** The same commit also went to fleet-web, which took it cleanly. */
@@ -114,6 +115,7 @@ export const RUNTIMES_SHIPPED: ServiceDeploys = {
 		},
 	],
 	verifyWindowSeconds: 1800,
+	readUntil: iso(RUNTIMES_NOW),
 }
 
 export const RUNTIMES_COMMITS: ReadonlyMap<string, Commit> = new Map([

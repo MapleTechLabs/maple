@@ -445,16 +445,28 @@ export const uptimeChecks = defineQuery({
  */
 const SERVICE_DEPLOYS_LEAD_SECONDS = 2 * CH.DEPLOY_VERIFY_WINDOW_SECONDS
 
+export const commitServices = defineQuery({
+	id: "commitServices",
+	profile: "list",
+	cache: timeRangeCache,
+	compile: (payload: ServiceDeploysRequest & { readonly commitSha: string }, orgId: OrgId) =>
+		CH.compile(CH.commitServicesQuery(payload.commitSha), windowParams(payload, orgId), {
+			rowSchema: CH.commitServicesRowSchema,
+		}),
+})
+
 export const serviceDeploys = defineQuery({
 	id: "serviceDeploys",
 	profile: "list",
 	cache: timeRangeCache,
-	compile: (payload: ServiceDeploysRequest, orgId: OrgId) =>
+	/** `serviceNames` bounds a commit's read to the services it reached (`commitServices`). */
+	compile: (payload: ServiceDeploysRequest & { readonly serviceNames?: readonly string[] }, orgId: OrgId) =>
 		CH.compile(
 			CH.releaseVerificationQuery({
 				serviceName: payload.serviceName,
 				environments: payload.environments,
 				commitSha: payload.commitSha,
+				serviceNames: payload.serviceNames,
 			}),
 			{
 				...windowParams(

@@ -58,10 +58,14 @@ const bucketSecondsOf = (points: ReadonlyArray<DetailPoint>): number => {
 
 /**
  * "Now" is the last complete bucket, traffic or not: a service that went quiet reads 0/s, not the
- * last busy minute. The trailing partial bucket is still filling, so it is skipped.
+ * last busy minute. The trailing partial bucket is still filling, so it is skipped, as is a bucket
+ * that starts where the window ends (a past range ending on a bucket boundary carries an empty one).
  */
-export const deriveHealth = (points: ReadonlyArray<DetailPoint>): Health | null => {
-	const complete = Arr.filter(points, (point) => !point.partial)
+export const deriveHealth = (points: ReadonlyArray<DetailPoint>, endMs: number): Health | null => {
+	const complete = Arr.filter(
+		points,
+		(point) => !point.partial && parseWarehouseDateTime(point.bucket) < endMs,
+	)
 	const served = Arr.filter(complete, (point) => point.totalCount > 0)
 	const latest = Arr.last(complete)
 	if (served.length === 0 || latest._tag === "None") return null

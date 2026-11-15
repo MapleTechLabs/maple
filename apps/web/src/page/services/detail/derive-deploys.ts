@@ -10,16 +10,19 @@ import type { DeployRow, ServiceDeploys } from "./model-deploys"
 const MIN_COMPARE_SPANS = 50
 const ERROR_RATIO = 2
 const ERROR_RATE_MIN_DIFF = 0.005
+/** Rates are float quotients: 9/1000 - 4/1000 lands a hair under 0.005. */
+const EPSILON = 1e-9
 const P95_RATIO = 1.25
 const P95_MIN_DIFF_MS = 10
 
 /** Twice as often and at least half a point more; from none, half a point is enough. */
 export const isErrorRateUp = (before: number, after: number): boolean =>
-	after - before >= ERROR_RATE_MIN_DIFF && (before === 0 || after / before >= ERROR_RATIO)
+	after - before >= ERROR_RATE_MIN_DIFF - EPSILON &&
+	(before === 0 || after / before >= ERROR_RATIO - EPSILON)
 
 /** A quarter slower and at least 10ms, so a 4ms → 8ms hop on an idle endpoint is not flagged. */
 export const isP95Up = (before: number, after: number): boolean =>
-	before > 0 && after / before >= P95_RATIO && after - before >= P95_MIN_DIFF_MS
+	before > 0 && after / before >= P95_RATIO - EPSILON && after - before >= P95_MIN_DIFF_MS - EPSILON
 
 export type Verdict = "errors-up" | "slower" | "verifying" | "clean" | "unjudged"
 
@@ -100,7 +103,9 @@ export const dataEndOf = (model: Model): number => {
 /** The window's deploys judged on their first minutes; empty until they load. */
 export const deployChecksOf = (model: Model): ReadonlyArray<DeployCheck> =>
 	AsyncData.getOrElse(
-		AsyncData.map(model.deploys.data, (deploys) => deployChecks(deploys, dataEndOf(model))),
+		AsyncData.map(model.deploys.data, (deploys) =>
+			deployChecks(deploys, Math.min(model.nowMs ?? 0, parseWarehouseDateTime(deploys.readUntil))),
+		),
 		() => [],
 	)
 
@@ -113,9 +118,18 @@ export const leadDeploy = (checks: ReadonlyArray<DeployCheck>): DeployCheck | un
 		),
 	)
 
-/** The newest deploy at or before `atMs`: the one an issue first seen then arrived with. */
-export const deployBefore = (checks: ReadonlyArray<DeployCheck>, atMs: number): DeployCheck | undefined =>
-	Option.getOrUndefined(Arr.findFirst(checks, (check) => check.firstSeenMs <= atMs))
+/**
+ * The newest deploy at or before `atMs`: the one an issue first seen then arrived with. An issue
+ * first seen after the read ended (`endMs`) came with something this window does not show.
+ */
+export const deployBefore = (
+	checks: ReadonlyArray<DeployCheck>,
+	atMs: number,
+	endMs: number,
+): DeployCheck | undefined =>
+	atMs > endMs
+		? undefined
+		: Option.getOrUndefined(Arr.findFirst(checks, (check) => check.firstSeenMs <= atMs))
 
 /** The same deploy: one commit on one service and environment, however it was derived. */
 export const isSameDeploy = (a: DeployCheck | undefined, b: DeployCheck): boolean =>
