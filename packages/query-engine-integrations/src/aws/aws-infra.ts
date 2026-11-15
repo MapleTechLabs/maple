@@ -27,13 +27,24 @@ type MetricsAccessor =
 	| ColumnAccessor<typeof Datasources.metricsGauge.columns>
 
 /** A row's identity values, then its region and account: `AWS_INFRA_RESOURCE_KEYS`. */
-const resourceKeys = ($: MetricsAccessor, kind: AwsInfraKindId) =>
+const resourceKeys = (
+	kind: AwsInfraKindId,
+	attribute: (key: string) => CH.Expr<string>,
+	resource: Readonly<Record<(typeof AWS_INFRA_RESOURCE_KEYS)[number], CH.Expr<string>>>,
+) =>
 	CH.arrayOf(
 		...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
-			$.Attributes.get(awsDimensionAttribute(dimension)),
+			attribute(awsDimensionAttribute(dimension)),
 		),
-		...Arr.map(AWS_INFRA_RESOURCE_KEYS, (attribute) => $.ResourceAttributes.get(attribute)),
+		...Arr.map(AWS_INFRA_RESOURCE_KEYS, (key) => resource[key]),
 	)
+
+/** `resourceKeys` of a raw point: region and account from its resource attributes. */
+const rawResourceKeys = ($: MetricsAccessor, kind: AwsInfraKindId) =>
+	resourceKeys(kind, (key) => $.Attributes.get(key), {
+		"cloud.region": $.ResourceAttributes.get("cloud.region"),
+		"cloud.account.id": $.ResourceAttributes.get("cloud.account.id"),
+	})
 
 /** The kind's metric names stored in one table. */
 const metricNames = (metrics: ReadonlyArray<AwsInfraMetric>, table: AwsInfraMetric["table"]) => [
@@ -76,16 +87,11 @@ const kindPoints = (
  */
 export type AwsMetricsTier = "hourly" | "raw"
 
-/** One table's raw points per resource and metric; `edgesOnly` keeps the hours the rollup leaves out. */
-const rawTotals = (
-	kind: AwsInfraKindId,
-	table: AwsInfraMetric["table"],
-	metrics: ReadonlyArray<AwsInfraMetric>,
-	edgesOnly: boolean,
-) =>
+/** One table's raw points per resource and metric; on the hourly tier only the hours the rollup leaves out. */
+const rawTotals = (kind: AwsInfraKindId, table: AwsInfraMetric["table"], tier: AwsMetricsTier) =>
 	from(table === "sum" ? Datasources.metricsSum : Datasources.metricsGauge)
 		.select(($) => ({
-			keys: resourceKeys($, kind),
+			keys: rawResourceKeys($, kind),
 			metric: $.MetricName,
 			total: CH.sum($.Value),
 			samples: CH.count(),
@@ -93,26 +99,19 @@ const rawTotals = (
 			lastSeen: CH.max_(CH.toDateTime($.TimeUnix)),
 		}))
 		.where(($) => [
-			...kindPoints($, kind, table, metrics),
-			CH.whenTrue(edgesOnly, () => edgeCondition("TimeUnix")),
+			...kindPoints($, kind, table, AWS_INFRA_KINDS[kind].metrics),
+			CH.whenTrue(tier === "hourly", () => edgeCondition("TimeUnix")),
 		])
 		.groupBy("keys", "metric")
 
 /** The same per resource and metric from the rollup's whole hours, at the kind's exact dimension set. */
-const hourlyTotals = (
-	kind: AwsInfraKindId,
-	table: AwsInfraMetric["table"],
-	metrics: ReadonlyArray<AwsInfraMetric>,
-) =>
+const hourlyTotals = (kind: AwsInfraKindId, table: AwsInfraMetric["table"]) =>
 	from(Datasources.awsMetricsHourly)
 		.select(($) => ({
-			keys: CH.arrayOf(
-				...Arr.map(AWS_INFRA_KINDS[kind].identity, ([, dimension]) =>
-					$.Attributes.get(awsDimensionAttribute(dimension)),
-				),
-				$.CloudRegion,
-				$.CloudAccountId,
-			),
+			keys: resourceKeys(kind, (key) => $.Attributes.get(key), {
+				"cloud.region": $.CloudRegion,
+				"cloud.account.id": $.CloudAccountId,
+			}),
 			metric: $.MetricName,
 			total: CH.sum($.Total),
 			samples: CH.sum($.Samples),
@@ -122,7 +121,7 @@ const hourlyTotals = (
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
 			$.MetricType.eq(table),
-			CH.inList($.MetricName, metricNames(metrics, table)),
+			CH.inList($.MetricName, metricNames(AWS_INFRA_KINDS[kind].metrics, table)),
 			...utcInteriorConditions($.Hour),
 			...dimensionSet((key) => $.Attributes.get(key), kind),
 		])
@@ -134,16 +133,15 @@ const hourlyTotals = (
  * `peak` is the highest point, `lastSeen` the newest.
  */
 export function awsInfraMetricsSQL(kind: AwsInfraKindId, tier: AwsMetricsTier) {
-	const metrics = AWS_INFRA_KINDS[kind].metrics
 	return fromUnion(
 		tier === "hourly"
 			? unionAll(
-					rawTotals(kind, "sum", metrics, true),
-					hourlyTotals(kind, "sum", metrics),
-					rawTotals(kind, "gauge", metrics, true),
-					hourlyTotals(kind, "gauge", metrics),
+					rawTotals(kind, "sum", tier),
+					hourlyTotals(kind, "sum"),
+					rawTotals(kind, "gauge", tier),
+					hourlyTotals(kind, "gauge"),
 				)
-			: unionAll(rawTotals(kind, "sum", metrics, false), rawTotals(kind, "gauge", metrics, false)),
+			: unionAll(rawTotals(kind, "sum", tier), rawTotals(kind, "gauge", tier)),
 		"points",
 	)
 		.select(($) => ({
@@ -156,7 +154,7 @@ export function awsInfraMetricsSQL(kind: AwsInfraKindId, tier: AwsMetricsTier) {
 		}))
 		.groupBy("keys", "metric")
 		.orderBy(["keys", "asc"], ["metric", "asc"])
-		.limit(AWS_INFRA_RESOURCE_LIMIT * metrics.length)
+		.limit(AWS_INFRA_RESOURCE_LIMIT * AWS_INFRA_KINDS[kind].metrics.length)
 		.format("JSON")
 }
 
@@ -177,7 +175,7 @@ export function awsInfraSparklinesSQL(kind: AwsInfraKindId, buckets: number) {
 	const definition = AWS_INFRA_KINDS[kind]
 	const metrics = Arr.filter(definition.metrics, (metric) => metric.key === definition.sparkline)
 	const point = ($: MetricsAccessor) => ({
-		keys: resourceKeys($, kind),
+		keys: rawResourceKeys($, kind),
 		t: $.TimeUnix,
 		metric: $.MetricName,
 		value: $.Value,

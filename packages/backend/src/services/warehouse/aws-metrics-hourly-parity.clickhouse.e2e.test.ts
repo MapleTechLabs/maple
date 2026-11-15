@@ -17,7 +17,7 @@ import { OrgId } from "@maple/domain"
 import { AWS_INFRA_KIND_IDS, type AwsInfraKindId } from "@maple/domain/aws-infra"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import * as Integrations from "@maple/query-engine-integrations"
-import { Array as Arr, Record as Rec, String as Str } from "effect"
+import { Array as Arr, Option, Record as Rec, String as Str } from "effect"
 import {
 	applyRealMigrations,
 	clickhouseE2eEnabled,
@@ -199,11 +199,10 @@ describe.skipIf(!clickhouseE2eEnabled)("AWS infra metrics raw-vs-rollup parity",
 			JSON.stringify(["i-b", "us-east-1", "111"]),
 		])
 		const lbRows = await read("loadBalancers", "hourly", HOUR_MS, 23 * HOUR_MS)
-		const requests = Arr.findFirst(
-			lbRows,
-			(row) => row.metric === "aws.application_elb.request_count.sum",
+		const requests = Option.getOrThrow(
+			Arr.findFirst(lbRows, (row) => row.metric === "aws.application_elb.request_count.sum"),
 		)
-		// 22 hours of 6 points each: the copies would triple it.
-		assert.strictEqual(requests._tag === "Some" ? Number(requests.value.samples) : 0, 22 * 6 + 1)
+		// 22 hours of 6 points plus the one on the inclusive end bound; the copies would triple it.
+		assert.strictEqual(Number(requests.samples), 22 * 6 + 1)
 	})
 })

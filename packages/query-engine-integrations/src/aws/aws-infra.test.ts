@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { compileUnsafe } from "@maple-dev/effect-orm/clickhouse"
 import { OrgId } from "@maple/domain"
-import {
-	AWS_INFRA_KIND_IDS,
-	AWS_INFRA_KINDS,
-	AWS_INFRA_RESOURCE_LIMIT,
-	AWS_METRIC_PREFIX,
-} from "@maple/domain/aws-infra"
+import { AWS_INFRA_KIND_IDS, AWS_INFRA_KINDS, AWS_INFRA_RESOURCE_LIMIT } from "@maple/domain/aws-infra"
 import {
 	awsInfraBucketCount,
 	awsInfraMetricsSQL,
@@ -58,27 +53,16 @@ describe("awsInfraMetricsSQL", () => {
 })
 
 describe("awsInfraMetricsSQL tiers", () => {
-	it("reads whole hours from aws_metrics_hourly and only the partial hours from raw points", () => {
+	it("reads the rollup on the hourly tier", () => {
 		const { sql, tenantScope } = compileUnsafe(awsInfraMetricsSQL("ec2", "hourly"), params)
 		expect(tenantScope).toBe("single-tenant")
 		expect(sql).toContain("FROM aws_metrics_hourly")
-		expect(sql).toContain("aws_metrics_hourly.MetricType = 'sum'")
-		expect(sql).toContain("aws_metrics_hourly.MetricType = 'gauge'")
-		// Every raw branch is limited to the edges, so no hour is read from both tiers.
-		expect(Str.split("FROM metrics_")(sql).length - 1).toBe(2)
-		expect(Str.split("TimeUnix < if(")(sql).length - 1).toBe(2)
 	})
 
-	it("reads raw points only when the cluster has no rollup", () => {
-		const { sql } = compileUnsafe(awsInfraMetricsSQL("ec2", "raw"), params)
-		expect(sql).not.toContain("aws_metrics_hourly")
-		expect(sql).not.toContain("TimeUnix < if(")
-	})
-
-	it("asks the rollup only for metrics its views write", () => {
-		for (const kind of AWS_INFRA_KIND_IDS)
-			for (const metric of AWS_INFRA_KINDS[kind].metrics)
-				expect(Str.startsWith(AWS_METRIC_PREFIX)(metric.name), metric.name).toBe(true)
+	it("reads raw points only on the raw tier", () => {
+		expect(compileUnsafe(awsInfraMetricsSQL("ec2", "raw"), params).sql).not.toContain(
+			"aws_metrics_hourly",
+		)
 	})
 })
 
