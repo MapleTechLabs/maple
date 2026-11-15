@@ -7,7 +7,7 @@ import { renderPromqlOutput } from "../lib/promql-render"
 import * as P from "../lib/params"
 import { Effect, Schema } from "effect"
 import { parseWarehouseDateTime } from "@maple/query-engine"
-import { PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
+import { MAX_STEPS, PromqlQueryService } from "@maple/backend/services/promql/PromqlQueryService"
 
 const WINDOW = P.timeWindow({ defaultHours: 1, maxHours: 7 * 24 })
 
@@ -51,6 +51,13 @@ export function registerQueryPromqlTool(server: McpToolRegistrar) {
 				})
 			}
 			const stepSeconds = instant ? 0 : (requested ?? defaultStepSeconds((endMs - startMs) / 1000))
+			if (!instant && (endMs - startMs) / (stepSeconds * 1000) > MAX_STEPS) {
+				return yield* new McpInvalidInputError({
+					message: `step "${params.step ?? `${stepSeconds}s`}" gives more than ${MAX_STEPS} points over this window; use at least ${Math.ceil((endMs - startMs) / 1000 / MAX_STEPS)}s.`,
+					parameter: "step",
+					example: `${defaultStepSeconds((endMs - startMs) / 1000)}s`,
+				})
+			}
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				"maple.ai.promql.instant": instant,

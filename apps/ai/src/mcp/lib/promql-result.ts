@@ -82,12 +82,28 @@ const peak = (series: RawSeries): number =>
 		!Number.isNaN(p.v) && p.v > max ? p.v : max,
 	)
 
-const byPeakDescending = Order.mapInput(Order.flip(Order.Number), peak)
+// Peaks are computed once per series, not once per comparison.
+const byPeakDescending = Order.mapInput(
+	Order.flip(Order.Number),
+	([max]: readonly [number, RawSeries]) => max,
+)
 
 /** Over {@link MAX_SERIES}, the series with the highest peaks; each keeps its last {@link MAX_POINTS} points. */
 export const capSeries = (result: PromqlResult): ReadonlyArray<typeof PromqlSeries.Type> => {
 	const all = rawSeries(result)
-	const kept = all.length > MAX_SERIES ? Arr.take(Arr.sort(all, byPeakDescending), MAX_SERIES) : all
+	const kept =
+		all.length > MAX_SERIES
+			? Arr.map(
+					Arr.take(
+						Arr.sort(
+							Arr.map(all, (series) => [peak(series), series] as const),
+							byPeakDescending,
+						),
+						MAX_SERIES,
+					),
+					([, series]) => series,
+				)
+			: all
 	return Arr.map(kept, (series) => ({
 		labels: series.labels,
 		points: Arr.map(Arr.takeRight(series.points, MAX_POINTS), (p) => ({ t: p.t, v: encodeSample(p.v) })),
