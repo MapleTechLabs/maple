@@ -56,6 +56,22 @@ describe("local metric detail", () => {
 		)
 	})
 
+	test("the breakdown reads with the chart's bucket width, so both count the same samples", () => {
+		const step = entered()
+		const found = pageUpdate(
+			step.model,
+			Message.SucceededFetchEntry({ key: step.model.entry.key ?? "", entry, fetchedAtMs: NOW }),
+		)
+		const bucketOf = (name: string) =>
+			Arr.map(
+				Arr.filter(found.commands ?? [], (command) => command.name === name),
+				({ args }) => args?.["bucketSeconds"],
+			)
+		const [chartBucket] = bucketOf("FetchLocalMetricTimeseries")
+		expect(chartBucket).toBeGreaterThan(0)
+		expect(bucketOf("FetchLocalMetricBreakdown")).toEqual([chartBucket])
+	})
+
 	test("an entry answer for a superseded window is dropped", () => {
 		const first = entered().model
 		const later = pageUpdate(first, Message.CompletedReadRefreshClock({ nowMs: NOW + 120_000 })).model
