@@ -27,6 +27,20 @@ export interface ProbeOutcome {
 	readonly timings?: PhaseTimings
 	/** HTTPS only: the certificate the configured host presented, when the handshake completed. */
 	readonly certificate?: UptimeCertificate
+	/** Multi-step only: each step that ran, in order, for its child span. */
+	readonly steps?: ReadonlyArray<UptimeStepRun>
+}
+
+/** One step of a multi-step check as it ran: a child span of the check's span. */
+export interface UptimeStepRun {
+	readonly name: string
+	readonly method: string
+	/** The URL it requested, interpolated; null when a variable it needed was missing. */
+	readonly url: string | null
+	readonly spanId: string
+	readonly startedAtMs: number
+	readonly endedAtMs: number
+	readonly outcome: ProbeOutcome
 }
 
 /** The W3C ids a check runs under; HTTP sends them so the target's server span joins the trace. */

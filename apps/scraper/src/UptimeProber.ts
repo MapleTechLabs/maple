@@ -4,6 +4,7 @@ import { UptimeCheckReport, type UptimeProbeTarget } from "@maple/domain/uptime"
 import { uptimeChecksTotal } from "./Metrics"
 import { UptimeDnsProbe } from "./UptimeDnsProbe"
 import { UptimeHttpProbe } from "./UptimeHttpProbe"
+import { UptimeMultiStepProbe } from "./UptimeMultiStepProbe"
 import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
 import { UptimeSpanExporter } from "./UptimeSpanExporter"
 import { UptimeTcpProbe } from "./UptimeTcpProbe"
@@ -29,6 +30,7 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 			const http = yield* UptimeHttpProbe
 			const tcp = yield* UptimeTcpProbe
 			const dns = yield* UptimeDnsProbe
+			const multistep = yield* UptimeMultiStepProbe
 			const exporter = yield* UptimeSpanExporter
 
 			const runProbe = (config: UptimeProbeTarget["config"], trace: CheckTraceContext) => {
@@ -39,6 +41,8 @@ export class UptimeProber extends Context.Service<UptimeProber, UptimeProberApi>
 						return tcp.probe(config)
 					case "dns":
 						return dns.probe(config)
+					case "multistep":
+						return multistep.probe(config, trace)
 				}
 			}
 

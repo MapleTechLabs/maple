@@ -1381,6 +1381,133 @@ describe("UptimeMonitorsService backing alert rule", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	describe("multi-step checks", () => {
+		const step = (name: string, url: string, overrides: Record<string, unknown> = {}) => ({
+			name,
+			method: "GET" as const,
+			url,
+			headers: {},
+			assertions: [],
+			extract: [],
+			...overrides,
+		})
+		const loginFlow = (overrides: Record<string, unknown> = {}): UptimeMonitorConfig => ({
+			_tag: "multistep",
+			timeoutMs: 30_000,
+			steps: [
+				step("Log in", "https://status.example.com/login", {
+					method: "POST",
+					body: "{}",
+					headers: { "X-Api-Key": "key-123" },
+					extract: [{ name: "token", from: { _tag: "json_path", path: "token" } }],
+				}),
+				step("Orders", "https://status.example.com/orders", {
+					headers: { Authorization: "Bearer {{token}}" },
+				}),
+			],
+			...overrides,
+		})
+		const createMultiStep = (config: UptimeMonitorConfig) =>
+			Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				return yield* service.create(ORG, {
+					name: "Login flow",
+					kind: "multistep",
+					config,
+					createdBy: USER,
+				})
+			})
+
+		it.effect("seals every step's headers, and the probe gets them back in order", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createMultiStep(loginFlow())
+				const stored = yield* Effect.promise(() =>
+					queryFirstRow<{ readonly steps: string; readonly sealed: string | null }>(
+						testDb,
+						`select (config_json -> 'steps')::text as steps, headers_ciphertext as sealed
+						 from uptime_monitors where id = $1`,
+						[monitor.id],
+					),
+				)
+				assert.notInclude(stored?.steps ?? "", "key-123")
+				assert.isTrue(Str.startsWith("v2.")(stored?.sealed ?? ""))
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep"
+						? Arr.map(target.config.steps, (s) => s.headers)
+						: null,
+					[{ "X-Api-Key": "key-123" }, { Authorization: "Bearer {{token}}" }],
+				)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("refuses a variable no earlier step extracts, and a literal private URL", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const unknown = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({
+							steps: [step("Orders", "https://status.example.com/orders/{{order}}")],
+						}),
+					),
+				)
+				assert.strictEqual(
+					unknown.message,
+					"Step 1 (Orders) uses {{order}}, which no earlier step extracts",
+				)
+				const internal = yield* Effect.flip(
+					createMultiStep(
+						loginFlow({ steps: [step("Metadata", "http://169.254.169.254/latest")] }),
+					),
+				)
+				assert.strictEqual(internal._tag, "@maple/http/errors/UptimeMonitorValidationError")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+
+		it.effect("keeps a step's hidden header value on edit only for the same step and origin", () => {
+			const testDb = createTestDb(trackedDbs)
+			return Effect.gen(function* () {
+				const service = yield* UptimeMonitorsService
+				const monitor = yield* createMultiStep(loginFlow())
+				const redacted = loginFlow()
+				const withRedacted = (url: string): UptimeMonitorConfig =>
+					redacted._tag === "multistep"
+						? {
+								...redacted,
+								steps: [
+									{
+										...step("Log in", url, { method: "POST", body: "{}" }),
+										headers: { "X-Api-Key": "[redacted]" },
+										extract: [
+											{ name: "token", from: { _tag: "json_path", path: "token" } },
+										],
+									},
+									...redacted.steps.slice(1),
+								],
+							}
+						: redacted
+				yield* service.update(ORG, monitor.id, {
+					config: withRedacted("https://status.example.com/v2/login"),
+					updatedBy: USER,
+				})
+				const [target] = yield* service.listProbeTargets
+				assert.deepStrictEqual(
+					target?.config._tag === "multistep" ? target.config.steps[0]?.headers : null,
+					{ "X-Api-Key": "key-123" },
+				)
+				const moved = yield* Effect.flip(
+					service.update(ORG, monitor.id, {
+						config: withRedacted("https://elsewhere.example.com/login"),
+						updatedBy: USER,
+					}),
+				)
+				assert.include(moved.message, "different origin")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		})
+	})
+
 	describe("request headers at rest", () => {
 		interface StoredHeaders {
 			readonly config_headers: string

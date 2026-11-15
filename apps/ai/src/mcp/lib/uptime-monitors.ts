@@ -37,6 +37,13 @@ export const targetSummary = (config: UptimeMonitorConfig): string => {
 			return `${config.host}:${config.port}`
 		case "dns":
 			return `${config.recordType} ${config.hostname}${config.expected === undefined ? "" : ` = ${config.expected}`}`
+		case "multistep": {
+			const first = config.steps[0]
+			const count = `${config.steps.length} ${config.steps.length === 1 ? "step" : "steps"}`
+			return first === undefined
+				? count
+				: `${count}, from ${first.method} ${redactUrlSecrets(first.url)}`
+		}
 		case "heartbeat": {
 			const schedule =
 				config.schedule._tag === "interval"
@@ -322,6 +329,11 @@ export const buildUptimeConfig = Effect.fnUntraced(function* (
 				timeoutMs: UPTIME_DEFAULT_TIMEOUT_MS,
 			})
 		}
+		case "multistep":
+			return yield* invalid(
+				"A multi-step check's steps are set from the dashboard or the REST API (POST /v2/uptime_monitors).",
+				"kind",
+			)
 		case "heartbeat": {
 			const schedule = yield* heartbeatSchedule(fields, fields.time_zone ?? DEFAULT_HEARTBEAT_TIMEZONE)
 			if (schedule === undefined) {
@@ -388,6 +400,11 @@ export const updateUptimeConfig = Effect.fnUntraced(function* (
 				...(fields.record_type === undefined ? undefined : { recordType: fields.record_type }),
 				...(fields.expected === undefined ? undefined : { expected: fields.expected }),
 			}).pipe(Effect.map((config) => (fields.clear_expected === true ? omitExpected(config) : config)))
+		case "multistep":
+			return yield* invalid(
+				"A multi-step check's steps are edited from the dashboard or the REST API; only its name, interval, service and destinations change here.",
+				"url",
+			)
 		case "heartbeat": {
 			const currentZone =
 				current.schedule._tag === "cron" ? current.schedule.timezone : DEFAULT_HEARTBEAT_TIMEZONE

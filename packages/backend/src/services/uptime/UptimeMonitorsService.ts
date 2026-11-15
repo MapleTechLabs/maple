@@ -36,6 +36,8 @@ import {
 	effectiveAssertions,
 	firstFailedAssertion,
 	heartbeatDeadline,
+	multiStepConfigProblem,
+	variablesIn,
 	uptimeHttpRequest,
 	UPTIME_CERTIFICATE_GROUP_KEY,
 	UPTIME_REDACTED_HEADER_VALUE,
@@ -275,6 +277,17 @@ const validateConfig = Effect.fnUntraced(function* (kind: UptimeMonitorKind, raw
 		case "dns":
 			yield* validateHost(config.hostname)
 			break
+		case "multistep": {
+			const problem = multiStepConfigProblem(config)
+			if (problem !== null) return yield* invalid(problem)
+			// A URL built from a variable is checked when it is sent; the scraper refuses private hosts then.
+			yield* Effect.forEach(
+				Arr.filter(config.steps, (step) => variablesIn(step.url).length === 0),
+				(step) => validateUrl(step.url),
+				{ discard: true },
+			)
+			break
+		}
 		case "heartbeat":
 			// The alert evaluator computes deadlines from this schedule, so it must have a next run.
 			if (config.schedule._tag === "cron") {
@@ -313,8 +326,46 @@ const validateFailuresToDown = (value: number) =>
 
 const newHeartbeatToken = () => randomBytes(18).toString("base64url")
 
+/** One header map's `[redacted]` values taken back from `stored`; a name with none stored is refused. */
+const keepRedactedIn = (
+	stored: Readonly<Record<string, string>>,
+	next: Readonly<Record<string, string>>,
+): Effect.Effect<Record<string, string>, UptimeMonitorValidationError> => {
+	const entries = Rec.toEntries(next)
+	const orphan = Arr.findFirst(
+		entries,
+		([name, value]) => value === UPTIME_REDACTED_HEADER_VALUE && stored[name] === undefined,
+	)
+	if (Option.isSome(orphan)) {
+		return Effect.fail(
+			invalid(`Header ${orphan.value[0]} has no stored value to keep; send its real value`),
+		)
+	}
+	return Effect.succeed(
+		Rec.fromEntries(
+			Arr.map(entries, ([name, value]) => [
+				name,
+				value === UPTIME_REDACTED_HEADER_VALUE ? (stored[name] ?? value) : value,
+			]),
+		),
+	)
+}
+
 /** An update's `[redacted]` header values take the stored value back; one with none stored is refused. */
 const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) => {
+	if (next._tag === "multistep") {
+		const storedSteps = current._tag === "multistep" ? current.steps : []
+		// Step by step, by position: a stored value goes only to the step it was entered for.
+		return Effect.map(
+			Effect.forEach(next.steps, (step, index) =>
+				Effect.map(keepRedactedIn(storedSteps[index]?.headers ?? {}, step.headers), (headers) => ({
+					...step,
+					headers,
+				})),
+			),
+			(steps) => ({ ...next, steps }),
+		)
+	}
 	if (next._tag !== "http") return Effect.succeed(next)
 	const stored = current._tag === "http" ? current.headers : {}
 	const entries = Rec.toEntries(next.headers)
@@ -341,11 +392,22 @@ const keepRedactedHeaders = (current: UptimeMonitorConfig, next: UptimeMonitorCo
 const originOf = (url: string): string => (URL.canParse(url) ? new URL(url).origin : url)
 
 /** A stored header value goes only to the origin it was entered for; a new origin needs them re-entered. */
+const keepsRedacted = (headers: Readonly<Record<string, string>>) =>
+	Arr.some(Rec.values(headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+
 const refuseRedactedHeadersForNewOrigin = (current: UptimeMonitorConfig, next: UptimeMonitorConfig) =>
-	current._tag === "http" &&
-	next._tag === "http" &&
-	originOf(next.url) !== originOf(current.url) &&
-	Arr.some(Rec.values(next.headers), (value) => value === UPTIME_REDACTED_HEADER_VALUE)
+	(current._tag === "http" &&
+		next._tag === "http" &&
+		originOf(next.url) !== originOf(current.url) &&
+		keepsRedacted(next.headers)) ||
+	(current._tag === "multistep" &&
+		next._tag === "multistep" &&
+		Arr.some(
+			next.steps,
+			(step, index) =>
+				keepsRedacted(step.headers) &&
+				originOf(step.url) !== originOf(current.steps[index]?.url ?? ""),
+		))
 		? Effect.fail(
 				invalid(
 					"The URL now points at a different origin; re-enter the header values instead of keeping the hidden ones",
@@ -508,8 +570,10 @@ const foldReports = (row: CheckStateRow, reports: ReadonlyArray<UptimeCheckRepor
 
 /** The origin an HTTPS check's certificate comes from; null for anything else. */
 export const certificateOrigin = (config: UptimeMonitorConfig): string | null => {
-	if (config._tag !== "http") return null
-	const url = Option.liftThrowable(() => new URL(config.url))()
+	const target =
+		config._tag === "http" ? config.url : config._tag === "multistep" ? config.steps[0]?.url : undefined
+	if (target === undefined) return null
+	const url = Option.liftThrowable(() => new URL(target))()
 	return Option.match(url, {
 		onNone: () => null,
 		onSome: (parsed) => (parsed.protocol === "https:" ? parsed.origin : null),
@@ -1098,7 +1162,10 @@ export class UptimeMonitorsService extends Context.Service<UptimeMonitorsService
 								headersTag: $.headersTag,
 								updatedAt: $.updatedAt,
 							}))
-							.where(($) => [$.enabled.eq(true), $.kind.in_("http", "tcp", "dns")]),
+							.where(($) => [
+								$.enabled.eq(true),
+								$.kind.in_("http", "tcp", "dns", "multistep"),
+							]),
 					),
 				)
 				// A config that no longer decodes, or headers that no longer open, skip their monitor,

@@ -28,7 +28,14 @@ import { ASSERTION_OPS, type AssertionDraft, type MonitorKind } from "../../kit/
 import { Message } from "./message"
 import { canManage, type Model } from "./model"
 import { assertionsSection, type H, requestSection, scheduleSection } from "./view-fields"
-import { dnsSection, heartbeatSection, notifySection, serviceSection, tcpSection } from "./view-kinds"
+import {
+	dnsSection,
+	heartbeatSection,
+	multistepSection,
+	notifySection,
+	serviceSection,
+	tcpSection,
+} from "./view-kinds"
 import { typography, typographyClass } from "@maple/views/ui/typography"
 import { hstack, hstackClass, vstack, vstackClass } from "@maple/views/ui/stack"
 
@@ -247,6 +254,8 @@ const kindSections = (h: H, model: Model): ReadonlyArray<Html> => {
 			return [...tcpSection(h, model), scheduleSection(h, model)]
 		case "dns":
 			return [...dnsSection(h, model), scheduleSection(h, model)]
+		case "multistep":
+			return [...multistepSection(h, model), scheduleSection(h, model)]
 		case "heartbeat":
 			return heartbeatSection(h, model)
 	}

@@ -32,6 +32,7 @@ export const defaultName = (form: Form): string => {
 					: `${Str.trim(form.host)}:${Str.trim(form.port)}`
 		case "dns":
 			return Str.trim(form.hostname) === "" ? "" : `${form.recordType} ${Str.trim(form.hostname)}`
+		case "multistep":
 		case "heartbeat":
 			return form.name
 	}
@@ -169,6 +170,11 @@ export const formIssues = (form: Form): ReadonlyArray<string> => {
 					...add(Str.trim(form.hostname) === "", "Add the hostname to resolve."),
 					...hostIssue(form.hostname),
 				]
+			case "multistep":
+				return add(
+					(form.multistep?.steps.length ?? 0) === 0,
+					"A multi-step check needs at least one step.",
+				)
 			case "heartbeat":
 				return form.scheduleMode === "interval"
 					? add(!(everySeconds(form) >= 60), "Heartbeats expect a ping at most once a minute.")
@@ -267,6 +273,8 @@ export const wireConfig = (form: Form): Readonly<Record<string, unknown>> => {
 				...(Str.trim(form.expected) === "" ? undefined : { expected: Str.trim(form.expected) }),
 				...timeout,
 			}
+		case "multistep":
+			return form.multistep ?? { type: "multistep", steps: [] }
 		case "heartbeat":
 			return {
 				type: "heartbeat",
@@ -378,6 +386,8 @@ export const formFromMonitor = (monitor: UptimeMonitor): Form => {
 				expected: config.expected ?? "",
 				timeoutMs: String(config.timeout_ms ?? 10000),
 			}
+		case "multistep":
+			return { ...base, multistep: config }
 		case "heartbeat":
 			return {
 				...base,

@@ -7,7 +7,7 @@ import {
 	type UptimeProbeTarget,
 } from "@maple/domain/uptime"
 import type { PhaseTimings } from "./UptimePhases"
-import type { CheckTraceContext, ProbeOutcome } from "./UptimeProbe"
+import type { CheckTraceContext, ProbeOutcome, UptimeStepRun } from "./UptimeProbe"
 
 /** Everything one check span needs; buffered until the org's next flush. */
 export interface UptimeCheckSpan {
@@ -33,6 +33,8 @@ export interface OtlpKeyValue {
 export interface OtlpSpan {
 	readonly traceId: string
 	readonly spanId: string
+	/** Absent on the check's root span; a multi-step check's steps carry it. */
+	readonly parentSpanId?: string
 	readonly name: string
 	/** 3 = SPAN_KIND_CLIENT. */
 	readonly kind: 3
@@ -81,6 +83,8 @@ export const checkSpanName = (config: UptimeCheckSpan["monitor"]["config"]): str
 			return `TCP ${config.host}:${config.port}`
 		case "dns":
 			return `DNS ${config.recordType} ${config.hostname}`
+		case "multistep":
+			return `Multi-step check (${config.steps.length} ${config.steps.length === 1 ? "step" : "steps"})`
 	}
 }
 
@@ -111,6 +115,8 @@ const targetAttributes = (
 				"maple.uptime.dns.record_type": config.recordType,
 				"network.transport": "udp",
 			}
+		case "multistep":
+			return { "maple.uptime.step_count": config.steps.length }
 	}
 }
 
@@ -140,6 +146,57 @@ export const certificateAttributes = (certificate: ProbeOutcome["certificate"]):
 					? undefined
 					: { "tls.server.issuer": `CN=${certificate.issuer}` }),
 			}
+
+/** `url.full` without the query or fragment, which may carry credentials. */
+const safeUrl = (raw: string): Record<string, string | number> =>
+	Option.match(parseUrl(raw), {
+		onNone: () => ({ "url.full": Str.split(/[?#]/u)(raw)[0] ?? "" }),
+		onSome: (url) => ({
+			"url.full": `${url.origin}${url.pathname}`,
+			"server.address": url.hostname,
+			"server.port": Number(url.port || (url.protocol === "https:" ? 443 : 80)),
+		}),
+	})
+
+/** A multi-step check's step as a CLIENT child of the check span, ids equal to its `traceparent`. */
+export const toStepSpan = (check: UptimeCheckSpan, step: UptimeStepRun, index: number): OtlpSpan => {
+	const { outcome } = step
+	const path =
+		step.url === null ? Option.none<string>() : Option.map(parseUrl(step.url), (url) => url.pathname)
+	return {
+		traceId: check.trace.traceId,
+		spanId: step.spanId,
+		parentSpanId: check.trace.spanId,
+		name: Option.match(path, {
+			onNone: () => step.name,
+			onSome: (pathname) => `${step.method} ${pathname}`,
+		}),
+		kind: 3,
+		startTimeUnixNano: toUnixNano(step.startedAtMs),
+		endTimeUnixNano: toUnixNano(step.endedAtMs),
+		attributes: keyValues({
+			...(step.url === null ? undefined : safeUrl(step.url)),
+			"http.request.method": step.method,
+			"maple.uptime.step.name": step.name,
+			"maple.uptime.step.index": index + 1,
+			"maple.uptime.ok": outcome.ok,
+			...(outcome.statusCode === null
+				? undefined
+				: { "http.response.status_code": outcome.statusCode }),
+			...(outcome.errorType === null ? undefined : { "error.type": outcome.errorType }),
+			...(outcome.error === null ? undefined : { "maple.uptime.failure": outcome.error }),
+			...timingAttributes(outcome.timings),
+			...certificateAttributes(outcome.certificate),
+		}),
+		status: outcome.ok ? { code: 1 } : { code: 2, message: outcome.error ?? "Step failed" },
+	}
+}
+
+/** The check's spans: its own, then one per step of a multi-step check. */
+export const toOtlpSpans = (check: UptimeCheckSpan): ReadonlyArray<OtlpSpan> => [
+	toOtlpSpan(check),
+	...Arr.map(check.outcome.steps ?? [], (step, index) => toStepSpan(check, step, index)),
+]
 
 /** One CLIENT span for a check, ids equal to the `traceparent` the target saw. */
 export const toOtlpSpan = (check: UptimeCheckSpan): OtlpSpan => {
@@ -183,7 +240,7 @@ export const encodeTraceExport = (checks: ReadonlyArray<UptimeCheckSpan>): OtlpT
 		resourceSpans: Arr.map(Rec.values(byMonitor), (group) => ({
 			// The newest check names the resource, so a rename shows up at once.
 			resource: { attributes: resourceAttributes(Arr.lastNonEmpty(group).monitor) },
-			scopeSpans: [{ scope: SCOPE, spans: Arr.map(group, toOtlpSpan) }],
+			scopeSpans: [{ scope: SCOPE, spans: Arr.flatMap(group, toOtlpSpans) }],
 		})),
 	}
 }
