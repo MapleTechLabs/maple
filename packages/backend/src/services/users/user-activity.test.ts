@@ -199,6 +199,8 @@ describe("readUserProfile", () => {
 			const replay = {
 				name: "Ada",
 				email: "",
+				nameAt: "1762000000",
+				emailAt: "1762000000",
 				groupId: "grp_acme",
 				groupName: "",
 				traitKeys: [],
@@ -234,6 +236,8 @@ describe("readUserProfile", () => {
 						{
 							name: "Ada",
 							email: "",
+							nameAt: "1762000000",
+							emailAt: "1762000000",
 							groupId: "grp_acme",
 							groupName: "Acme",
 							traitKeys: [],
@@ -266,6 +270,8 @@ describe("readUserProfile", () => {
 						{
 							name: "Ada Lovelace",
 							email: "ada@example.com",
+							nameAt: "1762000000",
+							emailAt: "1762000000",
 							groupId: "grp_acme",
 							groupName: "Acme Inc.",
 							traitKeys: ["plan"],
@@ -285,6 +291,8 @@ describe("readUserProfile", () => {
 						{
 							name: "ada (mcp)",
 							email: "",
+							nameAt: "1761990000",
+							emailAt: "0",
 							requests: "6",
 							calls: "3",
 							firstSeen: "2026-11-01 08:30:00.000",
