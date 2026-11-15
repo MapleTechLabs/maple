@@ -373,6 +373,7 @@ function generateRuntimeMetrics(
 	orgId: string,
 	startMs: number,
 	endMs: number,
+	instanceId: string,
 ): { metricGaugeRows: MetricGaugeRow[]; metricSumRows: MetricSumRow[] } {
 	const metricGaugeRows: MetricGaugeRow[] = []
 	const metricSumRows: MetricSumRow[] = []
@@ -418,6 +419,7 @@ function generateRuntimeMetrics(
 			gcCount += Math.max(0, Math.round(gaussian(rand, 4, 2)))
 			metricSumRows.push({
 				...base,
+				resource_attributes: { ...base.resource_attributes, "service.instance.id": instanceId },
 				metric_name: "process.runtime.nodejs.gc.count",
 				metric_unit: "{collections}",
 				value: gcCount,
@@ -599,10 +601,10 @@ export function generateDemoRows({
 		logRows.push(...result.logRows)
 	}
 
-	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now)
-	// Each seed is its own instance, so a second seed over the same hours is a second
-	// series and not a second running total interleaved into the first.
+	// Each seed is its own instance, so the running totals of a second seed over the same
+	// hours are a second series and not interleaved into the first.
 	const instanceId = `demo-${Math.floor(rand() * 0xffffffff).toString(16)}`
+	const { metricGaugeRows, metricSumRows } = generateRuntimeMetrics(rand, orgId, startMs, now, instanceId)
 	const metricHistogramRows = generateDurationHistograms(rand, orgId, startMs, now, instanceId)
 	const metricExponentialHistogramRows = generateQueryDurationHistograms(
 		rand,

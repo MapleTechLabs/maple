@@ -228,6 +228,41 @@ describe("metric detail", () => {
 		)
 	})
 
+	test("a percentile ranks the breakdown by that percentile, and min by count", () => {
+		const shown = (agg: "p95" | "min", title: string) =>
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded([row("payment-svc")], { agg })),
+				themeResolved(),
+				Mount.resolve(
+					MountWhereCaret,
+					Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
+				),
+				expectView(text(`${agg}(${NAME})`)).toExist(),
+				expectView(text(title)).toExist(),
+			)
+		shown("p95", "Top values · p95 per value")
+		shown("min", "Top values · count per value")
+	})
+
+	test("the chart names the metric's unit for a percentile and not for a count", () => {
+		const unitLabel = (agg: "p95" | "count") =>
+			scene(
+				{ update: pageUpdate, view },
+				given(loaded([row("payment-svc")], { agg })),
+				themeResolved(),
+				Mount.resolve(
+					MountWhereCaret,
+					Message.GotCaretMessage({ message: CaretMessage.BlurredEditor() }),
+				),
+				agg === "count"
+					? expectView(text("unit: s")).not.toExist()
+					: expectView(text("unit: s")).toExist(),
+			)
+		unitLabel("p95")
+		unitLabel("count")
+	})
+
 	test("the page shows the query, the breakdown and the catalog summary", () => {
 		scene(
 			{ update: pageUpdate, view },

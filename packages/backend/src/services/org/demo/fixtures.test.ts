@@ -99,10 +99,10 @@ describe("generateDemoRows metrics", () => {
 		}
 	})
 
-	it("gives both histograms of one seed the same service instance", () => {
+	it("gives the running totals of one seed an instance of their own", () => {
 		const instances = new Set(
 			Arr.map(
-				[...rows.metricHistogramRows, ...rows.metricExponentialHistogramRows],
+				[...rows.metricSumRows, ...rows.metricHistogramRows, ...rows.metricExponentialHistogramRows],
 				(row) => row.resource_attributes["service.instance.id"],
 			),
 		)
