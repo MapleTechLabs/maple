@@ -189,7 +189,8 @@ export const createFlameChart = (
 		if (context === null || layout === undefined) return
 		context.setTransform(dpr, 0, 0, dpr, 0, 0)
 		context.clearRect(0, 0, width, OVERVIEW_HEIGHT)
-		const rowHeight = Math.min(4, Math.max(1, (OVERVIEW_HEIGHT - 6) / layout.rows))
+		// Under a pixel for a deep profile, so its deepest rows still fit in the strip.
+		const rowHeight = Math.min(4, (OVERVIEW_HEIGHT - 6) / layout.rows)
 		const mini = (frame: FlameNode): void => {
 			const frameWidth = (frame.x1 - frame.x0) * width
 			if (frameWidth < 0.5) return
@@ -260,7 +261,8 @@ export const createFlameChart = (
 		context.beginPath()
 		context.rect(0, RULER_HEIGHT, width, viewHeight)
 		context.clip()
-		const dims = props.search !== ""
+		// The same test `matchesSearch` applies: a blank search matches nothing, so it dims nothing.
+		const dims = Str.trim(props.search) !== ""
 		const frame = (node: FlameNode): void => {
 			const rect = rectOf(node)
 			// Callees sit inside their caller, so nothing under an off-screen or sub-pixel frame shows.
