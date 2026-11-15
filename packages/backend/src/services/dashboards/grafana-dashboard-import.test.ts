@@ -1,5 +1,5 @@
 import { assert, describe, expect, it } from "@effect/vitest"
-import { Effect, Option, Array as Arr, Record as Rec } from "effect"
+import { Effect, Option, Array as Arr, Record as Rec, String as Str } from "effect"
 import { dataSourcePromql, dataSourceRawSql, dataSourceTransform } from "@maple/widgets/dashboard"
 import { convertGrafanaDashboardToPortable, isGrafanaDashboardJson } from "./grafana-dashboard-import"
 import {
@@ -355,7 +355,7 @@ describe("review regressions", () => {
 				(w) => dataSourceTransform(w.dataSource)?.reduceToValue?.aggregate,
 			)
 			expect(transforms).toEqual(["max", "first"])
-			expect(warnings.some((w) => w.includes('"range"'))).toBe(true)
+			expect(Arr.some(warnings, Str.includes('"range"'))).toBe(true)
 		}),
 	)
 
@@ -365,7 +365,7 @@ describe("review regressions", () => {
 				board([panel({ type: "heatmap" })]),
 			)
 			expect(dataSourcePromql(dashboard.widgets[0]?.dataSource)).toBeNull()
-			expect(warnings.some((w) => w.includes("buckets over time"))).toBe(true)
+			expect(Arr.some(warnings, Str.includes("buckets over time"))).toBe(true)
 		}),
 	)
 
