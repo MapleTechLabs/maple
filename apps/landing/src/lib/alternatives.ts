@@ -113,7 +113,7 @@ const dash0: AlternativesPage = {
 		},
 	],
 	stayIf: [
-		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools above, Maple, SigNoz, Grafana and Better Stack take PromQL.",
+		"Your alerts and dashboards are written in PromQL, or kept as Perses dashboards-as-code. Leaving means rewriting them; of the tools above, SigNoz, Grafana and Better Stack take PromQL alerts; Maple runs PromQL queries and dashboards, but its alerts are its own.",
 		"You want 13 months of metric retention included in the storage rate. By default Maple keeps metrics 90 days, Honeycomb 60 and SigNoz one month.",
 		"You use Dash0's Kubernetes operator and OpenTelemetry distribution, or its synthetic API checks at $0.20 per thousand runs.",
 		"Per-data-point pricing suits your data. Dash0 charges per span, log record and metric data point, not per byte, so wide spans and verbose log lines cost the same as small ones.",
@@ -311,7 +311,7 @@ const dash0: AlternativesPage = {
 		},
 		{
 			question: "Which Dash0 alternatives support PromQL?",
-			answer: "Maple, SigNoz, Grafana and Better Stack. Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages. If your alerting and dashboards are written in PromQL, start with those four.",
+			answer: "SigNoz, Grafana and Better Stack take PromQL for queries and alerts. Maple runs PromQL queries and imports dashboards with their PromQL, but alert rules have to be set up again in Maple. Honeycomb, Axiom, Datadog and New Relic use their own builders or query languages.",
 		},
 		{
 			question: "How hard is it to move off Dash0?",
