@@ -46,10 +46,42 @@ function hasOrgScope(sql: string): boolean {
 	return Str.includes("$__orgFilter")(sql) || /\bOrgId\b/.test(sql)
 }
 
+/**
+ * Where `keyword` first appears at the top level of `sql`: outside parentheses, quotes and comments.
+ * A clause inside a subquery or a string literal is not the outer query's.
+ */
+function topLevelIndex(sql: string, keyword: RegExp): number | undefined {
+	const sticky = new RegExp(`(?<![A-Za-z0-9_])(?:${keyword.source})(?![A-Za-z0-9_])`, "iy")
+	let depth = 0
+	let quote: string | undefined
+	for (let i = 0; i < sql.length; i++) {
+		const ch = sql[i] ?? ""
+		if (quote !== undefined) {
+			if (ch === "\\") i += 1
+			else if (ch === quote) quote = undefined
+			continue
+		}
+		if (ch === "'" || ch === '"' || ch === "`") quote = ch
+		else if (ch === "-" && sql[i + 1] === "-") {
+			// A line comment runs to the newline; its quotes and parentheses do not count.
+			while (i < sql.length && sql[i] !== "\n") i += 1
+		} else if (ch === "(") depth += 1
+		else if (ch === ")") depth -= 1
+		else if (depth === 0) {
+			sticky.lastIndex = i
+			if (sticky.test(sql)) return i
+		}
+	}
+	return undefined
+}
+
+const TRAILING_CLAUSE = /GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT|SETTINGS/
+
+/** `fragment` before the outer query's first trailing clause, or at its end. */
 function insertBeforeTrailingClauses(sql: string, fragment: string): string {
-	const match = /\b(GROUP\s+BY|ORDER\s+BY|LIMIT|FORMAT)\b/i.exec(sql)
-	if (!match) return `${Str.trimEnd(sql)} ${fragment}`
-	return `${Str.trimEnd(Str.slice(0, match.index)(sql))} ${fragment} ${Str.trimStart(Str.slice(match.index)(sql))}`
+	const at = topLevelIndex(sql, TRAILING_CLAUSE)
+	if (at === undefined) return `${Str.trimEnd(sql)} ${fragment}`
+	return `${Str.trimEnd(Str.slice(0, at)(sql))} ${fragment} ${Str.trimStart(Str.slice(at)(sql))}`
 }
 
 export type NormalizedSql = { readonly sql: string } | { readonly placeholderReason: string }
@@ -63,9 +95,24 @@ export function normalizeClickHouseSql(sql: string, warnings: string[], panelTit
 		return { placeholderReason: "This ClickHouse query needs Maple org scoping before it can run." }
 	}
 
+	const hasWhere = topLevelIndex(sql, /WHERE/) !== undefined
+	const fromAt = topLevelIndex(sql, /FROM/)
+	// The outer query reads a subquery: its rows may have no OrgId column to filter, so the scope
+	// has to be written inside it by hand.
+	const readsSubquery = fromAt !== undefined && /^FROM\s*\(/i.test(Str.slice(fromAt)(sql))
+	if (!Str.includes("$__orgFilter")(sql) && !hasWhere && readsSubquery) {
+		warnings.push(
+			`Panel "${panelTitle}" was imported as a placeholder because its ClickHouse query reads a subquery with no outer WHERE; add $__orgFilter inside it.`,
+		)
+		return {
+			placeholderReason:
+				"This ClickHouse query needs $__orgFilter inside its subquery before it can run.",
+		}
+	}
+
 	const normalized = Str.includes("$__orgFilter")(sql)
 		? sql
-		: insertBeforeTrailingClauses(sql, /\bWHERE\b/i.test(sql) ? "AND $__orgFilter" : "WHERE $__orgFilter")
+		: insertBeforeTrailingClauses(sql, hasWhere ? "AND $__orgFilter" : "WHERE $__orgFilter")
 
 	if (!Str.includes("$__orgFilter")(sql)) {
 		warnings.push(
@@ -97,8 +144,17 @@ export function rawSqlDataSource(args: {
 	visualization: string
 	sql: string
 	displayType: RawSqlDisplayType
+	/** A scalar's reducer from the source dashboard; the default reads the first row. */
+	transform?:
+		| ReturnType<typeof scalarTransform>
+		| {
+				readonly reduceToValue: {
+					readonly field: string
+					readonly aggregate: "first" | "avg" | "max" | "min" | "sum" | "count"
+				}
+		  }
 }): DashboardWidget["dataSource"] {
-	const transform = scalarTransform(args.visualization, args.displayType)
+	const transform = args.transform ?? scalarTransform(args.visualization, args.displayType)
 	return makeRawSqlDataSource({
 		sql: args.sql,
 		displayType: args.displayType,

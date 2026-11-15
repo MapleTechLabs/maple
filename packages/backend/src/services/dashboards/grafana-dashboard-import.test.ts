@@ -260,6 +260,65 @@ describe("convertGrafanaDashboardToPortable on other inputs", () => {
 		}),
 	)
 
+	it.effect("scopes a ClickHouse query at its top level and keeps a stat's calculation", () =>
+		Effect.gen(function* () {
+			const ch = { type: "grafana-clickhouse-datasource", uid: "ch" }
+			const panel = (
+				title: string,
+				type: string,
+				rawSql: string,
+				extra: Record<string, unknown> = {},
+			) => ({
+				type,
+				title,
+				datasource: ch,
+				gridPos: { x: 0, y: 0, w: 6, h: 4 },
+				targets: [{ refId: "A", rawSql }],
+				...extra,
+			})
+			const converted = yield* convertGrafanaDashboardToPortable({
+				title: "ClickHouse",
+				schemaVersion: 39,
+				panels: [
+					panel(
+						"Nested",
+						"table",
+						"SELECT n FROM (SELECT count() AS n FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) LIMIT 5) WHERE n > 0",
+					),
+					panel(
+						"Literal",
+						"table",
+						"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND Body LIKE '%limit%' AND $__timeFilter(Timestamp)",
+					),
+					panel(
+						"Subquery",
+						"table",
+						"SELECT count() FROM (SELECT * FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp))",
+					),
+					panel(
+						"Mean",
+						"stat",
+						"SELECT toStartOfMinute(Timestamp) AS t, count() AS value FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) GROUP BY t",
+						{ options: { reduceOptions: { calcs: ["mean"] } } },
+					),
+				],
+			})
+			expect(dataSourceRawSql(widgetNamed(converted, "Nested").dataSource)?.sql).toBe(
+				"SELECT n FROM (SELECT count() AS n FROM logs WHERE OrgId = 'x' AND $__timeFilter(Timestamp) LIMIT 5) WHERE n > 0 AND $__orgFilter",
+			)
+			expect(dataSourceRawSql(widgetNamed(converted, "Literal").dataSource)?.sql).toBe(
+				"SELECT count() AS value FROM logs WHERE OrgId = 'x' AND Body LIKE '%limit%' AND $__timeFilter(Timestamp) AND $__orgFilter",
+			)
+			expect(dataSourceRawSql(widgetNamed(converted, "Subquery").dataSource)).toBeNull()
+			expect(converted.warnings).toEqual(
+				expect.arrayContaining([expect.stringContaining("reads a subquery with no outer WHERE")]),
+			)
+			expect(widgetNamed(converted, "Mean").dataSource).toMatchObject({
+				transform: { reduceToValue: { field: "value", aggregate: "avg" } },
+			})
+		}),
+	)
+
 	it.effect("unwraps the API's `{ dashboard, meta }` envelope", () =>
 		Effect.gen(function* () {
 			const converted = yield* convertGrafanaDashboardToPortable({

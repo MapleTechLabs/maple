@@ -255,7 +255,8 @@ function convertQueryPanel(args: {
 			// normalizeClickHouseSql already said why.
 			return args.placeholder(normalized.placeholderReason)
 		}
-		dataSource = rawSqlDataSource({ visualization, sql: normalized.sql, displayType })
+		const transform = grafanaScalarTransform(panel, visualization, displayType, title, context.warnings)
+		dataSource = rawSqlDataSource({ visualization, sql: normalized.sql, displayType, transform })
 	} else {
 		// A PromQL widget's heatmap rows keep one value per series, not the time by bucket grid.
 		if (target === "heatmap") {
@@ -266,7 +267,7 @@ function convertQueryPanel(args: {
 		}
 		const legendFormat = asString(first.legendFormat)
 		const minStepSeconds = intervalSeconds(first.interval) ?? intervalSeconds(panel.interval)
-		const transform = promqlScalarTransform(panel, visualization, displayType, title, context.warnings)
+		const transform = grafanaScalarTransform(panel, visualization, displayType, title, context.warnings)
 		dataSource = makePromqlDataSource({
 			query: rewriteVariableRefs(query.expr, context.variables),
 			...(legendFormat === undefined || legendFormat === "__auto" ? undefined : { legendFormat }),
@@ -293,7 +294,7 @@ function convertQueryPanel(args: {
 	}
 }
 
-/** Grafana's `reduceOptions.calcs` to Maple's reducers, over rows a PromQL stat gets newest first. */
+/** Grafana's `reduceOptions.calcs` to Maple's reducers; `last` reads the first row, as a stat's rows come newest first. */
 const GRAFANA_CALCS = new Map<string, "first" | "avg" | "max" | "min" | "sum" | "count">([
 	["lastNotNull", "first"],
 	["last", "first"],
@@ -305,7 +306,7 @@ const GRAFANA_CALCS = new Map<string, "first" | "avg" | "max" | "min" | "sum" | 
 ])
 
 /** A scalar panel's reducer: Grafana's own calculation where Maple has it, else the latest value. */
-function promqlScalarTransform(
+function grafanaScalarTransform(
 	panel: UnknownRecord,
 	visualization: string,
 	displayType: string,
