@@ -67,6 +67,21 @@ export const FetchShipped = Command.define("FetchServiceDeployShipped", {
 
 const MINUTE_MS = 60_000
 
+/**
+ * Seconds of traffic the after side holds: from the deploy's minute to where the read stops, at
+ * most the window. A deploy 90 seconds in holds 90, not one floored minute; a few seconds at least.
+ */
+export const afterSeconds = (
+	check: Pick<DeployCheck, "firstSeenMs" | "windowMinutes">,
+	dataEndMs: number,
+): number => {
+	const deployMs = Math.floor(check.firstSeenMs / MINUTE_MS) * MINUTE_MS
+	const covered = Math.min(dataEndMs, deployMs + check.windowMinutes * MINUTE_MS) - deployMs
+	return Math.max(MIN_AFTER_SECONDS, covered / 1000)
+}
+
+const MIN_AFTER_SECONDS = 5
+
 /** The minutes either side of the deploy, cut at the minute the warehouse placed it in. */
 export const sidesOf = (check: Pick<DeployCheck, "firstSeenMs" | "windowMinutes">, dataEndMs: number) => {
 	const deployMs = Math.floor(check.firstSeenMs / MINUTE_MS) * MINUTE_MS

@@ -31,7 +31,7 @@ import { verdictBadge } from "../view-verdict"
 import { type OperationChange, operationChanges } from "./derive"
 import { Message } from "./message"
 import type { Model } from "./model"
-import { OPERATIONS_LIMIT, sidesOf } from "./update"
+import { afterSeconds, OPERATIONS_LIMIT, sidesOf } from "./update"
 
 type H = HtmlBuilder<Message>
 
@@ -85,10 +85,7 @@ const header = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Htm
 }
 
 /** The two sides cover different minutes while a deploy verifies, so they compare as rates. */
-// A deploy in its first minute has spans in a minute not yet over: divide by one, not zero.
-const perSecond = (spans: number, minutes: number) => spans / (Math.max(1, minutes) * 60)
-
-const comparison = (h: H, check: DeployCheck): Html => {
+const comparison = (h: H, check: DeployCheck, dataEndMs: number): Html => {
 	const errorsUp = isErrorRateUp(check.before.errorRate, check.after.errorRate)
 	const slower = isP95Up(check.before.p95Ms, check.after.p95Ms)
 	return vstack(h, { gap: "2" }, [
@@ -103,9 +100,9 @@ const comparison = (h: H, check: DeployCheck): Html => {
 		statRail(h, { columns: 3, className: "w-full overflow-hidden" }, [
 			statRailItem(h, {
 				eyebrow: "Requests",
-				value: formatRate(perSecond(check.after.spans, check.minutes)),
+				value: formatRate(check.after.spans / afterSeconds(check, dataEndMs)),
 				hint: "/s",
-				subline: `before ${formatRate(perSecond(check.before.spans, check.windowMinutes))}/s`,
+				subline: `before ${formatRate(check.before.spans / (check.windowMinutes * 60))}/s`,
 				compact: true,
 			}),
 			statRailItem(h, {
@@ -165,6 +162,11 @@ const operationRow = (h: H, change: OperationChange): Html =>
  * tenth of the requests from other versions (a rollout), the section says its figures include them.
  */
 const sharedNote = (h: H, check: DeployCheck, after: ReadonlyArray<Operation>): Html => {
+	// A full list was cut at its cap, so its sum undercounts the traffic: say so without a share.
+	if (after.length >= OPERATIONS_LIMIT)
+		return typography(h, { size: "2xs", tone: "muted", as: "p" }, [
+			"These figures count every version serving after this deploy, not only this one.",
+		])
 	const total = Arr.reduce(after, 0, (sum, op) => sum + op.spanCount)
 	const others = total <= 0 ? 0 : Math.max(0, 1 - check.after.spans / total)
 	return others < 0.1
@@ -322,7 +324,7 @@ const content = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Re
 		"sheet",
 		model.dialog.id,
 		[
-			comparison(h, check),
+			comparison(h, check, inputs.dataEndMs),
 			operationsSection(h, model, check),
 			issuesSection(h, inputs.issues),
 			shippedSection(h, model, check, inputs),
