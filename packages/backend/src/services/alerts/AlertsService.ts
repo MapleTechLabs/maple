@@ -3486,7 +3486,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						const flapsSince =
 							normalized.costBudget === null
 								? 0
-								: costBudgetPeriodWindow(normalized.costBudget.period, windowEndMs).startMs
+								: costBudgetPeriodWindow(normalized.costBudget.period, timestamp).startMs
 						const priorNotified =
 							(yield* dbExecute((db) =>
 								db.run(
@@ -5612,9 +5612,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				const unavailableOrgs = yield* Ref.make(HashSet.empty<OrgId>())
 				const markOrgUnavailable = (orgId: OrgId) => Ref.update(unavailableOrgs, HashSet.add(orgId))
 
-				const evaluateBeforeDeadline = (row: StoredAlertRuleRow, rule: NormalizedRule) =>
+				// A budget has no rolling window to snap. It is judged at its claim's own time, which
+				// is what its incident's `firstTriggeredAt` records: the two name the same period.
+				const evaluateBeforeDeadline = (
+					row: StoredAlertRuleRow,
+					rule: NormalizedRule,
+					claimedAt: number,
+				) =>
 					Effect.flatMap(now, (startedAt) =>
-						evaluateRule(row.orgId, rule, tickWindowEndMs).pipe(
+						evaluateRule(
+							row.orgId,
+							rule,
+							rule.costBudget === null ? tickWindowEndMs : claimedAt,
+						).pipe(
 							Effect.timeoutOrElse({
 								duration: Duration.millis(
 									Math.max(0, Math.min(lane.evalTimeoutMs(row), deadline - startedAt)),
@@ -5656,7 +5666,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 							const serviceRules = yield* perServiceRules(normalized)
 							yield* Effect.forEach(serviceRules, ({ groupKey, rule }) =>
 								Effect.gen(function* () {
-									const observations = yield* evaluateBeforeDeadline(row, rule)
+									const observations = yield* evaluateBeforeDeadline(row, rule, timestamp)
 									// A service with no rows at all used to be dropped here,
 									// which left its open incident frozen for as long as it
 									// stayed quiet. An empty window is an observation too,
@@ -5708,7 +5718,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 						// UNGROUPED_GROUP_KEY entry (with a no-data fallback) when the
 						// compiled plan is ungrouped. So both shapes flow through the
 						// same loop with no key translation here.
-						const results = yield* evaluateBeforeDeadline(row, normalized)
+						const results = yield* evaluateBeforeDeadline(row, normalized, timestamp)
 						// An uptime rule has no plan; it is keyed by its monitor's service when linked.
 						// An anomaly rule is always keyed by anomaly incident.
 						const grouped =
@@ -5733,7 +5743,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 												observed,
 												prefetch.openIncidentFor(row.orgId, row.id, groupKey)
 													?.firstTriggeredAt ?? null,
-												tickWindowEndMs,
+												timestamp,
 											)
 								yield* recordEvaluationStatus(evaluation)
 								yield* processEvaluation(
