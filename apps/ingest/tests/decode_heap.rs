@@ -1036,3 +1036,312 @@ fn every_text_field_is_charged() {
         );
     }
 }
+
+mod prometheus {
+    use super::{peak_during, LIVE};
+    use maple_ingest::prometheus_remote_write::{
+        decode, decode_cost, Label, MetricMetadata, MetricType, Sample, Skipped, TimeSeries,
+        WriteRequest,
+    };
+    use prost::Message;
+    use std::cell::Cell;
+
+    fn label(name: &str, value: &str) -> Label {
+        Label {
+            name: name.to_owned(),
+            value: value.to_owned(),
+        }
+    }
+
+    /// `series` series of `samples` samples, each with `labels` labels besides
+    /// its name, `job` and `instance`, spread over `targets` targets.
+    fn request(series: usize, samples: usize, labels: usize, targets: usize) -> WriteRequest {
+        let timeseries = (0..series)
+            .map(|i| {
+                let mut all = vec![
+                    label("__name__", &format!("http_requests_{}_total", i % 200)),
+                    label("instance", &format!("10.0.{}.1:9090", i % targets)),
+                    label("job", "api"),
+                ];
+                all.extend(
+                    (0..labels).map(|l| label(&format!("label_{l}"), &format!("value-{i}-{l}"))),
+                );
+                TimeSeries {
+                    labels: all,
+                    samples: (0..samples)
+                        .zip(1_700_000_000_000_i64..)
+                        .map(|(s, timestamp)| Sample {
+                            value: s as f64,
+                            timestamp,
+                        })
+                        .collect(),
+                    exemplars: vec![Skipped {}; 2],
+                    histograms: Vec::new(),
+                }
+            })
+            .collect();
+        WriteRequest {
+            timeseries,
+            metadata: Vec::new(),
+        }
+    }
+
+    struct Measured {
+        /// Estimated and real peak while decoding and mapping.
+        peak: (usize, usize),
+        /// Estimated and real bytes the mapped request holds afterwards.
+        retained: (usize, usize),
+    }
+
+    fn measure(wire: &[u8]) -> Measured {
+        let cost = decode_cost(wire, u64::MAX).unwrap();
+        let base = LIVE.with(Cell::get);
+        let (peak, decoded) = peak_during(|| decode(wire));
+        let retained = LIVE.with(Cell::get) - base;
+        decoded.unwrap();
+        Measured {
+            peak: (usize::try_from(cost.peak).unwrap(), peak),
+            retained: (usize::try_from(cost.retained).unwrap(), retained),
+        }
+    }
+
+    #[test]
+    fn the_estimate_bounds_decoding_and_mapping_a_remote_write() {
+        let help = "h".repeat(4 * 1024);
+        let mut described = request(2_000, 1, 8, 2_000);
+        described.metadata = (0..200)
+            .map(|i| MetricMetadata {
+                kind: MetricType::Counter.into(),
+                metric_family_name: format!("http_requests_{i}_total"),
+                help: help.clone(),
+                unit: "requests".to_owned(),
+            })
+            .collect();
+        // (case, request, a shape a real sender produces)
+        let cases = [
+            ("one sample per series", request(2_000, 1, 8, 50), true),
+            ("a backfill of one series", request(1, 20_000, 8, 1), true),
+            ("a few samples per series", request(500, 10, 12, 20), true),
+            ("a target per series", request(2_000, 1, 2, 2_000), false),
+            ("many labels", request(50, 4, 400, 5), false),
+            ("help text on every metric", described, false),
+            ("no labels at all", request(5_000, 1, 0, 1), false),
+        ];
+        for (case, request, realistic) in cases {
+            let wire = request.encode_to_vec();
+            let Measured {
+                peak: (estimate, actual),
+                retained: (kept_estimate, kept),
+            } = measure(&wire);
+            eprintln!(
+                "{case:>26}: wire {:>8} B, peak {actual:>9} B ({:>5.1}x wire), estimate {estimate:>9} B ({:.2}x), retained {kept:>9} B, estimate {kept_estimate:>9} B ({:.2}x)",
+                wire.len(),
+                actual as f64 / wire.len() as f64,
+                estimate as f64 / actual as f64,
+                kept_estimate as f64 / kept as f64,
+            );
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+            assert!(
+                kept_estimate >= kept,
+                "{case}: retained estimate {kept_estimate} below the real {kept}"
+            );
+            // Loose on purpose: every series is costed as a metric and a resource of its own.
+            assert!(
+                !realistic || (estimate <= actual * 4 && kept_estimate <= kept * 3),
+                "{case}: estimates {estimate} and {kept_estimate} overshoot {actual} and {kept}"
+            );
+        }
+    }
+
+    /// A body of nothing but empty series and empty labels is the cheapest way
+    /// to make the decoder allocate; the estimate still covers it.
+    #[test]
+    fn the_estimate_bounds_a_body_of_empty_messages() {
+        let empty_series = [0x0a, 0x00].repeat(100_000);
+        let empty_labels = [0x0a, 0x00].repeat(60_000);
+        let mut one_series = vec![0x0a, 0x80 | (empty_labels.len() & 0x7f) as u8];
+        one_series.push(((empty_labels.len() >> 7) & 0x7f) as u8 | 0x80);
+        one_series.push((empty_labels.len() >> 14) as u8);
+        one_series.extend(&empty_labels);
+        for (case, wire) in [("empty series", empty_series), ("empty labels", one_series)] {
+            let Measured {
+                peak: (estimate, actual),
+                retained: (kept_estimate, kept),
+            } = measure(&wire);
+            eprintln!(
+                "{case}: wire {} B, peak {actual} B, estimate {estimate} B",
+                wire.len()
+            );
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+            assert!(
+                kept_estimate >= kept,
+                "{case}: retained estimate {kept_estimate} below the real {kept}"
+            );
+        }
+    }
+    /// Field `tag` holding `body`, length-delimited.
+    fn framed(tag: u8, body: &[u8]) -> Vec<u8> {
+        let mut out = vec![(tag << 3) | 2];
+        prost::encoding::encode_varint(body.len() as u64, &mut out);
+        out.extend_from_slice(body);
+        out
+    }
+
+    /// The decoder builds everything before a malformed byte and only then fails, so
+    /// the estimate has to cover that prefix: a request the decoder will refuse must
+    /// not be decoded under a reservation that ignores what it holds on the way.
+    #[test]
+    fn the_estimate_bounds_what_a_malformed_body_allocates_before_it_fails() {
+        let empty_labels = [0x0a, 0x00].repeat(60_000);
+        // A series of empty labels that ends in a tag of zero.
+        let bad_tail = framed(1, &[empty_labels.as_slice(), &[0x00]].concat());
+        // The same labels, then a label whose own body is cut short.
+        let bad_label = framed(1, &[empty_labels.as_slice(), &[0x0a, 0x02, 0x0a, 0x7f]].concat());
+        // Good series, then a byte that is not a field.
+        let good = request(2_000, 1, 8, 50).encode_to_vec();
+        let bad_after_good = [good.as_slice(), &[0x00]].concat();
+        // Metadata with a long help text and then a tag of zero.
+        let help = [&[0x22, 0x80, 0x40][..], &[b'h'; 8 * 1024]].concat();
+        let bad_metadata = framed(3, &[help.as_slice(), &[0x00]].concat());
+        // A label two bytes long whose name claims the 8 kB that follow the series: the
+        // decoder copies them into the name before it notices the label was overrun.
+        let overrun = [
+            framed(1, &[0x0a, 0x02, 0x0a, 0x80, 0x40]).as_slice(),
+            &[b'x'; 8 * 1024],
+        ]
+        .concat();
+        for (case, wire) in [
+            ("a label overrunning its series", overrun),
+            ("a series ending in a bad tag", bad_tail),
+            ("a series ending in a cut label", bad_label),
+            ("a bad byte after good series", bad_after_good),
+            ("metadata ending in a bad tag", bad_metadata),
+        ] {
+            let cost = decode_cost(&wire, u64::MAX).unwrap();
+            let (actual, decoded) = peak_during(|| decode(&wire));
+            assert!(decoded.is_err(), "{case}: the decoder accepted it");
+            let estimate = usize::try_from(cost.peak).unwrap();
+            eprintln!("{case}: wire {} B, peak {actual} B, estimate {estimate} B", wire.len());
+            assert!(
+                estimate >= actual,
+                "{case}: estimate {estimate} below the real peak {actual}"
+            );
+        }
+    }
+    /// A small deterministic generator, so a failing case can be replayed from its seed.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            (self.next() % bound.max(1) as u64) as usize
+        }
+
+        fn text(&mut self, longest: usize) -> String {
+            let len = self.below(longest + 1);
+            (0..len).map(|_| char::from(b'a' + self.below(26) as u8)).collect()
+        }
+    }
+
+    /// A request of random shape: any number of series, labels, samples and metadata.
+    fn random_request(rng: &mut Rng) -> WriteRequest {
+        let timeseries = (0..rng.below(40))
+            .map(|_| TimeSeries {
+                labels: (0..rng.below(30))
+                    .map(|_| label(&rng.text(24), &rng.text(40)))
+                    .collect(),
+                samples: (0..rng.below(60))
+                    .map(|_| Sample {
+                        value: rng.below(1_000) as f64,
+                        timestamp: 1_700_000_000_000 + i64::try_from(rng.below(1_000_000)).unwrap_or(0),
+                    })
+                    .collect(),
+                exemplars: vec![Skipped {}; rng.below(3)],
+                histograms: vec![Skipped {}; rng.below(2)],
+            })
+            .collect();
+        let metadata = (0..rng.below(6))
+            .map(|_| MetricMetadata {
+                kind: MetricType::Counter.into(),
+                metric_family_name: rng.text(24),
+                help: rng.text(300),
+                unit: rng.text(8),
+            })
+            .collect();
+        WriteRequest {
+            timeseries,
+            metadata,
+        }
+    }
+
+    /// Damages `wire` the ways a hostile sender would: cut it, overwrite bytes, and
+    /// splice in runs of the cheapest messages the decoder allocates for.
+    fn mutate(rng: &mut Rng, mut wire: Vec<u8>) -> Vec<u8> {
+        for _ in 0..rng.below(4) {
+            if wire.is_empty() {
+                break;
+            }
+            let at = rng.below(wire.len());
+            match rng.below(5) {
+                0 => wire.truncate(at),
+                1 => wire[at] = rng.next() as u8,
+                2 => wire.insert(at, 0x00),
+                3 => {
+                    let run = [0x0a, 0x00].repeat(rng.below(4_000));
+                    wire.splice(at..at, run);
+                }
+                _ => {
+                    let run = framed(1, &[0x0a, 0x00].repeat(rng.below(4_000)));
+                    wire.splice(at..at, run);
+                }
+            }
+        }
+        wire
+    }
+
+    /// What the decoder's own error value can hold, however large the input.
+    const ERROR_VALUE_BYTES: usize = 1024;
+
+    /// Whatever the bytes are, and whether the decoder accepts them or not, it never
+    /// allocates more than the estimate reserved for it.
+    #[test]
+    fn the_estimate_bounds_random_and_damaged_bodies() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let (mut refused, mut accepted) = (0_u32, 0_u32);
+        for case in 0..12_000 {
+            let seed = rng.0;
+            let wire = random_request(&mut rng).encode_to_vec();
+            let wire = if case % 3 == 0 { wire } else { mutate(&mut rng, wire) };
+            let cost = decode_cost(&wire, u64::MAX).unwrap();
+            let (actual, decoded) = peak_during(|| decode(&wire));
+            if decoded.is_ok() {
+                accepted += 1;
+            } else {
+                refused += 1;
+            }
+            drop(decoded);
+            // A refusal also allocates the decoder's error value: its message and the
+            // path to the field, a few hundred bytes whatever the input.
+            let estimate = usize::try_from(cost.peak).unwrap() + ERROR_VALUE_BYTES;
+            assert!(
+                estimate >= actual,
+                "case {case} (seed {seed:#x}, {} wire bytes): estimate {estimate} below the real peak {actual}",
+                wire.len()
+            );
+        }
+        eprintln!("{accepted} bodies decoded, {refused} refused");
+        assert!(accepted > 500 && refused > 500, "{accepted} decoded, {refused} refused");
+    }
+}
