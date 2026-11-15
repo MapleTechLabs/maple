@@ -541,7 +541,14 @@ const make = Effect.gen(function* () {
 		const alignedStart = Math.floor(startMs / stepMs) * stepMs
 		const alignedEnd = Math.max(alignedStart, Math.floor(endMs / stepMs) * stepMs)
 		const query = interpolatePromqlBuiltins(input.query, { startMs, endMs, stepMs })
-		const result = yield* query_(tenant, { query, startMs: alignedStart, endMs: alignedEnd, stepMs })
+		// Range mode even for a one-step window: a chart always wants a matrix.
+		const result = yield* query_(tenant, {
+			query,
+			startMs: alignedStart,
+			endMs: alignedEnd,
+			stepMs,
+			instant: false,
+		})
 		const rows = promqlRowsForDisplay(result, {
 			...(input.displayType === undefined ? undefined : { displayType: input.displayType }),
 			...(input.legendFormat === undefined ? undefined : { legendFormat: input.legendFormat }),
