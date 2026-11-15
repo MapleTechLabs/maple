@@ -20,6 +20,7 @@ import {
 	type Labels,
 	LOOKBACK_MS,
 	type Point,
+	type PushdownData,
 	type QueryResult,
 	type RangeSeries,
 	type Sample,
@@ -204,6 +205,8 @@ export interface EvaluationInput {
 	readonly params: QueryParams
 	/** What the source returned for each selector of `planRequests`. */
 	readonly data: ReadonlyMap<VectorSelector, SelectorData>
+	/** Subtrees the source evaluated itself (see `planPushdowns`). */
+	readonly pushed?: ReadonlyMap<Expr, PushdownData>
 	readonly limits?: EvalLimits
 }
 
@@ -215,6 +218,7 @@ class Evaluator {
 		private readonly params: QueryParams,
 		private readonly data: ReadonlyMap<VectorSelector, SelectorData>,
 		private readonly limits: EvalLimits,
+		private readonly pushed: ReadonlyMap<Expr, PushdownData>,
 	) {
 		this.lookbackMs = params.lookbackMs ?? LOOKBACK_MS
 	}
@@ -510,7 +514,31 @@ class Evaluator {
 		})
 	}
 
+	/** A pushed subtree's answer as steps; a bare range function drops the metric name. */
+	fromPushed(expr: Expr, data: PushdownData, grid: TimeGrid): R<Steps> {
+		const times = gridTimes(grid)
+		const vectors: Sample[][] = times.map(() => [])
+		const keepName = expr.type === "Aggregate" || (expr.type === "Call" && expr.func === "last_over_time")
+		// Label order, as the selector would have read them; ties in topk depend on it.
+		const ordered = [...data.series].sort((x, y) => compareLabels(x.labels, y.labels))
+		for (const series of ordered) {
+			const labels = keepName ? series.labels : dropMetricName(series.labels)
+			for (const [i, step] of series.steps.entries()) {
+				const t = times[step]
+				const value = series.values[i]
+				if (t !== undefined && value !== undefined) vectors[step]?.push({ labels, value, t })
+			}
+		}
+		for (const vector of vectors) {
+			const unique = checkUnique(vector)
+			if (Result.isFailure(unique)) return Result.fail(unique.failure)
+		}
+		return this.steps(times, vectors)
+	}
+
 	eval(expr: Expr, grid: TimeGrid): R<Value> {
+		const pushed = this.pushed.get(expr)
+		if (pushed !== undefined) return this.fromPushed(expr, pushed, grid)
 		return Result.gen(this, function* (): Generator<R<unknown>, Value> {
 			switch (expr.type) {
 				case "NumberLiteral":
@@ -624,7 +652,12 @@ class Evaluator {
 /** Evaluate a planned query once the source has answered every request of `planRequests`. */
 export const evaluate = (input: EvaluationInput): R<QueryResult> => {
 	const { expr, params } = input
-	const evaluator = new Evaluator(params, input.data, input.limits ?? DEFAULT_LIMITS)
+	const evaluator = new Evaluator(
+		params,
+		input.data,
+		input.limits ?? DEFAULT_LIMITS,
+		input.pushed ?? new Map(),
+	)
 	const instant = params.startMs === params.endMs
 	const grid: TimeGrid = instant
 		? { startMs: params.startMs, endMs: params.startMs, stepMs: 0 }

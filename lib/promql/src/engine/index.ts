@@ -9,7 +9,14 @@ import type { EvalLimits, QueryResult, SelectorData, SelectorRequest } from "./t
 export { evaluate, type EvaluationInput } from "./evaluate"
 export { bucketSamples, matchesLabels, memorySource, type RawSeries } from "./memory-source"
 export type { EvalError } from "./ops"
-export { gridTimes, planRequests, type QueryParams, type RequestPlan } from "./plan"
+export {
+	gridTimes,
+	planPushdowns,
+	planRequests,
+	type PushdownCandidate,
+	type QueryParams,
+	type RequestPlan,
+} from "./plan"
 export * from "./types"
 
 /** Parse, plan and evaluate against a synchronous source. Tests and the compliance runner use it. */

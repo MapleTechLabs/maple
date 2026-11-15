@@ -109,3 +109,56 @@ export const DEFAULT_LIMITS: EvalLimits = { maxSeries: 10_000, maxPoints: 5_000_
 
 /** Prometheus' default lookback for instant selectors. */
 export const LOOKBACK_MS = 300_000
+
+/** Range functions a source may evaluate itself; `last` is an instant selector's lookback. */
+export const PUSHDOWN_FUNCTIONS = [
+	"rate",
+	"increase",
+	"delta",
+	"irate",
+	"idelta",
+	"resets",
+	"changes",
+	"avg_over_time",
+	"sum_over_time",
+	"count_over_time",
+	"min_over_time",
+	"max_over_time",
+	"last_over_time",
+	"present_over_time",
+	"stddev_over_time",
+	"stdvar_over_time",
+	"last",
+] as const
+export type PushdownFunction = (typeof PUSHDOWN_FUNCTIONS)[number]
+
+export const PUSHDOWN_AGGREGATIONS = ["sum", "avg", "min", "max", "count", "group"] as const
+export type PushdownAggregation = (typeof PUSHDOWN_AGGREGATIONS)[number]
+
+/**
+ * A subtree the source may evaluate whole: `func(selector[range])` at every step,
+ * optionally combined `op by (labels)`. Steps are `startMs + j * stepMs`, the
+ * window of step j is `(t - offset - range, t - offset]`, and `widthMs` divides
+ * both the step and the range so windows are whole buckets.
+ */
+export interface PushdownRequest {
+	readonly metricName: string | undefined
+	readonly matchers: ReadonlyArray<LabelMatcher>
+	readonly offsetMs: number
+	readonly func: PushdownFunction
+	readonly rangeMs: number
+	readonly startMs: number
+	readonly stepMs: number
+	readonly steps: number
+	readonly widthMs: number
+	readonly aggregation: { readonly op: PushdownAggregation; readonly by: ReadonlyArray<string> } | undefined
+}
+
+/** A source's answer: per series (or per group), the steps that have a value. */
+export interface PushdownData {
+	readonly series: ReadonlyArray<{
+		readonly labels: Labels
+		readonly steps: ReadonlyArray<number>
+		readonly values: ReadonlyArray<number>
+	}>
+}

@@ -15,19 +15,25 @@ import { decodeJsonEachRow } from "@maple/local-server/chdb-rows"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import * as CH from "@maple/query-engine/ch"
 import {
+	buildPushdownQuery,
 	buildSelectorQueries,
 	catalogFromRows,
 	catalogQuery,
 	promqlCatalogRowSchema,
+	promqlPushdownRowSchema,
 	promqlSelectorRowSchema,
+	toPushdownData,
 	toSelectorData,
 	type CatalogMetric,
 } from "@maple/query-engine/promql"
 import {
 	evaluate,
+	type Expr,
 	memorySource,
 	parse,
+	planPushdowns,
 	planRequests,
+	type PushdownData,
 	type QueryParams,
 	type QueryResult,
 	type RawSeries,
@@ -110,13 +116,35 @@ const insertHistogram = (db: Chdb, service: string): void => {
 }
 
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
+const decodePushdown = decodeJsonEachRow(promqlPushdownRowSchema)
+const options = { orgId: OrgId.make(ORG), maxSeries: 10_000 }
+let pushedCount = 0
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
 
-const sqlRun = (db: Chdb, catalog: ReadonlyArray<CatalogMetric>, query: string, params: QueryParams) => {
+const sqlRun = (
+	db: Chdb,
+	catalog: ReadonlyArray<CatalogMetric>,
+	query: string,
+	params: QueryParams,
+	pushdown: boolean,
+) => {
 	const parsed = parse(query)
 	if (Result.isFailure(parsed)) return Result.fail(parsed.failure.message)
+	const pushed = new Map<Expr, PushdownData>()
+	const skipped = new Set<VectorSelector>()
+	for (const [node, candidate] of pushdown ? planPushdowns(parsed.success, params) : []) {
+		const plan = buildPushdownQuery(candidate.request, catalog, options)
+		if (plan === undefined) continue
+		const rows = decodePushdown(
+			db.query(normalizeSqlForClickHouseClient(Effect.runSync(plan.compiled).sql)),
+		)
+		pushed.set(node, toPushdownData(candidate.request, plan, rows))
+		skipped.add(candidate.selector)
+		pushedCount += 1
+	}
 	const data = new Map<VectorSelector, SelectorData>()
 	for (const [selector, request] of planRequests(parsed.success, params)) {
+		if (skipped.has(selector)) continue
 		const results = Arr.map(
 			buildSelectorQueries(request, catalog, { orgId: OrgId.make(ORG), maxSeries: 10_000 }),
 			(plan) => ({
@@ -128,7 +156,7 @@ const sqlRun = (db: Chdb, catalog: ReadonlyArray<CatalogMetric>, query: string, 
 		)
 		data.set(selector, toSelectorData(request, results))
 	}
-	return Result.mapError(evaluate({ expr: parsed.success, params, data }), (e) => e.message)
+	return Result.mapError(evaluate({ expr: parsed.success, params, data, pushed }), (e) => e.message)
 }
 
 const flatten = (result: QueryResult): ReadonlyArray<readonly [string, number, number]> => {
@@ -217,14 +245,22 @@ describeWithChdb("PromQL on the warehouse matches the reference", () => {
 		test(query, () => {
 			for (const { name, params } of cases) {
 				const want = runQuery(query, params, reference)
-				const got = sqlRun(db, catalog, query, params)
-				if (Result.isFailure(want)) {
-					expect(Result.isFailure(got)).toBe(true)
-					continue
+				for (const pushdown of [false, true]) {
+					const label = `${name}${pushdown ? " pushdown" : ""}`
+					const got = sqlRun(db, catalog, query, params, pushdown)
+					if (Result.isFailure(want)) {
+						expect(Result.isFailure(got)).toBe(true)
+						continue
+					}
+					if (Result.isFailure(got)) throw new Error(`${label}: ${got.failure}`)
+					expect(`${label}: ${mismatch(got.success, want.success) ?? "ok"}`).toBe(`${label}: ok`)
 				}
-				if (Result.isFailure(got)) throw new Error(`${name}: ${got.failure}`)
-				expect(`${name}: ${mismatch(got.success, want.success) ?? "ok"}`).toBe(`${name}: ok`)
 			}
 		})
 	}
+
+	test("pushes most of the corpus down", () => {
+		// Each corpus query runs four cases; dozens of them have a pushable subtree.
+		expect(pushedCount).toBeGreaterThan(100)
+	})
 })

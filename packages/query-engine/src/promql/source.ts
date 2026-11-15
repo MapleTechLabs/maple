@@ -2,17 +2,29 @@
 // (table, component) of the stored metrics its name resolves to, and their rows become SelectorData.
 // Pure: the caller runs the compiled queries.
 
-import type { LabelMatcher, SampleBucket, SelectorData, SelectorRequest, SeriesData } from "@maple/promql"
+import type {
+	LabelMatcher,
+	PushdownData,
+	PushdownRequest,
+	SampleBucket,
+	SelectorData,
+	SelectorRequest,
+	SeriesData,
+} from "@maple/promql"
 import { Array as Arr, Order } from "effect"
 import { compile } from "@maple-dev/effect-orm/clickhouse"
 import type { OrgId } from "@maple/primitives"
 import {
 	type PromqlCatalogRow,
 	type PromqlSelectorRow,
+	type PromqlPushdownRow,
 	promqlCatalogQuery,
+	type PromqlPushdownOpts,
+	promqlPushdownGroupQuery,
+	promqlPushdownSeriesQuery,
 	promqlSelectorQuery,
 } from "../ch/queries/promql"
-import { matchesAll, matcherCondition, seriesLabels } from "./labels"
+import { formatLe, labelValueExpr, matchesAll, matcherCondition, seriesLabels } from "./labels"
 import {
 	type CatalogMetric,
 	type MetricComponent,
@@ -197,3 +209,114 @@ export const catalogFromRows = (rows: ReadonlyArray<PromqlCatalogRow>): Readonly
 				]
 			: [],
 	)
+
+export interface PushdownPlan {
+	readonly promName: string
+	readonly component: MetricComponent
+	readonly compiled: ReturnType<typeof compilePushdown>
+}
+
+const compilePushdown = (
+	request: PushdownRequest,
+	target: PromNameTarget,
+	labelMatchers: ReadonlyArray<LabelMatcher>,
+	byLabels: ReadonlyArray<string>,
+	options: SelectorPlanOptions,
+) => {
+	const originMs = request.startMs - request.offsetMs
+	const lastEnd = originMs + (request.steps - 1) * request.stepMs
+	const params = {
+		orgId: options.orgId,
+		startMs: originMs - request.rangeMs,
+		endMs: lastEnd,
+		originMs,
+		timeOriginMs: originMs,
+	}
+	const opts: PromqlPushdownOpts = {
+		table: target.table,
+		component: target.component,
+		metricNames: [target.metricName],
+		widthMs: request.widthMs,
+		func: request.func,
+		rangeMs: request.rangeMs,
+		steps: request.steps,
+		stepBuckets: request.steps === 1 ? 1 : request.stepMs / request.widthMs,
+		rangeBuckets: request.rangeMs / request.widthMs,
+		limit: options.maxSeries + 1,
+		conditions: ($) => Arr.map(labelMatchers, (m) => matcherCondition($, m)),
+	}
+	const aggregation = request.aggregation
+	if (aggregation === undefined) return compile(promqlPushdownSeriesQuery(opts), params)
+	return compile(
+		promqlPushdownGroupQuery(opts, {
+			op: aggregation.op,
+			labels: ($) =>
+				Arr.flatMap(byLabels, (name) => {
+					const expr = labelValueExpr($, name)
+					return expr === undefined ? [] : [expr]
+				}),
+			byLe: aggregation.by.includes("le"),
+		}),
+		params,
+	)
+}
+
+/**
+ * The warehouse query for a pushdown, or undefined when it cannot be exact: the selector must
+ * resolve to one stored metric, and every label matcher must run in SQL (an `le` matcher is
+ * only checked after the fetch). The evaluator then reads the selector instead.
+ */
+export const buildPushdownQuery = (
+	request: PushdownRequest,
+	catalog: ReadonlyArray<CatalogMetric>,
+	options: SelectorPlanOptions,
+): PushdownPlan | undefined => {
+	const targets = resolveSelectorName(
+		Arr.filter(request.matchers, (m) => m.name === "__name__"),
+		catalog,
+	)
+	const target = targets[0]
+	if (targets.length !== 1 || target === undefined) return undefined
+	const labelMatchers = Arr.filter(request.matchers, (m) => m.name !== "__name__")
+	if (Arr.some(labelMatchers, (m) => m.name === "le")) return undefined
+	if (request.widthMs <= 0 || request.rangeMs % request.widthMs !== 0) return undefined
+	if (request.steps > 1 && request.stepMs % request.widthMs !== 0) return undefined
+	const byLabels = Arr.filter(request.aggregation?.by ?? [], (name) => name !== "le" && name !== "__name__")
+	return {
+		promName: target.promName,
+		component: target.component,
+		compiled: compilePushdown(request, target, labelMatchers, byLabels, options),
+	}
+}
+
+/** The pushdown's rows as the evaluator reads them. */
+export const toPushdownData = (
+	request: PushdownRequest,
+	plan: PushdownPlan,
+	rows: ReadonlyArray<PromqlPushdownRow>,
+): PushdownData => {
+	const by = request.aggregation?.by
+	const byLabels = Arr.filter(by ?? [], (name) => name !== "le" && name !== "__name__")
+	return {
+		series: Arr.map(rows, (row) => {
+			if (by === undefined) {
+				const labels = seriesLabels({
+					promName: plan.promName,
+					serviceName: row.serviceName,
+					attributes: row.attributes,
+					resourceAttributes: row.resourceAttributes,
+					le: plan.component === "bucket" ? parseLe(row.le) : undefined,
+				})
+				return { labels, steps: row.steps, values: row.values }
+			}
+			const labels: Record<string, string> = {}
+			Arr.forEach(byLabels, (name, i) => {
+				const value = row.groups[i] ?? ""
+				if (value !== "") labels[name] = value
+			})
+			if (by.includes("le") && plan.component === "bucket") labels.le = formatLe(parseLe(row.le))
+			if (by.includes("__name__")) labels.__name__ = plan.promName
+			return { labels, steps: row.steps, values: row.values }
+		}),
+	}
+}

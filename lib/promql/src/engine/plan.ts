@@ -1,5 +1,13 @@
 import type { AtModifier, Expr, MatrixSelector, SubqueryExpr, VectorSelector } from "../ast"
-import { LOOKBACK_MS, type SelectorRequest } from "./types"
+import {
+	LOOKBACK_MS,
+	PUSHDOWN_AGGREGATIONS,
+	PUSHDOWN_FUNCTIONS,
+	type PushdownAggregation,
+	type PushdownFunction,
+	type PushdownRequest,
+	type SelectorRequest,
+} from "./types"
 
 /** Query parameters. An instant query has `startMs === endMs` and any step. */
 export interface QueryParams {
@@ -130,4 +138,110 @@ export const planRequests = (expr: Expr, params: QueryParams): RequestPlan => {
 	// A bare range selector returns its raw samples.
 	walk(expr, top, expr.type === "MatrixSelector")
 	return plan
+}
+
+/** A subtree a source may evaluate whole, and the one selector it reads. */
+export interface PushdownCandidate {
+	readonly request: PushdownRequest
+	readonly selector: VectorSelector
+}
+
+const isPushdownFunction = (func: string): func is PushdownFunction =>
+	func !== "last" && PUSHDOWN_FUNCTIONS.some((f) => f === func)
+
+const isPushdownAggregation = (op: string): op is PushdownAggregation =>
+	PUSHDOWN_AGGREGATIONS.some((a) => a === op)
+
+const unparen = (expr: Expr): Expr => (expr.type === "Paren" ? unparen(expr.expr) : expr)
+
+/** `func(selector[range])`, or a bare selector read as its lookback (`last`). */
+const pushableInner = (
+	expr: Expr,
+	lookbackMs: number,
+): { selector: VectorSelector; func: PushdownFunction; rangeMs: number } | undefined => {
+	const node = unparen(expr)
+	if (node.type === "VectorSelector" && node.at === undefined)
+		return { selector: node, func: "last", rangeMs: lookbackMs }
+	if (node.type !== "Call" || !isPushdownFunction(node.func) || node.args.length !== 1) return undefined
+	const arg = node.args[0]
+	if (arg?.type !== "MatrixSelector" || arg.vector.at !== undefined) return undefined
+	return { selector: arg.vector, func: node.func, rangeMs: arg.rangeMs }
+}
+
+/**
+ * Subtrees of the top-level grid a source may evaluate whole: a range function
+ * over a selector, or `sum|avg|min|max|count|group [by (...)]` over one or over a
+ * bare selector. The source may decline any of them; the evaluator then reads
+ * the selector as usual. Nothing inside a subquery is offered.
+ */
+export const planPushdowns = (expr: Expr, params: QueryParams): Map<Expr, PushdownCandidate> => {
+	const out = new Map<Expr, PushdownCandidate>()
+	const lookback = params.lookbackMs ?? LOOKBACK_MS
+	const instant = params.startMs === params.endMs || params.stepMs <= 0
+	const steps = instant ? 1 : Math.floor((params.endMs - params.startMs) / params.stepMs) + 1
+	const offer = (
+		node: Expr,
+		inner: { selector: VectorSelector; func: PushdownFunction; rangeMs: number },
+		aggregation: PushdownRequest["aggregation"],
+	): boolean => {
+		const widthMs = instant ? inner.rangeMs : gcd(params.stepMs, inner.rangeMs)
+		if (widthMs < MIN_BUCKET_MS) return false
+		out.set(node, {
+			selector: inner.selector,
+			request: {
+				metricName: inner.selector.name,
+				matchers: inner.selector.matchers,
+				offsetMs: inner.selector.offsetMs,
+				func: inner.func,
+				rangeMs: inner.rangeMs,
+				startMs: params.startMs,
+				stepMs: instant ? 0 : params.stepMs,
+				steps,
+				widthMs,
+				aggregation,
+			},
+		})
+		return true
+	}
+	const walk = (node: Expr): void => {
+		switch (node.type) {
+			case "Aggregate": {
+				const inner = pushableInner(node.expr, lookback)
+				if (
+					inner !== undefined &&
+					isPushdownAggregation(node.op) &&
+					!node.without &&
+					node.param === undefined &&
+					offer(node, inner, { op: node.op, by: node.grouping })
+				) {
+					return
+				}
+				if (node.param !== undefined) walk(node.param)
+				walk(node.expr)
+				return
+			}
+			case "Call": {
+				const inner = pushableInner(node, lookback)
+				if (inner !== undefined && inner.func !== "last" && offer(node, inner, undefined)) return
+				for (const arg of node.args) walk(arg)
+				return
+			}
+			case "Paren":
+			case "Unary":
+				walk(node.expr)
+				return
+			case "Binary":
+				walk(node.lhs)
+				walk(node.rhs)
+				return
+			case "NumberLiteral":
+			case "StringLiteral":
+			case "VectorSelector":
+			case "MatrixSelector":
+			case "Subquery":
+				return
+		}
+	}
+	walk(expr)
+	return out
 }
