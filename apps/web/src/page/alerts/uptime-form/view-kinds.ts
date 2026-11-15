@@ -48,7 +48,7 @@ export const multistepSection = (h: H, model: Model): ReadonlyArray<Html> => [
 	section(
 		h,
 		"Steps",
-		"Steps are set through the REST API (PUT /v2/uptime_monitors/{id}); this form keeps them as they are.",
+		"Steps are set through the REST API (PATCH /v2/uptime_monitors/{id}); this form keeps them as they are.",
 		[
 			keyValueList(
 				h,
