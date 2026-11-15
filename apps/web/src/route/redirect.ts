@@ -167,12 +167,16 @@ export const routeRedirect = (route: AppRoute): Option.Option<Redirect> =>
 							})
 						: AppRoute.Service({
 								serviceName: search.service,
+								// The Releases pages read a week by default: a link with no window keeps that week,
+								// so the deploy is still in range when the drawer looks for it.
 								search: {
 									deploy: commitSha,
 									environments: search.environments,
 									startTime: search.startTime,
 									endTime: search.endTime,
-									timePreset: search.timePreset,
+									timePreset:
+										search.timePreset ??
+										(search.startTime === undefined ? "7d" : undefined),
 								},
 							}),
 					true,

@@ -155,6 +155,10 @@ describe("routes", () => {
 				"/services/checkout?deploy=abc123&environments=%5B%22production%22%5D&timePreset=24h",
 			),
 		)
+		// A release link with no window opens on the week the Releases page read by default.
+		expect(redirectOf("/releases/abc123?service=checkout")).toEqual(
+			Option.some("/services/checkout?deploy=abc123&timePreset=7d"),
+		)
 		// Without a service there is no page to open the deploy on: the services, in the same window.
 		expect(redirectOf("/releases/abc123?timePreset=24h")).toEqual(Option.some("/services?timePreset=24h"))
 		expect(routeRedirect(parse("/releases"))).toEqual(Option.some({ url: "/services", isReplace: true }))
