@@ -215,10 +215,12 @@ describe("/internal/cost/budgets", () => {
 		}
 	})
 
-	it("answers 403 on every endpoint for an org outside the cloud cost rollout", async () => {
+	// An org that left the rollout still has its budgets checked: it must be able to stop one.
+	it("answers 403 for an org outside the cloud cost rollout, on everything but delete", async () => {
 		const testDb = createTestDb(trackedDbs)
 		const inRollout = makeHarness(ENGINEER, { cloudCost: true }, testDb)
 		const outside = makeHarness(ENGINEER, { cloudCost: false }, testDb)
+		const outsideMember = makeHarness(["org:member"], { cloudCost: false }, testDb)
 		try {
 			const existing = asBudget((await inRollout.budgets("POST", "", budgetBody())).body)
 
@@ -227,15 +229,19 @@ describe("/internal/cost/budgets", () => {
 				await outside.budgets("GET", `/${existing.id}`),
 				await outside.budgets("POST", "", budgetBody({ name: "Other" })),
 				await outside.budgets("PATCH", `/${existing.id}`, { amount: 9 }),
-				await outside.budgets("DELETE", `/${existing.id}`),
+				await outsideMember.budgets("DELETE", `/${existing.id}`),
 			]
 
 			expect(Arr.map(responses, (response) => response.status)).toEqual([403, 403, 403, 403, 403])
 			expect(asFailure(responses[0]?.body)._tag).toBe("@maple/http/errors/CloudCostDisabledError")
 			expect(asBudgets((await inRollout.budgets("GET")).body).budgets).toHaveLength(1)
+
+			expect((await outside.budgets("DELETE", `/${existing.id}`)).status).toBe(200)
+			expect(asBudgets((await inRollout.budgets("GET")).body).budgets).toEqual([])
 		} finally {
 			await inRollout.dispose()
 			await outside.dispose()
+			await outsideMember.dispose()
 		}
 	})
 

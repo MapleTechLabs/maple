@@ -10,7 +10,7 @@ import { CloudCostDisabledError, CloudCostPersistenceError, costEndpointErrors }
 
 // Cost budgets: an amount per calendar period over a slice of the org's spend. Each one is a
 // hidden `cost_budget` alert rule, so its incidents and notifications are the alerting ones.
-// Dashboard only, behind the `cloudCost` rollout; writes need `alerts:manage`.
+// Dashboard only, behind the `cloudCost` rollout (but for delete); writes need `alerts:manage`.
 
 /** Each budget reads the warehouse once an hour and once per list; the cap bounds that per org. */
 export const MAX_COST_BUDGETS_PER_ORG = 50
@@ -182,7 +182,8 @@ export class CostBudgetsApiGroup extends HttpApiGroup.make("costBudgets")
 		HttpApiEndpoint.delete("remove", "/:id", {
 			params: { id: AlertRuleId },
 			success: CostBudgetDeleteResponse,
-			error: [...budgetWriteErrors, CostBudgetNotFoundError],
+			// Open to an org outside the rollout, so it never answers `CloudCostDisabledError`.
+			error: [CloudCostPersistenceError, CostBudgetForbiddenError, CostBudgetNotFoundError],
 		}),
 	)
 	.prefix("/internal/cost/budgets")

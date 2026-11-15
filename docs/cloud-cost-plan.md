@@ -169,14 +169,20 @@ the alerting ones and nothing is built twice. The generic rule APIs refuse it.
 
 - A budget has one or two alerts, one per severity. Each opens at a percent of the amount and
   watches either the spend so far or the period's forecast.
-- The forecast is a straight run rate: spend so far over the days that have passed, times the
-  days of the period. None is made in the first three days of a period.
+- The forecast is a straight run rate over the period's complete days, times the days of the
+  period. Today, still filling, is no day of the rate, and neither is a last day or two a
+  provider has not reported yet. None is made in the first three days of a period. A forecast
+  alert opens at its percent and clears five percent under it, so a rate that moves a little
+  every day does not close and reopen an incident.
 - The rule is checked hourly. Each check reads the period to date from `cost_daily` over the
   org's connected sources (`CostBudgetSource`), so it follows the sync, and a cached read is
   replaced as soon as a sync writes.
 - A new period starts at zero, which resolves an open incident.
 - A budget that is spent opens no error issue and starts no investigation.
-- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org.
+- Writes need `alerts:manage`; everyone in the org can read. At most 50 budgets per org. An org
+  that leaves the rollout can still delete its budgets, which go on being checked.
+- A budget's checks are served by the public rule API, like an SLO's: they say no more than
+  its incidents.
 
 Known limit: cost for the last days of a period arrives after the period has closed. An overage
 that only shows then is not alerted on, because a check reads the current period only.

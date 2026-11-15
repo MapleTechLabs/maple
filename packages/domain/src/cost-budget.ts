@@ -73,11 +73,12 @@ export const costBudgetPeriodWindow = (period: CostBudgetPeriod, nowMs: number) 
 	}
 }
 
+/** Days a provider's newest cost may trail today before the forecast reads the gap as no spend. */
+const FORECAST_LAG_DAYS = 2
+
 /**
  * A budget's progress from its daily spend. Days outside the current period are left out. The
- * forecast is a straight run rate: spend so far over the days that have passed, times the days
- * of the period. Days passed are the complete ones before today, or through the newest day
- * with cost when that is later, so a provider that already reports today is not read as slow.
+ * forecast is a straight run rate over the period's complete days, times the days of the period.
  */
 export const costBudgetProgress = (
 	budget: Pick<StoredCostBudget, "amount" | "period">,
@@ -85,13 +86,16 @@ export const costBudgetProgress = (
 	days: ReadonlyArray<{ readonly day: string; readonly cost: number }>,
 ): CostBudgetProgress => {
 	const window = costBudgetPeriodWindow(budget.period, nowMs)
+	const today = dayOfMs(nowMs)
 	const inPeriod = Arr.filter(days, (row) => row.day >= window.startDay && row.day <= window.endDay)
 	const spent = Num.sumAll(Arr.map(inPeriod, (row) => row.cost))
+	// Today is still filling: its cost is spent, but it is no day of the run rate.
+	const complete = Arr.filter(inPeriod, (row) => row.day < today)
 	const completedDays = Math.floor((nowMs - window.startMs) / DAY_MS)
 	const throughNewest = Option.match(
 		Arr.last(
 			Arr.sort(
-				Arr.map(inPeriod, (row) => row.day),
+				Arr.map(complete, (row) => row.day),
 				Order.String,
 			),
 		),
@@ -101,8 +105,13 @@ export const costBudgetProgress = (
 				Math.round((DateTime.toEpochMillis(DateTime.makeUnsafe(day)) - window.startMs) / DAY_MS) + 1,
 		},
 	)
-	const elapsedDays = Math.min(window.days, Math.max(completedDays, throughNewest))
-	const forecast = elapsedDays < COST_BUDGET_FORECAST_MIN_DAYS ? null : (spent / elapsedDays) * window.days
+	// A provider reports a day late or two: the rate runs through the newest day with cost, so
+	// a day not in yet does not read as a day without spend. Past that lag, an empty day is one.
+	const elapsedDays = Math.min(completedDays, Math.max(throughNewest, completedDays - FORECAST_LAG_DAYS))
+	const forecast =
+		elapsedDays < COST_BUDGET_FORECAST_MIN_DAYS
+			? null
+			: Math.max(spent, (Num.sumAll(Arr.map(complete, (row) => row.cost)) / elapsedDays) * window.days)
 	// Times a hundred first: 1100 of 1000 is then 110 and not 110.00000000000001.
 	const percentOf = (money: number) => (money * 100) / budget.amount
 	return {
@@ -128,10 +137,21 @@ export interface CostBudgetTier {
 export const costBudgetObserved = (progress: CostBudgetProgress, basis: CostBudgetBasis): number | null =>
 	basis === "forecast" ? progress.forecastPercent : progress.percent
 
-/** Whether a tier's percent is reached. A forecast not made yet reaches nothing. */
-export const costBudgetTierReached = (progress: CostBudgetProgress, tier: CostBudgetTier): boolean => {
+/** How far under its percent a forecast must fall before its tier clears: a run rate moves daily. */
+const FORECAST_RECOVERY = 0.95
+
+/**
+ * Where a tier stands: reached, clear, or (a forecast just under its percent) held as it was.
+ * A forecast not made yet is clear, so a new period ends what the last one opened.
+ */
+export const costBudgetTierStatus = (
+	progress: CostBudgetProgress,
+	tier: CostBudgetTier,
+): "breach" | "hold" | "clear" => {
 	const observed = costBudgetObserved(progress, tier.basis)
-	return observed !== null && observed >= tier.percent
+	if (observed === null) return "clear"
+	if (observed >= tier.percent) return "breach"
+	return tier.basis === "forecast" && observed >= tier.percent * FORECAST_RECOVERY ? "hold" : "clear"
 }
 
 const criticalFirst: Order.Order<CostBudgetTier> = Order.mapInput(Order.Number, (tier) =>
@@ -143,4 +163,4 @@ export const costBudgetReachedTier = <Tier extends CostBudgetTier>(
 	progress: CostBudgetProgress,
 	tiers: ReadonlyArray<Tier>,
 ): Option.Option<Tier> =>
-	Arr.findFirst(Arr.sort(tiers, criticalFirst), (tier) => costBudgetTierReached(progress, tier))
+	Arr.findFirst(Arr.sort(tiers, criticalFirst), (tier) => costBudgetTierStatus(progress, tier) === "breach")

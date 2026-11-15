@@ -3064,8 +3064,6 @@ export class SearchConsoleLandingPagesResponse extends Schema.Class<SearchConsol
 	data: Schema.Array(SearchConsoleLandingPage),
 }) {}
 
-export { COST_FILTER_MAX_VALUES, COST_FILTER_MAX_VALUE_LENGTH, CostFilters } from "../cost"
-
 // Cloud cost: provider spend synced into the ingest-pinned `cost_daily`, read per whole UTC day.
 // Every endpoint answers `CloudCostDisabledError` for an org outside the `cloudCost` rollout.
 

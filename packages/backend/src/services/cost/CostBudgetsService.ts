@@ -65,7 +65,7 @@ const selectBudgets = () =>
 		name: $.name,
 		enabled: $.enabled,
 		costBudgetJson: PG.undecoded($.costBudgetJson),
-		thresholdsJson: $.thresholdsJson,
+		thresholdsJson: PG.undecoded($.thresholdsJson),
 		createdAt: $.createdAt,
 		updatedAt: $.updatedAt,
 	}))

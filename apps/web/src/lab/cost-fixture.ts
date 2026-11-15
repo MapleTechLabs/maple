@@ -1,8 +1,8 @@
+import type { CostFilters } from "@maple/domain/cost"
 import { CostProvider } from "@maple/domain/cost"
 import {
 	CostBreakdownResponse,
 	type CostBreakdownSortBy,
-	type CostFilters,
 	CostSourcesResponse,
 	CostTimeseriesResponse,
 	CostTotalsResponse,

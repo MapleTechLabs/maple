@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { Option } from "effect"
+import { Array as Arr, Option, String as Str } from "effect"
 import {
 	type CostBudgetTier,
 	costBudgetPeriodWindow,
 	costBudgetProgress,
 	costBudgetReachedTier,
+	costBudgetTierStatus,
 } from "./cost-budget"
 
 const at = (iso: string) => Date.parse(iso)
@@ -73,23 +74,50 @@ describe("costBudgetProgress", () => {
 		// Ten complete days, 300 spent: 30 a day over 30 days.
 		const progress = costBudgetProgress(budget, at("2026-11-11T12:00:00Z"), [
 			{ day: "2026-11-03", cost: 100 },
-			{ day: "2026-11-09", cost: 200 },
+			{ day: "2026-11-10", cost: 200 },
 		])
 		expect(progress).toMatchObject({ elapsedDays: 10, forecast: 900, forecastPercent: 90 })
 	})
 
-	it("counts today once a provider has reported it", () => {
+	// Today is still filling: counting it as a whole day would read the rate low until midnight.
+	it("counts today's cost as spent, and not as a day of the run rate", () => {
 		const progress = costBudgetProgress(budget, at("2026-11-11T12:00:00Z"), [
-			{ day: "2026-11-11", cost: 330 },
+			{ day: "2026-11-10", cost: 300 },
+			{ day: "2026-11-11", cost: 30 },
 		])
-		expect(progress).toMatchObject({ elapsedDays: 11, forecast: 900 })
+		expect(progress).toMatchObject({ spent: 330, elapsedDays: 10, forecast: 900 })
+	})
+
+	// A provider that reports a day late has no row for yesterday until its next sync. The
+	// forecast must not drop at midnight and come back after the sync.
+	it("holds its forecast across midnight while a provider's last day is not in yet", () => {
+		const steady = (through: number) =>
+			Arr.makeBy(through, (index) => ({
+				day: `2026-11-${Str.padStart(2, "0")(String(index + 1))}`,
+				cost: 40,
+			}))
+		const forecastAt = (now: string, through: number) =>
+			costBudgetProgress(budget, at(now), steady(through)).forecast
+
+		expect(forecastAt("2026-11-10T23:55:00Z", 9)).toBe(1200)
+		expect(forecastAt("2026-11-11T00:05:00Z", 9)).toBe(1200)
+		expect(forecastAt("2026-11-11T06:00:00Z", 10)).toBe(1200)
+	})
+
+	// Past the lag a provider can have, a day without cost is a day nothing was spent: one
+	// charge early in the period is not a daily rate.
+	it("spreads a single early charge over the days since, not over the day it fell on", () => {
+		const progress = costBudgetProgress(budget, at("2026-11-20T12:00:00Z"), [
+			{ day: "2026-11-02", cost: 340 },
+		])
+		expect(progress).toMatchObject({ elapsedDays: 17, forecast: 600 })
 	})
 
 	it("makes no forecast in the period's first days", () => {
 		const progress = costBudgetProgress(budget, at("2026-11-03T06:00:00Z"), [
 			{ day: "2026-11-01", cost: 400 },
 		])
-		expect(progress).toMatchObject({ elapsedDays: 2, spent: 400, forecast: null, forecastPercent: null })
+		expect(progress).toMatchObject({ spent: 400, forecast: null, forecastPercent: null })
 	})
 
 	it("stands at zero, with a zero forecast, when nothing is spent", () => {
@@ -97,11 +125,12 @@ describe("costBudgetProgress", () => {
 		expect(progress).toMatchObject({ spent: 0, percent: 0, forecast: 0, forecastPercent: 0 })
 	})
 
-	it("forecasts the period's own total on its last day", () => {
+	it("never forecasts less than what is already spent", () => {
+		// Everything was spent today: no complete day has a rate, and the total stands.
 		const progress = costBudgetProgress(budget, at("2026-11-30T12:00:00Z"), [
 			{ day: "2026-11-30", cost: 600 },
 		])
-		expect(progress).toMatchObject({ elapsedDays: 30, forecast: 600 })
+		expect(progress.forecast).toBe(600)
 	})
 })
 
@@ -126,6 +155,19 @@ describe("costBudgetReachedTier", () => {
 
 	it("reaches the most severe tier once both are", () => {
 		expect(Option.getOrThrow(costBudgetReachedTier(progressAt(1100), tiers)).severity).toBe("critical")
+	})
+
+	// A run rate moves a little every day: just under its percent, a forecast tier neither
+	// opens nor clears, so an incident does not close and reopen around the line.
+	it("holds a forecast tier that is just under its percent, and clears it well under", () => {
+		const forecastTier = { severity: "warning", percent: 100, basis: "forecast" } as const
+		const actualTier = { severity: "critical", percent: 100, basis: "actual" } as const
+		// 485 in 15 days projects to 970, 97% of the amount; 460 to 920.
+		expect(costBudgetTierStatus(progressAt(485), forecastTier)).toBe("hold")
+		expect(costBudgetTierStatus(progressAt(460), forecastTier)).toBe("clear")
+		expect(costBudgetTierStatus(progressAt(500), forecastTier)).toBe("breach")
+		// Money spent has no such band: under the percent is under.
+		expect(costBudgetTierStatus(progressAt(970), actualTier)).toBe("clear")
 	})
 
 	it("holds a forecast tier back until a forecast exists", () => {
