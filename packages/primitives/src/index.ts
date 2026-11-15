@@ -698,3 +698,9 @@ export const ChatConversationKey = Schema.String.check(
 	Schema.annotate({ identifier: "@maple/ChatConversationKey", title: "Chat Conversation Key" }),
 )
 export type ChatConversationKey = Schema.Schema.Type<typeof ChatConversationKey>
+
+/** The longest PromQL query a widget, the share path or the PromQL routes take. */
+export const MAX_PROMQL_QUERY_LENGTH = 10_000
+
+/** The longest `legendFormat` a PromQL widget takes. */
+export const MAX_PROMQL_LEGEND_LENGTH = 500

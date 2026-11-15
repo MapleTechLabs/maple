@@ -136,4 +136,9 @@ describe("withScalarReduction on PromQL", () => {
 		const source = makePromqlDataSource({ query: "up", displayType: "gauge" })
 		expect(withScalarReduction(source, true)).toMatchObject({ displayType: "gauge" })
 	})
+
+	it("replaces a line display type on a scalar, whose rows would be oldest first", () => {
+		const source = makePromqlDataSource({ query: "up", displayType: "line" })
+		expect(withScalarReduction(source, true)).toMatchObject({ displayType: "stat" })
+	})
 })

@@ -24,7 +24,7 @@ import {
 	QueryComparisonSchema,
 } from "@maple/query-model"
 import { RawSqlText } from "../../raw-sql"
-import { MAX_PROMQL_QUERY_LENGTH } from "../../promql"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "../../promql"
 import { Timestamp } from "./timestamp"
 import { replaceWith } from "@maple/strings"
 
@@ -212,7 +212,7 @@ const V2RawSqlDataSource = Schema.Struct({
 const V2PromqlDataSource = Schema.Struct({
 	kind: Schema.Literal("promql"),
 	query: Schema.String.check(Schema.isMaxLength(MAX_PROMQL_QUERY_LENGTH)),
-	legendFormat: optional(Schema.String),
+	legendFormat: optional(Schema.String.check(Schema.isMaxLength(MAX_PROMQL_LEGEND_LENGTH))),
 	minStepSeconds: optional(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
 	displayType: optional(Schema.String),
 	transform: optional(V2WidgetTransform),

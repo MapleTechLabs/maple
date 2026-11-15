@@ -1,2 +1,1 @@
-/** The longest PromQL query a widget or the PromQL query route takes. */
-export const MAX_PROMQL_QUERY_LENGTH = 10_000
+export { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"

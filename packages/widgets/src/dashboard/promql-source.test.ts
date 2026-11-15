@@ -1,4 +1,5 @@
-import { Schema } from "effect"
+import { MAX_PROMQL_LEGEND_LENGTH, MAX_PROMQL_QUERY_LENGTH } from "@maple/primitives"
+import { Result, Schema, String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { dataSourcePromql, dataSourceQuerySet, dataSourceRawSql, dataSourceRouteParams } from "./access"
 import { makePromqlDataSource } from "./construct"
@@ -20,6 +21,16 @@ describe("makePromqlDataSource", () => {
 		const source = decode(makePromqlDataSource(full))
 		expect(source.kind).toBe("promql")
 		expect(dataSourcePromql(source)).toEqual(full)
+	})
+
+	it("refuses a query or legend longer than the PromQL routes accept", () => {
+		const tooLong = (overrides: Record<string, string>) =>
+			Result.isFailure(
+				Schema.decodeResult(WidgetDataSourceV3)({ kind: "promql", ...full, ...overrides }),
+			)
+		expect(tooLong({ query: Str.repeat(MAX_PROMQL_QUERY_LENGTH + 1)("u") })).toBe(true)
+		expect(tooLong({ legendFormat: Str.repeat(MAX_PROMQL_LEGEND_LENGTH + 1)("l") })).toBe(true)
+		expect(tooLong({})).toBe(false)
 	})
 
 	it("writes no keys for unset options", () => {

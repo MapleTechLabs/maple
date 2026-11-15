@@ -502,8 +502,9 @@ why `groupBy` without `addOns.groupBy: true` silently does nothing.
 
 On traces only, setting `valueField: "attr.<key>"` switches the query to numeric-attribute
 mode, where the aggregation is one of `avg`, `sum`, `min`, `max`, `p50`, `p95`, `p99`.
-This is the **only** place a bare `p50`/`p95`/`p99` is valid; latency percentiles are
-spelled `p95_duration`. Metrics never accept percentiles.
+Trace latency percentiles are spelled `p95_duration`; a bare `p50` to `p99` is valid only in this
+numeric-attribute mode and as a `metrics` aggregation, where a histogram estimates the quantile
+from its merged buckets and a gauge or sum takes it over each series' samples.
 
 ### Group-by tokens
 

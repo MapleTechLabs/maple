@@ -1,4 +1,5 @@
 import type { QueryResult } from "@maple/promql"
+import { Array as Arr, Record as Rec } from "effect"
 import { describe, expect, it } from "vitest"
 import { formatPromqlLegend, promqlRowsForDisplay, promqlStepSeconds } from "./rows"
 
@@ -79,6 +80,23 @@ describe("promqlRowsForDisplay", () => {
 		expect(promqlRowsForDisplay(sshd, { displayType: "table", legendFormat: "{{name}}" })).toEqual([
 			{ __name__: "unit", label_name: "sshd", label_value: "x", name: "sshd", value: 1 },
 		])
+	})
+
+	it("moves a name label past an existing label_name instead of overwriting it", () => {
+		const both = {
+			resultType: "vector" as const,
+			result: [{ labels: { name: "sshd", label_name: "original" }, value: 1, t: 0 }],
+		}
+		expect(promqlRowsForDisplay(both, { displayType: "table", legendFormat: "x" })).toEqual([
+			{ label_name: "original", label_label_name: "sshd", name: "x", value: 1 },
+		])
+	})
+
+	it("keeps a series whose legend is __proto__ as a column", () => {
+		const rows = promqlRowsForDisplay(matrix, { displayType: "line", legendFormat: "__proto__" })
+		expect(rows.length).toBeGreaterThan(0)
+		expect(Arr.some(rows, (row) => Rec.has(row, "__proto__"))).toBe(true)
+		expect(Arr.every(rows, (row) => Object.getPrototypeOf(row) === Object.prototype)).toBe(true)
 	})
 
 	it("gives a table one row per series with its labels and last value", () => {

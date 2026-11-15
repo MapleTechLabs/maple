@@ -115,7 +115,14 @@ const timeseriesRows = (series: ReadonlyArray<NamedSeries>): ReadonlyArray<Promq
 		Arr.forEach(points, ({ t, v }) => {
 			const value = finite(v)
 			const row = byTime.get(t) ?? { bucket: isoOf(t) }
-			if (value !== null) row[name] = value
+			// An own data property, so a series named `__proto__` is a column, not the prototype.
+			if (value !== null)
+				Object.defineProperty(row, name, {
+					value,
+					enumerable: true,
+					writable: true,
+					configurable: true,
+				})
 			byTime.set(t, row)
 		}),
 	)
@@ -155,10 +162,19 @@ export function promqlRowsForDisplay(
 	}
 	return Arr.flatMap(series, (one) => {
 		const value = lastValue(one)
-		// `name` and `value` are the row's own columns; a label of either name keeps its value as `label_<name>`.
-		const labels = Rec.mapKeys(one.labels, (key) =>
-			key === "name" || key === "value" ? `label_${key}` : key,
-		)
-		return value === null ? [] : [{ ...labels, name: one.name, value }]
+		// `name` and `value` are the row's own columns; a label of either name moves to the first
+		// `label_` name no other label holds, so no label value is lost.
+		const keys = new Set(Rec.keys(one.labels))
+		const moved = (key: string): string => {
+			let candidate = `label_${key}`
+			while (keys.has(candidate)) candidate = `label_${candidate}`
+			keys.add(candidate)
+			return candidate
+		}
+		const entries = Arr.map(Rec.toEntries(one.labels), ([key, label]): readonly [string, string] => [
+			key === "name" || key === "value" ? moved(key) : key,
+			label,
+		])
+		return value === null ? [] : [{ ...Rec.fromEntries(entries), name: one.name, value }]
 	})
 }
