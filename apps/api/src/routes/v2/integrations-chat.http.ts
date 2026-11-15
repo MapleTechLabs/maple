@@ -9,7 +9,7 @@ import {
 	V2CallbackHostUnavailable,
 	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
-import { Array as Arr, Effect } from "effect"
+import { Array as Arr, Effect, Record as Rec } from "effect"
 import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
 import * as Policy from "@maple/domain/policy"
 import { Env } from "@maple/backend/platform/Env"
@@ -197,16 +197,6 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
 							V2InsufficientPermissions.make(denial.message),
 						)
-						const settled =
-							payload.settings === undefined
-								? undefined
-								: yield* chat.updateSettings(tenant.orgId, params.id, payload.settings)
-						if (settled !== undefined) {
-							yield* recordHttpAudit("chat_integration.settings_updated", {
-								resourceId: settled.id,
-								metadata: { connector: settled.connector },
-							})
-						}
 						const features = {
 							...(payload.alerts_enabled !== undefined && {
 								alertsEnabled: payload.alerts_enabled,
@@ -218,16 +208,18 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 								assistantEnabled: payload.assistant_enabled,
 							}),
 						}
-						const featuresSent =
-							payload.alerts_enabled !== undefined ||
-							payload.direct_messages_enabled !== undefined ||
-							payload.assistant_enabled !== undefined
-						// Also the read when nothing was sent: an empty update returns the workspace as stored.
-						const workspace =
-							settled !== undefined && !featuresSent
-								? settled
-								: yield* chat.updateFeatures(tenant.orgId, params.id, features)
-						if (featuresSent) {
+						// One statement for both: a refused setting leaves the switches unsaved too.
+						const workspace = yield* chat.updateWorkspace(tenant.orgId, params.id, {
+							...(payload.settings !== undefined && { settings: payload.settings }),
+							features,
+						})
+						if (payload.settings !== undefined) {
+							yield* recordHttpAudit("chat_integration.settings_updated", {
+								resourceId: workspace.id,
+								metadata: { connector: workspace.connector },
+							})
+						}
+						if (!Rec.isEmptyRecord<string, unknown>(features)) {
 							yield* recordHttpAudit("chat_integration.features_updated", {
 								resourceId: workspace.id,
 								metadata: { connector: workspace.connector, ...workspace.features },

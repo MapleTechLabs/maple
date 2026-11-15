@@ -210,6 +210,39 @@ describe("LinearOAuthService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb, mockLinear())))
 	})
 
+	it.effect("two switches saved at once both stick", () => {
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* connect
+			const linear = yield* LinearOAuthService
+			// The first save inserts the row; the concurrent pair then race on the update path.
+			yield* linear.setFeatures(orgA, userA, new LinearFeatureSettingsRequest({}))
+			yield* Effect.all(
+				[
+					linear.setFeatures(
+						orgA,
+						userA,
+						new LinearFeatureSettingsRequest({ openIssuesEnabled: false }),
+					),
+					linear.setFeatures(
+						orgA,
+						userA,
+						new LinearFeatureSettingsRequest({ reopenIssuesEnabled: false }),
+					),
+				],
+				{ concurrency: "unbounded" },
+			)
+			assert.deepStrictEqual(
+				yield* linear.getFeatures(orgA),
+				new LinearFeatureSwitches({
+					...ALL_LINEAR_FEATURES,
+					openIssuesEnabled: false,
+					reopenIssuesEnabled: false,
+				}),
+			)
+		}).pipe(Effect.provide(makeLayer(testDb, mockLinear())))
+	})
+
 	it.effect("lists teams by name, refreshing a token Linear rejects", () => {
 		const testDb = createTestDb(trackedDbs)
 		const linear = mockLinear({ rejectedTokens: ["lin-access"] })

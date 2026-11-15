@@ -11,7 +11,18 @@ import {
 } from "@maple/domain/http"
 import * as PG from "@maple-dev/effect-orm/postgres"
 import { LinearFeatureSettings } from "@maple/db/tables"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema, String as Str, Array as Arr } from "effect"
+import {
+	Clock,
+	Context,
+	Effect,
+	Layer,
+	Option,
+	Redacted,
+	Schema,
+	String as Str,
+	Array as Arr,
+	Record as Rec,
+} from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { Env, type EnvConfig } from "@maple/backend/platform/Env"
 import { LinearOAuthClientSecret } from "@maple/infra/secrets"
@@ -35,6 +46,14 @@ const SCOPES = "read,write"
 const decodeOrgId = Schema.decodeUnknownSync(OrgId)
 
 /** Every feature on: an org that never changed a switch. */
+const switchesOf = (row: PG.SelectRowOf<typeof LinearFeatureSettings>) =>
+	new LinearFeatureSwitches({
+		openIssuesEnabled: row.openIssuesEnabled,
+		updateCommentsEnabled: row.updateCommentsEnabled,
+		reopenIssuesEnabled: row.reopenIssuesEnabled,
+		resolveCommentsEnabled: row.resolveCommentsEnabled,
+	})
+
 export const ALL_LINEAR_FEATURES = new LinearFeatureSwitches({
 	openIssuesEnabled: true,
 	updateCommentsEnabled: true,
@@ -233,14 +252,7 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 					),
 				)
 				const row = rows[0]
-				return row === undefined
-					? ALL_LINEAR_FEATURES
-					: new LinearFeatureSwitches({
-							openIssuesEnabled: row.openIssuesEnabled,
-							updateCommentsEnabled: row.updateCommentsEnabled,
-							reopenIssuesEnabled: row.reopenIssuesEnabled,
-							resolveCommentsEnabled: row.resolveCommentsEnabled,
-						})
+				return row === undefined ? ALL_LINEAR_FEATURES : switchesOf(row)
 			})
 
 			const setFeatures = Effect.fn("LinearOAuthService.setFeatures")(function* (
@@ -249,19 +261,43 @@ export class LinearOAuthService extends Context.Service<LinearOAuthService, Line
 				update: LinearFeatureSettingsRequest,
 			) {
 				yield* Effect.annotateCurrentSpan({ orgId })
-				const next = new LinearFeatureSwitches({ ...(yield* getFeatures(orgId)), ...update })
+				// Only the switches sent: a concurrent save of another one keeps its value.
+				const set = {
+					...(update.openIssuesEnabled !== undefined && {
+						openIssuesEnabled: update.openIssuesEnabled,
+					}),
+					...(update.updateCommentsEnabled !== undefined && {
+						updateCommentsEnabled: update.updateCommentsEnabled,
+					}),
+					...(update.reopenIssuesEnabled !== undefined && {
+						reopenIssuesEnabled: update.reopenIssuesEnabled,
+					}),
+					...(update.resolveCommentsEnabled !== undefined && {
+						resolveCommentsEnabled: update.resolveCommentsEnabled,
+					}),
+				}
+				if (Rec.isEmptyRecord<string, unknown>(set)) return yield* getFeatures(orgId)
 				const now = yield* Clock.currentTimeMillis
-				yield* oauth.dbExecute((db) =>
+				const rows = yield* oauth.dbExecute((db) =>
 					db.run(
 						PG.insertInto(LinearFeatureSettings)
-							.values({ orgId, ...next, createdAt: now, updatedAt: now, updatedBy: userId })
+							.values({
+								orgId,
+								...ALL_LINEAR_FEATURES,
+								...set,
+								createdAt: now,
+								updatedAt: now,
+								updatedBy: userId,
+							})
 							.onConflictDoUpdate({
 								target: ["orgId"],
-								set: () => ({ ...next, updatedAt: now, updatedBy: userId }),
-							}),
+								set: () => ({ ...set, updatedAt: now, updatedBy: userId }),
+							})
+							.returning(),
 					),
 				)
-				return next
+				const row = rows[0]
+				return row === undefined ? yield* getFeatures(orgId) : switchesOf(row)
 			})
 
 			const getStatus = Effect.fn("LinearOAuthService.getStatus")(function* (orgId: OrgId) {
