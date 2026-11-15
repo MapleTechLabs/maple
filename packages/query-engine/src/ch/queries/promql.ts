@@ -758,18 +758,25 @@ export function promqlMetadataQuery(opts: { readonly limit: number }) {
 		.format("JSON")
 }
 
-/** Services that sent metrics in the window: the `job` values a bare label-values call lists. */
-export function promqlServiceNamesQuery(opts: { readonly limit: number }) {
-	return from(Datasources.metricCatalog)
-		.select(($) => ({ serviceName: $.ServiceName }))
+/**
+ * Distinct `job` values in one metric table, built as series labels build them: `service.namespace/`
+ * before the service name when a namespace is set. The catalog keeps no namespace, so this reads the
+ * table, bounded by org, window and limit.
+ */
+export function promqlJobValuesQuery(opts: { readonly table: PromqlMetricTable; readonly limit: number }) {
+	return from(metricTable(opts.table))
+		.select(($) => ({
+			job: sql(
+				T.string,
+			)`multiIf(${$.ResourceAttributes}['service.namespace'] = '', if(${$.ResourceAttributes}['service.name'] = '', ${$.ServiceName}, ${$.ResourceAttributes}['service.name']), concat(${$.ResourceAttributes}['service.namespace'], '/', if(${$.ResourceAttributes}['service.name'] = '', ${$.ServiceName}, ${$.ResourceAttributes}['service.name'])))`,
+		}))
 		.where(($) => [
 			$.OrgId.eq(orgIdParam),
-			$.Hour.gte(utcHourFloor("startTime")),
-			$.Hour.lte(utcSecondsParam("endTime")),
-			$.ServiceName.neq(""),
+			$.TimeUnix.gte(utcSecondsParam("startTime")),
+			$.TimeUnix.lte(utcSecondsParam("endTime")),
 		])
-		.groupBy("serviceName")
-		.orderBy(["serviceName", "asc"])
+		.groupBy("job")
+		.orderBy(["job", "asc"])
 		.limit(opts.limit)
 		.format("JSON")
 }
