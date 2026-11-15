@@ -15,6 +15,8 @@ import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { SignalPresenceData } from "@maple/views/data/signal-presence"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
+import * as SavedViews from "../../kit/saved-views"
+import { browseViewsExplorer } from "../saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { PresetValue } from "../../kit/time-controls"
 import { type MetricRow, SPARKLINE_METRIC_TYPES } from "../shared"
@@ -151,6 +153,8 @@ const isSameQuery = (a: Search, b: Search) => (a.q ?? "") === (b.q ?? "") && a.t
 
 const typeSelectValue = (search: Search) => search.type ?? "all"
 
+const toSavedViews = (message: SavedViews.Message) => Message.GotSavedViewsMessage({ message })
+
 export const init = (route: { readonly search: Search }, context: PageContext): Return => {
 	const model: Model = {
 		search: route.search,
@@ -172,6 +176,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 		}),
 		presence: SignalPresenceData.Loading(),
 		timePicker: TimeRangePicker.init("metrics-time-range"),
+		savedViews: SavedViews.init("metrics-views"),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -183,6 +188,7 @@ export const init = (route: { readonly search: Search }, context: PageContext): 
 			LoadSignalPresence({ orgId: context.orgId }),
 			resolveCommand(model, context, "Load"),
 			LoadChartRuntime(),
+			SavedViews.loadCommand(browseViewsExplorer([model.search]), toSavedViews),
 		],
 	}
 }
@@ -383,5 +389,7 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}),
 		GotTypeSelectMessage: ({ message: inner }) => liftTypeSelect(model, inner),
 		GotTimePickerMessage: ({ message: inner }) => liftTimePicker(model, inner),
+		GotSavedViewsMessage: ({ message: inner }) =>
+			SavedViews.pageStep(model, inner, browseViewsExplorer([model.search]), toSavedViews),
 		GotSparklineMessage: () => ({ model }),
 	})

@@ -292,6 +292,12 @@ existing copies onto it (see `apps/web/CLAUDE.md`).
 - `apps/web/src/page/kit/resource-not-found.ts` `resourceNotFound`
 - `apps/web/src/page/kit/route-window.ts` `isWindowChange`, `snapModeOf`, `routeWindowStep`: A page's time window across `routeChanged`: re-resolved only when its own fields moved, and only Reload revalidates unchanged keys.
 - `apps/web/src/page/kit/save-bar.ts` `saveBar`: Pinned while a settings tab has unsaved edits.
+- `apps/web/src/page/kit/saved-views/index.ts` `loadCommand`, `pageStep`: Saved views as a Submodel: the Views button an explorer's toolbar embeds (`/logs`, `/traces`, `/metrics`), with its menu and its save, rename and delete dialogs.
+- `apps/web/src/page/kit/saved-views/model.ts` `activeViewOf`: The Views control an explorer embeds (`/logs`, `/traces`, `/metrics`): its menu, the views it lists, and the save, rename and delete dialogs.
+- `apps/web/src/page/kit/saved-views/state.ts` `searchParamsOf`, `readSearch`, `memoHref`: What a saved view stores and how it is read back: the explorer's URL search params, and nothing that is not in the URL.
+- `apps/web/src/page/kit/saved-views/test-views.ts` `savedView`, `sentNamed`, `navigationOf`, `viewsDriver`: Saved views for the explorers' scene tests, and the steps a person takes with the Views control, sent through the page's own update.
+- `apps/web/src/page/kit/saved-views/update.ts` `viewItem` (stateful: Model, init, update): The Views control's steps: what a menu pick does, the save and rename form, and the writes they send.
+- `apps/web/src/page/kit/saved-views/view.ts` `view`, `control`: The Views control as drawn: the toolbar button, its menu, and the save, rename and delete dialogs.
 - `apps/web/src/page/kit/sdk-snippets.ts` `sdkSnippets`, `register`, `fillSnippet`: The snippet's text with the endpoint and key filled in.
 - `apps/web/src/page/kit/section-heading.ts` `sectionHeading`: A section's heading: a title row with hint, count and actions, or the eyebrow label.
 - `apps/web/src/page/kit/sentence-card.ts` `sentenceCardHeadingId`, `sentenceCardSummaryId`, `sentenceCard`, `sentenceChain`, `sentenceRow`, `sentencePhrase`, `sentenceClause`, `sentenceSection`: Sentence cards: a form that reads top to bottom as one sentence ("When ...

@@ -29,6 +29,8 @@ import * as CopyButton from "@maple/views/ui/copy-button"
 import * as Select from "@maple/views/ui/select"
 import { type PageContext, PageOutMessage, type PageReturn } from "../../contract"
 import { routeWindowStep, snapModeOf } from "../../kit/route-window"
+import * as SavedViews from "../../kit/saved-views"
+import { metricViewsExplorer } from "../saved-views"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import type { PresetValue } from "../../kit/time-controls"
 import {
@@ -254,6 +256,8 @@ const liftAddToDashboard = (
 
 export const AGGREGATION_SELECT_ID = "metric-aggregation"
 
+const toSavedViews = (message: SavedViews.Message) => Message.GotSavedViewsMessage({ message })
+
 export const init = (route: Route, context: PageContext): Return => {
 	const model: Model = {
 		metricName: route.metricName,
@@ -280,6 +284,7 @@ export const init = (route: Route, context: PageContext): Return => {
 		addToDashboard: AddToDashboard.init(),
 		chart: Chart.init(),
 		timePicker: TimeRangePicker.init("metric-time-range"),
+		savedViews: SavedViews.init("metric-views"),
 		chartRuntime: { _tag: "Loading" },
 		themeColors: null,
 		refreshVersion: 0,
@@ -287,7 +292,11 @@ export const init = (route: Route, context: PageContext): Return => {
 	}
 	return {
 		model,
-		commands: [resolveCommand(model, context, "Load"), LoadChartRuntime()],
+		commands: [
+			resolveCommand(model, context, "Load"),
+			LoadChartRuntime(),
+			SavedViews.loadCommand(metricViewsExplorer([model.metricName, model.search]), toSavedViews),
+		],
 	}
 }
 
@@ -529,4 +538,11 @@ export const update = (model: Model, message: Message, context: PageContext): Re
 			}
 		},
 		GotTimePickerMessage: ({ message: inner }) => liftTimePicker(model, inner),
+		GotSavedViewsMessage: ({ message: inner }) =>
+			SavedViews.pageStep(
+				model,
+				inner,
+				metricViewsExplorer([model.metricName, model.search]),
+				toSavedViews,
+			),
 	})
