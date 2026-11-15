@@ -181,6 +181,25 @@ describe("query_promql", () => {
 		}),
 	)
 
+	it.effect("refuses a step too fine for the window as a step error, before querying", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				run({ query: "up", ...WINDOW, step: "100ms" }, () => Effect.die("not reached")),
+			)
+			expect(error).toMatchObject({ _tag: "@maple/mcp/errors/McpInvalidInputError", parameter: "step" })
+		}),
+	)
+
+	it.effect("prints a sub-second step the way the step parameter accepts it", () =>
+		Effect.gen(function* () {
+			const { text } = yield* run({ query: "up", ...WINDOW, step: "500ms" }, () =>
+				Effect.succeed({ resultType: "matrix" as const, result: [series("api", [1])] }),
+			)
+			expect(text).toContain("500ms")
+			expect(text).not.toContain("0.5s")
+		}),
+	)
+
 	it.effect("keeps the 20 highest series and the last 200 points, and suggests summing by service", () =>
 		Effect.gen(function* () {
 			const many = Arr.makeBy(25, (i) =>
