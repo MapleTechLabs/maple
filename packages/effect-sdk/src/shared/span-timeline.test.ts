@@ -114,6 +114,17 @@ describe("makeSpanTimeline", () => {
 		}).pipe(Effect.provide(Layer.succeed(Tracer.Tracer, timeline.instrument(namedTracer))))
 	})
 
+	it.effect("opens the log with the span already running when recording starts", () => {
+		const timeline = makeSpanTimeline()
+		return Effect.gen(function* () {
+			const opened = yield* Effect.sync(() => {
+				timeline.setRecording(true)
+				return spansOf(timeline.drain())
+			}).pipe(Effect.withSpan("long"))
+			expect(opened).toEqual(["long"])
+		}).pipe(Effect.provide(Layer.succeed(Tracer.Tracer, timeline.instrument(namedTracer))))
+	})
+
 	it.effect("records nothing while recording is off", () => {
 		const timeline = makeSpanTimeline()
 		return Effect.gen(function* () {
