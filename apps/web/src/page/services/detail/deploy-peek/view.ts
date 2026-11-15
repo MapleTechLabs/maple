@@ -85,7 +85,8 @@ const header = (h: H, model: Model, check: DeployCheck, inputs: ViewInputs): Htm
 }
 
 /** The two sides cover different minutes while a deploy verifies, so they compare as rates. */
-const perSecond = (spans: number, minutes: number) => (minutes > 0 ? spans / (minutes * 60) : 0)
+// A deploy in its first minute has spans in a minute not yet over: divide by one, not zero.
+const perSecond = (spans: number, minutes: number) => spans / (Math.max(1, minutes) * 60)
 
 const comparison = (h: H, check: DeployCheck): Html => {
 	const errorsUp = isErrorRateUp(check.before.errorRate, check.after.errorRate)
@@ -93,9 +94,11 @@ const comparison = (h: H, check: DeployCheck): Html => {
 	return vstack(h, { gap: "2" }, [
 		sectionHeading(h, {
 			title:
-				check.minutes < check.windowMinutes
-					? `First ${check.minutes} of ${check.windowMinutes} minutes, against the ${check.windowMinutes} before`
-					: `First ${check.windowMinutes} minutes, against the ${check.windowMinutes} before`,
+				check.minutes === 0
+					? `Since this deploy, against the ${check.windowMinutes} minutes before`
+					: check.minutes < check.windowMinutes
+						? `First ${check.minutes} of ${check.windowMinutes} minutes, against the ${check.windowMinutes} before`
+						: `First ${check.windowMinutes} minutes, against the ${check.windowMinutes} before`,
 		}),
 		statRail(h, { columns: 3, className: "w-full overflow-hidden" }, [
 			statRailItem(h, {
