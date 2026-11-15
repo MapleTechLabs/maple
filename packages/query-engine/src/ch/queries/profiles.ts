@@ -105,9 +105,12 @@ export function profileSampleTypesQuery(opts: ProfileScopeOpts = {}) {
 			value: CH.sum($.Value),
 			samples: CH.sum($.Samples),
 			profiles: CH.rawExpr("uniqExact(ProfileId)", T.uint64),
-			// The mean window times the profile count: exact while every profile covers the same
-			// window, as a steady exporter's do, and it holds no tuple per row.
-			durationNano: CH.rawExpr("toUInt64(avg(DurationNano) * uniqExact(ProfileId))", T.uint64),
+			// Each profile's window once, however many rows it has: every row of a profile carries
+			// its window, so one (profile, window) pair per profile is summed.
+			durationNano: CH.rawExpr(
+				"toUInt64(arraySum(arrayMap(p -> p.2, groupUniqArray((ProfileId, DurationNano)))))",
+				T.uint64,
+			),
 		}))
 		.where(($) => scopeConditions($, opts))
 		.groupBy("sampleType", "sampleUnit")
