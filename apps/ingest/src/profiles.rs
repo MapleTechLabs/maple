@@ -136,7 +136,7 @@ pub fn flatten<'a>(
         spent: 0,
     };
     meter.charge(
-        dictionary.strings.len() * size_of::<usize>()
+        dictionary.strings.len() * (size_of::<usize>() + size_of::<i32>() + 3 * NODE_BYTES / 4)
             + dictionary.attributes.len() * size_of::<Option<Cost>>(),
     )?;
     let string_lens: Vec<usize> = dictionary
@@ -145,6 +145,17 @@ pub fn flatten<'a>(
         .map(|text| json_text_len(text))
         .collect();
     dictionary.string_lens = &string_lens;
+    // One index per distinct text: a table may hold the same key twice, and a key named
+    // through either index replaces the other in a map.
+    let mut first_of: HashMap<&str, i32> = HashMap::with_capacity(dictionary.strings.len());
+    let string_ids: Vec<i32> = (0..dictionary.strings.len())
+        .map(|at| {
+            let at = i32::try_from(at).unwrap_or(i32::MAX);
+            *first_of.entry(dictionary.string(at)).or_insert(at)
+        })
+        .collect();
+    drop(first_of);
+    dictionary.string_ids = &string_ids;
     let attribute_costs: Vec<Option<Cost>> = dictionary
         .attributes
         .iter()
@@ -264,6 +275,8 @@ struct Dictionary<'a> {
     stacks: &'a [Stack],
     /// Each string's length inside a JSON string, by string-table index.
     string_lens: &'a [usize],
+    /// The first index holding each string's text, by string-table index.
+    string_ids: &'a [i32],
     /// What reading each attribute-table entry costs; `None` for one never read.
     attribute_costs: &'a [Option<Cost>],
 }
@@ -302,6 +315,7 @@ impl<'a> Dictionary<'a> {
                 attributes: &[],
                 stacks: &[],
                 string_lens: &[],
+                string_ids: &[],
                 attribute_costs: &[],
             };
         };
@@ -314,6 +328,7 @@ impl<'a> Dictionary<'a> {
             attributes: &dictionary.attribute_table,
             stacks: &dictionary.stack_table,
             string_lens: &[],
+            string_ids: &[],
             attribute_costs: &[],
         }
     }
@@ -546,7 +561,7 @@ impl<'a> Dictionary<'a> {
 
     /// The JSON length of the map the attributes `indices` name: a key named again replaces
     /// its earlier value, so each key counts once, at its last value. Keys are compared by
-    /// string-table index, never by their text.
+    /// the first index holding their text, never by scanning the text again.
     fn indexed_json_len(&self, indices: &[i32]) -> usize {
         let mut entries: BTreeMap<i32, usize> = BTreeMap::new();
         for index in indices {
@@ -554,7 +569,10 @@ impl<'a> Dictionary<'a> {
                 continue;
             };
             if let Some(cost) = at(self.attribute_costs, *index).copied().flatten() {
-                entries.insert(entry.key_strindex, cost.json_len);
+                let key = at(self.string_ids, entry.key_strindex)
+                    .copied()
+                    .unwrap_or(entry.key_strindex);
+                entries.insert(key, cost.json_len);
             }
         }
         entries.values().fold(0, |sum, len| sum.saturating_add(*len))
@@ -1818,6 +1836,40 @@ mod tests {
         });
         request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
             vec![entry; 4];
+        let flattened = flatten(
+            &request,
+            &ResourceStamps::default(),
+            NOW_NANO,
+            &mut test_profile_id,
+            2 * 1024 * 1024,
+            &mut |_| true,
+        )
+        .expect("the export flattens");
+        assert_eq!((flattened.rows.len(), flattened.dropped_rows), (1, 0));
+    }
+
+    #[test]
+    fn counts_one_key_held_twice_in_the_string_table_once() {
+        // Two entries, the same key text at two string-table indices, a 1 MiB value each:
+        // the row keeps the last, well under 2 MiB.
+        let mut request = decode(&cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }])));
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let long = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.push("v".repeat(1024 * 1024));
+        let again = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.push("thread.name".to_owned());
+        let first = i32::try_from(dictionary.attribute_table.len()).unwrap();
+        for key in [9, again] {
+            dictionary.attribute_table.push(KeyValueAndUnit {
+                key_strindex: key,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValueStrindex(long)),
+                }),
+                ..Default::default()
+            });
+        }
+        request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
+            vec![first, first + 1];
         let flattened = flatten(
             &request,
             &ResourceStamps::default(),
