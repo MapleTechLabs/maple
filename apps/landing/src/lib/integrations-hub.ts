@@ -288,6 +288,8 @@ const code: HubTile[] = [
 	{ name: "Cursor", hint: m.intg_hint_mcp_client, href: doc("reference/mcp"), icon: { mark: "cursor" } },
 	{ name: "MCP", hint: m.intg_hint_mcp, href: doc("reference/mcp"), icon: { mark: "mcp" } },
 	{ name: "Alchemy", hint: m.intg_hint_alchemy, href: doc("iac/alchemy"), icon: { mark: "alchemy" } },
+	{ name: "Terraform", hint: m.intg_hint_iac, href: doc("iac/terraform"), icon: { mark: "terraform" } },
+	{ name: "Pulumi", hint: m.intg_hint_iac, href: doc("iac/pulumi"), icon: { mark: "pulumi" } },
 ]
 
 export const HUB_CATEGORIES: readonly HubCategory[] = [
