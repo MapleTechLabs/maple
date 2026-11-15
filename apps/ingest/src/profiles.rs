@@ -483,7 +483,20 @@ impl<'a> Dictionary<'a> {
         // Each entry's JSON length, carried beside it: a value is never rescanned to size the
         // map, however many keys share it.
         let mut lens: BTreeMap<&'a str, usize> = BTreeMap::new();
-        for attribute in resource.map_or(&[][..], |resource| resource.attributes.as_slice()) {
+        let listed = resource.map_or(&[][..], |resource| resource.attributes.as_slice());
+        // A key named by string-table index counts at its last naming only, so the maps below
+        // compare each such key's text once however often it repeats.
+        let mut last_named: HashMap<i32, usize> = HashMap::new();
+        for (at, attribute) in listed.iter().enumerate() {
+            if attribute.key.is_empty() {
+                last_named.insert(self.key_id(attribute.key_strindex), at);
+            }
+        }
+        let kept = listed.iter().enumerate().filter(|(at, attribute)| {
+            !attribute.key.is_empty()
+                || last_named.get(&self.key_id(attribute.key_strindex)) == Some(at)
+        });
+        for (_, attribute) in kept {
             let cost = self.value_cost(attribute.value.as_ref());
             meter.charge(2 * NODE_BYTES + cost.heap)?;
             let key = self.key(attribute);
@@ -569,20 +582,28 @@ impl<'a> Dictionary<'a> {
                 continue;
             };
             if let Some(cost) = at(self.attribute_costs, *index).copied().flatten() {
-                let key = at(self.string_ids, entry.key_strindex)
-                    .copied()
-                    .unwrap_or(entry.key_strindex);
-                entries.insert(key, cost.json_len);
+                entries.insert(self.key_id(entry.key_strindex), cost.json_len);
             }
         }
         entries.values().fold(0, |sum, len| sum.saturating_add(*len))
     }
 
     /// Sample and profile attributes, looked up in the dictionary's attribute table.
+    /// A key named again replaces its earlier value, so each key is resolved once, at its
+    /// last reference, before any text is compared.
     fn indexed_attributes(&self, indices: &'a [i32], out: &mut Attributes<'a>) {
+        let mut last: BTreeMap<i32, (&'a str, &'a KeyValueAndUnit)> = BTreeMap::new();
         for (key, entry) in self.indexed_entries(indices) {
+            last.insert(self.key_id(entry.key_strindex), (key, entry));
+        }
+        for (key, entry) in last.into_values() {
             out.insert(Cow::Borrowed(key), self.value(entry.value.as_ref()));
         }
+    }
+
+    /// The first string-table index holding the same text as `index`.
+    fn key_id(&self, index: i32) -> i32 {
+        at(self.string_ids, index).copied().unwrap_or(index)
     }
 
     /// A producer that counts samples (the eBPF profiler: `samples`/`count` every
@@ -1880,6 +1901,40 @@ mod tests {
         )
         .expect("the export flattens");
         assert_eq!((flattened.rows.len(), flattened.dropped_rows), (1, 0));
+    }
+
+    #[test]
+    fn builds_maps_of_long_keys_held_twice_without_comparing_them_per_reference() {
+        // 100,000 references alternating between two copies of one 1 MiB key, in the
+        // profile's attributes and in the resource's.
+        let mut request = decode(&cpu_request(json!([{ "stackIndex": 1, "values": ["1"] }])));
+        let dictionary = request.dictionary.as_mut().unwrap();
+        let key = "k".repeat(1024 * 1024);
+        let first = i32::try_from(dictionary.string_table.len()).unwrap();
+        dictionary.string_table.extend([key.clone(), key]);
+        let entry = i32::try_from(dictionary.attribute_table.len()).unwrap();
+        for at in [first, first + 1] {
+            dictionary.attribute_table.push(KeyValueAndUnit {
+                key_strindex: at,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValue("v".to_owned())),
+                }),
+                ..Default::default()
+            });
+        }
+        request.resource_profiles[0].scope_profiles[0].profiles[0].attribute_indices =
+            (0..100_000).map(|at| entry + at % 2).collect();
+        let resource = request.resource_profiles[0].resource.as_mut().unwrap();
+        resource
+            .attributes
+            .extend((0..100_000).map(|at| KeyValue {
+                key_strindex: first + at % 2,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValue("v".to_owned())),
+                }),
+                ..Default::default()
+            }));
+        assert_eq!(flatten_quickly(&request).profile_count, 1);
     }
 
     #[test]
