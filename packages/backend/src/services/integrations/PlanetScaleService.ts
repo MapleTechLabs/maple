@@ -778,13 +778,16 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 				// Each database row carries its own lease + 5-minute TTL, so this is
 				// safe to enter on every tick. Its own error boundary — a broken
 				// backfill must never cost the org its inventory.
-				const deployEvents = yield* refreshDeployRequests(connection).pipe(
-					isolatePollFailure(
-						"PlanetScale deploy-request backfill failed for org",
-						{ orgId: connection.orgId },
-						0,
-					),
-				)
+				// Events switched off: no deploy-request history either.
+				const deployEvents = !connection.eventsEnabled
+					? 0
+					: yield* refreshDeployRequests(connection).pipe(
+							isolatePollFailure(
+								"PlanetScale deploy-request backfill failed for org",
+								{ orgId: connection.orgId },
+								0,
+							),
+						)
 				yield* Effect.annotateCurrentSpan({
 					"maple.planetscale.deploy_events_inserted": deployEvents,
 				})
@@ -896,6 +899,8 @@ export class PlanetScaleService extends Context.Service<PlanetScaleService, Plan
 			const syncWebhooks = Effect.fn("PlanetScaleService.syncWebhooks")(
 				function* (connection: PlanetScaleConnectionRow) {
 					yield* Effect.annotateCurrentSpan({ orgId: connection.orgId })
+					// Turning events off already removed the webhooks; registering them again would undo it.
+					if (!connection.eventsEnabled) return
 					yield* underPollState(connection.orgId, WEBHOOKS_DATASET, "", WEBHOOKS_TTL_MS, (lease) =>
 						Effect.gen(function* () {
 							const result = yield* webhooks.reconcile(connection)

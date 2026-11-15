@@ -202,6 +202,20 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 				"Webhook registration across the organization's databases, or `null` before one is bound.",
 		}),
 	),
+	metrics_enabled: Schema.optionalKey(
+		Schema.Boolean.annotate({
+			description:
+				"Whether Maple collects branch metrics. Off stops the metrics poller and the managed scrape target; metrics already collected stay.",
+			examples: [true],
+		}),
+	),
+	events_enabled: Schema.optionalKey(
+		Schema.Boolean.annotate({
+			description:
+				"Whether Maple collects deploy requests and branch changes. Off deletes the webhooks Maple registered and drops deliveries; events already recorded stay.",
+			examples: [true],
+		}),
+	),
 	last_inventory_at: Schema.NullOr(Timestamp).annotate({
 		description: "When the database/branch inventory last refreshed, or `null` before the first refresh.",
 	}),
@@ -242,6 +256,8 @@ export const V2PlanetScaleIntegration = Schema.Struct({
 				last_scrape_error: null,
 			},
 			webhooks: { state: "active", registered_databases: 3, databases: 3, last_error: null },
+			metrics_enabled: true,
+			events_enabled: true,
 			last_inventory_at: "2026-08-05T12:00:00.000Z",
 			last_inventory_error: null,
 			revoked_at: null,
@@ -373,6 +389,24 @@ export const V2PlanetScaleMetricsTokenRequest = Schema.Struct({
 	examples: [wireExample({ token_id: "abcdef123456", token_secret: "pscale_tkn_example" })],
 })
 export type V2PlanetScaleMetricsTokenRequest = Schema.Schema.Type<typeof V2PlanetScaleMetricsTokenRequest>
+
+export const V2PlanetScaleFeaturesRequest = Schema.Struct({
+	metrics_enabled: Schema.optionalKey(Schema.Boolean).annotate({
+		description: "Turn branch metrics on or off. Omit to keep the current setting.",
+		examples: [true],
+	}),
+	events_enabled: Schema.optionalKey(Schema.Boolean).annotate({
+		description:
+			"Turn deploy requests and branch changes on or off. Off deletes Maple's webhooks; on registers them again.",
+		examples: [false],
+	}),
+}).annotate({
+	identifier: "PlanetScaleFeaturesRequest",
+	title: "PlanetScale features",
+	description: "What Maple collects from PlanetScale. A field left out keeps its current setting.",
+	examples: [wireExample({ metrics_enabled: true, events_enabled: false })],
+})
+export type V2PlanetScaleFeaturesRequest = Schema.Schema.Type<typeof V2PlanetScaleFeaturesRequest>
 
 export const V2PlanetScaleDisconnectResponse = Schema.Struct({
 	object: Schema.Literal("planetscale_integration").annotate({
@@ -950,6 +984,25 @@ export class V2PlanetScaleIntegrationsApiGroup extends HttpApiGroup.make("planet
 				summary: "Attach a PlanetScale metrics service token",
 				description:
 					"Optional: branch metrics arrive without a token, polled from PlanetScale's metrics API on the OAuth grant. Attaches a service token carrying the single `read_metrics_endpoints` permission to the managed scrape target, switching the connection to Prometheus scraping instead. Maple validates the token against PlanetScale's metrics discovery endpoint before storing it: an invalid or under-permissioned token is rejected with `invalid_request_error` and nothing is written. Re-submitting rotates the token in place. Returns the refreshed integration status, whose `metrics_auth` becomes `service_token` on success. Requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.patch("updateFeatures", "/", {
+			payload: V2PlanetScaleFeaturesRequest,
+			success: V2PlanetScaleIntegration,
+			error: [
+				V2InsufficientPermissions.schema,
+				integrationNotConnected,
+				integrationPersistence,
+				scrapeTargetStoredConfigInvalid,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "updatePlanetScaleIntegration",
+				summary: "Choose what Maple collects from PlanetScale",
+				description:
+					"Turns branch metrics and events on or off. Turning events off deletes the webhooks Maple registered on your databases; turning them on registers them again. Data already collected is kept. Returns the refreshed integration status. Requires an org-admin role and the `integrations:write` scope.",
 			}),
 		),
 	)

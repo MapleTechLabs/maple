@@ -1,6 +1,10 @@
 import * as Animation from "@foldkit/ui/animation"
 import { OrgId } from "@maple/domain"
-import { CloudflareIntegrationStatus, IntegrationsForbiddenError } from "@maple/domain/http"
+import {
+	CloudflareFeatureSwitches,
+	CloudflareIntegrationStatus,
+	IntegrationsForbiddenError,
+} from "@maple/domain/http"
 import { Result, Schema, Array as Arr } from "effect"
 import {
 	click,
@@ -18,7 +22,7 @@ import { toLoadFailure } from "@maple/views/data/load-failure"
 import { STATUS_READS } from "../../../integrations/command"
 import * as Dialog from "@maple/views/ui/dialog"
 import type { PageContext } from "../../../contract"
-import { SaveCloudflareZones } from "./cloudflare"
+import { SaveCloudflareFeatures, SaveCloudflareZones } from "./cloudflare"
 import { Message } from "../../../integrations/message"
 import { CloudflareMessage } from "./cloudflare"
 import type { Model } from "../../../integrations/model"
@@ -177,6 +181,49 @@ describe("cloudflare zone selection", () => {
 		expect(saved.model.cloudflareCard.zoneDialog.isOpen).toBe(false)
 		expect(Arr.map(saved.commands ?? [], ({ name }) => name)).toContain(
 			"LoadIntegrationsCloudflareStatus",
+		)
+	})
+})
+
+describe("cloudflare feature switches", () => {
+	const allOn = {
+		httpTrafficEnabled: true,
+		firewallEnabled: true,
+		dnsEnabled: true,
+		workersEnabled: true,
+		queuesEnabled: true,
+		durableObjectsEnabled: true,
+	}
+
+	test("a switch flips at once and saves; a refused save puts it back and says why", () => {
+		scene(
+			{ update: pageUpdate, view },
+			given(connected()),
+			expectView(role("switch", { name: "DNS queries" })).toBeChecked(),
+			click(role("switch", { name: "DNS queries" })),
+			Command.expectHas(
+				SaveCloudflareFeatures({
+					switches: new CloudflareFeatureSwitches({ ...allOn, dnsEnabled: false }),
+				}),
+			),
+			expectView(role("switch", { name: "DNS queries" })).not.toBeChecked(),
+			expectView(role("switch", { name: "Workers" })).toBeDisabled(),
+			Command.resolve(
+				SaveCloudflareFeatures,
+				CloudflareMessage.CompletedFeatures({
+					failure: toLoadFailure(
+						new IntegrationsForbiddenError({
+							message: "Only org admins can manage integrations",
+						}),
+					),
+				}),
+			),
+			Command.resolve(
+				STATUS_READS.cloudflare,
+				Message.CompletedLoadCloudflare({ key: "", result: Result.succeed(status) }),
+			),
+			expectView(role("switch", { name: "DNS queries" })).toBeChecked(),
+			expectView(text("Only org admins can manage integrations")).toExist(),
 		)
 	})
 })

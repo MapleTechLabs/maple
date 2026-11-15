@@ -21,6 +21,7 @@ import { ChatIdentities } from "./chat-identities"
 import { ChatWorkspaces } from "./chat-workspaces"
 import { CliDeviceAuthorizations } from "./cli-device-authorizations"
 import { CloudflareAnalyticsState } from "./cloudflare-analytics-state"
+import { CloudflareFeatureSettings } from "./cloudflare-feature-settings"
 import { CloudflareHyperdriveConfigs } from "./cloudflare-hyperdrive-configs"
 import { CloudflareLogpushConnectors } from "./cloudflare-logpush-connectors"
 import { CloudflareZoneSettings } from "./cloudflare-zone-settings"
@@ -131,6 +132,7 @@ export * from "./cli-device-authorizations"
 export * from "./cloudflare-analytics-state"
 export * from "./cloudflare-hyperdrive-configs"
 export * from "./cloudflare-logpush-connectors"
+export * from "./cloudflare-feature-settings"
 export * from "./cloudflare-zone-settings"
 export * from "./dashboard-shares"
 export * from "./dashboards"
@@ -200,6 +202,7 @@ export const allTables: ReadonlyArray<PgSchemaTable<string, ColumnDefs>> = [
 	ChatWorkspaces,
 	CliDeviceAuthorizations,
 	CloudflareAnalyticsState,
+	CloudflareFeatureSettings,
 	CloudflareHyperdriveConfigs,
 	CloudflareLogpushConnectors,
 	CloudflareZoneSettings,

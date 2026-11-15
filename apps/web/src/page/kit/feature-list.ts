@@ -1,6 +1,9 @@
 import type { IntegrationFeatureSpec } from "@maple/domain/integration-features"
 import { linkButton } from "@maple/views/ui/button"
+import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
 import { badge } from "@maple/views/ui/display"
+import { icon } from "@maple/views/ui/icon"
+import { panel, panelBody, panelHeader } from "@maple/views/ui/panel"
 import { dividedList } from "@maple/views/ui/rule"
 import { settingRow } from "@maple/views/ui/setting-row"
 import { Array as Arr } from "effect"
@@ -101,3 +104,30 @@ export const featureList = <M>(
 			)
 		}),
 	)
+
+/** `FeaturePanel`: a connected integration's feature list as a titled panel, with the error of a change that did not save. */
+export const featurePanel = <M>(
+	h: HtmlBuilder<M>,
+	options: Readonly<{
+		idPrefix: string
+		rows: ReadonlyArray<FeatureRow<M>>
+		/** Why the last change did not save; its switch is back where it was. */
+		error: string | null
+		title?: string
+	}>,
+): Html =>
+	panel(h, {}, [
+		panelHeader(h, { title: options.title ?? "What Maple collects", divided: true }),
+		...(options.error === null
+			? []
+			: [
+					panelBody(h, [
+						alert(h, { variant: "crit" }, [
+							icon(h, "CircleWarningIcon"),
+							alertTitle(h, ["Couldn't save that change"]),
+							alertDescription(h, [options.error]),
+						]),
+					]),
+				]),
+		featureList(h, { idPrefix: options.idPrefix, rows: options.rows, bordered: false }),
+	])

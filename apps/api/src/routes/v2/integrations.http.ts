@@ -5,7 +5,7 @@ import type {
 	PlanetScaleQueryInsightsResponse,
 	SelfDescribingHttpError,
 } from "@maple/domain/http"
-import { CurrentTenant, PlanetScaleMetricsTokenRequest } from "@maple/domain/http"
+import { CurrentTenant, PlanetScaleFeaturesRequest, PlanetScaleMetricsTokenRequest } from "@maple/domain/http"
 import type { PlanetScaleDatabaseRow } from "@maple/db/tables"
 import type {
 	V2PlanetScaleConnectResponse,
@@ -136,6 +136,8 @@ const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScal
 					last_scrape_at: isoTimestampOrNull(status.scrapeTarget.lastScrapeAt),
 					last_scrape_error: status.scrapeTarget.lastScrapeError,
 				},
+	metrics_enabled: status.metricsEnabled,
+	events_enabled: status.eventsEnabled,
 	webhooks:
 		status.webhooks === null
 			? null
@@ -338,6 +340,34 @@ export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 							// is write-only and never reaches an audit row.
 							yield* recordHttpAudit("planetscale_integration.metrics_token_set", {
 								metadata: { token_id: payload.token_id },
+							})
+							return toPlanetScaleStatus(status)
+						}),
+					)
+					.handle("updateFeatures", ({ payload }) =>
+						Effect.gen(function* () {
+							const tenant = yield* CurrentTenant.Context
+							yield* Policy.check(tenant.roles, "integrations:manage", (denial) =>
+								V2InsufficientPermissions.make(denial.message),
+							)
+							const status = yield* planetscale
+								.setFeatures(
+									tenant.orgId,
+									new PlanetScaleFeaturesRequest({
+										...(payload.metrics_enabled !== undefined && {
+											metricsEnabled: payload.metrics_enabled,
+										}),
+										...(payload.events_enabled !== undefined && {
+											eventsEnabled: payload.events_enabled,
+										}),
+									}),
+								)
+								.pipe(tapHttpErrors("PlanetScale feature update failed"))
+							yield* recordHttpAudit("planetscale_integration.features_updated", {
+								metadata: {
+									metrics_enabled: status.metricsEnabled,
+									events_enabled: status.eventsEnabled,
+								},
 							})
 							return toPlanetScaleStatus(status)
 						}),

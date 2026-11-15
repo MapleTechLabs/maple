@@ -281,6 +281,18 @@ export class CloudflareConnectedAccountStatus extends Schema.Class<CloudflareCon
  * the pre-multi-account single-account view (first account + all accounts' zones merged),
  * kept so bundles from before `accounts` existed keep rendering during a deploy window.
  */
+/** What the grant collects, one switch per feature of `INTEGRATION_FEATURES.cloudflare`. */
+export class CloudflareFeatureSwitches extends Schema.Class<CloudflareFeatureSwitches>(
+	"CloudflareFeatureSwitches",
+)({
+	httpTrafficEnabled: Schema.Boolean,
+	firewallEnabled: Schema.Boolean,
+	dnsEnabled: Schema.Boolean,
+	workersEnabled: Schema.Boolean,
+	queuesEnabled: Schema.Boolean,
+	durableObjectsEnabled: Schema.Boolean,
+}) {}
+
 export class CloudflareIntegrationStatus extends Schema.Class<CloudflareIntegrationStatus>(
 	"CloudflareIntegrationStatus",
 )({
@@ -300,6 +312,8 @@ export class CloudflareIntegrationStatus extends Schema.Class<CloudflareIntegrat
 	accounts: Schema.optionalKey(Schema.Array(CloudflareConnectedAccountStatus)),
 	zones: Schema.Array(CloudflareAnalyticsZoneStatus),
 	workers: Schema.NullOr(CloudflareAnalyticsWorkersStatus),
+	/** optionalKey only for deploy-window compat; always sent. */
+	features: Schema.optionalKey(CloudflareFeatureSwitches),
 }) {}
 
 /**
@@ -431,6 +445,18 @@ export class CloudflareZoneSettingsRequest extends Schema.Class<CloudflareZoneSe
 	zones: Schema.Array(CloudflareZoneWatchSetting).check(Schema.isMaxLength(5000)),
 }) {}
 
+/** Turns Cloudflare features on or off; a field left out keeps its switch. */
+export class CloudflareFeatureSettingsRequest extends Schema.Class<CloudflareFeatureSettingsRequest>(
+	"CloudflareFeatureSettingsRequest",
+)({
+	httpTrafficEnabled: Schema.optionalKey(Schema.Boolean),
+	firewallEnabled: Schema.optionalKey(Schema.Boolean),
+	dnsEnabled: Schema.optionalKey(Schema.Boolean),
+	workersEnabled: Schema.optionalKey(Schema.Boolean),
+	queuesEnabled: Schema.optionalKey(Schema.Boolean),
+	durableObjectsEnabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
 	"CloudflareDisconnectResponse",
 )({
@@ -531,6 +557,9 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	scrapeTarget: Schema.NullOr(PlanetScaleScrapeTargetSummary),
 	/** Null until an organization is bound. */
 	webhooks: Schema.NullOr(PlanetScaleWebhookStatus),
+	/** The person's switches (`INTEGRATION_FEATURES.planetscale`); both on until changed. */
+	metricsEnabled: Schema.Boolean,
+	eventsEnabled: Schema.Boolean,
 	/** Epoch ms of the last successful inventory refresh; null before the first. */
 	lastInventoryAt: Schema.NullOr(Schema.Number),
 	lastInventoryError: Schema.NullOr(Schema.String),
@@ -543,6 +572,14 @@ export class PlanetScaleIntegrationStatus extends Schema.Class<PlanetScaleIntegr
 	revokedAt: Schema.NullOr(Schema.Number),
 	/** Epoch ms the access token expires; refresh happens well before this. */
 	expiresAt: Schema.NullOr(Schema.Number),
+}) {}
+
+/** Turns PlanetScale features on or off; a field left out keeps its switch. */
+export class PlanetScaleFeaturesRequest extends Schema.Class<PlanetScaleFeaturesRequest>(
+	"PlanetScaleFeaturesRequest",
+)({
+	metricsEnabled: Schema.optionalKey(Schema.Boolean),
+	eventsEnabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class PlanetScaleStartConnectRequest extends Schema.Class<PlanetScaleStartConnectRequest>(
@@ -1780,6 +1817,14 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			payload: CloudflareZoneSettingsRequest,
 			success: CloudflareIntegrationStatus,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// The next poll reads the switches; nothing is set up at Cloudflare for them.
+		HttpApiEndpoint.patch("cloudflareFeatures", "/cloudflare/features", {
+			payload: CloudflareFeatureSettingsRequest,
+			success: CloudflareIntegrationStatus,
+			error: [IntegrationsForbiddenError, IntegrationsNotConnectedError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(

@@ -240,6 +240,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/integrations/aws/connections/{id}",
 			"PATCH /v2/integrations/chat_workspaces/{id}",
 			"PATCH /v2/integrations/gcp/connectors/{id}",
+			"PATCH /v2/integrations/planetscale",
 			"PATCH /v2/scrape_targets/{id}",
 			"PATCH /v2/slos/{id}",
 			"PATCH /v2/sources/{id}",

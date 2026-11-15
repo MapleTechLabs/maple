@@ -13,7 +13,7 @@ import {
 } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/http"
-import { OrgId, UserId } from "@maple/domain/http"
+import { OrgId, PlanetScaleFeaturesRequest, UserId } from "@maple/domain/http"
 import { EnvTestLive } from "@maple/backend/testing/env-test-support"
 import {
 	cleanupTestDbs,
@@ -285,6 +285,24 @@ describe("PlanetScaleMetricsService", () => {
 			assert.lengthOf(api.metricRequests, 0)
 			const status = yield* (yield* PlanetScaleConnectionService).getStatus(asOrgId("org_1"))
 			assert.strictEqual(status.metricsAuth, "service_token")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("reads no metrics while the metrics switch is off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const api = fakePlanetScale()
+		return Effect.gen(function* () {
+			yield* connectAndLoadInventory()
+			yield* (yield* PlanetScaleConnectionService).setFeatures(
+				asOrgId("org_1"),
+				new PlanetScaleFeaturesRequest({
+					metricsEnabled: false,
+				}),
+			)
+			yield* (yield* PlanetScaleMetricsService).pollAll
+
+			assert.lengthOf(api.metricRequests, 0)
+			assert.lengthOf(api.ingested, 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
