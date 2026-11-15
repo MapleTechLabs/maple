@@ -72,8 +72,9 @@ function labelValuesSource(query: string, name: string, warnings: string[]): Que
 	const match = LABEL_VALUES.exec(query)
 	if (match === null) return undefined
 	const [, selector, label = ""] = match
-	// Without a metric there is nothing to read job from but the service list.
-	if (label === "job" && selector === undefined) return { kind: "facet", facet: "service" }
+	// `job` is the service name: OTel metrics carry it only as `service.name`, and the scraper sets
+	// `service.name` to the job too, so the service list holds every job a dashboard can filter by.
+	if (label === "job") return { kind: "facet", facet: "service" }
 	if (selector === undefined) return undefined
 	const [metricPart, matchers] = Str.split(selector, "{")
 	const metric = Str.trim(metricPart)

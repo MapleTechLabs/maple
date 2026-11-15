@@ -169,14 +169,8 @@ describe("convertGrafanaDashboardToPortable on a Node Exporter style board", () 
 				{
 					name: "job",
 					type: "query",
-					// Scraped data carries job and instance as labels on the metric.
-					source: {
-						kind: "metric",
-						metricType: "gauge",
-						metricNames: ["node_uname_info"],
-						scope: "metric",
-						attributeKey: "job",
-					},
+					// `job` is the service name, which OTel metrics carry only as `service.name`.
+					source: { kind: "facet", facet: "service" },
 					defaultValue: "node",
 				},
 				{
