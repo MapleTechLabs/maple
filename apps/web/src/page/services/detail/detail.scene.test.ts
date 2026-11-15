@@ -35,7 +35,8 @@ import * as PeekMessage from "./endpoint-peek/message"
 import { Message } from "./message"
 import type { Model, OverviewData } from "./model"
 import type { Endpoint, Operation } from "./model-tabs"
-import { contextChanged, init, routeChanged, update } from "./update"
+import { FetchDeployOperations, FetchShipped } from "./deploy-peek/update"
+import { contextChanged, deployPeekOf, init, routeChanged, update } from "./update"
 import { view as pageView } from "./view"
 
 const orgId = Schema.decodeSync(OrgId)("org_acme")
@@ -232,6 +233,52 @@ describe("service detail", () => {
 			Mount.resolve(MountLinkedZoom, LinkedCursorMessage.CompletedMountLinkedCursor()),
 			expectView(text("an old timeout")).toExist(),
 			expectView(text(/new since/)).not.toExist(),
+		)
+	})
+
+	test("a deploy row opens its drawer by URL; the drawer reads both sides and the commit's other deploys", () => {
+		const loaded = withDeploys(entered(), [deploy("v2.0.0", 60, 0.05)]).model
+		expect(
+			pageUpdate(loaded, Message.ClickedDeploy({ sha: "v2.0.0", environment: "production" }))
+				.outMessage,
+		).toEqual(
+			PageOutMessage.RequestedNavigation({
+				url: "/services/payment-svc?deploy=v2.0.0&deployEnv=production",
+				isReplace: false,
+			}),
+		)
+		const opened = routeChanged(loaded, route({ deploy: "v2.0.0" }), context)
+		expect(opened.model.deployPeek.dialog.isOpen).toBe(true)
+		expect(names(opened.commands)).toEqual(
+			expect.arrayContaining([FetchDeployOperations.name, FetchShipped.name]),
+		)
+		expect(
+			Arr.filter(names(opened.commands), (name) => name === FetchDeployOperations.name),
+		).toHaveLength(2)
+	})
+
+	test("a commit in two environments opens the environment its row named", () => {
+		const loaded = withDeploys(entered(), [
+			{ ...deploy("v2.0.0", 30, 0.05), environment: "staging" },
+			deploy("v2.0.0", 60),
+		]).model
+		const opened = routeChanged(loaded, route({ deploy: "v2.0.0", deployEnv: "production" }), context)
+		expect(deployPeekOf(opened.model)?.environment).toBe("production")
+	})
+
+	test("a deploy the window no longer holds leaves the URL", () => {
+		const model = entered({ deploy: "gone" })
+		const loaded = withDeploys(model, [deploy("v2.0.0", 60)])
+		expect(loaded.outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc", isReplace: true }),
+		)
+		expect(loaded.model.deployPeek.dialog.isOpen).toBe(false)
+	})
+
+	test("switching tab closes the deploy drawer", () => {
+		const model = entered({ deploy: "v2.0.0" })
+		expect(pageUpdate(model, Message.ClickedTab({ tab: "api" })).outMessage).toEqual(
+			PageOutMessage.RequestedNavigation({ url: "/services/payment-svc?tab=api", isReplace: true }),
 		)
 	})
 

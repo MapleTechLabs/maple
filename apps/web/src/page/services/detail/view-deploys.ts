@@ -1,3 +1,4 @@
+import { PANEL_ROW_CLASS } from "./view-panels"
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { countLabel, formatNumber, pluralize } from "@maple/ui/lib/format"
 import { shortId } from "@maple/ui/lib/ids"
@@ -11,10 +12,18 @@ import { inlineCode } from "@maple/views/ui/inline-code"
 import { docsLink } from "../../kit/signal-empty-state"
 import { emptyMessage } from "@maple/views/ui/empty"
 import { listRow } from "@maple/views/ui/list-row"
+import { pressable } from "@maple/views/ui/pressable"
 import { skeleton, skeletonList } from "@maple/views/ui/skeleton"
 import { textLink } from "@maple/views/ui/text-link"
 import { truncatedText } from "@maple/views/ui/truncated-text"
-import { type DeployCheck, deployBefore, deployChecksOf, deployDataEndOf, railOrder } from "./derive-deploys"
+import {
+	type DeployCheck,
+	deployBefore,
+	deployChecksOf,
+	deployDataEndOf,
+	isOpenDeploy,
+	railOrder,
+} from "./derive-deploys"
 import { verdictBadge, verdictFigure } from "./view-verdict"
 import { Message } from "./message"
 import type { Issue, Model } from "./model"
@@ -67,7 +76,7 @@ const issueLine = (
 ): Html =>
 	listRow(h, {
 		density: "compact",
-		className: "gap-2.5 rounded-sm px-2 text-sm",
+		className: PANEL_ROW_CLASS,
 		href: `/errors/issues/${issue.id}`,
 		leading: hasSeverity ? issueSeverityBadge(h, issue.severity) : undefined,
 		title: truncatedText(h, { text: issue.title, className: "font-normal" }),
@@ -330,7 +339,26 @@ const deploySkeleton = (h: H): Html =>
 		]),
 	])
 
-const deployRow = (h: H, model: Model, deploy: DeployCheck, clock: Clock, showEnvironment: boolean): Html => {
+/** A row opens the deploy's drawer; the open one keeps its lane. */
+const deployRow = (h: H, model: Model, deploy: DeployCheck, clock: Clock, showEnvironment: boolean): Html =>
+	pressable(
+		h,
+		{
+			onClick: Message.ClickedDeploy({ sha: deploy.sha, environment: deploy.environment }),
+			selectedLane: isOpenDeploy(model.search, deploy),
+			className: "block w-full rounded-sm text-left hover:bg-surface-sunken active:bg-surface-sunken",
+			attributes: [h.Key(`${deploy.sha}-${deploy.environment}`)],
+		},
+		[deployRowContent(h, model, deploy, clock, showEnvironment)],
+	)
+
+const deployRowContent = (
+	h: H,
+	model: Model,
+	deploy: DeployCheck,
+	clock: Clock,
+	showEnvironment: boolean,
+): Html => {
 	const chip = verdictBadge(h, deploy)
 	if (!isResolvableSha(deploy.sha)) {
 		const label = shortId(deploy.sha, "generic", { length: 24, ellipsis: true })

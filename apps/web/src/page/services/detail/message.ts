@@ -12,6 +12,7 @@ import { ServiceRuntime } from "../../kit/service-runtimes"
 import * as TimeRangePicker from "../../kit/time-range-picker"
 import { ServiceTab } from "./derive"
 import { ENDPOINT_FILTERS } from "./derive-api"
+import * as DeployPeek from "./deploy-peek/message"
 import * as EndpointPeek from "./endpoint-peek/message"
 import {
 	ApiBucket,
@@ -22,7 +23,8 @@ import {
 	SortTable,
 	StatusRow,
 } from "./model-tabs"
-import { Issue, OverviewData, RefinementPoint, ServiceDeploys, Usage, Workload } from "./model"
+import { Issue, OverviewData, RefinementPoint, Usage, Workload } from "./model"
+import { ServiceDeploys } from "./model-deploys"
 import { Commit, CommitFailure } from "../../kit/service-metrics/points"
 
 /** The reads that can be retried from their error state. */
@@ -83,6 +85,9 @@ export const Message = defineMessageUnion({
 	ClickedEndpointFilter: { filter: Schema.Literals(ENDPOINT_FILTERS) },
 	ChangedEndpointQuery: { value: Schema.String },
 	GotEndpointPeekMessage: { message: EndpointPeek.Message },
+	/** A deploy row or the callout: its drawer (`?deploy=`). */
+	ClickedDeploy: { sha: Schema.String, environment: Schema.String },
+	GotDeployPeekMessage: { message: DeployPeek.Message },
 	GotEnvironmentSelectMessage: { message: Select.Message },
 	GotTimePickerMessage: { message: TimeRangePicker.Message },
 	GotChartMessage: { chartId: Schema.String, message: Chart.Message },

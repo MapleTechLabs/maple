@@ -37,6 +37,9 @@ export const sectionCard = (
 		panelBody(h, children),
 	])
 
+/** A compact `listRow` inside a panel or drawer: issue, deploy and operation rows. */
+export const PANEL_ROW_CLASS = "gap-2.5 rounded-sm px-2 text-sm"
+
 /** Jumps from an Overview card to the full tab. */
 export const viewAllButton = (h: H, onClick: Message): Html =>
 	textLink(h, { className: "text-xs", onClick }, ["View all →"])

@@ -1,7 +1,8 @@
 import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Array as Arr, Option, Order } from "effect"
 import { AsyncData } from "foldkit"
-import type { DeployRow, Model, ServiceDeploys } from "./model"
+import type { Model } from "./model"
+import type { DeployRow, ServiceDeploys } from "./model-deploys"
 
 // Each deploy's first minutes against the minutes just before it, judged into one verdict.
 
@@ -28,6 +29,7 @@ export type Verdict = "errors-up" | "slower" | "verifying" | "clean" | "unjudged
 export type Side = Readonly<{ spans: number; errorRate: number; p95Ms: number }>
 
 export type DeployCheck = Readonly<{
+	serviceName: string
 	sha: string
 	environment: string
 	firstSeenMs: number
@@ -72,6 +74,7 @@ export const judge = (row: DeployRow, windowSeconds: number, dataEndMs: number):
 					? "verifying"
 					: "clean"
 	return {
+		serviceName: row.serviceName,
 		sha: row.commitSha,
 		environment: row.environment,
 		firstSeenMs,
@@ -141,6 +144,17 @@ export const deployBefore = (
 	atMs > endMs
 		? undefined
 		: Option.getOrUndefined(Arr.findFirst(checks, (check) => check.firstSeenMs <= atMs))
+
+/** The deploy the URL opens: its commit, and its environment when the URL names one. */
+export const isOpenDeploy = (
+	search: Readonly<{ deploy?: string | undefined; deployEnv?: string | undefined }>,
+	check: DeployCheck,
+): boolean =>
+	search.deploy === check.sha && (search.deployEnv === undefined || search.deployEnv === check.environment)
+
+/** The same deploy: one commit on one service and environment, however it was derived. */
+export const isSameDeploy = (a: DeployCheck | undefined, b: DeployCheck): boolean =>
+	a !== undefined && a.sha === b.sha && a.serviceName === b.serviceName && a.environment === b.environment
 
 /** Flagged deploys first, then newest first: the rail leads with what needs a look. */
 export const railOrder = (checks: ReadonlyArray<DeployCheck>): ReadonlyArray<DeployCheck> =>

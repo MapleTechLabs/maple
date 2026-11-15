@@ -2,7 +2,8 @@ import { parseWarehouseDateTime } from "@maple/query-engine"
 import { formatErrorRate, formatLatency, formatRate } from "@maple/ui/lib/format"
 import { AsyncData } from "foldkit"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { alert, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { alert, alertAction, alertDescription, alertTitle } from "@maple/views/ui/alert"
+import { button } from "@maple/views/ui/button"
 import { badge } from "@maple/views/ui/display"
 import { icon } from "@maple/views/ui/icon"
 import { statRail, statRailItem, statRailLoading } from "../../kit/stat-rail"
@@ -16,10 +17,11 @@ import {
 	deployBefore,
 	deployDataEndOf,
 	isComparable,
+	isSameDeploy,
 	leadDeploy,
 } from "./derive-deploys"
 import type { Issue, Model } from "./model"
-import type { Message } from "./message"
+import { Message } from "./message"
 import { mergedPoints } from "./view-charts"
 import { verdictFigure } from "./view-verdict"
 import { Array as Arr } from "effect"
@@ -130,15 +132,30 @@ export const deployCallout = (h: H, model: Model, deploys: ReadonlyArray<DeployC
 	if (deploy === undefined) return null
 	const issues: ReadonlyArray<Issue> = AsyncData.getOrElse(model.issues.data, () => [])
 	// The issue tags' rule: an issue belongs to the newest deploy before it first appeared.
-	const newIssues = Arr.filter(
-		issues,
-		(issue) =>
-			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), deployDataEndOf(model)) ===
+	const newIssues = Arr.filter(issues, (issue) =>
+		isSameDeploy(
+			deployBefore(deploys, parseWarehouseDateTime(issue.firstSeenAt), deployDataEndOf(model)),
 			deploy,
+		),
 	).length
 	return alert(h, { variant: ALERT_VARIANT[deploy.verdict], role: "status" }, [
 		icon(h, deploy.verdict === "verifying" ? "ClockIcon" : "CircleWarningIcon"),
 		alertTitle(h, [headline(deploy)]),
 		alertDescription(h, [deployName(h, model, deploy), h.span([], [detail(deploy, newIssues)])]),
+		alertAction(h, [
+			button(
+				h,
+				{
+					variant: "outline",
+					size: "sm",
+					attributes: [
+						h.OnClick(
+							Message.ClickedDeploy({ sha: deploy.sha, environment: deploy.environment }),
+						),
+					],
+				},
+				["What changed", icon(h, "ArrowRightIcon")],
+			),
+		]),
 	])
 }

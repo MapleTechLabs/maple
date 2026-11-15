@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { Array as Arr } from "effect"
 import { deployBefore, deployChecks, judge, leadDeploy, railOrder } from "./derive-deploys"
-import type { DeployRow } from "./model"
+import type { DeployRow } from "./model-deploys"
 
 const MINUTE = 60_000
 const NOW = Date.parse("2026-11-15T12:00:00Z")
