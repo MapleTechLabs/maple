@@ -80,7 +80,8 @@ interface HopPhases {
 interface Answer {
 	readonly response: http.IncomingMessage
 	readonly phases: HopPhases
-	readonly certificate: UptimeCertificate | null
+	/** None without a completed TLS handshake (plain http://). */
+	readonly certificate: Option.Option<UptimeCertificate | null>
 }
 
 /** The leaf certificate of a completed handshake; null when the runtime gives no readable expiry. */
@@ -109,7 +110,8 @@ const exchange = (
 		const startedAt = performance.now()
 		// Socket events land in callbacks, so their times are kept here until the headers arrive.
 		const marks = new Map<"connect" | "tls", number>()
-		let certificate: UptimeCertificate | null = null
+		// Set once a handshake completes: the leaf's certificate, or null when its expiry is unreadable.
+		let certificate: Option.Option<UptimeCertificate | null> = Option.none()
 		const options: https.RequestOptions = {
 			method: request.method,
 			headers: { "accept-encoding": ACCEPT_ENCODING, ...request.headers },
@@ -123,7 +125,7 @@ const exchange = (
 			socket.once("connect", () => marks.set("connect", performance.now()))
 			socket.once("secureConnect", () => {
 				marks.set("tls", performance.now())
-				if (socket instanceof tls.TLSSocket) certificate = peerCertificate(socket)
+				if (socket instanceof tls.TLSSocket) certificate = Option.some(peerCertificate(socket))
 			})
 		})
 		const connected = (): HopPhases => {
@@ -138,7 +140,7 @@ const exchange = (
 		}
 		// A handshake that completed is a certificate read, whatever the request does next.
 		const presented = Effect.suspend(() =>
-			certificate === null ? Effect.void : recordCertificate(certificate),
+			Option.match(certificate, { onNone: () => Effect.void, onSome: recordCertificate }),
 		)
 		// Kept for the request's life: an abort after the headers still emits here. A failed hop
 		// still reports what it got through (a connect before a refused handshake, a TLS certificate
@@ -211,7 +213,7 @@ export const timedHttpClient: HttpClient.HttpClient = HttpClient.make((request, 
 			fiber.getRef(DialServerName),
 		)
 		yield* recordPhases(phases)
-		if (certificate !== null) yield* recordCertificate(certificate)
+		if (Option.isSome(certificate)) yield* recordCertificate(certificate.value)
 		return yield* toWeb(request, response)
 	}),
 )

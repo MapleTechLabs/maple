@@ -44,7 +44,7 @@ const tlsServer = (onSecure: (socket: tls.TLSSocket) => void) => {
 /** Runs one GET through the timed client at the test server, returning what it recorded. */
 const recordingGet = (port: number, timeout: Duration.Input) =>
 	Effect.gen(function* () {
-		const seen = yield* Ref.make<ReadonlyArray<UptimeCertificate>>([])
+		const seen = yield* Ref.make<ReadonlyArray<UptimeCertificate | null>>([])
 		const result = yield* timedHttpClient.get(`https://127.0.0.1:${port}/`).pipe(
 			Effect.timeout(timeout),
 			Effect.scoped,

@@ -334,6 +334,8 @@ describe("UptimeHttpProbe", () => {
 			subject: host,
 			issuer: "Test CA",
 		})
+		// Hosts whose certificate has no readable expiry.
+		const unreadable = new Set<string>()
 		// Every hop presents its own host's certificate, as the timed transport reports it.
 		const PresentingLive = UptimeHttpProbe.layer.pipe(
 			Layer.provide(
@@ -341,7 +343,11 @@ describe("UptimeHttpProbe", () => {
 					HttpClient.HttpClient,
 					Effect.map(HttpClient.HttpClient, (client) =>
 						HttpClient.tapRequest(client, (request) =>
-							recordCertificate(certificateOf(request.headers.host ?? "")),
+							recordCertificate(
+								unreadable.has(request.headers.host ?? "")
+									? null
+									: certificateOf(request.headers.host ?? ""),
+							),
 						),
 					),
 				).pipe(Layer.provide(FetchHttpClient.layer)),
@@ -375,6 +381,16 @@ describe("UptimeHttpProbe", () => {
 			)
 			assert.isTrue(plain.ok)
 			assert.isUndefined(plain.certificate)
+			// The configured host's certificate is unreadable: the redirect target's does not stand in.
+			unreadable.add("api.example.com")
+			recorded.length = 0
+			const unread = yield* probeWith(recorded, () =>
+				recorded.length === 1
+					? new Response(null, { status: 301, headers: { location: "https://moved.example.org/h" } })
+					: new Response("ok", { status: 200 }),
+			)
+			assert.strictEqual(recorded.length, 2)
+			assert.isUndefined(unread.certificate)
 		}).pipe(Effect.provide(PresentingLive))
 	})
 })

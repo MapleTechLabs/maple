@@ -203,7 +203,10 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 			const probe = (config: HttpProbeConfig, trace: CheckTraceContext) =>
 				Effect.gen(function* () {
 					const phases = yield* Ref.make(NO_PHASES)
-					const certificate = yield* Ref.make<UptimeCertificate | null>(null)
+					// The first TLS hop's result, an unreadable (null) one included.
+					const certificate = yield* Ref.make<Option.Option<UptimeCertificate | null>>(
+						Option.none(),
+					)
 					const outcome = yield* check(config, trace).pipe(
 						Effect.provideService(PhaseRecorder, (hop) =>
 							Ref.update(phases, (total) => addPhases(total, hop)),
@@ -211,13 +214,16 @@ export class UptimeHttpProbe extends Context.Service<UptimeHttpProbe, UptimeHttp
 						// The first hop's, so only for an https:// URL: a redirect's host does not stand in for it.
 						Effect.provideService(CertificateRecorder, (seen) =>
 							Str.startsWith("https:")(Str.toLowerCase(Str.trim(config.url)))
-								? Ref.update(certificate, (first) => first ?? seen)
+								? Ref.update(certificate, (first) =>
+										Option.isSome(first) ? first : Option.some(seen),
+									)
 								: Effect.void,
 						),
 					)
 					// The phases that completed, a failed check's too (DNS and connect before a TLS error).
 					const timings = yield* Ref.get(phases)
-					const presented = yield* Ref.get(certificate)
+					const firstHop = yield* Ref.get(certificate)
+					const presented = Option.getOrNull(Option.flatMapNullishOr(firstHop, (seen) => seen))
 					return {
 						...outcome,
 						...(hasPhases(timings) ? { timings } : undefined),
