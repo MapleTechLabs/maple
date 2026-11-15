@@ -20,6 +20,9 @@ import {
 	catalogQuery,
 	promqlCatalogRowSchema,
 	promqlInstanceValuesQuery,
+	promqlMetadataQuery,
+	promqlMetadataRowSchema,
+	prometheusMetadata,
 	promqlSelectorRowSchema,
 	toSelectorData,
 	type CatalogMetric,
@@ -333,6 +336,7 @@ const expected = (req: Request, series: ReadonlyArray<ExpectedSeries>) =>
 
 const decodeRows = decodeJsonEachRow(promqlSelectorRowSchema)
 const decodeCatalog = decodeJsonEachRow(promqlCatalogRowSchema)
+const decodeMetadata = decodeJsonEachRow(promqlMetadataRowSchema)
 const decodeInstances = decodeJsonEachRow(Schema.Struct({ instance: Schema.String }))
 
 const catalogOf = (db: Chdb, org: string): ReadonlyArray<CatalogMetric> => {
@@ -566,6 +570,23 @@ describeWithChdb("PromQL selector source", () => {
 		const millis = select(db, ORG_A, request("request_duration_milliseconds")).series
 		expect(Arr.map(seconds, (s) => s.labels.job)).toEqual(["seconds-svc"])
 		expect(Arr.map(millis, (s) => s.labels.job)).toEqual(["millis-svc"])
+		const metadata = prometheusMetadata(
+			decodeMetadata(
+				db.query(
+					normalizeSqlForClickHouseClient(
+						CH.compileUnsafe(promqlMetadataQuery({ limit: 1000 }), {
+							orgId: OrgId.make(ORG_A),
+							startTime: Str.slice(0, 19)(chTime(-HOUR_MS)),
+							endTime: Str.slice(0, 19)(chTime(HOUR_MS)),
+						}).sql,
+					),
+				),
+			),
+		)
+		expect([
+			metadata.has("request_duration_seconds"),
+			metadata.has("request_duration_milliseconds"),
+		]).toEqual([true, true])
 	})
 
 	test("attribute order does not split a series", () => {
