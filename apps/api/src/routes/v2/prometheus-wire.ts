@@ -8,11 +8,14 @@ import { PromqlBadQueryError } from "@maple/backend/services/promql/PromqlQueryS
 const FLOAT = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
 
+/** The largest epoch ms a JavaScript Date renders. */
+const MAX_DATE_MS = 8.64e15
+
 /** A Prometheus timestamp: Unix seconds with an optional fraction, or RFC3339. Epoch ms. */
 export const parseTime = (name: string, text: string): Effect.Effect<number, PromqlBadQueryError> => {
 	if (FLOAT.test(text)) {
 		const ms = Math.round(Number(text) * 1000)
-		if (Number.isFinite(ms)) return Effect.succeed(ms)
+		if (Math.abs(ms) <= MAX_DATE_MS) return Effect.succeed(ms)
 	} else if (RFC3339.test(text)) {
 		const parsed = DateTime.make(text)
 		if (Option.isSome(parsed)) return Effect.succeed(DateTime.toEpochMillis(parsed.value))
