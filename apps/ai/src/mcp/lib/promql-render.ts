@@ -166,7 +166,7 @@ export const renderPromqlOutput = (output: Output): ToolDoc => {
 			output.instant
 				? ["At", output.timeRange.end]
 				: ["Window", `${output.timeRange.start} to ${output.timeRange.end}`],
-			["Step", output.instant ? undefined : `${output.stepSeconds}s`],
+			["Step", output.instant ? undefined : stepText(output.stepSeconds)],
 		],
 		blocks: bodyOf(output),
 		...(empty
