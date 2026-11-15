@@ -191,6 +191,7 @@ describe("print keeps meaning", () => {
 	it("parenthesizes nested operators so precedence cannot regroup them", () => {
 		expect(print(bin("*", bin("+", v("a"), v("b")), v("c")))).toBe("(a + b) * c")
 		expect(print(bin("-", v("a"), bin("-", v("b"), v("c"))))).toBe("a - (b - c)")
+		expect(ok(print(ok("a / ignoring() b")))).toEqual(ok("a / ignoring() b"))
 	})
 
 	it("fails cleanly on an escape past U+10FFFF", () => {
